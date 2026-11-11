@@ -402,7 +402,7 @@ contract BackingPoolTest is BackingPoolFixture {
         assertEq(s.milestone.resolveBy, _now() + 14 days);
         assertEq(s.pending, 99e18 / 4);
         assertTrue(s.holderCanLeave);
-        (uint256 leaveOut, uint256 fromCurve, uint256 fromEscrow,) = pool.quoteLeave(ALICE);
+        (uint256 leaveOut, uint256 fromCurve, uint256 fromEscrow,,) = pool.quoteLeave(ALICE);
         assertEq(s.holderLeaveValue, leaveOut);
         assertEq(leaveOut, fromCurve + fromEscrow);
         // Leaving hands back the whole escrow part, and that is what the wallet's escrow reads while it can leave.

@@ -200,7 +200,7 @@ contract BackingPoolFuzzTest is BackingPoolFixture {
 
         uint256 bobTook;
         if (bobLeaves) {
-            (, uint256 fromCurve, uint256 fromEscrow,) = pool.quoteLeave(BOB);
+            (, uint256 fromCurve, uint256 fromEscrow,,) = pool.quoteLeave(BOB);
             assertApproxEqAbs(fromEscrow, bobDue, 1);
             bobTook = fromEscrow;
             assertEq(_leave(BOB), fromCurve + fromEscrow);
@@ -216,7 +216,7 @@ contract BackingPoolFuzzTest is BackingPoolFixture {
         _assertSolvent();
     }
 
-    /// @dev Leaving never pays more than the wallet put in: the curve without a fee and its own escrow part.
+    /// @dev Leaving never pays more than the wallet put in: the curve less the fee, and its own escrow part.
     function testFuzz_buy_then_leave_at_the_next_milestone_never_profits(uint256 prior, uint256 amount) public {
         prior = bound(prior, 1e15, 2_000_000e18);
         amount = bound(amount, 1e15, 2_000_000e18);

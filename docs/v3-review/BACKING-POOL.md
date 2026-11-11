@@ -28,8 +28,8 @@ Every buy is split three ways:
   project money behind for the backers who stay: buy and sell straight back and you get about 88%.
 - **At each milestone you can stay, or leave with your held money back.** When the project posts a
   milestone you have 7 days. If you stay, a quarter of your held money goes to the project. If you leave,
-  all your units are sold with no fee and you get all of your held money, with nothing taken for that
-  milestone. Nobody can stop a release, and nobody is made to fund a milestone they reject.
+  all your units are sold at the ordinary 1% fee and you get all of your held money, with nothing taken
+  for that milestone. Nobody can stop a release, and nobody is made to fund a milestone they reject.
 - **You can only leave if you held before the milestone was posted** and have not bought since. Money you
   put in after a post is not touched by that milestone.
 - **If the project is abandoned** (see below) you sell as usual, with no fee, and each sale also returns
@@ -68,7 +68,7 @@ never abandoned; the clock starts again with the next backer.
 | Curve: paper reserve | 25,000 quote | Opening price 0.000025 a unit. Raising 50,000 in total moves the price about 7.7 times. |
 | Curve: paper units | 1,000,000,000 | The supply approaches this and never reaches it, so there is no sell-out and no "graduation". |
 | Project part | 10% of each buy after the fee | With 30% a round trip lost 31% and needed +46% to break even, which nobody would use next to other apps. At 10% a round trip returns about 88%. |
-| Fee | 1% on buys and on sales, to the treasury | Makes churn and sandwiching pay the project. Leaving at a milestone and refunds pay none. |
+| Fee | 1% on buys and on sales, to the treasury | Makes churn and sandwiching pay the project. Leaving at a milestone pays it on the units sold; refunds after abandonment pay none. |
 | Tranche | 25% of the escrow at the post | No milestone can empty the escrow; there is no last tranche and no cliff. |
 | Window to leave | 7 days | One weekly update cycle. |
 | Time to release after the window | 7 days | A milestone cannot be held open to wait for a better moment. |
@@ -117,10 +117,11 @@ Protected, each with a test that runs the attack (`contracts/test/BackingPoolAdv
 
 Not protected. Say these plainly in the app:
 
-- **Leaving and buying back skips the tranche for the price of the 1% fee**
-  (`test_limit_leaving_and_buying_back_*`). A backer who does it every time funds the project through fees
-  only. This is the cost of "nobody is made to fund a milestone they reject" and it is the main open
-  question on the money side.
+- **Leaving and buying straight back skips a tranche, at the price of two fees**
+  (`test_limit_leaving_and_buying_back_*`). Leaving pays the ordinary 1% on the units sold and buying back
+  pays 1% again: about 2% of the position. Staying costs a quarter of the held money: about 2.5% of the
+  position at the first milestone and less after each release. So it is barely worth doing once and a loss
+  afterwards, and the project gets the two fees either way.
 - **A released tranche is gone.** Nothing checks that a milestone is true except backers leaving.
 - **Released money goes to the DAO treasury**, which Share holders control. A founder who holds most Shares
   can take it out.
@@ -160,7 +161,7 @@ Not protected. Say these plainly in the app:
 | Buy (first time for a wallet / again) | 159,000 / 105,000 (282,000 for the pool's very first buy) |
 | Sell | 89,000 |
 | Claim milestone (`postMilestone`) | 180,000 |
-| Leave at a milestone | 130,000 |
+| Leave at a milestone | 140,000 |
 | Release (`resolveMilestone`, pays the treasury) | 121,000 |
 | Refund (sell once abandoned) | 68,000 (116,000 for the first one, which records the abandonment) |
 

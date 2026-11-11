@@ -40,7 +40,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// public record event. The post fixes the tranche: `trancheBps` of the escrow as it stands at that
 /// moment (`pending`), carried by the weight that exists at that moment (`staked`). For
 /// `objectionWindow` after the post, a backer who held before it and has not bought since may `leave`:
-/// all their units go back to the curve with no fee, and they get their whole part of the escrow,
+/// all their units go back to the curve at the ordinary sale fee, and they get their whole part of the escrow,
 /// their part of the tranche included. Nobody can stop a release and nobody is made to fund a milestone
 /// they reject. When the window ends anyone resolves it and the tranche, less what the leavers took of
 /// it, goes to the DAO treasury. Money that arrives after the post is not touched by that milestone: a
@@ -266,8 +266,8 @@ contract BackingPool {
         uint256 supplyAfter,
         uint256 reserveAfter
     );
-    /// @notice A backer left at a milestone: all their units sold with no fee (`fromCurve`) and their
-    /// whole part of the escrow handed back (`fromEscrow`). `quoteOut` is the two together.
+    /// @notice A backer left at a milestone: all their units sold (`fromCurve`, after the ordinary `fee`)
+    /// and their whole part of the escrow handed back (`fromEscrow`). `quoteOut` is the two together.
     event Left(
         uint256 indexed id,
         address indexed backer,
@@ -275,6 +275,7 @@ contract BackingPool {
         uint256 quoteOut,
         uint256 fromCurve,
         uint256 fromEscrow,
+        uint256 fee,
         uint256 priceAfter,
         uint256 supplyAfter,
         uint256 reserveAfter
@@ -461,7 +462,7 @@ contract BackingPool {
         emit Sold(msg.sender, unitsIn, quoteOut, fee, refund, price(), totalSupply, reserve);
     }
 
-    /// @notice Leave at the open milestone: sell all your units to the curve with no fee and take back
+    /// @notice Leave at the open milestone: sell all your units to the curve, at the ordinary sale fee, and take back
     /// your whole part of the escrow, your part of the tranche included. Only while the milestone's
     /// window runs, and only for a wallet that held before the post and has not bought since.
     /// @param minQuoteOut The least quote you accept; the call reverts below it.
@@ -474,7 +475,8 @@ contract BackingPool {
         uint256 units = balanceOf[msg.sender];
         if (units == 0 || boughtDuring[msg.sender] == id) revert NoSay();
         (uint256 gross, uint256 fromTranche, uint256 fromEscrow, uint256 weight) = _quoteLeave(msg.sender, units);
-        quoteOut = gross + fromEscrow;
+        uint256 fee = _bpsUp(gross, feeBps);
+        quoteOut = gross - fee + fromEscrow;
         if (quoteOut < minQuoteOut) revert Slippage();
 
         _burn(msg.sender, units, weight, gross);
@@ -485,8 +487,13 @@ contract BackingPool {
         refunded += fromEscrow;
         milestones[id].leftWith += fromEscrow;
 
+        if (fee != 0) {
+            feesTaken += fee;
+            treasuryOwed += fee;
+        }
+
         quote.safeTransfer(msg.sender, quoteOut);
-        emit Left(id, msg.sender, units, quoteOut, gross, fromEscrow, price(), totalSupply, reserve);
+        emit Left(id, msg.sender, units, quoteOut, gross - fee, fromEscrow, fee, price(), totalSupply, reserve);
     }
 
     // ---- milestones -----------------------------------------------------------------------------------------------
@@ -656,20 +663,24 @@ contract BackingPool {
 
     /// @notice What `holder` gets by leaving now; all zero when they cannot.
     /// @return quoteOut Quote received: `fromCurve` plus `fromEscrow`.
-    /// @return fromCurve What their units sell for, with no fee.
+    /// @return fromCurve What their units sell for, after the fee.
     /// @return fromEscrow Their whole part of the escrow.
     /// @return priceAfter The curve price after they left (see `price`).
+    /// @return fee The ordinary sale fee on the curve part, owed to the DAO treasury.
     function quoteLeave(address holder)
         public
         view
-        returns (uint256 quoteOut, uint256 fromCurve, uint256 fromEscrow, uint256 priceAfter)
+        returns (uint256 quoteOut, uint256 fromCurve, uint256 fromEscrow, uint256 priceAfter, uint256 fee)
     {
-        if (!canLeave(holder)) return (0, 0, 0, 0);
+        if (!canLeave(holder)) return (0, 0, 0, 0, 0);
         uint256 units = balanceOf[holder];
-        (fromCurve,, fromEscrow,) = _quoteLeave(holder, units);
+        uint256 gross;
+        (gross,, fromEscrow,) = _quoteLeave(holder, units);
+        fee = _bpsUp(gross, feeBps);
+        fromCurve = gross - fee;
         quoteOut = fromCurve + fromEscrow;
         priceAfter =
-            Math.mulDiv(virtualQuote + reserve - fromCurve, 1e18 * PRICE_SCALE, virtualUnits - totalSupply + units);
+            Math.mulDiv(virtualQuote + reserve - gross, 1e18 * PRICE_SCALE, virtualUnits - totalSupply + units);
     }
 
     /// @notice `holder`'s part of the escrow now: what leaving would hand back while they can leave,
@@ -722,7 +733,7 @@ contract BackingPool {
         s.holderEscrow = escrowOf(holder);
         if (s.holderUnits != 0) (s.holderSellValue,,,) = quoteSell(holder, s.holderUnits);
         s.holderCanLeave = canLeave(holder);
-        (s.holderLeaveValue,,,) = quoteLeave(holder);
+        (s.holderLeaveValue,,,,) = quoteLeave(holder);
         s.holderVotedAbandon = votedAbandon[holder];
         if (earlyCap != 0 && block.timestamp < uint256(openedAt) + earlyWindow) {
             s.holderEarlyLeft = earlyCap - earlySpent[holder];
@@ -779,7 +790,7 @@ contract BackingPool {
         }
     }
 
-    /// @dev What leaving pays: the curve with no fee, and the leaver's whole part of the escrow, which is
+    /// @dev What leaving pays before the fee: the curve, and the leaver's whole part of the escrow, which is
     /// their part of the escrow with the tranche taken off plus their part of the tranche.
     function _quoteLeave(address holder, uint256 units)
         private

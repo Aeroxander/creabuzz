@@ -84,13 +84,13 @@ contract BackingPoolHandler is Test {
         address actor = actors[who % 5];
         if (!pool.canLeave(actor)) return;
         uint256 mine = pool.escrowOf(actor);
-        (uint256 out, uint256 fromCurve, uint256 fromEscrow,) = pool.quoteLeave(actor);
+        (uint256 out, uint256 fromCurve, uint256 fromEscrow,, uint256 fee) = pool.quoteLeave(actor);
         assertEq(fromEscrow, mine);
         uint256 fees = pool.feesTaken();
         vm.prank(actor);
         assertEq(pool.leave(out, block.timestamp), out);
         assertEq(out, fromCurve + fromEscrow);
-        assertEq(pool.feesTaken(), fees);
+        assertEq(pool.feesTaken(), fees + fee);
         assertEq(pool.balanceOf(actor), 0);
         paidOut += out;
         leftThisMilestone += fromEscrow;

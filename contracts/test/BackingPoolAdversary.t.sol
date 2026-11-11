@@ -179,7 +179,7 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
         uint256 start = quote.balanceOf(MALLORY);
         _buy(MALLORY, 1e18);
         _post();
-        (,, uint256 fromEscrow,) = pool.quoteLeave(MALLORY);
+        (,, uint256 fromEscrow,,) = pool.quoteLeave(MALLORY);
         assertLe(fromEscrow, 0.099e18);
         _leave(MALLORY);
         assertGt(_spent(MALLORY, start), 0);
@@ -437,7 +437,7 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
         _buy(FOUNDER, 405_000e18);
         uint256 founderDue = pool.escrowOf(FOUNDER);
         _post();
-        (,, uint256 fromEscrow,) = pool.quoteLeave(ALICE);
+        (,, uint256 fromEscrow,,) = pool.quoteLeave(ALICE);
         assertApproxEqAbs(fromEscrow, aliceDue, 1);
         _leave(ALICE);
         _skip(7 days);
@@ -470,30 +470,36 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
         pool.postMilestone(REF);
         _post();
         uint256 out = _leave(ALICE);
-        // She leaves with what the first milestone did not release, and her units sold with no fee.
+        // She leaves with what the first milestone did not release, and her units sold at the ordinary fee.
         assertApproxEqAbs(pool.refunded(), aliceDue - aliceDue / 4, 2);
-        assertGt(out, 100_000e18 * 95 / 100);
+        assertGt(out, 100_000e18 * 94 / 100);
     }
 
     // ---- limits, recorded ------------------------------------------------------------------------------------------
 
     /// @dev Leaving is not final: a backer can leave at a milestone and buy back straight away. They pay the
-    /// 1% fee on the way back in and keep their project money out of that tranche. With the default terms
-    /// that is cheaper than staying while their escrow part is more than about 4% of their position, so a
-    /// backer who does this every time funds the project through fees only. Recorded, not prevented.
-    function test_limit_leaving_and_buying_back_dodges_the_tranche_for_the_price_of_a_fee() public {
+    /// 1% fee on the way out and again on the way back in, about 2% of their position, and keep their project
+    /// money out of that tranche. Staying costs a quarter of their escrow part: about 2.5% of the position
+    /// while none of it has been released, less after every release. So the dodge is barely worth it at the
+    /// first milestone and a loss afterwards. Recorded with its numbers, not prevented.
+    function test_limit_leaving_and_buying_back_costs_two_fees_to_skip_a_tranche() public {
         _buy(BOB, 100_000e18);
         uint256 units = _buy(ALICE, 100_000e18);
         uint256 start = quote.balanceOf(ALICE);
         _post();
+        uint256 feesBefore = pool.feesTaken();
         uint256 out = _leave(ALICE);
         uint256 back = _buy(ALICE, out);
         _skip(7 days);
         pool.resolveMilestone();
         assertEq(_spent(ALICE, start), 0);
-        // She holds 1% fewer units, and all of her project money: the tranche took none of it.
-        assertApproxEqRel(back, units, 0.02e18);
-        assertApproxEqRel(pool.escrowOf(ALICE), 9_900e18, 0.02e18);
+        // What it cost her: two fees to the treasury, about 1,870 on a 99,000 position (1.9%), and with them
+        // some of her units.
+        assertApproxEqAbs(pool.feesTaken() - feesBefore, 1_872e18, 2e18);
+        assertLt(back, units);
+        assertGt(back, units * 98 / 100);
+        // What she kept out of the tranche: a quarter of 9,900, about 2,475 (2.5%). Her project money is whole.
+        assertApproxEqRel(pool.escrowOf(ALICE), 9_900e18 * 981 / 1000, 0.002e18);
         // Bob, who stayed, carried his own quarter.
         assertApproxEqAbs(pool.escrowOf(BOB), 9_900e18 * 3 / 4, 2);
     }

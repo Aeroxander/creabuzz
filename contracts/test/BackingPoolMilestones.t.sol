@@ -24,6 +24,7 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         uint256 quoteOut,
         uint256 fromCurve,
         uint256 fromEscrow,
+        uint256 fee,
         uint256 priceAfter,
         uint256 supplyAfter,
         uint256 reserveAfter
@@ -248,7 +249,7 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
 
     // ---- leaving --------------------------------------------------------------------------------------------------
 
-    function test_a_backer_who_leaves_gets_the_curve_with_no_fee_and_their_whole_escrow_part() public {
+    function test_a_backer_who_leaves_sells_at_the_ordinary_fee_and_gets_their_whole_escrow_part() public {
         _threeBackers();
         uint256 bobEscrow = pool.escrowOf(BOB);
         assertApproxEqAbs(bobEscrow, 297e18, 2);
@@ -257,9 +258,11 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         assertApproxEqAbs(pool.escrowOf(BOB), bobEscrow, 1, "the post has not taken anything from him yet");
         bobEscrow = pool.escrowOf(BOB);
         assertTrue(pool.canLeave(BOB));
-        (uint256 quotedOut, uint256 fromCurve, uint256 fromEscrow, uint256 priceAfter) = pool.quoteLeave(BOB);
+        (uint256 quotedOut, uint256 fromCurve, uint256 fromEscrow, uint256 priceAfter, uint256 fee) =
+            pool.quoteLeave(BOB);
         (uint256 sellOut, uint256 sellFee,,) = pool.quoteSell(BOB, units);
-        assertEq(fromCurve, sellOut + sellFee, "the curve, with no fee");
+        assertEq(fromCurve, sellOut, "the curve, at the fee any seller pays");
+        assertEq(fee, sellFee);
         assertEq(fromEscrow, bobEscrow);
         assertEq(quotedOut, fromCurve + fromEscrow);
 
@@ -268,7 +271,9 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         uint256 supply = pool.totalSupply();
         uint256 before = quote.balanceOf(BOB);
         vm.expectEmit(true, true, false, true, address(pool));
-        emit Left(1, BOB, units, quotedOut, fromCurve, fromEscrow, priceAfter, supply - units, reserve - fromCurve);
+        emit Left(
+            1, BOB, units, quotedOut, fromCurve, fromEscrow, fee, priceAfter, supply - units, reserve - fromCurve - fee
+        );
         vm.prank(BOB);
         uint256 out = pool.leave(quotedOut, _now());
 
@@ -276,7 +281,8 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         assertEq(quote.balanceOf(BOB) - before, out);
         assertEq(pool.balanceOf(BOB), 0);
         assertEq(pool.weightOf(BOB), 0);
-        assertEq(pool.feesTaken(), fees, "no fee");
+        assertEq(pool.feesTaken(), fees + fee, "the fee is the treasury's");
+        assertEq(pool.treasuryOwed(), fees + fee);
         assertEq(pool.refunded(), fromEscrow);
         assertEq(pool.price(), priceAfter);
         (,,,,,, uint256 leftWith,) = pool.milestones(1);
@@ -312,7 +318,7 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         vm.expectRevert(BackingPool.WindowOver.selector);
         pool.leave(0, type(uint256).max);
         assertFalse(pool.canLeave(ALICE));
-        (uint256 q,,,) = pool.quoteLeave(ALICE);
+        (uint256 q,,,,) = pool.quoteLeave(ALICE);
         assertEq(q, 0);
 
         _post();
@@ -322,7 +328,7 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         vm.prank(ALICE);
         vm.expectRevert(BackingPool.Expired.selector);
         pool.leave(0, _now() - 1);
-        (q,,,) = pool.quoteLeave(ALICE);
+        (q,,,,) = pool.quoteLeave(ALICE);
         vm.prank(ALICE);
         vm.expectRevert(BackingPool.Slippage.selector);
         pool.leave(q + 1, type(uint256).max);
