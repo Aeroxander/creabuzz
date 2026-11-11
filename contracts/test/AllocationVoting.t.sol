@@ -275,7 +275,8 @@ contract AllocationVotingTest is VotingFixture {
 
     function testFuzz_any_nonzero_remaining_supply_can_authorize(uint96 input) public {
         uint96 supply = uint96(bound(input, 1, 100e18));
-        _leave(ALICE, 100e18 - supply);
+        // Leaving with nothing is refused by the DAO, so the whole-supply case skips the exit.
+        if (supply < 100e18) _leave(ALICE, 100e18 - supply);
         vm.roll(block.number + 1);
         vote(ALICE, ID, supply);
         vm.warp(vm.getBlockTimestamp() + 48 hours);
