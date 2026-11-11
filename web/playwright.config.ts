@@ -152,6 +152,8 @@ export default defineConfig({
         "**/scorecard.spec.ts",
         // The newcomer's welcome on Home: three ways in, once.
         "**/newcomer-welcome.spec.ts",
+        // Browser notifications: asked for only from a button, shown by count while the page is hidden.
+        "**/browser-notifications.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

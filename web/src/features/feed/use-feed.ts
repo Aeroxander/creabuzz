@@ -1,3 +1,4 @@
+import { MEANINGFUL_EVENT } from "@/features/notifications/lib/browser-notify";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useSyncExternalStore } from "react";
 
@@ -220,6 +221,9 @@ export function useFollowChanges() {
               ? withPerson(latest, target, next.follow)
               : withLaunch(latest, target, next.follow),
           onWritten: (written) => {
+            // Following a project is when a heads-up about its news is worth offering.
+            if (next.follow && kind !== KIND_CONTACT_LIST)
+              window.dispatchEvent(new Event(MEANINGFUL_EVENT));
             queryClient.setQueryData<{
               contacts: SignedEventLike | null;
               bookmarks: SignedEventLike | null;

@@ -1,3 +1,4 @@
+import { NotifyToggle } from "@/features/notifications/ui/BrowserNotifications";
 import { useRoomsLink } from "@/features/communities/use-rooms-link";
 import { Button } from "@/shared/ui/button";
 import { useNotifications as useRoomNotifications } from "@/features/notifications/use-notifications";
@@ -481,6 +482,7 @@ export function NotificationsPage() {
         {me && tab === "all" ? (
           <HelpNoticesSection visitSeenAt={visitSeenAt.current ?? 0} />
         ) : null}
+        {me && tab === "all" ? <NotifyToggle me={me} /> : null}
         {me && tab === "all" ? (
           <RoomsNotice visitSeenAt={visitSeenAt.current ?? 0} />
         ) : null}

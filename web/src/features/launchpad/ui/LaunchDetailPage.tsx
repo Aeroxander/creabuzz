@@ -1,3 +1,4 @@
+import { MEANINGFUL_EVENT } from "@/features/notifications/lib/browser-notify";
 import type { SponsorIntent } from "../lib/sponsor";
 import type { ChallengeIntent } from "../lib/challenge";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -331,6 +332,7 @@ export function LaunchDetailPage({
       });
       setUpdateOpen(false);
       setUpdatePosted(true);
+      window.dispatchEvent(new Event(MEANINGFUL_EVENT));
       // The card at the top reads this project's updates on its own: read them again so it shows the new one.
       void queryClient.invalidateQueries({ queryKey: helpQueryKey });
     } catch (error) {

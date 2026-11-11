@@ -1,3 +1,4 @@
+import { BrowserNotifications } from "@/features/notifications/ui/BrowserNotifications";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Bell,
@@ -292,6 +293,7 @@ export function InboxLinks({
   );
   return (
     <div className="flex items-center gap-0.5" data-testid="app-nav-inbox">
+      {me && !failed ? <BrowserNotifications me={me} unread={unread} /> : null}
       {entries.map((entry) => (
         <SocialNavLink
           compact
