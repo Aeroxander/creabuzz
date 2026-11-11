@@ -15,6 +15,19 @@ contract PoolQuote is ERC20 {
     }
 }
 
+/// @dev A 6-decimal token, as USDC is.
+contract SixDecimalQuote is ERC20 {
+    constructor() ERC20("Six decimals", "SIX") {}
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
+
 /// @dev A token that keeps 1% of every transfer.
 contract SkimmingQuote is ERC20 {
     constructor() ERC20("Skimming quote", "SKIM") {}
@@ -103,11 +116,11 @@ abstract contract BackingPoolFixture is Test {
     function defaultTerms() internal pure returns (BackingPool.Params memory p) {
         p.virtualQuote = 25_000e18;
         p.virtualUnits = 1_000_000_000e18;
-        p.projectBps = 3000;
+        p.projectBps = 1000;
         p.feeBps = 100;
         p.trancheBps = 2500;
-        p.objectionBps = 2000;
         p.objectionWindow = 7 days;
+        p.resolveWindow = 7 days;
         p.claimInterval = 28 days;
         p.abandonAfter = 180 days;
         p.voteSeasoning = 30 days;
@@ -168,8 +181,20 @@ abstract contract BackingPoolFixture is Test {
         id = pool.postMilestone(REF);
     }
 
+    function _leave(address who) internal returns (uint256 out) {
+        vm.prank(who);
+        out = pool.leave(0, type(uint256).max);
+    }
+
+    /// @dev Post, let the window pass, and release.
+    function _release() internal returns (uint256 amount) {
+        _post();
+        _skip(7 days);
+        (, amount) = pool.resolveMilestone();
+    }
+
     function _status(uint256 id) internal view returns (BackingPool.MilestoneStatus status) {
-        (,,, status,,,) = pool.milestones(id);
+        (,,,, status,,,) = pool.milestones(id);
     }
 
     /// @dev The pool holds what its books say, to the unit.

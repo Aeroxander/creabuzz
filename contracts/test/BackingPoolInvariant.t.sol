@@ -18,6 +18,13 @@ contract BackingPoolHandler is Test {
     uint256 public paidOut;
     uint256 public escrowIn;
     uint256 public donated;
+    /// @dev What leavers took from the escrow during the milestone that is open now.
+    uint256 public leftThisMilestone;
+    /// @dev How often each path was really taken, so a green run is known to have exercised them.
+    uint256 public leaves;
+    uint256 public releases;
+    uint256 public voids;
+    uint256 public abandonments;
 
     constructor(BackingPool pool_, PoolQuote quote_, address founder_) {
         pool = pool_;
@@ -43,10 +50,18 @@ contract BackingPoolHandler is Test {
         if (amount > s.holderEarlyLeft) amount = s.holderEarlyLeft;
         (uint256 units,, uint256 toEscrow,) = pool.quoteBuy(amount);
         if (units == 0) return;
+        uint256 mine = pool.escrowOf(actor);
+        bool couldLeave = s.holderCanLeave;
         vm.prank(actor);
         pool.buy(amount, units, block.timestamp);
         paidIn += amount;
         escrowIn += toEscrow;
+        // A buy is worth what it adds, to the buyer and to nobody else, whatever milestone is open.
+        if (!couldLeave) {
+            assertLe(pool.escrowOf(actor), mine + toEscrow);
+            // (to within what one unit of weight is worth, which is all a buy can lose to rounding)
+            assertGe(pool.escrowOf(actor) + 2 + pool.escrow() / 1e12, mine + toEscrow);
+        }
     }
 
     function sell(uint256 who, uint256 part) external {
@@ -54,32 +69,59 @@ contract BackingPoolHandler is Test {
         uint256 held = pool.balanceOf(actor);
         if (held == 0) return;
         uint256 units = bound(part, 1, held);
-        (uint256 out,,,) = pool.quoteSell(actor, units);
+        bool wasAbandoned = pool.abandoned();
+        (uint256 out, uint256 fee, uint256 refund,) = pool.quoteSell(actor, units);
+        // Once the clock has run out a sale is a refund with no fee, declared or not.
+        if (wasAbandoned) assertEq(fee, 0);
+        else assertEq(refund, 0);
         vm.prank(actor);
         assertEq(pool.sell(units, out, block.timestamp), out);
         paidOut += out;
+        if (wasAbandoned && abandonments == 0) abandonments = 1;
+    }
+
+    function leave(uint256 who) external {
+        address actor = actors[who % 5];
+        if (!pool.canLeave(actor)) return;
+        uint256 mine = pool.escrowOf(actor);
+        (uint256 out, uint256 fromCurve, uint256 fromEscrow,) = pool.quoteLeave(actor);
+        assertEq(fromEscrow, mine);
+        uint256 fees = pool.feesTaken();
+        vm.prank(actor);
+        assertEq(pool.leave(out, block.timestamp), out);
+        assertEq(out, fromCurve + fromEscrow);
+        assertEq(pool.feesTaken(), fees);
+        assertEq(pool.balanceOf(actor), 0);
+        paidOut += out;
+        leftThisMilestone += fromEscrow;
+        ++leaves;
     }
 
     function post(uint256 ref) external {
         if (pool.abandoned() || block.timestamp < pool.nextClaimAt()) return;
-        (,,, BackingPool.MilestoneStatus status,,,) = pool.milestones(pool.milestoneCount());
-        if (status == BackingPool.MilestoneStatus.Open) return;
+        if (_status() == BackingPool.MilestoneStatus.Open) return;
         vm.prank(founder);
         pool.postMilestone(keccak256(abi.encode(ref)));
-    }
-
-    function object(uint256 who) external {
-        address actor = actors[who % 5];
-        if (!pool.snapshot(actor).holderCanObject) return;
-        vm.prank(actor);
-        pool.object();
+        leftThisMilestone = 0;
     }
 
     function resolve() external {
-        if (pool.abandoned()) return;
-        (,, uint64 endsAt, BackingPool.MilestoneStatus status,,,) = pool.milestones(pool.milestoneCount());
+        uint256 id = pool.milestoneCount();
+        (,, uint64 endsAt, uint64 resolveBy, BackingPool.MilestoneStatus status, uint256 escrowAtPost,,) =
+            pool.milestones(id);
         if (status != BackingPool.MilestoneStatus.Open || block.timestamp < endsAt) return;
-        pool.resolveMilestone();
+        uint256 pending = pool.pending();
+        (bool wasReleased, uint256 amount) = pool.resolveMilestone();
+        if (wasReleased) {
+            assertLt(block.timestamp, resolveBy);
+            assertEq(amount, pending);
+            // Never more than the tranche of what was held at the post, less what leavers took of it.
+            assertLe(amount, escrowAtPost * pool.trancheBps() / 10_000);
+            ++releases;
+        } else {
+            assertEq(amount, 0);
+            ++voids;
+        }
     }
 
     function voteAbandon(uint256 who) external {
@@ -93,8 +135,9 @@ contract BackingPoolHandler is Test {
     }
 
     function declare() external {
-        if (pool.abandoned()) return;
-        try pool.declareAbandoned() {} catch {}
+        try pool.declareAbandoned() {
+            abandonments = 1;
+        } catch {}
     }
 
     function donate(uint256 amount) external {
@@ -104,11 +147,48 @@ contract BackingPoolHandler is Test {
     }
 
     function wait(uint256 time) external {
-        vm.warp(block.timestamp + bound(time, 1 hours, 40 days));
+        vm.warp(block.timestamp + bound(time, 1 hours, 5 days));
+    }
+
+    function waitLong(uint256 time) external {
+        vm.warp(block.timestamp + bound(time, 10 days, 40 days));
+    }
+
+    /// @dev Go to the next moment a milestone can be posted and post it, then let one backer who can leave
+    /// do so: the leave path is taken in most runs and not only when the random waits line up.
+    function postAndLeave(uint256 ref, uint256 who) external {
+        if (_status() != BackingPool.MilestoneStatus.Open) {
+            if (pool.abandoned()) return;
+            uint256 state = vm.snapshotState();
+            if (block.timestamp < pool.nextClaimAt()) vm.warp(pool.nextClaimAt());
+            if (pool.abandoned()) {
+                vm.revertToState(state);
+                return;
+            }
+            vm.deleteStateSnapshot(state);
+            vm.prank(founder);
+            pool.postMilestone(keccak256(abi.encode(ref)));
+            leftThisMilestone = 0;
+        }
+        this.leave(who);
+    }
+
+    /// @dev Bring the open milestone to the end of its window and resolve it in time, so releases happen
+    /// in most runs and not only when the random waits line up.
+    function resolveInTime() external {
+        (,, uint64 endsAt, uint64 resolveBy, BackingPool.MilestoneStatus status,,,) =
+            pool.milestones(pool.milestoneCount());
+        if (status != BackingPool.MilestoneStatus.Open || block.timestamp >= resolveBy) return;
+        if (block.timestamp < endsAt) vm.warp(endsAt);
+        this.resolve();
+    }
+
+    function _status() private view returns (BackingPool.MilestoneStatus status) {
+        (,,,, status,,,) = pool.milestones(pool.milestoneCount());
     }
 }
 
-/// @notice What must hold after any sequence of buys, sales, milestone posts, objections, releases, votes,
+/// @notice What must hold after any sequence of buys, sales, leaving, milestone posts, releases, voids, votes,
 /// abandonment, stray transfers and waiting.
 contract BackingPoolInvariantTest is Test {
     BackingPool internal pool;
@@ -123,11 +203,11 @@ contract BackingPoolInvariantTest is Test {
         BackingPool.Params memory p;
         p.virtualQuote = 25_000e18;
         p.virtualUnits = 1_000_000_000e18;
-        p.projectBps = 3000;
+        p.projectBps = 1000;
         p.feeBps = 100;
         p.trancheBps = 2500;
-        p.objectionBps = 2000;
         p.objectionWindow = 7 days;
+        p.resolveWindow = 7 days;
         p.claimInterval = 28 days;
         p.abandonAfter = 180 days;
         p.voteSeasoning = 30 days;
@@ -157,7 +237,8 @@ contract BackingPoolInvariantTest is Test {
         );
     }
 
-    /// @dev The project money alone: what entered the escrow is still there, was released, or was refunded.
+    /// @dev The project money alone: what entered the escrow is still there, was released, or was handed
+    /// back (to leavers, or after abandonment).
     function invariant_escrow_released_and_refunded_add_up() public view {
         assertEq(handler.escrowIn(), pool.escrow() + pool.released() + pool.refunded());
         assertEq(quote.balanceOf(treasury) + pool.treasuryOwed(), pool.released() + pool.feesTaken());
@@ -188,28 +269,41 @@ contract BackingPoolInvariantTest is Test {
         assertLt(pool.totalSupply(), pool.virtualUnits());
     }
 
-    /// @dev An open milestone's count is exactly the wallets that still have a say and those that objected.
-    function invariant_the_objection_count_matches_the_wallets() public view {
+    /// @dev The open tranche is always covered by the escrow, never more than a tranche of what was held at
+    /// the post, and carried by weight that includes every wallet that can still leave. With no milestone
+    /// open there is no tranche.
+    function invariant_the_open_tranche_is_covered_and_bounded() public view {
         uint256 id = pool.milestoneCount();
-        (,, uint64 endsAt, BackingPool.MilestoneStatus status, uint256 eligible, uint256 objections,) =
-            pool.milestones(id);
-        assertLe(objections, eligible);
-        if (status != BackingPool.MilestoneStatus.Open || block.timestamp >= endsAt) return;
-        uint256 sumEligible;
-        uint256 sumObjecting;
+        (,,,, BackingPool.MilestoneStatus status, uint256 escrowAtPost, uint256 leftWith,) = pool.milestones(id);
+        if (status != BackingPool.MilestoneStatus.Open) {
+            assertEq(pool.pending(), 0);
+            assertEq(pool.staked(), 0);
+            return;
+        }
+        assertLe(pool.pending(), pool.escrow());
+        assertLe(pool.pending(), escrowAtPost * pool.trancheBps() / 10_000);
+        assertEq(leftWith, handler.leftThisMilestone());
+        uint256 canStillLeave;
         for (uint256 i; i < handler.actorCount(); ++i) {
             address actor = handler.actors(i);
-            if (pool.boughtDuring(actor) == id) continue;
-            sumEligible += pool.weightOf(actor);
-            if (pool.objectedTo(actor) == id) sumObjecting += pool.weightOf(actor);
+            if (pool.canLeave(actor)) canStillLeave += pool.weightOf(actor);
         }
-        assertEq(eligible, sumEligible);
-        assertEq(objections, sumObjecting);
+        assertLe(canStillLeave, pool.staked());
     }
 
-    /// @dev From any state, every holder can sell everything, in either order, and the pool still holds its
-    /// books afterwards; once abandoned, that empties the escrow too.
-    function invariant_everyone_can_always_sell_everything() public {
+    /// @dev What the backers are owed in project money never adds up to more than the escrow, in any state:
+    /// milestone open or not, abandoned or not.
+    function invariant_the_backers_parts_never_exceed_the_escrow() public view {
+        uint256 owed;
+        for (uint256 i; i < handler.actorCount(); ++i) {
+            owed += pool.escrowOf(handler.actors(i));
+        }
+        assertLe(owed, pool.escrow());
+    }
+
+    /// @dev From any state, every wallet that can leave does, and then every holder sells everything, in
+    /// either order, and the pool still holds its books; once abandoned, that empties the escrow too.
+    function invariant_everyone_can_always_get_out() public {
         uint256 state = vm.snapshotState();
         for (uint256 pass; pass < 2; ++pass) {
             uint256 n = handler.actorCount();
@@ -217,8 +311,10 @@ contract BackingPoolInvariantTest is Test {
                 address actor = handler.actors(pass == 0 ? i : n - 1 - i);
                 uint256 held = pool.balanceOf(actor);
                 if (held == 0) continue;
+                bool leaves = pool.canLeave(actor);
                 vm.prank(actor);
-                pool.sell(held, 0, block.timestamp);
+                if (leaves) pool.leave(0, block.timestamp);
+                else pool.sell(held, 0, block.timestamp);
             }
             assertEq(pool.totalSupply(), 0);
             assertEq(pool.totalWeight(), 0);
@@ -226,5 +322,14 @@ contract BackingPoolInvariantTest is Test {
             assertGe(quote.balanceOf(address(pool)), pool.reserve() + pool.escrow() + pool.treasuryOwed());
             vm.revertToState(state);
         }
+    }
+
+    /// @dev Not a property of the pool: a check that the run above really took the paths it claims to cover.
+    /// Kept loose (a single short run may miss one), and printed by `forge test -vv`.
+    function invariant_the_handler_reaches_the_leave_path() public {
+        emit log_named_uint("leaves", handler.leaves());
+        emit log_named_uint("releases", handler.releases());
+        emit log_named_uint("voids", handler.voids());
+        emit log_named_uint("abandonments", handler.abandonments());
     }
 }

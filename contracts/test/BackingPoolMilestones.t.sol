@@ -5,18 +5,33 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BackingPool} from "../src/BackingPool.sol";
 import {BackingPoolFixture, BlockingQuote} from "./helpers/BackingPoolFixture.sol";
 
-/// @notice The project money: milestone posts, objections, releases, and abandonment with its refunds.
+/// @notice The project money: milestone posts, staying or leaving, and releases. Abandonment and its refunds
+/// are in BackingPoolAbandonment.t.sol.
 contract BackingPoolMilestonesTest is BackingPoolFixture {
     event MilestonePosted(
-        uint256 indexed id, bytes32 indexed ref, address indexed by, uint64 windowEndsAt, uint256 eligible
+        uint256 indexed id,
+        bytes32 indexed ref,
+        address indexed by,
+        uint64 windowEndsAt,
+        uint64 resolveBy,
+        uint256 escrowAtPost,
+        uint256 tranche
     );
-    event Objected(uint256 indexed id, address indexed backer, uint256 weight);
-    event MilestoneResolved(uint256 indexed id, bool released, uint256 amount, uint256 objections, uint256 eligible);
+    event Left(
+        uint256 indexed id,
+        address indexed backer,
+        uint256 unitsIn,
+        uint256 quoteOut,
+        uint256 fromCurve,
+        uint256 fromEscrow,
+        uint256 priceAfter,
+        uint256 supplyAfter,
+        uint256 reserveAfter
+    );
+    event MilestoneResolved(uint256 indexed id, bool wasReleased, uint256 amount);
     event TreasuryPaid(uint256 amount);
-    event AbandonVoted(address indexed backer, uint256 weight);
-    event Abandoned(address indexed by, bool byVote, uint256 escrow, uint256 orphaned);
 
-    /// @dev Three backers past the early window: Alice 60%, Bob 30%, Carol 10% of the project money (about).
+    /// @dev Three backers past the early window: Alice 60%, Bob 30%, Carol 10% of the project money.
     function _threeBackers() internal {
         _pastEarly();
         _buy(ALICE, 6_000e18);
@@ -33,17 +48,30 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         vm.expectRevert(BackingPool.NotClaimant.selector);
         pool.postMilestone(REF);
 
+        uint256 escrow = pool.escrow();
         vm.expectEmit(true, true, true, true, address(pool));
-        emit MilestonePosted(1, REF, FOUNDER, uint64(_now() + 7 days), pool.totalWeight());
+        emit MilestonePosted(1, REF, FOUNDER, uint64(_now() + 7 days), uint64(_now() + 14 days), escrow, escrow / 4);
         vm.prank(FOUNDER);
         assertEq(pool.postMilestone(REF), 1);
-        (bytes32 ref, uint64 postedAt, uint64 endsAt, BackingPool.MilestoneStatus status, uint256 eligible,,) =
-            pool.milestones(1);
+        (
+            bytes32 ref,
+            uint64 postedAt,
+            uint64 endsAt,
+            uint64 resolveBy,
+            BackingPool.MilestoneStatus status,
+            uint256 escrowAtPost,
+            uint256 leftWith,
+            uint256 released
+        ) = pool.milestones(1);
         assertEq(ref, REF);
         assertEq(postedAt, _now());
         assertEq(endsAt, _now() + 7 days);
+        assertEq(resolveBy, _now() + 14 days);
         assertEq(uint8(status), uint8(BackingPool.MilestoneStatus.Open));
-        assertEq(eligible, pool.totalWeight());
+        assertEq(escrowAtPost, escrow);
+        assertEq(leftWith, 0);
+        assertEq(released, 0);
+        assertEq(pool.pending(), escrow / 4);
         assertEq(pool.lastClaimAt(), _now());
     }
 
@@ -96,9 +124,7 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
 
     function test_posts_are_at_least_an_interval_apart() public {
         _threeBackers();
-        _post();
-        _skip(7 days);
-        pool.resolveMilestone();
+        _release();
         uint256 notBefore = pool.nextClaimAt();
         vm.prank(FOUNDER);
         vm.expectRevert(abi.encodeWithSelector(BackingPool.TooSoon.selector, notBefore));
@@ -107,20 +133,20 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
 
     // ---- release --------------------------------------------------------------------------------------------------
 
-    function test_an_unopposed_milestone_releases_one_tranche_to_the_treasury() public {
+    function test_when_everyone_stays_one_tranche_goes_to_the_treasury() public {
         _threeBackers();
         uint256 escrow = pool.escrow();
-        uint256 aliceBefore = pool.escrowOf(ALICE);
         _post();
+        uint256 aliceBefore = pool.escrowOf(ALICE);
         vm.expectRevert(BackingPool.WindowNotOver.selector);
         pool.resolveMilestone();
         _skip(7 days);
 
-        vm.expectEmit(true, false, false, true, address(pool));
-        emit MilestoneResolved(1, true, escrow / 4, 0, pool.totalWeight());
         // The treasury is sent the tranche and, with it, the fees the trades have paid so far.
         uint256 fees = pool.feesTaken();
         assertEq(pool.treasuryOwed(), fees);
+        vm.expectEmit(true, false, false, true, address(pool));
+        emit MilestoneResolved(1, true, escrow / 4);
         vm.expectEmit(false, false, false, true, address(pool));
         emit TreasuryPaid(escrow / 4 + fees);
         // Anyone resolves.
@@ -132,24 +158,25 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         assertEq(quote.balanceOf(treasury), escrow / 4 + fees);
         assertEq(pool.escrow(), escrow - escrow / 4);
         assertEq(pool.released(), escrow / 4);
+        assertEq(pool.pending(), 0);
+        assertEq(pool.staked(), 0);
         assertEq(pool.treasuryOwed(), 0);
         assertEq(pool.lastReleaseAt(), _now());
         assertEq(uint8(_status(1)), uint8(BackingPool.MilestoneStatus.Released));
+        (,,,,,,, uint256 released) = pool.milestones(1);
+        assertEq(released, amount);
         // Everyone's part shrank by the same quarter.
         assertApproxEqAbs(pool.escrowOf(ALICE), aliceBefore * 3 / 4, 2);
-        // The reserve was not touched: the curve pays exactly as before.
         _assertSolvent();
         vm.expectRevert(BackingPool.NoOpenMilestone.selector);
         pool.resolveMilestone();
     }
 
-    function test_each_release_takes_a_quarter_of_what_is_left() public {
+    function test_each_release_takes_a_quarter_of_what_is_there_when_it_is_posted() public {
         _threeBackers();
         uint256 escrow = pool.escrow();
         for (uint256 i = 1; i <= 3; ++i) {
-            _post();
-            _skip(7 days);
-            (, uint256 amount) = pool.resolveMilestone();
+            uint256 amount = _release();
             assertEq(amount, escrow / 4);
             escrow -= amount;
         }
@@ -157,152 +184,244 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         assertEq(pool.milestoneCount(), 3);
     }
 
-    // ---- objections -----------------------------------------------------------------------------------------------
+    /// @dev Finding F1: the tranche is what was held at the post. Money that arrives afterwards, during the
+    /// window or while the milestone waits to be resolved, is not taken and not shrunk.
+    function test_money_that_arrives_after_the_post_is_not_touched_by_that_milestone() public {
+        _pastEarly();
+        _buy(ALICE, 100_000e18);
+        _post();
+        uint256 atPost = pool.escrow();
+        _skip(7 days - 1);
+        _buy(BOB, 100_000e18);
+        uint256 bobBefore = pool.escrowOf(BOB);
+        _skip(1);
+        // The window is over; the milestone sits unresolved while a larger buyer arrives.
+        _skip(5 days);
+        _buy(CAROL, 300_000e18);
+        uint256 carolBefore = pool.escrowOf(CAROL);
+        uint256 escrowBefore = pool.escrow();
 
-    function test_objections_at_the_threshold_keep_the_money_back() public {
+        (, uint256 amount) = pool.resolveMilestone();
+        assertEq(amount, atPost / 4, "a quarter of what was there at the post, whatever came later");
+        assertEq(pool.escrow(), escrowBefore - atPost / 4);
+        assertApproxEqAbs(pool.escrowOf(BOB), bobBefore, 2, "Bob bought in the window: untouched");
+        assertApproxEqAbs(pool.escrowOf(CAROL), carolBefore, 2, "Carol bought after it: untouched");
+        // Each is owed the project part of what they paid, whole.
+        assertApproxEqAbs(bobBefore, 100_000e18 * 99 / 100 / 10, 2);
+        assertApproxEqAbs(carolBefore, 300_000e18 * 99 / 100 / 10, 2);
+        // Alice, who held at the post and stayed, carried the whole tranche.
+        assertApproxEqAbs(pool.escrowOf(ALICE), atPost - atPost / 4, 2);
+        _assertSolvent();
+    }
+
+    /// @dev Finding F1: a milestone nobody resolves in time can only be voided, by anyone.
+    function test_a_milestone_left_unresolved_past_its_deadline_is_voided() public {
         _threeBackers();
         uint256 escrow = pool.escrow();
+        uint256 clock = pool.lastReleaseAt();
         _post();
-        // Bob holds about 30% of the weight: over the 20% threshold alone.
-        vm.expectEmit(true, true, false, true, address(pool));
-        emit Objected(1, BOB, pool.weightOf(BOB));
-        vm.prank(BOB);
-        pool.object();
-        _skip(7 days);
+        _skip(14 days - 1);
+        uint256 state = vm.snapshotState();
+        // One second before the deadline it still releases.
         (bool wasReleased, uint256 amount) = pool.resolveMilestone();
+        assertTrue(wasReleased);
+        assertEq(amount, escrow / 4);
+        vm.revertToState(state);
+
+        _skip(1);
+        vm.expectEmit(true, false, false, true, address(pool));
+        emit MilestoneResolved(1, false, 0);
+        vm.prank(MALLORY);
+        (wasReleased, amount) = pool.resolveMilestone();
         assertFalse(wasReleased);
         assertEq(amount, 0);
+        assertEq(uint8(_status(1)), uint8(BackingPool.MilestoneStatus.Void));
         assertEq(pool.escrow(), escrow);
+        assertEq(pool.pending(), 0);
         assertEq(pool.released(), 0);
-        assertEq(quote.balanceOf(treasury), 0);
-        assertEq(uint8(_status(1)), uint8(BackingPool.MilestoneStatus.Blocked));
-        // A kept-back milestone does not restart the abandonment clock.
-        assertEq(pool.lastReleaseAt(), pool.openedAt());
-    }
-
-    function test_objections_under_the_threshold_do_not_stop_a_release() public {
-        _threeBackers();
-        _post();
-        // Carol holds about 10%.
-        vm.prank(CAROL);
-        pool.object();
-        _skip(7 days);
-        (bool wasReleased,) = pool.resolveMilestone();
-        assertTrue(wasReleased);
-    }
-
-    function test_the_threshold_is_inclusive() public {
-        // Two backers with exactly equal weight and a 50% threshold: one objecting is exactly at it.
-        BackingPool.Params memory p = defaultTerms();
-        p.objectionBps = 5000;
-        p.feeBps = 0;
-        p.earlyCap = 0;
-        BackingPool even = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p);
-        vm.prank(ALICE);
-        quote.approve(address(even), type(uint256).max);
-        vm.prank(BOB);
-        quote.approve(address(even), type(uint256).max);
-        vm.prank(ALICE);
-        even.buy(1_000e18, 0, type(uint256).max);
-        // Bob's project money has to buy the same weight: with no fee the weight price has not moved.
-        vm.prank(BOB);
-        even.buy(1_000e18, 0, type(uint256).max);
-        assertEq(even.weightOf(ALICE), even.weightOf(BOB));
-        vm.warp(even.nextClaimAt());
+        assertEq(pool.lastReleaseAt(), clock, "a voided milestone does not restart the clock");
+        // The project can post again once the interval allows.
+        vm.warp(pool.nextClaimAt());
         vm.prank(FOUNDER);
-        even.postMilestone(REF);
-        vm.prank(BOB);
-        even.object();
-        _skip(7 days);
-        (bool wasReleased,) = even.resolveMilestone();
-        assertFalse(wasReleased);
+        assertEq(pool.postMilestone(REF), 2);
     }
 
-    function test_object_refuses_outside_a_window_without_weight_and_twice() public {
+    // ---- leaving --------------------------------------------------------------------------------------------------
+
+    function test_a_backer_who_leaves_gets_the_curve_with_no_fee_and_their_whole_escrow_part() public {
+        _threeBackers();
+        uint256 bobEscrow = pool.escrowOf(BOB);
+        assertApproxEqAbs(bobEscrow, 297e18, 2);
+        uint256 units = pool.balanceOf(BOB);
+        _post();
+        assertApproxEqAbs(pool.escrowOf(BOB), bobEscrow, 1, "the post has not taken anything from him yet");
+        bobEscrow = pool.escrowOf(BOB);
+        assertTrue(pool.canLeave(BOB));
+        (uint256 quotedOut, uint256 fromCurve, uint256 fromEscrow, uint256 priceAfter) = pool.quoteLeave(BOB);
+        (uint256 sellOut, uint256 sellFee,,) = pool.quoteSell(BOB, units);
+        assertEq(fromCurve, sellOut + sellFee, "the curve, with no fee");
+        assertEq(fromEscrow, bobEscrow);
+        assertEq(quotedOut, fromCurve + fromEscrow);
+
+        uint256 fees = pool.feesTaken();
+        uint256 reserve = pool.reserve();
+        uint256 supply = pool.totalSupply();
+        uint256 before = quote.balanceOf(BOB);
+        vm.expectEmit(true, true, false, true, address(pool));
+        emit Left(1, BOB, units, quotedOut, fromCurve, fromEscrow, priceAfter, supply - units, reserve - fromCurve);
+        vm.prank(BOB);
+        uint256 out = pool.leave(quotedOut, _now());
+
+        assertEq(out, quotedOut);
+        assertEq(quote.balanceOf(BOB) - before, out);
+        assertEq(pool.balanceOf(BOB), 0);
+        assertEq(pool.weightOf(BOB), 0);
+        assertEq(pool.feesTaken(), fees, "no fee");
+        assertEq(pool.refunded(), fromEscrow);
+        assertEq(pool.price(), priceAfter);
+        (,,,,,, uint256 leftWith,) = pool.milestones(1);
+        assertEq(leftWith, fromEscrow);
+        assertFalse(pool.canLeave(BOB));
+        _assertSolvent();
+    }
+
+    /// @dev The heart of the exit model: a leaver is not charged the tranche, and those who stay are charged
+    /// exactly their own quarter, not the leaver's.
+    function test_the_tranche_comes_from_those_who_stayed_only() public {
+        _threeBackers();
+        uint256 escrow = pool.escrow();
+        uint256 aliceBefore = pool.escrowOf(ALICE);
+        uint256 carolBefore = pool.escrowOf(CAROL);
+        _post();
+        uint256 bobEscrow = pool.escrowOf(BOB);
+        _leave(BOB);
+        assertApproxEqAbs(pool.pending(), (escrow - bobEscrow) / 4, 2);
+        _skip(7 days);
+        (bool wasReleased, uint256 amount) = pool.resolveMilestone();
+        assertTrue(wasReleased);
+        assertApproxEqAbs(amount, (escrow - bobEscrow) / 4, 2, "a quarter of the escrow of those who stayed");
+        assertApproxEqAbs(pool.escrowOf(ALICE), aliceBefore * 3 / 4, 3);
+        assertApproxEqAbs(pool.escrowOf(CAROL), carolBefore * 3 / 4, 3);
+        assertEq(pool.escrow(), escrow - bobEscrow - amount);
+        _assertSolvent();
+    }
+
+    function test_leaving_is_only_for_a_running_window_and_a_wallet_with_units() public {
         _threeBackers();
         vm.prank(ALICE);
         vm.expectRevert(BackingPool.WindowOver.selector);
-        pool.object();
+        pool.leave(0, type(uint256).max);
+        assertFalse(pool.canLeave(ALICE));
+        (uint256 q,,,) = pool.quoteLeave(ALICE);
+        assertEq(q, 0);
+
         _post();
         vm.prank(MALLORY);
         vm.expectRevert(BackingPool.NoSay.selector);
-        pool.object();
+        pool.leave(0, type(uint256).max);
         vm.prank(ALICE);
-        pool.object();
+        vm.expectRevert(BackingPool.Expired.selector);
+        pool.leave(0, _now() - 1);
+        (q,,,) = pool.quoteLeave(ALICE);
         vm.prank(ALICE);
-        vm.expectRevert(BackingPool.AlreadyDone.selector);
-        pool.object();
-        _skip(7 days);
-        vm.prank(BOB);
+        vm.expectRevert(BackingPool.Slippage.selector);
+        pool.leave(q + 1, type(uint256).max);
+
+        // The last second of the window still works; the window's end does not.
+        _skip(7 days - 1);
+        assertTrue(pool.canLeave(ALICE));
+        _skip(1);
+        assertFalse(pool.canLeave(ALICE));
+        vm.prank(ALICE);
         vm.expectRevert(BackingPool.WindowOver.selector);
-        pool.object();
+        pool.leave(0, type(uint256).max);
     }
 
-    function test_buying_during_a_window_gives_up_the_say_on_that_milestone() public {
+    function test_a_wallet_that_buys_during_the_window_cannot_leave_on_that_milestone() public {
         _threeBackers();
         _post();
-        uint256 eligible = pool.totalWeight();
-        uint256 bobWeight = pool.weightOf(BOB);
-        vm.prank(BOB);
-        pool.object();
         _buy(BOB, 10e18);
-        // His objection and his weight are both out of this milestone's count.
-        (,,,, uint256 nowEligible, uint256 objections,) = pool.milestones(1);
-        assertEq(objections, 0);
-        assertEq(nowEligible, eligible - bobWeight);
         assertEq(pool.boughtDuring(BOB), 1);
+        assertFalse(pool.canLeave(BOB));
+        assertFalse(pool.snapshot(BOB).holderCanLeave);
         vm.prank(BOB);
         vm.expectRevert(BackingPool.NoSay.selector);
-        pool.object();
-        // Buying again changes nothing more.
-        _buy(BOB, 10e18);
-        (,,,, uint256 again,,) = pool.milestones(1);
-        assertEq(again, nowEligible);
-        // On the next milestone he has his say back.
+        pool.leave(0, type(uint256).max);
+        // A newcomer in the window cannot either.
+        _buy(MALLORY, 500e18);
+        vm.prank(MALLORY);
+        vm.expectRevert(BackingPool.NoSay.selector);
+        pool.leave(0, type(uint256).max);
+        // On the next milestone both can.
         _skip(7 days);
         pool.resolveMilestone();
         _post();
-        vm.prank(BOB);
-        pool.object();
+        assertTrue(pool.canLeave(BOB));
+        assertTrue(pool.canLeave(MALLORY));
+        _leave(BOB);
+        _leave(MALLORY);
     }
 
-    function test_selling_takes_the_sold_part_of_an_objection_with_it() public {
+    function test_leaving_and_buying_back_gives_no_second_exit() public {
         _threeBackers();
         _post();
+        _leave(BOB);
+        _buy(BOB, 3_000e18);
         vm.prank(BOB);
-        pool.object();
-        uint256 eligible = pool.totalWeight();
-        uint256 bobWeight = pool.weightOf(BOB);
-        _sell(BOB, pool.balanceOf(BOB) / 2);
-        uint256 sold = bobWeight - pool.weightOf(BOB);
-        (,,,, uint256 nowEligible, uint256 objections,) = pool.milestones(1);
-        assertEq(objections, bobWeight - sold);
-        assertEq(nowEligible, eligible - sold);
-        _sellAll(BOB);
-        (,,,, nowEligible, objections,) = pool.milestones(1);
-        assertEq(objections, 0);
-        assertEq(nowEligible, eligible - bobWeight);
+        vm.expectRevert(BackingPool.NoSay.selector);
+        pool.leave(0, type(uint256).max);
+        // What he bought back is priced with the tranche already off, so the release does not shrink it.
+        uint256 bobEscrow = pool.escrowOf(BOB);
+        assertApproxEqAbs(bobEscrow, 297e18, 2);
         _skip(7 days);
-        (bool wasReleased,) = pool.resolveMilestone();
-        assertTrue(wasReleased, "an objector who left no longer blocks");
+        pool.resolveMilestone();
+        assertApproxEqAbs(pool.escrowOf(BOB), bobEscrow, 2);
     }
 
-    function test_the_count_is_final_when_the_window_ends() public {
+    function test_a_backer_who_sold_part_leaves_with_the_rest() public {
         _threeBackers();
         _post();
-        vm.prank(BOB);
-        pool.object();
+        uint256 units = pool.balanceOf(BOB);
+        _sell(BOB, units / 2);
+        // Half his part stayed behind for everyone still holding, himself included.
+        uint256 rest = pool.escrowOf(BOB);
+        assertGt(rest, 297e18 / 2);
+        assertLt(rest, 297e18 * 6 / 10);
+        uint256 refunded = pool.refunded();
+        _leave(BOB);
+        assertEq(pool.refunded() - refunded, rest);
+        // What he gave up with the ordinary sale stays, and its part of the tranche is still released.
         _skip(7 days);
-        (,,,, uint256 eligible, uint256 objections,) = pool.milestones(1);
-        // After the window, neither a sale nor a buy moves the count.
-        _sellAll(BOB);
-        _buy(ALICE, 500e18);
-        (,,,, uint256 eligibleAfter, uint256 objectionsAfter,) = pool.milestones(1);
-        assertEq(eligibleAfter, eligible);
-        assertEq(objectionsAfter, objections);
-        assertEq(pool.boughtDuring(ALICE), 0);
-        (bool wasReleased,) = pool.resolveMilestone();
-        assertFalse(wasReleased);
+        (, uint256 amount) = pool.resolveMilestone();
+        assertGt(amount, (pool.escrow() + amount) / 4 - 1e6);
+        _assertSolvent();
+    }
+
+    function test_when_everyone_leaves_the_milestone_releases_nothing_and_nothing_is_stuck() public {
+        _threeBackers();
+        _post();
+        _leave(ALICE);
+        _leave(BOB);
+        _leave(CAROL);
+        assertEq(pool.totalSupply(), 0);
+        assertEq(pool.totalWeight(), 0);
+        assertLe(pool.escrow(), 3, "only rounding is left");
+        _skip(7 days);
+        (bool wasReleased, uint256 amount) = pool.resolveMilestone();
+        assertTrue(wasReleased);
+        assertLe(amount, 3);
+        assertEq(uint8(_status(1)), uint8(BackingPool.MilestoneStatus.Released));
+        assertEq(pool.pending(), 0);
+        if (amount == 0) assertLt(pool.lastReleaseAt(), _now(), "nothing paid: the clock is not restarted");
+        _assertSolvent();
+        // The pool goes on: the clock starts again with the next money in, and the next milestone releases a
+        // quarter of it.
+        vm.warp(pool.nextClaimAt());
+        bool empty = pool.escrow() == 0;
+        _buy(ALICE, 1_000e18);
+        if (empty) assertEq(pool.lastReleaseAt(), _now());
+        uint256 escrow = pool.escrow();
+        assertEq(_release(), escrow / 4);
     }
 
     // ---- a token that refuses the treasury ------------------------------------------------------------------------
@@ -347,250 +466,5 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         assertEq(token.balanceOf(address(blockPool)), blockPool.reserve() + blockPool.escrow());
         vm.expectRevert(BackingPool.NothingOwed.selector);
         blockPool.payTreasury();
-    }
-
-    // ---- abandonment by the clock ---------------------------------------------------------------------------------
-
-    function test_no_release_for_the_set_time_lets_anyone_declare_abandonment() public {
-        _threeBackers();
-        vm.warp(pool.abandonableAt() - 1);
-        vm.expectRevert(BackingPool.NotAbandonable.selector);
-        pool.declareAbandoned();
-        vm.warp(pool.abandonableAt());
-        uint256 escrow = pool.escrow();
-        vm.expectEmit(true, false, false, true, address(pool));
-        emit Abandoned(MALLORY, false, escrow, 0);
-        vm.prank(MALLORY);
-        pool.declareAbandoned();
-        assertTrue(pool.abandoned());
-        assertTrue(pool.snapshot(ALICE).abandoned);
-    }
-
-    function test_after_abandonment_buying_and_milestones_stop_for_good() public {
-        _threeBackers();
-        vm.warp(pool.abandonableAt());
-        pool.declareAbandoned();
-        vm.prank(ALICE);
-        vm.expectRevert(BackingPool.IsAbandoned.selector);
-        pool.buy(1e18, 0, type(uint256).max);
-        vm.prank(FOUNDER);
-        vm.expectRevert(BackingPool.IsAbandoned.selector);
-        pool.postMilestone(REF);
-        vm.expectRevert(BackingPool.IsAbandoned.selector);
-        pool.resolveMilestone();
-        vm.prank(ALICE);
-        vm.expectRevert(BackingPool.IsAbandoned.selector);
-        pool.voteAbandon();
-        vm.expectRevert(BackingPool.IsAbandoned.selector);
-        pool.declareAbandoned();
-    }
-
-    function test_after_abandonment_every_backer_gets_their_part_of_the_escrow_in_any_order() public {
-        _threeBackers();
-        // One tranche went to the project first.
-        _post();
-        _skip(7 days);
-        pool.resolveMilestone();
-        vm.warp(pool.abandonableAt());
-        pool.declareAbandoned();
-
-        uint256 escrow = pool.escrow();
-        uint256 aliceShare = pool.escrowOf(ALICE);
-        uint256 bobShare = pool.escrowOf(BOB);
-        uint256 carolShare = pool.escrowOf(CAROL);
-        assertApproxEqAbs(aliceShare + bobShare + carolShare, escrow, 3);
-        // 60 / 30 / 10, as they paid in.
-        assertApproxEqRel(aliceShare, escrow * 60 / 100, 0.01e18);
-
-        (uint256 out, uint256 fee, uint256 refund,) = pool.quoteSell(BOB, pool.balanceOf(BOB));
-        assertEq(fee, 0, "no fee once abandoned");
-        assertEq(refund, bobShare);
-        uint256 before = quote.balanceOf(BOB);
-        assertEq(_sellAll(BOB), out);
-        assertEq(quote.balanceOf(BOB) - before, out);
-        assertEq(pool.refunded(), bobShare);
-
-        // The others' parts did not move because Bob went first.
-        assertApproxEqAbs(pool.escrowOf(ALICE), aliceShare, 2);
-        assertApproxEqAbs(pool.escrowOf(CAROL), carolShare, 2);
-        // A partial sale pays the matching part of the refund.
-        uint256 half = pool.balanceOf(ALICE) / 2;
-        (,, uint256 halfRefund,) = pool.quoteSell(ALICE, half);
-        assertApproxEqAbs(halfRefund, aliceShare / 2, 1e6);
-        _sell(ALICE, half);
-        _sellAll(ALICE);
-        _sellAll(CAROL);
-        assertEq(pool.escrow(), 0, "the last backer out takes the last of it");
-        assertEq(pool.totalWeight(), 0);
-        assertEq(pool.totalSupply(), 0);
-        assertEq(pool.refunded(), escrow);
-        _assertSolvent();
-    }
-
-    function test_a_milestone_inside_its_window_is_heard_before_the_clock_decides() public {
-        _threeBackers();
-        vm.warp(pool.abandonableAt() - 1 days);
-        vm.prank(FOUNDER);
-        pool.postMilestone(REF);
-        vm.warp(pool.abandonableAt());
-        vm.expectRevert(BackingPool.MilestoneOpen.selector);
-        pool.declareAbandoned();
-        // The window is over and nobody objected: it has to be released, not overridden.
-        _skip(7 days);
-        vm.expectRevert(BackingPool.MilestoneOpen.selector);
-        pool.declareAbandoned();
-        pool.resolveMilestone();
-        vm.expectRevert(BackingPool.NotAbandonable.selector);
-        pool.declareAbandoned();
-    }
-
-    function test_a_kept_back_milestone_does_not_save_the_project_from_the_clock() public {
-        _threeBackers();
-        vm.warp(pool.abandonableAt() - 1 days);
-        vm.prank(FOUNDER);
-        pool.postMilestone(REF);
-        vm.prank(ALICE);
-        pool.object();
-        _skip(7 days);
-        // Not resolved by anyone yet: declaring settles it as kept back and goes on.
-        pool.declareAbandoned();
-        assertTrue(pool.abandoned());
-        assertEq(uint8(_status(1)), uint8(BackingPool.MilestoneStatus.Blocked));
-    }
-
-    function test_escrow_nobody_has_a_weight_for_goes_to_the_treasury_on_abandonment() public {
-        _threeBackers();
-        _sellAll(ALICE);
-        _sellAll(BOB);
-        _sellAll(CAROL);
-        uint256 left = pool.escrow();
-        assertGt(left, 0);
-        assertEq(pool.totalWeight(), 0);
-        vm.warp(pool.abandonableAt());
-        vm.expectEmit(true, false, false, true, address(pool));
-        emit Abandoned(address(this), false, 0, left);
-        pool.declareAbandoned();
-        assertEq(pool.escrow(), 0);
-        assertEq(pool.released(), left);
-        assertEq(quote.balanceOf(treasury), left + pool.feesTaken());
-        _assertSolvent();
-    }
-
-    // ---- abandonment by vote --------------------------------------------------------------------------------------
-
-    function test_more_than_half_the_weight_can_declare_abandonment_once_releases_have_stopped() public {
-        _threeBackers();
-        vm.warp(uint256(pool.lastReleaseAt()) + 90 days);
-        vm.expectEmit(true, false, false, true, address(pool));
-        emit AbandonVoted(BOB, pool.weightOf(BOB));
-        vm.prank(BOB);
-        pool.voteAbandon();
-        assertEq(pool.abandonVotes(), pool.weightOf(BOB));
-        vm.expectRevert(BackingPool.NotAbandonable.selector);
-        pool.declareAbandoned();
-        vm.prank(ALICE);
-        pool.voteAbandon();
-        uint256 escrow = pool.escrow();
-        vm.expectEmit(true, false, false, true, address(pool));
-        emit Abandoned(address(this), true, escrow, 0);
-        pool.declareAbandoned();
-        assertTrue(pool.abandoned());
-    }
-
-    function test_exactly_half_is_not_enough() public {
-        BackingPool.Params memory p = defaultTerms();
-        p.feeBps = 0;
-        p.earlyCap = 0;
-        p.voteSeasoning = 0;
-        p.voteAfter = 0;
-        BackingPool even = new BackingPool(treasury, FOUNDER, IERC20(address(quote)), p);
-        vm.prank(ALICE);
-        quote.approve(address(even), type(uint256).max);
-        vm.prank(BOB);
-        quote.approve(address(even), type(uint256).max);
-        // With no weight at all there is no majority.
-        vm.expectRevert(BackingPool.NotAbandonable.selector);
-        even.declareAbandoned();
-        vm.prank(ALICE);
-        even.buy(1_000e18, 0, type(uint256).max);
-        vm.prank(BOB);
-        even.buy(1_000e18, 0, type(uint256).max);
-        assertEq(even.weightOf(ALICE), even.weightOf(BOB));
-        vm.prank(ALICE);
-        even.voteAbandon();
-        vm.expectRevert(BackingPool.NotAbandonable.selector);
-        even.declareAbandoned();
-        vm.prank(BOB);
-        even.voteAbandon();
-        even.declareAbandoned();
-        assertTrue(even.abandoned());
-    }
-
-    function test_a_majority_cannot_end_a_project_that_released_a_tranche_lately() public {
-        _threeBackers();
-        _post();
-        _skip(7 days);
-        pool.resolveMilestone();
-        _skip(30 days);
-        vm.prank(ALICE);
-        pool.voteAbandon();
-        vm.prank(BOB);
-        pool.voteAbandon();
-        assertGt(pool.abandonVotes(), pool.totalWeight() / 2);
-        // 30 days after a release: the vote is there, the waiting time is not.
-        vm.expectRevert(BackingPool.NotAbandonable.selector);
-        pool.declareAbandoned();
-        vm.warp(uint256(pool.lastReleaseAt()) + 90 days);
-        pool.declareAbandoned();
-        assertTrue(pool.abandoned());
-    }
-
-    function test_a_vote_waits_after_a_buy_and_a_new_buy_withdraws_it() public {
-        _threeBackers();
-        uint256 notBefore = _now() + 30 days;
-        vm.prank(ALICE);
-        vm.expectRevert(abi.encodeWithSelector(BackingPool.TooSoon.selector, notBefore));
-        pool.voteAbandon();
-        _skip(30 days);
-        vm.prank(ALICE);
-        pool.voteAbandon();
-        assertTrue(pool.votedAbandon(ALICE));
-        vm.prank(ALICE);
-        vm.expectRevert(BackingPool.AlreadyDone.selector);
-        pool.voteAbandon();
-        vm.prank(MALLORY);
-        vm.expectRevert(BackingPool.NoSay.selector);
-        pool.voteAbandon();
-
-        _buy(ALICE, 1e18);
-        assertFalse(pool.votedAbandon(ALICE));
-        assertEq(pool.abandonVotes(), 0);
-        vm.expectRevert(BackingPool.NotAbandonable.selector);
-        pool.declareAbandoned();
-    }
-
-    function test_selling_shrinks_a_vote() public {
-        _threeBackers();
-        _skip(30 days);
-        vm.prank(ALICE);
-        pool.voteAbandon();
-        _sell(ALICE, pool.balanceOf(ALICE) / 2);
-        assertEq(pool.abandonVotes(), pool.weightOf(ALICE));
-        _sellAll(ALICE);
-        assertEq(pool.abandonVotes(), 0);
-        assertEq(pool.weightOf(ALICE), 0);
-    }
-
-    function test_a_vote_ends_an_open_milestone_without_a_release() public {
-        _threeBackers();
-        _skip(90 days);
-        _post();
-        vm.prank(ALICE);
-        pool.voteAbandon();
-        uint256 escrow = pool.escrow();
-        pool.declareAbandoned();
-        assertEq(uint8(_status(1)), uint8(BackingPool.MilestoneStatus.Void));
-        assertEq(pool.escrow(), escrow);
-        assertEq(quote.balanceOf(treasury), 0);
     }
 }

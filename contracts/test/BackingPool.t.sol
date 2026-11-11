@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BackingPool} from "../src/BackingPool.sol";
-import {BackingPoolFixture, ReenteringQuote, SkimmingQuote} from "./helpers/BackingPoolFixture.sol";
+import {BackingPoolFixture, ReenteringQuote, SixDecimalQuote, SkimmingQuote} from "./helpers/BackingPoolFixture.sol";
 
 /// @notice The pool's trading surface: creation terms, buy, sell, quotes, the read surface, and every revert.
 contract BackingPoolTest is BackingPoolFixture {
@@ -38,11 +38,11 @@ contract BackingPoolTest is BackingPoolFixture {
         assertEq(pool.openedAt(), _now());
         assertEq(pool.virtualQuote(), 25_000e18);
         assertEq(pool.virtualUnits(), 1_000_000_000e18);
-        assertEq(pool.projectBps(), 3000);
+        assertEq(pool.projectBps(), 1000);
         assertEq(pool.feeBps(), 100);
         assertEq(pool.trancheBps(), 2500);
-        assertEq(pool.objectionBps(), 2000);
         assertEq(pool.objectionWindow(), 7 days);
+        assertEq(pool.resolveWindow(), 7 days);
         assertEq(pool.claimInterval(), 28 days);
         assertEq(pool.abandonAfter(), 180 days);
         assertEq(pool.voteSeasoning(), 30 days);
@@ -53,8 +53,8 @@ contract BackingPoolTest is BackingPoolFixture {
         assertEq(pool.totalSupply(), 0);
         assertEq(pool.reserve(), 0);
         assertEq(pool.escrow(), 0);
-        // 25,000 quote on paper against a billion units: 0.000025 quote a unit.
-        assertEq(pool.price(), 25_000e18 * 1e18 / 1_000_000_000e18);
+        // 25,000 quote on paper against a billion units: 0.000025 quote a unit, in the 1e18 fixed point.
+        assertEq(pool.price(), 0.000025e18 * 1e18);
         assertEq(pool.nextClaimAt(), _now() + 28 days);
         assertEq(pool.abandonableAt(), _now() + 180 days);
     }
@@ -90,17 +90,17 @@ contract BackingPoolTest is BackingPoolFixture {
         p.trancheBps = 5001;
         _expectBadTerms(p);
         p = defaultTerms();
-        p.objectionBps = 0;
-        _expectBadTerms(p);
-        p = defaultTerms();
-        p.objectionBps = 10_001;
-        _expectBadTerms(p);
-        p = defaultTerms();
         p.objectionWindow = 1 days - 1;
         _expectBadTerms(p);
         p = defaultTerms();
         p.objectionWindow = 30 days + 1;
         p.claimInterval = 60 days;
+        _expectBadTerms(p);
+        p = defaultTerms();
+        p.resolveWindow = 1 days - 1;
+        _expectBadTerms(p);
+        p = defaultTerms();
+        p.resolveWindow = 30 days + 1;
         _expectBadTerms(p);
         p = defaultTerms();
         p.claimInterval = p.objectionWindow - 1;
@@ -110,7 +110,7 @@ contract BackingPoolTest is BackingPoolFixture {
         p.abandonAfter = 800 days;
         _expectBadTerms(p);
         p = defaultTerms();
-        p.abandonAfter = p.claimInterval + p.objectionWindow;
+        p.abandonAfter = p.claimInterval + p.objectionWindow + p.resolveWindow;
         _expectBadTerms(p);
         p = defaultTerms();
         p.abandonAfter = 1460 days + 1;
@@ -140,28 +140,28 @@ contract BackingPoolTest is BackingPoolFixture {
 
     function test_a_buy_splits_the_money_and_mints_from_the_curve() public {
         (uint256 quotedUnits, uint256 quotedFee, uint256 quotedEscrow, uint256 quotedPrice) = pool.quoteBuy(1_000e18);
-        // 1% fee to the treasury, then 30% of the rest to the project: 297 to the escrow, 693 to the reserve.
+        // 1% fee to the treasury, then 10% of the rest to the project: 297 to the escrow, 693 to the reserve.
         assertEq(quotedFee, 10e18);
-        assertEq(quotedEscrow, 297e18);
-        uint256 expectedUnits = uint256(1_000_000_000e18) * 693e18 / (25_000e18 + 693e18);
+        assertEq(quotedEscrow, 99e18);
+        uint256 expectedUnits = uint256(1_000_000_000e18) * 891e18 / (25_000e18 + 891e18);
         assertEq(quotedUnits, expectedUnits);
 
         vm.expectEmit(true, false, false, true, address(pool));
-        emit Bought(ALICE, 1_000e18, expectedUnits, 10e18, 297e18, quotedPrice, expectedUnits, 693e18);
+        emit Bought(ALICE, 1_000e18, expectedUnits, 10e18, 99e18, quotedPrice, expectedUnits, 891e18);
         uint256 units = _buy(ALICE, 1_000e18);
 
         assertEq(units, expectedUnits);
         assertEq(pool.balanceOf(ALICE), expectedUnits);
         assertEq(pool.totalSupply(), expectedUnits);
-        assertEq(pool.reserve(), 693e18);
-        assertEq(pool.escrow(), 297e18);
+        assertEq(pool.reserve(), 891e18);
+        assertEq(pool.escrow(), 99e18);
         assertEq(pool.feesTaken(), 10e18);
         assertEq(pool.treasuryOwed(), 10e18);
         assertEq(pool.price(), quotedPrice);
-        assertGt(pool.price(), 25_000e18 * 1e18 / 1_000_000_000e18, "a buy moves the price up");
+        assertGt(pool.price(), 0.000025e18 * 1e18, "a buy moves the price up");
         assertEq(pool.lastBuyAt(ALICE), _now());
         // Her weight stands for the project money she put in.
-        assertApproxEqAbs(pool.escrowOf(ALICE), 297e18, 2);
+        assertApproxEqAbs(pool.escrowOf(ALICE), 99e18, 2);
         _assertSolvent();
     }
 
@@ -265,13 +265,13 @@ contract BackingPoolTest is BackingPoolFixture {
         assertEq(quotedRefund, 0);
         // Selling everything empties the reserve to within the rounding the curve keeps.
         uint256 gross = quotedOut + quotedFee;
-        assertLe(gross, 693e18);
-        assertGe(gross, 693e18 - 2);
+        assertLe(gross, 891e18);
+        assertGe(gross, 891e18 - 2);
         assertEq(quotedFee, (gross + 99) / 100);
 
         uint256 before = quote.balanceOf(ALICE);
         vm.expectEmit(true, false, false, true, address(pool));
-        emit Sold(ALICE, units, quotedOut, quotedFee, 0, quotedPrice, 0, 693e18 - gross);
+        emit Sold(ALICE, units, quotedOut, quotedFee, 0, quotedPrice, 0, 891e18 - gross);
         uint256 out = _sell(ALICE, units);
 
         assertEq(out, quotedOut);
@@ -280,9 +280,10 @@ contract BackingPoolTest is BackingPoolFixture {
         assertEq(pool.weightOf(ALICE), 0);
         assertEq(pool.totalWeight(), 0);
         // The project money stays; the two fees are the treasury's.
-        assertEq(pool.escrow(), 297e18);
+        assertEq(pool.escrow(), 99e18);
         assertEq(pool.treasuryOwed(), 10e18 + quotedFee);
-        assertLt(out, 1_000e18 * 70 / 100, "a round trip gives back less than the reserve part");
+        assertLt(out, 1_000e18 * 90 / 100, "a round trip gives back less than the reserve part");
+        assertGt(out, 1_000e18 * 88 / 100, "and about 88% of what was paid");
         _assertSolvent();
     }
 
@@ -338,11 +339,11 @@ contract BackingPoolTest is BackingPoolFixture {
         _buy(ALICE, 1_000e18);
         uint256 spot = pool.price();
         uint256 buyPrice = pool.buyPrice();
-        // 1 / (0.99 * 0.70)
-        assertApproxEqRel(buyPrice, spot * 10_000 * 10_000 / (9_900 * 7_000), 1e9);
+        // 1 / (0.99 * 0.90)
+        assertApproxEqRel(buyPrice, spot * 10_000 * 10_000 / (9_900 * 9_000), 1e9);
         // A small buy pays about that per unit.
         (uint256 units,,,) = pool.quoteBuy(1e18);
-        assertApproxEqRel(1e18 * 1e18 / units, buyPrice, 1e14);
+        assertApproxEqRel(1e18 * 1e36 / units, buyPrice, 1e14);
     }
 
     function test_quotes_match_what_the_trades_do() public {
@@ -361,8 +362,8 @@ contract BackingPoolTest is BackingPoolFixture {
         BackingPool.Snapshot memory s = pool.snapshot(ALICE);
         assertEq(s.price, pool.price());
         assertEq(s.buyPrice, pool.buyPrice());
-        assertEq(s.reserve, 693e18);
-        assertEq(s.escrow, 297e18);
+        assertEq(s.reserve, 891e18);
+        assertEq(s.escrow, 99e18);
         assertEq(s.feesTaken, 10e18);
         assertEq(s.treasuryOwed, 10e18);
         assertEq(s.released, 0);
@@ -380,8 +381,9 @@ contract BackingPoolTest is BackingPoolFixture {
         assertEq(s.holderEscrow, pool.escrowOf(ALICE));
         (uint256 out,,,) = pool.quoteSell(ALICE, units);
         assertEq(s.holderSellValue, out);
-        assertFalse(s.holderCanObject);
-        assertFalse(s.holderObjected);
+        assertFalse(s.holderCanLeave);
+        assertEq(s.holderLeaveValue, 0);
+        assertEq(s.pending, 0);
         assertFalse(s.holderVotedAbandon);
         assertEq(s.holderEarlyLeft, 0);
 
@@ -395,14 +397,41 @@ contract BackingPoolTest is BackingPoolFixture {
         assertEq(s.milestoneId, 1);
         assertEq(s.milestone.ref, REF);
         assertEq(uint8(s.milestone.status), uint8(BackingPool.MilestoneStatus.Open));
-        assertEq(s.milestone.eligible, pool.totalWeight());
-        assertTrue(s.holderCanObject);
-        vm.prank(ALICE);
-        pool.object();
-        s = pool.snapshot(ALICE);
-        assertTrue(s.holderObjected);
-        assertFalse(s.holderCanObject);
-        assertEq(s.milestone.objections, pool.weightOf(ALICE));
+        assertEq(s.milestone.escrowAtPost, 99e18);
+        assertEq(s.milestone.windowEndsAt, _now() + 7 days);
+        assertEq(s.milestone.resolveBy, _now() + 14 days);
+        assertEq(s.pending, 99e18 / 4);
+        assertTrue(s.holderCanLeave);
+        (uint256 leaveOut, uint256 fromCurve, uint256 fromEscrow,) = pool.quoteLeave(ALICE);
+        assertEq(s.holderLeaveValue, leaveOut);
+        assertEq(leaveOut, fromCurve + fromEscrow);
+        // Leaving hands back the whole escrow part, and that is what the wallet's escrow reads while it can leave.
+        assertApproxEqAbs(fromEscrow, 99e18, 2);
+        assertEq(s.holderEscrow, fromEscrow);
+        assertGt(s.holderLeaveValue, s.holderSellValue);
+    }
+
+    /// @dev A 6-decimal quote token: the price is fine-grained enough to chart (it moves with every buy).
+    function test_the_price_is_fine_grained_with_a_six_decimal_quote() public {
+        SixDecimalQuote six = new SixDecimalQuote();
+        BackingPool.Params memory p = defaultTerms();
+        p.virtualQuote = 25_000e6;
+        p.earlyCap = 0;
+        BackingPool small = new BackingPool(treasury, FOUNDER, IERC20(address(six)), p);
+        six.mint(ALICE, 1_000_000e6);
+        vm.startPrank(ALICE);
+        six.approve(address(small), type(uint256).max);
+        // 0.000025 of a token a unit: 25 base units a whole unit, in the 1e18 fixed point.
+        uint256 last = small.price();
+        assertEq(last, 25e18);
+        for (uint256 i; i < 5; ++i) {
+            small.buy(1e6, 0, type(uint256).max);
+            assertGt(small.price(), last, "one token moves the price");
+            last = small.price();
+        }
+        vm.stopPrank();
+        // And about 0.007% a token, not the 4% steps a whole-number price had.
+        assertLt(last, 25e18 * 1001 / 1000);
     }
 
     // ---- reentrancy -----------------------------------------------------------------------------------------------
@@ -461,8 +490,8 @@ contract BackingPoolTest is BackingPoolFixture {
     function test_money_sent_to_the_pool_by_mistake_belongs_to_nobody_and_breaks_nothing() public {
         uint256 units = _buy(ALICE, 1_000e18);
         quote.mint(address(pool), 5_000e18);
-        assertEq(pool.reserve(), 693e18);
-        assertEq(pool.escrow(), 297e18);
+        assertEq(pool.reserve(), 891e18);
+        assertEq(pool.escrow(), 99e18);
         (uint256 out,,,) = pool.quoteSell(ALICE, units);
         assertEq(_sell(ALICE, units), out);
         assertEq(quote.balanceOf(address(pool)), pool.reserve() + pool.escrow() + pool.treasuryOwed() + 5_000e18);

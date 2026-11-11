@@ -45,11 +45,11 @@ contract ContributorKitV3Test is Test {
     function terms() internal pure returns (BackingPool.Params memory p) {
         p.virtualQuote = 25_000e18;
         p.virtualUnits = 1_000_000_000e18;
-        p.projectBps = 3000;
+        p.projectBps = 1000;
         p.feeBps = 100;
         p.trancheBps = 2500;
-        p.objectionBps = 2000;
         p.objectionWindow = 7 days;
+        p.resolveWindow = 7 days;
         p.claimInterval = 28 days;
         p.abandonAfter = 180 days;
         p.voteSeasoning = 30 days;
@@ -148,7 +148,7 @@ contract ContributorKitV3Test is Test {
         assertEq(address(pool.quote()), address(quote));
         assertEq(pool.factory(), address(poolFactory));
         assertEq(pool.openedAt(), _now());
-        assertEq(pool.projectBps(), 3000);
+        assertEq(pool.projectBps(), 1000);
         assertEq(pool.earlyCap(), 1_000e18);
         assertEq(poolFactory.founderOf(dao), FOUNDER);
         assertEq(TreasuryMandateFactory(mandateFactory).daos(budget), dao);
@@ -341,11 +341,11 @@ contract ContributorKitV3Test is Test {
         BackingPool.Params memory t = poolFactory.terms();
         assertEq(t.virtualQuote, 25_000e18);
         assertEq(t.virtualUnits, 1_000_000_000e18);
-        assertEq(t.projectBps, 3000);
+        assertEq(t.projectBps, 1000);
         assertEq(t.feeBps, 100);
         assertEq(t.trancheBps, 2500);
-        assertEq(t.objectionBps, 2000);
         assertEq(t.objectionWindow, 7 days);
+        assertEq(t.resolveWindow, 7 days);
         assertEq(t.claimInterval, 28 days);
         assertEq(t.abandonAfter, 180 days);
         assertEq(t.voteSeasoning, 30 days);
@@ -472,28 +472,47 @@ contract ContributorKitV3Test is Test {
         pool.postMilestone(REF);
         emit log_named_uint("claim milestone: postMilestone", vm.lastCallGas().gasTotalUsed);
         vm.prank(BOB);
-        pool.object();
-        emit log_named_uint("object", vm.lastCallGas().gasTotalUsed);
-        uint256 half = pool.balanceOf(BOB) / 2;
-        vm.prank(BOB);
-        pool.sell(half, 0, type(uint256).max);
-        emit log_named_uint("sell (part, during a window, objecting)", vm.lastCallGas().gasTotalUsed);
-        // He leaves, so the milestone is released and not kept back.
-        half = pool.balanceOf(BOB);
-        vm.prank(BOB);
-        pool.sell(half, 0, type(uint256).max);
+        pool.leave(0, type(uint256).max);
+        emit log_named_uint("leave (at a milestone)", vm.lastCallGas().gasTotalUsed);
         vm.warp(_now() + 7 days);
         (bool wasReleased,) = pool.resolveMilestone();
         emit log_named_uint("release: resolveMilestone (pays the treasury)", vm.lastCallGas().gasTotalUsed);
         assertTrue(wasReleased);
 
+        vm.prank(BOB);
+        pool.buy(10_000e18, 0, type(uint256).max);
         vm.warp(pool.abandonableAt());
-        pool.declareAbandoned();
-        emit log_named_uint("declareAbandoned", vm.lastCallGas().gasTotalUsed);
+        uint256 bobs = pool.balanceOf(BOB);
+        vm.prank(BOB);
+        pool.sell(bobs, 0, type(uint256).max);
+        emit log_named_uint("refund: sell (all) that also writes the abandonment", vm.lastCallGas().gasTotalUsed);
         uint256 rest = pool.balanceOf(ALICE);
         vm.prank(ALICE);
         pool.sell(rest, 0, type(uint256).max);
-        emit log_named_uint("refund: sell (all, after abandonment)", vm.lastCallGas().gasTotalUsed);
+        emit log_named_uint("refund: sell (all, once abandoned)", vm.lastCallGas().gasTotalUsed);
         assertEq(Moloch(payable(d)).votingWeight() != address(0), true);
+    }
+
+    /// @dev Finding F7a: the heaviest launch, with the most first projects a launch takes, as its own
+    /// transaction. Some chains cap a transaction at 2**24 gas (EIP-7825); the launch has to fit with room.
+    function test_gas_the_largest_launch_fits_one_transaction() public {
+        ContributorKitV2.LaunchParams memory p = _params("eight");
+        p.base.projects = new ContributorKit.FirstProject[](8);
+        for (uint256 i; i < 8; ++i) {
+            p.base.projects[i] = ContributorKit.FirstProject({
+                id: bytes32(uint256(0x1000 + i)),
+                manager: address(uint160(0x5000 + i)),
+                shares: 40e18,
+                expires: _now() + 90 days,
+                check: keccak256(abi.encode("check", i))
+            });
+        }
+        vm.prank(FOUNDER);
+        (address dao,,, address pool) = kit.launchWithPool(p);
+        uint256 used = vm.lastCallGas().gasTotalUsed;
+        emit log_named_uint("create: launchWithPool with 8 first projects", used);
+        assertEq(poolFactory.poolOf(dao), pool);
+        // Under the cap with at least a tenth of it to spare, measured with or without --isolate.
+        assertLt(used, uint256(1 << 24) * 90 / 100);
     }
 }

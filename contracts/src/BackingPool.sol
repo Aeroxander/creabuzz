@@ -9,16 +9,14 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// @notice Instant backing for one project (docs/v3-review/BACKING-POOL.md). Anyone buys the project's
 /// backing units with the quote token at a price read from a curve, and sells them back to the same
 /// curve at any time: no rounds, no seats, no keeper. Part of every buy stays here as the reserve that
-/// pays sellers; the rest is the project's money, held here until the project confirms a milestone and
-/// backers do not object, and handed back to the backers who are still holding if the project is
-/// declared abandoned.
+/// pays sellers; the rest is the project's money, held here and released a tranche at a time as the
+/// project posts milestones. At each milestone a backer can stay, or leave with their held money back.
+/// If the project is abandoned, the backers who are still holding get back what was not released.
 ///
 /// WHAT A BACKER HOLDS. Backing units are a ledger inside this contract: they are not the DAO's Shares,
 /// carry no vote in the DAO, and cannot be moved between wallets. The DAO's Shares can only ever be
 /// minted by a reviewed award (the issuance rule is sealed at the DAO's birth), so no pool could mint
-/// them, and a pool that could would let anyone buy a majority of the votes in one transaction. The
-/// only voice a unit holder has is here, over this pool's project money: objecting to a milestone and
-/// voting the project abandoned.
+/// them, and a pool that could would let anyone buy a majority of the votes in one transaction.
 ///
 /// THE CURVE AND WHY SELLS ALWAYS CLEAR. A constant product with virtual reserves, run on the reserve
 /// part only: with `x = virtualQuote + reserve` and `y = virtualUnits - totalSupply`, a buy that adds
@@ -31,24 +29,39 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 /// `reserve + escrow + treasuryOwed`.
 ///
 /// THE PROJECT MONEY. A buy pays a fee (`feeBps`, owed to the DAO treasury at once and never to an
-/// operator: it is what makes churn and griefing cost something the project receives), then
-/// `projectBps` of the rest goes to the escrow and the remainder to the reserve. Each backer's part of
-/// the escrow is tracked as a weight, priced like a vault share so a newcomer's weight is worth exactly
-/// what they just put in: nobody can buy in late and take a part of money others left. Selling units
-/// gives up the matching part of the seller's weight; what it stood for stays in the escrow for those
-/// who remain. So a buy-then-sell loses the project part by design: this is backing, not a trade.
+/// operator), then `projectBps` of the rest goes to the escrow and the remainder to the reserve. Each
+/// backer's part of the escrow is tracked as a weight, priced like a vault share so a newcomer's weight
+/// is worth exactly what they just put in: nobody can buy in late and take a part of money others left.
+/// An ordinary sale gives up the part of the seller's weight that matches the units sold (by units, not
+/// by what they cost); what it stood for stays in the escrow for those who remain. Money only ever
+/// leaves the escrow to the DAO treasury or back to backers.
 ///
-/// MILESTONES. The founder (or the DAO) posts "milestone reached" with the id of the public record
-/// event; that opens an objection window. Backers who held before the post object with their weight.
-/// When the window ends anyone resolves it: if objections reached `objectionBps` of the weight that
-/// could object, the money stays; otherwise `trancheBps` of the escrow goes to the DAO treasury.
-/// Buying during a window gives up that wallet's say on that milestone (so nobody can buy a block, or
-/// buy to drown one), and tallies freeze when the window ends.
+/// MILESTONES: STAY OR LEAVE. The founder (or the DAO) posts "milestone reached" with the id of the
+/// public record event. The post fixes the tranche: `trancheBps` of the escrow as it stands at that
+/// moment (`pending`), carried by the weight that exists at that moment (`staked`). For
+/// `objectionWindow` after the post, a backer who held before it and has not bought since may `leave`:
+/// all their units go back to the curve with no fee, and they get their whole part of the escrow,
+/// their part of the tranche included. Nobody can stop a release and nobody is made to fund a milestone
+/// they reject. When the window ends anyone resolves it and the tranche, less what the leavers took of
+/// it, goes to the DAO treasury. Money that arrives after the post is not touched by that milestone: a
+/// buyer's weight is priced on the escrow with the tranche already taken off. A milestone nobody
+/// resolves within `resolveWindow` of its window's end can only be voided, and releases nothing.
 ///
-/// ABANDONMENT. If no tranche has been released for `abandonAfter`, or for `voteAfter` and backers
-/// holding more than half the weight vote for it, anyone can declare the project abandoned. Buying and claiming stop for good;
-/// selling keeps working on the curve, and each sale also pays the seller's part of the remaining
-/// escrow.
+/// ABANDONMENT. While any backer holds a weight, `abandonAfter` without a release that paid anything
+/// makes the project abandoned: no vote and no call is needed, the next sale makes the change itself. Backers
+/// holding more than half the weight can also vote for it once `voteAfter` has passed without a
+/// release. Buying and milestones stop for good; selling keeps working on the curve with no fee, and
+/// each sale also pays the seller's part of the remaining escrow. Escrow nobody holds a weight for goes
+/// to the DAO treasury, never to a later buyer.
+///
+/// THE FOUNDER'S ROLE. The founder named at creation stays one of the two addresses that may post a
+/// milestone for the life of the pool; the DAO is the other, and nothing can change either. Posting is
+/// the founder's only power: released money and fees go to the DAO and nowhere else.
+///
+/// A LIMIT ON THE ARITHMETIC. Every release lowers what a unit of weight is worth, so weights grow
+/// against the escrow by a third per release at the default tranche. After about 300 releases (more
+/// than twenty years at one a month) a buy could overflow and revert; sales, leaving and refunds divide
+/// and never do.
 ///
 /// There is no owner, no admin, no pause and no upgrade; every parameter is fixed at creation.
 contract BackingPool {
@@ -64,19 +77,19 @@ contract BackingPool {
         uint16 projectBps;
         /// The fee on each buy and each sale, owed to the DAO treasury at once (basis points).
         uint16 feeBps;
-        /// The part of the escrow one confirmed milestone releases (basis points).
+        /// The part of the escrow, as it stands when a milestone is posted, that the milestone releases.
         uint16 trancheBps;
-        /// Objections at or above this part of the weight that could object keep a tranche back.
-        uint16 objectionBps;
-        /// How long backers have to object to a posted milestone.
+        /// How long after a post backers may leave with their held money.
         uint32 objectionWindow;
+        /// How long after that window a milestone can be resolved before it can only be voided.
+        uint32 resolveWindow;
         /// The least time between two milestone posts (and between opening and the first one).
         uint32 claimInterval;
-        /// How long without a released tranche before anyone may declare the project abandoned.
+        /// How long, with money held, without a release before the project counts as abandoned.
         uint32 abandonAfter;
         /// How long after a wallet's last buy before it may vote the project abandoned.
         uint32 voteSeasoning;
-        /// How long without a released tranche before a vote of the backers can declare the project abandoned.
+        /// How long without a release before a vote of the backers can declare the project abandoned.
         uint32 voteAfter;
         /// How long after opening the per-wallet buy cap applies; zero for no cap.
         uint32 earlyWindow;
@@ -89,7 +102,6 @@ contract BackingPool {
         None,
         Open,
         Released,
-        Blocked,
         Void
     }
 
@@ -97,11 +109,16 @@ contract BackingPool {
     struct Milestone {
         bytes32 ref;
         uint64 postedAt;
+        /// Until when backers may leave.
         uint64 windowEndsAt;
+        /// Until when it can be resolved; after that it can only be voided.
+        uint64 resolveBy;
         MilestoneStatus status;
-        /// Weight that may object: what was held at the post, less what was sold or excluded since.
-        uint256 eligible;
-        uint256 objections;
+        /// The escrow when it was posted.
+        uint256 escrowAtPost;
+        /// What leavers took out of the escrow during its window.
+        uint256 leftWith;
+        /// What it released to the treasury.
         uint256 released;
     }
 
@@ -113,6 +130,8 @@ contract BackingPool {
         uint256 escrow;
         uint256 released;
         uint256 refunded;
+        uint256 feesTaken;
+        uint256 treasuryOwed;
         uint256 totalSupply;
         uint256 totalWeight;
         bool abandoned;
@@ -120,16 +139,15 @@ contract BackingPool {
         uint64 nextClaimAt;
         uint64 abandonableAt;
         uint256 abandonVotes;
-        uint256 feesTaken;
-        uint256 treasuryOwed;
         uint256 milestoneId;
         Milestone milestone;
+        uint256 pending;
         uint256 holderUnits;
         uint256 holderWeight;
         uint256 holderEscrow;
         uint256 holderSellValue;
-        bool holderCanObject;
-        bool holderObjected;
+        bool holderCanLeave;
+        uint256 holderLeaveValue;
         bool holderVotedAbandon;
         uint256 holderEarlyLeft;
     }
@@ -137,17 +155,22 @@ contract BackingPool {
     uint256 private constant BPS = 10_000;
     /// @dev The vault-share offset: a first backer's weight is their project money times this, and the
     /// "plus one" beside it keeps the price defined when the escrow holds money nobody has a weight for.
+    /// The slice of the escrow that belongs to this offset belongs to no backer: it is released by
+    /// milestones like the rest and goes to the treasury on abandonment.
     uint256 private constant WEIGHT_OFFSET = 1e12;
+    /// @dev Prices are quote base units per whole unit (1e18 base units), times this.
+    uint256 private constant PRICE_SCALE = 1e18;
 
     /// @notice Units have 18 decimals, like the DAO's Shares.
     uint8 public constant decimals = 18;
 
     /// @notice The factory that made this pool.
     address public immutable factory;
-    /// @notice The project's DAO: the treasury released tranches are paid to, and one of the two
-    /// addresses that may post a milestone.
+    /// @notice The project's DAO: the treasury that fees and released tranches are paid to, and one of the
+    /// two addresses that may post a milestone.
     address public immutable dao;
-    /// @notice The founder, the other address that may post a milestone; zero when only the DAO may.
+    /// @notice The founder, the other address that may post a milestone, for the life of the pool; zero
+    /// when only the DAO may.
     address public immutable founder;
     /// @notice What backers pay in and are paid in.
     IERC20 public immutable quote;
@@ -159,8 +182,8 @@ contract BackingPool {
     uint16 public immutable projectBps;
     uint16 public immutable feeBps;
     uint16 public immutable trancheBps;
-    uint16 public immutable objectionBps;
     uint32 public immutable objectionWindow;
+    uint32 public immutable resolveWindow;
     uint32 public immutable claimInterval;
     uint32 public immutable abandonAfter;
     uint32 public immutable voteSeasoning;
@@ -174,11 +197,11 @@ contract BackingPool {
     mapping(address => uint256) public balanceOf;
     /// @notice Quote held to pay curve sales.
     uint256 public reserve;
-    /// @notice Project money held here: not yet released, not yet refunded.
+    /// @notice Project money held here: not yet released, not yet handed back.
     uint256 public escrow;
     /// @notice Project money released to the DAO treasury so far (paid or still owed).
     uint256 public released;
-    /// @notice Project money refunded to backers after abandonment so far.
+    /// @notice Project money handed back to backers so far: to leavers, and after abandonment.
     uint256 public refunded;
     /// @notice Fees taken from trades so far (owed to the DAO treasury the moment they are taken).
     uint256 public feesTaken;
@@ -194,19 +217,21 @@ contract BackingPool {
     uint256 public milestoneCount;
     /// @notice Each milestone post, by id (from 1).
     mapping(uint256 => Milestone) public milestones;
+    /// @notice The open milestone's tranche: what it will release, less what leavers took of it. Zero
+    /// when no milestone is open.
+    uint256 public pending;
+    /// @notice The weight that carries `pending`: the weight (and offset) at the post, less the leavers'.
+    uint256 public staked;
     /// @notice When the latest milestone was posted (the opening time before the first).
     uint64 public lastClaimAt;
-    /// @notice When the latest tranche was released (the opening time before the first).
+    /// @notice When the abandonment clocks last restarted: at opening, when a backer arrives while no
+    /// backer holds a weight, and at every release that paid something.
     uint64 public lastReleaseAt;
-    /// @notice True once the project was declared abandoned. Final.
-    bool public abandoned;
     /// @notice Weight currently voting to declare the project abandoned.
     uint256 public abandonVotes;
 
-    /// @notice The milestone whose window a wallet bought during (it has no say on that one).
+    /// @notice The milestone whose window a wallet bought during (it cannot leave on that one).
     mapping(address => uint256) public boughtDuring;
-    /// @notice The milestone a wallet is objecting to.
-    mapping(address => uint256) public objectedTo;
     /// @notice Whether a wallet is voting to declare the project abandoned.
     mapping(address => bool) public votedAbandon;
     /// @notice When a wallet last bought.
@@ -214,9 +239,12 @@ contract BackingPool {
     /// @notice Quote a wallet spent during the early window.
     mapping(address => uint256) public earlySpent;
 
+    /// @dev Set when the change to "abandoned" was written. `abandoned()` is true from the moment the
+    /// clock runs out, before anyone has written it.
+    bool private _abandonedWritten;
     bool private transient _entered;
 
-    /// @notice A buy. `priceAfter` is the curve price after it (quote base units per whole unit).
+    /// @notice A buy. `priceAfter` is the curve price after it (see `price`).
     event Bought(
         address indexed buyer,
         uint256 quoteIn,
@@ -238,19 +266,39 @@ contract BackingPool {
         uint256 supplyAfter,
         uint256 reserveAfter
     );
-    /// @notice A milestone was posted and its objection window opened.
-    event MilestonePosted(
-        uint256 indexed id, bytes32 indexed ref, address indexed by, uint64 windowEndsAt, uint256 eligible
+    /// @notice A backer left at a milestone: all their units sold with no fee (`fromCurve`) and their
+    /// whole part of the escrow handed back (`fromEscrow`). `quoteOut` is the two together.
+    event Left(
+        uint256 indexed id,
+        address indexed backer,
+        uint256 unitsIn,
+        uint256 quoteOut,
+        uint256 fromCurve,
+        uint256 fromEscrow,
+        uint256 priceAfter,
+        uint256 supplyAfter,
+        uint256 reserveAfter
     );
-    /// @notice A backer objected to a milestone.
-    event Objected(uint256 indexed id, address indexed backer, uint256 weight);
-    /// @notice A milestone's window ended and it was resolved: released, or kept back.
-    event MilestoneResolved(uint256 indexed id, bool released, uint256 amount, uint256 objections, uint256 eligible);
-    /// @notice Released money reached the DAO treasury.
+    /// @notice A milestone was posted: backers may leave until `windowEndsAt`, and it can be resolved
+    /// from then until `resolveBy`. `tranche` is what it releases if nobody leaves.
+    event MilestonePosted(
+        uint256 indexed id,
+        bytes32 indexed ref,
+        address indexed by,
+        uint64 windowEndsAt,
+        uint64 resolveBy,
+        uint256 escrowAtPost,
+        uint256 tranche
+    );
+    /// @notice A milestone was resolved: `wasReleased` with the `amount` that went to the treasury
+    /// (which can be zero when everyone left), or voided with nothing released.
+    event MilestoneResolved(uint256 indexed id, bool wasReleased, uint256 amount);
+    /// @notice Money owed to the DAO treasury reached it.
     event TreasuryPaid(uint256 amount);
     /// @notice A backer voted to declare the project abandoned.
     event AbandonVoted(address indexed backer, uint256 weight);
-    /// @notice The project was declared abandoned. `orphaned` is escrow nobody had a weight for.
+    /// @notice The project became abandoned. `escrow` is what is left for backers; `orphaned` is escrow
+    /// nobody had a weight for, which went to the treasury.
     event Abandoned(address indexed by, bool byVote, uint256 escrow, uint256 orphaned);
 
     error InvalidParams();
@@ -290,10 +338,12 @@ contract BackingPool {
         if (
             p.virtualQuote == 0 || p.virtualQuote > type(uint112).max || p.virtualUnits < 1e18
                 || p.virtualUnits > type(uint112).max || p.projectBps > 9000 || p.feeBps > 500 || p.trancheBps == 0
-                || p.trancheBps > 5000 || p.objectionBps == 0 || p.objectionBps > BPS || p.objectionWindow < 1 days
-                || p.objectionWindow > 30 days || p.claimInterval < p.objectionWindow || p.claimInterval > 365 days
-                || p.abandonAfter <= uint256(p.claimInterval) + p.objectionWindow || p.abandonAfter > 1460 days
-                || p.voteSeasoning > 90 days || p.voteAfter > p.abandonAfter || p.earlyWindow > 30 days
+                || p.trancheBps > 5000 || p.objectionWindow < 1 days || p.objectionWindow > 30 days
+                || p.resolveWindow < 1 days || p.resolveWindow > 30 days || p.claimInterval < p.objectionWindow
+                || p.claimInterval > 365 days
+                || p.abandonAfter <= uint256(p.claimInterval) + p.objectionWindow + p.resolveWindow
+                || p.abandonAfter > 1460 days || p.voteSeasoning > 90 days || p.voteAfter > p.abandonAfter
+                || p.earlyWindow > 30 days
         ) revert InvalidParams();
         factory = msg.sender;
         dao = dao_;
@@ -307,8 +357,8 @@ contract BackingPool {
         projectBps = p.projectBps;
         feeBps = p.feeBps;
         trancheBps = p.trancheBps;
-        objectionBps = p.objectionBps;
         objectionWindow = p.objectionWindow;
+        resolveWindow = p.resolveWindow;
         claimInterval = p.claimInterval;
         abandonAfter = p.abandonAfter;
         voteSeasoning = p.voteSeasoning;
@@ -330,7 +380,7 @@ contract BackingPool {
         returns (uint256 unitsOut)
     {
         if (block.timestamp > deadline) revert Expired();
-        if (abandoned) revert IsAbandoned();
+        if (abandoned()) revert IsAbandoned();
         if (earlyCap != 0 && block.timestamp < uint256(openedAt) + earlyWindow) {
             uint256 spent = earlySpent[msg.sender] + quoteIn;
             if (spent > earlyCap) revert EarlyCapReached();
@@ -343,27 +393,22 @@ contract BackingPool {
         if (unitsOut == 0) revert ZeroAmount();
         if (unitsOut < minUnitsOut) revert Slippage();
 
-        // A wallet that buys while a window is running has no say on that milestone, and has to wait
+        // A wallet that buys while a window is running cannot leave on that milestone, and has to wait
         // again before it can vote the project abandoned.
         uint256 weightBefore = weightOf[msg.sender];
         uint256 id = _liveMilestone();
-        if (id != 0 && boughtDuring[msg.sender] != id) {
-            boughtDuring[msg.sender] = id;
-            Milestone storage m = milestones[id];
-            m.eligible -= weightBefore;
-            if (objectedTo[msg.sender] == id) {
-                objectedTo[msg.sender] = 0;
-                m.objections -= weightBefore;
-            }
-        }
+        if (id != 0 && boughtDuring[msg.sender] != id) boughtDuring[msg.sender] = id;
         if (votedAbandon[msg.sender]) {
             votedAbandon[msg.sender] = false;
             abandonVotes -= weightBefore;
         }
         lastBuyAt[msg.sender] = uint64(block.timestamp);
+        // The clocks measure time with backers' money held: they start again with the first backer in.
+        if (totalWeight == 0) lastReleaseAt = uint64(block.timestamp);
 
-        // The buyer's weight is priced before their money goes in, so it is worth what they add.
-        uint256 weight = Math.mulDiv(toProject, totalWeight + WEIGHT_OFFSET, escrow + 1);
+        // The buyer's weight is priced before their money goes in and on the escrow with any open
+        // tranche already taken off, so it is worth what they add and an open milestone does not touch it.
+        uint256 weight = Math.mulDiv(toProject, totalWeight + WEIGHT_OFFSET, escrow - pending + 1);
         weightOf[msg.sender] = weightBefore + weight;
         totalWeight += weight;
         escrow += toProject;
@@ -381,8 +426,10 @@ contract BackingPool {
         emit Bought(msg.sender, quoteIn, unitsOut, fee, toProject, price(), totalSupply, reserve);
     }
 
-    /// @notice Sell `unitsIn` units back to the curve. After abandonment the sale also pays your part of
-    /// the remaining escrow; before it, the matching part of your weight stays with those who remain.
+    /// @notice Sell `unitsIn` units back to the curve. Before abandonment the sale pays the fee and the
+    /// matching part of your weight stays with those who remain. Once the project is abandoned (this
+    /// call makes the change itself if the clock has run out) there is no fee, and the sale also pays
+    /// your part of the remaining escrow.
     /// @param unitsIn The units you sell.
     /// @param minQuoteOut The least quote you accept; the sale reverts below it.
     /// @param deadline The latest time this sale may happen.
@@ -394,24 +441,13 @@ contract BackingPool {
     {
         if (block.timestamp > deadline) revert Expired();
         if (unitsIn == 0) revert ZeroAmount();
-        (uint256 gross, uint256 fee, uint256 refund, uint256 weight) = _quoteSell(msg.sender, unitsIn);
+        if (!_abandonedWritten && _clockRanOut()) _abandon(false);
+        (uint256 gross, uint256 fee, uint256 refund, uint256 weight) =
+            _quoteSell(msg.sender, unitsIn, _abandonedWritten, escrow);
         quoteOut = gross - fee + refund;
         if (quoteOut < minQuoteOut) revert Slippage();
 
-        if (weight != 0) {
-            uint256 id = _liveMilestone();
-            if (id != 0 && boughtDuring[msg.sender] != id) {
-                Milestone storage m = milestones[id];
-                m.eligible -= weight;
-                if (objectedTo[msg.sender] == id) m.objections -= weight;
-            }
-            if (votedAbandon[msg.sender]) abandonVotes -= weight;
-            weightOf[msg.sender] -= weight;
-            totalWeight -= weight;
-        }
-        balanceOf[msg.sender] -= unitsIn;
-        totalSupply -= unitsIn;
-        reserve -= gross;
+        _burn(msg.sender, unitsIn, weight, gross);
         if (refund != 0) {
             escrow -= refund;
             refunded += refund;
@@ -425,71 +461,94 @@ contract BackingPool {
         emit Sold(msg.sender, unitsIn, quoteOut, fee, refund, price(), totalSupply, reserve);
     }
 
+    /// @notice Leave at the open milestone: sell all your units to the curve with no fee and take back
+    /// your whole part of the escrow, your part of the tranche included. Only while the milestone's
+    /// window runs, and only for a wallet that held before the post and has not bought since.
+    /// @param minQuoteOut The least quote you accept; the call reverts below it.
+    /// @param deadline The latest time this may happen.
+    /// @return quoteOut The quote you received.
+    function leave(uint256 minQuoteOut, uint256 deadline) external nonReentrant returns (uint256 quoteOut) {
+        if (block.timestamp > deadline) revert Expired();
+        uint256 id = _liveMilestone();
+        if (id == 0) revert WindowOver();
+        uint256 units = balanceOf[msg.sender];
+        if (units == 0 || boughtDuring[msg.sender] == id) revert NoSay();
+        (uint256 gross, uint256 fromTranche, uint256 fromEscrow, uint256 weight) = _quoteLeave(msg.sender, units);
+        quoteOut = gross + fromEscrow;
+        if (quoteOut < minQuoteOut) revert Slippage();
+
+        _burn(msg.sender, units, weight, gross);
+        // The leaver's weight stops carrying the tranche, and takes its part of the tranche with it.
+        staked -= weight;
+        pending -= fromTranche;
+        escrow -= fromEscrow;
+        refunded += fromEscrow;
+        milestones[id].leftWith += fromEscrow;
+
+        quote.safeTransfer(msg.sender, quoteOut);
+        emit Left(id, msg.sender, units, quoteOut, gross, fromEscrow, price(), totalSupply, reserve);
+    }
+
     // ---- milestones -----------------------------------------------------------------------------------------------
 
     /// @notice Post "milestone reached": the founder or the DAO names the public record event that
-    /// shows it, and the objection window opens. One post at a time, and no sooner than `claimInterval`
-    /// after the last one (or after opening).
+    /// shows it. The tranche is fixed now, from the escrow as it stands, and the window to leave opens.
+    /// One post at a time, and no sooner than `claimInterval` after the last one (or after opening).
     /// @param ref The id of the public record event for this milestone.
     /// @return id The milestone's id.
     function postMilestone(bytes32 ref) external nonReentrant returns (uint256 id) {
         if (msg.sender != dao && (founder == address(0) || msg.sender != founder)) revert NotClaimant();
-        if (abandoned) revert IsAbandoned();
+        if (abandoned()) revert IsAbandoned();
         if (ref == bytes32(0)) revert ZeroAmount();
         if (milestones[milestoneCount].status == MilestoneStatus.Open) revert MilestoneOpen();
         uint256 notBefore = uint256(lastClaimAt) + claimInterval;
         if (block.timestamp < notBefore) revert TooSoon(notBefore);
         id = ++milestoneCount;
         uint64 ends = uint64(block.timestamp) + objectionWindow;
+        uint256 tranche = escrow * trancheBps / BPS;
         milestones[id] = Milestone({
             ref: ref,
             postedAt: uint64(block.timestamp),
             windowEndsAt: ends,
+            resolveBy: ends + resolveWindow,
             status: MilestoneStatus.Open,
-            eligible: totalWeight,
-            objections: 0,
+            escrowAtPost: escrow,
+            leftWith: 0,
             released: 0
         });
+        pending = tranche;
+        staked = totalWeight + WEIGHT_OFFSET;
         lastClaimAt = uint64(block.timestamp);
-        emit MilestonePosted(id, ref, msg.sender, ends, totalWeight);
+        emit MilestonePosted(id, ref, msg.sender, ends, ends + resolveWindow, escrow, tranche);
     }
 
-    /// @notice Object to the open milestone with all of your weight. Only while its window runs, and
-    /// only for a wallet that has not bought since it was posted. Selling afterwards takes the sold
-    /// part of the objection with it.
-    function object() external nonReentrant {
-        uint256 id = _liveMilestone();
-        if (id == 0) revert WindowOver();
-        uint256 weight = weightOf[msg.sender];
-        if (weight == 0 || boughtDuring[msg.sender] == id) revert NoSay();
-        if (objectedTo[msg.sender] == id) revert AlreadyDone();
-        objectedTo[msg.sender] = id;
-        milestones[id].objections += weight;
-        emit Objected(id, msg.sender, weight);
-    }
-
-    /// @notice Resolve the open milestone once its window is over; anyone may call. If objections
-    /// reached the threshold the escrow stays whole; otherwise one tranche goes to the DAO treasury.
-    /// @return wasReleased Whether a tranche was released.
-    /// @return amount The tranche released (zero when kept back).
+    /// @notice Resolve the open milestone once its window is over; anyone may call. Until `resolveBy`
+    /// the tranche fixed at the post, less what leavers took of it, goes to the DAO treasury; nothing
+    /// that arrived after the post is taken. After `resolveBy` the milestone is voided and releases
+    /// nothing.
+    /// @return wasReleased Whether the milestone was released (false when voided).
+    /// @return amount What went to the treasury (zero when voided, or when everyone left).
     function resolveMilestone() external nonReentrant returns (bool wasReleased, uint256 amount) {
-        if (abandoned) revert IsAbandoned();
         uint256 id = milestoneCount;
         Milestone storage m = milestones[id];
         if (m.status != MilestoneStatus.Open) revert NoOpenMilestone();
         if (block.timestamp < m.windowEndsAt) revert WindowNotOver();
-        if (_blocked(m)) {
-            m.status = MilestoneStatus.Blocked;
-        } else {
+        if (block.timestamp < m.resolveBy) {
             wasReleased = true;
-            amount = escrow * trancheBps / BPS;
+            amount = pending;
             m.status = MilestoneStatus.Released;
-            m.released = amount;
-            escrow -= amount;
-            released += amount;
-            lastReleaseAt = uint64(block.timestamp);
+            if (amount != 0) {
+                m.released = amount;
+                escrow -= amount;
+                released += amount;
+                lastReleaseAt = uint64(block.timestamp);
+            }
+        } else {
+            m.status = MilestoneStatus.Void;
         }
-        emit MilestoneResolved(id, wasReleased, amount, m.objections, m.eligible);
+        pending = 0;
+        staked = 0;
+        emit MilestoneResolved(id, wasReleased, amount);
         if (amount != 0) _payTreasury(amount);
     }
 
@@ -506,7 +565,7 @@ contract BackingPool {
     /// @notice Vote, with all of your weight, to declare the project abandoned. A wallet may vote only
     /// `voteSeasoning` after its last buy; buying again withdraws the vote, selling shrinks it.
     function voteAbandon() external nonReentrant {
-        if (abandoned) revert IsAbandoned();
+        if (abandoned()) revert IsAbandoned();
         uint256 weight = weightOf[msg.sender];
         if (weight == 0) revert NoSay();
         if (votedAbandon[msg.sender]) revert AlreadyDone();
@@ -517,48 +576,36 @@ contract BackingPool {
         emit AbandonVoted(msg.sender, weight);
     }
 
-    /// @notice Declare the project abandoned; anyone may call once either condition holds: no tranche
-    /// was released for `voteAfter` and more than half the weight votes for it, or no tranche was released for `abandonAfter` (a milestone whose
-    /// window is still running, or that is waiting to be released, is settled first). Final: buying and
-    /// milestones stop, and every sale from now on also pays the seller's part of the escrow.
+    /// @notice Write the change to "abandoned"; anyone may call once either condition holds: no release
+    /// for `voteAfter` and more than half the weight votes for it, or the clock has run out (a backer holding
+    /// a weight and no release for `abandonAfter`; an open milestone is resolved or voided first). A sale makes
+    /// the same change by itself when the clock has run out, so nobody has to call this for backers to
+    /// get their money.
     function declareAbandoned() external nonReentrant {
-        if (abandoned) revert IsAbandoned();
+        if (_abandonedWritten) revert IsAbandoned();
         bool byVote = totalWeight != 0 && abandonVotes > totalWeight / 2
             && block.timestamp >= uint256(lastReleaseAt) + voteAfter;
-        Milestone storage m = milestones[milestoneCount];
-        if (!byVote) {
-            if (block.timestamp < uint256(lastReleaseAt) + abandonAfter) revert NotAbandonable();
-            // A milestone still inside its window, or one that passed and only waits for `resolveMilestone`,
-            // is the project's last word: it is heard before the clock decides.
-            if (m.status == MilestoneStatus.Open && (block.timestamp < m.windowEndsAt || !_blocked(m))) {
-                revert MilestoneOpen();
-            }
-        }
-        if (m.status == MilestoneStatus.Open) {
-            m.status = byVote ? MilestoneStatus.Void : MilestoneStatus.Blocked;
-            emit MilestoneResolved(milestoneCount, false, 0, m.objections, m.eligible);
-        }
-        abandoned = true;
-        // Escrow nobody holds a weight for (every backer had already left) has no one to go back to.
-        uint256 orphaned;
-        if (totalWeight == 0 && escrow != 0) {
-            orphaned = escrow;
-            escrow = 0;
-            released += orphaned;
-        }
-        emit Abandoned(msg.sender, byVote, escrow, orphaned);
-        if (orphaned != 0) _payTreasury(orphaned);
+        if (!byVote && !_clockRanOut()) revert NotAbandonable();
+        _abandon(byVote);
+        if (treasuryOwed != 0) _payTreasury(0);
     }
 
     // ---- reads ----------------------------------------------------------------------------------------------------
 
-    /// @notice The curve price now: quote base units one whole unit (1e18) sells for at the margin,
-    /// before the fee.
-    function price() public view returns (uint256) {
-        return Math.mulDiv(virtualQuote + reserve, 1e18, virtualUnits - totalSupply);
+    /// @notice Whether the project is abandoned: declared so, or its clock has run out (the next sale
+    /// writes it). Final either way.
+    function abandoned() public view returns (bool) {
+        return _abandonedWritten || _clockRanOut();
     }
 
-    /// @notice What one whole unit costs to buy at the margin, with the project part and fee included.
+    /// @notice The curve price now, before the fee: quote base units per whole unit (1e18 base units),
+    /// times 1e18. Divide by 1e18 and by ten to the quote token's decimals for a price in whole tokens.
+    function price() public view returns (uint256) {
+        return Math.mulDiv(virtualQuote + reserve, 1e18 * PRICE_SCALE, virtualUnits - totalSupply);
+    }
+
+    /// @notice What one whole unit costs to buy at the margin, with the project part and fee included,
+    /// in the same fixed point as `price`.
     function buyPrice() public view returns (uint256) {
         return Math.mulDiv(price(), BPS * BPS, uint256(BPS - feeBps) * (BPS - projectBps), Math.Rounding.Ceil);
     }
@@ -567,42 +614,76 @@ contract BackingPool {
     /// @return unitsOut Units received.
     /// @return fee The fee, owed to the DAO treasury.
     /// @return toEscrow The project part, held in the escrow.
-    /// @return priceAfter The curve price after the buy.
+    /// @return priceAfter The curve price after the buy (see `price`).
     function quoteBuy(uint256 quoteIn)
         external
         view
         returns (uint256 unitsOut, uint256 fee, uint256 toEscrow, uint256 priceAfter)
     {
-        uint256 toProject;
         uint256 toReserve;
-        (unitsOut, fee, toProject, toReserve) = _quoteBuy(quoteIn);
-        toEscrow = toProject;
-        priceAfter =
-            Math.mulDiv(virtualQuote + reserve + toReserve, 1e18, virtualUnits - totalSupply - unitsOut);
+        (unitsOut, fee, toEscrow, toReserve) = _quoteBuy(quoteIn);
+        priceAfter = Math.mulDiv(
+            virtualQuote + reserve + toReserve, 1e18 * PRICE_SCALE, virtualUnits - totalSupply - unitsOut
+        );
     }
 
     /// @notice What `holder` selling `unitsIn` gets now.
     /// @return quoteOut Quote received (fee taken, refund added).
-    /// @return fee The fee, owed to the DAO treasury (zero after abandonment).
+    /// @return fee The fee, owed to the DAO treasury (zero once abandoned).
     /// @return refund The holder's part of the escrow paid with this sale (zero before abandonment).
-    /// @return priceAfter The curve price after the sale.
+    /// @return priceAfter The curve price after the sale (see `price`).
     function quoteSell(address holder, uint256 unitsIn)
-        external
+        public
         view
         returns (uint256 quoteOut, uint256 fee, uint256 refund, uint256 priceAfter)
     {
+        // A sale made now would first write the abandonment the clock has already decided.
+        bool gone = abandoned();
+        uint256 left = _abandonedWritten || !gone ? escrow : escrow - _orphaned();
         uint256 gross;
-        (gross, fee, refund,) = _quoteSell(holder, unitsIn);
+        (gross, fee, refund,) = _quoteSell(holder, unitsIn, gone, left);
         quoteOut = gross - fee + refund;
-        priceAfter = Math.mulDiv(virtualQuote + reserve - gross, 1e18, virtualUnits - totalSupply + unitsIn);
+        priceAfter =
+            Math.mulDiv(virtualQuote + reserve - gross, 1e18 * PRICE_SCALE, virtualUnits - totalSupply + unitsIn);
     }
 
-    /// @notice What `holder`'s weight in the escrow is worth now: their part of the money not yet
-    /// released, which they get back if the project is abandoned while they still hold.
+    /// @notice Whether `holder` may leave now: a milestone's window is running, and they hold units they
+    /// had before it was posted and have not bought since.
+    function canLeave(address holder) public view returns (bool) {
+        uint256 id = _liveMilestone();
+        return id != 0 && balanceOf[holder] != 0 && boughtDuring[holder] != id;
+    }
+
+    /// @notice What `holder` gets by leaving now; all zero when they cannot.
+    /// @return quoteOut Quote received: `fromCurve` plus `fromEscrow`.
+    /// @return fromCurve What their units sell for, with no fee.
+    /// @return fromEscrow Their whole part of the escrow.
+    /// @return priceAfter The curve price after they left (see `price`).
+    function quoteLeave(address holder)
+        public
+        view
+        returns (uint256 quoteOut, uint256 fromCurve, uint256 fromEscrow, uint256 priceAfter)
+    {
+        if (!canLeave(holder)) return (0, 0, 0, 0);
+        uint256 units = balanceOf[holder];
+        (fromCurve,, fromEscrow,) = _quoteLeave(holder, units);
+        quoteOut = fromCurve + fromEscrow;
+        priceAfter =
+            Math.mulDiv(virtualQuote + reserve - fromCurve, 1e18 * PRICE_SCALE, virtualUnits - totalSupply + units);
+    }
+
+    /// @notice `holder`'s part of the escrow now: what leaving would hand back while they can leave,
+    /// what a refund pays once abandoned, and otherwise their part with any open tranche taken off.
     function escrowOf(address holder) public view returns (uint256) {
         uint256 weight = weightOf[holder];
         if (weight == 0) return 0;
-        return Math.mulDiv(escrow, weight, abandoned ? totalWeight : totalWeight + WEIGHT_OFFSET);
+        if (_abandonedWritten) return Math.mulDiv(escrow, weight, totalWeight);
+        if (_clockRanOut()) return Math.mulDiv(escrow - _orphaned(), weight, totalWeight);
+        if (canLeave(holder)) {
+            (,, uint256 fromEscrow,) = _quoteLeave(holder, balanceOf[holder]);
+            return fromEscrow;
+        }
+        return Math.mulDiv(escrow - pending, weight, totalWeight + WEIGHT_OFFSET);
     }
 
     /// @notice The earliest time the next milestone may be posted.
@@ -610,7 +691,8 @@ contract BackingPool {
         return lastClaimAt + claimInterval;
     }
 
-    /// @notice The time from which the project may be declared abandoned for lack of a release.
+    /// @notice The time from which the project counts as abandoned for lack of a release, if a backer
+    /// holds a weight then and no milestone is open.
     function abandonableAt() public view returns (uint64) {
         return lastReleaseAt + abandonAfter;
     }
@@ -623,27 +705,24 @@ contract BackingPool {
         s.escrow = escrow;
         s.released = released;
         s.refunded = refunded;
+        s.feesTaken = feesTaken;
+        s.treasuryOwed = treasuryOwed;
         s.totalSupply = totalSupply;
         s.totalWeight = totalWeight;
-        s.abandoned = abandoned;
+        s.abandoned = abandoned();
         s.openedAt = openedAt;
         s.nextClaimAt = nextClaimAt();
         s.abandonableAt = abandonableAt();
         s.abandonVotes = abandonVotes;
-        s.feesTaken = feesTaken;
-        s.treasuryOwed = treasuryOwed;
         s.milestoneId = milestoneCount;
         s.milestone = milestones[s.milestoneId];
+        s.pending = pending;
         s.holderUnits = balanceOf[holder];
         s.holderWeight = weightOf[holder];
         s.holderEscrow = escrowOf(holder);
-        if (s.holderUnits != 0) {
-            (uint256 gross, uint256 fee, uint256 refund,) = _quoteSell(holder, s.holderUnits);
-            s.holderSellValue = gross - fee + refund;
-        }
-        uint256 live = _liveMilestone();
-        s.holderObjected = live != 0 && objectedTo[holder] == live;
-        s.holderCanObject = live != 0 && s.holderWeight != 0 && boughtDuring[holder] != live && !s.holderObjected;
+        if (s.holderUnits != 0) (s.holderSellValue,,,) = quoteSell(holder, s.holderUnits);
+        s.holderCanLeave = canLeave(holder);
+        (s.holderLeaveValue,,,) = quoteLeave(holder);
         s.holderVotedAbandon = votedAbandon[holder];
         if (earlyCap != 0 && block.timestamp < uint256(openedAt) + earlyWindow) {
             s.holderEarlyLeft = earlyCap - earlySpent[holder];
@@ -676,22 +755,55 @@ contract BackingPool {
         unitsOut = (virtualUnits - totalSupply) * toReserve / (x + toReserve);
     }
 
-    /// @dev The curve, the fee, the refund and the weight given up for a sale.
-    function _quoteSell(address holder, uint256 unitsIn)
+    /// @dev What `unitsIn` units pay from the curve.
+    function _curveOut(uint256 unitsIn) private view returns (uint256) {
+        return (virtualQuote + reserve) * unitsIn / (virtualUnits - totalSupply + unitsIn);
+    }
+
+    /// @dev The curve, the fee, the refund and the weight given up for a sale, with the project abandoned
+    /// or not and `escrowLeft` to refund from.
+    function _quoteSell(address holder, uint256 unitsIn, bool gone, uint256 escrowLeft)
         private
         view
         returns (uint256 gross, uint256 fee, uint256 refund, uint256 weight)
     {
         uint256 held = balanceOf[holder];
         if (unitsIn > held) revert InsufficientUnits();
-        gross = (virtualQuote + reserve) * unitsIn / (virtualUnits - totalSupply + unitsIn);
+        gross = _curveOut(unitsIn);
         uint256 holderWeight = weightOf[holder];
         weight = unitsIn == held ? holderWeight : Math.mulDiv(holderWeight, unitsIn, held);
-        if (abandoned) {
-            if (weight != 0) refund = Math.mulDiv(escrow, weight, totalWeight);
+        if (gone) {
+            if (weight != 0) refund = Math.mulDiv(escrowLeft, weight, totalWeight);
         } else {
             fee = _bpsUp(gross, feeBps);
         }
+    }
+
+    /// @dev What leaving pays: the curve with no fee, and the leaver's whole part of the escrow, which is
+    /// their part of the escrow with the tranche taken off plus their part of the tranche.
+    function _quoteLeave(address holder, uint256 units)
+        private
+        view
+        returns (uint256 gross, uint256 fromTranche, uint256 fromEscrow, uint256 weight)
+    {
+        gross = _curveOut(units);
+        weight = weightOf[holder];
+        if (weight != 0) {
+            fromTranche = Math.mulDiv(pending, weight, staked);
+            fromEscrow = Math.mulDiv(escrow - pending, weight, totalWeight + WEIGHT_OFFSET) + fromTranche;
+        }
+    }
+
+    /// @dev Take `units` and `weight` from `holder` and `gross` from the reserve.
+    function _burn(address holder, uint256 units, uint256 weight, uint256 gross) private {
+        if (weight != 0) {
+            if (votedAbandon[holder]) abandonVotes -= weight;
+            weightOf[holder] -= weight;
+            totalWeight -= weight;
+        }
+        balanceOf[holder] -= units;
+        totalSupply -= units;
+        reserve -= gross;
     }
 
     /// @dev The id of the milestone whose window is running now, or zero.
@@ -701,9 +813,42 @@ contract BackingPool {
         if (m.status != MilestoneStatus.Open || block.timestamp >= m.windowEndsAt) return 0;
     }
 
-    /// @dev Whether objections reached the threshold.
-    function _blocked(Milestone storage m) private view returns (bool) {
-        return m.objections != 0 && m.objections >= Math.mulDiv(m.eligible, objectionBps, BPS, Math.Rounding.Ceil);
+    /// @dev Whether the clock has made the project abandoned: some backer holds a weight, nothing was
+    /// released for `abandonAfter`, and no milestone is still waiting to be resolved. With no backer there is
+    /// nobody to hand anything back to: the pool stays open, and any escrow left behind by people who sold
+    /// stays project money, released by milestones.
+    function _clockRanOut() private view returns (bool) {
+        if (totalWeight == 0 || block.timestamp < uint256(lastReleaseAt) + abandonAfter) return false;
+        Milestone storage m = milestones[milestoneCount];
+        return m.status != MilestoneStatus.Open || block.timestamp >= m.resolveBy;
+    }
+
+    /// @dev The slice of the escrow no backer has a weight for (all of it when nobody has any).
+    function _orphaned() private view returns (uint256) {
+        if (totalWeight == 0) return escrow;
+        return Math.mulDiv(escrow, WEIGHT_OFFSET, totalWeight + WEIGHT_OFFSET, Math.Rounding.Ceil);
+    }
+
+    /// @dev Write the abandonment. An open milestone ends with nothing released, and the escrow no
+    /// backer has a weight for goes to the treasury, so what is left divides among the backers exactly
+    /// as their parts stood, and a later buyer can never have it.
+    function _abandon(bool byVote) private {
+        uint256 id = milestoneCount;
+        Milestone storage m = milestones[id];
+        if (m.status == MilestoneStatus.Open) {
+            m.status = MilestoneStatus.Void;
+            pending = 0;
+            staked = 0;
+            emit MilestoneResolved(id, false, 0);
+        }
+        _abandonedWritten = true;
+        uint256 orphaned = _orphaned();
+        if (orphaned != 0) {
+            escrow -= orphaned;
+            released += orphaned;
+            treasuryOwed += orphaned;
+        }
+        emit Abandoned(msg.sender, byVote, escrow, orphaned);
     }
 
     /// @dev Add `amount` to what the treasury is owed and try to pay all of it. A token that refuses

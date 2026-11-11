@@ -32,7 +32,7 @@ contract BackingPoolFuzzTest is BackingPoolFixture {
         uint256 units = _buy(ALICE, amount);
         uint256 out = _sell(ALICE, units);
         // With the default terms the project part and two fees stay behind.
-        assertLe(out, amount * 70 / 100);
+        assertLe(out, amount * 8821 / 10_000);
         _assertSolvent();
     }
 
@@ -111,11 +111,7 @@ contract BackingPoolFuzzTest is BackingPoolFixture {
         _buy(CAROL, second);
         // Bob leaves some or all of his project money behind, and maybe a tranche is released.
         _sell(BOB, bound(sold, 1, bobUnits));
-        if (release) {
-            _post();
-            _skip(7 days);
-            pool.resolveMilestone();
-        }
+        if (release) _release();
         uint256 carolBefore = pool.escrowOf(CAROL);
         uint256 bobBefore = pool.escrowOf(BOB);
 
@@ -140,10 +136,11 @@ contract BackingPoolFuzzTest is BackingPoolFixture {
         _buy(BOB, b);
         _buy(CAROL, c);
         vm.warp(pool.abandonableAt());
+        // What each is owed is the same the second before the abandonment is written and the second after.
+        uint256[3] memory due = [pool.escrowOf(ALICE), pool.escrowOf(BOB), pool.escrowOf(CAROL)];
         pool.declareAbandoned();
         uint256 escrow = pool.escrow();
         uint256 reserve = pool.reserve();
-        uint256[3] memory due = [pool.escrowOf(ALICE), pool.escrowOf(BOB), pool.escrowOf(CAROL)];
         address[3] memory who = [ALICE, BOB, CAROL];
         uint256 paid;
         for (uint256 i; i < 3; ++i) {
@@ -171,8 +168,63 @@ contract BackingPoolFuzzTest is BackingPoolFixture {
         _skip(7 days);
         (, uint256 amount) = pool.resolveMilestone();
         assertEq(amount, escrow * 2500 / 10_000);
+        assertEq(pool.escrow(), escrow - amount);
         assertEq(pool.reserve(), reserve);
         assertEq(quote.balanceOf(treasury), amount + pool.feesTaken());
+        _assertSolvent();
+    }
+
+    /// @dev Staying or leaving at a milestone, over random sizes: a leaver takes exactly their part (tranche
+    /// included), the tranche is a quarter of the escrow of those who stayed, and a buyer who came in
+    /// during the window is not touched.
+    function testFuzz_leavers_take_their_part_and_stayers_pay_only_their_own_tranche(
+        uint256 a,
+        uint256 b,
+        uint256 late,
+        bool bobLeaves
+    ) public {
+        a = bound(a, 1e15, 2_000_000e18);
+        b = bound(b, 1e15, 2_000_000e18);
+        late = bound(late, 1e15, 2_000_000e18);
+        _buy(ALICE, a);
+        _buy(BOB, b);
+        uint256 aliceDue = pool.escrowOf(ALICE);
+        uint256 bobDue = pool.escrowOf(BOB);
+        _post();
+        // The post takes nothing from anyone yet (splitting a part in two can round a unit away).
+        assertApproxEqAbs(pool.escrowOf(ALICE), aliceDue, 1);
+        assertApproxEqAbs(pool.escrowOf(BOB), bobDue, 1);
+        _buy(CAROL, late);
+        uint256 carolDue = pool.escrowOf(CAROL);
+        uint256 escrow = pool.escrow();
+
+        uint256 bobTook;
+        if (bobLeaves) {
+            (, uint256 fromCurve, uint256 fromEscrow,) = pool.quoteLeave(BOB);
+            assertApproxEqAbs(fromEscrow, bobDue, 1);
+            bobTook = fromEscrow;
+            assertEq(_leave(BOB), fromCurve + fromEscrow);
+        }
+        _skip(7 days);
+        (, uint256 amount) = pool.resolveMilestone();
+        uint256 stayed = aliceDue + (bobLeaves ? 0 : bobDue);
+        assertApproxEqAbs(amount, stayed / 4, 4);
+        assertEq(pool.escrow(), escrow - bobTook - amount);
+        assertApproxEqAbs(pool.escrowOf(ALICE), aliceDue - aliceDue / 4, 4);
+        if (!bobLeaves) assertApproxEqAbs(pool.escrowOf(BOB), bobDue - bobDue / 4, 4);
+        assertApproxEqAbs(pool.escrowOf(CAROL), carolDue, 4);
+        _assertSolvent();
+    }
+
+    /// @dev Leaving never pays more than the wallet put in: the curve without a fee and its own escrow part.
+    function testFuzz_buy_then_leave_at_the_next_milestone_never_profits(uint256 prior, uint256 amount) public {
+        prior = bound(prior, 1e15, 2_000_000e18);
+        amount = bound(amount, 1e15, 2_000_000e18);
+        _buy(BOB, prior);
+        _buy(ALICE, amount);
+        _post();
+        uint256 out = _leave(ALICE);
+        assertLe(out, amount - amount / 100, "the buy fee at least is gone");
         _assertSolvent();
     }
 }
