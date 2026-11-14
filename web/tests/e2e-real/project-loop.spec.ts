@@ -1319,3 +1319,279 @@ test("8. boards made inside the project, Home's Boards tab, a private bookmark, 
   await teamMemberPostsAnUpdate();
   await theRecordIsReadOnHomeAndOnYourProjects();
 });
+
+test("9. the scoreboard, Work, the public scorecard, a cheer and the note after an update, all from the real records", async ({
+  browser,
+}) => {
+  test.setTimeout(240_000);
+
+  // A visitor with no account opens the project's scorecard at its short address.
+  const visitor = await ownBrowserPage(browser);
+  await visitor.goto(`/p/${SLUG}-${founder.pubkey.slice(0, 16)}`);
+  const scorecard = visitor.getByTestId("scorecard");
+  await expect(scorecard.getByRole("heading", { level: 1 })).toHaveText(
+    PROJECT_NAME,
+  );
+  // Test 3 made three promises and answered each: the totals are stated, from the founder's own records.
+  await expect(scorecard.getByTestId("scorecard-kept")).toHaveText(
+    /^\d+ of \d+$/,
+  );
+  await expect(scorecard.getByTestId("scorecard-streak")).not.toHaveText(
+    "Not known",
+  );
+  await expect(
+    scorecard.getByTestId("scorecard-promise").first(),
+  ).toBeVisible();
+  await expect(scorecard.getByTestId("scorecard-update")).toContainText(
+    `From the team ${RUN}`,
+  );
+  await expect(scorecard.getByTestId("scorecard-team")).toContainText(
+    FOUNDER_NAME,
+  );
+  await expect(scorecard.getByTestId("scorecard-failed")).toHaveCount(0);
+  await expect(visitor).toHaveTitle(`${PROJECT_NAME} on Creaton`);
+  await expect(scorecard).not.toContainText(/\$|earn/i);
+  await shot(visitor, "10-scorecard");
+  // The same project id under another account's address opens nothing.
+  await visitor.goto(`/p/${SLUG}-${stranger.pubkey.slice(0, 16)}`);
+  await expect(visitor.getByTestId("scorecard-missing")).toBeVisible();
+
+  // The Projects scoreboard, signed out: the project is on "New" with its record, and on "Moving now" (it posted
+  // today), from one read by who signed.
+  await visitor.goto("/discover");
+  const board = visitor.getByTestId("project-board");
+  await board.getByTestId("project-board-tab-new").click();
+  const row = board
+    .getByTestId("project-board-row")
+    .filter({ hasText: PROJECT_NAME });
+  await expect(row.getByTestId("project-board-facts")).toContainText(
+    /promises? kept/,
+  );
+  await board.getByTestId("project-board-tab-moving").click();
+  await expect(row).toHaveCount(1);
+  await expect(board.getByTestId("project-board-failed")).toHaveCount(0);
+  await shot(visitor, "11-scoreboard");
+
+  // Work: the page reads for a visitor, and the helper's own tasks are there step by step. The piece the team
+  // confirmed in test 5 has all four steps.
+  await visitor.goto("/work");
+  await expect(visitor.getByTestId("work-page")).toBeVisible();
+  await expect(visitor.getByTestId("work-open-failed")).toHaveCount(0);
+  await helperPage.goto("/work");
+  const confirmed = helperPage.locator(
+    '[data-testid="work-yours-item"][data-state="confirmed"]',
+  );
+  await expect(confirmed).toHaveCount(1);
+  await expect(confirmed).toContainText(PROJECT_NAME);
+  await expect(confirmed.locator('[data-step][data-done="true"]')).toHaveCount(
+    4,
+  );
+  await expect(helperPage.getByTestId("work-yours-failed")).toHaveCount(0);
+  await expect(helperPage.getByTestId("work-waiting-failed")).toHaveCount(0);
+  await shot(helperPage, "12-work");
+
+  // A cheer on accepted work: one tap, stored by the server as that person's reaction, counted once.
+  await matePage.goto("/?tab=updates");
+  const accepted = matePage
+    .getByTestId("record-feed")
+    .getByTestId("record-card")
+    .filter({ hasText: "Work accepted" })
+    .filter({ hasText: cliHelper.name });
+  const cheer = accepted.getByTestId("record-card-cheer");
+  await cheer.click();
+  await expect(cheer).toContainText("Cheered");
+  await expect(accepted.getByTestId("record-card-cheers")).toHaveText("1");
+  await expect
+    .poll(
+      async () =>
+        (await readAs(stranger, { kinds: [7], authors: [mate.pubkey] })).length,
+    )
+    .toBe(1);
+  await matePage.reload();
+  await expect(cheer).toContainText("Cheered");
+  await expect(cheer).toBeDisabled();
+
+  // The founder posts once more: the server takes it, and the page ends on the note with the record to share.
+  await founderPage.goto(projectPath);
+  await founderPage.getByRole("button", { name: "Post update" }).click();
+  const dialog = founderPage.getByRole("dialog", { name: "Post update" });
+  await dialog.getByLabel("Title").fill(`Closing the week ${RUN}`);
+  await dialog
+    .getByLabel("What's next")
+    .fill("One more thing\nAnd another\nA third\nA fourth");
+  await expect(dialog.getByTestId("update-next-too-many")).toBeVisible();
+  await dialog.getByRole("button", { name: "Publish update" }).click();
+  await expect(dialog).toHaveCount(0);
+  const note = founderPage.getByTestId("update-posted");
+  await expect(note.getByTestId("update-posted-streak")).toBeVisible();
+  const stored = (await projectRecords("promise")).find((e) =>
+    e.content.includes(`Closing the week ${RUN}`),
+  );
+  expect(stored, "the update is on the server").toBeTruthy();
+  expect(stored?.tags.filter((t) => t[0] === "promise")).toHaveLength(3);
+  await note.getByTestId("share-record").click();
+  // Copied, or (where the browser will not copy) the words shown to copy by hand: either way the link is the
+  // scorecard's.
+  await expect
+    .poll(async () => {
+      const status = await note.getByTestId("share-record-status").innerText();
+      const shown = await note.getByTestId("share-record-words").count();
+      return status.includes("Copied") || shown === 1;
+    })
+    .toBe(true);
+  await shot(founderPage, "13-update-posted");
+});
+
+test("10. the next update starts from last time's promises, Home shows it live, Work lists its request and takes an offer, and a newcomer is welcomed", async ({
+  browser,
+}) => {
+  test.setTimeout(300_000);
+  const PROOF = `Someone to proofread the install guide ${RUN}.`;
+  const TITLE = `Week three ${RUN}`;
+
+  // Home is open on the helper's side before anything is posted.
+  await helperPage.goto("/?tab=updates");
+  const feed = helperPage.getByTestId("record-feed");
+  await expect(feed.getByTestId("record-card").first()).toBeVisible();
+  await expect(
+    feed.getByTestId("record-card").filter({ hasText: TITLE }),
+  ).toHaveCount(0);
+
+  // The founder opens the update dialog: it starts from what the last updates promised, each asking for an answer.
+  await founderPage.goto(projectPath);
+  await founderPage.getByRole("button", { name: "Post update" }).click();
+  const dialog = founderPage.getByRole("dialog", { name: "Post update" });
+  const promise = (text: string) => dialog.getByRole("group", { name: text });
+  for (const said of ["One more thing", "And another", "A third"])
+    await expect(promise(said)).toBeVisible();
+  await expect(dialog).toContainText("What you said last time");
+  await promise("One more thing")
+    .getByRole("radio", { name: "Done", exact: true })
+    .check();
+  await promise("And another").getByRole("radio", { name: "Not done" }).check();
+  await dialog.getByLabel("Short note for: And another").fill("Next week");
+  await dialog.getByLabel("Title").fill(TITLE);
+  await dialog
+    .getByLabel("What happened this week")
+    .fill("Finished the first of the three.");
+  await dialog.getByLabel("What's next").fill("Proofread the install guide");
+  await dialog.getByLabel("Help needed (optional)").fill(PROOF);
+  await dialog.getByRole("radio", { name: "Small" }).check();
+  await dialog.getByRole("button", { name: "Publish update" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(founderPage.getByTestId("update-posted")).toBeVisible();
+  const posted = (await projectRecords("help-needed")).find(
+    (e) => tagOf(e, "help-needed") === PROOF,
+  );
+  expect(posted, "the update with its request is on the server").toBeTruthy();
+  expect(
+    posted?.tags.filter((t) => t[0] === "promise-mark").map((t) => t[2]),
+  ).toEqual(["done", "not-done"]);
+
+  // Home, still open, finds it on its next look (every 30 seconds): it waits behind "1 new record" so nothing moves
+  // under the reader, and slides in when the pill is pressed.
+  const pill = feed.getByTestId("record-feed-new-pill");
+  await expect(pill).toHaveText("1 new record", { timeout: 60_000 });
+  await expect(
+    feed.getByTestId("record-card").filter({ hasText: TITLE }),
+  ).toHaveCount(0);
+  await pill.click();
+  const fresh = feed.getByTestId("record-card").filter({ hasText: TITLE });
+  await expect(fresh).toHaveCount(1);
+  await expect(fresh).toContainText(PROOF);
+  await expect(feed.getByTestId("record-feed-failed")).toHaveCount(0);
+
+  // Work lists the request with its size and one tap to offer; the tap lands on the request itself.
+  await helperPage.goto("/work");
+  const item = helperPage
+    .getByTestId("work-open-item")
+    .filter({ hasText: PROJECT_NAME });
+  await expect(item).toHaveCount(1);
+  await expect(item).toContainText(PROOF);
+  await expect(item).toContainText("Small");
+  await item.getByTestId("work-open-do").click();
+  await expect(helperPage).toHaveURL(/tab=updates/);
+  const request = helperPage
+    .getByTestId("help-request")
+    .filter({ hasText: PROOF });
+  await expect(request).toBeVisible();
+  await request.getByRole("button", { name: "I can help" }).click();
+  const box = request.getByTestId("help-offer-box");
+  await box
+    .getByLabel("Add a short note (optional)")
+    .fill("I have an hour on Thursday.");
+  await box.getByRole("button", { name: "Send offer" }).click();
+  await expect(request.getByTestId("help-my-offer")).toContainText(
+    "I have an hour on Thursday.",
+  );
+  // The server has it: the command line reads the request as already offered on by this helper.
+  const listed = await buzz(helper, [
+    "launchpad",
+    "tasks",
+    "list",
+    SLUG,
+    "--author",
+    founder.pubkey,
+  ]);
+  expect(listed.code, listed.stderr).toBe(0);
+  expect(listed.json).toMatchObject({
+    help_requests: expect.arrayContaining([
+      expect.objectContaining({ text: PROOF, offered_by_me: true }),
+    ]),
+  });
+  await shot(helperPage, "14-work-offer");
+
+  // The scorecard reads for a visitor with no account: the open request, and the answers just given.
+  const visitor = await ownBrowserPage(browser);
+  await visitor.goto(`/p/${SLUG}-${founder.pubkey.slice(0, 16)}`);
+  const scorecard = visitor.getByTestId("scorecard");
+  await expect(scorecard.getByTestId("scorecard-open-help")).toContainText(
+    "open request",
+  );
+  await expect(scorecard.getByTestId("scorecard-kept")).toHaveText(
+    /^\d+ of \d+$/,
+  );
+  await expect(scorecard.getByTestId("scorecard-follow")).toBeVisible();
+  await expect(scorecard).not.toContainText(/\$|earn/i);
+
+  // A newcomer: a new account tied to no project is welcomed once, with three ways in; following a project from
+  // the welcome is stored by the server as that account's own follow.
+  const newcomer = await ownBrowserPage(browser);
+  await newcomer.goto("/");
+  await newcomer.getByTestId("create-identity-cta").first().click();
+  await newcomer.getByTestId("onboarding-name").fill(`Nia ${RUN}`);
+  await newcomer.getByTestId("onboarding-create").click();
+  await expect(newcomer.getByTestId("user-chip")).toBeVisible();
+  const [sealed, wrap] = await newcomer.evaluate(() => [
+    window.localStorage.getItem("buzz.identity.nsec") ?? "",
+    window.localStorage.getItem("buzz.identity.wrap") ?? "",
+  ]);
+  const nia = accountFromKey(nip49Decrypt(sealed, wrap), `Nia ${RUN}`);
+  await newcomer.goto("/");
+  const welcome = newcomer.getByTestId("newcomer-welcome");
+  await expect(welcome).toBeVisible();
+  await expect(welcome.getByTestId("welcome-start")).toHaveAttribute(
+    "href",
+    "/start",
+  );
+  await expect(welcome.getByTestId("welcome-work")).toHaveAttribute(
+    "href",
+    "/work",
+  );
+  await expect(welcome).not.toContainText(/\$|price|earn|trending|hot/i);
+  await welcome.getByTestId("welcome-follow-some").click();
+  const picks = welcome.getByTestId("welcome-follow-item");
+  await expect(picks.first()).toBeVisible();
+  expect(await picks.count()).toBeLessThanOrEqual(5);
+  await picks.first().getByTestId("welcome-follow").click();
+  await expect
+    .poll(
+      async () =>
+        (await readAs(stranger, { kinds: [10003], authors: [nia.pubkey] }))
+          .length,
+    )
+    .toBe(1);
+  await welcome.getByTestId("welcome-done").click();
+  await expect(welcome).toHaveCount(0);
+  await shot(newcomer, "15-newcomer");
+});
