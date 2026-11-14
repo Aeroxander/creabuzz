@@ -1,24 +1,28 @@
-import { Check, X } from "lucide-react";
-import * as React from "react";
-
-import { useApprovalMutation } from "@/features/workflows/hooks";
 import type { WorkflowApproval } from "@/shared/api/types";
-import { Button } from "@/shared/ui/button";
-import { Textarea } from "@/shared/ui/textarea";
+
+import { useApprovalMutation } from "../hooks";
 
 type WorkflowApprovalCardProps = {
   approval: WorkflowApproval;
 };
 
 export function WorkflowApprovalCard({ approval }: WorkflowApprovalCardProps) {
-  const [note, setNote] = React.useState("");
-  const approvalMutation = useApprovalMutation();
-
   const isExpired = new Date(approval.expiresAt) < new Date();
+  const resolveApproval = useApprovalMutation();
+  const isResolving = resolveApproval.isPending;
 
   if (approval.status !== "pending" || isExpired) {
     return null;
   }
+
+  const resolve = (action: "grant" | "deny") => {
+    // approvalRef is the hex-encoded token hash — the reference the relay's
+    // approval resolution reads from the kind:46030/46031 `d` tag.
+    resolveApproval.mutate({
+      token: approval.approvalRef,
+      action,
+    });
+  };
 
   return (
     <div
@@ -32,48 +36,31 @@ export function WorkflowApprovalCard({ approval }: WorkflowApprovalCardProps) {
       <p className="mb-2 text-xs text-muted-foreground">
         Expires: {new Date(approval.expiresAt).toLocaleString()}
       </p>
-
-      <Textarea
-        aria-label="Approval note"
-        className="mb-2 h-16 resize-none text-xs"
-        onChange={(event) => setNote(event.target.value)}
-        placeholder="Optional note..."
-        value={note}
-      />
-
       <div className="flex gap-2">
-        <Button
-          className="flex-1 bg-green-600 text-white hover:bg-green-700"
-          disabled={approvalMutation.isPending}
-          onClick={() =>
-            approvalMutation.mutate({
-              token: approval.token,
-              action: "grant",
-              note: note || undefined,
-            })
-          }
-          size="sm"
+        <button
+          type="button"
+          className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={isResolving}
+          onClick={() => resolve("grant")}
         >
-          <Check className="mr-1 h-4 w-4" />
           Approve
-        </Button>
-        <Button
-          className="flex-1"
-          disabled={approvalMutation.isPending}
-          onClick={() =>
-            approvalMutation.mutate({
-              token: approval.token,
-              action: "deny",
-              note: note || undefined,
-            })
-          }
-          size="sm"
-          variant="destructive"
+        </button>
+        <button
+          type="button"
+          className="rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={isResolving}
+          onClick={() => resolve("deny")}
         >
-          <X className="mr-1 h-4 w-4" />
           Deny
-        </Button>
+        </button>
       </div>
+      {resolveApproval.isError ? (
+        <p className="mt-2 text-2xs text-red-400" role="alert">
+          {resolveApproval.error instanceof Error
+            ? resolveApproval.error.message
+            : "Failed to send the approval decision."}
+        </p>
+      ) : null}
     </div>
   );
 }

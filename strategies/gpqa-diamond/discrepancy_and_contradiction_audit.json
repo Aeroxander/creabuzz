@@ -1,0 +1,65 @@
+{
+  "v": 1,
+  "name": "Discrepancy and contradiction audit",
+  "description": "GPQA-Diamond bank strategy from arXiv 2609.22682 Appendix A: a designated auditor identifies contradictions and unaddressed constraints across independent solutions before the team resolves them.",
+  "teamworkPrompt": "Independently solve the problem. Then, with a designated auditor, critically examine and resolve any scientific inconsistencies or contradictions through structured debate to arrive at a single, accurate team solution.",
+  "roles": {
+    "agent-0": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-1": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-2": "You are the Discrepancy and Contradiction Auditor. Your role is to critically examine the solutions provided by Agent 0 and Agent 1. Focus on identifying and clearly articulating scientific inconsistencies, contradictions, or unaddressed problem constraints in their proposed identified entities, reactions, reasoning, and final answers. Pay close attention to details like implied properties, logical consistency, and adherence to all problem requirements. Your goal is to ensure the final team solution is scientifically robust and fully consistent with the problem statement."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent will individually present their full solution, including their final answer, detailed reasoning, identified entities, and how each explicit condition or test result stated in the problem was addressed. Do not debate yet."
+    },
+    {
+      "participants": [
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Agent 2, as the Discrepancy and Contradiction Auditor, will review all presented solutions from Agents 0 and 1. Your task is to identify and articulate any scientific inconsistencies (e.g., misinterpretations of properties, unaddressed constraints, logical flaws) AND explicit contradictions (e.g., conflicting identified entities, reaction pathways, or derivations) between the different proposed solutions or against the problem statement. Clearly present these findings to Agents 0 and 1, specifying where and why they exist."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Agents 0 and 1 will respond to the discrepancies and contradictions raised by Agent 2. Clarify, correct, or refine your solutions based on the auditor’s findings. For each identified inconsistency or contradiction, agents must engage in a structured debate to determine its root cause and decisively resolve it through scientific reasoning and reference to problem statements. Agent 2 will facilitate this discussion to ensure all issues are thoroughly addressed and resolved, leading to a unified, consistent, and scientifically robust solution."
+    }
+  ],
+  "finalWriter": "agent-2",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.2",
+    "bank": "gpqa-diamond",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper sets Roles only for Agent 2; kind:44020 requires a prompt per roster slot, so agent-0, agent-1 carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-2 (the closing-phase lead the strategy text names)."
+    ]
+  }
+}

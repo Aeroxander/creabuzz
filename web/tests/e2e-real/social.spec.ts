@@ -1,0 +1,1311 @@
+import type { Page } from "@playwright/test";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import * as nip44 from "nostr-tools/nip44";
+import { finalizeEvent, getPublicKey } from "nostr-tools/pure";
+
+import { openGiftWrap } from "../../src/features/social/lib/nip17.ts";
+import { expect, test } from "./frame-meter";
+import { keyFromHex, post, readAs, waitForEvents } from "./social-helpers.mjs";
+
+/**
+ * The social section against a real relay: real NIP-42 auth, real ingest, real
+ * Postgres reads. Each test makes its own posts (with a run id in the text) so
+ * it does not depend on what earlier tests or runs left behind, and checks what
+ * the relay *stored* — tags, encryption, authors — not just what the page shows.
+ *
+ * Setup: see README.md, then `node --experimental-strip-types
+ * tests/e2e-real/seed-social.mjs` for the people, follows and the DM.
+ */
+
+interface Fixture {
+  relay: string;
+  people: Record<"dev" | "alice" | "bob" | "carol", string>;
+  nsecs: Record<"dev" | "alice" | "bob" | "carol", string>;
+  notes: Record<string, string>;
+}
+
+function fixtureOrSkip(): Fixture {
+  const path = join(
+    dirname(fileURLToPath(import.meta.url)),
+    ".social-fixture.json",
+  );
+  if (!existsSync(path)) {
+    test.skip(
+      true,
+      "run `node --experimental-strip-types tests/e2e-real/seed-social.mjs` (see README.md)",
+    );
+  }
+  return JSON.parse(readFileSync(path, "utf8")) as Fixture;
+}
+
+test.use({ viewport: { width: 1360, height: 900 } });
+
+const RUN = Date.now().toString(36);
+const unique = (label: string) =>
+  `${label} ${RUN}-${Math.random().toString(36).slice(2, 6)}`;
+
+async function signInAsDev(page: Page, fixture: Fixture) {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.addInitScript(
+    ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+    [fixture.nsecs.dev],
+  );
+  return errors;
+}
+
+const postCard = (page: Page, text: string) =>
+  page.getByTestId("social-post").filter({ hasText: text }).first();
+
+/**
+ * What the page sends and hears about follow lists (kind 3) and profiles (kind 0), plus relay answers and errors, as
+ * short lines with the time since this call. The mention list is built from exactly these, so the lines are printed
+ * when it does not appear. The returned array fills as frames pass.
+ */
+function traceFollowAndProfileFrames(page: Page): string[] {
+  const trace: string[] = [];
+  const started = Date.now();
+  page.on("websocket", (socket) => {
+    const note = (dir: string, raw: string | Buffer) => {
+      const text = typeof raw === "string" ? raw : raw.toString();
+      let line: string | null = null;
+      try {
+        const frame = JSON.parse(text);
+        if (frame[0] === "REQ") {
+          const kinds = (frame.slice(2) as { kinds?: number[] }[]).flatMap(
+            (f) => f.kinds ?? [],
+          );
+          if (kinds.includes(0) || kinds.includes(3))
+            line = `REQ ${String(frame[1]).slice(0, 12)} ${text.slice(0, 160)}`;
+        } else if (frame[0] === "EVENT") {
+          const event = frame[2] ?? frame[1];
+          if (event?.kind === 0 || event?.kind === 3)
+            line = `EVENT kind ${event.kind} by ${String(event.pubkey).slice(0, 8)} created_at=${event.created_at}${
+              event.kind === 3
+                ? ` p=${(event.tags as string[][]).filter((t) => t[0] === "p").length}`
+                : ""
+            }`;
+        } else if (
+          ["EOSE", "CLOSED", "NOTICE", "AUTH", "OK"].includes(frame[0])
+        )
+          line = text.slice(0, 160);
+      } catch {
+        // not JSON: not a Nostr frame
+      }
+      if (line)
+        trace.push(
+          `+${Date.now() - started}ms ${dir} ${socket.url().replace(/^wss?:\/\//, "")} ${line}`,
+        );
+    };
+    socket.on("framesent", (f) => note("->", f.payload));
+    socket.on("framereceived", (f) => note("<-", f.payload));
+  });
+  return trace;
+}
+
+/** The feed pages as you scroll; an old seeded post may be several pages down. */
+async function scrollUntilVisible(page: Page, text: string) {
+  for (let i = 0; i < 25; i += 1) {
+    if (await postCard(page, text).isVisible()) return;
+    await page.getByTestId("social-shell").evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    await page.waitForTimeout(400);
+  }
+}
+
+test("the Creaton feed shows every post on the relay, including reposts", async ({
+  page,
+}) => {
+  const fixture = fixtureOrSkip();
+  const errors = await signInAsDev(page, fixture);
+  await page.goto("/social");
+  await expect(page.getByTestId("social-shell")).toBeVisible({
+    timeout: 20_000,
+  });
+  for (const text of [
+    "Shipping the first Creaton social feed today.",
+    "Maintainer life: 40 open issues",
+    "Testing the Creaton feed from a real relay.",
+  ]) {
+    await scrollUntilVisible(page, text);
+    await expect(postCard(page, text)).toBeVisible({ timeout: 20_000 });
+  }
+  // Carol's repost of Alice's launch post shows who reposted it.
+  await expect(page.getByTestId("social-reposted-by").first()).toContainText(
+    "Carol Coder reposted",
+  );
+  // A reply is not a top-level post, so it is not in the main timeline.
+  await expect(postCard(page, "Congrats Alice, this looks great!")).toHaveCount(
+    0,
+  );
+  expect(errors, errors.join(" | ")).toEqual([]);
+});
+
+test("Following shows the people you follow and nobody else", async ({
+  page,
+}) => {
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  await page.goto("/social");
+  await page.getByTestId("social-tab-following").click();
+  // Dev follows Alice (and sees their own posts). The seeded posts may be a few
+  // pages down once earlier runs have added more.
+  await scrollUntilVisible(
+    page,
+    "Shipping the first Creaton social feed today.",
+  );
+  await scrollUntilVisible(page, "Testing the Creaton feed from a real relay.");
+  await expect(
+    postCard(page, "Shipping the first Creaton social feed today."),
+  ).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(
+    postCard(page, "Testing the Creaton feed from a real relay."),
+  ).toBeVisible();
+  // Carol's post and Bob's mention are not from anyone Dev follows.
+  await expect(postCard(page, "Maintainer life: 40 open issues")).toHaveCount(
+    0,
+  );
+  await expect(postCard(page, "want to review this?")).toHaveCount(0);
+});
+
+test("a post with a hashtag and a mention is stored with the right tags and findable", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const errors = await signInAsDev(page, fixture);
+  const trace = traceFollowAndProfileFrames(page);
+  await page.goto("/social");
+  const tag = `tag${RUN}`;
+  const input = page.getByTestId("social-composer-input");
+  await input.click();
+  await input.pressSequentially("hello @Alic");
+  // Mentions autocomplete from the people you follow.
+  const option = page.getByRole("option", { name: /Alice Archer/ });
+  try {
+    await expect(option).toBeVisible({ timeout: 15_000 });
+  } catch (error) {
+    // The list needs Dev's follow list (kind 3) and the followed people's profiles (kind 0). Print what the page asked
+    // for and heard, what the server holds for Dev, and what the box and list show, so a CI failure names its cause.
+    const listed = await page
+      .getByRole("option")
+      .allTextContents()
+      .catch(() => []);
+    const typed = await input.inputValue().catch(() => "?");
+    const serverFollows = (
+      (await readAs("dev", {
+        kinds: [3],
+        authors: [fixture.people.dev],
+      }).catch(() => [])) as { created_at: number; tags: string[][] }[]
+    )
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, 1)
+      .map((e) => e.tags.filter((t) => t[0] === "p").map((t) => t[1]));
+    console.log(
+      [
+        `mention list trace (alice=${fixture.people.alice.slice(0, 8)} dev=${fixture.people.dev.slice(0, 8)}):`,
+        ...trace,
+        `box: ${JSON.stringify(typed)}`,
+        `options shown: ${JSON.stringify(listed)}`,
+        `server follow list of dev (newest): ${JSON.stringify(serverFollows)}`,
+        `page errors: ${JSON.stringify(errors)}`,
+      ].join("\n"),
+    );
+    throw error;
+  }
+  await option.click();
+  await input.pressSequentially(`welcome to #${tag}`);
+  await page.getByTestId("social-composer-submit").click();
+
+  await expect(postCard(page, `#${tag}`)).toBeVisible({ timeout: 20_000 });
+
+  const stored = await waitForEvents("dev", {
+    kinds: [1],
+    authors: [fixture.people.dev],
+    "#t": [tag],
+  });
+  expect(stored[0].tags).toEqual(
+    expect.arrayContaining([
+      ["t", tag],
+      ["p", fixture.people.alice],
+    ]),
+  );
+  expect(stored[0].content).toContain("nostr:npub1");
+
+  // It survives a reload and is on the hashtag page.
+  await page.goto(`/social/tag/${tag}`);
+  await expect(postCard(page, `#${tag}`)).toBeVisible({ timeout: 20_000 });
+  // The mention renders as the person's name, linked to their profile.
+  await expect(
+    postCard(page, `#${tag}`).getByRole("link", { name: "@Alice Archer" }),
+  ).toBeVisible();
+});
+
+test("an up vote is stored and still shown after a reload", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const text = unique("like me");
+  const note = await post("carol", { kind: 1, tags: [], content: text });
+  await signInAsDev(page, fixture);
+  await page.goto("/social");
+  const card = postCard(page, text);
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await card.getByTestId("social-vote-up").click();
+  await expect(card.getByTestId("social-vote-up")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  const likes = await waitForEvents("dev", {
+    kinds: [7],
+    authors: [fixture.people.dev],
+    "#e": [note.id],
+  });
+  expect(likes[0].content).toBe("+");
+  expect(likes[0].tags).toEqual(
+    expect.arrayContaining([
+      ["e", note.id],
+      ["p", fixture.people.carol],
+    ]),
+  );
+
+  await page.reload();
+  const again = postCard(page, text);
+  await expect(again.getByTestId("social-vote-up")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+    { timeout: 20_000 },
+  );
+  await expect(again.getByTestId("social-vote-score")).toContainText("1");
+});
+
+test("replying from the thread page stores NIP-10 reply tags and shows the conversation", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const rootText = unique("thread root");
+  const root = await post("alice", { kind: 1, tags: [], content: rootText });
+  await signInAsDev(page, fixture);
+  await page.goto(`/social/post/${root.id}`);
+  await expect(postCard(page, rootText)).toBeVisible({ timeout: 20_000 });
+
+  const reply = unique("my reply");
+  await page.getByTestId("social-reply-composer-input").fill(reply);
+  await page.getByTestId("social-reply-composer-submit").click();
+  await expect(postCard(page, reply)).toBeVisible({ timeout: 20_000 });
+
+  const stored = await waitForEvents("dev", {
+    kinds: [1],
+    authors: [fixture.people.dev],
+    "#e": [root.id],
+  });
+  expect(stored[0].tags).toEqual(
+    expect.arrayContaining([
+      ["e", root.id, "", "root"],
+      ["p", fixture.people.alice],
+    ]),
+  );
+
+  await page.reload();
+  await expect(postCard(page, reply)).toBeVisible({ timeout: 20_000 });
+  // Opening the reply shows the post above it.
+  await page.goto(`/social/post/${(stored[0] as { id: string }).id}`);
+  await expect(postCard(page, rootText)).toBeVisible({ timeout: 20_000 });
+  await expect(postCard(page, reply)).toBeVisible();
+});
+
+test("a repost shows on your timeline and can be undone", async ({ page }) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const text = unique("repost me");
+  const note = await post("bob", { kind: 1, tags: [], content: text });
+  await signInAsDev(page, fixture);
+  await page.goto("/social");
+  const card = postCard(page, text);
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await card.getByTestId("social-repost").click();
+  await card.getByTestId("social-repost-confirm").click();
+
+  const reposts = await waitForEvents("dev", {
+    kinds: [6],
+    authors: [fixture.people.dev],
+    "#e": [note.id],
+  });
+  expect(reposts[0].tags).toEqual(
+    expect.arrayContaining([
+      ["e", note.id],
+      ["p", fixture.people.bob],
+    ]),
+  );
+  // The original is embedded so other clients can show it without a lookup.
+  expect(JSON.parse(reposts[0].content).id).toBe(note.id);
+
+  await page.goto("/social");
+  await expect(
+    page
+      .getByTestId("social-post")
+      .filter({ hasText: text })
+      .first()
+      .getByTestId("social-reposted-by"),
+  ).toContainText("You reposted", { timeout: 20_000 });
+
+  // Undo: the repost is deleted from the relay and the marker goes away.
+  const row = postCard(page, text);
+  await row.getByTestId("social-repost").click();
+  await expect(row.getByTestId("social-repost-confirm")).toContainText(
+    "Undo repost",
+  );
+  await row.getByTestId("social-repost-confirm").click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await readAs("dev", {
+            kinds: [6],
+            authors: [fixture.people.dev],
+            "#e": [note.id],
+          })
+        ).length,
+      {
+        timeout: 20_000,
+      },
+    )
+    .toBe(0);
+});
+
+test("a quote post carries a q tag and shows the quoted post as a card", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const original = unique("quote this");
+  const note = await post("carol", { kind: 1, tags: [], content: original });
+  await signInAsDev(page, fixture);
+  await page.goto("/social");
+  const card = postCard(page, original);
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await card.getByTestId("social-repost").click();
+  await card.getByTestId("social-quote").click();
+
+  const comment = unique("my take");
+  await page.getByTestId("social-quote-composer-input").fill(comment);
+  await page.getByTestId("social-quote-composer-submit").click();
+
+  const stored = await waitForEvents("dev", {
+    kinds: [1],
+    authors: [fixture.people.dev],
+    "#q": [note.id],
+  });
+  expect(stored[0].tags).toEqual(
+    expect.arrayContaining([["q", note.id, "", fixture.people.carol]]),
+  );
+  expect(stored[0].content).toContain("nostr:nevent1");
+
+  await page.goto("/social");
+  const quote = postCard(page, comment);
+  await expect(quote).toBeVisible({ timeout: 20_000 });
+  await expect(quote.getByTestId("social-quote-card")).toContainText(original);
+});
+
+test("bookmarks are private: stored encrypted, listed after a reload", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const text = unique("save me");
+  const note = await post("alice", { kind: 1, tags: [], content: text });
+  await signInAsDev(page, fixture);
+  await page.goto("/social");
+  const card = postCard(page, text);
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await card.getByTestId("social-bookmark").click();
+  await expect(card.getByTestId("social-bookmark")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  const [list] = await waitForEvents("dev", {
+    kinds: [10003],
+    authors: [fixture.people.dev],
+  });
+  // Nothing in the public tags or plain content reveals what was saved...
+  expect(JSON.stringify(list.tags)).not.toContain(note.id);
+  expect(list.content).not.toContain(note.id);
+  expect(list.content.length).toBeGreaterThan(0);
+  // ...but the owner can read it.
+  const key = keyFromHex(fixture.nsecs.dev);
+  const private_ = nip44.decrypt(
+    list.content,
+    nip44.getConversationKey(key, getPublicKey(key)),
+  );
+  expect(private_).toContain(note.id);
+
+  await page.goto("/social/bookmarks");
+  await expect(postCard(page, text)).toBeVisible({ timeout: 20_000 });
+});
+
+test("notifications list up votes, replies, mentions and follows with an unread badge", async ({
+  page,
+}) => {
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  await page.goto("/social");
+  await expect(page.getByTestId("social-unread").first()).toBeVisible({
+    timeout: 20_000,
+  });
+
+  await page.goto("/social/notifications");
+  const kinds = page.getByTestId("social-notification");
+  await expect(kinds.first()).toBeVisible({ timeout: 20_000 });
+  // Rows fill in as the posts and profiles they mention arrive.
+  const shell = page.getByTestId("social-shell");
+  // A like is an up vote since D71.
+  await expect(shell).toContainText("upvoted your post", { timeout: 20_000 });
+  await expect(shell).toContainText("replied to you", { timeout: 20_000 });
+  await expect(shell).toContainText("mentioned you", { timeout: 20_000 });
+  await expect(shell).toContainText("followed you", { timeout: 20_000 });
+  // Up votes on the same post collapse into one row.
+  await expect(page.locator('[data-kind="like"]')).toHaveCount(1);
+  await expect(page.locator('[data-kind="like"]')).toContainText("and 1 other");
+
+  // Viewing them clears the badge, and it stays cleared after a reload.
+  await page.goto("/social");
+  await expect(page.getByTestId("social-unread")).toHaveCount(0, {
+    timeout: 20_000,
+  });
+});
+
+test("Explore surfaces trending posts, people to follow and hashtags", async ({
+  page,
+}) => {
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  await page.goto("/social/explore");
+  // Alice's first post has the most likes and replies.
+  await expect(
+    postCard(page, "Shipping the first Creaton social feed today."),
+  ).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.getByTestId("social-tab-people").click();
+  await expect(page.getByTestId("social-people-list")).toContainText(
+    "Carol Coder",
+  );
+  await page.getByTestId("social-tab-hashtags").click();
+  await expect(page.getByTestId("social-hashtag-list")).toContainText(
+    "#creaton",
+  );
+});
+
+test("search finds people by name and recent posts by text", async ({
+  page,
+}) => {
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  await page.goto("/social/search?q=whiteboard");
+  await expect(postCard(page, "A picture of the whiteboard")).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.goto("/social/search?q=Archer");
+  await page.getByTestId("social-tab-people").click();
+  await expect(page.getByTestId("social-search-people")).toContainText(
+    "Alice Archer",
+    {
+      timeout: 20_000,
+    },
+  );
+});
+
+test("a profile shows counts and tabs; following and unfollowing is stored", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  await page.goto(`/u/${fixture.people.carol}`);
+  await expect(
+    page.getByRole("heading", { name: "Carol Coder" }).first(),
+  ).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("profile-followers-count")).toContainText("1");
+  await expect(page.getByTestId("profile-following-count")).toContainText("2");
+
+  // Follow Carol: the relay's newest contact list for Dev now has her, and keeps Alice.
+  await page.getByTestId("profile-follow").click();
+  await expect
+    .poll(
+      async () => {
+        const lists = await readAs("dev", {
+          kinds: [3],
+          authors: [fixture.people.dev],
+        });
+        const newest = lists.sort(
+          (a: { created_at: number }, b: { created_at: number }) =>
+            b.created_at - a.created_at,
+        )[0];
+        return newest?.tags.map((t: string[]) => t[1]).sort();
+      },
+      { timeout: 20_000 },
+    )
+    .toEqual([fixture.people.alice, fixture.people.carol].sort());
+
+  // Unfollow: back to only Alice (keeps the fixture clean for other tests).
+  await expect(page.getByTestId("profile-follow")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByTestId("profile-follow").click();
+  await expect
+    .poll(
+      async () => {
+        const lists = await readAs("dev", {
+          kinds: [3],
+          authors: [fixture.people.dev],
+        });
+        const newest = lists.sort(
+          (a: { created_at: number }, b: { created_at: number }) =>
+            b.created_at - a.created_at,
+        )[0];
+        return newest?.tags.map((t: string[]) => t[1]);
+      },
+      { timeout: 20_000 },
+    )
+    .toEqual([fixture.people.alice]);
+
+  for (const tab of ["replies", "media", "likes"]) {
+    await page.getByTestId(`social-tab-${tab}`).click();
+  }
+  await page.getByTestId("social-tab-posts").click();
+  await expect(postCard(page, "Maintainer life: 40 open issues")).toBeVisible({
+    timeout: 20_000,
+  });
+});
+
+test("editing your profile keeps the fields the form does not show", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  // A field the form has no input for must survive an edit.
+  await post("dev", {
+    kind: 0,
+    tags: [],
+    content: JSON.stringify({
+      name: "dev",
+      display_name: "Dev Tester",
+      about: "before",
+      lud16: "dev@example.com",
+    }),
+  });
+  await signInAsDev(page, fixture);
+  await page.goto(`/u/${fixture.people.dev}`);
+  await page.getByTestId("profile-edit").click();
+  const about = unique("about me");
+  await page.getByLabel("Bio").fill(about);
+  await page.getByTestId("social-edit-profile-save").click();
+
+  await expect
+    .poll(
+      async () => {
+        const events = await readAs("dev", {
+          kinds: [0],
+          authors: [fixture.people.dev],
+        });
+        const newest = events.sort(
+          (a: { created_at: number }, b: { created_at: number }) =>
+            b.created_at - a.created_at,
+        )[0];
+        return newest ? JSON.parse(newest.content) : null;
+      },
+      { timeout: 20_000 },
+    )
+    .toMatchObject({
+      about,
+      lud16: "dev@example.com",
+      display_name: "Dev Tester",
+    });
+
+  await page.reload();
+  // `getByText` also matches a textarea's value, so read rendered text instead.
+  await expect
+    .poll(() => page.getByTestId("social-shell").innerText(), {
+      timeout: 20_000,
+    })
+    .toContain(about);
+});
+
+test("muting someone hides their posts from your timelines", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const text = unique("mute test");
+  await post("carol", { kind: 1, tags: [], content: text });
+  await signInAsDev(page, fixture);
+  await page.goto("/social");
+  await expect(postCard(page, text)).toBeVisible({ timeout: 20_000 });
+
+  await page.goto(`/u/${fixture.people.carol}`);
+  await page.getByTestId("profile-mute").click();
+  // Wait for the relay to hold a new, private mute list: written encrypted to dev, with no public tag naming Carol.
+  const newestMuteList = async () => {
+    const lists = await readAs("dev", {
+      kinds: [10000],
+      authors: [fixture.people.dev],
+    });
+    return lists.sort(
+      (a: { created_at: number }, b: { created_at: number }) =>
+        b.created_at - a.created_at,
+    )[0] as { id: string; content: string; tags: string[][] } | undefined;
+  };
+  let mutedListId = "";
+  await expect
+    .poll(
+      async () => {
+        const newest = await newestMuteList();
+        if (
+          !newest ||
+          newest.content === "" ||
+          newest.tags.some((t) => t[1] === fixture.people.carol)
+        )
+          return false;
+        mutedListId = newest.id;
+        return true;
+      },
+      { timeout: 20_000 },
+    )
+    .toBe(true);
+
+  await page.goto("/social");
+  await expect(page.getByTestId("social-post-list")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(postCard(page, text)).toHaveCount(0);
+
+  // Unmute so later runs see Carol again — and wait for the relay to hold it,
+  // because leaving the page first would abandon the write.
+  await page.goto(`/u/${fixture.people.carol}`);
+  await page.getByTestId("profile-mute").click();
+  // A newer list replaced the one that muted her (its contents are private, so the page below shows the result).
+  await expect
+    .poll(async () => (await newestMuteList())?.id !== mutedListId, {
+      timeout: 20_000,
+    })
+    .toBe(true);
+  await page.goto("/social");
+  await expect(postCard(page, text)).toBeVisible({ timeout: 20_000 });
+});
+
+test("direct messages are end-to-end encrypted and readable by another client", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  await page.goto("/social/messages");
+  // The seeded encrypted message from Alice is opened in the browser. (Earlier
+  // runs may have added replies, so look in the thread, not the list preview.)
+  await expect(page.getByTestId("social-conversation").first()).toContainText(
+    "Alice Archer",
+    { timeout: 20_000 },
+  );
+  await page.getByTestId("social-conversation").first().click();
+  await expect(
+    page
+      .getByTestId("social-message")
+      .filter({ hasText: "this message is end-to-end encrypted" }),
+  ).toBeVisible({ timeout: 20_000 });
+
+  const reply = unique("pong");
+  await page.getByTestId("social-message-input").fill(reply);
+  await page.getByTestId("social-message-send").click();
+  await expect(
+    page.getByTestId("social-message").filter({ hasText: reply }),
+  ).toBeVisible({ timeout: 20_000 });
+
+  // What the relay stored for Alice is a gift wrap from a throwaway key — it never
+  // names Dev, and the text is not in it...
+  const wraps = (await waitForEvents(
+    "alice",
+    { kinds: [1059], "#p": [fixture.people.alice] },
+    2,
+  )) as {
+    id: string;
+    pubkey: string;
+    kind: number;
+    content: string;
+    tags: string[][];
+    created_at: number;
+    sig: string;
+  }[];
+  for (const wrap of wraps) {
+    expect(wrap.pubkey).not.toBe(fixture.people.dev);
+    expect(wrap.content).not.toContain(reply);
+  }
+  // ...but Alice (any NIP-17 client holding her key) can open it.
+  const aliceKey = keyFromHex(fixture.nsecs.alice);
+  const aliceSigner = {
+    pubkey: fixture.people.alice,
+    sign: async (t: object) =>
+      finalizeEvent(
+        {
+          created_at: Math.floor(Date.now() / 1000),
+          ...(t as { kind: number; tags: string[][]; content: string }),
+        },
+        aliceKey,
+      ),
+    encrypt: async (peer: string, text: string) =>
+      nip44.encrypt(text, nip44.getConversationKey(aliceKey, peer)),
+    decrypt: async (peer: string, text: string) =>
+      nip44.decrypt(text, nip44.getConversationKey(aliceKey, peer)),
+  };
+  const opened = (
+    await Promise.all(wraps.map((w) => openGiftWrap(aliceSigner, w as never)))
+  ).filter(Boolean);
+  expect(opened.map((m) => m?.content)).toContain(reply);
+
+  await page.reload();
+  await expect(
+    page.getByTestId("social-message").filter({ hasText: reply }),
+  ).toBeVisible({ timeout: 20_000 });
+});
+
+const LAUNCH_LABEL = ["l", "launch-update", "creaton.launch"];
+
+test("launch mode: the team's update is stored as a normal note, marked and shown as a launch update; a stranger's mark does nothing", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  const quartz = `37001:${fixture.people.dev}:quartz-hardware`;
+  const nebula = `37001:${fixture.people.alice}:nebula-dao`;
+
+  // A stranger copies the label onto a post about Alice's launch…
+  const fake = unique("fake update");
+  await post("bob", {
+    kind: 1,
+    tags: [["a", nebula], LAUNCH_LABEL],
+    content: fake,
+  });
+
+  await page.goto("/social");
+  await expect(page.getByTestId("social-composer-launch-mode")).toBeVisible({
+    timeout: 20_000,
+  });
+  const text = unique("Quartz batch two ships");
+  await page.getByTestId("social-composer-input").fill(text);
+  await page.getByTestId("social-composer-launch-mode").check();
+  // The team has more than one launch by now (other tests start their own), so
+  // pick the one this test is about instead of trusting the default.
+  const pick = page.getByTestId("social-composer-launch-pick");
+  if (await pick.isVisible()) {
+    await pick.selectOption({ value: `${fixture.people.dev}:quartz-hardware` });
+  }
+  await page.getByTestId("social-composer-submit").click();
+
+  // What the relay stored is a plain kind 1 note naming the launch + the label.
+  let stored: { kind: number; tags: string[][]; content: string } | undefined;
+  for (let i = 0; i < 30 && !stored; i += 1) {
+    const mine = await readAs("dev", {
+      kinds: [1],
+      authors: [fixture.people.dev],
+      limit: 30,
+    });
+    stored = mine.find((e: { content: string }) => e.content.includes(text));
+    if (!stored) await new Promise((r) => setTimeout(r, 500));
+  }
+  if (!stored) throw new Error("the relay never stored the launch update");
+  expect(stored.kind).toBe(1);
+  expect(stored.tags).toContainEqual(["a", quartz]);
+  expect(stored.tags).toContainEqual(LAUNCH_LABEL);
+
+  const card = postCard(page, text);
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await expect(card.getByTestId("social-launch-update")).toBeVisible();
+  // …and the stranger's marked post is not an update, wherever it shows.
+  await expect(
+    postCard(page, fake).getByTestId("social-launch-update"),
+  ).toHaveCount(0);
+});
+
+test("a priority update from a launch you follow lands in notifications, and can be turned off", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  // A launch of its own per run: priority updates are rationed per launch per
+  // week, so reusing one would stop being priority after a few runs.
+  const launchId = `nebula-${RUN}`;
+  const nebula = `37001:${fixture.people.alice}:${launchId}`;
+  await post("alice", {
+    kind: 37001,
+    tags: [
+      ["d", launchId],
+      ["name", `Nebula ${RUN}`],
+      ["t", "dao-launchpad"],
+      ["admission", "curated"],
+    ],
+    content: JSON.stringify({
+      pitch: "A fresh launch for this run.",
+      stage: "funding",
+    }),
+  });
+
+  // Dev follows Nebula (a bookmark-list `a` tag, keeping what is already there).
+  const lists = await readAs("dev", {
+    kinds: [10003],
+    authors: [fixture.people.dev],
+    limit: 5,
+  });
+  const current = lists.sort(
+    (a: { created_at: number }, b: { created_at: number }) =>
+      b.created_at - a.created_at,
+  )[0];
+  const tags: string[][] = current?.tags ?? [];
+  if (!tags.some((t) => t[0] === "a" && t[1] === nebula)) {
+    await post("dev", {
+      kind: 10003,
+      created_at: Math.max(
+        Math.floor(Date.now() / 1000),
+        (current?.created_at ?? 0) + 1,
+      ),
+      tags: [...tags, ["a", nebula]],
+      content: current?.content ?? "",
+    });
+  }
+
+  // Alice, the founder, posts an official update.
+  const text = unique("Nebula beta is open");
+  await post("alice", {
+    kind: 1,
+    tags: [["a", nebula], LAUNCH_LABEL],
+    content: text,
+  });
+
+  await page.goto("/social/notifications");
+  const section = page.getByTestId("social-launch-updates");
+  await expect(section).toContainText(text, { timeout: 30_000 });
+  await expect(
+    section.getByTestId("social-launch-update").first(),
+  ).toBeVisible();
+
+  // Turning the launch's priority updates off removes them without unfollowing.
+  await section.getByTestId("social-launch-update-mute").first().click();
+  await expect(page.getByTestId("social-launch-updates")).toHaveCount(0);
+});
+
+test("you can delete your own post; other people's posts have no delete button", async ({
+  page,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  await signInAsDev(page, fixture);
+  const mine = unique("delete me");
+  const theirs = unique("not mine");
+  await post("carol", { kind: 1, tags: [], content: theirs });
+
+  await page.goto("/social");
+  await page.getByTestId("social-composer-input").fill(mine);
+  await page.getByTestId("social-composer-submit").click();
+  const card = postCard(page, mine);
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await expect(postCard(page, theirs)).toBeVisible({ timeout: 20_000 });
+  await expect(postCard(page, theirs).getByTestId("social-delete")).toHaveCount(
+    0,
+  );
+
+  const stored = await waitForEvents("dev", {
+    kinds: [1],
+    authors: [fixture.people.dev],
+    limit: 50,
+  });
+  const event = stored.find((e: { content: string }) => e.content === mine);
+  expect(event).toBeTruthy();
+
+  await card.getByTestId("social-delete").click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(postCard(page, mine)).toHaveCount(0);
+
+  // The relay honoured the NIP-09 request: the note is gone for everyone.
+  for (let i = 0; i < 20; i += 1) {
+    const left = await readAs("carol", { ids: [event.id], kinds: [1] });
+    if (left.length === 0) return;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error("the relay still serves the deleted post");
+});
+
+const BASE_URL = process.env.BUZZ_REAL_RELAY_URL ?? "http://localhost:3199";
+
+/**
+ * The hosted build is contributor-only (its Dockerfile sets VITE_CONTRIBUTOR_ONLY=1): it runs no sales, so the tests that
+ * need a sale and its gated backers room are left out when the suite runs as the pilot server does (`HOSTED=1
+ * scripts/web-social-e2e.sh` passes SOCIAL_HOSTED=1). Ideas and their supporters room are open there, so that test
+ * runs and only its sale-button checks are left out.
+ */
+const CONTRIBUTOR_ONLY = process.env.SOCIAL_HOSTED === "1";
+const NO_SALE_PATH =
+  "the hosted build is contributor-only and runs no sales (SOCIAL_HOSTED=1)";
+
+test("an idea starts in one step with an open supporters room, and a supporter joins in one click", async ({
+  page,
+  browser,
+}) => {
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const errors = await signInAsDev(page, fixture);
+  const name = `Idea ${RUN}`;
+  if (CONTRIBUTOR_ONLY) {
+    // The contributor-only build lists ideas on Discover: `/launchpad` leads there, and `?start=idea` opens the dialog.
+    await page.goto("/launchpad?start=idea");
+  } else {
+    await page.goto("/launchpad");
+    await page.getByTestId("start-idea").first().click();
+  }
+  await page.getByTestId("idea-name").fill(name);
+  await page.getByTestId("idea-pitch").fill("A thing worth talking about.");
+  await page.getByTestId("idea-create").click();
+
+  // Straight onto the page they just made, as an idea, with their checklist.
+  await expect(page.getByTestId("launch-idea-badge")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("idea-progress")).toBeVisible();
+  const launchId = new URL(page.url()).pathname.split("/").pop() as string;
+
+  // The record carries no money and no chain, and names the two rooms.
+  const stored = await waitForEvents("dev", {
+    kinds: [37001],
+    authors: [fixture.people.dev],
+    "#d": [launchId],
+  });
+  const record = stored.sort(
+    (a: { created_at: number }, b: { created_at: number }) =>
+      b.created_at - a.created_at,
+  )[0];
+  const body = JSON.parse(record.content);
+  expect(body.requiredRaised).toBeUndefined();
+  expect(body.floorPrice).toBeUndefined();
+  expect(body.tokenPlan).toBeUndefined();
+  expect(record.tags.some((t: string[]) => t[0] === "chain")).toBe(false);
+  const chat = body.chat as {
+    team: string;
+    supporters: string;
+    backers?: string;
+  };
+  expect(chat.team).toMatch(/^[0-9a-f-]{36}$/);
+  expect(chat.supporters).toMatch(/^[0-9a-f-]{36}$/);
+  expect(chat.backers).toBeUndefined();
+
+  // The supporters room is open: anyone can see it. The team room is not.
+  expect(
+    await readAs("alice", { kinds: [39000], "#d": [chat.supporters] }),
+  ).toHaveLength(1);
+  expect(
+    await readAs("alice", { kinds: [39000], "#d": [chat.team] }),
+  ).toHaveLength(0);
+
+  // An idea's page is quiet: no empty money tabs, and a plain "what happens next".
+  await expect(page.getByTestId("idea-overview")).toBeVisible();
+  await expect(page.getByRole("tab", { name: /Proposals/ })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Treasury" })).toHaveCount(0);
+
+  // The announcement is written for them; posting it ticks the step off.
+  await page.getByTestId("idea-announce").click();
+  await expect(page.getByTestId("idea-share-input")).toHaveValue(
+    new RegExp(`starting ${name}`),
+  );
+  await page.getByTestId("idea-share-submit").click();
+  await expect(page.getByTestId("idea-announce")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+
+  // The Ideas filter finds it (on Discover in the contributor-only build).
+  if (CONTRIBUTOR_ONLY) {
+    await page.goto("/discover");
+    await page.getByTestId("discover-filter-ideas").click();
+  } else {
+    await page.goto("/launchpad");
+    await page.getByTestId("launch-filter-ideas").click();
+  }
+  await expect(
+    page
+      .getByTestId(CONTRIBUTOR_ONLY ? "discover-launch" : "launch-card-title")
+      .filter({ hasText: name }),
+  ).toBeVisible({ timeout: 30_000 });
+  await page.goto(`/launchpad/${launchId}?author=${fixture.people.dev}`);
+  await expect(page.getByTestId("idea-progress")).toBeVisible();
+
+  // Until ten people show up, the sale is not the next step (but can be skipped). The contributor-only build runs no
+  // sales, so there these buttons are not checked.
+  if (!CONTRIBUTOR_ONLY) {
+    await expect(page.getByTestId("idea-prepare-sale")).toBeDisabled();
+    await expect(page.getByTestId("idea-prepare-anyway")).toBeVisible();
+  }
+
+  // Alice, in her own browser, backs it with one click.
+  const aliceContext = await browser.newContext({
+    viewport: { width: 1360, height: 900 },
+  });
+  try {
+    await aliceContext.addInitScript(
+      ([nsec]) => window.localStorage.setItem("buzz.identity.nsec", nsec),
+      [fixture.nsecs.alice],
+    );
+    const alice = await aliceContext.newPage();
+    await alice.goto(
+      `${BASE_URL}/launchpad/${launchId}?author=${fixture.people.dev}`,
+    );
+    await expect(alice.getByTestId("launch-idea-badge")).toBeVisible({
+      timeout: 30_000,
+    });
+    // She is not a backer, so there is no gated room to be locked out of yet.
+    await alice.getByTestId("launch-back-idea").click();
+    await expect(alice.getByTestId("launch-back-idea")).toContainText(
+      "Following",
+      {
+        timeout: 30_000,
+      },
+    );
+
+    // She follows it (the supporter signal) and is now in the supporters room.
+    const lists = await waitForEvents("alice", {
+      kinds: [10003],
+      authors: [fixture.people.alice],
+    });
+    const newest = lists.sort(
+      (a: { created_at: number }, b: { created_at: number }) =>
+        b.created_at - a.created_at,
+    )[0];
+    expect(newest.tags).toContainEqual([
+      "a",
+      `37001:${fixture.people.dev}:${launchId}`,
+    ]);
+    for (let i = 0; i < 30; i += 1) {
+      const members = await readAs("dev", {
+        kinds: [39002],
+        "#d": [chat.supporters],
+      });
+      if (
+        members.some((event: { tags: string[][] }) =>
+          event.tags.some((t) => t[0] === "p" && t[1] === fixture.people.alice),
+        )
+      )
+        break;
+      if (i === 29) throw new Error("alice never joined the supporters room");
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    await alice.reload();
+    await expect(alice.getByTestId("launch-chat-open-supporters")).toBeVisible({
+      timeout: 30_000,
+    });
+  } finally {
+    await aliceContext.close();
+  }
+
+  // The founder is told, without opening the launch: it is in notifications.
+  await page.goto("/social/notifications");
+  await expect(
+    page.getByTestId("your-launches-supporters").first(),
+  ).toContainText("new supporter", { timeout: 30_000 });
+  await expect(page.getByTestId("your-launches")).toContainText(name);
+
+  // Opening the launch shows the count, and counts as having seen them.
+  await page.goto(`/launchpad/${launchId}?author=${fixture.people.dev}`);
+  await expect(page.getByTestId("launch-supporters")).toContainText(
+    "1 supporter",
+    { timeout: 30_000 },
+  );
+  await expect(page.getByTestId("idea-supporters")).toContainText("1 of 10");
+  expect(errors, errors.join(" | ")).toEqual([]);
+});
+
+test("launch chat: the gated backers room admits a backer with one click", async ({
+  page,
+}) => {
+  test.skip(CONTRIBUTOR_ONLY, NO_SALE_PATH);
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const errors = await signInAsDev(page, fixture);
+  // A launch with sale terms (so it is more than an idea), published without rooms.
+  const launchId = `chat-${RUN}`;
+  await post("dev", {
+    kind: 37001,
+    tags: [
+      ["d", launchId],
+      ["name", `Chat launch ${RUN}`],
+      ["t", "dao-launchpad"],
+      ["admission", "curated"],
+    ],
+    content: JSON.stringify({
+      pitch: "A launch to talk about.",
+      stage: "funding",
+      floorPrice: "792281625140000",
+      requiredRaised: "299999999998",
+    }),
+  });
+
+  await page.goto(`/launchpad/${launchId}?author=${fixture.people.dev}`);
+  await page.getByTestId("launch-chat-create").click();
+  await expect(page.getByTestId("launch-chat-row-backers")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.getByTestId("launch-chat-open-backers")).toBeVisible();
+  await expect(page.getByTestId("launch-chat-open-team")).toBeVisible();
+  await expect(page.getByTestId("launch-chat-open-supporters")).toHaveCount(1);
+
+  // The record names all three rooms, and the relay holds them.
+  const stored = await waitForEvents("dev", {
+    kinds: [37001],
+    authors: [fixture.people.dev],
+    "#d": [launchId],
+  });
+  const record = stored.sort(
+    (a: { created_at: number }, b: { created_at: number }) =>
+      b.created_at - a.created_at,
+  )[0];
+  const chat = JSON.parse(record.content).chat as {
+    team: string;
+    supporters: string;
+    backers: string;
+  };
+  const bound = record.tags
+    .filter((t: string[]) => t[0] === "buzz-channel")
+    .map((t: string[]) => t[1]);
+  expect(bound.sort()).toEqual(
+    [chat.team, chat.supporters, chat.backers].sort(),
+  );
+
+  // Alice is not in the gated room or the team room, so she cannot see them.
+  for (const room of [chat.backers, chat.team]) {
+    expect(
+      await readAs("alice", { kinds: [39000], "#d": [room] }),
+    ).toHaveLength(0);
+  }
+
+  // She records a bid, and the founder sees her waiting.
+  await post("alice", {
+    kind: 47002,
+    tags: [
+      ["a", `37001:${fixture.people.dev}:${launchId}`],
+      ["m", "bucket-1"],
+    ],
+    content: JSON.stringify({ budget: "1000000" }),
+  });
+  await page.reload();
+  await expect(page.getByTestId("launch-chat-admit")).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.getByTestId("launch-chat-admit-button").click();
+  await expect(page.getByTestId("launch-chat-admit")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+
+  // The relay now lets her see the backers room, but still not the team room.
+  const after = await waitForEvents("alice", {
+    kinds: [39000],
+    "#d": [chat.backers],
+  });
+  expect(after).toHaveLength(1);
+  expect(
+    await readAs("alice", { kinds: [39000], "#d": [chat.team] }),
+  ).toHaveLength(0);
+  expect(errors, errors.join(" | ")).toEqual([]);
+});
+
+test("preparing the sale keeps the idea's rooms and adds the gated backers room", async ({
+  page,
+}) => {
+  test.skip(CONTRIBUTOR_ONLY, NO_SALE_PATH);
+  test.slow();
+  const fixture = fixtureOrSkip();
+  const errors = await signInAsDev(page, fixture);
+  await page.goto("/launchpad");
+  await page.getByTestId("start-idea").first().click();
+  await page.getByTestId("idea-name").fill(`Sale ${RUN}`);
+  await page.getByTestId("idea-pitch").fill("An idea that grows up to a sale.");
+  await page.getByTestId("idea-create").click();
+  await expect(page.getByTestId("idea-progress")).toBeVisible({
+    timeout: 30_000,
+  });
+  const launchId = new URL(page.url()).pathname.split("/").pop() as string;
+
+  const latest = async () => {
+    const events = await waitForEvents("dev", {
+      kinds: [37001],
+      authors: [fixture.people.dev],
+      "#d": [launchId],
+    });
+    return events.sort(
+      (a: { created_at: number }, b: { created_at: number }) =>
+        b.created_at - a.created_at,
+    )[0];
+  };
+  const before = JSON.parse((await latest()).content).chat as {
+    team: string;
+    supporters: string;
+  };
+
+  // Under the supporter nudge the sale can still be prepared, deliberately.
+  await page.getByTestId("idea-prepare-anyway").click();
+  // The sale starts as two choices; the rest is defaulted and listed.
+  await expect(page.getByTestId("quick-sale")).toBeVisible();
+  await expect(page.getByTestId("quick-defaults")).toContainText(
+    `Sale ${RUN} Token`,
+  );
+  await expect(page.getByTestId("quick-raise")).not.toHaveValue("");
+  // Customizing opens the full steps with the same values; Quick setup returns.
+  await page.getByTestId("quick-customize").click();
+  await expect(
+    page.locator('div[data-testid="wizard-step-token"]'),
+  ).toBeVisible();
+  await page.getByTestId("quick-back").click();
+  await expect(page.getByTestId("quick-sale")).toBeVisible();
+
+  await page.getByTestId("quick-raise").fill("50000");
+  await page.getByTestId("quick-duration-14d").click();
+  await page.getByRole("button", { name: /Publish launch/ }).click();
+
+  // The idea is now a sale: same record id, terms set, nothing else lost.
+  await expect(page.getByTestId("idea-progress")).toHaveCount(0, {
+    timeout: 30_000,
+  });
+  // The guidance does not vanish: the next steps (commitments first) take its place.
+  await expect(page.getByTestId("sale-progress")).toBeVisible();
+  await expect(page.getByTestId("sale-step-commitments")).toBeVisible();
+  await page.getByRole("tab", { name: /Manage/ }).click();
+  await expect(page.getByTestId("launch-readiness")).toBeVisible();
+  let record = await latest();
+  for (let i = 0; i < 30 && !JSON.parse(record.content).floorPrice; i += 1) {
+    await new Promise((r) => setTimeout(r, 500));
+    record = await latest();
+  }
+  const body = JSON.parse(record.content);
+  expect(body.floorPrice).toBeTruthy();
+  expect(body.requiredRaised).toBeTruthy();
+  expect(body.chat.team).toBe(before.team);
+  expect(body.chat.supporters).toBe(before.supporters);
+  expect(body.chat.backers).toMatch(/^[0-9a-f-]{36}$/);
+  const bound = record.tags
+    .filter((t: string[]) => t[0] === "buzz-channel")
+    .map((t: string[]) => t[1]);
+  expect(bound.sort()).toEqual(
+    [body.chat.team, body.chat.supporters, body.chat.backers].sort(),
+  );
+
+  // The backers room is gated: a stranger cannot see it.
+  expect(
+    await readAs("alice", { kinds: [39000], "#d": [body.chat.backers] }),
+  ).toHaveLength(0);
+  expect(errors, errors.join(" | ")).toEqual([]);
+});

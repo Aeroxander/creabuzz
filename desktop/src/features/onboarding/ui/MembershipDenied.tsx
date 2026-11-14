@@ -2,7 +2,8 @@ import * as React from "react";
 import { Check, Copy, KeyRound, ShieldX, Ticket } from "lucide-react";
 
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
-import { nsecToNpub, pubkeyToNpub } from "@/shared/lib/nostrUtils";
+import { nsecToNpub } from "@/shared/lib/nostrUtils";
+import { canonicalNpub, UNAVAILABLE_KEY_LABEL } from "@/shared/lib/pubkey";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
@@ -29,17 +30,14 @@ export function MembershipDenied({
   onRetry,
   pubkey,
 }: MembershipDeniedProps) {
-  const npub = React.useMemo(() => {
-    if (!pubkey) {
-      return "Unknown public key";
-    }
-
-    try {
-      return pubkeyToNpub(pubkey);
-    } catch {
-      return pubkey;
-    }
-  }, [pubkey]);
+  // Full canonical npub; an unencodable identity renders the neutral label
+  // (never raw hex) and is never copyable.
+  const identityNpub = React.useMemo(
+    () => (pubkey ? canonicalNpub(pubkey) : null),
+    [pubkey],
+  );
+  const npub =
+    identityNpub ?? (pubkey ? UNAVAILABLE_KEY_LABEL : "Unknown public key");
   const [copied, setCopied] = React.useState(false);
   const [importError, setImportError] = React.useState<string | null>(null);
   const [isImportFormOpen, setIsImportFormOpen] = React.useState(false);
@@ -53,6 +51,7 @@ export function MembershipDenied({
   const communityOnboarding = useCommunityOnboarding();
 
   const handleCopy = React.useCallback(async () => {
+    if (!identityNpub) return;
     try {
       await writeTextToClipboard(npub);
       setCopied(true);
@@ -60,12 +59,12 @@ export function MembershipDenied({
     } catch {
       // Fallback: select the text so the user can copy manually
     }
-  }, [npub]);
+  }, [identityNpub, npub]);
 
   const handleImportKey = React.useCallback(async () => {
     if (!previewNpub) {
       setImportError(
-        "That doesn't look like a valid nsec. Paste an nsec1 key.",
+        "That doesn't look like a valid secret key. Secret keys start with nsec1.",
       );
       return;
     }
@@ -114,8 +113,8 @@ export function MembershipDenied({
             </h1>
           </div>
           <p className="text-sm leading-6 text-muted-foreground">
-            This relay requires an invitation. Ask a relay admin to add you as a
-            member, then come back and try again.
+            This community requires an invitation. Ask a community admin to add
+            you as a member, then come back and try again.
           </p>
         </div>
 
@@ -130,6 +129,7 @@ export function MembershipDenied({
               </code>
               <Button
                 className="shrink-0"
+                disabled={!identityNpub}
                 onClick={() => {
                   void handleCopy();
                 }}
@@ -147,8 +147,8 @@ export function MembershipDenied({
             </div>
           </div>
           <p className="text-xs leading-5 text-muted-foreground">
-            This is your public identity — it&apos;s safe to share. Send it to
-            the relay admin so they can invite you.
+            This is your public identity. It&apos;s safe to share. Send it to
+            the community admin so they can invite you.
           </p>
         </div>
 

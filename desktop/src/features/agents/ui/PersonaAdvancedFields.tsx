@@ -1,8 +1,12 @@
 import * as React from "react";
+import { useAgentAccessOwnerOnlyQuery } from "../useAgentAccessOwnerOnly";
 import { Input } from "@/shared/ui/input";
 import { cn } from "@/shared/lib/cn";
 import { EnvVarsEditor, type EnvVarsValue } from "./EnvVarsEditor";
-import { CreateAgentRespondToField } from "./RespondToField";
+import {
+  CreateAgentRespondToField,
+  OWNER_ONLY_ACCESS_DISABLED_REASON,
+} from "./RespondToField";
 import type { PersonaBehaviorDraft } from "./personaBehaviorDraft";
 import {
   isBuzzAgentRuntime,
@@ -11,6 +15,7 @@ import {
 import {
   AGENT_PARALLELISM_HELP,
   AGENT_PARALLELISM_PLACEHOLDER,
+  parallelismCapHint,
 } from "../lib/agentParallelism";
 import {
   BuzzAgentModelTuningFields,
@@ -22,7 +27,11 @@ import {
   PERSONA_FIELD_SHELL_CLASS,
   PERSONA_LABEL_OPTIONAL_CLASS,
 } from "./agentConfigOptions";
-import type { AcpRuntimeCatalogEntry } from "@/shared/api/types";
+import type {
+  AcpRuntimeCatalogEntry,
+  AcpSessionPolicy,
+} from "@/shared/api/types";
+import { PersonaDropdownField } from "./PersonaDropdownField";
 import {
   deriveNumericDescriptors,
   structuredEnvKeys,
@@ -33,6 +42,7 @@ export function PersonaAdvancedFields({
   behaviorDraft,
   disabled,
   envVars,
+  afterRespondTo,
   inheritedEnvVars = {},
   model,
   modelTuningRuntimeId = "",
@@ -50,6 +60,8 @@ export function PersonaAdvancedFields({
   behaviorDraft: PersonaBehaviorDraft;
   disabled: boolean;
   envVars: EnvVarsValue;
+  /** Optional create-only field rendered after instruction permissions. */
+  afterRespondTo?: React.ReactNode;
   /** Env vars to display as inherited defaults in tuning-field placeholders.
    *  For templates, pass `globalConfig.env_vars` (the fallback layer). */
   inheritedEnvVars?: EnvVarsValue;
@@ -82,6 +94,11 @@ export function PersonaAdvancedFields({
    */
   selectedRuntime?: AcpRuntimeCatalogEntry;
 }) {
+  const { data: agentAccessOwnerOnly = false } = useAgentAccessOwnerOnlyQuery();
+  const respondToMode = agentAccessOwnerOnly
+    ? "owner-only"
+    : (behaviorDraft.respondTo ?? "owner-only");
+
   // Numeric tuning descriptors — gate on catalog status so that loading/error
   // never collapses to "no controls": keys stay visible as generic rows.
   const numericDescriptors = React.useMemo(
@@ -102,12 +119,35 @@ export function PersonaAdvancedFields({
     ],
     [hiddenEnvKeys, modelTuningRuntimeId, numericDescriptors],
   );
+
+  // Persona hint: definitions keep a portable requested value across harnesses.
+  // When the selected harness has a cap and the draft's parallelism exceeds it,
+  // explain that the agent will run at the cap — without clamping the stored value.
+  const personaParallelismHint = React.useMemo(() => {
+    if (
+      selectedRuntime?.maxParallelism === undefined ||
+      behaviorDraft.parallelism === ""
+    ) {
+      return null;
+    }
+    const requested = parseInt(behaviorDraft.parallelism, 10);
+    if (Number.isNaN(requested)) return null;
+    return parallelismCapHint(
+      selectedRuntime.label,
+      selectedRuntime.maxParallelism,
+      requested,
+    );
+  }, [selectedRuntime, behaviorDraft.parallelism]);
+
   return (
     <div className="space-y-5 pt-2">
       <CreateAgentRespondToField
-        allowlist={behaviorDraft.respondToAllowlist}
-        disabled={disabled}
-        mode={behaviorDraft.respondTo ?? "owner-only"}
+        allowlist={agentAccessOwnerOnly ? [] : behaviorDraft.respondToAllowlist}
+        disabled={disabled || agentAccessOwnerOnly}
+        disabledReason={
+          agentAccessOwnerOnly ? OWNER_ONLY_ACCESS_DISABLED_REASON : undefined
+        }
+        mode={respondToMode}
         onAllowlistChange={(allowlist) =>
           onBehaviorDraftChange({
             ...behaviorDraft,
@@ -120,7 +160,43 @@ export function PersonaAdvancedFields({
         variant="persona"
       />
 
+      {afterRespondTo}
+
       <div className="grid gap-5 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <label
+            className="text-sm font-medium text-foreground"
+            htmlFor="persona-session-policy"
+          >
+            Conversation context
+          </label>
+          <PersonaDropdownField
+            ariaDescribedBy="persona-session-policy-description"
+            disabled={disabled}
+            id="persona-session-policy"
+            onValueChange={(value) =>
+              onBehaviorDraftChange({
+                ...behaviorDraft,
+                sessionPolicy: value as AcpSessionPolicy,
+              })
+            }
+            options={[
+              { label: "Entire channel", value: "channel" },
+              { label: "Each thread", value: "thread" },
+            ]}
+            placeholder="Entire channel"
+            value={behaviorDraft.sessionPolicy}
+          />
+          <p
+            className="text-xs text-muted-foreground"
+            id="persona-session-policy-description"
+          >
+            {behaviorDraft.sessionPolicy === "thread"
+              ? "Keeps a separate conversation for each channel thread. Direct messages remain shared."
+              : "Shares one conversation across every thread in a channel."}
+          </p>
+        </div>
+
         <div className="space-y-1.5">
           <label
             className="text-sm font-medium text-foreground"
@@ -159,6 +235,11 @@ export function PersonaAdvancedFields({
           <p className="text-xs text-muted-foreground">
             {AGENT_PARALLELISM_HELP}
           </p>
+          {personaParallelismHint !== null ? (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              {personaParallelismHint}
+            </p>
+          ) : null}
         </div>
       </div>
 

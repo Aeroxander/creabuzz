@@ -1,0 +1,77 @@
+{
+  "v": 1,
+  "name": "Precision matched effects audit",
+  "description": "GPQA-Diamond bank strategy from arXiv 2609.22682 Appendix A: the team quantifies secondary effects relative to the precision separating the answer options before selecting the closest option.",
+  "teamworkPrompt": "Consensus is not sufficient. If the team appears to agree, actively test whether the shared answer could still be wrong. Specifically, always quantitatively evaluate secondary physical effects, especially when velocities, small differences, or extreme conditions are provided, to confirm their negligibility or significance, and perform precise numerical matching to options.",
+  "roles": {
+    "agent-0": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-1": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-2": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "State the current consensus or disagreement regarding the physical effects at play. If there is a consensus on which effects are relevant, identify the weakest link in the shared scientific rationale, especially regarding neglected effects or assumptions of negligibility. Explain the rationale for any initial dismissal of such effects."
+    },
+    {
+      "participants": [
+        "agent-2",
+        "agent-0",
+        "agent-1"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Agent 2 acts as consensus challenger. For any parameters in the problem (e.g., relative velocities, small differences in quantities, extreme conditions) that might suggest a secondary physical effect (e.g., relativistic effects, quantum effects, gravitational interactions), Agent 2 must quantitatively evaluate if this effect significantly alters the primary calculation. This evaluation must consider the magnitude of the effect relative to the precision required to distinguish between the available answer options. Agents 0 and 1 respond with their own calculations or a critical review of Agent 2’s calculation, focusing on the quantitative assessment."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "The team must now perform a precise calculation of the full solution, explicitly including the quantitative impact of any physical effect identified as non-negligible. Once the numerical result is obtained, compare it against all provided multiple-choice options. For each option, calculate the absolute difference between the calculated value and the option. State the final answer as the option with the smallest absolute difference."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Decide whether the challenged answer or current working solution survives. If it does, state why with evidence; if not, revise using the discovered issue and present the improved solution, specifically justifying the choice of the closest option based on the precise numerical comparison."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.2",
+    "bank": "gpqa-diamond",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper leaves Roles unset (shown when set); kind:44020 requires a prompt per roster slot, so all three slots carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

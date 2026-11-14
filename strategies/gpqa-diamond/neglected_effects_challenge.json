@@ -1,0 +1,77 @@
+{
+  "v": 1,
+  "name": "Neglected effects challenge",
+  "description": "GPQA-Diamond bank strategy from arXiv 2609.22682 Appendix A: a designated challenger quantitatively tests effects initially dismissed as negligible and requires the team to incorporate them or justify their exclusion.",
+  "teamworkPrompt": "Actively challenge assumptions of negligibility, especially for physical effects suggested by problem parameters. Quantitatively evaluate potential subtle effects to determine their true significance.",
+  "roles": {
+    "agent-0": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-1": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-2": "You are the consensus challenger. Your primary role is to identify and quantitatively evaluate any subtle physical effects or overlooked information suggested by the problem’s parameters, especially when it might change the outcome, even if initially thought to be negligible. Focus on general physical principles rather than problem-specific details."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent independently presents their initial interpretation of the problem, including relevant physical laws and initial proposed solution path. They should highlight any information they consider potentially extraneous or secondary."
+    },
+    {
+      "participants": [
+        "agent-2",
+        "agent-0",
+        "agent-1"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Agent 2 acts as consensus challenger. Agent 2 must scrutinize all information initially deemed ’extraneous’ or ’secondary’ by any agent. Specifically, Agent 2 must identify any physical phenomena (e.g., relativistic effects, quantum effects, or environmental factors) that could be implicitly suggested by the problem’s parameters (e.g., high velocities, very small scales, extreme conditions) but might have been overlooked. For each identified phenomenon, Agent 2 must provide a qualitative argument for its potential relevance and an initial quantitative estimate of its impact on the solution. Agents 0 and 1 must then critically evaluate Agent 2’s arguments and estimates, providing counter-arguments or supporting evidence based on general scientific principles, not on external tools or knowledge outside the prompt."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "The team collaboratively decides whether any of the challenged physical phenomena are indeed significant enough to alter the solution, based on the quantitative estimates and critical evaluations. If deemed significant, the team must explicitly incorporate the effect into their derivation and recalculate the solution. If deemed negligible, a clear, quantitative justification for its negligibility must be provided."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Present the final, refined solution, explicitly detailing all physical effects considered, their quantitative impact (or justification for negligibility), and the final calculated answer."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.2",
+    "bank": "gpqa-diamond",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper sets Roles only for Agent 2; kind:44020 requires a prompt per roster slot, so agent-0, agent-1 carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

@@ -3,7 +3,7 @@
  * HTTP requests to the relay (used by isomorphic-git for smart HTTP transport).
  */
 
-import { signNostrEvent } from "./nostr-signer";
+import { signForRelay } from "./relay-auth";
 
 async function sha256Hex(value: string): Promise<string> {
   const digest = await crypto.subtle.digest(
@@ -23,23 +23,35 @@ async function sha256Hex(value: string): Promise<string> {
 export async function makeNip98AuthHeader(
   url: string,
   method: string,
-  options?: { body?: string; requireNip07?: boolean },
+  options?: {
+    body?: string;
+    /** The signer must be a browser extension. */
+    requireNip07?: boolean;
+    /** The signer must be an identity that survives a reload (see `relay-auth`). */
+    requireDurable?: boolean;
+  },
 ): Promise<string> {
   const tags = [
     ["u", url],
     ["method", method],
+    // Every request carries its own nonce, bodies or not. The server refuses an authorization it has already seen, and
+    // two identical requests in the same second (a probe and the read that follows it) would otherwise sign the very
+    // same event and have the second one turned away as a replay.
+    ["nonce", crypto.randomUUID()],
   ];
   if (options?.body !== undefined) {
     tags.push(["payload", await sha256Hex(options.body)]);
-    tags.push(["nonce", crypto.randomUUID()]);
   }
-  const event = await signNostrEvent(
+  const event = await signForRelay(
     {
       kind: 27235,
       tags,
       content: "",
     },
-    { requireNip07: options?.requireNip07 },
+    {
+      requireNip07: options?.requireNip07,
+      requireDurable: options?.requireDurable,
+    },
   );
 
   const json = JSON.stringify(event);

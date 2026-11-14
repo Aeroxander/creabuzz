@@ -1,3 +1,10 @@
+# Logs capped as in compose.yml (an anchor does not reach across files).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
 services:
   postgres:
     ports:
@@ -13,6 +20,7 @@ services:
       - "${MINIO_CONSOLE_PORT:-9001}:9001"
 
   adminer:
+    logging: *logging
     image: adminer:latest
     container_name: buzz-adminer
     depends_on:
@@ -27,6 +35,7 @@ services:
       - buzz-net
 
   prometheus:
+    logging: *logging
     image: prom/prometheus:latest
     container_name: buzz-prometheus
     volumes:

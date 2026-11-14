@@ -1,0 +1,760 @@
+/**
+ * The four steps of the create-launch wizard.
+ *
+ * Presentational: every value and every handler comes from
+ * {@link WizardController}, which `CreateLaunchDialog` builds from the same
+ * form state the Advanced drawer edits. That is why a choice made here and an
+ * override made there cannot disagree — they are one state, reached through
+ * two doors (`lib/wizard.ts` holds the derivation and validation rules).
+ *
+ * Plain language throughout: no blocks, no Q96, no base units. The chain-level
+ * truth of a choice is shown honestly in one line (`sale-blocks-conversion`)
+ * instead of being asked for as input.
+ */
+
+import {
+  SALE_DURATIONS,
+  SALE_KINDS,
+  SALE_PLANS,
+  type SaleKind,
+} from "../../lib/sale-plans";
+import {
+  MAX_MILESTONES,
+  MILESTONE_TEMPLATES,
+  MIN_MILESTONES,
+  SHORT_VESTING_MONTHS,
+  UNLOCK_ENFORCEMENT_GAP,
+} from "../../lib/unlock-plans";
+import { LAUNCH_CATEGORIES } from "../../models";
+import {
+  WIZARD_STEPS,
+  type DurationKey,
+  type PricingMode,
+  type WizardState,
+  type WizardStep,
+} from "../../lib/wizard";
+import type { SaleCurrency } from "@creaton/core/launchpad/sale-currency.ts";
+import { presetTarget } from "../../lib/raise-presets";
+import { CurrencyChoice } from "./CurrencyChoice";
+import { PresetPicker } from "./PresetPicker";
+import type { SupplyAllocation } from "../../lib/allocation";
+import { CoverImageField } from "./CoverImageField";
+import { LaunchCardPreview } from "./LaunchCardPreview";
+import { Field, Segmented, Select, Stepper } from "./fields";
+import { SupplySplit } from "./SupplySplit";
+
+/** Everything the steps can read or change, assembled by the dialog. */
+export interface WizardController {
+  wizard: WizardState;
+  patch(next: Partial<WizardState>): void;
+  /**
+   * The edit surface: the same steps, but create-time plan inputs (sale
+   * shape, duration, milestone editor) do not write the record and must not
+   * render as if they did. Fields that DO map to the record stay live.
+   */
+  editing: boolean;
+  token: {
+    name: string;
+    onName(value: string): void;
+    symbol: string;
+    onSymbol(value: string): void;
+    totalSupply: string;
+    onTotalSupply(value: string): void;
+    launchId: string;
+    tokenName: string;
+    /** The one-line pitch, cover image URL and category shown on launch cards. */
+    pitch: string;
+    onPitch(value: string): void;
+    image: string;
+    onImage(value: string): void;
+    category: string;
+    onCategory(value: string): void;
+  };
+  /** Who holds the supply. One state with the dialog's allocation. */
+  supply: {
+    allocation: SupplyAllocation;
+    onChange(key: keyof SupplyAllocation, value: number): void;
+    onReset(): void;
+    issue: string | null;
+  };
+  sale: {
+    /** What the sale raises in, and the choices offered on this chain. */
+    currency: SaleCurrency;
+    currencyChoices: readonly SaleCurrency[];
+    onCurrency(value: SaleCurrency): void;
+    summary: string;
+    conversion: string | null;
+    onSaleKind(kind: SaleKind): void;
+    onPricingMode(mode: PricingMode): void;
+    onPrice(value: string): void;
+    onRaiseTarget(value: string): void;
+  };
+  unlocks: {
+    /** The project launches with its own DAO: the team's Shares are locked behind milestones, never by time. */
+    ownDao: boolean;
+    issues: readonly string[];
+    onLabel(index: number, value: string): void;
+    onPercent(index: number, value: string): void;
+    onAdd(): void;
+    onRemove(index: number): void;
+    adoptTemplate(key: string): void;
+    customLadderNote: string | null;
+  };
+  dao: {
+    share: number | "custom";
+    onShare(value: number): void;
+    capNote: string | null;
+    equity: readonly { label: string; pct: number }[] | null;
+    equityNote: string;
+  };
+  stepIssues: readonly string[];
+}
+
+export function WizardSteps({
+  controller,
+  variant = "stepper",
+}: {
+  controller: WizardController;
+  /**
+   * `stepper` (create): one step at a time behind the Stepper chrome.
+   * `all` (edit): every step body stacked on one page — the same components,
+   * so a field can never have two owners across the two surfaces.
+   */
+  variant?: "stepper" | "all";
+}) {
+  const { wizard, stepIssues } = controller;
+  const stepBody = (key: WizardStep) =>
+    key === "token" ? (
+      <TokenStep controller={controller} />
+    ) : key === "sale" ? (
+      <SaleStep controller={controller} />
+    ) : key === "unlocks" ? (
+      <UnlockStep controller={controller} />
+    ) : (
+      <DaoStep controller={controller} />
+    );
+  return (
+    <div
+      className={
+        variant === "all" ? "flex flex-col gap-6" : "flex flex-col gap-4"
+      }
+    >
+      {variant === "stepper" ? (
+        <Stepper
+          current={wizard.step}
+          currentTitle={
+            WIZARD_STEPS.find((step) => step.key === wizard.step)?.title ?? ""
+          }
+          steps={WIZARD_STEPS.map((step) => ({
+            key: step.key,
+            label: step.label,
+          }))}
+        />
+      ) : null}
+      {variant === "all"
+        ? WIZARD_STEPS.map((meta) => (
+            <section className="flex flex-col gap-3" key={meta.key}>
+              <div>
+                <h3 className="text-sm font-semibold text-black dark:text-white">
+                  {meta.title}
+                </h3>
+                <p className="text-xs text-black/60 dark:text-white/60">
+                  {meta.blurb}
+                </p>
+              </div>
+              {stepBody(meta.key)}
+            </section>
+          ))
+        : stepBody(wizard.step)}
+      {stepIssues.length > 0 ? (
+        <ul
+          className="space-y-0.5 text-xs text-red-600 dark:text-red-400"
+          data-testid="wizard-step-issues"
+        >
+          {stepIssues.map((issue) => (
+            <li key={issue}>✗ {issue}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function TokenStep({ controller }: { controller: WizardController }) {
+  const { token } = controller;
+  return (
+    <div className="flex flex-col gap-3" data-testid="wizard-step-token">
+      <Field
+        id="launch-name"
+        label="Name"
+        hint="What people see. It also sets the page address and suggests the symbol."
+      >
+        <input
+          className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm text-black dark:border-white/15 dark:text-white"
+          id="launch-name"
+          onChange={(event) => token.onName(event.target.value)}
+          placeholder="Nebula DAO"
+          type="text"
+          value={token.name}
+        />
+      </Field>
+      <Field
+        id="launch-pitch"
+        label="Pitch"
+        hint="One or two lines. This is what backers read on the card."
+      >
+        <textarea
+          className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm focus:border-ring focus:outline-none"
+          id="launch-pitch"
+          maxLength={280}
+          onChange={(event) => token.onPitch(event.target.value)}
+          placeholder="What problem gets solved, and why now?"
+          rows={2}
+          value={token.pitch}
+        />
+      </Field>
+      <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+        <CoverImageField onChange={token.onImage} value={token.image} />
+        <Select
+          hint="Where it shows up when people browse."
+          id="launch-category"
+          label="Category"
+          onChange={(event) => token.onCategory(event.target.value)}
+          options={[
+            { value: "", label: "Choose…" },
+            ...LAUNCH_CATEGORIES.map((c) => ({ value: c, label: c })),
+          ]}
+          value={token.category}
+        />
+      </div>
+      <LaunchCardPreview
+        category={token.category}
+        image={token.image}
+        name={token.name}
+        pitch={token.pitch}
+      />
+      <div className="flex flex-col gap-3 sm:flex-row">
+        <Field
+          id="launch-symbol"
+          label="Symbol"
+          hint="A short code for the token, like NEB."
+        >
+          <input
+            className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm uppercase text-black dark:border-white/15 dark:text-white"
+            id="launch-symbol"
+            onChange={(event) => token.onSymbol(event.target.value)}
+            placeholder="NEB"
+            type="text"
+            value={token.symbol}
+          />
+        </Field>
+        <Field
+          id="launch-supply"
+          label="Total supply"
+          hint="How many exist in all. The part you put up for sale is chosen just below."
+        >
+          <input
+            className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm tabular-nums text-black dark:border-white/15 dark:text-white"
+            id="launch-supply"
+            inputMode="numeric"
+            onChange={(event) => token.onTotalSupply(event.target.value)}
+            placeholder="1000000000"
+            type="text"
+            value={token.totalSupply}
+          />
+        </Field>
+      </div>
+      <dl className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10">
+        <div className="flex justify-between gap-2">
+          <dt className="text-black/60 dark:text-white/60">Called</dt>
+          <dd data-testid="token-name-preview">{token.tokenName || "—"}</dd>
+        </div>
+        <div className="mt-1 flex justify-between gap-2">
+          <dt className="text-black/60 dark:text-white/60">Page address</dt>
+          <dd className="font-mono text-xs" data-testid="launch-id-preview">
+            {token.launchId || "—"}
+          </dd>
+        </div>
+      </dl>
+      <SupplySplit
+        allocation={controller.supply.allocation}
+        issue={controller.supply.issue}
+        onChange={controller.supply.onChange}
+        onReset={controller.supply.onReset}
+        ownDao={controller.unlocks.ownDao}
+        teamLocked={controller.wizard.unlockMode === "milestones"}
+        totalSupply={token.totalSupply}
+      />
+      <p className="text-xs text-black/60 dark:text-white/60">
+        Everything else has a sensible default. Open Advanced at the bottom to
+        change it.
+      </p>
+    </div>
+  );
+}
+
+function SaleStep({ controller }: { controller: WizardController }) {
+  const { wizard, patch, sale, editing } = controller;
+  return (
+    <div className="flex flex-col gap-3" data-testid="wizard-step-sale">
+      <CurrencyChoice
+        choices={sale.currencyChoices}
+        onChange={sale.onCurrency}
+        selected={sale.currency}
+      />
+      {editing ? null : (
+        <PresetPicker
+          currencyKind={sale.currency.kind}
+          currencySymbol={sale.currency.symbol}
+          durationKey={wizard.durationKey}
+          onPick={(preset) => {
+            patch({ durationKey: preset.duration });
+            sale.onPricingMode("raise");
+            sale.onRaiseTarget(presetTarget(preset, sale.currency.kind));
+          }}
+          raiseTarget={wizard.pricingMode === "raise" ? wizard.raiseTarget : ""}
+        />
+      )}
+      {sale.currency.kind === "eth" ? (
+        <p
+          className="text-xs text-black/60 dark:text-white/60"
+          data-testid="sale-eth-note"
+        >
+          Prices and targets below are in ETH. Nothing is converted from
+          dollars, so check the price against today&apos;s ETH price.
+        </p>
+      ) : null}
+      {/* Sale shape and duration are create-time plan inputs: the published
+          record's window and auction are its own, so they do not render on
+          the edit surface (no control that writes nothing). */}
+      {editing ? null : (
+        <>
+          <Select
+            hint={SALE_PLANS[wizard.saleKind].blurb}
+            id="sale-kind"
+            label="How it sells"
+            onChange={(event) =>
+              patch({ saleKind: event.target.value as SaleKind })
+            }
+            options={SALE_KINDS.map((kind) => ({
+              value: kind,
+              label: SALE_PLANS[kind].label,
+            }))}
+            testId="sale-kind"
+            value={wizard.saleKind}
+          />
+          <Select
+            id="sale-duration"
+            label="How long"
+            onChange={(event) =>
+              patch({ durationKey: event.target.value as DurationKey })
+            }
+            options={SALE_DURATIONS.map((duration) => ({
+              value: duration.key,
+              label: duration.label,
+            }))}
+            testId="sale-duration"
+            value={wizard.durationKey}
+          />
+          {wizard.durationKey === "custom" ? (
+            <Field
+              hint="The sale closes at the end of that day, UTC."
+              id="sale-end"
+              label="Sale ends on"
+            >
+              <input
+                className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm text-black dark:border-white/15 dark:text-white"
+                id="sale-end"
+                onChange={(event) => patch({ endDate: event.target.value })}
+                type="date"
+                value={wizard.endDate}
+              />
+            </Field>
+          ) : null}
+        </>
+      )}
+      <Segmented
+        label="You set it by"
+        onChange={sale.onPricingMode}
+        options={[
+          { value: "price", label: "Price per token" },
+          { value: "raise", label: "Raise target" },
+        ]}
+        testId="pricing-mode"
+        value={wizard.pricingMode}
+      />
+      {wizard.pricingMode === "price" ? (
+        <Field
+          hint={
+            sale.currency.kind === "eth"
+              ? "What one token costs, in ETH. 0.000004 is four millionths of an ETH."
+              : "What one token costs. 0.01 means a cent."
+          }
+          id="sale-price"
+          label={`Price per token (${sale.currency.symbol})`}
+        >
+          <input
+            className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm tabular-nums text-black dark:border-white/15 dark:text-white"
+            id="sale-price"
+            inputMode="decimal"
+            onChange={(event) => sale.onPrice(event.target.value)}
+            placeholder={sale.currency.kind === "eth" ? "0.000004" : "0.01"}
+            type="text"
+            value={wizard.price}
+          />
+        </Field>
+      ) : (
+        <Field
+          hint={`The least the sale must raise, in whole ${sale.currency.symbol}. Below that, every bid is refunded.`}
+          id="sale-raise"
+          label={`Raise target (${sale.currency.symbol})`}
+        >
+          <input
+            className="h-9 w-full rounded-md border border-black/15 bg-transparent px-3 text-sm tabular-nums text-black dark:border-white/15 dark:text-white"
+            id="sale-raise"
+            inputMode="decimal"
+            onChange={(event) => sale.onRaiseTarget(event.target.value)}
+            placeholder={sale.currency.kind === "eth" ? "120" : "300000"}
+            type="text"
+            value={wizard.raiseTarget}
+          />
+        </Field>
+      )}
+      <p className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10">
+        {sale.summary}
+      </p>
+      <p
+        className="text-xs text-black/60 dark:text-white/60"
+        data-testid="sale-blocks-conversion"
+      >
+        {sale.conversion}
+      </p>
+    </div>
+  );
+}
+
+function UnlockStep({ controller }: { controller: WizardController }) {
+  const { wizard, patch, unlocks, editing } = controller;
+  const ownDao = unlocks.ownDao;
+  if (editing) {
+    // The published unlock plan is carried through a save untouched
+    // (`FormState.unlocks`); an editor here would be a control that writes
+    // nothing. Say so instead (Review-Proven Rule 6 — never fake affordances).
+    return (
+      <div className="flex flex-col gap-3" data-testid="wizard-step-unlocks">
+        <p
+          className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10"
+          data-testid="unlock-edit-note"
+        >
+          Unlocks are chosen when the launch is created. This launch keeps the
+          plan it published.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3" data-testid="wizard-step-unlocks">
+      <Select
+        hint={
+          ownDao
+            ? "Your team's Shares are yours to vote with from the start. A milestone decides when part of them can be sold, or used to leave with a share of the project's money."
+            : "What has to happen before you can sell your own tokens."
+        }
+        id="unlock-mode"
+        label="Your own Shares"
+        onChange={(event) =>
+          patch({
+            unlockMode: event.target.value as WizardState["unlockMode"],
+          })
+        }
+        options={[
+          {
+            value: "milestones",
+            label: "Locked until milestones are met (recommended)",
+          },
+          // With its own DAO there is no time option; one already chosen stays visible so it can be changed.
+          ...(!ownDao || wizard.unlockMode === "time"
+            ? [
+                {
+                  value: "time",
+                  label: ownDao
+                    ? "Released over time (not available for this project)"
+                    : "Released over a few months",
+                },
+              ]
+            : []),
+          { value: "none", label: ownDao ? "Not locked" : "Not locked" },
+        ]}
+        testId="unlock-mode"
+        value={wizard.unlockMode}
+      />
+      {wizard.unlockMode === "milestones" ? (
+        <MilestoneEditor controller={controller} />
+      ) : null}
+      {wizard.unlockMode === "time" ? (
+        <Select
+          hint="How many months after the sale closes until your Shares are all free."
+          id="unlock-months"
+          label="Released over"
+          onChange={(event) => patch({ months: Number(event.target.value) })}
+          options={SHORT_VESTING_MONTHS.map((months) => ({
+            value: String(months),
+            label: `${months} months`,
+          }))}
+          testId="unlock-months"
+          value={String(wizard.months)}
+        />
+      ) : null}
+      {wizard.unlockMode === "none" ? (
+        <p className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10">
+          {ownDao
+            ? "Nothing is locked: your team Shares can be sold, or used to leave with a share of the project's money, straight away."
+            : "Nothing locks: everything your allocation holds releases when the sale closes."}
+        </p>
+      ) : null}
+      <p
+        className="rounded-lg border border-amber-300/60 p-3 text-xs text-amber-800 dark:border-amber-500/40 dark:text-amber-200"
+        data-testid="unlock-gap"
+      >
+        {ownDao
+          ? "These milestones are enforced when you launch: the part tied to each one cannot be sold, or used to leave with a share of the project's money, until the milestone is reached. By default you publish evidence and holders get a week to object; you can name reviewers instead when you launch. A milestone is judged by exactly the words you write."
+          : UNLOCK_ENFORCEMENT_GAP}
+      </p>
+      {unlocks.customLadderNote ? (
+        <p className="text-xs text-black/60 dark:text-white/60">
+          {unlocks.customLadderNote}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function MilestoneEditor({ controller }: { controller: WizardController }) {
+  const { wizard, unlocks } = controller;
+  const total = wizard.milestones.reduce((sum, row) => sum + row.percent, 0);
+  return (
+    <div className="flex flex-col gap-2" data-testid="milestone-editor">
+      <div className="flex flex-wrap gap-1.5">
+        {MILESTONE_TEMPLATES.map((template) => (
+          <button
+            className="rounded-full border border-black/15 px-2.5 py-1 text-xs font-medium dark:border-white/15"
+            data-testid={`unlock-template-${template.key}`}
+            key={template.key}
+            onClick={() => unlocks.adoptTemplate(template.key)}
+            type="button"
+          >
+            {template.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-black/60 dark:text-white/60">
+        Write each milestone so a stranger could check it: what will exist, and
+        where they can see it. Holders (or reviewers, if you name them) judge it
+        by exactly these words, and backers read them before they bid.
+      </p>
+      {wizard.milestones.map((row, index) => (
+        <div
+          className="flex items-end gap-2 rounded-lg border border-black/10 p-2 dark:border-white/10"
+          key={row.claim}
+        >
+          <div className="w-6 shrink-0 pb-2 text-sm font-semibold text-black/50 dark:text-white/50">
+            {index + 1}
+          </div>
+          <div className="min-w-0 flex-1">
+            <Field id={`milestone-label-${index}`} label="What has to happen">
+              <textarea
+                className="w-full resize-y rounded-md border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white"
+                id={`milestone-label-${index}`}
+                // A milestone is one statement; a line break would only look odd on the page and in the record.
+                onChange={(event) =>
+                  unlocks.onLabel(
+                    index,
+                    event.target.value.replace(/\s*\n\s*/g, " "),
+                  )
+                }
+                placeholder="A public beta is live at a web address, with its source published"
+                rows={2}
+                value={row.label}
+              />
+            </Field>
+          </div>
+          <div className="w-20 shrink-0">
+            <Field id={`milestone-percent-${index}`} label="Unlocks %">
+              <input
+                className="h-9 w-full rounded-md border border-black/15 bg-transparent px-2 text-sm tabular-nums text-black dark:border-white/15 dark:text-white"
+                id={`milestone-percent-${index}`}
+                inputMode="numeric"
+                onChange={(event) =>
+                  unlocks.onPercent(index, event.target.value)
+                }
+                type="text"
+                value={String(row.percent)}
+              />
+            </Field>
+          </div>
+          {wizard.milestones.length > MIN_MILESTONES ? (
+            <button
+              aria-label={`Remove milestone ${index + 1}`}
+              className="pb-2 text-xs text-black/50 hover:underline dark:text-white/50"
+              onClick={() => unlocks.onRemove(index)}
+              type="button"
+            >
+              Remove
+            </button>
+          ) : null}
+        </div>
+      ))}
+      <div className="flex items-center justify-between gap-2">
+        <button
+          className="text-xs font-medium text-black underline underline-offset-2 dark:text-white"
+          data-testid="milestone-add"
+          disabled={wizard.milestones.length >= MAX_MILESTONES}
+          onClick={() => unlocks.onAdd()}
+          type="button"
+        >
+          Add a milestone
+        </button>
+        <span
+          className={`text-xs ${total === 100 ? "text-black/60 dark:text-white/60" : "text-red-600 dark:text-red-400"}`}
+          data-testid="milestone-sum"
+        >
+          {total === 100
+            ? "Adds up to 100% of what the milestones unlock."
+            : `These add up to ${total}%. They need to add up to 100%.`}
+        </span>
+      </div>
+      <p className="text-xs text-black/60 dark:text-white/60">
+        {controller.unlocks.ownDao
+          ? "The project's reviewers decide whether each milestone was met."
+          : "You confirm each milestone yourself for now."}
+      </p>
+      {unlocks.issues.length > 0 ? (
+        <ul className="space-y-0.5 text-xs text-red-600 dark:text-red-400">
+          {unlocks.issues.map((issue) => (
+            <li key={issue}>✗ {issue}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function DaoStep({ controller }: { controller: WizardController }) {
+  const { wizard, patch, dao } = controller;
+  return (
+    <div className="flex flex-col gap-3" data-testid="wizard-step-dao">
+      {controller.unlocks.ownDao ? (
+        <div
+          className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10"
+          data-testid="wizard-own-dao-note"
+        >
+          <p className="font-medium text-black dark:text-white">
+            Your project gets its own DAO when it launches
+          </p>
+          <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+            A DAO is a project run by its holders&apos; votes, with its money
+            held in the open. Everyone who holds Shares votes on how the money
+            is spent, from the first day. It is created in the same step that
+            opens the sale; there is nothing to set up afterwards.
+          </p>
+        </div>
+      ) : (
+        <fieldset className="rounded-lg border border-black/10 p-3 dark:border-white/10">
+          <legend className="text-sm font-medium text-black dark:text-white">
+            Turn the project into a DAO when the raise succeeds?
+          </legend>
+          <div className="mt-1 flex gap-4">
+            <label className="flex items-center gap-1.5 text-sm">
+              <input
+                checked={wizard.formDao}
+                name="wizard-dao"
+                onChange={() => patch({ formDao: true })}
+                type="radio"
+              />
+              Yes
+            </label>
+            <label className="flex items-center gap-1.5 text-sm">
+              <input
+                checked={!wizard.formDao}
+                name="wizard-dao"
+                onChange={() => patch({ formDao: false })}
+                type="radio"
+              />
+              No
+            </label>
+          </div>
+          <p className="mt-1 text-xs text-black/60 dark:text-white/60">
+            A DAO lets everyone who holds Shares vote on how the money is spent.
+            This only records your choice; you set the DAO up after the sale.
+          </p>
+        </fieldset>
+      )}
+      <Select
+        hint="Whether a company or similar body stands behind the project. Shown on the project page. Starting with none is a fine choice; you can decide later."
+        id="dao-legal-wrapper"
+        label="Legal structure"
+        onChange={(event) => patch({ legalWrapper: event.target.value })}
+        options={[
+          { value: "none", label: "None for now (default)" },
+          { value: "dao-llc", label: "DAO LLC" },
+          { value: "own-entity", label: "Our own entity" },
+        ]}
+        value={wizard.legalWrapper}
+      />
+      <Select
+        hint="The monthly budget the team says it will spend, as a share of what the sale raises. It is the team's promise, shown on the project page; the contracts do not enforce it."
+        id="dao-budget"
+        label="Operating budget"
+        onChange={(event) => dao.onShare(Number(event.target.value))}
+        options={[
+          { value: "0", label: "No monthly budget" },
+          { value: "5", label: "5% of the raise" },
+          { value: "10", label: "10% of the raise" },
+          { value: "15", label: "15% of the raise" },
+          { value: "20", label: "20% of the raise" },
+          { value: "25", label: "25% of the raise" },
+          ...(dao.share === "custom"
+            ? [
+                {
+                  value: String(dao.share),
+                  label: "Custom (set in Advanced)",
+                  disabled: true,
+                },
+              ]
+            : []),
+        ]}
+        testId="dao-budget"
+        value={String(dao.share)}
+      />
+      {dao.capNote ? (
+        <p
+          className="rounded-lg border border-amber-300/60 p-3 text-xs text-amber-800 dark:border-amber-500/40 dark:text-amber-200"
+          data-testid="budget-cap-note"
+        >
+          {dao.capNote}
+        </p>
+      ) : null}
+      <div
+        className="rounded-lg border border-black/10 p-3 text-sm dark:border-white/10"
+        data-testid="dao-equity-map"
+      >
+        <p className="font-medium">Who gets what</p>
+        <p className="mt-0.5 text-xs text-black/60 dark:text-white/60">
+          {dao.equityNote}
+        </p>
+        {dao.equity && dao.equity.length > 0 ? (
+          <ul className="mt-1">
+            {dao.equity.map((row) => (
+              <li className="flex justify-between gap-2" key={row.label}>
+                <span className="text-black/70 dark:text-white/70">
+                  {row.label}
+                </span>
+                <span className="tabular-nums">{row.pct}%</span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,67 @@
+{
+  "v": 1,
+  "name": "Corrective step audit",
+  "description": "GPQA-Diamond bank strategy from arXiv 2609.22682 Appendix A: members audit specific scientific claims, propose and acknowledge corrections, and preserve validated minority evidence during synthesis.",
+  "teamworkPrompt": "Treat scientific facts, mechanisms, definitions, unit conversions, and option eliminations as audit targets before accepting a final answer. Ensure that all identified errors are explicitly corrected and documented, and that all distinct individual claims supported by evidence are retained and integrated into the final team solution.",
+  "roles": {
+    "agent-0": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-1": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-2": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Audit the reasoning chains step by step. Each agent should identify one concrete claim from another agent that is either verified, questionable, or incorrect. For any questionable or incorrect claim, the auditing agent must explicitly propose a scientific correction and provide a brief rationale for the correction."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Resolve the audited issues. If a claim is corrected, the agent whose claim was corrected must acknowledge the correction, explain the scientific reason for their initial error, and confirm their revised answer choice. If a proposed correction is challenged, the team must discuss and scientifically justify the most accurate correction."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Synthesize the strongest supported answer, explicitly incorporating all agreed-upon corrections. The final answer must reflect a consolidated, scientifically sound reasoning chain, and any initial individual claims that were validated against evidence and reasoning must be explicitly identified and their preservation explained, even if initially a minority view."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.2",
+    "bank": "gpqa-diamond",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper leaves Roles unset (shown when set); kind:44020 requires a prompt per roster slot, so all three slots carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

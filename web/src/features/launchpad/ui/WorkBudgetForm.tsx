@@ -1,0 +1,407 @@
+import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+
+import { ethCall, getRpcEndpoint } from "../chain";
+import { createToken } from "../chain-config";
+import {
+  DecisionInputError,
+  mandateDecision,
+  parseUnits,
+} from "@creaton/core/launchpad/daoActions.ts";
+import { decodeWord } from "@creaton/core/launchpad/work.ts";
+import { useShareRules } from "../use-share-rules";
+import { useWalletLabels } from "../use-wallet-labels";
+import {
+  PeoplePicker,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from "./decision-fields";
+import {
+  attempt,
+  DAY,
+  DraftPanel,
+  type DraftResult,
+  days,
+  type FormProps,
+  names,
+} from "./decision-forms";
+
+const reviewerExample =
+  "Add people from the list, or paste an account address on each line";
+
+const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+/** The decimals of a token the vote names for the reviewers' bond, read from the chain (null while it cannot be). */
+export function useTokenDecimals(token: string) {
+  return useQuery({
+    queryKey: ["launchpad", "token-decimals", token.toLowerCase()],
+    enabled: ADDRESS_RE.test(token),
+    queryFn: async () => {
+      const word = decodeWord(
+        await ethCall(getRpcEndpoint(), token, "0x313ce567"),
+      );
+      if (word > 36n) throw new Error("not a token");
+      return Number(word);
+    },
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  });
+}
+
+export function WorkBudgetForm({
+  ctx,
+  blocked,
+  busy,
+  gate,
+  onSubmit,
+}: FormProps) {
+  const [shareBudget, setShareBudget] = useState("");
+  const [shareCap, setShareCap] = useState("");
+  const [money, setMoney] = useState("");
+  const [moneyCap, setMoneyCap] = useState("");
+  const [open, setOpen] = useState("90");
+  const [reviewers, setReviewers] = useState("");
+  const [quorum, setQuorum] = useState("");
+  const [bond, setBond] = useState("");
+  // What the bond is paid in: the claim currency when there is one (the safest), the project's own token, or another.
+  const hasCurrency = ctx.currencyDecimals !== null;
+  // Shares locked against transfers (every project the kits make starts that way) can move only to and from the DAO,
+  // so a bond in them could never be posted and the budget's reviewers could never judge. They are offered, and
+  // accepted by any route, only once the chain has said they can move: a read still pending or failed proves nothing.
+  const shareRules = useShareRules(ctx.sharesToken || null, ctx.dao);
+  const sharesLocked = shareRules.data?.rules?.transfersLocked === true;
+  const sharesTransferable = shareRules.data?.rules?.transfersLocked === false;
+  // $CREATE, the platform's work token, where this build names it (N6).
+  const create = createToken(ctx.chainId ?? null);
+  const [bondIn, setBondIn] = useState<
+    "currency" | "project" | "create" | "other"
+  >(hasCurrency ? "currency" : "project");
+  const bondChoice =
+    bondIn === "project" && !sharesTransferable
+      ? hasCurrency
+        ? "currency"
+        : "other"
+      : bondIn;
+  const [bondOther, setBondOther] = useState("");
+  const otherDecimals = useTokenDecimals(
+    bondChoice === "other" ? bondOther.trim() : "",
+  );
+  const dirty = [
+    shareBudget,
+    shareCap,
+    money,
+    moneyCap,
+    reviewers,
+    quorum,
+    bond,
+    bondOther,
+  ].some((v) => v !== "");
+
+  const result = useMemo<DraftResult>(
+    () =>
+      attempt(() => {
+        const decimals = ctx.currencyDecimals ?? 0;
+        const list = names(reviewers);
+        // The bond's token, its decimals and how the summary names it. The claim currency needs no words.
+        const bondTerms = () => {
+          if (!bond.trim()) return { reviewerBond: 0n };
+          if (bondChoice === "currency") {
+            return {
+              reviewerBond: parseUnits(
+                bond,
+                decimals,
+                "reviewerBond",
+                "The bond",
+              ),
+            };
+          }
+          if (bondChoice === "project") {
+            return {
+              reviewerBond: parseUnits(bond, 18, "reviewerBond", "The bond"),
+              reviewerBondToken: ctx.sharesToken,
+              reviewerBondDecimals: 18,
+              reviewerBondLabel: "of the project's own token",
+            };
+          }
+          if (bondChoice === "create" && create) {
+            return {
+              reviewerBond: parseUnits(bond, 18, "reviewerBond", "The bond"),
+              reviewerBondToken: create,
+              reviewerBondDecimals: 18,
+              reviewerBondLabel: "CREATE",
+            };
+          }
+          const token = bondOther.trim();
+          if (!ADDRESS_RE.test(token))
+            throw new DecisionInputError(
+              "reviewerBondToken",
+              "Paste the address of the token the bond is paid in.",
+            );
+          if (otherDecimals.isError)
+            throw new DecisionInputError(
+              "reviewerBondToken",
+              "That address does not look like a token on this network.",
+            );
+          if (otherDecimals.data === undefined)
+            throw new DecisionInputError(
+              "reviewerBondToken",
+              "Reading that token…",
+            );
+          return {
+            reviewerBond: parseUnits(
+              bond,
+              otherDecimals.data,
+              "reviewerBond",
+              "The bond",
+            ),
+            reviewerBondToken: token,
+            reviewerBondDecimals: otherDecimals.data,
+          };
+        };
+        const bondTermsChosen = bondTerms();
+        // The token the bond is finally in, however it was chosen: never the project's Shares unless they can move.
+        const bondToken =
+          "reviewerBondToken" in bondTermsChosen
+            ? (bondTermsChosen.reviewerBondToken ?? "")
+            : "";
+        if (
+          bondToken !== "" &&
+          bondToken.toLowerCase() === ctx.sharesToken.toLowerCase() &&
+          !sharesTransferable
+        ) {
+          throw new DecisionInputError(
+            "reviewerBondToken",
+            sharesLocked
+              ? "The project's own Shares cannot be the bond: they are locked against transfers, so a reviewer could never post them."
+              : "Could not read whether the project's Shares can move, so they cannot be the bond yet. Try again, or choose another token.",
+          );
+        }
+        return mandateDecision({
+          dao: ctx.dao,
+          factory: ctx.factory,
+          currency: ctx.currency,
+          currencyDecimals: decimals,
+          budget: money.trim()
+            ? parseUnits(money, decimals, "budget", "The money")
+            : 0n,
+          cap: moneyCap.trim()
+            ? parseUnits(moneyCap, decimals, "cap", "The limit per work area")
+            : 0n,
+          shareBudget: shareBudget.trim()
+            ? parseUnits(shareBudget, 18, "shareBudget", "The Shares")
+            : 0n,
+          shareCap: shareCap.trim()
+            ? parseUnits(shareCap, 18, "shareCap", "The limit per work area")
+            : 0n,
+          expiresAt: ctx.chainTime + Math.round(days(open, 90) * DAY),
+          reviewers: list,
+          // Left empty, a simple majority of the reviewers named.
+          quorum: quorum.trim()
+            ? Number(quorum)
+            : Math.floor(list.length / 2) + 1,
+          ...bondTermsChosen,
+          now: ctx.chainTime,
+        });
+      }),
+    [
+      ctx,
+      shareBudget,
+      shareCap,
+      money,
+      moneyCap,
+      open,
+      reviewers,
+      quorum,
+      bond,
+      bondChoice,
+      create,
+      sharesLocked,
+      sharesTransferable,
+      bondOther,
+      otherDecimals.data,
+      otherDecimals.isError,
+    ],
+  );
+
+  return (
+    <div className="mt-3 grid gap-3" data-testid="form-work-budget">
+      <p className="text-sm text-muted-foreground">
+        Set aside Shares (and, if you want, money) for people to earn by doing
+        work. Reviewers you name check each submission; nothing is paid or
+        awarded without them.
+      </p>
+      <TextField
+        hint="The most Shares the project may award from this budget, in all."
+        inputMode="decimal"
+        label="Shares to set aside"
+        onChange={setShareBudget}
+        placeholder="100000"
+        testId="budget-shares"
+        value={shareBudget}
+      />
+      <TextField
+        hint="The most Shares any one work area can be allowed to award."
+        inputMode="decimal"
+        label="Most Shares for one work area"
+        onChange={setShareCap}
+        placeholder="25000"
+        testId="budget-shares-cap"
+        value={shareCap}
+      />
+      {ctx.currencyDecimals !== null ? (
+        <>
+          <TextField
+            hint="Optional. This money moves from the project's money into the budget now."
+            inputMode="decimal"
+            label="Money to set aside"
+            onChange={setMoney}
+            placeholder="0"
+            testId="budget-money"
+            value={money}
+          />
+          <TextField
+            hint="Needed with money: the most any one work area can hold."
+            inputMode="decimal"
+            label="Most money for one work area"
+            onChange={setMoneyCap}
+            placeholder="0"
+            testId="budget-money-cap"
+            value={moneyCap}
+          />
+        </>
+      ) : null}
+      <TextField
+        label="Open for how many days"
+        inputMode="numeric"
+        onChange={setOpen}
+        testId="budget-days"
+        value={open}
+      />
+      <TextAreaField
+        hint="People who judge the work. Choose people other than the ones who will submit it; team members whose Shares are locked cannot be reviewers."
+        after={
+          <PeoplePicker
+            onPick={(address) =>
+              setReviewers((current) =>
+                current.toLowerCase().includes(address.toLowerCase())
+                  ? current
+                  : current.trim()
+                    ? `${current.trimEnd()}\n${address}`
+                    : address,
+              )
+            }
+            testId="budget-reviewers-people"
+          />
+        }
+        label="Reviewers"
+        onChange={setReviewers}
+        placeholder={reviewerExample}
+        testId="budget-reviewers"
+        value={reviewers}
+      />
+      <PickedNames text={reviewers} />
+      <TextField
+        hint="Leave empty for a simple majority of the reviewers."
+        inputMode="numeric"
+        label="How many reviewers must agree on a submission"
+        onChange={setQuorum}
+        testId="budget-quorum"
+        value={quorum}
+      />
+      <TextField
+        hint="Optional. Each reviewer posts this before judging a submission. The project can take it after a disputed approval, so judging carelessly costs them. Leave empty for none."
+        inputMode="decimal"
+        label="Bond each reviewer must post"
+        onChange={setBond}
+        placeholder="0"
+        testId="budget-bond"
+        value={bond}
+      />
+      {bond.trim() ? (
+        <>
+          <SelectField
+            label="Bond paid in"
+            onChange={(next) => setBondIn(next as typeof bondIn)}
+            options={[
+              ...(hasCurrency
+                ? [
+                    {
+                      value: "currency",
+                      label: `${ctx.currencySymbol || "The payment currency"} (recommended)`,
+                    },
+                  ]
+                : []),
+              ...(sharesTransferable
+                ? [{ value: "project", label: "The project's own token" }]
+                : []),
+              ...(create
+                ? [{ value: "create", label: "CREATE, the platform's token" }]
+                : []),
+              { value: "other", label: "Another token" },
+            ]}
+            testId="budget-bond-token"
+            value={bondChoice}
+          />
+          {sharesLocked ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="budget-bond-shares-locked"
+            >
+              The project's own Shares cannot be the bond: they are locked
+              against transfers, so a reviewer could never post them.
+            </p>
+          ) : null}
+          {bondChoice === "other" ? (
+            <TextField
+              hint="The address of the token on this network."
+              label="Token address"
+              onChange={setBondOther}
+              placeholder="0x…"
+              testId="budget-bond-other"
+              value={bondOther}
+            />
+          ) : null}
+          {bondChoice !== "currency" ? (
+            <p
+              className="text-xs text-amber-700 dark:text-amber-300"
+              data-testid="budget-bond-warning"
+            >
+              {bondChoice === "project"
+                ? "A bond in the project's own token is worth least when the project struggles, and the people steering the project help set its price. Reviewers may not accept it."
+                : bondChoice === "create"
+                  ? "A bond in CREATE moves with its price. Size it so it still deters if the price halves."
+                  : "Any token works, but a bond only deters if it keeps its value and nobody involved can freeze or inflate it. Check the token before you vote."}
+            </p>
+          ) : null}
+        </>
+      ) : null}
+      <DraftPanel
+        blocked={blocked}
+        busy={busy}
+        dirty={dirty}
+        gate={gate}
+        onSubmit={onSubmit}
+        result={result}
+      />
+    </div>
+  );
+}
+
+/** The people picked so far, by name, so nobody has to read the addresses in the box above. */
+function PickedNames({ text }: { text: string }) {
+  const addresses = useMemo(
+    () => [...new Set(text.match(/0x[0-9a-fA-F]{40}/g) ?? [])],
+    [text],
+  );
+  const nameOf = useWalletLabels(addresses);
+  if (addresses.length === 0) return null;
+  return (
+    <p
+      className="-mt-2 text-xs text-muted-foreground"
+      data-testid="budget-reviewers-named"
+    >
+      Reviewers: {addresses.map(nameOf).join(", ")}
+    </p>
+  );
+}

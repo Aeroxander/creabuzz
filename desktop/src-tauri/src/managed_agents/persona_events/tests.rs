@@ -3,8 +3,10 @@ use crate::managed_agents::{BackendKind, ManagedAgentRecord, RespondTo};
 
 /// A linked instance record with no persona-derived fields set yet — the
 /// state right after creation, before any snapshot apply.
-fn sample_record() -> ManagedAgentRecord {
+pub(super) fn sample_record() -> ManagedAgentRecord {
     ManagedAgentRecord {
+        session_policy: Default::default(),
+        description: None,
         pubkey: "p".repeat(64),
         name: "agent".into(),
         persona_id: Some("test-persona".into()),
@@ -31,6 +33,7 @@ fn sample_record() -> ManagedAgentRecord {
         runtime_pid: None,
         backend: BackendKind::Local,
         backend_agent_id: None,
+        provider_policy_pending: false,
         provider_binary_path: None,
         team_id: None,
         persona_team_dir: None,
@@ -54,10 +57,12 @@ fn sample_record() -> ManagedAgentRecord {
         source_team: None,
         source_team_persona_slug: None,
         catalog_source: None,
+        team_catalog_source: None,
         definition_respond_to: None,
         definition_respond_to_allowlist: Vec::new(),
         definition_parallelism: None,
         relay_mesh: None,
+        effort_level: None,
     }
 }
 
@@ -139,12 +144,15 @@ fn preview_passes_through_unchanged_when_persona_missing() {
     assert_eq!(preview.persona_id.as_deref(), Some("deleted-persona"));
 }
 
-fn sample_persona() -> AgentDefinition {
+pub(super) fn sample_persona() -> AgentDefinition {
     AgentDefinition {
+        session_policy: Default::default(),
+        description: None,
         id: "test-persona".to_string(),
         display_name: "Test Persona".to_string(),
         avatar_url: Some("https://example.com/avatar.png".to_string()),
         system_prompt: "You are a test assistant.".to_string(),
+        acp_command: None,
         runtime: Some("goose".to_string()),
         model: Some("claude-opus-4".to_string()),
         provider: Some("anthropic".to_string()),
@@ -155,6 +163,7 @@ fn sample_persona() -> AgentDefinition {
         source_team: None,
         source_team_persona_slug: Some("test-slug".to_string()),
         catalog_source: None,
+        team_catalog_source: None,
         env_vars: BTreeMap::from([("KEY".to_string(), "value".to_string())]),
         respond_to: None,
         respond_to_allowlist: Vec::new(),
@@ -248,7 +257,7 @@ fn d_tag_already_valid_slug_is_unchanged() {
 #[test]
 fn build_persona_event_produces_correct_kind() {
     let record = sample_persona();
-    let builder = build_persona_event(&record).unwrap();
+    let builder = build_persona_event(&record, None).unwrap();
     let keys = nostr::Keys::generate();
     let event = builder.sign_with_keys(&keys).unwrap();
     assert_eq!(event.kind.as_u16() as u32, KIND_PERSONA);
@@ -258,7 +267,7 @@ fn build_persona_event_produces_correct_kind() {
 fn shared_persona_event_has_exact_tag_and_round_trips() {
     let mut record = sample_persona();
     record.shared = true;
-    let event = build_persona_event(&record)
+    let event = build_persona_event(&record, None)
         .unwrap()
         .sign_with_keys(&nostr::Keys::generate())
         .unwrap();
@@ -273,10 +282,150 @@ fn shared_persona_event_has_exact_tag_and_round_trips() {
     assert!(persona_from_event(&event).unwrap().shared);
 }
 
+/// Head tags rendered as flat string slices, for exact-shape assertions.
+fn tag_shape(event: &nostr::Event) -> Vec<Vec<&str>> {
+    event
+        .tags
+        .iter()
+        .map(|t| t.as_slice().iter().map(String::as_str).collect())
+        .collect()
+}
+
+/// A signed head carrying `d`, `shared`, a skill binding, and the template
+/// marker — the four tag classes a rebuild can face.
+fn binding_head(keys: &nostr::Keys) -> nostr::Event {
+    EventBuilder::new(
+        Kind::Custom(KIND_PERSONA as u16),
+        r#"{"display_name":"Old"}"#,
+    )
+    .tags(vec![
+        Tag::parse(["d", "old-slug"]).expect("d tag"),
+        Tag::parse(["shared", "true"]).expect("shared tag"),
+        Tag::parse(["skill", "ethereum-dev", "developers"]).expect("skill tag"),
+        Tag::parse(["marker", "template"]).expect("marker tag"),
+    ])
+    .sign_with_keys(keys)
+    .expect("signed head")
+}
+
+/// Carry-forward unit: everything the builder cannot re-derive survives, and
+/// everything it CAN re-derive (`d`, `shared`) is excluded so it is never
+/// duplicated onto the new head.
+#[test]
+fn carried_forward_tags_keeps_bindings_and_excludes_recomputed_names() {
+    let keys = nostr::Keys::generate();
+    let head = binding_head(&keys);
+
+    let carried = carried_forward_tags(&head);
+    let shape: Vec<Vec<&str>> = carried
+        .iter()
+        .map(|t| t.as_slice().iter().map(String::as_str).collect())
+        .collect();
+    assert_eq!(
+        shape,
+        vec![
+            vec!["skill", "ethereum-dev", "developers"],
+            vec!["marker", "template"],
+        ],
+        "skill + marker carry; d/shared are recomputed by the builder"
+    );
+}
+
+/// Full rebuild through the production seam: content updates from the record,
+/// `d` and `shared` are recomputed exactly once each, and the carried
+/// `skill`/`marker` tags are byte-identical to the head's own tags.
+#[test]
+fn rebuild_carries_binding_tags_byte_identically_while_content_updates() {
+    let keys = nostr::Keys::generate();
+    let head = binding_head(&keys);
+
+    let mut record = sample_persona();
+    record.shared = true;
+    record.system_prompt = "Edited prompt.".to_string();
+
+    let event = build_persona_event(&record, Some(&head))
+        .expect("build")
+        .sign_with_keys(&keys)
+        .expect("signed");
+
+    assert_eq!(
+        tag_shape(&event),
+        vec![
+            vec!["d", "test-slug"],
+            vec!["shared", "true"],
+            vec!["skill", "ethereum-dev", "developers"],
+            vec!["marker", "template"],
+        ],
+        "d/shared recomputed once (head's stale `old-slug` d replaced), skill + marker carried"
+    );
+    // Byte-identity against the head's own tags, not just shape.
+    assert_eq!(event.tags.as_slice()[2], head.tags.as_slice()[2]);
+    assert_eq!(event.tags.as_slice()[3], head.tags.as_slice()[3]);
+    // Content updates from the record.
+    assert!(event.content.contains("Edited prompt."));
+}
+
+/// No head: the rebuild starts from nothing carried — `d` (plus `shared`
+/// when set) and no invented tags.
+#[test]
+fn rebuild_without_a_head_carries_nothing() {
+    let keys = nostr::Keys::generate();
+    let mut record = sample_persona();
+    record.shared = true;
+
+    let event = build_persona_event(&record, None)
+        .expect("build")
+        .sign_with_keys(&keys)
+        .expect("signed");
+
+    assert_eq!(
+        tag_shape(&event),
+        vec![vec!["d", "test-slug"], vec!["shared", "true"]]
+    );
+}
+
+/// Deliberate-removal path (the documented future removal): carry-forward
+/// never drops a tag, so an editor that CAN express a binding edit passes the
+/// full desired tag intent to `build_persona_event_with_tags` — here the
+/// carried set minus the skill binding — and the resulting head publishes the
+/// removal. An empty intent is the explicit clear: only `d` (+`shared`)
+/// remains.
+#[test]
+fn deliberate_binding_removal_is_expressed_as_explicit_tag_intent() {
+    let keys = nostr::Keys::generate();
+    let head = binding_head(&keys);
+    let mut record = sample_persona();
+
+    // Editor computes intent: carried tags minus the removed binding.
+    let mut intent = carried_forward_tags(&head);
+    intent.retain(|tag| tag.as_slice().first().map(String::as_str) != Some("skill"));
+    let removed = build_persona_event_with_tags(&record, intent)
+        .expect("build with explicit intent")
+        .sign_with_keys(&keys)
+        .expect("signed");
+    assert_eq!(
+        tag_shape(&removed),
+        vec![vec!["d", "test-slug"], vec!["marker", "template"]],
+        "the binding is gone while the marker survives — the removal publishes"
+    );
+
+    // Explicit clear: empty intent → head carries only the recomputed tags.
+    record.shared = true;
+    let cleared = build_persona_event_with_tags(&record, vec![])
+        .expect("build with cleared intent")
+        .sign_with_keys(&keys)
+        .expect("signed");
+    assert_eq!(
+        tag_shape(&cleared),
+        vec![vec!["d", "test-slug"], vec!["shared", "true"]]
+    );
+}
+
 #[test]
 fn round_trip_serialization() {
-    let record = sample_persona();
-    let builder = build_persona_event(&record).unwrap();
+    let mut record = sample_persona();
+    record.acp_command = Some("buzz-janet-acp".to_string());
+    let builder = build_persona_event(&record, None).unwrap();
     let keys = nostr::Keys::generate();
     let event = builder.sign_with_keys(&keys).unwrap();
 
@@ -288,6 +437,7 @@ fn round_trip_serialization() {
         Some("https://example.com/avatar.png".to_string())
     );
     assert_eq!(restored.system_prompt, "You are a test assistant.");
+    assert_eq!(restored.acp_command.as_deref(), Some("buzz-janet-acp"));
     assert_eq!(restored.runtime, Some("goose".to_string()));
     assert_eq!(restored.model, Some("claude-opus-4".to_string()));
     assert_eq!(restored.provider, Some("anthropic".to_string()));
@@ -315,8 +465,11 @@ fn content_matches_nip_ap_vector() {
     const VECTOR: &str = r#"{"display_name":"Test Agent","system_prompt":"You are a test assistant.","avatar_url":"https://example.com/avatar.png","runtime":"goose","model":"claude-opus-4","provider":"anthropic","name_pool":["Alpha","Beta"]}"#;
 
     let content = PersonaEventContent {
+        session_policy: Default::default(),
+        description: None,
         display_name: "Test Agent".to_string(),
         system_prompt: Some("You are a test assistant.".to_string()),
+        acp_command: None,
         avatar_url: Some("https://example.com/avatar.png".to_string()),
         runtime: Some("goose".to_string()),
         model: Some("claude-opus-4".to_string()),
@@ -330,6 +483,16 @@ fn content_matches_nip_ap_vector() {
         serde_json::to_string(&content).unwrap(),
         VECTOR,
         "serialized content drifted from the NIP-AP Event 1 vector"
+    );
+
+    let mut with_transport = content.clone();
+    with_transport.acp_command = Some("buzz-janet-acp".into());
+    assert_eq!(
+        serde_json::to_string(&with_transport).unwrap(),
+        VECTOR.replace(
+            "\"avatar_url\":",
+            "\"acp_command\":\"buzz-janet-acp\",\"avatar_url\":"
+        )
     );
 
     // Hash invariance across the unified-model widening: REAL pre-revision
@@ -368,10 +531,13 @@ fn content_matches_nip_ap_vector() {
     // signed content, so a second implementer following the spec computes
     // the same NIP-01 id.
     let record = AgentDefinition {
+        session_policy: Default::default(),
+        description: None,
         id: "test-agent".to_string(),
         display_name: "Test Agent".to_string(),
         avatar_url: Some("https://example.com/avatar.png".to_string()),
         system_prompt: "You are a test assistant.".to_string(),
+        acp_command: None,
         runtime: Some("goose".to_string()),
         model: Some("claude-opus-4".to_string()),
         provider: Some("anthropic".to_string()),
@@ -382,6 +548,7 @@ fn content_matches_nip_ap_vector() {
         source_team: None,
         source_team_persona_slug: None,
         catalog_source: None,
+        team_catalog_source: None,
         env_vars: BTreeMap::new(),
         respond_to: None,
         respond_to_allowlist: Vec::new(),
@@ -389,7 +556,7 @@ fn content_matches_nip_ap_vector() {
         created_at: "2025-01-01T00:00:00Z".to_string(),
         updated_at: "2025-01-01T00:00:00Z".to_string(),
     };
-    let event = build_persona_event(&record)
+    let event = build_persona_event(&record, None)
         .unwrap()
         .sign_with_keys(&nostr::Keys::generate())
         .unwrap();
@@ -399,10 +566,13 @@ fn content_matches_nip_ap_vector() {
 #[test]
 fn round_trip_minimal_persona() {
     let record = AgentDefinition {
+        session_policy: Default::default(),
+        description: None,
         id: "minimal".to_string(),
         display_name: "Minimal".to_string(),
         avatar_url: None,
         system_prompt: "Hello".to_string(),
+        acp_command: None,
         runtime: None,
         model: None,
         provider: None,
@@ -413,6 +583,7 @@ fn round_trip_minimal_persona() {
         source_team: Some("team-1".to_string()),
         source_team_persona_slug: None,
         catalog_source: None,
+        team_catalog_source: None,
         env_vars: BTreeMap::new(),
         respond_to: None,
         respond_to_allowlist: Vec::new(),
@@ -421,7 +592,7 @@ fn round_trip_minimal_persona() {
         updated_at: "2025-01-01T00:00:00Z".to_string(),
     };
 
-    let builder = build_persona_event(&record).unwrap();
+    let builder = build_persona_event(&record, None).unwrap();
     let keys = nostr::Keys::generate();
     let event = builder.sign_with_keys(&keys).unwrap();
 
@@ -496,10 +667,13 @@ fn behavioral_defaults_survive_record_round_trip() {
 #[test]
 fn quad_absent_definition_hash_stable_across_activation() {
     let record = AgentDefinition {
+        session_policy: Default::default(),
+        description: None,
         id: "quad-absent".to_string(),
         display_name: "Test".to_string(),
         avatar_url: None,
         system_prompt: "Hello".to_string(),
+        acp_command: None,
         runtime: Some("goose".to_string()),
         model: Some("gpt-oss".to_string()),
         provider: None,
@@ -510,6 +684,7 @@ fn quad_absent_definition_hash_stable_across_activation() {
         source_team: None,
         source_team_persona_slug: None,
         catalog_source: None,
+        team_catalog_source: None,
         env_vars: BTreeMap::new(),
         respond_to: None,
         respond_to_allowlist: Vec::new(),
@@ -520,6 +695,7 @@ fn quad_absent_definition_hash_stable_across_activation() {
     let live = persona_event_content(&record);
     // The reserved-era projection: identical fields, quad hardcoded off.
     let reserved_era = PersonaEventContent {
+        session_policy: Default::default(),
         respond_to: None,
         respond_to_allowlist: Vec::new(),
         parallelism: None,
@@ -540,10 +716,13 @@ fn quad_absent_definition_hash_stable_across_activation() {
 /// way `persona_from_event` maps fields, without needing a signed event.
 fn persona_from_event_content_for_test(content: PersonaEventContent) -> AgentDefinition {
     AgentDefinition {
+        session_policy: content.session_policy,
+        description: content.description,
         id: "staged".to_string(),
         display_name: content.display_name,
         avatar_url: content.avatar_url,
         system_prompt: content.system_prompt.unwrap_or_default(),
+        acp_command: content.acp_command,
         runtime: content.runtime,
         model: content.model,
         provider: content.provider,
@@ -554,6 +733,7 @@ fn persona_from_event_content_for_test(content: PersonaEventContent) -> AgentDef
         source_team: None,
         source_team_persona_slug: None,
         catalog_source: None,
+        team_catalog_source: None,
         env_vars: BTreeMap::new(),
         respond_to: content.respond_to,
         respond_to_allowlist: content.respond_to_allowlist,
@@ -566,9 +746,12 @@ fn persona_from_event_content_for_test(content: PersonaEventContent) -> AgentDef
 #[test]
 fn persona_content_hash_is_deterministic() {
     let content = PersonaEventContent {
+        session_policy: Default::default(),
+        description: None,
         display_name: "Test".to_string(),
         avatar_url: None,
         system_prompt: Some("Hello".to_string()),
+        acp_command: None,
         runtime: None,
         model: None,
         provider: None,
@@ -586,9 +769,12 @@ fn persona_content_hash_is_deterministic() {
 #[test]
 fn persona_content_hash_changes_on_edit() {
     let content1 = PersonaEventContent {
+        session_policy: Default::default(),
+        description: None,
         display_name: "Test".to_string(),
         avatar_url: None,
         system_prompt: Some("Hello".to_string()),
+        acp_command: None,
         runtime: None,
         model: None,
         provider: None,
@@ -603,6 +789,121 @@ fn persona_content_hash_changes_on_edit() {
         persona_content_hash(&content1),
         persona_content_hash(&content2)
     );
+}
+
+#[test]
+fn session_policy_change_changes_hash_and_snapshot() {
+    let mut persona = sample_persona();
+    let channel_hash = persona_content_hash(&persona_event_content(&persona));
+    persona.session_policy = crate::managed_agents::AcpSessionPolicy::Thread;
+
+    let thread_content = persona_event_content(&persona);
+    assert_ne!(channel_hash, persona_content_hash(&thread_content));
+    assert_eq!(
+        thread_content.session_policy,
+        crate::managed_agents::AcpSessionPolicy::Thread
+    );
+
+    let mut record = sample_record();
+    apply_persona_snapshot(&mut record, &persona);
+    assert_eq!(
+        record.session_policy,
+        crate::managed_agents::AcpSessionPolicy::Thread
+    );
+}
+
+#[test]
+fn channel_policy_stays_wire_compatible_when_absent() {
+    let content = persona_event_content(&sample_persona());
+    let value = serde_json::to_value(content).unwrap_or_default();
+    assert!(value.get("session_policy").is_none());
+
+    let parsed: PersonaEventContent = serde_json::from_value(serde_json::json!({
+        "display_name": "Legacy"
+    }))
+    .unwrap_or_else(|error| panic!("legacy persona content should parse: {error}"));
+    assert_eq!(
+        parsed.session_policy,
+        crate::managed_agents::AcpSessionPolicy::Channel
+    );
+
+    for value in [serde_json::json!("conversation"), serde_json::Value::Null] {
+        let parsed: PersonaEventContent = serde_json::from_value(serde_json::json!({
+            "display_name": "Forward-compatible",
+            "session_policy": value,
+        }))
+        .unwrap_or_else(|error| panic!("unknown policy should not drop a persona: {error}"));
+        assert_eq!(
+            parsed.session_policy,
+            crate::managed_agents::AcpSessionPolicy::Channel
+        );
+    }
+}
+
+/// `description` is public display metadata, deliberately excluded from
+/// `persona_content_hash`: two contents differing only in description must
+/// hash identically, so a description-only edit never flips the
+/// "restart required" drift badge on linked instances.
+#[test]
+fn description_change_does_not_change_content_hash() {
+    let without = PersonaEventContent {
+        session_policy: Default::default(),
+        description: None,
+        display_name: "Test".to_string(),
+        avatar_url: None,
+        system_prompt: Some("Hello".to_string()),
+        acp_command: None,
+        runtime: None,
+        model: None,
+        provider: None,
+        name_pool: vec![],
+        respond_to: None,
+        respond_to_allowlist: Vec::new(),
+        parallelism: None,
+    };
+    let mut with = without.clone();
+    with.description = Some("A friendly test agent.".to_string());
+    assert_eq!(
+        persona_content_hash(&without),
+        persona_content_hash(&with),
+        "description must not participate in the content hash"
+    );
+
+    let mut edited = with.clone();
+    edited.description = Some("A different description.".to_string());
+    assert_eq!(
+        persona_content_hash(&with),
+        persona_content_hash(&edited),
+        "description-only edits must not change the content hash"
+    );
+}
+
+#[test]
+fn snapshot_applies_persona_acp_command_to_linked_instance() {
+    let mut record = sample_record();
+    let mut persona = sample_persona();
+    persona.acp_command = Some("buzz-janet-acp".to_string());
+
+    apply_persona_snapshot(&mut record, &persona);
+
+    assert_eq!(record.acp_command, "buzz-janet-acp");
+
+    // Saving stock transport round-trips through the unified store as None.
+    persona.acp_command = Some("buzz-acp".to_string());
+    let restored = persona
+        .clone()
+        .into_agent_record()
+        .to_definition_view()
+        .unwrap();
+    assert_eq!(restored.acp_command, None);
+    apply_persona_snapshot(&mut record, &restored);
+    assert_eq!(record.acp_command, "buzz-acp");
+
+    // Owner-controlled legacy custom commands remain definition state.
+    persona.acp_command = Some("/opt/custom-acp".to_string());
+    let restored = persona.into_agent_record().to_definition_view().unwrap();
+    apply_persona_snapshot(&mut record, &restored);
+    assert_eq!(record.acp_command, "/opt/custom-acp");
 }
 
 // ── PersonaSnapshot.runtime ───────────────────────────────────────────────
@@ -636,6 +937,7 @@ fn snapshot_runtime_verbatim_from_persona() {
 /// Helper: a persona with no model/provider configured.
 fn blank_model_persona() -> AgentDefinition {
     AgentDefinition {
+        session_policy: Default::default(),
         model: None,
         provider: None,
         ..sample_persona()

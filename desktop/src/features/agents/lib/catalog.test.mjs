@@ -47,7 +47,7 @@ test("isCatalogPersonaSelected treats active catalog personas as selected", () =
   );
 });
 
-test("getPersonaLabelsById keeps every returned persona addressable", () => {
+test("getPersonaLabelsById keeps every returned personan addressable", () => {
   const personas = [
     createPersona("builtin:fizz", "Fizz", { isBuiltIn: true, isActive: false }),
     createPersona("custom:builder", "Builder"),

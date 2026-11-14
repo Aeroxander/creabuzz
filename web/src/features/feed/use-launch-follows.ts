@@ -1,0 +1,102 @@
+import { useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
+
+import { existingUserPubkey } from "@/shared/lib/identity";
+
+import {
+  coordinatesFromLegacyKeys,
+  followedLaunches,
+  withMigratedLaunches,
+} from "./lib/lists";
+import { useFollowChanges, useMyLists, usePublishFeedEvent } from "./use-feed";
+import { needAccountTo } from "@/features/identity/lib/account-copy";
+
+/** Where launch follows lived before they were published (browser only). */
+const LEGACY_KEY = "buzz.launchpad.followed";
+
+function readLegacy(): string[] {
+  try {
+    const raw = globalThis.localStorage?.getItem(LEGACY_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? coordinatesFromLegacyKeys(
+          parsed.filter((v): v is string => typeof v === "string"),
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function clearLegacy(): void {
+  try {
+    globalThis.localStorage?.removeItem(LEGACY_KEY);
+  } catch {
+    // Nothing readable either; the next load simply finds nothing to migrate.
+  }
+}
+
+/**
+ * The launches this person follows, from their published bookmark list, with
+ * a one-time move of the old browser-only list into it. The old list is only
+ * removed after the relay accepted the migrated bookmarks (Review-Proven
+ * Rule 1: never drop the only copy before its replacement is durable).
+ */
+export function useLaunchFollows() {
+  const me = existingUserPubkey();
+  const lists = useMyLists();
+  const publish = usePublishFeedEvent();
+  const { change, pendingFor } = useFollowChanges();
+  // One attempt per visit: a failure keeps the old list (still shown below)
+  // and is retried on the next page load, never in a render loop.
+  const attempted = useRef(false);
+  const { mutate } = publish;
+
+  useEffect(() => {
+    if (!me || !lists.isSuccess || attempted.current) return;
+    const legacy = readLegacy();
+    if (legacy.length === 0) return;
+    attempted.current = true;
+    const template = withMigratedLaunches(lists.data.bookmarks, legacy);
+    if (!template) {
+      clearLegacy();
+      return;
+    }
+    mutate(template, { onSuccess: clearLegacy });
+  }, [me, lists.isSuccess, lists.data, mutate]);
+
+  const followed = useMemo(() => {
+    const set = followedLaunches(lists.data?.bookmarks ?? null);
+    for (const coord of readLegacy()) set.add(coord);
+    return set;
+  }, [lists.data]);
+
+  /** `onDone` runs once the follow list change is accepted by the server. */
+  const toggle = (coord: string, onDone?: () => void) => {
+    if (!me) {
+      toast.error(needAccountTo("follow"));
+      return;
+    }
+    if (!lists.isSuccess) return;
+    // The shared follow queue re-reads the newest list, so this never undoes another follow made a moment ago.
+    if (pendingFor({ launchCoord: coord }) !== undefined) return;
+    change({ launchCoord: coord, follow: !followed.has(coord) }).then(
+      () => onDone?.(),
+      (error: unknown) =>
+        toast.error(
+          error instanceof Error ? error.message : "Could not update follows.",
+        ),
+    );
+  };
+
+  const { refetch } = lists;
+  return {
+    followed,
+    toggle,
+    ready: !me || lists.isSuccess,
+    /** Who the person follows could not be read: `followed` is then not the whole list, and nothing waits on it. */
+    failed: Boolean(me) && lists.isError && !lists.data,
+    retry: () => void refetch(),
+    pending: publish.isPending,
+  };
+}

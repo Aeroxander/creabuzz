@@ -94,7 +94,7 @@ export function deleteConfirmState(
   if (agents.isError || personas.isError) {
     return {
       canConfirm: true,
-      message: `Couldn't check which agents use this harness — some agents may stop launching. Delete ${label}?`,
+      message: `Couldn't check which agents use this harness. Some agents may stop launching. Delete ${label}?`,
     };
   }
   const count = countAgentsReferencingHarness(

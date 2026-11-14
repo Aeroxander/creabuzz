@@ -1,0 +1,64 @@
+# Creaton on the single-node bundle (see README.md, "Creaton"). Added by run.sh when BUZZ_COMPOSE_CREATON=true.
+#
+# The relay image is built from this checkout, with the Creaton web app inside it and the app's network settings
+# from .env (they are read when the app is built, and are public in the page). Every one is empty unless .env sets it;
+# the weekly-sale trial block (VITE_SECONDARY_MARKET_FACTORY, VITE_TRADING_TRIAL and what goes with them) switches
+# trading on only when both of its first two are set; the investing block (VITE_INVESTING and the three addresses) is one
+# switch, off while VITE_INVESTING is empty. The upstream image would serve Buzz,
+# without the Creaton app or its database migrations. The server also turns on what the app relies on: unread markers,
+# the app's own page routes, and the terms and privacy note shown at sign-up (run.sh reads them from their files), and the age box.
+services:
+  relay:
+    image: ${CREATON_IMAGE:-creaton-relay:local}
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: runtime
+      args:
+        BUZZ_SOURCE_SHA: ${BUZZ_SOURCE_SHA:-unknown}
+        VITE_LAUNCHPAD_CHAIN_ID: ${VITE_LAUNCHPAD_CHAIN_ID:-}
+        VITE_CHAIN_RPC_URL: ${VITE_CHAIN_RPC_URL:-}
+        VITE_CONTRIBUTOR_KITS: ${VITE_CONTRIBUTOR_KITS:-}
+        VITE_HISTORY_FROM_BLOCKS: ${VITE_HISTORY_FROM_BLOCKS:-}
+        VITE_SECONDARY_MARKET_FACTORY: ${VITE_SECONDARY_MARKET_FACTORY:-}
+        VITE_TRADING_TRIAL: ${VITE_TRADING_TRIAL:-}
+        VITE_TEST_QUOTE_TOKENS: ${VITE_TEST_QUOTE_TOKENS:-}
+        VITE_INVESTING: ${VITE_INVESTING:-}
+        VITE_BACKING_POOL_FACTORY: ${VITE_BACKING_POOL_FACTORY:-}
+        VITE_CONTRIBUTOR_KIT_V3: ${VITE_CONTRIBUTOR_KIT_V3:-}
+        VITE_BACKING_QUOTE_TOKEN: ${VITE_BACKING_QUOTE_TOKEN:-}
+        VITE_WORK_BOUNTIES: ${VITE_WORK_BOUNTIES:-}
+        VITE_OPEN_BOUNTIES: ${VITE_OPEN_BOUNTIES:-}
+        VITE_CREATE_TOKENS: ${VITE_CREATE_TOKENS:-}
+        VITE_CREATE_FAUCETS: ${VITE_CREATE_FAUCETS:-}
+        VITE_COURTS: ${VITE_COURTS:-}
+        VITE_PAYOUTS_FACTORIES: ${VITE_PAYOUTS_FACTORIES:-}
+        VITE_REMIX_BONDS: ${VITE_REMIX_BONDS:-}
+        VITE_ZERODEV_PROJECT_ID: ${VITE_ZERODEV_PROJECT_ID:-}
+        VITE_ZERODEV_CHAIN_ID: ${VITE_ZERODEV_CHAIN_ID:-}
+        VITE_ZERODEV_API_KEY: ${VITE_ZERODEV_API_KEY:-}
+        VITE_BUNDLER_URL: ${VITE_BUNDLER_URL:-}
+        VITE_ERROR_REPORT_URL: ${VITE_ERROR_REPORT_URL:-}
+        VITE_APP_RELEASE: ${VITE_APP_RELEASE:-}
+        VITE_COMMUNITY_API_ORIGIN: ${VITE_COMMUNITY_API_ORIGIN:-}
+    environment:
+      # Unread rooms and boards: the server's private read-state API (D101).
+      BUZZ_V1_ENABLED: ${BUZZ_V1_ENABLED:-true}
+      # How much one signed-in person may send. The first counts every read, live update and write the web app sends,
+      # per second, averaged over 5 seconds and shared by all of that person's tabs and devices; the second counts
+      # writes a minute. The relay's own default (10 a second) is sized for chat clients: the web app opens several
+      # reads per page, and one person may have two tabs open. Measured on 2026-10-29: the social suite's busiest five
+      # seconds for one person was 81 requests (the relay's default allows 50); 40 a second allows 200, room for two busy
+      # tabs. To measure again: HOSTED=1 SOCIAL_FRAME_REPORT=1 scripts/web-social-e2e.sh (it reads these values here).
+      # The web app's HTTP reads (/query, unread state) count against a third limit, BUZZ_RATE_LIMIT_HUMAN_API_CALLS_PER_MIN
+      # (relay default 300 a minute), which is left at its default and is not measured by that run.
+      BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC: ${BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC:-40}
+      BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN: ${BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN:-300}
+      # Every path the server does not own opens the web app (its own routes, and invites on every community address).
+      BUZZ_WEB_SPA: full
+      # Shown at sign-up. run.sh fills these from BUZZ_TERMS_FILE and BUZZ_PRIVACY_FILE, and refuses a file that still
+      # has a draft's [placeholders]. Empty shows none.
+      BUZZ_TERMS_OF_SERVICE_MARKDOWN: ${BUZZ_TERMS_OF_SERVICE_MARKDOWN:-}
+      BUZZ_PRIVACY_POLICY_MARKDOWN: ${BUZZ_PRIVACY_POLICY_MARKDOWN:-}
+      # The "I am 18 years of age or older" box at sign-up. On unless .env says false, so an older .env gets it too.
+      BUZZ_AGE_ATTESTATION_REQUIRED: ${BUZZ_AGE_ATTESTATION_REQUIRED:-true}

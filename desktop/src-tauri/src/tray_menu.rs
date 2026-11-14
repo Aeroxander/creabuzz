@@ -213,7 +213,9 @@ struct TrayMenuState<R: Runtime> {
 pub enum TrayAction {
     NewChannel,
     OpenChannel {
+        #[serde(rename = "channelId")]
         channel_id: String,
+        #[serde(rename = "communityGeneration")]
         community_generation: u64,
     },
 }
@@ -334,7 +336,7 @@ fn build_menu<R: Runtime>(
     menu.append(&MenuItem::with_id(
         app,
         OPEN_BUZZ_ID,
-        "Open Buzz",
+        "Open Creaton",
         true,
         None::<&str>,
     )?)?;
@@ -342,7 +344,7 @@ fn build_menu<R: Runtime>(
     menu.append(&MenuItem::with_id(
         app,
         QUIT_ID,
-        "Quit Buzz",
+        "Quit Creaton",
         true,
         None::<&str>,
     )?)?;
@@ -504,7 +506,7 @@ pub fn take_tray_actions<R: Runtime>(app: AppHandle<R>) -> Result<Vec<TrayAction
     let mut queue = state
         .action_queue
         .lock()
-        .map_err(|_| "Buzz tray action queue is unavailable".to_string())?;
+        .map_err(|_| "Creaton tray action queue is unavailable".to_string())?;
     Ok(std::mem::take(&mut queue.pending_actions))
 }
 
@@ -531,7 +533,7 @@ pub fn requeue_tray_actions<R: Runtime>(
     let mut queue = state
         .action_queue
         .lock()
-        .map_err(|_| "Buzz tray action queue is unavailable".to_string())?;
+        .map_err(|_| "Creaton tray action queue is unavailable".to_string())?;
     requeue_actions(&mut queue, actions);
     drop(queue);
     app.emit("tray-action-available", ())
@@ -546,7 +548,7 @@ pub fn clear_tray_agent_activity<R: Runtime>(app: AppHandle<R>) -> Result<(), St
     let mut queue = state
         .action_queue
         .lock()
-        .map_err(|_| "Buzz tray action queue is unavailable".to_string())?;
+        .map_err(|_| "Creaton tray action queue is unavailable".to_string())?;
     queue.community_generation = queue.community_generation.wrapping_add(1);
     queue
         .pending_actions
@@ -573,7 +575,7 @@ pub fn update_tray_agent_activity<R: Runtime>(
     let mut activity_items = state
         .activity_items
         .lock()
-        .map_err(|_| "Buzz tray menu state is unavailable".to_string())?;
+        .map_err(|_| "Creaton tray menu state is unavailable".to_string())?;
 
     if activity_items.len() == activities.len().saturating_add(recent_activities.len())
         && activity_items
@@ -593,7 +595,7 @@ pub fn update_tray_agent_activity<R: Runtime>(
         }
         let tray = app
             .tray_by_id(TRAY_ID)
-            .ok_or_else(|| "Buzz tray icon is not available".to_string())?;
+            .ok_or_else(|| "Creaton tray icon is not available".to_string())?;
         apply_activity_presentation(&tray, activities, recent_activities)?;
         return Ok(());
     }
@@ -602,7 +604,7 @@ pub fn update_tray_agent_activity<R: Runtime>(
         build_menu(&app, activities, recent_activities).map_err(|error| error.to_string())?;
     let tray = app
         .tray_by_id(TRAY_ID)
-        .ok_or_else(|| "Buzz tray icon is not available".to_string())?;
+        .ok_or_else(|| "Creaton tray icon is not available".to_string())?;
     tray.set_menu(Some(menu))
         .map_err(|error| error.to_string())?;
     apply_activity_presentation(&tray, activities, recent_activities)?;
@@ -613,6 +615,23 @@ pub fn update_tray_agent_activity<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::{requeue_actions, TrayAction, TrayActionQueue};
+
+    #[test]
+    fn open_channel_action_serializes_with_frontend_field_names() {
+        let action = TrayAction::OpenChannel {
+            channel_id: "channel-123".into(),
+            community_generation: 7,
+        };
+
+        assert_eq!(
+            serde_json::to_value(action).expect("tray action should serialize"),
+            serde_json::json!({
+                "kind": "openChannel",
+                "channelId": "channel-123",
+                "communityGeneration": 7,
+            })
+        );
+    }
 
     #[test]
     fn stale_channel_actions_are_not_requeued_after_community_change() {

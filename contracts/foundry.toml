@@ -1,0 +1,24 @@
+[profile.default]
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+# vm.ffi for the pinned P-256 fixture signer in test/kernel-sign.mjs
+# (KernelWebAuthnUserOp.t.sol).
+ffi = true
+fs_permissions = [{ access = "read-write", path = "./deployments" }]
+# Every first-party contract compiles with one pinned solc (ES-5 in docs/v3-review/AUDIT-SCOPE.md: 0.8.37, released
+# 2026-09-10, fixes the via-IR and storage bugs listed for 0.8.26 and 0.8.30; the one bug still listed for it,
+# YulOptimizerKnowledgeBaseStaleBookkeeping, low, is fixed in 0.8.38, not yet released: move the pin when it is). The pin also keeps the desktop's embedded bytecode
+# reproducible: `GraduationExecutor` and `AllowlistHook` are deployed from creation bytecode embedded in
+# desktop/src/features/launchpad/lib/graduationArtifact.ts (regenerate with scripts/regen-graduation-artifact.mjs;
+# graduationArtifact.test.mjs byte-matches it against contracts/out). Upstream code keeps its own pins (the auction is
+# =0.8.26), so a test may not import both: test/LaunchLifecycle.t.sol drives our executor and hook through their
+# artifacts.
+compilation_restrictions = [
+  { paths = "src/**", version = "=0.8.37" },
+]
+
+[rpc_endpoints]
+anvil = "http://127.0.0.1:8545"
+sepolia = "${SEPOLIA_RPC_URL}"

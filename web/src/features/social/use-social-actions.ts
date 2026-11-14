@@ -1,0 +1,165 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { KIND_MUTE_LIST, KIND_PROFILE } from "@/shared/constants/kinds";
+import {
+  existingUserPubkey,
+  nip44DecryptAsUser,
+  nip44EncryptAsUser,
+} from "@/shared/lib/identity";
+
+import {
+  type EventTemplate,
+  replacementTimestamp,
+} from "../feed/lib/feed-events";
+import { latestList } from "../feed/lib/lists";
+import { publishFeedEvent } from "../feed/use-feed";
+import {
+  type MuteState,
+  mutedInState,
+  nextMuteList,
+  readMuteState,
+} from "./mute-list";
+import { readEvents, readLatest } from "./read";
+import { socialKeys } from "./use-social-data";
+
+/**
+ * Publish any social event, then refresh what it can change. `mirror` is the
+ * composer's "Also share with other apps" for this one post only.
+ */
+export function useSocialPublish() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      mirror,
+      ...template
+    }: EventTemplate & { mirror?: boolean }) =>
+      publishFeedEvent(template, { mirror }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: socialKeys.all });
+      void queryClient.invalidateQueries({ queryKey: ["feed"] });
+    },
+  });
+}
+
+/* ── Mutes (private: NIP-44 in the list's content) ───────────────────────── */
+
+/** Your newest mute list, its private part opened with your own key. */
+async function readMyMutes(me: string): Promise<MuteState> {
+  return readMuteState(
+    latestList(
+      await readEvents({ kinds: [KIND_MUTE_LIST], authors: [me], limit: 5 }),
+      KIND_MUTE_LIST,
+      me,
+    ),
+    (ciphertext) => nip44DecryptAsUser(me, ciphertext),
+  );
+}
+
+export function useMutedPeople() {
+  const me = existingUserPubkey();
+  return useQuery({
+    queryKey: [...socialKeys.lists, "muted", me],
+    enabled: Boolean(me),
+    staleTime: 60_000,
+    queryFn: async () => mutedInState(await readMyMutes(me as string)),
+  });
+}
+
+const NOBODY: ReadonlySet<string> = new Set();
+
+/**
+ * The people the reader has muted, empty while signed out or before the list is read. A mute hides a person from the
+ * reader everywhere they meet them (Home, boards, rooms, notifications, messages); it never hides anything from anyone
+ * else, and never what is about the reader's own access (a moderator's notice).
+ */
+export function useMutedSet(): ReadonlySet<string> {
+  return useMutedPeople().data ?? NOBODY;
+}
+
+/**
+ * Mute or unmute a person. The mute list replaces itself on every write, so
+ * the newest copy is re-read first and the write is refused if it no longer
+ * contains someone this session already saw in it. Every write keeps the
+ * people muted in the private part only (`mute-list.ts`).
+ */
+export function useToggleMute() {
+  const queryClient = useQueryClient();
+  const me = existingUserPubkey();
+  return useMutation({
+    mutationFn: async ({
+      pubkey,
+      muted,
+    }: {
+      pubkey: string;
+      muted: boolean;
+    }) => {
+      if (!me) throw new Error("Sign in to mute people.");
+      const known = queryClient.getQueryData<Set<string>>([
+        ...socialKeys.lists,
+        "muted",
+        me,
+      ]);
+      const state = await readMyMutes(me);
+      const current = mutedInState(state);
+      for (const seen of known ?? []) {
+        if (!current.has(seen)) {
+          throw new Error(
+            "Couldn't load your mute list. Try again in a moment.",
+          );
+        }
+      }
+      // Written privately, so the person muted can't read that they were.
+      return publishFeedEvent(
+        await nextMuteList(state, pubkey, muted, (plaintext) =>
+          nip44EncryptAsUser(me, plaintext),
+        ),
+      );
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: socialKeys.lists });
+    },
+  });
+}
+
+/* ── Profile (kind 0) ───────────────────────────────────────────────────── */
+
+export type ProfilePatch = Partial<
+  Record<
+    "display_name" | "name" | "about" | "picture" | "banner" | "website",
+    string
+  >
+>;
+
+/** Merge edited fields into your kind 0, keeping every field this form doesn't touch. */
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+  const me = existingUserPubkey();
+  return useMutation({
+    mutationFn: async (patch: ProfilePatch) => {
+      if (!me) throw new Error("Sign in to edit your profile.");
+      const latest = await readLatest(KIND_PROFILE, me);
+      let existing: Record<string, unknown> = {};
+      try {
+        const parsed = latest ? JSON.parse(latest.content) : {};
+        if (parsed && typeof parsed === "object") existing = parsed;
+      } catch {
+        // Unreadable profile JSON — start from the edited fields alone.
+      }
+      const merged: Record<string, unknown> = { ...existing };
+      for (const [field, value] of Object.entries(patch)) {
+        const trimmed = value?.trim();
+        if (trimmed) merged[field] = trimmed;
+        else delete merged[field];
+      }
+      return publishFeedEvent({
+        kind: KIND_PROFILE,
+        tags: latest?.tags ?? [],
+        content: JSON.stringify(merged),
+        created_at: replacementTimestamp(latest),
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["profiles"] });
+    },
+  });
+}

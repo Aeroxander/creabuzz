@@ -12,32 +12,41 @@ use uuid::Uuid;
 use buzz_auth::Scope;
 use buzz_core::kind::{
     event_kind_u32, is_identity_archive_request_kind, is_parameterized_replaceable,
-    is_relay_admin_kind, KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE, KIND_AGENT_TURN_METRIC,
-    KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_AUTH, KIND_BOOKMARK_LIST, KIND_BOOKMARK_SET,
-    KIND_CANVAS, KIND_CONTACT_LIST, KIND_DELETION, KIND_DM_ADD_MEMBER, KIND_DM_HIDE, KIND_DM_OPEN,
-    KIND_EMOJI_LIST, KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT,
-    KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH,
-    KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE,
-    KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
-    KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
-    KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
-    KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
-    KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT,
-    KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST,
-    KIND_NIP29_CREATE_GROUP, KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP,
-    KIND_NIP29_EDIT_METADATA, KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST,
-    KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER, KIND_NIP43_LEAVE_REQUEST,
-    KIND_NIP65_RELAY_LIST_METADATA, KIND_PERSONA, KIND_PIN_LIST, KIND_PRESENCE_UPDATE,
-    KIND_PRODUCT_FEEDBACK, KIND_PROFILE, KIND_PROJECT, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
-    KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_BOOKMARKED, KIND_STREAM_MESSAGE_DIFF,
-    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_PINNED, KIND_STREAM_MESSAGE_SCHEDULED,
-    KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEXT_NOTE,
-    KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
-    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    is_relay_admin_kind, KIND_AGENT_CAPABILITIES, KIND_AGENT_ENGRAM, KIND_AGENT_PROFILE,
+    KIND_AGENT_TASK, KIND_AGENT_TURN_METRIC, KIND_AGENT_WIKI_PAGE, KIND_APPROVAL_DENY,
+    KIND_APPROVAL_GRANT, KIND_AUDIT_ENTRY, KIND_AUTH, KIND_BLOSSOM_SERVER_LIST, KIND_BOOKMARK_LIST,
+    KIND_BOOKMARK_SET, KIND_BUDGET_SPEND_RECEIPT, KIND_CANVAS, KIND_COMMENT, KIND_CONTACT_LIST,
+    KIND_CONTRIBUTION_RECORD, KIND_DELETION, KIND_DEPLOYMENT_RECORD, KIND_DM_ADD_MEMBER,
+    KIND_DM_HIDE, KIND_DM_OPEN, KIND_DM_RELAY_LIST, KIND_EMOJI_LIST, KIND_EMOJI_SET,
+    KIND_EVENT_REMINDER, KIND_EVM_BINDING, KIND_FOLLOW_SET, KIND_FORECAST, KIND_FORUM_COMMENT,
+    KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_GENERIC_REPOST, KIND_GIFT_WRAP, KIND_GIT_ISSUE,
+    KIND_GIT_PATCH, KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT,
+    KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED,
+    KIND_GIT_STATUS_OPEN, KIND_HIGHLIGHT, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES,
+    KIND_HUDDLE_PARTICIPANT_JOINED, KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED,
+    KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_LAUNCH_BID, KIND_LAUNCH_PROPOSAL,
+    KIND_LAUNCH_RECEIPT, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_LONG_FORM,
+    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
+    KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
+    KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_MUTE_LIST, KIND_NIP29_CREATE_GROUP,
+    KIND_NIP29_DELETE_EVENT, KIND_NIP29_DELETE_GROUP, KIND_NIP29_EDIT_METADATA,
+    KIND_NIP29_JOIN_REQUEST, KIND_NIP29_LEAVE_REQUEST, KIND_NIP29_PUT_USER, KIND_NIP29_REMOVE_USER,
+    KIND_NIP43_LEAVE_REQUEST, KIND_NIP65_RELAY_LIST_METADATA, KIND_ORG_BUDGET, KIND_ORG_GRANT,
+    KIND_ORG_JOIN_REQUEST, KIND_ORG_NODE, KIND_ORG_PITCH, KIND_PERSONA, KIND_PIN_LIST, KIND_POLL,
+    KIND_POLL_RESPONSE, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK,
+    KIND_PROFILE, KIND_PROJECT, KIND_PROJECT_FOCUS, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
+    KIND_REPOST, KIND_SCORE_ROOT, KIND_SKILL, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF,
+    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
+    KIND_TEAM_CATALOG, KIND_TEAM_RUN, KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE,
+    KIND_USER_STATUS, KIND_WIKI_CORRECTION, KIND_WIKI_PAGE, KIND_WORKFLOW_DEF,
+    KIND_WORKFLOW_TRIGGER, KIND_WORK_CHECK_RUN, KIND_WORK_TAKEN_ON, RELAY_ADMIN_ADD_MEMBER,
+    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_ACCESS,
+    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
 use buzz_core::CommunityId;
+use buzz_evm_auth::{AttestationEnvelope, EvmAddress};
 use nostr::Event;
 
 use crate::state::AppState;
@@ -48,6 +57,201 @@ use crate::conformance::{
     self as conf, channel_label, claimed_community_from_event, emit, msg_id_label,
     state_for_request, EmitGuard, TraceAction, Verdict,
 };
+
+fn huddle_backing_channel_id(event: &Event) -> Result<Uuid, IngestError> {
+    let content: serde_json::Value = serde_json::from_str(&event.content).map_err(|_| {
+        IngestError::Rejected("invalid: Huddle event content must be a JSON object".into())
+    })?;
+    let channel_id = content
+        .get("ephemeral_channel_id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            IngestError::Rejected("invalid: Huddle event must name an ephemeral_channel_id".into())
+        })?;
+    channel_id.parse::<Uuid>().map_err(|_| {
+        IngestError::Rejected("invalid: Huddle ephemeral_channel_id must be a UUID".into())
+    })
+}
+
+fn map_huddle_backing_channel_error(error: buzz_db::DbError) -> IngestError {
+    match error {
+        buzz_db::DbError::ChannelNotFound(_) => {
+            IngestError::Rejected("invalid: Huddle backing channel not found".into())
+        }
+        error => IngestError::Internal(format!("error: loading Huddle backing channel: {error}")),
+    }
+}
+
+fn expected_huddle_backing_ttl(ephemeral_ttl_override: Option<i32>) -> i32 {
+    ephemeral_ttl_override.unwrap_or(3600)
+}
+
+async fn validate_huddle_lifecycle_event(
+    tenant: &TenantContext,
+    state: &AppState,
+    event: &Event,
+    kind: u32,
+) -> Result<(), IngestError> {
+    if kind != KIND_HUDDLE_STARTED && kind != KIND_HUDDLE_ENDED {
+        return Ok(());
+    }
+
+    let backing_channel_id = huddle_backing_channel_id(event)?;
+    let backing = state
+        .db
+        .get_channel_for_event_write(tenant.community(), backing_channel_id)
+        .await
+        .map_err(map_huddle_backing_channel_error)?;
+    let signer = event.pubkey.to_bytes();
+    let relay = state.relay_keypair.public_key().to_bytes();
+    let signer_created_backing = backing.created_by.as_slice() == signer.as_slice();
+
+    if kind == KIND_HUDDLE_STARTED {
+        let expected_ttl = expected_huddle_backing_ttl(state.config.ephemeral_ttl_override);
+        if !signer_created_backing
+            || backing.channel_type != "stream"
+            || backing.visibility != "private"
+            || backing.ttl_seconds != Some(expected_ttl)
+            || backing.archived_at.is_some()
+        {
+            return Err(IngestError::Rejected(
+                "invalid: Huddle start must reference the signer's active private ephemeral stream"
+                    .into(),
+            ));
+        }
+    } else {
+        if !signer_created_backing && signer.as_slice() != relay.as_slice() {
+            return Err(IngestError::Rejected(
+                "invalid: only the Huddle creator or relay may end it".into(),
+            ));
+        }
+        let parent_channel_id = extract_channel_id(event).ok_or_else(|| {
+            IngestError::Rejected("invalid: Huddle end must name its parent channel".into())
+        })?;
+        let linked = state
+            .db
+            .huddle_started_link_exists_for_event_write(
+                tenant.community(),
+                parent_channel_id,
+                backing_channel_id,
+                &backing.created_by,
+            )
+            .await
+            .map_err(|error| {
+                IngestError::Internal(format!("error: checking Huddle start linkage: {error}"))
+            })?;
+        if !linked {
+            return Err(IngestError::Rejected(
+                "invalid: Huddle end does not match a creator-signed start in this channel".into(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_custom_emoji_tags(event: &Event) -> Result<(), IngestError> {
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        if parts.first().map(String::as_str) != Some("emoji") {
+            continue;
+        }
+        let shortcode = parts.get(1).ok_or_else(|| {
+            IngestError::Rejected("invalid: emoji tag must include a shortcode".into())
+        })?;
+        buzz_sdk::normalize_custom_emoji_shortcode(shortcode)
+            .map_err(|err| IngestError::Rejected(format!("invalid: {err}")))?;
+    }
+    Ok(())
+}
+
+fn validate_reaction_emoji(event: &Event, emoji: &str) -> Result<(), IngestError> {
+    let emoji_char_count = emoji.chars().count();
+    if emoji_char_count <= 64 {
+        return Ok(());
+    }
+
+    let Some(shortcode) = emoji
+        .strip_prefix(':')
+        .and_then(|value| value.strip_suffix(':'))
+    else {
+        return Err(IngestError::Rejected(format!(
+            "invalid: reaction emoji exceeds 64 characters (got {emoji_char_count})"
+        )));
+    };
+    let normalized = buzz_sdk::normalize_custom_emoji_shortcode(shortcode)
+        .map_err(|err| IngestError::Rejected(format!("invalid: {err}")))?;
+    if shortcode != normalized {
+        return Err(IngestError::Rejected(
+            "invalid: long custom emoji reaction shortcode must be canonical lowercase".into(),
+        ));
+    }
+    let has_matching_tag = event.tags.iter().any(|tag| {
+        let parts = tag.as_slice();
+        parts.first().map(String::as_str) == Some("emoji")
+            && parts.get(1).is_some_and(|value| value == shortcode)
+    });
+    if !has_matching_tag || emoji_char_count > buzz_sdk::MAX_CUSTOM_EMOJI_REACTION_LEN {
+        return Err(IngestError::Rejected(format!(
+            "invalid: reaction emoji exceeds 64 characters (got {emoji_char_count})"
+        )));
+    }
+    Ok(())
+}
+
+/// A validated canvas `expected-revision` precondition.
+///
+/// The tag value is either the literal `none` (expect no canvas head yet) or a
+/// 64-hex event ID (expect the live head to match it).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CanvasRevisionSpec {
+    /// Literal `none` — the writer expects no canvas head to exist.
+    NoHead,
+    /// A 32-byte event ID the live canvas head must equal.
+    Head(Vec<u8>),
+}
+
+/// Parse the optional canvas `expected-revision` precondition from an event.
+///
+/// Returns `Ok(None)` when the tag is absent (backward-compatible unconditional
+/// append). The tag shape is exactly `["expected-revision", value]`: a
+/// one-element `["expected-revision"]` or any three-or-more-element form is
+/// malformed and rejects `invalid:` — it is never treated as absent. At most
+/// one `expected-revision` tag may be present. A single well-formed tag yields
+/// `Some(spec)`.
+pub(crate) fn parse_canvas_expected_revision(
+    event: &Event,
+) -> Result<Option<CanvasRevisionSpec>, IngestError> {
+    let mut tags = event
+        .tags
+        .iter()
+        .map(nostr::Tag::as_slice)
+        .filter(|parts| parts.first().map(String::as_str) == Some("expected-revision"));
+
+    let Some(tag) = tags.next() else {
+        return Ok(None);
+    };
+    if tags.next().is_some() {
+        return Err(IngestError::Rejected(
+            "invalid: duplicate expected-revision tag".into(),
+        ));
+    }
+    if tag.len() != 2 {
+        return Err(IngestError::Rejected(
+            "invalid: expected-revision tag must have exactly one value".into(),
+        ));
+    }
+    let value = tag[1].as_str();
+
+    if value == "none" {
+        return Ok(Some(CanvasRevisionSpec::NoHead));
+    }
+    let bytes = hex::decode(value)
+        .ok()
+        .filter(|bytes| bytes.len() == 32)
+        .ok_or_else(|| IngestError::Rejected("invalid: bad expected canvas revision".into()))?;
+    Ok(Some(CanvasRevisionSpec::Head(bytes)))
+}
 
 /// How the HTTP caller authenticated (for [`IngestAuth::Http`]).
 #[derive(Debug, Clone)]
@@ -162,6 +366,72 @@ pub fn reject_with_transport(transport: &'static str, reason: &'static str) {
     .increment(1);
 }
 
+fn valid_link_preview_text(value: &str, max: usize, allow_newlines: bool) -> bool {
+    value.len() <= max
+        && !value
+            .chars()
+            .any(|character| character.is_control() && !(allow_newlines && character == '\n'))
+}
+
+fn validate_link_preview_tags(event: &Event, media_base_url: &str) -> Result<(), String> {
+    const MAX_SNAPSHOTS: usize = 8;
+    const MAX_TITLE: usize = 300;
+    const MAX_SITE: usize = 100;
+    const MAX_DESCRIPTION: usize = 1000;
+
+    let mut count = 0;
+    let mut suppressed = false;
+    let mut seen = std::collections::HashSet::new();
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        if parts.first().map(String::as_str) != Some("link-preview") {
+            continue;
+        }
+        count += 1;
+        if parts == ["link-preview", "none"] {
+            if count > 1 {
+                return Err("link-preview suppression cannot include snapshots".into());
+            }
+            suppressed = true;
+            continue;
+        }
+        if suppressed
+            || count > MAX_SNAPSHOTS
+            || parts.len() != 11
+            || parts[1] != "snapshot"
+            || parts[2] != "1"
+        {
+            return Err("invalid link-preview snapshot tag".into());
+        }
+        let canonical =
+            url::Url::parse(&parts[3]).map_err(|_| "invalid link-preview canonical URL")?;
+        if canonical.scheme() != "https"
+            || !canonical.username().is_empty()
+            || canonical.password().is_some()
+            || canonical.fragment().is_some()
+            || !seen.insert(parts[3].clone())
+            || !event.content.contains(&parts[3])
+        {
+            return Err("invalid link-preview canonical URL".into());
+        }
+        for (value, max, allow_newlines) in [
+            (&parts[4], MAX_TITLE, false),
+            (&parts[5], MAX_SITE, false),
+            (&parts[6], MAX_DESCRIPTION, true),
+        ] {
+            if !valid_link_preview_text(value, max, allow_newlines) {
+                return Err("invalid link-preview snapshot text".into());
+            }
+        }
+        if !super::imeta::validate_local_image_media_pair(&parts[7], &parts[8], media_base_url)
+            || !super::imeta::validate_local_image_media_pair(&parts[9], &parts[10], media_base_url)
+        {
+            return Err("link-preview media must reference matching local image blobs".into());
+        }
+    }
+    Ok(())
+}
+
 /// Successful ingestion result.
 pub struct IngestResult {
     /// Hex-encoded event ID.
@@ -177,10 +447,36 @@ pub struct IngestResult {
 pub enum IngestError {
     /// Client error (bad event) — WS: OK false, HTTP: 400.
     Rejected(String),
+    /// Canvas CAS precondition failure — WS: OK false, HTTP: 409.
+    ///
+    /// Emitted when a canvas write's `expected-revision` tag no longer matches
+    /// the relay's canonical head: the revision is missing, has changed, or the
+    /// new event does not supersede the current one.  Kept separate from
+    /// [`IngestError::Rejected`] so the HTTP bridge can map it to
+    /// `409 CONFLICT` while generic client mistakes remain `400 BAD_REQUEST`.
+    CanvasConflict(String),
     /// Auth/scope error — WS: OK false, HTTP: 401/403.
     AuthFailed(String),
     /// Server error — WS: OK false, HTTP: 500.
     Internal(String),
+}
+
+/// Map the durable community write-fence lookup onto the ingest error taxonomy.
+///
+/// An inactive community is an authorization decision and keeps the exact
+/// `restricted:` wire text the ephemeral path uses. A lookup outage is a
+/// server fault and fails closed as `error:`/500 — a Postgres blip can
+/// neither admit a write past the fence nor read as a client mistake.
+fn map_serving_fence_state(active: Result<bool, buzz_db::DbError>) -> Result<(), IngestError> {
+    match active {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(IngestError::Rejected(
+            "restricted: community writes are fenced".into(),
+        )),
+        Err(error) => Err(IngestError::Internal(format!(
+            "error: checking community write fence: {error}"
+        ))),
+    }
 }
 
 fn map_relay_admin_error(error: super::relay_admin::RelayAdminError) -> IngestError {
@@ -211,10 +507,15 @@ fn map_push_accept_error(error: super::push_lease::AcceptError) -> IngestError {
 fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static str> {
     match kind {
         KIND_PROFILE => Ok(Scope::UsersWrite),
-        KIND_TEXT_NOTE | KIND_LONG_FORM => Ok(Scope::MessagesWrite),
+        KIND_TEXT_NOTE | KIND_LONG_FORM | buzz_core::kind::KIND_ARTIFACT => Ok(Scope::MessagesWrite),
+        // Public social posts: NIP-18 reposts, NIP-22 comments, NIP-84 highlights,
+        // NIP-88 polls and poll responses. Ordinary member writes, global-only.
+        KIND_REPOST | KIND_GENERIC_REPOST | KIND_COMMENT | KIND_HIGHLIGHT | KIND_POLL
+        | KIND_POLL_RESPONSE => Ok(Scope::MessagesWrite),
         KIND_CONTACT_LIST | KIND_READ_STATE | KIND_USER_STATUS | KIND_AGENT_ENGRAM
         | KIND_EVENT_REMINDER | KIND_PERSONA | KIND_TEAM | KIND_MANAGED_AGENT
-        | KIND_TEAM_CATALOG | super::push_lease::KIND_PUSH_LEASE => {
+        | KIND_PRIVATE_MANAGED_AGENT | KIND_TEAM_CATALOG | KIND_SKILL
+        | super::push_lease::KIND_PUSH_LEASE => {
             Ok(Scope::UsersWrite)
         }
         // NIP-AM: agent turn metrics are agent-authored global events (encrypted to owner).
@@ -227,6 +528,9 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // Scope only proves the transport can submit message writes; the
         // command handler owns role/capability authorization.
         k if buzz_core::kind::is_moderation_command_kind(k) => Ok(Scope::MessagesWrite),
+        // Board moderation commands: the same transport proof; the handler owns
+        // the board-standing authorization.
+        k if buzz_core::kind::is_board_moderation_command_kind(k) => Ok(Scope::MessagesWrite),
         // NIP-51 standard lists and NIP-65 relay list — user-owned global state,
         // same ownership shape as kind:3 (contacts) and kind:0 (profile).
         KIND_MUTE_LIST
@@ -240,6 +544,10 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // palette is the client-side union of every member's own set.
         | KIND_EMOJI_SET
         | KIND_EMOJI_LIST
+        // NIP-17 DM relay list (10050) and BUD-03 Blossom server list (10063):
+        // user-owned replaceable config, same shape as the NIP-65 relay list.
+        | KIND_DM_RELAY_LIST
+        | KIND_BLOSSOM_SERVER_LIST
         | KIND_AGENT_PROFILE => Ok(Scope::UsersWrite),
         KIND_DELETION
         | KIND_REACTION
@@ -248,9 +556,6 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_STREAM_MESSAGE_V2
         | KIND_NIP29_DELETE_EVENT
         | KIND_STREAM_MESSAGE_EDIT
-        | KIND_STREAM_MESSAGE_PINNED
-        | KIND_STREAM_MESSAGE_BOOKMARKED
-        | KIND_STREAM_MESSAGE_SCHEDULED
         | KIND_STREAM_REMINDER
         | KIND_STREAM_MESSAGE_DIFF
         | KIND_FORUM_POST
@@ -264,7 +569,8 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         k if k == RELAY_ADMIN_ADD_MEMBER
             || k == RELAY_ADMIN_REMOVE_MEMBER
             || k == RELAY_ADMIN_CHANGE_ROLE
-            || k == RELAY_ADMIN_SET_WORKSPACE_PROFILE =>
+            || k == RELAY_ADMIN_SET_WORKSPACE_PROFILE
+            || k == RELAY_ADMIN_SET_ACCESS =>
         {
             Ok(Scope::AdminUsers)
         }
@@ -304,6 +610,49 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // NIP-MP: a project is repository metadata — grouping repositories needs
         // the same scope as announcing them.
         KIND_PROJECT => Ok(Scope::ReposWrite),
+        // NIP-LP: launchpad records and mirrors are ordinary member writes —
+        // same model as forum posts. Real authorization (money, membership)
+        // lives onchain; the relay validates envelopes, and for update records
+        // (47003) who signed them (`launch_update_authority`).
+        KIND_LAUNCH_RECORD
+        | KIND_SCORE_ROOT
+        | KIND_LAUNCH_BID
+        | KIND_LAUNCH_UPDATE
+        | KIND_LAUNCH_PROPOSAL
+        | KIND_LAUNCH_RECEIPT
+        // A forecast on a bounty (N3): an opinion with a reason, no money and no vote.
+        | KIND_FORECAST
+        // Work taken on and a project's focus: statements, no money and no rights.
+        | KIND_WORK_TAKEN_ON
+        | KIND_PROJECT_FOCUS
+        // A check-run record: the contributor's own bounded execution records
+        // for a claim. A statement of what ran, no money and no rights; the
+        // reviewer's verdict stays theirs.
+        | KIND_WORK_CHECK_RUN => Ok(Scope::MessagesWrite),
+        // NIP-ORG: org nodes, grants, and budgets are ordinary member writes
+        // (same model as forum posts). Structural authorization (grant chains,
+        // budget limits) is layered on top; the relay validates envelopes and
+        // scopes them to their community via the `h` tag.
+        //
+        // The Project Board kinds join the same arm: a pitch (37015) and a
+        // join request (37016) are coordination records, not authority — the
+        // equity claim they describe is recorded by a 37011 grant and only
+        // becomes enforceable when the project adopts a DAO (NIP-LP).
+        //
+        // The Discovery plane kinds (37017 EVM binding / 37018 deployment
+        // record) are member writes too: 37017 self-verifies at ingest (the
+        // EIP-712 attestation must match the signer) and 37018 is verifiable
+        // on-chain through its required `tx` tag — neither grants the relay
+        // anything to act on.
+        KIND_ORG_NODE
+        | KIND_ORG_GRANT
+        | KIND_ORG_BUDGET
+        | KIND_CONTRIBUTION_RECORD
+        | KIND_BUDGET_SPEND_RECEIPT
+        | KIND_ORG_PITCH
+        | KIND_ORG_JOIN_REQUEST
+        | KIND_EVM_BINDING
+        | KIND_DEPLOYMENT_RECORD => Ok(Scope::MessagesWrite),
         KIND_GIT_PATCH
         | KIND_GIT_PULL_REQUEST
         | KIND_GIT_PR_UPDATE
@@ -314,6 +663,11 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         | KIND_GIT_STATUS_DRAFT => Ok(Scope::MessagesWrite),
         // Command kinds — DM management, workflows, approvals
         KIND_DM_OPEN | KIND_DM_ADD_MEMBER | KIND_DM_HIDE => Ok(Scope::MessagesWrite),
+        KIND_WIKI_PAGE | KIND_AGENT_WIKI_PAGE | KIND_WIKI_CORRECTION => Ok(Scope::MessagesWrite),
+        KIND_AGENT_CAPABILITIES | KIND_AGENT_TASK => Ok(Scope::MessagesWrite),
+        // SAT slice 1: team strategies, runs, and turns are agent-authored
+        // community-level records (same write scope as fleet tasks).
+        KIND_TEAM_STRATEGY | KIND_TEAM_RUN | KIND_TEAM_TURN => Ok(Scope::MessagesWrite),
         KIND_WORKFLOW_DEF | KIND_WORKFLOW_TRIGGER => Ok(Scope::MessagesWrite),
         KIND_APPROVAL_GRANT | KIND_APPROVAL_DENY => Ok(Scope::MessagesWrite),
         _ => Err("restricted: unknown event kind"),
@@ -371,7 +725,10 @@ pub(crate) async fn derive_reaction_channel(
         _ => return ReactionChannelResult::NoTarget,
     };
 
-    match db.get_event_by_id(community_id, &id_bytes).await {
+    match db
+        .get_event_by_id_for_event_write(community_id, &id_bytes)
+        .await
+    {
         Ok(Some(target)) => match target.channel_id {
             Some(ch_id) => ReactionChannelResult::Channel(ch_id),
             None => ReactionChannelResult::NoChannel,
@@ -379,6 +736,76 @@ pub(crate) async fn derive_reaction_channel(
         Ok(None) => ReactionChannelResult::NotFound,
         Err(e) => ReactionChannelResult::DbError(e.to_string()),
     }
+}
+
+/// Structural checks for the public social kinds (NIP-18, NIP-22, NIP-88).
+///
+/// Returns the rejection reason (without the `invalid:` prefix) when the event is
+/// malformed. Kinds outside this set always pass. Only the minimum each NIP
+/// marks as required is enforced; clients own the rest of the semantics.
+fn validate_social_event(kind: u32, event: &Event) -> Result<(), &'static str> {
+    fn has_tag(event: &Event, name: &str, hex_value: bool) -> bool {
+        event.tags.iter().any(|t| {
+            t.kind().to_string() == name
+                && t.content().is_some_and(|v| {
+                    !hex_value || (v.len() == 64 && v.chars().all(|c| c.is_ascii_hexdigit()))
+                })
+        })
+    }
+    fn count_tags(event: &Event, name: &str) -> usize {
+        event
+            .tags
+            .iter()
+            .filter(|t| t.kind().to_string() == name && t.content().is_some())
+            .count()
+    }
+
+    match kind {
+        KIND_REPOST | KIND_GENERIC_REPOST if !has_tag(event, "e", true) => {
+            Err("repost must reference the reposted event via an e tag")
+        }
+        KIND_GENERIC_REPOST if !has_tag(event, "k", false) => {
+            Err("generic repost must name the reposted kind via a k tag")
+        }
+        KIND_COMMENT
+            if !(has_tag(event, "E", false)
+                || has_tag(event, "A", false)
+                || has_tag(event, "I", false)) =>
+        {
+            Err("comment must name its root via an E, A or I tag")
+        }
+        KIND_POLL if count_tags(event, "option") < 2 => {
+            Err("poll must have at least two option tags")
+        }
+        KIND_POLL_RESPONSE if !has_tag(event, "e", true) || count_tags(event, "response") == 0 => {
+            Err("poll response must reference the poll via an e tag and carry a response tag")
+        }
+        _ => Ok(()),
+    }
+}
+
+/// How far an event's `created_at` may be from server time, in seconds.
+const MAX_TIMESTAMP_DRIFT_SECS: i64 = 900; // ±15 minutes
+
+/// NIP-59 gift wraps carry a `created_at` randomized up to two days into the
+/// past so the timestamp does not reveal when a message was really sent. Every
+/// NIP-17 client does this, so a relay that applied the ordinary ±15 minute
+/// window to wraps would refuse nearly all private messages. One extra day of
+/// slack covers clock skew on top of the two days the spec asks for.
+const GIFT_WRAP_MAX_PAST_SECS: i64 = 3 * 24 * 60 * 60;
+
+/// Whether `event_ts` is acceptable for an event of `kind` at server time `now`.
+///
+/// Gift wraps may be backdated (see [`GIFT_WRAP_MAX_PAST_SECS`]) but never
+/// post-dated: the future bound is the same ±15 minutes as every other kind.
+pub(crate) fn timestamp_within_bounds(kind: u32, event_ts: i64, now: i64) -> bool {
+    let max_past = if kind == KIND_GIFT_WRAP {
+        GIFT_WRAP_MAX_PAST_SECS
+    } else {
+        MAX_TIMESTAMP_DRIFT_SECS
+    };
+    let delta = event_ts - now;
+    delta <= MAX_TIMESTAMP_DRIFT_SECS && -delta <= max_past
 }
 
 /// Kinds that are always global (`channel_id = NULL`).
@@ -399,6 +826,16 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | KIND_TEXT_NOTE
             | KIND_CONTACT_LIST
             | KIND_LONG_FORM
+            // Public social posts — never channel-scoped, same as kind:1.
+            | KIND_REPOST
+            | KIND_GENERIC_REPOST
+            | KIND_COMMENT
+            | KIND_HIGHLIGHT
+            | KIND_POLL
+            | KIND_POLL_RESPONSE
+            // NIP-17 DM relay list + BUD-03 Blossom server list: user-owned replaceable.
+            | KIND_DM_RELAY_LIST
+            | KIND_BLOSSOM_SERVER_LIST
             | KIND_USER_STATUS
             | KIND_READ_STATE
             // NIP-51 standard lists + sets and NIP-65 relay list — user-owned global state.
@@ -427,7 +864,11 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // (pubkey, kind, d_tag). A stray `h` tag must not channel-scope them.
             | KIND_TEAM
             | KIND_MANAGED_AGENT
+            | KIND_PRIVATE_MANAGED_AGENT
             | KIND_TEAM_CATALOG
+            // Agent skill definitions (30180): keyed by (pubkey, kind, d_tag).
+            // A stray `h` tag must not channel-scope them.
+            | KIND_SKILL
             // NIP-34: git events use `a` tags (repo reference), not `h` tags (channel scope).
             // Parameterized replaceable kinds are keyed by (pubkey, kind, d_tag).
             | KIND_GIT_REPO_ANNOUNCEMENT
@@ -444,6 +885,45 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // `buzz-channel` tag is a metadata reference, not a routing directive,
             // so a project's state is never channel-scoped.
             | KIND_PROJECT
+            // NIP-LP: launches are addressed by (pubkey, kind, d_tag) for
+            // the record and stack-scoped via `a` tags for mirrors. The
+            // `buzz-channel` tag is a metadata reference, not routing.
+            | KIND_LAUNCH_RECORD
+            | KIND_SCORE_ROOT
+            | KIND_LAUNCH_BID
+            | KIND_LAUNCH_UPDATE
+            | KIND_LAUNCH_PROPOSAL
+            | KIND_LAUNCH_RECEIPT
+            // A forecast names its bounty in a `t` tag; it belongs to no channel.
+            | KIND_FORECAST
+            // Work taken on and a project's focus name their launch in an `a` tag.
+            | KIND_WORK_TAKEN_ON
+            | KIND_PROJECT_FOCUS
+            // A check-run record names its launch in an `a` tag and its claim
+            // via `claim`/`evidence` tags; it belongs to no channel.
+            | KIND_WORK_CHECK_RUN
+            // NIP-ORG: the org graph is a community-level object, addressed by
+            // (pubkey, kind, d_tag) exactly like a project (30621) or a launch
+            // record (37001). One org belongs to the whole community, not to a
+            // channel, so a stray `h` tag must never channel-scope its nodes,
+            // grants, or budgets.
+            | KIND_ORG_NODE
+            | KIND_ORG_GRANT
+            | KIND_ORG_BUDGET
+            | KIND_CONTRIBUTION_RECORD
+            | KIND_BUDGET_SPEND_RECEIPT
+            // Project Board (NIP-ORG extension): a pitch (37015) and a join
+            // request (37016) describe the same community-level project the
+            // org node does — addressed by `(pubkey, kind, d)`, so a stray
+            // `h` must never channel-scope them either.
+            | KIND_ORG_PITCH
+            | KIND_ORG_JOIN_REQUEST
+            // Discovery plane (NIP-ORG extension): a binding (37017) keys on
+            // the EVM address and a deployment record (37018) on
+            // `<chainId>:<role>` — both community-level, addressed by
+            // `(pubkey, kind, d)`, so a stray `h` never channel-scopes them.
+            | KIND_EVM_BINDING
+            | KIND_DEPLOYMENT_RECORD
             // Community moderation commands (9040–9044): community-global
             // direct commands, same model as the NIP-43 9030-series. A stray
             // `h` tag must never channel-scope them (pinned contract —
@@ -459,6 +939,7 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             | RELAY_ADMIN_REMOVE_MEMBER
             | RELAY_ADMIN_CHANGE_ROLE
             | RELAY_ADMIN_SET_WORKSPACE_PROFILE
+            | RELAY_ADMIN_SET_ACCESS
             | KIND_NIP43_LEAVE_REQUEST
             // NIP-IA: identity archive/unarchive requests drive relay-global
             // archive state (8002/8003/13535) and are audited as global request
@@ -468,6 +949,20 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // NIP-AM: agent turn metrics are owner-scoped global events.
             // Channel identity is encrypted inside the payload — no `h` tag.
             | KIND_AGENT_TURN_METRIC
+            // Agent Wiki pages (44002): community-level knowledge base pages,
+            // keyed by (pubkey, kind, d). A stray `h` tag must not channel-scope them.
+            | KIND_AGENT_WIKI_PAGE
+            // Wiki corrections (44003): per-author community-level notes keyed
+            // by (pubkey, kind, d), `h`-less by design — a stray `h` must not
+            // channel-scope them either.
+            | KIND_WIKI_CORRECTION
+            // SAT slice 1 (44020–44022): team strategies, runs, and turns are
+            // community-level records keyed by (pubkey, kind, d), exactly like
+            // the NIP-ORG kinds and Agent Wiki pages. A stray `h` tag must
+            // never channel-scope a strategy definition or its transcripts.
+            | KIND_TEAM_STRATEGY
+            | KIND_TEAM_RUN
+            | KIND_TEAM_TURN
             // NIP-PL leases are author-owned, addressable global state.
             | super::push_lease::KIND_PUSH_LEASE
     )
@@ -475,14 +970,13 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
 
 /// Kinds that require an `h` tag for channel scoping.
 pub(crate) fn requires_h_channel_scope(kind: u32) -> bool {
-    matches!(
-        kind,
-        KIND_STREAM_MESSAGE
+    // Board moderation commands act on the board their `h` tag names.
+    buzz_core::kind::is_board_moderation_command_kind(kind)
+        || matches!(
+            kind,
+            KIND_STREAM_MESSAGE
             | KIND_STREAM_MESSAGE_V2
             | KIND_STREAM_MESSAGE_EDIT
-            | KIND_STREAM_MESSAGE_PINNED
-            | KIND_STREAM_MESSAGE_BOOKMARKED
-            | KIND_STREAM_MESSAGE_SCHEDULED
             | KIND_STREAM_REMINDER
             | KIND_STREAM_MESSAGE_DIFF
             | KIND_CANVAS
@@ -502,7 +996,7 @@ pub(crate) fn requires_h_channel_scope(kind: u32) -> bool {
             | KIND_HUDDLE_PARTICIPANT_LEFT
             | KIND_HUDDLE_ENDED
             | KIND_HUDDLE_GUIDELINES
-    )
+        )
 }
 
 /// Check channel membership: member OR open-visibility channel.
@@ -532,7 +1026,7 @@ pub(crate) async fn check_channel_membership(
         Some(ch) => ch.visibility == "open",
         None => state
             .db
-            .get_channel(tenant.community(), ch_id)
+            .get_channel_for_event_write(tenant.community(), ch_id)
             .await
             .map(|ch| ch.visibility == "open")
             .unwrap_or(false),
@@ -541,6 +1035,51 @@ pub(crate) async fn check_channel_membership(
         Ok(())
     } else {
         Err("restricted: not a channel member".to_string())
+    }
+}
+
+/// The kind-9 channel write gates (token scope, membership or open channel,
+/// not archived) for a channel other than the event's own `h`.
+pub(crate) async fn check_channel_write(
+    tenant: &TenantContext,
+    state: &AppState,
+    auth: &IngestAuth,
+    ch_id: Uuid,
+) -> Result<(), IngestError> {
+    check_token_channel_access(auth, ch_id).map_err(IngestError::Rejected)?;
+    let channel = load_channel_for_write(tenant, state, ch_id).await?;
+    check_channel_membership(
+        tenant,
+        state,
+        ch_id,
+        &auth.pubkey().to_bytes(),
+        channel.as_ref(),
+    )
+    .await
+    .map_err(IngestError::Rejected)?;
+    if channel.is_some_and(|ch| ch.archived_at.is_some()) {
+        return Err(IngestError::Rejected("invalid: channel is archived".into()));
+    }
+    Ok(())
+}
+
+/// Load the channel row for the write gates. A missing row is `Ok(None)`, and
+/// callers keep their missing-row behavior. Any other lookup error is returned
+/// as an internal error, so the write is denied instead of silently skipping
+/// the archive check.
+async fn load_channel_for_write(
+    tenant: &TenantContext,
+    state: &AppState,
+    ch_id: Uuid,
+) -> Result<Option<buzz_db::channel::ChannelRecord>, IngestError> {
+    match state
+        .db
+        .get_channel_for_event_write(tenant.community(), ch_id)
+        .await
+    {
+        Ok(channel) => Ok(Some(channel)),
+        Err(buzz_db::DbError::ChannelNotFound(_)) => Ok(None),
+        Err(e) => Err(IngestError::Internal(format!("error: database error: {e}"))),
     }
 }
 
@@ -589,39 +1128,20 @@ pub(crate) async fn resolve_nip10_thread_meta(
     channel_id: Uuid,
     state: &AppState,
 ) -> Result<Option<ThreadMetadataOwned>, String> {
-    let mut root_hex: Option<String> = None;
-    let mut reply_hex: Option<String> = None;
+    let markers = buzz_core::nip10::parse_thread_markers(&event.tags);
 
-    for tag in event.tags.iter() {
-        let parts = tag.as_slice();
-        if parts.len() >= 4 && parts[0] == "e" {
-            let hex_val = &parts[1];
-            let marker = &parts[3];
-            if hex_val.len() == 64 && hex_val.chars().all(|c| c.is_ascii_hexdigit()) {
-                match marker.as_str() {
-                    "root" => root_hex = Some(hex_val.to_string()),
-                    "reply" => reply_hex = Some(hex_val.to_string()),
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    if root_hex.is_none() && reply_hex.is_none() {
-        return Ok(None);
-    }
-
-    let (root_hex, parent_hex) = match (root_hex, reply_hex) {
-        (Some(r), Some(p)) => (r, p),
-        (None, Some(p)) => (p.clone(), p),
-        (Some(_), None) | (None, None) => return Ok(None),
+    let (root_hex, parent_hex) = match markers.resolve() {
+        Some(pair) => pair,
+        None => return Ok(None),
     };
 
     let parent_bytes =
         hex::decode(&parent_hex).map_err(|_| "invalid parent event ID hex".to_string())?;
 
     let (parent_event_result, parent_meta_result) = tokio::join!(
-        state.db.get_event_by_id(community_id, &parent_bytes),
+        state
+            .db
+            .get_event_by_id_for_event_write(community_id, &parent_bytes),
         state
             .db
             .get_thread_metadata_by_event(community_id, &parent_bytes),
@@ -657,7 +1177,7 @@ pub(crate) async fn resolve_nip10_thread_meta(
             }
             let root_ts = if let Ok(Some(root_ev)) = state
                 .db
-                .get_event_by_id(community_id, &effective_root)
+                .get_event_by_id_for_event_write(community_id, &effective_root)
                 .await
             {
                 chrono::DateTime::from_timestamp(root_ev.event.created_at.as_secs() as i64, 0)
@@ -672,46 +1192,18 @@ pub(crate) async fn resolve_nip10_thread_meta(
             (effective_root, root_ts, depth)
         }
         None => {
-            let parent_root = parent_event
-                .event
-                .tags
-                .iter()
-                .find_map(|t| {
-                    let parts = t.as_slice();
-                    if parts.len() >= 4 && parts[0] == "e" && parts[3] == "root" {
-                        hex::decode(&parts[1]).ok().filter(|b| b.len() == 32)
-                    } else {
-                        None
-                    }
-                })
-                .or_else(|| {
-                    parent_event.event.tags.iter().find_map(|t| {
-                        let parts = t.as_slice();
-                        if parts.len() >= 4 && parts[0] == "e" && parts[3] == "reply" {
-                            hex::decode(&parts[1]).ok().filter(|b| b.len() == 32)
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .unwrap_or_else(|| parent_bytes.clone());
+            let (parent_root, root_created, depth) = derive_ancestry_from_parent_tags(
+                community_id,
+                &parent_event.event,
+                &parent_bytes,
+                parent_created,
+                state,
+            )
+            .await;
 
             if client_root_bytes != parent_root {
                 return Err("root tag does not match thread ancestry".to_string());
             }
-            let depth = if parent_root == parent_bytes { 1 } else { 2 };
-            let root_created = if parent_root != parent_bytes {
-                if let Ok(Some(root_ev)) =
-                    state.db.get_event_by_id(community_id, &parent_root).await
-                {
-                    chrono::DateTime::from_timestamp(root_ev.event.created_at.as_secs() as i64, 0)
-                        .unwrap_or(parent_created)
-                } else {
-                    parent_created
-                }
-            } else {
-                parent_created
-            };
             (parent_root, root_created, depth)
         }
     };
@@ -735,6 +1227,187 @@ pub(crate) async fn resolve_nip10_thread_meta(
         depth,
         broadcast,
     }))
+}
+
+/// Recover a reply's thread ancestry from its *parent's* NIP-10 tags when the
+/// parent has **no** `thread_metadata` row (legacy or not-yet-indexed events).
+///
+/// The parent's markers are first collapsed through `ThreadMarkers::resolve()`:
+/// a `root`+`reply` parent carries its marked root, a `reply`-only parent carries
+/// its reply target as root, and a root-only/malformed/unmarked parent is itself
+/// top-level and its own root. Depth is 1 when the parent is the root and 2
+/// otherwise — a reply to a nested-but-unindexed parent must not be mistaken for
+/// a top-level reply.
+///
+/// Shared by [`resolve_nip10_thread_meta`] (client path) and
+/// [`resolve_relay_reply_thread_meta`] (workflow path) so the two cannot
+/// diverge. Returns `(root_event_id, root_event_created_at, depth)`.
+async fn derive_ancestry_from_parent_tags(
+    community_id: CommunityId,
+    parent_event: &Event,
+    parent_bytes: &[u8],
+    parent_created: chrono::DateTime<Utc>,
+    state: &AppState,
+) -> (Vec<u8>, chrono::DateTime<Utc>, i32) {
+    let marked_ancestor = |id_hex: &str| hex::decode(id_hex).ok().filter(|b| b.len() == 32);
+    let markers = buzz_core::nip10::parse_thread_markers(&parent_event.tags);
+    let parent_root = markers
+        .resolve()
+        .map(|(root, _)| root)
+        .as_deref()
+        .and_then(marked_ancestor)
+        .unwrap_or_else(|| parent_bytes.to_vec());
+
+    if parent_root.as_slice() == parent_bytes {
+        (parent_root, parent_created, 1)
+    } else {
+        let root_created = if let Ok(Some(root_ev)) = state
+            .db
+            .get_event_by_id_for_event_write(community_id, &parent_root)
+            .await
+        {
+            chrono::DateTime::from_timestamp(root_ev.event.created_at.as_secs() as i64, 0)
+                .unwrap_or(parent_created)
+        } else {
+            parent_created
+        };
+        (parent_root, root_created, 2)
+    }
+}
+
+/// Resolved thread ancestry for a relay-built reply (workflow path).
+///
+/// Carries the parent and root identifiers plus the reply's depth, so the
+/// caller can both emit matching NIP-10 `root`/`reply` tags and persist thread
+/// metadata for the signed reply event.
+pub(crate) struct ReplyAncestry {
+    pub parent_event_id: Vec<u8>,
+    pub parent_event_created_at: chrono::DateTime<Utc>,
+    pub root_event_id: Vec<u8>,
+    pub root_event_created_at: chrono::DateTime<Utc>,
+    pub depth: i32,
+}
+
+impl ReplyAncestry {
+    /// Root event ID as lowercase hex, for the NIP-10 `root` tag.
+    pub fn root_hex(&self) -> String {
+        hex::encode(&self.root_event_id)
+    }
+
+    /// Parent event ID as lowercase hex, for the NIP-10 `reply` tag.
+    pub fn parent_hex(&self) -> String {
+        hex::encode(&self.parent_event_id)
+    }
+
+    /// Build the DB thread-metadata params for the signed reply event.
+    pub fn into_thread_meta(
+        self,
+        reply_event_id: Vec<u8>,
+        reply_created_at: chrono::DateTime<Utc>,
+        channel_id: Uuid,
+    ) -> ThreadMetadataOwned {
+        ThreadMetadataOwned {
+            event_id: reply_event_id,
+            event_created_at: reply_created_at,
+            channel_id,
+            parent_event_id: self.parent_event_id,
+            parent_event_created_at: self.parent_event_created_at,
+            root_event_id: self.root_event_id,
+            root_event_created_at: self.root_event_created_at,
+            depth: self.depth,
+            broadcast: false,
+        }
+    }
+}
+
+/// Resolve thread ancestry for a reply built by the relay (workflow path).
+///
+/// Unlike [`resolve_nip10_thread_meta`], which validates client-supplied NIP-10
+/// `e` tags, this derives ancestry from a known `parent_hex` (the triggering
+/// event) and *computes* the correct root and depth. Enforces the same-channel
+/// invariant and the depth limit that the ingest path applies.
+pub(crate) async fn resolve_relay_reply_thread_meta(
+    community_id: CommunityId,
+    parent_hex: &str,
+    channel_id: Uuid,
+    state: &AppState,
+) -> Result<ReplyAncestry, String> {
+    let parent_bytes =
+        hex::decode(parent_hex).map_err(|_| "invalid parent event ID hex".to_string())?;
+
+    let (parent_event_result, parent_meta_result) = tokio::join!(
+        state
+            .db
+            .get_event_by_id_for_event_write(community_id, &parent_bytes),
+        state
+            .db
+            .get_thread_metadata_by_event(community_id, &parent_bytes),
+    );
+
+    let parent_event = parent_event_result
+        .map_err(|e| format!("db error looking up parent: {e}"))?
+        .ok_or_else(|| "reply parent not found".to_string())?;
+
+    match parent_event.channel_id {
+        Some(parent_ch) if parent_ch != channel_id => {
+            return Err("parent event belongs to a different channel".to_string());
+        }
+        None => return Err("parent event has no channel association".to_string()),
+        _ => {}
+    }
+
+    let parent_created =
+        chrono::DateTime::from_timestamp(parent_event.event.created_at.as_secs() as i64, 0)
+            .unwrap_or_else(Utc::now);
+
+    let parent_meta =
+        parent_meta_result.map_err(|e| format!("db error looking up thread metadata: {e}"))?;
+
+    // Root = parent's root if the parent is itself a reply, else the parent.
+    // Depth = parent depth + 1 (a direct reply to a top-level message is depth 1).
+    let (root_bytes, root_created, depth) = match parent_meta {
+        Some(meta) => {
+            let effective_root = meta.root_event_id.unwrap_or_else(|| parent_bytes.clone());
+            let root_ts = if effective_root == parent_bytes {
+                parent_created
+            } else if let Ok(Some(root_ev)) = state
+                .db
+                .get_event_by_id_for_event_write(community_id, &effective_root)
+                .await
+            {
+                chrono::DateTime::from_timestamp(root_ev.event.created_at.as_secs() as i64, 0)
+                    .unwrap_or(parent_created)
+            } else {
+                parent_created
+            };
+            (effective_root, root_ts, meta.depth + 1)
+        }
+        // No metadata row ⇒ recover the parent's ancestry from its own NIP-10
+        // tags. A marked (but not-yet-indexed) nested parent yields depth 2, not
+        // a false top-level depth 1.
+        None => {
+            derive_ancestry_from_parent_tags(
+                community_id,
+                &parent_event.event,
+                &parent_bytes,
+                parent_created,
+                state,
+            )
+            .await
+        }
+    };
+
+    if depth > 100 {
+        return Err("thread depth limit exceeded".to_string());
+    }
+
+    Ok(ReplyAncestry {
+        parent_event_id: parent_bytes,
+        parent_event_created_at: parent_created,
+        root_event_id: root_bytes,
+        root_event_created_at: root_created,
+        depth,
+    })
 }
 
 /// Count all `e` tags regardless of content validity.
@@ -809,7 +1482,7 @@ async fn validate_edit_ownership(
         hex::decode(&target_hex).map_err(|_| "invalid target event ID".to_string())?;
     let target_event = state
         .db
-        .get_event_by_id(community_id, &target_bytes)
+        .get_event_by_id_for_event_write(community_id, &target_bytes)
         .await
         .map_err(|e| format!("db error: {e}"))?
         .ok_or_else(|| "edit target event not found".to_string())?;
@@ -839,7 +1512,7 @@ async fn validate_edit_ownership(
             if !is_member {
                 let is_open = state
                     .db
-                    .get_channel(community_id, ch_id)
+                    .get_channel_for_event_write(community_id, ch_id)
                     .await
                     .map(|ch| ch.visibility == "open")
                     .unwrap_or(false);
@@ -890,7 +1563,7 @@ async fn validate_forum_vote_target(
         hex::decode(&target_hex).map_err(|_| "invalid target event ID".to_string())?;
     let target_event = state
         .db
-        .get_event_by_id(community_id, &target_bytes)
+        .get_event_by_id_for_event_write(community_id, &target_bytes)
         .await
         .map_err(|e| format!("db error: {e}"))?
         .ok_or_else(|| "vote target event not found".to_string())?;
@@ -1165,6 +1838,1663 @@ fn validate_team_catalog_envelope(event: &Event) -> Result<(), String> {
     validate_shared_tag(event, LABEL)?;
     single_bounded_d_tag(event, LABEL)?;
     Ok(())
+}
+
+/// True when `value` is a `0x` + 40-hex EVM address.
+fn is_0x_address(value: &str) -> bool {
+    value.len() == 42
+        && value.starts_with("0x")
+        && value[2..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// NIP-LP launchpad envelope caps.
+///
+/// Counted over raw tags (see `PROJECT_MEMBER_CAP`): the caps must hold before
+/// any allocation proportional to the tag list.
+const LAUNCH_A_TAG_CAP: usize = 64;
+const LAUNCH_TEAM_TAG_CAP: usize = 64;
+const LAUNCH_CHANNEL_TAG_CAP: usize = 8;
+const LAUNCH_NAME_MAX_LEN: usize = 256;
+/// Launch content is JSON; bound well above any honest record so a junk
+/// payload cannot win NIP-33 replacement against a valid head.
+const LAUNCH_CONTENT_MAX_LEN: usize = 65536;
+
+// NIP-ORG caps: org nodes/grants/budgets are small, community-level records.
+const ORG_CONTENT_MAX_LEN: usize = 16384;
+const ORG_SEAT_TAG_CAP: usize = 256;
+const ORG_NAME_MAX_LEN: usize = 128;
+// Project Board caps (kinds 37015/37016 and the ownership tags they put on a
+// 37011 grant): a role slug is the middle segment of a `d` tag bounded to 64
+// chars, a role label is short display text, and a percentage is 1..=100 —
+// so no single event can declare or claim more than a whole project.
+const ORG_ROLE_TAG_CAP: usize = 64;
+const ORG_ROLE_SLUG_MAX_LEN: usize = 12;
+const ORG_ROLE_LABEL_MAX_LEN: usize = 64;
+
+/// Validate a lowercase-64-hex pubkey string (a NIP-ORG seat / grantee tag).
+fn is_lower_hex_pubkey(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+/// Validate a bounded whole-percentage value: ASCII digits only, 1..=100.
+///
+/// Digit-only keeps the canonical form (no `+5`, `50%`, or `050x` can ride a
+/// claim the board renders), and the range keeps one event from asserting more
+/// than the entire equity pool.
+fn is_org_percentage(value: &str) -> bool {
+    value.bytes().all(|b| b.is_ascii_digit())
+        && value
+            .parse::<u32>()
+            .map(|n| (1..=100).contains(&n))
+            .unwrap_or(false)
+}
+
+/// Validate a Project Board `["role", <slug>, <label>?, <pct>?]` tag.
+///
+/// Two legal shapes: `["role", <slug>]` (a grant naming the role it fills)
+/// and `["role", <slug>, <label>, <pct>]` (a manifest declaring a role and
+/// its equity target). The slug is the role's identity across events — it
+/// keys the join request's `d` and the grant's `d` — so it is bounded to a
+/// short lowercase slug shape.
+fn validate_org_role_tag(parts: &[String], label: &str) -> Result<(), String> {
+    let slug = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+    if slug.is_empty()
+        || slug.len() > ORG_ROLE_SLUG_MAX_LEN
+        || !slug
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Err(format!(
+            "{label} `role` tag slug must be 1..={ORG_ROLE_SLUG_MAX_LEN} chars of [a-z0-9-]"
+        ));
+    }
+    match parts.len() {
+        2 => Ok(()),
+        4 => {
+            let role_label = parts[2].as_str();
+            if role_label.is_empty() || role_label.chars().count() > ORG_ROLE_LABEL_MAX_LEN {
+                return Err(format!(
+                    "{label} `role` tag label must be 1..={ORG_ROLE_LABEL_MAX_LEN} chars"
+                ));
+            }
+            if !is_org_percentage(parts[3].as_str()) {
+                return Err(format!(
+                    "{label} `role` tag percentage must be a whole number 1..=100"
+                ));
+            }
+            Ok(())
+        }
+        _ => Err(format!(
+            "{label} `role` tag must be [slug] or [slug, label, pct] (got {} values)",
+            parts.len().saturating_sub(1)
+        )),
+    }
+}
+
+/// The NIP-ORG kind that shares the org envelope, with the label its errors
+/// carry. `None` for every non-org kind.
+///
+/// This is the single map from kind to envelope validation, used by ingest
+/// and enumerated by tests: registering a new org kind here (and in
+/// `required_scope_for_kind` / `is_global_only_kind`) is what makes the
+/// relay both accept and bound it.
+pub(crate) fn org_envelope_label(kind: u32) -> Option<&'static str> {
+    match kind {
+        KIND_ORG_NODE => Some("org node event"),
+        KIND_ORG_GRANT => Some("org grant event"),
+        KIND_ORG_BUDGET => Some("org budget event"),
+        KIND_CONTRIBUTION_RECORD => Some("contribution record event"),
+        KIND_BUDGET_SPEND_RECEIPT => Some("budget spend receipt event"),
+        KIND_ORG_PITCH => Some("project pitch event"),
+        KIND_ORG_JOIN_REQUEST => Some("project join request event"),
+        _ => None,
+    }
+}
+
+/// Validate the shared envelope of a NIP-ORG event (37010–37016).
+///
+/// All of them are parameterized-replaceable, **community-level** records (the
+/// same shape as a project `30621` or a launch record `37001`): exactly one
+/// bounded `d` (node/grant/subject id) and a JSON-object content body.
+/// `seat`/`grantee` tags, when present, must hold a lowercase 64-hex pubkey,
+/// and the `seat` list is capped. Project Board records add bounded `role`
+/// tags (a declared/filled role with its equity target) and a bounded `org`
+/// ownership percentage on a grant. Malformed org records must not pollute
+/// the org chart, so the envelope is checked at ingest.
+///
+/// Deliberately absent: any authority. A node asserts a seat; a grant asserts
+/// a delegation; a pitch or join request asserts a *claim about* equity that
+/// only a 37011 grant records. None is a permission the relay acts on here —
+/// chain verification is layered on top, and a stray `h` tag never
+/// channel-scopes these (see [`is_global_only_kind`]).
+fn validate_org_envelope(event: &Event, label: &str) -> Result<(), String> {
+    let d = single_bounded_d_tag(event, label)?;
+    if d.len() > 64 {
+        return Err(format!("{label} `d` tag too long (max 64 chars)"));
+    }
+
+    let mut seat_count = 0usize;
+    let mut name_count = 0usize;
+    let mut role_count = 0usize;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "seat" => {
+                seat_count += 1;
+                if !is_lower_hex_pubkey(value) {
+                    return Err(format!(
+                        "{label} `seat` tag must hold a lowercase 64-hex pubkey"
+                    ));
+                }
+            }
+            "grantee" if !is_lower_hex_pubkey(value) => {
+                return Err(format!(
+                    "{label} `grantee` tag must hold a lowercase 64-hex pubkey"
+                ));
+            }
+            "name" => {
+                name_count += 1;
+                if value.chars().count() > ORG_NAME_MAX_LEN {
+                    return Err(format!(
+                        "{label} `name` tag too long (max {ORG_NAME_MAX_LEN} chars)"
+                    ));
+                }
+            }
+            "role" => {
+                role_count += 1;
+                validate_org_role_tag(parts, label)?;
+            }
+            // Ownership marker on an approval grant: `["org", <pct>]` claims
+            // a percentage of the project named by the grant's `via`.
+            "org" if !is_org_percentage(value) => {
+                return Err(format!(
+                    "{label} `org` tag must be a whole percentage 1..=100"
+                ));
+            }
+            _ => {}
+        }
+    }
+    if seat_count > ORG_SEAT_TAG_CAP {
+        return Err(format!(
+            "{label} must have at most {ORG_SEAT_TAG_CAP} `seat` tags (got {seat_count})"
+        ));
+    }
+    if role_count > ORG_ROLE_TAG_CAP {
+        return Err(format!(
+            "{label} must have at most {ORG_ROLE_TAG_CAP} `role` tags (got {role_count})"
+        ));
+    }
+    if name_count > 1 {
+        return Err(format!("{label} must have at most one `name` tag"));
+    }
+    if event.content.len() > ORG_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{label} content too long (max {ORG_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    match serde_json::from_str::<serde_json::Value>(&event.content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(format!("{label} content must be a JSON object")),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Discovery plane (NIP-ORG extension): kind:37017 EVM binding + kind:37018
+// deployment record.
+//
+// These two are the queryable half of the discovery plane — "which address
+// holds this seat" and "where is the Summoner" — answerable from signed
+// events alone. Both are community-level and global-only member writes, but
+// neither rides the shared org envelope: its `role` tag shape
+// (name/description/equity) describes neither record, so each carries its own
+// envelope, checked at the single ingest call site below.
+// ---------------------------------------------------------------------------
+
+/// Max `content` bytes for a kind:37017 EVM binding record. The EIP-712
+/// envelope is a few hundred bytes — this is headroom, not a budget.
+const EVM_BINDING_CONTENT_MAX_LEN: usize = 8192;
+/// Max `content` bytes for a kind:37018 deployment record.
+const DEPLOYMENT_CONTENT_MAX_LEN: usize = 4096;
+/// Max chars in the optional deployment-record `note`.
+const DEPLOYMENT_NOTE_MAX_CHARS: usize = 256;
+/// Max chars in the optional deployment-record `project` slug.
+const DEPLOYMENT_PROJECT_MAX_LEN: usize = 64;
+
+/// True when `value` is a lowercase `0x` + 40-hex EVM address — the
+/// canonical `d` form of kind:37017.
+fn is_lower_0x_address(value: &str) -> bool {
+    is_0x_address(value) && value.chars().all(|c| !c.is_ascii_uppercase())
+}
+
+/// True when `value` is `0x` + 64 hex — a 32-byte hash (deploy tx hash or
+/// the SIWE `personal_sign` digest).
+fn is_0x_hash32(value: &str) -> bool {
+    value.len() == 66
+        && value.starts_with("0x")
+        && value.as_bytes()[2..].iter().all(|b| b.is_ascii_hexdigit())
+}
+
+/// True when `value` is a canonical decimal `u64` (digits only, no leading
+/// zero, at most 20 digits) — chain ids, block numbers, `d` prefixes.
+fn is_canonical_decimal(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 20
+        && value.bytes().all(|b| b.is_ascii_digit())
+        && (value.len() == 1 || !value.starts_with('0'))
+}
+
+/// Verify the EIP-712 attestation carried by a kind:37017 record against the
+/// event's signer and the claimed address — fully offline (one `ecrecover`).
+///
+/// `require_fresh` is `false` only for a revocation: a signature that once
+/// authorized the binding still authorizes withdrawing it, so an expired
+/// attestation may revoke but may never activate (a live record always goes
+/// through [`AttestationEnvelope::verify_for_npub`] — expiry, npub, and
+/// signature — exactly as `POST /auth/siwe/register` does).
+///
+/// Returns `true` when a live binding's signature belongs to a **contract account** (a smart account such as a
+/// passkey account, whose signature is not a 65-byte `r‖s‖v`): `ecrecover` cannot check it, so the cheap checks here
+/// pass and the account's own answer is still owed (see [`PendingContractCheck`]).
+fn verify_binding_attestation(
+    label: &str,
+    envelope: &AttestationEnvelope,
+    author: &nostr::PublicKey,
+    address: &EvmAddress,
+    require_fresh: bool,
+) -> Result<bool, String> {
+    if envelope.attestation.npub != author.to_bytes() {
+        return Err(format!(
+            "{label} attestation authorizes a different npub than the event signer"
+        ));
+    }
+    if envelope.attestation.account != *address {
+        return Err(format!(
+            "{label} attestation account must equal the bound `address`"
+        ));
+    }
+    let now = Utc::now().timestamp() as u64;
+    if is_contract_signature(&envelope.signature) {
+        // Withdrawing a link needs only control of the Nostr key, as it does for an ordinary wallet, so a
+        // revocation owes the chain nothing: it must not depend on this server's connection to a node being up.
+        if !require_fresh {
+            return Ok(false);
+        }
+        // Expiry is cheap and needs no chain, so a stale proof is refused before any network call.
+        if envelope.attestation.is_expired(now) {
+            return Err(format!(
+                "{label} attestation rejected: {}",
+                buzz_evm_auth::EvmAuthError::Expired
+            ));
+        }
+        return Ok(true);
+    }
+    if require_fresh {
+        envelope
+            .verify_for_npub(&author.to_hex(), now)
+            .map_err(|e| format!("{label} attestation rejected: {e}"))?;
+        return Ok(false);
+    }
+    envelope
+        .attestation
+        .verify(&envelope.domain, &envelope.signature)
+        .map_err(|e| format!("{label} attestation rejected: {e}"))?;
+    Ok(false)
+}
+
+/// Whether an attestation signature is a contract account's rather than an EOA's: valid hex that is not exactly
+/// 65 bytes. Anything that is not hex goes down the offline path and is refused there.
+fn is_contract_signature(signature: &str) -> bool {
+    let hex_part = signature.strip_prefix("0x").unwrap_or(signature);
+    hex::decode(hex_part).is_ok_and(|bytes| bytes.len() != 65)
+}
+
+/// A binding record that passed every offline check and whose attestation is signed by a contract account: the
+/// account itself is asked, over RPC, whether the signature is valid (EIP-1271, or EIP-6492 before it is deployed).
+#[derive(Debug)]
+pub(crate) struct PendingContractCheck {
+    envelope: AttestationEnvelope,
+}
+
+/// Ask the chain whether a contract account accepts a pending binding's attestation. `configured_chain` is the chain
+/// this server verifies (`BUZZ_EVM_CHAIN_ID`); an attestation for another chain is refused rather than answered
+/// from the wrong network.
+async fn verify_pending_contract_check(
+    verifier: &buzz_evm_auth::RpcSignatureVerifier,
+    configured_chain: Option<u64>,
+    pending: &PendingContractCheck,
+    author_hex: &str,
+    now: u64,
+) -> Result<(), String> {
+    const LABEL: &str = "EVM binding event";
+    let envelope = &pending.envelope;
+    if let Some(chain) = configured_chain {
+        if envelope.domain.chain_id != chain {
+            return Err(format!(
+                "{LABEL} attestation is for chain {}, but this server verifies smart accounts on chain {chain}",
+                envelope.domain.chain_id
+            ));
+        }
+    }
+    envelope
+        .verify_for_npub_contract(verifier, author_hex, now)
+        .await
+        .map(drop)
+        .map_err(|e| format!("{LABEL} attestation rejected: {e}"))
+}
+
+/// [`validate_evm_binding_envelope`], plus the chain check a smart account's attestation needs. This is the one the
+/// ingest path calls: an EOA binding costs nothing extra, and a contract account's costs one bounded RPC call.
+pub(crate) async fn validate_evm_binding(state: &AppState, event: &Event) -> Result<(), String> {
+    let Some(pending) = check_evm_binding(event)? else {
+        return Ok(());
+    };
+    let config = state
+        .config
+        .evm_auth
+        .as_ref()
+        .filter(|config| config.rpc_url.is_some())
+        .ok_or_else(|| {
+            "EVM binding event is signed by a smart account, but this server has no connection to a chain to check it              with (BUZZ_EVM_AUTH and BUZZ_EVM_RPC_URL)"
+                .to_string()
+        })?;
+    let Some(rpc_url) = config.rpc_url.as_deref() else {
+        return Err("EVM binding event cannot be checked: no chain connection".into());
+    };
+    let mut verifier = buzz_evm_auth::RpcSignatureVerifier::new(rpc_url);
+    if let Some(validator) = &config.erc6492_validator {
+        let validator = EvmAddress::parse(validator).map_err(|e| {
+            format!("this server's BUZZ_EVM_ERC6492_VALIDATOR is not an address: {e}")
+        })?;
+        verifier = verifier.with_erc6492_validator(validator);
+    }
+    verify_pending_contract_check(
+        &verifier,
+        config.chain_id,
+        &pending,
+        &event.pubkey.to_hex(),
+        Utc::now().timestamp() as u64,
+    )
+    .await
+}
+
+/// Validate the envelope of a kind:37017 EVM binding record **and enforce its
+/// authenticity claim** — the anti-spoof seam of the discovery plane.
+///
+/// What ingest verifies, offline (no RPC), and what it does not:
+///
+/// * **Authorship** — `attestation.npub` must equal the event signer, so a
+///   record can only ever claim *the author's own* address; with the
+///   transport-level event signature (`verify_event`), npub ↔ address is a
+///   two-link chain ending in an `ecrecover`.
+/// * **Address** — `d`, the `address` tag, and `content.address` must all be
+///   the same 20 bytes (`d` lowercase — the NIP-33 coordinate).
+/// * **EIP-712 attestation** — required whenever the record is live
+///   (`content.revoked` is not `true`): signature, npub, and expiry, via the
+///   same `verify_for_npub` call `POST /auth/siwe/register` makes. An
+///   unverifiable claim never lands; the worst case is a rejected event.
+/// * **SIWE** — *not* re-verifiable here, and ingest does not pretend
+///   otherwise: the record carries only `siweMessageHash` (a commitment to
+///   the EIP-4361 message), not the message + signature, so only its shape is
+///   checked. A client holding the original message can re-derive the digest
+///   (`buzz_evm_auth::personal_sign_digest`) and compare.
+/// * **Revocation** — `content.revoked: true` (same `(author, d)`
+///   republication as NIP-ORG kind:37011 §Revocation) needs no attestation:
+///   withdrawal requires only control of the npub, mirroring
+///   `POST /auth/siwe/revoke`. An attestation that *is* present must still
+///   verify signature/npub/account (expiry excluded).
+///
+/// Readers resolve per `(author, d)` (NIP-33 is author-keyed): a foreign
+/// author's record for the same address never suppresses an author's own head.
+#[cfg(test)]
+pub(crate) fn validate_evm_binding_envelope(event: &Event) -> Result<(), String> {
+    match check_evm_binding(event)? {
+        None => Ok(()),
+        Some(_) => Err(
+            "EVM binding event is signed by a smart account, which only the chain can check, not this offline \
+             validator"
+                .into(),
+        ),
+    }
+}
+
+/// Every offline check of a kind:37017 record. `Some` means it is otherwise sound and its attestation is signed by
+/// a contract account, so the account's own answer is still owed.
+fn check_evm_binding(event: &Event) -> Result<Option<PendingContractCheck>, String> {
+    const LABEL: &str = "EVM binding event";
+    let d = single_bounded_d_tag(event, LABEL)?;
+    if !is_lower_0x_address(d) {
+        return Err(format!(
+            "{LABEL} `d` tag must be a lowercase `0x` + 40-hex EVM address (got {d:?})"
+        ));
+    }
+    let d_address = EvmAddress::parse(d)
+        .map_err(|_| format!("{LABEL} `d` tag must be a lowercase `0x` + 40-hex EVM address"))?;
+
+    let mut address_tag: Option<&str> = None;
+    let mut chain_tag: Option<&str> = None;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "address" if address_tag.is_none() => address_tag = Some(value),
+            "address" => return Err(format!("{LABEL} must have at most one `address` tag")),
+            "chain" if chain_tag.is_none() => chain_tag = Some(value),
+            "chain" => return Err(format!("{LABEL} must have at most one `chain` tag")),
+            _ => {}
+        }
+    }
+    let address_tag =
+        address_tag.ok_or_else(|| format!("{LABEL} must carry exactly one `address` tag"))?;
+    let tag_address = EvmAddress::parse(address_tag).map_err(|_| {
+        format!("{LABEL} `address` tag must be an `0x` + 40-hex EVM address (got {address_tag:?})")
+    })?;
+    if tag_address != d_address {
+        return Err(format!(
+            "{LABEL} `address` tag must equal the `d` address (got {address_tag:?})"
+        ));
+    }
+    if let Some(chain) = chain_tag {
+        if !is_canonical_decimal(chain) || chain.parse::<u64>().is_err() {
+            return Err(format!(
+                "{LABEL} `chain` tag must be a decimal EIP-155 chain id (got {chain:?})"
+            ));
+        }
+    }
+
+    if event.content.len() > EVM_BINDING_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {EVM_BINDING_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    let content: serde_json::Value = serde_json::from_str(&event.content)
+        .map_err(|_| format!("{LABEL} content must be a JSON object"))?;
+    let body = content
+        .as_object()
+        .ok_or_else(|| format!("{LABEL} content must be a JSON object"))?;
+    if body.get("v").and_then(serde_json::Value::as_u64) != Some(1) {
+        return Err(format!("{LABEL} content `v` must be 1"));
+    }
+    let raw_address = body
+        .get("address")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| format!("{LABEL} content must carry an `address`"))?;
+    let content_address = EvmAddress::parse(raw_address)
+        .map_err(|_| format!("{LABEL} content `address` must be an `0x` + 40-hex EVM address"))?;
+    if content_address != d_address {
+        return Err(format!(
+            "{LABEL} content `address` must equal the `d` address (got {raw_address:?})"
+        ));
+    }
+    let siwe_hash = body
+        .get("siweMessageHash")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| format!("{LABEL} content must carry a `siweMessageHash`"))?;
+    if !is_0x_hash32(siwe_hash) {
+        return Err(format!(
+            "{LABEL} content `siweMessageHash` must be `0x` + 64 hex"
+        ));
+    }
+    let revoked = match body.get("revoked") {
+        None | Some(serde_json::Value::Null) => false,
+        Some(serde_json::Value::Bool(flag)) => *flag,
+        Some(_) => return Err(format!("{LABEL} content `revoked` must be a boolean")),
+    };
+
+    let envelope = match body.get("attestation") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(value) => Some(
+            serde_json::from_value::<AttestationEnvelope>(value.clone()).map_err(|_| {
+                format!("{LABEL} content `attestation` must be an EIP-712 NostrSigner envelope")
+            })?,
+        ),
+    };
+    let mut pending = None;
+    match &envelope {
+        None if !revoked => {
+            return Err(format!(
+                "{LABEL} content `attestation` is required: a live binding must carry a \
+                 verifiable EIP-712 NostrSigner attestation (the SIWE message is not part \
+                 of the record, so ingest cannot verify it instead)"
+            ));
+        }
+        // Npub-only revocation: control of the event signer is the proof.
+        None => {}
+        Some(envelope) => {
+            let owes_chain_check = verify_binding_attestation(
+                LABEL,
+                envelope,
+                &event.pubkey,
+                &content_address,
+                !revoked,
+            )?;
+            if owes_chain_check {
+                pending = Some(PendingContractCheck {
+                    envelope: envelope.clone(),
+                });
+            }
+        }
+    }
+    // A `chain` tag may not contradict the signed attestation domain.
+    if let (Some(chain), Some(envelope)) = (chain_tag, &envelope) {
+        if chain.parse::<u64>() != Ok(envelope.domain.chain_id) {
+            return Err(format!(
+                "{LABEL} `chain` tag ({chain}) must equal the attestation domain chain id ({})",
+                envelope.domain.chain_id
+            ));
+        }
+    }
+    Ok(pending)
+}
+
+/// Validate the envelope of a kind:37018 deployment record.
+///
+/// An advisory record with on-chain verifiability: `d` is `<chainId>:<role>`,
+/// every tag must agree with `d` and each other, and the required `tx` tag
+/// (32-byte deploying transaction hash — the kind:47005 receipt rule, see
+/// [`validate_launch_mirror_envelope`]) lets a client verify the deployment
+/// against the chain instead of trusting the claim. Authored by whoever holds
+/// `BUZZ_PRIVATE_KEY` — the relay never signs deployment records.
+pub(crate) fn validate_deployment_record_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "deployment record event";
+    let d = single_bounded_d_tag(event, LABEL)?;
+    let Some((chain_part, role_part)) = d.split_once(':') else {
+        return Err(format!(
+            "{LABEL} `d` tag must be `<chainId>:<role>` (got {d:?})"
+        ));
+    };
+    if !is_canonical_decimal(chain_part) {
+        return Err(format!(
+            "{LABEL} `d` chain id must be a canonical decimal (got {chain_part:?})"
+        ));
+    }
+    if !matches!(role_part, "summoner" | "factory" | "implementation") {
+        return Err(format!(
+            "{LABEL} `d` role must be summoner|factory|implementation (got {role_part:?})"
+        ));
+    }
+
+    let mut chain_tag: Option<&str> = None;
+    let mut role_tag: Option<&str> = None;
+    let mut address_tag: Option<&str> = None;
+    let mut tx_tag: Option<&str> = None;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        let slot = match name {
+            "chain" => &mut chain_tag,
+            "role" => &mut role_tag,
+            "address" => &mut address_tag,
+            "tx" => &mut tx_tag,
+            _ => continue,
+        };
+        if slot.is_some() {
+            return Err(format!("{LABEL} must have at most one `{name}` tag"));
+        }
+        *slot = Some(value);
+    }
+
+    let chain = chain_tag.ok_or_else(|| format!("{LABEL} must carry exactly one `chain` tag"))?;
+    if chain != chain_part {
+        return Err(format!(
+            "{LABEL} `chain` tag ({chain}) must equal the chain id in `d` ({chain_part})"
+        ));
+    }
+    let role = role_tag.ok_or_else(|| format!("{LABEL} must carry exactly one `role` tag"))?;
+    if role != role_part {
+        return Err(format!(
+            "{LABEL} `role` tag ({role}) must equal the role in `d` ({role_part})"
+        ));
+    }
+    let address =
+        address_tag.ok_or_else(|| format!("{LABEL} must carry exactly one `address` tag"))?;
+    if !is_0x_address(address) {
+        return Err(format!(
+            "{LABEL} `address` tag must be an `0x` + 40-hex EVM address (got {address:?})"
+        ));
+    }
+    let tx = tx_tag.ok_or_else(|| format!("{LABEL} must carry exactly one `tx` tag"))?;
+    if !is_0x_hash32(tx) {
+        return Err(format!(
+            "{LABEL} `tx` tag must be the 32-byte deploy tx hash (`0x` + 64 hex), verifiable \
+             against the chain (got {tx:?})"
+        ));
+    }
+
+    if event.content.len() > DEPLOYMENT_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {DEPLOYMENT_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    let content: serde_json::Value = serde_json::from_str(&event.content)
+        .map_err(|_| format!("{LABEL} content must be a JSON object"))?;
+    let body = content
+        .as_object()
+        .ok_or_else(|| format!("{LABEL} content must be a JSON object"))?;
+    if body.get("v").and_then(serde_json::Value::as_u64) != Some(1) {
+        return Err(format!("{LABEL} content `v` must be 1"));
+    }
+    if body
+        .get("block")
+        .and_then(serde_json::Value::as_u64)
+        .is_none_or(|block| block == 0)
+    {
+        return Err(format!(
+            "{LABEL} content must carry a non-zero decimal `block`"
+        ));
+    }
+    if let Some(project) = body.get("project") {
+        let project = project
+            .as_str()
+            .ok_or_else(|| format!("{LABEL} content `project` must be a slug"))?;
+        let valid_first = project
+            .as_bytes()
+            .first()
+            .is_some_and(|b| b.is_ascii_lowercase() || b.is_ascii_digit());
+        let valid_rest = project
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'_' | b'-'));
+        if !valid_first || !valid_rest || project.len() > DEPLOYMENT_PROJECT_MAX_LEN {
+            return Err(format!(
+                "{LABEL} content `project` must match [a-z0-9][a-z0-9_-]{{0,{DEPLOYMENT_PROJECT_MAX_LEN}}}"
+            ));
+        }
+    }
+    if let Some(note) = body.get("note") {
+        let note = note
+            .as_str()
+            .ok_or_else(|| format!("{LABEL} content `note` must be a string"))?;
+        if note.chars().count() > DEPLOYMENT_NOTE_MAX_CHARS {
+            return Err(format!(
+                "{LABEL} content `note` too long (max {DEPLOYMENT_NOTE_MAX_CHARS} chars)"
+            ));
+        }
+    }
+    Ok(())
+}
+
+// Agent Wiki caps: pages are markdown (no JSON envelope), so the content cap
+// is generous (same ceiling as launch content) and the provenance tags are
+// bounded so junk cannot win read-side LWW against an honest page.
+const AGENT_WIKI_CONTENT_MAX_LEN: usize = 65536;
+/// Max `d`-tag length for an Agent Wiki page (`<space>/<slug>` with both parts).
+const AGENT_WIKI_D_MAX_LEN: usize = 256;
+/// Max length of the `model` provenance tag value.
+const AGENT_WIKI_MODEL_MAX_LEN: usize = 128;
+/// Max length of the `cost_tokens` provenance tag value (digits).
+const AGENT_WIKI_COST_TOKENS_MAX_LEN: usize = 16;
+/// Max count of comma-separated source event ids in one `sources` tag.
+const AGENT_WIKI_SOURCES_MAX: usize = 64;
+/// Max length of one source event id (64 hex chars) plus one separator.
+const AGENT_WIKI_SOURCE_ID_MAX_LEN: usize = 65;
+
+/// Prefix of the sticky team-scope tag on kind:44001 wiki pages:
+/// `t: team:<team-node-id>`, where `<team-node-id>` is the `d` tag of an org
+/// node in the `agentSeats`/`holders` graph (`store/org_graph.rs`).
+const WIKI_TEAM_TAG_PREFIX: &str = "team:";
+
+/// The team node id this wiki revision is scoped to — the value of its single
+/// `t: team:<node-id>` tag, if any. More than one team scope tag is a
+/// malformed envelope.
+fn wiki_team_scope(event: &Event) -> Result<Option<String>, String> {
+    let mut scope: Option<String> = None;
+    for tag in event.tags.iter() {
+        if tag.kind().to_string() != "t" {
+            continue;
+        }
+        let Some(value) = tag.content() else { continue };
+        let Some(node) = value.strip_prefix(WIKI_TEAM_TAG_PREFIX) else {
+            continue;
+        };
+        if node.is_empty() {
+            return Err("invalid: `t: team:` tag must name a team node id".into());
+        }
+        if scope.is_some() {
+            return Err(
+                "invalid: wiki revision may carry at most one `t: team:<node-id>` scope tag".into(),
+            );
+        }
+        scope = Some(node.to_string());
+    }
+    Ok(scope)
+}
+
+/// Validate the envelope of a kind:44003 wiki correction.
+///
+/// Pinned shape: exactly one bounded `d` tag shaped `correction-for-<slug>`
+/// and one `t` tag shaped `correction-for:<slug>` naming the SAME slug, plus
+/// bounded markdown content. Any member may publish one (`MessagesWrite`) and
+/// nothing in it is interpreted — the distillation loop folds unconsumed
+/// corrections in as untrusted data. Corrections are per-author coordinates;
+/// deletion is scoped to the signer's own correction (see `side_effects`).
+pub(crate) fn validate_wiki_correction_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "wiki correction";
+    const D_MAX_LEN: usize = 256;
+    const CONTENT_MAX_LEN: usize = 65536;
+
+    let d_values: Vec<&str> = event
+        .tags
+        .iter()
+        .filter(|t| t.kind().to_string() == "d")
+        .filter_map(|t| t.content())
+        .collect();
+    let [d] = d_values[..] else {
+        return Err(format!(
+            "{LABEL} must carry exactly one `d` tag shaped `correction-for-<slug>`"
+        ));
+    };
+    if d.len() > D_MAX_LEN {
+        return Err(format!("{LABEL} `d` tag too long (max {D_MAX_LEN} bytes)"));
+    }
+    let Some(slug) = d.strip_prefix("correction-for-").filter(|s| !s.is_empty()) else {
+        return Err(format!(
+            "{LABEL} `d` tag must be shaped `correction-for-<slug>`"
+        ));
+    };
+    let expected_t = format!("correction-for:{slug}");
+    let carries_t = event
+        .tags
+        .iter()
+        .filter(|t| t.kind().to_string() == "t")
+        .filter_map(|t| t.content())
+        .any(|t| t == expected_t);
+    if !carries_t {
+        return Err(format!(
+            "{LABEL} must carry a `t` tag shaped `correction-for:<slug>` matching its `d` tag"
+        ));
+    }
+    if event.content.len() > CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    Ok(())
+}
+
+/// The public writes a new account is slowed down on: posts (kind 1), board posts and board replies. Votes and chat are
+/// not counted.
+const NEW_ACCOUNT_LIMITED_KINDS: [u32; 3] = [
+    buzz_core::kind::KIND_TEXT_NOTE,
+    buzz_core::kind::KIND_FORUM_POST,
+    buzz_core::kind::KIND_FORUM_COMMENT,
+];
+
+/// Accounts already known to be established, so they are looked up once per process rather than on every post.
+/// Being established only ever becomes true (the first record's receive time does not move), so nothing here goes
+/// stale; a restart only costs one lookup per account again.
+static ESTABLISHED_ACCOUNTS: std::sync::LazyLock<dashmap::DashSet<(Uuid, [u8; 32])>> =
+    std::sync::LazyLock::new(dashmap::DashSet::new);
+
+/// An account this server first heard from less than `new_account_hours` ago may send at most
+/// `new_account_posts_per_hour` posts, board posts and board replies an hour; community owners and admins are not
+/// limited. Measured by the server's receive time, which a client cannot backdate.
+async fn check_new_account_limit(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let limit = state.config.new_account_posts_per_hour;
+    if limit == 0 {
+        return Ok(());
+    }
+    let pubkey = event.pubkey.to_bytes();
+    let key = (*tenant.community().as_uuid(), pubkey);
+    if ESTABLISHED_ACCOUNTS.contains(&key) {
+        return Ok(());
+    }
+    let now = chrono::Utc::now();
+    let cutoff = now - chrono::Duration::hours(i64::from(state.config.new_account_hours));
+    let established = state
+        .db
+        .has_events_received_before(tenant.community(), &pubkey, cutoff)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking account age: {e}")))?;
+    if established {
+        ESTABLISHED_ACCOUNTS.insert(key);
+        return Ok(());
+    }
+    if is_community_admin_or_owner(state, tenant, &event.pubkey.to_hex()).await? {
+        return Ok(());
+    }
+    let kinds: Vec<i32> = NEW_ACCOUNT_LIMITED_KINDS
+        .iter()
+        .map(|k| *k as i32)
+        .collect();
+    let sent = state
+        .db
+        .count_events_received_since(
+            tenant.community(),
+            &pubkey,
+            &kinds,
+            now - chrono::Duration::hours(1),
+        )
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error counting posts: {e}")))?;
+    if sent >= i64::from(limit) {
+        return Err(IngestError::Rejected(format!(
+            "rate-limited: new accounts can post {limit} times an hour for their first day; try again later"
+        )));
+    }
+    Ok(())
+}
+
+/// Anyone in a community may start a board, but not more than `boards_per_person_per_day` in a day unless they own or
+/// administer the community. The count includes boards since deleted, so deleting does not make room for more.
+async fn check_board_creation_limit(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let limit = state.config.boards_per_person_per_day;
+    if limit == 0 {
+        return Ok(());
+    }
+    let author_hex = event.pubkey.to_hex();
+    if is_community_admin_or_owner(state, tenant, &author_hex).await? {
+        return Ok(());
+    }
+    let since = chrono::Utc::now() - chrono::Duration::hours(24);
+    let started = state
+        .db
+        .count_boards_created_since(tenant.community(), &event.pubkey.to_bytes(), since)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error counting boards: {e}")))?;
+    if started >= i64::from(limit) {
+        return Err(IngestError::Rejected(format!(
+            "rate-limited: you can start {limit} boards a day; try again tomorrow"
+        )));
+    }
+    Ok(())
+}
+
+/// Whether the signer is a community owner/admin (`relay_members.role`) — the
+/// authority tier that bypasses team-seat checks and purges on delete.
+async fn is_community_admin_or_owner(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    author_hex: &str,
+) -> Result<bool, IngestError> {
+    let role = state
+        .db
+        .get_relay_member(tenant.community(), author_hex)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking member role: {e}")))?
+        .map(|m| m.role);
+    Ok(matches!(role.as_deref(), Some("owner" | "admin")))
+}
+
+/// Where a wiki page's team scope stands after reading its whole history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum WikiPageScope {
+    /// No revision ever carried a `t: team:` tag: any member edits/deletes.
+    Unscoped,
+    /// The history names exactly one team node, but that node has no
+    /// canonical record (missing or unanchored) — NO resolvable team. The
+    /// page falls back to open editing (any member), matching the app-side
+    /// fallback instead of dead-locking every edit behind seats nobody can
+    /// hold. The stale tag value is kept so a revision that repeats it is
+    /// accepted rather than misread as a fresh scoping act.
+    Unresolvable(String),
+    /// The page is scoped to this team node's canonical record: only that
+    /// team's canonical seats and community admins/owners act on it.
+    Scoped(String),
+    /// The history disagrees (conflicting scopes) and no admin/owner
+    /// revision has settled it: only admins/owners may publish — their
+    /// revision settles the scope (its tag, or its absence, becomes the page
+    /// scope).
+    Conflicting,
+}
+
+/// The effective scope (bare team node id) and whether the history is in
+/// unresolved conflict. Revisions must be OLDEST first.
+///
+/// The state machine holds the EFFECTIVE scope while walking history: a
+/// revision carrying the effective scope conforms; an owner/admin revision
+/// always expresses the page scope (set / re-scope / unscope / settle — its
+/// absence means the page is unscoped); an untagged non-admin revision is
+/// noise and never unsets a scope (the historical sticky rule); the first
+/// scope tag on an unscoped page establishes the scope (the scoping act of
+/// rule (c)); any later non-admin scope disagreement marks the history
+/// CONFLICTING until an admin revision settles it.
+pub(crate) fn effective_page_scope(
+    history: &[buzz_db::event::WikiScopeRevision],
+) -> (Option<String>, bool) {
+    let mut effective: Option<String> = None;
+    let mut conflict = false;
+    for rev in history {
+        let scope = rev
+            .scope
+            .as_deref()
+            .and_then(|value| value.strip_prefix(WIKI_TEAM_TAG_PREFIX))
+            .map(str::to_owned);
+        if scope == effective {
+            continue;
+        }
+        if rev.author_is_admin {
+            effective = scope;
+            conflict = false;
+            continue;
+        }
+        match scope {
+            None => {}
+            Some(node) if effective.is_none() && !conflict => effective = Some(node),
+            Some(_) => conflict = true,
+        }
+    }
+    (effective, conflict)
+}
+
+/// Resolve the scope of wiki page (`kind`, `d`) from its bounded revision
+/// history, then check that the team node resolves to a canonical org record.
+pub(crate) async fn resolve_wiki_page_scope(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    kind: i32,
+    d: &str,
+) -> Result<WikiPageScope, IngestError> {
+    let history = state
+        .db
+        .wiki_page_scope_history(tenant.community(), kind, d)
+        .await
+        .map_err(|e| {
+            IngestError::Internal(format!("error: db error reading wiki page scope: {e}"))
+        })?;
+    let (effective, conflict) = effective_page_scope(&history);
+    if conflict {
+        return Ok(WikiPageScope::Conflicting);
+    }
+    let Some(node) = effective else {
+        return Ok(WikiPageScope::Unscoped);
+    };
+    let resolvable = state
+        .db
+        .org_graph(tenant.community())
+        .node_is_resolvable(&node)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error resolving team node: {e}")))?;
+    Ok(if resolvable {
+        WikiPageScope::Scoped(node)
+    } else {
+        WikiPageScope::Unresolvable(node)
+    })
+}
+
+/// Enforce team scoping on an incoming kind:44001 wiki page revision.
+///
+/// The page's scope is STICKY across its whole revision history (tombstoned
+/// revisions included — see `wiki_page_scope_history`, so a delete +
+/// re-publish can never reset a team page to open membership), with these
+/// rules:
+///
+/// (a) a scoped page accepts edits only from that team's CANONICAL seats
+///     (`org_graph` — stale node copies grant nothing) or community
+///     admins/owners. An admin/owner revision MAY change the `t: team:<node>`
+///     tag or drop it entirely (re-scope/unscope), overriding stickiness;
+///     non-admins are rejected as before;
+/// (b) an unscoped page accepts members as today. A page with NO resolvable
+///     team in its history (the scope names a node with no canonical record)
+///     counts as unscoped: any member edits (the app-side open-editing
+///     fallback), and a revision may keep or drop the stale tag;
+/// (c) scoping a previously unscoped page is allowed for the target team's
+///     seats/admins only (it narrows the page's audience — a governance act);
+/// (d) a page whose history carries conflicting scopes is frozen for
+///     non-admins (rejected as today) until an admin/owner revision SETTLES
+///     it: the settling revision's tag — or its absence — becomes the page
+///     scope and clears the conflict.
+///
+/// Enforcement is at INGEST, the same seam as the R1 authority anchor. A
+/// tombstoned page restores when an authorized editor publishes a new
+/// revision: the insert is the restore (the new row is live; tombstoned rows
+/// keep their preserved content but stay hidden).
+pub(crate) async fn enforce_wiki_page_scope(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let scope = wiki_team_scope(event).map_err(IngestError::Rejected)?;
+    let Some(d) = event
+        .tags
+        .iter()
+        .find(|t| t.kind().to_string() == "d")
+        .and_then(|t| t.content())
+    else {
+        // No `d` tag: not a page revision at all — nothing to scope.
+        return Ok(());
+    };
+
+    let author_hex = event.pubkey.to_hex();
+    let admin = is_community_admin_or_owner(state, tenant, &author_hex).await?;
+    match resolve_wiki_page_scope(state, tenant, KIND_WIKI_PAGE as i32, d).await? {
+        // (d) conflicting history: admins/owners settle it with this very
+        // revision; everyone else is rejected as before.
+        WikiPageScope::Conflicting => {
+            if admin {
+                Ok(())
+            } else {
+                Err(IngestError::Rejected(
+                    "restricted: wiki page carries conflicting `t: team:` scopes; refusing revision".into(),
+                ))
+            }
+        }
+        // (b) no resolvable team: open editing. Keeping the stale tag is
+        // fine (it grants nobody anything); naming a DIFFERENT team is a
+        // fresh scoping act governed by that team.
+        WikiPageScope::Unresolvable(stale) => match scope {
+            None => Ok(()),
+            Some(node) if node == stale => Ok(()),
+            Some(node) => {
+                require_wiki_team_authority(state, tenant, event, &node, "scoping a wiki page to a team").await
+            }
+        },
+        WikiPageScope::Scoped(page_scope) => match scope {
+            Some(node) if node == page_scope => {
+                require_wiki_team_authority(state, tenant, event, &page_scope, "editing a team-scoped wiki page").await
+            }
+            // (a) admins/owners may re-scope or unscope; anyone else may not
+            // change or drop the tag.
+            _ if admin => Ok(()),
+            None => Err(IngestError::Rejected(
+                "restricted: wiki page is team-scoped; a revision may not drop its `t: team:<node-id>` tag".into(),
+            )),
+            Some(_) => Err(IngestError::Rejected(
+                "restricted: wiki page is team-scoped; a revision may not change its `t: team:<node-id>` team".into(),
+            )),
+        },
+        // (b) unscoped pages accept members as today; (c) scoping is a
+        // governance act for the target team's seats/admins.
+        WikiPageScope::Unscoped => match scope {
+            None => Ok(()),
+            Some(node) => {
+                require_wiki_team_authority(state, tenant, event, &node, "scoping a wiki page to a team").await
+            }
+        },
+    }
+}
+
+/// The signer must hold a seat in team node `node_id` (its `agentSeats`/
+/// `holders` per `org_graph`) or be a community admin/owner.
+async fn require_wiki_team_authority(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+    node_id: &str,
+    what: &str,
+) -> Result<(), IngestError> {
+    let author_hex = event.pubkey.to_hex();
+    if is_community_admin_or_owner(state, tenant, &author_hex).await? {
+        return Ok(());
+    }
+    let seated = state
+        .db
+        .org_graph(tenant.community())
+        .holds_node_seat(node_id, &author_hex)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking team seat: {e}")))?;
+    if seated {
+        return Ok(());
+    }
+    Err(IngestError::Rejected(format!(
+        "restricted: {what} requires a seat in team {node_id} or community admin/owner"
+    )))
+}
+
+/// Enforce who may publish kind:44002 Agent Wiki pages. The "agent name" is a
+/// forgeable model tag, so shape proves nothing: a 44002 publish is accepted
+/// only when the signer is a SEATED agent (pubkey in some node's
+/// `agentSeats`), or a human authority holder publishing on the agent's
+/// behalf (community owner/admin, or a seat holder — the distillation loop
+/// runs under the human runner's key and must keep working).
+pub(crate) async fn enforce_agent_wiki_authority(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let author_hex = event.pubkey.to_hex();
+    let graph = state.db.org_graph(tenant.community());
+    if graph
+        .is_seated_agent(&author_hex)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking agent seat: {e}")))?
+    {
+        return Ok(());
+    }
+    if is_community_admin_or_owner(state, tenant, &author_hex).await? {
+        return Ok(());
+    }
+    if graph
+        .holds_any_seat(&author_hex)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db error checking holder seat: {e}")))?
+    {
+        return Ok(());
+    }
+    Err(IngestError::Rejected(
+        "restricted: agent wiki pages require a seated agent signer or a human authority holder (community owner/admin/seat holder)".into(),
+    ))
+}
+
+/// Validate the envelope of a kind:44002 Agent Wiki page event.
+///
+/// Community-level, global-only (same addressing model as the NIP-ORG kinds):
+/// exactly one bounded `d` tag shaped `<space>/<slug>` (both parts non-empty,
+/// lowercase alnum/`-`/`_`/`.`/`/`), markdown content (no JSON envelope, so
+/// `content` is not parsed as JSON — matching kind:44001 wiki pages), and
+/// bounded provenance tags: at most one `model`, one `cost_tokens` (digits),
+/// and one `sources` list (comma-separated 64-hex event ids, capped).
+///
+/// Content is UNTRUSTED DATA to any downstream consumer of the page (the
+/// distillation loop reads it as data, never as instructions) — the relay
+/// bounds but does not interpret it. Malformed pages must not win read-side
+/// LWW against a valid head, so the envelope is checked at ingest — and on
+/// the relay's own internal `distill_agent_wiki` publish path
+/// (`workflow_sink::sign_and_validate_agent_wiki_page`), which enforces the
+/// same bounds as client publishes.
+pub(crate) fn validate_agent_wiki_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "agent wiki page event";
+    let d = single_bounded_d_tag(event, LABEL)?;
+    if d.len() > AGENT_WIKI_D_MAX_LEN {
+        return Err(format!(
+            "{LABEL} `d` tag too long (max {AGENT_WIKI_D_MAX_LEN} bytes)"
+        ));
+    }
+    // d = `<space>/<slug>`: at least one '/', both halves non-empty
+    // (`default/projects/research/standup` = space `default` + nested slug).
+    // Every '/'-separated segment matches `^[a-z0-9][a-z0-9_.-]*$`.
+    let Some((space, slug)) = d.split_once('/') else {
+        return Err(format!(
+            "{LABEL} `d` tag must be `<space>/<slug>` with at least one '/' (got {d:?})"
+        ));
+    };
+    if space.is_empty() || slug.is_empty() {
+        return Err(format!(
+            "{LABEL} `d` tag halves must both be non-empty (got {d:?})"
+        ));
+    }
+    for part in d.split('/') {
+        if part.is_empty() {
+            return Err(format!(
+                "{LABEL} `d` tag parts must all be non-empty (got {d:?})"
+            ));
+        }
+        let part_bytes = part.as_bytes();
+        let valid_first = part_bytes[0].is_ascii_lowercase() || part_bytes[0].is_ascii_digit();
+        let valid_rest = part_bytes[1..].iter().all(|&b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'_' | b'-')
+        });
+        if !valid_first || !valid_rest {
+            return Err(format!(
+                "{LABEL} `d` tag parts must match [a-z0-9][a-z0-9_.-]* (got {d:?})"
+            ));
+        }
+    }
+
+    if event.content.is_empty() {
+        return Err(format!("{LABEL} content must not be empty"));
+    }
+    if event.content.len() > AGENT_WIKI_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {AGENT_WIKI_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+
+    let mut model_count = 0usize;
+    let mut cost_tokens_count = 0usize;
+    let mut sources_count = 0usize;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "model" => {
+                model_count += 1;
+                if value.is_empty() || value.len() > AGENT_WIKI_MODEL_MAX_LEN {
+                    return Err(format!(
+                        "{LABEL} `model` tag must be 1..={AGENT_WIKI_MODEL_MAX_LEN} chars"
+                    ));
+                }
+            }
+            "cost_tokens" => {
+                cost_tokens_count += 1;
+                if value.is_empty()
+                    || value.len() > AGENT_WIKI_COST_TOKENS_MAX_LEN
+                    || !value.bytes().all(|b| b.is_ascii_digit())
+                {
+                    return Err(format!(
+                        "{LABEL} `cost_tokens` tag must be a short digit string"
+                    ));
+                }
+            }
+            "sources" => {
+                sources_count += 1;
+                if value.is_empty()
+                    || value.len() > AGENT_WIKI_SOURCES_MAX * AGENT_WIKI_SOURCE_ID_MAX_LEN
+                {
+                    return Err(format!(
+                        "{LABEL} `sources` tag value exceeds the {AGENT_WIKI_SOURCES_MAX}-id bound"
+                    ));
+                }
+                for id in value.split(',') {
+                    if !(id.len() == 64
+                        && id
+                            .bytes()
+                            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()))
+                    {
+                        return Err(format!(
+                            "{LABEL} `sources` ids must be lowercase 64-hex event ids, comma-separated"
+                        ));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if model_count > 1 {
+        return Err(format!("{LABEL} must have at most one `model` tag"));
+    }
+    if cost_tokens_count > 1 {
+        return Err(format!("{LABEL} must have at most one `cost_tokens` tag"));
+    }
+    if sources_count > 1 {
+        return Err(format!("{LABEL} must have at most one `sources` tag"));
+    }
+    Ok(())
+}
+
+/// Validate the envelope of a kind:37001 NIP-LP launch record.
+///
+/// Exactly one slug-grammar `d` tag (the launch id), at most one `name`,
+/// bounded `a` (linked projects) / `team` / `buzz-channel` tags, well-formed
+/// chain addresses when present, and JSON-object content.
+///
+/// Deliberately absent: any authority over linked projects, repositories, or
+/// channels — membership is an assertion, never a permission grant.
+// SAT slice 1 caps: team strategies are JSON documents; runs are JSON
+// transcripts; turns are markdown. All three are community-level records
+// (global-only), so a bounded envelope plus JSON-object shape protects the
+// read-side LWW slot from junk heads — same rationale as the NIP-ORG kinds.
+const TEAM_CONTENT_MAX_LEN: usize = 65536;
+/// Max `d`-tag length for a strategy id or run id (slug-shaped ids).
+const TEAM_ID_D_MAX_LEN: usize = 64;
+/// Max `d`-tag length for a turn (`<run-id>/<phase>/<agentSlot>`).
+const TEAM_TURN_D_MAX_LEN: usize = 256;
+
+/// Validate the shared envelope of a kind:44020 strategy or kind:44021 run.
+///
+/// Exactly one bounded `d` tag (strategy id / run id) and a JSON-object,
+/// bounded content body. Semantic validation (steps non-empty, participants
+/// within roles, flow enum, final writer within roster) lives in the CLI
+/// (`buzz team strategy put`, run start) — the relay bounds but does not
+/// interpret — mirroring the NIP-ORG envelope/authority split.
+fn validate_team_json_envelope(event: &Event, label: &str) -> Result<(), String> {
+    let d = single_bounded_d_tag(event, label)?;
+    if d.is_empty() || d.len() > TEAM_ID_D_MAX_LEN {
+        return Err(format!(
+            "{label} `d` tag must be 1..={TEAM_ID_D_MAX_LEN} chars (got {} bytes)",
+            d.len()
+        ));
+    }
+    if event.content.is_empty() {
+        return Err(format!("{label} content must not be empty"));
+    }
+    if event.content.len() > TEAM_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{label} content too long (max {TEAM_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    match serde_json::from_str::<serde_json::Value>(&event.content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(format!("{label} content must be a JSON object")),
+    }
+}
+
+/// Validate the envelope of a kind:44022 team turn event.
+///
+/// `d` = `<run-id>/<phase>/<agentSlot>` (all parts non-empty, bounded), and
+/// non-empty bounded markdown content. The turn content is UNTRUSTED DATA to
+/// any downstream reader — the relay bounds but does not interpret it.
+///
+/// The turn `d` deliberately does NOT go through [`single_bounded_d_tag`]:
+/// that helper caps `d` at 64 chars (the NIP-ORG / fleet id ceiling), while a
+/// turn coordinate embeds a run id of up to that size plus `/phase/slot`
+/// suffixes — so the turn cap is its own [`TEAM_TURN_D_MAX_LEN`] and the
+/// exact-one/cardinality check is repeated here.
+fn validate_team_turn_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "team turn event";
+    let d_tags: Vec<&str> = event
+        .tags
+        .iter()
+        .filter_map(|tag| {
+            let parts = tag.as_slice();
+            (parts.first().map(|name| name.as_str()) == Some("d"))
+                .then(|| parts.get(1).map(|v| v.as_str()))
+                .flatten()
+        })
+        .collect();
+    if d_tags.len() != 1 {
+        return Err(format!(
+            "{LABEL} must have exactly one `d` tag (got {})",
+            d_tags.len()
+        ));
+    }
+    let d = d_tags[0];
+    if d.is_empty() || d.chars().count() > TEAM_TURN_D_MAX_LEN {
+        return Err(format!(
+            "{LABEL} `d` tag must be 1..={TEAM_TURN_D_MAX_LEN} chars (got {} chars)",
+            d.chars().count()
+        ));
+    }
+    if d.chars().any(|c| c.is_control() || c.is_whitespace()) {
+        return Err(format!(
+            "{LABEL} `d` tag must not contain control characters or whitespace"
+        ));
+    }
+    // d = `<run-id>/<phase>/<agentSlot>`: at least two '/' separators, all
+    // parts non-empty and free of control characters / whitespace.
+    let parts: Vec<&str> = d.split('/').collect();
+    if parts.len() < 3 || parts.iter().any(|p| p.is_empty()) {
+        return Err(format!(
+            "{LABEL} `d` tag must be `<run-id>/<phase>/<agentSlot>` with non-empty parts (got {d:?})"
+        ));
+    }
+    if event.content.is_empty() {
+        return Err(format!("{LABEL} content must not be empty"));
+    }
+    if event.content.len() > TEAM_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {TEAM_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    Ok(())
+}
+
+fn validate_launch_record_envelope(event: &Event) -> Result<(), String> {
+    const LABEL: &str = "launch record event";
+    let d = single_bounded_d_tag(event, LABEL)?;
+    // Slug grammar: ^[a-z0-9][a-z0-9_-]{0,63}$
+    let bytes = d.as_bytes();
+    if !bytes[0].is_ascii_lowercase() && !bytes[0].is_ascii_digit() {
+        return Err(format!(
+            "{LABEL} `d` tag must start with a lowercase letter or digit"
+        ));
+    }
+    if !bytes[1..]
+        .iter()
+        .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    {
+        return Err(format!(
+            "{LABEL} `d` tag must match [a-z0-9_-] after the first character"
+        ));
+    }
+    let mut a_count = 0usize;
+    let mut team_count = 0usize;
+    let mut channel_count = 0usize;
+    let mut name_count = 0usize;
+    let mut chain_count = 0usize;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "a" => a_count += 1,
+            "team" => {
+                team_count += 1;
+                if parts.len() != 3
+                    || value.len() != 64
+                    || !value.bytes().all(|b| b.is_ascii_hexdigit())
+                {
+                    return Err(format!(
+                        "{LABEL} `team` tag must be [`team`, <64-hex-pubkey>, <role>]"
+                    ));
+                }
+            }
+            "buzz-channel" => {
+                channel_count += 1;
+                if value.parse::<uuid::Uuid>().is_err() {
+                    return Err(format!(
+                        "{LABEL} `buzz-channel` tag must hold a channel UUID"
+                    ));
+                }
+            }
+            "name" => {
+                name_count += 1;
+                if value.chars().count() > LAUNCH_NAME_MAX_LEN {
+                    return Err(format!(
+                        "{LABEL} `name` tag too long (max {LAUNCH_NAME_MAX_LEN} chars)"
+                    ));
+                }
+            }
+            "chain" => {
+                chain_count += 1;
+                if value.parse::<u64>().is_err() {
+                    return Err(format!("{LABEL} `chain` tag must hold a numeric chain id"));
+                }
+            }
+            "auction" | "token" | "treasury" if !is_0x_address(value) => {
+                return Err(format!("{LABEL} `{name}` tag must hold a 0x address"));
+            }
+            "hook" if parts.len() != 3 || !is_0x_address(value) => {
+                return Err(format!(
+                    "{LABEL} `hook` tag must be [`hook`, <0x-address>, <bucket>]"
+                ));
+            }
+            _ => {}
+        }
+    }
+    if name_count > 1 {
+        return Err(format!("{LABEL} must have at most one `name` tag"));
+    }
+    if chain_count > 1 {
+        return Err(format!("{LABEL} must have at most one `chain` tag"));
+    }
+    if a_count > LAUNCH_A_TAG_CAP {
+        return Err(format!(
+            "{LABEL} must have at most {LAUNCH_A_TAG_CAP} `a` tags (got {a_count})"
+        ));
+    }
+    if team_count > LAUNCH_TEAM_TAG_CAP {
+        return Err(format!(
+            "{LABEL} must have at most {LAUNCH_TEAM_TAG_CAP} `team` tags (got {team_count})"
+        ));
+    }
+    if channel_count > LAUNCH_CHANNEL_TAG_CAP {
+        return Err(format!(
+            "{LABEL} must have at most {LAUNCH_CHANNEL_TAG_CAP} `buzz-channel` tags (got {channel_count})"
+        ));
+    }
+    if event.content.len() > LAUNCH_CONTENT_MAX_LEN {
+        return Err(format!(
+            "{LABEL} content too long (max {LAUNCH_CONTENT_MAX_LEN} bytes)"
+        ));
+    }
+    match serde_json::from_str::<serde_json::Value>(&event.content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(format!("{LABEL} content must be a JSON object")),
+    }
+}
+
+/// Check that `coordinate` is a canonical launch address:
+/// `37001:<lowercase-64-hex-author>:<non-empty-d>`.
+pub(crate) fn parse_launch_coordinate(coordinate: &str) -> Result<(), String> {
+    let mut segments = coordinate.splitn(3, ':');
+    let (Some(kind), Some(author), Some(d)) = (segments.next(), segments.next(), segments.next())
+    else {
+        return Err(format!(
+            "launch event `a` tag must be `37001:<author-hex>:<launch-id>` (got {coordinate:?})"
+        ));
+    };
+    if kind != "37001" {
+        return Err(format!(
+            "launch event `a` tag must reference kind 37001 (got {kind:?})"
+        ));
+    }
+    if author.len() != 64
+        || !author
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    {
+        return Err(format!(
+            "launch event `a` tag author must be lowercase 64-hex (got {author:?})"
+        ));
+    }
+    if d.is_empty() {
+        return Err("launch event `a` tag launch id must not be empty".to_string());
+    }
+    Ok(())
+}
+
+/// Validate the envelope of a NIP-LP mirror event (47002–47005).
+///
+/// Every mirror names exactly one launch via its `a` tag; receipts additionally
+/// carry the chain tx hash they mirror, and bids name their bucket. Content
+/// must be a JSON object so malformed mirrors cannot pollute launch feeds.
+/// The longest reason a forecast may carry, in characters.
+const MAX_FORECAST_REASON_CHARS: usize = 500;
+
+/// Whether `question` names a bounty: `forecast:<workbounty|postbounty>:<chain id>:<0x contract, lowercase>:<id>`.
+fn is_forecast_question(question: &str) -> bool {
+    let mut parts = question.split(':');
+    let (Some("forecast"), Some(kind), Some(chain), Some(contract), Some(id), None) = (
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+        parts.next(),
+    ) else {
+        return false;
+    };
+    let digits = |s: &str, max: usize| {
+        !s.is_empty()
+            && s.len() <= max
+            && s.bytes().all(|b| b.is_ascii_digit())
+            && !s.starts_with('0')
+    };
+    matches!(kind, "workbounty" | "postbounty")
+        && digits(chain, 12)
+        && digits(id, 20)
+        && is_lower_address(contract)
+}
+
+/// A forecast (kind 47008, N3): exactly one `t` tag naming a bounty question, exactly one `forecast` tag holding a
+/// whole percent 0–100 written plainly, and a reason of 1 to `MAX_FORECAST_REASON_CHARS` characters.
+fn validate_forecast(event: &Event) -> Result<(), String> {
+    let mut questions = 0usize;
+    let mut percents = 0usize;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "t" => {
+                questions += 1;
+                if !is_forecast_question(value) {
+                    return Err("forecast `t` tag must name a bounty question".to_string());
+                }
+            }
+            "forecast" => {
+                percents += 1;
+                let plain = value == "0" || (!value.starts_with('0') && !value.is_empty());
+                match value.parse::<u8>() {
+                    Ok(p) if plain && p <= 100 && value.bytes().all(|b| b.is_ascii_digit()) => {}
+                    _ => {
+                        return Err(
+                            "forecast tag must hold a whole percent from 0 to 100".to_string()
+                        )
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if questions != 1 {
+        return Err(format!(
+            "forecast must have exactly one `t` tag (got {questions})"
+        ));
+    }
+    if percents != 1 {
+        return Err(format!(
+            "forecast must have exactly one `forecast` tag (got {percents})"
+        ));
+    }
+    let reason = event.content.trim();
+    if reason.is_empty() || reason.chars().count() > MAX_FORECAST_REASON_CHARS {
+        return Err(format!(
+            "forecast reason must be 1 to {MAX_FORECAST_REASON_CHARS} characters"
+        ));
+    }
+    Ok(())
+}
+
+/// Whether `s` is a 0x address written in lowercase.
+fn is_lower_address(s: &str) -> bool {
+    s.len() == 42
+        && s.starts_with("0x")
+        && s[2..]
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+fn validate_launch_mirror_envelope(event: &Event, label: &str) -> Result<(), String> {
+    let mut a_tags: Vec<&str> = Vec::new();
+    let mut m_count = 0usize;
+    let mut tx_count = 0usize;
+    for tag in event.tags.iter() {
+        let parts = tag.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "a" => a_tags.push(value),
+            "m" => m_count += 1,
+            "tx" => {
+                tx_count += 1;
+                if !(value.len() == 66
+                    && value.starts_with("0x")
+                    && value[2..].bytes().all(|b| b.is_ascii_hexdigit()))
+                {
+                    return Err(format!("{label} `tx` tag must hold a 0x tx hash"));
+                }
+            }
+            _ => {}
+        }
+    }
+    if a_tags.len() != 1 {
+        return Err(format!(
+            "{label} must have exactly one `a` tag (got {})",
+            a_tags.len()
+        ));
+    }
+    parse_launch_coordinate(a_tags[0])?;
+    let kind_u32 = event.kind.as_u16() as u32;
+    if kind_u32 == KIND_LAUNCH_BID && m_count != 1 {
+        return Err(format!("{label} must have exactly one `m` (bucket) tag"));
+    }
+    if kind_u32 == KIND_LAUNCH_RECEIPT && tx_count != 1 {
+        return Err(format!("{label} must have exactly one `tx` tag"));
+    }
+    match serde_json::from_str::<serde_json::Value>(&event.content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(format!("{label} content must be a JSON object")),
+    }
 }
 
 /// Maximum number of member `a` tags on a kind:30621 project.
@@ -1729,6 +4059,73 @@ async fn author_type_label(
     }
 }
 
+/// Kinds a timed-out principal may still write: reports (so abuse can be
+/// signalled during a write-block) and the moderation commands that lift a
+/// restriction. Bans exempt nothing.
+fn allowed_while_timed_out(kind: u32) -> bool {
+    matches!(
+        kind,
+        KIND_REPORT
+            | buzz_core::kind::KIND_MODERATION_UNBAN
+            | buzz_core::kind::KIND_MODERATION_UNTIMEOUT
+    )
+}
+
+/// The write-path verdict for a restriction snapshot, or `None` to admit.
+fn write_restriction_denial(
+    kind: u32,
+    restriction: &buzz_db::moderation::RestrictionState,
+    now: chrono::DateTime<Utc>,
+) -> Option<IngestError> {
+    if restriction.banned {
+        return Some(IngestError::AuthFailed(
+            "blocked: you are banned from this community".to_string(),
+        ));
+    }
+    match restriction.muted_until {
+        Some(until) if until > now && !allowed_while_timed_out(kind) => {
+            Some(IngestError::AuthFailed(format!(
+                "restricted: you are timed out until {}",
+                until.timestamp()
+            )))
+        }
+        _ => None,
+    }
+}
+
+/// Community ban / timeout write-block (COMMUNITY_MODERATION_PLAN.md §0
+/// decision 4), shared by ingest and the WebSocket ephemeral and observer
+/// paths that never reach ingest.
+///
+/// The restriction state is effective: an agent is blocked by its own row and
+/// by its owner's (`users.agent_owner_pubkey`). A ban is normally enforced by
+/// the auth seam and the live disconnect; this gate is the durable backstop
+/// for a missed disconnect and for HTTP writes. A timeout has no auth-seam
+/// presence, so this is where it is enforced. Fails closed on a DB error.
+pub(crate) async fn enforce_write_restriction(
+    state: &AppState,
+    tenant: &TenantContext,
+    kind: u32,
+    pubkey: &nostr::PublicKey,
+) -> Result<(), IngestError> {
+    let restriction = state
+        .db
+        .moderation_restriction_state(tenant.community(), pubkey.as_bytes())
+        .await
+        .map_err(|e| {
+            IngestError::Internal(format!(
+                "error: internal error checking restriction state: {e}"
+            ))
+        })?;
+    match write_restriction_denial(kind, &restriction, Utc::now()) {
+        // Say when the ban ends and why, as the auth seam does.
+        Some(IngestError::AuthFailed(_)) if restriction.banned => Err(IngestError::AuthFailed(
+            super::auth::ban_refusal_for(state, tenant.community(), pubkey.as_bytes()).await,
+        )),
+        denial => denial.map_or(Ok(()), Err),
+    }
+}
+
 /// Ingest a signed Nostr event through the full validation pipeline.
 ///
 /// Shared by WebSocket and HTTP transports. The caller constructs [`IngestAuth`]
@@ -1803,6 +4200,26 @@ pub async fn ingest_event(
     result
 }
 
+/// Maximum seconds in the future a kind:40100 canvas event may be timestamped.
+/// Tighter than the general ±900 s drift window to prevent a ceiling-timestamped
+/// head from producing a write at `head + 1` that the relay would accept (the
+/// boundary head itself is within ±900 s) but that permanently stalls all later
+/// legitimate writes behind an inflated floor. Invariant:
+///   client ceiling (60 s, CANVAS_MAX_FUTURE_SKEW_SECS) < canvas relay bound (300 s) < relay general bound (900 s)
+const CANVAS_MAX_INGEST_FUTURE_SECS: i64 = 300;
+
+/// Returns `Ok(())` if the canvas event timestamp is within the allowed future
+/// window, or `Err` with a rejection message otherwise.
+///
+/// Extracted as a pure function so the boundary can be regression-tested without
+/// a live database or HTTP stack.
+fn validate_canvas_future_timestamp(event_ts: i64, now: i64) -> Result<(), &'static str> {
+    if event_ts - now > CANVAS_MAX_INGEST_FUTURE_SECS {
+        return Err("invalid: canvas event timestamp too far in the future");
+    }
+    Ok(())
+}
+
 async fn ingest_event_inner(
     state: &Arc<AppState>,
     tracer: &Arc<dyn buzz_conformance::Tracer>,
@@ -1814,6 +4231,17 @@ async fn ingest_event_inner(
     let kind_u32 = event_kind_u32(&event);
     debug!(event_id = %event_id_hex, kind = kind_u32, "ingest_event");
 
+    // Durable community write fence: persistent ingest is a DB write the
+    // deletion engine cannot exclude via serving-write leases (those cover
+    // external side effects only), so the shared WS/HTTP seam must refuse
+    // writes once the community leaves the active lifecycle state. Row churn
+    // inside the remaining race window is swept by the destructive DB stage.
+    map_serving_fence_state(
+        buzz_deletion::store(&state.db)
+            .is_serving_active(tenant.community())
+            .await,
+    )?;
+
     if kind_u32 == KIND_AUTH {
         return Err(IngestError::Rejected(
             "invalid: AUTH events cannot be submitted".into(),
@@ -1822,6 +4250,21 @@ async fn ingest_event_inner(
     if kind_u32 == KIND_MEMBER_ADDED_NOTIFICATION || kind_u32 == KIND_MEMBER_REMOVED_NOTIFICATION {
         return Err(IngestError::Rejected(
             "invalid: membership notifications are relay-signed only".into(),
+        ));
+    }
+
+    // Kind:48001 is the relay's own publication of a `buzz-audit` chain entry.
+    // The relay is the single writer: envelopes are built and signed inside the
+    // audit worker (`crate::audit::publish_audit_entry`) and inserted directly
+    // into the event store through the internal dispatch path — never through
+    // client ingest. Rejecting here bounds every envelope at ingest (no client
+    // can submit arbitrarily large "audit" content) and keeps the served chain
+    // single-writer: a client-signed 48001 could never chain-verify (its
+    // content would not match any `audit_log` row), but serving it would make
+    // the desktop's verifier report the chain as broken.
+    if kind_u32 == KIND_AUDIT_ENTRY {
+        return Err(IngestError::Rejected(
+            "restricted: audit entries are relay-authored only".into(),
         ));
     }
 
@@ -1856,13 +4299,47 @@ async fn ingest_event_inner(
     }
     let event = std::sync::Arc::try_unwrap(event).unwrap_or_else(|arc| (*arc).clone());
 
-    const MAX_TIMESTAMP_DRIFT_SECS: i64 = 900; // ±15 minutes
+    if kind_u32 == buzz_core::kind::KIND_ARTIFACT
+        && event.pubkey == *auth.pubkey()
+        && state
+            .db
+            .artifact_accepted(tenant.community(), event.id.as_bytes())
+            .await
+            .map_err(|e| IngestError::Internal(e.to_string()))?
+    {
+        emit(
+            tracer,
+            TraceAction::WriteDuplicate {
+                msg_id: msg_id_label(event.id.as_bytes()),
+                channel: channel_label(
+                    extract_channel_id(&event)
+                        .ok_or_else(|| IngestError::Rejected("invalid: missing home".into()))?,
+                ),
+                claimed_community: claimed_community_from_event(&event),
+            },
+            state_for_request(tenant, auth.pubkey()),
+        );
+        return Ok(IngestResult {
+            event_id: event_id_hex,
+            accepted: true,
+            message: String::new(),
+        });
+    }
+
     let now = chrono::Utc::now().timestamp();
     let event_ts = event.created_at.as_secs() as i64;
-    if (event_ts - now).abs() > MAX_TIMESTAMP_DRIFT_SECS {
+    if !timestamp_within_bounds(kind_u32, event_ts, now) {
         return Err(IngestError::Rejected(
             "invalid: event timestamp too far from server time".into(),
         ));
+    }
+
+    // kind:40100 canvas events carry a tighter future ceiling — see
+    // `validate_canvas_future_timestamp` for the rationale and invariant.
+    if kind_u32 == KIND_CANVAS {
+        if let Err(msg) = validate_canvas_future_timestamp(event_ts, now) {
+            return Err(IngestError::Rejected(msg.into()));
+        }
     }
 
     const MAX_EVENT_CONTENT_BYTES: usize = 256 * 1024; // 256 KB
@@ -1907,6 +4384,10 @@ async fn ingest_event_inner(
             required
         )));
     }
+
+    // Ban / timeout write-block. Runs before every kind-specific branch below
+    // (commands, feedback, reports, moderation) so no write returns ahead of it.
+    enforce_write_restriction(state, tenant, kind_u32, auth.pubkey()).await?;
 
     // Command kinds are routed AFTER signature verification, timestamp check,
     // pubkey/auth match, and scope validation — never before.
@@ -1966,61 +4447,16 @@ async fn ingest_event_inner(
         });
     }
 
-    // Community ban / timeout write-block (COMMUNITY_MODERATION_PLAN.md §0
-    // decision 4). A timeout is a write-block only — the connection stays open,
-    // content writes are refused with `restricted: you are timed out until <ts>`
-    // so the desktop can render a countdown. A ban is normally enforced at the
-    // auth seam, but an already-authenticated connection never re-auths: if the
-    // live-disconnect fan-out is missed (fire-and-forget publish, broadcast lag,
-    // subscriber reconnect window), a banned member's open socket would keep
-    // writing indefinitely. So the ban is re-checked here — this write-path gate
-    // is the durable backstop the fan-out's best-effort delivery relies on.
-    // Moderation commands enforce bans inside their handler and remain exempt
-    // here only so timeouts do not disarm the tool used to lift them. Relay-admin
-    // commands (9030–9033) are exempt for the same reason — a timed-out admin
-    // must still be able to administer the roster — and likewise enforce the
-    // durable ban inside `relay_admin::handle_relay_admin_event`. Any kind added
-    // to this exemption owes the same handler-local ban check.
-    //
-    // Scope: this gate checks the *authoring* pubkey only, with no NIP-OA
-    // owner→agent cascade. That cascade lives at the auth seam for bans, where
-    // it is structural: an agent whose owner is banned can never authenticate,
-    // so its socket never exists to reach ingest. Timeout has no auth-seam
-    // presence (it is write-block-only), so an owner-timeout does not cascade to
-    // the owner's agents — a deliberate Phase-1 asymmetry. `IngestAuth` does not
-    // carry the self-proving auth tag, so resolving the owner here would mean
-    // plumbing it through the whole transport boundary; the follow-up shape is
-    // the restriction-state cache (see should-fix), which can fold in owner
-    // resolution without a per-write DB round-trip.
-    if !buzz_core::kind::is_moderation_command_kind(kind_u32) && !is_relay_admin_kind(kind_u32) {
-        match state
-            .db
-            .moderation_restriction_state(tenant.community(), auth.pubkey().as_bytes())
-            .await
-        {
-            Ok(r) => {
-                if r.banned {
-                    return Err(IngestError::AuthFailed(
-                        "blocked: you are banned from this community".to_string(),
-                    ));
-                }
-                if let Some(until) = r.muted_until {
-                    if until > chrono::Utc::now() {
-                        return Err(IngestError::AuthFailed(format!(
-                            "restricted: you are timed out until {}",
-                            until.timestamp()
-                        )));
-                    }
-                }
-            }
-            Err(e) => {
-                // Fail closed: a DB error must not let a banned/timed-out actor
-                // write.
-                return Err(IngestError::Internal(format!(
-                    "error: internal error checking restriction state: {e}"
-                )));
-            }
-        }
+    // A community moderator removing a Home post: a kind:9005 with no `h` tag
+    // (rooms and boards name theirs). Run directly, never stored: the removal,
+    // its audit row, the closed reports and the public log entry commit
+    // together before the answer. Boxed: the ingest future runs close to a
+    // worker's stack.
+    if kind_u32 == KIND_NIP29_DELETE_EVENT && super::home_moderation::is_home_removal(&event) {
+        return Box::pin(super::home_moderation::remove_home_post(
+            tenant, state, &event, &auth,
+        ))
+        .await;
     }
 
     let mut channel_id = if kind_u32 == KIND_REACTION {
@@ -2070,7 +4506,7 @@ async fn ingest_event_inner(
                 })?;
                 match state
                     .db
-                    .get_event_by_id(tenant.community(), &target_bytes)
+                    .get_event_by_id_for_event_write(tenant.community(), &target_bytes)
                     .await
                 {
                     Ok(Some(target)) => target.channel_id,
@@ -2118,9 +4554,30 @@ async fn ingest_event_inner(
     // it later in this request); each gate keeps its existing missing-row
     // behavior.
     let channel_row = match channel_id {
-        Some(ch_id) => state.db.get_channel(tenant.community(), ch_id).await.ok(),
+        Some(ch_id) => load_channel_for_write(tenant, state, ch_id).await?,
         None => None,
     };
+    // Board moderation commands (9045–9053) are direct board mutations, never
+    // stored or fanned out themselves. They run here, once the board is
+    // resolved under the tenant and the token's channel access is checked, and
+    // before the membership gate: an open board's moderator need not have
+    // joined it, and the handler decides standing itself. The community
+    // ban/timeout gate above has already applied.
+    if buzz_core::kind::is_board_moderation_command_kind(kind_u32) {
+        let message = super::board_moderation::handle_board_command(
+            tenant,
+            state,
+            &event,
+            channel_row.as_ref(),
+        )
+        .await
+        .map_err(IngestError::Rejected)?;
+        return Ok(IngestResult {
+            event_id: event_id_hex,
+            accepted: true,
+            message,
+        });
+    }
     // E1 phase-2 (§4.8 phase-2 addendum): resolve the fan-out visibility once,
     // here, through the same `channel_visibility_cached` gate fan-out uses
     // (fence 2: cached `private` wins over the prefetched row; a `private`
@@ -2203,7 +4660,11 @@ async fn ingest_event_inner(
 
     // Handled directly — removes the sender from relay_members. NOT stored.
     if kind_u32 == KIND_NIP43_LEAVE_REQUEST {
-        if !state.config.require_relay_membership {
+        if !state
+            .membership_required(tenant.community(), false)
+            .await
+            .unwrap_or(true)
+        {
             return Err(IngestError::Rejected(
                 "invalid: relay membership is not enabled".into(),
             ));
@@ -2265,6 +4726,17 @@ async fn ingest_event_inner(
             }
         }
 
+        // Leaving ends access now, exactly like admin removal: close the
+        // member's and their agents' live sessions on every pod.
+        let revoked = state
+            .revoke_live_access(
+                tenant,
+                &event.pubkey.to_bytes(),
+                &event_id_hex,
+                "restricted: you left this relay",
+            )
+            .await;
+
         // Publish NIP-43 announcements — fire-and-forget.
         if let Err(e) =
             crate::handlers::side_effects::publish_nip43_member_removed(tenant, state, &sender_hex)
@@ -2279,6 +4751,9 @@ async fn ingest_event_inner(
         }
 
         info!(pubkey = %sender_hex, "relay member left via NIP-43 leave request");
+        revoked.map_err(|e| {
+            IngestError::Internal(format!("left relay but live revoke incomplete: {e}"))
+        })?;
 
         return Ok(IngestResult {
             event_id: event_id_hex,
@@ -2286,6 +4761,8 @@ async fn ingest_event_inner(
             message: "info: you have left this relay".into(),
         });
     }
+
+    validate_huddle_lifecycle_event(tenant, state, &event, kind_u32).await?;
 
     if crate::handlers::side_effects::is_admin_kind(kind_u32) {
         crate::handlers::side_effects::validate_admin_event(tenant, kind_u32, &event, state)
@@ -2324,6 +4801,24 @@ async fn ingest_event_inner(
                 }
             }
         }
+    }
+
+    // Artifact revisions passed the same home-channel write gates as kind 9
+    // above; they are stored and published without conversation side effects.
+    if kind_u32 == buzz_core::kind::KIND_ARTIFACT {
+        let result = super::artifact::accept(state, tenant, &event, &auth).await?;
+        if let Some(ch_id) = channel_id {
+            emit(
+                tracer,
+                TraceAction::WriteInsert {
+                    msg_id: msg_id_label(event.id.as_bytes()),
+                    channel: channel_label(ch_id),
+                    claimed_community: claimed_community_from_event(&event),
+                },
+                state_for_request(tenant, auth.pubkey()),
+            );
+        }
+        return Ok(result);
     }
 
     // NIP-09: kind:5 may reference targets via `e` tag (regular events) OR
@@ -2398,6 +4893,94 @@ async fn ingest_event_inner(
                     .into(),
             ));
         }
+
+        // NIP-ORG budget enforcement: check run limits for this agent and
+        // consume one run. The counter write is a same-call durable write
+        // whose failure fails the ingest; see
+        // `budget_enforcement::enforce_run_budget` for the atomicity note.
+        let agent_hex = hex::encode(event.pubkey.to_bytes());
+        super::budget_enforcement::enforce_run_budget(state, tenant, &agent_hex).await?;
+    }
+
+    // NIP-ORG budget enforcement for agent tasks (kind:44011): every task
+    // row an agent publishes consumes one `tasks.create` unit against each
+    // budget whose `content.subject` names this agent. The counter write is
+    // a same-call durable write whose failure fails the ingest — same
+    // `enforce_counter` path as the runs gate above, so window derivation,
+    // subject binding, and exceed behavior (hard reject vs durable
+    // budget_approvals row + best-effort kind:46010) cannot diverge.
+    //
+    // Kind:44011 is not addressable — a status update is a new row — so
+    // status churn also consumes the counter. That over-counts, which is
+    // the fail-closed direction: an agent is budget-limited sooner, never
+    // later.
+    //
+    // TODO(budget): the `tasks.approve` counter is not enforced anywhere.
+    // An agent's approval action is not observable at this ingest seam:
+    // kind:46011/46012 (`KIND_WORKFLOW_APPROVAL_GRANTED`/`DENIED`) are not
+    // in `required_scope_for_kind`, so client-authored copies are rejected
+    // as unknown kinds before this code runs. The only agent-reachable
+    // approval action flows through the command path
+    // (`KIND_APPROVAL_GRANT` 46030 → `command_executor::handle_approval_grant`),
+    // which is outside the ingest gate and outside this change's scope —
+    // and grant/deny consumption for `budget_approvals` rows is itself
+    // still unwired (see migrations/0060_budget_consumption.sql). Enforce
+    // `task_approve` where budget approval grants are actually consumed.
+    if kind_u32 == KIND_AGENT_TASK {
+        let agent_hex = hex::encode(event.pubkey.to_bytes());
+        super::budget_enforcement::enforce_counter(state, tenant, &agent_hex, "task_create")
+            .await?;
+    }
+
+    // NIP-ORG budget enforcement for agent CHAT (kinds 9 and 40002): each
+    // message an agent authors consumes one `messages` unit against the
+    // strictest budget covering it (its own, else the community default).
+    // Humans are never metered (design rule 5), so a non-agent author returns
+    // before any budget lookup; overruns become a durable approval request,
+    // exactly like the gates above.
+    if kind_u32 == KIND_STREAM_MESSAGE || kind_u32 == KIND_STREAM_MESSAGE_V2 {
+        let author_hex = hex::encode(event.pubkey.to_bytes());
+        super::budget_enforcement::enforce_message_budget(state, tenant, &author_hex).await?;
+    }
+
+    // NIP-ORG budget enforcement for GOVERNANCE actions (agentic-governance
+    // S3's HITL gate): the observable governance actions an agent takes are
+    // its own mirrors — a proposal record (47004) is `governance.proposal`;
+    // a receipt whose table is `vote`/`execute` (47005) is
+    // `governance.vote`/`governance.execute`. Same `enforce_counter` path as
+    // the gates above: over the ceiling with `onExceed: "require-approval"`
+    // writes the durable `budget_approvals` row + best-effort kind:46010 and
+    // REJECTS the action — approval is a human decision, never a re-submit.
+    //
+    // Humans pass for free and by design: budgets bind by
+    // `content.subject == author` and humans have no budget records
+    // (NIP-ORG design rule 5: budgets never apply to a human's own actions).
+    if kind_u32 == KIND_LAUNCH_PROPOSAL {
+        let agent_hex = hex::encode(event.pubkey.to_bytes());
+        super::budget_enforcement::enforce_counter(
+            state,
+            tenant,
+            &agent_hex,
+            "governance_proposal",
+        )
+        .await?;
+    }
+    if kind_u32 == KIND_LAUNCH_RECEIPT {
+        let table = serde_json::from_str::<serde_json::Value>(&event.content)
+            .ok()
+            .and_then(|body| {
+                body.get("table")
+                    .and_then(|t| t.as_str().map(|s| s.to_owned()))
+            });
+        let class = match table.as_deref() {
+            Some("vote") => Some("governance_vote"),
+            Some("execute") => Some("governance_execute"),
+            _ => None,
+        };
+        if let Some(class) = class {
+            let agent_hex = hex::encode(event.pubkey.to_bytes());
+            super::budget_enforcement::enforce_counter(state, tenant, &agent_hex, class).await?;
+        }
     }
 
     if kind_u32 == KIND_EVENT_REMINDER {
@@ -2417,6 +5000,140 @@ async fn ingest_event_inner(
 
     if kind_u32 == KIND_PROJECT {
         validate_project_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_LAUNCH_RECORD {
+        validate_launch_record_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    // Shared NIP-ORG envelope (37010–37016): exactly one bounded `d`, a
+    // JSON-object body, bounded `seat`/`grantee`/`name`/`role`/`org` tags —
+    // one call site for every org kind, so a newly registered kind cannot
+    // skip the envelope unnoticed (tests enumerate `org_envelope_label`).
+    if let Some(label) = org_envelope_label(kind_u32) {
+        validate_org_envelope(&event, label)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    // Discovery plane: the EVM binding record (37017) carries its
+    // authenticity proof inline and is verified at ingest (offline
+    // `ecrecover` over the EIP-712 attestation — the anti-spoof seam); the
+    // deployment record (37018) is cross-checked against its `d`. Neither
+    // uses the shared org envelope above — its `role` tag shape
+    // (name/description/equity) describes neither record.
+    if kind_u32 == KIND_EVM_BINDING {
+        validate_evm_binding(state, &event)
+            .await
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_DEPLOYMENT_RECORD {
+        validate_deployment_record_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_ORG_NODE {
+        // R1 authority anchor: only the community owner/admin, or a holder of
+        // an anchored parent seat, may publish a node — so a member cannot
+        // shadow the owner's node by reusing its `d`. Always on.
+        super::org_grant_enforcement::validate_org_node_publication(state, tenant, &event).await?;
+        // The `onchain` binding on the org root is a governance act: only the
+        // root's holders or the community owner may publish it, and only on
+        // a root node. Always on — a forged binding must never store.
+        super::org_grant_enforcement::validate_org_node_binding(state, tenant, &event).await?;
+    }
+
+    if kind_u32 == KIND_ORG_GRANT {
+        // NIP-ORG grant-chain enforcement is on by default
+        // (`ORG_GRANT_ENFORCEMENT=off` disables it). On: verify attenuation,
+        // root standing, anchoring and expiry before acceptance — fail closed
+        // (see `org_grant_enforcement`). Equity records are exempt.
+        if state.config.org_grant_enforcement {
+            super::org_grant_enforcement::enforce_grant_chain(state, tenant, &event).await?;
+        }
+    }
+
+    if kind_u32 == KIND_ORG_BUDGET {
+        // Budget-specific content contract (camelCase keys, `window` enum)
+        // and the publication rule: subject agent itself or community owner.
+        super::budget_enforcement::validate_budget_publication(state, tenant, &event).await?;
+    }
+
+    if kind_u32 == KIND_WIKI_PAGE {
+        // Sticky team scope: a page scoped to a team node (t: team:<node-id>)
+        // can never be opened by a client that drops the tag. Always on.
+        enforce_wiki_page_scope(state, tenant, &event).await?;
+    }
+
+    if kind_u32 == KIND_AGENT_WIKI_PAGE {
+        validate_agent_wiki_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+        // Agent wiki pages are written by seated agents — or by a human
+        // authority holder publishing on the agent's behalf (the distillation
+        // runner). A plain member cannot forge one. Always on.
+        enforce_agent_wiki_authority(state, tenant, &event).await?;
+    }
+
+    if kind_u32 == KIND_WIKI_CORRECTION {
+        validate_wiki_correction_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    // SAT slice 1: team strategies/runs are JSON-object records, turns are
+    // markdown. Envelope-only (bounded, global-only) at ingest; semantic
+    // strategy validation is the CLI's job (see `buzz team strategy put`).
+    if kind_u32 == KIND_TEAM_STRATEGY {
+        validate_team_json_envelope(&event, "team strategy event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_TEAM_RUN {
+        validate_team_json_envelope(&event, "team run event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_TEAM_TURN {
+        validate_team_turn_envelope(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_LAUNCH_BID {
+        validate_launch_mirror_envelope(&event, "launch bid event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_LAUNCH_UPDATE {
+        validate_launch_mirror_envelope(&event, "launch update event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+        // Goals, promises, team updates and task steps count only from the
+        // right signer; checked here, once, against the project as it stands.
+        super::launch_update_authority::enforce_launch_update_authority(state, tenant, &event)
+            .await?;
+    }
+
+    if kind_u32 == KIND_LAUNCH_PROPOSAL {
+        validate_launch_mirror_envelope(&event, "launch proposal event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_LAUNCH_RECEIPT {
+        validate_launch_mirror_envelope(&event, "launch receipt event")
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_FORECAST {
+        validate_forecast(&event).map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_WORK_TAKEN_ON {
+        super::project_structure::validate_work_taken_on(&event)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
+    if kind_u32 == KIND_PROJECT_FOCUS {
+        super::project_structure::validate_project_focus(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
@@ -2479,6 +5196,10 @@ async fn ingest_event_inner(
                 IngestError::Rejected(format!("invalid channel_type: {channel_type_str}"))
             })?;
 
+        if channel_type == buzz_db::channel::ChannelType::Forum {
+            check_board_creation_limit(state, tenant, &event).await?;
+        }
+
         if let Some(client_uuid) = channel_id {
             let name = create_name.unwrap_or_default();
             let name = buzz_core::channel::canonical_channel_name(&name);
@@ -2524,6 +5245,19 @@ async fn ingest_event_inner(
             )
             .increment(1);
         }
+    }
+
+    if NEW_ACCOUNT_LIMITED_KINDS.contains(&kind_u32) {
+        check_new_account_limit(state, tenant, &event).await?;
+    }
+
+    // Board mutes and locked threads (D93): a muted person cannot post, reply,
+    // vote or react on that board, and only moderators and above reply in a
+    // locked thread.
+    if let Some(channel) = &channel_row {
+        super::board_moderation::enforce_board_write(tenant, state, kind_u32, &event, channel)
+            .await
+            .map_err(IngestError::Rejected)?;
     }
 
     if kind_u32 == KIND_NIP29_JOIN_REQUEST {
@@ -2596,6 +5330,13 @@ async fn ingest_event_inner(
         });
     }
 
+    let tenant_media_base =
+        crate::api::media::media_base_url_for_tenant(&state.config.relay_url, tenant.host());
+    if kind_u32 == KIND_STREAM_MESSAGE {
+        validate_link_preview_tags(&event, &tenant_media_base)
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+    }
+
     let imeta_tags: Vec<Vec<String>> = event
         .tags
         .iter()
@@ -2603,8 +5344,6 @@ async fn ingest_event_inner(
         .map(|t| t.as_slice().iter().map(|s| s.to_string()).collect())
         .collect();
     if !imeta_tags.is_empty() {
-        let tenant_media_base =
-            crate::api::media::media_base_url_for_tenant(&state.config.relay_url, tenant.host());
         crate::api::validate_imeta_tags(&imeta_tags, &tenant_media_base)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
         crate::api::verify_imeta_blobs(tenant, &imeta_tags, &state.media_storage)
@@ -2624,6 +5363,11 @@ async fn ingest_event_inner(
         None
     };
 
+    // Structural checks for the public social kinds (reposts, comments, polls).
+    if let Err(reason) = validate_social_event(kind_u32, &event) {
+        return Err(IngestError::Rejected(format!("invalid: {reason}")));
+    }
+
     // Pre-validate kind:0 content before storage so we don't store an event
     // whose profile sync will silently fail in the side-effect handler.
     if kind_u32 == KIND_PROFILE
@@ -2632,6 +5376,16 @@ async fn ingest_event_inner(
         return Err(IngestError::Rejected(
             "invalid: kind:0 content must be valid JSON".into(),
         ));
+    }
+
+    // An agent account's label rides on its profile: checked here, once, and
+    // a confirmed one is put on record before the profile is stored.
+    if kind_u32 == KIND_PROFILE {
+        super::agent_label::enforce_agent_label(state, tenant, &event).await?;
+    }
+
+    if kind_u32 == KIND_EMOJI_SET || kind_u32 == KIND_EMOJI_LIST {
+        validate_custom_emoji_tags(&event)?;
     }
 
     // Resolve the target reference, then use one DB transaction to upsert the
@@ -2672,17 +5426,7 @@ async fn ingest_event_inner(
             &event.content
         };
 
-        // Mirror the SDK's 64-character emoji limit server-side so raw clients
-        // cannot bypass it. Uses chars().count() (not byte len) to match the
-        // SDK's check_emoji_len, which also counts Unicode characters.
-        const MAX_REACTION_EMOJI_CHARS: usize = 64;
-        let emoji_char_count = emoji.chars().count();
-        if emoji_char_count > MAX_REACTION_EMOJI_CHARS {
-            return Err(IngestError::Rejected(format!(
-                "invalid: reaction emoji exceeds {} characters (got {})",
-                MAX_REACTION_EMOJI_CHARS, emoji_char_count
-            )));
-        }
+        validate_reaction_emoji(&event, emoji)?;
 
         // Atomically upsert the reaction row with this kind:7 event id, then store
         // the event in the same transaction. Ordering is load-bearing: active
@@ -2721,24 +5465,29 @@ async fn ingest_event_inner(
         };
 
         let pubkey_hex = auth.pubkey().to_hex();
-        // Spec WriteInsert (line 514) / WriteDuplicate (line 606): emit
-        // the abstract write action. The persist API returns
-        // `was_inserted` (true → Insert, false → Duplicate). This branch
-        // is the reaction path; channel_id is always Some here, so
-        // WriteInsertGlobal does not apply.
+        // Spec WriteInsert (line 514) / WriteDuplicate (line 606) /
+        // WriteInsertGlobal (line 559): emit the abstract write action. The
+        // persist API returns `was_inserted` (true → Insert/Global, false →
+        // Duplicate). Reactions on project events (issue/PR roots and their
+        // comments) carry no `h` tag, so `channel_id` can be `None` here —
+        // mirror the message write's three-way split instead of asserting a
+        // channel, which panicked the ingest worker on those events.
         let claimed = claimed_community_from_event(&event);
-        let action = if was_inserted {
-            TraceAction::WriteInsert {
+        let action = match (channel_id, was_inserted) {
+            (Some(ch), true) => TraceAction::WriteInsert {
                 msg_id: msg_id_label(event.id.as_bytes()),
-                channel: channel_label(channel_id.expect("reaction path has channel")),
+                channel: channel_label(ch),
                 claimed_community: claimed,
-            }
-        } else {
-            TraceAction::WriteDuplicate {
+            },
+            (Some(ch), false) => TraceAction::WriteDuplicate {
                 msg_id: msg_id_label(event.id.as_bytes()),
-                channel: channel_label(channel_id.expect("reaction path has channel")),
+                channel: channel_label(ch),
                 claimed_community: claimed,
-            }
+            },
+            (None, _) => TraceAction::WriteInsertGlobal {
+                msg_id: msg_id_label(event.id.as_bytes()),
+                claimed_community: claimed,
+            },
         };
         emit(tracer, action, state_for_request(tenant, auth.pubkey()));
         dispatch_persistent_event(
@@ -2759,7 +5508,38 @@ async fn ingest_event_inner(
         });
     }
 
-    let (stored_event, was_inserted) = if buzz_core::kind::is_replaceable(kind_u32) {
+    // Parse a canvas `expected-revision` precondition once, ahead of the write
+    // dispatch. Malformed or duplicate tags reject here (never reaching the DB);
+    // an absent tag yields `None`, routing canvas writes to the generic append.
+    let canvas_revision_spec = if kind_u32 == KIND_CANVAS {
+        parse_canvas_expected_revision(&event)?
+    } else {
+        None
+    };
+
+    let workflow_deletion = crate::handlers::side_effects::is_workflow_deletion(&event);
+    // A moderator removing someone else's words from a board (D111): the
+    // removal, its log entry, the hourly limit and this deletion event are one
+    // commit, applied before anything is acknowledged. A removal the board
+    // refuses (the limit, raced) is refused here, with nothing stored, so a
+    // resend tries again instead of reading as a duplicate.
+    let board_removal = if kind_u32 == KIND_NIP29_DELETE_EVENT && !workflow_deletion {
+        // Boxed: the ingest future already runs close to a worker's stack.
+        Box::pin(remove_from_board_before_storing(tenant, state, &event)).await?
+    } else {
+        None
+    };
+    let removed_on_board = board_removal.is_some();
+    let (stored_event, was_inserted) = if let Some(stored) = board_removal {
+        stored
+    } else if workflow_deletion {
+        // A single commit owns public acceptance, domain mutation, and dispatch.
+        // Failure rolls everything back; identical concurrent requests cannot
+        // divide insertion and repair ownership between two relay workers.
+        crate::handlers::side_effects::persist_workflow_deletion(tenant, &event, state)
+            .await
+            .map_err(|e| IngestError::Internal(format!("error: workflow deletion failed: {e}")))?
+    } else if buzz_core::kind::is_replaceable(kind_u32) {
         // NIP-16 replaceable event — atomic replace with stale-write protection.
         // channel_id is None for global kinds (0, 1, 3) due to step 5b above.
         state
@@ -2782,6 +5562,42 @@ async fn ingest_event_inner(
             .replace_parameterized_event(tenant.community(), &event, &d_tag, channel_id)
             .await
             .map_err(|e| IngestError::Internal(format!("error: {e}")))?
+    } else if let Some(spec) = canvas_revision_spec.as_ref() {
+        // Canvas write carrying an optimistic-concurrency precondition. Plain
+        // canvas writes (no `expected-revision` tag) fall through to the generic
+        // append path below, preserving unconditional behavior. The channel is
+        // guaranteed present here: KIND_CANVAS requires an `h` tag and step 5b
+        // resolved it into `channel_id`.
+        let channel = channel_id
+            .ok_or_else(|| IngestError::Rejected("invalid: canvas event missing channel".into()))?;
+        let precondition = match spec {
+            CanvasRevisionSpec::NoHead => buzz_db::ChannelHeadPrecondition::ExpectNoHead,
+            CanvasRevisionSpec::Head(id) => buzz_db::ChannelHeadPrecondition::ExpectedHead(id),
+        };
+        let (stored_event, status) = state
+            .db
+            .insert_canvas_head_checked(tenant.community(), &event, channel, precondition)
+            .await
+            .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+        match status {
+            buzz_db::ChannelHeadWriteStatus::RevisionMissing => {
+                return Err(IngestError::CanvasConflict(
+                    "conflict: canvas revision does not exist".into(),
+                ));
+            }
+            buzz_db::ChannelHeadWriteStatus::RevisionMismatch => {
+                return Err(IngestError::CanvasConflict(
+                    "conflict: canvas changed since it was loaded".into(),
+                ));
+            }
+            buzz_db::ChannelHeadWriteStatus::SupersedeFailed => {
+                return Err(IngestError::CanvasConflict(
+                    "conflict: canvas write does not supersede the current head".into(),
+                ));
+            }
+            buzz_db::ChannelHeadWriteStatus::Inserted => (stored_event, true),
+            buzz_db::ChannelHeadWriteStatus::Duplicate => (stored_event, false),
+        }
     } else {
         let thread_params = thread_meta.as_ref().map(|m| m.as_params());
         match state
@@ -2826,7 +5642,10 @@ async fn ingest_event_inner(
         });
     }
 
-    if crate::handlers::side_effects::is_side_effect_kind(kind_u32) {
+    if !workflow_deletion
+        && !removed_on_board
+        && crate::handlers::side_effects::is_side_effect_kind(kind_u32)
+    {
         if let Err(e) =
             crate::handlers::side_effects::handle_side_effects(tenant, kind_u32, &event, state)
                 .await
@@ -2903,8 +5722,34 @@ async fn ingest_event_inner(
     })
 }
 
+/// Apply a moderator's board removal with its kind:9005 stored in the same
+/// commit (D111). `None` when this deletion is not a board removal, or the
+/// words were already gone: the deletion is then stored as any other.
+async fn remove_from_board_before_storing(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    event: &Event,
+) -> Result<Option<(buzz_core::StoredEvent, bool)>, IngestError> {
+    let removal = match crate::handlers::side_effects::board_removal_of(tenant, state, event).await
+    {
+        Ok(Some(removal)) => removal,
+        Ok(None) => return Ok(None),
+        Err(e) => return Err(IngestError::Rejected(format!("invalid: {e}"))),
+    };
+    let applied =
+        crate::handlers::side_effects::apply_board_removal(tenant, state, event, removal, true)
+            .await
+            .map_err(|e| match e.downcast_ref::<buzz_db::DbError>() {
+                Some(buzz_db::DbError::ModeratorRateLimited(_)) => {
+                    IngestError::Rejected(super::board_moderation::rate_limited())
+                }
+                _ => IngestError::Internal(format!("error: board removal failed: {e}")),
+            })?;
+    Ok(applied.flatten())
+}
+
 #[cfg(test)]
-mod tests {
+mod postgres_tests {
     use std::sync::Mutex;
 
     use super::*;
@@ -2912,9 +5757,177 @@ mod tests {
     use buzz_core::kind::{
         KIND_CANVAS, KIND_FORUM_COMMENT, KIND_FORUM_POST, KIND_FORUM_VOTE, KIND_LONG_FORM,
         KIND_MANAGED_AGENT, KIND_PERSONA, KIND_PRESENCE_UPDATE, KIND_STREAM_MESSAGE,
-        KIND_STREAM_MESSAGE_DIFF, KIND_TEAM, KIND_USER_STATUS,
+        KIND_STREAM_MESSAGE_DIFF, KIND_TEAM, KIND_USER_STATUS, KIND_WIKI_SYNC,
     };
     use nostr::{EventBuilder, Kind};
+
+    /// A channel lookup failure must deny the write. Before, the error became
+    /// "no row", which skipped the archive check while a cached membership
+    /// still authorized the write.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn check_channel_write_denies_when_channel_lookup_fails() {
+        let state = crate::state::tests::test_state_with_database_url(
+            "postgres://buzz:buzz_dev@127.0.0.1:1/buzz",
+        )
+        .await;
+        let community = buzz_core::tenant::CommunityId::from_uuid(Uuid::nil());
+        let tenant = TenantContext::resolved(community, "archive.test");
+        let keys = nostr::Keys::generate();
+        let channel_id = Uuid::new_v4();
+        state.membership_cache.insert(
+            (community, channel_id, keys.public_key().to_bytes().to_vec()),
+            true,
+        );
+        let auth = IngestAuth::Nip42 {
+            pubkey: keys.public_key(),
+            scopes: vec![],
+            channel_ids: None,
+            conn_id: Uuid::new_v4(),
+        };
+
+        let result = check_channel_write(&tenant, &state, &auth, channel_id).await;
+
+        match result {
+            Err(IngestError::Internal(err)) => {
+                assert!(err.starts_with("error: database error"), "{err}")
+            }
+            other => panic!("a failed channel lookup must deny as internal, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn missing_huddle_backing_channel_is_a_client_rejection() {
+        let channel_id = Uuid::new_v4();
+        assert!(matches!(
+            map_huddle_backing_channel_error(buzz_db::DbError::ChannelNotFound(channel_id)),
+            IngestError::Rejected(message) if message.contains("backing channel not found")
+        ));
+    }
+
+    #[test]
+    fn huddle_backing_channel_lookup_outage_is_internal() {
+        let error = sqlx::Error::Io(std::io::Error::other("database unavailable"));
+        assert!(matches!(
+            map_huddle_backing_channel_error(buzz_db::DbError::Sqlx(error)),
+            IngestError::Internal(message) if message.contains("loading Huddle backing channel")
+        ));
+    }
+
+    #[test]
+    fn huddle_backing_ttl_honors_the_ephemeral_override() {
+        assert_eq!(expected_huddle_backing_ttl(None), 3600);
+        assert_eq!(expected_huddle_backing_ttl(Some(60)), 60);
+    }
+
+    #[test]
+    fn huddle_lifecycle_requires_a_uuid_backing_channel() {
+        let event = EventBuilder::new(
+            Kind::Custom(KIND_HUDDLE_STARTED as u16),
+            r#"{"ephemeral_channel_id":"not-a-uuid"}"#,
+        )
+        .sign_with_keys(&nostr::Keys::generate())
+        .expect("sign Huddle event");
+
+        assert!(matches!(
+            huddle_backing_channel_id(&event),
+            Err(IngestError::Rejected(message)) if message.contains("must be a UUID")
+        ));
+    }
+
+    #[test]
+    fn huddle_lifecycle_extracts_the_backing_channel() {
+        let channel_id = Uuid::new_v4();
+        let event = EventBuilder::new(
+            Kind::Custom(KIND_HUDDLE_ENDED as u16),
+            serde_json::json!({"ephemeral_channel_id": channel_id}).to_string(),
+        )
+        .sign_with_keys(&nostr::Keys::generate())
+        .expect("sign Huddle event");
+
+        assert_eq!(
+            huddle_backing_channel_id(&event).expect("channel id"),
+            channel_id
+        );
+    }
+
+    #[test]
+    fn reaction_validation_accepts_wrapped_max_shortcode() {
+        let shortcode = "a".repeat(buzz_sdk::MAX_CUSTOM_EMOJI_SHORTCODE_LEN);
+        let event = EventBuilder::new(Kind::Custom(KIND_REACTION as u16), format!(":{shortcode}:"))
+            .tags([
+                nostr::Tag::parse(["emoji", &shortcode, "https://example.com/max.png"])
+                    .expect("emoji tag"),
+            ])
+            .sign_with_keys(&nostr::Keys::generate())
+            .expect("sign reaction");
+
+        assert!(validate_reaction_emoji(&event, &event.content).is_ok());
+    }
+
+    #[test]
+    fn reaction_validation_rejects_mixed_case_max_shortcode() {
+        let shortcode = "Ab".repeat(buzz_sdk::MAX_CUSTOM_EMOJI_SHORTCODE_LEN / 2);
+        let event = EventBuilder::new(Kind::Custom(KIND_REACTION as u16), format!(":{shortcode}:"))
+            .tags([
+                nostr::Tag::parse(["emoji", &shortcode, "https://example.com/max.png"])
+                    .expect("emoji tag"),
+            ])
+            .sign_with_keys(&nostr::Keys::generate())
+            .expect("sign reaction");
+
+        assert!(matches!(
+            validate_reaction_emoji(&event, &event.content),
+            Err(IngestError::Rejected(_))
+        ));
+    }
+
+    #[test]
+    fn reaction_validation_rejects_case_mismatched_tag() {
+        let shortcode = "a".repeat(buzz_sdk::MAX_CUSTOM_EMOJI_SHORTCODE_LEN);
+        let uppercase_shortcode = shortcode.to_uppercase();
+        let event = EventBuilder::new(Kind::Custom(KIND_REACTION as u16), format!(":{shortcode}:"))
+            .tags([nostr::Tag::parse([
+                "emoji",
+                &uppercase_shortcode,
+                "https://example.com/max.png",
+            ])
+            .expect("emoji tag")])
+            .sign_with_keys(&nostr::Keys::generate())
+            .expect("sign reaction");
+
+        assert!(matches!(
+            validate_reaction_emoji(&event, &event.content),
+            Err(IngestError::Rejected(_))
+        ));
+    }
+
+    #[test]
+    fn emoji_set_validation_enforces_shortcode_boundary() {
+        let max_shortcode = "a".repeat(buzz_sdk::MAX_CUSTOM_EMOJI_SHORTCODE_LEN);
+        let valid_event = EventBuilder::new(Kind::Custom(KIND_EMOJI_SET as u16), "")
+            .tags([
+                nostr::Tag::parse(["emoji", &max_shortcode, "https://example.com/max.png"])
+                    .expect("emoji tag"),
+            ])
+            .sign_with_keys(&nostr::Keys::generate())
+            .expect("sign valid emoji set");
+        assert!(validate_custom_emoji_tags(&valid_event).is_ok());
+
+        let shortcode = "a".repeat(buzz_sdk::MAX_CUSTOM_EMOJI_SHORTCODE_LEN + 1);
+        let event = EventBuilder::new(Kind::Custom(KIND_EMOJI_SET as u16), "")
+            .tags([
+                nostr::Tag::parse(["emoji", &shortcode, "https://example.com/long.png"])
+                    .expect("emoji tag"),
+            ])
+            .sign_with_keys(&nostr::Keys::generate())
+            .expect("sign emoji set");
+
+        assert!(matches!(
+            validate_custom_emoji_tags(&event),
+            Err(IngestError::Rejected(message)) if message.contains("exceeds 64 bytes")
+        ));
+    }
 
     /// A banned relay admin must be refused with the same wire prefix and
     /// transport status as every other durable-restriction refusal:
@@ -2969,6 +5982,125 @@ mod tests {
             other => {
                 panic!("restriction DB failure must map to Internal (HTTP 500), got {other:?}")
             }
+        }
+    }
+
+    /// An active community passes the durable write fence untouched.
+    #[test]
+    fn serving_fence_active_community_admits_write() {
+        assert!(map_serving_fence_state(Ok(true)).is_ok());
+    }
+
+    /// A fenced/tombstoned/archived community is an authorization decision:
+    /// `restricted:` and (via `bridge.rs`) HTTP 400 — with the exact wire text
+    /// the ephemeral WS path uses, so clients see one refusal vocabulary.
+    #[test]
+    fn serving_fence_inactive_community_maps_to_restricted() {
+        match map_serving_fence_state(Ok(false)) {
+            Err(IngestError::Rejected(msg)) => {
+                assert_eq!(msg, "restricted: community writes are fenced");
+            }
+            other => panic!("fenced community must map to Rejected, got {other:?}"),
+        }
+    }
+
+    /// A fence-lookup outage is a server fault and must fail closed as
+    /// `error:`/500 — a Postgres blip can neither admit a write past the
+    /// fence nor be reported to an innocent client as a bad request.
+    #[test]
+    fn serving_fence_lookup_outage_fails_closed_as_internal() {
+        let outage = buzz_db::DbError::Sqlx(sqlx::Error::PoolTimedOut);
+        match map_serving_fence_state(Err(outage)) {
+            Err(IngestError::Internal(msg)) => {
+                assert!(
+                    msg.starts_with("error: "),
+                    "fence outages need the `error:` NIP-01 prefix, got {msg:?}"
+                );
+            }
+            other => panic!("fence lookup failure must map to Internal, got {other:?}"),
+        }
+    }
+
+    /// Production-path regression: the exact predicate `ingest_event_inner`
+    /// consults must admit writes while a community is active and refuse them
+    /// once the community deletion lifecycle fences it.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn ingest_write_fence_follows_community_deletion_lifecycle() {
+        use buzz_db::deletion::{
+            FrozenInventory, KeyStreamDigest, PrefixManifest, StorageManifest,
+            DEFAULT_LEASE_DURATION,
+        };
+
+        let url = std::env::var("BUZZ_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+        let pool = sqlx::PgPool::connect(&url).await.expect("connect test DB");
+        let db = buzz_db::Db::from_pool(pool);
+        if std::env::var("BUZZ_TEST_SCHEMA_MODE").as_deref() != Ok("desired") {
+            db.migrate().await.expect("migrate test DB");
+        }
+        let store = buzz_deletion::store(&db);
+
+        let host = format!("lane3-fence-{}.example", Uuid::new_v4().simple());
+        let community = db
+            .ensure_configured_community(&host)
+            .await
+            .expect("community")
+            .id;
+
+        assert!(
+            map_serving_fence_state(store.is_serving_active(community).await).is_ok(),
+            "active community must admit persistent ingest"
+        );
+
+        let submitted = store
+            .submit(
+                &host,
+                "test-operator",
+                Some("lane3 ingest fence regression"),
+            )
+            .await
+            .expect("submit");
+        let inventory = FrozenInventory {
+            schema: store
+                .inventory_schema(community)
+                .await
+                .expect("schema inventory"),
+            storage: StorageManifest {
+                version: 4,
+                prefixes: buzz_media::tenant_prefixes(*community.as_uuid())
+                    .into_iter()
+                    .map(|prefix| PrefixManifest {
+                        prefix,
+                        object_count: 0,
+                        total_bytes: 0,
+                        keys_digest: KeyStreamDigest::new().finish().0,
+                    })
+                    .collect(),
+            },
+        };
+        let request = store
+            .freeze_inventory(submitted.id, &inventory)
+            .await
+            .expect("freeze inventory");
+        store
+            .approve(request.id, "approver", None)
+            .await
+            .expect("approve");
+        let claim = store
+            .claim_specific(request.id, "executor", DEFAULT_LEASE_DURATION)
+            .await
+            .expect("claim")
+            .expect("won claim");
+        store.begin_quiescing(&claim.lease).await.expect("quiesce");
+        store.fence(&claim.lease).await.expect("fence");
+
+        match map_serving_fence_state(store.is_serving_active(community).await) {
+            Err(IngestError::Rejected(msg)) => {
+                assert_eq!(msg, "restricted: community writes are fenced");
+            }
+            other => panic!("fenced community must refuse persistent ingest, got {other:?}"),
         }
     }
 
@@ -3096,6 +6228,19 @@ mod tests {
     }
 
     #[test]
+    fn work_taken_on_and_project_focus_are_member_writes_that_belong_to_no_channel() {
+        let dummy = make_dummy_event();
+        for kind in [KIND_WORK_TAKEN_ON, KIND_PROJECT_FOCUS] {
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "{kind}"
+            );
+            assert!(is_global_only_kind(kind), "{kind}");
+        }
+    }
+
+    #[test]
     fn long_form_requires_messages_write_scope() {
         let dummy = make_dummy_event();
         assert_eq!(
@@ -3216,9 +6361,165 @@ mod tests {
         }
     }
 
+    const SOCIAL_KINDS: [u32; 6] = [
+        KIND_REPOST,
+        KIND_GENERIC_REPOST,
+        KIND_COMMENT,
+        KIND_HIGHLIGHT,
+        KIND_POLL,
+        KIND_POLL_RESPONSE,
+    ];
+
+    #[test]
+    fn social_kinds_are_global_only_member_writes() {
+        let dummy = make_dummy_event();
+        for kind in SOCIAL_KINDS {
+            assert!(is_global_only_kind(kind), "kind {kind} must be global-only");
+            assert!(
+                !requires_h_channel_scope(kind),
+                "kind {kind} must not require an h tag"
+            );
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "kind {kind} requires MessagesWrite"
+            );
+        }
+        for kind in [KIND_DM_RELAY_LIST, KIND_BLOSSOM_SERVER_LIST] {
+            assert!(is_global_only_kind(kind), "kind {kind} must be global-only");
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::UsersWrite,
+                "kind {kind} requires UsersWrite"
+            );
+        }
+    }
+
+    fn event_with(kind: u32, tags: &[&[&str]]) -> Event {
+        use nostr::{EventBuilder, Keys, Kind, Tag};
+        let parsed: Vec<Tag> = tags
+            .iter()
+            .map(|parts| Tag::parse(parts.iter().copied()).unwrap())
+            .collect();
+        EventBuilder::new(Kind::Custom(kind as u16), "")
+            .tags(parsed)
+            .sign_with_keys(&Keys::generate())
+            .unwrap()
+    }
+
+    const ID: &str = "0101010101010101010101010101010101010101010101010101010101010101";
+
+    #[test]
+    fn repost_requires_e_tag_and_generic_repost_requires_k() {
+        assert!(
+            validate_social_event(KIND_REPOST, &event_with(KIND_REPOST, &[&["e", ID]])).is_ok()
+        );
+        assert!(validate_social_event(KIND_REPOST, &event_with(KIND_REPOST, &[])).is_err());
+        assert!(
+            validate_social_event(KIND_REPOST, &event_with(KIND_REPOST, &[&["e", "nothex"]]))
+                .is_err()
+        );
+        assert!(validate_social_event(
+            KIND_GENERIC_REPOST,
+            &event_with(KIND_GENERIC_REPOST, &[&["e", ID]])
+        )
+        .is_err());
+        assert!(validate_social_event(
+            KIND_GENERIC_REPOST,
+            &event_with(KIND_GENERIC_REPOST, &[&["e", ID], &["k", "30023"]])
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn comment_requires_a_root_tag() {
+        assert!(validate_social_event(KIND_COMMENT, &event_with(KIND_COMMENT, &[])).is_err());
+        // Lowercase parent tags alone do not name a root.
+        assert!(
+            validate_social_event(KIND_COMMENT, &event_with(KIND_COMMENT, &[&["e", ID]])).is_err()
+        );
+        for root in ["E", "A", "I"] {
+            assert!(
+                validate_social_event(KIND_COMMENT, &event_with(KIND_COMMENT, &[&[root, ID]]))
+                    .is_ok(),
+                "{root} tag should name a comment root"
+            );
+        }
+    }
+
+    #[test]
+    fn poll_and_response_shapes() {
+        let ok_poll = event_with(
+            KIND_POLL,
+            &[&["option", "a", "Yes"], &["option", "b", "No"]],
+        );
+        assert!(validate_social_event(KIND_POLL, &ok_poll).is_ok());
+        let one_option = event_with(KIND_POLL, &[&["option", "a", "Yes"]]);
+        assert!(validate_social_event(KIND_POLL, &one_option).is_err());
+
+        let ok_vote = event_with(KIND_POLL_RESPONSE, &[&["e", ID], &["response", "a"]]);
+        assert!(validate_social_event(KIND_POLL_RESPONSE, &ok_vote).is_ok());
+        let no_choice = event_with(KIND_POLL_RESPONSE, &[&["e", ID]]);
+        assert!(validate_social_event(KIND_POLL_RESPONSE, &no_choice).is_err());
+        let no_poll = event_with(KIND_POLL_RESPONSE, &[&["response", "a"]]);
+        assert!(validate_social_event(KIND_POLL_RESPONSE, &no_poll).is_err());
+    }
+
+    #[test]
+    fn other_kinds_skip_social_validation() {
+        assert!(validate_social_event(KIND_TEXT_NOTE, &event_with(KIND_TEXT_NOTE, &[])).is_ok());
+        assert!(validate_social_event(KIND_HIGHLIGHT, &event_with(KIND_HIGHLIGHT, &[])).is_ok());
+    }
+
+    #[test]
+    fn private_managed_agent_kind_is_owner_scoped_global_user_data() {
+        let event = make_dummy_event();
+        assert_eq!(
+            required_scope_for_kind(KIND_PRIVATE_MANAGED_AGENT, &event),
+            Ok(Scope::UsersWrite)
+        );
+        assert!(is_global_only_kind(KIND_PRIVATE_MANAGED_AGENT));
+        assert!(!requires_h_channel_scope(KIND_PRIVATE_MANAGED_AGENT));
+    }
+
+    #[test]
+    fn ordinary_events_must_be_within_fifteen_minutes() {
+        let now = 1_700_000_000;
+        assert!(timestamp_within_bounds(KIND_TEXT_NOTE, now, now));
+        assert!(timestamp_within_bounds(KIND_TEXT_NOTE, now - 900, now));
+        assert!(timestamp_within_bounds(KIND_TEXT_NOTE, now + 900, now));
+        assert!(!timestamp_within_bounds(KIND_TEXT_NOTE, now - 901, now));
+        assert!(!timestamp_within_bounds(KIND_TEXT_NOTE, now + 901, now));
+    }
+
+    #[test]
+    fn gift_wraps_may_be_backdated_but_not_postdated() {
+        let now = 1_700_000_000;
+        let two_days = 2 * 24 * 60 * 60;
+        // NIP-59: randomized up to two days in the past.
+        assert!(timestamp_within_bounds(KIND_GIFT_WRAP, now - two_days, now));
+        assert!(timestamp_within_bounds(
+            KIND_GIFT_WRAP,
+            now - two_days - 3600,
+            now
+        ));
+        // Still bounded, so a wrap cannot be stamped arbitrarily far back.
+        assert!(!timestamp_within_bounds(
+            KIND_GIFT_WRAP,
+            now - 4 * 24 * 60 * 60,
+            now
+        ));
+        // And never from the future beyond the usual window.
+        assert!(timestamp_within_bounds(KIND_GIFT_WRAP, now + 900, now));
+        assert!(!timestamp_within_bounds(KIND_GIFT_WRAP, now + 901, now));
+    }
+
     #[test]
     fn ephemeral_kinds_not_in_scope_allowlist() {
         assert!(required_scope_for_kind(KIND_PRESENCE_UPDATE, &make_dummy_event()).is_err());
+        // Wiki live-sync (20003) is ephemeral fan-out only — it must never be
+        // admissible to the persistent ingest path, or it would be stored.
+        assert!(required_scope_for_kind(KIND_WIKI_SYNC, &make_dummy_event()).is_err());
     }
 
     #[test]
@@ -3252,6 +6553,15 @@ mod tests {
             KIND_FORUM_COMMENT,
             KIND_LONG_FORM,
             KIND_USER_STATUS,
+            // NIP-18/22/84/88 public social kinds
+            KIND_REPOST,
+            KIND_GENERIC_REPOST,
+            KIND_COMMENT,
+            KIND_HIGHLIGHT,
+            KIND_POLL,
+            KIND_POLL_RESPONSE,
+            KIND_DM_RELAY_LIST,
+            KIND_BLOSSOM_SERVER_LIST,
             // NIP-51 lists + sets, NIP-65 relay list
             KIND_MUTE_LIST,
             KIND_PIN_LIST,
@@ -3496,6 +6806,109 @@ mod tests {
             ],
         );
         assert!(validate_diff_event(&event).is_err());
+    }
+
+    #[test]
+    fn link_preview_suppression_accepts_blanket_marker() {
+        let event = make_event_with_tags(
+            KIND_STREAM_MESSAGE,
+            "https://example.com",
+            &[&["link-preview", "none"]],
+        );
+
+        assert!(validate_link_preview_tags(&event, "https://media.example.com").is_ok());
+    }
+
+    #[test]
+    fn link_preview_suppression_rejects_duplicate_marker() {
+        let event = make_event_with_tags(
+            KIND_STREAM_MESSAGE,
+            "https://example.com",
+            &[&["link-preview", "none"], &["link-preview", "none"]],
+        );
+
+        assert_eq!(
+            validate_link_preview_tags(&event, "https://media.example.com"),
+            Err("link-preview suppression cannot include snapshots".into())
+        );
+    }
+
+    #[test]
+    fn link_preview_suppression_rejects_mixed_snapshot_tags_in_either_order() {
+        let snapshot = [
+            "link-preview",
+            "snapshot",
+            "1",
+            "https://example.com",
+            "Example",
+            "Example",
+            "Description",
+            "",
+            "",
+            "",
+            "",
+        ];
+        for tags in [
+            vec![&["link-preview", "none"][..], &snapshot[..]],
+            vec![&snapshot[..], &["link-preview", "none"][..]],
+        ] {
+            let event = make_event_with_tags(KIND_STREAM_MESSAGE, "https://example.com", &tags);
+            assert!(validate_link_preview_tags(&event, "https://media.example.com").is_err());
+        }
+    }
+
+    fn make_link_preview_event(title: &str, site: &str, description: &str) -> Event {
+        make_event_with_tags(
+            KIND_STREAM_MESSAGE,
+            "https://example.com",
+            &[&[
+                "link-preview",
+                "snapshot",
+                "1",
+                "https://example.com",
+                title,
+                site,
+                description,
+                "",
+                "",
+                "",
+                "",
+            ]],
+        )
+    }
+
+    #[test]
+    fn link_preview_snapshot_accepts_description_newlines() {
+        let event = make_link_preview_event(
+            "Example title",
+            "Example site",
+            "First paragraph\n\nSecond paragraph",
+        );
+
+        assert!(validate_link_preview_tags(&event, "https://media.example.com").is_ok());
+    }
+
+    #[test]
+    fn link_preview_snapshot_rejects_title_and_site_newlines() {
+        for (title, site) in [
+            ("Example\ntitle", "Example site"),
+            ("Example title", "Example\nsite"),
+        ] {
+            let event = make_link_preview_event(title, site, "Description");
+            assert!(validate_link_preview_tags(&event, "https://media.example.com").is_err());
+        }
+    }
+
+    #[test]
+    fn link_preview_snapshot_rejects_non_newline_controls_in_all_text_fields() {
+        for (title, site, description) in [
+            ("Example\ttitle", "Example site", "Description"),
+            ("Example title", "Example\rsite", "Description"),
+            ("Example title", "Example site", "Unsafe\tdescription"),
+        ] {
+            let event = make_link_preview_event(title, site, description);
+            assert!(validate_link_preview_tags(&event, "https://media.example.com").is_err());
+        }
     }
 
     fn make_dummy_event() -> Event {
@@ -4562,6 +7975,826 @@ mod tests {
     }
 
     #[test]
+    fn launchpad_kinds_are_in_scope_allowlist() {
+        let dummy = make_dummy_event();
+        for kind in [
+            KIND_LAUNCH_RECORD,
+            KIND_SCORE_ROOT,
+            KIND_LAUNCH_BID,
+            KIND_LAUNCH_UPDATE,
+            KIND_LAUNCH_PROPOSAL,
+            KIND_LAUNCH_RECEIPT,
+        ] {
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "kind {kind} must be an ordinary member write"
+            );
+        }
+    }
+
+    #[test]
+    fn launchpad_kinds_are_global_only() {
+        // `buzz-channel` is a metadata reference, not a routing directive;
+        // mirrors are stack-scoped via `a` tags.
+        for kind in [
+            KIND_LAUNCH_RECORD,
+            KIND_SCORE_ROOT,
+            KIND_LAUNCH_BID,
+            KIND_LAUNCH_UPDATE,
+            KIND_LAUNCH_PROPOSAL,
+            KIND_LAUNCH_RECEIPT,
+        ] {
+            assert!(is_global_only_kind(kind), "kind {kind} must be global-only");
+            assert!(
+                !requires_h_channel_scope(kind),
+                "kind {kind} must not require h scope"
+            );
+        }
+    }
+
+    #[test]
+    fn launchpad_record_is_parameterized_replaceable() {
+        // Owner-only editing comes free from NIP-33 addressing.
+        assert!(is_parameterized_replaceable(KIND_LAUNCH_RECORD));
+        assert!(is_parameterized_replaceable(KIND_SCORE_ROOT));
+        for kind in [
+            KIND_LAUNCH_BID,
+            KIND_LAUNCH_UPDATE,
+            KIND_LAUNCH_PROPOSAL,
+            KIND_LAUNCH_RECEIPT,
+        ] {
+            assert!(
+                !is_parameterized_replaceable(kind),
+                "kind {kind} must be a regular event"
+            );
+        }
+    }
+
+    fn make_launch_record(tags: &[&[&str]]) -> Event {
+        make_event_with_tags(KIND_LAUNCH_RECORD, "{\"stage\":\"draft\"}", tags)
+    }
+
+    fn launch_coord() -> String {
+        format!("37001:{}:nebula", "a".repeat(64))
+    }
+
+    #[test]
+    fn score_root_is_scoped_like_a_launch_record_and_global() {
+        // A trustgraph operator publishes the proven root of a community's
+        // scores (kind 37006); clients verify claims against it. For the
+        // record to flow through the relay it needs the same scope as the
+        // other launchpad kinds and must never be channel-scoped.
+        let dummy = make_dummy_event();
+        assert_eq!(
+            required_scope_for_kind(KIND_SCORE_ROOT, &dummy).unwrap(),
+            Scope::MessagesWrite,
+            "kind 37006 should require MessagesWrite scope"
+        );
+        assert!(
+            is_global_only_kind(KIND_SCORE_ROOT),
+            "kind 37006 should be global-only"
+        );
+        assert!(
+            !requires_h_channel_scope(KIND_SCORE_ROOT),
+            "kind 37006 must not require an h-tag channel scope"
+        );
+    }
+
+    // ---- NIP-ORG org graph (37010–37012) ----
+
+    fn make_org_event(kind: u32, tags: &[&[&str]]) -> Event {
+        make_event_with_tags(kind, "{\"v\":1}", tags)
+    }
+
+    #[test]
+    fn org_envelope_accepts_valid_node() {
+        let seat = "c".repeat(64);
+        let ev = make_org_event(
+            KIND_ORG_NODE,
+            &[&["d", "cto"], &["name", "CTO"], &["seat", seat.as_str()]],
+        );
+        assert!(validate_org_envelope(&ev, "org node event").is_ok());
+    }
+
+    #[test]
+    fn org_kinds_are_parameterized_replaceable() {
+        // Owner-editable addressing comes free from NIP-33 (d-tag replacement).
+        for kind in [
+            KIND_ORG_NODE,
+            KIND_ORG_GRANT,
+            KIND_ORG_BUDGET,
+            KIND_CONTRIBUTION_RECORD,
+            KIND_BUDGET_SPEND_RECEIPT,
+        ] {
+            assert!(
+                is_parameterized_replaceable(kind),
+                "kind {kind} must be parameterized-replaceable"
+            );
+        }
+    }
+
+    #[test]
+    fn org_kinds_are_global_member_writes() {
+        // The org graph is a community-level object: ordinary member writes
+        // that are global-only (addressed by pubkey/kind/d, like a project or
+        // a launch record). Structural authorization is layered on top, not
+        // baked into the write scope, and a stray `h` must not channel-scope
+        // the org.
+        let dummy = make_dummy_event();
+        for kind in [
+            KIND_ORG_NODE,
+            KIND_ORG_GRANT,
+            KIND_ORG_BUDGET,
+            KIND_CONTRIBUTION_RECORD,
+            KIND_BUDGET_SPEND_RECEIPT,
+        ] {
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "kind {kind} should require MessagesWrite scope"
+            );
+            assert!(
+                is_global_only_kind(kind),
+                "kind {kind} must be global-only (one org per community)"
+            );
+            assert!(
+                !requires_h_channel_scope(kind),
+                "kind {kind} must not require an h-tag channel scope"
+            );
+        }
+    }
+
+    #[test]
+    fn org_envelope_accepts_stray_h_tag() {
+        // `h` is not part of the org envelope. One or several stray `h` tags are
+        // accepted and never channel-scope the event (is_global_only_kind strips
+        // routing), exactly as for projects and launch records — the org belongs
+        // to the whole community, so an `h` tag is never routing.
+        let one = make_org_event(
+            KIND_ORG_NODE,
+            &[&["d", "cto"], &["h", "not-a-routing-directive"]],
+        );
+        assert!(validate_org_envelope(&one, "org node event").is_ok());
+        let two = make_org_event(KIND_ORG_NODE, &[&["d", "cto"], &["h", "a"], &["h", "b"]]);
+        assert!(validate_org_envelope(&two, "org node event").is_ok());
+    }
+
+    #[test]
+    fn org_envelope_accepts_all_three_kinds() {
+        // The validator is shared across node, grant, and budget.
+        for (kind, label) in [
+            (KIND_ORG_NODE, "org node event"),
+            (KIND_ORG_GRANT, "org grant event"),
+            (KIND_ORG_BUDGET, "org budget event"),
+        ] {
+            let grantee = "d".repeat(64);
+            let ev = make_org_event(kind, &[&["d", "x"], &["grantee", &grantee]]);
+            assert!(
+                validate_org_envelope(&ev, label).is_ok(),
+                "kind {kind} should accept a valid envelope"
+            );
+        }
+    }
+
+    #[test]
+    fn org_envelope_accepts_budget_spend_receipt() {
+        // 37014 shares the org envelope (exactly one d tag, JSON-object
+        // content, global-only) and adds a p tag for the budgeted subject.
+        let subject = "e".repeat(64);
+        let ev = make_org_event(
+            KIND_BUDGET_SPEND_RECEIPT,
+            &[&["d", "spend-1"], &["p", subject.as_str()]],
+        );
+        assert!(
+            validate_org_envelope(&ev, "budget spend receipt event").is_ok(),
+            "a well-formed 37014 receipt should pass the shared org envelope"
+        );
+        let missing_d = make_org_event(KIND_BUDGET_SPEND_RECEIPT, &[&["p", subject.as_str()]]);
+        let err = validate_org_envelope(&missing_d, "budget spend receipt event").unwrap_err();
+        assert!(err.contains("exactly one"), "got: {err}");
+    }
+
+    #[test]
+    fn org_envelope_rejects_missing_d() {
+        let ev = make_org_event(KIND_ORG_NODE, &[&["name", "CTO"]]);
+        let err = validate_org_envelope(&ev, "org node event").unwrap_err();
+        assert!(err.contains("exactly one"), "got: {err}");
+    }
+
+    #[test]
+    fn org_envelope_rejects_non_hex_seat() {
+        let ev = make_org_event(KIND_ORG_NODE, &[&["d", "cto"], &["seat", "not-a-pubkey"]]);
+        let err = validate_org_envelope(&ev, "org node event").unwrap_err();
+        assert!(err.contains("`seat` tag"), "got: {err}");
+    }
+
+    #[test]
+    fn org_envelope_rejects_uppercase_grantee() {
+        let upper = "AB".repeat(32);
+        let ev = make_org_event(KIND_ORG_GRANT, &[&["d", "g1"], &["grantee", &upper]]);
+        let err = validate_org_envelope(&ev, "org grant event").unwrap_err();
+        assert!(err.contains("`grantee` tag"), "got: {err}");
+    }
+
+    #[test]
+    fn org_envelope_rejects_non_object_content() {
+        let ev = make_event_with_tags(KIND_ORG_NODE, "not json", &[&["d", "cto"]]);
+        let err = validate_org_envelope(&ev, "org node event").unwrap_err();
+        assert!(err.contains("JSON object"), "got: {err}");
+    }
+
+    // ---- Project Board (37015 pitch / 37016 join request) ----
+
+    #[test]
+    fn project_board_kinds_are_org_plane_records() {
+        // The Project Board rides the org plane: registered member writes,
+        // global-only, NIP-33 addressed, and routed through the shared
+        // envelope so an unbounded record never stores. Removing any of
+        // these legs makes this test fail.
+        let dummy = make_dummy_event();
+        for (kind, label) in [
+            (KIND_ORG_PITCH, "project pitch event"),
+            (KIND_ORG_JOIN_REQUEST, "project join request event"),
+        ] {
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "kind {kind} must be an ordinary member write"
+            );
+            assert!(
+                is_global_only_kind(kind),
+                "kind {kind} must be global-only (never channel-scoped)"
+            );
+            assert!(
+                !requires_h_channel_scope(kind),
+                "kind {kind} must not require an h-tag channel scope"
+            );
+            assert!(
+                is_parameterized_replaceable(kind),
+                "kind {kind} must be NIP-33 addressed"
+            );
+            assert_eq!(
+                org_envelope_label(kind),
+                Some(label),
+                "kind {kind} must route through the org envelope"
+            );
+        }
+    }
+
+    #[test]
+    fn org_envelope_label_covers_exactly_the_org_kinds() {
+        // Enumerating the map is what makes the single envelope call site
+        // falsifiable: a registered org kind missing here would store
+        // unvalidated, and a non-org kind added here would be rejected as
+        // malformed for records the relay never bounds.
+        for kind in [
+            KIND_ORG_NODE,
+            KIND_ORG_GRANT,
+            KIND_ORG_BUDGET,
+            KIND_CONTRIBUTION_RECORD,
+            KIND_BUDGET_SPEND_RECEIPT,
+            KIND_ORG_PITCH,
+            KIND_ORG_JOIN_REQUEST,
+        ] {
+            assert!(
+                org_envelope_label(kind).is_some(),
+                "kind {kind} must use the org envelope"
+            );
+        }
+        for kind in [KIND_PROJECT, KIND_LAUNCH_RECORD, KIND_WIKI_PAGE] {
+            assert!(
+                org_envelope_label(kind).is_none(),
+                "kind {kind} is not an org kind"
+            );
+        }
+    }
+
+    #[test]
+    fn project_pitch_envelope_accepts_declared_roles() {
+        let ev = make_org_event(
+            KIND_ORG_PITCH,
+            &[
+                &["d", "nebula"],
+                &["name", "Nebula"],
+                &["role", "founder", "The founder", "40"],
+                &["role", "writer", "The writer", "12"],
+            ],
+        );
+        assert!(
+            validate_org_envelope(&ev, "project pitch event").is_ok(),
+            "a manifest of bounded role tags must pass the shared envelope"
+        );
+    }
+
+    #[test]
+    fn join_request_envelope_accepts_role_reference() {
+        let founder = "a".repeat(64);
+        let ev = make_org_event(
+            KIND_ORG_JOIN_REQUEST,
+            &[
+                &["d", "nebula/writer/abcdef0123456789"],
+                &["role", "writer"],
+                &["p", founder.as_str()],
+            ],
+        );
+        assert!(
+            validate_org_envelope(&ev, "project join request event").is_ok(),
+            "a join request naming its role must pass the shared envelope"
+        );
+    }
+
+    #[test]
+    fn org_envelope_rejects_malformed_role_tags() {
+        // Every shape that would let a claim exceed the declared pool or
+        // carry an unrenderable role identity.
+        let cases: [&[&str]; 7] = [
+            &["role", "Writer"],
+            &["role", "a-very-long-role-slug"],
+            &["role", "writer", "The writer", "0"],
+            &["role", "writer", "The writer", "150"],
+            &["role", "writer", "The writer", "12%"],
+            &["role", "writer", "The writer"],
+            &["role", "writer", "The writer", "12", "extra"],
+        ];
+        for role in cases {
+            let tags: Vec<&[&str]> = vec![&["d", "nebula"], role];
+            let ev = make_event_with_tags(KIND_ORG_PITCH, "{\"v\":1}", &tags);
+            let err = validate_org_envelope(&ev, "project pitch event")
+                .expect_err(&format!("role tag {role:?} must be rejected"));
+            assert!(err.contains("`role`"), "got: {err}");
+        }
+    }
+
+    #[test]
+    fn org_envelope_caps_role_tags() {
+        let slugs: Vec<String> = (0..=64).map(|i| format!("r{i}")).collect();
+        let mut tag_refs: Vec<Vec<&str>> = vec![vec!["d", "nebula"]];
+        tag_refs.extend(slugs.iter().map(|slug| vec!["role", slug.as_str()]));
+        let borrowed: Vec<&[&str]> = tag_refs.iter().map(|t| t.as_slice()).collect();
+        let ev = make_event_with_tags(KIND_ORG_PITCH, "{\"v\":1}", &borrowed);
+        let err = validate_org_envelope(&ev, "project pitch event").unwrap_err();
+        assert!(err.contains("`role` tags"), "got: {err}");
+    }
+
+    #[test]
+    fn ownership_grant_envelope_bounds_the_org_percentage() {
+        // `["org", <pct>]` is the ownership claim on an approval grant: the
+        // relay bounds it to a whole percentage of one project, so a single
+        // grant can never assert more than the entire pool.
+        let grantee = "d".repeat(64);
+        let ok = make_org_event(
+            KIND_ORG_GRANT,
+            &[
+                &["d", "nebula/writer"],
+                &["grantee", &grantee],
+                &["org", "12"],
+            ],
+        );
+        assert!(validate_org_envelope(&ok, "org grant event").is_ok());
+        for pct in ["0", "150", "12%", "abc", ""] {
+            let ev = make_org_event(
+                KIND_ORG_GRANT,
+                &[
+                    &["d", "nebula/writer"],
+                    &["grantee", &grantee],
+                    &["org", pct],
+                ],
+            );
+            let err = validate_org_envelope(&ev, "org grant event")
+                .expect_err(&format!("org tag {pct:?} must be rejected"));
+            assert!(err.contains("`org`"), "got: {err}");
+        }
+    }
+
+    // ---- Agent Wiki (44002) ----
+
+    fn make_agent_wiki_event(tags: &[&[&str]]) -> Event {
+        make_event_with_tags(KIND_AGENT_WIKI_PAGE, "# Standup\n\nBody", tags)
+    }
+
+    #[test]
+    fn agent_wiki_envelope_accepts_valid_page() {
+        let d = "default/projects/research/standup";
+        let ev = make_agent_wiki_event(&[
+            &["d", d],
+            &["model", "test-model"],
+            &["cost_tokens", "1500"],
+            &["sources", &"a".repeat(64)],
+        ]);
+        assert!(validate_agent_wiki_envelope(&ev).is_ok());
+    }
+
+    #[test]
+    fn agent_wiki_envelope_accepts_minimal_page_without_provenance() {
+        let ev = make_agent_wiki_event(&[&["d", "default/standup"]]);
+        assert!(validate_agent_wiki_envelope(&ev).is_ok());
+    }
+
+    #[test]
+    fn agent_wiki_envelope_rejects_plain_44001_style_d_slug() {
+        // 44002 requires `<space>/<slug>` — a bare slug is a 44001 page shape.
+        let ev = make_agent_wiki_event(&[&["d", "standup"]]);
+        let err = validate_agent_wiki_envelope(&ev).unwrap_err();
+        assert!(err.contains("at least one"), "got: {err}");
+    }
+
+    #[test]
+    fn agent_wiki_envelope_rejects_empty_parts() {
+        for d in ["/standup", "default/", "default//x"] {
+            let ev = make_agent_wiki_event(&[&["d", d]]);
+            let err = validate_agent_wiki_envelope(&ev).unwrap_err();
+            assert!(
+                err.contains("non-empty") || err.contains("at least one"),
+                "d={d:?} got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn agent_wiki_envelope_rejects_bad_slug_character() {
+        let ev = make_agent_wiki_event(&[&["d", "Default/Standup"]]);
+        let err = validate_agent_wiki_envelope(&ev).unwrap_err();
+        assert!(err.contains("must match"), "got: {err}");
+    }
+
+    #[test]
+    fn agent_wiki_envelope_rejects_empty_content() {
+        let ev = make_event_with_tags(KIND_AGENT_WIKI_PAGE, "", &[&["d", "default/standup"]]);
+        let err = validate_agent_wiki_envelope(&ev).unwrap_err();
+        assert!(err.contains("not be empty"), "got: {err}");
+    }
+
+    #[test]
+    fn agent_wiki_envelope_rejects_junk_provenance() {
+        // Two model tags.
+        let two_models = make_agent_wiki_event(&[
+            &["d", "default/standup"],
+            &["model", "m1"],
+            &["model", "m2"],
+        ]);
+        assert!(validate_agent_wiki_envelope(&two_models).is_err());
+
+        // cost_tokens must be digits.
+        let bad_cost =
+            make_agent_wiki_event(&[&["d", "default/standup"], &["cost_tokens", "1.5k"]]);
+        let err = validate_agent_wiki_envelope(&bad_cost).unwrap_err();
+        assert!(err.contains("cost_tokens"), "got: {err}");
+
+        // sources ids must be lowercase 64-hex.
+        let upper_src =
+            make_agent_wiki_event(&[&["d", "default/standup"], &["sources", &"A".repeat(64)]]);
+        let err = validate_agent_wiki_envelope(&upper_src).unwrap_err();
+        assert!(err.contains("64-hex"), "got: {err}");
+
+        // sources must not exceed the cap (68 ids × 65 chars).
+        let too_many = "b".repeat(64);
+        let many = vec![too_many.as_str(); 68].join(",");
+        let overflow = make_agent_wiki_event(&[&["d", "default/standup"], &["sources", &many]]);
+        assert!(validate_agent_wiki_envelope(&overflow).is_err());
+    }
+
+    #[test]
+    fn agent_wiki_kind_is_global_only_and_not_param_replaceable() {
+        assert!(
+            is_global_only_kind(KIND_AGENT_WIKI_PAGE),
+            "kind 44002 should be a community-level global-only kind"
+        );
+        assert!(
+            !buzz_core::kind::is_parameterized_replaceable(KIND_AGENT_WIKI_PAGE),
+            "44002 is outside 30000–39999; replacement is read-side LWW"
+        );
+    }
+
+    // ---- SAT slice 1 (44020–44022) ----
+
+    fn make_team_strategy_event() -> Event {
+        make_event_with_tags(
+            KIND_TEAM_STRATEGY,
+            r#"{"v":1,"name":"audit","description":"d","teamworkPrompt":"t","roles":{"agent-0":"r"},"steps":[{"participants":["agent-0"],"rounds":1,"flow":"local","prompt":"p"}],"finalWriter":"agent-0"}"#,
+            &[&["d", "mechanistic_step_audit"]],
+        )
+    }
+
+    #[test]
+    fn team_strategy_envelope_accepts_valid() {
+        // Strategy + run share the JSON-object envelope validator.
+        assert!(
+            validate_team_json_envelope(&make_team_strategy_event(), "team strategy event").is_ok()
+        );
+        let run = make_event_with_tags(
+            KIND_TEAM_RUN,
+            r#"{"v":1,"strategyId":"s","problem":"p","transcript":[],"finalAnswer":"a","totalTokens":12,"model":"m","status":"complete"}"#,
+            &[&["d", "run-1-1700000000"]],
+        );
+        assert!(validate_team_json_envelope(&run, "team run event").is_ok());
+    }
+
+    #[test]
+    fn team_strategy_envelope_rejects_junk_shapes() {
+        // Non-object content.
+        let not_json = make_event_with_tags(KIND_TEAM_STRATEGY, "not json", &[&["d", "s1"]]);
+        let err = validate_team_json_envelope(&not_json, "team strategy event").unwrap_err();
+        assert!(err.contains("JSON object"), "got: {err}");
+
+        // JSON array content.
+        let array = make_event_with_tags(KIND_TEAM_STRATEGY, "[1,2]", &[&["d", "s1"]]);
+        assert!(validate_team_json_envelope(&array, "team strategy event").is_err());
+
+        // Missing d.
+        let no_d = make_event_with_tags(KIND_TEAM_STRATEGY, "{}", &[]);
+        assert!(validate_team_json_envelope(&no_d, "team strategy event").is_err());
+
+        // Over-long d (TEAM_ID_D_MAX_LEN).
+        let long_d = make_event_with_tags(KIND_TEAM_STRATEGY, "{}", &[&["d", &"x".repeat(65)]]);
+        let err = validate_team_json_envelope(&long_d, "team strategy event").unwrap_err();
+        assert!(
+            err.contains("too long") || err.contains("must be 1..="),
+            "got: {err}"
+        );
+
+        // Empty content.
+        let empty = make_event_with_tags(KIND_TEAM_STRATEGY, "", &[&["d", "s1"]]);
+        let err = validate_team_json_envelope(&empty, "team strategy event").unwrap_err();
+        assert!(err.contains("not be empty"), "got: {err}");
+
+        // Two d tags (cardinality).
+        let two_d = make_event_with_tags(KIND_TEAM_STRATEGY, "{}", &[&["d", "s1"], &["d", "s2"]]);
+        assert!(validate_team_json_envelope(&two_d, "team strategy event").is_err());
+    }
+
+    #[test]
+    fn team_run_envelope_bounds_content() {
+        let big = "x".repeat(TEAM_CONTENT_MAX_LEN + 1);
+        let run = make_event_with_tags(
+            KIND_TEAM_RUN,
+            &serde_json::json!({"pad": big}).to_string(),
+            &[&["d", "run-1"]],
+        );
+        let err = validate_team_json_envelope(&run, "team run event").unwrap_err();
+        assert!(err.contains("too long"), "got: {err}");
+    }
+
+    #[test]
+    fn team_turn_envelope_accepts_valid_markdown() {
+        let ev = make_event_with_tags(
+            KIND_TEAM_TURN,
+            "# Phase 1\n\nMy analysis...",
+            &[&["d", "run-1/1/agent-0"]],
+        );
+        assert!(validate_team_turn_envelope(&ev).is_ok());
+
+        // Longer nested run id still under the turn cap.
+        let nested = format!("{}/2/agent-1", "r".repeat(60));
+        let ev2 = make_event_with_tags(KIND_TEAM_TURN, "x", &[&["d", &nested]]);
+        assert!(validate_team_turn_envelope(&ev2).is_ok());
+    }
+
+    #[test]
+    fn team_turn_envelope_rejects_bad_d_and_empty_content() {
+        // Fewer than three parts.
+        for d in ["run-1", "run-1/1"] {
+            let ev = make_event_with_tags(KIND_TEAM_TURN, "x", &[&["d", d]]);
+            let err = validate_team_turn_envelope(&ev).unwrap_err();
+            assert!(
+                err.contains("`<run-id>/<phase>/<agentSlot>`"),
+                "d={d} got: {err}"
+            );
+        }
+        // Empty part.
+        let ev = make_event_with_tags(KIND_TEAM_TURN, "x", &[&["d", "run-1//agent-0"]]);
+        assert!(validate_team_turn_envelope(&ev).is_err());
+        // Empty content.
+        let ev = make_event_with_tags(KIND_TEAM_TURN, "", &[&["d", "run-1/1/agent-0"]]);
+        let err = validate_team_turn_envelope(&ev).unwrap_err();
+        assert!(err.contains("not be empty"), "got: {err}");
+        // Over-long d.
+        let long = format!("{}/1/agent-0", "r".repeat(TEAM_TURN_D_MAX_LEN));
+        let ev = make_event_with_tags(KIND_TEAM_TURN, "x", &[&["d", &long]]);
+        assert!(validate_team_turn_envelope(&ev).is_err());
+    }
+
+    #[test]
+    fn team_kinds_are_global_only_and_scope_to_messages_write() {
+        for kind in [KIND_TEAM_STRATEGY, KIND_TEAM_RUN, KIND_TEAM_TURN] {
+            assert!(
+                is_global_only_kind(kind),
+                "kind {kind} should be global-only"
+            );
+            assert!(
+                !buzz_core::kind::is_parameterized_replaceable(kind),
+                "kind {kind} sits outside 30000–39999; replacement is read-side LWW"
+            );
+            // Eligible write scope for ordinary members (mirrors fleet kinds).
+            let ev = make_event_with_tags(kind, "{}", &[&["d", "x"]]);
+            assert!(required_scope_for_kind(kind, &ev).is_ok());
+        }
+    }
+
+    #[test]
+    fn launch_record_envelope_accepts_valid() {
+        let coord_owner = "b".repeat(64);
+        let ev = make_launch_record(&[
+            &["d", "nebula"],
+            &["name", "Nebula DAO"],
+            &["chain", "11155111"],
+            &["auction", "0x1234567890123456789012345678901234567890"],
+            &["team", &coord_owner, "founder"],
+        ]);
+        assert!(validate_launch_record_envelope(&ev).is_ok());
+    }
+
+    #[test]
+    fn launch_record_envelope_rejects_missing_d() {
+        let ev = make_launch_record(&[&["name", "Nebula DAO"]]);
+        let err = validate_launch_record_envelope(&ev).unwrap_err();
+        assert!(err.contains("exactly one"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_record_envelope_rejects_bad_slug() {
+        let ev = make_launch_record(&[&["d", "Nebula!"]]);
+        let err = validate_launch_record_envelope(&ev).unwrap_err();
+        assert!(
+            err.contains("must match") || err.contains("start with"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn launch_record_envelope_rejects_bad_address() {
+        let ev = make_launch_record(&[&["d", "nebula"], &["auction", "not-an-address"]]);
+        let err = validate_launch_record_envelope(&ev).unwrap_err();
+        assert!(err.contains("0x address"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_record_envelope_rejects_non_json_content() {
+        let ev = make_event_with_tags(KIND_LAUNCH_RECORD, "not json", &[&["d", "nebula"]]);
+        let err = validate_launch_record_envelope(&ev).unwrap_err();
+        assert!(err.contains("JSON object"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_mirror_envelope_accepts_bid_and_receipt() {
+        let coord = launch_coord();
+        let bid = make_event_with_tags(
+            KIND_LAUNCH_BID,
+            "{\"budget\":\"100\"}",
+            &[&["a", &coord], &["m", "bucket-0"]],
+        );
+        assert!(validate_launch_mirror_envelope(&bid, "launch bid event").is_ok());
+        let receipt = make_event_with_tags(
+            KIND_LAUNCH_RECEIPT,
+            "{\"raised\":\"1\"}",
+            &[
+                &["a", &coord],
+                &[
+                    "tx",
+                    "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+                ],
+            ],
+        );
+        assert!(validate_launch_mirror_envelope(&receipt, "launch receipt event").is_ok());
+    }
+
+    const FORECAST_Q: &str =
+        "forecast:postbounty:31337:0x9d4454b023096f34b160d6b654540c56a1f81688:1";
+
+    #[test]
+    fn a_forecast_with_one_question_one_percent_and_a_reason_is_accepted() {
+        for percent in ["0", "1", "50", "100"] {
+            let ev = make_event_with_tags(
+                KIND_FORECAST,
+                "They have done two like it",
+                &[&["t", FORECAST_Q], &["forecast", percent]],
+            );
+            assert!(validate_forecast(&ev).is_ok(), "{percent}");
+        }
+        let work = "forecast:workbounty:11155111:0x8f86403a4de0bb5791fa46b8e795c547942fe4cf:12";
+        let ev = make_event_with_tags(KIND_FORECAST, "r", &[&["t", work], &["forecast", "7"]]);
+        assert!(validate_forecast(&ev).is_ok());
+        assert!(is_global_only_kind(KIND_FORECAST));
+    }
+
+    #[test]
+    fn a_forecast_percent_outside_0_to_100_or_not_written_plainly_is_refused() {
+        for percent in ["101", "-1", "50.5", "050", "", "1e2", " 5", "256"] {
+            let ev = make_event_with_tags(
+                KIND_FORECAST,
+                "reason",
+                &[&["t", FORECAST_Q], &["forecast", percent]],
+            );
+            let err = validate_forecast(&ev).unwrap_err();
+            assert!(err.contains("whole percent"), "{percent}: {err}");
+        }
+    }
+
+    #[test]
+    fn a_forecast_must_name_one_bounty_question() {
+        for question in [
+            "forecast:raise:31337:0x9d4454b023096f34b160d6b654540c56a1f81688:1",
+            "forecast:postbounty:31337:0x9D4454B023096F34B160D6B654540C56A1F81688:1",
+            "forecast:postbounty:31337:0x9d44:1",
+            "forecast:postbounty:031337:0x9d4454b023096f34b160d6b654540c56a1f81688:1",
+            "forecast:postbounty:31337:0x9d4454b023096f34b160d6b654540c56a1f81688:01",
+            "forecast:postbounty:31337:0x9d4454b023096f34b160d6b654540c56a1f81688:1:extra",
+            "work-proposal:31337:0x9d4454b023096f34b160d6b654540c56a1f81688",
+        ] {
+            let ev =
+                make_event_with_tags(KIND_FORECAST, "r", &[&["t", question], &["forecast", "5"]]);
+            assert!(validate_forecast(&ev).is_err(), "{question}");
+        }
+        let none = make_event_with_tags(KIND_FORECAST, "r", &[&["forecast", "5"]]);
+        assert!(validate_forecast(&none)
+            .unwrap_err()
+            .contains("exactly one `t`"));
+        let two = make_event_with_tags(
+            KIND_FORECAST,
+            "r",
+            &[&["t", FORECAST_Q], &["t", FORECAST_Q], &["forecast", "5"]],
+        );
+        assert!(validate_forecast(&two)
+            .unwrap_err()
+            .contains("exactly one `t`"));
+        let no_percent = make_event_with_tags(KIND_FORECAST, "r", &[&["t", FORECAST_Q]]);
+        assert!(validate_forecast(&no_percent)
+            .unwrap_err()
+            .contains("exactly one `forecast`"));
+    }
+
+    #[test]
+    fn a_forecast_is_an_ordinary_member_write() {
+        let ev = make_event_with_tags(
+            KIND_FORECAST,
+            "r",
+            &[&["t", FORECAST_Q], &["forecast", "5"]],
+        );
+        assert_eq!(
+            required_scope_for_kind(KIND_FORECAST, &ev),
+            Ok(Scope::MessagesWrite)
+        );
+    }
+
+    #[test]
+    fn a_forecast_needs_a_reason_of_at_most_500_characters() {
+        let tags: &[&[&str]] = &[&["t", FORECAST_Q], &["forecast", "40"]];
+        assert!(validate_forecast(&make_event_with_tags(KIND_FORECAST, "   ", tags)).is_err());
+        assert!(
+            validate_forecast(&make_event_with_tags(KIND_FORECAST, &"é".repeat(500), tags)).is_ok()
+        );
+        assert!(
+            validate_forecast(&make_event_with_tags(KIND_FORECAST, &"é".repeat(501), tags))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn a_retired_exit_offer_is_refused_as_an_unknown_kind() {
+        // Kind 47009 carried signed offers for matched exits, retired in D152; the number stays unused.
+        let ev = make_event_with_tags(
+            47009,
+            "{}",
+            &[&["t", "exit:31337:0x9d4454b023096f34b160d6b654540c56a1f81688"]],
+        );
+        assert_eq!(
+            required_scope_for_kind(47009, &ev),
+            Err("restricted: unknown event kind")
+        );
+    }
+
+    #[test]
+    fn launch_mirror_envelope_rejects_missing_a() {
+        let ev = make_event_with_tags(KIND_LAUNCH_UPDATE, "{\"title\":\"hi\"}", &[]);
+        let err = validate_launch_mirror_envelope(&ev, "launch update event").unwrap_err();
+        assert!(err.contains("exactly one"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_bid_envelope_rejects_missing_bucket() {
+        let coord = launch_coord();
+        let ev = make_event_with_tags(KIND_LAUNCH_BID, "{}", &[&["a", &coord]]);
+        let err = validate_launch_mirror_envelope(&ev, "launch bid event").unwrap_err();
+        assert!(err.contains("`m`"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_receipt_envelope_rejects_missing_tx() {
+        let coord = launch_coord();
+        let ev = make_event_with_tags(KIND_LAUNCH_RECEIPT, "{}", &[&["a", &coord]]);
+        let err = validate_launch_mirror_envelope(&ev, "launch receipt event").unwrap_err();
+        assert!(err.contains("`tx`"), "got: {err}");
+    }
+
+    #[test]
+    fn launch_mirror_envelope_rejects_wrong_coordinate_kind() {
+        let bad = format!("30621:{}:proj", "a".repeat(64));
+        let ev = make_event_with_tags(KIND_LAUNCH_UPDATE, "{}", &[&["a", &bad]]);
+        let err = validate_launch_mirror_envelope(&ev, "launch update event").unwrap_err();
+        assert!(err.contains("37001"), "got: {err}");
+    }
+
+    #[test]
     fn project_is_parameterized_replaceable() {
         // Owner-only editing comes free from NIP-33 addressing: replacement is
         // keyed by (pubkey, kind, d), so one signer can never overwrite another's
@@ -4785,5 +9018,2187 @@ mod tests {
             counts.get(&("ws".to_owned(), "invalid".to_owned())),
             Some(&1)
         );
+    }
+
+    /// Boundary regression for the canvas-specific ingest future-timestamp guard.
+    /// `validate_canvas_future_timestamp` is the pure seam; mutation: changing
+    /// `CANVAS_MAX_INGEST_FUTURE_SECS` to 900 or removing the guard makes the
+    /// "at ceiling + 1" case pass when it must not.
+    ///
+    /// Fixed-literal contract (pinned so constant mutations go red): the relay
+    /// canvas bound IS 300 s; now+300 accepted, now+301 rejected. The relay
+    /// general bound is 900 s (a separate guard); the client ceiling is 60 s
+    /// (CANVAS_MAX_FUTURE_SKEW_SECS in buzz-sdk). Mutating the 300 s constant
+    /// back to 900 makes the numeric assertions below fail.
+    #[test]
+    fn canvas_ingest_future_timestamp_boundary() {
+        let now = 1_700_000_000i64;
+
+        // Exactly at the ceiling: accepted.
+        assert!(
+            validate_canvas_future_timestamp(now + CANVAS_MAX_INGEST_FUTURE_SECS, now).is_ok(),
+            "canvas event at now+300 is within the relay canvas future bound"
+        );
+
+        // One second past the ceiling: rejected.
+        assert!(
+            validate_canvas_future_timestamp(now + CANVAS_MAX_INGEST_FUTURE_SECS + 1, now).is_err(),
+            "canvas event at now+301 exceeds the relay canvas future bound and must be rejected"
+        );
+
+        // Past the general ±900 s window: also rejected (guard fires first).
+        assert!(
+            validate_canvas_future_timestamp(now + 901, now).is_err(),
+            "canvas event at now+901 exceeds both the canvas bound and the general drift window"
+        );
+
+        // In the past: accepted (canvas guard is future-only; general past check is separate).
+        assert!(
+            validate_canvas_future_timestamp(now - 1, now).is_ok(),
+            "canvas event in the past is not affected by the future-timestamp guard"
+        );
+
+        // Fixed-literal contract: relay canvas bound IS 300 s, NOT 900 s.
+        // Mutating CANVAS_MAX_INGEST_FUTURE_SECS back to 900 makes these fail.
+        assert!(
+            validate_canvas_future_timestamp(now + 300, now).is_ok(),
+            "now+300: accepted at the 300 s relay canvas ceiling"
+        );
+        assert!(
+            validate_canvas_future_timestamp(now + 301, now).is_err(),
+            "now+301: rejected one second past the 300 s relay canvas ceiling"
+        );
+        // The old 900 s value must be rejected by this guard.
+        assert!(
+            validate_canvas_future_timestamp(now + 900, now).is_err(),
+            "now+900 must be rejected by the 300 s relay canvas ceiling"
+        );
+    }
+
+    /// Standalone numeric contract for the relay-side canvas ingest guard.
+    ///
+    /// No constants used — if CANVAS_MAX_INGEST_FUTURE_SECS changes, this test
+    /// catches it regardless of whether constant-based assertions remain
+    /// self-consistent. The relay canvas ceiling IS 300 s: now+300 is the last
+    /// accepted timestamp; now+301 is the first rejected timestamp.
+    #[test]
+    fn canvas_ingest_numeric_contract() {
+        let now = 1_700_000_000i64;
+        // These assertions use only fixed numeric literals; they cannot be
+        // self-referential regardless of what CANVAS_MAX_INGEST_FUTURE_SECS holds.
+        assert!(
+            validate_canvas_future_timestamp(now + 300, now).is_ok(),
+            "now+300 must be accepted: relay canvas ceiling is 300 s",
+        );
+        assert!(
+            validate_canvas_future_timestamp(now + 301, now).is_err(),
+            "now+301 must be rejected: one second past the 300 s relay canvas ceiling",
+        );
+        // Old 900 s value must also be rejected (prevents silent reversion to
+        // the general drift bound).
+        assert!(
+            validate_canvas_future_timestamp(now + 900, now).is_err(),
+            "now+900 must be rejected: the general 900 s bound does not apply to canvas events",
+        );
+    }
+
+    /// Ingest-path wiring regression: the kind-40100 canvas future-timestamp
+    /// guard in `ingest_event_inner` must be exercised through the real ingest
+    /// path, not only the pure `validate_canvas_future_timestamp` helper.
+    ///
+    /// A signed kind-40100 event with `created_at = relay_now + 600` is
+    /// submitted through `ingest_event_inner`. The offset is chosen to be
+    /// well inside the guard's rejection zone (300 s ceiling) so that
+    /// scheduler latency between test setup and production's `Utc::now()`
+    /// re-sample cannot shrink the apparent offset to within 300 s and
+    /// accidentally let the event through. Exact 300/301 boundary coverage
+    /// lives in `canvas_ingest_numeric_contract` and
+    /// `canvas_ingest_future_timestamp_boundary`, which exercise the pure
+    /// `validate_canvas_future_timestamp` helper with fixed arguments.
+    ///
+    /// Mutation oracle: deleting the `if kind_u32 == KIND_CANVAS { … }` call
+    /// site in `ingest_event_inner` changes the rejection reason to the h-tag
+    /// check ("channel-scoped events must include an h tag"), causing this
+    /// assertion to fail.
+    ///
+    /// Infrastructure: a real Postgres is required to pass the community
+    /// deletion-fence check that precedes the canvas guard. Redis is not
+    /// needed — the canvas guard fires before any Redis-backed path.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn canvas_ingest_guard_wired_through_ingest_event_inner() {
+        use buzz_auth::Nip98ReplayGuard;
+        use nostr::{Keys, Kind, Timestamp};
+
+        const FAKE_REDIS_URL: &str = "redis://127.0.0.1:1"; // no Redis needed for this path
+
+        // ── Postgres connection ──────────────────────────────────────────────
+        let db_url = std::env::var("BUZZ_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+        let pool = sqlx::PgPool::connect(&db_url).await.expect(
+            "connect test Postgres — start local Postgres before running ignored ingest tests",
+        );
+        let db = buzz_db::Db::from_pool(pool.clone());
+        // Do not call db.migrate() here: CI migrates the schema before running
+        // integration tests; calling migrate() locally risks version conflicts
+        // if the DB was provisioned via a different path.
+
+        // ── AppState ─────────────────────────────────────────────────────────
+        // Redis is lazy and never actually contacted on this rejection path.
+        let redis_pool = deadpool_redis::Config::from_url(FAKE_REDIS_URL)
+            .create_pool(Some(deadpool_redis::Runtime::Tokio1))
+            .expect("deadpool redis pool");
+        let pubsub = Arc::new(
+            buzz_pubsub::PubSubManager::new(FAKE_REDIS_URL, redis_pool.clone())
+                .await
+                .expect("pubsub manager"),
+        );
+        let mut config = crate::config::Config::for_test();
+        config.database_url = db_url.clone();
+        config.redis_url = FAKE_REDIS_URL.to_string();
+        config.require_relay_membership = false;
+
+        let audit = buzz_audit::AuditService::new(pool.clone());
+        let auth_svc = buzz_auth::AuthService::new(config.auth.clone());
+        let search = buzz_search::SearchService::new(pool.clone());
+        let workflow_engine = Arc::new(buzz_workflow::WorkflowEngine::new(
+            db.clone(),
+            buzz_workflow::WorkflowConfig::default(),
+        ));
+        let media_storage = buzz_media::MediaStorage::new(&config.media).expect("media storage");
+
+        let (mut state, _audit_shutdown) = crate::state::AppState::new(
+            config,
+            db.clone(),
+            redis_pool,
+            audit,
+            pubsub,
+            auth_svc,
+            search,
+            workflow_engine,
+            Keys::generate(),
+            media_storage,
+        );
+
+        // Replace the NIP-98 replay guard so no live Redis is required.
+        struct AlwaysFreshReplayGuard;
+        impl Nip98ReplayGuard for AlwaysFreshReplayGuard {
+            fn try_mark_in_scope<'a>(
+                &'a self,
+                _scope: &'a str,
+                _event_id: &'a nostr::EventId,
+                _ttl_secs: u64,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = Result<bool, buzz_auth::AuthError>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async { Ok(true) })
+            }
+        }
+        state.nip98_replay = Arc::new(AlwaysFreshReplayGuard);
+        let state = Arc::new(state);
+
+        // ── Provision a fresh community so the deletion fence allows writes ──
+        let host = format!("canvas-ts-guard-{}.test", Uuid::new_v4().simple());
+        let community = db
+            .ensure_configured_community(&host)
+            .await
+            .expect("ensure community")
+            .id;
+        let tenant = TenantContext::resolved(community, &host);
+
+        // ── Build a kind-40100 event 600 seconds in the future ───────────────
+        // +600 is well inside the guard's rejection zone (>300 s), so scheduler
+        // latency between this Utc::now() call and production's independent
+        // Utc::now() re-sample inside ingest_event_inner cannot close the gap
+        // to within 300 s. Exact 300/301 boundary assertions live in the pure
+        // `validate_canvas_future_timestamp` tests which have no clock race.
+        let keys = Keys::generate();
+        let relay_now = chrono::Utc::now().timestamp() as u64;
+        let event = nostr::EventBuilder::new(Kind::Custom(KIND_CANVAS as u16), "")
+            .custom_created_at(Timestamp::from(relay_now + 600))
+            .sign_with_keys(&keys)
+            .expect("sign canvas event");
+
+        let auth = IngestAuth::Http {
+            pubkey: keys.public_key(),
+            scopes: vec![Scope::ChannelsWrite],
+            auth_method: HttpAuthMethod::Nip98,
+        };
+        let tracer: Arc<dyn buzz_conformance::Tracer> = Arc::new(VecTracer::default());
+
+        // ── Submit through the real ingest path ───────────────────────────────
+        let result = ingest_event_inner(&state, &tracer, &tenant, event, auth).await;
+
+        // The canvas-specific guard must fire before the h-tag check.
+        // created_at = relay_now + 600 is 300 s above the canvas ceiling, so
+        // even under heavy load the guard fires and rejects with this message.
+        //
+        // Mutation oracle: delete `if kind_u32 == KIND_CANVAS { … }` in
+        // ingest_event_inner → no canvas guard fires → the event reaches the
+        // h-tag check → Rejected("invalid: channel-scoped events must include
+        // an h tag") → assert! below fails.
+        let err = match result {
+            Ok(_) => panic!(
+                "kind-40100 event at now+600 must be rejected, but ingest_event_inner returned Ok"
+            ),
+            Err(e) => e,
+        };
+        assert!(
+            matches!(&err, IngestError::Rejected(msg) if msg.contains("canvas event timestamp too far in the future")),
+            "rejection must be the canvas guard, not the h-tag check; \
+             deleting the guard call site changes this error to the h-tag rejection. \
+             Got: {err:?}",
+        );
+    }
+
+    // ── parse_canvas_expected_revision unit tests ─────────────────────────
+    //
+    // These cover every branch in the parser without requiring Postgres or
+    // Redis.  A helper builds a signed kind-40100 event from a tag-list so the
+    // tests only state the tags they care about.
+
+    /// Build a signed kind-40100 event carrying the given tags.  The event is
+    /// fully signed so the nostr library populates `tags` correctly; content
+    /// and timestamp are irrelevant for the parser.
+    fn canvas_event_with_tags(tags: impl IntoIterator<Item = nostr::Tag>) -> nostr::Event {
+        use nostr::{EventBuilder, Keys, Kind};
+        EventBuilder::new(Kind::Custom(KIND_CANVAS as u16), "")
+            .tags(tags)
+            .sign_with_keys(&Keys::generate())
+            .expect("sign canvas event for parser test")
+    }
+
+    /// No `expected-revision` tag → `Ok(None)` (backward-compatible unconditional
+    /// append; mutation: adding a spurious tag-match makes the call return
+    /// `Some`, changing the Ok(None) assertion to fail).
+    #[test]
+    fn parse_canvas_revision_absent_returns_none() {
+        let event = canvas_event_with_tags([nostr::Tag::parse(["h", "chan-uuid"]).unwrap()]);
+        let result = parse_canvas_expected_revision(&event);
+        assert_eq!(result.unwrap(), None);
+    }
+
+    /// `expected-revision = "none"` → `Ok(Some(NoHead))` (first-create
+    /// precondition; mutation: changing `"none"` check to `"NONE"` makes the
+    /// parser fall through to the hex decoder and return `Rejected`).
+    #[test]
+    fn parse_canvas_revision_none_literal_yields_no_head() {
+        let event =
+            canvas_event_with_tags([nostr::Tag::parse(["expected-revision", "none"]).unwrap()]);
+        assert_eq!(
+            parse_canvas_expected_revision(&event).unwrap(),
+            Some(CanvasRevisionSpec::NoHead),
+        );
+    }
+
+    /// A well-formed 64-hex event ID → `Ok(Some(Head(bytes)))` where the
+    /// bytes equal the decoded hex (mutation: changing `bytes.len() == 32`
+    /// to `!= 32` makes this return `Rejected`).
+    #[test]
+    fn parse_canvas_revision_valid_hex_yields_head() {
+        let hex_id = "a".repeat(64);
+        let event =
+            canvas_event_with_tags([nostr::Tag::parse(["expected-revision", &hex_id]).unwrap()]);
+        let spec = parse_canvas_expected_revision(&event)
+            .expect("valid hex must parse")
+            .expect("must be Some");
+        assert_eq!(spec, CanvasRevisionSpec::Head(vec![0xaa; 32]));
+    }
+
+    /// Two `expected-revision` tags → `Rejected("invalid: duplicate …")`.
+    /// Mutation: removing the `tags.next().is_some()` guard makes this return
+    /// `Ok(Some(…))` instead.
+    #[test]
+    fn parse_canvas_revision_duplicate_tag_rejects() {
+        let hex_id = "b".repeat(64);
+        let event = canvas_event_with_tags([
+            nostr::Tag::parse(["expected-revision", &hex_id]).unwrap(),
+            nostr::Tag::parse(["expected-revision", &hex_id]).unwrap(),
+        ]);
+        assert!(
+            matches!(
+                parse_canvas_expected_revision(&event),
+                Err(IngestError::Rejected(msg)) if msg.contains("duplicate expected-revision tag")
+            ),
+            "duplicate tags must be rejected",
+        );
+    }
+
+    /// A one-element `["expected-revision"]` tag (no value) → `Rejected`.
+    /// Mutation: changing `tag.len() != 2` to `< 2` also catches zero-element
+    /// forms but not three-element; this case specifically exercises the
+    /// `len == 1` branch.
+    #[test]
+    fn parse_canvas_revision_missing_value_rejects() {
+        // nostr::Tag::parse requires ≥1 element; build a tag with only the key.
+        let event = canvas_event_with_tags([nostr::Tag::parse(["expected-revision"]).unwrap()]);
+        assert!(
+            matches!(
+                parse_canvas_expected_revision(&event),
+                Err(IngestError::Rejected(msg)) if msg.contains("expected-revision tag must have exactly one value")
+            ),
+            "tag with no value must be rejected",
+        );
+    }
+
+    /// A three-element `["expected-revision", value, extra]` tag → `Rejected`.
+    /// Mutation: changing `tag.len() != 2` to `tag.len() < 2` lets three-element
+    /// tags through; this test catches that.
+    #[test]
+    fn parse_canvas_revision_extra_value_rejects() {
+        let hex_id = "c".repeat(64);
+        let event =
+            canvas_event_with_tags([
+                nostr::Tag::parse(["expected-revision", &hex_id, "extra"]).unwrap()
+            ]);
+        assert!(
+            matches!(
+                parse_canvas_expected_revision(&event),
+                Err(IngestError::Rejected(msg)) if msg.contains("expected-revision tag must have exactly one value")
+            ),
+            "tag with extra value must be rejected",
+        );
+    }
+
+    /// A 62-character hex string (too short — not a 32-byte id) → `Rejected`.
+    /// Mutation: removing the `bytes.len() == 32` length check makes this return
+    /// `Ok(Some(Head(…)))` with 31 bytes instead of rejecting.
+    #[test]
+    fn parse_canvas_revision_too_short_hex_rejects() {
+        let short_hex = "d".repeat(62);
+        let event =
+            canvas_event_with_tags([nostr::Tag::parse(["expected-revision", &short_hex]).unwrap()]);
+        assert!(
+            matches!(
+                parse_canvas_expected_revision(&event),
+                Err(IngestError::Rejected(msg)) if msg.contains("bad expected canvas revision")
+            ),
+            "too-short hex must be rejected",
+        );
+    }
+
+    /// A non-hex value → `Rejected("invalid: bad expected canvas revision")`.
+    /// Mutation: removing `hex::decode(value).ok()` makes this panic instead.
+    #[test]
+    fn parse_canvas_revision_non_hex_rejects() {
+        let not_hex = "g".repeat(64); // 'g' is not a valid hex digit
+        let event =
+            canvas_event_with_tags([nostr::Tag::parse(["expected-revision", &not_hex]).unwrap()]);
+        assert!(
+            matches!(
+                parse_canvas_expected_revision(&event),
+                Err(IngestError::Rejected(msg)) if msg.contains("bad expected canvas revision")
+            ),
+            "non-hex value must be rejected",
+        );
+    }
+
+    // ── CAS ingest-path wiring test ───────────────────────────────────────
+    //
+    // Proves that the `expected-revision` parser → dispatch → DB transaction
+    // round-trip is wired end-to-end through `ingest_event_inner`. Deletng or
+    // bypassing the CAS dispatch block (the `} else if let Some(spec) =
+    // canvas_revision_spec.as_ref() {` branch) must turn this test red.
+    //
+    // Mutation oracle for the dispatch:
+    //   - Removing the `canvas_revision_spec` branch makes tagged writes fall
+    //     through to the generic append; the stale-head step no longer returns
+    //     a conflict: rejection, causing the assert! below to fail.
+    //   - Replacing `insert_canvas_head_checked` with `insert_event_with_thread_metadata`
+    //     has the same effect — no conflict is surfaced.
+    //
+    // Requires Postgres (and does NOT need Redis — the fake replay guard fires
+    // before any Redis-backed path, and the CAS path never touches Redis).
+
+    /// Build the minimal AppState for an ingest-path CAS test.
+    ///
+    /// Replaces the NIP-98 replay guard with an always-fresh stub so that no
+    /// live Redis is needed. The returned `AppState` is ready for
+    /// `ingest_event_inner` calls.
+    async fn build_canvas_ingest_state(
+        db_url: &str,
+        pool: &sqlx::PgPool,
+    ) -> Arc<crate::state::AppState> {
+        use buzz_auth::Nip98ReplayGuard;
+        use nostr::Keys;
+
+        const FAKE_REDIS_URL: &str = "redis://127.0.0.1:1"; // never contacted
+        let db = buzz_db::Db::from_pool(pool.clone());
+        let redis_pool = deadpool_redis::Config::from_url(FAKE_REDIS_URL)
+            .create_pool(Some(deadpool_redis::Runtime::Tokio1))
+            .expect("deadpool redis pool");
+        let pubsub = Arc::new(
+            buzz_pubsub::PubSubManager::new(FAKE_REDIS_URL, redis_pool.clone())
+                .await
+                .expect("pubsub manager"),
+        );
+        let mut config = crate::config::Config::for_test();
+        config.database_url = db_url.to_owned();
+        config.redis_url = FAKE_REDIS_URL.to_string();
+        config.require_relay_membership = false;
+
+        let audit = buzz_audit::AuditService::new(pool.clone());
+        let auth_svc = buzz_auth::AuthService::new(config.auth.clone());
+        let search = buzz_search::SearchService::new(pool.clone());
+        let workflow_engine = Arc::new(buzz_workflow::WorkflowEngine::new(
+            db.clone(),
+            buzz_workflow::WorkflowConfig::default(),
+        ));
+        let media_storage = buzz_media::MediaStorage::new(&config.media).expect("media storage");
+
+        let (mut state, _audit_shutdown) = crate::state::AppState::new(
+            config,
+            db.clone(),
+            redis_pool,
+            audit,
+            pubsub,
+            auth_svc,
+            search,
+            workflow_engine,
+            Keys::generate(),
+            media_storage,
+        );
+
+        struct AlwaysFresh;
+        impl Nip98ReplayGuard for AlwaysFresh {
+            fn try_mark_in_scope<'a>(
+                &'a self,
+                _scope: &'a str,
+                _event_id: &'a nostr::EventId,
+                _ttl_secs: u64,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<Output = Result<bool, buzz_auth::AuthError>>
+                        + Send
+                        + 'a,
+                >,
+            > {
+                Box::pin(async { Ok(true) })
+            }
+        }
+        state.nip98_replay = Arc::new(AlwaysFresh);
+        Arc::new(state)
+    }
+
+    async fn role_sql(admin: &sqlx::PgPool, q: String) -> Result<(), sqlx::Error> {
+        sqlx::query(sqlx::AssertSqlSafe(q))
+            .execute(admin)
+            .await
+            .map(|_| ())
+    }
+
+    async fn create_role(admin: &sqlx::PgPool, role: &str) -> Result<(), sqlx::Error> {
+        role_sql(admin, format!("CREATE ROLE {role} NOLOGIN")).await
+    }
+
+    async fn drop_role(admin: &sqlx::PgPool, role: &str) -> Result<(), sqlx::Error> {
+        role_sql(admin, format!("DROP OWNED BY {role}")).await?;
+        role_sql(admin, format!("DROP ROLE {role}")).await
+    }
+
+    /// A pool whose connections run as `role`, which can do everything ingest
+    /// needs except `SELECT` on `channels`.
+    async fn channel_blind_pool(
+        admin: &sqlx::PgPool,
+        db_url: &str,
+        role: &str,
+    ) -> Result<sqlx::PgPool, sqlx::Error> {
+        for q in [
+            format!("GRANT USAGE ON SCHEMA public TO {role}"),
+            format!(
+                "GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO {role}"
+            ),
+            format!("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO {role}"),
+            format!("REVOKE SELECT ON channels FROM {role}"),
+            format!("GRANT {role} TO CURRENT_USER"),
+        ] {
+            role_sql(admin, q).await?;
+        }
+        let set_role = format!("SET ROLE {role}");
+        sqlx::postgres::PgPoolOptions::new()
+            .after_connect(move |conn, _| {
+                let set_role = set_role.clone();
+                Box::pin(async move {
+                    sqlx::query(sqlx::AssertSqlSafe(set_role))
+                        .execute(conn)
+                        .await
+                        .map(|_| ())
+                })
+            })
+            .connect(db_url)
+            .await
+    }
+
+    /// Main ingest wiring for the archive gate: when only the channel lookup
+    /// fails, a kind-9 post by a (cached) member of an archived channel is
+    /// denied and not stored. The control run, with a working lookup, is denied
+    /// for the archive reason, proving the post reaches that gate.
+    ///
+    /// The lookup failure comes from a least-privilege role that can do
+    /// everything ingest needs except `SELECT` on `channels`.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn cluster_global_ingest_denies_post_when_channel_lookup_fails() {
+        use buzz_db::channel::{ChannelType, ChannelVisibility};
+        use nostr::{Keys, Tag};
+
+        let db_url = std::env::var("BUZZ_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+        let admin = sqlx::PgPool::connect(&db_url)
+            .await
+            .expect("connect test Postgres");
+
+        let role = format!("archive_probe_{}", Uuid::new_v4().simple());
+        create_role(&admin, &role)
+            .await
+            .expect("create restricted role");
+
+        // Everything between creating and dropping the server-wide role is
+        // fallible, so a setup failure still reaches the cleanup below.
+        let outcome = async {
+            let restricted = channel_blind_pool(&admin, &db_url, &role).await?;
+            let healthy = build_canvas_ingest_state(&db_url, &admin).await;
+            let failing = build_canvas_ingest_state(&db_url, &restricted).await;
+
+            let host = format!("archive-lookup-{}.test", Uuid::new_v4().simple());
+            let community = healthy
+                .db
+                .ensure_configured_community(&host)
+                .await
+                .map_err(|e| sqlx::Error::Protocol(e.to_string()))?
+                .id;
+            let tenant = TenantContext::resolved(community, &host);
+            let author = Keys::generate();
+            let channel_id = Uuid::new_v4();
+            healthy
+                .db
+                .create_channel_with_id(
+                    community,
+                    channel_id,
+                    &format!("archive-lookup-{}", channel_id.simple()),
+                    ChannelType::Stream,
+                    ChannelVisibility::Open,
+                    None,
+                    author.public_key().to_bytes().as_slice(),
+                    None,
+                )
+                .await
+                .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+            healthy
+                .db
+                .archive_channel(community, channel_id)
+                .await
+                .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+
+            let tracer: Arc<dyn buzz_conformance::Tracer> = Arc::new(VecTracer::default());
+            let post = |content: &str| {
+                EventBuilder::new(Kind::Custom(9), content)
+                    .tags([Tag::parse(["h", &channel_id.to_string()]).unwrap()])
+                    .sign_with_keys(&author)
+                    .expect("sign post")
+            };
+            let auth = || IngestAuth::Http {
+                pubkey: author.public_key(),
+                scopes: vec![Scope::MessagesWrite],
+                auth_method: HttpAuthMethod::Nip98,
+            };
+            let member_key = (
+                community,
+                channel_id,
+                author.public_key().to_bytes().to_vec(),
+            );
+
+            // Control: a working lookup reaches the archive gate.
+            healthy.membership_cache.insert(member_key.clone(), true);
+            let control =
+                ingest_event_inner(&healthy, &tracer, &tenant, post("control"), auth()).await;
+
+            // Only the channel lookup fails: the post must be denied and not stored.
+            failing.membership_cache.insert(member_key, true);
+            let event = post("lookup fails");
+            let event_id = event.id.to_bytes().to_vec();
+            let denied = ingest_event_inner(&failing, &tracer, &tenant, event, auth()).await;
+            let stored: i64 = sqlx::query_scalar("SELECT count(*) FROM events WHERE id = $1")
+                .bind(&event_id)
+                .fetch_one(&admin)
+                .await?;
+            restricted.close().await;
+            Ok::<_, sqlx::Error>((control, denied, stored))
+        }
+        .await;
+
+        drop_role(&admin, &role)
+            .await
+            .expect("drop restricted role");
+
+        let (control, denied, stored) = outcome.expect("test setup");
+        match control {
+            Err(IngestError::Rejected(reason)) => {
+                assert_eq!(reason, "invalid: channel is archived")
+            }
+            Err(other) => panic!("control must be denied as archived, got {other:?}"),
+            Ok(_) => panic!("control must be denied as archived, got accepted"),
+        }
+        match denied {
+            Err(IngestError::Internal(reason)) => assert!(
+                reason.starts_with("error: database error") && reason.contains("channels"),
+                "{reason}"
+            ),
+            Err(other) => panic!("a failed channel lookup must deny the post, got {other:?}"),
+            Ok(_) => panic!("a failed channel lookup must deny the post, got accepted"),
+        }
+        assert_eq!(stored, 0, "denied post must not be stored");
+    }
+
+    /// An artifact move whose source-channel lookup fails is an internal
+    /// error, not a client rejection carrying the database error text.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn cluster_global_artifact_move_source_lookup_failure_is_internal() {
+        use buzz_db::channel::{ChannelType, ChannelVisibility};
+        use nostr::{Keys, Tag};
+
+        let db_url = std::env::var("BUZZ_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+        let admin = sqlx::PgPool::connect(&db_url)
+            .await
+            .expect("connect test Postgres");
+        let role = format!("archive_probe_{}", Uuid::new_v4().simple());
+        create_role(&admin, &role)
+            .await
+            .expect("create restricted role");
+
+        let outcome = async {
+            let restricted = channel_blind_pool(&admin, &db_url, &role).await?;
+            let healthy = build_canvas_ingest_state(&db_url, &admin).await;
+            let failing = build_canvas_ingest_state(&db_url, &restricted).await;
+            let db_err = |e: buzz_db::DbError| sqlx::Error::Protocol(e.to_string());
+
+            let host = format!("artifact-move-{}.test", Uuid::new_v4().simple());
+            let community = healthy
+                .db
+                .ensure_configured_community(&host)
+                .await
+                .map_err(db_err)?
+                .id;
+            let tenant = TenantContext::resolved(community, &host);
+            let author = Keys::generate();
+            let [source, target] = [Uuid::new_v4(), Uuid::new_v4()];
+            for channel in [source, target] {
+                healthy
+                    .db
+                    .create_channel_with_id(
+                        community,
+                        channel,
+                        &format!("artifact-move-{}", channel.simple()),
+                        ChannelType::Stream,
+                        ChannelVisibility::Open,
+                        None,
+                        author.public_key().to_bytes().as_slice(),
+                        None,
+                    )
+                    .await
+                    .map_err(db_err)?;
+            }
+
+            let artifact = Uuid::new_v4().to_string();
+            let revision = |home: Uuid, op: &str, prev: Option<String>| {
+                let mut tags = vec![
+                    vec!["ar".to_string(), "1".into()],
+                    vec!["d".into(), artifact.clone()],
+                    vec!["h".into(), home.to_string()],
+                    vec!["type".into(), "buzz.task".into()],
+                    vec!["op".into(), op.into()],
+                    vec!["title".into(), "Task".into()],
+                ];
+                tags.extend(prev.map(|p| vec!["prev".into(), p]));
+                EventBuilder::new(Kind::Custom(45010), "")
+                    .tags(tags.into_iter().map(|t| Tag::parse(t).unwrap()))
+                    .sign_with_keys(&author)
+                    .expect("sign revision")
+            };
+            let create = revision(source, "create", None);
+            let env = buzz_core::artifact::validate(&create).expect("valid create");
+            healthy
+                .db
+                .accept_artifact(community, &create, &env, None, &healthy.relay_keypair)
+                .await
+                .map_err(db_err)?;
+
+            let auth = IngestAuth::Http {
+                pubkey: author.public_key(),
+                scopes: vec![Scope::MessagesWrite],
+                auth_method: HttpAuthMethod::Nip98,
+            };
+            failing.membership_cache.insert(
+                (community, source, author.public_key().to_bytes().to_vec()),
+                true,
+            );
+            let moved = revision(target, "move", Some(create.id.to_hex()));
+            let result = super::super::artifact::accept(&failing, &tenant, &moved, &auth).await;
+            restricted.close().await;
+            Ok::<_, sqlx::Error>(result)
+        }
+        .await;
+
+        drop_role(&admin, &role)
+            .await
+            .expect("drop restricted role");
+        match outcome.expect("test setup") {
+            Err(IngestError::Internal(reason)) => {
+                assert!(reason.starts_with("error: database error"), "{reason}")
+            }
+            Err(other) => panic!("a failed source lookup must be internal, got {other:?}"),
+            Ok(_) => panic!("a failed source lookup must deny the move, got accepted"),
+        }
+    }
+
+    /// End-to-end CAS dispatch wiring: a tagged write inserts, a stale same-head
+    /// competitor returns the exact conflict: rejection, the loser is absent from
+    /// the DB, and an untagged write still appends unconditionally.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn canvas_cas_dispatch_wired_through_ingest_event_inner() {
+        use buzz_db::channel::{ChannelType, ChannelVisibility};
+        use nostr::{Keys, Kind, Tag, Timestamp};
+
+        let db_url = std::env::var("BUZZ_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".to_string()); // sadscan:disable np.postgres.1
+        let pool = sqlx::PgPool::connect(&db_url).await.expect(
+            "connect test Postgres — start local Postgres before running ignored ingest tests",
+        );
+        let state = build_canvas_ingest_state(&db_url, &pool).await;
+
+        // Provision a fresh community + channel so each test run is isolated.
+        let host = format!("canvas-cas-wiring-{}.test", Uuid::new_v4().simple());
+        let community = state
+            .db
+            .ensure_configured_community(&host)
+            .await
+            .expect("ensure community")
+            .id;
+        let tenant = TenantContext::resolved(community, &host);
+
+        let channel_id = Uuid::new_v4();
+        let creator_keys = Keys::generate();
+        state
+            .db
+            .create_channel_with_id(
+                community,
+                channel_id,
+                &format!("canvas-cas-wiring-{}", channel_id.simple()),
+                ChannelType::Stream,
+                ChannelVisibility::Open,
+                None,
+                creator_keys.public_key().to_bytes().as_slice(),
+                None,
+            )
+            .await
+            .expect("create test channel");
+
+        let now = chrono::Utc::now().timestamp() as u64;
+        let channel_uuid_str = channel_id.to_string();
+        let tracer: Arc<dyn buzz_conformance::Tracer> = Arc::new(VecTracer::default());
+
+        let make_auth = |keys: &Keys| IngestAuth::Http {
+            pubkey: keys.public_key(),
+            scopes: vec![Scope::ChannelsWrite],
+            auth_method: HttpAuthMethod::Nip98,
+        };
+
+        // ── Step 1: first write with expected-revision=none → Inserted ────────
+        let author = Keys::generate();
+        let first = nostr::EventBuilder::new(Kind::Custom(KIND_CANVAS as u16), "# v1")
+            .custom_created_at(Timestamp::from(now))
+            .tags([
+                Tag::parse(["h", &channel_uuid_str]).unwrap(),
+                Tag::parse(["expected-revision", "none"]).unwrap(),
+            ])
+            .sign_with_keys(&author)
+            .expect("sign first canvas");
+        let first_id_hex = first.id.to_hex();
+
+        ingest_event_inner(&state, &tracer, &tenant, first, make_auth(&author))
+            .await
+            .expect("first canvas write must succeed");
+
+        // ── Step 2: advance with expected-revision=<first id> → Inserted ──────
+        let second = nostr::EventBuilder::new(Kind::Custom(KIND_CANVAS as u16), "# v2")
+            .custom_created_at(Timestamp::from(now + 1))
+            .tags([
+                Tag::parse(["h", &channel_uuid_str]).unwrap(),
+                Tag::parse(["expected-revision", &first_id_hex]).unwrap(),
+            ])
+            .sign_with_keys(&author)
+            .expect("sign second canvas");
+
+        ingest_event_inner(&state, &tracer, &tenant, second, make_auth(&author))
+            .await
+            .expect("second canvas write must succeed");
+
+        // ── Step 3: stale competitor — same first-id precondition → conflict ──
+        // The head is now the second event, so expected-revision=<first_id> is stale.
+        // Mutation oracle: deleting the `canvas_revision_spec` dispatch block makes
+        // this return Ok instead of the conflict: rejection below.
+        let stale = nostr::EventBuilder::new(Kind::Custom(KIND_CANVAS as u16), "# stale")
+            .custom_created_at(Timestamp::from(now + 2))
+            .tags([
+                Tag::parse(["h", &channel_uuid_str]).unwrap(),
+                Tag::parse(["expected-revision", &first_id_hex]).unwrap(),
+            ])
+            .sign_with_keys(&author)
+            .expect("sign stale canvas");
+        let stale_id_bytes = stale.id.as_bytes().to_vec();
+
+        let err =
+            match ingest_event_inner(&state, &tracer, &tenant, stale, make_auth(&author)).await {
+                Ok(_) => panic!("stale precondition must be rejected, but ingest returned Ok"),
+                Err(e) => e,
+            };
+        assert!(
+            matches!(&err, IngestError::CanvasConflict(msg) if msg.starts_with("conflict:")),
+            "stale write must return a canvas conflict: rejection; got {:?}",
+            err,
+        );
+
+        // The losing write must not be persisted.
+        let persisted: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM events WHERE community_id = $1 AND id = $2")
+                .bind(community.as_uuid())
+                .bind(stale_id_bytes.as_slice())
+                .fetch_one(&pool)
+                .await
+                .expect("count stale canvas row");
+        assert_eq!(persisted, 0, "losing CAS write must not be stored");
+
+        // ── Step 4: untagged write still appends unconditionally ──────────────
+        // No expected-revision tag → the event is routed through the generic
+        // append path, NOT through insert_canvas_head_checked. It must succeed
+        // regardless of the current head state.
+        let untagged =
+            nostr::EventBuilder::new(Kind::Custom(KIND_CANVAS as u16), "# unconditional")
+                .custom_created_at(Timestamp::from(now + 3))
+                .tags([Tag::parse(["h", &channel_uuid_str]).unwrap()])
+                .sign_with_keys(&author)
+                .expect("sign untagged canvas");
+
+        ingest_event_inner(&state, &tracer, &tenant, untagged, make_auth(&author))
+            .await
+            .expect("untagged canvas write must append unconditionally");
+    }
+    // ---- Discovery plane: kind:37017 EVM binding / kind:37018 deployment ----
+
+    use k256::ecdsa::SigningKey;
+
+    /// Checksum-cased anvil account #0 — a known-good EIP-55 address.
+    const BINDING_ADDRESS: &str = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+    /// The same address as the `d` tag must spell it (lowercase).
+    const BINDING_ADDRESS_LOWER: &str = "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266";
+    /// anvil account #0's private key: paired with [`BINDING_ADDRESS`] (its
+    /// EIP-55 address), so an attestation signed with it recovers to the
+    /// bound address — a fixture whose signature recovers elsewhere proves
+    /// nothing except that the mismatch check fires.
+    const BINDING_EVM_KEY: &str =
+        "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+    /// Anvil account #1 — a second address that is *not* the bound one.
+    const OTHER_ADDRESS: &str = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";
+    /// The same address, lowercase (the `d` coordinate of a record claiming it).
+    const OTHER_ADDRESS_LOWER: &str = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
+    const BINDING_SIWE_HASH: &str =
+        "0x1111111111111111111111111111111111111111111111111111111111111111";
+    const DEPLOY_TX: &str = "0x2222222222222222222222222222222222222222222222222222222222222222";
+
+    /// The secp256k1 key behind [`BINDING_ADDRESS`].
+    fn binding_evm_key() -> SigningKey {
+        SigningKey::from_slice(&hex::decode(BINDING_EVM_KEY).expect("hex")).expect("secp256k1 key")
+    }
+
+    /// An EIP-712 `NostrSigner` attestation authorizing `npub` from `account`,
+    /// signed by `key` — the exact envelope `POST /auth/siwe/register` stores
+    /// and kind:37017 ingest verifies.
+    fn binding_attestation(
+        key: &SigningKey,
+        npub: &nostr::PublicKey,
+        account: &str,
+        expires: u64,
+        chain_id: u64,
+    ) -> AttestationEnvelope {
+        let attestation = buzz_evm_auth::NostrSignerAttestation {
+            account: EvmAddress::parse(account).expect("address parses"),
+            npub: npub.to_bytes(),
+            expires,
+            nonce: 0,
+        };
+        let domain = buzz_evm_auth::Eip712Domain {
+            name: "creabuzz".into(),
+            version: "1".into(),
+            chain_id,
+            verifying_contract: EvmAddress::from_bytes([0u8; 20]),
+        };
+        let digest = attestation.digest(&domain);
+        let (signature, recid) = key.sign_prehash_recoverable(&digest);
+        let mut bytes = signature.to_bytes().to_vec();
+        bytes.push(if recid.is_y_odd() { 28 } else { 27 });
+        AttestationEnvelope {
+            attestation,
+            domain,
+            signature: hex::encode(bytes),
+        }
+    }
+
+    /// Kind:37017 content; `envelope: None` omits the `attestation` key.
+    fn binding_content(
+        address: &str,
+        envelope: Option<&AttestationEnvelope>,
+        revoked: bool,
+    ) -> String {
+        let mut content = serde_json::json!({
+            "v": 1,
+            "address": address,
+            "siweMessageHash": BINDING_SIWE_HASH,
+        });
+        if let Some(envelope) = envelope {
+            content["attestation"] =
+                serde_json::to_value(envelope).expect("attestation serializes");
+        }
+        if revoked {
+            content["revoked"] = serde_json::json!(true);
+        }
+        content.to_string()
+    }
+
+    fn binding_tags(d: &str, address: &str, chain: Option<&str>) -> Vec<nostr::Tag> {
+        let mut tags = vec![
+            nostr::Tag::parse(["d", d]).expect("d tag"),
+            nostr::Tag::parse(["address", address]).expect("address tag"),
+        ];
+        if let Some(chain) = chain {
+            tags.push(nostr::Tag::parse(["chain", chain]).expect("chain tag"));
+        }
+        tags
+    }
+
+    fn binding_event(keys: &nostr::Keys, content: &str, tags: Vec<nostr::Tag>) -> Event {
+        nostr::EventBuilder::new(
+            nostr::Kind::Custom(KIND_EVM_BINDING as u16),
+            content.to_string(),
+        )
+        .tags(tags)
+        .sign_with_keys(keys)
+        .expect("signed binding event")
+    }
+
+    /// The happy path: `d` lowercase, checksummed `address` tag, chain tag
+    /// agreeing with the attestation domain.
+    fn live_binding(keys: &nostr::Keys, envelope: &AttestationEnvelope) -> Event {
+        let content = binding_content(BINDING_ADDRESS, Some(envelope), false);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        binding_event(keys, &content, tags)
+    }
+
+    #[test]
+    fn evm_binding_envelope_accepts_an_attested_live_binding() {
+        let keys = nostr::Keys::generate();
+        let evm_key = binding_evm_key();
+        let now = Utc::now().timestamp() as u64;
+        let envelope = binding_attestation(
+            &evm_key,
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+        let event = live_binding(&keys, &envelope);
+        if let Err(err) = validate_evm_binding_envelope(&event) {
+            panic!("an attested, unexpired binding signed by the bound npub must store: {err}");
+        }
+        // The `chain` tag is optional; the address tag may also be lowercase.
+        let content = binding_content(BINDING_ADDRESS_LOWER, Some(&envelope), false);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS_LOWER, None);
+        assert!(
+            validate_evm_binding_envelope(&binding_event(&keys, &content, tags)).is_ok(),
+            "lowercase-only spelling and a missing chain tag must store"
+        );
+    }
+
+    // ---- Smart accounts: a binding signed through EIP-1271 ----
+
+    /// A smart account's signature: valid hex that is not a 65-byte `r‖s‖v` (a passkey account's is a few hundred
+    /// bytes of ABI-encoded WebAuthn data behind a one-byte validator prefix).
+    fn contract_signature() -> String {
+        format!("0x00{}", "ab".repeat(300))
+    }
+
+    fn contract_envelope(
+        npub: &nostr::PublicKey,
+        expires: u64,
+        chain_id: u64,
+    ) -> AttestationEnvelope {
+        let mut envelope =
+            binding_attestation(&binding_evm_key(), npub, BINDING_ADDRESS, expires, chain_id);
+        envelope.signature = contract_signature();
+        envelope
+    }
+
+    /// A chain node that says one fixed thing about every `isValidSignature` call, and has code at every address.
+    struct FakeNode {
+        answer: [u8; 4],
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl buzz_evm_auth::JsonRpc for FakeNode {
+        async fn eth_get_code(
+            &self,
+            _address: &EvmAddress,
+        ) -> Result<Vec<u8>, buzz_evm_auth::EvmAuthError> {
+            Ok(vec![0x60, 0x80])
+        }
+        async fn eth_call(
+            &self,
+            _to: &EvmAddress,
+            _data: &[u8],
+        ) -> Result<Vec<u8>, buzz_evm_auth::EvmAuthError> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(self.answer.to_vec())
+        }
+    }
+
+    fn node(answer: [u8; 4]) -> (buzz_evm_auth::RpcSignatureVerifier, Arc<FakeNode>) {
+        let node = Arc::new(FakeNode {
+            answer,
+            calls: std::sync::atomic::AtomicUsize::new(0),
+        });
+        (
+            buzz_evm_auth::RpcSignatureVerifier::from_transport(node.clone()),
+            node,
+        )
+    }
+
+    const ERC1271_YES: [u8; 4] = [0x16, 0x26, 0xba, 0x7e];
+
+    fn pending_for(keys: &nostr::Keys, expires: u64, chain: u64) -> PendingContractCheck {
+        let envelope = contract_envelope(&keys.public_key(), expires, chain);
+        let content = binding_content(BINDING_ADDRESS, Some(&envelope), false);
+        let tags = binding_tags(
+            BINDING_ADDRESS_LOWER,
+            BINDING_ADDRESS,
+            Some(&chain.to_string()),
+        );
+        check_evm_binding(&binding_event(keys, &content, tags))
+            .expect("the offline checks pass")
+            .expect("a contract signature leaves the chain check owed")
+    }
+
+    #[test]
+    fn a_smart_account_binding_passes_the_offline_checks_and_waits_for_the_chain() {
+        let keys = nostr::Keys::generate();
+        let now = Utc::now().timestamp() as u64;
+        let envelope = contract_envelope(&keys.public_key(), now + 3600, 8453);
+        let event = live_binding(&keys, &envelope);
+        assert!(
+            check_evm_binding(&event).expect("sound").is_some(),
+            "a contract signature owes a chain check"
+        );
+        // The offline-only validator never accepts it on its own.
+        let err = validate_evm_binding_envelope(&event).expect_err("offline cannot accept it");
+        assert!(err.contains("smart account"), "{err}");
+        // An EOA binding owes nothing.
+        let eoa = binding_attestation(
+            &binding_evm_key(),
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+        assert!(check_evm_binding(&live_binding(&keys, &eoa))
+            .expect("sound")
+            .is_none());
+    }
+
+    #[test]
+    fn a_smart_account_binding_still_has_the_cheap_checks() {
+        let keys = nostr::Keys::generate();
+        let now = Utc::now().timestamp() as u64;
+        // Expired and live: refused without any chain call.
+        let expired = contract_envelope(&keys.public_key(), now - 10, 8453);
+        let err = check_evm_binding(&live_binding(&keys, &expired)).expect_err("expired");
+        assert!(err.contains("expired"), "{err}");
+        // Another npub than the event signer.
+        let elsewhere = contract_envelope(&nostr::Keys::generate().public_key(), now + 3600, 8453);
+        assert!(check_evm_binding(&live_binding(&keys, &elsewhere)).is_err());
+        // A different account than the bound address.
+        let mut other_account = contract_envelope(&keys.public_key(), now + 3600, 8453);
+        other_account.attestation.account = EvmAddress::parse(OTHER_ADDRESS).expect("address");
+        assert!(check_evm_binding(&live_binding(&keys, &other_account)).is_err());
+    }
+
+    #[tokio::test]
+    async fn the_account_decides_and_nothing_else_does() {
+        let keys = nostr::Keys::generate();
+        let now = Utc::now().timestamp() as u64;
+        let pending = pending_for(&keys, now + 3600, 8453);
+        let author = keys.public_key().to_hex();
+
+        let (yes, node_yes) = node(ERC1271_YES);
+        verify_pending_contract_check(&yes, Some(8453), &pending, &author, now)
+            .await
+            .expect("an account that says yes is accepted");
+        assert_eq!(node_yes.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        let (no, _) = node([0xff; 4]);
+        let err = verify_pending_contract_check(&no, Some(8453), &pending, &author, now)
+            .await
+            .expect_err("an account that says no is refused");
+        assert!(err.contains("did not accept"), "{err}");
+
+        // Without a configured chain there is nothing to compare; with one, another chain is refused up front.
+        let (yes_again, node_again) = node(ERC1271_YES);
+        assert!(
+            verify_pending_contract_check(&yes_again, None, &pending, &author, now)
+                .await
+                .is_ok()
+        );
+        let wrong_chain =
+            verify_pending_contract_check(&yes_again, Some(1), &pending, &author, now)
+                .await
+                .expect_err("a proof for another chain is not answered from this one");
+        assert!(wrong_chain.contains("chain 8453"), "{wrong_chain}");
+        assert_eq!(
+            node_again.calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "the wrong-chain proof never reached the node"
+        );
+    }
+
+    #[test]
+    fn a_revocation_by_a_smart_account_owes_the_chain_nothing() {
+        let keys = nostr::Keys::generate();
+        let now = Utc::now().timestamp() as u64;
+        // Even with a stale proof attached, withdrawing a link needs only control of the Nostr key, so it never
+        // waits on this server's connection to a node.
+        let stale = contract_envelope(&keys.public_key(), now - 10, 8453);
+        let content = binding_content(BINDING_ADDRESS, Some(&stale), true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        let event = binding_event(&keys, &content, tags);
+        assert!(check_evm_binding(&event)
+            .expect("a revocation is sound")
+            .is_none());
+        assert!(validate_evm_binding_envelope(&event).is_ok());
+        // It still has to be about the author's own key and address.
+        let elsewhere = contract_envelope(&nostr::Keys::generate().public_key(), now + 3600, 8453);
+        let content = binding_content(BINDING_ADDRESS, Some(&elsewhere), true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        assert!(check_evm_binding(&binding_event(&keys, &content, tags)).is_err());
+    }
+
+    #[test]
+    fn evm_binding_envelope_rejects_every_spoof_path() {
+        let keys = nostr::Keys::generate();
+        let evm_key = binding_evm_key();
+        let now = Utc::now().timestamp() as u64;
+        let envelope = binding_attestation(
+            &evm_key,
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+        let good_content = || binding_content(BINDING_ADDRESS, Some(&envelope), false);
+        let good_tags = || binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+
+        let mut rejects: Vec<(&str, Event)> = Vec::new();
+
+        // 1. Wrong author: the attestation authorizes a different npub than
+        //    the event signer — the spoof that would let anyone claim any seat.
+        let other = nostr::Keys::generate();
+        let foreign = binding_attestation(
+            &evm_key,
+            &other.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+        rejects.push((
+            "attestation npub != event signer",
+            live_binding(&keys, &foreign),
+        ));
+
+        // 2. No attestation at all on a live record.
+        rejects.push((
+            "attestation omitted",
+            binding_event(
+                &keys,
+                &binding_content(BINDING_ADDRESS, None, false),
+                good_tags(),
+            ),
+        ));
+
+        // 3. `attestation: null` — same claim, spelled out.
+        let mut null_attestation: serde_json::Value =
+            serde_json::from_str(&good_content()).expect("content parses");
+        null_attestation["attestation"] = serde_json::Value::Null;
+        rejects.push((
+            "attestation null",
+            binding_event(&keys, &null_attestation.to_string(), good_tags()),
+        ));
+
+        // 4. Expired attestation: an old proof must not activate a new claim.
+        let expired = binding_attestation(
+            &evm_key,
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now.saturating_sub(60),
+            8453,
+        );
+        rejects.push(("expired attestation", live_binding(&keys, &expired)));
+
+        // 5. The attestation proves the bound account, but the record claims
+        //    a *different* address — valid signature, wrong subject.
+        let mismatched = binding_content(OTHER_ADDRESS, Some(&envelope), false);
+        let mismatched_tags = binding_tags(OTHER_ADDRESS_LOWER, OTHER_ADDRESS, Some("8453"));
+        rejects.push((
+            "attestation account != address",
+            binding_event(&keys, &mismatched, mismatched_tags),
+        ));
+
+        // 6. Tampered signature over an otherwise-valid attestation (same
+        //    length, different `s` — so it parses and still must fail).
+        let mut tampered = envelope.clone();
+        let mut flipped = tampered.signature.clone().into_bytes();
+        let last = flipped.last_mut().expect("signature is non-empty");
+        *last = if *last == b'0' { b'1' } else { b'0' };
+        tampered.signature = String::from_utf8(flipped).expect("hex stays hex");
+        rejects.push(("tampered signature", live_binding(&keys, &tampered)));
+
+        // 7. `d` not lowercase — the NIP-33 coordinate must be canonical.
+        rejects.push((
+            "uppercase d",
+            binding_event(
+                &keys,
+                &good_content(),
+                binding_tags(BINDING_ADDRESS, BINDING_ADDRESS, Some("8453")),
+            ),
+        ));
+
+        // 8. `address` tag names another address than `d`.
+        rejects.push((
+            "address tag != d",
+            binding_event(
+                &keys,
+                &good_content(),
+                binding_tags(BINDING_ADDRESS_LOWER, OTHER_ADDRESS, Some("8453")),
+            ),
+        ));
+
+        // 9. Missing `address` tag.
+        rejects.push((
+            "address tag omitted",
+            binding_event(
+                &keys,
+                &good_content(),
+                vec![
+                    nostr::Tag::parse(["d", BINDING_ADDRESS_LOWER]).expect("d tag"),
+                    nostr::Tag::parse(["chain", "8453"]).expect("chain tag"),
+                ],
+            ),
+        ));
+
+        // 10. `content.address` names another address than `d`.
+        rejects.push((
+            "content address != d",
+            binding_event(
+                &keys,
+                &binding_content(OTHER_ADDRESS, Some(&envelope), false),
+                good_tags(),
+            ),
+        ));
+
+        // 11. Malformed `siweMessageHash`.
+        let mut bad_hash: serde_json::Value =
+            serde_json::from_str(&good_content()).expect("content parses");
+        bad_hash["siweMessageHash"] = serde_json::json!("0xdeadbeef");
+        rejects.push((
+            "malformed siweMessageHash",
+            binding_event(&keys, &bad_hash.to_string(), good_tags()),
+        ));
+
+        // 12. Wrong content version.
+        let mut bad_version: serde_json::Value =
+            serde_json::from_str(&good_content()).expect("content parses");
+        bad_version["v"] = serde_json::json!(2);
+        rejects.push((
+            "v != 1",
+            binding_event(&keys, &bad_version.to_string(), good_tags()),
+        ));
+
+        // 13. `chain` tag contradicting the signed attestation domain.
+        rejects.push((
+            "chain tag != attestation chain",
+            binding_event(
+                &keys,
+                &good_content(),
+                binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("1")),
+            ),
+        ));
+
+        // 14. Content is not a JSON object.
+        rejects.push((
+            "non-JSON content",
+            binding_event(&keys, "not json", good_tags()),
+        ));
+
+        // 15. Two `d` tags — no unbounded coordinate.
+        let mut two_d = good_tags();
+        two_d.push(nostr::Tag::parse(["d", BINDING_ADDRESS_LOWER]).expect("d tag"));
+        rejects.push(("two d tags", binding_event(&keys, &good_content(), two_d)));
+
+        for (label, event) in rejects {
+            let err = validate_evm_binding_envelope(&event)
+                .expect_err(&format!("{label} must be rejected"));
+            if label.contains("attestation omitted") {
+                assert!(
+                    err.contains("attestation"),
+                    "{label}: error must name the missing proof, got {err:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn evm_binding_revocation_needs_npub_only_and_keeps_the_coordinate() {
+        let keys = nostr::Keys::generate();
+        let evm_key = binding_evm_key();
+        let now = Utc::now().timestamp() as u64;
+        let envelope = binding_attestation(
+            &evm_key,
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+
+        // Withdrawal with no attestation: control of the npub is the proof,
+        // mirroring `POST /auth/siwe/revoke` (which requires no EVM signature).
+        let content = binding_content(BINDING_ADDRESS, None, true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        assert!(
+            validate_evm_binding_envelope(&binding_event(&keys, &content, tags)).is_ok(),
+            "a npub-only revocation must store"
+        );
+
+        // A fresh attestation may accompany a revocation too — the common
+        // case where the owner republishes the head with `revoked: true`.
+        let content = binding_content(BINDING_ADDRESS, Some(&envelope), true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        assert!(
+            validate_evm_binding_envelope(&binding_event(&keys, &content, tags)).is_ok(),
+            "a revocation carrying the owner's fresh attestation must store"
+        );
+
+        // An expired attestation may still accompany a revocation: a proof
+        // that once authorized the binding authorizes withdrawing it.
+        let expired = binding_attestation(
+            &evm_key,
+            &keys.public_key(),
+            BINDING_ADDRESS,
+            now.saturating_sub(60),
+            8453,
+        );
+        let content = binding_content(BINDING_ADDRESS, Some(&expired), true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        let event = binding_event(&keys, &content, tags);
+        if let Err(err) = validate_evm_binding_envelope(&event) {
+            panic!("an expired attestation may revoke, never activate: {err}");
+        }
+
+        // …but a revocation carrying an attestation for someone else's npub
+        // is still a spoof: present means verified.
+        let other = nostr::Keys::generate();
+        let foreign = binding_attestation(
+            &evm_key,
+            &other.public_key(),
+            BINDING_ADDRESS,
+            now + 3600,
+            8453,
+        );
+        let content = binding_content(BINDING_ADDRESS, Some(&foreign), true);
+        let tags = binding_tags(BINDING_ADDRESS_LOWER, BINDING_ADDRESS, Some("8453"));
+        assert!(
+            validate_evm_binding_envelope(&binding_event(&keys, &content, tags)).is_err(),
+            "a revocation carrying a foreign attestation must be rejected"
+        );
+    }
+
+    #[test]
+    fn discovery_kinds_are_member_writes_global_only_and_replaceable() {
+        let dummy = make_dummy_event();
+        for kind in [KIND_EVM_BINDING, KIND_DEPLOYMENT_RECORD] {
+            assert_eq!(
+                required_scope_for_kind(kind, &dummy).unwrap(),
+                Scope::MessagesWrite,
+                "kind {kind} must be an ordinary member write"
+            );
+            assert!(
+                is_global_only_kind(kind),
+                "kind {kind} must never be channel-scoped"
+            );
+            assert!(
+                is_parameterized_replaceable(kind),
+                "kind {kind} must be NIP-33 addressed"
+            );
+        }
+        // …and neither rides the shared org envelope: its `role` tag shape
+        // (name/description/equity) describes neither record, so routing them
+        // through it would reject valid records.
+        for kind in [KIND_EVM_BINDING, KIND_DEPLOYMENT_RECORD] {
+            assert!(
+                org_envelope_label(kind).is_none(),
+                "kind {kind} has its own envelope, not the org one"
+            );
+        }
+    }
+
+    /// Tags/content of a kind:37018 record exactly as `buzz launchpad
+    /// deployment record` builds them (the producer half of this contract).
+    fn deployment_event(
+        content: &str,
+        d: &str,
+        chain: Option<&str>,
+        role: Option<&str>,
+        address: Option<&str>,
+        tx: Option<&str>,
+    ) -> Event {
+        let mut tags = vec![nostr::Tag::parse(["d", d]).expect("d tag")];
+        for (name, value) in [
+            ("chain", chain),
+            ("role", role),
+            ("address", address),
+            ("tx", tx),
+        ] {
+            if let Some(value) = value {
+                tags.push(nostr::Tag::parse([name, value]).expect("tag"));
+            }
+        }
+        nostr::EventBuilder::new(
+            nostr::Kind::Custom(KIND_DEPLOYMENT_RECORD as u16),
+            content.to_string(),
+        )
+        .tags(tags)
+        .sign_with_keys(&nostr::Keys::generate())
+        .expect("signed deployment record")
+    }
+
+    #[test]
+    fn deployment_record_envelope_accepts_the_published_shape() {
+        let content = r#"{"v":1,"block":42,"project":"nebula","note":"forge script"}"#;
+        let event = deployment_event(
+            content,
+            "8453:summoner",
+            Some("8453"),
+            Some("summoner"),
+            Some(BINDING_ADDRESS),
+            Some(DEPLOY_TX),
+        );
+        assert!(
+            validate_deployment_record_envelope(&event).is_ok(),
+            "the CLI's golden shape must store"
+        );
+
+        // Optional fields stay optional: no project, no note.
+        let bare = deployment_event(
+            r#"{"v":1,"block":7}"#,
+            "1:factory",
+            Some("1"),
+            Some("factory"),
+            Some(BINDING_ADDRESS),
+            Some(DEPLOY_TX),
+        );
+        assert!(
+            validate_deployment_record_envelope(&bare).is_ok(),
+            "a bare deployment record must store"
+        );
+    }
+
+    #[test]
+    fn deployment_record_envelope_rejects_inconsistent_claims() {
+        let content = r#"{"v":1,"block":42,"project":"nebula","note":"forge script"}"#;
+        let default = |d: &str,
+                       chain: Option<&str>,
+                       role: Option<&str>,
+                       address: Option<&str>,
+                       tx: Option<&str>| {
+            deployment_event(content, d, chain, role, address, tx)
+        };
+        let rejects: Vec<(&str, Event)> = vec![
+            (
+                "d without a colon",
+                default(
+                    "8453",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "unknown role",
+                default(
+                    "8453:deployer",
+                    Some("8453"),
+                    Some("deployer"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "role tag != d role",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("factory"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "chain tag != d chain",
+                default(
+                    "8453:summoner",
+                    Some("1"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "leading-zero chain id in d",
+                default(
+                    "08453:summoner",
+                    Some("08453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "missing tx tag",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    None,
+                ),
+            ),
+            (
+                "malformed tx tag",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some("0xdead"),
+                ),
+            ),
+            (
+                "missing address tag",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    None,
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "malformed address tag",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some("0xnope"),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "chain tag omitted",
+                default(
+                    "8453:summoner",
+                    None,
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "role tag omitted",
+                default(
+                    "8453:summoner",
+                    Some("8453"),
+                    None,
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "zero block",
+                deployment_event(
+                    r#"{"v":1,"block":0}"#,
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "missing block",
+                deployment_event(
+                    r#"{"v":1}"#,
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "wrong content version",
+                deployment_event(
+                    r#"{"v":2,"block":42}"#,
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "bad project slug",
+                deployment_event(
+                    r#"{"v":1,"block":42,"project":"Nebula!"}"#,
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+            (
+                "oversized note",
+                deployment_event(
+                    &format!(r#"{{"v":1,"block":42,"note":"{}"}}"#, "x".repeat(257)),
+                    "8453:summoner",
+                    Some("8453"),
+                    Some("summoner"),
+                    Some(BINDING_ADDRESS),
+                    Some(DEPLOY_TX),
+                ),
+            ),
+        ];
+        for (label, event) in rejects {
+            assert!(
+                validate_deployment_record_envelope(&event).is_err(),
+                "{label} must be rejected"
+            );
+        }
+    }
+
+    // ── Owner-aware ban/timeout coverage ─────────────────────────────────────
+
+    /// Fresh community plus an agent owned by `owner` (users.agent_owner_pubkey).
+    async fn owned_agent_fixture(
+        state: &crate::state::AppState,
+        label: &str,
+    ) -> (TenantContext, nostr::Keys, nostr::Keys) {
+        let host = format!("{label}-{}.test", Uuid::new_v4().simple());
+        let community = state
+            .db
+            .ensure_configured_community(&host)
+            .await
+            .expect("ensure community")
+            .id;
+        let (owner, agent) = (nostr::Keys::generate(), nostr::Keys::generate());
+        for keys in [&owner, &agent] {
+            state
+                .db
+                .ensure_user(community, keys.public_key().as_bytes())
+                .await
+                .expect("ensure user");
+        }
+        assert!(state
+            .db
+            .set_agent_owner(
+                community,
+                agent.public_key().as_bytes(),
+                owner.public_key().as_bytes(),
+            )
+            .await
+            .expect("set agent owner"));
+        (TenantContext::resolved(community, &host), owner, agent)
+    }
+
+    async fn ingest_state() -> Arc<crate::state::AppState> {
+        let db_url = crate::test_support::database_url();
+        let pool = sqlx::PgPool::connect(&db_url)
+            .await
+            .expect("connect test Postgres");
+        build_canvas_ingest_state(&db_url, &pool).await
+    }
+
+    /// An owner's timeout reaches its agent, and it is enforced before command
+    /// routing: a DM open (a command kind) is refused, while a report and the
+    /// restriction-lifting commands stay admitted.
+    /// Mutations: gate after command routing, or no owner fold → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn owner_timeout_blocks_agent_dm_open_but_admits_report_and_lift() {
+        let state = ingest_state().await;
+        let (tenant, owner, agent) = owned_agent_fixture(&state, "owner-timeout").await;
+        state
+            .db
+            .timeout_community_member(
+                tenant.community(),
+                owner.public_key().as_bytes(),
+                owner.public_key().as_bytes(),
+                Utc::now() + chrono::Duration::hours(1),
+                None,
+            )
+            .await
+            .expect("timeout owner");
+
+        let dm_open = EventBuilder::new(Kind::Custom(buzz_core::kind::KIND_DM_OPEN as u16), "")
+            .tags([nostr::Tag::public_key(owner.public_key())])
+            .sign_with_keys(&agent)
+            .expect("sign dm open");
+        let auth = IngestAuth::Http {
+            pubkey: agent.public_key(),
+            scopes: vec![Scope::MessagesWrite],
+            auth_method: HttpAuthMethod::Nip98,
+        };
+        match ingest_event(&state, &tenant, dm_open, auth).await {
+            Err(IngestError::AuthFailed(msg)) => assert!(
+                msg.starts_with("restricted: you are timed out until "),
+                "got {msg:?}"
+            ),
+            Err(other) => panic!("timed-out owner's agent must not open a DM, got {other:?}"),
+            Ok(_) => panic!("timed-out owner's agent must not open a DM, but it was accepted"),
+        }
+
+        for kind in [
+            KIND_REPORT,
+            buzz_core::kind::KIND_MODERATION_UNBAN,
+            buzz_core::kind::KIND_MODERATION_UNTIMEOUT,
+        ] {
+            enforce_write_restriction(&state, &tenant, kind, &agent.public_key())
+                .await
+                .unwrap_or_else(|e| panic!("kind {kind} must stay open under timeout: {e:?}"));
+        }
+        assert!(
+            enforce_write_restriction(&state, &tenant, KIND_REACTION, &agent.public_key())
+                .await
+                .is_err(),
+            "ordinary writes stay blocked for the timed-out owner's agent"
+        );
+    }
+
+    /// A ban exempts nothing — not even a report — and an owner's ban reaches
+    /// its agent until the owner is unbanned.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn owner_ban_blocks_every_agent_write_until_unban() {
+        let state = ingest_state().await;
+        let (tenant, owner, agent) = owned_agent_fixture(&state, "owner-ban").await;
+        let owner_bytes = owner.public_key().to_bytes();
+        state
+            .db
+            .ban_community_member(tenant.community(), &owner_bytes, &owner_bytes, None, None)
+            .await
+            .expect("ban owner");
+
+        match enforce_write_restriction(&state, &tenant, KIND_REPORT, &agent.public_key()).await {
+            Err(IngestError::AuthFailed(msg)) => {
+                assert_eq!(msg, "blocked: you are banned from this community")
+            }
+            other => panic!("banned owner's agent must not report, got {other:?}"),
+        }
+
+        state
+            .db
+            .unban_community_member(tenant.community(), &owner_bytes, &owner_bytes)
+            .await
+            .expect("unban owner");
+        enforce_write_restriction(&state, &tenant, KIND_REACTION, &agent.public_key())
+            .await
+            .expect("unbanning the owner restores the agent");
+    }
+
+    /// A person banned directly is told, on the write backstop, when the ban
+    /// ends and why; their agent, banned through them, gets the plain refusal.
+    /// Mutation: drop the `restriction.banned` arm in
+    /// `enforce_write_restriction` → the person gets the plain prefix → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn direct_ban_write_refusal_says_when_it_ends_and_why() {
+        let state = ingest_state().await;
+        let (tenant, owner, agent) = owned_agent_fixture(&state, "direct-ban").await;
+        let owner_bytes = owner.public_key().to_bytes();
+        let end = Utc::now() + chrono::Duration::days(3);
+        state
+            .db
+            .ban_community_member(
+                tenant.community(),
+                &owner_bytes,
+                &owner_bytes,
+                Some("Selling coins in chat."),
+                Some(end),
+            )
+            .await
+            .expect("ban owner");
+
+        for (keys, refusal) in [
+            (
+                &owner,
+                format!(
+                    "blocked: you are banned from this community until {}; reason: Selling coins in chat.",
+                    end.timestamp()
+                ),
+            ),
+            (&agent, "blocked: you are banned from this community".to_string()),
+        ] {
+            match enforce_write_restriction(&state, &tenant, KIND_REACTION, &keys.public_key())
+                .await
+            {
+                Err(IngestError::AuthFailed(msg)) => assert_eq!(msg, refusal),
+                other => panic!("banned write must be refused, got {other:?}"),
+            }
+        }
+    }
+
+    /// The live disconnect a kind-9040 ban sends carries the end and the
+    /// reason: that is the refusal a person with the app open sees. The
+    /// banned person's agent is closed by the same command and so gets the
+    /// same words (it belongs to the banned person).
+    /// Mutation: pass the plain `BAN_REFUSAL` to `revoke_live_access` in
+    /// `handle_ban` → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn ban_command_live_disconnect_says_when_it_ends_and_why() {
+        use tokio_util::sync::CancellationToken;
+
+        let state = ingest_state().await;
+        let (tenant, owner, agent) = owned_agent_fixture(&state, "ban-live").await;
+        let moderator = nostr::Keys::generate();
+        state
+            .db
+            .add_relay_member(
+                tenant.community(),
+                &moderator.public_key().to_hex(),
+                "owner",
+                None,
+            )
+            .await
+            .expect("add moderator");
+
+        let open_socket = |keys: &nostr::Keys, admitted_owner: Option<&nostr::Keys>| {
+            let (tx, _rx) = tokio::sync::mpsc::channel(4);
+            let (ctrl, ctrl_rx) = tokio::sync::mpsc::channel(4);
+            let (terminal, _terminal_rx) = tokio::sync::mpsc::channel(1);
+            let cancel = CancellationToken::new();
+            let id = Uuid::new_v4();
+            state.conn_manager.register(
+                id,
+                tx,
+                ctrl,
+                terminal,
+                None,
+                cancel.clone(),
+                tenant.community(),
+                Arc::new(std::sync::atomic::AtomicU8::new(0)),
+                Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+                3,
+                crate::state::CommunityConnectionControl::new(cancel.clone()),
+            );
+            state
+                .conn_manager
+                .set_authenticated_pubkey(id, keys.public_key().to_bytes().to_vec());
+            if let Some(owner) = admitted_owner {
+                state
+                    .conn_manager
+                    .set_admitted_owner(id, owner.public_key().to_bytes());
+            }
+            (id, cancel, ctrl_rx, _rx, _terminal_rx)
+        };
+        let (owner_id, owner_cancel, mut owner_ctrl, _o1, _o2) = open_socket(&owner, None);
+        let (agent_id, agent_cancel, mut agent_ctrl, _a1, _a2) = open_socket(&agent, Some(&owner));
+
+        let end = Utc::now().timestamp() + 3 * 24 * 3600;
+        let ban = EventBuilder::new(
+            Kind::Custom(buzz_core::kind::KIND_MODERATION_BAN as u16),
+            "",
+        )
+        .tags([
+            nostr::Tag::public_key(owner.public_key()),
+            nostr::Tag::parse(["expiration".to_string(), end.to_string()]).expect("tag"),
+            nostr::Tag::parse(["reason".to_string(), "Selling coins in chat.".to_string()])
+                .expect("tag"),
+        ])
+        .sign_with_keys(&moderator)
+        .expect("sign ban");
+        crate::handlers::moderation_commands::handle_moderation_command(&tenant, &state, &ban)
+            .await
+            .expect("ban applied");
+
+        let expected = crate::protocol::RelayMessage::ok(
+            &ban.id.to_hex(),
+            false,
+            &format!(
+                "blocked: you are banned from this community until {end}; reason: Selling coins in chat."
+            ),
+        );
+        for (ctrl, cancel) in [
+            (&mut owner_ctrl, &owner_cancel),
+            (&mut agent_ctrl, &agent_cancel),
+        ] {
+            assert!(cancel.is_cancelled(), "the live session closes");
+            match ctrl.try_recv() {
+                Ok(axum::extract::ws::Message::Text(frame)) => {
+                    assert_eq!(frame.as_str(), expected)
+                }
+                other => panic!("expected the refusal frame, got {other:?}"),
+            }
+        }
+        state.conn_manager.deregister(owner_id);
+        state.conn_manager.deregister(agent_id);
+    }
+
+    /// HTTP routes that call `enforce_relay_membership` refuse a banned member
+    /// with 403 `blocked:` even on an open relay, and admit once unbanned.
+    /// Mutation: drop the ban step from `enforce_relay_membership` → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn relay_membership_step_refuses_banned_member_on_http() {
+        let state = ingest_state().await;
+        let (tenant, owner, agent) = owned_agent_fixture(&state, "http-ban").await;
+        let owner_bytes = owner.public_key().to_bytes();
+        state
+            .db
+            .ban_community_member(
+                tenant.community(),
+                &owner_bytes,
+                &owner_bytes,
+                Some("spam"),
+                None,
+            )
+            .await
+            .expect("ban owner");
+
+        // The banned person is told the ban is for good and why; their agent,
+        // banned through them, gets the plain refusal.
+        for (keys, refusal) in [
+            (
+                &owner,
+                "blocked: you are banned from this community for good; reason: spam",
+            ),
+            (&agent, "blocked: you are banned from this community"),
+        ] {
+            let (status, body) = crate::api::relay_members::enforce_relay_membership(
+                &state,
+                tenant.community(),
+                keys.public_key().as_bytes(),
+                None,
+                None,
+            )
+            .await
+            .expect_err("banned principal (or its agent) must be refused");
+            assert_eq!(status, axum::http::StatusCode::FORBIDDEN);
+            assert_eq!(body.0["error"], refusal);
+        }
+
+        state
+            .db
+            .unban_community_member(tenant.community(), &owner_bytes, &owner_bytes)
+            .await
+            .expect("unban owner");
+        crate::api::relay_members::enforce_relay_membership(
+            &state,
+            tenant.community(),
+            owner.public_key().as_bytes(),
+            None,
+            None,
+        )
+        .await
+        .expect("unbanned member is admitted");
+    }
+
+    /// Revoking a member's live access also closes their agents' sockets, and
+    /// no one else's.
+    /// Mutation: disconnect only the target pubkey → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn revoke_live_access_closes_owned_agent_sockets() {
+        use crate::state::CommunityConnectionControl;
+        use tokio_util::sync::CancellationToken;
+
+        let state = ingest_state().await;
+        let (tenant, owner, agent) = owned_agent_fixture(&state, "revoke").await;
+        let bystander = nostr::Keys::generate();
+        let bound = |keys: &nostr::Keys| {
+            let control = CommunityConnectionControl::new(CancellationToken::new());
+            control.bind_pubkey(keys.public_key().to_bytes());
+            let guard = state.community_connections.register(
+                Uuid::new_v4(),
+                tenant.community(),
+                control.clone(),
+            );
+            (control, guard)
+        };
+        let (owner_socket, _g1) = bound(&owner);
+        let (agent_socket, _g2) = bound(&agent);
+        let (bystander_socket, _g3) = bound(&bystander);
+
+        state
+            .revoke_live_access(
+                &tenant,
+                owner.public_key().as_bytes(),
+                "test-event",
+                "blocked: you are banned from this community",
+            )
+            .await
+            .expect("revoke");
+
+        assert!(owner_socket.cancellation_token().is_cancelled());
+        assert!(agent_socket.cancellation_token().is_cancelled());
+        assert!(!bystander_socket.cancellation_token().is_cancelled());
+    }
+
+    /// Revoking an owner closes the sockets of agents admitted under that
+    /// owner even when the owned-agent lookup fails: each socket recorded its
+    /// owner at admission, so the disconnect needs no database read. A
+    /// bystander's socket stays open. This proves the pod-local match; the
+    /// same command reaches other pods over the conn-control channel.
+    /// Mutation: match only the principal in the disconnect → the agent's
+    /// sockets stay open → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn owner_revoke_closes_recorded_agent_sockets_without_a_lookup() {
+        use crate::state::CommunityConnectionControl;
+        use sqlx::postgres::PgConnectOptions;
+        use tokio_util::sync::CancellationToken;
+
+        // A schema with bans but no `users` table: the ban commits, and only
+        // the owned-agent lookup fails.
+        let db_url = crate::test_support::database_url();
+        let admin = sqlx::PgPool::connect(&db_url)
+            .await
+            .expect("connect test Postgres");
+        let schema = format!("revoke_owner_{}", Uuid::new_v4().simple());
+        sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
+            "CREATE SCHEMA {schema}; \
+             CREATE TABLE {schema}.community_bans (LIKE public.community_bans INCLUDING ALL);"
+        )))
+        .execute(&admin)
+        .await
+        .expect("create schema");
+        let options = db_url
+            .parse::<PgConnectOptions>()
+            .expect("database url")
+            .options([("search_path", schema.as_str())]);
+        let pool = sqlx::PgPool::connect_with(options)
+            .await
+            .expect("schema pool");
+        let state = build_canvas_ingest_state(&db_url, &pool).await;
+        let community = buzz_core::tenant::CommunityId::from_uuid(Uuid::new_v4());
+        let tenant = TenantContext::resolved(community, "revoke-owner.test".to_string());
+        let (owner, agent, bystander) = (
+            nostr::Keys::generate(),
+            nostr::Keys::generate(),
+            nostr::Keys::generate(),
+        );
+        let bound = |keys: &nostr::Keys, owner: Option<&nostr::Keys>| {
+            let control = CommunityConnectionControl::new(CancellationToken::new());
+            control.bind_pubkey(keys.public_key().to_bytes());
+            if let Some(owner) = owner {
+                control.bind_owner(owner.public_key().to_bytes());
+            }
+            let guard =
+                state
+                    .community_connections
+                    .register(Uuid::new_v4(), community, control.clone());
+            (control, guard)
+        };
+        let (owner_socket, _g1) = bound(&owner, None);
+        let (agent_audio, _g2) = bound(&agent, Some(&owner));
+        let (bystander_socket, _g3) = bound(&bystander, None);
+        let (tx, _rx) = tokio::sync::mpsc::channel(4);
+        let (ctrl, _ctrl_rx) = tokio::sync::mpsc::channel(4);
+        let (terminal, _terminal_rx) = tokio::sync::mpsc::channel(1);
+        let agent_root = CancellationToken::new();
+        let agent_root_id = Uuid::new_v4();
+        state.conn_manager.register(
+            agent_root_id,
+            tx,
+            ctrl,
+            terminal,
+            None,
+            agent_root.clone(),
+            community,
+            std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            3,
+            crate::state::CommunityConnectionControl::new(agent_root.clone()),
+        );
+        state
+            .conn_manager
+            .set_authenticated_pubkey(agent_root_id, agent.public_key().to_bytes().to_vec());
+        state
+            .conn_manager
+            .set_admitted_owner(agent_root_id, owner.public_key().to_bytes());
+
+        state
+            .db
+            .ban_community_member(
+                community,
+                owner.public_key().as_bytes(),
+                bystander.public_key().as_bytes(),
+                None,
+                None,
+            )
+            .await
+            .expect("ban commits");
+        let revoked = state
+            .revoke_live_access(
+                &tenant,
+                owner.public_key().as_bytes(),
+                "test-event",
+                "blocked: you are banned from this community",
+            )
+            .await;
+        assert!(
+            revoked.is_err(),
+            "the failed agent lookup is still reported"
+        );
+        assert!(owner_socket.cancellation_token().is_cancelled());
+        assert!(
+            agent_audio.cancellation_token().is_cancelled(),
+            "the agent's audio socket closes by its recorded owner"
+        );
+        assert!(
+            agent_root.is_cancelled(),
+            "the agent's root socket closes by its recorded owner"
+        );
+        assert!(!bystander_socket.cancellation_token().is_cancelled());
+        let _ = sqlx::raw_sql(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+            .execute(&admin)
+            .await;
     }
 }

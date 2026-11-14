@@ -1,0 +1,20 @@
+out/
+cache/
+broadcast/
+.env
+
+# Local dev-chain launch kit (scripts/dev-chain.sh): a fresh address and hash every run, not a fixture
+deployments/dao-launch-kit-*.json
+
+# Written by the deploy scripts and the dev chain on every run: outputs, not sources.
+deployments/*.json
+
+# Except the real Sepolia deploy (scripts/sepolia-deploy.sh --broadcast): public addresses a hosted build is made from.
+# Rehearsals and fork journeys write the same path on a throwaway fork and put it back as it was.
+!deployments/dao-launch-kit-11155111.json
+
+# And the weekly-sale set (scripts/sepolia-deploy-v5.sh --broadcast): the same kind of public addresses, beside the 5 Nov manifest.
+!deployments/v5-sepolia-11155111.json
+
+# And the instant-backing set (script/DeployBackingSepolia.s.sol --broadcast), beside the weekly-sale manifest.
+!deployments/backing-sepolia-11155111.json

@@ -1,5 +1,7 @@
 import * as React from "react";
 
+import { AGE_CONFIRMATION } from "@/features/identity/lib/account-copy";
+
 type InviteJoinPolicy = {
   terms_markdown?: string;
   privacy_markdown?: string;
@@ -103,21 +105,21 @@ export function InviteJoinPolicyNotice({
     >
       {policy.age_attestation_required ? (
         <PolicyCheckbox
-          accessibleLabel="I am 18 years of age or older."
+          accessibleLabel={AGE_CONFIRMATION}
           checked={ageConfirmed}
           onCheckedChange={onAgeConfirmedChange}
         >
-          I am 18 years of age or older.
+          {AGE_CONFIRMATION}
         </PolicyCheckbox>
       ) : null}
 
       {policy.terms_markdown || policy.privacy_markdown ? (
         <PolicyCheckbox
-          accessibleLabel="I agree to the Buzz Terms of Service and Privacy Policy."
+          accessibleLabel="I agree to the Creaton Terms of use and Privacy note."
           checked={agreementConfirmed}
           onCheckedChange={onAgreementConfirmedChange}
         >
-          I agree to the Buzz{" "}
+          I agree to the Creaton{" "}
           {policy.terms_markdown ? (
             <button
               className="text-black no-underline underline-offset-4 hover:text-black/70 hover:underline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-black"
@@ -125,15 +127,15 @@ export function InviteJoinPolicyNotice({
               onClick={(event) =>
                 stopLabelActivation(
                   event,
-                  "Terms of Service",
+                  "Terms of use",
                   policy.terms_markdown ?? "",
                 )
               }
             >
-              Terms of Service
+              Terms of use
             </button>
           ) : (
-            "Terms of Service"
+            "Terms of use"
           )}{" "}
           and{" "}
           {policy.privacy_markdown ? (
@@ -143,15 +145,15 @@ export function InviteJoinPolicyNotice({
               onClick={(event) =>
                 stopLabelActivation(
                   event,
-                  "Privacy Policy",
+                  "Privacy note",
                   policy.privacy_markdown ?? "",
                 )
               }
             >
-              Privacy Policy
+              Privacy note
             </button>
           ) : (
-            "Privacy Policy"
+            "Privacy note"
           )}
           .
         </PolicyCheckbox>

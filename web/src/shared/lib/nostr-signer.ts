@@ -20,6 +20,11 @@ export type SignedNostrEvent = UnsignedNostrEvent & {
 type Nip07Provider = {
   getPublicKey(): Promise<string>;
   signEvent(event: UnsignedNostrEvent): Promise<SignedNostrEvent>;
+  /** NIP-07's optional NIP-44 methods (encrypted DMs, private lists). */
+  nip44?: {
+    encrypt(pubkey: string, plaintext: string): Promise<string>;
+    decrypt(pubkey: string, ciphertext: string): Promise<string>;
+  };
 };
 
 declare global {
@@ -30,12 +35,136 @@ declare global {
 
 export class Nip07UnavailableError extends Error {
   constructor() {
-    super("A NIP-07 browser extension is required to join in the browser.");
+    super(
+      "Joining from this browser needs a sign-in extension, and none was found.",
+    );
     this.name = "Nip07UnavailableError";
   }
 }
 
+/**
+ * The one sentence a registered-but-locked passkey answers with.
+ *
+ * Shared as a constant because every surface that renders it also has to
+ * render the recovery beside it (Review-Proven Rule 6), and that check has to
+ * survive message wrapping (`PitchPublishError` prefixes it, mutation layers
+ * re-throw it) — see `isSigningBlockedError`.
+ */
+export const SIGNING_BLOCKED_MESSAGE =
+  "Unlock your passkey so this browser can confirm this.";
+
+/**
+ * Thrown when the durable identity exists but is not usable right now — the
+ * registered passkey has not been unlocked this session.
+ *
+ * A typed error so callers can tell "this reader cannot sign *yet*, here is
+ * the unlock action" apart from "the relay refused this" without matching on
+ * prose. The fall-through it prevents stays real: signing as a fresh key here
+ * would mint a second durable identity while the passkey is who the reader is.
+ */
+export class SigningBlockedError extends Error {
+  constructor(reason: string = SIGNING_BLOCKED_MESSAGE) {
+    super(reason);
+    this.name = "SigningBlockedError";
+  }
+}
+
+/**
+ * True when `error` means "the passkey identity is locked", however it was
+ * wrapped on the way up (`instanceof` fails across message boundaries and
+ * after `Error` subclass re-wrapping, so the prose is a second signal).
+ */
+export function isSigningBlockedError(error: unknown): boolean {
+  if (error instanceof SigningBlockedError) return true;
+  if (!(error instanceof Error)) return false;
+  return error.message.includes(SIGNING_BLOCKED_MESSAGE);
+}
+
 let ephemeralSecretKey: Uint8Array | null = null;
+
+/**
+ * Optional user-signer override (e.g. the PRF passkey signer). Returns a
+ * signed event, or null to mean "fall through to the normal identity path".
+ */
+let userSignerOverride:
+  | ((template: UnsignedNostrEvent) => Promise<SignedNostrEvent | null>)
+  | null = null;
+
+export function setUserSignerOverride(
+  fn:
+    | ((template: UnsignedNostrEvent) => Promise<SignedNostrEvent | null>)
+    | null,
+): void {
+  userSignerOverride = fn;
+}
+
+export function getUserSignerOverride(): typeof userSignerOverride {
+  return userSignerOverride;
+}
+
+/**
+ * Optional NIP-44 override, registered next to the signer override. The
+ * passkey identity's secret never leaves its module, so encryption to a peer
+ * has to run through it too. Returns null to mean "not this signer — fall
+ * through" (for example the passkey is not unlocked this session).
+ */
+export interface UserNip44Override {
+  encrypt(peer: string, plaintext: string): Promise<string | null>;
+  decrypt(peer: string, ciphertext: string): Promise<string | null>;
+}
+
+let userNip44Override: UserNip44Override | null = null;
+
+export function setUserNip44Override(fn: UserNip44Override | null): void {
+  userNip44Override = fn;
+}
+
+export function getUserNip44Override(): UserNip44Override | null {
+  return userNip44Override;
+}
+
+/**
+ * Optional pubkey override: who the app *is*, when that is not the stored nsec.
+ *
+ * A passkey identity derived from the credential (PRF mode) is a different key
+ * from anything in `buzz.identity.nsec`, and it is the one signatures carry. Any
+ * accessor that answers "who am I" — the `#p` filters, "is this my message", the
+ * board's "mine" — must answer with the same key, or the app filters by one
+ * identity while signing as another (the relay's p-gate then refuses those
+ * reads). Registered by the passkey module so this file keeps no dependency on
+ * it.
+ */
+let userPubkeyOverride: (() => string | null) | null = null;
+
+export function setUserPubkeyOverride(fn: (() => string | null) | null): void {
+  userPubkeyOverride = fn;
+}
+
+export function getUserPubkeyOverride(): (() => string | null) | null {
+  return userPubkeyOverride;
+}
+
+/**
+ * Optional reason why signing must fail instead of falling through.
+ *
+ * The identity precedence is passkey, then a NIP-07 extension, then the stored
+ * nsec — and the last step *creates* a key when none exists. That is right for a
+ * first-time reader, and wrong for someone whose identity is a passkey that is
+ * not unlocked this session: falling through mints a second, durable identity
+ * and signs with it, so the app would be a different person depending on when
+ * the query ran. Registered by the passkey module.
+ */
+let userSigningBlockedReason: (() => string | null) | null = null;
+
+export function setUserSigningBlockedReason(
+  fn: (() => string | null) | null,
+): void {
+  userSigningBlockedReason = fn;
+}
+
+export function getUserSigningBlockedReason(): string | null {
+  return userSigningBlockedReason?.() ?? null;
+}
 
 function getEphemeralSecretKey(): Uint8Array {
   if (!ephemeralSecretKey) {
@@ -77,6 +206,10 @@ export async function signNostrEvent(
     ...template,
     created_at: template.created_at ?? Math.floor(Date.now() / 1000),
   };
+  if (userSignerOverride) {
+    const override = await userSignerOverride(unsigned);
+    if (override) return override;
+  }
   const provider = typeof window === "undefined" ? undefined : window.nostr;
 
   if (provider) {
@@ -88,7 +221,9 @@ export async function signNostrEvent(
       typeof signed.id !== "string" ||
       typeof signed.sig !== "string"
     ) {
-      throw new Error("The NIP-07 extension returned an invalid signed event.");
+      throw new Error(
+        "Your sign-in extension gave an answer we could not use. Try again.",
+      );
     }
     return signed;
   }
@@ -100,7 +235,9 @@ export async function signNostrEvent(
   const secretKey = getEphemeralSecretKey();
   const signed = finalizeEvent(unsigned, secretKey);
   if (signed.pubkey !== getPublicKey(secretKey)) {
-    throw new Error("Failed to create the ephemeral browser identity.");
+    throw new Error(
+      "Couldn't set up a temporary account in this browser. Reload the page and try again.",
+    );
   }
   return signed;
 }

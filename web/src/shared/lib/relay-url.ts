@@ -9,11 +9,114 @@ export function relayHttpUrl(wsUrl: string): string {
   return wsUrl;
 }
 
-/** Read the relay WebSocket URL from environment or derive from window.location. */
+/**
+ * localStorage key for an explicit relay URL override.
+ *
+ * The web app defaults to same-origin (works when the relay itself serves the
+ * bundle), but any other host — `vite preview`, a CDN, a static host — would
+ * otherwise dial the wrong WebSocket endpoint and silently fall back to the
+ * empty-community screen. A stored override lets users point the app at the
+ * right relay without rebuilding.
+ */
+const RELAY_URL_STORAGE_KEY = "buzz.relayUrl";
+
+/** Hosts a browser lets an https page reach over plain ws:// (they never leave the machine). */
+function isLocalHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "127.0.0.1" ||
+    hostname === "[::1]"
+  );
+}
+
+/**
+ * An https page cannot open ws:// to another host: the browser blocks it as mixed content, and the
+ * app would only ever say the server did not answer. Such an address is moved to wss://; on an http
+ * page, or for a server on this machine, ws:// is kept.
+ */
+function secureForPage(wsUrl: string): string {
+  if (!wsUrl.startsWith("ws://")) return wsUrl;
+  let pageIsHttps = false;
+  try {
+    pageIsHttps = window.location.protocol === "https:";
+  } catch {
+    return wsUrl;
+  }
+  if (!pageIsHttps) return wsUrl;
+  try {
+    if (isLocalHost(new URL(wsUrl).hostname)) return wsUrl;
+  } catch {
+    return wsUrl;
+  }
+  return `wss://${wsUrl.slice(5)}`;
+}
+
+/** Normalize a user-supplied relay URL to a WebSocket URL (http→ws, https→wss). */
+export function normalizeRelayWsUrl(input: string): string {
+  const trimmed = input.trim();
+  if (trimmed.startsWith("ws://") || trimmed.startsWith("wss://")) {
+    return secureForPage(trimmed);
+  }
+  if (trimmed.startsWith("http://")) {
+    return secureForPage(`ws://${trimmed.slice(7)}`);
+  }
+  if (trimmed.startsWith("https://")) {
+    return `wss://${trimmed.slice(8)}`;
+  }
+  // Bare host:ports are common enough to accept (e.g. "relay.example.com:3000").
+  return secureForPage(`ws://${trimmed}`);
+}
+
+function getStoredRelayWsUrl(): string | null {
+  let stored: string | null;
+  try {
+    stored = window.localStorage.getItem(RELAY_URL_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+  if (!stored) return stored;
+  // An address saved before this page was served over https (or by an older build that always
+  // chose ws://) would stay broken on every visit; correct it and save the corrected one.
+  const corrected = secureForPage(stored);
+  if (corrected !== stored) {
+    try {
+      window.localStorage.setItem(RELAY_URL_STORAGE_KEY, corrected);
+    } catch {
+      // Still use the corrected address this visit; it is worked out again next time.
+    }
+  }
+  return corrected;
+}
+
+export function setStoredRelayWsUrl(wsUrl: string): void {
+  window.localStorage.setItem(RELAY_URL_STORAGE_KEY, wsUrl);
+}
+
+/**
+ * Read the relay WebSocket URL, in priority order:
+ * 1. `localStorage` override set from the web UI (survives reloads).
+ * 2. `VITE_RELAY_URL` baked in at build time.
+ * 3. Same-origin derivation (works when the relay serves the bundle itself).
+ */
 export function relayWsUrl(): string {
+  const storedUrl = getStoredRelayWsUrl();
+  if (storedUrl) return storedUrl;
   const envUrl = import.meta.env.VITE_RELAY_URL;
-  if (envUrl) return envUrl;
+  if (envUrl) return secureForPage(envUrl);
   // Same-origin: derive from current page location (works when served from relay)
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}`;
+}
+
+/**
+ * The server an invite link is for: the one that served the link. An invite is made on the community's own address, so
+ * an address this browser saved earlier (for another community) must not decide which community a person joins.
+ * A build that bakes in `VITE_RELAY_URL` talks to that server as always.
+ */
+export function inviteRelayWsUrl(): string {
+  const envUrl = import.meta.env.VITE_RELAY_URL;
+  if (envUrl) return secureForPage(envUrl);
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${proto}//${window.location.host}`;
 }
@@ -21,4 +124,13 @@ export function relayWsUrl(): string {
 /** HTTP base URL for the relay (derived from the WS URL). */
 export function relayHttpBaseUrl(): string {
   return relayHttpUrl(relayWsUrl());
+}
+
+/** The host of the community this browser is connected to, as the `/c/<host>` address names it. */
+export function communityHostName(): string {
+  try {
+    return new URL(relayWsUrl()).host;
+  } catch {
+    return "";
+  }
 }

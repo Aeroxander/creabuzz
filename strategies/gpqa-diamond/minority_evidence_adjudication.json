@@ -1,0 +1,67 @@
+{
+  "v": 1,
+  "name": "Minority evidence adjudication",
+  "description": "GPQA-Diamond bank strategy from arXiv 2609.22682 Appendix A: a designated adjudicator evaluates every claim that differs from the emerging consensus and integrates or refutes it with evidence.",
+  "teamworkPrompt": "Preserve independent reasoning. Do not converge until each agent’s submission and evidence have been compared against the others, and any distinct but scientifically sound individual submissions have been explicitly adjudicated, integrated, or refuted with evidence. Agent 2 is the dedicated Minority Evidence Adjudicator.",
+  "roles": {
+    "agent-0": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-1": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-2": "You are the Minority Evidence Adjudicator. Your role is to critically evaluate any individual claims that diverge from the team’s emerging consensus. You must explicitly state whether each differing claim is scientifically sound. If it is, integrate it into the collective solution and explain its relevance. If it is not, provide a clear, evidence-based scientific refutation. Be thorough and precise."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent independently derives an answer and identifies the key scientific principles, assumptions, or reasoning steps used in their derivation, and potential limitations or uncertainties in their approach."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Identify any individual submissions that are distinct from other submissions but are scientifically sound. If such distinct submissions exist, the team must collaboratively adjudicate them, explaining why they are correct, how they relate to other submitted ideas, and whether they should be integrated or if the team’s shared understanding needs to be revised. If there are no such distinct, scientifically sound submissions, simply state that all sound individual submissions align."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Agent 2 takes on the role of the Minority Evidence Adjudicator. For every individual claim that differs from the emerging consensus, Agent 2 must explicitly state whether the claim is scientifically sound and, if so, integrate it into the collective understanding, explaining its contribution. If the claim is found to be incorrect, Agent 2 must provide a clear, scientific refutation, citing specific evidence or logical flaws. Agents 0 and 1 must engage with Agent 2’s adjudication, either confirming or challenging it with further evidence. The team then synthesizes the strongest supported answer, ensuring all valid individual insights are preserved and incorrect ones are formally refuted."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.2",
+    "bank": "gpqa-diamond",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper sets Roles only for Agent 2; kind:44020 requires a prompt per roster slot, so agent-0, agent-1 carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

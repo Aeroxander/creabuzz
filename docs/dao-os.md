@@ -1,0 +1,119 @@
+# creabuzz — a DAO OS
+
+> **History, 2026-10-31.** The DAO OS framing (agentic Slack plus a launchpad) was replaced by the social MVP and then contributor projects with no raise (D63, D137). Where this file disagrees with [v3-review/STATUS.md](v3-review/STATUS.md) or [v3-review/DECISIONS.md](v3-review/DECISIONS.md), those win.
+
+> **Removed in D150, see tag pre-deprecation-2026-10-31:** the web royalty statement, the `buzz royalty` CLI and `scripts/journey-float.sh`. The desktop copy stays for a later clean-up; the float, sell-gate and buyback contracts were removed in D151 (`RoyaltyDistributor.sol` stays because `ClaimStake` imports its interface).
+
+> Agentic Slack + a DAO launchpad, wired into one loop. This is the product
+> contract the code is held to. Where an older plan (`docs/archive/ORG_COMMUNITY_PLAN.md`,
+> `docs/dao-launchpad-plan.md`, `docs/next-gen-launchpad-plan.md`) disagrees
+> with this file, this file wins.
+
+## What it is
+
+A community on a relay is a workspace: channels, threads, a wiki, humans and
+agents. creabuzz adds the parts that turn a workspace into an organization
+that can raise money and be owned: an org chart humans and agents sit in,
+budgets that bound what agents may do, a token sale that funds a treasury, and
+a DAO that governs it. The relay stays the record; the chain stays the ledger
+for money.
+
+## The loop
+
+1. **Start.** A founder applies a project template: channels, agent
+   personas, workflows, wiki pages — and now the org: a founder seat and a
+   default budget for every agent.
+2. **Staff.** Agents are employees. Each sits in a seat and is covered by a
+   budget from the moment it joins; nobody has to remember to configure one.
+3. **Work.** Humans and agents talk in channels, create tasks, and write the
+   wiki (human pages and agent pages). Every agent action is metered.
+4. **Approve.** When an agent hits its budget the overrun becomes an approval
+   card in "Needs me" with a human's name on it. Approving lets the retry
+   through; the decision is on the audit chain.
+5. **Fund.** The project launches with its own DAO: one transaction creates
+   the DAO, vests the team's Shares, opens the sale of the DAO's own Shares
+   and points the raise at the DAO's treasury, so the founder's wallet never
+   holds the supply or the money. (A project that wants a programmable
+   apptoken instead can still mint one and sell that.) Sandbox (simulated)
+   first, testnet next, mainnet only behind an explicit switch. A project may
+   also skip the raise and go straight to contributors (step 7).
+6. **Govern.** The DAO is a patched majeur whose one ballot is movable
+   Shares allocations (`docs/token-voting-design.md`). Backers who bought in
+   the sale vote and can always ragequit; the DAO's own Shares neither vote
+   nor dilute an exit.
+7. **Reward.** Contributions — by people and agents — are claimed, reviewed by
+   a human other than the contributor, and then paid in currency, recognised
+   in Shares, or both, inside a mandate the DAO approved. A mandate with no
+   currency lets a project with an empty treasury reward work in Shares,
+   bounded by a share budget the broad vote capped.
+
+## Design rules (the wiring contract)
+
+- **R1. One anchor of authority.** Owner → seats → agents. Only the
+  community owner/admin, or a holder of an *anchored* parent seat, may create
+  or change org nodes, grants and budgets. Grant chains are verified at
+  ingest by default and resolve parents by *who signed them*, never by id
+  alone.
+- **R2. Budgets bind every agent by default.** A community default budget
+  (`subject: "*"`, owner-signed only) covers any agent without its own.
+  Counters are runs, tasks, proposals, messages and LLM calls. Windows are
+  fixed epochs (86,400 / 604,800 / 2,592,000 s) so the relay, the contract and
+  the UI agree. Overrun → durable approval request, never a silent stop.
+- **R3. Money is enforced where money moves.** The allowance contract holds
+  the ceiling and the payout path (`spendTo`); the relay's records are a
+  mirror. A ledger that a key can bypass is labelled advisory.
+- **R4. Launching is one flow with safe defaults.** Token fee ceilings are
+  low and owned by the DAO; the settlement executor is bound to exactly one
+  auction; the reserve cannot be pulled before a lock expires; mainnet is
+  off unless `VITE_ENABLE_MAINNET` is set, and the UI says "unaudited".
+- **R5. The wiki is the DAO's memory, and it is safe to give agents.** Human
+  pages are kind 44001, agent pages 44002. Anything an agent or a relay job
+  reads on behalf of the community is limited to what every member could
+  read. Live co-editing is authenticated: every update carries the signer's
+  key and is dropped unless the signer is a member.
+- **R6. The relay is still a pipe.** LLM calls happen in clients and
+  harnesses. The two relay-side exceptions — the LLM gateway and the
+  `distill_agent_wiki` job — are opt-in, rate-limited, and read only public
+  channels.
+- **R7. Honest surfaces.** Each screen says whether a rule is enforced or
+  advisory. No fabricated numbers. Testnet by default.
+
+## Enforced vs advisory
+
+| Rule | Where it bites |
+| --- | --- |
+| Who may write org nodes, grants, budgets | Relay ingest (always) |
+| Grant-chain attenuation, root standing | Relay ingest (default on; `ORG_GRANT_ENFORCEMENT=off` to disable) |
+| Run / task / proposal / message / LLM budgets | Relay ingest and gateway |
+| Spend ceilings | `OrgAllowance.spendTo` on chain; advisory without it |
+| Reviewer ≠ contributor for the autonomy ladder | Relay ladder tally (unauthorized reviews are stored but never counted) |
+| Role-scoped reads (`readBelow`, `assignBelow`) | **Not implemented.** Channel membership is the only read gate. |
+
+## Settlement job (royalties)
+
+`buzz royalty settle-weights` is the contribution→payout bridge. For one
+epoch of the connected relay's community it reads the kind:37013
+contribution records (one bounded query), resolves each action's verdict
+exactly the way the review machinery does — the newest review by an
+authorized reviewer other than the subject; the subject's own `reviewStatus`
+is never trusted — and computes per-beneficiary schedule weights:
+
+    weight(b) = Σ_accepted floor(amount × min(monthsActive, 12) × 1000 / 12)
+                − Σ_rejected|slashed floor(amount × min(monthsActive, 12) × 1000 / 12)
+
+clamped at 0 per beneficiary (integers scaled ×1000 to stay in `u32`).
+`monthsActive` defaults to 12 when absent; `amount` is required and claims
+without one are reported as unpayable, never silently dropped. Only
+`accepted` adds weight; `rejected`/`slashed` subtract;
+`pending`/`appealed`/unreviewed actions are excluded. The job emits one
+unsigned kind:47006 schedule mirror per beneficiary through the existing
+composer (advisory — the chain is authoritative) and prints the exact
+`buzz royalty publish-schedule` / `buzz royalty settle` follow-ups to record
+the mirrors and close the window on chain. An epoch with nothing payable
+reports `"status": "empty"` explicitly.
+
+## Not now
+
+Role-scoped read gates, futarchy, per-jurisdiction compliance, and anything
+that needs a legal opinion before real money. The launchpad stays
+testnet-only until the contracts are audited and a legal posture exists.

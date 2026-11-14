@@ -42,6 +42,14 @@ pub enum CliError {
     /// Catch-all for unexpected failures
     #[error("{0}")]
     Other(String),
+
+    /// A batch operation completed with per-item failures (exit 2): the
+    /// batch ran to completion and reported per-task lines, but at least one
+    /// item failed. Kept distinct from [`CliError::Other`] so the batch exit
+    /// code matches the CLI contract (0 = all ok or nothing to do, 2 = any
+    /// failed).
+    #[error("{0}")]
+    BatchFailed(String),
 }
 
 /// Walk the full `std::error::Error::source()` chain on a `reqwest::Error`
@@ -104,6 +112,7 @@ pub fn exit_code(e: &CliError) -> i32 {
         CliError::NotFound(_) => 1,
         CliError::DeliveryUnknown(_) => 2,
         CliError::Other(_) => 4,
+        CliError::BatchFailed(_) => 2,
     }
 }
 
@@ -126,6 +135,7 @@ pub fn print_error(e: &CliError) {
         CliError::NotFound(_) => "not_found",
         CliError::DeliveryUnknown(_) => "delivery_unknown",
         CliError::Other(_) => "error",
+        CliError::BatchFailed(_) => "batch_failed",
     };
     let obj = serde_json::json!({
         "error": category,

@@ -52,7 +52,7 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("waiting for the current member roster")) {
       return {
         message:
-          "Buzz is waiting for the relay's member roster. Try again shortly; if this persists, check the relay's membership configuration.",
+          "Creaton is waiting for the server's member roster. Try again shortly; if this persists, check the server's membership configuration.",
         tone: "warning",
       };
     }
@@ -68,7 +68,7 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("shared compute is not available in this build")) {
       return {
         message:
-          "This version of Buzz cannot use shared compute. Update Buzz or choose another provider.",
+          "This version of Creaton cannot use shared compute. Update Creaton or choose another provider.",
         tone: "warning",
       };
     }
@@ -76,14 +76,14 @@ export function formatModelDiscoveryErrorStatus(
     if (message.includes("shared compute status is malformed")) {
       return {
         message:
-          "Buzz received an invalid shared compute status. Check the member machine, then try again.",
+          "Creaton received an invalid shared compute status. Check the member machine, then try again.",
         tone: "warning",
       };
     }
 
     return {
       message:
-        "Buzz couldn't check shared compute through the relay. Check your relay connection and try again.",
+        "Creaton couldn't check shared compute through the server. Check your connection to the server and try again.",
       tone: "warning",
     };
   }
@@ -124,10 +124,52 @@ export function formatModelDiscoveryErrorStatus(
     return null;
   }
 
+  // Databricks transparent auth (agent_models_databricks.rs). The backend
+  // launches the browser OAuth flow itself from every discovery surface, so
+  // these are terminal outcomes the user should see, not raw error text.
+  // Matched on the stable error strings the backend emits (string matching is
+  // this file's convention until typed error codes arrive).
+  const databricksStatus = formatDatabricksAuthStatus(message);
+  if (databricksStatus !== null) {
+    return databricksStatus;
+  }
+
   return {
     message: `Using built-in model options. Could not load live models for ${providerObjectLabel(
       provider,
     )}.`,
     tone: "warning",
   };
+}
+
+/**
+ * Maps the terminal Databricks sign-in states to user-facing guidance, or null
+ * when the error is not a Databricks sign-in outcome. "Sign-in required" is a
+ * quiet muted note (a passive surface hit its cooldown, or an unsaved draft
+ * can't launch the browser); a failed, cancelled, or timed-out sign-in is a
+ * warning that points the user at the explicit retry path.
+ */
+function formatDatabricksAuthStatus(
+  message: string,
+): PersonaModelDiscoveryStatus | null {
+  if (message.includes("Databricks sign-in is required")) {
+    return {
+      message:
+        "Databricks sign-in is required. Open the model picker to sign in, or run `buzz-agent auth databricks` in a terminal.",
+      tone: "muted",
+    };
+  }
+
+  if (
+    message.includes("Databricks sign-in failed") ||
+    message.includes("Databricks sign-in timed out")
+  ) {
+    return {
+      message:
+        "Databricks sign-in didn't complete. Open the model picker to retry, or run `buzz-agent auth databricks` in a terminal.",
+      tone: "warning",
+    };
+  }
+
+  return null;
 }

@@ -3,81 +3,136 @@
 @plugin "@tailwindcss/typography";
 @config "../../../tailwind.config.js";
 
+/* Reader font-size preference: moves conversation type only. */
+:root[data-font-size="smaller"] {
+  --buzz-type-rem: calc(1rem * 13 / 14);
+}
+
+:root[data-font-size="larger"] {
+  --buzz-type-rem: calc(1rem * 15 / 14);
+}
+
+/* Compact conversation density: same type, tighter rhythm. */
+:root[data-conversation-density="compact"] {
+  --conversation-body-gap: 0rem;
+  --conversation-row-padding-block: 0.25rem;
+  --conversation-paragraph-gap: 0.375rem;
+  --conversation-list-item-gap: 0.25rem;
+}
+
 @layer base {
   :root {
-    /* Catppuccin Latte (mauve accent) */
-    --radius: 0.625rem;
-    --background: 220 23.08% 94.9%;
-    --foreground: 234 16.02% 35.49%;
-    --card: 220 23.08% 94.9%;
-    --card-foreground: 234 16.02% 35.49%;
-    --popover: 220 23.08% 94.9%;
-    --popover-foreground: 234 16.02% 35.49%;
-    --primary: 266 85.05% 58.04%;
-    --primary-foreground: 220 23.08% 94.9%;
-    --secondary: 223 15.91% 82.75%;
-    --secondary-foreground: 234 16.02% 35.49%;
-    --muted: 223 15.91% 82.75%;
-    --muted-foreground: 233 12.8% 41.37%;
-    --accent: 223 15.91% 82.75%;
-    --accent-foreground: 234 16.02% 35.49%;
+    /* The virtual typography rem. Conversation type derives from it, so a
+       reader's font-size preference moves the chat text without touching the
+       layout rem: the desktop contract is Smaller/Default/Larger = 13/14/15px. */
+    --buzz-type-rem: 1rem;
+    /* Conversation type + density (desktop's `--conversation-*` contract). */
+    --conversation-message-font-size: calc(var(--buzz-type-rem) * 0.875);
+    --conversation-message-line-height: calc(var(--buzz-type-rem) * 1.25);
+    --conversation-author-line-height: var(--buzz-type-rem);
+    --conversation-timestamp-font-size: calc(var(--buzz-type-rem) * 0.75);
+    --conversation-timestamp-line-height: var(--buzz-type-rem);
+    --conversation-body-gap: 0.125rem;
+    --conversation-row-padding-block: 0.25rem;
+    --conversation-paragraph-gap: 0.5rem;
+    --conversation-list-item-gap: 0.375rem;
+    /* Creaton day: the same brand, lit. Mint action with dark violet text. */
+    --radius: 0.75rem;
+    --background: 260 30% 97%;
+    --foreground: 266 43% 17%;
+    --card: 0 0% 100%;
+    --card-foreground: 266 43% 17%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 266 43% 17%;
+    --primary: 153 59% 47%;
+    --primary-foreground: 266 43% 17%;
+    /* Mint as text on a light page: the action colour itself is too pale. */
+    --primary-ink: 153 75% 24%;
+    --secondary: 262 30% 92%;
+    --secondary-foreground: 266 43% 17%;
+    --muted: 262 30% 92%;
+    /* Darkened from 41.37%: on `--muted` the pair measured 4.05:1, under the
+       4.5:1 floor for the 11px badges it is used on. This is 4.7:1. */
+    --muted-foreground: 262 14% 36%;
+    --accent: 262 30% 92%;
+    --accent-foreground: 266 43% 17%;
     --destructive: 347 86.67% 44.12%;
-    --destructive-foreground: 220 23.08% 94.9%;
-    --border: 225 13.56% 76.86%;
-    --input: 225 13.56% 76.86%;
-    --ring: 234 16.02% 35.49%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 262 20% 84%;
+    --input: 262 20% 84%;
+    --ring: 153 59% 36%;
     --chart-1: 345 57.65% 74.12%;
     --chart-2: 185 37.25% 70.59%;
     --chart-3: 219 81.96% 78.43%;
     --chart-4: 35 61.18% 76.86%;
     --chart-5: 113 32.94% 73.33%;
-    --sidebar: 218 25.1% 93.73%;
-    --sidebar-background: 218 25.1% 93.73%;
-    --sidebar-foreground: 234 16.02% 35.49%;
-    --sidebar-primary: 266 85.05% 58.04%;
-    --sidebar-primary-foreground: 220 23.08% 94.9%;
-    --sidebar-accent: 220 23.08% 94.9%;
-    --sidebar-accent-foreground: 234 16.02% 35.49%;
-    --sidebar-border: 225 13.56% 76.86%;
-    --sidebar-ring: 225 13.56% 76.86%;
+    --sidebar: 260 30% 95%;
+    --sidebar-background: 260 30% 95%;
+    --sidebar-foreground: 266 43% 17%;
+    --sidebar-primary: 153 59% 47%;
+    --sidebar-primary-foreground: 266 43% 17%;
+    --sidebar-accent: 0 0% 100%;
+    --sidebar-accent-foreground: 266 43% 17%;
+    --sidebar-border: 262 20% 84%;
+    --sidebar-ring: 153 59% 42%;
+    /* Creaton gradient wash (mint-on-midnight brand) + brand tokens. */
+    --brand-mint: #43e296;
+    --brand-mint-deep: #0e9f66;
+    --brand-indigo: #3f3a94;
+    --brand-midnight: #120821;
+    --brand-steel: #437f97;
+    /* Desktop parity: the same cream -> periwinkle wash the reference client
+       paints, so the two clients read as one product. The mint brand token
+       stays for accents, focus rings and primary actions. */
+    --buzz-gradient-light-top: #f4f1fb;
+    --buzz-gradient-light-bottom: #e6f6ee;
+    --buzz-gradient-dark-top: #1a0f30;
+    --buzz-gradient-dark-bottom: #0d0618;
+    /* Creaton accents: the purple the brand uses for emphasis words. */
+    --brand-violet: #a77bff;
+    /* Dark content canvas: the violet-black page, so panes sit on the wash. */
+    --buzz-content-dark: 266 66% 8%;
   }
 
   .dark {
-    /* Catppuccin Macchiato (mauve accent) */
-    --radius: 0.625rem;
-    --background: 232 23.4% 18.43%;
-    --foreground: 227 68.25% 87.65%;
-    --card: 232 23.4% 18.43%;
-    --card-foreground: 227 68.25% 87.65%;
-    --popover: 232 23.4% 18.43%;
-    --popover-foreground: 227 68.25% 87.65%;
-    --primary: 267 82.69% 79.61%;
-    --primary-foreground: 232 23.4% 18.43%;
-    --secondary: 230 18.8% 26.08%;
-    --secondary-foreground: 227 68.25% 87.65%;
-    --muted: 230 18.8% 26.08%;
-    --muted-foreground: 228 39.22% 80%;
-    --accent: 230 18.8% 26.08%;
-    --accent-foreground: 227 68.25% 87.65%;
+    /* Creaton night: violet-black page, raised violet cards, mint action.
+       Values come from the Creaton brand file (#120821 page, #241a33 card,
+       #46385a hairline, #352a50 chip, #35cc82 action). */
+    --radius: 0.75rem;
+    --background: 266 66% 8%;
+    --foreground: 0 0% 100%;
+    --card: 266 31% 16%;
+    --card-foreground: 0 0% 100%;
+    --popover: 266 31% 14%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 153 59% 50%;
+    --primary-foreground: 266 43% 17%;
+    --primary-ink: 153 59% 50%;
+    --secondary: 266 31% 24%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 266 31% 24%;
+    --muted-foreground: 255 20% 78%;
+    --accent: 266 31% 24%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 351 73.91% 72.94%;
-    --destructive-foreground: 232 23.4% 18.43%;
-    --border: 231 15.61% 33.92%;
-    --input: 231 15.61% 33.92%;
-    --ring: 227 68.25% 87.65%;
+    --destructive-foreground: 266 66% 8%;
+    --border: 266 24% 28%;
+    --input: 266 24% 28%;
+    --ring: 153 59% 50%;
     --chart-1: 333 20.78% 38.04%;
     --chart-2: 193 19.61% 38.04%;
     --chart-3: 224 26.67% 41.18%;
     --chart-4: 30 8.24% 42.35%;
     --chart-5: 139 10.98% 38.82%;
-    --sidebar: 234 22.75% 17.25%;
-    --sidebar-background: 234 22.75% 17.25%;
-    --sidebar-foreground: 227 68.25% 87.65%;
-    --sidebar-primary: 267 82.69% 79.61%;
-    --sidebar-primary-foreground: 232 23.4% 18.43%;
-    --sidebar-accent: 232 23.4% 18.43%;
-    --sidebar-accent-foreground: 227 68.25% 87.65%;
-    --sidebar-border: 231 15.61% 33.92%;
-    --sidebar-ring: 231 15.61% 33.92%;
+    --sidebar: 266 55% 10%;
+    --sidebar-background: 266 55% 10%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 153 59% 50%;
+    --sidebar-primary-foreground: 266 43% 17%;
+    --sidebar-accent: 266 31% 16%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 266 24% 28%;
+    --sidebar-ring: 153 59% 50%;
   }
 
   * {
@@ -95,6 +150,140 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: "Inter Variable", Inter, "Avenir Next", "Segoe UI", sans-serif;
+    font-family:
+      "Figtree Variable", Figtree, "Avenir Next", Avenir, "Segoe UI", sans-serif;
+  }
+}
+
+/* App backdrop wash painted on <body> (backgrounds always composite behind
+   content — no stacking-context games). Pale yellow -> pale blue (light),
+   deep olive -> navy (dark). */
+body {
+  background-image:
+    radial-gradient(
+      60rem 40rem at 85% -10%,
+      hsl(266 90% 70% / 0.14),
+      transparent 60%
+    ),
+    radial-gradient(
+      50rem 36rem at -5% 35%,
+      hsl(153 70% 50% / 0.1),
+      transparent 60%
+    ),
+    linear-gradient(
+      160deg,
+      var(--buzz-gradient-light-top),
+      var(--buzz-gradient-light-bottom)
+    );
+  background-size: 100vw 100vh;
+  background-repeat: no-repeat;
+  background-attachment: fixed;
+}
+.dark body {
+  background-image:
+    radial-gradient(
+      60rem 40rem at 85% -10%,
+      hsl(266 90% 62% / 0.28),
+      transparent 60%
+    ),
+    radial-gradient(
+      50rem 36rem at -5% 40%,
+      hsl(153 70% 45% / 0.13),
+      transparent 60%
+    ),
+    radial-gradient(
+      40rem 30rem at 60% 110%,
+      hsl(280 80% 55% / 0.16),
+      transparent 60%
+    ),
+    linear-gradient(
+      160deg,
+      var(--buzz-gradient-dark-top),
+      var(--buzz-gradient-dark-bottom)
+    );
+}
+
+/*
+ * Glass: a translucent card that lets the page's colour glow through, with a
+ * hairline highlight on the top edge. Use it on surfaces that float over the
+ * wash (cards, columns, dialogs); dense reading surfaces keep their plain card.
+ */
+.glass {
+  background-color: hsl(var(--card) / 0.55);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  backdrop-filter: blur(18px) saturate(140%);
+  border-color: hsl(0 0% 100% / 0.1);
+  box-shadow:
+    inset 0 1px 0 hsl(0 0% 100% / 0.07),
+    0 10px 30px -16px rgb(0 0 0 / 0.55);
+}
+.glass-strong {
+  background-color: hsl(var(--card) / 0.72);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+  border-color: hsl(0 0% 100% / 0.1);
+}
+/*
+ * A dialog sits over a busy page, so it is solid: with a see-through card the page's text shows through the form and
+ * makes both hard to read. Only the card's edge keeps the glass highlight.
+ */
+.glass-dialog {
+  background-color: hsl(var(--card));
+  border-color: hsl(0 0% 100% / 0.1);
+}
+:root:not(.dark) .glass,
+:root:not(.dark) .glass-strong {
+  background-color: hsl(0 0% 100% / 0.62);
+  border-color: hsl(262 20% 80% / 0.7);
+  box-shadow: 0 10px 30px -18px rgb(60 30 120 / 0.25);
+}
+
+/*
+ * Floating content card over the wash, ported from desktop `ContentSurface`:
+ * `rounded-2xl bg-background shadow-content-edge`, inset by a hairline on the
+ * top-left and a small margin on the right/bottom. The hairline is what makes
+ * the card read as a raised pane over the gradient — especially in dark mode,
+ * where a soft black shadow reads as nothing.
+ */
+:root:not(.dark) .glass-dialog {
+  background-color: hsl(0 0% 100%);
+  border-color: hsl(262 20% 80% / 0.7);
+}
+
+.buzz-content-card {
+  background-color: hsl(var(--background));
+  border-radius: 1rem;
+  box-shadow:
+    -1px -1px 0 0 hsl(var(--border) / 0.45),
+    0 0 4px 0 rgb(0 0 0 / 7%);
+  overflow: hidden;
+}
+
+.dark .buzz-content-card {
+  /* The desktop uses a warm neutral for the inset content canvas in dark mode,
+     lighter than the themed background, so panes read as raised. */
+  --background: var(--buzz-content-dark);
+  background-color: hsl(var(--background));
+}
+
+/* Keyboard focus must always be visible (WCAG 2.4.7). Components that draw
+   their own ring keep it; this covers every other control, including the ones
+   added later. */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Honour the reader's motion preference. The client animates spinners,
+   presence pulses, slide-overs and dialog entrances; all of it collapses to
+   near-instant when the OS asks for reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.01ms;
+    scroll-behavior: auto;
   }
 }

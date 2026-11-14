@@ -12,6 +12,8 @@ pub mod channel;
 /// NIP-AE Agent Engrams — slug grammar, conversation key, d-tag derivation,
 /// body parse/serialize, envelope build/validate, head selection.
 pub mod engram;
+/// Buzz kind number registry — custom event type constants.
+pub mod erc4824;
 /// Relay-side error types.
 pub mod error;
 /// Relay-side event wrapper with verification tracking.
@@ -22,22 +24,31 @@ pub mod filter;
 pub mod git_perms;
 /// Shared invite-link contract constants.
 pub mod invite;
-/// Buzz kind number registry — custom event type constants.
 pub mod kind;
 /// Network utilities — SSRF-safe IP classification.
 pub mod network;
+/// NIP-10 thread-marker parsing — shared `root`/`reply` marker resolver.
+pub mod nip10;
 /// Agent observer frame helpers.
 pub mod observer;
+pub mod org_diag;
+/// NIP-ORG grant-chain verification — pure attenuation/standing/expiry walk.
+pub mod org_grant;
 /// NIP-AB device pairing — crypto primitives, message types, and errors.
 pub mod pairing;
 /// Presence status types shared across crates.
 pub mod presence;
+/// NIP-PMA owner-encrypted private managed-agent wire codec.
+pub mod private_managed_agent;
 /// Canonical relay runtime identities.
 pub mod relay;
 /// Tenant identity — the server-resolved community key carried on scoped paths.
 pub mod tenant;
+/// NIP-CW thread-mode normalized newest-first window contract.
+pub mod thread_window;
 /// Schnorr signature and event ID verification.
 pub mod verification;
+pub mod wiki_deleted;
 
 pub use error::VerificationError;
 pub use event::StoredEvent;
@@ -75,3 +86,6 @@ pub mod test_helpers {
         StoredEvent::with_received_at(make_event(kind), Utc::now(), channel_id, true)
     }
 }
+
+/// NIP-AR channel artifact envelope and limits.
+pub mod artifact;

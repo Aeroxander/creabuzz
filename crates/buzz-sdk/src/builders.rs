@@ -1,4 +1,4 @@
-//! Typed event builder functions (38 builders).
+//! Typed event builder functions (39 builders).
 //!
 //! All functions return `Result<nostr::EventBuilder, SdkError>`.
 //! The caller signs: `builder.sign_with_keys(&keys)?`.
@@ -120,6 +120,11 @@ fn check_repo_id(repo_id: &str) -> Result<(), SdkError> {
     Ok(())
 }
 
+/// Maximum length of a custom emoji shortcode.
+pub const MAX_CUSTOM_EMOJI_SHORTCODE_LEN: usize = 64;
+/// Maximum reaction payload length for a colon-wrapped custom emoji shortcode.
+pub const MAX_CUSTOM_EMOJI_REACTION_LEN: usize = MAX_CUSTOM_EMOJI_SHORTCODE_LEN + 2;
+
 /// Validate and normalize a NIP-30 custom emoji shortcode.
 ///
 /// Shortcodes are case-insensitive in Buzz's relay-global set; lowercase
@@ -131,9 +136,9 @@ pub fn normalize_custom_emoji_shortcode(shortcode: &str) -> Result<String, SdkEr
             "emoji shortcode must not be empty".into(),
         ));
     }
-    if trimmed.len() > 64 {
+    if trimmed.len() > MAX_CUSTOM_EMOJI_SHORTCODE_LEN {
         return Err(SdkError::InvalidInput(format!(
-            "emoji shortcode exceeds 64 bytes (got {})",
+            "emoji shortcode exceeds {MAX_CUSTOM_EMOJI_SHORTCODE_LEN} bytes (got {})",
             trimmed.len()
         )));
     }
@@ -208,6 +213,21 @@ fn imeta_tags(media_tags: &[Vec<String>], tags: &mut Vec<Tag>) -> Result<(), Sdk
     Ok(())
 }
 
+/// Attach NIP-30 `["emoji", shortcode, url]` tags.
+///
+/// Each element of `emoji_tags` must be a three-element vector whose first
+/// entry is `"emoji"`.  Entries that don't match this shape are silently
+/// skipped so an unknown future shape never blocks a message send.
+fn nip30_emoji_tags(emoji_tags: &[Vec<String>], tags: &mut Vec<Tag>) -> Result<(), SdkError> {
+    for et in emoji_tags {
+        if et.len() == 3 && et[0] == "emoji" {
+            let parts: Vec<&str> = et.iter().map(String::as_str).collect();
+            tags.push(Tag::parse(parts).map_err(|e| SdkError::InvalidTag(e.to_string()))?);
+        }
+    }
+    Ok(())
+}
+
 /// Build a stream message (kind 9).
 ///
 /// - `channel_id`: target channel UUID
@@ -216,6 +236,7 @@ fn imeta_tags(media_tags: &[Vec<String>], tags: &mut Vec<Tag>) -> Result<(), Sdk
 /// - `mentions`: pubkey hex strings to p-tag (deduped, max 50)
 /// - `broadcast`: if true, adds `["broadcast", "1"]` tag
 /// - `media_tags`: raw imeta tag vectors
+/// - `emoji_tags`: NIP-30 `["emoji", shortcode, url]` tag vectors
 pub fn build_message(
     channel_id: Uuid,
     content: &str,
@@ -223,6 +244,7 @@ pub fn build_message(
     mentions: &[&str],
     broadcast: bool,
     media_tags: &[Vec<String>],
+    emoji_tags: &[Vec<String>],
 ) -> Result<EventBuilder, SdkError> {
     check_content(content, 64 * 1024)?;
     let mut tags = vec![tag(&["h", &channel_id.to_string()])?];
@@ -234,7 +256,10 @@ pub fn build_message(
         tags.push(tag(&["broadcast", "1"])?);
     }
     imeta_tags(media_tags, &mut tags)?;
-    Ok(EventBuilder::new(Kind::Custom(9), content).tags(tags))
+    nip30_emoji_tags(emoji_tags, &mut tags)?;
+    Ok(EventBuilder::new(Kind::Custom(9), content)
+        .tags(tags)
+        .allow_self_tagging())
 }
 
 /// Build an encrypted agent observer frame (kind 24200).
@@ -285,7 +310,9 @@ pub fn build_forum_post(
     let mut tags = vec![tag(&["h", &channel_id.to_string()])?];
     mention_tags(mentions, &mut tags)?;
     imeta_tags(media_tags, &mut tags)?;
-    Ok(EventBuilder::new(Kind::Custom(45001), content).tags(tags))
+    Ok(EventBuilder::new(Kind::Custom(45001), content)
+        .tags(tags)
+        .allow_self_tagging())
 }
 
 /// Build a forum comment reply (kind 45003).
@@ -301,7 +328,9 @@ pub fn build_forum_comment(
     thread_tags(thread_ref, &mut tags)?;
     mention_tags(mentions, &mut tags)?;
     imeta_tags(media_tags, &mut tags)?;
-    Ok(EventBuilder::new(Kind::Custom(45003), content).tags(tags))
+    Ok(EventBuilder::new(Kind::Custom(45003), content)
+        .tags(tags)
+        .allow_self_tagging())
 }
 
 /// Build a diff/patch message (kind 40008).
@@ -526,9 +555,186 @@ pub fn build_custom_emoji_set(emojis: &[CustomEmoji]) -> Result<EventBuilder, Sd
 }
 
 /// Build a canvas update event (kind 40100).
-pub fn build_set_canvas(channel_id: Uuid, content: &str) -> Result<EventBuilder, SdkError> {
-    let tags = vec![tag(&["h", &channel_id.to_string()])?];
+///
+/// When `expected_revision` is set, an `["expected-revision", …]` tag is
+/// attached. A 64-hex event ID names the head the write was composed against;
+/// the literal `none` asserts no head exists yet. The relay enforces this tag
+/// as a compare-and-swap (CAS): it reads the canonical live head under an
+/// advisory lock, checks the precondition, and rejects mismatched writes before
+/// insertion. Omit the tag for an unconditional append (backward compatible).
+pub fn build_set_canvas(
+    channel_id: Uuid,
+    content: &str,
+    expected_revision: Option<&str>,
+) -> Result<EventBuilder, SdkError> {
+    let mut tags = vec![tag(&["h", &channel_id.to_string()])?];
+    if let Some(expected_revision) = expected_revision {
+        if expected_revision != "none"
+            && (expected_revision.len() != 64
+                || !expected_revision.chars().all(|c| c.is_ascii_hexdigit()))
+        {
+            return Err(SdkError::InvalidInput(format!(
+                "expected_revision must be the literal \"none\" or a 64-character hex event id (got {expected_revision:?})"
+            )));
+        }
+        tags.push(tag(&["expected-revision", expected_revision])?);
+    }
     Ok(EventBuilder::new(Kind::Custom(40100), content).tags(tags))
+}
+
+/// Build a canvas write (kind 40100) that edits or restores against a known
+/// head, applying writer discipline in one place.
+///
+/// Sets the `expected-revision` precondition to `head_id` and stamps
+/// `created_at = max(now, head_created_at + 1)` so the event sorts strictly
+/// ahead of the head it asserts under `created_at DESC, id ASC`. This keeps a
+/// legitimate first-party restore/edit whose local clock lags the head from
+/// landing behind that head in read order (which would "succeed" without
+/// changing the visible canvas). First-party signers (CLI `set`/restore,
+/// Desktop save/restore) MUST route disciplined canvas writes through this
+/// helper rather than re-deriving the timestamp.
+///
+/// Ordering note: the `+ 1` bump guarantees a strictly greater `created_at`, so
+/// the write never ties the head. Writes that *do* share a second resolve by
+/// `id ASC` under `created_at DESC, id ASC` — the smallest event id wins the
+/// visible head, not the last write. This helper sidesteps that tie by stamping
+/// ahead; unconditional appends that omit the bump remain subject to it.
+pub fn build_set_canvas_after_head(
+    channel_id: Uuid,
+    content: &str,
+    head_id: &str,
+    head_created_at: u64,
+) -> Result<EventBuilder, SdkError> {
+    let created_at = canvas_write_created_at(head_created_at)?;
+    Ok(build_set_canvas(channel_id, content, Some(head_id))?
+        .custom_created_at(nostr::Timestamp::from(created_at)))
+}
+
+/// Build an unconditional canvas write (kind 40100) that still applies writer
+/// discipline: stamps `created_at = max(now, head_created_at + 1)` so the
+/// event sorts strictly ahead of the current head under `created_at DESC, id ASC`.
+///
+/// Unlike [`build_set_canvas_after_head`], no `expected-revision` tag is added
+/// — the write is an unconditional append that can never conflict. Use this for
+/// `buzz canvas set`, which documents unconditional replace semantics.
+///
+/// Returns an error if `head_created_at` is more than
+/// [`CANVAS_MAX_FUTURE_SKEW_SECS`] beyond `now` (poisoned timeline guard).
+pub fn build_set_canvas_unconditional_after_head(
+    channel_id: Uuid,
+    content: &str,
+    head_created_at: u64,
+) -> Result<EventBuilder, SdkError> {
+    let created_at = canvas_write_created_at(head_created_at)?;
+    Ok(build_set_canvas(channel_id, content, None)?
+        .custom_created_at(nostr::Timestamp::from(created_at)))
+}
+
+/// Maximum future skew a canvas head may carry before a first-party client
+/// refuses to ratchet past it (seconds). A head timestamped beyond `now +
+/// CANVAS_MAX_FUTURE_SKEW_SECS` is treated as poisoned: stamping
+/// `max(now, head + 1)` against it would silently extend a bogus timeline
+/// arbitrarily far ahead, and every later legitimate write would inherit that
+/// floor.
+///
+/// This is kept well below the relay's general ±900 s drift window. A ceiling
+/// head at `now + 60` produces a write at `now + 61`, which is within the relay's
+/// kind-40100-specific future bound (`CANVAS_MAX_INGEST_FUTURE_SECS = 300` in
+/// ingest.rs) and far inside the general ±900 s window — first-party clients
+/// can never construct an ingest-rejected event through ordinary use.
+pub const CANVAS_MAX_FUTURE_SKEW_SECS: u64 = 60;
+
+/// Contract-v3 writer-discipline timestamp for a canvas write asserting a head
+/// at `head_created_at`: `max(now, head_created_at + 1)` (Unix seconds).
+///
+/// The single home for canvas timestamp discipline. `build_set_canvas_after_head`
+/// stamps CLI restore/`set` writes with this, and Desktop's `set_canvas` calls
+/// it directly for the same reason, so the `max(now, head + 1)` rule is never
+/// re-derived per surface.
+///
+/// Rejects a head timestamped more than [`CANVAS_MAX_FUTURE_SKEW_SECS`] beyond
+/// `now` rather than ratcheting past it: extending a poisoned future timeline
+/// would strand every later write behind a floor arbitrarily far ahead.
+/// `u64::MAX` is covered by the same ceiling.
+pub fn canvas_write_created_at(head_created_at: u64) -> Result<u64, SdkError> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    canvas_write_created_at_at(head_created_at, now)
+}
+
+/// Pure core of [`canvas_write_created_at`] with `now` injected — the clock
+/// seam. The public wrapper reads the real clock; tests drive the exact
+/// `now + 60` / `now + 61` boundaries against a fixed `now`.
+fn canvas_write_created_at_at(head_created_at: u64, now: u64) -> Result<u64, SdkError> {
+    if head_created_at > now.saturating_add(CANVAS_MAX_FUTURE_SKEW_SECS) {
+        return Err(SdkError::InvalidInput(
+            "canvas head is timestamped too far in the future; refusing to extend it".into(),
+        ));
+    }
+    Ok(now.max(head_created_at.saturating_add(1)))
+}
+
+/// Maximum ancestry links the post-write supersession walk follows before
+/// failing safe (reporting superseded). A legitimate descendant chain visible
+/// in one history page is far shorter; the bound only caps a pathological or
+/// adversarial revision stream so the walk can never loop or run unbounded.
+pub const CANVAS_ANCESTRY_WALK_MAX: usize = 256;
+
+/// Whether a just-published canvas write still survives as — or anywhere in the
+/// accepted ancestry of — the live head read back after submit. The post-write
+/// supersession check.
+///
+/// `revisions` is a recent slice of the channel's canvas stream ordered newest
+/// first, each entry `(event_id, the expected-revision it built on)`;
+/// `revisions[0]` is the live head. A conflict-checked write (Desktop
+/// save/restore, CLI `restore`) re-reads this stream after publishing and the
+/// walk starts at the head, following `expected-revision` links backward:
+/// - the head **is** our event → survived;
+/// - our event is reached anywhere in the head's ancestry chain (e.g. A→B→C
+///   with C the head and A ours, each linked by `expected-revision`) → a later
+///   write legitimately layered on top of ours → survived;
+/// - the chain ends, reaches a link outside `revisions`, cycles, exceeds
+///   [`CANVAS_ANCESTRY_WALK_MAX`], or there is no head at all → not survived: a
+///   concurrent write won the visible head and ours is superseded (preserved in
+///   history, not lost). Every non-survival outcome, including a truncated or
+///   adversarial stream, fails safe as superseded and never hangs.
+///
+/// All id comparisons are case-insensitive, matching the precondition check's
+/// `eq_ignore_ascii_case` convention. This only detects a competitor already
+/// visible at verification time; a competitor that lands after this read is
+/// still missed — the relay's advisory-lock CAS prevents concurrent conflicting
+/// writes from both being accepted, but this client check is a secondary
+/// confirmation for the caller's own visibility.
+pub fn canvas_write_survived(our_id: &str, revisions: &[(String, Option<String>)]) -> bool {
+    let Some((head_id, _)) = revisions.first() else {
+        return false; // no head after an accepted write → conservatively superseded
+    };
+    if head_id.eq_ignore_ascii_case(our_id) {
+        return true;
+    }
+    // Lowercased id → its expected-revision, for walking the chain backward.
+    let by_id: std::collections::HashMap<String, Option<&str>> = revisions
+        .iter()
+        .map(|(id, expected)| (id.to_ascii_lowercase(), expected.as_deref()))
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut cursor = head_id.to_ascii_lowercase();
+    for _ in 0..CANVAS_ANCESTRY_WALK_MAX {
+        if !seen.insert(cursor.clone()) {
+            return false; // cycle guard
+        }
+        // The link out of `cursor`; absent id or missing tag ends the walk.
+        let Some(expected) = by_id.get(&cursor).copied().flatten() else {
+            return false;
+        };
+        if expected.eq_ignore_ascii_case(our_id) {
+            return true;
+        }
+        cursor = expected.to_ascii_lowercase();
+    }
+    false // depth exhausted → fail safe (superseded)
 }
 
 /// Build a NIP-01 profile metadata event (kind 0).
@@ -1110,6 +1316,131 @@ pub fn build_git_issue(
     Ok(EventBuilder::new(Kind::Custom(KIND_GIT_ISSUE as u16), content).tags(tags))
 }
 
+/// Build an issue assignment note (kind:1) — a labeled comment whose `p`
+/// tags are the assignees, mirroring the Desktop app's assignment events.
+///
+/// Tag layout: `["e", <issue>, "", "root"]`, `["a", <repo>]`, one `["p", ..]`
+/// per assignee, and `["t", "assignment"]`.
+///
+/// Clients only trust assignments signed by the issue author or the repo
+/// owner (who may assign anyone), or a self-assignment whose sole assignee
+/// is the signer. Assignments from other signers are ignored on read.
+pub fn build_git_issue_assignment(
+    repo: &GitRepoCoord,
+    issue_id: &str,
+    assignees: &[String],
+    content: &str,
+) -> Result<EventBuilder, SdkError> {
+    build_git_issue_assignment_with_prior(repo, issue_id, assignees, content, None)
+}
+
+/// Build an issue assignment note with an optional causal assignment-operation
+/// event ID in a `["prior", <event-id>]` tag.
+///
+/// `prior`, when present, must be a 64-character hexadecimal event ID.
+pub fn build_git_issue_assignment_with_prior(
+    repo: &GitRepoCoord,
+    issue_id: &str,
+    assignees: &[String],
+    content: &str,
+    prior: Option<&str>,
+) -> Result<EventBuilder, SdkError> {
+    build_git_issue_assignee_operation(
+        repo,
+        issue_id,
+        assignees,
+        content,
+        GitIssueAssigneeOperation::Assign,
+        prior,
+    )
+}
+
+/// Build an issue unassignment note (kind:1) whose `p` tags name the people
+/// being removed and whose operation label is `t: unassignment`.
+///
+/// Clients trust unassignments signed by the issue author or repository owner,
+/// or a self-unassignment whose sole `p` tag is the signer.
+pub fn build_git_issue_unassignment(
+    repo: &GitRepoCoord,
+    issue_id: &str,
+    assignees: &[String],
+    content: &str,
+) -> Result<EventBuilder, SdkError> {
+    build_git_issue_unassignment_with_prior(repo, issue_id, assignees, content, None)
+}
+
+/// Build an issue unassignment note with an optional causal
+/// assignment-operation event ID in a `["prior", <event-id>]` tag.
+///
+/// `prior`, when present, must be a 64-character hexadecimal event ID.
+pub fn build_git_issue_unassignment_with_prior(
+    repo: &GitRepoCoord,
+    issue_id: &str,
+    assignees: &[String],
+    content: &str,
+    prior: Option<&str>,
+) -> Result<EventBuilder, SdkError> {
+    build_git_issue_assignee_operation(
+        repo,
+        issue_id,
+        assignees,
+        content,
+        GitIssueAssigneeOperation::Unassign,
+        prior,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum GitIssueAssigneeOperation {
+    Assign,
+    Unassign,
+}
+
+impl GitIssueAssigneeOperation {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Assign => "assignment",
+            Self::Unassign => "unassignment",
+        }
+    }
+}
+
+fn build_git_issue_assignee_operation(
+    repo: &GitRepoCoord,
+    issue_id: &str,
+    assignees: &[String],
+    content: &str,
+    operation: GitIssueAssigneeOperation,
+    prior: Option<&str>,
+) -> Result<EventBuilder, SdkError> {
+    check_content(content, 64 * 1024)?;
+    let issue = check_hex_exact(issue_id, 64, "issue")?;
+    let a_value = repo.to_a_tag_value()?;
+    if assignees.is_empty() || assignees.len() > 50 {
+        return Err(SdkError::InvalidInput(
+            "between 1 and 50 assignees are required".into(),
+        ));
+    }
+    let mut normalized = assignees
+        .iter()
+        .map(|assignee| check_pubkey_hex(assignee, "assignee"))
+        .collect::<Result<Vec<_>, _>>()?;
+    normalized.sort();
+    normalized.dedup();
+
+    let mut tags = vec![tag(&["e", &issue, "", "root"])?, tag(&["a", &a_value])?];
+    for assignee in &normalized {
+        tags.push(tag(&["p", assignee])?);
+    }
+    tags.push(tag(&["t", operation.label()])?);
+    if let Some(prior) = prior {
+        let prior = check_hex_exact(prior, 64, "prior assignment operation")?;
+        tags.push(tag(&["prior", &prior])?);
+    }
+
+    Ok(EventBuilder::new(Kind::Custom(1), content).tags(tags))
+}
+
 /// Status to apply to a patch or issue root (kind:1630/1631/1632/1633, NIP-34).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GitStatus {
@@ -1482,11 +1813,13 @@ pub fn build_workflow_update(
     channel_id: Uuid,
     workflow_id: Uuid,
     yaml: &str,
+    expected_revision: &str,
 ) -> Result<EventBuilder, SdkError> {
     check_content(yaml, 64 * 1024)?;
     let tags = vec![
         tag(&["d", &workflow_id.to_string()])?,
         tag(&["h", &channel_id.to_string()])?,
+        tag(&["expected-revision", expected_revision])?,
     ];
     Ok(EventBuilder::new(Kind::Custom(KIND_WORKFLOW_DEF as u16), yaml).tags(tags))
 }
@@ -2191,6 +2524,971 @@ pub fn build_delete_addressable(
     Ok(EventBuilder::new(Kind::Custom(KIND_DELETION as u16), "").tags(tags))
 }
 
+// ─── NIP-ORG: Community org graph (kinds:37010–37014) ─────────────────────
+//
+//  Public surface:
+//  • `validate_org_envelope`  — Layer A protocol validator (mirrors relay ingest)
+//  • `OrgNodeContent`        — parsed org node content body
+//  • `OrgGrantContent`       — parsed org grant content body
+//  • `OrgBudgetContent`      — parsed org budget content body (with optional
+//                              `onchain` spend binding)
+//  • `build_org_node`        — build a kind:37010 event
+//  • `build_org_grant`       — build a kind:37011 event
+//  • `build_org_budget`      — build a kind:37012 event
+//  • `BudgetSpendReceiptContent` / `build_budget_spend_receipt`
+//                            — kind:37014 spend receipt (mirror of an
+//                              onchain allowance spend)
+
+use buzz_core::kind::{KIND_BUDGET_SPEND_RECEIPT, KIND_ORG_BUDGET, KIND_ORG_GRANT, KIND_ORG_NODE};
+
+/// Maximum byte length of an org `d` tag value (matches relay constant).
+pub const ORG_D_MAX_LEN: usize = 64;
+/// Maximum character count of an org `name` tag value.
+pub const ORG_NAME_MAX_LEN: usize = 128;
+/// Maximum byte length of org event content.
+pub const ORG_CONTENT_MAX_LEN: usize = 16384;
+/// Maximum number of `seat` tags per org event.
+pub const ORG_SEAT_CAP: usize = 256;
+
+/// The kind of an org node in the org hierarchy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OrgNodeKind {
+    /// A named role (e.g. "CTO", "Verifier").
+    Role,
+    /// A team or working group.
+    Team,
+    /// An agent's seat in the org.
+    AgentSeat,
+}
+
+impl std::fmt::Display for OrgNodeKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Role => write!(f, "role"),
+            Self::Team => write!(f, "team"),
+            Self::AgentSeat => write!(f, "agent-seat"),
+        }
+    }
+}
+
+impl std::str::FromStr for OrgNodeKind {
+    type Err = SdkError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "role" => Ok(Self::Role),
+            "team" => Ok(Self::Team),
+            "agent-seat" => Ok(Self::AgentSeat),
+            other => Err(SdkError::InvalidInput(format!(
+                "unknown org node kind: {other:?}"
+            ))),
+        }
+    }
+}
+
+pub use buzz_core::org_grant::{
+    verify_grant_chain, GrantChainError, OrgGrantContent, OrgScope, ResolvedGrant, ResolvedOrgNode,
+};
+
+/// UI metadata for rendering an org node.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct OrgNodeUi {
+    /// Color hex string (e.g. `"#ff0000"`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Icon identifier.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    /// Short human-readable blurb.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blurb: Option<String>,
+}
+
+/// Content body of a kind:37010 org node event.
+///
+/// Serialized with camelCase keys per NIP-ORG (`agentSeats`, …).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgNodeContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// Human-readable name for this role/team.
+    pub name: String,
+    /// The kind of org node.
+    #[serde(rename = "kind")]
+    pub node_kind: OrgNodeKind,
+    /// `d` tag of the parent node in the hierarchy (omit for root).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Human seat holders (64-char hex pubkeys).
+    #[serde(default)]
+    pub holders: Vec<String>,
+    /// Agent seat holders (NIP-OA keys, 64-char hex).
+    #[serde(default)]
+    pub agent_seats: Vec<String>,
+    /// Delegation scope for this node.
+    #[serde(default)]
+    pub scope: OrgScope,
+    /// UI rendering hints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ui: Option<OrgNodeUi>,
+    /// Optional onchain binding for the org ROOT node (NIP-ORG "Opt-in
+    /// onchain binding"). Set by `buzz org bind` after a majeur DAO is
+    /// summoned for the community; absent = pure coordination data.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain: Option<OrgOnchainBinding>,
+}
+
+/// Optional onchain binding of an org ROOT node to a Moloch-family DAO
+/// (NIP-ORG "Opt-in onchain binding"). Distinct from [`OnchainBinding`],
+/// which is the per-budget spend-ceiling binding on kind:37012.
+///
+/// On binding, the root node's `holders` map to initial DAO shares (minted
+/// once at bind time; later seat changes are governance proposals, never
+/// auto-mutations) and budgets map to treasury allowances. The exit right
+/// is ragequit.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgOnchainBinding {
+    /// Chain identifier: `eip155:<chainId>`, or `"anvil-31337"` in dev.
+    pub chain: String,
+    /// Bound DAO (Moloch clone) address (`0x…`).
+    pub dao: String,
+    /// Unix seconds when the binding was recorded onchain.
+    pub bound_at: u64,
+}
+
+/// Spend limit within a budget.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SpendLimit {
+    /// Amount in the specified unit.
+    pub amount: u64,
+    /// Unit identifier (e.g. `"usd-cents"`).
+    #[serde(default = "default_spend_unit")]
+    pub unit: String,
+}
+
+fn default_spend_unit() -> String {
+    "usd-cents".to_string()
+}
+
+/// Task limits within a budget.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TaskLimits {
+    /// Maximum tasks that can be created in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create: Option<u32>,
+    /// Maximum tasks that can be approved in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approve: Option<u32>,
+}
+
+/// Governance-action limits within a budget (agentic-governance S3: the
+/// supervision gate). The observable governance actions an agent takes are
+/// its own mirrors — a proposal record (47004) and vote/execute receipts
+/// (47005) — and each class gets its own per-window ceiling. Over the
+/// ceiling with `onExceed: "require-approval"` the action becomes a 46010
+/// approval request instead of executing (HITL), which is also OAv2 §4.6's
+/// supervision rate limit.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GovernanceLimits {
+    /// Maximum proposal records (kind:47004) in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<u32>,
+    /// Maximum vote receipts (kind:47005, table `vote`) in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vote: Option<u32>,
+    /// Maximum execute receipts (kind:47005, table `execute`) in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execute: Option<u32>,
+}
+
+/// How the budget window resets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetWindow {
+    /// Resets each governance epoch.
+    Epoch,
+    /// Daily reset.
+    Day,
+    /// Weekly reset.
+    Week,
+    /// Monthly reset.
+    Month,
+}
+
+impl std::fmt::Display for BudgetWindow {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Epoch => write!(f, "epoch"),
+            Self::Day => write!(f, "day"),
+            Self::Week => write!(f, "week"),
+            Self::Month => write!(f, "month"),
+        }
+    }
+}
+
+impl std::str::FromStr for BudgetWindow {
+    type Err = SdkError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "epoch" => Ok(Self::Epoch),
+            "day" => Ok(Self::Day),
+            "week" => Ok(Self::Week),
+            "month" => Ok(Self::Month),
+            other => Err(SdkError::InvalidInput(format!(
+                "unknown budget window: {other:?} (expected \"epoch\", \"day\", \"week\", or \"month\")"
+            ))),
+        }
+    }
+}
+
+/// What happens when a budget limit is exceeded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OnExceed {
+    /// Route the action into workflow approval (46010–46012).
+    RequireApproval,
+    /// Refuse the action outright, with no approval request — a hard stop
+    /// (used by an emergency stop, where a human queue would only be noise).
+    Reject,
+}
+
+/// Limits within a budget record.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BudgetLimits {
+    /// Spend cap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spend: Option<SpendLimit>,
+    /// Maximum autonomous runs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub runs: Option<u32>,
+    /// Task creation/approval caps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<TaskLimits>,
+    /// Governance-action caps (proposal / vote / execute — the HITL gate).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub governance: Option<GovernanceLimits>,
+    /// Maximum chat messages (kinds 9 and 40002) an agent may author in the
+    /// window. Enforced by the relay at ingest (counter class `messages`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub messages: Option<u32>,
+    /// Maximum LLM gateway calls in the window. Enforced by the relay's LLM
+    /// gateway (counter class `llm_calls`); the wire key is `llmCalls`.
+    #[serde(default, rename = "llmCalls", skip_serializing_if = "Option::is_none")]
+    pub llm_calls: Option<u32>,
+    /// Maximum LLM spend in US cents in the window. Enforced by the relay's LLM
+    /// gateway from the upstream's reported token usage and the operator's
+    /// price table (`BUZZ_LLM_PRICE_*`); the wire key is `llmCostCents`.
+    #[serde(
+        default,
+        rename = "llmCostCents",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub llm_cost_cents: Option<u32>,
+}
+
+/// Optional onchain binding for a budget's SPEND ceiling (NIP-ORG §37012).
+///
+/// When present, the spend limit is enforced at the value layer: the harness's
+/// authorized spender calls `OrgAllowance.sol` `spend()` over the key
+/// `(bytes32 subject, address token, uint64 epoch)` before an action
+/// executes. The contract is the ledger; Nostr is the record (NIP-LP rule).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnchainBinding {
+    /// Chain identifier: `eip155:<chainId>`, or `"anvil-31337"` in dev.
+    pub chain: String,
+    /// Allowance contract address (`0x…`).
+    pub contract: String,
+    /// The budgeted subject's 32-byte pubkey — same value as
+    /// [`OrgBudgetContent::subject`].
+    pub subject: String,
+}
+
+/// Performance-linked autonomy ("budget ladder", NIP-ORG §
+/// Performance-linked autonomy): a pre-authorized escalation on a kind:37012
+/// budget. The budgeted subject's ACTIVE limits rise with the number of its
+/// *accepted* kind:37013 contribution records in the window and fall when
+/// records are rejected.
+///
+/// The ladder is signed once by the budget author — publishing it IS the
+/// human approval — and every tier is a standing pre-authorization the
+/// author could have granted directly (the root-standing rule applies to
+/// the highest tier). Evaluation is deterministic over signed events; any
+/// client MUST derive the same active limits from the same inputs.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceLink {
+    /// Contribution window the accepted/rejected counts are taken over.
+    pub window: BudgetWindow,
+    /// When set, only records carrying at least one of these dimensions
+    /// count toward the ladder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dimensions: Option<Vec<String>>,
+    /// Escalation tiers, strictly ascending by `minAccepted`. The highest
+    /// tier is the maximum pre-authorized autonomy.
+    pub tiers: Vec<PerformanceTier>,
+    /// What happens when rejections cross the violation threshold.
+    #[serde(default)]
+    pub on_violation: OnViolation,
+    /// Rejected records in the window that trigger `onViolation`.
+    /// `None` means violations never gate the ladder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub violation_threshold: Option<ViolationThreshold>,
+}
+
+/// One rung of a [`PerformanceLink`] ladder.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceTier {
+    /// Accepted contribution records required in the window.
+    pub min_accepted: u32,
+    /// Limits active while this tier holds. Every component present on the
+    /// base budget MUST be present here and >= the base component.
+    pub limits: BudgetLimits,
+}
+
+/// What happens when the violation threshold is crossed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum OnViolation {
+    /// Drop to the budget's base limits until the window heals (default).
+    #[default]
+    Base,
+    /// Zero autonomy while violated; every action routes through the
+    /// workflow approval flow (same machinery as `onExceed`).
+    RequireApproval,
+    /// Zero autonomy while violated, hard-rejected — no approval path.
+    Revoke,
+}
+
+/// Rejected-record count that triggers [`PerformanceLink::on_violation`].
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ViolationThreshold {
+    /// Rejected contribution records in the window.
+    pub rejected: u32,
+}
+
+/// Deterministic per-window outcome counts for one contributor, as fed to
+/// [`evaluate_performance_link`]. The caller derives these from kind:37013
+/// events (see the NIP-ORG counting rules); this crate only resolves tiers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ContributionSummary {
+    /// Accepted (`reviewStatus: "accepted"`) records in the window.
+    pub accepted: u32,
+    /// Rejected (`reviewStatus: "rejected"`) records in the window.
+    pub rejected: u32,
+}
+
+/// The ladder state resolved against a [`ContributionSummary`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LadderResolution {
+    /// Limits the subject currently holds.
+    pub limits: BudgetLimits,
+    /// Matched tier index into [`PerformanceLink::tiers`] (`None` = the
+    /// base limits hold).
+    pub tier: Option<usize>,
+    /// True when the violation threshold is crossed.
+    pub violated: bool,
+}
+
+/// Zero autonomy, expressed as explicit zeros so a consumer can never read
+/// an absent component as "uncapped".
+fn zeroed_limits() -> BudgetLimits {
+    BudgetLimits {
+        spend: Some(SpendLimit {
+            amount: 0,
+            unit: "usd-cents".into(),
+        }),
+        runs: Some(0),
+        tasks: Some(TaskLimits {
+            create: Some(0),
+            approve: Some(0),
+        }),
+        governance: Some(GovernanceLimits {
+            proposal: Some(0),
+            vote: Some(0),
+            execute: Some(0),
+        }),
+        messages: Some(0),
+        llm_calls: Some(0),
+        llm_cost_cents: Some(0),
+    }
+}
+
+/// Resolve a budget ladder against deterministic contribution counts.
+///
+/// - Violated (`rejected >= threshold`) collapses to `onViolation`:
+///   `Base` returns the base limits, `RequireApproval`/`Revoke` return
+///   explicit zero limits (the caller distinguishes approval routing from
+///   hard rejection via [`PerformanceLink::on_violation`]).
+/// - Otherwise the highest tier with `minAccepted <= accepted` holds;
+///   below the first tier the base limits hold.
+pub fn evaluate_performance_link(
+    link: &PerformanceLink,
+    summary: &ContributionSummary,
+    base_limits: &BudgetLimits,
+) -> LadderResolution {
+    let violated = match link.violation_threshold {
+        Some(t) => summary.rejected >= t.rejected,
+        None => false,
+    };
+    if violated {
+        let limits = match link.on_violation {
+            OnViolation::Base => base_limits.clone(),
+            OnViolation::RequireApproval | OnViolation::Revoke => zeroed_limits(),
+        };
+        return LadderResolution {
+            limits,
+            tier: None,
+            violated: true,
+        };
+    }
+    let tier = link
+        .tiers
+        .iter()
+        .rposition(|t| summary.accepted >= t.min_accepted);
+    let limits = match tier {
+        Some(i) => link.tiers[i].limits.clone(),
+        None => base_limits.clone(),
+    };
+    LadderResolution {
+        limits,
+        tier,
+        violated: false,
+    }
+}
+
+/// Validate a ladder against its base budget. Fail-closed: a malformed
+/// ladder never publishes.
+pub fn validate_performance_link(
+    link: &PerformanceLink,
+    base_limits: &BudgetLimits,
+) -> Result<(), SdkError> {
+    if link.tiers.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "performanceLink must have at least one tier".into(),
+        ));
+    }
+    if link.tiers.len() > 8 {
+        return Err(SdkError::InvalidInput(
+            "performanceLink must have at most 8 tiers".into(),
+        ));
+    }
+    let mut prev = 0u32;
+    for (i, tier) in link.tiers.iter().enumerate() {
+        if tier.min_accepted <= prev {
+            return Err(SdkError::InvalidInput(format!(
+                "performanceLink tier {i}: minAccepted must be strictly ascending (got {prev} then {})",
+                tier.min_accepted
+            )));
+        }
+        prev = tier.min_accepted;
+        // Every component the base caps, a tier must cap at least as high —
+        // a tier may introduce a component the base leaves uncapped (that is
+        // a pre-authorized widening the author signed for).
+        if let (Some(b), Some(t)) = (&base_limits.spend, &tier.limits.spend) {
+            if t.amount < b.amount {
+                return Err(SdkError::InvalidInput(format!(
+                    "performanceLink tier {i}: spend {} is below the base spend {}",
+                    t.amount, b.amount
+                )));
+            }
+        }
+        if let (Some(b), Some(t)) = (base_limits.runs, tier.limits.runs) {
+            if t < b {
+                return Err(SdkError::InvalidInput(format!(
+                    "performanceLink tier {i}: runs {t} is below the base runs {b}"
+                )));
+            }
+        }
+        if let (Some(b), Some(t)) = (&base_limits.tasks, &tier.limits.tasks) {
+            if let (Some(bc), Some(tc)) = (b.create, t.create) {
+                if tc < bc {
+                    return Err(SdkError::InvalidInput(format!(
+                        "performanceLink tier {i}: tasks.create {tc} is below the base {bc}"
+                    )));
+                }
+            }
+            if let (Some(ba), Some(ta)) = (b.approve, t.approve) {
+                if ta < ba {
+                    return Err(SdkError::InvalidInput(format!(
+                        "performanceLink tier {i}: tasks.approve {ta} is below the base {ba}"
+                    )));
+                }
+            }
+        }
+    }
+    if let Some(t) = &link.violation_threshold {
+        if t.rejected == 0 {
+            return Err(SdkError::InvalidInput(
+                "violationThreshold.rejected must be >= 1 (0 would violate every budget)".into(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Content body of a kind:37012 budget event.
+///
+/// Serialized with camelCase keys per NIP-ORG (`onExceed`, …).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrgBudgetContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// What this budget bounds: an agent pubkey, an org node `d`, or a grant id.
+    pub subject: String,
+    /// Budget window.
+    pub window: BudgetWindow,
+    /// Limits within the window.
+    pub limits: BudgetLimits,
+    /// What happens when limits are exceeded.
+    pub on_exceed: OnExceed,
+    /// Optional onchain binding for the spend ceiling (omit when off-chain).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub onchain: Option<OnchainBinding>,
+    /// Optional performance-linked autonomy ladder (NIP-ORG §
+    /// Performance-linked autonomy). Omit for a flat budget.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub performance_link: Option<PerformanceLink>,
+}
+
+fn is_lower_hex_pubkey(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+/// **Layer A**: Validate a NIP-ORG event envelope (37010–37012).
+/// Mirrors relay's `validate_org_envelope` in `buzz-relay/src/handlers/ingest.rs`.
+pub fn validate_org_envelope(tags: &[Tag], content: &str) -> Result<(), SdkError> {
+    let d_tags: Vec<&Tag> = tags.iter().filter(|t| tag_name(t) == Some("d")).collect();
+    match d_tags.len() {
+        0 => {
+            return Err(SdkError::InvalidInput(
+                "NIP-ORG event must have exactly one 'd' tag".into(),
+            ))
+        }
+        1 => {}
+        _ => {
+            return Err(SdkError::InvalidInput(
+                "NIP-ORG event must have exactly one 'd' tag".into(),
+            ))
+        }
+    }
+    let d_val = tag_value(d_tags[0]).unwrap_or("");
+    if d_val.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "NIP-ORG 'd' tag must not be empty".into(),
+        ));
+    }
+    if d_val.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "NIP-ORG 'd' tag exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+
+    let mut seat_count = 0usize;
+    let mut name_count = 0usize;
+    for t in tags {
+        let parts = t.as_slice();
+        let Some(name) = parts.first().map(|s| s.as_str()) else {
+            continue;
+        };
+        let value = parts.get(1).map(|s| s.as_str()).unwrap_or("");
+        match name {
+            "seat" => {
+                seat_count += 1;
+                if !is_lower_hex_pubkey(value) {
+                    return Err(SdkError::InvalidInput(
+                        "NIP-ORG 'seat' tag must hold a lowercase 64-hex pubkey".into(),
+                    ));
+                }
+            }
+            "grantee" if !is_lower_hex_pubkey(value) => {
+                return Err(SdkError::InvalidInput(
+                    "NIP-ORG 'grantee' tag must hold a lowercase 64-hex pubkey".into(),
+                ));
+            }
+            "name" => {
+                name_count += 1;
+                if value.chars().count() > ORG_NAME_MAX_LEN {
+                    return Err(SdkError::InvalidInput(format!(
+                        "NIP-ORG 'name' tag too long (max {ORG_NAME_MAX_LEN} chars)"
+                    )));
+                }
+            }
+            _ => {}
+        }
+    }
+    if seat_count > ORG_SEAT_CAP {
+        return Err(SdkError::InvalidInput(format!(
+            "NIP-ORG event must have at most {ORG_SEAT_CAP} 'seat' tags (got {seat_count})"
+        )));
+    }
+    if name_count > 1 {
+        return Err(SdkError::InvalidInput(
+            "NIP-ORG event must have at most one 'name' tag".into(),
+        ));
+    }
+
+    if content.len() > ORG_CONTENT_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "NIP-ORG content too long (max {ORG_CONTENT_MAX_LEN} bytes)"
+        )));
+    }
+    match serde_json::from_str::<serde_json::Value>(content) {
+        Ok(serde_json::Value::Object(_)) => Ok(()),
+        _ => Err(SdkError::InvalidInput(
+            "NIP-ORG content must be a JSON object".into(),
+        )),
+    }
+}
+
+/// Build a kind:37010 org node event.
+pub fn build_org_node(node_id: &str, content: &OrgNodeContent) -> Result<EventBuilder, SdkError> {
+    if node_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org node 'node_id' must not be empty".into(),
+        ));
+    }
+    if node_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "org node 'node_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+    if content.name.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org node 'name' must not be empty".into(),
+        ));
+    }
+
+    let mut tags: Vec<Tag> = Vec::new();
+    tags.push(tag(&["d", node_id])?);
+    tags.push(tag(&["name", &content.name])?);
+
+    for holder in &content.holders {
+        let pk = check_pubkey_hex(holder, "seat holder")?;
+        tags.push(tag(&["seat", &pk])?);
+    }
+    for agent in &content.agent_seats {
+        let pk = check_pubkey_hex(agent, "agent seat")?;
+        tags.push(tag(&["seat", &pk])?);
+    }
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!("failed to serialize org node content: {e}"))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_ORG_NODE as u16), &content_json).tags(tags))
+}
+
+/// Build a kind:37011 org grant event.
+pub fn build_org_grant(
+    grant_id: &str,
+    content: &OrgGrantContent,
+) -> Result<EventBuilder, SdkError> {
+    if grant_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org grant 'grant_id' must not be empty".into(),
+        ));
+    }
+    if grant_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "org grant 'grant_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+
+    let grantee_pk = check_pubkey_hex(&content.grantee, "grantee")?;
+    let _issuer_pk = check_pubkey_hex(&content.issuer, "issuer")?;
+
+    let tags: Vec<Tag> = vec![tag(&["d", grant_id])?, tag(&["grantee", &grantee_pk])?];
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!("failed to serialize org grant content: {e}"))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_ORG_GRANT as u16), &content_json).tags(tags))
+}
+
+/// Build a kind:37012 org budget event.
+pub fn build_org_budget(
+    subject_id: &str,
+    content: &OrgBudgetContent,
+) -> Result<EventBuilder, SdkError> {
+    if subject_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "org budget 'subject_id' must not be empty".into(),
+        ));
+    }
+    if subject_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "org budget 'subject_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+
+    if let Some(link) = &content.performance_link {
+        validate_performance_link(link, &content.limits)?;
+    }
+
+    let tags: Vec<Tag> = vec![tag(&["d", subject_id])?];
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!("failed to serialize org budget content: {e}"))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_ORG_BUDGET as u16), &content_json).tags(tags))
+}
+
+/// Content body of a kind:37014 budget spend receipt event.
+///
+/// The receipt mirror of a spend settled against an onchain allowance bound to
+/// a kind:37012 budget — the NIP-ORG analogue of NIP-LP's 47005 receipt.
+/// Serialized with camelCase keys per NIP-ORG (`txHash`, …). Advisory: the
+/// contract is the ledger, Nostr the record.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BudgetSpendReceiptContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// The budgeted subject's 32-byte pubkey (mirrors the 37012 `subject`).
+    pub subject: String,
+    /// Token address the spend moved (`0x…`).
+    pub token: String,
+    /// Amount spent in `unit`.
+    pub amount: u64,
+    /// Unit identifier (e.g. `"usd-cents"`, or the token's smallest unit).
+    pub unit: String,
+    /// Allowance epoch key the spend was settled over (`uint64`).
+    pub epoch: u64,
+    /// Budget window the epoch counter maps to (`"epoch" | "day" | "week" | "month"`).
+    pub window: BudgetWindow,
+    /// Hash of the chain transaction that settled the spend.
+    pub tx_hash: String,
+    /// Allowance contract address (`0x…`).
+    pub contract: String,
+}
+
+/// Build a kind:37014 budget spend receipt event.
+///
+/// Tags are:
+/// - `d`: `spend_id` — stable spend id, NIP-33 replacement key
+/// - `p`: the budgeted subject pubkey
+pub fn build_budget_spend_receipt(
+    spend_id: &str,
+    content: &BudgetSpendReceiptContent,
+) -> Result<EventBuilder, SdkError> {
+    if spend_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "budget spend receipt 'spend_id' must not be empty".into(),
+        ));
+    }
+    if spend_id.len() > ORG_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "budget spend receipt 'spend_id' exceeds {ORG_D_MAX_LEN} bytes"
+        )));
+    }
+    let subject_pk = check_pubkey_hex(&content.subject, "subject")?;
+
+    let tags: Vec<Tag> = vec![tag(&["d", spend_id])?, tag(&["p", &subject_pk])?];
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!(
+            "failed to serialize budget spend receipt content: {e}"
+        ))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(
+        Kind::Custom(KIND_BUDGET_SPEND_RECEIPT as u16),
+        &content_json,
+    )
+    .tags(tags))
+}
+
+// ─── NIP-ORG: Contribution records (kind:37013) ──────────────────────────
+//
+//  Evidence-gated contribution profiles attached to org-graph seats.
+//  Fills the gap: "no language for what someone contributed" (NIP-ORG draft).
+//  Record shape from ResonantDAO §2.2 Appendix A.3.
+
+use buzz_core::kind::KIND_CONTRIBUTION_RECORD;
+
+/// Maximum byte length of a contribution record `d` tag value.
+pub const CONTRIBUTION_D_MAX_LEN: usize = 64;
+
+/// Human-vs-AI work attribution for a contribution.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HumanVsAi {
+    /// Fraction of work done by humans (0.0–1.0).
+    #[serde(default)]
+    pub human: f64,
+    /// Fraction of work done by AI (0.0–1.0).
+    #[serde(default)]
+    pub ai: f64,
+}
+
+/// Review status of a contribution record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReviewStatus {
+    /// Claim submitted, awaiting verification.
+    Pending,
+    /// Verified by the verifier panel.
+    Accepted,
+    /// Rejected by the verifier panel.
+    Rejected,
+    /// Under appeal.
+    Appealed,
+}
+
+impl std::fmt::Display for ReviewStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pending => write!(f, "pending"),
+            Self::Accepted => write!(f, "accepted"),
+            Self::Rejected => write!(f, "rejected"),
+            Self::Appealed => write!(f, "appealed"),
+        }
+    }
+}
+
+impl std::str::FromStr for ReviewStatus {
+    type Err = SdkError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "pending" => Ok(Self::Pending),
+            "accepted" => Ok(Self::Accepted),
+            "rejected" => Ok(Self::Rejected),
+            "appealed" => Ok(Self::Appealed),
+            other => Err(SdkError::InvalidInput(format!(
+                "unknown review status: {other:?}"
+            ))),
+        }
+    }
+}
+
+/// An entry in the appeal history of a contribution record.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AppealEntry {
+    /// Appeal status at the time of the entry.
+    pub status: String,
+    /// Unix timestamp of the appeal.
+    pub at: u64,
+}
+
+/// Content body of a kind:37013 contribution record event.
+///
+/// Record shape from ResonantDAO §2.2 Appendix A.3, adapted for Nostr events.
+/// Serialized with camelCase keys, matching the other NIP-ORG content bodies
+/// (`humanVsAi`, `informedBy`, `classifierVersion`, `reviewStatus`,
+/// `appealHistory`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributionRecordContent {
+    /// Schema version — always `1`.
+    pub v: u32,
+    /// Description of the contribution action.
+    pub action: String,
+    /// Multi-dimensional contribution profile (plain names: build, teach, care, research, etc.).
+    #[serde(default)]
+    pub dimensions: std::collections::HashMap<String, f64>,
+    /// Outcome: verified effect, net of harm.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub outcome: Option<ContributionOutcome>,
+    /// Evidence links (event ids, imeta urls).
+    #[serde(default)]
+    pub evidence: Vec<String>,
+    /// Human-vs-AI work attribution.
+    #[serde(default)]
+    pub human_vs_ai: HumanVsAi,
+    /// `informed-by` references for chain settlement (contribution record d-tags, task ids).
+    #[serde(default)]
+    pub informed_by: Vec<String>,
+    /// Classifier version used to compute the profile.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub classifier_version: Option<String>,
+    /// Review status of the contribution.
+    pub review_status: ReviewStatus,
+    /// Appeal history.
+    #[serde(default)]
+    pub appeal_history: Vec<AppealEntry>,
+}
+
+/// Outcome of a contribution action.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ContributionOutcome {
+    /// Verified positive effect description.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect: Option<String>,
+    /// Verified harm description (if any). A damaging result cannot pay gross.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harm: Option<String>,
+}
+
+/// Build a kind:37013 contribution record event.
+///
+/// Tags are:
+/// - `d`: `action_id`
+/// - `p`: contributor pubkey (from content.author if set, else signer)
+/// - `h`: community tag (optional, set by caller)
+/// - `e`: each evidence link
+/// - `a`: each informed-by reference (contribution record coordinates)
+pub fn build_contribution_record(
+    action_id: &str,
+    content: &ContributionRecordContent,
+) -> Result<EventBuilder, SdkError> {
+    if action_id.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "contribution record 'action_id' must not be empty".into(),
+        ));
+    }
+    if action_id.len() > CONTRIBUTION_D_MAX_LEN {
+        return Err(SdkError::InvalidInput(format!(
+            "contribution record 'action_id' exceeds {CONTRIBUTION_D_MAX_LEN} bytes"
+        )));
+    }
+    if content.action.is_empty() {
+        return Err(SdkError::InvalidInput(
+            "contribution record 'action' must not be empty".into(),
+        ));
+    }
+
+    let mut tags: Vec<Tag> = Vec::new();
+    tags.push(tag(&["d", action_id])?);
+
+    for evidence in &content.evidence {
+        tags.push(tag(&["e", evidence])?);
+    }
+
+    for informed_by in &content.informed_by {
+        tags.push(tag(&["a", informed_by])?);
+    }
+
+    let content_json = serde_json::to_string(content).map_err(|e| {
+        SdkError::InvalidInput(format!(
+            "failed to serialize contribution record content: {e}"
+        ))
+    })?;
+    validate_org_envelope(&tags, &content_json)?;
+
+    Ok(EventBuilder::new(Kind::Custom(KIND_CONTRIBUTION_RECORD as u16), &content_json).tags(tags))
+}
+
+// ── Grant-chain verification ───────────────────────────────────────────
+//
+// The pure chain-walk verifier (`verify_grant_chain`, `ResolvedGrant`,
+// `ResolvedOrgNode`, `GrantChainError`, verb entailment) lives in
+// `buzz-core::org_grant` so the relay's opt-in ingest gate can share it.
+// Re-exported below — the SDK's public API is unchanged.
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2242,10 +3540,58 @@ mod tests {
     #[test]
     fn message_happy_path() {
         let cid = uuid();
-        let ev = sign(build_message(cid, "hello", None, &[], false, &[]).unwrap());
+        let ev = sign(build_message(cid, "hello", None, &[], false, &[], &[]).unwrap());
         assert_eq!(ev.kind.as_u16(), 9);
         assert_eq!(ev.content, "hello");
         assert!(has_tag(&ev, "h", &cid.to_string()));
+    }
+
+    #[test]
+    fn message_preserves_self_mention_p_tag() {
+        // nostr 0.44 strips p tags matching the signer by default.
+        // build_message must opt in via allow_self_tagging() so that
+        // explicit self-mentions survive signing. See #4906.
+        let cid = uuid();
+        let sender = keys();
+        let self_pk = sender.public_key().to_hex();
+        let builder =
+            build_message(cid, "self-canary", None, &[&self_pk], false, &[], &[]).unwrap();
+        let ev = builder.sign_with_keys(&sender).expect("sign");
+        assert!(
+            has_tag(&ev, "p", &self_pk),
+            "self-mention p tag must survive signing"
+        );
+    }
+
+    #[test]
+    fn forum_post_preserves_self_mention_p_tag() {
+        let cid = uuid();
+        let sender = keys();
+        let self_pk = sender.public_key().to_hex();
+        let builder = build_forum_post(cid, "self-canary", &[&self_pk], &[]).unwrap();
+        let ev = builder.sign_with_keys(&sender).expect("sign");
+        assert!(
+            has_tag(&ev, "p", &self_pk),
+            "self-mention p tag must survive signing"
+        );
+    }
+
+    #[test]
+    fn forum_comment_preserves_self_mention_p_tag() {
+        let cid = uuid();
+        let sender = keys();
+        let self_pk = sender.public_key().to_hex();
+        let root = event_id();
+        let tr = ThreadRef {
+            root_event_id: root,
+            parent_event_id: root,
+        };
+        let builder = build_forum_comment(cid, "self-canary", &tr, &[&self_pk], &[]).unwrap();
+        let ev = builder.sign_with_keys(&sender).expect("sign");
+        assert!(
+            has_tag(&ev, "p", &self_pk),
+            "self-mention p tag must survive signing"
+        );
     }
 
     #[test]
@@ -2300,7 +3646,7 @@ mod tests {
             root_event_id: eid,
             parent_event_id: eid,
         };
-        let ev = sign(build_message(cid, "reply", Some(&tr), &[], false, &[]).unwrap());
+        let ev = sign(build_message(cid, "reply", Some(&tr), &[], false, &[], &[]).unwrap());
         // Direct reply: only one e-tag with "reply" marker
         let e_tags: Vec<_> = ev
             .tags
@@ -2323,7 +3669,7 @@ mod tests {
             root_event_id: root,
             parent_event_id: parent,
         };
-        let ev = sign(build_message(cid, "nested", Some(&tr), &[], false, &[]).unwrap());
+        let ev = sign(build_message(cid, "nested", Some(&tr), &[], false, &[], &[]).unwrap());
         let e_tags: Vec<_> = ev
             .tags
             .iter()
@@ -2341,7 +3687,7 @@ mod tests {
     #[test]
     fn message_broadcast_flag() {
         let cid = uuid();
-        let ev = sign(build_message(cid, "hi", None, &[], true, &[]).unwrap());
+        let ev = sign(build_message(cid, "hi", None, &[], true, &[], &[]).unwrap());
         assert!(has_tag(&ev, "broadcast", "1"));
     }
 
@@ -2349,7 +3695,7 @@ mod tests {
     fn message_mentions_deduped() {
         let cid = uuid();
         let hex = "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234";
-        let ev = sign(build_message(cid, "hi", None, &[hex, hex], false, &[]).unwrap());
+        let ev = sign(build_message(cid, "hi", None, &[hex, hex], false, &[], &[]).unwrap());
         let p_tags = tag_values(&ev, "p");
         assert_eq!(p_tags.len(), 1);
     }
@@ -2370,7 +3716,7 @@ mod tests {
             })
             .collect();
         let refs: Vec<&str> = hexes.iter().map(|s| s.as_str()).collect();
-        let result = build_message(cid, "hi", None, &refs, false, &[]);
+        let result = build_message(cid, "hi", None, &refs, false, &[], &[]);
         assert!(matches!(result, Err(SdkError::TooManyMentions)));
     }
 
@@ -2378,7 +3724,7 @@ mod tests {
     fn message_content_too_large() {
         let cid = uuid();
         let big = "x".repeat(64 * 1024 + 1);
-        let result = build_message(cid, &big, None, &[], false, &[]);
+        let result = build_message(cid, &big, None, &[], false, &[], &[]);
         assert!(matches!(result, Err(SdkError::ContentTooLarge { .. })));
     }
 
@@ -2386,7 +3732,91 @@ mod tests {
     fn message_max_content_ok() {
         let cid = uuid();
         let max = "x".repeat(64 * 1024);
-        assert!(build_message(cid, &max, None, &[], false, &[]).is_ok());
+        assert!(build_message(cid, &max, None, &[], false, &[], &[]).is_ok());
+    }
+
+    #[test]
+    fn message_emoji_tags_attached() {
+        let cid = uuid();
+        let emoji_tags = vec![
+            vec![
+                "emoji".to_string(),
+                "wave".to_string(),
+                "https://example.com/wave.gif".to_string(),
+            ],
+            vec![
+                "emoji".to_string(),
+                "party".to_string(),
+                "https://example.com/party.gif".to_string(),
+            ],
+        ];
+        let ev = sign(
+            build_message(
+                cid,
+                ":wave: hey :party:",
+                None,
+                &[],
+                false,
+                &[],
+                &emoji_tags,
+            )
+            .unwrap(),
+        );
+        // Both emoji tags present
+        assert!(ev
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["emoji", "wave", "https://example.com/wave.gif"]));
+        assert!(ev
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["emoji", "party", "https://example.com/party.gif"]));
+        // kind 9
+        assert_eq!(ev.kind.as_u16(), 9);
+    }
+
+    #[test]
+    fn message_malformed_emoji_tag_silently_skipped() {
+        let cid = uuid();
+        let emoji_tags = vec![
+            // only 2 elements — invalid, must be skipped
+            vec!["emoji".to_string(), "wave".to_string()],
+            // wrong kind — must be skipped
+            vec![
+                "imeta".to_string(),
+                "wave".to_string(),
+                "https://example.com/wave.gif".to_string(),
+            ],
+            // valid
+            vec![
+                "emoji".to_string(),
+                "ok".to_string(),
+                "https://example.com/ok.gif".to_string(),
+            ],
+        ];
+        let ev = sign(build_message(cid, "hi", None, &[], false, &[], &emoji_tags).unwrap());
+        let emoji_count = ev
+            .tags
+            .iter()
+            .filter(|t| t.as_slice().first().map(String::as_str) == Some("emoji"))
+            .count();
+        assert_eq!(emoji_count, 1);
+        assert!(ev
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["emoji", "ok", "https://example.com/ok.gif"]));
+    }
+
+    #[test]
+    fn message_empty_emoji_tags_slice_ok() {
+        let cid = uuid();
+        let ev = sign(build_message(cid, "hello", None, &[], false, &[], &[]).unwrap());
+        let emoji_count = ev
+            .tags
+            .iter()
+            .filter(|t| t.as_slice().first().map(String::as_str) == Some("emoji"))
+            .count();
+        assert_eq!(emoji_count, 0);
     }
 
     #[test]
@@ -2655,6 +4085,30 @@ mod tests {
     }
 
     #[test]
+    fn custom_emoji_reaction_accepts_max_shortcode_length() {
+        let eid = event_id();
+        let shortcode = "a".repeat(MAX_CUSTOM_EMOJI_SHORTCODE_LEN);
+        let ev = sign(
+            build_custom_emoji_reaction(eid, &shortcode, "https://example.com/max.png").unwrap(),
+        );
+
+        assert_eq!(ev.content, format!(":{shortcode}:"));
+        assert_eq!(ev.content.chars().count(), MAX_CUSTOM_EMOJI_REACTION_LEN);
+        assert!(has_tag(&ev, "emoji", &shortcode));
+    }
+
+    #[test]
+    fn custom_emoji_reaction_rejects_overlong_shortcode() {
+        let eid = event_id();
+        let shortcode = "a".repeat(MAX_CUSTOM_EMOJI_SHORTCODE_LEN + 1);
+
+        assert!(matches!(
+            build_custom_emoji_reaction(eid, &shortcode, "https://example.com/too-long.png"),
+            Err(SdkError::InvalidInput(message)) if message.contains("exceeds 64 bytes")
+        ));
+    }
+
+    #[test]
     fn custom_emoji_set_happy_path() {
         let ev = sign(
             build_custom_emoji_set(&[CustomEmoji {
@@ -2679,10 +4133,238 @@ mod tests {
     #[test]
     fn set_canvas_happy_path() {
         let cid = uuid();
-        let ev = sign(build_set_canvas(cid, "# Canvas\nHello").unwrap());
+        let ev = sign(build_set_canvas(cid, "# Canvas\nHello", None).unwrap());
         assert_eq!(ev.kind.as_u16(), 40100);
         assert!(has_tag(&ev, "h", &cid.to_string()));
         assert_eq!(ev.content, "# Canvas\nHello");
+        assert!(!ev.tags.iter().any(|t| t
+            .as_slice()
+            .first()
+            .is_some_and(|k| k == "expected-revision")));
+    }
+
+    #[test]
+    fn set_canvas_pins_expected_revision() {
+        let cid = uuid();
+        let head = event_id().to_hex();
+        let ev = sign(build_set_canvas(cid, "# Canvas\nHi", Some(&head)).unwrap());
+        assert!(has_tag(&ev, "expected-revision", &head));
+
+        let create = sign(build_set_canvas(cid, "# New", Some("none")).unwrap());
+        assert!(has_tag(&create, "expected-revision", "none"));
+    }
+
+    #[test]
+    fn set_canvas_after_head_pins_revision_and_bumps_timestamp() {
+        let cid = uuid();
+        let head = event_id().to_hex();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Head created ahead of the signer's clock but within the future-skew
+        // ceiling: the discipline must still stamp strictly ahead of it.
+        let future_head = now + CANVAS_MAX_FUTURE_SKEW_SECS;
+        let ev = sign(build_set_canvas_after_head(cid, "# Restored", &head, future_head).unwrap());
+        assert!(has_tag(&ev, "expected-revision", &head));
+        assert!(
+            ev.created_at.as_secs() > future_head,
+            "created_at {} must be strictly ahead of future head {future_head}",
+            ev.created_at.as_secs()
+        );
+
+        // Head in the past: the signer's `now` wins and is still ahead.
+        let past_head = 1_000_u64;
+        let ev = sign(build_set_canvas_after_head(cid, "# Restored", &head, past_head).unwrap());
+        assert!(ev.created_at.as_secs() > past_head);
+    }
+
+    #[test]
+    fn set_canvas_rejects_malformed_expected_revision() {
+        let cid = uuid();
+        // Wrong length (63 hex chars).
+        assert!(matches!(
+            build_set_canvas(cid, "x", Some(&"a".repeat(63))),
+            Err(SdkError::InvalidInput(_))
+        ));
+        // Correct length but non-hex.
+        assert!(matches!(
+            build_set_canvas(cid, "x", Some(&"z".repeat(64))),
+            Err(SdkError::InvalidInput(_))
+        ));
+        // Literal "none" and a valid 64-hex id are accepted.
+        assert!(build_set_canvas(cid, "x", Some("none")).is_ok());
+        assert!(build_set_canvas(cid, "x", Some(&"a".repeat(64))).is_ok());
+    }
+
+    #[test]
+    fn set_canvas_after_head_rejects_max_head_created_at() {
+        let cid = uuid();
+        let head = event_id().to_hex();
+        // u64::MAX is far beyond the future-skew ceiling: reject instead of
+        // silently saturating and breaking the head-advancement guarantee.
+        assert!(matches!(
+            build_set_canvas_after_head(cid, "# Restored", &head, u64::MAX),
+            Err(SdkError::InvalidInput(_))
+        ));
+    }
+
+    #[test]
+    fn canvas_write_created_at_skew_boundary() {
+        // Fixed clock: the injected-`now` core removes the second-rollover seam
+        // that a real-clock read introduces. A head exactly at the ceiling
+        // (`now + 60`) is accepted and stamped strictly ahead; one second past
+        // it is rejected as poisoned.
+        //
+        // Invariant contract (pinned with literals, not constants, so a constant
+        // mutation also fails this test): the client ceiling is 60 s; the relay
+        // canvas ingest bound is 300 s; the relay general drift bound is 900 s.
+        // A ceiling head at now+60 produces now+61, well below both relay bounds.
+        // These numeric assertions must stay consistent with CANVAS_MAX_FUTURE_SKEW_SECS
+        // and the relay's CANVAS_MAX_INGEST_FUTURE_SECS (300) / MAX_TIMESTAMP_DRIFT_SECS (900).
+        let now = 1_700_000_000u64;
+        let at_ceiling = now + CANVAS_MAX_FUTURE_SKEW_SECS;
+        assert_eq!(
+            canvas_write_created_at_at(at_ceiling, now).unwrap(),
+            at_ceiling + 1,
+            "a head at now+60 is accepted and stamped strictly ahead"
+        );
+        assert!(
+            matches!(
+                canvas_write_created_at_at(at_ceiling + 1, now),
+                Err(SdkError::InvalidInput(_))
+            ),
+            "a head at now+61 is poisoned and rejected"
+        );
+
+        // Fixed-literal contract: client ceiling IS 60 s, NOT the old 900 s.
+        // Mutating CANVAS_MAX_FUTURE_SKEW_SECS back to 900 makes these fail.
+        assert!(
+            canvas_write_created_at_at(now + 60, now).is_ok(),
+            "now+60 is within the 60 s client ceiling"
+        );
+        assert!(
+            matches!(
+                canvas_write_created_at_at(now + 61, now),
+                Err(SdkError::InvalidInput(_))
+            ),
+            "now+61 is one second past the 60 s client ceiling"
+        );
+        // Confirm the old 900 s ceiling is now rejected (prevents silent
+        // reversion): a head at now+900 must not be ratcheted past.
+        assert!(
+            matches!(
+                canvas_write_created_at_at(now + 900, now),
+                Err(SdkError::InvalidInput(_))
+            ),
+            "now+900 must be rejected by the 60 s client ceiling"
+        );
+    }
+
+    /// Standalone numeric contract for the client-side canvas future-skew ceiling.
+    ///
+    /// No constants used — if CANVAS_MAX_FUTURE_SKEW_SECS changes, this test
+    /// catches it regardless of whether the constant-based assertions remain
+    /// self-consistent. The client ceiling IS 60 s: now+60 is the last accepted
+    /// head; now+61 is the first rejected head.
+    ///
+    /// Cross-crate invariant: the relay canvas ingest bound is 300 s and the
+    /// relay general drift bound is 900 s. A ceiling head at now+60 is stamped
+    /// now+61, comfortably below both relay bounds.
+    #[test]
+    fn canvas_write_created_at_numeric_contract() {
+        let now = 1_700_000_000u64;
+        // The client ceiling is exactly 60 s — not 900 s (the old value).
+        // These assertions use only fixed numeric literals; they cannot be
+        // self-referential regardless of what CANVAS_MAX_FUTURE_SKEW_SECS holds.
+        assert!(
+            canvas_write_created_at_at(now + 60, now).is_ok(),
+            "now+60 must be accepted: client ceiling is 60 s",
+        );
+        assert!(
+            canvas_write_created_at_at(now + 61, now).is_err(),
+            "now+61 must be rejected: one second past the 60 s client ceiling",
+        );
+        // Old 900 s value must also be rejected (prevents silent reversion).
+        assert!(
+            canvas_write_created_at_at(now + 900, now).is_err(),
+            "now+900 must be rejected: the old 900 s ceiling is no longer valid",
+        );
+    }
+
+    #[test]
+    fn canvas_write_survived_classifies_head_ancestry() {
+        let ours = "a".repeat(64);
+        let other = "b".repeat(64);
+        let third = "c".repeat(64);
+        // Head is our own event → survived.
+        assert!(canvas_write_survived(&ours, &[(ours.clone(), None)]));
+        // Head is case-insensitively our event → survived.
+        assert!(canvas_write_survived(&ours, &[(ours.to_uppercase(), None)]));
+        // Head is a stranger that builds directly on us (case-insensitively) →
+        // survived.
+        assert!(canvas_write_survived(
+            &ours,
+            &[(other.clone(), Some(ours.to_uppercase()))]
+        ));
+        // Transitive descendant: A(ours) → B(exp=A) → C(exp=B, the head). Ours
+        // is reached by walking the chain, so the write survived.
+        assert!(canvas_write_survived(
+            &ours,
+            &[
+                (third.clone(), Some(other.clone())),
+                (other.clone(), Some(ours.clone())),
+                (ours.clone(), None),
+            ]
+        ));
+        // Head is a stranger that builds on someone else, and that ancestor is
+        // not ours and not in the stream → superseded.
+        assert!(!canvas_write_survived(
+            &ours,
+            &[(other.clone(), Some(third.clone()))]
+        ));
+        // Head is a stranger with no ancestry tag → superseded.
+        assert!(!canvas_write_survived(&ours, &[(other.clone(), None)]));
+        // No head at all after an accepted write → superseded, never silent
+        // success (shouldn't happen, classified conservatively).
+        assert!(!canvas_write_survived(&ours, &[]));
+        // A descendant chain that never reaches ours before the stream ends →
+        // superseded (fails safe rather than assuming survival).
+        assert!(!canvas_write_survived(
+            &ours,
+            &[
+                (third.clone(), Some(other.clone())),
+                (other.clone(), Some("d".repeat(64))),
+            ]
+        ));
+    }
+
+    #[test]
+    fn canvas_write_survived_fails_safe_on_cycles_and_depth() {
+        let ours = "a".repeat(64);
+        let x = "b".repeat(64);
+        let y = "c".repeat(64);
+        // A cycle in the stream (x→y→x) that never touches ours must terminate
+        // as superseded, not loop forever.
+        assert!(!canvas_write_survived(
+            &ours,
+            &[(x.clone(), Some(y.clone())), (y.clone(), Some(x.clone()))]
+        ));
+        // A chain longer than the walk bound that never reaches ours fails safe
+        // as superseded. Each link i points to link i+1; ours is never in it.
+        let mut revisions: Vec<(String, Option<String>)> = (0..(CANVAS_ANCESTRY_WALK_MAX + 10))
+            .map(|i| {
+                let id = format!("{i:064x}");
+                let next = format!("{:064x}", i + 1);
+                (id, Some(next))
+            })
+            .collect();
+        // Terminate the last link at ours so only the depth bound (not a missing
+        // link) can stop the walk — proving the bound itself is the guard.
+        let last = revisions.len() - 1;
+        revisions[last].1 = Some(ours.clone());
+        assert!(!canvas_write_survived(&ours, &revisions));
     }
 
     #[test]
@@ -3400,6 +5082,149 @@ mod tests {
     }
 
     #[test]
+    fn git_issue_assignment_happy_path() {
+        let owner = "a".repeat(64);
+        let repo = GitRepoCoord {
+            owner: owner.clone(),
+            id: "repo".to_string(),
+        };
+        let issue = "b".repeat(64);
+        // Duplicates (case-insensitive) collapse to a single p tag.
+        let assignees = vec!["C".repeat(64), "c".repeat(64), "d".repeat(64)];
+        let ev = sign(
+            build_git_issue_assignment(&repo, &issue, &assignees, "Assigned this issue to Thomas")
+                .unwrap(),
+        );
+        assert_eq!(ev.kind.as_u16(), 1);
+        assert_eq!(ev.content, "Assigned this issue to Thomas");
+        assert!(has_tag(&ev, "e", &issue));
+        assert!(has_tag(&ev, "a", &format!("30617:{owner}:repo")));
+        assert!(has_tag(&ev, "p", &"c".repeat(64)));
+        assert!(has_tag(&ev, "p", &"d".repeat(64)));
+        assert!(has_tag(&ev, "t", "assignment"));
+        let p_count = ev
+            .tags
+            .iter()
+            .filter(|tag| tag.as_slice().first().map(String::as_str) == Some("p"))
+            .count();
+        assert_eq!(p_count, 2);
+    }
+
+    #[test]
+    fn git_issue_assignment_rejects_bad_input() {
+        let repo = GitRepoCoord {
+            owner: "a".repeat(64),
+            id: "repo".to_string(),
+        };
+        let issue = "b".repeat(64);
+        // No assignees.
+        let err = build_git_issue_assignment(&repo, &issue, &[], "x").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+        // Malformed assignee pubkey.
+        let err =
+            build_git_issue_assignment(&repo, &issue, &["nope".to_string()], "x").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+        // Malformed issue id.
+        let err = build_git_issue_assignment(&repo, "short", &["c".repeat(64)], "x").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn git_issue_assignment_with_prior_emits_valid_causal_tag() {
+        let repo = GitRepoCoord {
+            owner: "a".repeat(64),
+            id: "repo".to_string(),
+        };
+        let issue = "b".repeat(64);
+        let assignee = "c".repeat(64);
+        let prior = "d".repeat(64);
+        let ev = sign(
+            build_git_issue_assignment_with_prior(
+                &repo,
+                &issue,
+                &[assignee],
+                "Assigned this issue",
+                Some(&prior),
+            )
+            .unwrap(),
+        );
+
+        assert!(has_tag(&ev, "prior", &prior));
+        let unassignment = sign(
+            build_git_issue_unassignment_with_prior(
+                &repo,
+                &issue,
+                &["c".repeat(64)],
+                "Unassigned this issue",
+                Some(&prior),
+            )
+            .unwrap(),
+        );
+        assert!(has_tag(&unassignment, "prior", &prior));
+        assert!(build_git_issue_assignment_with_prior(
+            &repo,
+            &issue,
+            &["c".repeat(64)],
+            "Assigned this issue",
+            Some("invalid"),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn git_issue_unassignment_happy_path() {
+        let owner = "a".repeat(64);
+        let repo = GitRepoCoord {
+            owner: owner.clone(),
+            id: "repo".to_string(),
+        };
+        let issue = "b".repeat(64);
+        let assignee = "c".repeat(64);
+        let ev = sign(
+            build_git_issue_unassignment(
+                &repo,
+                &issue,
+                std::slice::from_ref(&assignee),
+                "Unassigned Thomas from this issue",
+            )
+            .unwrap(),
+        );
+        assert_eq!(ev.kind.as_u16(), 1);
+        assert_eq!(ev.content, "Unassigned Thomas from this issue");
+        assert!(has_tag(&ev, "e", &issue));
+        assert!(has_tag(&ev, "a", &format!("30617:{owner}:repo")));
+        assert!(has_tag(&ev, "p", &assignee));
+        assert!(has_tag(&ev, "t", "unassignment"));
+        assert!(!has_tag(&ev, "t", "assignment"));
+    }
+
+    #[test]
+    fn legacy_issue_assignment_builders_omit_prior() {
+        let repo = GitRepoCoord {
+            owner: "a".repeat(64),
+            id: "repo".to_string(),
+        };
+        let issue = "b".repeat(64);
+        let assignees = vec!["c".repeat(64)];
+        let assignment = sign(
+            build_git_issue_assignment(&repo, &issue, &assignees, "Assigned this issue").unwrap(),
+        );
+        let unassignment = sign(
+            build_git_issue_unassignment(&repo, &issue, &assignees, "Unassigned this issue")
+                .unwrap(),
+        );
+
+        assert!(!assignment
+            .tags
+            .iter()
+            .any(|tag| { tag.as_slice().first().map(String::as_str) == Some("prior") }));
+        assert!(!unassignment
+            .tags
+            .iter()
+            .any(|tag| { tag.as_slice().first().map(String::as_str) == Some("prior") }));
+    }
+
+    #[test]
     fn git_status_open_happy_path() {
         let root = event_id().to_hex();
         let meta = GitStatusMeta {
@@ -3622,16 +5447,18 @@ mod tests {
     fn workflow_update_includes_h_tag() {
         let cid = uuid();
         let wid = uuid();
-        let ev = sign(build_workflow_update(cid, wid, "name: updated").unwrap());
+        let revision = "a".repeat(64);
+        let ev = sign(build_workflow_update(cid, wid, "name: updated", &revision).unwrap());
         assert_eq!(ev.kind.as_u16(), 30620);
         assert!(has_tag(&ev, "d", &wid.to_string()));
         assert!(has_tag(&ev, "h", &cid.to_string()));
+        assert!(has_tag(&ev, "expected-revision", &revision));
     }
 
     #[test]
     fn workflow_update_rejects_oversized_yaml() {
         let big = "x".repeat(65 * 1024);
-        let err = build_workflow_update(uuid(), uuid(), &big).unwrap_err();
+        let err = build_workflow_update(uuid(), uuid(), &big, &"a".repeat(64)).unwrap_err();
         assert!(matches!(err, SdkError::ContentTooLarge { .. }));
     }
 
@@ -4512,5 +6339,662 @@ mod tests {
 
         assert_eq!(accept_count, 11, "expected 11 accept cases");
         assert_eq!(reject_count, 20, "expected 20 reject cases");
+    }
+
+    // ── NIP-ORG: org node, grant, budget builders ─────────────────────────
+
+    fn sample_node_content() -> OrgNodeContent {
+        OrgNodeContent {
+            v: 1,
+            name: "CTO".into(),
+            node_kind: OrgNodeKind::Role,
+            parent: None,
+            holders: vec!["a".repeat(64)],
+            agent_seats: vec![],
+            scope: OrgScope::default(),
+            ui: None,
+            onchain: None,
+        }
+    }
+
+    fn sample_grant_content() -> OrgGrantContent {
+        OrgGrantContent {
+            v: 1,
+            issuer: "a".repeat(64),
+            grantee: "b".repeat(64),
+            via: "cto".into(),
+            verbs: vec!["read:#leadership".into(), "task:create".into()],
+            parent_grant: None,
+            expires: None,
+            revoked: false,
+        }
+    }
+
+    fn sample_budget_content() -> OrgBudgetContent {
+        OrgBudgetContent {
+            v: 1,
+            subject: "b".repeat(64),
+            window: BudgetWindow::Epoch,
+            limits: BudgetLimits {
+                spend: Some(SpendLimit {
+                    amount: 100000,
+                    unit: "usd-cents".into(),
+                }),
+                runs: Some(50),
+                governance: None,
+                messages: None,
+                llm_calls: None,
+                llm_cost_cents: None,
+                tasks: Some(TaskLimits {
+                    create: Some(20),
+                    approve: Some(0),
+                }),
+            },
+            on_exceed: OnExceed::RequireApproval,
+            onchain: None,
+            performance_link: None,
+        }
+    }
+
+    fn ladder_budget() -> OrgBudgetContent {
+        let mut c = sample_budget_content();
+        c.performance_link = Some(PerformanceLink {
+            window: BudgetWindow::Week,
+            dimensions: Some(vec!["build".into()]),
+            tiers: vec![
+                PerformanceTier {
+                    min_accepted: 3,
+                    limits: BudgetLimits {
+                        spend: Some(SpendLimit {
+                            amount: 200000,
+                            unit: "usd-cents".into(),
+                        }),
+                        runs: Some(80),
+                        governance: None,
+                        messages: None,
+                        llm_calls: None,
+                        llm_cost_cents: None,
+                        tasks: Some(TaskLimits {
+                            create: Some(30),
+                            approve: Some(0),
+                        }),
+                    },
+                },
+                PerformanceTier {
+                    min_accepted: 10,
+                    limits: BudgetLimits {
+                        spend: Some(SpendLimit {
+                            amount: 500000,
+                            unit: "usd-cents".into(),
+                        }),
+                        runs: Some(200),
+                        governance: None,
+                        messages: None,
+                        llm_calls: None,
+                        llm_cost_cents: None,
+                        tasks: Some(TaskLimits {
+                            create: Some(60),
+                            approve: Some(2),
+                        }),
+                    },
+                },
+            ],
+            on_violation: OnViolation::Revoke,
+            violation_threshold: Some(ViolationThreshold { rejected: 1 }),
+        });
+        c
+    }
+
+    #[test]
+    fn performance_link_ladder_resolves_tiers() {
+        let link = ladder_budget().performance_link.unwrap();
+        let base = ladder_budget().limits;
+
+        // Below the first tier: base limits hold.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 2,
+                rejected: 0,
+            },
+            &base,
+        );
+        assert_eq!(r.tier, None);
+        assert!(!r.violated);
+        assert_eq!(r.limits.runs, base.runs);
+
+        // First tier.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 3,
+                rejected: 0,
+            },
+            &base,
+        );
+        assert_eq!(r.tier, Some(0));
+        assert_eq!(r.limits.runs, Some(80));
+
+        // Top tier.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 25,
+                rejected: 0,
+            },
+            &base,
+        );
+        assert_eq!(r.tier, Some(1));
+        assert_eq!(r.limits.spend.as_ref().unwrap().amount, 500000);
+    }
+
+    #[test]
+    fn performance_link_violation_semantics() {
+        let mut c = ladder_budget();
+        let base = c.limits.clone();
+        let link = c.performance_link.take().unwrap();
+
+        // Revoke: explicit zero limits.
+        let r = evaluate_performance_link(
+            &link,
+            &ContributionSummary {
+                accepted: 30,
+                rejected: 1,
+            },
+            &base,
+        );
+        assert!(r.violated);
+        assert_eq!(r.limits.spend.as_ref().unwrap().amount, 0);
+        assert_eq!(r.limits.runs, Some(0));
+
+        // Base: falls back to the budget's own limits.
+        let mut softened = link.clone();
+        softened.on_violation = OnViolation::Base;
+        let r = evaluate_performance_link(
+            &softened,
+            &ContributionSummary {
+                accepted: 30,
+                rejected: 5,
+            },
+            &base,
+        );
+        assert!(r.violated);
+        assert_eq!(r.limits, base);
+
+        // No threshold: rejections never gate the ladder.
+        let mut no_threshold = link.clone();
+        no_threshold.violation_threshold = None;
+        let r = evaluate_performance_link(
+            &no_threshold,
+            &ContributionSummary {
+                accepted: 3,
+                rejected: 9,
+            },
+            &base,
+        );
+        assert!(!r.violated);
+        assert_eq!(r.tier, Some(0));
+    }
+
+    #[test]
+    fn performance_link_validation_rejects_bad_ladders() {
+        let base = ladder_budget().limits;
+        let mut c = ladder_budget();
+        let link = c.performance_link.take().unwrap();
+
+        // Non-ascending tiers.
+        let mut bad = link.clone();
+        bad.tiers[1].min_accepted = 3;
+        assert!(validate_performance_link(&bad, &base).is_err());
+
+        // Tier spend below base spend.
+        let mut bad = link.clone();
+        bad.tiers[0].limits.spend = Some(SpendLimit {
+            amount: 1,
+            unit: "usd-cents".into(),
+        });
+        assert!(validate_performance_link(&bad, &base).is_err());
+
+        // Zero violation threshold.
+        let mut bad = link.clone();
+        bad.violation_threshold = Some(ViolationThreshold { rejected: 0 });
+        assert!(validate_performance_link(&bad, &base).is_err());
+
+        // Empty ladder.
+        let mut bad = link;
+        bad.tiers.clear();
+        assert!(validate_performance_link(&bad, &base).is_err());
+    }
+
+    #[test]
+    fn budget_with_ladder_builds_and_round_trips_camel_case() {
+        let content = ladder_budget();
+        let builder = build_org_budget("subject-agent", &content).unwrap();
+        let event = sign(builder);
+        assert!(event.content.contains("\"performanceLink\""));
+        assert!(event.content.contains("\"minAccepted\""));
+        assert!(event.content.contains("\"onViolation\":\"revoke\""));
+
+        let parsed: OrgBudgetContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed, content);
+    }
+
+    #[test]
+    fn org_node_builds_valid_event() {
+        let content = sample_node_content();
+        let builder = build_org_node("cto", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_ORG_NODE as u16));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "cto"]));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["name", "CTO"]));
+        assert!(event.tags.iter().any(|t| t.as_slice()[0] == "seat"));
+        // Content must parse back.
+        let parsed: OrgNodeContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.name, "CTO");
+    }
+
+    #[test]
+    fn org_grant_builds_valid_event() {
+        let content = sample_grant_content();
+        let builder = build_org_grant("grant-1", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_ORG_GRANT as u16));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "grant-1"]));
+        assert!(event.tags.iter().any(|t| t.as_slice()[0] == "grantee"));
+        let parsed: OrgGrantContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.via, "cto");
+        assert_eq!(parsed.verbs.len(), 2);
+    }
+
+    #[test]
+    fn org_budget_builds_valid_event() {
+        let content = sample_budget_content();
+        let builder = build_org_budget("agent-budget", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_ORG_BUDGET as u16));
+        assert!(event
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["d", "agent-budget"]));
+        let parsed: OrgBudgetContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.window, BudgetWindow::Epoch);
+        assert_eq!(parsed.limits.runs, Some(50));
+    }
+
+    #[test]
+    fn budget_spend_receipt_builds_valid_event() {
+        let content = BudgetSpendReceiptContent {
+            v: 1,
+            subject: "c".repeat(64),
+            token: "0x4200000000000000000000000000000000000006".into(),
+            amount: 2500,
+            unit: "usd-cents".into(),
+            epoch: 7,
+            window: BudgetWindow::Week,
+            tx_hash: "0xdeadbeef".into(),
+            contract: "0xabc".into(),
+        };
+        let builder = build_budget_spend_receipt("spend-1", &content).unwrap();
+        let keys = Keys::generate();
+        let event = builder.sign_with_keys(&keys).unwrap();
+        assert_eq!(event.kind.as_u16() as u32, KIND_BUDGET_SPEND_RECEIPT);
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "spend-1"]));
+        assert!(event
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["p", &"c".repeat(64)]));
+        let parsed: BudgetSpendReceiptContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed, content);
+        // camelCase wire key for the tx hash.
+        let json: serde_json::Value = serde_json::from_str(&event.content).unwrap();
+        assert!(json.get("txHash").is_some());
+        assert!(json.get("tx_hash").is_none());
+    }
+
+    #[test]
+    fn budget_spend_receipt_rejects_empty_id() {
+        let content = BudgetSpendReceiptContent {
+            v: 1,
+            subject: "c".repeat(64),
+            token: "0x4200000000000000000000000000000000000006".into(),
+            amount: 1,
+            unit: "usd-cents".into(),
+            epoch: 0,
+            window: BudgetWindow::Day,
+            tx_hash: "0x1".into(),
+            contract: "0xabc".into(),
+        };
+        let err = build_budget_spend_receipt("", &content).unwrap_err();
+        assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn org_node_rejects_empty_id() {
+        let content = sample_node_content();
+        let err = build_org_node("", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_node_rejects_overlong_id() {
+        let content = sample_node_content();
+        let err = build_org_node(&"a".repeat(65), &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_node_rejects_empty_name() {
+        let mut content = sample_node_content();
+        content.name = "".into();
+        let err = build_org_node("cto", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_grant_rejects_bad_grantee() {
+        let mut content = sample_grant_content();
+        content.grantee = "not-a-pubkey".into();
+        let err = build_org_grant("g1", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_envelope_rejects_duplicate_d() {
+        // Manually construct tags with two 'd' tags.
+        let tags = vec![tag(&["d", "x"]).unwrap(), tag(&["d", "y"]).unwrap()];
+        let err = validate_org_envelope(&tags, "{}").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_envelope_rejects_bad_seat_pubkey() {
+        let tags = vec![
+            tag(&["d", "x"]).unwrap(),
+            tag(&["seat", "not-hex"]).unwrap(),
+        ];
+        let err = validate_org_envelope(&tags, "{}").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_envelope_rejects_non_json_content() {
+        let tags = vec![tag(&["d", "x"]).unwrap()];
+        let err = validate_org_envelope(&tags, "not json").unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn org_budget_window_from_str() {
+        assert!(matches!(
+            "epoch".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Epoch)
+        ));
+        assert!(matches!(
+            "day".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Day)
+        ));
+        assert!(matches!(
+            "week".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Week)
+        ));
+        assert!(matches!(
+            "month".parse::<BudgetWindow>(),
+            Ok(BudgetWindow::Month)
+        ));
+        assert!("invalid".parse::<BudgetWindow>().is_err());
+    }
+
+    #[test]
+    fn org_node_kind_from_str() {
+        assert!(matches!(
+            "role".parse::<OrgNodeKind>(),
+            Ok(OrgNodeKind::Role)
+        ));
+        assert!(matches!(
+            "team".parse::<OrgNodeKind>(),
+            Ok(OrgNodeKind::Team)
+        ));
+        assert!(matches!(
+            "agent-seat".parse::<OrgNodeKind>(),
+            Ok(OrgNodeKind::AgentSeat)
+        ));
+        assert!("invalid".parse::<OrgNodeKind>().is_err());
+    }
+
+    #[test]
+    fn org_content_serializes_camel_case_keys() {
+        let node = sample_node_content();
+        let json = serde_json::to_value(&node).unwrap();
+        assert!(json.get("agentSeats").is_some());
+        assert!(json.get("agent_seats").is_none());
+
+        let scope = serde_json::to_value(OrgScope {
+            read_below: true,
+            assign_below: false,
+            can_grant: vec!["spend:100000".into()],
+        })
+        .unwrap();
+        assert_eq!(scope.get("readBelow"), Some(&serde_json::Value::Bool(true)));
+        assert_eq!(
+            scope.get("assignBelow"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        assert!(scope.get("canGrant").is_some());
+        assert!(scope.get("can_grant").is_none());
+
+        // parentGrant is present when set (skip_serializing_if omits None).
+        let child_grant = OrgGrantContent {
+            parent_grant: Some("root-grant".into()),
+            ..sample_grant_content()
+        };
+        let json = serde_json::to_value(&child_grant).unwrap();
+        assert_eq!(
+            json.get("parentGrant"),
+            Some(&serde_json::Value::String("root-grant".into()))
+        );
+        assert!(json.get("parent_grant").is_none());
+        let json = serde_json::to_value(sample_grant_content()).unwrap();
+        assert!(json.get("parentGrant").is_none());
+
+        // Contribution record (37013) follows the same camelCase contract.
+        let record = ContributionRecordContent {
+            v: 1,
+            action: "test".into(),
+            dimensions: std::collections::HashMap::new(),
+            outcome: None,
+            evidence: vec![],
+            human_vs_ai: HumanVsAi {
+                human: 1.0,
+                ai: 0.0,
+            },
+            informed_by: vec!["a".into()],
+            classifier_version: Some("v1".into()),
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![AppealEntry {
+                status: "pending".into(),
+                at: 1,
+            }],
+        };
+        let json = serde_json::to_value(&record).unwrap();
+        assert!(json.get("humanVsAi").is_some());
+        assert!(json.get("informedBy").is_some());
+        assert_eq!(
+            json.get("classifierVersion"),
+            Some(&serde_json::Value::String("v1".into()))
+        );
+        assert_eq!(
+            json.get("reviewStatus"),
+            Some(&serde_json::Value::String("pending".into()))
+        );
+        assert!(json.get("appealHistory").is_some());
+        assert!(json.get("human_vs_ai").is_none());
+        assert!(json.get("review_status").is_none());
+
+        let budget = sample_budget_content();
+        let json = serde_json::to_value(&budget).unwrap();
+        assert_eq!(
+            json.get("onExceed"),
+            Some(&serde_json::Value::String("require-approval".into()))
+        );
+        assert!(json.get("on_exceed").is_none());
+        // An absent onchain binding is skipped entirely (camelCase contract).
+        assert!(json.get("onchain").is_none());
+
+        // A present onchain binding serializes as the flat camelCase object.
+        let mut bound = sample_budget_content();
+        bound.onchain = Some(OnchainBinding {
+            chain: "anvil-31337".into(),
+            contract: "0xabc".into(),
+            subject: "b".repeat(64),
+        });
+        let json = serde_json::to_value(&bound).unwrap();
+        let onchain = json.get("onchain").expect("onchain present");
+        assert_eq!(
+            onchain.get("chain"),
+            Some(&serde_json::Value::String("anvil-31337".into()))
+        );
+        assert_eq!(
+            onchain.get("contract"),
+            Some(&serde_json::Value::String("0xabc".into()))
+        );
+        assert_eq!(
+            onchain.get("subject"),
+            Some(&serde_json::Value::String("b".repeat(64)))
+        );
+        assert!(onchain.get("subject_pubkey").is_none());
+    }
+
+    #[test]
+    fn org_node_onchain_binding_serializes_camel_case() {
+        // An absent root binding is skipped entirely (serde default).
+        let json = serde_json::to_value(sample_node_content()).unwrap();
+        assert!(json.get("onchain").is_none());
+
+        // A present root binding serializes as the flat camelCase object.
+        let mut bound = sample_node_content();
+        bound.onchain = Some(OrgOnchainBinding {
+            chain: "anvil-31337".into(),
+            dao: "0xdao".into(),
+            bound_at: 1_798_765_432,
+        });
+        let json = serde_json::to_value(&bound).unwrap();
+        let onchain = json.get("onchain").expect("onchain present");
+        assert_eq!(
+            onchain.get("chain"),
+            Some(&serde_json::Value::String("anvil-31337".into()))
+        );
+        assert_eq!(
+            onchain.get("dao"),
+            Some(&serde_json::Value::String("0xdao".into()))
+        );
+        assert_eq!(
+            onchain.get("boundAt"),
+            Some(&serde_json::Value::from(1_798_765_432u64))
+        );
+        assert!(onchain.get("bound_at").is_none());
+
+        // Round-trips through a pre-binding event payload unchanged.
+        let parsed: OrgNodeContent =
+            serde_json::from_value(serde_json::to_value(sample_node_content()).unwrap()).unwrap();
+        assert_eq!(parsed, sample_node_content());
+    }
+
+    // ── Contribution record (37013) tests ──────────────────────────────────
+
+    #[test]
+    fn contribution_record_builds_valid_event() {
+        let mut dims = std::collections::HashMap::new();
+        dims.insert("build".into(), 0.8);
+        dims.insert("teach".into(), 0.3);
+
+        let content = ContributionRecordContent {
+            v: 1,
+            action: "Implemented NIP-ORG SDK builders".into(),
+            dimensions: dims,
+            outcome: Some(ContributionOutcome {
+                effect: Some("SDK compiles and passes 326 tests".into()),
+                harm: None,
+            }),
+            evidence: vec!["event-id-1".into()],
+            human_vs_ai: HumanVsAi {
+                human: 0.7,
+                ai: 0.3,
+            },
+            informed_by: vec![],
+            classifier_version: Some("2026-Q3".into()),
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![],
+        };
+
+        let builder = build_contribution_record("action-1", &content).unwrap();
+        let event = sign(builder);
+        assert_eq!(event.kind, Kind::Custom(KIND_CONTRIBUTION_RECORD as u16));
+        assert!(event.tags.iter().any(|t| t.as_slice() == ["d", "action-1"]));
+        assert!(event
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["e", "event-id-1"]));
+
+        let parsed: ContributionRecordContent = serde_json::from_str(&event.content).unwrap();
+        assert_eq!(parsed.action, "Implemented NIP-ORG SDK builders");
+        assert_eq!(parsed.dimensions.get("build"), Some(&0.8));
+        assert_eq!(parsed.human_vs_ai.human, 0.7);
+    }
+
+    #[test]
+    fn contribution_record_rejects_empty_id() {
+        let content = ContributionRecordContent {
+            v: 1,
+            action: "test".into(),
+            dimensions: std::collections::HashMap::new(),
+            outcome: None,
+            evidence: vec![],
+            human_vs_ai: HumanVsAi::default(),
+            informed_by: vec![],
+            classifier_version: None,
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![],
+        };
+        let err = build_contribution_record("", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn contribution_record_rejects_empty_action() {
+        let content = ContributionRecordContent {
+            v: 1,
+            action: "".into(),
+            dimensions: std::collections::HashMap::new(),
+            outcome: None,
+            evidence: vec![],
+            human_vs_ai: HumanVsAi::default(),
+            informed_by: vec![],
+            classifier_version: None,
+            review_status: ReviewStatus::Pending,
+            appeal_history: vec![],
+        };
+        let err = build_contribution_record("action-1", &content).unwrap_err();
+        assert!(matches!(err, SdkError::InvalidInput(_)));
+    }
+
+    #[test]
+    fn review_status_from_str() {
+        assert!(matches!(
+            "pending".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Pending)
+        ));
+        assert!(matches!(
+            "accepted".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Accepted)
+        ));
+        assert!(matches!(
+            "rejected".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Rejected)
+        ));
+        assert!(matches!(
+            "appealed".parse::<ReviewStatus>(),
+            Ok(ReviewStatus::Appealed)
+        ));
+        assert!("invalid".parse::<ReviewStatus>().is_err());
     }
 }

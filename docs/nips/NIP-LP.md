@@ -1,0 +1,380 @@
+NIP-LP
+======
+
+DAO Launchpad
+
+`draft` `optional` `relay`
+
+**Depends on**: NIP-01 (basic event format, addressable events), NIP-09 (event
+deletion), NIP-34 (git repositories, issues). Interacts with NIP-29 (the
+channels a launch binds to), NIP-MP (projects a launch references), and
+NIP-OA (how agents inherit owner authority).
+
+## Abstract
+
+This NIP defines five Buzz-specific event kinds (`37001`, `47002`–`47005`) for DAO
+launches: one addressable **launch record** holding the launch's identity,
+community link, chain addresses, and auction parameters; plus four regular
+kinds for **bid mirrors**, **founder updates**, **proposal records**, and
+**chain-state receipts**.
+
+The chain is the ledger; Nostr is the record. Capital, escrow, minting, and
+conversion happen onchain (provable, slashable, irreversible). Framing,
+discussion, updates, and receipts are Nostr events (cheap, searchable,
+human- and agent-readable). Hash links bind the two. Receipt and bid-mirror
+events are advisory: the chain is authoritative and clients verify against
+it when money is at stake.
+
+## Motivation
+
+A DAO launch needs a coordination surface (who is raising, on what terms, in
+which community, with what progress) and a money surface (auction, token,
+treasury, governance). Buzz already owns the coordination surface. These
+kinds give launches a first-class, signed, searchable record inside the
+community that spawned them, without inventing a new HTTP API: realtime
+fan-out, NIP-29 scoping, and the existing auth pipeline come for free.
+
+One custom record kind is required because no standard kind expresses
+"a fundraise with a community link, chain addresses, and an auction
+parameter commitment under one signer." Everything else reuses standard
+semantics (regular events, `a`/`e`/`p`/`d` tags, NIP-09 deletion).
+
+## The kinds
+
+| Kind | Name | Shape | Author | Purpose |
+|------|------|-------|--------|---------|
+| `37001` | Launch record | parameterized replaceable, `d` = launch id | founder key | identity, community link, chain addrs, auction params, stage |
+| `47002` | Bid mirror | regular, `a` = launch coordinate | bidder (or indexer) | auction bid: bucket, budget, max price, tx hash |
+| `47003` | Launch update | regular, `a` = launch coordinate | founder key | signed update: title + markdown body + links |
+| `47004` | Proposal record | regular, `a` = launch coordinate | founder/member | proposal: onchain id if any, plain vs futarchy, issue link, state, execution `calls[]` |
+| `47005` | Receipt | regular, `a` = launch coordinate | anyone (usually indexer bot) | chain-state mirror: table kind, tx hash, payload JSON |
+| `37006` | Score root | parameterized replaceable, `d` = `<program>:<epoch>` | scoring operator | trustgraph score Merkle root + proof pointer |
+| `47008` | Forecast | regular, `t` = bounty question | anyone | a whole percent that a bounty will be paid, and a reason |
+| `37019` | Work taken on | parameterized replaceable, `d` = `<budget>:<work-area-id>`, `a` = launch coordinate | anyone | what they will deliver in a work area, for whom, and by when |
+| `37020` | Project focus | parameterized replaceable, `d` = launch id, `a` = launch coordinate | launch author | the team's Now (at most three) and Not doing lists |
+
+Kinds `37002`–`37009` (except `37006`) are reserved for future launchpad use; `47006`–`47007` are the royalty
+mirrors and `47008` the forecasts. `47009` carried exit offers for matched exits, retired in D152: relays refuse
+it, and it is not reused.
+
+## `37001`: the launch record
+
+Tags:
+
+- `["d", <launch-id>]` — stable id, REQUIRED, exactly one. Lowercase
+  `[a-z0-9-]` recommended (e.g. `nebula-dao`).
+- `["name", <display name>]` — REQUIRED.
+- `["buzz-channel", <channel-uuid>]` — bound discussion channel. MAY be
+  repeated (announcements + discussion). Follows the NIP-34 `buzz-channel`
+  convention.
+- `["a", "30621:<owner-hex>:<project>", ...]` — linked NIP-MP projects.
+  A launch asserts grouping only; it gains no authority over member
+  repositories (same rule as NIP-MP).
+- `["a", "37001:<author-hex>:<launch-id>", "", "built-on"]` — the launch this one is built on (N11). At most one; it
+  matches the `builtOn` content field. A parent finds the launches built on it with `#a:[its coordinate]`. It claims
+  nothing over the parent.
+- `["team", <hex-pubkey>, <role>]` — founders/team. `role` is a free string
+  (`founder`, `engineer`, ...). Clients resolve seed weights offchain; the
+  chain never reads this tag.
+- `["chain", <chain-id>]` — e.g. `11155111`. Exactly one for v1.
+- `["auction", <0x-address>]`, `["token", <0x-address>]`,
+  `["treasury", <0x-address>]`, `["hook", <0x-address>, <bucket>]` — chain
+  addresses. Absent = not yet deployed (pre-launch launches).
+- `["admission", "curated" | "community"]` — sale admission track.
+- `["t", "dao-launchpad"]` — discovery marker. Clients SHOULD include it;
+  directory queries filter on it.
+
+Content is JSON:
+
+```json
+{
+  "longPitch": "What exists today, why now, what failure looks like.",
+  "ipList": ["https://github.com/…", "naddr1…"],
+  "updateCadence": "monthly with KPIs",
+
+  "pitch": "One-paragraph pitch.",
+  "stage": "draft | review | live | funding | graduated | failed",
+  "currency": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+  "floorPrice": "1000000",
+  "tickSpacing": "100",
+  "requiredRaised": "50000000000",
+  "graduationThreshold": "50000000000",
+  "budget": "4166666666",
+  "startBlock": 12345678,
+  "endBlock": 12395678,
+  "claimBlock": 12400678,
+  "paramsHash": "0x…",
+  "website": "https://…",
+  "docs": ["<blossom-or-https-url>"]
+}
+```
+
+`budget` (optional) is the monthly operating budget in currency smallest
+units, a commitment investors price at bid time: a budget above a sixth of the
+graduation threshold is displayed as a warning by clients (the treasury could
+be refilled only about every six months at the cap). It is a commitment, not a
+chain-enforced number.
+
+`longPitch` (optional), `ipList` (optional, URLs or NIP-MP `a` coordinates)
+and `updateCadence` (optional) are the founder commitments. Clients gate the
+`review` → `live` stage on them: numeric terms make a deployable auction;
+these make an investor able to judge the person running it. A launch cannot
+leave `review` without a long pitch, a bound `buzz-channel`, a committed
+`budget`, and an update cadence.
+
+`paramsHash` commits to the full offchain auction configuration (steps,
+buckets, caps, gating) so clients can detect silent edits. `stage` is a
+display hint; the chain determines the truth. `tokenPlan` (optional) records
+a mint intent — `{mode: "mint", name, symbol, supply}` in whole tokens —
+when the founder chose mint-over-import in the wizard; the `token` tag is
+added later once the apptoken deploys.
+
+`builtOn` (optional, N11) is `{author, id}` of the launch this one is built on, with the `a` tag above. `remixTerms`
+(optional, N11) is `{invited, asks, offers}`: whether the project invites launches built on it, what it asks in return
+in its own words (at most 500 characters; nothing in it is enforced), and what a launch built on it gets (any of
+`name`, `assets`, `announce`, `contributors`). Clients say whether a launch's IP record (D38) fits its parent's
+licence and terms; they never present remix terms as taking back rights an open licence gave.
+
+**Authority.** Replaceable only by its signer. The signer SHOULD be the
+founder key (or a team key whose members are listed in `team` tags).
+Unlinking a community (removing `buzz-channel`) requires an explicit
+republish; discussion history in the old channel is retained, never moved.
+
+## `47002`: bid mirrors
+
+A bidder (or an indexer watching the auction contract) publishes one event
+per bid: `a` = launch coordinate (`37001:<author-hex>:<launch-id>`),
+`m` = bucket id, content JSON
+`{"budget": "<uint-string>", "maxPrice": "<uint-string>", "tx": "<0x-hash>"}`.
+Mirrors exist for feed, search, and notifications. Fills, refunds, and
+claims are chain truth; mirrors MUST NOT be treated as settlement.
+
+## `47003`: launch updates
+
+Founder-signed. `a` = launch coordinate. Content JSON
+`{"title": "…", "body": "markdown…", "links": ["…"]}`. Clients render an
+Updates feed and MAY cross-post the title into a bound channel as a regular
+message (one user action = one atomic persist: the update event and the
+channel message are published together or not at all).
+
+Who may sign one is checked by the relay when it is written
+(`crates/buzz-relay/src/handlers/launch_update_authority.rs`): goals and
+promises are the founder's; updates and answers to offers are the founder's or
+a team member's; an offer to help is anyone's; a task's steps are the team's
+or the named helper's. A `47003` that carries none of those tags is stored
+only from the founder or the team, unless its JSON body marks it as a record
+about on-chain work that people outside the team write (`claim`, `review`,
+`agreement`, `agreementCorrections`, `workArea` or `challenge` as an object).
+An account on record as an agent (below) may not sign a confirmation, a grant
+of more time, a goal, a promise or a promise mark.
+
+## `47004`: proposal records
+
+`a` = launch coordinate. Content JSON
+`{"proposalId": "<onchain-id-or-null>", "kind": "plain | futarchy-budget | signal", "issue": "<1621-coordinate-or-null>", "state": "open | passed | executed | defeated | agent-draft", "title": "…", "evidence": "…", "calls": [{"operation": "call | delegatecall", "from": "0x…", "to": "0x…", "value": "0", "data": "0x…"}]}`.
+The optional `calls` array is the proposal's execution intent in ERC-4824
+`CallDataEVM` shape — majeur proposals are call batches (`op` 0 = call, 1 =
+delegatecall), so this is the exact input `executeByVotes` takes and the
+exact shape the `dao.json` projection renders. Readers MUST ignore (not
+guess at) a `calls` array containing malformed entries; such a record carries
+no executable intent. Proposals with no onchain action (`signal`) live as git
+issues (NIP-34 `kind:1621`) and are only mirrored here for launch-scoped
+discovery.
+Futarchy markets exist only for `futarchy-budget` (budget/subDAO
+allocation); all other proposals are plain votes.
+
+`agent-draft` records (2026-09-28, docs/persona-drafting-loop.md) are
+agent-composed proposals awaiting a human counter-sign: `proposalId` is null,
+`evidence` (optional) is a verbatim quote from the wiki block the draft was
+composed from, and the optional `["wiki", <page-coordinate>, <block-anchor>]`
+tag binds the draft to its source wiki block (the dedupe key — one live
+record per anchor — and the provenance pointer). An agent draft never
+broadcasts onchain without approval: the accepted record (`state: "open"`,
+`proposalId` set, same `wiki` tag) supersedes the draft, and the draft is
+NIP-09 tombstoned. ERC-4824 projections present `agent-draft` as DAOIP-5
+`status: "draft"`.
+
+## `47005`: receipts
+
+Anyone MAY publish; usually an indexer bot. `a` = launch coordinate,
+`tx` = chain tx hash, `kind` = one of
+`auction-created | bid | sweep | claim | lock | summon | dao-launch | stream | cancel | ragequit`.
+`dao-launch` is the launch kit creating a project's DAO and opening its sale in one transaction; its payload names
+the `dao`, the `shares` token, the `auction`, the graduation `executor` and the team's vesting `vaults`, and unlike
+`summon` it does not mark the launch graduated (the raise has not happened yet).
+Content is the mirrored payload JSON. Advisory: clients MUST cross-check
+the chain before acting on money.
+
+## `47008`: forecasts
+
+Anyone MAY publish. A forecast says how likely a person thinks a bounty is to be paid (N3 of
+`docs/v3-review/NEXT-GEN-DAO.md`). It carries no money and no vote.
+
+- Exactly one `t` tag naming the question:
+  `forecast:<workbounty|postbounty>:<chain id>:<0x contract, lowercase>:<bounty id>` (decimal numbers, no leading
+  zeros). `workbounty` is a `WorkAreaBounty`, `postbounty` an `OpenBounty`.
+- Exactly one `forecast` tag holding a whole percent, `0`–`100`, written plainly.
+- Content: the reason, 1 to 500 characters.
+
+Relays reject anything else, and an event more than 15 minutes from the relay's clock, so a forecast's `created_at` can
+be trusted to that margin. Every revision is a new event; clients count each author's latest forecast made strictly
+before the question's cutoff: the day before the bounty's deadline, or earlier when work started to win it (an
+`OpenBounty`'s first `RunStarted`; a work-area bounty's first submission released after it opened). The question settles
+on the chain: paid is done; refunds open is not done. Accuracy is `100 × (1 − mean Brier score)`, computed by each
+client from public forecasts and the chain, only for bounties on contracts the client itself trusts.
+
+## `37019` and `37020`: working structure
+
+Two records give a project's team its structure without moving money (`docs/v3-review/PROJECT-STRUCTURE.md`).
+
+**Work taken on (`37019`).** Signed by the person doing the work. `d` = `<budget>:<work-area-id>`, both lowercase hex
+(the work budget's address and the 32-byte work area id), so each person has one per work area and a newer one
+replaces it. One `a` tag names the launch. Content is a JSON object: `deliver` (1–280 characters, what they will
+deliver), `for` (1–140, who will use it), `until` (Unix seconds), and optionally `released: true` when they let it go.
+It grants nothing and reserves nothing: anyone may submit work in the area, and awards still come only from review and
+the DAO's vote. Clients show it until `until` passes or it is released.
+
+**Project focus (`37020`).** Signed by the launch's author: the relay refuses one whose `a` tag names a launch by
+anyone else, or whose `d` is not that launch's id. Content: `now`, at most three `{text, area?}` items (`area` in the
+same form as a `37019` `d`), and `notDoing`, at most ten `{text, why?}` items. Text is 1–280 characters, `why` up to 280.
+Optional `aim` (up to 200 characters) says who the project is for and what it changes for them. A Now item may also
+carry `why` (why this, now) and a prediction: `expect` (what the team expects to see, up to 280 characters) with
+`checkBy` (Unix seconds, the day it will check). `expect` and `checkBy` come together or not at all. A Now item may
+carry an `id` (1–80 letters, digits, `_`, `:` or `-`, different for each item) that stays with it across saves, and the
+record may carry `applied`: the event id of the last check note (a `47003` launch update with a `check` object) applied
+to it. Clients keep both on every save, apply a check note's answers to items by `id`, and treat a note as applied when
+the focus names it, never by comparing times. Clients reading a record without ids derive them from the record.
+
+## Deletion
+
+NIP-09 `kind:5` tombstones apply. Launch records address deletion by `a`
+coordinate (`37001:<author-hex>:<launch-id>`), like NIP-MP projects.
+Deleting a launch record hides the directory card; it changes nothing
+onchain.
+
+## Relay notes
+
+Launchpad events are stack-scoped via `a` tags, not channel-scoped via `h`
+tags. Directory queries use `kinds:[37001]` with `#t:[dao-launchpad]`.
+Per-launch queries use `kinds:[37001,47002..47005]` with `#a:[coordinate]` and/or
+`#d:[launch-id]`. Relay filters MUST always specify `kinds` (p-gate).
+
+## Non-goals
+
+This NIP does not define the auction mechanism, token standard, vesting
+locks, or governance rules — those live in the contract layer. It does not
+grant the launch signer any authority over linked projects, repositories,
+or channels. It does not define nested launches.
+
+### `37006`: score-root record
+
+An operator publishes the proven Merkle root of a community's scores once per
+epoch: `{program, root, epoch, indexerUrl?, anchorBlock?}`. The `root` is the
+same root `TrustGatedHook` consumes for gate gating; clients verify an
+individual score claim against it with a sorted-pair Merkle proof and the
+leaf `keccak256(abi.encode(member, score))` — no prover needed on the read
+side. The workspace data the root was computed from stays private; the root
+proves the computation, never exposes the source. Malformed roots (wrong
+length, missing program) are refused by clients rather than shown as
+authoritative.
+
+
+## Graduation execution (apptoken rails)
+
+Decision (§7.2, 2026-09-13): the launch graduates into **apptoken rails**,
+not a Uniswap v4 pool. `contracts/src/GraduationExecutor.sol` is deployed as
+the auction's `fundsRecipient` AND `tokensRecipient` at launch (the CCA's
+sweeps are recipient-only), so one call atomically:
+
+1. `sweepCurrency()` — net raised currency into the executor (protocol fee
+   already taken by the immutable fee controller),
+2. `sweepUnsoldTokens()` — remaining supply back,
+3. split by `reserveBps`: reserve → escrow for the TokenMaster floor,
+   remainder → treasury; unsold tokens → treasury,
+4. emit `GraduationExecuted` (mirrored as a 47005 `sweep` receipt).
+
+The reserve releases once, treasury-only, to the recorded pool
+(`releaseReserve`, mirrored as 47005 `lock`); if the pool never lands the
+treasury can `withdrawStuckReserve`. The accounting-only
+`AppTokenLBPInitializer` is superseded and was removed from the contracts in D151 (tag pre-deprecation-2026-10-31).
+
+
+## Relaunch, exit, and vesting (A3 / B4 / B5, 2026-09-13)
+
+- **Relaunch keeps the record id.** A failed launch is republished under the
+  same `d` with `stage` reset and chain links cleared: the community and its
+  history stay (the paper's "problems outlive teams" on the record layer).
+  The refund for the failed raise is the auction contract itself.
+- **Exit proposal.** A `47004` proposal with `kind: "return-capital"` is the
+  visible exit path: a signal on Nostr before graduation (the onchain refund
+  is the auction's `exitBid`), a real DAO decision after.
+- **Performance vesting.** `vesting` on the record: `{cliffBlocks, tranches:
+  [{multiple, percent}], twapWindow?}` — tranches unlock at price multiples of
+  the raise price (MetaDAO's 2x..32x ladder default; ascending, summing to
+  100). The onchain enforcer is deferred (plan §7.4: verifier milestones
+  primary, TWAP backstop). Clients refuse to publish a config that sums wrong
+  or descends.
+- The liquidity minimum is a wizard *policy*, never a record/chain field: the
+  wizard converts "20% of the raise" into supply percent (`liquidity >= sale%
+  * 2000/10000`) and warns when the pool would be thin.
+
+
+## Agent seats (C4, 2026-09-13)
+
+Agents are first-class launchpad participants, not impersonators:
+
+- An agent-authored launch/mirror stays authored by the agent key and carries
+  a self-describing `["agent", <agent-pubkey>]` tag so clients can badge
+  "Agent-run" without decoding signatures. When the owner opts in, the event
+  also carries a NIP-OA `auth` tag (owner BIP-340 attestation over
+  `nostr:agent-auth:<agent-pubkey>:<conditions>`) — the web app attests when
+  an owner identity exists; the CLI respects `BUZZ_AUTH_TAG` on every launchpad
+  write. Clients MUST NOT treat an `auth` tag as an identity override
+  (NIP-OA).
+- The same two tags on the account's own profile (kind `0`) are its
+  account-level label: "this account is an agent, and this person runs it". It
+  takes both keys (the profile is signed by the agent, the `auth` tag by the
+  operator). The relay refuses an `agent` tag that names any key but the
+  signer, an `agent` tag without an operator's signature that covers the
+  profile, more than one `auth` tag, and an `auth` signature that does not
+  hold; a profile that passes puts the account on record as run by that
+  operator, once and for good (`crates/buzz-relay/src/handlers/agent_label.rs`).
+  CLI: `buzz agents confirm`, `buzz agents label`, `buzz agents show`. See
+  `docs/agents/JOINING.md`.
+- Web: the create dialog and bid dialog offer a "as agent" toggle; the
+  directory and detail badge the launch.
+- CLI: `buzz launchpad compose-bid --as-agent` marks the unsigned envelope
+  agent-authored (the mirror, when recorded under `BUZZ_AUTH_TAG`, carries the
+  attestation).
+
+
+## Decisions applicable to this NIP (2026-09-13)
+
+- Agents publish launchpad records/mirrors under their own key with NIP-OA
+  attestation (C4). They never sign onchain value movement — an agent is
+  publish-only by policy.
+- The "participation token" concept is retired: the instruments with defined
+  claims (sale tokens, Moloch shares/loot, apptoken rails) are the answer to
+  the paper's undefined record-of-participation. No 47006 ledger.
+- Each project owns its legal posture; the NIP adds no admission restriction
+  beyond what the launch's own hooks configure.
+
+
+## Milestone attestation receipts (C5, 2026-09-13)
+
+Mirrors of the verifier/claim contracts use 47005 with a `kind` tag:
+
+- `kind=claim`, tag `claim=<id>` + `evidence=<64-hex>` — a contributor's
+  milestone claim, bound to its evidence by hash (ClaimStake).
+- `kind=verdict`, tag `claim=<id>` + approved/rejected in content — a
+  verifier's attestation mirror (VerifierSet). The `verdict` word is
+  `approve|reject`; clients and the CLI refuse anything else so the
+  vocabulary stays closed.
+- `kind=milestone-slashed` / `stream-cancelled` remain available for the
+  slash/freeze paths as the chain reports them (advisory; the chain is
+  authoritative).
+
+Both mirrors carry the `tx` tag: every `47005` names the chain transaction
+that settled it, and the relay refuses a receipt without one. CLI:
+`buzz launchpad record-claim` and `buzz launchpad record-verdict` validate the
+vocabulary, the evidence-hash shape, and the tx hash before mirroring.

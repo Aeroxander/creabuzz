@@ -1,0 +1,57 @@
+{
+  "v": 1,
+  "name": "Backward constraint validation",
+  "description": "AIME-2024 bank strategy from arXiv 2609.22682 Appendix A: agents derive answer constraints, generate candidates, and verify backward.",
+  "teamworkPrompt": "Use the final-answer format and problem constraints as a validation scaffold. Candidate answers must survive independent backward checks.",
+  "roles": {
+    "agent-0": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem.",
+    "agent-1": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem.",
+    "agent-2": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Derive necessary conditions for the final integer answer without relying on pre-supplied candidates: bounds, divisibility, modular residues, monotonicity, feasibility, or direct substitution conditions."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "For each candidate answer in the discussion, test it backward against the original problem conditions and the necessary conditions. Reject or repair candidates only with a stated mathematical reason."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.1",
+    "bank": "aime-2024",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper leaves Roles unset (shown when set); kind:44020 requires a prompt per roster slot, so all three slots carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

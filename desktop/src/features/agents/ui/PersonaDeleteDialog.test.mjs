@@ -14,13 +14,13 @@ const persona = { displayName: "Scout" };
 test("cascade delete discloses relay archival (plural)", () => {
   const copy = personaDeleteDescription(persona, 3);
   assert.match(copy, /deletes 3 agent instances/);
-  assert.match(copy, /archives their identities on the relay/);
+  assert.match(copy, /archives their identities on the server/);
 });
 
 test("cascade delete discloses relay archival (singular)", () => {
   const copy = personaDeleteDescription(persona, 1);
   assert.match(copy, /deletes 1 agent instance /);
-  assert.match(copy, /archives its identity on the relay/);
+  assert.match(copy, /archives its identity on the server/);
 });
 
 test("no instances → no archival claim (nothing is archived)", () => {
