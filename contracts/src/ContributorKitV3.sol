@@ -59,6 +59,17 @@ contract ContributorKitV3 is ContributorKit {
     /// the factory accepts.
     uint256 private constant MAX_LOT_SIZE_BOUND = type(uint128).max;
 
+    /// @notice The most reviewers a launch through this kit may name. The launch is one transaction and some
+    /// chains cap a transaction at 2**24 gas (EIP-7825): the V2 launch alone takes 10.8 million, the pool 4
+    /// million more, and each reviewer about 31,000 (a `ContributorKitV2` launch has no such cap and is
+    /// unchanged). With 8 first projects, 8 reviewers and the longest name and symbol the launch still leaves
+    /// more than 5% of the cap (`test_gas_the_largest_launch_fits_one_transaction`).
+    uint256 public constant MAX_REVIEWERS = 8;
+    /// @notice The longest project name and symbol (in bytes) a launch through this kit takes: both are stored by
+    /// the DAO and its Shares, at about 800 gas a byte.
+    uint256 public constant MAX_NAME_BYTES = 64;
+    uint256 public constant MAX_SYMBOL_BYTES = 12;
+
     /// @dev Everything the read-back checks, in one place.
     struct Predictions {
         address dao;
@@ -130,6 +141,8 @@ contract ContributorKitV3 is ContributorKit {
                 || base.shareCap == 0 || base.shareCap > base.shareBudget || base.reviewers.length == 0
                 || base.quorum == 0 || base.quorum > base.reviewers.length || base.predictedBudget == address(0)
                 || base.currency.code.length == 0 || bytes(base.name).length == 0 || bytes(base.symbol).length == 0
+                || base.reviewers.length > MAX_REVIEWERS || bytes(base.name).length > MAX_NAME_BYTES
+                || bytes(base.symbol).length > MAX_SYMBOL_BYTES
         ) revert InvalidTerms();
         _checkProjects(base);
         // D79, as the legacy kit: the founder starts with at most a third of the first budget, and

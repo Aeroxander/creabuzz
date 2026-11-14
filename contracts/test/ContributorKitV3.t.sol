@@ -558,10 +558,11 @@ contract ContributorKitV3Test is Test {
         assertEq(Moloch(payable(d)).votingWeight() != address(0), true);
     }
 
-    /// @dev Finding F7a: the heaviest launch, with the most first projects a launch takes, as its own
-    /// transaction. Some chains cap a transaction at 2**24 gas (EIP-7825); the launch has to fit with room.
-    function test_gas_the_largest_launch_fits_one_transaction() public {
-        ContributorKitV2.LaunchParams memory p = _params("eight");
+    /// @dev Finding F7a and F2: the heaviest launch the kit accepts, as its own transaction: the most first
+    /// projects, the most reviewers, and the longest name and symbol. Some chains cap a transaction at 2**24 gas
+    /// (EIP-7825); the launch has to fit with room.
+    function _heaviestLaunch() internal returns (ContributorKitV2.LaunchParams memory p) {
+        p = _params("eight");
         p.base.projects = new ContributorKit.FirstProject[](8);
         for (uint256 i; i < 8; ++i) {
             p.base.projects[i] = ContributorKit.FirstProject({
@@ -572,14 +573,69 @@ contract ContributorKitV3Test is Test {
                 check: keccak256(abi.encode("check", i))
             });
         }
+        address[] memory reviewers = new address[](kit.MAX_REVIEWERS());
+        for (uint256 i; i < reviewers.length; ++i) {
+            reviewers[i] = address(uint160(0xA000 + i));
+        }
+        p.base.reviewers = reviewers;
+        p.base.quorum = 5;
+        p.base.name = _filled(kit.MAX_NAME_BYTES());
+        p.base.symbol = _filled(kit.MAX_SYMBOL_BYTES());
+    }
+
+    function _filled(uint256 length) internal pure returns (string memory) {
+        bytes memory b = new bytes(length);
+        for (uint256 i; i < length; ++i) {
+            b[i] = "x";
+        }
+        return string(b);
+    }
+
+    function test_gas_the_largest_launch_fits_one_transaction() public {
+        ContributorKitV2.LaunchParams memory p = _heaviestLaunch();
         vm.prank(FOUNDER);
         (address dao,,, address pool) = kit.launchWithPool(p);
         uint256 used = vm.lastCallGas().gasTotalUsed;
-        emit log_named_uint("create: launchWithPool with 8 first projects", used);
+        emit log_named_uint("create: launchWithPool, 8 first projects, 8 reviewers, longest name and symbol", used);
         assertEq(poolFactory.poolOf(dao), pool);
-        // Under the cap. The room left is about 8% (1.3 million gas): the pool's code grew with the opening
-        // round, and creating it is most of what this launch adds to a V2 launch.
-        assertLt(used, uint256(1 << 24) * 93 / 100);
+        // Under the cap with at least 5% to spare. (The gas limit the transaction has to carry is a little above
+        // what it uses, about half a percent more, measured by searching for the least limit that succeeds.)
+        assertLt(used, uint256(1 << 24) * 95 / 100);
+    }
+
+    /// @dev The caps are the ones the gas figure above holds for, and nothing but this kit has them.
+    function test_a_launch_beyond_the_caps_is_refused_and_v2_is_unchanged() public {
+        ContributorKitV2.LaunchParams memory p = _params("caps");
+        address[] memory reviewers = new address[](9);
+        for (uint256 i; i < 9; ++i) {
+            reviewers[i] = address(uint160(0xA000 + i));
+        }
+        p.base.reviewers = reviewers;
+        p.base.quorum = 2;
+        vm.prank(FOUNDER);
+        vm.expectRevert(ContributorKit.InvalidTerms.selector);
+        kit.launchWithPool(p);
+
+        p = _params("caps name");
+        p.base.name = _filled(65);
+        vm.prank(FOUNDER);
+        vm.expectRevert(ContributorKit.InvalidTerms.selector);
+        kit.launchWithPool(p);
+
+        p = _params("caps symbol");
+        p.base.symbol = _filled(13);
+        vm.prank(FOUNDER);
+        vm.expectRevert(ContributorKit.InvalidTerms.selector);
+        kit.launchWithPool(p);
+
+        // The kit it repeats takes all three: V2 has no such caps.
+        p = _params("caps v2");
+        p.base.reviewers = reviewers;
+        p.base.quorum = 2;
+        p.base.name = _filled(65);
+        p.base.symbol = _filled(13);
+        vm.prank(FOUNDER);
+        kitV2.launch(p);
     }
 
     // ---- opening with a round --------------------------------------------------------------------------------------

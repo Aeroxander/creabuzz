@@ -2,8 +2,12 @@
 
 **Status (2026-11-11, branch `v4-governance-rework`): built and tested, deployed nowhere.** Contracts:
 `contracts/src/BackingPool.sol`, `BackingPoolFactory.sol`, `BackingClaim.sol`, `ContributorKitV3.sol`. One internal adversarial
-review (2026-11-11) found three medium flaws; all are fixed here and its proofs are now regression tests. No
-outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
+review (2026-11-11) found three medium flaws; all are fixed here and its proofs are now regression tests. A
+second review of the round (two skeptics per finding) confirmed seven more, fixed or written down below: the
+vote could be corrupted by exchanging claim tokens, the vote wait could be skipped through claim tokens,
+rounding leftovers of a round counted as a backer, a protocol fee above the raise bricked the settlement, the
+round's blocks were counted on the wrong clock on Arbitrum, and the launch was unbounded in reviewers and name
+length. No outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
 for counsel at the end are open.
 
 ## What it is
@@ -63,7 +67,8 @@ Every buy is split three ways:
   (zero for the default minimum). It is a second transaction because the two together do not fit in one
   (18.5 million gas against a cap of 16.8 million on some chains).
 - **Open now:** a new project gets its pool in the transaction that creates it
-  (`ContributorKitV3.launchWithPool`, same inputs as today's launch), or an existing project made with
+  (`ContributorKitV3.launchWithPool`, same inputs as today's launch, with at most 8 reviewers, a name of at most
+  64 bytes and a symbol of at most 12; the V2 kit has no such caps), or an existing project made with
   `ContributorKitV2` opens one with a single call from the founder (`BackingPoolFactory.open(dao)`). No vote
   either way. A project from the older kit has no founder on record, so its pool takes one passed decision.
 - **You choose nothing.** Every term is fixed in the factory.
@@ -212,18 +217,19 @@ Not protected. Say these plainly in the app:
 
 | Step | Gas |
 |---|---|
-| Create project with pool, open now (`launchWithPool`), 1 first project / 8 | 14,702,000 / 15,458,000 (the per-transaction cap some chains enforce is 16,777,216, so about 8% to spare; the V2 launch alone is 10,754,000) |
-| Open a pool for an existing project, open now (`open`) | 3,951,000 |
-| Open a pool behind a round (`openWithRound`: pool, claim token, auction) | 7,788,000 |
+| Create project with pool, open now (`launchWithPool`), 1 first project / 8 | 14,714,000 / 15,470,000 (the V2 launch alone is 10,754,000) |
+| The heaviest launch the kit accepts (8 first projects, 8 reviewers, 64-byte name, 12-byte symbol) | 15,702,000 used; the least gas limit that succeeds is 15,792,000, which is 5.9% under the 16,777,216 per-transaction cap some chains enforce. Each reviewer adds about 31,000 and each name byte about 800, which is why the kit caps them (32 reviewers took 16,401,000, 2% under the cap, and a 300-byte name 16,627,000) |
+| Open a pool for an existing project, open now (`open`) | 3,962,000 |
+| Open a pool behind a round (`openWithRound`: pool, claim token, auction) | 7,801,000 |
 | Bid in a round (the auction's own call) | 396,000 |
-| Settle a round (`seedFromAuction`) | 605,000 |
-| Exchange claim tokens for units (`redeem`) | 93,000 |
-| Buy (first time for a wallet / again) | 164,000 / 110,000 (286,000 for the pool's very first buy) |
-| Sell | 92,000 |
-| Claim milestone (`postMilestone`) | 183,000 |
+| Settle a round (`seedFromAuction`) | 604,000 |
+| Exchange claim tokens for units (`redeem`, a wallet's first) | 117,000 |
+| Buy (first time for a wallet / again) | 166,000 / 112,000 (289,000 for the pool's very first buy) |
+| Sell | 94,000 |
+| Claim milestone (`postMilestone`) | 185,000 |
 | Leave at a milestone | 143,000 |
 | Release (`resolveMilestone`, pays the treasury) | 122,000 |
-| Refund (sell once abandoned) | 70,000 (118,000 for the first one, which records the abandonment) |
+| Refund (sell once abandoned) | 70,000 (120,000 for the first one, which records the abandonment) |
 
 ## Deploying (Sepolia)
 
