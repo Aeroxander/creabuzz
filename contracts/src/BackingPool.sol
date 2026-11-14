@@ -670,13 +670,14 @@ contract BackingPool {
             abandonVotes -= weightBefore;
         }
         lastBuyAt[msg.sender] = uint64(block.timestamp);
-        // The clocks measure time with backers' money held: they start again with the first backer in. Weight
-        // of the round nobody has redeemed is not a backer (see `_redeemableWeight`).
-        if (_redeemableWeight() == 0) lastReleaseAt = uint64(block.timestamp);
 
         // The buyer's weight is priced before their money goes in and on the escrow with any open
         // tranche already taken off, so it is worth what they add and an open milestone does not touch it.
         uint256 weight = Math.mulDiv(toProject, totalWeight + WEIGHT_OFFSET, escrow - pending + 1);
+        // The clocks measure time with backers' money held: they start again with the first backer in. That is a
+        // buy that gives its wallet a weight: weight of the round nobody has redeemed is not a backer (see
+        // `_redeemableWeight`), and nor is a dust buy whose weight rounds to zero.
+        if (weight != 0 && _redeemableWeight() == 0) lastReleaseAt = uint64(block.timestamp);
         weightOf[msg.sender] = weightBefore + weight;
         totalWeight += weight;
         escrow += toProject;

@@ -1150,6 +1150,50 @@ contract BackingRoundDustTest is BackingRoundFixture {
         _assertBooks(0);
     }
 
+    /// @dev The review's second pass: the round's leftovers hold all the weight there is and the escrow is large, so
+    /// a dust buy still mints units but its weight rounds to zero. Such a buy gives the buyer no say in the
+    /// escrow and so must not restart the abandonment clock (it used to, and a dust buy every 179 days kept a
+    /// dormant pool alive for ever). A buy that does give a wallet weight is a backer arriving and does restart it.
+    function test_a_dust_buy_that_gets_no_weight_does_not_restart_the_abandonment_clock() public {
+        (uint256 a1, uint256 a2, uint256 b) = _round();
+        _collect(a1);
+        _collect(a2);
+        _collect(b);
+        _everyoneRedeemsAndSells([ALICE, BOB]);
+        assertEq(pool.totalWeight(), pool.unredeemedWeight(), "no wallet holds any weight");
+        uint256 clockStart = pool.lastReleaseAt();
+        uint256 expires = pool.abandonableAt();
+
+        // Day 179: a dust buy gets units and no weight, and the clock stays where it was.
+        vm.warp(clockStart + 179 days);
+        currency.mint(NEWBIE, 1_000);
+        vm.startPrank(NEWBIE);
+        currency.approve(address(pool), type(uint256).max);
+        pool.buy(1_000, 0, type(uint256).max);
+        vm.stopPrank();
+        assertGt(pool.balanceOf(NEWBIE), 0, "the dust bought units");
+        assertEq(pool.weightOf(NEWBIE), 0, "and no weight");
+        assertEq(pool.lastReleaseAt(), clockStart, "so it is not a backer arriving");
+        assertEq(pool.abandonableAt(), expires);
+        _assertBooks(0);
+
+        // A buy big enough to carry weight is a backer arriving: it restarts the clock, once. A second buy
+        // while that wallet holds its weight does not move it again.
+        vm.warp(clockStart + 179 days + 1 hours);
+        currency.mint(CAROL, 2e12);
+        vm.startPrank(CAROL);
+        currency.approve(address(pool), type(uint256).max);
+        pool.buy(1e12, 0, type(uint256).max);
+        assertGt(pool.weightOf(CAROL), 0);
+        assertEq(pool.lastReleaseAt(), vm.getBlockTimestamp(), "a backer with a weight restarts it");
+        uint256 restarted = pool.lastReleaseAt();
+        vm.warp(restarted + 10 days);
+        pool.buy(1e12, 0, type(uint256).max);
+        vm.stopPrank();
+        assertEq(pool.lastReleaseAt(), restarted, "and only once, while somebody holds a weight");
+        _assertBooks(0);
+    }
+
     /// @dev Round buyers who have not exchanged their claim tokens are not backers yet: with nobody else the
     /// clock does not run. When one of them exchanges, a clock that has already run out takes effect at once,
     /// so they are refunded.

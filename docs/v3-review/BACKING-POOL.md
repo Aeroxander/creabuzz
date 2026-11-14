@@ -214,6 +214,16 @@ Not protected. Say these plainly in the app:
   newcomer's buy restarts it, and the first exchange after the clock has run out is refunded at once. (So a
   founder can restart the clock by buying while every round bidder is asleep; a bidder ends that by
   exchanging his claim tokens once.)
+- **What a dust buy can and cannot do to that clock.** A buy restarts the clock only when it gives the buyer
+  a weight. In a pool whose only weight is round leftovers and unexchanged claim tokens, a buy so small that
+  its weight rounds to zero (it still mints units) does not restart it, so such buys cannot keep a dormant
+  round pool alive (`test_a_dust_buy_that_gets_no_weight_does_not_restart_the_abandonment_clock`). A buy that
+  carries even one base unit of weight does restart it, and that costs next to nothing (about the escrow
+  divided by 1e12, in base units of project money). After it that wallet holds a weight, so it is a backer
+  and no other buy restarts the clock while it does. To restart again the wallet has to sell all its units
+  and buy again, paying the fee on both trades (rounded up) and the gas, and every such cycle only delays
+  the refund of claim holders who have not exchanged, never touching the money of anyone who has. It ends
+  the first time a bidder exchanges: his weight then counts as a wallet's.
 - The round's length is counted in blocks, so its length in days depends on the chain. Blocks are counted on
   the auction's own clock: on Arbitrum and its Orbit chains that is the chain's own block number (ArbSys), not
   `block.number`, and the factory and the pool read it the same way (a test runs a round against a stand-in
