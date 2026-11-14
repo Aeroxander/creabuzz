@@ -505,7 +505,8 @@ export async function ethGetLogs(
   endpoint: string,
   filter: {
     address: string;
-    topics: (string | null)[];
+    /** Each position is one topic, any of a list (an OR), or null for any. */
+    topics: (string | string[] | null)[];
     fromBlock: string;
     toBlock: string;
   },

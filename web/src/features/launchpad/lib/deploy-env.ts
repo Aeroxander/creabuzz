@@ -123,6 +123,10 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   );
 
   const contributor = contributorKit(chainId, env);
+  // Projects can also be made by the pool kit when investing is on: it is a contributor kit for everything below that asks
+  // whether the page makes projects (a chain node to read them, paid gas in the contributor-only image, error reports).
+  const kitV3 = contributorKitV3(chainId, env);
+  const makesProjects = contributor ?? kitV3;
   const raise = daoLaunchKit(chainId, env);
   if (value(env, "VITE_CONTRIBUTOR_KITS") && !contributor) {
     problems.push(
@@ -236,7 +240,6 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   // carry an address nobody asked to use, so a half setting stops the build, with the one thing to change.
   const investingSwitch = value(env, "VITE_INVESTING");
   const poolFactory = backingPoolFactory(chainId, env);
-  const kitV3 = contributorKitV3(chainId, env);
   const backingQuote = backingQuoteToken(chainId, env);
   const investingNames = [
     ["VITE_BACKING_POOL_FACTORY", poolFactory],
@@ -294,7 +297,7 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
     );
   }
   const from = historyFromBlock(chainId, env);
-  if (contributor || raise) {
+  if (makesProjects || raise) {
     if (!rpc) {
       problems.push(
         "A kit is named but VITE_CHAIN_RPC_URL is not: a hosted page has no chain node without it.",
@@ -307,7 +310,7 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
     }
   }
   summary.push(
-    `Contributor projects: ${contributor ? `on (kit ${contributor}, history from block ${from})` : "off"}`,
+    `Contributor projects: ${makesProjects ? `on (kit ${makesProjects}, history from block ${from})` : "off"}`,
   );
   summary.push(`Test raises: ${raise ? `on (kit ${raise})` : "off"}`);
   summary.push(`Bounties on work areas: ${bounty ? `on (${bounty})` : "off"}`);
@@ -354,7 +357,7 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   // Only one of the two set is said above already; this is for neither.
   if (
     env.VITE_CONTRIBUTOR_ONLY?.trim() === "1" &&
-    contributor &&
+    makesProjects &&
     !project &&
     !zerodevChain
   ) {
@@ -367,7 +370,7 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
   // without them it sends nothing on chain.
   const contributorOnly = env.VITE_CONTRIBUTOR_ONLY?.trim() === "1";
   const paidGasOff = contributorOnly
-    ? contributor
+    ? makesProjects
       ? "off"
       : "off (not needed: contributor projects are off)"
     : "off (people bring a wallet and test gas)";
@@ -383,7 +386,7 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       problems.push(`VITE_ERROR_REPORT_URL ${checked.problem}.`);
     else reportHost = checked.host;
   }
-  if (contributor && !reports) {
+  if (makesProjects && !reports) {
     warnings.push(
       "Contributor projects are on, but VITE_ERROR_REPORT_URL is not set: the page will send no error reports, so a step that fails for people (a refused fee, a busy chain node) reaches you only if they tell you. The pilot runbook relies on them (docs/error-reporting.md).",
     );

@@ -7,6 +7,7 @@ import {
   kitLaunchLogs,
   TOPIC_CONTRIBUTOR_LAUNCHED,
   TOPIC_CONTRIBUTOR_LAUNCHED_V2,
+  TOPIC_CONTRIBUTOR_LAUNCHED_V3,
 } from "./contributor-status.ts";
 
 test("the kit's launch event is the one the contract emits", () => {
@@ -15,6 +16,15 @@ test("the kit's launch event is the one the contract emits", () => {
     TOPIC_CONTRIBUTOR_LAUNCHED,
     "0x7f4eb55556e4a4d7639e36b6ec8b0e6d4ab4fcfff92dd9c201bed8e870716583",
   );
+});
+
+test("the pool kit's launch event is the one the contract emits, and is not in the pinned list of the older kits'", () => {
+  // cast keccak 'ContributorProjectLaunchedV3(address,address,address,address,address,address,uint256,address)'
+  assert.equal(
+    TOPIC_CONTRIBUTOR_LAUNCHED_V3,
+    "0x380a3c60d2cbbdbb8d1ae519d55227a94cbbda306279fa58a970d2400e9ec05c",
+  );
+  assert.ok(!KIT_LAUNCH_TOPICS.includes(TOPIC_CONTRIBUTOR_LAUNCHED_V3));
 });
 
 test("the weekly-sale kit's launch event is the one the contract emits", () => {

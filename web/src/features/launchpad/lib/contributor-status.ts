@@ -46,6 +46,20 @@ export const TOPIC_CONTRIBUTOR_LAUNCHED_V2 = `0x${bytesToHex(
 )}`;
 
 /**
+ * `ContributorProjectLaunchedV3(address indexed founder, address indexed dao, address indexed market, address budget,
+ * address policy, address quote, uint256 lotSize, address pool)`, emitted by the pool kit for a project it makes with its
+ * market and its backing pool. The founder and the DAO are indexed in the same places. It is not in `KIT_LAUNCH_TOPICS`,
+ * which the pinned list of the plain and weekly-sale kits' events stays; the pool kit is read with its own address.
+ */
+export const TOPIC_CONTRIBUTOR_LAUNCHED_V3 = `0x${bytesToHex(
+  keccak_256(
+    utf8ToBytes(
+      "ContributorProjectLaunchedV3(address,address,address,address,address,address,uint256,address)",
+    ),
+  ),
+)}`;
+
+/**
  * Every launch event a named kit may have emitted for a project. The weekly-sale kit emits the second for its own launch
  * and the first when its plain launch is called, so a project counts as made by the kit on either.
  */
