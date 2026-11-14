@@ -562,6 +562,13 @@ contract BackingPool {
         return _settle();
     }
 
+    /// @dev Close the round for good: the pool never opens and the project may open another.
+    function _failRound(IRoundAuction a) private returns (bool) {
+        roundState = RoundState.Failed;
+        emit RoundFailed(address(a), a.currencyRaised(), minimumRaise);
+        return false;
+    }
+
     /// @dev The settlement behind `seedFromAuction` and `abandonRound`, the second of which is told apart by the
     /// selector it was called with (a flag passed as an argument makes the compiler copy the whole function into
     /// each caller, which is too large for the pool's creation code to fit in its deployer).
@@ -579,11 +586,7 @@ contract BackingPool {
         // auction's block number has reached it. Before, it is earlier and this reverts, undoing the call.
         a.checkpoint();
         if (a.lastCheckpointedBlock() < end) revert RoundNotOver(end);
-        if (!a.isGraduated()) {
-            roundState = RoundState.Failed;
-            emit RoundFailed(address(a), a.currencyRaised(), minimumRaise);
-            return false;
-        }
+        if (!a.isGraduated()) return _failRound(a);
         // The final price is read plainly: the auction's `lbpInitializationParams` subtracts its protocol fee
         // from the raise without clamping and reverts when a fee controller reports more than was raised, while
         // `sweepCurrency` clamps. Seeding depends on the fee controller only through the sweep.
@@ -597,9 +600,7 @@ contract BackingPool {
             if (gasleft() < SWEEP_GAS * 64 / 63 + 50_000) revert NotEnoughGas();
             try a.sweepCurrency() {}
             catch {
-                roundState = RoundState.Failed;
-                emit RoundFailed(address(a), a.currencyRaised(), minimumRaise);
-                return false;
+                return _failRound(a);
             }
         } else {
             a.sweepCurrency();
@@ -617,8 +618,7 @@ contract BackingPool {
         // the project may open another. Nothing is stranded: what the sweep delivered goes to the treasury.
         // (Bidders were filled, so there is no refund to take; the money was the protocol's.)
         if (sold == 0 || toReserve == 0) {
-            roundState = RoundState.Failed;
-            emit RoundFailed(address(a), a.currencyRaised(), minimumRaise);
+            _failRound(a);
             if (received != 0) _payTreasury(received);
             return false;
         }
