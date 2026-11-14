@@ -175,6 +175,20 @@ Not protected. Say these plainly in the app:
   that case, so the auction refunds nothing: the money went to the protocol, and the couple of base units that
   reached the pool go to the DAO treasury. The app can tell the two failures apart: a round that closed with
   its raise at or above its minimum took this path.
+- **A round whose raise cannot be swept** (the auction's fee recipient cannot be paid: it is unset, or the quote
+  token refuses it) cannot be settled. `seedFromAuction` reverts with the auction's error and the pool keeps
+  waiting, which would also stop the project from ever opening another. Thirty days after the pool opened
+  (`ROUND_GRACE`) and once the round is over, anyone may call `abandonRound()`. If the sweep works by then it
+  settles the round like `seedFromAuction` (so it cannot end a healthy round, and returns true). If the sweep
+  still reverts it closes the pool for good (`Failed`, with `RoundFailed` carrying a raise at or above the
+  minimum) and the project may open another. It moves no money: the pool holds none of the round's before a
+  sweep, and a failed sweep delivers none. What the sweep could not deliver stays in the auction and is lost
+  to the bidders: only the pool can sweep it, and it never will. Bids that were outbid or only partly filled still
+  get their unspent money back through the auction's own `exitBid` / `exitPartiallyFilledBid`, and the claim
+  tokens are worth nothing. The thirty days are a bet that a temporary fault clears: once the pool is closed,
+  fixing the fee recipient delivers nothing. The call needs about 1.1 million gas available (it refuses with
+  `NotEnoughGas` otherwise, so too little gas can never pass for a failed sweep).
+  (`test_after_the_grace_a_stuck_round_is_closed_and_no_money_moves`, in `BackingRound.t.sol`.)
 - **Earlier sellers get a better curve price than later ones**, as on any curve, including after abandonment.
 - **A rival with over half the weight, held for 30 days,** can end a pool that has released nothing for 90
   days. Backers get their money back (`test_A4_limit_*`).

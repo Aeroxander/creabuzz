@@ -57,7 +57,11 @@ interface IBackingPool {
     error ZeroAmount();
     error NoSay();
     error InvalidParams();
+    error NotEnoughGas();
 
+    function ROUND_GRACE() external view returns (uint256);
+    function openedAt() external view returns (uint64);
+    function abandonRound() external returns (bool);
     function bindRound(address auction, uint256 minimumRaise) external;
     function seedFromAuction() external returns (bool);
     function redeem(uint256 amount) external returns (uint256);
@@ -943,6 +947,169 @@ contract BackingRoundFeeTest is BackingRoundFixture {
         assertTrue(pool.seedFromAuction());
         assertEq(pool.clearingPriceX96(), auction.clearingPrice());
         assertEq(pool.roundInfo(address(0)).clearingPriceX96, auction.clearingPrice());
+    }
+}
+
+/// @dev A protocol fee controller whose recipient can be made unreachable: the auction's sweep then reverts when it
+/// pays the fee (`protocolFeeRecipient()` is read outside any try in the auction), as it does for a recipient
+/// the quote token will not pay.
+contract DownableFeeController {
+    bool public down;
+    uint256 public feeAmount;
+
+    function setDown(bool down_) external {
+        down = down_;
+    }
+
+    function setProtocolFeeAmount(uint256 amount) external {
+        feeAmount = amount;
+    }
+
+    function protocolFeeRecipient() external view returns (address) {
+        require(!down, "recipient unavailable");
+        return address(0xFEE);
+    }
+
+    function getProtocolFeeAmount(address, uint256) external view returns (uint256) {
+        return feeAmount;
+    }
+}
+
+/// @notice An auction whose sweep reverts (the fee recipient cannot be paid) would leave the pool waiting for ever,
+/// and the project unable to open another. After a long grace anyone may close the pool; the same call settles a
+/// round that can be settled, so it never ends a healthy one, and it moves no money.
+contract BackingRoundStuckSweepTest is BackingRoundFixture {
+    address internal constant ALICE = address(0xA11CE);
+
+    event RoundFailed(address indexed auction, uint256 raised, uint256 minimumRaise);
+
+    DownableFeeController internal controller;
+
+    function _openStuck() internal returns (uint256 bidId) {
+        controller = new DownableFeeController();
+        controller.setProtocolFeeAmount(1e18);
+        _open(MINIMUM, address(controller));
+        bidId = _bid(ALICE, 6_000e18);
+        vm.roll(END);
+        controller.setDown(true);
+    }
+
+    function _afterGrace() internal {
+        vm.warp(uint256(pool.openedAt()) + pool.ROUND_GRACE());
+    }
+
+    function test_a_sweep_that_reverts_keeps_the_pool_waiting() public {
+        _openStuck();
+        vm.expectRevert();
+        pool.seedFromAuction();
+        assertEq(pool.roundState(), 1, "still waiting");
+        // And nothing here can settle it sooner: the grace has to pass first.
+        vm.expectRevert(abi.encodeWithSelector(IBackingPool.TooSoon.selector, uint256(pool.openedAt()) + 30 days));
+        pool.abandonRound();
+    }
+
+    function test_the_grace_is_thirty_days_from_opening_to_the_second() public {
+        _openStuck();
+        assertEq(pool.ROUND_GRACE(), 30 days);
+        vm.warp(uint256(pool.openedAt()) + 30 days - 1);
+        vm.expectRevert(abi.encodeWithSelector(IBackingPool.TooSoon.selector, uint256(pool.openedAt()) + 30 days));
+        pool.abandonRound();
+        vm.warp(uint256(pool.openedAt()) + 30 days);
+        assertFalse(pool.abandonRound());
+    }
+
+    function test_after_the_grace_a_stuck_round_is_closed_and_no_money_moves() public {
+        uint256 bidId = _openStuck();
+        _afterGrace();
+        uint256 inAuction = currency.balanceOf(address(auction));
+        uint256 treasuryBefore = currency.balanceOf(treasury);
+        assertGt(inAuction, 0);
+        assertEq(currency.balanceOf(address(pool)), 0, "the pool holds none of the round's money before a sweep");
+
+        vm.expectEmit(true, false, false, false, address(pool));
+        emit RoundFailed(address(auction), 0, 0);
+        assertFalse(pool.abandonRound());
+
+        assertEq(pool.roundState(), 3, "closed for good: the project may open another");
+        assertEq(currency.balanceOf(address(pool)), 0);
+        assertEq(currency.balanceOf(address(auction)), inAuction, "the auction still holds what it held");
+        assertEq(currency.balanceOf(treasury), treasuryBefore);
+        assertEq(pool.treasuryOwed() + pool.reserve() + pool.escrow() + pool.totalSupply(), 0);
+        IBackingPool.RoundView memory r = pool.roundInfo(address(0));
+        assertEq(r.state, 3);
+        assertGe(r.raised, r.minimumRaise, "on record as having reached its minimum");
+
+        // Nothing is left to settle, to buy, or to exchange; claim tokens collected from the auction are worthless here.
+        vm.expectRevert(IBackingPool.RoundNotWaiting.selector);
+        pool.seedFromAuction();
+        vm.expectRevert(IBackingPool.RoundNotWaiting.selector);
+        pool.abandonRound();
+        _collect(bidId);
+        uint256 tokens = claim.balanceOf(ALICE);
+        assertGt(tokens, 0);
+        vm.prank(ALICE);
+        vm.expectRevert(IBackingPool.RoundNotLive.selector);
+        pool.redeem(tokens);
+        vm.prank(ALICE);
+        vm.expectRevert(IBackingPool.RoundNotLive.selector);
+        pool.buy(1e18, 0, type(uint256).max);
+    }
+
+    /// @dev A transient failure that clears before the grace is simply retried.
+    function test_a_sweep_that_recovers_settles_through_seedFromAuction() public {
+        _openStuck();
+        vm.expectRevert();
+        pool.seedFromAuction();
+        controller.setDown(false);
+        assertTrue(pool.seedFromAuction());
+        assertEq(pool.roundState(), 2);
+        _assertBooks(0);
+    }
+
+    /// @dev The call cannot end a round that can be settled: past the grace, with the sweep working, it settles it.
+    function test_abandonRound_settles_a_round_whose_sweep_works() public {
+        _openStuck();
+        controller.setDown(false);
+        _afterGrace();
+        assertTrue(pool.abandonRound());
+        assertEq(pool.roundState(), 2, "live, not closed");
+        assertGt(pool.totalSupply(), 0);
+        assertGt(pool.reserve(), 0);
+        _assertBooks(0);
+        vm.expectRevert(IBackingPool.RoundNotWaiting.selector);
+        pool.abandonRound();
+    }
+
+    /// @dev Running short of gas must not read as a failed sweep: with too little the call reverts, with enough
+    /// it closes the pool.
+    function test_abandonRound_refuses_a_gas_limit_that_could_fake_a_failed_sweep() public {
+        _openStuck();
+        _afterGrace();
+        vm.expectRevert(IBackingPool.NotEnoughGas.selector);
+        pool.abandonRound{gas: 900_000}();
+        assertEq(pool.roundState(), 1);
+        assertFalse(pool.abandonRound{gas: 5_000_000}());
+        assertEq(pool.roundState(), 3);
+    }
+
+    /// @dev Not before the round is over, whatever the date.
+    function test_abandonRound_waits_for_the_round_to_end() public {
+        _openStuck();
+        vm.roll(END - 1);
+        _afterGrace();
+        vm.expectRevert(abi.encodeWithSelector(IBackingPool.RoundNotOver.selector, uint256(END)));
+        pool.abandonRound();
+        assertEq(pool.roundState(), 1);
+    }
+
+    /// @dev A round under its minimum closes the ordinary way, with or without the grace.
+    function test_abandonRound_on_a_round_that_missed_its_minimum_closes_it_like_seedFromAuction() public {
+        _bid(ALICE, 1_000e18);
+        vm.roll(END);
+        _afterGrace();
+        assertFalse(pool.abandonRound());
+        assertEq(pool.roundState(), 3);
+        assertLt(pool.roundInfo(address(0)).raised, pool.roundInfo(address(0)).minimumRaise);
     }
 }
 

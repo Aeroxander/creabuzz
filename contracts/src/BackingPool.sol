@@ -100,7 +100,11 @@ interface IRoundAuction {
 /// with the matching part of the round's escrow weight. Weight not yet redeemed counts as staying at a
 /// milestone; to leave, redeem first. A redeem acquires weight like a buy does, so it withdraws a standing
 /// abandon vote and restarts the wait before the wallet may vote (claim tokens are transferable, so the
-/// wait counts from the redeem, not from the bid).
+/// wait counts from the redeem, not from the bid). If the auction's sweep keeps reverting (a fee recipient that
+/// cannot receive its fee), the pool cannot settle and would wait for ever, and the project could not open another:
+/// `ROUND_GRACE` after the pool opened, once the round is over, anyone may call `abandonRound`, which settles the
+/// round if the sweep works and otherwise closes the pool, moving no money. What the failed sweep left in the
+/// auction stays there.
 ///
 /// There is no owner, no admin, no pause and no upgrade; every parameter is fixed at creation.
 contract BackingPool {
@@ -235,6 +239,11 @@ contract BackingPool {
     uint256 private constant WEIGHT_OFFSET = 1e12;
     /// @dev Prices are quote base units per whole unit (1e18 base units), times this.
     uint256 private constant PRICE_SCALE = 1e18;
+    /// @notice How long after a pool opens before `abandonRound` may close a round whose raise cannot be swept.
+    uint256 public constant ROUND_GRACE = 30 days;
+    /// @dev The gas `abandonRound` leaves the auction's sweep, so that running short of gas is never read as the
+    /// sweep failing (a sweep costs a small fraction of this).
+    uint256 private constant SWEEP_GAS = 1_000_000;
 
     /// @notice Units have 18 decimals, like the DAO's Shares.
     uint8 public constant decimals = 18;
@@ -448,6 +457,7 @@ contract BackingPool {
     error RoundNotWaiting();
     error RoundNotOver(uint256 endBlock);
     error BadAuction();
+    error NotEnoughGas();
 
     modifier nonReentrant() {
         if (_entered) revert Reentrancy();
@@ -529,10 +539,38 @@ contract BackingPool {
     /// state one buy of the reserve part would have left. If it did not, close this pool for good (bidders
     /// are refunded by the auction). The pool also closes, with nothing refundable, when the minimum was
     /// reached but the auction's protocol fee left too little here to open a curve on (at most two base
-    /// units, which go to the treasury).
+    /// units, which go to the treasury). If the auction's own sweep reverts (a fee recipient that cannot
+    /// receive the fee, say) this reverts with it and the pool keeps waiting; see `abandonRound`.
+    /// The auction is asked to checkpoint first, so a revert here can be the auction's own (`AuctionNotStarted`,
+    /// `TokensNotReceived`) as well as `RoundNotOver`.
     /// @return live Whether the pool went live.
-    function seedFromAuction() external nonReentrant returns (bool live) {
+    function seedFromAuction() external returns (bool live) {
+        return _settle();
+    }
+
+    /// @notice Close a round that cannot be settled, so that the project may open another. Anyone may call, but
+    /// only once `ROUND_GRACE` has passed since the pool opened and the round is over. It does the same as
+    /// `seedFromAuction` with one difference: if the auction's `sweepCurrency` reverts (so the raise cannot reach
+    /// this pool), the pool is closed for good instead of reverting, and `RoundFailed` is emitted. A round that
+    /// can be settled is settled by this call (it returns true and goes live), so it can never end a healthy round.
+    /// It moves no money: before a sweep the pool holds none of the round's, and a failed sweep delivers none. What
+    /// the failed sweep left in the auction stays there (see the Known limits of the design note); bids that were
+    /// outbid or only partly filled still exit through the auction's own `exitBid` and `exitPartiallyFilledBid`.
+    /// The claim tokens of a round closed this way are worth nothing here.
+    /// @return live Whether the pool went live (false when it was closed).
+    function abandonRound() external returns (bool live) {
+        return _settle();
+    }
+
+    /// @dev The settlement behind `seedFromAuction` and `abandonRound`, the second of which is told apart by the
+    /// selector it was called with (a flag passed as an argument makes the compiler copy the whole function into
+    /// each caller, which is too large for the pool's creation code to fit in its deployer).
+    function _settle() private nonReentrant returns (bool live) {
+        bool giveUp = msg.sig == this.abandonRound.selector;
         if (roundState != RoundState.Waiting || auction == address(0)) revert RoundNotWaiting();
+        if (giveUp && block.timestamp < uint256(openedAt) + ROUND_GRACE) {
+            revert TooSoon(uint256(openedAt) + ROUND_GRACE);
+        }
         IRoundAuction a = IRoundAuction(auction);
         uint256 end = a.endBlock();
         // The raise at the end block does not exist until the auction is told to record it. That checkpoint is
@@ -554,7 +592,18 @@ contract BackingPool {
         // Only what this call moves counts: money or claim tokens sent here by anyone are not the round's.
         uint256 heldQuote = quote.balanceOf(address(this));
         uint256 heldClaim = claimToken.balanceOf(address(this));
-        a.sweepCurrency();
+        if (giveUp) {
+            // A sweep that failed for want of gas is not a sweep that cannot be done: it gets at least SWEEP_GAS.
+            if (gasleft() < SWEEP_GAS * 64 / 63 + 50_000) revert NotEnoughGas();
+            try a.sweepCurrency() {}
+            catch {
+                roundState = RoundState.Failed;
+                emit RoundFailed(address(a), a.currencyRaised(), minimumRaise);
+                return false;
+            }
+        } else {
+            a.sweepCurrency();
+        }
         a.sweepUnsoldTokens();
         uint256 received = quote.balanceOf(address(this)) - heldQuote;
         uint256 sold = roundSupply - (claimToken.balanceOf(address(this)) - heldClaim);

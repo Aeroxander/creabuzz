@@ -932,6 +932,41 @@ contract ContributorKitV3Test is Test {
         assertEq(pool.balanceOf(ALICE), tokens);
     }
 
+    /// @dev The protocol's fee recipient is not set, so the auction's sweep reverts (the quote token will not pay the
+    /// zero address) and the round cannot be settled. The pool would wait for ever and the project could never open
+    /// another; thirty days after it opened anyone closes it, no money moves, and the project opens again.
+    function test_a_round_whose_sweep_cannot_be_made_is_closed_after_the_grace_and_the_project_opens_again() public {
+        address controller = vm.deployCode("MockProtocolFeeController.sol:MockProtocolFeeController");
+        IFeeControllerLike(controller).setProtocolFeeAmount(1e18); // and no recipient
+        BackingPoolFactory.RoundSettings memory r = rounds();
+        r.auctionFactory = vm.deployCode(
+            "ContinuousClearingAuctionFactory.sol:ContinuousClearingAuctionFactory", abi.encode(controller)
+        );
+        BackingPoolFactory feeFactory = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), r);
+        Moloch dao = _launchV2("stuck round");
+        vm.prank(FOUNDER);
+        (BackingPool pool, address auction) = feeFactory.openWithRound(address(dao), 0);
+        _bid(auction, ALICE, 4_000e18);
+        vm.roll(IRoundAuctionLike(auction).endBlock());
+        vm.expectRevert();
+        pool.seedFromAuction();
+        vm.prank(FOUNDER);
+        vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(pool)));
+        feeFactory.openWithRound(address(dao), 0);
+
+        uint256 held = quote.balanceOf(auction);
+        vm.warp(uint256(pool.openedAt()) + 30 days);
+        assertFalse(pool.abandonRound());
+        assertEq(uint8(pool.roundState()), uint8(BackingPool.RoundState.Failed));
+        assertEq(quote.balanceOf(address(pool)), 0);
+        assertEq(quote.balanceOf(auction), held);
+
+        vm.prank(FOUNDER);
+        (BackingPool second,) = feeFactory.openWithRound(address(dao), 0);
+        assertEq(feeFactory.poolOf(address(dao)), address(second));
+        assertTrue(address(second) != address(pool));
+    }
+
     /// @dev A factory that counts the round on one clock and an auction that runs on another cannot open: the
     /// factory asks the new auction to checkpoint, the auction (still before its start on its own clock) refuses with
     /// its own `AuctionNotStarted`, and the whole open is undone, so the project is not left with a pool waiting for
