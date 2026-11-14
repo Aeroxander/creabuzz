@@ -19,6 +19,7 @@ interface IRoundAuction {
     function clearingPrice() external view returns (uint256);
     function onTokensReceived() external;
     function checkpoint() external;
+    function lastCheckpointedBlock() external view returns (uint64);
     function sweepCurrency() external;
     function sweepUnsoldTokens() external;
 }
@@ -532,9 +533,12 @@ contract BackingPool {
         if (roundState != RoundState.Waiting || auction == address(0)) revert RoundNotWaiting();
         IRoundAuction a = IRoundAuction(auction);
         uint256 end = a.endBlock();
-        if (block.number < end) revert RoundNotOver(end);
-        // The raise at the end block does not exist until the auction is told to record it.
+        // The raise at the end block does not exist until the auction is told to record it. That checkpoint is
+        // also how the pool learns the round is over, on the auction's own clock (on Arbitrum and its Orbit
+        // chains `block.number` is not the auction's): the last checkpoint is at the end block only once the
+        // auction's block number has reached it. Before, it is earlier and this reverts, undoing the call.
         a.checkpoint();
+        if (a.lastCheckpointedBlock() < end) revert RoundNotOver(end);
         if (!a.isGraduated()) {
             roundState = RoundState.Failed;
             emit RoundFailed(address(a), a.currencyRaised(), minimumRaise);

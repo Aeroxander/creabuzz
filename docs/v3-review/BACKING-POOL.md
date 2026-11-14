@@ -192,7 +192,10 @@ Not protected. Say these plainly in the app:
   newcomer's buy restarts it, and the first exchange after the clock has run out is refunded at once. (So a
   founder can restart the clock by buying while every round bidder is asleep; a bidder ends that by
   exchanging his claim tokens once.)
-- The round's length is counted in blocks, so its length in days depends on the chain.
+- The round's length is counted in blocks, so its length in days depends on the chain. Blocks are counted on
+  the auction's own clock: on Arbitrum and its Orbit chains that is the chain's own block number (ArbSys), not
+  `block.number`, and the factory and the pool read it the same way (a test runs a round against a stand-in
+  for ArbSys).
 - No owner and no upgrade: a defect cannot be patched, only replaced by a new deployment.
 - The quote token must move exactly what is asked. A token that takes a cut is refused at the first buy;
   rebasing tokens are not supported. If the token refuses to pay the treasury, the money waits in the pool

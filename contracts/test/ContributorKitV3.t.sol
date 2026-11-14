@@ -40,6 +40,19 @@ interface IFeeControllerLike {
     function setProtocolFeeRecipient(address recipient) external;
 }
 
+/// @dev Stands at Arbitrum's system address (100): the chain's own block number, which is not `block.number` there.
+contract ArbSysStub {
+    uint256 public number;
+
+    function set(uint256 number_) external {
+        number = number_;
+    }
+
+    function arbBlockNumber() external view returns (uint256) {
+        return number;
+    }
+}
+
 /// @dev Stands at Permit2's address for bids: the one call the auction makes to pull a bid.
 contract Permit2Stub {
     function transferFrom(address from, address to, uint160 amount, address token) external {
@@ -803,6 +816,39 @@ contract ContributorKitV3Test is Test {
         (BackingPool second,) = feeFactory.openWithRound(address(dao), 0);
         assertTrue(address(second) != address(pool));
         assertEq(feeFactory.poolOf(address(dao)), address(second));
+    }
+
+    /// @dev On Arbitrum and its Orbit chains the auction counts blocks with ArbSys (`block.number` there is the parent
+    /// chain's). The factory and the pool use the same clock, so the round's blocks are the auction's own: it
+    /// takes bids from the first block, and the pool refuses to settle until the auction says it is over.
+    function test_a_round_counts_blocks_on_the_auctions_own_clock() public {
+        uint256 arbBlock = 400_000_000;
+        vm.etch(address(100), address(new ArbSysStub()).code);
+        ArbSysStub(address(100)).set(arbBlock);
+        // Everything below is made after ArbSys exists, as on the chain (each of these reads it once, at creation).
+        BackingPoolFactory arbFactory = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), rounds());
+        Moloch dao = _launchV2("arbitrum");
+        vm.prank(FOUNDER);
+        (BackingPool pool, address auction) = arbFactory.openWithRound(address(dao), 0);
+        assertEq(IRoundAuctionLike(auction).endBlock(), arbBlock + 50_000, "the round runs on the chain's clock");
+        assertEq(pool.roundInfo(address(0)).endBlock, arbBlock + 50_000);
+
+        // Bids are taken (they were refused when the round was counted on `block.number`)...
+        uint256 id = _bid(auction, ALICE, 4_000e18);
+        // ...and the pool does not settle before the auction's end, whatever `block.number` says.
+        vm.roll(arbBlock + 60_000);
+        ArbSysStub(address(100)).set(arbBlock + 50_000 - 1);
+        vm.expectRevert(abi.encodeWithSelector(BackingPool.RoundNotOver.selector, arbBlock + 50_000));
+        pool.seedFromAuction();
+        vm.roll(1_000);
+        ArbSysStub(address(100)).set(arbBlock + 50_000);
+        assertTrue(pool.seedFromAuction());
+        IRoundAuctionLike(auction).exitBid(id);
+        IRoundAuctionLike(auction).claimTokens(id);
+        uint256 tokens = pool.claimToken().balanceOf(ALICE);
+        vm.prank(ALICE);
+        pool.redeem(tokens);
+        assertEq(pool.balanceOf(ALICE), tokens);
     }
 
     /// @dev Opening with a round as its own transaction, and what a launch plus a round would cost in one.

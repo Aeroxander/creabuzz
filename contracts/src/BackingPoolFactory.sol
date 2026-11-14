@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {BlockNumberish} from "blocknumberish/src/BlockNumberish.sol";
 import {Summoner} from "./majeur/MolochPatched.sol";
 import {BackingPool} from "./BackingPool.sol";
 
@@ -84,7 +85,7 @@ contract BackingPoolDeployer {
 ///
 /// No owner, no admin, no upgrade: the terms, the quote token and the kit are immutable, and after
 /// `open` the factory has no power over the pool it made.
-contract BackingPoolFactory {
+contract BackingPoolFactory is BlockNumberish {
     /// @notice The summoner every project opened here came from.
     Summoner public immutable summoner;
     /// @notice The runtime bytecode hash of that summoner's DAO clones.
@@ -231,7 +232,10 @@ contract BackingPoolFactory {
         if (minimumRaise == 0) minimumRaise = defaultMinimumRaise;
         if (minimumRaise < LEAST_MINIMUM) revert MinimumTooLow(LEAST_MINIMUM);
         pool = _open(dao, roundSupply);
-        uint64 start = uint64(block.number);
+        // The auction's own clock (`BlockNumberish`, the helper the auction itself uses), not `block.number`:
+        // on Arbitrum and its Orbit chains the two differ, and a round whose blocks were counted on the wrong
+        // one would already be over, or not yet begun, when the auction opens.
+        uint64 start = uint64(_getBlockNumberish());
         RoundAuctionParameters memory config = RoundAuctionParameters({
             currency: address(quote),
             tokensRecipient: address(pool),
