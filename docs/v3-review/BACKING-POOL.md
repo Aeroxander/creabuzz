@@ -6,8 +6,8 @@ review (2026-11-11) found three medium flaws; all are fixed here and its proofs 
 second review of the round (two skeptics per finding) confirmed seven more, fixed or written down below: the
 vote could be corrupted by exchanging claim tokens, the vote wait could be skipped through claim tokens,
 rounding leftovers of a round counted as a backer, a protocol fee above the raise bricked the settlement, the
-round's blocks were counted on the wrong clock on Arbitrum, and the launch was unbounded in reviewers and name
-length. No outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
+round's blocks were counted on the wrong clock on Arbitrum, the launch was unbounded in reviewers and name
+length, and three limits of the registry and the summoner (see "Not protected"). No outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
 for counsel at the end are open.
 
 ## What it is
@@ -181,6 +181,23 @@ Not protected. Say these plainly in the app:
 - **A large buy sent with no price limit** can be sandwiched (`test_A1_limit_*`). The app must always send a
   limit.
 - **The early cap is per wallet**; many wallets get around it.
+- **The list of pools is not a curated list.** `BackingPoolFactory` opens a pool for any DAO the pinned
+  summoner made, and the summoner is open to anyone: a stranger can summon a DAO and register a pool for it in
+  the same transaction (`open` is one of the calls a summon can run, with the DAO's predicted address).
+  `pools(i)`, `poolCount()` and `poolOf` therefore list strangers' DAOs next to real ones, under any name. The
+  app lists only the DAOs it learns from the kit's `ContributorProjectLaunchedV3` events (or its own records),
+  never from `pools()`, and never shows a project by its name alone.
+- **A launch can be made to fail by someone who guesses its inputs.** The address of a new DAO follows from
+  the summoner's salt, and the summoner's own address calculation covers only the holders, their shares and
+  that salt, not the name or the caller (the kit adds the caller to the salt it passes, which anyone who knows
+  the founder and the salt can repeat). Someone who sees a launch before it is mined can summon another DAO at
+  the predicted address first; the launch then reverts whole, with nothing taken but gas. The founder submits
+  privately where the chain offers it, and uses a random salt, never a guessable one, and a new one after a
+  failure.
+- **Escrow behind claim tokens nobody ever exchanges stays in the pool for good**, after abandonment too: it is
+  still those tokens' share, and nothing sweeps it to the treasury. The auction lets a bidder collect at any
+  time, so no waiting time proves a bidder gone; a sweep after a long grace would be a bet against someone who
+  is only late. The amount is the share of the round's project money behind tokens nobody holds an interest in.
 - **If nobody releases a milestone within its 7 days it is cancelled**, and money that came in during it
   gains a small part of the tranche that was not taken.
 
