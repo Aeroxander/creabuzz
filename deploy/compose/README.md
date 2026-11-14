@@ -132,6 +132,13 @@ all of it out. `./run.sh build` and `./run.sh upgrade` run the web app's setting
 with Node.js 22.6 or newer on the machine; without it they say so and the image's own build runs the check) and refuse a
 half-set block before Docker starts. The image stays contributor-only. `docs/sepolia-testnet.md` ("Trading") has the steps.
 
+### The investing switch
+
+Investing is off unless `.env` sets `VITE_INVESTING=1` together with `VITE_BACKING_POOL_FACTORY`, `VITE_CONTRIBUTOR_KIT_V3` and
+`VITE_BACKING_QUOTE_TOKEN`; the lines are in `.env.creaton.example`. The settings check refuses a half-set block before Docker
+starts, as it does for trading. The image stays contributor-only, and the switch turns on the backing surfaces only. The steps
+after the contracts are deployed are in `docs/v3-review/INVESTING-SWITCH.md`.
+
 ### AI helpers (optional, no rebuild)
 
 The AI work check, the check-note draft and the newcomer interviewer call the server's own `/llm/chat/completions`, which

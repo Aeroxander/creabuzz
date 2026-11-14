@@ -9,8 +9,11 @@
  */
 
 import {
+  backingPoolFactory,
+  backingQuoteToken,
   type ChainEnv,
   contributorKit,
+  contributorKitV3,
   courtAddress,
   createFaucet,
   createToken,
@@ -228,6 +231,61 @@ export function checkDeployEnv(env: DeployEnv): DeployEnvReport {
       "VITE_SECONDARY_MARKET_FACTORY is named but VITE_CONTRIBUTOR_KITS is not: trading is for projects the kit makes.",
     );
   }
+  // Investing is off unless the switch is 1 AND the pool factory, the kit that makes a project with its pool and the token
+  // backers pay in are named for the build's network (`lib/investing-offered.ts`). Either half alone would show nothing or
+  // carry an address nobody asked to use, so a half setting stops the build, with the one thing to change.
+  const investingSwitch = value(env, "VITE_INVESTING");
+  const poolFactory = backingPoolFactory(chainId, env);
+  const kitV3 = contributorKitV3(chainId, env);
+  const backingQuote = backingQuoteToken(chainId, env);
+  const investingNames = [
+    ["VITE_BACKING_POOL_FACTORY", poolFactory],
+    ["VITE_CONTRIBUTOR_KIT_V3", kitV3],
+    ["VITE_BACKING_QUOTE_TOKEN", backingQuote],
+  ] as const;
+  for (const [name, address] of investingNames) {
+    if (value(env, name) && !address) {
+      problems.push(
+        `${name} names no valid address for ${networkLabel(chainId)} (${chainId}).`,
+      );
+    }
+  }
+  if (investingSwitch !== null && investingSwitch !== "1") {
+    problems.push(
+      "VITE_INVESTING must be 1 to switch investing on; leave it empty for no investing.",
+    );
+  }
+  const investingOn = investingSwitch === "1";
+  if (investingOn) {
+    for (const [name] of investingNames) {
+      if (value(env, name) === null) {
+        problems.push(
+          `VITE_INVESTING is 1 but ${name} is not set: investing needs the pool factory, the pool kit and the backing token for ${networkLabel(chainId)} (${chainId}).`,
+        );
+      }
+    }
+    if (!rpc) {
+      problems.push(
+        "VITE_INVESTING is 1 but VITE_CHAIN_RPC_URL is not: a hosted page has no chain node to read pools from without it.",
+      );
+    }
+    if (historyFromBlock(chainId, env) === 0n) {
+      problems.push(
+        `VITE_INVESTING is 1 but VITE_HISTORY_FROM_BLOCKS has no block for ${chainId}: a real node refuses history read from block 0.`,
+      );
+    }
+  } else {
+    for (const [name] of investingNames) {
+      if (value(env, name) !== null) {
+        problems.push(
+          `${name} is named but VITE_INVESTING is not set to 1: a build shows investing only with the switch, so it would not show it.`,
+        );
+      }
+    }
+  }
+  summary.push(
+    `Investing: ${investingOn && poolFactory && kitV3 && backingQuote ? `on (pool factory ${poolFactory}, pool kit ${kitV3}, backing token ${backingQuote})` : "off"}`,
+  );
   // The free test token is only read where a market's price token is compared with it, so naming it alone is harmless.
   const testToken = testQuoteToken(chainId, env);
   if (value(env, "VITE_TEST_QUOTE_TOKENS") && !testToken) {

@@ -143,6 +143,11 @@ COPY admin-web/ admin-web/
 # off: the weekly sale shows only when a market factory is named AND
 # VITE_TRADING_TRIAL=1, and a build with one without the other is refused.
 # A build for real pilot people leaves the whole block out.
+#
+# The investing block (VITE_INVESTING, VITE_BACKING_POOL_FACTORY, VITE_CONTRIBUTOR_KIT_V3 and VITE_BACKING_QUOTE_TOKEN) is
+# one switch, off by default. With VITE_INVESTING=1 and the three addresses named for the network, the page shows backing
+# on projects, in Home's feed and under You, in this contributor-only image too, and for those places only. A build with
+# the switch and a missing address, or an address and no switch, is refused (docs/v3-review/INVESTING-SWITCH.md).
 ARG VITE_LAUNCHPAD_CHAIN_ID=
 ARG VITE_CHAIN_RPC_URL=
 ARG VITE_CONTRIBUTOR_KITS=
@@ -150,6 +155,10 @@ ARG VITE_HISTORY_FROM_BLOCKS=
 ARG VITE_SECONDARY_MARKET_FACTORY=
 ARG VITE_TRADING_TRIAL=
 ARG VITE_TEST_QUOTE_TOKENS=
+ARG VITE_INVESTING=
+ARG VITE_BACKING_POOL_FACTORY=
+ARG VITE_CONTRIBUTOR_KIT_V3=
+ARG VITE_BACKING_QUOTE_TOKEN=
 ARG VITE_WORK_BOUNTIES=
 ARG VITE_OPEN_BOUNTIES=
 ARG VITE_CREATE_TOKENS=
@@ -171,7 +180,8 @@ ARG BUZZ_SOURCE_SHA=unknown
 RUN set -eu; \
     for name in VITE_LAUNCHPAD_CHAIN_ID VITE_CHAIN_RPC_URL VITE_CONTRIBUTOR_KITS \
                 VITE_HISTORY_FROM_BLOCKS VITE_SECONDARY_MARKET_FACTORY VITE_TRADING_TRIAL \
-                VITE_TEST_QUOTE_TOKENS VITE_WORK_BOUNTIES VITE_OPEN_BOUNTIES \
+                VITE_TEST_QUOTE_TOKENS VITE_INVESTING VITE_BACKING_POOL_FACTORY \
+                VITE_CONTRIBUTOR_KIT_V3 VITE_BACKING_QUOTE_TOKEN VITE_WORK_BOUNTIES VITE_OPEN_BOUNTIES \
                 VITE_CREATE_TOKENS VITE_CREATE_FAUCETS VITE_COURTS VITE_PAYOUTS_FACTORIES \
                 VITE_REMIX_BONDS VITE_ZERODEV_PROJECT_ID \
                 VITE_ZERODEV_CHAIN_ID VITE_ZERODEV_API_KEY VITE_BUNDLER_URL \

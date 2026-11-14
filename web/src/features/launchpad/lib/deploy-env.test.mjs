@@ -464,3 +464,127 @@ test("the build check script reads the trading settings from the environment it 
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /VITE_TRADING_TRIAL/);
 });
+
+// ---- investing: one switch, three addresses (lib/investing-offered.ts) ---------------------------------------------
+
+const POOL_FACTORY = `0x${"b1".repeat(20)}`;
+const KIT_V3 = `0x${"b2".repeat(20)}`;
+const BACKING_TOKEN = `0x${"b3".repeat(20)}`;
+const INVESTING = {
+  ...SEPOLIA,
+  VITE_INVESTING: "1",
+  VITE_BACKING_POOL_FACTORY: JSON.stringify({ 11155111: POOL_FACTORY }),
+  VITE_CONTRIBUTOR_KIT_V3: JSON.stringify({ 11155111: KIT_V3 }),
+  VITE_BACKING_QUOTE_TOKEN: JSON.stringify({ 11155111: BACKING_TOKEN }),
+};
+
+test("investing is off by default and the summary says so", () => {
+  const { problems, summary } = checkDeployEnv(SEPOLIA);
+  assert.deepEqual(problems, []);
+  assert.ok(summary.includes("Investing: off"), summary.join("\n"));
+});
+
+test("a whole investing block passes and the summary names every address", () => {
+  const { problems, summary } = checkDeployEnv(INVESTING);
+  assert.deepEqual(problems, []);
+  assert.ok(
+    summary.includes(
+      `Investing: on (pool factory ${POOL_FACTORY}, pool kit ${KIT_V3}, backing token ${BACKING_TOKEN})`,
+    ),
+    summary.join("\n"),
+  );
+});
+
+test("investing on with an address missing stops the build and names it", () => {
+  for (const name of [
+    "VITE_BACKING_POOL_FACTORY",
+    "VITE_CONTRIBUTOR_KIT_V3",
+    "VITE_BACKING_QUOTE_TOKEN",
+  ]) {
+    const env = { ...INVESTING };
+    delete env[name];
+    const { problems } = checkDeployEnv(env);
+    assert.ok(
+      problems.some((p) =>
+        p.startsWith(`VITE_INVESTING is 1 but ${name} is not set`),
+      ),
+      `${name}: ${problems.join(" | ")}`,
+    );
+  }
+});
+
+test("investing on needs a chain node and a history block", () => {
+  const noNode = { ...INVESTING };
+  delete noNode.VITE_CHAIN_RPC_URL;
+  assert.ok(
+    checkDeployEnv(noNode).problems.some((p) =>
+      p.startsWith("VITE_INVESTING is 1 but VITE_CHAIN_RPC_URL is not"),
+    ),
+  );
+  const noBlock = { ...INVESTING };
+  delete noBlock.VITE_HISTORY_FROM_BLOCKS;
+  assert.ok(
+    checkDeployEnv(noBlock).problems.some((p) =>
+      p.startsWith(
+        "VITE_INVESTING is 1 but VITE_HISTORY_FROM_BLOCKS has no block",
+      ),
+    ),
+  );
+});
+
+test("an address for another network than the build's is refused, not read as absent", () => {
+  const { problems } = checkDeployEnv({
+    ...INVESTING,
+    VITE_BACKING_POOL_FACTORY: JSON.stringify({ 31337: POOL_FACTORY }),
+  });
+  assert.ok(
+    problems.some((p) =>
+      p.startsWith("VITE_BACKING_POOL_FACTORY names no valid address"),
+    ),
+    problems.join(" | "),
+  );
+});
+
+test("an address without the switch is refused: the page would show nothing", () => {
+  for (const name of [
+    "VITE_BACKING_POOL_FACTORY",
+    "VITE_CONTRIBUTOR_KIT_V3",
+    "VITE_BACKING_QUOTE_TOKEN",
+  ]) {
+    const env = { ...INVESTING };
+    delete env.VITE_INVESTING;
+    const { problems } = checkDeployEnv(env);
+    assert.ok(
+      problems.some((p) =>
+        p.startsWith(`${name} is named but VITE_INVESTING is not set to 1`),
+      ),
+      `${name}: ${problems.join(" | ")}`,
+    );
+  }
+});
+
+test("the switch must be exactly 1, and a CHANGE_ME placeholder stops the build", () => {
+  assert.ok(
+    checkDeployEnv({ ...INVESTING, VITE_INVESTING: "yes" }).problems.some((p) =>
+      p.startsWith("VITE_INVESTING must be 1"),
+    ),
+  );
+  assert.ok(
+    checkDeployEnv({
+      ...INVESTING,
+      VITE_BACKING_POOL_FACTORY: "CHANGE_ME_pool_factory",
+    }).problems.some((p) =>
+      p.startsWith("VITE_BACKING_POOL_FACTORY still holds a CHANGE_ME"),
+    ),
+  );
+});
+
+test("investing works in the contributor-only build, which is how the hosted image builds it", () => {
+  const { problems } = checkDeployEnv({
+    ...INVESTING,
+    VITE_CONTRIBUTOR_ONLY: "1",
+    VITE_ZERODEV_PROJECT_ID: ZERODEV_PROJECT,
+    VITE_ZERODEV_CHAIN_ID: "11155111",
+  });
+  assert.deepEqual(problems, []);
+});

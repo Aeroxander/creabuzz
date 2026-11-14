@@ -20,6 +20,7 @@ import {
   founderSettings,
   ideaShowsTeamSurfaces,
 } from "../../features/launchpad/lib/launch-tabs.ts";
+import { investingOffered } from "../../features/launchpad/lib/investing-offered.ts";
 import { raisesOffered } from "../../features/launchpad/lib/raises-offered.ts";
 import { remixesOffered } from "../../features/launchpad/lib/remixes-offered.ts";
 import {
@@ -160,4 +161,35 @@ test("community setup in the pilot counts and writes no AI helpers, for every bu
     );
     assert.deepEqual(helperSteps, [], `${entry.template.id} plans helpers`);
   }
+});
+
+/**
+ * The pilot build with investing on (`VITE_INVESTING=1` and a pool factory): the backing surfaces appear, and every
+ * other thing the pilot hides stays hidden. With the switch off the pilot is exactly what it was.
+ */
+const PILOT_INVESTING = {
+  ...PILOT,
+  VITE_INVESTING: "1",
+  VITE_BACKING_POOL_FACTORY: JSON.stringify({
+    11155111: `0x${"b1".repeat(20)}`,
+  }),
+};
+
+test("investing is off in the pilot unless the switch is set, and the switch overrides nothing else", () => {
+  assert.equal(investingOffered(PILOT), false);
+  assert.equal(investingOffered(PILOT_INVESTING), true);
+  const on = raisesOffered(PILOT_INVESTING);
+  assert.equal(on, false);
+  assert.equal(notContributorOnlyBuild(PILOT_INVESTING), false);
+  assert.equal(remixesOffered(PILOT_INVESTING), false);
+  assert.equal(identityDemoOffered(PILOT_INVESTING, false), false);
+  assert.equal(linkDeviceOffered(PILOT_INVESTING), false);
+  assert.equal(courtOffered(PILOT_INVESTING, false), false);
+  // The pilot still lists no raise and offers nothing to back through a sale.
+  assert.equal(listedHere(raise, on), false);
+  assert.equal(canBackLaunch("live", on), false);
+  assert.deepEqual(
+    discoverFilters(on).map((f) => f.label),
+    ["All", "Projects", "Ideas"],
+  );
 });

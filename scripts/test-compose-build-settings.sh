@@ -191,9 +191,36 @@ NODE_CHAIN=0xaa36a7 NODE_LOGS=whole build || fail "build refused a whole trial b
 grep -q "Trading: on" "${TEST_DIR}/out" || fail "the trial build did not say trading is on"
 grep -q "compose .* build relay" "${DOCKER_LOG}" || fail "the trial build did not reach compose build relay"
 
+# The investing block (docs/v3-review/INVESTING-SWITCH.md): the switch with an address missing, an address without the
+# switch, and a switch that is not 1 are refused before compose is called; a whole block builds and says investing is on.
+POOL_FACTORY="0x$(printf 'b1%.0s' {1..20})"
+KIT_V3="0x$(printf 'b2%.0s' {1..20})"
+BACKING_TOKEN="0x$(printf 'b3%.0s' {1..20})"
+investing_lines=(
+  "VITE_INVESTING=1"
+  "VITE_BACKING_POOL_FACTORY={\"11155111\":\"${POOL_FACTORY}\"}"
+  "VITE_CONTRIBUTOR_KIT_V3={\"11155111\":\"${KIT_V3}\"}"
+  "VITE_BACKING_QUOTE_TOKEN={\"11155111\":\"${BACKING_TOKEN}\"}"
+)
+trial_refused "the investing switch without any address" "VITE_INVESTING is 1 but VITE_BACKING_POOL_FACTORY is not set" "VITE_INVESTING=1"
+trial_refused "the investing switch without the pool kit" "VITE_INVESTING is 1 but VITE_CONTRIBUTOR_KIT_V3 is not set" \
+  "${investing_lines[0]}" "${investing_lines[1]}" "${investing_lines[3]}"
+trial_refused "an investing address without the switch" "VITE_BACKING_POOL_FACTORY is named but VITE_INVESTING is not set to 1" \
+  "${investing_lines[1]}"
+trial_refused "the investing switch set to something other than 1" "VITE_INVESTING must be 1" \
+  "VITE_INVESTING=yes" "${investing_lines[1]}" "${investing_lines[2]}" "${investing_lines[3]}"
+trial_env "${investing_lines[@]}"
+NODE_CHAIN=0xaa36a7 NODE_LOGS=whole build || fail "build refused a whole investing block"
+grep -q "Investing: on" "${TEST_DIR}/out" || fail "the investing build did not say investing is on"
+grep -q "compose .* build relay" "${DOCKER_LOG}" || fail "the investing build did not reach compose build relay"
+trial_env
+NODE_CHAIN=0xaa36a7 NODE_LOGS=whole build || fail "build refused the default settings again"
+grep -q "Investing: off" "${TEST_DIR}/out" || fail "a build with no investing setting did not say investing is off"
+
 # The compose file names every setting the check reads, as a build argument, and so does the Dockerfile (an argument missing
 # from either would be dropped silently: the page would be built without the setting the check approved).
-for name in VITE_SECONDARY_MARKET_FACTORY VITE_TRADING_TRIAL VITE_TEST_QUOTE_TOKENS VITE_WORK_BOUNTIES VITE_OPEN_BOUNTIES \
+for name in VITE_SECONDARY_MARKET_FACTORY VITE_TRADING_TRIAL VITE_TEST_QUOTE_TOKENS VITE_INVESTING VITE_BACKING_POOL_FACTORY \
+            VITE_CONTRIBUTOR_KIT_V3 VITE_BACKING_QUOTE_TOKEN VITE_WORK_BOUNTIES VITE_OPEN_BOUNTIES \
             VITE_CREATE_TOKENS VITE_CREATE_FAUCETS VITE_COURTS VITE_PAYOUTS_FACTORIES VITE_REMIX_BONDS; do
   grep -q "^        ${name}: \${${name}:-}\$" "${REPO_ROOT}/deploy/compose/compose.creaton.yml" || fail "compose.creaton.yml has no build argument line for ${name}"
   grep -q "^ARG ${name}=\$" "${REPO_ROOT}/Dockerfile" || fail "the Dockerfile has no ARG ${name}="

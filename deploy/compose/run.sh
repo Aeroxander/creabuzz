@@ -125,6 +125,7 @@ require_page_settings() {
 WEB_SETTINGS=(
   VITE_LAUNCHPAD_CHAIN_ID VITE_CHAIN_RPC_URL VITE_CONTRIBUTOR_KITS VITE_HISTORY_FROM_BLOCKS
   VITE_SECONDARY_MARKET_FACTORY VITE_TRADING_TRIAL VITE_TEST_QUOTE_TOKENS
+  VITE_INVESTING VITE_BACKING_POOL_FACTORY VITE_CONTRIBUTOR_KIT_V3 VITE_BACKING_QUOTE_TOKEN
   VITE_WORK_BOUNTIES VITE_OPEN_BOUNTIES VITE_CREATE_TOKENS VITE_CREATE_FAUCETS
   VITE_COURTS VITE_PAYOUTS_FACTORIES VITE_REMIX_BONDS
   VITE_ZERODEV_PROJECT_ID VITE_ZERODEV_CHAIN_ID VITE_ZERODEV_API_KEY VITE_BUNDLER_URL
@@ -132,7 +133,8 @@ WEB_SETTINGS=(
 )
 
 # The settings check the image runs first (web/scripts/check-deploy-env.mjs), run here on the same settings before the
-# long build: a half-set trial block (a market factory without VITE_TRADING_TRIAL, or the reverse), a kit without a chain
+# long build: a half-set trial block (a market factory without VITE_TRADING_TRIAL, or the reverse), a half-set investing
+# block (VITE_INVESTING without its three addresses, or an address without it), a kit without a chain
 # node, a malformed address. It prints what the build will offer, and stops on what does not fit together. With no
 # Node.js 22.6 or newer on this machine it says so and goes on, since the image's own build runs the same check and stops
 # there; with the checkout's script missing there is nothing to build from, so it stops.

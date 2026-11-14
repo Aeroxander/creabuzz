@@ -144,6 +144,18 @@ export interface ChainEnv {
    */
   VITE_TRADING_TRIAL?: string;
   /**
+   * "1" turns on every investing surface in this build (`lib/investing-offered.ts`): the Backing block on a project, its
+   * cards in Home's feed, positions under You, and the pool-aware way to set up Shares. Empty by default: with it off no
+   * page changes. It works in the contributor-only build too, for these surfaces only.
+   */
+  VITE_INVESTING?: string;
+  /** The BackingPoolFactory per chain, as JSON: `{"11155111":"0x…"}`. `poolOf(dao)` names a project's pool. */
+  VITE_BACKING_POOL_FACTORY?: string;
+  /** The ContributorKitV3 per chain, as JSON: it makes a project with its backing pool (`launchWithPool`). */
+  VITE_CONTRIBUTOR_KIT_V3?: string;
+  /** The token backers pay in, per chain, as JSON: the one the pool factory was deployed with. */
+  VITE_BACKING_QUOTE_TOKEN?: string;
+  /**
    * The free-mint test token per chain, as JSON: `{"11155111":"0x…"}`. Test networks only. A market whose price token is
    * this one shows a "Get test tokens" action on its Trading card, and a project started on the weekly-sale kit takes it
    * as its price token. A chain with no entry has none.
@@ -284,6 +296,48 @@ export function secondaryMarketFactory(
   env: ChainEnv | undefined = viteEnv(),
 ): string | null {
   return addressForChain(env?.VITE_SECONDARY_MARKET_FACTORY, chainId);
+}
+
+/** The pool factory on `chainId`, or null when the build does not name one. Never guessed: people pay into its pools. */
+export function backingPoolFactory(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_BACKING_POOL_FACTORY, chainId);
+}
+
+/** The kit that makes a project with its pool on `chainId`, or null when the build does not name one. Never guessed. */
+export function contributorKitV3(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_CONTRIBUTOR_KIT_V3, chainId);
+}
+
+/** The token backers pay in on `chainId`, or null when the build does not name one. Never guessed. */
+export function backingQuoteToken(
+  chainId: string | number | null,
+  env: ChainEnv | undefined = viteEnv(),
+): string | null {
+  return addressForChain(env?.VITE_BACKING_QUOTE_TOKEN, chainId);
+}
+
+/** Whether a JSON map of chain id to address names at least one usable address on any chain. */
+export function namesAnyAddress(value: string | undefined): boolean {
+  const raw = value?.trim();
+  if (!raw) return false;
+  try {
+    const map: unknown = JSON.parse(raw);
+    if (map === null || typeof map !== "object" || Array.isArray(map)) {
+      return false;
+    }
+    return Object.values(map).some(
+      (address) =>
+        typeof address === "string" && /^0x[0-9a-fA-F]{40}$/.test(address),
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
