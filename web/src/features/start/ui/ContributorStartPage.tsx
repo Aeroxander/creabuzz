@@ -75,7 +75,7 @@ import { FirstProjectsField } from "./FirstProjectsField";
 import { RemixFields } from "./RemixFields";
 import { ReviewersPicked } from "./ReviewersPicked";
 import { WeeklySaleFields } from "./WeeklySaleFields";
-import { weeklySaleIssue } from "../lib/weekly-sale";
+import { poolKitIssue, weeklySaleIssue } from "../lib/weekly-sale";
 
 const EMPTY: ContributorDraft = {
   name: "",
@@ -346,8 +346,11 @@ export function ContributorStartPage() {
   const saleIssue = weekly
     ? weeklySaleIssue(draft, preview?.founderWhole)
     : null;
+  // A project that opens with backing is made by the pool kit, which takes at most 8 reviewers and a short name and symbol.
+  const poolIssue = weekly?.pool ? poolKitIssue(draft) : null;
   const issue =
     contributorIssue(draft, founderAddresses) ??
+    (poolIssue ? { ...poolIssue, index: null, part: null } : null) ??
     (saleIssue ? { ...saleIssue, index: null, part: null } : null);
   const warning = preview ? founderShareWarning(preview) : null;
   // A problem is said under the field it is about, once the founder has tried to start.

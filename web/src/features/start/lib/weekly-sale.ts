@@ -21,12 +21,15 @@ import {
 } from "@creaton/core/launchpad/evmAbi.ts";
 
 import {
+  backingPoolFactory,
+  backingQuoteToken,
   type ChainEnv,
   secondaryMarketFactory,
   testQuoteToken,
   viteEnv,
 } from "../../launchpad/chain-config.ts";
 import { ActingStepError } from "../../launchpad/lib/acting-account.ts";
+import { investingOffered } from "../../launchpad/lib/investing-offered.ts";
 import { tradingOffered } from "../../launchpad/lib/trading-offered.ts";
 import {
   type ContributorDraft,
@@ -34,6 +37,7 @@ import {
   KIT_PARAMS_SIGNATURE,
   type KitLaunch,
   kitParamsValue,
+  reviewerList,
   wordAddress,
 } from "./contributor-project.ts";
 
@@ -189,6 +193,67 @@ export function encodeKitLaunchV2(launch: KitLaunchV2): string {
   );
 }
 
+/**
+ * `ContributorKitV3.launchWithPool(LaunchParams)`: the same terms as the weekly-sale launch, and the project's backing pool
+ * is opened in the same step. The tuple is the weekly-sale kit's, so a project made either way is the same project.
+ */
+export const KIT_LAUNCH_V3_SIGNATURE = `launchWithPool((${KIT_PARAMS_SIGNATURE},uint64,uint64,uint64,address,uint256))`;
+
+/** The weekly launch with its pool: one transaction, at most the kit's own limits (`poolKitIssue`). */
+export function encodeKitLaunchV3(launch: KitLaunchV2): string {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(launch.quote))
+    throw new Error("invalid price token address");
+  return encodeFunctionData(
+    KIT_LAUNCH_V3_SIGNATURE,
+    [LAUNCH_V2_PARAMS],
+    [
+      [
+        kitParamsValue(launch),
+        0n,
+        launch.sale.cliffSeconds,
+        launch.sale.durationSeconds,
+        launch.quote,
+        launch.sale.lotSize,
+      ],
+    ],
+  );
+}
+
+/** The most reviewers, the longest name and the longest short name (in bytes) the pool kit takes in one launch. */
+export const POOL_KIT_LIMITS = {
+  reviewers: 8,
+  nameBytes: 64,
+  symbolBytes: 12,
+} as const;
+
+/**
+ * What the pool kit refuses that the plain launch does not: more than 8 reviewers, a name over 64 bytes, a short name over
+ * 12 (the launch is one transaction and some networks cap one at about 16.8 million of work; the pool takes 4 million
+ * of it). Said in the form, in plain words, before anything is sent.
+ */
+export function poolKitIssue(
+  draft: Pick<ContributorDraft, "name" | "symbol" | "reviewers">,
+): { field: "reviewers" | "name" | "symbol"; message: string } | null {
+  const reviewers = reviewerList(draft.reviewers).length;
+  if (reviewers > POOL_KIT_LIMITS.reviewers)
+    return {
+      field: "reviewers",
+      message: `Name at most ${POOL_KIT_LIMITS.reviewers} reviewers for a project that opens with backing. You named ${reviewers}.`,
+    };
+  const bytes = (text: string) => new TextEncoder().encode(text.trim()).length;
+  if (bytes(draft.name) > POOL_KIT_LIMITS.nameBytes)
+    return {
+      field: "name",
+      message: `Keep the project's name to ${POOL_KIT_LIMITS.nameBytes} characters or fewer (letters with accents and emoji count as more than one).`,
+    };
+  if (bytes(draft.symbol) > POOL_KIT_LIMITS.symbolBytes)
+    return {
+      field: "symbol",
+      message: `Keep the short name to ${POOL_KIT_LIMITS.symbolBytes} characters or fewer.`,
+    };
+  return null;
+}
+
 /** `predictLaunch(...)`: the DAO's address is its first answer, the same address `predictDao` gives. */
 export function encodePredictLaunch(
   founder: string,
@@ -209,27 +274,38 @@ export function encodePredictLaunch(
 /** What starting a project on this network's kit needs, or why it cannot. */
 export interface KitSale {
   /** Set for the weekly-sale kit when this build fits it; null for the plain kit, and for a kit that cannot be used. */
-  weekly: { marketFactory: string; quote: string } | null;
+  weekly: { marketFactory: string; quote: string; pool: boolean } | null;
   /** Why a weekly-sale kit cannot be used from this build, in words for the founder; null when there is none. */
   problem: string | null;
 }
 
-const TRADING_OFF_PROBLEM =
-  "Starting a project here needs trading switched on for this site, and it is not. Tell whoever runs this site.";
 const FACTORY_DISAGREES_PROBLEM =
   "This site and the network do not agree on where trading lives, so a project started now could not be traded. Tell whoever runs this site.";
 const NO_TOKEN_PROBLEM =
-  "This site has no trade token set for this network, so a project cannot be started with trading yet. Tell whoever runs this site.";
+  "This site has no token set for this network to open the project's Shares market with, so a project cannot be set up yet. Tell whoever runs this site.";
+const POOL_DISAGREES_PROBLEM =
+  "This site and the network do not agree on where backing lives, so a project started now could not be backed. Tell whoever runs this site.";
+const POOL_NO_TOKEN_PROBLEM =
+  "This site does not name the token backers pay in for this network, so a project cannot be set up with backing yet. Tell whoever runs this site.";
+
+export const CALL_POOL_FACTORY = encodeFunctionData("poolFactory()", [], []);
 
 /**
- * Whether `kit` is the weekly-sale kit (it names a market factory) or the plain one (the call reverts or answers
- * nothing). A node that did not answer is neither: the error stands, so a founder is never sent down the wrong launch.
+ * Whether `kit` is the pool kit (it names a pool factory), the weekly-sale kit (it names a market factory only) or the
+ * plain one (the call reverts or answers nothing). A node that did not answer is none of them: the error stands, so a
+ * founder is never sent down the wrong launch.
+ *
+ * Setting up Shares never depends on investing or on trading. A weekly-sale kit whose market stays shut (trading off) is
+ * used as it is: its market is opened with the token this build names (the free test token, else `fallbackQuote`, the
+ * network's own money) and no round can open until a vote publishes a listing, so nothing about it is offered. The pool kit
+ * is used only when investing is on, where it must agree with the build about its pool factory and the backing token.
  */
 export async function readKitSale(
   call: (to: string, data: string) => Promise<string>,
   kit: string,
   chainId: string | number,
   env: ChainEnv | undefined = viteEnv(),
+  fallbackQuote: string | null = null,
 ): Promise<KitSale> {
   let answer: string;
   try {
@@ -245,13 +321,40 @@ export async function readKitSale(
     throw new Error(
       "The network's project maker did not name a market, so projects cannot be started here yet.",
     );
-  if (!tradingOffered(env))
-    return { weekly: null, problem: TRADING_OFF_PROBLEM };
-  if (marketFactory !== secondaryMarketFactory(chainId, env))
+  // The pool kit also has a market factory; only it answers `poolFactory()`.
+  let pooled: string | null = null;
+  try {
+    const poolAnswer = await call(kit, CALL_POOL_FACTORY);
+    if (poolAnswer !== "0x" && poolAnswer !== "")
+      pooled = wordAddress(poolAnswer);
+  } catch (error) {
+    if (!(error instanceof Error && /revert/i.test(error.message))) throw error;
+  }
+  if (pooled !== null) {
+    if (!investingOffered(env))
+      return { weekly: null, problem: POOL_DISAGREES_PROBLEM };
+    if (pooled !== backingPoolFactory(chainId, env))
+      return { weekly: null, problem: POOL_DISAGREES_PROBLEM };
+    const backing = backingQuoteToken(chainId, env);
+    if (backing === null)
+      return { weekly: null, problem: POOL_NO_TOKEN_PROBLEM };
+    return {
+      weekly: { marketFactory, quote: backing, pool: true },
+      problem: null,
+    };
+  }
+  // Trading on: the build's factory must be this kit's. Trading off: the market stays shut, and that is no problem.
+  if (
+    tradingOffered(env) &&
+    marketFactory !== secondaryMarketFactory(chainId, env)
+  )
     return { weekly: null, problem: FACTORY_DISAGREES_PROBLEM };
-  const quote = testQuoteToken(chainId, env);
+  const quote = testQuoteToken(chainId, env) ?? fallbackQuote;
   if (quote === null) return { weekly: null, problem: NO_TOKEN_PROBLEM };
-  return { weekly: { marketFactory, quote }, problem: null };
+  return {
+    weekly: { marketFactory, quote: quote.toLowerCase(), pool: false },
+    problem: null,
+  };
 }
 
 // ---- the node's say before anything is sent -------------------------------------------------------

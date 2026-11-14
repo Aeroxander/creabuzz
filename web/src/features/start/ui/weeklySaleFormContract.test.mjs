@@ -11,6 +11,18 @@ import { fileURLToPath } from "node:url";
 const source = (name) =>
   readFileSync(fileURLToPath(new URL(name, import.meta.url)), "utf8");
 
+test("a project that opens with backing is held to the pool kit's limits in the form", () => {
+  const page = source("./ContributorStartPage.tsx");
+  assert.match(
+    page,
+    /const poolIssue = weekly\?\.pool \? poolKitIssue\(draft\) : null;/,
+  );
+  assert.match(
+    page,
+    /\(poolIssue \? \{ \.\.\.poolIssue, index: null, part: null \} : null\)/,
+  );
+});
+
 test("the sale fields are in the form only for a weekly-sale kit, and their problem is part of the form's", () => {
   const page = source("./ContributorStartPage.tsx");
   assert.match(page, /const weekly = start\.network\?\.weekly \?\? null;/);
@@ -25,7 +37,12 @@ test("the job carries the price token only when the kit is the weekly-sale kit, 
   const hook = source("../use-contributor-start.ts");
   assert.match(
     hook,
-    /\.\.\.\(weekly \? \{ weekly: \{ quote: weekly\.quote \} \} : \{\}\)/,
+    /\.\.\.\(weekly\s*\?\s*\{\s*weekly: \{\s*quote: weekly\.quote,\s*\.\.\.\(weekly\.pool \? \{ pool: true as const \} : \{\}\),/,
+  );
+  // With investing on the pool kit makes the project; with it off the kit is the one the build always named.
+  assert.match(
+    hook,
+    /\(investingOffered\(\) \? contributorKitV3\(chainId\) : null\) \?\?\s*contributorKit\(chainId\)/,
   );
   // The kit's version is read from the kit, not guessed from the build's settings.
   assert.match(hook, /readKitSale\(/);

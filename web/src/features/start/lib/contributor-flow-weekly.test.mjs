@@ -18,6 +18,7 @@ import {
 import {
   encodePredictLaunch,
   KIT_LAUNCH_V2_SIGNATURE,
+  KIT_LAUNCH_V3_SIGNATURE,
   LAUNCH_GAS_CAP,
   weeklySaleTerms,
 } from "./weekly-sale.ts";
@@ -35,6 +36,7 @@ const AUTHOR = "aa".repeat(32);
 const SALT = contributorSalt(AUTHOR, "docs-commons");
 const LAUNCH_V2 = selectorOf(KIT_LAUNCH_V2_SIGNATURE);
 const LAUNCH_V1 = selectorOf(KIT_LAUNCH_SIGNATURE);
+const LAUNCH_V3 = selectorOf(KIT_LAUNCH_V3_SIGNATURE);
 
 function job(overrides = {}) {
   return {
@@ -230,10 +232,9 @@ test("a stored weekly job keeps its price token across a reload", () => {
   assert.equal(parseJob(JSON.stringify(job({ weekly: "yes" }))), null);
 });
 
-test("a stored weekly job is not sent when this build no longer offers trading, that kit or that token", async () => {
+test("a stored weekly job is not sent when this build no longer names that kit or that token", async () => {
   const builds = {
-    "trading off (the pilot rebuild)": {},
-    "trial switch only": { ...TRIAL_ENV, VITE_SECONDARY_MARKET_FACTORY: "" },
+    "no kit named (the pilot rebuild)": {},
     "another kit": {
       ...TRIAL_ENV,
       VITE_CONTRIBUTOR_KITS: JSON.stringify({ 11155111: a("c2") }),
@@ -249,11 +250,82 @@ test("a stored weekly job is not sent when this build no longer offers trading, 
     const out = await runContributorStart(job(), fx, () => {});
     assert.equal(out.ok, false, name);
     assert.equal(out.step, "create", name);
-    assert.match(out.message, /no longer offers trading/, name);
+    assert.match(out.message, /no longer offers/, name);
     assert.match(out.message, /Discard it/, name);
     assert.deepEqual(state.events, [], name);
     assert.equal(state.sends.length, 0, name);
   }
+});
+
+test("setting up Shares never waits on trading: with the trading switch off the weekly kit launches as before", async () => {
+  const { fx, state } = fakeChain({
+    env: {
+      VITE_CONTRIBUTOR_KITS: TRIAL_ENV.VITE_CONTRIBUTOR_KITS,
+      VITE_TEST_QUOTE_TOKENS: TRIAL_ENV.VITE_TEST_QUOTE_TOKENS,
+    },
+  });
+  const out = await runContributorStart(job(), fx, () => {});
+  assert.equal(out.ok, true, out.message);
+  assert.deepEqual(state.events, ["estimate", "send"]);
+  assert.ok(state.sends[0].data.startsWith(LAUNCH_V2));
+});
+
+test("a pool-kit job sends launchWithPool, and only while investing is on and the build names that kit and token", async () => {
+  const BACKING = a("b3");
+  const POOL_KIT = a("c3");
+  const investing = {
+    VITE_INVESTING: "1",
+    VITE_BACKING_POOL_FACTORY: JSON.stringify({ 11155111: a("b1") }),
+    VITE_CONTRIBUTOR_KIT_V3: JSON.stringify({ 11155111: POOL_KIT }),
+    VITE_BACKING_QUOTE_TOKEN: JSON.stringify({ 11155111: BACKING }),
+  };
+  const pooled = (extra = {}) =>
+    job({ kit: POOL_KIT, weekly: { quote: BACKING, pool: true }, ...extra });
+  const chain = (env) => {
+    const made = fakeChain({ env });
+    const base = made.fx.call;
+    made.fx.call = async (to, data) =>
+      to === POOL_KIT
+        ? base(
+            KIT,
+            data === encodePredictLaunch(FOUNDER, 100_000n, SALT, BACKING, LOT)
+              ? encodePredictLaunch(FOUNDER, 100_000n, SALT, QUOTE, LOT)
+              : data,
+          ).then((x) => x)
+        : base(to, data);
+    return made;
+  };
+  const { fx, state } = chain(investing);
+  const out = await runContributorStart(pooled(), fx, () => {});
+  assert.equal(out.ok, true, out.message);
+  assert.equal(state.sends[0].to, POOL_KIT);
+  assert.ok(state.sends[0].data.startsWith(LAUNCH_V3));
+  assert.ok(state.sends[0].data.includes(BACKING.slice(2)));
+  for (const [name, env] of Object.entries({
+    "investing off": { ...investing, VITE_INVESTING: "" },
+    "another kit": {
+      ...investing,
+      VITE_CONTRIBUTOR_KIT_V3: JSON.stringify({ 11155111: a("c4") }),
+    },
+    "another token": {
+      ...investing,
+      VITE_BACKING_QUOTE_TOKEN: JSON.stringify({ 11155111: a("b4") }),
+    },
+  })) {
+    const refused = chain(env);
+    const result = await runContributorStart(pooled(), refused.fx, () => {});
+    assert.equal(result.ok, false, name);
+    assert.match(result.message, /no longer offers/, name);
+    assert.equal(refused.state.sends.length, 0, name);
+  }
+  // A stored pool job keeps its flag across a reload, and a malformed one is dropped.
+  assert.equal(parseJob(JSON.stringify(pooled()))?.weekly?.pool, true);
+  assert.equal(
+    parseJob(
+      JSON.stringify(pooled({ weekly: { quote: BACKING, pool: "yes" } })),
+    ),
+    null,
+  );
 });
 
 test("a weekly project already made still reaches its record on a build that stopped offering trading", async () => {

@@ -9,9 +9,11 @@ import { carryOnIssue, recordCarryingOver } from "./lib/from-idea";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { onPasskeySessionChange } from "@/features/identity/lib/passkey-identity";
+import { investingOffered } from "@/features/launchpad/lib/investing-offered";
 
 import {
   contributorKit,
+  contributorKitV3,
   daoLaunchKit,
   ethCall,
   ethChainId,
@@ -118,7 +120,11 @@ export function useContributorStart() {
     queryKey: ["start", "contributor", "network", endpoint],
     queryFn: async () => {
       const chainId = Number(await ethChainId(endpoint));
-      const kit = contributorKit(chainId);
+      // With investing on, a project is made by the pool kit, so none is left without a pool to open later; with it off the
+      // kit is the one the build has always named. Setting up Shares never waits on either switch.
+      const kit =
+        (investingOffered() ? contributorKitV3(chainId) : null) ??
+        contributorKit(chainId);
       const launchKit = daoLaunchKit(chainId);
       const currency = usdcAddress(chainId, localUsdcAddress());
       // Which launch this kit takes is read from the kit itself (`lib/weekly-sale.ts`); a node error fails the read.
@@ -132,7 +138,13 @@ export function useContributorStart() {
             )
           : null,
         kit
-          ? readKitSale((to, data) => ethCall(endpoint, to, data), kit, chainId)
+          ? readKitSale(
+              (to, data) => ethCall(endpoint, to, data),
+              kit,
+              chainId,
+              undefined,
+              currency,
+            )
           : { weekly: null, problem: null },
       ]);
       return {
@@ -360,7 +372,14 @@ export function useContributorStart() {
         expectedSummoner,
         founder: wallet.address.toLowerCase(),
         currency: currency as string,
-        ...(weekly ? { weekly: { quote: weekly.quote } } : {}),
+        ...(weekly
+          ? {
+              weekly: {
+                quote: weekly.quote,
+                ...(weekly.pool ? { pool: true as const } : {}),
+              },
+            }
+          : {}),
         draft,
         dao: null,
         shares: null,

@@ -22,13 +22,15 @@ import {
   type StepFlowState,
 } from "@creaton/core/launchpad/step-flow.ts";
 import {
+  backingQuoteToken,
   type ChainEnv,
   contributorKit,
+  contributorKitV3,
   testQuoteToken,
   viteEnv,
 } from "../../launchpad/chain-config.ts";
 import { actingErrorDetails } from "../../launchpad/lib/acting-account.ts";
-import { tradingOffered } from "../../launchpad/lib/trading-offered.ts";
+import { investingOffered } from "../../launchpad/lib/investing-offered.ts";
 import type { CreateLaunchInput } from "../../launchpad/use-launches.ts";
 import {
   CALL_BUDGET_FACTORY,
@@ -46,6 +48,7 @@ import {
 import {
   assertLaunchFits,
   encodeKitLaunchV2,
+  encodeKitLaunchV3,
   encodePredictLaunch,
   weeklySaleTerms,
 } from "./weekly-sale.ts";
@@ -105,7 +108,11 @@ export interface ContributorJob {
    * Set when the kit is the weekly-sale kit (`weekly-sale.ts`): the price token its market is made for. The sale's lot
    * and schedule are the draft's. Absent for the plain kit, whose launch has none of it.
    */
-  weekly?: { quote: string };
+  weekly?: {
+    quote: string;
+    /** The pool kit: the project's backing pool is opened in the same step (`encodeKitLaunchV3`). */
+    pool?: boolean;
+  };
   draft: ContributorDraft;
   dao: string | null;
   shares: string | null;
@@ -152,19 +159,28 @@ export const EARLIER_TRY_MESSAGE =
   "A project was already made at this address in an earlier try, and we can't tell whether it was set up with what you entered here. Nothing was sent. Discard this and start the project again: the new try gets a new address.";
 
 const WEEKLY_NOT_OFFERED_MESSAGE =
-  "This site no longer offers trading with the project maker and trade token this half-finished project was set up with, so nothing was sent. Discard it and start the project again.";
+  "This site no longer offers the project maker and token this half-finished project was set up with, so nothing was sent. Discard it and start the project again.";
 
 /**
- * Whether this build still offers the weekly-sale launch a stored job asked for: trading is on, the kit is the one the
- * build names, and the price token is the build's test token. A job outlives a rebuild of the site (same address, same
- * browser storage), so it is asked again before anything is sent.
+ * Whether this build still offers the weekly-sale launch a stored job asked for: the kit is the one the build names (the
+ * pool kit only while investing is on) and the market's token is one the build still uses. A job outlives a rebuild of the
+ * site (same address, same browser storage), so it is asked again before anything is sent. Trading is not part of it:
+ * setting up Shares never depends on trading.
  */
 function weeklyStillOffered(job: ContributorJob, env: ChainEnv | undefined) {
   if (!job.weekly) return true;
+  const kit = job.kit.toLowerCase();
+  if (job.weekly.pool)
+    return (
+      investingOffered(env) &&
+      contributorKitV3(job.chainId, env) === kit &&
+      backingQuoteToken(job.chainId, env) === job.weekly.quote.toLowerCase()
+    );
+  const quote = job.weekly.quote.toLowerCase();
   return (
-    tradingOffered(env) &&
-    contributorKit(job.chainId, env) === job.kit.toLowerCase() &&
-    testQuoteToken(job.chainId, env) === job.weekly.quote.toLowerCase()
+    contributorKit(job.chainId, env) === kit &&
+    (testQuoteToken(job.chainId, env) === quote ||
+      job.currency.toLowerCase() === quote)
   );
 }
 
@@ -305,7 +321,10 @@ async function makeProject(
       now: await fx.now(),
     };
     const data = weekly
-      ? encodeKitLaunchV2({ ...launch, ...weekly })
+      ? (job.weekly?.pool ? encodeKitLaunchV3 : encodeKitLaunchV2)({
+          ...launch,
+          ...weekly,
+        })
       : encodeKitLaunch(launch);
     // The weekly launch is large (about 10.8 million against a limit of 16.8 million): the node is asked what it needs
     // first, live, and a refusal, a launch over the limit or no answer ends here in plain words with nothing sent.
@@ -419,8 +438,12 @@ export const JOB_STORAGE_PREFIX = "creaton.contributor-start.";
 /** A stored job's weekly-sale part is absent, or names a price token: anything else would send the wrong launch. */
 function weeklyJobOk(weekly: unknown): boolean {
   if (weekly === undefined) return true;
-  const quote = (weekly as { quote?: unknown } | null)?.quote;
-  return typeof quote === "string" && /^0x[0-9a-fA-F]{40}$/.test(quote);
+  const { quote, pool } = (weekly ?? {}) as { quote?: unknown; pool?: unknown };
+  return (
+    typeof quote === "string" &&
+    /^0x[0-9a-fA-F]{40}$/.test(quote) &&
+    (pool === undefined || typeof pool === "boolean")
+  );
 }
 
 /** A stored job, or null when there is none or it is not one this app wrote. A job from before D84 (one first project)
