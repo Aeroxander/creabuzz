@@ -1062,6 +1062,7 @@ export const BACKING_ERROR_NAMES = [
   "NotAllowed",
   "RoundsOff",
   "MinimumTooLow",
+  "NotEnoughGas",
   "ERC20InsufficientBalance",
   "ERC20InsufficientAllowance",
 ] as const;
@@ -1096,6 +1097,7 @@ export const BACKING_ERROR_SIGNATURES: Record<BackingErrorName, string> = {
   NotAllowed: "NotAllowed()",
   RoundsOff: "RoundsOff()",
   MinimumTooLow: "MinimumTooLow(uint128)",
+  NotEnoughGas: "NotEnoughGas()",
   ERC20InsufficientBalance: "ERC20InsufficientBalance(address,uint256,uint256)",
   ERC20InsufficientAllowance:
     "ERC20InsufficientAllowance(address,uint256,uint256)",

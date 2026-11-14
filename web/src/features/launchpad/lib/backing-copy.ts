@@ -316,6 +316,8 @@ const REFUSALS: Record<BackingErrorName, string> = {
     "Only the account that made the project, or the project itself, can open backing.",
   RoundsOff: "Opening rounds are not offered on this network.",
   MinimumTooLow: "That minimum is lower than the least a round may ask for.",
+  NotEnoughGas:
+    "The step ran short of network fee before it could finish, so nothing changed. Try again and allow a higher fee.",
   ERC20InsufficientBalance:
     "Your account does not hold enough of the backing token for that.",
   ERC20InsufficientAllowance:
