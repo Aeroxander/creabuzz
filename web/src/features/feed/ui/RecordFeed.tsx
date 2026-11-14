@@ -34,6 +34,7 @@ import { cheerCountWords, cheerTarget } from "../lib/cheers";
 import { newPillWords, splitLive } from "../lib/live-feed";
 import { progressArtifacts } from "../lib/project-progress";
 import { answersLine, type FeedItem, itemLabel } from "../lib/record-feed";
+import { BackingFeed } from "./BackingFeed";
 import { ProjectMark } from "./MovingNow";
 import { useCheers } from "../use-cheers";
 import { useLaunchFollows } from "../use-launch-follows";
@@ -301,6 +302,8 @@ export function RecordFeed() {
               })}
             </ul>
           )}
+          {/* Backing, when the build offers it: below the records, small and quiet. Nothing here when it is off. */}
+          <BackingFeed byCoordinate={byCoordinate} scope={scope} />
           {feed.moreError ? (
             <p
               className="text-sm"
