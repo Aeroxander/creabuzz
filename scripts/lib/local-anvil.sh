@@ -24,7 +24,9 @@ start_local_anvil() {
   # SO_REUSEADDR as anvil sets it: a live listener still fails the bind, a lingering closed connection (TIME_WAIT) does not.
   python3 -c 'import socket, sys; s=socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1); s.bind(("127.0.0.1", int(sys.argv[1]))); s.close()' "$port" 2>/dev/null \
     || fail "port ${port} is already in use: not starting a chain next to another one (unset ANVIL_PORT to pick a free port)"
-  anvil --host 127.0.0.1 --port "$port" --chain-id 31337 >"$log" 2>&1 &
+  # ANVIL_ARGS (optional, split on spaces) adds flags: a run that mines tens of thousands of blocks passes `--prune-history 256`.
+  # shellcheck disable=SC2086
+  anvil --host 127.0.0.1 --port "$port" --chain-id 31337 ${ANVIL_ARGS:-} >"$log" 2>&1 &
   ANVIL_PID=$!
   for _ in $(seq 1 100); do
     kill -0 "$ANVIL_PID" 2>/dev/null || { tail -20 "$log"; fail "anvil exited before it was listening on port ${port}"; }

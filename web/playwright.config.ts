@@ -219,7 +219,11 @@ export default defineConfig({
       // Investing, in two builds of its own (the switch on, and the addresses named with the switch unset), against a
       // stand-in chain node: run it with scripts/web-investing-mock-e2e.sh. Anywhere else it skips itself.
       name: "investing",
-      testMatch: ["**/investing.spec.ts", "**/investing-shots.spec.ts"],
+      testMatch: [
+        "**/investing.spec.ts",
+        "**/investing-shots.spec.ts",
+        "**/backing-chain.spec.ts",
+      ],
       use: {
         ...devices["Desktop Chrome"],
         ...(process.env.PW_CHROMIUM_PATH
