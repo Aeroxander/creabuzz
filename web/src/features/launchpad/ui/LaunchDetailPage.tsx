@@ -92,6 +92,7 @@ import { ProjectAgents } from "@/features/fleet/ui/ProjectAgents";
 import { ProjectDeliveryOverview } from "./ProjectDeliveryOverview";
 import { ContributorStatusNote } from "./ContributorStatusNote";
 import { DaoOverview } from "./DaoOverview";
+import { BackingBlock } from "./BackingBlock";
 import { TradingCard } from "./TradingCard";
 import { MyBidsPanel } from "./MyBidsPanel";
 import { resolveDaoBinding } from "../lib/org-money";
@@ -555,8 +556,6 @@ export function LaunchDetailPage({
           project={launch.record}
         />
       ) : null}
-      {/* Backing goes here when it is offered, above the project's news: money raised, what is held for the project,
-          what each milestone releases, the next milestone, and the date backers may leave by. One full-width card. */}
       {/* The project's news, above the tabs; the Updates tab is the full list, so it is not repeated there. */}
       {!sandbox && shown !== "updates" ? (
         <ProjectUpdateCard
@@ -574,6 +573,9 @@ export function LaunchDetailPage({
           <ProjectTasksCard launch={launch} />
           <ProjectTeamCard isFounder={isFounder} launch={launch} />
           <ProjectRecordCard isFounder={isFounder} launch={launch} />
+          {/* Backing comes after the record, so the record is read first and the money second. It renders nothing unless
+              the build turns investing on, and nothing for a project that cannot be backed. */}
+          <BackingBlock isFounder={isFounder} launch={launch} variant="page" />
         </>
       )}
 

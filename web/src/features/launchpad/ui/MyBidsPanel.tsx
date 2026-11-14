@@ -17,6 +17,8 @@ import { truncatePubkey } from "@/shared/lib/pubkey";
 import { TechnicalDetails } from "@/shared/ui/technical-details";
 import { toast } from "sonner";
 
+import type { SaleCurrency } from "@creaton/core/launchpad/sale-currency.ts";
+
 import { recordSaleCurrency } from "../chain";
 import { bidSummary } from "../lib/bid-words.ts";
 import type { LaunchRecord } from "../models";
@@ -84,9 +86,18 @@ export function MyBidsPanel({
   record,
   rpcEndpoint,
   autoAction,
+  currency: currencyGiven,
+  words,
 }: {
   record: LaunchRecord;
   rpcEndpoint: string;
+  /**
+   * The currency of the auction when the record cannot say it (a backing project's opening round is paid in the
+   * backing token, whose own decimals the page read). Without it the record's sale currency is used.
+   */
+  currency?: SaleCurrency;
+  /** The panel's own heading and line, when it is not about a sale (the opening round of backing). */
+  words?: { title: string; intro: string };
   /**
    * Desktop → web handoff (`?action=exit|claim`): open the first matching
    * bid's action dialog once the snapshot is in. Opening is never destructive
@@ -95,7 +106,7 @@ export function MyBidsPanel({
   autoAction?: "exit" | "claim" | null;
 }) {
   const auction = record.auction;
-  const currency = recordSaleCurrency(record);
+  const currency = currencyGiven ?? recordSaleCurrency(record);
   const [groups, setGroups] = useState<OwnerGroup[]>([]);
   const [snapshots, setSnapshots] = useState<Record<string, GroupSnapshot>>({});
   const [action, setAction] = useState<Action | null>(null);
@@ -210,12 +221,11 @@ export function MyBidsPanel({
       <div className="flex items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold text-black dark:text-white">
-            My bids
+            {words?.title ?? "My bids"}
           </h2>
           <p className="text-sm text-black/60 dark:text-white/60">
-            Your bids on this sale, from your wallet or passkey account. Take
-            back the money that did not buy anything, then collect the tokens
-            you bought once the sale pays out.
+            {words?.intro ??
+              "Your bids on this sale, from your wallet or passkey account. Take back the money that did not buy anything, then collect the tokens you bought once the sale pays out."}
           </p>
         </div>
         <Button onClick={refresh} size="sm" variant="outline">

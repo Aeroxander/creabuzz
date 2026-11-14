@@ -4,9 +4,9 @@
  * Follow and "I can help" are the two things to do.
  *
  * Every number is from records the project's own people signed, and each says so when its read was not complete.
- * There is no price here. The "Backing" block (money raised, what is held for the project, what each milestone
- * releases, the next milestone and the date backers may leave by) has its home marked below, between the record and
- * the latest update, for when backing is offered.
+ * There is no price here. The "Backing" block (what is held for the project, what each milestone releases, the next
+ * milestone and the date backers may leave by) sits between the record and the latest update when the build offers
+ * backing, and is read only: its actions are on the project's page.
  */
 
 import { Link, useParams } from "@tanstack/react-router";
@@ -30,6 +30,7 @@ import {
   updateDueWords,
 } from "@/features/launchpad/lib/weekly-update";
 import { type Launch, launchCoordinate } from "@/features/launchpad/models";
+import { BackingBlock } from "@/features/launchpad/ui/BackingBlock";
 import { ShareRecordButton } from "@/features/launchpad/ui/ShareRecordButton";
 import { useProjectUpdates } from "@/features/launchpad/use-help-requests";
 import { useLaunch } from "@/features/launchpad/use-launches";
@@ -259,9 +260,6 @@ function Scorecard({ launch }: { launch: Launch }) {
         </p>
       ) : null}
 
-      {/* Backing goes here when it is offered: money raised, what is held for the project, what each milestone
-          releases, the next milestone, and the date backers may leave by. One full-width block, same card shape. */}
-
       <section
         aria-labelledby="scorecard-promises-heading"
         className="flex flex-col gap-2"
@@ -313,6 +311,9 @@ function Scorecard({ launch }: { launch: Launch }) {
           </ul>
         )}
       </section>
+
+      {/* Backing, when the build offers it: between the record and the latest update. Read only here. */}
+      <BackingBlock isFounder={false} launch={launch} variant="scorecard" />
 
       <section
         aria-labelledby="scorecard-update-heading"

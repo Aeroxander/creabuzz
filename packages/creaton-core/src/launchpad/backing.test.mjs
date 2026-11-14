@@ -79,6 +79,9 @@ test("every selector is the one `cast sig` gives", () => {
     "quote()": "0x999b93af",
     "roundFloorPriceX96()": "0xeaa2ea4c",
     "roundTickSpacingX96()": "0x2dde66d2",
+    "founderOf(address)": "0x3a9c00e0",
+    "auctionFactory()": "0xabf4fde4",
+    "defaultMinimumRaise()": "0xf52d9b78",
   };
   const used = new Set(Object.values(BACKING_SIGNATURES));
   for (const [signature, selector] of Object.entries(pinned)) {
@@ -978,6 +981,11 @@ function fakeChain(overrides = {}) {
     [`${FACTORY}:${sel("quote()")}`]: () => wordOf(QUOTE),
     [`${FACTORY}:${sel("roundFloorPriceX96()")}`]: () => wordOf(2500n),
     [`${FACTORY}:${sel("roundTickSpacingX96()")}`]: () => wordOf(25n),
+    [`${FACTORY}:${sel("founderOf(address)")}`]: () => wordOf(ME),
+    [`${FACTORY}:${sel("auctionFactory()")}`]: () =>
+      wordOf(`0x${"af".repeat(20)}`),
+    [`${FACTORY}:${sel("defaultMinimumRaise()")}`]: () =>
+      wordOf(2_500_000_000n),
     [`${POOL}:${sel("snapshot(address)")}`]: () => snapshotHex(),
     [`${POOL}:${sel("founder()")}`]: () => wordOf(ME),
     [`${POOL}:${sel("quote()")}`]: () => wordOf(QUOTE),
@@ -1006,10 +1014,26 @@ test("a project's pool is found by its DAO through the factory, and the zero add
     [`${FACTORY}:${selectorOf("poolOf(address)")}`]: () => wordOf(0),
   });
   assert.equal(await readPoolAddress(none, FACTORY, DAO), null);
-  assert.deepEqual(
-    await readPool(none, { factory: FACTORY, dao: DAO, holder: ME }),
-    { kind: "none" },
+  const read = await readPool(none, {
+    factory: FACTORY,
+    dao: DAO,
+    holder: ME,
+    expectedQuote: QUOTE,
+  });
+  assert.equal(read.kind, "none");
+  assert.equal(read.founder, ME);
+  assert.deepEqual(read.quote, { address: QUOTE, decimals: 6, symbol: "TEST" });
+  assert.equal(read.quoteMatchesFactory, true);
+  assert.deepEqual(read.round, { defaultMinimum: 2_500_000_000n });
+  // A factory with no auction factory offers no round.
+  const noRounds = await readPool(
+    fakeChain({
+      [`${FACTORY}:${selectorOf("poolOf(address)")}`]: () => wordOf(0),
+      [`${FACTORY}:${selectorOf("auctionFactory()")}`]: () => wordOf(0),
+    }),
+    { factory: FACTORY, dao: DAO, holder: null },
   );
+  assert.equal(noRounds.round, null);
   // A node that does not answer, or answers with nonsense, is a failed read and never "no pool".
   const down = fakeChain({
     [`${FACTORY}:${selectorOf("poolOf(address)")}`]: () => {

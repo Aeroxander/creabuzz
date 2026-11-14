@@ -15,8 +15,11 @@ import {
   type BackingChain,
   MAX_POOL_EVENTS,
   type PoolLog,
+  readBuyQuote,
+  readLeaveQuote,
   readPool,
   readPoolEvents,
+  readSellQuote,
 } from "@creaton/core/launchpad/backing.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useRef } from "react";
@@ -65,20 +68,18 @@ export function backingChain(endpoint: string): BackingChain {
 }
 
 /**
- * Whether a kit this build names made the project's DAO, read from the kit's own launch event: the plain or weekly-sale
- * kit's, or the pool kit's. A record alone only claims it, and a record can name any DAO, so a pool is shown for a
- * project only once this says "kit". One read, kept: it never changes.
+ * How a project's start is checked against the kits' launch events, as one query definition: the page's hook and the feed's
+ * reads both use it, so a project is checked once and never again (the answer cannot change).
  */
-export function useBackingProvenance(
-  chainId: string | null,
-  dao: string | null,
-): Provenance {
+export function provenanceQuery(chainId: string | null, dao: string | null) {
   const plain = contributorKit(chainId);
   const pooled = contributorKitV3(chainId);
-  const query = useQuery({
+  return {
     queryKey: [...BACKING_QUERY, "provenance", chainId, plain, pooled, dao],
     enabled: dao !== null && (plain !== null || pooled !== null),
-    queryFn: async () => {
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
+    queryFn: async (): Promise<boolean> => {
       const topic = addressTopic(dao as string);
       const reads: Promise<readonly unknown[]>[] = [];
       if (plain !== null) {
@@ -113,12 +114,56 @@ export function useBackingProvenance(
       }
       return (await Promise.all(reads)).some((logs) => logs.length > 0);
     },
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnWindowFocus: false,
+  };
+}
+
+/**
+ * Whether a kit this build names made the project's DAO, read from the kit's own launch event: the plain or weekly-sale
+ * kit's, or the pool kit's. A record alone only claims it, and a record can name any DAO, so a pool is shown for a
+ * project only once this says "kit". One read, kept: it never changes.
+ */
+export function useBackingProvenance(
+  chainId: string | null,
+  dao: string | null,
+): { provenance: Provenance; failed: boolean; retry: () => void } {
+  const plain = contributorKit(chainId);
+  const pooled = contributorKitV3(chainId);
+  const query = useQuery(provenanceQuery(chainId, dao));
+  const retry = () => void query.refetch();
+  if (dao === null || (plain === null && pooled === null))
+    return { provenance: "record", failed: false, retry };
+  // A read that did not complete is not "no kit made it": it is said as a failed read, with a way to try again.
+  if (query.isError && query.data === undefined)
+    return { provenance: "reading", failed: true, retry };
+  if (query.isLoading) return { provenance: "reading", failed: false, retry };
+  return {
+    provenance: query.data === true ? "kit" : "record",
+    failed: false,
+    retry,
+  };
+}
+
+/**
+ * One read of a project's pool for a wallet. A page that reads another network than the project's would find no pool
+ * there: that is a wrong place to ask, not "no pool", so it is refused first.
+ */
+export async function readProjectPool(
+  target: Extract<BackingTarget, { kind: "target" }>,
+  wallet: string | null,
+) {
+  const endpoint = getRpcEndpoint();
+  const chainId = Number(await ethChainId(endpoint));
+  if (chainId !== target.chainId) {
+    throw new Error(
+      `This page reads network ${chainId}, but the project is on network ${target.chainId}.`,
+    );
+  }
+  return readPool(backingChain(endpoint), {
+    factory: target.factory,
+    dao: target.dao,
+    holder: wallet,
+    expectedQuote: target.quoteToken,
   });
-  if (dao === null || (plain === null && pooled === null)) return "record";
-  if (query.isLoading) return "reading";
-  return query.data === true ? "kit" : "record";
 }
 
 /**
@@ -134,7 +179,11 @@ export function useBackingPool(
     ? backingTarget(record)
     : { kind: "off" };
   const dao = target.kind === "target" ? target.dao : null;
-  const provenance = useBackingProvenance(
+  const {
+    provenance,
+    failed: provenanceFailed,
+    retry: retryProvenance,
+  } = useBackingProvenance(
     target.kind === "target" ? String(target.chainId) : null,
     dao,
   );
@@ -158,26 +207,12 @@ export function useBackingPool(
         (data.phase === "waiting" || data.snapshot.milestone.status === "open");
       return backingRefreshMs(failures, busy);
     },
-    queryFn: async () => {
+    queryFn: () => {
       if (target.kind !== "target") throw new Error("no project to read");
-      const endpoint = getRpcEndpoint();
-      // A page that reads another network than the project's would find no pool there: that is a wrong place to ask, not
-      // "no pool".
-      const chainId = Number(await ethChainId(endpoint));
-      if (chainId !== target.chainId) {
-        throw new Error(
-          `This page reads network ${chainId}, but the project is on network ${target.chainId}.`,
-        );
-      }
-      return readPool(backingChain(endpoint), {
-        factory: target.factory,
-        dao: target.dao,
-        holder: wallet,
-        expectedQuote: target.quoteToken,
-      });
+      return readProjectPool(target, wallet);
     },
   });
-  return { target, provenance, query };
+  return { target, provenance, provenanceFailed, retryProvenance, query };
 }
 
 /**
@@ -219,5 +254,79 @@ export function useBackingEvents(pool: string | null, chainId: number | null) {
       );
       return { ...events, times };
     },
+  });
+}
+
+/**
+ * What a buy of `quoteIn` would give right now, asked of the pool itself. Off with no amount. The key names the pool and
+ * the amount, so a quote for another amount is never shown for this one; a failed ask throws and the form says so.
+ */
+export function useBuyQuote(pool: string | null, quoteIn: bigint | null) {
+  return useQuery({
+    queryKey: [
+      ...BACKING_QUERY,
+      "quote-buy",
+      pool,
+      quoteIn?.toString() ?? null,
+    ],
+    enabled: pool !== null && quoteIn !== null && quoteIn > 0n,
+    staleTime: 5_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    queryFn: () =>
+      readBuyQuote(
+        backingChain(getRpcEndpoint()),
+        pool as string,
+        quoteIn as bigint,
+      ),
+  });
+}
+
+/** What the wallet selling `units` would get right now. */
+export function useSellQuote(
+  pool: string | null,
+  holder: string | null,
+  units: bigint | null,
+) {
+  return useQuery({
+    queryKey: [
+      ...BACKING_QUERY,
+      "quote-sell",
+      pool,
+      holder,
+      units?.toString() ?? null,
+    ],
+    enabled: pool !== null && holder !== null && units !== null && units > 0n,
+    staleTime: 5_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    queryFn: () =>
+      readSellQuote(
+        backingChain(getRpcEndpoint()),
+        pool as string,
+        holder as string,
+        units as bigint,
+      ),
+  });
+}
+
+/** What leaving at the open milestone would pay the wallet right now. Off unless the wallet may leave. */
+export function useLeaveQuote(
+  pool: string | null,
+  holder: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: [...BACKING_QUERY, "quote-leave", pool, holder],
+    enabled: enabled && pool !== null && holder !== null,
+    staleTime: 5_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    queryFn: () =>
+      readLeaveQuote(
+        backingChain(getRpcEndpoint()),
+        pool as string,
+        holder as string,
+      ),
   });
 }

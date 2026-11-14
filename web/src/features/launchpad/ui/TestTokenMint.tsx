@@ -24,8 +24,9 @@ export function TestTokenMint({
   busy,
   gateNoteId,
   onSend,
+  note = TEST_TOKEN_NOTE,
 }: {
-  quote: SecondaryMarketFacts;
+  quote: Pick<SecondaryMarketFacts, "quoteToken" | "quoteDecimals">;
   chainId: string | null;
   /** The signed-in account's address; null with none. */
   me: string | null;
@@ -33,6 +34,8 @@ export function TestTokenMint({
   busy: string | null;
   gateNoteId?: string;
   onSend: (key: string, to: string, data: string) => Promise<boolean>;
+  /** What the token is, when the card is not about trading (the Backing block says it in its own words). */
+  note?: string;
 }) {
   const noteId = useId();
   if (!isTestQuote(quote.quoteToken, chainId)) return null;
@@ -40,7 +43,7 @@ export function TestTokenMint({
   return (
     <div className="mt-2 grid gap-1" data-testid="trading-test-tokens">
       <p className="text-sm" id={noteId}>
-        {TEST_TOKEN_NOTE}
+        {note}
       </p>
       <div>
         <Button

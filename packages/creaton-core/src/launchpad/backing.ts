@@ -47,6 +47,7 @@ export const BACKING_SIGNATURES = {
   roundFloorPriceX96: "roundFloorPriceX96()",
   roundTickSpacingX96: "roundTickSpacingX96()",
   roundBlocks: "roundBlocks()",
+  founderOf: "founderOf(address)",
   auctionFactory: "auctionFactory()",
   // pool, reads
   snapshot: "snapshot(address)",
@@ -435,6 +436,12 @@ export const encodeQuoteSell = (holder: string, unitsIn: bigint): string =>
     BACKING_SIGNATURES.quoteSell,
     ["address", "uint256"],
     [address(holder, "The holder"), uint(unitsIn, 256, "The units")],
+  );
+export const encodeFounderOf = (dao: string): string =>
+  encodeFunctionData(
+    BACKING_SIGNATURES.founderOf,
+    ["address"],
+    [address(dao, "The project's DAO")],
   );
 export const encodeQuoteLeave = (holder: string): string =>
   encodeFunctionData(
@@ -1184,7 +1191,57 @@ export async function readPoolAddress(
   return pool === ZERO_ADDRESS ? null : pool;
 }
 
+/** The token's own decimals and symbol: amounts are never shown with an assumed number of places. */
+async function readQuoteFacts(
+  chain: Pick<BackingChain, "call">,
+  token: string,
+): Promise<QuoteFacts> {
+  const [decimalsHex, symbolHex] = await Promise.all([
+    chain.call(token, encodeNoArgs(SIG_DECIMALS)),
+    chain.call(token, encodeNoArgs(SIG_SYMBOL)).catch(() => null),
+  ]);
+  const [decimals] = words(decimalsHex, 1, "decimals()");
+  if (decimals > 36n)
+    throw new Error("the quote token reports more than 36 decimals");
+  return {
+    address: token,
+    decimals: Number(decimals),
+    symbol: symbolHex === null ? null : decodeSymbol(symbolHex),
+  };
+}
+
+/** A pool's quote token and its own decimals and symbol: three bounded calls, for a feed that shows amounts and never reads the whole pool. */
+export async function readPoolQuoteFacts(
+  chain: Pick<BackingChain, "call">,
+  pool: string,
+): Promise<QuoteFacts> {
+  const token = wordToAddress(
+    await chain.call(
+      address(pool, "The pool"),
+      encodeNoArgs(BACKING_SIGNATURES.quote),
+    ),
+    "quote()",
+  );
+  return readQuoteFacts(chain, token);
+}
+
+/** What a project with no pool yet needs for the founder's "open backing": who may, the token, and whether rounds are offered. */
+export interface NoPoolView {
+  kind: "none";
+  factory: string;
+  dao: string;
+  /** The founder on the DAO's record, who may open backing (and the DAO itself); the zero address when none is recorded. */
+  founder: string;
+  quote: QuoteFacts;
+  quoteMatchesFactory: boolean;
+  /** Set when the factory offers a fair opening round: its default minimum, in the token's base units. */
+  round: { defaultMinimum: bigint } | null;
+  now: number;
+  block: number;
+}
+
 export interface PoolView {
+  kind: "pool";
   pool: string;
   factory: string;
   dao: string;
@@ -1223,13 +1280,48 @@ export async function readPool(
     holder: string | null;
     expectedQuote?: string | null;
   },
-): Promise<{ kind: "none" } | ({ kind: "pool" } & PoolView)> {
+): Promise<NoPoolView | PoolView> {
   const factory = address(input.factory, "The pool factory");
   const dao = address(input.dao, "The project's DAO");
   const holder =
     input.holder === null ? null : address(input.holder, "The wallet");
+  const expected = input.expectedQuote
+    ? address(input.expectedQuote, "The backing token")
+    : null;
   const pool = await readPoolAddress(chain, factory, dao);
-  if (pool === null) return { kind: "none" };
+  if (pool === null) {
+    const [
+      founderHex,
+      factoryQuoteHex,
+      auctionFactoryHex,
+      minimumHex,
+      now,
+      block,
+    ] = await Promise.all([
+      chain.call(factory, encodeFounderOf(dao)),
+      chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.factoryQuote)),
+      chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.auctionFactory)),
+      chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.defaultMinimumRaise)),
+      chain.now(),
+      chain.blockNumber(),
+    ]);
+    const factoryQuote = wordToAddress(factoryQuoteHex, "quote()");
+    const roundsOffered =
+      wordToAddress(auctionFactoryHex, "auctionFactory()") !== ZERO_ADDRESS;
+    return {
+      kind: "none",
+      factory,
+      dao,
+      founder: wordToAddress(founderHex, "founderOf(address)"),
+      quote: await readQuoteFacts(chain, factoryQuote),
+      quoteMatchesFactory: expected === null || expected === factoryQuote,
+      round: roundsOffered
+        ? { defaultMinimum: words(minimumHex, 1, "defaultMinimumRaise()")[0] }
+        : null,
+      now,
+      block,
+    };
+  }
   // `snapshot` is asked about the zero address when no wallet is connected: the pool alone.
   const [snapshotHex, founderHex, quoteHex, factoryQuoteHex, now, block] =
     await Promise.all([
@@ -1243,9 +1335,8 @@ export async function readPool(
   const snapshot = decodeSnapshot(snapshotHex);
   const quoteAddress = wordToAddress(quoteHex, "quote()");
   const factoryQuote = wordToAddress(factoryQuoteHex, "quote()");
-  const [decimalsHex, symbolHex, moneyHex] = await Promise.all([
-    chain.call(quoteAddress, encodeNoArgs(SIG_DECIMALS)),
-    chain.call(quoteAddress, encodeNoArgs(SIG_SYMBOL)).catch(() => null),
+  const [quoteFacts, moneyHex] = await Promise.all([
+    readQuoteFacts(chain, quoteAddress),
     holder === null
       ? Promise.resolve(null)
       : Promise.all([
@@ -1263,9 +1354,6 @@ export async function readPool(
           ),
         ]),
   ]);
-  const [decimals] = words(decimalsHex, 1, "decimals()");
-  if (decimals > 36n)
-    throw new Error("the quote token reports more than 36 decimals");
   let round: PoolView["round"] = null;
   if (snapshot.round.state === "waiting") {
     const [floorHex, tickHex, permitHex] = await Promise.all([
@@ -1289,9 +1377,6 @@ export async function readPool(
         permitHex === null ? null : words(permitHex, 1, "allowance()")[0],
     };
   }
-  const expected = input.expectedQuote
-    ? address(input.expectedQuote, "The backing token")
-    : null;
   return {
     kind: "pool",
     pool,
@@ -1300,11 +1385,7 @@ export async function readPool(
     founder: wordToAddress(founderHex, "founder()"),
     snapshot,
     phase: poolPhase(snapshot),
-    quote: {
-      address: quoteAddress,
-      decimals: Number(decimals),
-      symbol: symbolHex === null ? null : decodeSymbol(symbolHex),
-    },
+    quote: quoteFacts,
     quoteMatchesFactory:
       quoteAddress === factoryQuote &&
       (expected === null || expected === quoteAddress),
