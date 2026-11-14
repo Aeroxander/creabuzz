@@ -56,6 +56,10 @@ async function shoot(
     as: "founder" | "visitor";
     wallet: string;
     before?: (page: Page) => Promise<void>;
+    /** Another page than the project's, and the element on it to photograph. */
+    path?: string;
+    target?: string;
+    ready?: string;
   },
 ) {
   const relay = createMockRelay();
@@ -113,13 +117,27 @@ async function shoot(
   mkdirSync(DIR as string, { recursive: true });
   for (const size of WIDTHS) {
     await page.setViewportSize({ width: size.width, height: size.height });
-    await page.goto(`/launchpad/docs-commons?author=${FOUNDER}`);
-    const block = page.getByTestId("backing");
+    await page.goto(
+      options.path ?? `/launchpad/docs-commons?author=${FOUNDER}`,
+    );
+    const block = page.getByTestId(options.target ?? "backing");
     await expect(block).toBeVisible({ timeout: 30_000 });
-    await expect(block.getByTestId("backing-state")).toBeVisible();
+    await expect(
+      block.getByTestId(options.ready ?? "backing-state").first(),
+    ).toBeVisible({ timeout: 30_000 });
     // Let the reads and the animations settle, then keep the whole block in view.
     await page.waitForTimeout(800);
     if (options.before) await options.before(page);
+    // The stubbed server has no terms to check: its notice is not part of what is being looked at.
+    await page.evaluate(() => {
+      for (const node of document.querySelectorAll("div, section, aside")) {
+        if (
+          node.children.length < 4 &&
+          node.textContent?.includes("could not check whether the terms")
+        )
+          (node as HTMLElement).style.display = "none";
+      }
+    });
     await page.evaluate(() => {
       for (const a of document.getAnimations()) a.finish();
     });
@@ -234,5 +252,31 @@ test("failed and closed", async ({ page }) => {
     pool: { ...live, phase: "abandoned" },
     as: "visitor",
     wallet: FIXTURE.backerWallet,
+  });
+});
+
+test("Home's feed and what you back", async ({ page }) => {
+  await shoot(page, {
+    name: "home-feed",
+    pool: live,
+    as: "visitor",
+    wallet: FIXTURE.backerWallet,
+    path: "/?tab=updates",
+    target: "record-feed",
+    ready: "backing-feed-card",
+  });
+  await shoot(page, {
+    name: "you-back",
+    pool: {
+      ...live,
+      windowEndsIn: DAY,
+      holderCanLeave: true,
+      holderLeaveValue: 99n * ONE,
+    },
+    as: "visitor",
+    wallet: FIXTURE.backerWallet,
+    path: "/portfolio",
+    target: "projects-you-back",
+    ready: "back-position",
   });
 });

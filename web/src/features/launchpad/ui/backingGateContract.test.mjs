@@ -54,3 +54,23 @@ test("the one switch is the build's own: nothing reads investing from anywhere e
     /if \(!investingOffered\(env\)\) return \{ kind: "off" \};/,
   );
 });
+
+test("Home's next step reads nothing for investing unless the switch is on: the off hook calls no hook", () => {
+  const positions = source("../use-backing-positions.ts");
+  assert.match(
+    positions,
+    /export const useBackingPositions: \(\) => Positions = investingOffered\(\)\s*\?\s*usePositionsOn\s*:\s*usePositionsOff;/,
+  );
+  const off = positions.slice(positions.indexOf("function usePositionsOff"));
+  const body = off.slice(off.indexOf("{\n") + 2, off.indexOf("\n}\n"));
+  assert.doesNotMatch(body, /\buse[A-Z]\w*\(/);
+  // The feed and the portfolio sections are components that return nothing before they read anything.
+  assert.match(
+    source("../../feed/ui/BackingFeed.tsx"),
+    /if \(!investingOffered\(\)\) return null;\n {2}return <BackingFeedBody/,
+  );
+  assert.match(
+    source("../../portfolio/ui/ProjectsYouBack.tsx"),
+    /if \(!investingOffered\(\)\) return null;\n {2}return <ProjectsYouBackBody/,
+  );
+});

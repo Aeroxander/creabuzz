@@ -35,7 +35,7 @@ export interface HeldPosition {
   position: Position;
 }
 
-export function useBackingPositions(): {
+interface Positions {
   held: HeldPosition[];
   needs: Need[];
   loading: boolean;
@@ -45,7 +45,9 @@ export function useBackingPositions(): {
   /** No account to hold anything with. */
   noAccount: boolean;
   retry: () => void;
-} {
+}
+
+function usePositionsOn(): Positions {
   const on = investingOffered();
   const wallet = useActingAccount().address;
   const client = useQueryClient();
@@ -123,3 +125,26 @@ export function useBackingPositions(): {
     },
   };
 }
+
+const NONE: Positions = {
+  held: [],
+  needs: [],
+  loading: false,
+  failed: 0,
+  cut: false,
+  noAccount: false,
+  retry: () => {},
+};
+
+/** With the switch off nothing is read, and no hook runs: not the account, not the projects, not the chain. */
+function usePositionsOff(): Positions {
+  return NONE;
+}
+
+/**
+ * The hook for this build. The switch is a build setting, so which of the two runs never changes while the page is open,
+ * and the off one calls no hook at all: Home gains no read from a build that has investing off.
+ */
+export const useBackingPositions: () => Positions = investingOffered()
+  ? usePositionsOn
+  : usePositionsOff;

@@ -55,3 +55,12 @@ sale and the rest stay hidden. With the switch off, no page changes in any build
    one test: back it with a small amount, sell, and check Home's feed.
 
 To turn it off, remove the four lines and build again: nothing is left on any page.
+
+## Checking a build
+
+- `./run.sh build` prints `Investing: on (...)` or `Investing: off` before the long build.
+- `scripts/web-investing-mock-e2e.sh` builds the app twice (switch on, and every address named with the switch unset) and runs
+  `web/tests/e2e/investing.spec.ts` against a stand-in chain node: every state of the Backing block, the steps it sends, Home's
+  feed, "Projects you back", and that the switch alone turns the page on.
+- `scripts/web-backing-e2e.sh` runs the same pages against the real contracts on a local chain (buy, sell, a milestone, leaving,
+  settling it, and an opening round bid and exchange).
