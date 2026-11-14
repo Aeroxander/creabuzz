@@ -309,6 +309,11 @@ test("on a phone the rail sits below the feed with every block reachable and no 
   await page.goto("/");
 
   await expect(rail(page)).toHaveCount(1);
+  // Every block has its content before anything is scrolled to: a block that fills in afterwards grows the rail and
+  // moves the heading that was just scrolled into view back out of it.
+  await expect(rail(page).getByTestId("social-rail-people")).toContainText(
+    "Dan Drummer",
+  );
   for (const name of [
     "Projects",
     "Most discussed posts",
