@@ -188,7 +188,10 @@ export function backingFeedLine(item: BackingFeedItem, name: string): string {
       return `Backed ${name}: ${plural(card.backers, "backer", "backers")} · ${money(card.paidIn, quote)} paid in${move}`;
     }
     case "milestone-posted":
-      return `${name} posted a milestone. Backers can leave until ${whenWords(card.leaveBy)}.`;
+      // A window end that was not read (0) is left out rather than shown as the year 1970.
+      return card.leaveBy > 0
+        ? `${name} posted a milestone. Backers can leave until ${whenWords(card.leaveBy)}.`
+        : `${name} posted a milestone.`;
     case "milestone-released": {
       const left =
         card.leavers > 0

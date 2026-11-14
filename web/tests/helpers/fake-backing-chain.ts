@@ -229,8 +229,8 @@ export function postedEvent(
       topicAddress(by),
     ],
     data: encodeParameters(Array(4).fill("uint256"), [
-      1n,
-      2n,
+      BigInt(Math.floor(Date.now() / 1000) + 5 * 86_400),
+      BigInt(Math.floor(Date.now() / 1000) + 7 * 86_400),
       220n * ONE,
       55n * ONE,
     ]),

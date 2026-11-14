@@ -29,7 +29,7 @@ import { useMyProjects } from "./use-my-projects";
 /** The most projects whose pools are asked about the wallet at once. */
 const POSITION_PROJECTS = 20;
 
-export interface HeldPosition {
+interface HeldPosition {
   record: LaunchRecord;
   coordinate: string;
   position: Position;

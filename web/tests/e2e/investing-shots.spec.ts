@@ -130,14 +130,38 @@ async function shoot(
     if (options.before) await options.before(page);
     // The stubbed server has no terms to check: its notice is not part of what is being looked at.
     await page.evaluate(() => {
-      for (const node of document.querySelectorAll("div, section, aside")) {
+      const phrase = "could not check whether the terms";
+      // Only the innermost element that holds the words (the notice), never a page or block around it.
+      for (const node of document.querySelectorAll("body *")) {
         if (
-          node.children.length < 4 &&
-          node.textContent?.includes("could not check whether the terms")
+          node.textContent?.includes(phrase) &&
+          ![...node.children].some((child) =>
+            child.textContent?.includes(phrase),
+          )
         )
           (node as HTMLElement).style.display = "none";
       }
     });
+    // Bars that stay fixed on the screen (the bottom menu, the test-version strip, any notice) would lie across a tall
+    // block's picture: they are left out, and the window is made tall enough to hold the whole block at once.
+    await page.evaluate((testId) => {
+      const wanted = document.querySelector(`[data-testid='${testId}']`);
+      for (const node of document.querySelectorAll("body *")) {
+        const style = getComputedStyle(node);
+        if (
+          (style.position === "fixed" || style.position === "sticky") &&
+          !node.contains(wanted)
+        )
+          (node as HTMLElement).style.display = "none";
+      }
+    }, options.target ?? "backing");
+    const box = await block.boundingBox();
+    if (box)
+      await page.setViewportSize({
+        width: size.width,
+        height: Math.ceil(box.height) + 200,
+      });
+    await page.waitForTimeout(400);
     await page.evaluate(() => {
       for (const a of document.getAnimations()) a.finish();
     });

@@ -63,17 +63,25 @@ function BackingFeedBody({
               data-testid="backing-feed-card"
               key={item.id}
             >
-              <Coins aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <Coins
+                aria-hidden
+                className="mt-0.5 h-3.5 w-3.5 shrink-0 max-sm:mt-3.5"
+              />
               <span className="min-w-0 break-words">
                 <Link
-                  className="underline-offset-2 hover:underline max-sm:inline-block max-sm:min-h-11 max-sm:py-2.5"
+                  className="underline-offset-2 hover:underline max-sm:block max-sm:min-h-11 max-sm:pt-2.5"
                   params={{ launchId: record.id }}
                   search={{ author: record.author }}
                   to="/launchpad/$launchId"
                 >
                   {backingFeedLine(item, record.name)}
                 </Link>{" "}
-                <span className="text-xs">· {relativeTime(item.at)}</span>
+                <span className="text-xs max-sm:block max-sm:pb-2.5">
+                  <span aria-hidden className="max-sm:hidden">
+                    ·{" "}
+                  </span>
+                  {relativeTime(item.at)}
+                </span>
               </span>
             </li>
           );

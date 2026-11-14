@@ -453,9 +453,15 @@ function PoolDetails({
           {position}
         </p>
       ) : null}
-      <p className="text-sm text-muted-foreground" data-testid="backing-honest">
-        {HONEST_LINE}
-      </p>
+      {view.phase === "failed" ? null : (
+        // Nothing was opened when a round fell short, so there is nothing to sell or leave: the line would promise it.
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="backing-honest"
+        >
+          {HONEST_LINE}
+        </p>
+      )}
       {actions}
       {variant === "page" ? (
         <>
