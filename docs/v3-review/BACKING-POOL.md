@@ -65,7 +65,7 @@ Every buy is split three ways:
 
 - **Open with a round:** create the project, then one call, `BackingPoolFactory.openWithRound(dao, minimum)`
   (zero for the default minimum). It is a second transaction because the two together do not fit in one
-  (18.5 million gas against a cap of 16.8 million on some chains).
+  (18.7 million gas against a cap of 16.8 million on some chains).
 - **Open now:** a new project gets its pool in the transaction that creates it
   (`ContributorKitV3.launchWithPool`, same inputs as today's launch, with at most 8 reviewers, a name of at most
   64 bytes and a symbol of at most 12; the V2 kit has no such caps), or an existing project made with
@@ -227,7 +227,11 @@ Not protected. Say these plainly in the app:
 - The round's length is counted in blocks, so its length in days depends on the chain. Blocks are counted on
   the auction's own clock: on Arbitrum and its Orbit chains that is the chain's own block number (ArbSys), not
   `block.number`, and the factory and the pool read it the same way (a test runs a round against a stand-in
-  for ArbSys).
+  for ArbSys). If the auction the factory creates counts on another clock than the factory does, opening
+  fails whole: `openWithRound` asks the new auction to checkpoint, and an auction whose clock is behind
+  the round's start reverts with its own `AuctionNotStarted()` (not a factory error), so nothing is
+  opened and the project can try again. A clock that is ahead is not refused: the round is shorter or already
+  over, settles as a round nobody bid in, and the project may open another.
 - No owner and no upgrade: a defect cannot be patched, only replaced by a new deployment.
 - The quote token must move exactly what is asked. A token that takes a cut is refused at the first buy;
   rebasing tokens are not supported. If the token refuses to pay the treasury, the money waits in the pool
@@ -247,7 +251,7 @@ Not protected. Say these plainly in the app:
 | Create project with pool, open now (`launchWithPool`), 1 first project / 8 | 14,714,000 / 15,470,000 (the V2 launch alone is 10,754,000) |
 | The heaviest launch the kit accepts (8 first projects, 8 reviewers, 64-byte name, 12-byte symbol) | 15,702,000 used; the least gas limit that succeeds is 15,792,000, which is 5.9% under the 16,777,216 per-transaction cap some chains enforce. Each reviewer adds about 31,000 and each name byte about 800, which is why the kit caps them (32 reviewers took 16,401,000, 2% under the cap, and a 300-byte name 16,627,000) |
 | Open a pool for an existing project, open now (`open`) | 3,962,000 |
-| Open a pool behind a round (`openWithRound`: pool, claim token, auction) | 7,801,000 |
+| Open a pool behind a round (`openWithRound`: pool, claim token, auction, and the auction's first checkpoint, about 114,000 of it) | 7,919,000 |
 | Bid in a round (the auction's own call) | 396,000 |
 | Settle a round (`seedFromAuction`) | 604,000 |
 | Exchange claim tokens for units (`redeem`, a wallet's first) | 117,000 |

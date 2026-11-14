@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {BlockNumberish} from "blocknumberish/src/BlockNumberish.sol";
 import {Summoner} from "./majeur/MolochPatched.sol";
-import {BackingPool} from "./BackingPool.sol";
+import {BackingPool, IRoundAuction} from "./BackingPool.sol";
 
 /// @notice The canonical auction factory (Uniswap's `ContinuousClearingAuctionFactory`), as far as a round needs it.
 interface IRoundAuctionFactory {
@@ -80,8 +80,10 @@ contract BackingPoolDeployer {
 /// the factory creates the pool waiting, builds the auction's configuration itself (so there is no
 /// founder-supplied configuration to validate: currency, recipients, blocks, floor, schedule are all derived
 /// here from the pool and this factory's fixed round settings; the founder chooses at most the minimum to
-/// raise), creates the auction on the canonical auction factory and binds it to the pool. The curve opens
-/// when the round is settled (`BackingPool.seedFromAuction`). A project whose round failed may open again.
+/// raise), creates the auction on the canonical auction factory and binds it to the pool, then asks the auction to
+/// checkpoint so that an auction counting blocks on another clock than this factory reverts the open (with the
+/// auction's own `AuctionNotStarted`) instead of leaving a pool waiting for a round that has not begun. The curve
+/// opens when the round is settled (`BackingPool.seedFromAuction`). A project whose round failed may open again.
 ///
 /// No owner, no admin, no upgrade: the terms, the quote token and the kit are immutable, and after
 /// `open` the factory has no power over the pool it made.
@@ -258,6 +260,14 @@ contract BackingPoolFactory is BlockNumberish {
             auctionFactory.create(claim, roundSupply, abi.encode(config), bytes32(uint256(uint160(address(pool)))));
         // The pool checks the auction against itself (token, currency, both recipients) before funding it.
         poolDeployer.bindRound(pool, auction, minimumRaise);
+        // The auction must be running on the clock this factory counted the round on. Asking it to checkpoint now
+        // makes it read its own clock: one that is behind this factory's (an Orbit-style chain whose auction copy
+        // of `BlockNumberish` reads another source) has not started the round, so the auction's own
+        // `AuctionNotStarted` reverts this call, and nothing is opened, instead of leaving a pool waiting for a
+        // round that begins in the far future and blocks the project from opening another. The revert is the
+        // auction's, passed on unchanged. (A clock that is ahead is not refused: the round is shorter, or over, and
+        // closes like any round that raised nothing.)
+        IRoundAuction(auction).checkpoint();
         emit RoundOpened(dao, address(pool), auction, claim, roundSupply, minimumRaise, start, start + roundBlocks);
     }
 

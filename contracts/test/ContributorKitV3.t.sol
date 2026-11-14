@@ -17,6 +17,7 @@ import {PoolQuote} from "./helpers/BackingPoolFixture.sol";
 
 /// @dev The auction, as far as these tests drive it (it pins another compiler, so it is not imported).
 interface IRoundAuctionLike {
+    error AuctionNotStarted();
     function submitBid(uint256 maxPrice, uint128 amount, address owner, uint256 prevTickPrice, bytes calldata hookData)
         external
         payable
@@ -48,7 +49,24 @@ contract ArbSysStub {
         number = number_;
     }
 
-    function arbBlockNumber() external view returns (uint256) {
+    function arbBlockNumber() external view virtual returns (uint256) {
+        return number;
+    }
+}
+
+/// @dev ArbSys as seen from a chain whose auctions end up on another clock than the factory: callers that are
+/// running their constructor (an address with no code yet) get no answer, so a contract made after `strict` is
+/// set decides it has no ArbSys and counts blocks with `block.number`, while the factory (built before, or
+/// reading it in a call) counts on ArbSys.
+contract PickyArbSysStub is ArbSysStub {
+    bool public strict;
+
+    function setStrict(bool strict_) external {
+        strict = strict_;
+    }
+
+    function arbBlockNumber() external view override returns (uint256) {
+        if (strict && msg.sender.code.length == 0) revert("constructor");
         return number;
     }
 }
@@ -912,6 +930,54 @@ contract ContributorKitV3Test is Test {
         vm.prank(ALICE);
         pool.redeem(tokens);
         assertEq(pool.balanceOf(ALICE), tokens);
+    }
+
+    /// @dev A factory that counts the round on one clock and an auction that runs on another cannot open: the
+    /// factory asks the new auction to checkpoint, the auction (still before its start on its own clock) refuses with
+    /// its own `AuctionNotStarted`, and the whole open is undone, so the project is not left with a pool waiting for
+    /// a round that begins in the far future. The factory that agrees with its auctions opens as ever.
+    function test_opening_a_round_reverts_when_the_auctions_clock_is_behind_the_factorys() public {
+        uint256 arbBlock = 400_000_000;
+        vm.etch(address(100), address(new PickyArbSysStub()).code);
+        ArbSysStub(address(100)).set(arbBlock);
+        // This factory counts on ArbSys (it reads it once, here)...
+        BackingPoolFactory arbFactory =
+            new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), rounds());
+        Moloch dao = _launchV2("clocks differ");
+        // ...and the auction, made in the same transaction as the round, ends up counting on `block.number` (1,000).
+        PickyArbSysStub(address(100)).setStrict(true);
+        vm.prank(FOUNDER);
+        vm.expectRevert(IRoundAuctionLike.AuctionNotStarted.selector);
+        arbFactory.openWithRound(address(dao), 0);
+        assertEq(arbFactory.poolOf(address(dao)), address(0), "nothing was opened");
+        assertEq(arbFactory.poolCount(), 0);
+
+        // The factory made on the same clock as its auctions opens the same project.
+        vm.etch(address(100), "");
+        BackingPoolFactory plainFactory =
+            new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), rounds());
+        vm.prank(FOUNDER);
+        (BackingPool pool,) = plainFactory.openWithRound(address(dao), 0);
+        assertEq(uint8(pool.roundState()), uint8(BackingPool.RoundState.Waiting));
+    }
+
+    /// @dev The other way round the factory cannot tell the clocks apart and does not try: the auction's clock is
+    /// ahead of the round, so the round is over at birth. Nothing is stuck: it settles as a round nobody bid in
+    /// (failed) at once, and the project may open another.
+    function test_a_round_whose_auction_clock_is_ahead_is_over_at_birth_and_fails_harmlessly() public {
+        BackingPoolFactory plain =
+            new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), rounds());
+        Moloch dao = _launchV2("clock ahead");
+        vm.etch(address(100), address(new ArbSysStub()).code);
+        ArbSysStub(address(100)).set(400_000_000);
+        vm.prank(FOUNDER);
+        (BackingPool pool, address auction) = plain.openWithRound(address(dao), 0);
+        assertEq(IRoundAuctionLike(auction).endBlock(), block.number + 50_000, "counted on the factory's clock");
+        assertFalse(pool.seedFromAuction());
+        assertEq(uint8(pool.roundState()), uint8(BackingPool.RoundState.Failed));
+        vm.prank(FOUNDER);
+        plain.openWithRound(address(dao), 0);
+        assertEq(plain.poolCount(), 2);
     }
 
     /// @dev Opening with a round as its own transaction, and what a launch plus a round would cost in one.
