@@ -537,9 +537,10 @@ contract BackingPool {
     /// @notice Settle the opening round once its auction is over; anyone may call, once. If the auction
     /// reached its minimum, collect what it raised, split it as a buy is split, and open the curve at the
     /// state one buy of the reserve part would have left. If it did not, close this pool for good (bidders
-    /// are refunded by the auction). The pool also closes, with nothing refundable, when the minimum was
-    /// reached but the auction's protocol fee left too little here to open a curve on (at most two base
-    /// units, which go to the treasury). If the auction's own sweep reverts (a fee recipient that cannot
+    /// are refunded by the auction). The pool also closes when the minimum was reached but the auction's
+    /// protocol fee left too little here to open a curve on (at most two base units, which go to the
+    /// treasury): what the bids spent went to the fee recipient and is not refunded, and only bids that were
+    /// outbid or partly filled get money back through the auction's exits. If the auction's own sweep reverts (a fee recipient that cannot
     /// receive the fee, say) this reverts with it and the pool keeps waiting; see `abandonRound`.
     /// The auction is asked to checkpoint first, so a revert here can be the auction's own (`AuctionNotStarted`,
     /// `TokensNotReceived`) as well as `RoundNotOver`.
@@ -616,7 +617,9 @@ contract BackingPool {
         // protocol fee took the raise (the sweep clamps it to the raise, so `received` can be zero), which
         // leaves at most two base units here. The pool closes for good, as a round under its minimum does, and
         // the project may open another. Nothing is stranded: what the sweep delivered goes to the treasury.
-        // (Bidders were filled, so there is no refund to take; the money was the protocol's.)
+        // (What the bids spent went to the protocol's fee recipient and is not refunded; bids that were outbid or
+        // only partly filled still get their unspent money back through the auction's `exitBid` and
+        // `exitPartiallyFilledBid`. The claim tokens are worth nothing: not here, and not on a pool opened later.)
         if (sold == 0 || toReserve == 0) {
             _failRound(a);
             if (received != 0) _payTreasury(received);

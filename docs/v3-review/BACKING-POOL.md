@@ -7,7 +7,10 @@ second review of the round (two skeptics per finding) confirmed seven more, fixe
 vote could be corrupted by exchanging claim tokens, the vote wait could be skipped through claim tokens,
 rounding leftovers of a round counted as a backer, a protocol fee above the raise bricked the settlement, the
 round's blocks were counted on the wrong clock on Arbitrum, the launch was unbounded in reviewers and name
-length, and three limits of the registry and the summoner (see "Not protected"). No outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
+length, and three limits of the registry and the summoner (see "Not protected"). A third, narrow pass found
+only low issues, all fixed or written down: a dust buy restarting the abandonment clock, an auction on another
+clock than the factory leaving a pool waiting, a round whose sweep cannot be made blocking the project for ever,
+and the corrections in "For the app" and "Not protected". No outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
 for counsel at the end are open.
 
 ## What it is
@@ -171,10 +174,19 @@ Not protected. Say these plainly in the app:
   Anyone can settle it, at any time, and nobody else can take the money.
 - **A round on a chain where the auction charges a protocol fee** opens the pool with what is left after it.
   If that fee takes the whole raise, or leaves two base units or fewer (nothing a curve can open on), the pool
-  closes for good like a round under its minimum, and the project may open another. Bidders were filled in
-  that case, so the auction refunds nothing: the money went to the protocol, and the couple of base units that
-  reached the pool go to the DAO treasury. The app can tell the two failures apart: a round that closed with
-  its raise at or above its minimum took this path.
+  closes for good like a round under its minimum, and the project may open another. That is not a refund: the
+  money the bids spent went to the protocol's fee recipient, and the couple of base units that reached the pool go
+  to the DAO treasury. Bids that were outbid or only partly filled still get their unspent money back through
+  the auction's own `exitBid` and `exitPartiallyFilledBid`. The claim tokens of that pool are worth nothing: they
+  cannot be exchanged on it (it is closed) nor on a pool opened later (that pool has its own claim token). The
+  app can tell this from a round that missed its minimum: it closed with its raise at or above the minimum.
+- **A round can go live with very little.** The line between going live and closing is arithmetic, not a share
+  of the minimum: the pool closes only when nothing is left for the reserve (what arrived is two base units or
+  fewer). A live pool with a handful of base units is possible only if the auction's fee controller, which is
+  fixed when the auction is made and which this system cannot change, takes about 99.99% of the raise. That is
+  a policy edge of the auction's fee, not a flaw of the pool: it is not fixed by closing below half the
+  minimum, which would hand bidders' remaining money to the treasury and leave them nothing, where going live
+  at least gives them units for the claim tokens they hold.
 - **A round whose raise cannot be swept** (the auction's fee recipient cannot be paid: it is unset, or the quote
   token refuses it) cannot be settled. `seedFromAuction` reverts with the auction's error and the pool keeps
   waiting, which would also stop the project from ever opening another. Thirty days after the pool opened
@@ -258,16 +270,20 @@ Not protected. Say these plainly in the app:
 - `ContributorKitV3` repeats the `ContributorKitV2` launch code, because V2 is deployed and was left
   unchanged. A test launches through both and compares the result.
 - Gas for a whole transaction, measured in the test VM on a real project with every call run as its own
-  transaction (`forge test --match-path "test/{BackingRound*,ContributorKitV3*}" --match-test test_gas_ --isolate -vv`):
+  transaction. The command (the `BackingRoundDustTest` test in it only makes sure the auction's artifact is
+  compiled: a filtered run that selects no `BackingRound` test does not build it, and the suite fails in `setUp`):
+  `forge test --match-contract 'ContributorKitV3Test|BackingRoundDustTest' --match-test 'test_gas_|test_a_pool_without_a_round_still' --isolate -vv`
+  (or drop `--match-test` and run both contracts whole).
 
 | Step | Gas |
 |---|---|
-| Create project with pool, open now (`launchWithPool`), 1 first project / 8 | 14,714,000 / 15,470,000 (the V2 launch alone is 10,754,000) |
-| The heaviest launch the kit accepts (8 first projects, 8 reviewers, 64-byte name, 12-byte symbol) | 15,702,000 used; the least gas limit that succeeds is 15,792,000, which is 5.9% under the 16,777,216 per-transaction cap some chains enforce. Each reviewer adds about 31,000 and each name byte about 800, which is why the kit caps them (32 reviewers took 16,401,000, 2% under the cap, and a 300-byte name 16,627,000) |
-| Open a pool for an existing project, open now (`open`) | 3,962,000 |
-| Open a pool behind a round (`openWithRound`: pool, claim token, auction, and the auction's first checkpoint, about 114,000 of it) | 7,919,000 |
-| Bid in a round (the auction's own call) | 396,000 |
+| Create project with pool, open now (`launchWithPool`), 1 first project / 8 | 14,765,000 / 15,521,000 (the V2 launch alone is 10,754,000) |
+| The heaviest launch the kit accepts (8 first projects, 8 reviewers, 64-byte name, 12-byte symbol) | 15,753,000 used. The transaction's gas limit has to be about 15.88 million: the least call gas that succeeds is 15,845,000, and this call data adds 37,000 of intrinsic gas. That is 5.3% under the 16,777,216 per-transaction cap some chains enforce. On V2 (no caps) each reviewer costs about 31,000 and each name byte about 770, which is why the kit caps them. Estimated on top of this launch (V2 measured, plus what the pool and market add), with the gas limit about 130,000 above what is used: 32 reviewers, 16,498,000 used (limit 16.63 million, 0.9% under the cap); a 300-byte name with 8 reviewers, 15,934,000 (limit 16.06 million, 4.3% under); 32 reviewers and a 300-byte name together, 16,679,000 (limit 16.81 million, over the cap): each figure holds only for the shape it names |
+| Open a pool for an existing project, open now (`open`) | 4,013,000 |
+| Open a pool behind a round (`openWithRound`: pool, claim token, auction, and the auction's first checkpoint, about 114,000 of it) | 7,965,000 |
+| Bid in a round (the auction's own call) | 296,000 |
 | Settle a round (`seedFromAuction`) | 604,000 |
+| Close a stuck round (`abandonRound`, the sweep failing) | 269,000 |
 | Exchange claim tokens for units (`redeem`, a wallet's first) | 117,000 |
 | Buy (first time for a wallet / again) | 166,000 / 112,000 (289,000 for the pool's very first buy) |
 | Sell | 94,000 |
@@ -275,6 +291,36 @@ Not protected. Say these plainly in the app:
 | Leave at a milestone | 143,000 |
 | Release (`resolveMilestone`, pays the treasury) | 122,000 |
 | Refund (sell once abandoned) | 70,000 (120,000 for the first one, which records the abandonment) |
+
+## For the app
+
+What the web needs that is not obvious from the contracts:
+
+- **Hide or label the claim tokens of any pool that is not `Waiting` or `Live`.** A `Failed` pool's claim token
+  cannot be exchanged (not on that pool, which is closed, and not on a pool the project opens afterwards, which
+  has its own claim token): it is worth nothing, even when the auction handed it out. While the pool is
+  `Waiting` the tokens are not collectable yet (the auction's claim block), and while it is `Live` they are
+  exchanged with `redeem`. Show a holder's `roundInfo(holder).holderClaimTokens` only in those two states.
+- **The launch caps are readable**: `ContributorKitV3.MAX_REVIEWERS()` (8), `MAX_NAME_BYTES()` (64) and
+  `MAX_SYMBOL_BYTES()` (12). Every cap violation reverts with the same `InvalidTerms()`, so check before
+  sending. The name cap counts UTF-8 bytes, not characters: measure the encoded length (`new TextEncoder().encode(name).length`),
+  because an emoji or an accented letter costs several.
+- **`seedFromAuction()` can return false with `RoundFailed` when the raise reached the minimum.** That is the
+  protocol-fee path (the fee left two base units or fewer): the bids' money is not refunded, only outbid or
+  partly filled bids get their unspent part back through the auction's `exitBid` / `exitPartiallyFilledBid`.
+  Tell it apart from a missed minimum with `roundInfo().raised >= roundInfo().minimumRaise`.
+- **`seedFromAuction()` and `abandonRound()` ask the auction to checkpoint first**, so the revert of a call that
+  cannot settle can be the auction's own (`AuctionNotStarted()`, `TokensNotReceived()`) as well as the pool's
+  `RoundNotOver(endBlock)`. Opening can revert with the auction's `AuctionNotStarted()` too (see "Known limits").
+- **"Can settle" must be asked on the auction's clock, not `block.number`.** On Arbitrum and its Orbit chains
+  they differ. The auction's own `lastCheckpointedBlock()` reaches `roundInfo().endBlock` only after someone
+  has checkpointed past the end, so a round that is over can still read below it. The dependable test is to
+  simulate `seedFromAuction()` (an `eth_call`): it reverts with `RoundNotOver` until the auction's clock has
+  reached the end.
+- **A round stuck on its sweep**: `seedFromAuction()` keeps reverting (with the auction's error). From
+  `openedAt() + ROUND_GRACE()` (30 days), once the round is over, offer `abandonRound()`: it settles the round if
+  it can and otherwise closes the pool (`Failed`); it needs about 1.1 million gas available (`NotEnoughGas()`
+  otherwise). Show a closed pool whose raise was at or above its minimum as "the raise could not be collected".
 
 ## Deploying (Sepolia)
 
