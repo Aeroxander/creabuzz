@@ -27,6 +27,7 @@ import {
   type HelpAsk,
   weeksInARow,
 } from "./weekly-update.ts";
+import { whenWords } from "./backing-copy.ts";
 
 /** A task is "due soon" from this many days before its date. */
 const DUE_SOON_DAYS = 3;
@@ -221,7 +222,11 @@ export type Need =
       due: string;
       late: boolean;
     }
-  | { kind: "update-due"; coordinate: string; days: number | null };
+  | { kind: "update-due"; coordinate: string; days: number | null }
+  /** A milestone's window is about to end for a project the person backs: stay or leave with their held money. */
+  | { kind: "leave-by"; coordinate: string; leaveBy: number }
+  /** The opening round of a project the person bid in has opened backing: their round tokens can become units. */
+  | { kind: "round-claim"; coordinate: string };
 
 /** Other people wait on the first of these; the last only helps the person themselves. */
 const ORDER: Record<Need["kind"], number> = {
@@ -231,6 +236,9 @@ const ORDER: Record<Need["kind"], number> = {
   invitation: 3,
   "task-due": 4,
   "update-due": 5,
+  // The window to leave ends on a date, so it comes before the others that only help the person themselves.
+  "leave-by": 3.5,
+  "round-claim": 3.6,
 };
 
 /** What a project's state needs from `viewer` (their own tasks on it come from {@link taskNeeds}). */
@@ -349,6 +357,16 @@ export function needWords(
           ? `Your task for ${project} is late: ${short(need.what)}`
           : `Your task for ${project} is due soon: ${short(need.what)}`,
         action: "Open the task",
+      };
+    case "leave-by":
+      return {
+        text: `A milestone of ${project} is open. Until ${whenWords(need.leaveBy)} you can stay, or leave and take your held money back.`,
+        action: "Stay or leave",
+      };
+    case "round-claim":
+      return {
+        text: `The opening round of ${project} is over and backing is open. Your round tokens can now be exchanged for backing units.`,
+        action: "Exchange them",
       };
     case "update-due":
       return {

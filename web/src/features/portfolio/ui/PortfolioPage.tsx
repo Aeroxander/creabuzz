@@ -66,6 +66,7 @@ import {
   useWorkStanding,
 } from "../use-portfolio";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
+import { ProjectsYouBack } from "./ProjectsYouBack";
 import { YourProjects } from "./YourProjects";
 
 /** AppToken supply is minted with 18 decimals. */
@@ -581,6 +582,8 @@ export function PortfolioPage() {
       />
       {/* The record comes first: the projects you started, help and follow. No price, amount or return is on it. */}
       <YourProjects />
+      {/* What you hold in a project's backing, when the build offers it: after the record, never before it. */}
+      <ProjectsYouBack />
       {raises ? (
         <>
           <WorkSection holdsShares={holdsShares} />

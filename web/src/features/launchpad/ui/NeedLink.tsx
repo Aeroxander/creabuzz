@@ -28,7 +28,9 @@ export function NeedLink({
       ? `task-${need.taskId}`
       : need.kind === "offers"
         ? `update-${need.updateId}`
-        : undefined;
+        : need.kind === "leave-by" || need.kind === "round-claim"
+          ? "backing"
+          : undefined;
   return (
     <Link
       className={className}

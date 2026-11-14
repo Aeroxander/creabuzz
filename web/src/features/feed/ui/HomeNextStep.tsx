@@ -11,14 +11,16 @@
  */
 
 import { Link } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import {
   dismissNextStep,
   nextStepDismissed,
 } from "@/features/launchpad/lib/next-step";
-import { needWords } from "@/features/launchpad/lib/project-state";
+import { positionNeeds } from "@/features/launchpad/lib/backing-positions";
+import { needWords, orderNeeds } from "@/features/launchpad/lib/project-state";
 import { NeedLink } from "@/features/launchpad/ui/NeedLink";
+import { useBackingPositions } from "@/features/launchpad/use-backing-positions";
 import { useMyNeeds } from "@/features/launchpad/use-my-projects";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
@@ -46,12 +48,32 @@ export function HomeNextStep({ me }: { me: string }) {
     nextStepDismissed(storage(), scope, Math.floor(Date.now() / 1000)),
   );
   const mine = useMyNeeds();
+  // What a backer holds can ask for a step too (a window about to end, round tokens to exchange); with investing off
+  // nothing is read and nothing is added.
+  const backing = useBackingPositions();
+  const needs = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    const all = [
+      ...mine.needs,
+      ...backing.held.flatMap((h) =>
+        positionNeeds(h.coordinate, h.position, now).map((need) => ({
+          need,
+          project: h.record,
+        })),
+      ),
+    ];
+    const byNeed = new Map(all.map((entry) => [entry.need, entry]));
+    return orderNeeds(all.map((entry) => entry.need)).flatMap((need) => {
+      const entry = byNeed.get(need);
+      return entry ? [entry] : [];
+    });
+  }, [mine.needs, backing.held]);
   // The facts take a moment to read (seconds, on a busy server). A line that arrived then, above the timeline, would
   // push down what the reader had already scrolled to: so whether it may appear is settled once, when there is first
   // something to say, and only a reader still at the top of the page gets it this visit.
   const mayAppear = useRef<boolean | null>(null);
   const something =
-    mine.needs.length > 0 || mine.failed || (mine.ready && mine.noProject);
+    needs.length > 0 || mine.failed || (mine.ready && mine.noProject);
   if (something && mayAppear.current === null)
     mayAppear.current = !readerScrolled();
   if (away || (something && mayAppear.current === false)) return null;
@@ -60,7 +82,7 @@ export function HomeNextStep({ me }: { me: string }) {
     dismissNextStep(storage(), scope, Math.floor(Date.now() / 1000));
     setAway(true);
   };
-  const first = mine.needs[0];
+  const first = needs[0];
   let body: React.ReactNode;
   if (first) {
     const words = needWords(first.need, first.project.name);
@@ -72,13 +94,13 @@ export function HomeNextStep({ me }: { me: string }) {
         >
           {words.text}
         </p>
-        {mine.needs.length > 1 ? (
+        {needs.length > 1 ? (
           <Link
             className="whitespace-nowrap text-sm underline"
             data-testid="home-next-step-more"
             to="/work"
           >
-            {mine.needs.length - 1} more waiting
+            {needs.length - 1} more waiting
           </Link>
         ) : null}
         <NeedLink
