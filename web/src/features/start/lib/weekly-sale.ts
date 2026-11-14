@@ -220,7 +220,7 @@ export function encodeKitLaunchV3(launch: KitLaunchV2): string {
 }
 
 /** The most reviewers, the longest name and the longest short name (in bytes) the pool kit takes in one launch. */
-export const POOL_KIT_LIMITS = {
+const POOL_KIT_LIMITS = {
   reviewers: 8,
   nameBytes: 64,
   symbolBytes: 12,

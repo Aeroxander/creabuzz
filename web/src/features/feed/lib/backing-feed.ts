@@ -35,7 +35,7 @@ export interface BackingFeedPool {
   times: ReadonlyMap<number, number>;
 }
 
-export type BackingCard =
+type BackingCard =
   | {
       kind: "backed";
       backers: number;

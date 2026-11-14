@@ -821,6 +821,120 @@ test.describe("Home's feed", () => {
   });
 });
 
+test.describe("what a backer holds", () => {
+  test.skip(
+    BUILD !== "on",
+    "needs the investing build: run scripts/web-investing-mock-e2e.sh",
+  );
+
+  const held = (): PoolFixture => ({
+    ...POOL_DEFAULTS,
+    windowEndsIn: DAY,
+    holderUnits: 4_000_000n * UNIT,
+    holderSellValue: 90n * ONE,
+    holderEscrow: 10n * ONE,
+    holderCanLeave: true,
+    holderLeaveValue: 99n * ONE,
+    events: [postedEvent(1n, "e".padEnd(64, "1"), FIXTURE.founderWallet, 20)],
+  });
+
+  test("'Projects you back' lists the position, the date to leave by and a link to stay or leave", async ({
+    page,
+  }) => {
+    await open(page, { pool: held(), as: "visitor", path: "/portfolio" });
+    const section = page.getByTestId("projects-you-back");
+    const card = section.getByTestId("back-position");
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expect(card).toContainText("Docs Commons");
+    await expect(card.getByTestId("back-position-units")).toHaveText(
+      "You hold 4,000,000 units. Selling them now pays 90 tTEST.",
+    );
+    await expect(card.getByTestId("back-position-held")).toHaveText(
+      "10 tTEST of what you paid is held for the project.",
+    );
+    await expect(card.getByTestId("back-position-leave")).toContainText(
+      "You can stay or leave until",
+    );
+    await expect(
+      card.getByRole("link", { name: "Stay or leave" }),
+    ).toHaveAttribute("href", /#backing$/);
+    // The record comes first on the page: Your projects, then what you back.
+    const order = await page.evaluate(() => {
+      const heads = [...document.querySelectorAll("h2")].map(
+        (h) => h.textContent,
+      );
+      return [
+        heads.indexOf("Your projects"),
+        heads.indexOf("Projects you back"),
+      ];
+    });
+    expect(order[1]).toBeGreaterThan(-1);
+    await expectAccessible(page, "Projects you back");
+  });
+
+  test("with nothing held it says so, and with no account it says to sign in", async ({
+    page,
+  }) => {
+    await open(page, {
+      pool: { ...POOL_DEFAULTS },
+      as: "visitor",
+      path: "/portfolio",
+    });
+    await expect(page.getByTestId("projects-you-back-empty")).toContainText(
+      "You hold no backing in the projects read here",
+      {
+        timeout: 30_000,
+      },
+    );
+  });
+
+  test("Home's next step names a milestone window about to end for a position held", async ({
+    page,
+  }) => {
+    await open(page, { pool: held(), as: "visitor", path: "/" });
+    // A newcomer's welcome shows first, once; the next step is what is under it.
+    await expect(async () => {
+      await page.getByTestId("welcome-dismiss").click({ timeout: 5_000 });
+      await expect(page.getByTestId("newcomer-welcome")).toHaveCount(0, {
+        timeout: 2_000,
+      });
+    }).toPass({ timeout: 30_000 });
+    const line = page.getByTestId("home-next-step");
+    await expect(line).toHaveAttribute("data-kind", "leave-by", {
+      timeout: 30_000,
+    });
+    await expect(line.getByTestId("home-next-step-text")).toContainText(
+      "A milestone of Docs Commons is open. Until",
+    );
+    await expect(line.getByTestId("home-next-step-action")).toHaveText(
+      "Stay or leave",
+    );
+  });
+
+  test("Home's next step names round tokens ready to exchange", async ({
+    page,
+  }) => {
+    await open(page, {
+      pool: { ...POOL_DEFAULTS, holderClaimTokens: 5n * UNIT },
+      as: "visitor",
+      path: "/",
+    });
+    await expect(async () => {
+      await page.getByTestId("welcome-dismiss").click({ timeout: 5_000 });
+      await expect(page.getByTestId("newcomer-welcome")).toHaveCount(0, {
+        timeout: 2_000,
+      });
+    }).toPass({ timeout: 30_000 });
+    const line = page.getByTestId("home-next-step");
+    await expect(line).toHaveAttribute("data-kind", "round-claim", {
+      timeout: 30_000,
+    });
+    await expect(line.getByTestId("home-next-step-action")).toHaveText(
+      "Exchange them",
+    );
+  });
+});
+
 test.describe("the switch is off", () => {
   test.skip(
     BUILD !== "off",

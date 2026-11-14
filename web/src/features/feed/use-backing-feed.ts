@@ -38,7 +38,7 @@ import { type BackingFeedPool, backingFeedItems } from "./lib/backing-feed";
 import type { FeedScope } from "./use-record-feed";
 
 /** The most projects whose backing one feed reads at once. */
-export const BACKING_FEED_PROJECTS = 12;
+const BACKING_FEED_PROJECTS = 12;
 /** The newest blocks whose dates are looked up for each pool: each is one request. */
 const DATED_BLOCKS = 16;
 /** How many events one pool keeps in the feed's read. */

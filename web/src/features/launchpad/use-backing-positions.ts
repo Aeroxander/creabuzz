@@ -27,7 +27,7 @@ import { useLaunches } from "./use-launches";
 import { useMyProjects } from "./use-my-projects";
 
 /** The most projects whose pools are asked about the wallet at once. */
-export const POSITION_PROJECTS = 20;
+const POSITION_PROJECTS = 20;
 
 export interface HeldPosition {
   record: LaunchRecord;

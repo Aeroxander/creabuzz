@@ -29,7 +29,7 @@ import {
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 const WORD_RE = /^0x[0-9a-fA-F]{64}$/;
-export const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const MAX_UINT256 = (1n << 256n) - 1n;
 
 const Q96 = 1n << 96n;
@@ -145,7 +145,7 @@ export const BACKING_STRUCT_TYPES = {
 } as const;
 
 /** Where a milestone post stands (`BackingPool.MilestoneStatus`). */
-export type MilestoneStatus = "none" | "open" | "released" | "void";
+type MilestoneStatus = "none" | "open" | "released" | "void";
 const MILESTONE_STATUSES: readonly MilestoneStatus[] = [
   "none",
   "open",
@@ -154,7 +154,7 @@ const MILESTONE_STATUSES: readonly MilestoneStatus[] = [
 ];
 
 /** Where a pool's opening round stands (`BackingPool.RoundState`). `none`: the pool was opened without one. */
-export type RoundState = "none" | "waiting" | "live" | "failed";
+type RoundState = "none" | "waiting" | "live" | "failed";
 const ROUND_STATES: readonly RoundState[] = [
   "none",
   "waiting",
@@ -162,7 +162,7 @@ const ROUND_STATES: readonly RoundState[] = [
   "failed",
 ];
 
-export interface MilestoneView {
+interface MilestoneView {
   /** The id of the public record event the founder named. */
   ref: string;
   postedAt: number;
@@ -374,15 +374,15 @@ function words(hex: string, expected: number, what: string): bigint[] {
   return out;
 }
 
-export function decodeBuyQuote(hex: string): BuyQuote {
+function decodeBuyQuote(hex: string): BuyQuote {
   const w = words(hex, 4, "quoteBuy()");
   return { unitsOut: w[0], fee: w[1], toEscrow: w[2], priceAfter: w[3] };
 }
-export function decodeSellQuote(hex: string): SellQuote {
+function decodeSellQuote(hex: string): SellQuote {
   const w = words(hex, 4, "quoteSell()");
   return { quoteOut: w[0], fee: w[1], refund: w[2], priceAfter: w[3] };
 }
-export function decodeLeaveQuote(hex: string): LeaveQuote {
+function decodeLeaveQuote(hex: string): LeaveQuote {
   const w = words(hex, 5, "quoteLeave()");
   return {
     quoteOut: w[0],
@@ -409,7 +409,7 @@ function uint(value: bigint, bits: number, what: string): bigint {
 }
 
 /** Calldata with no arguments. */
-export function encodeNoArgs(signature: string): string {
+function encodeNoArgs(signature: string): string {
   return selectorOf(signature);
 }
 
@@ -425,25 +425,25 @@ export const encodeSnapshot = (holder: string): string =>
     ["address"],
     [address(holder, "The holder")],
   );
-export const encodeQuoteBuy = (quoteIn: bigint): string =>
+const encodeQuoteBuy = (quoteIn: bigint): string =>
   encodeFunctionData(
     BACKING_SIGNATURES.quoteBuy,
     ["uint256"],
     [uint(quoteIn, 256, "The amount")],
   );
-export const encodeQuoteSell = (holder: string, unitsIn: bigint): string =>
+const encodeQuoteSell = (holder: string, unitsIn: bigint): string =>
   encodeFunctionData(
     BACKING_SIGNATURES.quoteSell,
     ["address", "uint256"],
     [address(holder, "The holder"), uint(unitsIn, 256, "The units")],
   );
-export const encodeFounderOf = (dao: string): string =>
+const encodeFounderOf = (dao: string): string =>
   encodeFunctionData(
     BACKING_SIGNATURES.founderOf,
     ["address"],
     [address(dao, "The project's DAO")],
   );
-export const encodeQuoteLeave = (holder: string): string =>
+const encodeQuoteLeave = (holder: string): string =>
   encodeFunctionData(
     BACKING_SIGNATURES.quoteLeave,
     ["address"],
@@ -522,12 +522,6 @@ export const encodeRedeem = (amount: bigint): string =>
     ["uint256"],
     [uint(amount, 256, "The amount")],
   );
-export const encodeVoteAbandon = (): string =>
-  encodeNoArgs(BACKING_SIGNATURES.voteAbandon);
-export const encodeDeclareAbandoned = (): string =>
-  encodeNoArgs(BACKING_SIGNATURES.declareAbandoned);
-export const encodePayTreasury = (): string =>
-  encodeNoArgs(BACKING_SIGNATURES.payTreasury);
 
 /** `BackingPoolFactory.open(dao)`: the pool opens now, no round. */
 export const encodeOpenPool = (dao: string): string =>
@@ -623,7 +617,7 @@ export function formatCurvePrice(price: bigint, quoteDecimals: number): string {
  * A round's clearing price in whole quote tokens per whole claim token: the auction's price is quote base units per base
  * unit of claim token times 2^96, and claim tokens have 18 decimals like units do.
  */
-export function roundPriceDecimals(
+function roundPriceDecimals(
   priceX96: bigint,
   quoteDecimals: number,
 ): { value: bigint; decimals: number } {
@@ -789,7 +783,7 @@ export const BACKING_TOPICS = Object.fromEntries(
 ) as { [K in keyof typeof BACKING_EVENT_SIGNATURES]: string };
 
 /** Every event the page reads from a pool, as one `topic0` filter (an OR). */
-export const POOL_EVENT_TOPICS: readonly string[] = [
+const POOL_EVENT_TOPICS: readonly string[] = [
   BACKING_TOPICS.bought,
   BACKING_TOPICS.sold,
   BACKING_TOPICS.left,

@@ -122,7 +122,7 @@ export function provenanceQuery(chainId: string | null, dao: string | null) {
  * kit's, or the pool kit's. A record alone only claims it, and a record can name any DAO, so a pool is shown for a
  * project only once this says "kit". One read, kept: it never changes.
  */
-export function useBackingProvenance(
+function useBackingProvenance(
   chainId: string | null,
   dao: string | null,
 ): { provenance: Provenance; failed: boolean; retry: () => void } {

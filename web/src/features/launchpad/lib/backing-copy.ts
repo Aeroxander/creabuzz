@@ -15,7 +15,6 @@ import {
   type BackingErrorName,
   backingErrorIn,
   formatAmount,
-  type MilestoneView,
   type NextMilestone,
   type PoolPhase,
   type PoolSnapshot,
@@ -393,5 +392,3 @@ export function milestoneOutcomeLine(
 export function shortRef(ref: string): string {
   return ref.replace(/^0x/, "").slice(0, 8);
 }
-
-export type { MilestoneView };
