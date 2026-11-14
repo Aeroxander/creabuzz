@@ -96,7 +96,7 @@ contract ContributorKitV3 is ContributorKit {
         // path — the kit keeps hold of nothing after a launch.
         if (
             address(factory_).code.length == 0 || factory_.authorizedKit() != address(this)
-            || address(factory_.summoner()) != address(summoner)
+                || address(factory_.summoner()) != address(summoner)
         ) revert InvalidTerms();
         policyImplementation = summoner_.policyImplementation();
         // Only the variant: a legacy `AllocationVoting` summoner has no secondary version to report
@@ -303,8 +303,8 @@ contract ContributorKitV3 is ContributorKit {
         (address marketAddr, address founderAddr, uint256 grant, uint64 start, uint64 cliff, uint64 duration) =
             _readSecondaryConfiguration(made.policy);
         if (
-            marketAddr != made.market || founderAddr != msg.sender || grant != base.founderShares
-                || start != saleStart || cliff != p.saleCliff || duration != p.saleDuration
+            marketAddr != made.market || founderAddr != msg.sender || grant != base.founderShares || start != saleStart
+                || cliff != p.saleCliff || duration != p.saleDuration
         ) revert SetupNotApplied();
 
         // The market: made through this kit's factory, for the right DAO, token, policy and terms,

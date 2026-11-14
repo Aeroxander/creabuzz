@@ -335,8 +335,7 @@ contract BackingRoundTest is BackingRoundFixture {
         // The right token, but someone else collects the money.
         AuctionParameters memory config = _config(MINIMUM);
         config.tokensRecipient = address(other);
-        ContinuousClearingAuction wrong =
-            new ContinuousClearingAuction(other.claimToken(), SUPPLY, config, address(0));
+        ContinuousClearingAuction wrong = new ContinuousClearingAuction(other.claimToken(), SUPPLY, config, address(0));
         vm.expectRevert(IBackingPool.BadAuction.selector);
         other.bindRound(address(wrong), MINIMUM);
         // Another currency.
@@ -1367,9 +1366,7 @@ contract BackingRoundInvariantTest is BackingRoundFixture {
                 if (leaves) pool.leave(0, block.timestamp);
                 else pool.sell(held, 0, block.timestamp);
             }
-            assertGe(
-                currency.balanceOf(address(pool)), pool.reserve() + pool.escrow() + pool.treasuryOwed()
-            );
+            assertGe(currency.balanceOf(address(pool)), pool.reserve() + pool.escrow() + pool.treasuryOwed());
             vm.revertToState(state);
         }
     }

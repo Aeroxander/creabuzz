@@ -423,7 +423,8 @@ contract ContributorKitV3Test is Test {
     }
 
     function test_a_factory_without_a_kit_still_serves_founders() public {
-        BackingPoolFactory plain = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), noRound());
+        BackingPoolFactory plain =
+            new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), noRound());
         Moloch dao = _launchV2("plain");
         vm.prank(address(0));
         vm.expectRevert(BackingPoolFactory.NotAllowed.selector);
@@ -445,7 +446,8 @@ contract ContributorKitV3Test is Test {
     function test_the_kit_refuses_a_pool_factory_made_for_another_kit_or_summoner() public {
         address predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 2);
         SecondaryMarketFactory markets = new SecondaryMarketFactory(summoner, predicted);
-        BackingPoolFactory elsewhere = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0xBEEF), noRound());
+        BackingPoolFactory elsewhere =
+            new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0xBEEF), noRound());
         vm.expectRevert(ContributorKit.InvalidTerms.selector);
         new ContributorKitV3(summoner, markets, elsewhere);
 
@@ -455,7 +457,8 @@ contract ContributorKitV3Test is Test {
         Summoner other = new Summoner(address(new ActivationVoting(new TreasuryMandateFactory())));
         predicted = vm.computeCreateAddress(address(this), vm.getNonce(address(this)) + 2);
         markets = new SecondaryMarketFactory(summoner, predicted);
-        BackingPoolFactory wrongSummoner = new BackingPoolFactory(other, IERC20(address(quote)), terms(), predicted, noRound());
+        BackingPoolFactory wrongSummoner =
+            new BackingPoolFactory(other, IERC20(address(quote)), terms(), predicted, noRound());
         vm.expectRevert(ContributorKit.InvalidTerms.selector);
         new ContributorKitV3(summoner, markets, wrongSummoner);
     }
@@ -480,7 +483,8 @@ contract ContributorKitV3Test is Test {
             abi.encode(summoner, address(quote), terms(), address(kit), rounds())
         );
         bytes memory poolCreation = abi.encodePacked(
-            vm.getCode("src/BackingPool.sol:BackingPool"), abi.encode(address(1), FOUNDER, address(quote), terms(), uint256(100_000_000e18))
+            vm.getCode("src/BackingPool.sol:BackingPool"),
+            abi.encode(address(1), FOUNDER, address(quote), terms(), uint256(100_000_000e18))
         );
         assertLe(kitCreation.length, MAX_INITCODE, "kit creation over EIP-3860");
         assertLe(factoryCreation.length, MAX_INITCODE, "pool factory creation over EIP-3860");
@@ -489,12 +493,13 @@ contract ContributorKitV3Test is Test {
         assertLe(address(poolFactory).code.length, MAX_RUNTIME, "pool factory runtime over EIP-170");
         assertLe(address(poolFactory.poolDeployer()).code.length, MAX_RUNTIME, "pool deployer runtime over EIP-170");
         assertLe(
-            vm.getDeployedCode("src/BackingClaim.sol:BackingClaim").length, MAX_RUNTIME, "claim token runtime over EIP-170"
+            vm.getDeployedCode("src/BackingClaim.sol:BackingClaim").length,
+            MAX_RUNTIME,
+            "claim token runtime over EIP-170"
         );
-        assertLe(
-            vm.getDeployedCode("src/BackingPool.sol:BackingPool").length, MAX_RUNTIME, "pool runtime over EIP-170"
-        );
+        assertLe(vm.getDeployedCode("src/BackingPool.sol:BackingPool").length, MAX_RUNTIME, "pool runtime over EIP-170");
     }
+
     /// @dev Gas for each step, on a real project. `forge test --match-test test_gas_for_every_step --isolate -vv`
     /// prints the table in docs/v3-review/BACKING-POOL.md: `--isolate` runs every call as its own transaction, so
     /// storage is cold and written as it would be on a chain (without it the figures are far too low). The numbers
@@ -753,7 +758,8 @@ contract ContributorKitV3Test is Test {
     }
 
     function test_a_factory_without_rounds_refuses_to_open_one() public {
-        BackingPoolFactory plain = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), noRound());
+        BackingPoolFactory plain =
+            new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), noRound());
         Moloch dao = _launchV2("no rounds");
         vm.prank(FOUNDER);
         vm.expectRevert(BackingPoolFactory.RoundsOff.selector);
@@ -882,7 +888,8 @@ contract ContributorKitV3Test is Test {
         vm.etch(address(100), address(new ArbSysStub()).code);
         ArbSysStub(address(100)).set(arbBlock);
         // Everything below is made after ArbSys exists, as on the chain (each of these reads it once, at creation).
-        BackingPoolFactory arbFactory = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), rounds());
+        BackingPoolFactory arbFactory =
+            new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), rounds());
         Moloch dao = _launchV2("arbitrum");
         vm.prank(FOUNDER);
         (BackingPool pool, address auction) = arbFactory.openWithRound(address(dao), 0);

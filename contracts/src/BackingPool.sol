@@ -401,7 +401,9 @@ contract BackingPool {
     /// nobody had a weight for, which went to the treasury.
     event Abandoned(address indexed by, bool byVote, uint256 escrow, uint256 orphaned);
     /// @notice The opening round's auction was bound and given the claim tokens to sell.
-    event RoundBound(address indexed auction, address indexed claimToken, uint256 supply, uint256 minimumRaise, uint64 endBlock);
+    event RoundBound(
+        address indexed auction, address indexed claimToken, uint256 supply, uint256 minimumRaise, uint64 endBlock
+    );
     /// @notice The opening round reached its minimum and the pool went live: `received` arrived from the
     /// auction and was split into `fee`, `toEscrow` and the reserve; `unitsSold` units exist for the claim
     /// tokens sold; the curve opened at `openingPrice` (see `price`).
@@ -857,8 +859,8 @@ contract BackingPool {
     /// get their money.
     function declareAbandoned() external nonReentrant {
         if (_abandonedWritten) revert IsAbandoned();
-        bool byVote = totalWeight != 0 && abandonVotes > totalWeight / 2
-            && block.timestamp >= uint256(lastReleaseAt) + voteAfter;
+        bool byVote =
+            totalWeight != 0 && abandonVotes > totalWeight / 2 && block.timestamp >= uint256(lastReleaseAt) + voteAfter;
         if (!byVote && !_clockRanOut()) revert NotAbandonable();
         _abandon(byVote);
         if (treasuryOwed != 0) _payTreasury(0);
@@ -896,9 +898,8 @@ contract BackingPool {
     {
         uint256 toReserve;
         (unitsOut, fee, toEscrow, toReserve) = _quoteBuy(quoteIn);
-        priceAfter = Math.mulDiv(
-            virtualQuote + reserve + toReserve, 1e18 * PRICE_SCALE, virtualUnits - totalSupply - unitsOut
-        );
+        priceAfter =
+            Math.mulDiv(virtualQuote + reserve + toReserve, 1e18 * PRICE_SCALE, virtualUnits - totalSupply - unitsOut);
     }
 
     /// @notice What `holder` selling `unitsIn` gets now.
@@ -946,8 +947,7 @@ contract BackingPool {
         fee = _bpsUp(gross, feeBps);
         fromCurve = gross - fee;
         quoteOut = fromCurve + fromEscrow;
-        priceAfter =
-            Math.mulDiv(virtualQuote + reserve - gross, 1e18 * PRICE_SCALE, virtualUnits - totalSupply + units);
+        priceAfter = Math.mulDiv(virtualQuote + reserve - gross, 1e18 * PRICE_SCALE, virtualUnits - totalSupply + units);
     }
 
     /// @notice `holder`'s part of the escrow now: what leaving would hand back while they can leave,

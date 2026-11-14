@@ -166,7 +166,9 @@ contract BackingPoolFactory is BlockNumberish {
         address authorizedKit_,
         RoundSettings memory round_
     ) {
-        if (address(pinnedSummoner).code.length == 0 || address(quote_).code.length == 0) revert InvalidSetup();
+        if (address(pinnedSummoner).code.length == 0 || address(quote_).code.length == 0) {
+            revert InvalidSetup();
+        }
         address implementation = pinnedSummoner.getImplementation();
         if (implementation.code.length == 0) revert InvalidSetup();
         summoner = pinnedSummoner;
@@ -211,7 +213,9 @@ contract BackingPoolFactory is BlockNumberish {
     function founderOf(address dao) public view returns (address founder) {
         address policy = IBackingMoloch(dao).votingWeight();
         (bool ok, bytes memory data) = policy.staticcall(abi.encodeWithSignature("secondaryConfiguration()"));
-        if (ok && data.length == 6 * 32) (, founder,,,,) = abi.decode(data, (address, address, uint256, uint64, uint64, uint64));
+        if (ok && data.length == 6 * 32) {
+            (, founder,,,,) = abi.decode(data, (address, address, uint256, uint64, uint64, uint64));
+        }
     }
 
     /// @notice Open `dao`'s pool with the curve live at once. Callable by the project's recorded founder, by
@@ -250,7 +254,8 @@ contract BackingPoolFactory is BlockNumberish {
             auctionStepsData: abi.encodePacked(uint24(10_000_000 / roundBlocks), uint40(roundBlocks))
         });
         address claim = address(pool.claimToken());
-        auction = auctionFactory.create(claim, roundSupply, abi.encode(config), bytes32(uint256(uint160(address(pool)))));
+        auction =
+            auctionFactory.create(claim, roundSupply, abi.encode(config), bytes32(uint256(uint160(address(pool)))));
         // The pool checks the auction against itself (token, currency, both recipients) before funding it.
         poolDeployer.bindRound(pool, auction, minimumRaise);
         emit RoundOpened(dao, address(pool), auction, claim, roundSupply, minimumRaise, start, start + roundBlocks);
