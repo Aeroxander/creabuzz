@@ -475,15 +475,17 @@ fn has_tag(event: &nostr::Event, name: &str, value: &str) -> bool {
 
 /// The fields of a project record's body that state the terms of a sale: its
 /// price floor and price step, the amount it must raise, the monthly budget
-/// buyers price, and how the supply is split and released.
-const SALE_TERM_KEYS: [&str; 7] = [
+/// buyers price, and Shares that unlock at multiples of the price.
+///
+/// Not `allocation` (how the supply is split) and not `unlocks` (what is
+/// released when): the web app writes its usual split onto every record it
+/// saves again, sale or no sale, so those say nothing about one.
+const SALE_TERM_KEYS: [&str; 5] = [
     "floorPrice",
     "tickSpacing",
     "requiredRaised",
     "budget",
-    "allocation",
     "vesting",
-    "unlocks",
 ];
 
 /// Whether a project record states the terms of a sale: something under one
@@ -1287,6 +1289,10 @@ mod tests {
             r#"{"pitch":"x","currency":"0xabc","floorPrice":"","tickSpacing":"","requiredRaised":""}"#,
             r#"{"pitch":"x","floorPrice":"  ","budget":null,"unlocks":null}"#,
             r#"{"pitch":"x","tokenPlan":{"mode":"dao","supply":"1000"},"funding":{"stance":"not-raising"}}"#,
+            // The web app writes its usual split of the supply onto every record it saves again (a new board, a
+            // change of team), sale or no sale: it says nothing about one. Nor does a plan of what unlocks when.
+            r#"{"pitch":"x","stage":"draft","started":1,"allocation":{"sale":40,"team":15,"treasury":20,"liquidity":10,"milestones":10,"community":5}}"#,
+            r#"{"pitch":"x","unlocks":{"rows":[]}}"#,
             "not json",
             "[]",
         ] {
@@ -1298,9 +1304,7 @@ mod tests {
             r#"{"tickSpacing":"7922816251400"}"#,
             r#"{"requiredRaised":"299999999998"}"#,
             r#"{"budget":"5000000000"}"#,
-            r#"{"allocation":{"sale":40}}"#,
-            r#"{"vesting":{"tranches":[]}}"#,
-            r#"{"unlocks":{"rows":[]}}"#,
+            r#"{"vesting":{"cliffBlocks":0,"tranches":[{"multiple":2,"percent":50}]}}"#,
         ] {
             assert!(states_sale_terms(&project(plain, body)), "{body}");
         }

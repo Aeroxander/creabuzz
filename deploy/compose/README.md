@@ -208,10 +208,12 @@ page happens to show:
   project that has them, its chain addresses. Anyone who asks the server directly gets the record as the founder signed
   it, so nothing can be left out of it. For that reason a project whose record states the terms of a sale is not given to
   someone with no invite at all, neither its record nor anything about it: a price floor or price step, an amount to
-  raise, a budget, how the supply is split or released, or a sale's address. They see "You need an invite to open this
-  project" and the link shows no preview; members see the project as before. A project started with the short form and
-  a contributor project state none of these. The team's account ids, chain addresses, the funding stance and a revenue
-  pledge are still sent; whether those, and sale terms, should be public is the owner's decision.
+  raise, a monthly budget, Shares that unlock at a multiple of the price, or a sale's address. They see "You need an
+  invite to open this project" and the link shows no preview; members see the project as before. A project started
+  with the short form and a contributor project state none of these. Still sent: the team's account ids, chain
+  addresses, the funding stance, a revenue pledge, and how the supply is split and what unlocks when (the app writes
+  its usual split onto every project it saves, so it says nothing about a sale). Whether those, and sale terms, should
+  be public is the owner's decision.
 - The founder's goals and promises with their answers, and the updates the founder or the team posted.
 - For work the team accepted and nobody on the team sent back: the task, the work handed in (its words, links and files)
   and the confirmation.
