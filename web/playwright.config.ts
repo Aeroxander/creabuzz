@@ -150,12 +150,14 @@ export default defineConfig({
         "**/project-board.spec.ts",
         // The weekly rhythm: due and late words, the pre-filled update dialog, the note after posting, sharing.
         "**/weekly-rhythm.spec.ts",
+        // The update loop: draft from the record, the update day, the weekly calendar reminder, the AI limit's own words.
+        "**/weekly-update.spec.ts",
         // A project's public scorecard at its own short address.
         "**/scorecard.spec.ts",
-        // The newcomer's welcome on Home: three ways in, once.
-        "**/newcomer-welcome.spec.ts",
         // The share picture for a project, a kept promise and accepted work: download, share sheet, post to Home.
         "**/share-card.spec.ts",
+        // The newcomer's welcome on Home: three ways in, once.
+        "**/newcomer-welcome.spec.ts",
         // Browser notifications: asked for only from a button, shown by count while the page is hidden.
         "**/browser-notifications.spec.ts",
       ],
