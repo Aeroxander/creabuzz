@@ -186,7 +186,7 @@ test("a hand-in says how it was checked and carries the numbers it reports; they
     "yes",
   );
   await expect(results.getByTestId("task-threshold")).toHaveText(
-    "Meets the stated threshold: yes",
+    "Meets the number in “Done means”: yes",
   );
   await expect(row.getByTestId("task-run-record")).toHaveCount(0);
   await expect(row.getByTestId("task-evidence")).toContainText(
@@ -248,7 +248,7 @@ test("a piece that reports a number for words that state no limit says the thres
     "not stated",
   );
   await expect(row.getByTestId("task-threshold")).toHaveText(
-    "Meets the stated threshold: not stated",
+    "“Done means” has no number to compare with.",
   );
   await expect(row.getByTestId("task-results-broken")).toContainText(
     "none of them is shown",

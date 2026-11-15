@@ -19,19 +19,20 @@ import {
 import {
   meetsThreshold,
   readResults,
+  thresholdLine,
   type ThresholdVerdict,
 } from "../lib/task-results";
 import type { TaskEvidence } from "../lib/tasks";
 import type { TaskRunRecords } from "../use-task-run-records";
 import { day } from "./TaskParts";
 
-const REPORTED_LABEL = "Reported by the helper, not run by anyone else";
-
 const VERDICT_WORDS: Record<ThresholdVerdict, string> = {
   yes: "yes",
   no: "no",
   "not stated": "not stated",
 };
+
+const REPORTED_LABEL = "Reported by the helper, not run by anyone else";
 
 /** The numbers a piece reports, with the one threshold line. Nothing when the piece reports none. */
 function ReportedNumbers({
@@ -120,7 +121,10 @@ function ReportedNumbers({
         data-testid="task-threshold"
         data-verdict={verdict}
       >
-        Meets the stated threshold: <strong>{VERDICT_WORDS[verdict]}</strong>
+        {thresholdLine(verdict).lead}
+        {thresholdLine(verdict).answer === null ? null : (
+          <strong>{thresholdLine(verdict).answer}</strong>
+        )}
       </p>
       <p className="text-xs text-muted-foreground">
         Worked out here from the helper's numbers and the words of “Done means”.

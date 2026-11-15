@@ -220,6 +220,19 @@ export function hasExtras(extras: HandInExtras): boolean {
 
 export type ThresholdVerdict = "yes" | "no" | "not stated";
 
+/**
+ * The line under a piece's reported numbers, in plain words: whether they meet the number "Done means" asks for, or
+ * that "Done means" gives none. `answer` is the part shown in bold; null when there is nothing to answer.
+ */
+export function thresholdLine(verdict: ThresholdVerdict): {
+  lead: string;
+  answer: "yes" | "no" | null;
+} {
+  return verdict === "not stated"
+    ? { lead: "“Done means” has no number to compare with.", answer: null }
+    : { lead: "Meets the number in “Done means”: ", answer: verdict };
+}
+
 type Op = "ge" | "gt" | "le" | "lt" | "eq";
 
 /** Words and signs that state a limit, longest first so "at least" is read before "at". */

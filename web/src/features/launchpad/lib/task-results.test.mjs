@@ -311,3 +311,20 @@ test("one limit left without a number keeps a yes from being said; a miss is sti
   );
   assert.equal(reading.unmatched, 0);
 });
+
+test("the line under reported numbers says whether they meet the number in Done means, or that it has none", async () => {
+  const { thresholdLine } = await import("./task-results.ts");
+  assert.deepEqual(thresholdLine("yes"), {
+    lead: "Meets the number in “Done means”: ",
+    answer: "yes",
+  });
+  assert.deepEqual(thresholdLine("no"), {
+    lead: "Meets the number in “Done means”: ",
+    answer: "no",
+  });
+  // "not stated" was the old word, which a person could not act on.
+  assert.deepEqual(thresholdLine("not stated"), {
+    lead: "“Done means” has no number to compare with.",
+    answer: null,
+  });
+});
