@@ -139,9 +139,9 @@ test("the file name is plain letters and dashes", () => {
   assert.ok(weeklyReminderFileName({ name: "a".repeat(200) }).length < 70);
 });
 
-test("a project's page address names the project and its founder", () => {
+test("a project's page address names the project and its founder, and opens the update form", () => {
   assert.equal(
     projectPageUrl("https://example.org", { id: "nebula os", author: "ab12" }),
-    "https://example.org/launchpad/nebula%20os?author=ab12",
+    "https://example.org/launchpad/nebula%20os?author=ab12&action=update",
   );
 });

@@ -154,3 +154,40 @@ export function updatesUse(input: {
 export function updatesLabel(count: number | null, complete: boolean): string {
   return count === null || !complete ? "Updates" : `Updates (${count})`;
 }
+
+/** The cards under the project's news that show only once they have something: its tasks, its team and its record. */
+export type SetUpCard = "tasks" | "team" | "record";
+
+/**
+ * Whether a project has something for one of those cards, from how many things were found and whether the read
+ * reached its end. The same three answers as {@link updatesUse}: a read that failed, or was cut short without finding
+ * anything, is "unknown", which keeps the card on the page; a read still on its way is "no" for the moment, so the card
+ * appears when the answer comes instead of showing and then going.
+ */
+export function cardUse(input: {
+  /** Null while the read has not answered. */
+  count: number | null;
+  failed: boolean;
+  complete: boolean;
+}): TabUse {
+  return updatesUse(input);
+}
+
+/**
+ * Whether one of those cards is on the page. It is once the project has something for it, or when the founder opened
+ * "Set up more". A card whose use could not be read stays, so a failed read never takes it away (and its "Try again").
+ */
+export function setUpCardShown(use: TabUse, opened: boolean): boolean {
+  return opened || use !== "no";
+}
+
+/** The cards "Set up more" would add right now: the ones the page is not showing. Empty when there is nothing left to open. */
+export function setUpMore(
+  uses: Readonly<Record<SetUpCard, TabUse>>,
+  opened: boolean,
+): SetUpCard[] {
+  if (opened) return [];
+  return (["tasks", "team", "record"] as const).filter(
+    (card) => !setUpCardShown(uses[card], false),
+  );
+}

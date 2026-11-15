@@ -1,16 +1,17 @@
 // Desktop → web deep-link `?action=` param handling.
 //
-// Contract: `bid`/`exit`/`claim` open their flows on load; anything else is
+// Contract: `bid`/`exit`/`claim`/`update` open their flows on load; anything else is
 // ignored (forward compat — desktop may grow actions the web cannot open).
 import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseLaunchAction } from "./deep-link.ts";
 
-test("the three handoff actions parse", () => {
+test("the handoff actions parse, and so does the calendar reminder's update", () => {
   assert.equal(parseLaunchAction("bid"), "bid");
   assert.equal(parseLaunchAction("exit"), "exit");
   assert.equal(parseLaunchAction("claim"), "claim");
+  assert.equal(parseLaunchAction("update"), "update");
 });
 
 test("unknown action values are ignored, never opened", () => {

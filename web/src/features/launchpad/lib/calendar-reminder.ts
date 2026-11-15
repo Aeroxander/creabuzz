@@ -154,10 +154,14 @@ export function weeklyReminderFileName(project: { name: string }): string {
   return `weekly-update-${slug || "project"}.ics`;
 }
 
-/** The address of a project's page in this app, where its update is posted: `https://host/launchpad/<id>?author=…`. */
+/**
+ * The address of a project's page in this app, where its update is posted: `https://host/launchpad/<id>?author=…`.
+ * It ends in `&action=update`, which opens the founder's update dialog on arrival (`deep-link.ts`); anyone else gets
+ * the page.
+ */
 export function projectPageUrl(
   origin: string,
   project: { id: string; author: string },
 ): string {
-  return `${origin}/launchpad/${encodeURIComponent(project.id)}?author=${encodeURIComponent(project.author)}`;
+  return `${origin}/launchpad/${encodeURIComponent(project.id)}?author=${encodeURIComponent(project.author)}&action=update`;
 }

@@ -3,8 +3,11 @@ import { test } from "node:test";
 
 import {
   allowedTabs,
+  cardUse,
   founderSettings,
   ideaShowsTeamSurfaces,
+  setUpCardShown,
+  setUpMore,
   tabAlias,
   tabShown,
   updatesLabel,
@@ -137,4 +140,44 @@ test("the Updates tab states a number only when the updates were read to the end
   // Cut short: three were found, more may exist. No number is stated.
   assert.equal(updatesLabel(3, false), "Updates");
   assert.equal(updatesLabel(null, true), "Updates");
+});
+
+test("a card shows once the project has something for it, or when the founder opened Set up more", () => {
+  assert.equal(setUpCardShown("yes", false), true);
+  assert.equal(setUpCardShown("no", false), false);
+  assert.equal(setUpCardShown("no", true), true);
+  // A read that failed or was cut short keeps the card: its "Try again" is the way back.
+  assert.equal(setUpCardShown("unknown", false), true);
+});
+
+test("a count of none is 'no' only when the read reached its end; none found in a failed or cut read is unknown", () => {
+  assert.equal(cardUse({ count: null, failed: false, complete: false }), "no");
+  assert.equal(
+    cardUse({ count: null, failed: true, complete: false }),
+    "unknown",
+  );
+  assert.equal(cardUse({ count: 0, failed: false, complete: true }), "no");
+  assert.equal(
+    cardUse({ count: 0, failed: false, complete: false }),
+    "unknown",
+  );
+  assert.equal(cardUse({ count: 2, failed: false, complete: false }), "yes");
+});
+
+test("Set up more offers exactly the cards the page does not show, and nothing once opened", () => {
+  const uses = { tasks: "no", team: "no", record: "yes" };
+  assert.deepEqual(setUpMore(uses, false), ["tasks", "team"]);
+  assert.deepEqual(setUpMore(uses, true), []);
+  assert.deepEqual(
+    setUpMore({ tasks: "yes", team: "unknown", record: "yes" }, false),
+    [],
+  );
+});
+
+test("the team card is among the ones Set up more adds, so a founder with no team can always add a person", () => {
+  assert.ok(
+    setUpMore({ tasks: "yes", team: "no", record: "yes" }, false).includes(
+      "team",
+    ),
+  );
 });
