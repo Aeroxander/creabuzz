@@ -6,6 +6,7 @@ mod admission;
 mod audit;
 mod build_info;
 mod rejection;
+mod share_preview;
 
 /// Shared NIP-FI assertion evaluation, denial rendering, and key pairing.
 pub(crate) mod nip_fi_core;

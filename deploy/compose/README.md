@@ -171,10 +171,22 @@ BUZZ_LLM_MODEL=<the model name to use>
 ```
 
 Set `BUZZ_LLM_MODEL`: the hosted web build sends no model name, so this one is used. Each call costs the owner money: set a
-spending cap at the provider. Optional limits (`BUZZ_LLM_RATE_PER_MIN`, default 20; `BUZZ_LLM_MAX_CALLS_PER_DAY`, 500;
+spending cap at the provider too. The server also caps its own use so a busy day cannot run up the bill: each account
+gets `BUZZ_LLM_MAX_CALLS_PER_DAY` calls a day (default 500), and the whole community gets `BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL`
+(default 2000); both reset at midnight UTC. When a cap is reached the person sees a plain sentence saying what ran out and
+when it comes back, and can still write the text themselves. Other optional limits (`BUZZ_LLM_RATE_PER_MIN`, default 20;
 `BUZZ_LLM_MAX_TOKENS`, 4096) and the price lines for budgets that carry a cost limit are described in the repository's root
 `.env.example`. The key sits in `.env` in plain text and is inside the encrypted backup: keep `.env` mode 0600 and treat the
 key as one you can replace.
+
+### Link previews
+
+A project's link (`/p/<project>-<founder>` and `/launchpad/<project>`) shows the project's name, pitch and main goal, with
+the Creaton card as the image, when it is pasted into a chat app. The server writes these into the page itself, so nothing
+needs setting: the image is part of the web build (`web/public/assets/share-card.png`) and the proxy only has to pass the
+`Host` and `X-Forwarded-Proto` headers, which Caddy does. A preview shows only what a signed-out visitor could already read:
+on a server where people must be members to read (invite-only) the link shows the plain Creaton page, and so does a project
+that is removed, not listed, or whose founder is muted or banned.
 
 ### First start
 

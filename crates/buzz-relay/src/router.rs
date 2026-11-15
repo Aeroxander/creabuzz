@@ -26,6 +26,7 @@ use crate::metrics::track_metrics;
 use crate::nip11::{nip11_document, relay_info_handler};
 use crate::nip_fi_core::http_denial;
 use crate::readiness::{self, DependencySnapshot, ReadinessReason};
+use crate::share_preview;
 use crate::state::AppState;
 
 // ── NIP-FI fail-closed assertion guard ───────────────────────────────────────
@@ -492,6 +493,24 @@ pub fn build_router(state: Arc<AppState>) -> Router {
                             .map(|response| with_spa_coi(response.into_response()));
                     }
                     if should_serve_spa(path, serve_git_web_gui, web_spa_full) {
+                        // A project's address carries its own title, description and
+                        // image, so a pasted link is not the generic card. Any miss is
+                        // the plain page (see `share_preview`).
+                        if req.method() == axum::http::Method::GET {
+                            if let Some(body) = share_preview::document(
+                                &state,
+                                req.headers(),
+                                &index,
+                                path,
+                                req.uri().query(),
+                            )
+                            .await
+                            {
+                                return Ok(with_spa_coi(
+                                    axum::response::Html(body).into_response(),
+                                ));
+                            }
+                        }
                         return Ok(with_spa_coi(read_spa_index(&index).await));
                     }
                 }

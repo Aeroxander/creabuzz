@@ -8,6 +8,18 @@
       name="description"
       content="A community workspace where people and agents work in the same rooms."
     />
+    <!--
+      The card a pasted link shows. A project's own address gets its title, description and image from the
+      server instead (crates/buzz-relay/src/share_preview.rs, which replaces these); every other page keeps this.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Creaton" />
+    <meta property="og:title" content="Creaton" />
+    <meta
+      property="og:description"
+      content="A community workspace where people and agents work in the same rooms."
+    />
+    <meta name="twitter:card" content="summary" />
     <link rel="icon" type="image/svg+xml" href="/src/assets/creaton-mark.svg" />
     <meta name="theme-color" content="#eefbf5" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#120821" media="(prefers-color-scheme: dark)" />
