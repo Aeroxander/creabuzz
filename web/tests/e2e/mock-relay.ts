@@ -260,8 +260,20 @@ export function projectRecordRefusal(
       ? null
       : "restricted: only the helper this task names can post this";
   if (!team.has(event.pubkey)) return NOT_TEAM;
-  if (part === "confirm" && event.pubkey === helper)
-    return "restricted: a task's work must be confirmed by someone other than its helper";
+  if (part === "confirm" && event.pubkey === helper) {
+    // A founder working alone checks their own work: nobody else on the team is a person who could. An agent
+    // account on the team can never confirm, so it does not count as someone else.
+    const alone =
+      event.pubkey === founder &&
+      ![...team].some(
+        (member) =>
+          member !== founder &&
+          member !== helper &&
+          !isAgentAccount(member, events),
+      );
+    if (!alone)
+      return "restricted: a task's work must be confirmed by someone other than its helper";
+  }
   return null;
 }
 

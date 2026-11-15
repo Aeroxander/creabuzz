@@ -1841,3 +1841,196 @@ test("10. the next update starts from last time's promises, Home shows it live, 
   await expect(welcome).toHaveCount(0);
   await shot(newcomer, "15-newcomer");
 });
+
+test("11. a founder with nobody else: signs up, starts a project, does a task alone and marks it done, and it reads as checked by them alone; with a team the server still refuses", async ({
+  browser,
+}) => {
+  test.setTimeout(240_000);
+  const SOLO_NAME = `Sol ${RUN}`;
+  const SOLO_PROJECT = `Lantern ${RUN}`;
+  const SOLO_SLUG = `lantern-${RUN}`;
+  const WHAT = `Write the first page ${RUN}.`;
+
+  // A brand-new person: no key, no team, nobody they know here.
+  const page = await ownBrowserPage(browser);
+  if (INVITE_ONLY) {
+    await joinAsNewPerson(page, SOLO_NAME);
+  } else {
+    await page.goto("/");
+    await page.getByTestId("create-identity-cta").first().click();
+    await page.getByTestId("onboarding-name").fill(SOLO_NAME);
+    await page.getByTestId("onboarding-create").click();
+  }
+  await expect(page.getByTestId("user-chip")).toBeVisible();
+  const [sealed, wrap] = await page.evaluate(() => [
+    window.localStorage.getItem("buzz.identity.nsec") ?? "",
+    window.localStorage.getItem("buzz.identity.wrap") ?? "",
+  ]);
+  const sol = accountFromKey(nip49Decrypt(sealed, wrap), SOLO_NAME);
+
+  // Quick Start: the project is theirs, and its team is them alone.
+  await page.goto("/start");
+  const form = page.getByTestId("quick-start");
+  await form.getByLabel("Project name").fill(SOLO_PROJECT);
+  await form.getByLabel("The goal").fill("A first page three people read");
+  await form.getByLabel("How we'll know").fill("Three people open the link");
+  await form.getByRole("button", { name: "Start the project" }).click();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText(
+    SOLO_PROJECT,
+  );
+  expect(new URL(page.url()).pathname).toBe(`/launchpad/${SOLO_SLUG}`);
+  const soloCoord = `37001:${sol.pubkey}:${SOLO_SLUG}`;
+  const soloPath = `/launchpad/${SOLO_SLUG}?author=${sol.pubkey}`;
+  const soloSteps = async (part: string) =>
+    (
+      await readAs(stranger, { kinds: [47003], "#a": [soloCoord], limit: 500 })
+    ).filter((e) => tagOf(e, "task-part") === part);
+  const [soloRecord] = await readAs(stranger, {
+    kinds: [37001],
+    authors: [sol.pubkey],
+  });
+  expect(
+    soloRecord.tags.filter((t) => t[0] === "team" && t[1] !== sol.pubkey),
+    "nobody else is on the new project's team",
+  ).toEqual([]);
+
+  // They make a task for themself. Nothing on the card promises a checker who is not there.
+  const more = page.getByTestId("set-up-more");
+  const tasks = page.getByTestId("project-tasks");
+  await expect(more.or(tasks)).toBeVisible();
+  if (await more.isVisible()) await more.click();
+  await expect(tasks.getByTestId("tasks-alone")).toContainText(
+    "You are the only person on this project",
+  );
+  await tasks.getByRole("button", { name: "Give someone a task" }).click();
+  const make = tasks.getByRole("form", { name: "Give someone a task" });
+  await make.getByRole("button", { name: "I'll do it myself" }).click();
+  await make.getByLabel("What is the task").fill(WHAT);
+  await make.getByLabel("Done means").fill("A page at a link anyone can open.");
+  await make.getByRole("button", { name: "Make the task" }).click();
+  await expect(tasks.getByTestId("tasks-said")).toContainText(
+    "mark it as done yourself",
+  );
+  const row = tasks.getByTestId("task").filter({ hasText: WHAT });
+  await expect(row).toHaveAttribute("data-state", "in-progress");
+
+  // They hand it in, and are offered their own check with what it is worth said first.
+  await row.getByRole("button", { name: "Hand in work" }).click();
+  const handIn = row.getByRole("form", { name: "Hand in work" });
+  await handIn.getByLabel("What you did").fill("The page is up.");
+  await handIn
+    .getByLabel("Links (optional, one per line)")
+    .fill("https://example.org/first-page");
+  await handIn.getByRole("button", { name: "Hand in" }).click();
+  await expect(row).toHaveAttribute("data-state", "submitted");
+  await expect(row.getByTestId("task-cannot-confirm")).toHaveCount(0);
+  await expect(row.getByTestId("task-check-alone")).toContainText(
+    "It will be shown as checked by you alone.",
+  );
+  await expect.poll(async () => (await soloSteps("confirm")).length).toBe(0);
+  await row.getByRole("button", { name: "Mark as done" }).click();
+  await expect(tasks.getByTestId("tasks-said")).toContainText(
+    "Marked as done. It shows as checked by you alone",
+  );
+
+  // The real server took the founder's own check: one confirmation, theirs, of the work they handed in.
+  await expect.poll(async () => (await soloSteps("confirm")).length).toBe(1);
+  const [check] = await soloSteps("confirm");
+  const [work] = await soloSteps("evidence");
+  expect(check.pubkey).toBe(sol.pubkey);
+  expect(tagOf(check, "task-evidence")).toBe(work.id);
+
+  // After a reload the page still says who checked it: the founder, alone. It is never called accepted.
+  await page.goto(soloPath);
+  await page.reload();
+  const soloCard = record(page);
+  const alone = soloCard.getByTestId("record-work-alone");
+  await expect(alone).toContainText(
+    "Done — checked by the founder, working alone",
+  );
+  await expect(alone).toContainText(WHAT);
+  await expect(soloCard.getByTestId("record-work-accepted")).toHaveCount(0);
+  await expect(soloCard.getByTestId("record-work-totals")).toHaveCount(0);
+  await expect(soloCard.getByTestId("record-work-alone-totals")).toHaveText(
+    "1 piece of work done alone, checked by the founder",
+  );
+  await expect(
+    page.getByTestId("project-tasks").getByTestId("task"),
+  ).toHaveCount(0);
+  await shot(page, "16-done-alone");
+  // Someone else reads the same thing, and the command line says it is the founder's own check.
+  await helperPage.goto(soloPath);
+  await expect(
+    record(helperPage).getByTestId("record-work-alone"),
+  ).toContainText("Done — checked by the founder, working alone");
+  const listed = await buzz(cliHelper, [
+    "launchpad",
+    "tasks",
+    "list",
+    SOLO_SLUG,
+    "--author",
+    sol.pubkey,
+  ]);
+  expect(listed.code, listed.stderr).toBe(0);
+  expect(listed.json).toMatchObject({
+    tasks: [
+      expect.objectContaining({
+        state: "confirmed",
+        self_checked: true,
+        checked_by: [sol.pubkey],
+      }),
+    ],
+  });
+
+  // The first project has someone else on its team, so there the server still refuses a founder's own check.
+  const [current] = await readAs(stranger, {
+    kinds: [37001],
+    authors: [founder.pubkey],
+    "#d": [SLUG],
+  });
+  expect(
+    current.tags.filter((t) => t[0] === "team" && t[1] !== founder.pubkey)
+      .length,
+    "the first project has another team member",
+  ).toBeGreaterThan(0);
+  const step = (tags: string[][], body: object) =>
+    publishAs(founder, {
+      kind: 47003,
+      content: JSON.stringify(body),
+      tags: [["a", coord], ["l", "creaton-task"], ...tags],
+    });
+  const own = await step(
+    [
+      ["task-part", "task"],
+      ["p", founder.pubkey],
+      ["task-helper", founder.pubkey],
+      ["task-what", `Tidy the notes ${RUN}.`],
+      ["task-done", "The notes are in one page."],
+      ["task-size", "small"],
+    ],
+    { title: "Task", body: "Tidy the notes." },
+  );
+  expect(own.reason).toBe("");
+  const handed = await step(
+    [
+      ["task-part", "evidence"],
+      ["e", own.event.id],
+      ["task", own.event.id],
+    ],
+    { title: "Work handed in", body: "Done.", note: "Done." },
+  );
+  expect(handed.reason).toBe("");
+  const refused = await step(
+    [
+      ["task-part", "confirm"],
+      ["e", own.event.id],
+      ["task", own.event.id],
+      ["task-evidence", handed.event.id],
+    ],
+    { title: "Work confirmed", body: "" },
+  );
+  expect(refused.accepted).toBe(false);
+  expect(refused.reason).toBe(
+    "restricted: a task's work must be confirmed by someone other than its helper",
+  );
+});

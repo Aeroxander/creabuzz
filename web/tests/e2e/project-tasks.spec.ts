@@ -525,7 +525,7 @@ test("an offer becomes a task with a finish line; the helper hands in, it is sen
   );
 });
 
-test("when the founder does the work, someone else must confirm; with nobody else on the team the page says so and offers nothing", async ({
+test("a founder with nobody else on the team marks their own work as done, and every page says only they checked it", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -547,8 +547,12 @@ test("when the founder does the work, someone else must confirm; with nobody els
   await form.getByRole("button", { name: "I'll do it myself" }).click();
   await form.getByRole("radio", { name: "Medium" }).check();
   await form.getByRole("button", { name: "Make the task" }).click();
-  await expect(tasks.getByTestId("tasks-said")).toContainText(
-    "Someone else on the team checks it when you hand it in.",
+  // Nothing on the card promises a checker who is not there.
+  await expect(tasks.getByTestId("tasks-alone")).toContainText(
+    "You are the only person on this project, so you check your own work",
+  );
+  await expect(tasks.getByTestId("tasks-said")).toHaveText(
+    "Task made. Hand it in when it is done, then mark it as done yourself: nobody else is on this project yet.",
   );
   const row = tasks.getByTestId("task");
   await expect(row).toHaveAttribute("data-state", "in-progress");
@@ -559,13 +563,88 @@ test("when the founder does the work, someone else must confirm; with nobody els
   await handIn.getByLabel("What you did").fill("It is live.");
   await handIn.getByRole("button", { name: "Hand in" }).click();
   await expect(row).toHaveAttribute("data-state", "submitted");
-  await expect(row.getByTestId("task-cannot-confirm")).toHaveText(
-    "You did this work, so someone else on the team has to confirm it. Nobody else is on this project's team yet: add a team member to the project before this can be confirmed.",
+  // No dead end: the row says what a check by yourself is worth, and offers it.
+  await expect(row.getByTestId("task-cannot-confirm")).toHaveCount(0);
+  await expect(row.getByTestId("task-check-alone")).toContainText(
+    "It will be shown as checked by you alone. Work checked by someone else counts for more once you have a team.",
   );
   await expect(
-    row.getByRole("button", { name: /Confirm|Send back|Cancel task/ }),
+    row.getByRole("button", { name: /Confirm it's done|Send back/ }),
   ).toHaveCount(0);
   expect(parts(relay, "confirm")).toHaveLength(0);
+  // One labelled button, reached and pressed from the keyboard.
+  const mark = row.getByRole("button", { name: "Mark as done" });
+  await expect(mark).toHaveCount(1);
+  await mark.focus();
+  await page.keyboard.press("Enter");
+  await expect(tasks.getByTestId("tasks-said")).toContainText(
+    "Marked as done. It shows as checked by you alone",
+  );
+  // One confirmation, signed by the founder, naming the work that was handed in.
+  const confirms = parts(relay, "confirm");
+  expect(confirms).toHaveLength(1);
+  expect(confirms[0].pubkey).toBe(FOUNDER);
+  expect(tag(confirms[0], "task-evidence")).toBe(
+    parts(relay, "evidence")[0].id,
+  );
+
+  // The record never calls it accepted: after a reload it is done, checked by the founder alone, counted apart.
+  await page.reload();
+  const record = page.getByTestId("project-record");
+  const alone = record.getByTestId("record-work-alone");
+  await expect(alone).toContainText(
+    "Done — checked by the founder, working alone",
+  );
+  await expect(alone).toContainText(
+    "Checked by Fay Founder, the founder, and by nobody else",
+  );
+  await expect(record.getByTestId("record-work-accepted")).toHaveCount(0);
+  await expect(record.getByTestId("record-work-totals")).toHaveCount(0);
+  await expect(record.getByTestId("record-work-alone-totals")).toHaveText(
+    "1 piece of work done alone, checked by the founder",
+  );
+  // On the founder's own profile it is listed apart, and nothing is counted as accepted.
+  await page.goto(`/u/${FOUNDER}`);
+  await page.getByRole("tab", { name: "Record" }).click();
+  const track = page.getByTestId("track-record");
+  await expect(track.getByTestId("track-record-accepted")).toHaveText(
+    "0 pieces of work accepted",
+  );
+  await expect(track.getByTestId("track-record-alone")).toContainText(
+    "1 piece of work done alone on their own project, checked by themself",
+  );
+  await expect(track.getByTestId("track-work-item")).toHaveCount(0);
+  await expect(track.getByTestId("track-work-alone-item")).toContainText(
+    "checked by the founder, working alone",
+  );
+});
+
+test("a founder's own check that reaches a project with a team is still shown as their own, and someone else's check takes its place", async ({
+  page,
+}) => {
+  // The server only takes such a check while the founder is alone. The team grew afterwards: the old check keeps
+  // its words, and it is the mate's confirmation that makes the work accepted.
+  const relay = createMockRelay();
+  seedProject(relay, { offer: false });
+  const task = seedTask(relay, {
+    helper: FOUNDER,
+    what: "Write the changelog.",
+  });
+  const work = seedStep(relay, FOUNDER, task, "evidence", [], "It is live.");
+  seedStep(relay, FOUNDER, task, "confirm", [["task-evidence", work.id]]);
+  await install(page, relay, MATE_KEY);
+  await page.goto(PROJECT);
+  const record = page.getByTestId("project-record");
+  await expect(record.getByTestId("record-work-alone")).toContainText(
+    "Done — checked by the founder, working alone",
+  );
+  await expect(record.getByTestId("record-work-accepted")).toHaveCount(0);
+  seedStep(relay, MATE, task, "confirm", [["task-evidence", work.id]]);
+  await page.reload();
+  await expect(record.getByTestId("record-work-accepted")).toContainText(
+    "Checked by Max Mate",
+  );
+  await expect(record.getByTestId("record-work-alone")).toHaveCount(0);
 });
 
 test("with a second team member, the founder's own work waits for them, and they can confirm it", async ({
@@ -587,6 +666,11 @@ test("with a second team member, the founder's own work waits for them, and they
   await expect(
     row.getByRole("button", { name: "Confirm it's done" }),
   ).toHaveCount(0);
+  // Someone else is on the team: the founder is not offered their own check.
+  await expect(row.getByTestId("task-check-alone")).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Mark as done" })).toHaveCount(
+    0,
+  );
 
   await openAs(page, MATE_KEY, PROJECT);
   await row.getByRole("button", { name: "Confirm it's done" }).click();
@@ -1253,6 +1337,29 @@ test("the server's own rules hold on the test server: only the team, the named h
     ),
   ).toBe(
     "restricted: a task's work must be confirmed by someone other than its helper",
+  );
+  // With nobody else on the team it is theirs to check; a helper who is not the founder still never checks their own.
+  const solo = createMockRelay();
+  seedProject(solo, { mate: false, offer: false });
+  const alone = seedTask(solo, { helper: FOUNDER });
+  const confirmBy = (by: string, task: { id: string }) =>
+    projectRecordRefusal(
+      event(
+        47003,
+        by,
+        {},
+        [
+          ["a", COORD],
+          ["task-part", "confirm"],
+          ["task", task.id],
+        ],
+        now(),
+      ),
+      solo.events,
+    );
+  expect(confirmBy(FOUNDER, alone)).toBeNull();
+  expect(confirmBy(HELPER, seedTask(solo))).toBe(
+    "restricted: only this project's team can post this",
   );
   expect(
     projectRecordRefusal(
