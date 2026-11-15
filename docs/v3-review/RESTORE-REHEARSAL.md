@@ -2,7 +2,24 @@
 
 Written 2026-11-01 (outside review A 1.3, with the critique's correction 5). Not yet run: the hosted server does not
 exist yet. Run it once before inviting anyone (PILOT-TEST-GUIDE.md step 6), and again after any upgrade that changes the
-database. Write the date, the backup's folder name and every check's result in [PILOT-REPORT.md](PILOT-REPORT.md).
+database. Write the date, the backup's folder name and every check's result in [PILOT-REPORT.md](PILOT-REPORT.md)
+("Before the run: the operator's own checks").
+
+**Status, 2026-11-15: still not run, and it cannot be run by an agent from a development checkout.** It needs the pilot
+server's real backup, your private backup key, and a second machine with Docker (a fresh VM is fine). What an agent could
+check without them: `scripts/test-compose-backup-encryption.sh` passes (backup, verify, restore and prune of the encrypted
+form, with a stand-in `docker`; it never reads your backup). That is not this rehearsal. What is left for you, in order,
+about two hours the first time (the image build is most of it):
+
+1. On the pilot server: write down section 0's facts, then section 1's steps 1 to 3 (`./run.sh backup`, `verify-backup`,
+   copy both files off).
+2. On the second machine: install Docker and `age`, check out the revision in the backup's `about.txt`, copy the private key
+   there from your password manager (never from the server), then sections 1 steps 4 and 5 and section 2.
+3. Section 3's table, one row at a time, every row marked passed or failed in the report. A row that fails is a finding, not
+   a retry.
+4. Section 4, then take it all down, including the plain copy and the key file if it does not live there.
+5. In [PILOT-REPORT.md](PILOT-REPORT.md): the date, the backup's file name, and the result of each row of section 3. If a step
+   needed anything not written here, add it to deploy/compose/README.md ("Backups").
 
 **What this proves, and what it does not.** `scripts/test-compose-backup.sh` stays as it is: separate, automated
 coverage that backup, verify and restore work on a scratch stack it builds itself, with its own post, image and git

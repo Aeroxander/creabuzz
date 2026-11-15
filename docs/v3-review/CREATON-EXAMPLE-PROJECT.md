@@ -1,15 +1,81 @@
-# Creaton as the first contributor project (seed content for the pilot)
+# Creaton as the first project on the server (seed content for the pilot)
 
-A first visitor to the server should find a real project with work they can do today, not an empty Discover page. The
-first project is Creaton itself, started as a **contributor project**: no token sale, Shares earned by reviewed work,
-with a few small pieces of work open to anyone, including people who know nothing about crypto. It is also the pilot's
-first project: the useful work people do here is the evidence the pilot is looking for
-([STATUS.md](STATUS.md)). It matches the contributor run in [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md) (updated 2026-10-31
-for D139, D144 and D145: reviewers by name, who decides a split, accepting for review and finishing the review).
+A first visitor to the server should find a real project that keeps its record, not an empty Home. Creaton's own project
+is that project. It has two forms, for the two runs in [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md):
 
-Everything below is a draft for you to type in through the normal pages and change as you like. Nothing here needs a
-script or a key in the repository. The numbers are the Start form's defaults, and the founder decides them. Keep the
-test-version wording: the app says "Testnet" beside the logo, Shares on a test network are test records, and nothing
+- **Part A, for Pilot A (founders, no chain; updated 2026-11-15 to the direction of 2026-11-10).** Started from Start in
+  four answers, with a weekly update and promises. Nothing here needs a chain, a script or a key in the repository.
+- **Part B, for the contributor run (needs the chain).** The contributor project with work areas and reviewers, as it was
+  written on 2026-10-31. It is further down, unchanged except for this heading.
+
+Everything below is a draft for you to type in through the normal pages and change as you like.
+
+## Part A. Creaton's own project, for Pilot A
+
+**Who types it in, and as whom.** You, the operator, from the owner's account, **before anyone is invited**. If you would
+rather start it from another account, put that account's 64-character hex key in `BUZZ_PILOT_EXCLUDE` in `.env` first.
+Either way it is left out of `./run.sh founders` and `./run.sh due`, so it never counts as a founder who kept or missed a
+week: the pilot measures other people.
+
+**Label it the server's own, in the project's own words**, so no one takes it for a founder's project: the one-sentence
+answer below says it. Nothing in the app marks a project as "the server's", so the sentence is the label.
+
+### A.1 Start (Start → the four answers)
+
+| Field | Text |
+|---|---|
+| Project name | Creaton |
+| What is it, in one sentence? | The server's own project, kept by the people who run it, so you can see what a record looks like. |
+| The goal | Five founders each post three weekly updates here. |
+| How we'll know | Five projects other than this one each show three weekly updates on their page by the end of the pilot. |
+
+### A.2 The first weekly update (the project's page → Post update)
+
+Post it straight away: "What happened this week", "What's next" (each line becomes a promise) and "Help needed".
+
+| Field | Text |
+|---|---|
+| Title | We are open |
+| What happened this week | Started this server and this project. A few founders are being invited one at a time. |
+| What's next | Post an update here every <the weekday you chose in the runbook><br>Read each founder's first update within two days of it arriving<br>Answer anyone who asks for help within one day |
+| Help needed | Tell us where signing up, or starting a project, was confusing. (Small) |
+
+One promise per line, written so that it can be missed. Do not soften them: the next update answers each one as done, not
+done or changed, and a miss written down with its reason is what this project is there to show.
+
+### A.3 What you keep doing
+
+- **Post on the day you wrote in the runbook ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "The operator's cadence"), every week
+  of the pilot.** The second update answers the three promises above, truthfully. A promise you did not keep is marked "Not
+  done" with the real reason, and stays.
+- **Never delete an update** to tidy the record. The page counts deletions.
+- **Do not post as a founder would to win the number**: this project is in no total, so there is nothing to win.
+- If you stop, the project becomes a visible miss for every founder to see. Say so on the page and take it down rather than
+  let it run silent.
+
+### A.4 What a first visitor gets
+
+- Home shows one project with a goal, an update, three promises and one open help request, not "No projects on this server
+  yet".
+- A founder starting their own project sees what a goal, an update and a promise look like before they write theirs.
+- The page says, in the project's own sentence, that it is the server's.
+
+### A.5 Not done here
+
+- **No Shares, no money, no chain.** Part A offers nothing for sale and records nothing on a chain. (Shares for accepted work
+  belong to the contributor run, Part B.)
+- **Nothing is published for you.** If you would rather have a script that posts these with a key you supply, say so.
+
+---
+
+## Part B. The contributor-run version (needs the chain)
+
+Written 2026-10-31 for the contributor run in [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md) ("Second"; updated then for D139, D144 and
+D145: reviewers by name, who decides a split, accepting for review and finishing the review). It is the pilot's first
+contributor project: the useful work people do here is the evidence that run is looking for ([STATUS.md](STATUS.md)). It is a
+**contributor project**: no token sale, Shares given only for work the reviewers accepted, with a few small pieces of work open to anyone,
+including people who know nothing about crypto. The numbers are the Start form's defaults, and the founder decides them. Keep
+the test-version wording: the app says "Testnet" beside the logo, Shares on a test network are test records, and nothing
 here offers a return.
 
 **Before you start:** the network the server is built for needs the contributor kit (on Sepolia, after
@@ -20,7 +86,7 @@ add them from the list by name. The founder cannot be a reviewer. Every piece of
 an open board called **supporters**: a community with no boards yet is offered it (with a private founders board) on
 its Boards page; otherwise start one with that name, open to everyone.
 
-## 1. The project (Start → Start a contributor project)
+### B.1 The project (Start → Start a contributor project)
 
 | Field | Text |
 |---|---|
@@ -56,7 +122,7 @@ vote. Two that fit well later, as suggestions: **A plain guide** (a one-page gui
 Shares here, that the reviewers find accurate) and **Bug reports** (a bug with the steps to reproduce it, reproduced by
 a reviewer).
 
-## 2. The invitation (Home → post to General)
+### B.2 The invitation (Home → post to General)
 
 > **Help build Creaton.** Two pieces of work are open on the Creaton project, and you need no Shares and no crypto
 > experience to do them: notes on your first hour here, or a check of three screens on your phone.
@@ -80,7 +146,7 @@ a reviewer).
 The three-day answer is a promise you make, not a rule the app enforces: a submission nobody answers lapses after 30
 days. If you cannot keep it, say so in the post.
 
-## 3. Two first posts for the supporters board
+### B.3 Two first posts for the supporters board
 
 1. **Where did you get stuck?** "If anything about Creaton confused you, reply here, even with one sentence. If you want
    Shares for it, the “Your first hour” work area is for exactly this."
@@ -88,13 +154,13 @@ days. If you cannot keep it, say so in the post.
    you would do, what finished looks like, and your price. If a holder puts it to a vote and it passes, it becomes a
    work area anyone can submit to."
 
-## 4. A first update (the project's page → Post update)
+### B.4 A first update (the project's page → Post update)
 
 > Creaton is open to a first small group. Two pieces of work are open under Ways to help, and anyone can suggest more.
 > We are watching where people get stuck, how long reviews take, and whether the award votes make sense, so tell us when
 > something is unclear. That is the most useful thing you can tell us.
 
-## What a first visitor gets
+### B.5 What a first visitor gets (contributor run)
 
 - Discover shows a project, and its Overview says how many work areas are open and that no Shares are needed to submit,
   with **Join the discussion** beside it.
@@ -102,7 +168,7 @@ days. If you cannot keep it, say so in the post.
 - The header says what is true and checked: no token sale at setup, new Shares only from awards, Shares locked.
 - The supporters board and General are not empty, so the first person to write is not the first person there.
 
-## For the pilot
+### B.6 For the contributor run
 
 Invite, on their own devices and accounts and with no walkthrough: the reviewers, a few contributors (at least one
 new to crypto and one doing non-technical work), and someone who joins a few days late and knows nobody. Each gets their
@@ -112,7 +178,7 @@ award vote, and the visit after a day away. Ask afterwards: what could you do wi
 what does approval give you? The day-by-day plan and what to watch are in [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md); what to
 write down is in [PILOT-REPORT.md](PILOT-REPORT.md).
 
-## Not done, and why
+### B.7 Not done, and why
 
 - **No raise.** The release order is the social MVP, then contributor projects, then an audited raise. A raise for
   Creaton itself would be a separate decision on that later path, after the audit and a legal read.

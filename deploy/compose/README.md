@@ -120,6 +120,25 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
   reports") needs `BUZZ_ADMIN_HOST`, a host name of its own for the admin API, which this HTTPS (Caddy) stack does not
   serve: it serves `BUZZ_DOMAIN` alone, so the admin API is never on the public host. Check `./run.sh reports` every
   morning and evening of a pilot run, and act on each in the web app the same day.
+- **The owner's pilot commands** (read the database, change nothing; `.env` must be filled in, as for `reports`):
+  - `./run.sh due` lists the founders whose last weekly update is 7 or more days old (`--days N` changes the 7), with
+    the day of it and how many days late: the list to message by hand. A project with no update yet counts from the day
+    it began.
+  - `./run.sh founders` is one row per founder's project: weekly updates, how many weeks of the project's life had one,
+    when the second and third came (and "after late flag" when it was over 7 days after the one before, which is when
+    the project was on `due`), promises kept, missed, changed and never answered, help requests and offers, tasks made and
+    accepted. Under it, the totals the pilot's one question needs: how many founders posted a second and a third update,
+    and how many of those were after a late flag. `--csv` prints the table alone, for [PILOT-REPORT.md](../../docs/v3-review/PILOT-REPORT.md).
+  - `./run.sh daily` is the one list for each morning and evening of a pilot: `due`, what happened in the last 24 hours
+    (projects started, weekly updates, offers) and the reports passed on to you. A part that cannot be read is said, the
+    rest still prints, and the command exits non-zero, so a failed part never looks like an empty one.
+  - Your own project is left out of every number: the keys in `RELAY_OWNER_PUBKEY` and `RELAY_OPERATOR_PUBKEYS`, and
+    any (comma-separated, 64-character hex) in `BUZZ_PILOT_EXCLUDE` in `.env`. Set that one when Creaton's own project
+    was started from an account that is not the owner's. Records are counted as the web app counts them (weekly updates
+    by the founder's own records, deleted ones ignored); a task counts as accepted when its helper handed work in and the
+    founder or a listed team member confirmed it and nobody on the team sent it back, which is the app's rule less its
+    edge cases: the project's page decides in a dispute. `scripts/test-pilot-commands.sh` checks every number against
+    records it seeds.
 - Taking down a post and its pictures, illegal content, and a person's request to see or delete their data:
   [docs/operator-takedown-and-data-requests.md](../../docs/operator-takedown-and-data-requests.md).
 
@@ -176,8 +195,10 @@ On the server, with the host name's DNS pointing at it and ports 80 and 443 open
 
 3. Put the host name in place of `CHANGE_ME_HOST` in `BUZZ_DOMAIN`, `RELAY_URL` (`wss://<host>`),
    `BUZZ_MEDIA_BASE_URL` (`https://<host>/media`), `BUZZ_MEDIA_SERVER_DOMAIN` (`<host>`) and `BUZZ_CORS_ORIGINS`
-   (`https://<host>`), and a Sepolia node in `BUZZ_EVM_RPC_URL`. `start` refuses while any of them still says
-   `CHANGE_ME_HOST`, or `buzz.example.com` (an older example's host).
+   (`https://<host>`). `start` refuses while any of them still says `CHANGE_ME_HOST`, or `buzz.example.com` (an older
+   example's host). The three `BUZZ_EVM_*` lines (a Sepolia node) are commented out in `.env.creaton.example`: leave them
+   so for the founders' pilot, which needs no chain (docs/v3-review/PILOT-RUNBOOK.md, "Pilot A"), and uncomment them,
+   with a node in `BUZZ_EVM_RPC_URL`, only for contributor projects.
 4. `mkdir -p policies && cp ../../docs/policies/TERMS-DRAFT.md policies/terms.md && cp
    ../../docs/policies/PRIVACY-DRAFT.md policies/privacy.md`, fill in every `[placeholder]` (the privacy note's log
    and backup periods should match "Logs" and "Backups" below), and set `BUZZ_TERMS_FILE=policies/terms.md` and
@@ -277,6 +298,29 @@ on your own computer, and the rehearsal below.
   (as a plain folder) and restores it. It never reads your backup, so running it anywhere says nothing about your
   server's backups. `scripts/test-compose-backup-encryption.sh` covers the encrypted form with a stand-in `docker`
   (it needs the `age` program, not Docker).
+
+## Uptime check (from outside, with an alert on your phone)
+
+Nothing on the server tells you when the server is down: the error reports (`VITE_ERROR_REPORT_URL`) come from people's
+browsers and need people. Set up one external monitor before inviting anyone, from a service that checks from outside your
+network and sends push notifications to your phone (for example UptimeRobot's free plan: HTTPS checks every 5 minutes, a
+phone app with push alerts; check the plan's current limits yourself). The two checks below cost nothing and say different
+things:
+
+| Check | URL | Passes when | What a failure means |
+|---|---|---|---|
+| The server answers | `https://<host>/health` | status 200 and the text `ok` | The relay process, Caddy, the certificate or the machine is down. (`/health` answers for the process alone: it does not touch Postgres, Redis or the media store.) |
+| The server can read its database | `https://<host>/info` | status 200 and the keyword `access` in the body | The relay is up but its database is not: `/info` carries the community's `access` setting (`invite_only` here) only when it could be read from Postgres. This is the check to trust for "can people sign in". |
+
+Set both to alert after **two** failed checks in a row (a single dropped check is not an outage), with the alert going to
+your phone's push notifications and, as a second route, your email. Then **test the alert once**, without taking the
+server down: add a third monitor on `https://<host>/health-test` (a page that does not exist, so it fails), wait for the
+phone to buzz, then delete the monitor. An alert that was never tested is not an alert.
+
+Also in the monitor: a certificate-expiry warning if it offers one (Caddy renews by itself; a failed renewal is quiet
+until the day the certificate ends). When an alert comes: `./run.sh status` for what is up, `./run.sh logs` for why, and
+`./run.sh restart` for a relay that is wedged. What the monitor cannot see is a slow server or a server that answers
+but refuses people; `./run.sh daily` and the error reports are for those.
 
 ## Logs
 

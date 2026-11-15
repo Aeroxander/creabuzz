@@ -1,6 +1,6 @@
 # Where Creaton stands
 
-Updated 2026-11-02 (v5 development scope; prior v4 validation remains historical); the weekly-sales items in Scope, Known gaps and Waiting on you were updated 2026-11-05, and again the same day after the low-severity run. The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
+Updated 2026-11-02 (v5 development scope; prior v4 validation remains historical); the weekly-sales items in Scope, Known gaps and Waiting on you were updated 2026-11-05, and again the same day after the low-severity run. **"Scope", "The gates" (the project-loop journey) and "Waiting on you" were rewritten 2026-11-15 to the direction of 2026-11-10 ([DIRECTION.md](DIRECTION.md)).** The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
 Each decision is a row in [DECISIONS.md](DECISIONS.md) (through D185). The hand tests for the pilot, in order, are in
 [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md); every hand test ever written is in [TEST-STEPS.md](TEST-STEPS.md), a log in
 date order. What the 2026-10-31 pass hid or retired, and what waits on your call, is in
@@ -12,10 +12,37 @@ A plain-words copy pass rewrote the web app's user-facing text for readers new t
 
 ## Scope
 
-- **The MVP is the server, the web app and contributor projects**: no raise, no sale, no market (D137). New Shares come
-  only from reviewed work and an award vote.
+**The product, as the owner set it on 2026-11-10 ([DIRECTION.md](DIRECTION.md)):** Creaton is where a project states a goal,
+does its work in the open, and lets anyone see whether it kept its promises. Every project has four things: a goal, a weekly
+update, tasks with a finish line, and a record (promised, delivered, missed, changed course). Shares follow the record; they
+are not the point of it. Nothing in DIRECTION.md changes a contract or an economic number.
+
+- **The MVP is the server, the web app and the project loop**: Start in four answers, a goal, weekly updates with promises
+  that the next update marks kept, missed or changed, help requests with offers, tasks with a finish line and an independent
+  check, the public scorecard, Home as a feed of project records, and Work. **It needs no chain.** These are records on the
+  server (`scripts/real-loop-e2e.sh` plays them against a real server, open and invite-only); no raise, no sale, no market
+  (D137). The first step is [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Pilot A": three to five founders, onboarded by hand,
+  and one number, whether they post a second and a third weekly update without being asked.
+- **Ready for agents, not built for them.** A helper is an account, labelled as an agent when it is one, with limited powers:
+  it may offer, do work, submit evidence and draft text; it may not vote, award Shares, move money or accept its own work.
+- **Price and returns appear only in the Home feed.** Trading and investing are off by default in every hosted build (no
+  market factory in the image, a listing starts disabled, `VITE_INVESTING` unset). Hidden until a project needs them: the
+  court, forecasts with money, trading, Explore, boards as a separate place. Not now: leads and delegation levels, Thanks
+  rounds, ladder stages, the vouch, new contracts.
+- **Contributor projects (a chain, reviewers, Shares given for accepted work) are the second pilot, not the first**
+  ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Second"). Their setup (a Sepolia deploy, a ZeroDev project, a node, synced
+  passkeys) waits for what Pilot A shows. New Shares come only from reviewed work and an award vote.
 - **No desktop or mobile app in the MVP.** The desktop and mobile apps in this repository are not kept level with the web
   app and are not part of any pilot; D9's "desktop and mobile parity after" waits until after the pilots (noted on D9).
+- **Operator tooling is part of the MVP, because notifications outside the app are not yet built:** `./run.sh founders`,
+  `due` and `daily` (who posted, who is late, what is waiting), encrypted backups with a restore rehearsal, and an outside
+  uptime check ([deploy/compose/README.md](../../deploy/compose/README.md)). Creaton's own project
+  ([CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md), Part A) is on the server so the first page is not empty; it is
+  left out of every number.
+
+**Also in development, off the MVP's path** (the contract work of the earlier direction; none of it is deployed or on by
+default):
+
 - **Contract development continues under D174's lift and the D180 handoff.** Work is in progress on
   `v5-governance-rework`; no v5 deployment or activation has occurred. Phase-by-phase evidence and the
   existing/new contract capability matrix belong in [V5-IMPLEMENTATION.md](V5-IMPLEMENTATION.md).
@@ -64,6 +91,7 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 | Contributor projects: start (no sale), work areas, Ways to help, submit, accept for review, review, finish the review, turn-downs, award vote, Needs you, contributions | D65, D66, D84, D88 to D91, D144, D145 | `scripts/web-contributor-e2e.sh`, `web-work-e2e.sh`, `web-paid-work-e2e.sh`, `cli-no-raise-e2e.sh` |
 | Passkey accounts for every contributor step, fees covered, money sent out | D139, D141 | `scripts/web-passkey-contributor-e2e.sh` (Sepolia fork, built like the image) |
 | The hosted image and server: first start, backups, contributor-only build | D107, D140 | `scripts/test-compose-backup.sh` (a scratch stack); `deploy-env` tests; your own backup only by [RESTORE-REHEARSAL.md](RESTORE-REHEARSAL.md), not yet run |
+| The project loop: Start in four answers, weekly updates and promises, help requests and offers, tasks and their checks, the scorecard, Home and Work; and the owner's `./run.sh founders`, `due` and `daily` | DIRECTION.md (2026-11-10) | `scripts/real-loop-e2e.sh` (open and invite-only), `scripts/test-pilot-commands.sh` |
 | Every screen, read as the pilot sees it | D108 to D111, D146 | `WEB_FEATURES=mvp scripts/web-screen-audit.sh`; [SCREEN-AUDIT-2026-10-24.md](SCREEN-AUDIT-2026-10-24.md) |
 | Sepolia readiness: the deploy rehearsed on a fork, every contract checked, the largest transaction under the gas cap | D85, D140 | `scripts/sepolia-deploy.sh` (rehearsal); `web-contributor-e2e.sh --sepolia-fork` |
 | Test networks only, off in the hosted build and frozen: bounties, forecasts, CREATE and the court, money forecasts (removed from the app in D150 and from the contracts in D151, see tag pre-deprecation-2026-10-31), matched exits (retired in D152), payouts, remixes, weekly rounds, funding terms | D113 to D136 | Forge suite, mutation check, `web-post-bounty-e2e.sh`, `web-rounds-e2e.sh` |
@@ -71,17 +99,30 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 
 ## The gates
 
-- **Run `scripts/mvp-gate.sh --pilot` green on the build you host** (ten journeys: the pilot build's screens, the
+- **Run `scripts/mvp-gate.sh --pilot` green on the build you host** (eleven journeys: the pilot build's screens, the
   social suite as the pilot server runs it, invite links, error reports, the command-line and page contributor
-  journeys, the passkey one, work and paid work, and `web-restricted-holder-e2e`: a muted, then banned, holder keeps
+  journeys, the passkey one, work and paid work, `web-restricted-holder-e2e`: a muted, then banned, holder keeps
   their rights on a real server, plus `web/tests/e2e-real/passkey-sign-in.spec.ts`, passkey sign-up and sign-in again
-  against that real server). Under `--pilot` the page contributor journey (`web-contributor-e2e`) runs in the
+  against that real server, and, since 2026-11-15, **`real-loop-e2e`, the project loop** (below)). Under `--pilot` the page
+  contributor journey (`web-contributor-e2e`) runs in the
   contributor-only build the pilot ships (`PILOT_BUILD=1`, since 2026-11-01). `scripts/mvp-gate.sh` runs all
-  27 (10 pilot, then 17 later), the pilot set first;
-  `--later` runs the raise, milestone, optional-feature, self-serve and weekly-sales (secondary market) journeys alone
-  (17); `--list` shows what
+  29 (11 pilot, then 18 later; investing's two journeys, `web-backing-e2e` and `web-investing-mock-e2e`, are later because
+  the hosted image keeps investing off), the pilot set first;
+  `--later` runs the raise, milestone, optional-feature, self-serve, investing and weekly-sales (secondary market) journeys alone
+  (18); `--list` shows what
   would run; `--outside` lists the four journey scripts no set runs, each with its reason. A journey script in no set
   and with no reason is printed as a warning on every run ([MVP-GATE-CI.md](MVP-GATE-CI.md)).
+- **The project loop in the gate (2026-11-15).** `real-loop-e2e` (`scripts/real-loop-e2e.sh`, `web/tests/e2e-real/project-loop.spec.ts`)
+  runs Quick Start, weekly updates and promises, help requests and offers, tasks with a finish line, the scorecard, Home and
+  Work against a real server and database, in three browsers, the `buzz` command line and a socket, with nothing mocked. It is
+  in the pilot set and takes about six minutes on a laptop (planned at ten in CI; no CI run of it is recorded yet). Run
+  locally on 2026-11-15: **10 of 10 on an open server and 10 of 10 on an invite-only one**
+  (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`, an invite link per browser). The invite-only run found that a signed-out visitor
+  at a project's shared address gets "Couldn't open this project." and no word about an invite: see "Waiting on you" 5 and
+  [PILOT-REPORT.md](PILOT-REPORT.md), "Findings from the loop journey". `scripts/test-mvp-gate.sh` passes (its one
+  check that a stopped stand-in is gone failed in a container that never reaps orphans, a zombie answering `kill -0`; it now
+  reads the process's state). `scripts/test-pilot-commands.sh` passes against seeded records. The gate as a whole (the 11
+  pilot journeys in one run) was not run.
 - **Pilot set, 2026-11-01: all ten pass locally; nine of ten in CI.** The first CI run (`.github/workflows/mvp-gate.yml`,
   pushed to the fork with draft PR Aeroxander/creabuzz#1) passed every journey but `web-social-hosted-e2e`. There,
   `follow-notify.spec.ts` lost one of two follows clicked within a second (twice, on the slower runner). It passed
@@ -123,22 +164,52 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 
 ## Waiting on you
 
-0. **Weekly sales (D181, D182), in this order:** read the brief's section 8 and decide the open items (price-token policy, a floor
+Rewritten 2026-11-15 to the direction of 2026-11-10. The first four are what stands between the repository and inviting
+three to five founders; the rest wait on what that run shows.
+
+1. **Decide the order: Pilot A (founders, no chain) before the contributor run.** This changes the old item 6, which put the
+   social run and then the contributor run first. Pilot A needs none of the contributor run's setup (no Sepolia deploy, no
+   ZeroDev project, no chain node, no synced passkeys, no reviewers). It is written as
+   [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Pilot A", with the day-by-day plan, the questions and what counts as a yes; it
+   stays a proposal until you say yes. **With it, approve the operator posting weekly on Creaton's own project for the
+   whole pilot** (the runbook's "operator's cadence"): if you will not, say so before the run and the example project is
+   taken down rather than left to go quiet.
+2. **Run the gate** on the build you host: `scripts/mvp-gate.sh --pilot` (eleven journeys; the project loop is one of them),
+   and the loop again on an invite-only server, as the pilot is: `BUZZ_REQUIRE_RELAY_MEMBERSHIP=true scripts/real-loop-e2e.sh`.
+   CI runs the first on the fork's pull requests.
+3. **Host the server** with `deploy/compose` (the image, terms at sign-up, backups): a machine, a domain, the filled-in
+   `.env` **without** the Sepolia lines, and these two that only you can do, with exact steps written down:
+   - **One restore rehearsal on a second machine**, with your real backup and your private backup key
+     ([RESTORE-REHEARSAL.md](RESTORE-REHEARSAL.md), which opens with what to do in order; about two hours). Not run, and an
+     agent cannot run it: it needs your server's backup, your key and a second machine.
+   - **An outside uptime check with an alert on your phone**, tested once
+     ([deploy/compose/README.md](../../deploy/compose/README.md), "Uptime check": two monitors, an alert after two failed
+     checks, a test monitor that fails on purpose). Not set up: it needs your account with a monitoring service and your phone.
+4. **Start Creaton's own project** from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md), Part A, before inviting
+   anyone: four answers, a first update, a label ("the server's own") in its sentence, and your key (or
+   `BUZZ_PILOT_EXCLUDE`) so it stays out of the pilot's numbers. Then the invites, one per founder
+   ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Pilot A").
+5. **Decide what a visitor with no account gets on an invite-only server.** A shared project address (`/p/<name>-<founder>`)
+   is built to be read signed out, but on the pilot's own setting it shows "Couldn't open this project." and nothing says why
+   or that an invite is needed ([PILOT-REPORT.md](PILOT-REPORT.md), "Findings from the loop journey"). Either say that shared
+   links reach members only (and tell founders so; the runbook does), or open public reads of a project's scorecard, which is a
+   moderation and counsel question: invite-only was chosen for abuse and moderation reasons (D107), and
+   [HOLDER-ACCESS-MODEL.md](HOLDER-ACCESS-MODEL.md) assumes membership gates reads. Nothing has been weakened.
+6. **The policy drafts** in `docs/policies/`, with a lawyer. Since the lawyer's review (D183, D184) the web app asks members to agree again when the text changes, the age box is on by default in the compose stack, the start guard is stricter and backups are encrypted to a key kept off the server; the desktop and mobile apps (decide: offer no mobile build), the pin and days-ahead of a change notice and every owner or counsel bracket are still open (see "Counsel's second round" and the Code follow-ups in `docs/policies/LAWYER-FEEDBACK-RESPONSE.md`). Showing returns, even only in Home's feed, is for counsel to read before it ships.
+
+**Later, not before Pilot A has been read:**
+
+7. **Weekly sales (D181, D182), in this order:** read the brief's section 8 and decide the open items (price-token policy, a floor
    for the founder schedule, whether the old rounds contract may be named as an exit exchange, order caps, the allocation
    rule, wash-trade wording (you chose price history with a standing line saying one person can set a round's price, under the latest round and the earlier-rounds list, D185; its words are counsel's and not approved; the old WeeklyRounds contract is deprecated on our side, and sealing the exit-exchange slot is still open), quorum floors, listing notice, which kit pilots use, the pilot build's Trading card, now hidden there, so say whether to keep that);
    send [LAWYER-BRIEF-WEEKLY-SALES.md](LAWYER-BRIEF-WEEKLY-SALES.md) and the review packet to counsel and to the outside
    reviewer; walk the changed trading flows yourself (`scripts/web-trading-e2e.sh` shows what the agents drove); decide whether the
    fixes from the low-severity run get a second look (a review of them has not been run); and only then consider a release decision, which is never bundled with a
    deployment.
-1. **Run the gate** on the build you host, as above (CI runs it on the fork's pull requests).
-2. **The rest of the calls in [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md)**: what to remove, merge or keep, one line each.
-3. **Broadcast to Sepolia:** `scripts/sepolia-deploy.sh --broadcast`, with your own key in `.env`.
-4. **Host the server** with `deploy/compose` (the image, read state, terms at sign-up, backups): a machine, a domain, the
-   filled-in `.env`, and one restore rehearsal ([RESTORE-REHEARSAL.md](RESTORE-REHEARSAL.md)).
-5. **The policy drafts** in `docs/policies/`, with a lawyer. Since the lawyer's review (D183, D184) the web app asks members to agree again when the text changes, the age box is on by default in the compose stack, the start guard is stricter and backups are encrypted to a key kept off the server; the desktop and mobile apps (decide: offer no mobile build), the pin and days-ahead of a change notice and every owner or counsel bracket are still open (see "Counsel's second round" and the Code follow-ups in `docs/policies/LAWYER-FEEDBACK-RESPONSE.md`).
-6. **The social run, then the contributor run** ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md)), with the first project typed in
-   from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md) and a few boards with real first posts.
-7. **The card onramp** on the local branch `onramp-options`: waiting on provider keys, not merged.
+8. **The rest of the calls in [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md)**: what to remove, merge or keep, one line each.
+9. **Broadcast to Sepolia:** `scripts/sepolia-deploy.sh --broadcast`, with your own key in `.env`; then the contributor run
+   ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Second").
+10. **The card onramp** on the local branch `onramp-options`: waiting on provider keys, not merged.
 
 ## Only a hosted pilot can show
 

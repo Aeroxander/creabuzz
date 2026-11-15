@@ -56,9 +56,18 @@ journeys use their default public node, which can drop a read: one rerun before 
 
 ## The journeys
 
-**Pilot set** (`--pilot`, ten): `web-pilot-e2e`, `web-social-hosted-e2e`, `web-invite-only-e2e`,
+**Pilot set** (`--pilot`, eleven): `web-pilot-e2e`, `web-social-hosted-e2e`, `web-invite-only-e2e`,
 `web-error-report-e2e`, `cli-no-raise-e2e`, `web-contributor-e2e`, `web-passkey-contributor-e2e`, `web-work-e2e`,
-`web-paid-work-e2e`, `web-restricted-holder-e2e`.
+`web-paid-work-e2e`, `web-restricted-holder-e2e`, `real-loop-e2e`.
+
+`real-loop-e2e` (added 2026-11-15) is the journey of what [DIRECTION.md](DIRECTION.md) says the product is: the project loop
+in three browsers and the command line against a real server and its own database, nothing mocked (Quick Start, weekly
+updates and promises, help requests and offers, tasks with a finish line, the scorecard, Home, Work). It takes about six
+minutes on a laptop (five of them in browsers) and is planned at ten in CI. It runs on an open server by default;
+`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true scripts/real-loop-e2e.sh` runs it on an invite-only one, as the pilot server is (an invite
+link per browser; see [PILOT-REPORT.md](PILOT-REPORT.md), "Findings from the loop journey"). The gate runs the open one; the
+invite-only run is a hand command before a pilot (the runbook's "Before it"). CI also runs `scripts/test-pilot-commands.sh`
+before the journeys: the owner's `./run.sh founders`, `due` and `daily` against records it seeds in a scratch database.
 
 Under `--pilot`, `web-contributor-e2e` runs in its contributor-only mode (`PILOT_BUILD=1`, set by the runner since
 2026-11-01): the web app is built as the hosted image builds it (`VITE_CONTRIBUTOR_ONLY=1`, no optional feature named),
@@ -74,10 +83,13 @@ keeps reading evidence, voting and leaving with `buzz org ragequit`; [HOLDER-ACC
 and `web/tests/e2e-real/passkey-sign-in.spec.ts` (signing up with a passkey and signing in again after a reload, with
 Chrome's virtual authenticator).
 
-**Later set** (`--later`, 16; with the 10 pilot journeys that is 26): `web-project-story-e2e`, `work-check-query-e2e`,
+**Later set** (`--later`, 18; with the 11 pilot journeys that is 29): `web-project-story-e2e`, `work-check-query-e2e`,
 `v5-local-fixture`, `cli-milestone-e2e`, `web-record-e2e`, `web-milestone-e2e`, `web-dao-launch-e2e`,
 `web-challenge-e2e`, `web-dao-journey-e2e`, `web-economy-e2e`, `web-sepolia-fork-e2e`,
-`web-trading-e2e`, `secondary-keeper-e2e`, `web-post-bounty-e2e`, `web-self-serve-e2e` and `shares-erc20c-e2e`. The
+`web-trading-e2e`, `secondary-keeper-e2e`, `web-post-bounty-e2e`, `web-self-serve-e2e`, `shares-erc20c-e2e` and, added
+2026-11-15, the two investing journeys `web-backing-e2e` (the real contracts on a local chain, a first build takes a quarter of
+an hour) and `web-investing-mock-e2e` (the page against a stand-in node and server), which are later because the hosted image
+keeps investing off. The
 three added on 2026-11-01 (`web-post-bounty-e2e`, `web-self-serve-e2e`, `shares-erc20c-e2e`) were in no set before
 (a fourth, `web-rounds-e2e`, was removed on 2026-11-06 with the old weekly rounds card, D185), and the weekly-sales and fixture journeys were added later still; no
 recorded nightly run has played them, so the first one may find them broken.
