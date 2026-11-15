@@ -30,7 +30,7 @@ const MAX_DONE_LINES = 6;
 const MAX_HELP_LINES = 2;
 
 /** How the founder marked a promise: done, not done, changed, or not answered yet (null). */
-export type DraftMark = "done" | "not-done" | "changed" | null;
+type DraftMark = "done" | "not-done" | "changed" | null;
 
 /** What the record holds, as far as the draft may use it. */
 export interface UpdateDraftFacts {
