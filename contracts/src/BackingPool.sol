@@ -63,8 +63,10 @@ interface IRoundAuction {
 /// goes to zero, so they fund no later milestone. Leaving sells nothing: the backer keeps every unit, the curve
 /// does not move (so a milestone can never start a run on the curve), and they can sell the units later, at the
 /// ordinary fee, in the ordinary way. To keep leaving from being free, the ordinary sale fee is charged on what
-/// the units would fetch on the curve now, as if sold, and is paid out of the refund (never more than the
-/// refund, so leaving cannot be blocked). Nobody can stop a release and nobody is made to fund a milestone
+/// the units that carry the weight would fetch on the curve now, as if sold, and is paid out of the refund. It is
+/// capped at the leaver's own part of the tranche, which is what staying one more milestone would have cost them,
+/// so leaving never costs more than staying and, at the default tranche, always returns at least three quarters of
+/// the held part, however the price has moved and however many milestones have passed. Nobody can stop a release and nobody is made to fund a milestone
 /// they reject. When the window ends anyone resolves it and the tranche, less what the leavers took of it, goes
 /// to the DAO treasury. Money that arrives after the post is not touched by that milestone: a buyer's weight is
 /// priced on the escrow with the tranche already taken off. A milestone nobody resolves within `resolveWindow` of
@@ -89,9 +91,11 @@ interface IRoundAuction {
 /// and never do.
 ///
 /// UNITS WITHOUT WEIGHT. Leaving keeps the units and ends the weight, so a wallet can hold units that carry no
-/// part of the escrow. They sell like any other units; they never get a refund after abandonment (the refund
-/// follows the weight); and they cannot leave again (leaving needs a weight). A wallet that buys again gets a
-/// weight for the new money only.
+/// part of the escrow (`bareUnitsOf`: set to the wallet's units at a leave, and only ever reduced after that). They
+/// sell like any other units, and a sale uses them first, so selling them gives up no weight that money put in
+/// later carries; they never get a refund after abandonment (the refund follows the weight); they pay no leave fee
+/// again (the fee is on the units that carry weight); and they cannot leave again (leaving needs a weight). A wallet
+/// that buys again gets a weight for the new money only.
 ///
 /// THE OPENING ROUND (optional). A pool can be created waiting for a round: an auction (Uniswap's
 /// Continuous Clearing Auction, as deployed, unchanged) sells a fixed supply of claim tokens for the quote
@@ -329,6 +333,10 @@ contract BackingPool {
     uint256 public totalWeight;
     /// @notice A backer's weight in the escrow.
     mapping(address => uint256) public weightOf;
+    /// @notice Units a wallet holds that carry none of its weight: what it kept when it left. A sale uses these
+    /// units first, so selling them never gives up weight that money put in after leaving carries, and leaving
+    /// again charges its fee only on the units that do carry weight.
+    mapping(address => uint256) public bareUnitsOf;
 
     /// @notice How many milestones have been posted; the latest one's id.
     uint256 public milestoneCount;
@@ -808,6 +816,7 @@ contract BackingPool {
             abandonVotes -= weight;
         }
         weightOf[msg.sender] = 0;
+        bareUnitsOf[msg.sender] = balanceOf[msg.sender];
         totalWeight -= weight;
         staked -= weight;
         pending -= fromTranche;
@@ -1122,8 +1131,13 @@ contract BackingPool {
         uint256 held = balanceOf[holder];
         if (unitsIn > held) revert InsufficientUnits();
         gross = _curveOut(unitsIn);
+        // Units that already left carry no weight and go first: only the rest of a sale gives weight up, in
+        // proportion to the units that carry it.
+        uint256 bare = bareUnitsOf[holder];
+        uint256 carrying = held - bare;
+        uint256 sold = unitsIn > bare ? unitsIn - bare : 0;
         uint256 holderWeight = weightOf[holder];
-        weight = unitsIn == held ? holderWeight : Math.mulDiv(holderWeight, unitsIn, held);
+        weight = sold == carrying ? holderWeight : Math.mulDiv(holderWeight, sold, carrying);
         if (gone) {
             if (weight != 0) refund = Math.mulDiv(escrowLeft, weight, totalWeight);
         } else {
@@ -1132,8 +1146,10 @@ contract BackingPool {
     }
 
     /// @dev What leaving hands back: the leaver's whole part of the escrow (their part with the tranche taken off
-    /// plus their part of the tranche), their weight, and the fee. The fee is the ordinary sale fee on what their
-    /// units would fetch on the curve now, as if sold, but capped at the refund so that leaving is never blocked.
+    /// plus their part of the tranche), their weight, and the fee. The fee is the ordinary sale fee on what the
+    /// units that carry their weight would fetch on the curve now, as if sold, but never more than their part of the
+    /// tranche: what staying one more milestone would cost them. So leaving never costs more than staying, and
+    /// always returns the rest of the held part, whatever the price has done and however many milestones have passed.
     function _quoteLeave(address holder)
         private
         view
@@ -1142,7 +1158,7 @@ contract BackingPool {
         weight = weightOf[holder];
         fromTranche = Math.mulDiv(pending, weight, staked);
         fromEscrow = Math.mulDiv(escrow - pending, weight, totalWeight + WEIGHT_OFFSET) + fromTranche;
-        fee = Math.min(_bpsUp(_curveOut(balanceOf[holder]), feeBps), fromEscrow);
+        fee = Math.min(_bpsUp(_curveOut(balanceOf[holder] - bareUnitsOf[holder]), feeBps), fromTranche);
     }
 
     /// @dev Take `units` and `weight` from `holder` and `gross` from the reserve.
@@ -1152,6 +1168,8 @@ contract BackingPool {
             weightOf[holder] -= weight;
             totalWeight -= weight;
         }
+        uint256 bare = bareUnitsOf[holder];
+        if (bare != 0) bareUnitsOf[holder] = bare - Math.min(bare, units);
         balanceOf[holder] -= units;
         totalSupply -= units;
         reserve -= gross;

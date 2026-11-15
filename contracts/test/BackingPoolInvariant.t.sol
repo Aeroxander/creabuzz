@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {BackingPool} from "../src/BackingPool.sol";
 import {PoolQuote, TreasuryStub} from "./helpers/BackingPoolFixture.sol";
 
@@ -98,12 +99,13 @@ contract BackingPoolHandler is Test {
         bool voted = pool.votedAbandon(actor);
         uint256 votes = pool.abandonVotes();
         (uint256 out, uint256 fromEscrow, uint256 fee) = pool.quoteLeave(actor);
-        (, uint256 sellFee,,) = pool.quoteSell(actor, units);
+        // The sale fee on the units that carry weight (units that already left are not in it), at most the
+        // leaver's own part of the tranche: what staying one more milestone would cost them.
+        (, uint256 sellFee,,) = pool.quoteSell(actor, units - pool.bareUnitsOf(actor));
+        uint256 stayCost = Math.mulDiv(pool.pending(), weight, pool.staked());
         assertEq(fromEscrow, mine);
         assertEq(out, fromEscrow - fee);
-        assertEq(
-            fee, sellFee < fromEscrow ? sellFee : fromEscrow, "the sale fee on the units' value, at most the refund"
-        );
+        assertEq(fee, sellFee < stayCost ? sellFee : stayCost, "the sale fee on the weighted units, at most staying");
         uint256 fees = pool.feesTaken();
         vm.prank(actor);
         assertEq(pool.leave(out, block.timestamp), out);

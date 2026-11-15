@@ -284,9 +284,12 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         _assertSolvent();
     }
 
-    /// @dev The fee never exceeds the refund, so leaving is never blocked: with the price run up far enough
-    /// that the units are worth more than the whole escrow part, the leaver gets nothing back and is out anyway.
-    function test_the_notional_fee_is_capped_at_the_refund_so_leaving_is_never_blocked() public {
+    /// @dev The fee never exceeds what staying one more milestone would cost the leaver (their part of the tranche),
+    /// so leaving always returns the rest: with the price run up far enough that the units are worth many times the
+    /// whole escrow part, the ordinary fee on them would be more than the refund, and the leaver still gets back
+    /// the three quarters that staying would have kept. (The fee used to be capped at the whole refund, and the
+    /// leaver got nothing: see BackingPoolLeaveFee.t.sol.)
+    function test_the_notional_fee_is_capped_at_what_staying_costs_so_leaving_returns_the_rest() public {
         _pastEarly();
         _buy(ALICE, 1_000e18);
         // A whale pushes the price far up: Alice's units are now worth many times what she paid.
@@ -297,9 +300,11 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         uint256 due = pool.escrowOf(ALICE);
         assertGt(sellFee, due, "the units' ordinary fee is more than her escrow part");
         (uint256 q, uint256 fromEscrow, uint256 fee) = pool.quoteLeave(ALICE);
-        assertEq(fee, fromEscrow, "the fee takes the whole refund and no more");
-        assertEq(q, 0);
-        assertEq(_leave(ALICE), 0);
+        uint256 herTranche = pool.pending() * pool.weightOf(ALICE) / pool.staked();
+        assertApproxEqAbs(fee, herTranche, 1, "the fee takes her part of the tranche and no more");
+        assertApproxEqAbs(q, fromEscrow - herTranche, 1);
+        assertGt(q, 0);
+        assertEq(_leave(ALICE), q);
         assertEq(pool.weightOf(ALICE), 0);
         assertEq(pool.balanceOf(ALICE), units);
         _assertSolvent();

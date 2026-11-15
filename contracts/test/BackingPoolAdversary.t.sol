@@ -488,10 +488,13 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
 
     /// @dev Leaving ends a backer's claim on every later tranche, for good, while the units stay: so the units
     /// that stay stop funding the project. To keep that from being free, leaving pays the ordinary sale fee on
-    /// what the units would fetch now, without selling them. Recorded with its numbers, not prevented: staying
-    /// costs a quarter of the escrow part (about 2.5% of the position at the first milestone, 1.9% at the next,
-    /// less after each), and the notional fee is 1% of the units' curve value, so leaving is cheaper than
-    /// staying at every milestone, and the project then gets only that fee, not the tranche.
+    /// what the units would fetch now, without selling them, and never more than their part of the next tranche.
+    /// Recorded with its numbers, not prevented: staying costs a quarter of the escrow part (about 2.5% of the
+    /// position at the first milestone, 1.9% at the next, less after each), and the notional fee is 1% of the units'
+    /// curve value, so at the first milestone leaving is cheaper than staying, and the project then gets only that
+    /// fee, not the tranche. From about the fifth milestone at a flat price the 1% would be the larger number, and
+    /// the cap makes it the same as staying one more milestone: leaving is never dearer than staying, but it is
+    /// not always cheaper (BackingPoolLeaveFee.t.sol).
     function test_limit_leaving_skips_every_later_tranche_for_the_units_that_stay() public {
         _buy(BOB, 100_000e18);
         uint256 units = _buy(ALICE, 100_000e18);
