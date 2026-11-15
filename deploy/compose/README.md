@@ -186,7 +186,8 @@ the Creaton card as the image, when it is pasted into a chat app. The server wri
 needs setting: the image is part of the web build (`web/public/assets/share-card.png`) and the proxy only has to pass the
 `Host` and `X-Forwarded-Proto` headers, which Caddy does. A preview shows only what a signed-out visitor could already read:
 on a server where people must be members to read (invite-only) the link shows the plain Creaton page, unless public
-records are on (next section); and so does a project that is removed, not listed, or whose founder is muted or banned.
+records are on (next section, which also leaves out a project whose record states the terms of a sale); and so does a
+project that is removed, not listed, or whose founder is muted or banned.
 
 ### Public project records on an invite-only server
 
@@ -195,14 +196,22 @@ record while everything else stays for members. Someone with no invite who opens
 or `/launchpad/<project>`) sees that project's goal, its weekly updates, which promises were kept and missed, and the work
 that was accepted, read only, with one line saying that taking part needs an invite and a Sign in button. The same link
 shows a real preview in a chat app. It covers only projects the preview rule above allows (listed, not removed, founder not
-muted or banned). Such a visitor cannot browse: they need the link.
+muted or banned), and never a project whose record states the terms of a sale (below). Such a visitor cannot browse: they
+need the link. While a project is not covered (for example for as long as its founder is muted), a visitor to its link
+is told "You need an invite to open this project", the same as for a project that is not there; the server does not say
+why, and members see the project as before.
 
 What the server gives someone with no invite is a fixed list, checked record by record on the server, not only what the
 page happens to show:
 
 - The project's own record, whole. Besides the name, pitch and picture it holds the account ids of the team and, for a
-  project that has them, its chain addresses and sale terms (price floor, amount to raise, budget). The page shows none of
-  the money fields, but anyone who asks the server directly gets the record as the founder signed it.
+  project that has them, its chain addresses. Anyone who asks the server directly gets the record as the founder signed
+  it, so nothing can be left out of it. For that reason a project whose record states the terms of a sale is not given to
+  someone with no invite at all, neither its record nor anything about it: a price floor or price step, an amount to
+  raise, a budget, how the supply is split or released, or a sale's address. They see "You need an invite to open this
+  project" and the link shows no preview; members see the project as before. A project started with the short form and
+  a contributor project state none of these. The team's account ids, chain addresses, the funding stance and a revenue
+  pledge are still sent; whether those, and sale terms, should be public is the owner's decision.
 - The founder's goals and promises with their answers, and the updates the founder or the team posted.
 - For work the team accepted and nobody on the team sent back: the task, the work handed in (its words, links and files)
   and the confirmation.
