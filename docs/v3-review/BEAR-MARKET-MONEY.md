@@ -216,6 +216,11 @@ Three things follow:
 
 ### Why the leave change matters
 
+*Note, 2026-11-15, later the same day: the leave change is built (see [BACKING-POOL.md](BACKING-POOL.md), "Why leaving has a
+fee"). "Today" in this section means the old exit that sold the units. The built fee is 1% of what the units that carry
+held money are worth, capped at the leaver's own part of the next tranche, so leaving never costs more than staying and
+always returns most of the held money. The deployer is now 23,548 of 24,576 bytes.*
+
 Today, when a milestone is posted, a backer who does not want to fund it can leave and take their held money back. Leaving
 also **sells all of that person's units** on the curve. So the milestone itself becomes the moment the price drops: the
 people who leave dump their units together.

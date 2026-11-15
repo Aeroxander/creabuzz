@@ -12,7 +12,9 @@ only low issues, all fixed or written down: a dust buy restarting the abandonmen
 clock than the factory leaving a pool waiting, a round whose sweep cannot be made blocking the project for ever,
 and the corrections in "For the app" and "Not protected". A fourth change (2026-11-15) answers the owner's worry that a
 project doing fine can still be run on: leaving at a milestone no longer sells (see "Runs on the curve"), and a founder
-chooses how deep the curve is from seven tiers (see "Curve depth"). No outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
+chooses how deep the curve is from seven tiers (see "Curve depth"). A review of those changes (2026-11-15) found that the
+leaving fee outgrew the refund over time, and that units that had already left were charged again and burned later
+weight; both are fixed (see "Why leaving has a fee" and "Units that already left"). No outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
 for counsel at the end are open.
 
 ## What it is
@@ -62,14 +64,17 @@ Every buy is split three ways:
   money is gone from the pool, so the units you keep fund nothing from then on (money you put in later is held
   again, for the new money only). Nobody can stop a release, and nobody is made to fund a milestone they reject.
 - **The leaving fee:** the ordinary 1% sale fee, charged on what your units would fetch on the curve now, as if you
-  had sold them, but taken out of your refund and never more than the refund, so leaving can never be blocked.
-  Selling the units later costs the ordinary 1% again. See "Why leaving has a fee".
+  had sold them, but taken out of your refund and never more than your own part of the next tranche (what staying
+  one more milestone would cost you). So leaving never costs more than staying, and at the default tranche you always
+  get back at least three quarters of your held money, whatever the price has done. Selling the units later costs
+  the ordinary 1% again. See "Why leaving has a fee".
 - **Bought in the round?** Exchange your claim tokens for units first; until you do, your part counts as
   staying.
 - **You can only leave if you held a weight before the milestone was posted** (you hold units with a part of the
   held money behind them) and have not bought since. Money you put in after a post is not touched by that
   milestone. Units with no held money behind them (you already left, or your buy was too small to count) cannot
-  leave, and get no refund if the project is later abandoned; they sell like any other units.
+  leave, and get no refund if the project is later abandoned; they sell like any other units, and a sale uses them
+  before any unit that has held money behind it (see "Units that already left").
 - **If the project is abandoned** (see below) you sell as usual, with no fee, and each sale also returns
   your held money. Nobody has to declare anything first.
 - **Units are not Shares.** They carry no vote in the project and cannot be sent to another wallet.
@@ -116,7 +121,7 @@ never abandoned; the clock starts again with the next backer.
 | Curve: paper reserve (the depth) | 25,000 quote, or a tier: 5,000, 10,000, 25,000, 50,000, 100,000, 250,000, 500,000 | The founder picks the tier when the pool is opened. At the default the opening price is 0.000025 a unit and raising 50,000 in total moves the price about 7.7 times. Deeper is flatter and gentler on sellers; see "Curve depth". |
 | Curve: paper units | 1,000,000,000 | The supply approaches this and never reaches it, so there is no sell-out and no "graduation". |
 | Project part | 10% of each buy after the fee | With 30% a round trip lost 31% and needed +46% to break even, which nobody would use next to other apps. At 10% a round trip returns about 88%. |
-| Fee | 1% on buys and on sales, to the treasury | Makes churn and sandwiching pay the project. Leaving at a milestone pays it on what the units would fetch, without selling them, out of the refund and never more than the refund; refunds after abandonment pay none. |
+| Fee | 1% on buys and on sales, to the treasury | Makes churn and sandwiching pay the project. Leaving at a milestone pays it on what the units that carry held money would fetch, without selling them, out of the refund and never more than the leaver's own part of the next tranche; refunds after abandonment pay none. |
 | Tranche | 25% of the escrow at the post | No milestone can empty the escrow; there is no last tranche and no cliff. |
 | Window to leave | 7 days | One weekly update cycle. |
 | Time to release after the window | 7 days | A milestone cannot be held open to wait for a better moment. |
@@ -158,17 +163,80 @@ the price fall. Leaving now sells nothing, which removes that shock (see "Runs o
 sells nothing and costs nothing is better than staying for every holder who is only there for the price: staying
 funds the project (2.5%, 1.9%, 1.4% ... of the position at each milestone) and leaving funds nothing and keeps all
 the exposure. So leaving pays the ordinary 1% sale fee on what the units would fetch on the curve now, as if sold:
-`fee = 1% of (curve value of all your units)`, taken out of your refund, never more than the refund (a guard so that
-leaving can never be blocked, however high the price has run: for a small holder, at roughly eleven times the price
-they paid, the fee would equal the whole refund; `test_the_notional_fee_is_capped_at_the_refund_so_leaving_is_never_blocked`).
-The units are not sold and nothing is paid from the reserve. The fee goes to the treasury
-and is shown in `quoteLeave` and in the `Left` event.
+`fee = min(1% of (curve value of the units that carry held money), your own part of the next tranche)`, taken out of
+your refund. The units are not sold and nothing is paid from the reserve. The fee goes to the treasury and is shown in
+`quoteLeave` and in the `Left` event.
 
-This is a price on leaving, not a reason to stay. At the first milestone staying costs about 2.5% of the position
-and leaving about 0.9%; the app and the owner should expect most speculators to leave every time. The project then
-receives the fee and the fees from trading, and the tranche only from the people who stay. If that is too little, the
-levers are a higher fee on the notional value (a per-pool constant), or milestones that tie the fee to the
-size of the tranche. Neither is built; that is the owner's decision.
+**Why the cap is your part of the tranche.** The first version capped the fee at the whole refund. A review of it
+(2026-11-15) measured what that does over time: the held money shrinks by a quarter at every released tranche, and
+the fee does not, so at the default terms and a flat price a backer with 1,000 in got back 90.09 of 98.999 at the
+first milestone, 22.4 of 31.3 at the fifth, 1.0 at the ninth, and from the tenth on nothing: the whole held part went
+to the treasury. A price eleven times higher did the same at the first milestone. That broke the rule "at each
+milestone you may leave and get your held money back". The cap is now the leaver's own part of the tranche, which is
+exactly what staying one more milestone would cost them (the treasury gets the fee instead of the tranche, never
+more). Leaving therefore never costs more than staying, and returns at least `(10000 - trancheBps) / 10000` of the
+held part: three quarters at the default. The rate is unchanged: at a flat price the fee is 1% of the units' worth,
+8.91 for 1,000 put in.
+
+What a backer who put in 1,000 and never traded again gets back by leaving (flat price, default terms; measured by
+`test_leaving_returns_the_held_share_less_a_bounded_fee_at_every_milestone`, which drives the pool's own `leave`):
+
+| Milestone | Held money | Fee | Returned | Returned under the first version |
+|---|---|---|---|---|
+| 1 | 99.00 | 8.91 | 90.09 | 90.09 |
+| 5 | 31.32 | 7.83 | 23.49 | 22.41 |
+| 9 | 9.91 | 2.48 | 7.43 | 1.00 |
+| 12 | 4.18 | 1.05 | 3.14 | 0 |
+
+From about the fifth milestone the fee is the cap (a quarter of the held money), not the 1%. With a price eleven times
+higher at the first milestone the fee is the cap too, and the leaver gets back three quarters
+(`test_leaving_after_the_price_has_multiplied_still_returns_three_quarters`).
+
+**The app must set `minQuoteOut` from `quoteLeave`, never to 0.** The fee follows the curve price at the moment the
+transaction runs, so anyone who buys during the window raises every leaver's fee. With the cap that can cost a leaver
+at most their part of the tranche (a quarter of the held money at the default), but a leave sent with a minimum of
+zero takes whatever the fee has become. The app shows the quote, sets the minimum from it with a small tolerance, and
+says that the held money comes back less a fee that is never more than staying would cost.
+
+This is a price on leaving, not a reason to stay. **Leaving is cheaper than staying at the first milestone only.** At
+the first milestone staying costs about 2.5% of the position and leaving about 0.9%. From about the fifth milestone at
+a flat price the 1% would be the larger number, and the cap makes leaving cost exactly what staying one more milestone
+would: never more, but no longer less. (The first version of this note said leaving was cheaper at every milestone;
+that was true only while the fee was small against the held money.) The project then receives the fee and the fees
+from trading, and the tranche only from the people who stay. If that is too little, the levers are a higher fee on the
+notional value (a per-pool constant), or a fee floor tied to the size of the tranche. Neither is built; that is the
+owner's decision.
+
+Leaving then selling the same units costs the ordinary 1% twice (about 1.8% in all at a flat price at the first
+milestone, against 0.9% when leaving sold the units itself). That is a pricing choice: the app should show leave and
+sell as two steps with the cost of each, and never present Leave as a way to sell.
+
+## Units that already left
+
+A leave ends the weight and keeps the units, so a wallet can hold units with no held money behind them. A second review
+(2026-11-15) found two ways those units cost a returning backer money, both reproduced:
+
+1. The leave fee was charged on all the wallet's units, including the ones that had already left and paid. A backer
+   who left, then put in 1,000 more, paid 1% of everything on the next leave: with old units worth ten times the new
+   money, that was the whole refund of the new money.
+2. A later sale burned weight in proportion to all the units, so selling the old units burned about 95% of the held
+   money the new buy carried and passed it silently to the other backers.
+
+The pool now keeps one number per wallet, `bareUnitsOf(wallet)`: the units that carry no held money. A leave sets it to
+all the units the wallet holds then; a buy and a redeem leave it alone; a sale uses it first. So:
+
+- **A sale uses the old units first.** Selling units that left burns no weight. A sale larger than them burns weight
+  only for the units beyond them, in proportion to the units that carry it
+  (`test_selling_the_units_that_left_burns_no_weight`, `test_a_sale_uses_the_units_that_left_first_and_burns_weight_for_the_rest`).
+- **The leave fee is charged on the units that carry weight only.** A backer who left and put in 1,000 more pays the
+  ordinary 1% on those 1,000 (8.91), not on everything they hold
+  (`test_the_leave_fee_leaves_out_units_that_already_left`).
+- Units cannot be moved between wallets, so the number cannot be dodged by splitting or transferring, and it is never
+  more than the units the wallet holds (`testFuzz_the_units_that_left_are_always_part_of_the_units_held`).
+
+Code size: the two fixes together cost 223 bytes of the pool's runtime and creation code. The deployer, which embeds the pool's whole
+creation code, is the binding limit (see "Gas and size"): 23,548 of 24,576 bytes, 1,028 spare, so the next pool change
+worth about a kilobyte will not fit unless the claim token is deployed from a second helper.
 
 ## Runs on the curve
 
@@ -280,7 +348,8 @@ cannot be exchanged twice):
 3. **Abusing the way out**: buying in the window and leaving, leaving twice, or leaving with more than your
    part are all refused (`test_A3_*`, `testFuzz_A3_*`); money that arrives after a post is not taken
    (`test_review_F1_*`). A leave never moves the price, takes nothing from the reserve, and cannot cost more
-   than the refund it pays out (`BackingPoolInvariant.t.sol`, the leave handler; `BackingPoolMilestones.t.sol`).
+   than the refund it pays out, or more than staying one more milestone would (`BackingPoolInvariant.t.sol`, the
+   leave handler; `BackingPoolMilestones.t.sol`; `BackingPoolLeaveFee.t.sol`).
 4. **Stopping a project's money or killing its pool**: nobody can block a release (`test_review_F2_*`); a
    bought majority cannot vote the same day, and a project that keeps releasing cannot be voted out
    (`test_A4_*`).
@@ -294,9 +363,11 @@ Not protected. Say these plainly in the app:
   the pool any more, so the units they keep fund no later milestone, now or ever; only money they put in after
   leaving is held again. Staying costs a quarter of the held money: about 2.5% of the position at the first
   milestone, 1.9% at the next, 1.4% at the third, and about 9.7% over a year of thirteen. Leaving costs the fee on the
-  units' curve value: about 0.9% of the position while the price has not moved. So leaving is cheaper than staying
-  at every milestone, and a pool full of people who all leave gives the project the fee, not the tranche. The
-  fee keeps leaving from being free; it does not make staying the better deal. See "Why leaving has a fee".
+  units' curve value: about 0.9% of the position while the price has not moved, and never more than staying one more
+  milestone would cost. So leaving is cheaper than staying at the first milestone and from then on costs about the
+  same (from about the fifth, at a flat price, the cap is the fee), and a pool full of people who all leave gives the
+  project the fee, not the tranche. The fee keeps leaving from being free; it does not make staying the better deal.
+  See "Why leaving has a fee".
 - **A released tranche is gone.** Nothing checks that a milestone is true except backers leaving.
 - **Released money goes to the DAO treasury**, which Share holders control. A founder who holds most Shares
   can take it out.
@@ -395,9 +466,10 @@ Not protected. Say these plainly in the app:
   over, settles as a round nobody bid in, and the project may open another.
 - No owner and no upgrade: a defect cannot be patched, only replaced by a new deployment.
 - **Contract size.** The pool deploys from its factory's deployer, whose runtime code is the pool's whole creation code
-  (the claim token's included). Measured with `forge build --sizes` on 2026-11-15: pool 18,764 bytes, deployer 23,325 of the
-  24,576 allowed (1,251 spare, 988 before this change: the leave rewrite freed room), factory 6,636 runtime and 32,712
-  initcode of 49,152, kit 16,375. There is little room left for new pool logic: a pool feature of more than about a
+  (the claim token's included). Measured with `forge build --sizes` on 2026-11-15, after the review fixes: pool 18,987 bytes, deployer
+  23,548 of the 24,576 allowed (1,028 spare; 1,251 before the per-wallet record of units that left, 988 before the leave
+  rewrite), factory 6,716 runtime and 32,935 initcode of 49,152, kit 16,375. The local fixture deploys all of them on a
+  node that enforces the limits. There is little room left for new pool logic: a pool feature of more than about a
   kilobyte needs the factory to create the claim token first (pass its address to the deployer and have the claim token
   bind to the pool once) before it fits.
 - The quote token must move exactly what is asked. A token that takes a cut is refused at the first buy;
@@ -418,8 +490,8 @@ Not protected. Say these plainly in the app:
 
 | Step | Gas |
 |---|---|
-| Create project with pool, open now (`launchWithPool`), 1 first project / 8 | 14,714,000 / about 15,470,000 (the second is the one-project figure plus the 756,000 that eight projects added in the last measurement, not measured again; the V2 launch alone is 10,754,000) |
-| The heaviest launch the kit accepts (8 first projects, 8 reviewers, 64-byte name, 12-byte symbol) | 15,702,000 used. The transaction's gas limit has to be about 15.81 million: the least call gas that succeeds is 15,773,000, and this call data (with the depth argument) adds about 38,000 of intrinsic gas. That is 5.7% under the 16,777,216 per-transaction cap some chains enforce. On V2 (no caps) each reviewer costs about 31,000 and each name byte about 770, which is why the kit caps them. Estimated on top of this launch (V2 measured, plus what the pool and market add), with the gas limit about 130,000 above what is used: 32 reviewers, 16,498,000 used (limit 16.63 million, 0.9% under the cap); a 300-byte name with 8 reviewers, 15,934,000 (limit 16.06 million, 4.3% under); 32 reviewers and a 300-byte name together, 16,679,000 (limit 16.81 million, over the cap): each figure holds only for the shape it names, and these estimates were made before the depth argument and the lighter leave and move by about 0.4% |
+| Create project with pool, open now (`launchWithPool`), 1 first project / 8 | 14,761,000 / about 15,517,000 (the second is the one-project figure plus the 756,000 that eight projects added in an earlier measurement, not measured again; the V2 launch alone is 10,754,000) |
+| The heaviest launch the kit accepts (8 first projects, 8 reviewers, 64-byte name, 12-byte symbol) | 15,708,000 used as the test measures it (15,748,000 run as its own transaction with `--isolate`). At the deepest curve depth: 15,710,000 and 15,750,000, which leaves 1,068,000 (1,028,000 isolated) under the 16,777,216 cap; any tier costs about 1,500 gas more than the default (the tier lookup, the early-cap scaling and one more event). The rest of this row was measured before the review fixes and moves by well under 0.1%. The transaction's gas limit has to be about 15.81 million: the least call gas that succeeds is 15,773,000, and this call data (with the depth argument) adds about 38,000 of intrinsic gas. That is 5.7% under the 16,777,216 per-transaction cap some chains enforce. On V2 (no caps) each reviewer costs about 31,000 and each name byte about 770, which is why the kit caps them. Estimated on top of this launch (V2 measured, plus what the pool and market add), with the gas limit about 130,000 above what is used: 32 reviewers, 16,498,000 used (limit 16.63 million, 0.9% under the cap); a 300-byte name with 8 reviewers, 15,934,000 (limit 16.06 million, 4.3% under); 32 reviewers and a 300-byte name together, 16,679,000 (limit 16.81 million, over the cap): each figure holds only for the shape it names, and these estimates were made before the depth argument and the lighter leave and move by about 0.4% |
 | Open a pool for an existing project, open now (`open`) | 3,962,000 |
 | Open a pool behind a round (`openWithRound`: pool, claim token, auction, and the auction's first checkpoint, about 114,000 of it) | 7,915,000 |
 | Bid in a round (the auction's own call) | 296,000 |
@@ -427,11 +499,11 @@ Not protected. Say these plainly in the app:
 | Close a stuck round (`abandonRound`, the sweep failing) | 269,000 |
 | Exchange claim tokens for units (`redeem`, a wallet's first) | 117,000 |
 | Buy (first time for a wallet / again) | 166,000 / 112,000 (289,000 for the pool's very first buy) |
-| Sell | 94,000 |
+| Sell | 97,000 |
 | Claim milestone (`postMilestone`) | 185,000 |
-| Leave at a milestone (sells nothing) | 137,000 |
+| Leave at a milestone (sells nothing; writes the record of units that left) | 159,000 |
 | Release (`resolveMilestone`, pays the treasury) | 122,000 |
-| Refund (sell once abandoned) | 70,000 (120,000 for the first one, which records the abandonment) |
+| Refund (sell once abandoned) | 72,000 (121,000 for the first one, which records the abandonment) |
 
 ## For the app
 
@@ -443,11 +515,23 @@ What the web needs that is not obvious from the contracts:
   the backer indexed. `canLeave` needs a weight, not units: show "Leave" only while it is true, and never as a way
   to sell. After leaving, the holder still has units and `holderWeight` is zero: their `holderEscrow` reads zero, and a
   later refund after abandonment is zero for those units. Say so in plain words.
+- **Leaving, as built after the review (2026-11-15).** The shapes above did not change; the fee did. `quoteLeave`
+  returns the fee already capped at the leaver's part of the tranche, and `leave` pays exactly that. **Set `minQuoteOut`
+  from `quoteLeave` (with a small tolerance), never to 0**: the fee follows the live curve price, so a buy that lands
+  first raises it, and a leave sent with no minimum takes whatever it has become. Show the quote next to what staying
+  costs (a quarter of the held money), say that leaving is cheaper than staying at the first milestone only, and never
+  present staying as the better deal or leaving as a way to sell. A new public read, `bareUnitsOf(holder)`, is the
+  units that carry no held money: a sale uses them first, so show "sell the units that left first" as the cheap order,
+  and do not show a weight-burning warning for them. The snapshot struct is unchanged.
 - **Depth.** `BackingPoolFactory.open(dao, depth)`, `openWithRound(dao, minimumRaise, depth)` and
   `ContributorKitV3.launchWithPool(params, depth)` take the depth in quote base units (zero for the default); anything
   that is not in `depthTiers()` reverts with `BadDepth()`. `roundTerms(depth)` returns the round's tick spacing, floor
   price and default minimum at a depth; `roundFloorPriceX96()`, `roundTickSpacingX96()` and `defaultMinimumRaise()` are
   now views at the default depth. A pool's own depth at birth is `virtualQuote()` (after a round it is the seeded one).
+  The factory also emits `DepthChosen(pool indexed, depth)` right after `PoolOpened` (the tier, or the default when
+  zero was passed): that is where a round pool's chosen depth stays readable once the round has set its own paper
+  reserve. `PoolOpened` and `RoundOpened` did not change. A factory refuses at deployment a default depth whose
+  deepest tier (twenty fifths) would not fit the pool's own limit (`type(uint112).max`), rounds or no rounds.
 
 - **Hide or label the claim tokens of any pool that is not `Waiting` or `Live`.** A `Failed` pool's claim token
   cannot be exchanged (not on that pool, which is closed, and not on a pool the project opens afterwards, which
