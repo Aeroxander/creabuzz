@@ -1205,7 +1205,7 @@ test("a project with its own DAO says what can and cannot be changed, before a b
       "unlock only when the named reviewers",
     );
     await expect(powers).toContainText(
-      "Take back a team member's unearned Shares",
+      "Take back a team member's Shares that are not yet freed",
     );
   } finally {
     servedTokenMode = "mint";
@@ -1228,7 +1228,7 @@ test("a project that does not lock the team's Shares says so, and drops the line
     );
     await expect(page.getByTestId("launch-powers-panel")).toHaveCount(0);
     await expect(powers).not.toContainText(
-      "Take back a team member's unearned Shares",
+      "Take back a team member's Shares that are not yet freed",
     );
     // What a vote can decide is true either way.
     await expect(powers).toContainText("Spend the project's money");

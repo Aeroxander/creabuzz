@@ -85,7 +85,7 @@ const KINDS: { id: Kind; label: string; about: string }[] = [
   {
     id: "budget",
     label: "Set aside a work budget",
-    about: "Shares (and optionally money) for people to earn by doing work.",
+    about: "Shares (and optionally money) to give people for accepted work.",
   },
   {
     id: "project",

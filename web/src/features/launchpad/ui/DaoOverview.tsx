@@ -591,8 +591,8 @@ export function DaoOverview({
               : "Set up the first work budget"}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            A work budget sets aside Shares (and money, if you want) for people
-            to earn by doing work. Holders vote on it, then anyone can submit
+            A work budget sets aside Shares (and money, if you want) to give
+            people for accepted work. Holders vote on it, then anyone can submit
             what they did and reviewers check it.
           </p>
           <Button

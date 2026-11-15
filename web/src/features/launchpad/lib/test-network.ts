@@ -34,5 +34,5 @@ export function testRecordsNotice(
   const preset = chainPresetByChainId(chainId);
   if (!preset || preset.mainnet) return null;
   const name = plainNetworkName(chainId);
-  return `${name === "the test network" ? "This" : name} is a test network. Shares earned here are test records: they will not move to a real network automatically.`;
+  return `${name === "the test network" ? "This" : name} is a test network. Shares awarded here are test records: they will not move to a real network automatically.`;
 }

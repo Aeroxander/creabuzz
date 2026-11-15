@@ -15,7 +15,7 @@ import { mainnetEnabled } from "@/features/launchpad/chain";
 import { Portal, useAnchoredStyle } from "@/shared/ui/portal";
 
 const EXPLANATION =
-  "This is a test version. Nothing here uses real money, and Shares earned here are test records that will not move to a real network automatically.";
+  "This is a test version. Nothing here uses real money, and Shares awarded here are test records that will not move to a real network automatically.";
 
 /** The wide top bar's tag beside the logo; pressing it opens the explanation below it. */
 export function TestnetChip() {

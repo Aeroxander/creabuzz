@@ -232,9 +232,9 @@ test("a contributor project is started from the page, work is claimed the same d
   await expect(founder.getByTestId("contributor-no-raise")).toContainText(
     PILOT ? "How Shares work" : "Starts without a token sale",
   );
-  // Every network this journey runs on is a test network: Shares earned on it stay there.
+  // Every network this journey runs on is a test network: Shares awarded on it stay there.
   await expect(founder.getByTestId("contributor-test-records")).toContainText(
-    "Shares earned here are test records: they will not move to a real network automatically.",
+    "Shares awarded here are test records: they will not move to a real network automatically.",
     { timeout: 20_000 },
   );
   await founder.getByTestId("contributor-name").fill("Docs Commons");
@@ -964,7 +964,7 @@ test("a contributor project is started from the page, work is claimed the same d
   // The founder's starting Shares, from the token's own mint at launch.
   await expect(reader.getByTestId("contributions-starting")).toHaveText("200");
   await expect(reader.getByTestId("contributions-test-records")).toContainText(
-    "Shares earned here are test records",
+    "Shares awarded here are test records",
   );
   if (process.env.E2E_SHOTS) {
     await reader

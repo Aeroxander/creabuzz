@@ -153,8 +153,9 @@ export function TaskPartOfPanel({
         ) : null}
       </div>
       <p className="text-2xs text-black/60 dark:text-white/60">
-        Finishing this task here awards nothing. To earn Shares, take the work
-        area on and submit your work on the project's Work tab.
+        Finishing this task here awards nothing. Shares are awarded for accepted
+        work: take the work area on and submit your work on the project's Work
+        tab.
       </p>
     </section>
   );

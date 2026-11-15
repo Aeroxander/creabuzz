@@ -305,7 +305,8 @@ export function CloseBudgetForm({
             {effects.incomplete
               ? "This budget has more history than the page reads, so there may be more. "
               : ""}
-            If that work should earn Shares, put the awards to a vote first.
+            If that work should be awarded Shares, put the awards to a vote
+            first.
           </p>
         </div>
       ) : null}

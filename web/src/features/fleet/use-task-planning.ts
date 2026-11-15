@@ -158,7 +158,7 @@ export function useTaskPlanning(items: readonly WorkItem[]): TaskPlanning {
     // A build without raises (the pilot) has no points: nothing there accepts a claim.
     if (!raisesOffered()) {
       throw new Error(
-        "Tasks here earn no points. To earn Shares, take the work on the project's Work tab.",
+        "Tasks here give no points. Shares are awarded for accepted work: take the work on the project's Work tab.",
       );
     }
     if (!item.doneRowId) {

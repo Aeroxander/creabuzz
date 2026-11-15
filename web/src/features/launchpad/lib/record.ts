@@ -333,7 +333,7 @@ export function buildLedger(input: LedgerInput): LedgerEntry[] {
           key: `gave-up-${person.holder}-${tranche.index}`,
           when: 0,
           kind: "milestone",
-          text: `The project took back ${labels.shares(tranche.amount)} Shares that ${who} had not earned yet.`,
+          text: `The project took back ${labels.shares(tranche.amount)} Shares that ${who} had not yet been freed.`,
           tab: null,
         });
       }

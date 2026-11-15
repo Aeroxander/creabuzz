@@ -10,9 +10,9 @@
  * Alias-free on purpose: `ui/contributorStartCopy.test.mjs` drives it under `node --test`.
  */
 
-/** The page's header line; the one place Shares are said to be votes. A build that offers raises says "can earn". */
+/** The page's header line; the one place Shares are said to be votes. A build that offers raises says "can be awarded". */
 export function startHeaderDescription(raises: boolean): string {
-  return `Set up a project where reviewed work ${raises ? "can earn" : "earns"} Shares, which are votes in the project.`;
+  return `Set up a project where reviewed work ${raises ? "can be awarded" : "is awarded"} Shares, which are votes in the project.`;
 }
 
 /** The card's heading: with raises on offer it is set against one; a contributor-only build has no sale to compare. */

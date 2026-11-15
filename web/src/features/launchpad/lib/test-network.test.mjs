@@ -6,7 +6,7 @@ import { plainNetworkName, testRecordsNotice } from "./test-network.ts";
 test("a test network says its Shares are test records that will not move on their own", () => {
   assert.equal(
     testRecordsNotice(11155111),
-    "Sepolia is a test network. Shares earned here are test records: they will not move to a real network automatically.",
+    "Sepolia is a test network. Shares awarded here are test records: they will not move to a real network automatically.",
   );
   // A launch record keeps its chain as text.
   assert.equal(testRecordsNotice("11155111"), testRecordsNotice(11155111));

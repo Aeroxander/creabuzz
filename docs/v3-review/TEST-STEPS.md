@@ -957,7 +957,7 @@ By hand on a hosted Sepolia build (`docs/sepolia-testnet.md` §3), with a founde
 contributor wallet, each with a little Sepolia ETH and no USDC:
 
 1. **The notice.** Start → **Start a contributor project**. Under "This project cannot raise money" a line says Sepolia is a
-   test network and Shares earned there are test records that will not move to a real network automatically. Hover the
+   test network and Shares awarded there are test records that will not move to a real network automatically. Hover the
    Testnet tag beside the logo: it says the same.
 2. **The founder limits, in the form.** Leave "Shares to earn" at 300,000 and type 100,001 as your starting Shares, fill in
    the rest and press **Start the project**: it says to start with at most a third, and the wallet is not asked. Put it back
@@ -970,7 +970,7 @@ contributor wallet, each with a little Sepolia ETH and no USDC:
 5. **Award.** As the founder, Decisions → **Award Shares for a claim**, back it, start the wait once the review has passed,
    run it once the wait has passed (on a real network the review and the wait take about a day each).
 6. **Contributions.** Open the Contributions tab with no wallet: the contributor, the Shares, the claim and the project, and
-   the same test-records line under "Who earned the Shares".
+   the same test-records line under "Who was awarded the Shares".
 7. **Locked.** Try to send some Shares from the contributor's wallet to another address: the network refuses it.
 
 Not covered: the real Sepolia (the deploy needs your key and go-ahead), the real relay (the spec stubs it in the page, as

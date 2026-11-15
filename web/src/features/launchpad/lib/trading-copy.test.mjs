@@ -1287,7 +1287,7 @@ test("the limits of weekly trading are said in plain words, each once", () => {
   const text = limits.join(" ");
   assert.match(
     text,
-    /Shares held in a round don't vote and don't earn payouts/,
+    /Shares held in a round don't vote and don't receive payouts/,
   );
   assert.match(text, /vote .* about a week \(7 to 8 days\) after you collect/);
   assert.match(text, /only way to sell Shares here/);
@@ -1338,7 +1338,7 @@ test("the offer and bid previews say what holding and filling mean at the moment
     sellLine,
     /This holds 3 lots \(300 Shares\) until the round settles/,
   );
-  assert.match(sellLine, /don't vote and don't earn payouts/);
+  assert.match(sellLine, /don't vote and don't receive payouts/);
   assert.match(sellLine, /filled in part, or not at all/);
   assert.match(sellLine, /What isn't filled waits for you to collect it/);
   assert.match(sellLine, /1\.048 USDC a lot at step 6/);

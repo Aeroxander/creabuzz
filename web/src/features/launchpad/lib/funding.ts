@@ -85,7 +85,7 @@ export const FUNDING_PATH_LABELS: Record<FundingPath, string> = {
 
 export const FUNDING_PATH_HINTS: Record<FundingPath, string> = {
   auction: "Sell a fixed batch to the highest bidders over a set period.",
-  contributors: "Nothing is sold. Shares are earned by work.",
+  contributors: "Nothing is sold. Shares are awarded for accepted work.",
 };
 
 /** The declared half: `content.funding` on the launch record (kind 37001). */

@@ -623,7 +623,7 @@ export function unreviewedLine(
 
 /** What holding Shares in a round costs: no vote, no payouts, until they are collected. */
 const HELD_LINE =
-  "Shares held in a round don't vote and don't earn payouts. They count again once they are collected.";
+  "Shares held in a round don't vote and don't receive payouts. They count again once they are collected.";
 
 /**
  * How many daily epochs a bought amount waits before it can vote: the voting contract's `MATURITY_EPOCHS`. The delay is

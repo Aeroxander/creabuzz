@@ -59,6 +59,16 @@ export const COPY_RULES = [
     pattern: /\bNostr (?:account|apps?|key)\b|\bon public Nostr\b|\bno explorer\b/i,
     why: "say \"account\" and \"other apps\"; a network without a public page needs no apology",
   },
+  {
+    id: "no-earn-shares",
+    // "earn" within about 40 characters of "Shares", either order, in one string. Shares are awarded for accepted work
+    // and are votes; "earn" reads as pay. Matches earn, earns, earned, earning and unearned (the "\b" before "earn"
+    // keeps "learn" out). Only the plural "Shares" counts, so "revenue share" in the ownership-only sentence stays as
+    // written. `[^]` spans the line breaks in wrapped JSX text.
+    pattern:
+      /\b(?:[Uu]n)?[Ee]arn(?:s|ed|ing)?\b[^]{0,40}\bShares\b|\bShares\b[^]{0,40}\b(?:[Uu]n)?[Ee]arn(?:s|ed|ing)?\b/,
+    why: 'Shares are awarded for accepted work, never "earned"; say "awarded", "given for accepted work" or "Shares from accepted work"',
+  },
 ];
 
 const TEST_FILE_RE = /\.test\.(?:m?[jt]sx?)$/;

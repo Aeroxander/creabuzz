@@ -255,7 +255,7 @@ test("Start offers a contributor project, says it has no token sale, and shows w
       .getByRole("heading", { level: 1 })
       .locator("xpath=following-sibling::p"),
   ).toHaveText(
-    "Set up a project where reviewed work can earn Shares, which are votes in the project.",
+    "Set up a project where reviewed work can be awarded Shares, which are votes in the project.",
   );
   await expect(intro).not.toContainText(/are votes|voting tokens/i);
   await expect(

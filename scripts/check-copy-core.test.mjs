@@ -61,3 +61,49 @@ test("plain copy passes", () => {
     [],
   );
 });
+
+test("no-earn-shares: flags earn next to Shares, either order, in any string form", () => {
+  for (const text of [
+    '"Shares earned here are test records."',
+    '"To earn Shares, take the work on the Work tab."',
+    '"Take back a team member\'s unearned Shares."',
+    '"Who earns the Shares"',
+    '"Shares held in a round don\'t earn payouts."',
+    "`Set up a project where work can earn Shares, which are votes.`",
+  ])
+    assert.deepEqual(scan(`const a = ${text};`), ["no-earn-shares"], text);
+  // JSX text wrapped over lines is one string.
+  assert.deepEqual(
+    scan(`const b = (
+      <p>
+        Each role's person can earn
+        Shares for reviewed work.
+      </p>
+    );`),
+    ["no-earn-shares"],
+  );
+});
+
+test("no-earn-shares: leaves awarded Shares, other earn words and the ownership-only sentence alone", () => {
+  for (const text of [
+    '"Shares are awarded for accepted work."',
+    '"Learn how Shares work."',
+    '"Tasks here give no points."',
+    '"Earns 10 points for the task."',
+    // Far apart: more than 40 characters between the words.
+    '"The project earns money from its many customers all over the world, and Shares are separate."',
+    // Legal sentence, kept exactly: "revenue share" is not "Shares".
+    '"Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one."',
+  ])
+    assert.deepEqual(scan(`const a = ${text};`), [], text);
+});
+
+test("no-earn-shares: ignores comments and identifiers", () => {
+  assert.deepEqual(
+    scan(`
+      // Who earned the Shares
+      const { earned, totalShares } = snapshot;
+    `),
+    [],
+  );
+});

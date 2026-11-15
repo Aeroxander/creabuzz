@@ -328,8 +328,8 @@ function LaunchpadBridge({
           </Link>
         ) : (
           <p className="text-2xs text-black/50 dark:text-white/50">
-            The founder starts it. Then each role&apos;s person can earn Shares
-            for reviewed work, each award by a separate vote.
+            The founder starts it. Then each role&apos;s person can be awarded
+            Shares for reviewed work, each award by a separate vote.
           </p>
         )}
       </div>

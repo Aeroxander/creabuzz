@@ -21,6 +21,6 @@ test("the points note does not say points add to anyone's Shares", () => {
   assert.match(source, /They are not Shares and are not money\./);
   assert.match(
     source,
-    /To earn Shares, take the work on the project's Work tab\./,
+    /Shares are awarded for accepted work: take the work on the project's Work tab\./,
   );
 });

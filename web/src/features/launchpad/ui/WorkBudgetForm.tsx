@@ -227,7 +227,7 @@ export function WorkBudgetForm({
   return (
     <div className="mt-3 grid gap-3" data-testid="form-work-budget">
       <p className="text-sm text-muted-foreground">
-        Set aside Shares (and, if you want, money) for people to earn by doing
+        Set aside Shares (and, if you want, money) to give people for accepted
         work. Reviewers you name check each submission; nothing is paid or
         awarded without them.
       </p>

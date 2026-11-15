@@ -412,7 +412,7 @@ export function ContributionsTab({
         data-testid="contributions-tab"
       >
         <span data-testid="contributions-failed" role="alert">
-          Couldn't read who earned Shares from the network.
+          Couldn't read who was awarded Shares from the network.
         </span>
         <Button
           onClick={() => void contributions.refetch()}
@@ -430,7 +430,7 @@ export function ContributionsTab({
   return (
     <div className="flex flex-col gap-4" data-testid="contributions-tab">
       <Card className="flex flex-col gap-2 p-4">
-        <h2 className="text-base font-bold">Who earned the Shares</h2>
+        <h2 className="text-base font-bold">Who was awarded the Shares</h2>
         <p className="text-sm text-muted-foreground">
           {contributor
             ? "New Shares come only from awards: the reviewers approve the work, then the project votes to award it."

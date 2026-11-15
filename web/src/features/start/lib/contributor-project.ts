@@ -411,7 +411,7 @@ export function contributorTerms(
   const budgetWhole = wholeShares(
     draft.budgetShares,
     "budgetShares",
-    "The Shares to earn",
+    "The Shares to award",
   );
   const capWhole = wholeShares(
     draft.projectCap,

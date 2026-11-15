@@ -152,8 +152,8 @@ export function TaskPlanningPanel({
       {raises ? (
         <p className="text-2xs text-black/60 dark:text-white/60">
           Points show on your profile once a reviewer accepts the task. They are
-          not Shares and are not money. To earn Shares, take the work on the
-          project's Work tab.
+          not Shares and are not money. Shares are awarded for accepted work:
+          take the work on the project's Work tab.
         </p>
       ) : null}
       {dirty ? (

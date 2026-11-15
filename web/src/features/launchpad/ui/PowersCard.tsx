@@ -150,7 +150,7 @@ function votable(rules: ShareRules | null, leaving: Leaving): string[] {
 }
 
 const GIVE_UP =
-  "Take back a team member's unearned Shares. They are destroyed and never put up for sale.";
+  "Take back a team member's Shares that are not yet freed. They are destroyed and never put up for sale.";
 
 function PowersCard({
   locked,

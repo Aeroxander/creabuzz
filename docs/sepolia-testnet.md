@@ -6,7 +6,7 @@ served by the Creaton image (`deploy/compose`). The optional features and the we
 image, empty unless set (below); only test raises need a build of your own.
 Everything here is test money on Sepolia. Nothing in it is audited, and mainnet stays off.
 
-**Shares earned on Sepolia are test records.** They will not move to a real network automatically: a real network gets its own
+**Shares awarded on Sepolia are test records.** They will not move to a real network automatically: a real network gets its own
 contracts and its own DAOs, and nothing carries a Sepolia balance over. The app says so on the Start page of a contributor
 project and on every project's Contributions tab (D85).
 
@@ -365,7 +365,7 @@ the image under the pilot's tag with the trial block set.
 ## What to say to testers
 
 - It is a testnet: the money is not real and nothing here is audited.
-- Shares earned here are test records. They will not move to a real network automatically.
+- Shares awarded here are test records. They will not move to a real network automatically.
 - Nothing on the page is legal advice. The IP card and the entity wording are the project's own statements.
 - The exchange is not there yet.
 - On a trial build the weekly sale of Shares works, priced in a free token worth nothing: a price there proves nothing.

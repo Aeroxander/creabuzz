@@ -369,7 +369,7 @@ test("Start's contributor page defines Shares once, in the header, with the pilo
       .getByRole("heading", { level: 1 })
       .locator("xpath=following-sibling::p"),
   ).toHaveText(
-    "Set up a project where reviewed work earns Shares, which are votes in the project.",
+    "Set up a project where reviewed work is awarded Shares, which are votes in the project.",
   );
   await expect(intro).not.toContainText(/are votes|voting tokens/i);
   await expect(
