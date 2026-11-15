@@ -100,7 +100,7 @@ contract BackingPoolRunsTest is BackingPoolFixture {
     }
 
     /// @dev At a depth of about twice the raise the same sale drops the price by about a third, whatever the raise.
-    /// The tier is the smallest of the factory's seven that is at least twice the raise.
+    /// The tier is the smallest of the factory's six that is at least twice the raise.
     function test_at_twice_the_raise_a_sale_of_half_the_units_drops_the_price_by_about_a_third_at_any_size() public {
         uint256[3] memory raised = [uint256(10_000e18), 50_000e18, 250_000e18];
         uint256[3] memory tier = [uint256(25_000e18), 100_000e18, 500_000e18];
@@ -123,7 +123,8 @@ contract BackingPoolRunsTest is BackingPoolFixture {
     }
 
     /// @dev The fall of the price under a given sale, as the depth goes from the tiers below the raise to the ones
-    /// above it: deeper is always gentler (a strictly smaller drop for a bigger tier).
+    /// above it: deeper is always gentler (a strictly smaller drop for a bigger tier). The first depth is the 5,000
+    /// one the factory no longer offers, kept here as the shallow end of the comparison.
     function test_each_deeper_tier_takes_the_same_sale_with_a_smaller_drop() public {
         uint256[7] memory tiers =
             [uint256(5_000e18), 10_000e18, 25_000e18, 50_000e18, 100_000e18, 250_000e18, 500_000e18];

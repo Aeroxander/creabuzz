@@ -28,7 +28,7 @@ import {Summoner} from "../src/majeur/MolochPatched.sol";
 ///
 /// The pool terms are the defaults of docs/v3-review/BACKING-POOL.md (`BackingTerms`), with the amounts scaled to the quote
 /// token's decimals. They are fixed in the factory for good: other terms are another factory. The one thing a founder
-/// chooses is the curve depth, from the seven tiers the factory derives from the default (5,000 to 500,000 whole
+/// chooses is the curve depth, from the six tiers the factory derives from the default (10,000 to 500,000 whole
 /// quote units; zero is the default, 25,000): the script checks the factory's menu against `BackingTerms`.
 ///
 /// Writes `deployments/backing-sepolia-11155111.json` (not ignored: commit it after a real deploy; a run without
@@ -90,11 +90,11 @@ contract DeployBackingSepolia is Script {
         require(
             address(poolFactory.auctionFactory()) == auctionFactory, "DeployBackingSepolia: another auction factory"
         );
-        // The depth menu a founder picks from is the documented one (the default, and the six around it).
-        uint256[7] memory tiers = poolFactory.depthTiers();
-        uint256[7] memory whole = BackingTerms.depthTiersWhole();
+        // The depth menu a founder picks from is the documented one (the default, and the five around it).
+        uint256[6] memory tiers = poolFactory.depthTiers();
+        uint256[6] memory whole = BackingTerms.depthTiersWhole();
         uint8 decimals = IERC20Metadata(quote).decimals();
-        for (uint256 i; i < 7; ++i) {
+        for (uint256 i; i < 6; ++i) {
             require(
                 tiers[i] == BackingTerms.depthOf(decimals, whole[i]), "DeployBackingSepolia: the depth tiers differ"
             );

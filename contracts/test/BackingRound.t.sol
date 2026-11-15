@@ -1423,8 +1423,8 @@ contract BackingRoundDepthTest is BackingRoundFixture {
     address internal constant ALICE = address(0xA11CE);
     address internal constant BOB = address(0xB0B);
 
-    function _tiers() internal pure returns (uint256[7] memory t) {
-        t = [uint256(5_000e18), 10_000e18, 25_000e18, 50_000e18, 100_000e18, 250_000e18, 500_000e18];
+    function _tiers() internal pure returns (uint256[6] memory t) {
+        t = [uint256(10_000e18), 25_000e18, 50_000e18, 100_000e18, 250_000e18, 500_000e18];
     }
 
     /// @dev Open a round at `tier` (replacing the one `setUp` opened) with a minimum of a thousandth of the depth.
@@ -1449,8 +1449,8 @@ contract BackingRoundDepthTest is BackingRoundFixture {
     /// the tier less what the fee and the project part take, less the units the round sold: about 0.85 of the tier
     /// when a twentieth of the depth was bid.
     function test_a_round_that_clears_at_the_floor_opens_the_curve_a_little_under_the_chosen_depth() public {
-        uint256[7] memory tiers = _tiers();
-        for (uint256 i; i < 7; ++i) {
+        uint256[6] memory tiers = _tiers();
+        for (uint256 i; i < 6; ++i) {
             _openAt(tiers[i]);
             uint256 sold = _settle(ALICE, uint128(tiers[i] / 20));
             uint256 units = pool.virtualUnits();
@@ -1476,8 +1476,8 @@ contract BackingRoundDepthTest is BackingRoundFixture {
     /// @dev Demand over the supply lifts the clearing price above the floor: the curve opens deeper than the tier,
     /// and the product at the open is still above its floor.
     function test_a_round_with_heavy_demand_opens_the_curve_deeper_than_the_chosen_depth() public {
-        uint256[7] memory tiers = _tiers();
-        for (uint256 i; i < 7; ++i) {
+        uint256[6] memory tiers = _tiers();
+        for (uint256 i; i < 6; ++i) {
             _openAt(tiers[i]);
             uint256 sold = _settle(BOB, uint128(tiers[i] * 3));
             assertApproxEqRel(sold, pool.roundSupply(), 1e9, "the whole supply sold");
@@ -1490,7 +1490,7 @@ contract BackingRoundDepthTest is BackingRoundFixture {
     /// @dev For any tier and any raise the auction accepts: the round settles, the curve's product starts at or above
     /// its floor, the books are exact, and every round buyer gets out.
     function testFuzz_the_seeded_curve_holds_for_every_tier_and_raise(uint8 tierIndex, uint256 raise) public {
-        uint256 tier = _tiers()[tierIndex % 7];
+        uint256 tier = _tiers()[tierIndex % 6];
         _openAt(tier);
         raise = bound(raise, uint256(tier / 1_000) * 2, tier * 5);
         uint256 sold = _settle(ALICE, uint128(raise));

@@ -80,9 +80,9 @@ contract BackingLocalFixture is Script {
         vm.stopBroadcast();
 
         // The factory's menu of depths is the documented one (the same check `DeployBackingSepolia` makes).
-        uint256[7] memory tiers = poolFactory.depthTiers();
-        uint256[7] memory whole = BackingTerms.depthTiersWhole();
-        for (uint256 i; i < 7; ++i) {
+        uint256[6] memory tiers = poolFactory.depthTiers();
+        uint256[6] memory whole = BackingTerms.depthTiersWhole();
+        for (uint256 i; i < 6; ++i) {
             require(tiers[i] == BackingTerms.depthOf(quote.decimals(), whole[i]), "the depth tiers differ");
         }
         // The chosen depths took, and the pool opened with no depth got the default.

@@ -186,9 +186,9 @@ contract BackingPoolFactory is BlockNumberish {
         );
         quote = quote_;
         authorizedKit = authorizedKit_;
-        // The tiers are fifths of the default depth, so the default must divide by five, and the deepest tier (twenty
-        // fifths) must stay within the pool's own limit (a uint112), which also keeps a round's `depth << 96` far
-        // from overflowing. This holds whether or not rounds are on.
+        // The tiers are fifths of the default depth (the shallowest is two fifths), so the default must divide by
+        // five, and the deepest tier (twenty times the default) must stay within the pool's own limit (a uint112),
+        // which also keeps a round's `depth << 96` far from overflowing. This holds whether or not rounds are on.
         if (terms_.virtualQuote == 0 || terms_.virtualQuote % 5 != 0 || terms_.virtualQuote > type(uint112).max / 20) {
             revert InvalidSetup();
         }
@@ -204,8 +204,8 @@ contract BackingPoolFactory is BlockNumberish {
             ) revert InvalidSetup();
             // Every tier must give a round the auction accepts, so a bad pair of terms fails here and not at the
             // first founder who picks the tier.
-            uint256[7] memory tiers = _tiersOf(terms_.virtualQuote);
-            for (uint256 i; i < 7; ++i) {
+            uint256[6] memory tiers = _tiersOf(terms_.virtualQuote);
+            for (uint256 i; i < 6; ++i) {
                 (uint256 step,, uint256 minimum) = _roundTerms(tiers[i], terms_.virtualUnits, round_.supply);
                 if (step < 2 || step * 100 <= (1 << 32) || minimum < LEAST_MINIMUM || minimum > type(uint128).max) {
                     revert InvalidSetup();
@@ -230,31 +230,33 @@ contract BackingPoolFactory is BlockNumberish {
         minimum = supply * depth / units;
     }
 
-    /// @dev The seven depths, as fifths of `base`: with a default of 25,000 whole quote units they are 5,000,
-    /// 10,000, 25,000, 50,000, 100,000, 250,000 and 500,000.
-    function _tiersOf(uint256 base) private pure returns (uint256[7] memory t) {
-        uint256 fifth = base / 5;
-        t[0] = fifth;
-        t[1] = fifth * 2;
-        t[2] = base;
-        t[3] = base * 2;
-        t[4] = base * 4;
-        t[5] = base * 10;
-        t[6] = base * 20;
+    /// @dev The six depths, from two fifths of `base` to twenty times it: with a default of 25,000 whole quote units
+    /// they are 10,000, 25,000, 50,000, 100,000, 250,000 and 500,000. There is no depth of a fifth (5,000): the price
+    /// multiple of a pool follows what it took in next to its depth alone, so the shallowest depth is where the
+    /// least money multiplies the price the most (25,000 paid in moved it about 30 times at 5,000, against about 10
+    /// times at 10,000), which rewards being first, not the project doing well (docs/v3-review/BACKING-POOL.md,
+    /// "What the first buyers hold").
+    function _tiersOf(uint256 base) private pure returns (uint256[6] memory t) {
+        t[0] = base / 5 * 2;
+        t[1] = base;
+        t[2] = base * 2;
+        t[3] = base * 4;
+        t[4] = base * 10;
+        t[5] = base * 20;
     }
 
     /// @notice The curve depths a founder may choose from, in quote base units: a paper reserve for the curve to
-    /// start with. Deeper means a sale moves the price less (and money coming in moves it less too). With the
-    /// default of 25,000 whole quote units: 5,000, 10,000, 25,000, 50,000, 100,000, 250,000 and 500,000.
-    function depthTiers() external view returns (uint256[7] memory) {
+    /// start with, shallowest first. Deeper means a sale moves the price less (and money coming in moves it less
+    /// too). With the default of 25,000 whole quote units: 10,000, 25,000, 50,000, 100,000, 250,000 and 500,000.
+    function depthTiers() external view returns (uint256[6] memory) {
         return _tiersOf(defaultDepth);
     }
 
     /// @dev `depth` as a curve depth: zero is the default, anything else must be one of the tiers.
     function _depth(uint256 depth) private view returns (uint256) {
         if (depth == 0) return defaultDepth;
-        uint256[7] memory tiers = _tiersOf(defaultDepth);
-        for (uint256 i; i < 7; ++i) {
+        uint256[6] memory tiers = _tiersOf(defaultDepth);
+        for (uint256 i; i < 6; ++i) {
             if (tiers[i] == depth) return depth;
         }
         revert BadDepth();

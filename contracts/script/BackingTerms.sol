@@ -28,18 +28,18 @@ library BackingTerms {
 
     /// @notice The curve depth tiers a founder may choose from, in whole quote units, in the order
     /// `BackingPoolFactory.depthTiers()` returns them. The factory derives them from the default depth
-    /// (`defaults(..).virtualQuote`, 25,000 whole units) as fifths: a fifth, two fifths, once, twice, 4, 10 and 20 times.
+    /// (`defaults(..).virtualQuote`, 25,000 whole units): two fifths, once, twice, 4, 10 and 20 times. There is no
+    /// depth of a fifth (5,000): see docs/v3-review/BACKING-POOL.md, "What the first buyers hold".
     /// Rule of thumb for the app: pick the first tier at or above twice the raise the founder hopes for. At that
     /// depth a sale of half the units moves the price down by about a third, whatever the size of the raise
-    /// (docs/v3-review/BACKING-POOL.md, "Curve depth").
-    function depthTiersWhole() internal pure returns (uint256[7] memory t) {
-        t[0] = 5_000;
-        t[1] = 10_000;
-        t[2] = 25_000;
-        t[3] = 50_000;
-        t[4] = 100_000;
-        t[5] = 250_000;
-        t[6] = 500_000;
+    /// (docs/v3-review/BACKING-POOL.md, "Runs on the curve").
+    function depthTiersWhole() internal pure returns (uint256[6] memory t) {
+        t[0] = 10_000;
+        t[1] = 25_000;
+        t[2] = 50_000;
+        t[3] = 100_000;
+        t[4] = 250_000;
+        t[5] = 500_000;
     }
 
     /// @notice A tier in quote base units: `wholeUnits` of a token with `quoteDecimals` decimals.

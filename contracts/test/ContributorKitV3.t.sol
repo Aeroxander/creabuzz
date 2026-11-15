@@ -794,27 +794,34 @@ contract ContributorKitV3Test is Test {
 
     // ---- curve depth -----------------------------------------------------------------------------------------------
 
-    function _tiers18() internal pure returns (uint256[7] memory t) {
-        t = [uint256(5_000e18), 10_000e18, 25_000e18, 50_000e18, 100_000e18, 250_000e18, 500_000e18];
+    function _tiers18() internal pure returns (uint256[6] memory t) {
+        t = [uint256(10_000e18), 25_000e18, 50_000e18, 100_000e18, 250_000e18, 500_000e18];
     }
 
-    /// @dev The founder chooses one number, the curve's depth, from seven: the default and the six around it.
-    function test_the_factory_offers_seven_depth_tiers_around_the_default() public view {
-        uint256[7] memory got = poolFactory.depthTiers();
-        uint256[7] memory want = _tiers18();
-        for (uint256 i; i < 7; ++i) {
+    /// @dev The founder chooses one number, the curve's depth, from six: the default, one shallower and four deeper.
+    /// The shallowest is two fifths of the default (10,000), never a fifth (5,000): docs/v3-review/BACKING-POOL.md,
+    /// "What the first buyers hold".
+    function test_the_factory_offers_six_depth_tiers_and_the_shallowest_is_two_fifths_of_the_default() public view {
+        uint256[6] memory got = poolFactory.depthTiers();
+        uint256[6] memory want = _tiers18();
+        for (uint256 i; i < 6; ++i) {
             assertEq(got[i], want[i]);
         }
         assertEq(poolFactory.defaultDepth(), 25_000e18);
-        // The default is the middle tier, and the terms every other setting of the pool comes from are unchanged.
-        assertEq(got[2], poolFactory.terms().virtualQuote);
+        // The default is the second tier, and the terms every other setting of the pool comes from are unchanged.
+        assertEq(got[1], poolFactory.terms().virtualQuote);
+        // Nothing on the menu is shallower than two fifths of the default.
+        assertEq(got[0], poolFactory.defaultDepth() / 5 * 2);
+        for (uint256 i; i < 6; ++i) {
+            assertGe(got[i], 10_000e18);
+        }
     }
 
     /// @dev Each tier opens a pool whose curve starts at that depth: the opening price is the depth over the paper
     /// units, and the per-wallet early cap grows and shrinks with it (a twenty-fifth of the depth).
     function test_each_tier_opens_a_pool_at_that_depth_and_zero_is_the_default() public {
-        uint256[7] memory tiers = _tiers18();
-        for (uint256 i; i < 7; ++i) {
+        uint256[6] memory tiers = _tiers18();
+        for (uint256 i; i < 6; ++i) {
             Moloch dao = _launchV2(bytes32(uint256(0xD00 + i)));
             vm.prank(FOUNDER);
             BackingPool pool = poolFactory.open(address(dao), tiers[i]);
@@ -834,9 +841,9 @@ contract ContributorKitV3Test is Test {
     }
 
     /// @dev Anything but a tier is refused, on every way in: `open`, `openWithRound` and the kit's launch (which then
-    /// makes no project at all).
+    /// makes no project at all). A fifth of the default (5,000) was a tier once and is refused like any other number.
     function test_a_depth_that_is_not_a_tier_is_refused_everywhere() public {
-        uint256[6] memory bad = [uint256(1), 4_999e18, 25_001e18, 75_000e18, 500_000e18 + 1, 1_000_000e18];
+        uint256[7] memory bad = [uint256(1), 4_999e18, 5_000e18, 25_001e18, 75_000e18, 500_000e18 + 1, 1_000_000e18];
         for (uint256 i; i < bad.length; ++i) {
             Moloch dao = _launchV2(bytes32(uint256(0xBAD + i)));
             vm.startPrank(FOUNDER);
@@ -873,10 +880,10 @@ contract ContributorKitV3Test is Test {
 
     /// @dev A round at each tier asks the auction for a floor price at the curve's opening price at that depth, a
     /// step of a hundredth of it, and a default minimum of the whole supply at the floor: the auction accepts all
-    /// seven (opening checkpoints it), and the pool reads the same minimum.
+    /// six (opening checkpoints it), and the pool reads the same minimum.
     function test_each_tier_opens_a_round_the_auction_accepts() public {
-        uint256[7] memory tiers = _tiers18();
-        for (uint256 i; i < 7; ++i) {
+        uint256[6] memory tiers = _tiers18();
+        for (uint256 i; i < 6; ++i) {
             Moloch dao = _launchV2(bytes32(uint256(0x1000 + i)));
             (uint256 tick, uint256 floor, uint128 minimum) = poolFactory.roundTerms(tiers[i]);
             uint256 opening = (tiers[i] << 96) / 1_000_000_000e18;
@@ -900,17 +907,17 @@ contract ContributorKitV3Test is Test {
     }
 
     /// @dev A six-decimal quote token at the shallowest tier is the tightest case for the auction's price step (it
-    /// must stay above 2**32 once multiplied back by a hundred): all seven tiers open a round.
+    /// must stay above 2**32 once multiplied back by a hundred): all six tiers open a round.
     function test_every_tier_opens_a_round_on_a_six_decimal_quote() public {
         SixDecimalQuote six = new SixDecimalQuote();
         BackingPool.Params memory p = terms();
         p.virtualQuote = 25_000e6;
         p.earlyCap = 1_000e6;
         BackingPoolFactory sixFactory = new BackingPoolFactory(summoner, IERC20(address(six)), p, address(0), rounds());
-        uint256[7] memory tiers = sixFactory.depthTiers();
-        assertEq(tiers[0], 5_000e6);
-        assertEq(tiers[6], 500_000e6);
-        for (uint256 i; i < 7; ++i) {
+        uint256[6] memory tiers = sixFactory.depthTiers();
+        assertEq(tiers[0], 10_000e6);
+        assertEq(tiers[5], 500_000e6);
+        for (uint256 i; i < 6; ++i) {
             Moloch dao = _launchV2(bytes32(uint256(0x2000 + i)));
             (uint256 tick, uint256 floor, uint128 minimum) = sixFactory.roundTerms(tiers[i]);
             assertGt(floor, 1 << 32, "above the auction's own least floor");
@@ -927,7 +934,7 @@ contract ContributorKitV3Test is Test {
     /// at the first founder who picks that tier. Terms that cannot be split into fifths fail too.
     function test_a_factory_refuses_terms_whose_tiers_the_auction_would_refuse() public {
         BackingPool.Params memory p = terms();
-        // A paper reserve of 50 base units: its shallowest tier (10 base units) gives a price step of a few tens
+        // A paper reserve of 50 base units: its shallowest tier (20 base units) gives a price step of a few tens
         // of units, so the floor is under the auction's own least floor.
         p.virtualQuote = 50;
         vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
