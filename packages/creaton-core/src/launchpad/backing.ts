@@ -40,9 +40,16 @@ const Q96 = 1n << 96n;
 export const BACKING_SIGNATURES = {
   // factory
   poolOf: "poolOf(address)",
-  open: "open(address)",
-  openWithRound: "openWithRound(address,uint128)",
+  open: "open(address,uint256)",
+  openWithRound: "openWithRound(address,uint128,uint256)",
   factoryQuote: "quote()",
+  /** The curve depths a founder may pick from, in quote base units (`BackingPoolFactory.depthTiers`). */
+  depthTiers: "depthTiers()",
+  /** The depth a pool gets when its founder names none. */
+  defaultDepth: "defaultDepth()",
+  /** A round's price step, floor and default minimum at one depth (zero is the default). */
+  roundTerms: "roundTerms(uint256)",
+  // The three getters below read the round at the DEFAULT depth only; a round at another depth is `roundTerms`.
   defaultMinimumRaise: "defaultMinimumRaise()",
   roundFloorPriceX96: "roundFloorPriceX96()",
   roundTickSpacingX96: "roundTickSpacingX96()",
@@ -58,6 +65,8 @@ export const BACKING_SIGNATURES = {
   founder: "founder()",
   dao: "dao()",
   quote: "quote()",
+  /** The pool's own curve depth: the tier it opened at, until a round seeds it from what the round raised. */
+  virtualQuote: "virtualQuote()",
   // pool, steps
   buy: "buy(uint256,uint256,uint256)",
   sell: "sell(uint256,uint256,uint256)",
@@ -352,11 +361,16 @@ export interface SellQuote {
   refund: bigint;
   priceAfter: bigint;
 }
+/**
+ * What leaving at the open milestone pays now (`quoteLeave`). Leaving sells nothing: the units are kept and the price does
+ * not move. The fee is the contract's own number, never worked out here: the app shows it and sets its limits from it.
+ */
 export interface LeaveQuote {
+  /** What the wallet receives: `fromEscrow` less `fee`. */
   quoteOut: bigint;
-  fromCurve: bigint;
+  /** The wallet's whole part of what is held for the project, which is handed back. */
   fromEscrow: bigint;
-  priceAfter: bigint;
+  /** Taken from `fromEscrow` and owed to the project's treasury. */
   fee: bigint;
 }
 
@@ -383,14 +397,8 @@ function decodeSellQuote(hex: string): SellQuote {
   return { quoteOut: w[0], fee: w[1], refund: w[2], priceAfter: w[3] };
 }
 function decodeLeaveQuote(hex: string): LeaveQuote {
-  const w = words(hex, 5, "quoteLeave()");
-  return {
-    quoteOut: w[0],
-    fromCurve: w[1],
-    fromEscrow: w[2],
-    priceAfter: w[3],
-    fee: w[4],
-  };
+  const w = words(hex, 3, "quoteLeave()");
+  return { quoteOut: w[0], fromEscrow: w[1], fee: w[2] };
 }
 
 // ---- calls ---------------------------------------------------------------------------------------
@@ -523,21 +531,84 @@ export const encodeRedeem = (amount: bigint): string =>
     [uint(amount, 256, "The amount")],
   );
 
-/** `BackingPoolFactory.open(dao)`: the pool opens now, no round. */
-export const encodeOpenPool = (dao: string): string =>
+/**
+ * `BackingPoolFactory.open(dao, depth)`: the pool opens now, no round. `depth` is one of the factory's tiers in the quote's
+ * base units, or zero for the default (anything else the factory refuses with `BadDepth`).
+ */
+export const encodeOpenPool = (dao: string, depth: bigint = 0n): string =>
   encodeFunctionData(
     BACKING_SIGNATURES.open,
-    ["address"],
-    [address(dao, "The project's DAO")],
+    ["address", "uint256"],
+    [address(dao, "The project's DAO"), uint(depth, 256, "The depth")],
   );
 
-/** `BackingPoolFactory.openWithRound(dao, minimumRaise)`: a fair opening round first. Zero asks for the default minimum. */
-export function encodeOpenWithRound(dao: string, minimumRaise: bigint): string {
+/**
+ * `BackingPoolFactory.openWithRound(dao, minimumRaise, depth)`: a fair opening round first. Zero asks for the default
+ * minimum at that depth; a zero depth asks for the default depth.
+ */
+export function encodeOpenWithRound(
+  dao: string,
+  minimumRaise: bigint,
+  depth: bigint = 0n,
+): string {
   return encodeFunctionData(
     BACKING_SIGNATURES.openWithRound,
-    ["address", "uint128"],
-    [address(dao, "The project's DAO"), uint(minimumRaise, 128, "The minimum")],
+    ["address", "uint128", "uint256"],
+    [
+      address(dao, "The project's DAO"),
+      uint(minimumRaise, 128, "The minimum"),
+      uint(depth, 256, "The depth"),
+    ],
   );
+}
+
+// ---- curve depth ---------------------------------------------------------------------------------
+
+/**
+ * The curve depths a founder may pick from, in WHOLE quote units: `BackingTerms.depthTiersWhole()`, which is fifths of the
+ * factory's default (25,000) as the factory derives them. The factory is the authority (`depthTiers()` returns them in
+ * base units and refuses any other number with `BadDepth`): this list is for the words and for tests that bind it to the
+ * Solidity source, and `readDepthTiers` reads the real menu.
+ */
+export const BACKING_DEPTH_TIERS_WHOLE: readonly number[] = [
+  5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000,
+];
+
+/** The tier the factory uses when a founder names none (zero on the wire). */
+export const BACKING_DEFAULT_DEPTH_WHOLE = 25_000;
+
+/** A tier in the quote's base units. */
+export function depthInBaseUnits(whole: number, decimals: number): bigint {
+  if (!Number.isInteger(whole) || whole <= 0) {
+    throw new Error("A depth is a whole number of quote units above zero");
+  }
+  return BigInt(whole) * 10n ** BigInt(decimals);
+}
+
+/** The first tier that is at least twice the raise a founder hopes for, or the deepest when none is; zero hope picks the default. */
+export function suggestDepthTier(hopedRaiseWhole: number): number {
+  if (!Number.isFinite(hopedRaiseWhole) || hopedRaiseWhole <= 0) {
+    return BACKING_DEFAULT_DEPTH_WHOLE;
+  }
+  return (
+    BACKING_DEPTH_TIERS_WHOLE.find((tier) => tier >= hopedRaiseWhole * 2) ??
+    BACKING_DEPTH_TIERS_WHOLE[BACKING_DEPTH_TIERS_WHOLE.length - 1]
+  );
+}
+
+/**
+ * What a depth means, in plain words and with no price: a deeper curve moves the price less when people buy or leave, and
+ * suits a bigger raise (about twice the amount hoped for). `unit` is the quote's symbol.
+ */
+export function explainDepthTier(whole: number, unit: string): string {
+  const feel =
+    whole < BACKING_DEFAULT_DEPTH_WHOLE
+      ? "Shallower than usual: the price moves more when people buy or leave."
+      : whole === BACKING_DEFAULT_DEPTH_WHOLE
+        ? "The usual depth."
+        : "Deeper than usual: the price moves less when people buy or leave.";
+  const raise = groupThousands(String(Math.floor(whole / 2)));
+  return `${feel} Suits raising up to about ${raise} ${unit}.`;
 }
 
 // ---- amounts and prices --------------------------------------------------------------------------
@@ -763,7 +834,7 @@ export const BACKING_EVENT_SIGNATURES = {
   bought:
     "Bought(address,uint256,uint256,uint256,uint256,uint256,uint256,uint256)",
   sold: "Sold(address,uint256,uint256,uint256,uint256,uint256,uint256,uint256)",
-  left: "Left(uint256,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint256)",
+  left: "Left(uint256,address,uint256,uint256,uint256,uint256)",
   milestonePosted:
     "MilestonePosted(uint256,bytes32,address,uint64,uint64,uint256,uint256)",
   milestoneResolved: "MilestoneResolved(uint256,bool,uint256)",
@@ -830,13 +901,16 @@ export type PoolEvent = EventBase &
         priceAfter: bigint;
       }
     | {
+        /** A backer left at a milestone: money handed back, nothing sold, the price unmoved. */
         kind: "left";
         id: bigint;
         backer: string;
-        unitsIn: bigint;
+        /** The units the backer still holds: leaving sells none. */
+        unitsKept: bigint;
+        /** What the backer received: `fromEscrow` less `fee`. */
         quoteOut: bigint;
         fromEscrow: bigint;
-        priceAfter: bigint;
+        fee: bigint;
       }
     | {
         kind: "milestone-posted";
@@ -937,16 +1011,16 @@ export function decodePoolLog(log: PoolLog): PoolEvent | null {
       };
     }
     case BACKING_TOPICS.left: {
-      const d = data(Array(8).fill("uint256"));
+      const d = data(Array(4).fill("uint256"));
       return {
         ...base,
         kind: "left",
         id: wordBigint(t[1]),
         backer: wordAddress(t[2]),
-        unitsIn: d[0],
+        unitsKept: d[0],
         quoteOut: d[1],
-        fromEscrow: d[3],
-        priceAfter: d[5],
+        fromEscrow: d[2],
+        fee: d[3],
       };
     }
     case BACKING_TOPICS.milestonePosted: {
@@ -1063,6 +1137,7 @@ export const BACKING_ERROR_NAMES = [
   "RoundsOff",
   "MinimumTooLow",
   "NotEnoughGas",
+  "BadDepth",
   "ERC20InsufficientBalance",
   "ERC20InsufficientAllowance",
 ] as const;
@@ -1098,6 +1173,7 @@ export const BACKING_ERROR_SIGNATURES: Record<BackingErrorName, string> = {
   RoundsOff: "RoundsOff()",
   MinimumTooLow: "MinimumTooLow(uint128)",
   NotEnoughGas: "NotEnoughGas()",
+  BadDepth: "BadDepth()",
   ERC20InsufficientBalance: "ERC20InsufficientBalance(address,uint256,uint256)",
   ERC20InsufficientAllowance:
     "ERC20InsufficientAllowance(address,uint256,uint256)",
@@ -1230,8 +1306,16 @@ export interface NoPoolView {
   founder: string;
   quote: QuoteFacts;
   quoteMatchesFactory: boolean;
-  /** Set when the factory offers a fair opening round: its default minimum, in the token's base units. */
+  /** Set when the factory offers a fair opening round: its default minimum at the default depth, in the token's base units. */
   round: { defaultMinimum: bigint } | null;
+  /**
+   * The curve depths the factory offers, shallowest first, in the token's base units, with the one it uses when none is
+   * named. For a factory that offers rounds each tier also carries the minimum a round raises by default at that depth.
+   */
+  depth: {
+    defaultDepth: bigint;
+    tiers: { depth: bigint; defaultMinimum: bigint | null }[];
+  };
   now: number;
   block: number;
 }
@@ -1263,6 +1347,55 @@ export interface PoolView {
   } | null;
 }
 
+/** What a round at `depth` asks of the auction, from the factory (`roundTerms`). */
+export interface RoundTerms {
+  tickSpacingX96: bigint;
+  floorPriceX96: bigint;
+  defaultMinimum: bigint;
+}
+
+/** `BackingPoolFactory.roundTerms(depth)`: a round's price step, floor and default minimum at one depth. */
+export async function readRoundTerms(
+  chain: Pick<BackingChain, "call">,
+  factory: string,
+  depth: bigint,
+): Promise<RoundTerms> {
+  const w = words(
+    await chain.call(
+      address(factory, "The pool factory"),
+      encodeFunctionData(
+        BACKING_SIGNATURES.roundTerms,
+        ["uint256"],
+        [uint(depth, 256, "The depth")],
+      ),
+    ),
+    3,
+    "roundTerms()",
+  );
+  return { tickSpacingX96: w[0], floorPriceX96: w[1], defaultMinimum: w[2] };
+}
+
+/**
+ * The curve depths a factory offers and its default, in the token's base units. A factory that does not answer is not
+ * guessed at: the menu is the factory's, and it refuses any depth that is not on it.
+ */
+export async function readDepthTiers(
+  chain: Pick<BackingChain, "call">,
+  factory: string,
+): Promise<{ defaultDepth: bigint; tiers: bigint[] }> {
+  const to = address(factory, "The pool factory");
+  const [tiersHex, defaultHex] = await Promise.all([
+    chain.call(to, encodeNoArgs(BACKING_SIGNATURES.depthTiers)),
+    chain.call(to, encodeNoArgs(BACKING_SIGNATURES.defaultDepth)),
+  ]);
+  const tiers = words(tiersHex, 7, "depthTiers()");
+  const defaultDepth = words(defaultHex, 1, "defaultDepth()")[0];
+  if (!tiers.includes(defaultDepth)) {
+    throw new Error("The factory's default depth is not one of its depths");
+  }
+  return { defaultDepth, tiers };
+}
+
 /**
  * Everything the Backing block shows about a project's pool and one wallet, at one moment. A pool answers in one
  * `snapshot` call; the rest is the token's facts, the founder, the chain's clock, and the wallet's money. Each is one
@@ -1291,6 +1424,7 @@ export async function readPool(
       factoryQuoteHex,
       auctionFactoryHex,
       minimumHex,
+      menu,
       now,
       block,
     ] = await Promise.all([
@@ -1298,12 +1432,23 @@ export async function readPool(
       chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.factoryQuote)),
       chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.auctionFactory)),
       chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.defaultMinimumRaise)),
+      readDepthTiers(chain, factory),
       chain.now(),
       chain.blockNumber(),
     ]);
     const factoryQuote = wordToAddress(factoryQuoteHex, "quote()");
     const roundsOffered =
       wordToAddress(auctionFactoryHex, "auctionFactory()") !== ZERO_ADDRESS;
+    // A round's default minimum follows the depth: one bounded read per tier, only when rounds are offered.
+    const minimums = roundsOffered
+      ? await Promise.all(
+          menu.tiers.map(async (depth) => ({
+            depth,
+            defaultMinimum: (await readRoundTerms(chain, factory, depth))
+              .defaultMinimum as bigint | null,
+          })),
+        )
+      : menu.tiers.map((depth) => ({ depth, defaultMinimum: null }));
     return {
       kind: "none",
       factory,
@@ -1314,6 +1459,7 @@ export async function readPool(
       round: roundsOffered
         ? { defaultMinimum: words(minimumHex, 1, "defaultMinimumRaise()")[0] }
         : null,
+      depth: { defaultDepth: menu.defaultDepth, tiers: minimums },
       now,
       block,
     };
@@ -1352,9 +1498,9 @@ export async function readPool(
   ]);
   let round: PoolView["round"] = null;
   if (snapshot.round.state === "waiting") {
-    const [floorHex, tickHex, permitHex] = await Promise.all([
-      chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.roundFloorPriceX96)),
-      chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.roundTickSpacingX96)),
+    // The grid is the one at the pool's own depth, which a waiting pool still has as the tier it opened at.
+    const [depthHex, permitHex] = await Promise.all([
+      chain.call(pool, encodeNoArgs(BACKING_SIGNATURES.virtualQuote)),
       holder === null
         ? Promise.resolve(null)
         : chain.call(
@@ -1366,9 +1512,14 @@ export async function readPool(
             ),
           ),
     ]);
+    const terms = await readRoundTerms(
+      chain,
+      factory,
+      words(depthHex, 1, "virtualQuote()")[0],
+    );
     round = {
-      floorPriceX96: words(floorHex, 1, "roundFloorPriceX96()")[0],
-      tickSpacingX96: words(tickHex, 1, "roundTickSpacingX96()")[0],
+      floorPriceX96: terms.floorPriceX96,
+      tickSpacingX96: terms.tickSpacingX96,
       permit2Allowance:
         permitHex === null ? null : words(permitHex, 1, "allowance()")[0],
     };

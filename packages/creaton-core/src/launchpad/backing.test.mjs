@@ -4,6 +4,8 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  BACKING_DEFAULT_DEPTH_WHOLE,
+  BACKING_DEPTH_TIERS_WHOLE,
   BACKING_ERROR_NAMES,
   BACKING_ERROR_SELECTORS,
   BACKING_ERROR_SIGNATURES,
@@ -18,6 +20,7 @@ import {
   decodePoolLog,
   decodeRoundInfo,
   decodeSnapshot,
+  depthInBaseUnits,
   encodeBuy,
   encodeLeave,
   encodeOpenPool,
@@ -28,6 +31,7 @@ import {
   encodeSell,
   encodeSnapshot,
   exactDecimal,
+  explainDepthTier,
   formatAmount,
   formatCurvePrice,
   formatRoundPrice,
@@ -38,12 +42,16 @@ import {
   poolPhase,
   poolTotals,
   priceMovePercent,
+  readDepthTiers,
+  readLeaveQuote,
   readPool,
   readPoolAddress,
   readPoolEvents,
+  readRoundTerms,
   recordRef,
   roundStage,
   snapRoundLimit,
+  suggestDepthTier,
   tradeDeadline,
   withSlippage,
 } from "./backing.ts";
@@ -72,8 +80,12 @@ test("every selector is the one `cast sig` gives", () => {
     "declareAbandoned()": "0x00d1d0b9",
     "payTreasury()": "0x268bd3aa",
     "poolOf(address)": "0x988b1fa7",
-    "open(address)": "0xb95460f8",
-    "openWithRound(address,uint128)": "0x9e742407",
+    "open(address,uint256)": "0x0a0e5c9d",
+    "openWithRound(address,uint128,uint256)": "0x45a3454f",
+    "depthTiers()": "0x1f9dbead",
+    "defaultDepth()": "0xaabf2efe",
+    "roundTerms(uint256)": "0xeeeee0bc",
+    "virtualQuote()": "0x147ece66",
     "founder()": "0x4d853ee5",
     "dao()": "0x4162169f",
     "quote()": "0x999b93af",
@@ -108,16 +120,23 @@ test("calldata matches `cast calldata`", () => {
     `0xfb03aded${"ab".repeat(32)}`,
   );
   const dao = `0x${"cd".repeat(20)}`;
+  // All three from `cast calldata`. Depth 0 is the default; 50,000 whole units of a 6-decimal token is 50000000000.
   assert.equal(
     encodeOpenPool(dao),
-    `0xb95460f8${"0".repeat(24)}${"cd".repeat(20)}`,
+    "0x0a0e5c9d000000000000000000000000cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd0000000000000000000000000000000000000000000000000000000000000000",
   );
   assert.equal(
+    encodeOpenPool(dao, 50_000_000_000n),
+    "0x0a0e5c9d000000000000000000000000cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd0000000000000000000000000000000000000000000000000000000ba43b7400",
+  );
+  assert.equal(
+    encodeOpenWithRound(dao, 25_000_000_000n, 100_000_000_000n),
+    "0x45a3454f000000000000000000000000cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd00000000000000000000000000000000000000000000000000000005d21dba00000000000000000000000000000000000000000000000000000000174876e800",
+  );
+  // A founder who names no depth gets the default, as zero.
+  assert.equal(
     encodeOpenWithRound(dao, 25_000_000_000n),
-    `0x9e742407${"0".repeat(24)}${"cd".repeat(20)}${"0".repeat(54)}5d21dba00`.replace(
-      /0{54}5d21dba00$/,
-      "00000000000000000000000000000000000000000000000000000005d21dba00",
-    ),
+    encodeOpenWithRound(dao, 25_000_000_000n, 0n),
   );
   assert.equal(
     encodeSnapshot(`0x${"11".repeat(20)}`),
@@ -136,6 +155,11 @@ test("calldata refuses what the pool would refuse anyway, before anything is sig
   assert.throws(() => encodePostMilestone("00".repeat(32)), /public record/);
   assert.throws(() => encodePostMilestone("abc"), /public record/);
   assert.throws(() => encodeOpenPool("0x12"), /not an address/);
+  assert.throws(() => encodeOpenPool(`0x${"cd".repeat(20)}`, -1n), /The depth/);
+  assert.throws(
+    () => encodeOpenWithRound(`0x${"cd".repeat(20)}`, 1n, 1n << 256n),
+    /The depth/,
+  );
   assert.throws(
     () => encodeOpenWithRound(`0x${"cd".repeat(20)}`, 1n << 128n),
     /128 bits/,
@@ -210,6 +234,140 @@ test("the structs, events and errors are the Solidity source's own, field for fi
       .join(",");
     assert.equal(types, args, name);
   }
+
+  // The other direction: a custom error added to the pool or its factory is either mapped here or listed below as
+  // one a person cannot reach, so a new refusal can never go unnamed by accident (`BadDepth` was added this way).
+  const notReachable = new Set([
+    "InvalidParams", // the pool's constructor, called by the deployer only
+    "Reentrancy", // a guard no page can trip
+    "NotFactory", // only the factory may call the pool's setup
+    "InvalidSetup", // the factory's constructor
+    "NotOwner", // the deployer's, once
+  ]);
+  for (const text of [source, factory]) {
+    for (const m of text.matchAll(/^\s*error (\w+)\(/gm)) {
+      assert.ok(
+        BACKING_ERROR_NAMES.includes(m[1]) || notReachable.has(m[1]),
+        `the contracts have an error ${m[1]} that the app neither names nor lists as unreachable`,
+      );
+    }
+  }
+});
+
+test("the depth tiers are the contracts' own, in whole quote units", () => {
+  const terms = read("../../../../contracts/script/BackingTerms.sol");
+  const tiers = [
+    ...(/depthTiersWhole\(\)[\s\S]*?\n {4}\}/.exec(terms)?.[0] ?? "").matchAll(
+      /t\[(\d)\] = ([\d_]+);/g,
+    ),
+  ].map((m) => Number(m[2].replaceAll("_", "")));
+  assert.equal(tiers.length, 7);
+  assert.deepEqual([...BACKING_DEPTH_TIERS_WHOLE], tiers);
+  // The default is the 25,000 the terms set, which the factory derives the tiers from as fifths and multiples.
+  assert.match(terms, /p\.virtualQuote = 25_000 \* one;/);
+  assert.equal(BACKING_DEFAULT_DEPTH_WHOLE, 25_000);
+  const factory = read("../../../../contracts/src/BackingPoolFactory.sol");
+  const fifth = BACKING_DEFAULT_DEPTH_WHOLE / 5;
+  assert.deepEqual(
+    [fifth, fifth * 2, 1, 2, 4, 10, 20].map((n, i) =>
+      i < 2 ? n : n * BACKING_DEFAULT_DEPTH_WHOLE,
+    ),
+    tiers,
+  );
+  assert.match(factory, /t\[4\] = base \* 4;/);
+  assert.match(factory, /t\[6\] = base \* 20;/);
+});
+
+test("a depth is written in base units, suggested from the hoped raise, and explained without a price", () => {
+  assert.equal(depthInBaseUnits(25_000, 6), 25_000_000_000n);
+  assert.equal(depthInBaseUnits(5_000, 18), 5_000n * 10n ** 18n);
+  assert.throws(() => depthInBaseUnits(0, 6), /above zero/);
+  assert.throws(() => depthInBaseUnits(1.5, 6), /whole number/);
+  // About twice the hoped raise, at the next tier up; the deepest when nothing is deep enough; the usual when unsure.
+  assert.equal(suggestDepthTier(2_000), 5_000);
+  assert.equal(suggestDepthTier(2_500), 5_000);
+  assert.equal(suggestDepthTier(2_501), 10_000);
+  assert.equal(suggestDepthTier(12_000), 25_000);
+  assert.equal(suggestDepthTier(40_000), 100_000);
+  assert.equal(suggestDepthTier(10_000_000), 500_000);
+  assert.equal(suggestDepthTier(0), 25_000);
+  assert.equal(suggestDepthTier(Number.NaN), 25_000);
+  for (const whole of BACKING_DEPTH_TIERS_WHOLE) {
+    const words = explainDepthTier(whole, "USDC");
+    assert.match(words, /Suits raising up to about/);
+    assert.match(words, /USDC\./);
+    assert.doesNotMatch(words, /return|profit|earn|gain/i);
+  }
+  assert.match(explainDepthTier(25_000, "USDC"), /usual depth/);
+  assert.match(explainDepthTier(25_000, "USDC"), /12,500 USDC/);
+  assert.match(explainDepthTier(5_000, "USDC"), /moves more/);
+  assert.match(explainDepthTier(500_000, "USDC"), /moves less/);
+});
+
+test("the factory's menu is read in one bounded step and its default must be on it", async () => {
+  const tiers = [5, 10, 25, 50, 100, 250, 500].map(
+    (n) => BigInt(n) * 10n ** 9n,
+  );
+  const chain = (def) => ({
+    async call(_to, data) {
+      if (data.startsWith(selectorOf("depthTiers()"))) return wordsOf(tiers);
+      if (data.startsWith(selectorOf("defaultDepth()"))) return wordOf(def);
+      throw new Error("unexpected");
+    },
+  });
+  const menu = await readDepthTiers(chain(25n * 10n ** 9n), FACTORY);
+  assert.deepEqual(menu, { defaultDepth: 25n * 10n ** 9n, tiers });
+  await assert.rejects(
+    readDepthTiers(chain(26n * 10n ** 9n), FACTORY),
+    /not one of its depths/,
+  );
+});
+
+test("a round's terms at a depth come from roundTerms, three words, and nothing is guessed", async () => {
+  const seen = [];
+  const chain = {
+    async call(to, data) {
+      seen.push([to, data]);
+      return `0x${[25n, 2500n, 9n].map((v) => v.toString(16).padStart(64, "0")).join("")}`;
+    },
+  };
+  const t = await readRoundTerms(chain, FACTORY, 50_000_000_000n);
+  assert.deepEqual(t, {
+    tickSpacingX96: 25n,
+    floorPriceX96: 2500n,
+    defaultMinimum: 9n,
+  });
+  assert.equal(
+    seen[0][1],
+    `${selectorOf("roundTerms(uint256)")}${wordOf(50_000_000_000n).slice(2)}`,
+  );
+  await assert.rejects(
+    readRoundTerms({ call: async () => wordOf(1) }, FACTORY, 1n),
+    /not 3/,
+  );
+});
+
+test("leaving reads three words: what you get, what is handed back, and the fee; the old five-word answer is refused", async () => {
+  const hex = (...v) =>
+    `0x${v.map((n) => n.toString(16).padStart(64, "0")).join("")}`;
+  const chain = (answer) => ({ call: async () => answer });
+  assert.deepEqual(await readLeaveQuote(chain(hex(90n, 100n, 10n)), POOL, ME), {
+    quoteOut: 90n,
+    fromEscrow: 100n,
+    fee: 10n,
+  });
+  // A wallet that cannot leave is all zeros, which is a real answer and not a failure.
+  assert.deepEqual(await readLeaveQuote(chain(hex(0n, 0n, 0n)), POOL, ME), {
+    quoteOut: 0n,
+    fromEscrow: 0n,
+    fee: 0n,
+  });
+  // The shape the contract had before 2026-11-15 (five words) must fail loudly rather than be read as three.
+  await assert.rejects(
+    readLeaveQuote(chain(hex(1n, 2n, 3n, 4n, 5n)), POOL, ME),
+    /not 3/,
+  );
+  await assert.rejects(readLeaveQuote(chain(hex(1n, 2n)), POOL, ME), /not 3/);
 });
 
 test("topics and error selectors are what `cast` says", () => {
@@ -223,7 +381,7 @@ test("topics and error selectors are what `cast` says", () => {
   );
   assert.equal(
     BACKING_TOPICS.left,
-    "0x9a9399623d08666d5491b3941e1574bdf1f9c2d149a915d40d690ae22ccbd174",
+    "0xb299c976172adf865f96558e24c5564803741d76338fbfc2f62058bd3c72ab13",
   );
   assert.equal(
     BACKING_TOPICS.milestonePosted,
@@ -249,6 +407,7 @@ test("topics and error selectors are what `cast` says", () => {
     BACKING_TOPICS.abandoned,
     "0x31578b8759fc961e04c99cc0d28d747d299b87bf0962f0fa33cc3b50eaf5d631",
   );
+  assert.equal(BACKING_ERROR_SELECTORS.get("0x0a589ca3"), "BadDepth");
   assert.equal(BACKING_ERROR_SELECTORS.get("0x7dd37f70"), "Slippage");
   assert.equal(BACKING_ERROR_SELECTORS.get("0x203d82d8"), "Expired");
   assert.equal(BACKING_ERROR_SELECTORS.get("0xe86f59ea"), "TooSoon");
@@ -690,27 +849,35 @@ test("each pool event decodes to the fields the page shows", () => {
   const left = decodePoolLog(
     log(
       [BACKING_TOPICS.left, topicNumber(2n), topicAddress(ADDR_A)],
-      Array(8).fill(U),
-      [10n, 95n, 80n, 15n, 1n, 650n, 5n, 6n],
+      Array(4).fill(U),
+      [10n, 95n, 105n, 10n],
     ),
   );
+  // (unitsKept, quoteOut, fromEscrow, fee): a leaver keeps their units and the event carries no price.
   assert.deepEqual(
-    {
-      kind: left.kind,
-      id: left.id,
-      backer: left.backer,
-      quoteOut: left.quoteOut,
-      fromEscrow: left.fromEscrow,
-      priceAfter: left.priceAfter,
-    },
+    { ...left, block: undefined, logIndex: undefined, tx: undefined },
     {
       kind: "left",
       id: 2n,
       backer: ADDR_A,
+      unitsKept: 10n,
       quoteOut: 95n,
-      fromEscrow: 15n,
-      priceAfter: 650n,
+      fromEscrow: 105n,
+      fee: 10n,
+      block: undefined,
+      logIndex: undefined,
+      tx: undefined,
     },
+  );
+  // An event with the right topic and too little data is refused, never shown with a missing figure.
+  assert.throws(() =>
+    decodePoolLog(
+      log(
+        [BACKING_TOPICS.left, topicNumber(2n), topicAddress(ADDR_A)],
+        Array(3).fill(U),
+        [1n, 2n, 3n],
+      ),
+    ),
   );
   const ref = `0x${"12".repeat(32)}`;
   const posted = decodePoolLog(
@@ -930,8 +1097,8 @@ test("totals and milestone records come from the events and are lower bounds whe
     ),
     log(
       [BACKING_TOPICS.left, topicNumber(1n), topicAddress(ADDR_B)],
-      Array(8).fill(U),
-      [1n, 1n, 1n, 1n, 1n, 1n, 1n, 1n],
+      Array(4).fill(U),
+      [1n, 1n, 1n, 0n],
       21,
     ),
     log(
@@ -971,6 +1138,9 @@ const QUOTE = `0x${"c0".repeat(20)}`;
 const DAO = `0x${"da".repeat(20)}`;
 const ME = `0x${"1e".repeat(20)}`;
 const wordOf = (v) => `0x${BigInt(v).toString(16).padStart(64, "0")}`;
+const wordsOf = (values) =>
+  `0x${values.map((v) => BigInt(v).toString(16).padStart(64, "0")).join("")}`;
+const TIERS = [5, 10, 25, 50, 100, 250, 500].map((n) => BigInt(n) * 10n ** 9n);
 const stringHex = (text) => encodeParameters(["string"], [text]);
 
 function fakeChain(overrides = {}) {
@@ -979,8 +1149,19 @@ function fakeChain(overrides = {}) {
   const handlers = {
     [`${FACTORY}:${sel("poolOf(address)")}`]: () => wordOf(POOL),
     [`${FACTORY}:${sel("quote()")}`]: () => wordOf(QUOTE),
-    [`${FACTORY}:${sel("roundFloorPriceX96()")}`]: () => wordOf(2500n),
-    [`${FACTORY}:${sel("roundTickSpacingX96()")}`]: () => wordOf(25n),
+    // The old getters answer for the DEFAULT depth only; a waiting round must not read them (the numbers differ on purpose).
+    [`${FACTORY}:${sel("roundFloorPriceX96()")}`]: () => wordOf(1111n),
+    [`${FACTORY}:${sel("roundTickSpacingX96()")}`]: () => wordOf(11n),
+    [`${FACTORY}:${sel("depthTiers()")}`]: () => wordsOf(TIERS),
+    [`${FACTORY}:${sel("defaultDepth()")}`]: () => wordOf(TIERS[2]),
+    // A round at depth d: the step and floor are a hundredth and the whole of d / 10; the minimum is d / 10.
+    [`${FACTORY}:${sel("roundTerms(uint256)")}`]: (data) => {
+      const depth = BigInt(`0x${data.slice(10)}`);
+      return `0x${[depth / 1000n, depth / 10n, depth / 10n]
+        .map((v) => v.toString(16).padStart(64, "0"))
+        .join("")}`;
+    },
+    [`${POOL}:${sel("virtualQuote()")}`]: () => wordOf(TIERS[3]),
     [`${FACTORY}:${sel("founderOf(address)")}`]: () => wordOf(ME),
     [`${FACTORY}:${sel("auctionFactory()")}`]: () =>
       wordOf(`0x${"af".repeat(20)}`),
@@ -1025,6 +1206,16 @@ test("a project's pool is found by its DAO through the factory, and the zero add
   assert.deepEqual(read.quote, { address: QUOTE, decimals: 6, symbol: "TEST" });
   assert.equal(read.quoteMatchesFactory, true);
   assert.deepEqual(read.round, { defaultMinimum: 2_500_000_000n });
+  // The depth menu is the factory's own, each tier with the minimum a round raises by default at that depth.
+  assert.equal(read.depth.defaultDepth, TIERS[2]);
+  assert.deepEqual(
+    read.depth.tiers.map((t) => t.depth),
+    TIERS,
+  );
+  assert.deepEqual(
+    read.depth.tiers.map((t) => t.defaultMinimum),
+    TIERS.map((d) => d / 10n),
+  );
   // A factory with no auction factory offers no round.
   const noRounds = await readPool(
     fakeChain({
@@ -1034,6 +1225,8 @@ test("a project's pool is found by its DAO through the factory, and the zero add
     { factory: FACTORY, dao: DAO, holder: null },
   );
   assert.equal(noRounds.round, null);
+  assert.ok(noRounds.depth.tiers.every((t) => t.defaultMinimum === null));
+  assert.equal(noRounds.depth.tiers.length, 7);
   // A node that does not answer, or answers with nonsense, is a failed read and never "no pool".
   const down = fakeChain({
     [`${FACTORY}:${selectorOf("poolOf(address)")}`]: () => {
@@ -1076,6 +1269,10 @@ test("reading a pool gives its snapshot, its token's own decimals and the wallet
   assert.equal(view.block, 777);
   assert.equal(view.round, null);
   assert.ok(chain.calls.length <= 12, `calls: ${chain.calls.length}`);
+  // A live pool asks the factory nothing about rounds or depth.
+  assert.ok(
+    !chain.calls.some(([, sel]) => sel === selectorOf("roundTerms(uint256)")),
+  );
 });
 
 test("a pool whose token is not the one the build names is flagged, not trusted", async () => {
@@ -1116,9 +1313,10 @@ test("a waiting round also reads its tick grid and what Permit2 may already take
     { factory: FACTORY, dao: DAO, holder: ME },
   );
   assert.equal(view.phase, "waiting");
+  // The grid is the one at the pool's own depth (the 50-unit tier here), not the default depth's.
   assert.deepEqual(view.round, {
-    floorPriceX96: 2500n,
-    tickSpacingX96: 25n,
+    floorPriceX96: TIERS[3] / 10n,
+    tickSpacingX96: TIERS[3] / 1000n,
     permit2Allowance: 77n,
   });
 });
