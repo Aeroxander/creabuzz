@@ -9,6 +9,7 @@ import { Rocket } from "lucide-react";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
 
+import { newFollowersLead } from "../lib/supporters";
 import { useFounderActivity } from "../use-founder-activity";
 import { useAdmitBackers } from "../use-launch-chat";
 import type { Launch } from "../models";
@@ -66,9 +67,7 @@ export function YourLaunchesSection() {
       <ul className="mt-1.5 space-y-1 text-sm">
         {rows.map((row) => (
           <li data-testid="your-launches-supporters" key={row.coord}>
-            {row.fresh === 1
-              ? "1 new supporter on "
-              : `${row.fresh} new supporters on `}
+            {newFollowersLead(row.fresh)}
             <LaunchLink author={row.author} id={row.id}>
               {row.name}
             </LaunchLink>

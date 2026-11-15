@@ -1140,7 +1140,7 @@ test("a record the founder removed leaves a trace: the count of removals, and an
   await page.reload();
   // The miss is no longer counted, and the page does not pretend nothing happened.
   await expect(record.getByTestId("record-removed")).toContainText(
-    `The founder has removed 1 update record. The last removal was on ${new Date(at * 1000).toLocaleDateString()}.`,
+    `The founder has removed 1 update record. The last removal was on ${new Date(at * 1000).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}.`,
   );
   const line = record.getByTestId("record-line");
   await expect(line).toContainText("Promise removed");

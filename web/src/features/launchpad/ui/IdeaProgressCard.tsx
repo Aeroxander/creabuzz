@@ -124,7 +124,7 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
         {/* The supporter gate belongs to a raise: a build that offers none asks nobody to gather supporters first. */}
         {raises ? (
           <>
-            <Step done={progress.open} title="Gather supporters">
+            <Step done={progress.open} title="Gather followers">
               <div className="mt-1.5 flex items-center gap-3">
                 <div
                   aria-hidden

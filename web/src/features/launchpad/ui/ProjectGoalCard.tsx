@@ -25,6 +25,7 @@ import {
   goalStepWord,
 } from "../lib/goals";
 import type { Launch } from "../models";
+import { recordDay as day } from "../lib/record-date";
 import { useProjectRecord, useSaveGoal } from "../use-project-record";
 import { GoalDialog, type GoalDialogTarget } from "./GoalDialog";
 
@@ -34,8 +35,6 @@ const STATE_TONE: Record<GoalState, ChipTone> = {
   missed: "danger",
   changed: "warning",
 };
-
-const day = (at: number) => new Date(at * 1000).toLocaleDateString();
 
 function StateChip({ state }: { state: GoalState }) {
   // An open goal needs no label: it is simply the goal.

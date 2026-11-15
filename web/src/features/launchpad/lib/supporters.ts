@@ -41,3 +41,16 @@ export function countSupporters(
   }
   return new Map(coordinates.map((c) => [c, people.get(c)?.size ?? 0]));
 }
+
+/**
+ * How many people follow a project, in the one word the app uses for them: they press Follow, so they are followers.
+ */
+export function followersLine(count: number): string {
+  if (count === 0) return "No followers yet";
+  return count === 1 ? "1 follower" : `${count} followers`;
+}
+
+/** "1 new follower on " / "3 new followers on ": the start of the founder's line about a project, before its name. */
+export function newFollowersLead(fresh: number): string {
+  return fresh === 1 ? "1 new follower on " : `${fresh} new followers on `;
+}

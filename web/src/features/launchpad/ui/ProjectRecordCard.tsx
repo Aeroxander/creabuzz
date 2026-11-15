@@ -44,6 +44,7 @@ import { projectAcceptedLine } from "../lib/track-record";
 import type { Launch } from "../models";
 import { useProjectRecord } from "../use-project-record";
 import { useProjectTasks, useTeamRemovals } from "../use-tasks";
+import { recordDay as day } from "../lib/record-date";
 import { JustAcceptedShare } from "./JustAcceptedShare";
 import { EvidenceLinks } from "./TaskParts";
 
@@ -141,8 +142,6 @@ function taskLines(
   }
   return lines;
 }
-
-const day = (at: number) => new Date(at * 1000).toLocaleDateString();
 
 export function ProjectRecordCard({
   launch,

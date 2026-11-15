@@ -21,6 +21,7 @@ import { launchArt } from "../lib/launch-art";
 import { saleCurrencyFor } from "@creaton/core/launchpad/sale-currency.ts";
 import type { LaunchRecord, LaunchStage } from "../models";
 import type { ResolvedFunding } from "../lib/funding";
+import { followersLine } from "../lib/supporters";
 import { FundingBadge, StageBadge, useAuctionProgress } from "./widgets";
 
 export function LaunchHero({
@@ -168,11 +169,7 @@ export function LaunchHero({
               <>
                 {" · "}
                 <span data-testid="launch-supporters">
-                  {supporters === 0
-                    ? "No supporters yet"
-                    : supporters === 1
-                      ? "1 supporter"
-                      : `${supporters} supporters`}
+                  {followersLine(supporters)}
                 </span>
               </>
             ) : null}

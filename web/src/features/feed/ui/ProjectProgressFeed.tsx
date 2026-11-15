@@ -24,6 +24,7 @@ import { progressScope, useProgressSeen } from "../use-progress-seen";
 import { EMPTY_TALLY } from "../lib/ranking";
 import { VoteButtons } from "./VoteButtons";
 import { Chip } from "@/shared/ui/chip";
+import { recordDay } from "@/features/launchpad/lib/record-date";
 
 /** Public project reports and evidence. Private task/agent activity is never copied into this feed. */
 export function ProjectProgressFeed({
@@ -331,7 +332,7 @@ function ProgressList({
                   ? `Work submitted by ${names(i.author)}`
                   : "Team update"}
                 {isNew(i.coordinate, i.id) ? " · New to you" : ""} ·{" "}
-                {new Date(i.at * 1000).toLocaleDateString()}
+                {recordDay(i.at)}
               </span>
             </div>
             <h3 className="mt-2 break-words text-sm font-semibold">

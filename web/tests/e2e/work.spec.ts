@@ -180,6 +180,7 @@ test("signed in, everything waiting on you comes first, each with its one action
     new Date((now() - ago * DAY) * 1000).toLocaleDateString(undefined, {
       day: "numeric",
       month: "short",
+      year: "numeric",
     });
   await expect(steps.nth(0)).toContainText(dayOf(5));
   await expect(steps.nth(1)).toContainText(dayOf(4));

@@ -1,7 +1,12 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { countSupporters } from "./supporters.ts";
+import {
+  countSupporters,
+  followersLine,
+  newFollowersLead,
+} from "./supporters.ts";
 
 const F = "f".repeat(64);
 const A = "a".repeat(64);
@@ -62,4 +67,25 @@ test("key case does not double count", () => {
     [coord],
   );
   assert.equal(counts.get(coord), 1);
+});
+
+test("people who follow a project are called followers, in one word everywhere", () => {
+  assert.equal(followersLine(0), "No followers yet");
+  assert.equal(followersLine(1), "1 follower");
+  assert.equal(followersLine(12), "12 followers");
+  assert.equal(newFollowersLead(1), "1 new follower on ");
+  assert.equal(newFollowersLead(3), "3 new followers on ");
+  // The screens that count them take the words from here, and none calls them supporters beside a Follow button.
+  for (const [file, word] of [
+    ["../ui/LaunchHero.tsx", "followersLine("],
+    ["../ui/YourLaunchesSection.tsx", "newFollowersLead("],
+  ]) {
+    const text = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.ok(text.includes(word), `${file} uses ${word}`);
+    assert.doesNotMatch(
+      text,
+      /No supporters yet|\d+ supporters?\b|new supporters? on/,
+      file,
+    );
+  }
 });

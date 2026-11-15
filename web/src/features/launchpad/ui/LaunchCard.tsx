@@ -191,7 +191,7 @@ export function LaunchCard({
               data-testid={idea ? "launch-card-supporters" : undefined}
               title={
                 idea
-                  ? `${countOf(supporters ?? 0, "supporter")} · ${countOf(updates, "update")}`
+                  ? `${countOf(supporters ?? 0, "follower")} · ${countOf(updates, "update")}`
                   : `${countOf(bids, "bid")} · ${countOf(updates, "update")}`
               }
             >

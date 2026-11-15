@@ -1122,7 +1122,7 @@ test("an idea starts in one step with an open supporters room, and a supporter j
   await page.goto("/social/notifications");
   await expect(
     page.getByTestId("your-launches-supporters").first(),
-  ).toContainText("new supporter", { timeout: 30_000 });
+  ).toContainText("new follower", { timeout: 30_000 });
   await expect(page.getByTestId("your-launches")).toContainText(name);
 
   // Opening the launch shows the count, and counts as having seen them.

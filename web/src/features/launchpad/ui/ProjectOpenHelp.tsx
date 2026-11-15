@@ -12,6 +12,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 
 import { helpRequest, teamOf } from "../lib/help-request";
 import type { Launch } from "../models";
+import { recordDay } from "../lib/record-date";
 import { useProjectUpdates } from "../use-help-requests";
 import { HelpRequestCard } from "./HelpRequestCard";
 
@@ -58,8 +59,8 @@ export function ProjectOpenHelp({
         {open.map((update) => (
           <li key={update.id}>
             <p className="text-xs text-muted-foreground">
-              Asked on {new Date(update.createdAt * 1000).toLocaleDateString()}{" "}
-              in <span className="break-words">{update.title}</span>
+              Asked on {recordDay(update.createdAt)} in{" "}
+              <span className="break-words">{update.title}</span>
             </p>
             <HelpRequestCard
               launch={launch}

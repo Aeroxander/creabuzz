@@ -49,17 +49,12 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { SectionHeader } from "@/shared/ui/PageHeader";
+import { recordDate } from "@/features/launchpad/lib/record-date";
 
 /** How many cards a group shows before "Show more": each card reads its project. */
 const SHOWN = 6;
 
-const day = (date: string) =>
-  new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+const day = (date: string) => recordDate(date);
 
 /** A person's own tasks in the order they should meet them: waiting on them first, then what they are waiting for. */
 function myTasksInOrder(tasks: readonly TaskView[]): TaskView[] {

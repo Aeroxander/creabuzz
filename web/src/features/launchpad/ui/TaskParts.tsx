@@ -10,6 +10,7 @@ import { type ReactNode, useId, useState } from "react";
 
 import { uploadBlob } from "@/shared/lib/upload-blob";
 import { Button } from "@/shared/ui/button";
+import { recordDate, recordDay } from "../lib/record-date";
 
 import {
   checkFile,
@@ -28,10 +29,9 @@ import {
 export const FIELD_CLASS =
   "mt-1 w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white";
 
-export const day = (at: number) => new Date(at * 1000).toLocaleDateString();
+export const day = recordDay;
 /** A `YYYY-MM-DD` date as the reader's own calendar writes it. */
-export const dateWords = (date: string) =>
-  new Date(`${date}T12:00:00Z`).toLocaleDateString();
+export const dateWords = (date: string) => recordDate(date);
 export const todayDate = () => new Date().toISOString().slice(0, 10);
 
 /** A send that did not go through: said where it happened, with a way to send it again. */

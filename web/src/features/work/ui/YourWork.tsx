@@ -18,24 +18,15 @@ import { useTrackRecord } from "@/features/launchpad/use-tasks";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { SectionHeader } from "@/shared/ui/PageHeader";
+import { recordDate, recordDay } from "@/features/launchpad/lib/record-date";
 
 import { myWork } from "../lib/my-work";
 
 /** Tasks shown before "Show more". */
 const SHOWN = 8;
 
-const day = (at: number) =>
-  new Date(at * 1000).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-  });
-const dueDay = (date: string) =>
-  new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
+const day = (at: number) => recordDay(at);
+const dueDay = (date: string) => recordDate(date);
 
 export function YourWork({ me }: { me: string }) {
   const read = useTrackRecord(me);
