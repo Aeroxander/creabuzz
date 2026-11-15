@@ -12,7 +12,10 @@
 //! - the host picks the community, as everywhere else (`tenant::bind_community`);
 //! - on a community where people must be members to read (an invite-only
 //!   server), a signed-out visitor reads nothing, so the preview says nothing
-//!   either and the page is the plain shell;
+//!   either and the page is the plain shell; unless the server lets anyone
+//!   read a public project's record (`BUZZ_PUBLIC_PROJECT_READS`,
+//!   `api::public_read`), when the visitor can read these words and the
+//!   preview says them;
 //! - a project that is removed, not listed, or whose founder is banned or muted
 //!   gets the plain shell;
 //! - only the project's own words are used (name, pitch, the founder's main
@@ -25,6 +28,8 @@ use std::time::Duration;
 
 use axum::http::HeaderMap;
 use buzz_core::kind::{KIND_DELETION, KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE};
+use buzz_core::CommunityId;
+use buzz_db::DbError;
 
 use crate::state::AppState;
 
@@ -130,15 +135,107 @@ pub(crate) async fn preview_for(
     }
 }
 
+/// A project record that anyone may be shown: listed, not removed, and signed
+/// by a founder who is neither muted nor banned.
+#[derive(Debug, Clone)]
+pub(crate) struct PublicProject {
+    /// The founder's record (kind 37001).
+    pub(crate) record: nostr::Event,
+    /// Its address, `37001:<founder key>:<project id>`.
+    pub(crate) coordinate: String,
+}
+
+/// The project records stored under `id` in `community`, whoever signed them
+/// (several founders may use one id), at most [`RECORD_READ_LIMIT`].
+pub(crate) async fn records_named(
+    state: &AppState,
+    community: CommunityId,
+    id: &str,
+) -> Result<Vec<nostr::Event>, DbError> {
+    Ok(state
+        .db
+        .query_events(&buzz_db::EventQuery {
+            kinds: Some(vec![KIND_LAUNCH_RECORD as i32]),
+            d_tag: Some(id.to_string()),
+            global_only: true,
+            limit: Some(RECORD_READ_LIMIT),
+            ..buzz_db::EventQuery::for_community(community)
+        })
+        .await?
+        .into_iter()
+        .map(|stored| stored.event)
+        .collect())
+}
+
+/// Whether `record` may be shown to anyone: `Ok(None)` when its founder is
+/// banned or muted, when the founder removed it, or when it is not listed.
+///
+/// This is the one rule for what a project shows to someone who is not a
+/// member: the link preview and the public record read both ask it, so they
+/// cannot disagree. A failed lookup is an error, never "public".
+pub(crate) async fn public_standing(
+    state: &AppState,
+    community: CommunityId,
+    record: nostr::Event,
+) -> Result<Option<PublicProject>, DbError> {
+    let Some(id) = record
+        .tags
+        .iter()
+        .find(|t| t.as_slice().first().map(String::as_str) == Some("d"))
+        .and_then(|t| t.as_slice().get(1).cloned())
+    else {
+        return Ok(None);
+    };
+    let author = record.pubkey.to_bytes();
+    let coordinate = format!("{KIND_LAUNCH_RECORD}:{}:{id}", record.pubkey.to_hex());
+
+    // A founder who is banned or muted has no public face.
+    let restriction = state
+        .db
+        .moderation_restriction_state(community, &author)
+        .await?;
+    if restriction.banned || restriction.muted_until.is_some() {
+        return Ok(None);
+    }
+
+    // Removed: the founder's own NIP-09 deletion of this record, at or after it.
+    let removals = state
+        .db
+        .query_events(&buzz_db::EventQuery {
+            kinds: Some(vec![KIND_DELETION as i32]),
+            pubkey: Some(author.to_vec()),
+            tag_filters: vec![("a".to_string(), vec![coordinate.clone()])],
+            limit: Some(RECORD_READ_LIMIT),
+            ..buzz_db::EventQuery::for_community(community)
+        })
+        .await?;
+    if removals
+        .iter()
+        .any(|stored| stored.event.created_at >= record.created_at)
+    {
+        return Ok(None);
+    }
+
+    // "Not listed yet": the page opens from its link but nothing may announce it.
+    let body: serde_json::Value = serde_json::from_str(&record.content).unwrap_or_default();
+    if body.get("listing").and_then(|v| v.as_str()) == Some("unlisted") {
+        return Ok(None);
+    }
+    Ok(Some(PublicProject { record, coordinate }))
+}
+
 async fn lookup(state: &AppState, raw_host: &str, route: &ProjectRoute) -> Option<Preview> {
     let tenant = crate::tenant::bind_community(&state.db, raw_host)
         .await
         .ok()?;
     let community = tenant.community();
     // Invite-only: a visitor who is not signed in reads nothing here, so the
-    // preview must not tell a crawler what the visitor could not read.
+    // preview must not tell a crawler what the visitor could not read. When the
+    // server lets anyone read a public project's record, the visitor can read
+    // these words, and the preview may say them.
     match state.membership_required(community, false).await {
         Ok(false) => {}
+        Ok(true) if state.config.public_project_reads => {}
         Ok(true) => return None,
         Err(error) => {
             tracing::warn!(%error, "share preview: could not read the access setting");
@@ -149,19 +246,11 @@ async fn lookup(state: &AppState, raw_host: &str, route: &ProjectRoute) -> Optio
     let id = match route {
         ProjectRoute::Scorecard { id, .. } | ProjectRoute::ProjectPage { id, .. } => id,
     };
-    let records = state
-        .db
-        .query_events(&buzz_db::EventQuery {
-            kinds: Some(vec![KIND_LAUNCH_RECORD as i32]),
-            d_tag: Some(id.clone()),
-            global_only: true,
-            limit: Some(RECORD_READ_LIMIT),
-            ..buzz_db::EventQuery::for_community(community)
-        })
+    let records = records_named(state, community, id)
         .await
         .map_err(|error| tracing::warn!(%error, "share preview: record read failed"))
         .ok()?;
-    let mut matching = records.into_iter().map(|stored| stored.event).filter(|e| {
+    let mut matching = records.into_iter().filter(|e| {
         let author = e.pubkey.to_hex();
         match route {
             ProjectRoute::Scorecard { founder_start, .. } => author.starts_with(founder_start),
@@ -178,46 +267,12 @@ async fn lookup(state: &AppState, raw_host: &str, route: &ProjectRoute) -> Optio
         return None;
     }
 
+    let PublicProject { record, coordinate } = public_standing(state, community, record)
+        .await
+        .map_err(|error| tracing::warn!(%error, "share preview: standing read failed"))
+        .ok()??;
     let author = record.pubkey.to_bytes();
-    let author_hex = record.pubkey.to_hex();
-    let coordinate = format!("{KIND_LAUNCH_RECORD}:{author_hex}:{id}");
-
-    // A founder who is banned or muted has no public face.
-    let restriction = state
-        .db
-        .moderation_restriction_state(community, &author)
-        .await
-        .map_err(|error| tracing::warn!(%error, "share preview: restriction read failed"))
-        .ok()?;
-    if restriction.banned || restriction.muted_until.is_some() {
-        return None;
-    }
-
-    // Removed: the founder's own NIP-09 deletion of this record, at or after it.
-    let removals = state
-        .db
-        .query_events(&buzz_db::EventQuery {
-            kinds: Some(vec![KIND_DELETION as i32]),
-            pubkey: Some(author.to_vec()),
-            tag_filters: vec![("a".to_string(), vec![coordinate.clone()])],
-            limit: Some(RECORD_READ_LIMIT),
-            ..buzz_db::EventQuery::for_community(community)
-        })
-        .await
-        .map_err(|error| tracing::warn!(%error, "share preview: removal read failed"))
-        .ok()?;
-    if removals
-        .iter()
-        .any(|stored| stored.event.created_at >= record.created_at)
-    {
-        return None;
-    }
-
     let body: serde_json::Value = serde_json::from_str(&record.content).unwrap_or_default();
-    // "Not listed yet": the page opens from its link but nothing may announce it.
-    if body.get("listing").and_then(|v| v.as_str()) == Some("unlisted") {
-        return None;
-    }
     let name = record
         .tags
         .iter()
@@ -752,6 +807,11 @@ mod tests {
         }
 
         async fn world(invite_only: bool) -> World {
+            world_with(invite_only, false).await
+        }
+
+        /// `public_reads` is the server's `BUZZ_PUBLIC_PROJECT_READS`.
+        async fn world_with(invite_only: bool, public_reads: bool) -> World {
             let dir = tempfile::tempdir().expect("bundle dir");
             std::fs::create_dir_all(dir.path().join("assets")).expect("assets");
             std::fs::write(dir.path().join("index.html"), PLAIN).expect("index");
@@ -760,6 +820,7 @@ mod tests {
                 config.web_dir = Some(web);
                 config.web_spa_full = true;
                 config.new_account_posts_per_hour = 0;
+                config.public_project_reads = public_reads;
             })
             .await;
             let host = format!("share-preview-{}.example", Uuid::new_v4().simple());
@@ -1036,6 +1097,42 @@ mod tests {
             assert!(page(&w, &slug(&w, "nebula"))
                 .await
                 .contains("Nebula on Creaton"));
+        }
+
+        #[tokio::test]
+        #[ignore = "requires Postgres and Redis"]
+        async fn an_invite_only_server_that_lets_anyone_read_public_records_previews_them() {
+            let w = world_with(true, true).await;
+            project(&w, "nebula", "Nebula", r#"{"pitch":"A weekly map."}"#).await;
+            goal(&w, "nebula", "Publish 12 maps", 0).await;
+            let html = page(&w, &slug(&w, "nebula")).await;
+            assert!(html.contains("<title>Nebula on Creaton</title>"), "{html}");
+            assert!(
+                html.contains("content=\"A weekly map. Goal: Publish 12 maps\""),
+                "{html}"
+            );
+            // What it would not show on an open server it does not show here either.
+            project(
+                &w,
+                "quiet",
+                "Quiet",
+                r#"{"listing":"unlisted","pitch":"Hush"}"#,
+            )
+            .await;
+            assert_eq!(page(&w, &slug(&w, "quiet")).await, PLAIN);
+            let actor = Keys::generate();
+            w.state
+                .db
+                .ban_community_member(
+                    w.tenant.community(),
+                    &w.founder.public_key().to_bytes(),
+                    &actor.public_key().to_bytes(),
+                    None,
+                    None,
+                )
+                .await
+                .expect("ban");
+            assert_eq!(page(&w, &slug(&w, "nebula")).await, PLAIN);
         }
 
         #[tokio::test]

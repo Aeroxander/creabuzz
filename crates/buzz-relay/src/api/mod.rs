@@ -17,6 +17,7 @@ pub mod mesh_demo;
 pub mod nip05;
 pub mod nip_fi;
 pub mod operator;
+pub(crate) mod public_read;
 pub mod self_serve;
 pub mod workflows;
 
@@ -241,6 +242,16 @@ pub mod relay_members {
         Ok(MembershipDecision::Denied)
     }
 
+    /// The `error` code of the refusal a caller who is not a member gets.
+    const MEMBERSHIP_REQUIRED: &str = "relay_membership_required";
+
+    /// Whether `refusal` is [`enforce_relay_membership`] turning away a caller
+    /// for not being a member (and not a ban, or a lookup that failed).
+    pub(crate) fn is_membership_refusal(refusal: &(StatusCode, Json<serde_json::Value>)) -> bool {
+        refusal.0 == StatusCode::FORBIDDEN
+            && refusal.1 .0.get("error").and_then(|v| v.as_str()) == Some(MEMBERSHIP_REQUIRED)
+    }
+
     /// Enforce relay membership for a pubkey, with NIP-OA agent delegation fallback.
     ///
     /// Returns `Ok(Some(owner_pubkey))` when the agent is not a direct member but
@@ -293,7 +304,7 @@ pub mod relay_members {
             Ok(MembershipDecision::Denied) => Err((
                 StatusCode::FORBIDDEN,
                 Json(serde_json::json!({
-                    "error": "relay_membership_required",
+                    "error": MEMBERSHIP_REQUIRED,
                     "message": "You must be a relay member to access this relay"
                 })),
             )),

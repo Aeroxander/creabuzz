@@ -1355,14 +1355,20 @@ async fn query_events_authed(
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
     let auth_tag = super::relay_members::extract_auth_tag_header(headers);
-    super::relay_members::enforce_relay_membership(
+    if let Err(refusal) = super::relay_members::enforce_relay_membership(
         state,
         tenant.community(),
         &pubkey_bytes,
         auth_tag,
         signed_auth_created_at,
     )
-    .await?;
+    .await
+    {
+        // Not a member. The one read such a caller may be answered is a public
+        // project's record, when the server says so (`BUZZ_PUBLIC_PROJECT_READS`);
+        // everything else, and everything when it is off, is this refusal unchanged.
+        return super::public_read::answer(state, tenant, &pubkey, body, refusal).await;
+    }
 
     // Two-pass parse: preserve raw JSON for custom extension fields (before_id,
     // depth_limit, feed_types) that nostr::Filter silently drops.

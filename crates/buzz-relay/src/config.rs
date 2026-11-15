@@ -617,6 +617,20 @@ pub struct Config {
     /// off the route answers 404, exactly like a relay that predates it (the
     /// web client already falls back gracefully).
     pub public_community_directory: bool,
+    /// Whether anyone may read a public project's record on a community that
+    /// otherwise requires membership (`BUZZ_PUBLIC_PROJECT_READS=1`). Default
+    /// off: a caller who is not a member is refused exactly as before. When on,
+    /// `POST /query` answers such a caller for the project record kinds in
+    /// [`crate::api::public_read`] only, and only for a project its link preview
+    /// would show (listed, not removed, founder not muted or banned); the link
+    /// preview itself is then served on an invite-only community too. Writes
+    /// and every other read stay for members.
+    pub public_project_reads: bool,
+    /// The most public project reads one community answers in a minute, for
+    /// all callers together (`BUZZ_PUBLIC_PROJECT_READS_PER_MIN`). A caller
+    /// who is not signed in can use a new key for every request, so the
+    /// per-caller limit alone does not bound them.
+    pub public_project_reads_per_min: u64,
 }
 
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
@@ -1705,6 +1719,12 @@ impl Config {
             .map(|value| value == "true" || value == "1")
             .unwrap_or(false);
 
+        let public_project_reads = std::env::var("BUZZ_PUBLIC_PROJECT_READS")
+            .map(|value| value == "true" || value == "1")
+            .unwrap_or(false);
+        let public_project_reads_per_min =
+            positive_u64_from_env("BUZZ_PUBLIC_PROJECT_READS_PER_MIN", 300)?;
+
         if let Some(ref dir) = web_dir {
             if !dir.join("index.html").is_file() {
                 return Err(ConfigError::InvalidValue(format!(
@@ -1810,6 +1830,8 @@ impl Config {
             nip_fi: crate::nip_fi_config::NipFiRelayConfig::from_env()?,
             web_spa_full,
             public_community_directory,
+            public_project_reads,
+            public_project_reads_per_min,
         })
     }
 
