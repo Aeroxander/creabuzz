@@ -126,6 +126,8 @@ export default defineConfig({
         "**/start-one-press.spec.ts",
         // Tasks with a finish line: made from an offer, handed in, sent back, confirmed by someone else; the profile.
         "**/project-tasks.spec.ts",
+        // The checkable finish line: how work was checked, reported numbers, run records, a sharper "Done means", the Work page filter.
+        "**/tasks.spec.ts",
         // The moment between making a task and reading it back, on a server that is slow to answer.
         "**/project-tasks-slow-read.spec.ts",
         // Which projects are listed (one rule for every list), and a founder's "Not listed yet".
