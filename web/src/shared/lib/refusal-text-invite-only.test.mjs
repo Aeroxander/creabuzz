@@ -47,7 +47,10 @@ describe("an invite-only server's refusal", () => {
   it("matches the server's own wording", () => {
     // If the server's words change, people see the raw text again.
     assert.match(relay("handlers/auth.rs"), /"restricted: not a relay member"/);
-    assert.match(relay("api/mod.rs"), /"error": "relay_membership_required"/);
+    assert.match(
+      relay("api/mod.rs"),
+      /MEMBERSHIP_REQUIRED: &str = "relay_membership_required"/,
+    );
   });
 });
 
