@@ -24,7 +24,16 @@ import { waitForAnimations } from "../helpers/animations";
 
 const FIXTURE = process.env.E2E_AUDIT_FIXTURE ?? "";
 const SHOTS = process.env.E2E_SHOTS ?? "";
-const ONLY = process.env.ONLY ?? "";
+/**
+ * Which stops to capture: names containing the text, or, with a leading `^`, starting with it; several, split by commas
+ * (`ONLY=^j` is the weekly loop's stops, `ONLY=g01,g02` two others). Empty: every stop.
+ */
+const ONLY = (process.env.ONLY ?? "").split(",").filter(Boolean);
+const wanted = (name: string) =>
+  ONLY.length === 0 ||
+  ONLY.some((part) =>
+    part.startsWith("^") ? name.startsWith(part.slice(1)) : name.includes(part),
+  );
 /** The capture is of the hosted build (`VITE_CONTRIBUTOR_ONLY=1`): `web-screen-audit.sh` sets it for the mvp modes. */
 const CONTRIBUTOR_ONLY = process.env.E2E_CONTRIBUTOR_ONLY === "1";
 
@@ -39,9 +48,17 @@ interface Person {
   wallet?: string | null;
   walletKey?: string | null;
 }
+/** The people and projects of the weekly loop (`audit-world.spec.ts`, "the weekly loop's world"). */
+interface LoopWorld {
+  people: Record<"ines" | "hugo" | "tess" | "pia" | "ravi", Person>;
+  /** Each project's page address, `/launchpad/<id>?author=<founder>`. */
+  projects: Record<"ines" | "pia" | "ravi", string>;
+  help: { photos: string; guide: string };
+}
 interface World {
   host: string;
   anvil: string;
+  loop?: LoopWorld;
   projectPath: string;
   boards: { supporters: string; room: string };
   posts: Record<string, string>;
@@ -61,14 +78,19 @@ type Who =
   | "cora"
   | "nia"
   | "mo"
-  | "dev";
+  | "dev"
+  | "ines"
+  | "hugo"
+  | "tess"
+  | "pia"
+  | "ravi";
 
 interface Stop {
   name: string;
   who: Who;
   path: string;
-  /** What to press after the page loads, to reach the state the stop is about. */
-  open?: (page: Page) => Promise<void>;
+  /** What to press after the page loads, to reach the state the stop is about. `width` is the one being captured. */
+  open?: (page: Page, at: { width: "desktop" | "phone" }) => Promise<void>;
   /** Also captured in the dark theme. */
   dark?: boolean;
   /** A selector that must be visible once `open` is done, or the stop fails: the state the stop is about was reached. */
@@ -85,7 +107,7 @@ interface Stop {
   hosted?: {
     absent?: (page: Page) => Promise<void>;
     redirect?: RegExp;
-    open?: (page: Page) => Promise<void>;
+    open?: (page: Page, at: { width: "desktop" | "phone" }) => Promise<void>;
     shows?: string;
     sameAs?: string;
   };
@@ -147,6 +169,268 @@ const noSaleWizard = async (page: Page) => {
   );
   await expect(page.getByTestId("wizard-step-token")).toHaveCount(0);
 };
+
+// ── The weekly loop: Start, a project's first week and its weekly update, Work, Home, Discover and the public scorecard.
+// The people and projects are the loop world's (`audit-world.spec.ts`); a stop that makes something (a project, an update,
+// a confirmed task) is last, so what it adds is not on the screens before it.
+const L = world?.loop;
+const loopProject = (who: "ines" | "pia" | "ravi") =>
+  L ? L.projects[who] : "/";
+/** The project's public scorecard address: its id and the first sixteen letters of its founder's key. */
+const scorecardPath = (who: "ines" | "pia" | "ravi") => {
+  if (!L) return "/";
+  const [path, query] = L.projects[who].split("?");
+  const id = path.split("/").pop();
+  const author = new URLSearchParams(query).get("author") ?? "";
+  return `/p/${id}-${author.slice(0, 16)}`;
+};
+/** A second, invite-only server (`web-screen-audit.sh`): only members read or post. */
+const INVITE_SERVER = process.env.E2E_INVITE_SERVER ?? "";
+const taskIn = (page: Page, helper: string, text: string) =>
+  page
+    .getByTestId("project-tasks")
+    .getByTestId("task")
+    .filter({ hasText: helper })
+    .filter({ hasText: text });
+/** Fill Start's four answers and press the button, as a person new to Creaton would. */
+const quickStartAnswers =
+  (input: { name: string; goal: string; how: string; category?: string }) =>
+  async (page: Page) => {
+    const form = page.getByTestId("quick-start");
+    await form.getByLabel("Project name").fill(input.name);
+    await form.getByLabel("The goal").fill(input.goal);
+    await form.getByLabel("How we'll know").fill(input.how);
+    if (input.category)
+      await form
+        .getByTestId(
+          `quick-category-${input.category.toLowerCase().replace(/\W+/g, "-")}`,
+        )
+        .click();
+  };
+const pressStart = async (page: Page) => {
+  await page
+    .getByTestId("quick-start")
+    .getByRole("button", { name: "Start the project" })
+    .click();
+};
+
+const LOOP_STOPS: Stop[] = L
+  ? [
+      // ── Signed out ─────────────────────────────────────────────────────────────────────────────────
+      ...(INVITE_SERVER
+        ? [
+            {
+              name: "j01-project-link-invite-only",
+              who: "visitor",
+              path: `${INVITE_SERVER}${scorecardPath("ines")}`,
+              shows: "main",
+            } satisfies Stop,
+          ]
+        : []),
+      {
+        name: "j02-scorecard-visitor",
+        who: "visitor",
+        path: scorecardPath("ines"),
+        shows: tid("scorecard"),
+        dark: true,
+      },
+      {
+        name: "j03-scorecard-new-project",
+        who: "visitor",
+        path: scorecardPath("pia"),
+        shows: tid("scorecard"),
+      },
+      { name: "j04-work-visitor", who: "visitor", path: "/work" },
+      {
+        name: "j05-work-agents-filter",
+        who: "visitor",
+        path: "/work",
+        open: click("work-agents-only"),
+      },
+      { name: "j06-discover-reliable", who: "visitor", path: "/discover" },
+      {
+        name: "j07-discover-ai-chip",
+        who: "visitor",
+        path: "/discover",
+        open: click("category-ai-agent-or-tool"),
+      },
+      {
+        name: "j08-discover-help-tab",
+        who: "visitor",
+        path: "/discover",
+        open: click("project-board-tab-help"),
+      },
+      // ── A new account on Start, before it presses anything ─────────────────────────────────────────────
+      { name: "j10-start-new-account", who: "newbie", path: "/start" },
+      {
+        name: "j11-start-ai-chip",
+        who: "newbie",
+        path: "/start",
+        open: click("quick-category-ai-agent-or-tool"),
+        shows: tid("quick-ai"),
+      },
+      {
+        name: "j12-start-answers-filled",
+        who: "newbie",
+        path: "/start",
+        open: quickStartAnswers({
+          name: "Bread Club",
+          goal: "Twelve neighbours bake with a shared sourdough starter",
+          how: "Each of the twelve posts a photo of a loaf by the end of June",
+        }),
+      },
+      // ── Home: what a quiet server shows ────────────────────────────────────────────────────────────────
+      { name: "j20-home-helper", who: "hugo", path: "/", dark: true },
+      { name: "j21-home-new-account", who: "newbie", path: "/" },
+      {
+        name: "j22-home-updates-tab",
+        who: "hugo",
+        path: "/?tab=updates",
+      },
+      // ── A founder: the record, the update dialog, Your projects ────────────────────────────────────────
+      {
+        name: "j30-project-founder-record",
+        who: "ines",
+        path: loopProject("ines"),
+        dark: true,
+      },
+      {
+        name: "j31-update-dialog",
+        who: "ines",
+        path: loopProject("ines"),
+        open: roleButton("Post update"),
+        shows: '[role="dialog"]',
+      },
+      {
+        name: "j32-update-draft-from-record",
+        who: "ines",
+        path: loopProject("ines"),
+        open: steps(roleButton("Post update"), click("update-draft-button")),
+        shows: tid("update-draft"),
+        subject: "update-draft",
+      },
+      { name: "j33-portfolio-founder", who: "ines", path: "/portfolio" },
+      {
+        name: "j34-project-fresh-from-start",
+        who: "pia",
+        path: `${loopProject("pia")}&started=1`,
+        shows: tid("started-card"),
+        dark: true,
+      },
+      {
+        name: "j35-project-new-set-up-more",
+        who: "pia",
+        path: `${loopProject("pia")}&started=1`,
+        open: click("set-up-more"),
+      },
+      {
+        name: "j36-project-as-visitor",
+        who: "visitor",
+        path: loopProject("ines"),
+      },
+      // ── A helper: Work, a task with its finish line, a hand-in with numbers, accepted work ─────────────
+      { name: "j40-work-helper", who: "hugo", path: "/work", dark: true },
+      {
+        name: "j41-project-tasks-helper",
+        who: "hugo",
+        path: loopProject("ines"),
+        shows: tid("project-tasks"),
+        subject: "project-tasks",
+      },
+      {
+        name: "j42-hand-in-with-numbers",
+        who: "hugo",
+        path: loopProject("ines"),
+        open: async (page) => {
+          const row = taskIn(page, "Hugo Lang", L.help.guide);
+          await row.getByRole("button", { name: "Hand in work" }).click();
+          const form = row.getByRole("form", { name: "Hand in work" });
+          await form
+            .getByLabel("What you did")
+            .fill(
+              "Read the guide twice and marked every line that needs a picture.",
+            );
+          await form.getByTestId("hand-in-add-result").click();
+          await form.getByTestId("hand-in-result-name").fill("lines marked");
+          await form.getByTestId("hand-in-result-value").fill("14");
+          await form.getByTestId("hand-in-result-unit").fill("lines");
+        },
+        shows: tid("hand-in-result"),
+        subject: "project-tasks",
+      },
+      {
+        name: "j43-accepted-work-on-record",
+        who: "hugo",
+        path: loopProject("ines"),
+        shows: tid("record-work-accepted"),
+        subject: "project-record",
+      },
+      {
+        name: "j44-helper-profile-record",
+        who: "visitor",
+        path: `/u/${L.people.hugo.pubkey}`,
+        open: tab("Record"),
+        shows: tid("track-record"),
+      },
+      // ── Makes things: each one adds a record, so they are last ─────────────────────────────────────────
+      {
+        name: "j50-start-pressed",
+        who: "newbie",
+        path: "/start",
+        open: steps(
+          quickStartAnswers({
+            name: "Bread Club",
+            goal: "Twelve neighbours bake with a shared sourdough starter",
+            how: "Each of the twelve posts a photo of a loaf by the end of June",
+          }),
+          pressStart,
+        ),
+        shows: tid("started-card"),
+      },
+      {
+        name: "j51-update-posted",
+        who: "ravi",
+        path: loopProject("ravi"),
+        open: async (page) => {
+          await page.getByRole("button", { name: "Post update" }).click();
+          const dialog = page.getByRole("dialog", { name: "Post update" });
+          await dialog.getByLabel("Title").fill("Week one");
+          await dialog
+            .getByLabel("What happened this week")
+            .fill(
+              "The helper now drafts replies to the ten most common emails.",
+            );
+          await dialog
+            .getByLabel("What's next")
+            .fill(
+              "- Draft replies for the next ten\n- Ask the team to rate every draft",
+            );
+          await dialog.getByRole("button", { name: "Publish update" }).click();
+        },
+        shows: tid("update-posted"),
+      },
+      {
+        name: "j52-accepted-share",
+        who: "ines",
+        path: loopProject("ines"),
+        // Two checks are waiting; each width confirms its own, so each photograph sees the share picture of a piece of
+        // work accepted a moment ago.
+        open: async (page, { width }) => {
+          const row = taskIn(
+            page,
+            "Tess Brandt",
+            width === "desktop" ? L.help.guide : L.help.photos,
+          );
+          await row.getByRole("button", { name: "Confirm it's done" }).click();
+          await row
+            .getByTestId("task-confirm-box")
+            .getByRole("button", { name: "Yes, confirm" })
+            .click();
+        },
+        shows: tid("task-share"),
+      },
+    ]
+  : [];
 
 const STOPS: Stop[] = [
   // ── Arriving, signed out ──────────────────────────────────────────────────────────────────────────
@@ -655,6 +939,7 @@ const STOPS: Stop[] = [
   { name: "i04-work-board", who: "dev", path: community("?view=work") },
   { name: "i05-link-device", who: "nia", path: "/link-device" },
   { name: "i06-identity-demo", who: "visitor", path: "/identity-demo" },
+  ...LOOP_STOPS,
 ];
 
 function personFor(who: Who): Person | null {
@@ -666,8 +951,24 @@ function personFor(who: Who): Person | null {
     return { key, pubkey: "" };
   }
   if (who === "dev") return W.social.dev;
+  if (
+    who === "ines" ||
+    who === "hugo" ||
+    who === "tess" ||
+    who === "pia" ||
+    who === "ravi"
+  )
+    return W.loop?.people[who] ?? null;
   return W.cast[who];
 }
+
+/** The version of the terms the server serves now, read once: signed-in people in the world have agreed to it. */
+let servedTerms: Promise<string> | null = null;
+const servedTermsVersion = () =>
+  (servedTerms ??= fetch(`http://${W.host}/api/join-policy`)
+    .then((r) => r.json() as Promise<{ policy?: { version?: string } }>)
+    .then((body) => body.policy?.version ?? "")
+    .catch(() => ""));
 
 async function openAs(
   browser: Browser,
@@ -694,16 +995,23 @@ async function openAs(
       display: checksumAddress(wallet.address),
     });
   }
+  const terms = person ? await servedTermsVersion() : "";
   await page.addInitScript(
-    ([key, rpcUrl, newbie]) => {
+    ([key, rpcUrl, newbie, version]) => {
       if (key && !window.localStorage.getItem("buzz.identity.nsec")) {
         window.localStorage.setItem("buzz.identity.nsec", key);
       }
       if (key && !newbie)
         window.localStorage.setItem("buzz.identity.backedUp", "1");
       window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
+      // Someone who signed up agreed to the terms then; a browser made here from a bare key says so for them.
+      if (key && version)
+        window.localStorage.setItem(
+          "creaton.joinPolicy.accepted",
+          JSON.stringify({ version, at: Date.now() }),
+        );
     },
-    [person?.key ?? "", world?.anvil ?? "", who === "newbie"] as const,
+    [person?.key ?? "", world?.anvil ?? "", who === "newbie", terms] as const,
   );
   return page;
 }
@@ -727,6 +1035,9 @@ function recordChecked(
   );
 }
 
+/** The tallest picture a stop saves, in pixels: a longer page is cut there (its words are still all saved). */
+const MAX_PICTURE_HEIGHT = 5000;
+
 async function capture(
   page: Page,
   stop: Stop,
@@ -737,6 +1048,27 @@ async function capture(
   await page.waitForTimeout(1500);
   await waitForAnimations(page).catch(() => undefined);
   const base = `${SHOTS}/${stop.name}-${variant}`;
+  // The app scrolls inside its own panes, so a "full page" picture is only the window. The window is made as tall as
+  // the longest pane (up to a limit) for the picture, so what is below the fold is photographed too.
+  // An open dialog is photographed in the window it opens in: a taller window would only move it to the middle.
+  const original = page.viewportSize();
+  const extra = await page.evaluate(() => {
+    if (document.querySelector('[role="dialog"]')) return 0;
+    let longest = 0;
+    for (const el of document.querySelectorAll<HTMLElement>("*")) {
+      const overflow = getComputedStyle(el).overflowY;
+      if (overflow !== "auto" && overflow !== "scroll") continue;
+      longest = Math.max(longest, el.scrollHeight - el.clientHeight);
+    }
+    return longest;
+  });
+  if (original && extra > 40) {
+    await page.setViewportSize({
+      width: original.width,
+      height: Math.min(original.height + extra, MAX_PICTURE_HEIGHT),
+    });
+    await page.waitForTimeout(500);
+  }
   // A form inside a long page is photographed on its own, so the picture is of the form, not of the page above it.
   const subject =
     stop.subject && !problem
@@ -747,6 +1079,7 @@ async function capture(
   } else {
     await page.screenshot({ path: `${base}.png`, fullPage: true });
   }
+  if (original) await page.setViewportSize(original);
   const text =
     subject && (await subject.count()) > 0
       ? await subject.innerText()
@@ -821,6 +1154,26 @@ test("the contributor-only build shows no sale", async ({ browser }) => {
     ).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Markets" })).toHaveCount(0);
 
+    // The names the hosted build gives the way back to the list and a project's card in it: the list is "Projects" in the
+    // top bar, so the back link is not "Launchpad" and a card is not "View launch" (those are the sale's words).
+    if (W.loop) {
+      await page.goto(W.loop.projects.ines);
+      const back = page.locator('[data-testid="launch-hero"] a').first();
+      await expect(back).toHaveText("Projects");
+      await expect(back).toHaveAttribute("href", "/discover");
+      await page.goto("/discover");
+      await expect(page.getByTestId("discover-launch").first()).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: /view launch/i }),
+      ).toHaveCount(0);
+      await expect(
+        page
+          .getByTestId("discover-launch")
+          .getByRole("link", { name: "Open project" })
+          .first(),
+      ).toBeVisible();
+    }
+
     await page.goto("/launchpad/nebula-sandbox");
     // The list of ideas may itself move under Discover in this build; either way the sandbox is not offered.
     await expect(page).toHaveURL(/\/(launchpad|discover)$/);
@@ -830,7 +1183,7 @@ test("the contributor-only build shows no sale", async ({ browser }) => {
 });
 
 for (const stop of STOPS) {
-  if (ONLY && !stop.name.includes(ONLY)) continue;
+  if (!wanted(stop.name)) continue;
   test(stop.name, async ({ browser }) => {
     test.setTimeout(120_000);
     const hosted = CONTRIBUTOR_ONLY ? stop.hosted : undefined;
@@ -859,7 +1212,7 @@ for (const stop of STOPS) {
           .waitForFunction(
             () =>
               !document.querySelector(".animate-pulse") &&
-              !/(^|\n)(Reading|Loading)\b[^\n]*(…|\.\.\.)/.test(
+              !/(^|\n)(Reading|Loading|Looking for)\b[^\n]*(…|\.\.\.)/.test(
                 document.body.innerText,
               ),
             null,
@@ -887,7 +1240,7 @@ for (const stop of STOPS) {
             await page.getByTestId("open-channel-list").click();
             await page.waitForTimeout(400);
           }
-          if (open) await open(page);
+          if (open) await open(page, { width });
           if (shows) {
             await expect(
               page.locator(`${shows}:visible`).first(),

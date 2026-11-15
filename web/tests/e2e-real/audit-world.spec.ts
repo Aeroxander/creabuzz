@@ -12,7 +12,12 @@ import { finalizeEvent } from "nostr-tools/pure";
 
 import { installKeyWallet, walletFromKey } from "../helpers/key-wallet";
 import { checksumAddress } from "../../src/features/identity/lib/wallet-proof";
-import { CAST, pubkeyOfCast } from "./audit-people.mjs";
+import { CAST, LOOP, pubkeyOfCast, pubkeyOfLoop } from "./audit-people.mjs";
+import {
+  accountFromKey,
+  publishAs as publishRecordAs,
+  readAs as readRecordsAs,
+} from "./project-loop-helpers";
 import {
   keyFromHex,
   PEOPLE,
@@ -92,6 +97,17 @@ async function publishAs(
   return event;
 }
 
+/**
+ * The version of the terms the server serves now. A person who signed up agreed to it (the app keeps it in their
+ * browser); a browser made here from a bare key has to say so, or the page behind them is covered by "Please agree to
+ * the terms" and no step can reach what is under it.
+ */
+async function servedTermsVersion(): Promise<string> {
+  const response = await fetch("http://localhost:3199/api/join-policy");
+  const body = (await response.json()) as { policy?: { version?: string } };
+  return body.policy?.version ?? "";
+}
+
 /** A browser of their own, signed in as `who`, their wallet one of Anvil's accounts. */
 async function as(browser: Browser, who: Who, path: string): Promise<Page> {
   const context = await browser.newContext({
@@ -107,16 +123,22 @@ async function as(browser: Browser, who: Who, path: string): Promise<Page> {
       display: checksumAddress(wallet.address),
     });
   }
+  const terms = await servedTermsVersion();
   await page.addInitScript(
-    ([key, rpcUrl]) => {
+    ([key, rpcUrl, version]) => {
       // Only the first load: the app stores the key wrapped once it has read it.
       if (!window.localStorage.getItem("buzz.identity.nsec")) {
         window.localStorage.setItem("buzz.identity.nsec", key);
       }
       window.localStorage.setItem("buzz.identity.backedUp", "1");
       window.localStorage.setItem("buzz.launchpad.rpc", rpcUrl);
+      if (version)
+        window.localStorage.setItem(
+          "creaton.joinPolicy.accepted",
+          JSON.stringify({ version, at: Date.now() }),
+        );
     },
-    [person.key, ANVIL_URL],
+    [person.key, ANVIL_URL, terms],
   );
   await page.goto(path);
   return page;
@@ -486,7 +508,7 @@ test("the screen audit's world", async ({ browser }) => {
   await claimCard(frida, "first-hour").getByTestId("work-settle").click();
   await expect(
     claimCard(frida, "first-hour").getByTestId("work-claim-status"),
-  ).toContainText("Approved");
+  ).toContainText(/Approved|Review complete/);
   await pass(700_000);
   await openTab(cora, projectPath, "Work");
   await claimCard(cora, "first-hour").getByTestId("work-payout").click();
@@ -667,4 +689,358 @@ test("money behind work and a post, with forecasts on both", async ({
     "New people post when someone asks them directly.",
   );
   await mo.context().close();
+});
+
+// ── The weekly loop: projects that keep (and miss) their promises, and the people who help ───────────────────────────
+
+type LoopWho = keyof typeof LOOP;
+
+/** A browser of their own for someone of the loop: their key, and the terms they agreed to when they signed up. */
+async function loopPage(
+  browser: Browser,
+  who: LoopWho,
+  path = "/",
+): Promise<Page> {
+  const context = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+  });
+  context.setDefaultTimeout(60_000);
+  const page = await context.newPage();
+  const terms = await servedTermsVersion();
+  await page.addInitScript(
+    ([key, version]) => {
+      if (!window.localStorage.getItem("buzz.identity.nsec")) {
+        window.localStorage.setItem("buzz.identity.nsec", key);
+      }
+      window.localStorage.setItem("buzz.identity.backedUp", "1");
+      if (version)
+        window.localStorage.setItem(
+          "creaton.joinPolicy.accepted",
+          JSON.stringify({ version, at: Date.now() }),
+        );
+    },
+    [LOOP[who].key, terms],
+  );
+  await page.goto(path);
+  await expect(page.getByTestId("user-chip")).toBeVisible();
+  return page;
+}
+
+const loopAccount = (who: LoopWho) =>
+  accountFromKey(
+    Uint8Array.from(
+      LOOP[who].key.match(/.{2}/g)?.map((b) => Number.parseInt(b, 16)) ?? [],
+    ),
+    LOOP[who].name,
+  );
+
+/** What the Start page asks, answered; the page it makes is the project's own, opened `?started=1`. */
+async function quickStart(
+  page: Page,
+  input: {
+    name: string;
+    pitch: string;
+    goal: string;
+    how: string;
+    category?: string;
+  },
+): Promise<string> {
+  await page.goto("/start");
+  const form = page.getByTestId("quick-start");
+  await form.getByLabel("Project name").fill(input.name);
+  await form.getByText("Edit the one-liner").click();
+  await form.getByLabel("What is it, in one sentence?").fill(input.pitch);
+  await form.getByLabel("The goal").fill(input.goal);
+  await form.getByLabel("How we'll know").fill(input.how);
+  if (input.category)
+    await form
+      .getByTestId(
+        `quick-category-${input.category.toLowerCase().replace(/\W+/g, "-")}`,
+      )
+      .click();
+  await form.getByRole("button", { name: "Start the project" }).click();
+  await expect(page.getByTestId("project-goal")).toBeVisible();
+  const url = new URL(page.url());
+  url.searchParams.delete("started");
+  return `${url.pathname}${url.search}`;
+}
+
+/** Post one weekly update from the project page, answering what was promised last time. */
+async function postUpdate(
+  page: Page,
+  projectPath: string,
+  update: {
+    title: string;
+    happened: string;
+    next: string;
+    help?: string;
+    answers?: { promise: string; mark: "Done" | "Not done"; note?: string }[];
+  },
+) {
+  await page.goto(projectPath);
+  await page.getByRole("button", { name: "Post update" }).click();
+  const dialog = page.getByRole("dialog", { name: "Post update" });
+  for (const answer of update.answers ?? []) {
+    const group = dialog.getByRole("group", { name: answer.promise });
+    await group.getByRole("radio", { name: answer.mark, exact: true }).check();
+    if (answer.note)
+      await dialog
+        .getByLabel(`Short note for: ${answer.promise}`)
+        .fill(answer.note);
+  }
+  await dialog.getByLabel("Title").fill(update.title);
+  await dialog.getByLabel("What happened this week").fill(update.happened);
+  await dialog.getByLabel("What's next").fill(update.next);
+  if (update.help) {
+    await dialog.getByLabel("Help needed (optional)").fill(update.help);
+    await dialog.getByRole("radio", { name: "Small" }).check();
+  }
+  await dialog.getByRole("button", { name: "Publish update" }).click();
+  await expect(dialog).toHaveCount(0);
+}
+
+const requestCard = (page: Page, text: string) =>
+  page.getByTestId("help-request").filter({ hasText: text });
+const taskOf = (page: Page, helper: string, text: string) =>
+  page
+    .getByTestId("project-tasks")
+    .getByTestId("task")
+    .filter({ hasText: helper })
+    .filter({ hasText: text });
+
+const LOOP_HELP = {
+  photos: "Someone to photograph twenty street libraries.",
+  guide: "Someone to proofread the how-to-add guide.",
+};
+const LOOP_DONE = {
+  photos: "Twenty photos, each named after its street, in the shared folder.",
+  guide: "The guide read start to finish, with every unclear line marked.",
+};
+
+/**
+ * The weekly loop's people and projects, made the way they would be (Start, Post update, I can help, Make the task,
+ * Hand in, Confirm), so Home, Work, Discover and a project's page have a record behind them:
+ * - Ines's Street Library Map, started twelve days ago (the project record names its first day), with two updates,
+ *   one promise not kept, two requests for help, and four tasks: Hugo's photographs accepted, his guide in progress,
+ *   Tess's two pieces handed in and waiting for a check;
+ * - Pia, who pressed Start a moment ago and has posted nothing;
+ * - Ravi's AI project, from the "AI agent or tool" chip.
+ * Read back by `screen-audit.spec.ts` from `loop` in the fixture.
+ */
+test("the weekly loop's world", async ({ browser }) => {
+  test.setTimeout(20 * 60_000);
+  for (const who of Object.keys(LOOP) as LoopWho[]) {
+    sql(`INSERT INTO relay_members (community_id, pubkey, role, added_by)
+           SELECT id, '${pubkeyOfLoop(who)}', 'member', 'seed' FROM communities
+           WHERE lower(host) = 'localhost:3199' ON CONFLICT DO NOTHING;`);
+    const named = await publishRecordAs(loopAccount(who), {
+      kind: 0,
+      tags: [],
+      content: JSON.stringify({
+        name: LOOP[who].name,
+        display_name: LOOP[who].name,
+      }),
+    });
+    expect(named.reason).toBe("");
+  }
+
+  // ── Ines starts a project, and it is twelve days old ─────────────────────────────────────────────────
+  const ines = await loopPage(browser, "ines");
+  const inesPath = await quickStart(ines, {
+    name: "Street Library Map",
+    pitch: "Every free street library in Porto on one map",
+    goal: "Every free street library in Porto is on the map",
+    how: "Three hundred libraries are listed, each with a photo",
+  });
+  const inesAccount = loopAccount("ines");
+  const [own] = await readRecordsAs(inesAccount, {
+    kinds: [37001],
+    authors: [inesAccount.pubkey],
+  });
+  expect(own, "Ines's project record is on the server").toBeTruthy();
+  const twelveDays = Math.floor(Date.now() / 1000) - 12 * 86_400;
+  const content = JSON.parse(own.content) as Record<string, unknown>;
+  const dated = await publishRecordAs(inesAccount, {
+    kind: 37001,
+    tags: own.tags,
+    content: JSON.stringify({ ...content, started: twelveDays }),
+    created_at: Math.max(Math.floor(Date.now() / 1000), own.created_at + 1),
+  });
+  expect(dated.reason).toBe("");
+
+  // ── Two weekly updates: the first promises three things, the second answers them ────────────────────────────
+  await postUpdate(ines, inesPath, {
+    title: "Week one",
+    happened: "Found forty street libraries and put them on a first map.",
+    next: "- Map the first fifty libraries\n- Write the how-to-add guide\n- Find two people to photograph",
+    help: LOOP_HELP.photos,
+  });
+  await postUpdate(ines, inesPath, {
+    title: "Week two",
+    happened:
+      "Fifty-three libraries are on the map. The guide is half written.",
+    next: "- Reach a hundred libraries\n- Publish the how-to-add guide",
+    help: LOOP_HELP.guide,
+    answers: [
+      { promise: "Map the first fifty libraries", mark: "Done" },
+      {
+        promise: "Write the how-to-add guide",
+        mark: "Not done",
+        note: "Ran out of time",
+      },
+      { promise: "Find two people to photograph", mark: "Done" },
+    ],
+  });
+
+  // ── Hugo and Tess offer on both requests ─────────────────────────────────────────────────────────────
+  const helperPages: Record<"hugo" | "tess", Page> = {
+    hugo: await loopPage(browser, "hugo", inesPath),
+    tess: await loopPage(browser, "tess", inesPath),
+  };
+  for (const who of ["hugo", "tess"] as const) {
+    const page = helperPages[who];
+    for (const [key, note] of [
+      ["photos", "I live near the old town and have a free weekend."],
+      ["guide", "I proofread for a living and can do it tonight."],
+    ] as const) {
+      await page.goto(inesPath);
+      const request = requestCard(page, LOOP_HELP[key]);
+      await request.getByRole("button", { name: "I can help" }).click();
+      const box = request.getByTestId("help-offer-box");
+      await box.getByLabel("Add a short note (optional)").fill(note);
+      await box.getByRole("button", { name: "Send offer" }).click();
+      await expect(request.getByTestId("help-my-offer")).toContainText(note);
+    }
+  }
+
+  // ── Ines turns each offer into a task that says what done means ──────────────────────────────────────────
+  await ines.goto(inesPath);
+  for (const [who, key] of [
+    ["hugo", "photos"],
+    ["tess", "photos"],
+    ["hugo", "guide"],
+    ["tess", "guide"],
+  ] as const) {
+    const name = LOOP[who].name;
+    const offer = requestCard(ines, LOOP_HELP[key])
+      .getByTestId("help-offer")
+      .filter({ hasText: name });
+    await offer
+      .getByRole("button", { name: `Accept ${name}'s offer and make a task` })
+      .click();
+    const form = offer.getByRole("form", { name: `Make a task for ${name}` });
+    await form.getByLabel("Done means").fill(LOOP_DONE[key]);
+    await form.getByLabel("Due date (optional)").fill("2099-01-15");
+    await form.getByRole("button", { name: "Make the task" }).click();
+    await expect(offer.getByTestId("offer-task-made")).toBeVisible();
+  }
+
+  // ── Everyone says yes; Hugo hands in the photographs with a number, Tess hands in both of hers ───────────────
+  const handIn = async (
+    page: Page,
+    who: "hugo" | "tess",
+    key: "photos" | "guide",
+    words: string,
+    link: string,
+    number?: { name: string; value: string; unit: string },
+  ) => {
+    await page.goto(inesPath);
+    const row = taskOf(page, LOOP[who].name, LOOP_HELP[key]);
+    await row.getByRole("button", { name: "Yes, I'll do it" }).click();
+    await expect(row).toHaveAttribute("data-state", "in-progress");
+    if (!words) return;
+    await row.getByRole("button", { name: "Hand in work" }).click();
+    const form = row.getByRole("form", { name: "Hand in work" });
+    await form.getByLabel("What you did").fill(words);
+    await form.getByLabel("Links (optional, one per line)").fill(link);
+    if (number) {
+      await form.getByTestId("hand-in-add-result").click();
+      await form.getByTestId("hand-in-result-name").fill(number.name);
+      await form.getByTestId("hand-in-result-value").fill(number.value);
+      await form.getByTestId("hand-in-result-unit").fill(number.unit);
+    }
+    await form.getByRole("button", { name: "Hand in" }).click();
+    await expect(row).toHaveAttribute("data-state", "submitted");
+  };
+  await handIn(
+    helperPages.hugo,
+    "hugo",
+    "photos",
+    "Photographed twenty libraries on Saturday and named each file after its street.",
+    "https://example.org/street-libraries/photos",
+    { name: "photos taken", value: "20", unit: "photos" },
+  );
+  await handIn(helperPages.hugo, "hugo", "guide", "", "");
+  await handIn(
+    helperPages.tess,
+    "tess",
+    "photos",
+    "Photographed eighteen libraries around the river.",
+    "https://example.org/street-libraries/river",
+    { name: "photos taken", value: "18", unit: "photos" },
+  );
+  await handIn(
+    helperPages.tess,
+    "tess",
+    "guide",
+    "Read the guide twice and marked six unclear lines.",
+    "https://example.org/street-libraries/notes",
+  );
+
+  // ── Ines checks Hugo's photographs: accepted work on the record ──────────────────────────────────────────
+  await ines.goto(inesPath);
+  const hugoPhotos = taskOf(ines, LOOP.hugo.name, LOOP_HELP.photos);
+  await hugoPhotos.getByRole("button", { name: "Confirm it's done" }).click();
+  await hugoPhotos
+    .getByTestId("task-confirm-box")
+    .getByRole("button", { name: "Yes, confirm" })
+    .click();
+  await expect(
+    ines.getByTestId("project-record").getByTestId("record-work-accepted"),
+  ).toContainText(LOOP_HELP.photos);
+
+  // ── Pia has just pressed Start; Ravi starts an AI project ────────────────────────────────────────────────
+  const pia = await loopPage(browser, "pia");
+  const piaPath = await quickStart(pia, {
+    name: "Dye Garden",
+    pitch: "Every colour of natural dye, grown on one allotment",
+    goal: "Twelve dye plants are growing on the allotment",
+    how: "Each plant has a photo and a label by the end of spring",
+  });
+  const ravi = await loopPage(browser, "ravi");
+  const raviPath = await quickStart(ravi, {
+    name: "Reply Helper",
+    pitch: "An AI helper that drafts replies to support emails",
+    goal: "Half of support replies start from a draft the team keeps",
+    how: "Fifty replies a week are sent from a draft with few changes",
+    category: "AI agent or tool",
+  });
+
+  const fixture = JSON.parse(readFileSync(FIXTURE, "utf8")) as Record<
+    string,
+    unknown
+  >;
+  const people = Object.fromEntries(
+    (Object.keys(LOOP) as LoopWho[]).map((who) => [
+      who,
+      { ...LOOP[who], pubkey: pubkeyOfLoop(who) },
+    ]),
+  );
+  writeFileSync(
+    FIXTURE,
+    JSON.stringify(
+      {
+        ...fixture,
+        loop: {
+          people,
+          projects: { ines: inesPath, pia: piaPath, ravi: raviPath },
+          help: LOOP_HELP,
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  for (const page of [ines, pia, ravi, ...Object.values(helperPages)])
+    await page.context().close();
 });

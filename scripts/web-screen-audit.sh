@@ -19,7 +19,7 @@
 # Usage:  scripts/web-screen-audit.sh [playwright args for the capture]
 # Env:    SHOTS=<dir> (default test-results/screen-audit-<date>/before), KEEP=1 (leave the world running for a look in
 #         a browser; Ctrl-C ends it), SKIP_BUILD=1 (reuse target/debug/buzz-relay; the web app is always built here),
-#         ONLY=<substring> (capture only stops whose name contains it), POSTGRES_ADMIN_URL, ANVIL_PORT,
+#         ONLY=<text>[,<text>] (capture only stops whose name contains it, or with a leading ^ starts with it: ONLY=^j), POSTGRES_ADMIN_URL, ANVIL_PORT,
 #         CAPTURE=0 (build the world, take no screenshots; with KEEP=1, a world to test by hand),
 #         WEB_FEATURES=audit (default: both kits) | mvp (as the hosted image is built: contributor projects, no sale) |
 #         mvp+forecasts (mvp plus money behind work areas and posts, where "Will it get done?" forecasts are given)
@@ -50,6 +50,9 @@ DEPLOYMENTS="$REPO_ROOT/contracts/deployments"
 BACKUP="$(mktemp -d)"
 SHOTS="${SHOTS:-$REPO_ROOT/test-results/screen-audit-$(date +%Y-%m-%d)/before}"
 RELAY_PID=""
+# A second server, invite-only, for the stop of a signed-out visitor who opens a project's link on one (see below).
+INVITE_PID=""
+INVITE_DB="${DB}_invite"
 
 cp -p "$DEPLOYMENTS"/*.json "$BACKUP"/ 2>/dev/null || true
 stop_own_anvil() {
@@ -62,9 +65,11 @@ stop_own_anvil() {
 }
 cleanup() {
   [[ -n "$RELAY_PID" ]] && kill "$RELAY_PID" 2>/dev/null || true
+  [[ -n "$INVITE_PID" ]] && kill "$INVITE_PID" 2>/dev/null || true
   RPC_URL="$RPC" STATE_DIR="$STATE" ./scripts/dev-chain.sh down >/dev/null 2>&1 || true
   stop_own_anvil
   psql "$ADMIN_URL" -qc "drop database if exists $DB with (force)" >/dev/null 2>&1 || true
+  psql "$ADMIN_URL" -qc "drop database if exists $INVITE_DB with (force)" >/dev/null 2>&1 || true
   for f in "$BACKUP"/*.json; do [[ -f "$f" ]] && cp -p "$f" "$DEPLOYMENTS/$(basename "$f")"; done
   rm -f "$REPO_ROOT/web/tests/e2e-real/.fixture.json" "$REPO_ROOT/web/tests/e2e-real/.social-fixture.json"
   rm -rf "$STATE" "$BACKUP"
@@ -143,6 +148,31 @@ for _ in $(seq 1 120); do
 done
 curl -fsS -m 2 "http://localhost:$PORT/self-serve/communities" | grep -q '"enabled":true' \
   || { tail -30 "$STATE/relay.log"; fail "the relay did not come up"; }
+
+# The pilot server is invite-only (BUZZ_REQUIRE_RELAY_MEMBERSHIP=true): a visitor with no invite is not shown a project's
+# scorecard. One more relay, on a scratch database of its own, serves the same web build that way, so the capture can show
+# what that visitor is told. It holds nothing but its owner: what a non-member is shown cannot depend on the project.
+INVITE_PORT=$(free_port); INVITE_HEALTH=$(free_port); INVITE_METRICS=$(free_port)
+step "starting an invite-only server on :${INVITE_PORT}"
+INVITE_OWNER="$(cd web && node --input-type=module -e \
+  'import { getPublicKey } from "nostr-tools/pure"; const k = Uint8Array.from(Buffer.from(process.argv[1], "hex")); console.log(getPublicKey(k))' \
+  "$(openssl rand -hex 32)")" || fail "could not work out the invite-only server's owner key"
+psql "$ADMIN_URL" -qc "create database $INVITE_DB" || fail "could not create the invite-only scratch database"
+env DATABASE_URL="${ADMIN_URL%/*}/$INVITE_DB" BUZZ_AUTO_MIGRATE=true BUZZ_RELAY_PRIVATE_KEY="$(openssl rand -hex 32)" \
+  BUZZ_BIND_ADDR="127.0.0.1:$INVITE_PORT" BUZZ_RELAY_URL="ws://localhost:$INVITE_PORT" RELAY_URL="ws://localhost:$INVITE_PORT" \
+  BUZZ_HEALTH_PORT="$INVITE_HEALTH" BUZZ_METRICS_PORT="$INVITE_METRICS" \
+  BUZZ_WEB_DIR="$WEB_DIST" BUZZ_WEB_SPA=full BUZZ_REQUIRE_RELAY_MEMBERSHIP=true RELAY_OWNER_PUBKEY="$INVITE_OWNER" \
+  BUZZ_GIT_CONFORMANCE_PROBE=false \
+  "$STATE/buzz-relay" >"$STATE/relay-invite.log" 2>&1 &
+INVITE_PID=$!
+for _ in $(seq 1 120); do
+  curl -fsS -m 2 -H 'Accept: application/nostr+json' "http://localhost:$INVITE_PORT/" >/dev/null 2>&1 && break
+  kill -0 "$INVITE_PID" 2>/dev/null || { tail -30 "$STATE/relay-invite.log"; fail "the invite-only relay exited"; }
+  sleep 1
+done
+psql "${ADMIN_URL%/*}/$INVITE_DB" -qc "insert into communities (host) values ('localhost:$INVITE_PORT') on conflict ((lower(host))) do nothing" \
+  || fail "could not add the invite-only server's address to its communities"
+export E2E_INVITE_SERVER="http://localhost:$INVITE_PORT"
 
 cd web
 step "seeding the community, its people, their posts and a few launches"

@@ -59,3 +59,18 @@ export const CAST = {
 };
 
 export const pubkeyOfCast = (name) => getPublicKey(keyFromHex(CAST[name].key));
+
+/**
+ * The people of the weekly loop in the audit world: fixed keys, no wallets (the loop needs no chain). Ines runs a
+ * project with two weekly updates and one promise she did not keep; Hugo and Tess help on it; Pia has only just pressed
+ * Start; Ravi starts an AI project. Each is made in the browser by `audit-world.spec.ts`, as a person would.
+ */
+export const LOOP = {
+  ines: { key: "e1".repeat(32), name: "Ines Ortiz" },
+  hugo: { key: "e2".repeat(32), name: "Hugo Lang" },
+  tess: { key: "e3".repeat(32), name: "Tess Brandt" },
+  pia: { key: "e4".repeat(32), name: "Pia Novak" },
+  ravi: { key: "e5".repeat(32), name: "Ravi Menon" },
+};
+
+export const pubkeyOfLoop = (name) => getPublicKey(keyFromHex(LOOP[name].key));
