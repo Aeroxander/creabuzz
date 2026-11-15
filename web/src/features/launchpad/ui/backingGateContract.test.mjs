@@ -30,8 +30,10 @@ test("both pages put the block where the record is read first, and nowhere else"
   assert.equal([...page.matchAll(/<BackingBlock\b/g)].length, 1);
   assert.match(
     page,
-    /<ProjectRecordCard isFounder=\{isFounder\} launch=\{launch\} \/>[\s\S]*?<BackingBlock isFounder=\{isFounder\} launch=\{launch\} variant="page" \/>/,
+    // The record card is one of the cards `SetUpCards` shows (once it has something), so it is read before the block.
+    /<SetUpCards\b[\s\S]*?<BackingBlock isFounder=\{isFounder\} launch=\{launch\} variant="page" \/>/,
   );
+  assert.match(source("./ProjectSetUp.tsx"), /<ProjectRecordCard\b/);
   const card = source("../../scorecard/ui/ScorecardPage.tsx");
   assert.equal([...card.matchAll(/<BackingBlock\b/g)].length, 1);
   assert.match(
