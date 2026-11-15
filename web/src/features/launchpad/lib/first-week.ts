@@ -8,7 +8,7 @@
 
 const DAY = 86_400;
 /** A project's first update is due a week after it started. */
-export const FIRST_UPDATE_DAYS = 7;
+const FIRST_UPDATE_DAYS = 7;
 
 /**
  * "Your first update is due in 7 days." for a project started today, counting down to "due in 1 day", and "Your first

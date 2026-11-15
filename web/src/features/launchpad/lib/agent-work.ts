@@ -23,7 +23,7 @@ interface TaskLike {
 
 const DAY = 86_400;
 /** A task counts as recent while it is open, or when its work was accepted within this many days. */
-export const RECENT_DAYS = 30;
+const RECENT_DAYS = 30;
 
 /**
  * The agents behind a project's recent tasks: the helper's agent mark for every task the helper agreed to that is

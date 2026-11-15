@@ -1,6 +1,7 @@
 /**
  * After an update is published: a small, still note on the project page that it is out, how many weeks in a row
- * that makes, one button to share the record and one to add a weekly reminder to the founder's own calendar (a
+ * that makes (stated only once two promises are answered, the rule the share picture follows, so the sentence and the
+ * picture agree), one button to share the record, with its picture, and one to add a weekly reminder to the founder's own calendar (a
  * calendar file; nothing is sent from here). It sits in the page and covers nothing; nothing moves, so there is
  * nothing for "reduce motion" to stop.
  */
@@ -13,6 +14,8 @@ import {
   weeklyReminderFileName,
   weeklyReminderIcs,
 } from "../lib/calendar-reminder";
+import { postedLine } from "../lib/first-week";
+import { projectGoals } from "../lib/goals";
 import { teamOf } from "../lib/help-request";
 import { promiseRecord, promiseTotals } from "../lib/promises";
 import { WEEKDAY_NAMES } from "../lib/update-day";
@@ -21,22 +24,9 @@ import type { Launch } from "../models";
 import { useProjectUpdates } from "../use-help-requests";
 import { Button } from "@/shared/ui/button";
 
+import { downloadCalendarFile } from "./download-calendar";
 import { ShareRecordButton } from "./ShareRecordButton";
 import { useUpdateDay } from "./use-update-day";
-
-/** Hands the person a calendar file to open in their own calendar app. */
-function downloadCalendarFile(name: string, text: string) {
-  const url = URL.createObjectURL(
-    new Blob([text], { type: "text/calendar;charset=utf-8" }),
-  );
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
 
 export function UpdatePosted({
   project,
@@ -69,6 +59,9 @@ export function UpdatePosted({
       ),
       kept: totals.kept,
       answered: totals.kept + totals.missed + totals.changed,
+      // The goal in the founder's words, for the share picture.
+      goal:
+        projectGoals(data.founder.goals, project.author).primary?.text ?? "",
     };
   }, [read.data, project]);
   return (
@@ -86,18 +79,17 @@ export function UpdatePosted({
           Update posted
         </h2>
         <p className="text-sm" data-testid="update-posted-streak" role="status">
-          {facts === null
-            ? "It's on your project's record for everyone to read."
-            : facts.streak >= 2
-              ? `That's ${facts.streak} weeks in a row. Keep it going next week.`
-              : "That's week one. Post again next week and your run begins."}
+          {postedLine(facts)}
         </p>
         <div className="flex flex-wrap items-start justify-between gap-2">
           <ShareRecordButton
             answered={facts?.answered ?? null}
+            card="kept"
+            goal={facts?.goal ?? ""}
             kept={facts?.kept ?? null}
             project={project}
             streak={facts?.streak ?? null}
+            withImage
           />
           <Button onClick={onClose} type="button" variant="outline">
             Done

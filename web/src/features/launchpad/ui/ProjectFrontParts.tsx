@@ -67,8 +67,11 @@ export function UpdateDialogWithPromises({
   failedWhy,
   onClose,
   onPublish,
+  startAt,
 }: {
   project: Launch["record"];
+  /** Where the cursor starts in the form: "help" for "Help needed". */
+  startAt?: "help";
   isPublishing: boolean;
   failed: boolean;
   failedWhy?: string | null;
@@ -108,6 +111,7 @@ export function UpdateDialogWithPromises({
       onPublish={onPublish}
       onRetryDue={retry}
       project={project}
+      startAt={startAt}
     />
   );
 }

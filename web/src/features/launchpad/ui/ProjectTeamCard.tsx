@@ -8,6 +8,9 @@
  * The server lets someone act for the project from the moment the founder adds them, before they say yes. That is
  * said to the founder before they add anyone, and to every reader beside each person who has not answered.
  *
+ * A new project does not show this card until it has someone on it, unless the founder opens "Set up more" on the
+ * page (`ProjectSetUp.tsx`); the founder's "Add a person" button is on it from then on.
+ *
  * What someone just did shows at once (the server can take seconds to show a record back) and gives way to what is
  * read back; a send that fails says so beside the button that sent it, and that button is the retry.
  */
@@ -381,6 +384,16 @@ export function ProjectTeamCard({
             ))
           : null}
       </ul>
+
+      {isFounder && team.ready && rows.length === 0 && former.length === 0 ? (
+        <p
+          className="mt-2 text-xs text-muted-foreground"
+          data-testid="team-alone"
+        >
+          It is just you for now. Add a person who can post updates or check
+          work.
+        </p>
+      ) : null}
 
       {team.failed ? (
         <p className="mt-2 text-sm" data-testid="team-read-failed" role="alert">

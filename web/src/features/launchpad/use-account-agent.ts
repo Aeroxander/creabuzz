@@ -6,6 +6,22 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import { type AgentMark, agentMark } from "./lib/agent-label";
 
+/** One account's agent mark, read from its newest profile: null when it is not an agent. */
+export async function readAccountAgent(
+  relay: string,
+  pubkey: string,
+): Promise<AgentMark | null> {
+  const events = await queryEvents(relay, {
+    kinds: [0],
+    authors: [pubkey],
+    limit: 5,
+  });
+  const newest = events
+    .filter((event) => event.kind === 0 && event.pubkey === pubkey)
+    .sort((a, b) => b.created_at - a.created_at)[0];
+  return newest ? agentMark(newest, 0) : null;
+}
+
 /**
  * Whether an account is an agent, from its own profile record: the profile says so (`["agent", <its own key>]`) and
  * carries the signature of the person who runs it. The server keeps such an account to a helper's powers: it may
@@ -23,17 +39,7 @@ export function useAccountAgent(pubkey: string | null): {
     enabled: pubkey !== null,
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    queryFn: async (): Promise<AgentMark | null> => {
-      const events = await queryEvents(relay, {
-        kinds: [0],
-        authors: [pubkey as string],
-        limit: 5,
-      });
-      const newest = events
-        .filter((event) => event.kind === 0 && event.pubkey === pubkey)
-        .sort((a, b) => b.created_at - a.created_at)[0];
-      return newest ? agentMark(newest, 0) : null;
-    },
+    queryFn: () => readAccountAgent(relay, pubkey as string),
   });
   return { mark: read.data ?? null, known: read.data !== undefined };
 }

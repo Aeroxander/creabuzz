@@ -18,7 +18,7 @@ import { AGENT_NEEDS_PERSON, useViewerIsAgent } from "../use-account-agent";
 import { ListingNote } from "./ListingNote";
 import { PostUpdateDialog } from "./PostUpdateDialog";
 import { UpdatePosted } from "./UpdatePosted";
-import { ProjectTeamCard, TeamPostUpdate } from "./ProjectTeamCard";
+import { TeamPostUpdate } from "./ProjectTeamCard";
 import { LaunchHero } from "./LaunchHero";
 import { LaunchChoice } from "./LaunchChoice";
 import { LaunchMissing } from "./LaunchMissing";
@@ -64,11 +64,15 @@ import { useLaunchFollows } from "@/features/feed/use-launch-follows";
 import { getRpcEndpoint } from "../chain";
 import { useAuctionProgress, OwnershipOnlyNote } from "./widgets";
 import { RecordBidDialog } from "./RecordBidDialog";
-import { ProjectUpdateCard } from "./ProjectUpdateCard";
 import { ProjectGoalCard } from "./ProjectGoalCard";
 import { ProjectOpenHelp } from "./ProjectOpenHelp";
-import { ProjectRecordCard } from "./ProjectRecordCard";
-import { ProjectTasksCard } from "./ProjectTasksCard";
+import { AgentPostCard } from "./AgentPostCard";
+import { AgentWorkNote } from "./AgentWorkNote";
+import { ProjectNews } from "./FirstWeekCard";
+import { RecoveryKeyPrompt } from "./RecoveryKeyPrompt";
+import { SetUpCards } from "./ProjectSetUp";
+import { StartedCard } from "./StartedCard";
+import { isAiCategory } from "../lib/agent-post";
 import { helpQueryKey } from "../use-help-requests";
 import {
   ProjectUpdatesTab,
@@ -110,6 +114,7 @@ export function LaunchDetailPage({
   initialTab,
   initialDecision,
   initialClaim,
+  started,
 }: {
   launchId: string;
   author: string | undefined;
@@ -126,6 +131,8 @@ export function LaunchDetailPage({
   /** One decision to highlight on the Decisions tab (`?decision=`). */
   initialDecision?: string;
   initialClaim?: { id: string; mandate: string };
+  /** `?started=1`: the project was just made from Start, so the page welcomes its founder. */
+  started?: 1;
 }) {
   const {
     launch: realLaunch,
@@ -172,10 +179,23 @@ export function LaunchDetailPage({
   const [updateFailed, setUpdateFailed] = useState(false);
   /** The server's reason for refusing the update, in plain words, when it gave one. */
   const [updateWhy, setUpdateWhy] = useState<string | null>(null);
+  /** Where the update form puts the cursor: "help" for "Help needed" (the first-week card's "Ask for help"). */
+  const [updateStart, setUpdateStart] = useState<"help" | undefined>(undefined);
   const setUpdateOpen = useCallback((open: boolean) => {
     setUpdateFailed(false);
+    setUpdateStart(undefined);
     setUpdateOpenRaw(open);
   }, []);
+  const askForHelp = useCallback(() => {
+    setUpdateFailed(false);
+    setUpdateStart("help");
+    setUpdateOpenRaw(true);
+  }, []);
+  // A project just made from Start: its welcome card, which can be put away, and its first-page recovery key prompt.
+  const [welcome, setWelcome] = useState(started === 1);
+  const [firstPage] = useState(started === 1);
+  // The Tasks, Team and Record cards a new project does not show until the founder asks for them.
+  const [setUpOpened, setSetUpOpened] = useState(false);
   const [mybidsAutoAction, setMybidsAutoAction] = useState<
     "exit" | "claim" | null
   >(null);
@@ -256,7 +276,8 @@ export function LaunchDetailPage({
   // `exit`/`claim` land on the My-bids section and expand the matching bid's
   // action there.
   useEffect(() => {
-    if (!action) return;
+    // `update` needs to know who is looking, so it waits for the effect below.
+    if (!action || action === "update") return;
     if (action === "bid") {
       // A contributor-only build takes no bids, so a shared bid link opens nothing there.
       if (raisesOffered()) setBidOpen(true);
@@ -265,6 +286,20 @@ export function LaunchDetailPage({
     setMybidsAutoAction(action);
     setTab("mybids");
   }, [action, setTab]);
+
+  // `?action=update` (the calendar reminder's link) opens the founder's update form once the page knows who is looking,
+  // then leaves the address as a plain project address, so a reload does not open it again. Anyone else gets the page.
+  const updateLinkUsed = useRef(false);
+  useEffect(() => {
+    if (action !== "update" || updateLinkUsed.current) return;
+    if (!launch || !isFounder || viewerIsAgent) return;
+    updateLinkUsed.current = true;
+    setUpdateOpen(true);
+    void navigate({
+      search: (previous) => ({ ...previous, action: undefined }),
+      replace: true,
+    });
+  }, [action, launch, isFounder, viewerIsAgent, setUpdateOpen, navigate]);
 
   // A link that names no author, to an id several people have a project under: the reader picks, nothing is guessed.
   if (!sandbox && !isLoading && !launch && several)
@@ -446,6 +481,16 @@ export function LaunchDetailPage({
     : "overview";
 
   const hasWorkTab = visibleTabs.some((t) => t.id === "work");
+  // The founder as a person: an agent account sets no goals and promises nothing, so it is not walked through a first week.
+  const founderPerson = isFounder && !viewerIsAgent && !sandbox;
+  const dismissWelcome = () => {
+    setWelcome(false);
+    // The address drops `?started=1`, so a reload or a shared copy of it is the plain page.
+    void navigate({
+      search: (previous) => ({ ...previous, started: undefined }),
+      replace: true,
+    });
+  };
 
   const raiseOverview = (
     <>
@@ -544,6 +589,10 @@ export function LaunchDetailPage({
               </Button>
             </p>
           ) : null}
+          {founderPerson && welcome ? (
+            <StartedCard onDismiss={dismissWelcome} project={launch.record} />
+          ) : null}
+          {founderPerson && firstPage ? <RecoveryKeyPrompt /> : null}
           <ListingNote isFounder={isFounder} launch={launch} stage={stage} />
           {/* What the project is for comes first: its goal, and how everyone will know. */}
           {isFounder && viewerIsAgent ? (
@@ -568,23 +617,35 @@ export function LaunchDetailPage({
           project={launch.record}
         />
       ) : null}
-      {/* The project's news, above the tabs; the Updates tab is the full list, so it is not repeated there. */}
-      {!sandbox && shown !== "updates" ? (
-        <ProjectUpdateCard
+      {/* The project's news, above the tabs; the Updates tab is the full list, so it is not repeated there. A founder who
+          has posted nothing gets the first-week card in its place. */}
+      {sandbox ? null : (
+        <ProjectNews
+          firstWeek={founderPerson}
           isFounder={isFounder}
           launch={launch}
+          onAskForHelp={askForHelp}
           onOpenUpdates={() => setTab("updates")}
           onPostUpdate={() => setUpdateOpen(true)}
+          showCard={shown !== "updates"}
           workTab={hasWorkTab}
         />
-      ) : null}
+      )}
 
       {sandbox ? null : (
         <>
+          <AgentWorkNote launch={launch} />
+          {founderPerson && isAiCategory(launch.record.category) ? (
+            <AgentPostCard project={launch.record} />
+          ) : null}
           <ProjectOpenHelp launch={launch} workTab={hasWorkTab} />
-          <ProjectTasksCard launch={launch} />
-          <ProjectTeamCard isFounder={isFounder} launch={launch} />
-          <ProjectRecordCard isFounder={isFounder} launch={launch} />
+          {/* Tasks, Team and Record show once they have something; "Set up more" brings them in for a new project. */}
+          <SetUpCards
+            isFounder={isFounder}
+            launch={launch}
+            onOpen={() => setSetUpOpened(true)}
+            opened={setUpOpened}
+          />
           {/* Backing comes after the record, so the record is read first and the money second. It renders nothing unless
               the build turns investing on, and nothing for a project that cannot be backed. */}
           <BackingBlock isFounder={isFounder} launch={launch} variant="page" />
@@ -846,6 +907,7 @@ export function LaunchDetailPage({
           onClose={() => setUpdateOpen(false)}
           onPublish={postUpdate}
           project={launch.record}
+          startAt={updateStart}
         />
       ) : updateOpen ? (
         <PostUpdateDialog

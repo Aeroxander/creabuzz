@@ -105,7 +105,8 @@ const LaunchDetailPage = lazyRouteComponent(
 
 function LaunchDetailRoute() {
   const { launchId } = Route.useParams();
-  const { author, action, tab, decision, claim, mandate } = Route.useSearch();
+  const { author, action, tab, decision, claim, mandate, started } =
+    Route.useSearch();
   const sandbox = launchId === SANDBOX_ID;
   return (
     <LaunchDetailPage
@@ -117,6 +118,7 @@ function LaunchDetailRoute() {
       initialTab={tab}
       launchId={launchId}
       sandbox={sandbox}
+      started={started}
     />
   );
 }

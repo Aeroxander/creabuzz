@@ -2,7 +2,8 @@
  * The founder's next steps while a project has no Shares and no sale: say something, gather supporters, then set up
  * what comes later. The later steps are the heavy part, so they wait until people have shown up.
  *
- * Setting up Shares for people who help is always here. It is the founder's one way to it from the project page, so
+ * The supporter count is the gate to preparing a sale, so it shows only in a build that offers raises. Setting up
+ * Shares for people who help is always here. It is the founder's one way to it from the project page, so
  * no other card or tab may take its place (a guard must not hide the only way back). A build that offers raises
  * (`raisesOffered`) also offers to prepare a sale.
  */
@@ -33,7 +34,9 @@ import { ProgressStep as Step } from "./ProgressStep";
 export function IdeaProgressCard({ launch }: { launch: Launch }) {
   const { record } = launch;
   const coord = launchCoord(record);
-  const supporters = useSupporters([coord]);
+  const raises = raisesOffered();
+  // The supporter count only gates a sale: a build with no raises does not read it.
+  const supporters = useSupporters(raises ? [coord] : []);
   const count = supporters.data?.get(coord) ?? null;
   const progress = gateProgress(count ?? 0);
   const notes = useLaunchNotes(coord);
@@ -42,7 +45,6 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
     launch.updates.length > 0 ||
     (notes.data ?? []).some((note) => note.author === record.author);
   const save = useCreateLaunch();
-  const raises = raisesOffered();
   const [preparing, setPreparing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
 
@@ -105,25 +107,28 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
             </Button>
           )}
         </Step>
-        <Step done={progress.open} title="Gather supporters">
-          <div className="mt-1.5 flex items-center gap-3">
-            <div
-              aria-hidden
-              className="h-2 w-40 overflow-hidden rounded-full bg-foreground/10"
-            >
+        {/* The supporter gate belongs to a raise: a build that offers none asks nobody to gather supporters first. */}
+        {raises ? (
+          <Step done={progress.open} title="Gather supporters">
+            <div className="mt-1.5 flex items-center gap-3">
               <div
-                className="h-full rounded-full bg-primary"
-                style={{ width: `${progress.percent}%` }}
-              />
+                aria-hidden
+                className="h-2 w-40 overflow-hidden rounded-full bg-foreground/10"
+              >
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${progress.percent}%` }}
+                />
+              </div>
+              <span
+                className="text-xs tabular-nums text-muted-foreground"
+                data-testid="idea-supporters"
+              >
+                {count === null ? "…" : count} of {progress.needed}
+              </span>
             </div>
-            <span
-              className="text-xs tabular-nums text-muted-foreground"
-              data-testid="idea-supporters"
-            >
-              {count === null ? "…" : count} of {progress.needed}
-            </span>
-          </div>
-        </Step>
+          </Step>
+        ) : null}
         {raises ? (
           <Step done={false} title="Prepare the sale">
             <div className="mt-1.5 flex flex-wrap items-center gap-3">

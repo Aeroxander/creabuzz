@@ -56,7 +56,10 @@ export function PostUpdateDialog({
   agent = false,
   accepted = NONE_ACCEPTED,
   project,
+  startAt,
 }: {
+  /** Where the cursor starts: "help" opens the dialog in "Help needed" (the first-week card's "Ask for help"). */
+  startAt?: "help";
   /**
    * The project, for "Draft from the record" (it reads this project's record). Without it the button is not shown: a
    * team member's update makes no promises and the draft has no founder's record to go on.
@@ -105,6 +108,7 @@ export function PostUpdateDialog({
   const promised = asFounder ? firstPromises(next) : { text: next, dropped: 0 };
   const headingId = useId();
   const asksHelp = help.trim() !== "";
+  const helpBox = useRef<HTMLTextAreaElement | null>(null);
 
   // The boxes as they are now, for a draft that arrives later to check against.
   const boxes = useRef({ done, help, line });
@@ -142,7 +146,12 @@ export function PostUpdateDialog({
     });
 
   return (
-    <Modal label="Post update" labelledBy={headingId} onClose={onClose}>
+    <Modal
+      initialFocus={startAt === "help" ? helpBox : undefined}
+      label="Post update"
+      labelledBy={headingId}
+      onClose={onClose}
+    >
       <h2
         className="text-lg font-semibold text-black dark:text-white"
         id={headingId}
@@ -457,6 +466,7 @@ export function PostUpdateDialog({
             className={AREA_CLASS}
             maxLength={UPDATE_LIMITS.help}
             onChange={(e) => setHelp(e.target.value)}
+            ref={helpBox}
             placeholder="For example: someone to test sign-up on an older phone."
             rows={2}
             value={help}
