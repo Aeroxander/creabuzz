@@ -1616,11 +1616,34 @@ pub enum LaunchpadCmd {
         #[command(subcommand)]
         step: commands::launchpad_work::WorkCmd,
     },
-    /// Tasks with a finish line, from the helper's side: list, show, open, offer, accept, hand in, ask for more
-    /// time, give up. Every read prints stable JSON (`"schema": "creaton.tasks.v1"`)
+    /// Tasks with a finish line, from the helper's side: mine, next, list, show, open, offer, accept, hand in
+    /// (with reported numbers), ask for more time, give up. Every read prints stable JSON
+    /// (`"schema": "creaton.tasks.v1"`)
     Tasks {
         #[command(subcommand)]
         step: commands::launchpad_tasks::TasksCmd,
+    },
+    /// Start a project in one command: its name, a sentence, its goal and how everyone will know it was reached.
+    /// Publishes the same two records as the web app's Quick Start and prints the project's page path as JSON
+    #[command(
+        after_help = "A labelled agent account cannot set goals: the project is made and its page printed, the goal \
+is reported as `needs_a_person`, and the command exits 3. A person sets the goal from the project page.\n\n\
+Example:\n  buzz launchpad start --name 'Star Atlas' --goal 'Publish the northern sky chart' \\\n    \
+--how 'The chart is on the site and ten people have read it' --pitch 'A map of the northern sky anyone can read'"
+    )]
+    Start {
+        /// The project's name (2 to 60 characters)
+        #[arg(long)]
+        name: String,
+        /// The project's goal, in your words (3 to 200 characters)
+        #[arg(long)]
+        goal: String,
+        /// How everyone will know the goal was reached (3 to 200 characters)
+        #[arg(long)]
+        how: String,
+        /// What the project is, in one sentence (10 to 140 characters). Defaults to the goal.
+        #[arg(long)]
+        pitch: Option<String>,
     },
     /// A project's weekly update, as its founder or a team member
     Updates {
@@ -1650,29 +1673,45 @@ pub enum LaunchpadCmd {
         #[arg(long)]
         launch_author: Option<String>,
         /// The claim's id (0x + 64 hex, or a 1–32-byte label)
-        #[arg(long)]
-        claim: String,
+        #[arg(long, required_unless_present = "task", conflicts_with = "task")]
+        claim: Option<String>,
         /// The claim's mandate address (0x + 40 hex)
-        #[arg(long)]
-        mandate: String,
+        #[arg(long, required_unless_present = "task", conflicts_with = "task")]
+        mandate: Option<String>,
         /// The evidence hash the checks ran against (0x + 64 hex — the hash
         /// the claim committed to onchain)
-        #[arg(long = "evidence-hash")]
-        evidence_hash: String,
+        #[arg(
+            long = "evidence-hash",
+            required_unless_present = "task",
+            conflicts_with = "task"
+        )]
+        evidence_hash: Option<String>,
         /// The words of the acceptance criterion this claim is judged against
         /// (their keccak256 must equal --check-hash)
-        #[arg(long = "check-text")]
+        #[arg(long = "check-text", conflicts_with = "task")]
         check_text: Option<String>,
         /// The claim's committed check hash (0x + 64 hex)
-        #[arg(long = "check-hash")]
-        check_hash: String,
+        #[arg(
+            long = "check-hash",
+            required_unless_present = "task",
+            conflicts_with = "task"
+        )]
+        check_hash: Option<String>,
         /// A work area's words a check may map to instead (bound to
         /// --work-area-hash)
-        #[arg(long = "work-area-text")]
+        #[arg(long = "work-area-text", conflicts_with = "task")]
         work_area_text: Option<String>,
         /// The work area's words hash (0x + 64 hex)
-        #[arg(long = "work-area-hash")]
+        #[arg(long = "work-area-hash", conflicts_with = "task")]
         work_area_hash: Option<String>,
+        /// Run the checks for a task's hand-in instead of a chain claim: the task's id (64 hex). The record is bound
+        /// to the task and to the piece of work named by --evidence, and judged against the task's "done means".
+        /// Without a Docker daemon the record says the checks were not run
+        #[arg(long, requires = "evidence")]
+        task: Option<String>,
+        /// With --task: the id of the piece of work you handed in (from `tasks show`), which the checks ran against
+        #[arg(long, requires = "task")]
+        evidence: Option<String>,
         /// The checks declaration file (JSON: {"checks":[{"name","argv",
         /// "criterion"?,"note"?}],"artifacts":[{"name","path","sha256"?,
         /// "version"?}]})
@@ -4135,6 +4174,7 @@ mod tests {
                 "record-receipt",
                 "record-verdict",
                 "show",
+                "start",
                 "tasks",
                 "updates",
                 "vote",
@@ -4317,7 +4357,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 23),
+            ("launchpad", 24),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

@@ -90,6 +90,20 @@ buzz launchpad updates post orbit --author <FOUNDER> --title 'Docs' --done 'Wrot
         #[arg(long = "no-promises", default_value_t = false)]
         no_promises: bool,
     },
+    /// Print the grounded facts a weekly update is drafted from, as JSON: goals, the last update and how its
+    /// promises stand, the work accepted since, open help requests. Read-only.
+    #[command(
+        after_help = "An operator's own agent reads this, drafts \"what happened\" and \"help needed\" from it, and \
+posts with `buzz launchpad updates post <id> --title ... --no-promises`. Nothing here is invented, and the update \
+makes no promises: a promise needs a person's signature."
+    )]
+    Facts {
+        /// Project id (slug)
+        id: String,
+        /// Founder pubkey (64-char hex). Defaults to the current identity.
+        #[arg(long)]
+        author: Option<String>,
+    },
 }
 
 fn first_tag(event: &Event, name: &str) -> Option<String> {
@@ -304,6 +318,31 @@ pub(crate) struct PromiseEntry {
     answers: Vec<(String, u64)>,
     /// The founder answered more than once and the answers disagree.
     conflict: bool,
+}
+
+impl PromiseEntry {
+    /// The promise's id: the id of the update that made it, a colon, and its number there.
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// How the promise stands, as the word `record` prints.
+    pub(crate) fn state(&self) -> &'static str {
+        self.state
+    }
+
+    /// The promise as `buzz launchpad record` lists it.
+    pub(crate) fn to_json(&self) -> Value {
+        json!({
+            "promise_id": self.id,
+            "text": self.text,
+            "promised_at": self.promised_at,
+            "state": self.state,
+            "note": self.note,
+            "answers": self.answers.iter().map(|(state, at)| json!({ "answer": state, "at": at })).collect::<Vec<_>>(),
+            "answered_more_than_once": self.conflict,
+        })
+    }
 }
 
 struct FounderUpdate<'a> {
@@ -531,15 +570,7 @@ pub async fn cmd_record(
             },
             "promises": promise_totals(&entries),
             "goals": goal_totals(&goals),
-            "promise_list": entries.iter().map(|e| json!({
-                "promise_id": e.id,
-                "text": e.text,
-                "promised_at": e.promised_at,
-                "state": e.state,
-                "note": e.note,
-                "answers": e.answers.iter().map(|(state, at)| json!({ "answer": state, "at": at })).collect::<Vec<_>>(),
-                "answered_more_than_once": e.conflict,
-            })).collect::<Vec<_>>(),
+            "promise_list": entries.iter().map(PromiseEntry::to_json).collect::<Vec<_>>(),
             "goal_list": goals.values().collect::<Vec<_>>(),
             // False: the founder has more records than were read, so the totals are of the newest ones only.
             "complete": complete,
@@ -754,6 +785,9 @@ pub async fn dispatch(cmd: UpdatesCmd, client: &BuzzClient) -> Result<(), CliErr
                 no_promises,
             )
             .await
+        }
+        UpdatesCmd::Facts { id, author } => {
+            super::launchpad_facts::cmd_facts(client, &id, author.as_deref()).await
         }
     }
 }

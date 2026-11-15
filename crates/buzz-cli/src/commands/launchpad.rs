@@ -680,6 +680,23 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             verdict,
             tx,
         } => cmd_verdict(client, &id, &claim_id, &verdict, &tx).await,
+        LaunchpadCmd::Start {
+            name,
+            goal,
+            how,
+            pitch,
+        } => {
+            super::launchpad_start::cmd_start(
+                client,
+                &super::launchpad_start::StartArgs {
+                    name,
+                    goal,
+                    how,
+                    pitch,
+                },
+            )
+            .await
+        }
         LaunchpadCmd::Tasks { step } => super::launchpad_tasks::dispatch(step, client).await,
         LaunchpadCmd::Updates { step } => super::launchpad_record::dispatch(step, client).await,
         LaunchpadCmd::Record { id, author } => {
@@ -695,6 +712,8 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
             check_hash,
             work_area_text,
             work_area_hash,
+            task,
+            evidence,
             checks,
             dir,
             timeout_secs,
@@ -718,6 +737,8 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
                     check_hash,
                     work_area_text,
                     work_area_hash,
+                    task,
+                    evidence,
                     checks_file: checks,
                     dir,
                     timeout_secs,

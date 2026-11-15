@@ -98,13 +98,17 @@ fn hash_word(value: &str, what: &str) -> Result<String, CliError> {
 pub(super) struct WorkChecksArgs {
     pub launch: String,
     pub launch_author: Option<String>,
-    pub claim: String,
-    pub mandate: String,
-    pub evidence_hash: String,
+    /// The chain claim's id, mandate, evidence hash and check hash: all given, or none when `task` is.
+    pub claim: Option<String>,
+    pub mandate: Option<String>,
+    pub evidence_hash: Option<String>,
     pub check_text: Option<String>,
-    pub check_hash: String,
+    pub check_hash: Option<String>,
     pub work_area_text: Option<String>,
     pub work_area_hash: Option<String>,
+    /// A task's hand-in to run the checks for, in place of a chain claim: the task's id and the piece of work's id.
+    pub task: Option<String>,
+    pub evidence: Option<String>,
     /// The sandbox image, locally available; resolved to its immutable ID
     /// and run with `--pull never`. Required: an unnamed image means nothing
     /// can run, by design.
@@ -130,10 +134,52 @@ pub(super) async fn cmd_work_checks(
     args: &WorkChecksArgs,
     client: &BuzzClient,
 ) -> Result<(), CliError> {
-    let claim = word_of(&args.claim, "claim id")?;
-    let mandate = address_of(&args.mandate, "mandate")?;
-    let evidence_hash = hash_word(&args.evidence_hash, "evidence hash")?;
-    let check_hash = hash_word(&args.check_hash, "check hash")?;
+    let missing = |what: &str| {
+        CliError::Usage(format!(
+            "{what} is required (or give --task and --evidence)"
+        ))
+    };
+    let (claim, mandate, evidence_hash, check_hash, task_words, task_tags) =
+        match (&args.task, &args.evidence) {
+            (Some(task), Some(piece)) => {
+                let bound = task_binding(client, args, task, piece).await?;
+                (
+                    bound.claim,
+                    bound.mandate,
+                    bound.evidence_hash,
+                    bound.check_hash,
+                    Some(bound.done_means),
+                    bound.tags,
+                )
+            }
+            (None, None) => (
+                word_of(
+                    args.claim.as_deref().ok_or_else(|| missing("--claim"))?,
+                    "claim id",
+                )?,
+                address_of(
+                    args.mandate
+                        .as_deref()
+                        .ok_or_else(|| missing("--mandate"))?,
+                    "mandate",
+                )?,
+                hash_word(
+                    args.evidence_hash
+                        .as_deref()
+                        .ok_or_else(|| missing("--evidence-hash"))?,
+                    "evidence hash",
+                )?,
+                hash_word(
+                    args.check_hash
+                        .as_deref()
+                        .ok_or_else(|| missing("--check-hash"))?,
+                    "check hash",
+                )?,
+                None,
+                Vec::new(),
+            ),
+            _ => return Err(CliError::Usage("--task and --evidence go together".into())),
+        };
     if args.work_area_text.is_some() != args.work_area_hash.is_some() {
         return Err(CliError::Usage(
             "--work-area-text and --work-area-hash go together: the words are bound to \
@@ -149,7 +195,7 @@ pub(super) async fn cmd_work_checks(
     let declaration = checks::parse_checks(&read_file(&args.checks_file)?)?;
     let envs = checks::parse_envs(&args.envs)?;
     let bindings = record::bind_criteria(
-        args.check_text.as_deref(),
+        task_words.as_deref().or(args.check_text.as_deref()),
         check_hash.clone(),
         args.work_area_text.as_deref(),
         args.work_area_hash.as_deref(),
@@ -262,7 +308,7 @@ pub(super) async fn cmd_work_checks(
         claim.as_str().to_lowercase(),
         evidence_hash.as_str().to_lowercase(),
     );
-    let tags = vec![
+    let mut tags = vec![
         Tag::parse(["a", coordinate.as_str()])
             .map_err(|e| CliError::Other(format!("bad a tag: {e}")))?,
         Tag::parse(["c", context_tag.as_str()])
@@ -276,6 +322,8 @@ pub(super) async fn cmd_work_checks(
         Tag::parse(["sandbox", sandbox_word])
             .map_err(|e| CliError::Other(format!("bad sandbox tag: {e}")))?,
     ];
+    // A run bound to a task's hand-in also names the task and the piece of work plainly, beside the claim fields.
+    tags.extend(task_tags);
     let builder =
         EventBuilder::new(Kind::Custom(KIND_WORK_CHECK_RUN as u16), record.to_string()).tags(tags);
     let event = client.sign_event(builder)?;
@@ -305,6 +353,104 @@ pub(super) async fn cmd_work_checks(
     response["published"] = json!(true);
     println!("{}", response);
     Ok(())
+}
+
+/// The mandate a task-bound run record carries: tasks have none, so it is the zero address.
+pub(crate) const TASK_MANDATE: &str = "0x0000000000000000000000000000000000000000";
+
+/// What a run for a task's hand-in is bound to. The record keeps the shape of a chain claim's record so the same
+/// readers verify it: the claim id is the task's id, the mandate is [`TASK_MANDATE`], and the evidence hash is the
+/// id of the piece of work handed in; the criterion is the task's "done means", hashed.
+struct TaskBinding {
+    claim: String,
+    mandate: String,
+    evidence_hash: String,
+    check_hash: String,
+    done_means: String,
+    tags: Vec<Tag>,
+}
+
+async fn task_binding(
+    client: &BuzzClient,
+    args: &WorkChecksArgs,
+    task: &str,
+    piece: &str,
+) -> Result<TaskBinding, CliError> {
+    use crate::commands::launchpad_tasks::{
+        project_tasks, read_project, read_task_records, split_coordinate, today,
+    };
+    for (what, id) in [("--task", task), ("--evidence", piece)] {
+        if id.len() != 64
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err(CliError::Usage(format!(
+                "{what} must be 64 lowercase hex characters"
+            )));
+        }
+    }
+    let coordinate =
+        resolve_launch_coordinate(client, &args.launch, args.launch_author.as_deref()).await?;
+    let (founder, id) = split_coordinate(&coordinate)
+        .ok_or_else(|| CliError::Other("the launch names its founder badly".into()))?;
+    let me = client.keys().public_key().to_hex();
+    let project = read_project(client, id, founder).await?;
+    let (records, complete) = read_task_records(client, &project).await?;
+    if !complete {
+        return Err(CliError::Other(
+            "this project has more task records than could be read, so the task's state is not known".into(),
+        ));
+    }
+    let team = project.team_set();
+    let view = project_tasks(&records, &project.coordinate, &team, &today(), &me)
+        .into_iter()
+        .find(|t| t["task_id"].as_str() == Some(task))
+        .ok_or_else(|| CliError::NotFound(format!("task {task} is not a task of this project")))?;
+    bind_task_view(&view, task, piece, &me)
+}
+
+/// What a run for `piece` of work on `task` (as `project_tasks` shows it to `me`) is bound to, or why it cannot be:
+/// the task must be this account's, and the piece must be work this account handed in on it.
+fn bind_task_view(
+    view: &Value,
+    task: &str,
+    piece: &str,
+    me: &str,
+) -> Result<TaskBinding, CliError> {
+    if view["helper"].as_str() != Some(me) {
+        return Err(CliError::Usage(
+            "that task is not this account's: only its helper runs checks for its work".into(),
+        ));
+    }
+    let handed_in = view["evidence"]
+        .as_array()
+        .is_some_and(|pieces| pieces.iter().any(|p| p["id"].as_str() == Some(piece)));
+    if !handed_in {
+        return Err(CliError::NotFound(format!(
+            "no work {piece} was handed in on this task by this account: hand it in first (`buzz launchpad tasks submit`)"
+        )));
+    }
+    let done_means = view["done_means"]
+        .as_str()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let check_hash = format!(
+        "0x{}",
+        hex::encode(buzz_evm_allowance::abi::keccak256(done_means.as_bytes()))
+    );
+    let word = |what: &str, value: &str| {
+        Tag::parse([what, value]).map_err(|e| CliError::Other(format!("bad {what} tag: {e}")))
+    };
+    Ok(TaskBinding {
+        claim: format!("0x{task}"),
+        mandate: TASK_MANDATE.to_string(),
+        evidence_hash: format!("0x{piece}"),
+        check_hash,
+        done_means,
+        tags: vec![word("task", task)?, word("task-evidence", piece)?],
+    })
 }
 
 fn sandbox_enforced_word(sandbox_json: &Value) -> &'static str {
@@ -517,4 +663,69 @@ fn read_file(path: &str) -> Result<String, CliError> {
         )));
     }
     std::fs::read_to_string(path).map_err(|e| CliError::Usage(format!("cannot read {path}: {e}")))
+}
+
+#[cfg(test)]
+mod task_binding_tests {
+    use super::*;
+
+    fn view(helper: &str, piece: &str) -> Value {
+        json!({
+            "task_id": "c".repeat(64),
+            "helper": helper,
+            "done_means": "  A list of every name that differs.  ",
+            "evidence": [{ "id": piece }],
+        })
+    }
+
+    #[test]
+    fn a_run_for_a_task_keeps_the_shape_the_readers_of_a_claims_run_verify() {
+        let (task, piece, me) = ("c".repeat(64), "e".repeat(64), "1".repeat(64));
+        let bound = bind_task_view(&view(&me, &piece), &task, &piece, &me).expect("bound");
+        // The claim id is the task's, the mandate is the zero address, the evidence hash is the piece's id.
+        assert_eq!(bound.claim, format!("0x{task}"));
+        assert_eq!(bound.mandate, TASK_MANDATE);
+        assert_eq!(bound.evidence_hash, format!("0x{piece}"));
+        // The criterion is the task's "done means", trimmed and hashed the way a claim's check words are.
+        assert_eq!(bound.done_means, "A list of every name that differs.");
+        let record::CriterionBinding { hash, words, .. } = record::bind_criteria(
+            Some(&bound.done_means),
+            bound.check_hash.clone(),
+            None,
+            None,
+        )
+        .expect("the words hash to the hash")
+        .remove(0);
+        assert_eq!(
+            (hash, words.as_deref()),
+            (bound.check_hash.clone(), Some(bound.done_means.as_str()))
+        );
+        assert!(bound
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["task", task.as_str()]));
+        assert!(bound
+            .tags
+            .iter()
+            .any(|t| t.as_slice() == ["task-evidence", piece.as_str()]));
+        // The three words a reader binds by are valid as the chain path writes them.
+        assert!(word_of(&bound.claim, "claim id").is_ok());
+        assert!(address_of(&bound.mandate, "mandate").is_ok());
+        assert!(hash_word(&bound.evidence_hash, "evidence hash").is_ok());
+    }
+
+    #[test]
+    fn only_the_helper_runs_checks_and_only_for_work_it_handed_in() {
+        let (task, piece, me) = ("c".repeat(64), "e".repeat(64), "1".repeat(64));
+        // Someone else's task.
+        assert!(matches!(
+            bind_task_view(&view(&"2".repeat(64), &piece), &task, &piece, &me),
+            Err(CliError::Usage(_))
+        ));
+        // Work that was never handed in on it.
+        assert!(matches!(
+            bind_task_view(&view(&me, &piece), &task, &"f".repeat(64), &me),
+            Err(CliError::NotFound(_))
+        ));
+    }
 }

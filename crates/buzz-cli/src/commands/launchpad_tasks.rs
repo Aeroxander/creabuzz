@@ -39,7 +39,7 @@ use crate::commands::parse_write_response;
 use crate::error::CliError;
 
 /// The `l` label every task record carries.
-const TASK_LABEL: &str = "creaton-task";
+pub(crate) const TASK_LABEL: &str = "creaton-task";
 /// How many of a project's task records are read. More than this and the listing says it is not complete.
 const TASK_READ_BOUND: u32 = 5_000;
 /// How many records are read for a project's help requests and what answers them.
@@ -55,6 +55,8 @@ pub(crate) const SCHEMA: &str = "creaton.tasks.v1";
 /// How many update records `open` looks through in one call unless told otherwise, and the most it ever will.
 const OPEN_SCAN_DEFAULT: u32 = 500;
 const OPEN_SCAN_MAX: u32 = 2_000;
+/// Said beside every list of reported results.
+pub(crate) const RESULTS_NOTE: &str = "Reported by the helper, not run by anyone else.";
 /// The largest file `submit --file` will fingerprint.
 const MAX_FILE_BYTES: u64 = 1 << 30;
 const MAX_FILE_NAME: usize = 120;
@@ -89,6 +91,42 @@ the next page. `cut: false` means the end was reached."
         /// How many update records to look through in this call (default 500, at most 2000)
         #[arg(long)]
         scan: Option<u32>,
+        #[command(flatten)]
+        filters: super::launchpad_inbox::OpenFilters,
+    },
+    /// The tasks that name this account, across every project: what to do next on each, and when it is due
+    #[command(
+        after_help = "Looks through at most --scan task records that name this account (newest first). Closed tasks \
+(confirmed, given up, cancelled) are left out unless --all. `next` says what this account can do: accept, submit, \
+wait-for-check, or none; `commands` holds the ready-to-run command. When `cut` is true, pass `next_until` as --until \
+to read older ones."
+    )]
+    Mine {
+        /// Only look at records signed at or before this time (unix seconds). Use `next_until` from the page before.
+        #[arg(long)]
+        until: Option<u64>,
+        /// How many task records to look through in this call (default 500, at most 2000)
+        #[arg(long)]
+        scan: Option<u32>,
+        /// Also list tasks that are finished, given up or cancelled
+        #[arg(long, default_value_t = false)]
+        all: bool,
+    },
+    /// The one open request that fits best, with the command to offer on it
+    #[command(
+        after_help = "Looks through one page of update records like `open`, applies the same filters, and returns the \
+best fit: the most words in common with --text, then the fewest offers so far, then the newest. An offer is not an \
+agreement; the team decides. When nothing in the page fits and `cut` is true, pass `next_until` as --until."
+    )]
+    Next {
+        /// Only look at records signed at or before this time (unix seconds). Use `next_until` from the page before.
+        #[arg(long)]
+        until: Option<u64>,
+        /// How many update records to look through in this call (default 500, at most 2000)
+        #[arg(long)]
+        scan: Option<u32>,
+        #[command(flatten)]
+        filters: super::launchpad_inbox::OpenFilters,
     },
     /// Offer to help on an update that asks for help (public; not an agreement, and not a yes to any task)
     Offer {
@@ -136,6 +174,17 @@ the next page. `cut: false` means the end was reached."
         /// more; at most 5)
         #[arg(long = "file")]
         files: Vec<std::path::PathBuf>,
+        /// A number you measured, as `name=value` with optional `/baseline=<n>`, `/n=<sample size>`, `/unit=<words>`
+        /// and `/by=<what produced it>` (repeat; at most 10). Example: `pass_rate=0.82/baseline=0.71/n=40`. It is
+        /// recorded as reported by you, not as run by anyone else.
+        #[arg(long = "result")]
+        results: Vec<String>,
+        /// A log file of the run behind the numbers: recorded by its fingerprint and name, never uploaded
+        #[arg(long = "run-log")]
+        run_log: Option<std::path::PathBuf>,
+        /// The id of a run record (from `buzz launchpad work-checks --task`) you signed for this task
+        #[arg(long = "run-record")]
+        run_record: Option<String>,
     },
     /// Ask for more time on your task
     #[command(name = "more-time")]
@@ -212,7 +261,7 @@ fn valid_link(value: &str) -> Option<String> {
     Some(text.to_string())
 }
 
-fn first_tag(event: &Event, name: &str) -> Option<String> {
+pub(crate) fn first_tag(event: &Event, name: &str) -> Option<String> {
     event.tags.iter().find_map(|tag| match tag.as_slice() {
         [n, v, ..] if n.as_str() == name => Some(v.clone()),
         _ => None,
@@ -247,6 +296,20 @@ pub(crate) fn is_help_signal(event: &Event) -> bool {
     })
 }
 
+/// The project a task record is made in, when it is a task (not a step) that names `me` as its helper.
+pub(crate) fn task_project_for(event: &Event, me: &str) -> Option<String> {
+    parse_task_record(event)
+        .filter(|record| record.part == "task" && record.helper == me)
+        .map(|record| record.coordinate)
+}
+
+/// Where a project's public scorecard page lives: `/p/<project id>-<start of the founder's account id>`, the same
+/// address the web app shares (`projectSharePath`).
+pub(crate) fn project_path(founder: &str, id: &str) -> String {
+    let start: String = founder.chars().take(16).collect::<String>().to_lowercase();
+    format!("/p/{id}-{start}")
+}
+
 /// The words a step carries: `note` in its JSON body.
 fn note_of(event: &Event) -> String {
     serde_json::from_str::<Value>(event.content.as_str())
@@ -259,7 +322,7 @@ fn note_of(event: &Event) -> String {
 /// One task record, as read. Who signed it is `author`; whether that gives it any weight is decided in
 /// [`project_tasks`].
 #[derive(Debug, Clone)]
-struct TaskRecord {
+pub(crate) struct TaskRecord {
     id: String,
     part: String,
     author: String,
@@ -282,10 +345,46 @@ struct TaskRecord {
     ask_id: Option<String>,
     links: Vec<String>,
     files: Vec<Value>,
+    /// The results the helper reported (`task-result`), when the hand-in keeps to the bounds of
+    /// `buzz_core::task_result`. Reported by the helper: nothing here was run by anyone else.
+    results: Vec<buzz_core::task_result::TaskResult>,
+    /// The run log fingerprint (`task-run-log`): its sha256 and file name.
+    run_log: Option<(String, String)>,
+    /// A run record (kind 47010) the helper named (`task-run-record`).
+    run_record: Option<String>,
     /// The record carries an `agent` or an `auth` tag: an agent signed it.
     agent: bool,
     /// The owner its `auth` tag proves, when the signature holds.
     owner: Option<String>,
+}
+
+impl TaskRecord {
+    /// The reported-result, run log and run record tags this hand-in carries, as signed and in a fixed order.
+    fn extra_tags(&self) -> Vec<Vec<String>> {
+        let mut tags: Vec<Vec<String>> = self.results.iter().map(|r| r.to_tag()).collect();
+        if let Some((hash, name)) = &self.run_log {
+            tags.push(vec![
+                buzz_core::task_result::TAG_RUN_LOG.into(),
+                hash.clone(),
+                name.clone(),
+            ]);
+        }
+        if let Some(id) = &self.run_record {
+            tags.push(vec![
+                buzz_core::task_result::TAG_RUN_RECORD.into(),
+                id.clone(),
+            ]);
+        }
+        tags.sort();
+        tags
+    }
+}
+
+/// What a hand-in carries beside its words, links and files, as the command line gave it.
+pub(crate) struct HandInExtras<'a> {
+    pub(crate) results: &'a [String],
+    pub(crate) run_log: Option<&'a std::path::Path>,
+    pub(crate) run_record: Option<&'a str>,
 }
 
 const PARTS: [&str; 9] = [
@@ -358,6 +457,9 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
         ask_id: None,
         links: Vec::new(),
         files: Vec::new(),
+        results: Vec::new(),
+        run_log: None,
+        run_record: None,
         agent,
         owner: None,
     };
@@ -407,6 +509,24 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
                     }
                 }
             }
+            // The reported results, the run log and the run record: kept only when the whole hand-in keeps to the
+            // bounds the relay holds it to. A hand-in that breaks them is still work handed in; its numbers are
+            // not read.
+            let all: Vec<Vec<String>> = event.tags.iter().map(|t| t.as_slice().to_vec()).collect();
+            if let Ok(results) = buzz_core::task_result::check_hand_in_tags(&all) {
+                record.results = results;
+                for fields in &all {
+                    match fields.as_slice() {
+                        [n, hash, name] if n == buzz_core::task_result::TAG_RUN_LOG => {
+                            record.run_log = Some((hash.clone(), name.clone()));
+                        }
+                        [n, id] if n == buzz_core::task_result::TAG_RUN_RECORD => {
+                            record.run_record = Some(id.clone());
+                        }
+                        _ => {}
+                    }
+                }
+            }
             // Evidence is something handed in.
             if record.links.is_empty() && record.files.is_empty() && record.note.is_empty() {
                 return None;
@@ -448,7 +568,7 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
 /// and a helper is on a task only once they signed a step for that very task (a yes, work handed in, an ask for
 /// more time). An offer to help is never agreement. A task nobody has agreed to is listed only for the project's
 /// team and for the person it names; the record itself is public all the same.
-fn project_tasks(
+pub(crate) fn project_tasks(
     records: &[TaskRecord],
     coordinate: &str,
     team: &HashSet<String>,
@@ -504,6 +624,8 @@ fn project_tasks(
         let evidence = from_helper("evidence");
         let ids: HashSet<&str> = evidence.iter().map(|e| e.id.as_str()).collect();
         let mut confirmed: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
+        // When the confirmation was signed, as its signer wrote it: the earliest of those for a piece of work.
+        let mut confirmed_at: BTreeMap<&str, u64> = BTreeMap::new();
         let mut confirmed_without_evidence = false;
         for step in from_team("confirm") {
             // Nobody grades their own work: not whoever runs the helper, and not an agent.
@@ -512,7 +634,9 @@ fn project_tasks(
             }
             match step.evidence_id.as_deref() {
                 Some(id) if ids.contains(id) => {
-                    confirmed.entry(id).or_default().push(step.author.as_str())
+                    confirmed.entry(id).or_default().push(step.author.as_str());
+                    let at = confirmed_at.entry(id).or_insert(step.at);
+                    *at = (*at).min(step.at);
                 }
                 _ => confirmed_without_evidence = true,
             }
@@ -617,6 +741,8 @@ fn project_tasks(
             "goal_id": task.goal_id,
             "limits": (!task.limits.is_empty()).then_some(task.limits.as_str()),
             "checked_by": checked_by,
+            // When the work was accepted, as its checker's record says (a signer writes it; it decides nothing).
+            "accepted_at": accepted.and_then(|e| confirmed_at.get(e.id.as_str())),
             "state": state,
             "late": late,
             "helper": helper,
@@ -646,6 +772,19 @@ fn project_tasks(
                 "note": e.note,
                 "links": e.links,
                 "files": e.files,
+                // What the helper reported, as numbers (`buzz_core::task_result`). Reported by the helper, not run
+                // by anyone else; `run_record` is the one thing in here a sandbox run signed, and it is only named.
+                "results": e.results.iter().map(|r| json!({
+                    "name": r.name,
+                    "value": r.value,
+                    "unit": r.unit,
+                    "baseline": (!r.baseline.is_empty()).then_some(r.baseline.as_str()),
+                    "sample_size": (!r.sample_size.is_empty()).then_some(r.sample_size.as_str()),
+                    "produced_by": r.produced_by,
+                })).collect::<Vec<_>>(),
+                "results_note": (!e.results.is_empty()).then_some(RESULTS_NOTE),
+                "run_log": e.run_log.as_ref().map(|(sha256, name)| json!({ "sha256": sha256, "name": name })),
+                "run_record": e.run_record,
                 "confirmed_by": confirmed.get(e.id.as_str()).cloned().unwrap_or_default(),
                 "sent_back": sent_back.get(e.id.as_str()).map(|list| list.iter().map(|s| json!({
                     "by": s.author,
@@ -684,7 +823,7 @@ fn project_tasks(
 
 /// The project's open help requests as JSON: team updates that ask for help and that no team member has marked
 /// "Help found". `signals` are the records that answer those updates.
-fn open_help_requests(
+pub(crate) fn open_help_requests(
     updates: &[Event],
     signals: &[Event],
     team: &HashSet<String>,
@@ -804,7 +943,7 @@ fn step_parts(
     Ok((tags, content))
 }
 
-fn parse_events(raw: Vec<Value>) -> Result<Vec<Event>, CliError> {
+pub(crate) fn parse_events(raw: Vec<Value>) -> Result<Vec<Event>, CliError> {
     raw.into_iter()
         .map(|event| {
             serde_json::from_value(event)
@@ -818,10 +957,12 @@ pub(crate) struct Project {
     pub(crate) name: String,
     /// The founder first, then the people on the project's record.
     pub(crate) team: Vec<String>,
+    /// The project's topics (its lowercase `t` tags, but for the routing tag every record carries).
+    pub(crate) topics: Vec<String>,
 }
 
 impl Project {
-    fn team_set(&self) -> HashSet<String> {
+    pub(crate) fn team_set(&self) -> HashSet<String> {
         self.team.iter().cloned().collect()
     }
 
@@ -837,12 +978,13 @@ impl Project {
             "name": self.name,
             "coordinate": self.coordinate,
             "team": self.team,
+            "topics": self.topics,
         })
     }
 }
 
 /// The founder and the id a project coordinate (`37001:<founder>:<id>`) names.
-fn split_coordinate(coordinate: &str) -> Option<(&str, &str)> {
+pub(crate) fn split_coordinate(coordinate: &str) -> Option<(&str, &str)> {
     let mut parts = coordinate.splitn(3, ':');
     let (kind, founder, id) = (parts.next()?, parts.next()?, parts.next()?);
     (kind == KIND_LAUNCH_RECORD.to_string() && is_hex64(founder) && !id.is_empty())
@@ -911,7 +1053,10 @@ fn attach_goals(tasks: &mut [Value], goals: &BTreeMap<String, Value>) {
 /// Say of each task's helper whether the account is labelled as an agent, and who runs it: read from the helper's
 /// own profile (`buzz agents show`), so it is known before the helper has signed anything for the task. A helper
 /// whose steps carry an agent's mark stays marked. Returns whether every helper's profile was looked at.
-async fn attach_helper_labels(client: &BuzzClient, tasks: &mut [Value]) -> Result<bool, CliError> {
+pub(crate) async fn attach_helper_labels(
+    client: &BuzzClient,
+    tasks: &mut [Value],
+) -> Result<bool, CliError> {
     let mut helpers: Vec<String> = tasks
         .iter()
         .filter_map(|t| t["helper"].as_str().map(str::to_string))
@@ -1004,10 +1149,18 @@ pub(crate) async fn read_project(
             }
         }
     }
+    let mut topics: Vec<String> = Vec::new();
+    for topic in all_tags(&record, "t") {
+        let topic = topic.trim().to_lowercase();
+        if !topic.is_empty() && topic != "dao-launchpad" && !topics.contains(&topic) {
+            topics.push(topic);
+        }
+    }
     Ok(Project {
         coordinate: format!("{KIND_LAUNCH_RECORD}:{owner}:{id}"),
         name: first_tag(&record, "name").unwrap_or_default(),
         team,
+        topics,
     })
 }
 
@@ -1033,7 +1186,7 @@ const HELPERS_READ: usize = 200;
 /// Read by who signed them, never only by what they name: first the team's own task records, then the steps of the
 /// helpers those tasks name. Anyone can sign a record that carries the project's tag and the task label, so a read
 /// by tag alone could be filled with a stranger's junk until it never reached its end.
-async fn read_task_records(
+pub(crate) async fn read_task_records(
     client: &BuzzClient,
     project: &Project,
 ) -> Result<(Vec<TaskRecord>, bool), CliError> {
@@ -1085,18 +1238,17 @@ async fn read_task_records(
     Ok((records, complete))
 }
 
-fn today() -> String {
+pub(crate) fn today() -> String {
     chrono::Utc::now().format("%Y-%m-%d").to_string()
 }
 
-async fn cmd_list(client: &BuzzClient, id: &str, author: Option<&str>) -> Result<(), CliError> {
-    let me = client.keys().public_key().to_hex();
-    let owner = author.map_or_else(|| me.clone(), str::to_string);
-    let project = read_project(client, id, &owner).await?;
-    let team = project.team_set();
-    let (records, tasks_complete) = read_task_records(client, &project).await?;
-
-    // Help requests are the team's own updates: read by author, so nobody else's records can crowd them out.
+/// The team's own update records for a project, the records that answer the ones that ask for help, and whether
+/// both were read to the end. Help requests are the team's own updates: read by author, so nobody else's records can
+/// crowd them out.
+pub(crate) async fn read_help_inputs(
+    client: &BuzzClient,
+    project: &Project,
+) -> Result<(Vec<Event>, Vec<Event>, bool), CliError> {
     let authors: Vec<&String> = project.team.iter().take(TEAM_TOLD).collect();
     let filter = json!({
         "kinds": [KIND_LAUNCH_UPDATE],
@@ -1108,7 +1260,7 @@ async fn cmd_list(client: &BuzzClient, id: &str, author: Option<&str>) -> Result
             .query_pages_bounded(filter, HELP_READ_BOUND + 1)
             .await?,
     )?;
-    let mut help_complete = updates.len() <= HELP_READ_BOUND as usize;
+    let mut complete = updates.len() <= HELP_READ_BOUND as usize;
     let asking: Vec<String> = updates
         .iter()
         .filter(|u| first_tag(u, "help-needed").is_some())
@@ -1122,9 +1274,20 @@ async fn cmd_list(client: &BuzzClient, id: &str, author: Option<&str>) -> Result
                 .query_pages_bounded(filter, HELP_READ_BOUND + 1)
                 .await?,
         )?;
-        help_complete &= found.len() <= HELP_READ_BOUND as usize;
+        complete &= found.len() <= HELP_READ_BOUND as usize;
         signals.extend(found);
     }
+    Ok((updates, signals, complete))
+}
+
+async fn cmd_list(client: &BuzzClient, id: &str, author: Option<&str>) -> Result<(), CliError> {
+    let me = client.keys().public_key().to_hex();
+    let owner = author.map_or_else(|| me.clone(), str::to_string);
+    let project = read_project(client, id, &owner).await?;
+    let team = project.team_set();
+    let (records, tasks_complete) = read_task_records(client, &project).await?;
+
+    let (updates, signals, help_complete) = read_help_inputs(client, &project).await?;
     let mut tasks = project_tasks(&records, &project.coordinate, &team, &today(), &me);
     // The goals are among the team's updates just read: the founder's goal records.
     attach_goals(
@@ -1303,6 +1466,7 @@ async fn cmd_accept(
     publish(client, &project.coordinate, tags, content).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn cmd_submit(
     client: &BuzzClient,
     id: &str,
@@ -1311,6 +1475,7 @@ async fn cmd_submit(
     note: Option<&str>,
     links: &[String],
     files: &[std::path::PathBuf],
+    extras: &HandInExtras<'_>,
 ) -> Result<(), CliError> {
     let note = note.unwrap_or("").trim();
     let mut clean: Vec<String> = Vec::new();
@@ -1337,10 +1502,19 @@ async fn cmd_submit(
             prints.push(print);
         }
     }
+    let log = match extras.run_log {
+        Some(path) => Some(file_fingerprint(path)?),
+        None => None,
+    };
+    let extra_tags =
+        super::launchpad_result::Extras::build(extras.results, log.as_ref(), extras.run_record)?;
     if note.is_empty() && clean.is_empty() && prints.is_empty() {
-        return Err(CliError::Usage(
-            "hand in something: --note, --link, --file, or any of them together".into(),
-        ));
+        return Err(CliError::Usage(if extra_tags.is_empty() {
+            "hand in something: --note, --link, --file, or any of them together".into()
+        } else {
+            "numbers go with work: add a --note (or a --link or --file) saying what they show"
+                .into()
+        }));
     }
     let me = client.keys().public_key().to_hex();
     let project = read_project(client, id, author).await?;
@@ -1363,6 +1537,7 @@ async fn cmd_submit(
             && r.author == me
             && r.note == kept_note
             && r.links == clean
+            && r.extra_tags() == extra_tags.tags
             && r.files.len() == prints.len()
             && r.files.iter().all(|file| {
                 prints
@@ -1375,9 +1550,17 @@ async fn cmd_submit(
             "this account already handed in exactly this on that task".into(),
         ));
     }
+    if let Some(id) = extras.run_record {
+        super::launchpad_result::check_run_record(client, id, task).await?;
+    }
     let (mut tags, content) =
         step_parts("evidence", task, &tell(&project, &view), note, &clean, None)?;
     tags.extend(file_tags(&prints)?);
+    for fields in &extra_tags.tags {
+        tags.push(
+            Tag::parse(fields.clone()).map_err(|e| CliError::Other(format!("bad tag: {e}")))?,
+        );
+    }
     publish(client, &project.coordinate, tags, content).await
 }
 
@@ -1522,7 +1705,10 @@ async fn cmd_show(client: &BuzzClient, task: &str) -> Result<(), CliError> {
 /// cut page gives up its oldest second whole, so the next page reads that second again from its start: no record
 /// is skipped and none is listed twice. When every record read shares one second there is nothing to give up; the
 /// page keeps them and continues from the second before, and says records in that second may have been missed.
-fn open_page(mut events: Vec<Event>, scan: usize) -> (Vec<Event>, bool, Option<u64>, bool) {
+pub(crate) fn open_page(
+    mut events: Vec<Event>,
+    scan: usize,
+) -> (Vec<Event>, bool, Option<u64>, bool) {
     events.sort_by(|a, b| {
         (b.created_at.as_secs(), b.id.to_hex()).cmp(&(a.created_at.as_secs(), a.id.to_hex()))
     });
@@ -1539,11 +1725,23 @@ fn open_page(mut events: Vec<Event>, scan: usize) -> (Vec<Event>, bool, Option<u
     (events, true, Some(oldest), false)
 }
 
-async fn cmd_open(
+/// One page of help requests, as `open` finds them.
+pub(crate) struct OpenRead {
+    pub(crate) requests: Vec<Value>,
+    pub(crate) scanned: usize,
+    pub(crate) cut: bool,
+    pub(crate) next_until: Option<u64>,
+    pub(crate) same_second: bool,
+    pub(crate) answers_complete: bool,
+    pub(crate) projects_gone: usize,
+}
+
+/// Read one bounded page of the help requests anyone may offer on, newest first.
+pub(crate) async fn read_open(
     client: &BuzzClient,
     until: Option<u64>,
     scan: Option<u32>,
-) -> Result<(), CliError> {
+) -> Result<OpenRead, CliError> {
     let scan = scan.unwrap_or(OPEN_SCAN_DEFAULT);
     if scan == 0 || scan > OPEN_SCAN_MAX {
         return Err(CliError::Usage(format!(
@@ -1613,7 +1811,12 @@ async fn cmd_open(
                 "author": founder,
                 "name": project.name,
                 "coordinate": project.coordinate,
+                "topics": project.topics,
             });
+            // The time as written, and what it comes to in hours when it can be read (`--max-time` uses it).
+            request["time_hours"] = json!(request["time"]
+                .as_str()
+                .and_then(super::launchpad_inbox::parse_hours));
             // The team asked, so its own members do not offer.
             request["may_offer"] = json!(!on_team && request["offered_by_me"] == json!(false));
             request["offer_command"] = json!(format!(
@@ -1632,23 +1835,47 @@ async fn cmd_open(
         };
         key(a).cmp(&key(b))
     });
+    Ok(OpenRead {
+        requests: out,
+        scanned,
+        cut,
+        next_until,
+        same_second,
+        answers_complete,
+        projects_gone,
+    })
+}
+
+async fn cmd_open(
+    client: &BuzzClient,
+    until: Option<u64>,
+    scan: Option<u32>,
+    filters: &super::launchpad_inbox::OpenFilters,
+) -> Result<(), CliError> {
+    let max_hours = filters.check()?;
+    let page = read_open(client, until, scan).await?;
+    let found = super::launchpad_inbox::apply(filters, max_hours, page.requests);
     println!(
         "{}",
         json!({
             "schema": SCHEMA,
-            "open": out,
-            "scanned": scanned,
+            "open": found.kept,
+            "scanned": page.scanned,
             // True: older records remain. Pass `next_until` as --until to read on.
-            "cut": cut,
-            "next_until": next_until,
+            "cut": page.cut,
+            "next_until": page.next_until,
             // True: more records share one second than one call looks through, so some in that second were not
             // looked at. Read again with a larger --scan to be sure.
-            "skipped_in_one_second": same_second,
+            "skipped_in_one_second": page.same_second,
             "complete": {
                 // False: a request has more answers than were read, so whether it is still open is not certain.
-                "answers": answers_complete,
+                "answers": page.answers_complete,
             },
-            "projects_no_longer_listed": projects_gone,
+            "projects_no_longer_listed": page.projects_gone,
+            // What the filters did: requests the page held, and those left out for a time that is not in hours,
+            // days or weeks (only with --max-time).
+            "considered": found.considered,
+            "time_unknown": found.time_unknown,
             "note": "An offer is not an agreement. The project's team makes a task for whoever it picks, and that person says yes to it.",
         })
     );
@@ -1709,7 +1936,19 @@ pub async fn dispatch(cmd: TasksCmd, client: &BuzzClient) -> Result<(), CliError
     match cmd {
         TasksCmd::List { id, author } => cmd_list(client, &id, author.as_deref()).await,
         TasksCmd::Show { task } => cmd_show(client, &task).await,
-        TasksCmd::Open { until, scan } => cmd_open(client, until, scan).await,
+        TasksCmd::Open {
+            until,
+            scan,
+            filters,
+        } => cmd_open(client, until, scan, &filters).await,
+        TasksCmd::Mine { until, scan, all } => {
+            super::launchpad_inbox::cmd_mine(client, until, scan, all).await
+        }
+        TasksCmd::Next {
+            until,
+            scan,
+            filters,
+        } => super::launchpad_inbox::cmd_next(client, until, scan, &filters).await,
         TasksCmd::GiveUp {
             id,
             author,
@@ -1730,7 +1969,27 @@ pub async fn dispatch(cmd: TasksCmd, client: &BuzzClient) -> Result<(), CliError
             note,
             links,
             files,
-        } => cmd_submit(client, &id, &author, &task, note.as_deref(), &links, &files).await,
+            results,
+            run_log,
+            run_record,
+        } => {
+            let extras = HandInExtras {
+                results: &results,
+                run_log: run_log.as_deref(),
+                run_record: run_record.as_deref(),
+            };
+            cmd_submit(
+                client,
+                &id,
+                &author,
+                &task,
+                note.as_deref(),
+                &links,
+                &files,
+                &extras,
+            )
+            .await
+        }
         TasksCmd::MoreTime {
             id,
             author,
@@ -2689,6 +2948,228 @@ mod tests {
             "orbit".to_string(),
         ] {
             assert_eq!(split_coordinate(&bad), None, "{bad}");
+        }
+    }
+
+    /// A hand-in with these whole tags beside the usual ones, signed by the helper.
+    fn hand_in_with(w: &mut World, task: &Event, extra: &[Vec<&str>], note: &str) -> Event {
+        let helper = w.helper.clone();
+        let id = task.id.to_hex();
+        let mut tags: Vec<Vec<String>> = vec![
+            vec!["l".into(), TASK_LABEL.into()],
+            vec!["task-part".into(), "evidence".into()],
+            vec!["e".into(), id.clone()],
+            vec!["task".into(), id],
+        ];
+        tags.extend(
+            extra
+                .iter()
+                .map(|t| t.iter().map(|p| p.to_string()).collect()),
+        );
+        w.sign(
+            &helper,
+            tags,
+            json!({ "title": "Work handed in", "note": note }),
+        )
+    }
+
+    #[test]
+    fn reported_numbers_are_listed_with_the_hand_in_and_labelled_as_the_helpers_own() {
+        let mut w = World::new();
+        let (founder, helper) = (w.founder.clone(), w.helper.clone());
+        let task = w.task(&founder, &[]);
+        let yes = w.step(&helper, &task, "accept", &[], "");
+        let hash = "a".repeat(64);
+        let record = "b".repeat(64);
+        let piece = hand_in_with(
+            &mut w,
+            &task,
+            &[
+                vec![
+                    "task-result",
+                    "pass_rate",
+                    "0.82",
+                    "ratio",
+                    "0.71",
+                    "40",
+                    "commit abc",
+                ],
+                vec!["task-run-log", &hash, "run.log"],
+                vec!["task-run-record", &record],
+            ],
+            "Ran it.",
+        );
+        let view = w.view(&[&task, &yes, &piece]);
+        let evidence = &view[0]["evidence"][0];
+        assert_eq!(evidence["results"][0]["name"], "pass_rate");
+        assert_eq!(evidence["results"][0]["value"], "0.82");
+        assert_eq!(evidence["results"][0]["baseline"], "0.71");
+        assert_eq!(evidence["results"][0]["sample_size"], "40");
+        assert_eq!(
+            evidence["results_note"],
+            "Reported by the helper, not run by anyone else."
+        );
+        assert_eq!(evidence["run_log"]["sha256"], hash);
+        assert_eq!(evidence["run_record"], record);
+        // A hand-in with no numbers has the same fields, empty, and says nothing about who reported them.
+        let plain = w.hand_in(&task, "Plain.");
+        let view = w.view(&[&task, &yes, &plain]);
+        let evidence = &view[0]["evidence"][0];
+        assert_eq!(evidence["results"], json!([]));
+        assert!(
+            evidence["results_note"].is_null()
+                && evidence["run_log"].is_null()
+                && evidence["run_record"].is_null()
+        );
+    }
+
+    #[test]
+    fn numbers_that_break_the_bounds_are_not_read_but_the_work_still_counts() {
+        let mut w = World::new();
+        let (founder, helper) = (w.founder.clone(), w.helper.clone());
+        let task = w.task(&founder, &[]);
+        let yes = w.step(&helper, &task, "accept", &[], "");
+        let piece = hand_in_with(
+            &mut w,
+            &task,
+            &[vec![
+                "task-result",
+                "pass_rate",
+                "very high",
+                "",
+                "",
+                "",
+                "",
+            ]],
+            "Done, mostly.",
+        );
+        let view = w.view(&[&task, &yes, &piece]);
+        assert_eq!(view[0]["state"], "submitted");
+        assert_eq!(view[0]["evidence"][0]["results"], json!([]));
+    }
+
+    #[test]
+    fn handing_in_the_same_work_with_other_numbers_is_new_work() {
+        let a = super::super::launchpad_result::Extras::build(&["x=1".into()], None, None).unwrap();
+        let b = super::super::launchpad_result::Extras::build(&["x=2".into()], None, None).unwrap();
+        assert_ne!(a.tags, b.tags);
+        let mut w = World::new();
+        let (founder, helper) = (w.founder.clone(), w.helper.clone());
+        let task = w.task(&founder, &[]);
+        let _ = w.step(&helper, &task, "accept", &[], "");
+        let one = hand_in_with(
+            &mut w,
+            &task,
+            &[a.tags[0].iter().map(String::as_str).collect()],
+            "N",
+        );
+        let record = parse_task_record(&one).expect("record");
+        assert_eq!(record.extra_tags(), a.tags);
+        assert_ne!(record.extra_tags(), b.tags);
+    }
+
+    #[test]
+    fn the_new_commands_parse_and_still_nothing_checks_or_awards() {
+        let id = "a".repeat(64);
+        let ok = |args: &[&str]| {
+            let mut all = vec!["buzz", "launchpad"];
+            all.extend_from_slice(args);
+            crate::Cli::try_parse_from(all).is_ok()
+        };
+        assert!(ok(&["tasks", "mine"]));
+        assert!(ok(&[
+            "tasks", "mine", "--all", "--scan", "50", "--until", "5"
+        ]));
+        assert!(ok(&[
+            "tasks",
+            "next",
+            "--size",
+            "small",
+            "--max-time",
+            "3d",
+            "--text",
+            "x"
+        ]));
+        assert!(ok(&[
+            "tasks",
+            "open",
+            "--project",
+            "orbit",
+            "--category",
+            "maps"
+        ]));
+        assert!(ok(&[
+            "tasks",
+            "submit",
+            "orbit",
+            "--author",
+            &id,
+            "--task",
+            &id,
+            "--note",
+            "n",
+            "--result",
+            "a=1",
+            "--result",
+            "b=2/n=4",
+            "--run-log",
+            "run.log",
+            "--run-record",
+            &id,
+        ]));
+        assert!(ok(&["updates", "facts", "orbit"]));
+        assert!(ok(&[
+            "start", "--name", "Orbit", "--goal", "A goal", "--how", "Like so"
+        ]));
+        // --task and --evidence go together, and replace the claim fields.
+        assert!(ok(&[
+            "work-checks",
+            "--launch",
+            "orbit",
+            "--task",
+            &id,
+            "--evidence",
+            &id,
+            "--checks",
+            "c.json",
+            "--dir",
+            ".",
+            "--sandbox-image",
+            "alpine:3.20",
+            "--sandbox-supervisor",
+            "s",
+        ]));
+        assert!(!ok(&[
+            "work-checks",
+            "--launch",
+            "orbit",
+            "--task",
+            &id,
+            "--checks",
+            "c.json",
+            "--dir",
+            ".",
+            "--sandbox-image",
+            "alpine:3.20",
+            "--sandbox-supervisor",
+            "s",
+        ]));
+        // Still no way to check work, grant time, vote or award from the helper's tools.
+        for step in [
+            "confirm",
+            "send-back",
+            "grant",
+            "award",
+            "vote",
+            "accept-work",
+        ] {
+            assert!(
+                !ok(&["tasks", step, "orbit", "--author", &id, "--task", &id]),
+                "{step}"
+            );
+        }
+        for step in ["promise", "mark", "set-goal", "confirm"] {
+            assert!(!ok(&["updates", step, "orbit"]), "{step}");
         }
     }
 }
