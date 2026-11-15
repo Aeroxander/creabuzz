@@ -144,15 +144,12 @@ const tid = (testId: string) => `[data-testid="${testId}"]`;
 const clickVisible = (testId: string) => async (page: Page) => {
   await page.locator(`[data-testid="${testId}"]:visible`).first().click();
 };
-// Sign-up lives in the header on a wide screen; a phone's tab bar has only Sign in, so there it is Home's own button.
+// Sign-up lives in the header on a wide screen; a phone's bar has only Sign in, so there it is the button under Home's
+// "Create your account to follow the ones you care about."
 const openSignUp = async (page: Page) => {
   const header = page.locator('[data-testid="create-identity-cta"]:visible');
   if ((await header.count()) > 0) await header.first().click();
-  else
-    await page
-      .getByTestId("home-welcome")
-      .getByRole("button", { name: "Create your account" })
-      .click();
+  else await page.getByTestId("record-feed-create-account").click();
 };
 // The kinds are cards on a wide screen and one list on a phone (DecisionComposer.tsx).
 const pickKind = (kind: string) => async (page: Page) => {
@@ -247,7 +244,13 @@ const LOOP_STOPS: Stop[] = L
         path: "/work",
         open: click("work-agents-only"),
       },
-      { name: "j06-discover-reliable", who: "visitor", path: "/discover" },
+      // Discover opens on Most reliable, so this is the same picture as the visitor's first look (a15).
+      {
+        name: "j06-discover-reliable",
+        who: "visitor",
+        path: "/discover",
+        sameAs: "a15-discover-visitor",
+      },
       {
         name: "j07-discover-ai-chip",
         who: "visitor",
@@ -684,6 +687,12 @@ const STOPS: Stop[] = [
     who: "dev",
     path: community(),
     open: click("start-project-toggle"),
+    // The hosted build starts projects on Start, so the community's own "Set up community" is not offered.
+    hosted: {
+      absent: async (page) => {
+        await expect(page.getByTestId("start-project-toggle")).toHaveCount(0);
+      },
+    },
   },
   {
     name: "e08-community-people",
@@ -845,6 +854,8 @@ const STOPS: Stop[] = [
         open: decision(kind),
         shows: '[data-testid="decision-new"][aria-expanded="true"]',
         subject: "decision-composer",
+        // The composer opens on the work budget, so choosing it again is the same picture as opening it.
+        ...(kind === "budget" ? { sameAs: "g18-new-decision" } : {}),
       }),
       // A contributor project offers no money decisions (D108).
     )
@@ -1085,10 +1096,16 @@ async function capture(
       ? await subject.innerText()
       : await page.evaluate(() => document.body.innerText);
   writeFileSync(`${base}.txt`, text);
+  // A scan that could not run is said in the index: no findings must mean none were found, not that none were looked for.
+  let axeFailed = "";
   const axe = await new AxeBuilder({ page })
     .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
     .analyze()
-    .catch(() => null);
+    .catch((error: unknown) => {
+      axeFailed =
+        error instanceof Error ? error.message.split("\n")[0] : "failed";
+      return null;
+    });
   const blocking = (axe?.violations ?? [])
     .filter((v) => v.impact === "serious" || v.impact === "critical")
     .map((v) => ({
@@ -1112,6 +1129,7 @@ async function capture(
       ...(sameAs ? { sameAs } : {}),
       words: text.split(/\s+/).filter(Boolean).length,
       accessibility: blocking,
+      ...(axeFailed ? { accessibilityScanFailed: axeFailed } : {}),
       sideways,
       problem,
     })}\n`,
