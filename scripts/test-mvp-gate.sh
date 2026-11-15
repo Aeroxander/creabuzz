@@ -87,7 +87,10 @@ echo "--- a journey that leaks a chain and the chain keeps state"
 "$GATE" leaky >"$WORK/run1.out" 2>&1; status=$?
 check "the run passes" $(yes_if [ $status -eq 0 ])
 check "the stand-in chain actually reached readiness" $(yes_if [ -f "$ANVIL_READY_FILE" ])
-check "the chain the journey leaked is stopped" $(yes_if bash -c '! kill -0 "$(cat "$0")" 2>/dev/null' "$LEAKED_PID_FILE")
+# Stopped means not running: a killed process nobody has reaped yet (a zombie, as when this runs in a container whose first
+# process does not reap its orphans) still answers `kill -0`, so its state is read too.
+check "the chain the journey leaked is stopped" \
+  $(yes_if bash -c 'pid="$(cat "$0")"; ! kill -0 "$pid" 2>/dev/null || [[ "$(ps -o stat= -p "$pid" 2>/dev/null)" == Z* ]]' "$LEAKED_PID_FILE")
 check "an unrelated process is left running" $(yes_if alive "$BYSTANDER")
 CACHE="$(head -1 "$ANVIL_CACHE_LOG" 2>/dev/null)"
 check "the chain was told to keep its state in a directory of the run's own" $(yes_if [ -n "$CACHE" ])
@@ -115,13 +118,14 @@ else
     check "the server on :4173 is still running" $(yes_if alive "$SERVER")
     # A journey that never serves on :4173 (the fixture's optional demo server is on :5173; the keeper test is a chain and
     # the command line only) must not be blocked by an unrelated preview server. web-trading-e2e does serve there.
-    for name in v5-local-fixture secondary-keeper-e2e web-trading-e2e; do
+    for name in v5-local-fixture secondary-keeper-e2e real-loop-e2e web-trading-e2e; do
       printf '#!/usr/bin/env bash\nexit 0\n' >"$WORK/journeys/$name.sh"
       chmod +x "$WORK/journeys/$name.sh"
     done
-    "$GATE" v5-local-fixture secondary-keeper-e2e web-trading-e2e >"$WORK/run2b.out" 2>&1
+    "$GATE" v5-local-fixture secondary-keeper-e2e real-loop-e2e web-trading-e2e >"$WORK/run2b.out" 2>&1
     check "the fixture is not blocked by a server on :4173" $(yes_if grep -q "PASS.* v5-local-fixture" "$WORK/run2b.out")
     check "the keeper test is not blocked by a server on :4173" $(yes_if grep -q "PASS.* secondary-keeper-e2e" "$WORK/run2b.out")
+    check "the project-loop journey, a real server on a free port, is not blocked by a server on :4173" $(yes_if grep -q "PASS.* real-loop-e2e" "$WORK/run2b.out")
     check "the web trading journey, which serves on :4173, is blocked by it" $(yes_if grep -q "BLOCKED.* web-trading-e2e: port 4173 is held by $SERVER" "$WORK/run2b.out")
   fi
   kill "$SERVER" 2>/dev/null
@@ -162,13 +166,13 @@ chmod +x "$WORK/wrapper/web-social-e2e.sh"
 HOSTED="" "$WORK/wrapper/web-social-hosted-e2e.sh" --grep feed >"$WORK/wrapper.out" 2>&1
 check "the wrapper runs the social suite with HOSTED=1 and passes its arguments on" $(yes_if grep -qx "HOSTED=1 args=--grep feed" "$WORK/wrapper.out")
 
-echo "--- the pilot set is what the hosted pilot depends on, and nothing raise-only"
+echo "--- the pilot set is what the hosted pilot depends on, and nothing raise-only (investing is later: its switch is off in the hosted image)"
 mkdir -p "$WORK/list-logs"
 PILOT_LIST="$(LOG_DIR="$WORK/list-logs" "$GATE" --pilot --list)"
-for journey in web-pilot-e2e web-social-hosted-e2e web-invite-only-e2e web-error-report-e2e web-contributor-e2e web-passkey-contributor-e2e web-restricted-holder-e2e; do
+for journey in web-pilot-e2e web-social-hosted-e2e web-invite-only-e2e web-error-report-e2e web-contributor-e2e web-passkey-contributor-e2e web-restricted-holder-e2e real-loop-e2e; do
   check "the pilot set includes $journey" $(yes_if grep -qx "$journey" <<<"$PILOT_LIST")
 done
-for journey in web-dao-launch-e2e web-economy-e2e web-sepolia-fork-e2e cli-milestone-e2e web-challenge-e2e; do
+for journey in web-dao-launch-e2e web-economy-e2e web-sepolia-fork-e2e cli-milestone-e2e web-challenge-e2e web-backing-e2e web-investing-mock-e2e; do
   check "the pilot set leaves out $journey" $(yes_if bash -c '! grep -qx "$0" <<<"$1"' "$journey" "$PILOT_LIST")
 done
 ALL_LIST="$(LOG_DIR="$WORK/list-logs" "$GATE" --list)"
@@ -200,7 +204,7 @@ check "every journey script in scripts/ is in a set or has a reason${UNHOMED:+ (
 OUTSIDE_LIST="$(LOG_DIR="$WORK/list-logs" "$GATE" --outside)"
 check "--outside gives each journey left out a reason" \
   $(yes_if bash -c '[[ -n "$0" ]] && ! grep -qvE "^[a-z0-9-]+-e2e: .{20,}" <<<"$0"' "$OUTSIDE_LIST")
-for journey in web-post-bounty-e2e web-self-serve-e2e shares-erc20c-e2e; do
+for journey in web-post-bounty-e2e web-self-serve-e2e shares-erc20c-e2e web-backing-e2e web-investing-mock-e2e; do
   check "the later set runs $journey, which no gate ran before" $(yes_if grep -qx "$journey" <<<"$(LOG_DIR="$WORK/list-logs" "$GATE" --later --list)")
 done
 
@@ -239,6 +243,16 @@ check "PILOT_BUILD=1 names no optional feature to the spec, and tells it the bui
   $(yes_if grep -qx "  OPTIONAL_SPEC=(E2E_PILOT_BUILD=1)" <<<"$PILOT_BRANCH")
 check "the build takes only what is named (env -i)" \
   $(yes_if grep -q 'env -i PATH="$PATH" HOME="$HOME" "${BUILD_ENV\[@\]}"' "$REPO_ROOT/scripts/web-contributor-e2e.sh")
+
+echo "--- the project-loop journey runs on an open server or an invite-only one, and says which"
+LOOP="$REPO_ROOT/scripts/real-loop-e2e.sh"
+BAD_MEMBERSHIP="$(BUZZ_REQUIRE_RELAY_MEMBERSHIP=maybe "$LOOP" 2>&1)"; status=$?
+check "real-loop-e2e.sh refuses a membership setting that is not true or false, before it starts anything" \
+  $(yes_if bash -c '[[ $0 -eq 2 ]] && grep -q "is true or false" <<<"$1"' "$status" "$BAD_MEMBERSHIP")
+check "real-loop-e2e.sh hands the setting to the relay it starts" $(yes_if grep -q 'BUZZ_REQUIRE_RELAY_MEMBERSHIP="$MEMBERSHIP"' "$LOOP")
+check "real-loop-e2e.sh is open unless asked otherwise" $(yes_if grep -q 'MEMBERSHIP="${BUZZ_REQUIRE_RELAY_MEMBERSHIP:-false}"' "$LOOP")
+check "an invite-only run makes an owner, and gives the spec the owner's key and the invite-only switch" \
+  $(yes_if bash -c 'grep -q "RELAY_OWNER_PUBKEY=" "$0" && grep -q "E2E_INVITE_ONLY=1" "$0" && grep -q "BUZZ_REAL_OWNER_KEY=" "$0"' "$LOOP")
 
 echo "--- a failing journey fails the run"
 "$GATE" failing >"$WORK/run3.out" 2>&1; status=$?

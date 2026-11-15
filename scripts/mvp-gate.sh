@@ -96,6 +96,10 @@ trap 'exit 130' INT TERM
 # (PILOT_BUILD=1): the web app built as the hosted image builds it, with none of the optional features, so the pilot gate
 # plays what the pilot ships. Every other run builds it with the optional features on (bounties, payouts, remixes, the
 # court, CREATE).
+# real-loop-e2e is the product's own loop (docs/v3-review/DIRECTION.md): Quick Start, weekly updates and their promises,
+# help requests and offers, tasks with a finish line, the scorecard, Home and Work, in browsers and from the command line,
+# against a real server and its database, nothing mocked. It takes about six minutes on a laptop (five of them the
+# browsers) and is the only journey of the loop the pilot is measuring, so it is in this set.
 PILOT=(
   web-pilot-e2e
   web-social-hosted-e2e
@@ -107,8 +111,11 @@ PILOT=(
   web-work-e2e
   web-paid-work-e2e
   web-restricted-holder-e2e
+  real-loop-e2e
 )
-# Later: raises, milestone locks, the optional features and what the pilot server does not offer. None of these is
+# Later: raises, milestone locks, the optional features and what the pilot server does not offer (investing is one: its
+# switch is off in the hosted image, so web-backing-e2e, against the real contracts, and web-investing-mock-e2e, the page
+# against a stand-in node, run here and not before the pilot). None of these is
 # reachable in the hosted build or on the pilot server (D137): money behind a post is a test-network feature,
 # a community of your own (self-serve) is off on the pilot server, and the Shares transfer-validator journey is
 # the LBAMM evaluation's (its lock-guard steps still run here, nightly).
@@ -129,6 +136,8 @@ LATER=(
   web-post-bounty-e2e
   web-self-serve-e2e
   shares-erc20c-e2e
+  web-backing-e2e
+  web-investing-mock-e2e
 )
 # Journey scripts that are in neither set, each with the reason. A *-e2e.sh script in none of PILOT, LATER and this list
 # is reported as a warning on every run, so a new journey cannot quietly read as tested. scripts/test-mvp-gate.sh fails
@@ -198,6 +207,11 @@ journey_ports() {
     # The pilot build, from a folder of its own, against a stubbed server.
     web-pilot-e2e) echo 4186 ;;
     web-project-story-e2e) echo 4196 ;;
+    # A real server on a free port, and no preview server.
+    real-loop-e2e) ;;
+    # Preview servers of their own: investing on and off (web-investing-mock-e2e), the pool journey (web-backing-e2e).
+    web-investing-mock-e2e) echo 4187 4188 ;;
+    web-backing-e2e) echo 4189 ;;
     work-check-query-e2e) ;; # Allocates its own loopback ports; no fixed port dependency.
     # A chain on a free port and the command line (the fixture's optional demo server is on :5173, set by V5_DEMO_WEB_PORT).
     v5-local-fixture | secondary-keeper-e2e) ;;

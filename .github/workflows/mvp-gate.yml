@@ -6,8 +6,10 @@
 # otherwise. docs/v3-review/MVP-GATE-CI.md says what it runs, what it needs, and what a green run does NOT prove.
 #
 # Two runs, one job:
-#   - pull requests that touch what the pilot runs on: `scripts/mvp-gate.sh --pilot` (the pilot set, about an hour;
-#     it runs the restricted-holder and real-server passkey sign-in steps of scripts/web-restricted-holder-e2e.sh);
+#   - pull requests that touch what the pilot runs on: `scripts/mvp-gate.sh --pilot` (the pilot set, about an hour and
+#     ten minutes: eleven journeys; it runs the restricted-holder and real-server passkey sign-in steps of
+#     scripts/web-restricted-holder-e2e.sh, and `real-loop-e2e`, the project loop on a real server, which takes about six
+#     minutes on a laptop and is planned at ten here: its web build, its Postgres database and five minutes of browsers);
 #   - nightly, and by hand: `scripts/mvp-gate.sh --later` (raises, milestones, the optional features, about two hours).
 # Each journey boots its own chain (anvil) and, for the real-server journeys, its own database on the Postgres below.
 # Every journey's log is uploaded, pass or fail.
@@ -74,7 +76,8 @@ jobs:
   gate:
     name: MVP gate (${{ github.event_name == 'schedule' && 'later' || inputs.set || 'pilot' }})
     runs-on: ubuntu-24.04 # Playwright 1.58 has no browsers for ubuntu-latest (26.04)
-    # The pilot set takes about an hour on a laptop with warm caches; cold Rust and web builds add up to half an hour.
+    # The pilot set takes about an hour and ten minutes on a laptop with warm caches (real-loop-e2e is about six of them);
+    # cold Rust and web builds add up to half an hour.
     # The later set is longer. A run that reaches this has hung: its logs are still uploaded below.
     timeout-minutes: ${{ (github.event_name == 'schedule' || inputs.set == 'later' || inputs.set == 'all') && 240 || 120 }}
     env:
@@ -92,8 +95,9 @@ jobs:
       - name: Tools the journeys call
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq lsof postgresql-client >/dev/null
-          for tool in node pnpm cargo curl docker lsof openssl psql python3 shasum; do
+          # redis-tools: real-loop-e2e asks Redis with redis-cli before it starts one of its own.
+          sudo apt-get install -y -qq lsof postgresql-client redis-tools >/dev/null
+          for tool in node pnpm cargo curl docker lsof openssl psql python3 redis-cli shasum timeout; do
             command -v "$tool" >/dev/null || { echo "missing: $tool"; exit 1; }
           done
 
@@ -148,6 +152,11 @@ jobs:
             docker compose ps -a >&2
             exit 1
           fi
+
+      # The owner's pilot commands (./run.sh founders, due, daily) read the records the journeys write: their own test
+      # makes a scratch database on the Postgres above and checks each number against records it seeded.
+      - name: The pilot commands' own test (scratch database)
+        run: scripts/test-pilot-commands.sh
 
       - name: Journeys (${{ env.GATE_SET }})
         run: |
