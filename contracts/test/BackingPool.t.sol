@@ -260,8 +260,7 @@ contract BackingPoolTest is BackingPoolFixture {
 
     function test_a_sale_pays_from_the_reserve_and_leaves_the_project_money() public {
         uint256 units = _buy(ALICE, 1_000e18);
-        (uint256 quotedOut, uint256 quotedFee, uint256 quotedRefund, uint256 quotedPrice) =
-            pool.quoteSell(ALICE, units);
+        (uint256 quotedOut, uint256 quotedFee, uint256 quotedRefund, uint256 quotedPrice) = pool.quoteSell(ALICE, units);
         assertEq(quotedRefund, 0);
         // Selling everything empties the reserve to within the rounding the curve keeps.
         uint256 gross = quotedOut + quotedFee;
@@ -402,13 +401,16 @@ contract BackingPoolTest is BackingPoolFixture {
         assertEq(s.milestone.resolveBy, _now() + 14 days);
         assertEq(s.pending, 99e18 / 4);
         assertTrue(s.holderCanLeave);
-        (uint256 leaveOut, uint256 fromCurve, uint256 fromEscrow,,) = pool.quoteLeave(ALICE);
+        (uint256 leaveOut, uint256 fromEscrow, uint256 leaveFee) = pool.quoteLeave(ALICE);
         assertEq(s.holderLeaveValue, leaveOut);
-        assertEq(leaveOut, fromCurve + fromEscrow);
+        // Leaving sells nothing: it pays the escrow part, less the ordinary fee on what the units are worth.
+        assertEq(leaveOut, fromEscrow - leaveFee);
+        assertGt(leaveFee, 0);
         // Leaving hands back the whole escrow part, and that is what the wallet's escrow reads while it can leave.
         assertApproxEqAbs(fromEscrow, 99e18, 2);
         assertEq(s.holderEscrow, fromEscrow);
-        assertGt(s.holderLeaveValue, s.holderSellValue);
+        // Leaving hands back the escrow part only (less the notional fee); selling pays the curve.
+        assertLt(s.holderLeaveValue, s.holderSellValue);
     }
 
     /// @dev A 6-decimal quote token: the price is fine-grained enough to chart (it moves with every buy).

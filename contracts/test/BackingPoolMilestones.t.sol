@@ -18,16 +18,7 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         uint256 tranche
     );
     event Left(
-        uint256 indexed id,
-        address indexed backer,
-        uint256 unitsIn,
-        uint256 quoteOut,
-        uint256 fromCurve,
-        uint256 fromEscrow,
-        uint256 fee,
-        uint256 priceAfter,
-        uint256 supplyAfter,
-        uint256 reserveAfter
+        uint256 indexed id, address indexed backer, uint256 unitsKept, uint256 quoteOut, uint256 fromEscrow, uint256 fee
     );
     event MilestoneResolved(uint256 indexed id, bool wasReleased, uint256 amount);
     event TreasuryPaid(uint256 amount);
@@ -249,7 +240,9 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
 
     // ---- leaving --------------------------------------------------------------------------------------------------
 
-    function test_a_backer_who_leaves_sells_at_the_ordinary_fee_and_gets_their_whole_escrow_part() public {
+    /// @dev Leaving sells nothing: the whole escrow part comes back less the ordinary sale fee on what the units
+    /// would fetch, the units stay, the curve does not move, and the weight is gone.
+    function test_a_backer_who_leaves_gets_their_escrow_part_less_a_notional_fee_and_keeps_the_units() public {
         _threeBackers();
         uint256 bobEscrow = pool.escrowOf(BOB);
         assertApproxEqAbs(bobEscrow, 297e18, 2);
@@ -258,36 +251,78 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         assertApproxEqAbs(pool.escrowOf(BOB), bobEscrow, 1, "the post has not taken anything from him yet");
         bobEscrow = pool.escrowOf(BOB);
         assertTrue(pool.canLeave(BOB));
-        (uint256 quotedOut, uint256 fromCurve, uint256 fromEscrow, uint256 priceAfter, uint256 fee) =
-            pool.quoteLeave(BOB);
-        (uint256 sellOut, uint256 sellFee,,) = pool.quoteSell(BOB, units);
-        assertEq(fromCurve, sellOut, "the curve, at the fee any seller pays");
-        assertEq(fee, sellFee);
+        (uint256 quotedOut, uint256 fromEscrow, uint256 fee) = pool.quoteLeave(BOB);
+        (, uint256 sellFee,,) = pool.quoteSell(BOB, units);
+        assertEq(fee, sellFee, "the fee any seller of these units would pay");
         assertEq(fromEscrow, bobEscrow);
-        assertEq(quotedOut, fromCurve + fromEscrow);
+        assertEq(quotedOut, fromEscrow - fee);
 
         uint256 fees = pool.feesTaken();
         uint256 reserve = pool.reserve();
         uint256 supply = pool.totalSupply();
+        uint256 price = pool.price();
         uint256 before = quote.balanceOf(BOB);
         vm.expectEmit(true, true, false, true, address(pool));
-        emit Left(
-            1, BOB, units, quotedOut, fromCurve, fromEscrow, fee, priceAfter, supply - units, reserve - fromCurve - fee
-        );
+        emit Left(1, BOB, units, quotedOut, fromEscrow, fee);
         vm.prank(BOB);
         uint256 out = pool.leave(quotedOut, _now());
 
         assertEq(out, quotedOut);
         assertEq(quote.balanceOf(BOB) - before, out);
-        assertEq(pool.balanceOf(BOB), 0);
+        assertEq(pool.balanceOf(BOB), units, "his units are not sold");
+        assertEq(pool.totalSupply(), supply);
+        assertEq(pool.reserve(), reserve);
+        assertEq(pool.price(), price, "the curve did not move");
         assertEq(pool.weightOf(BOB), 0);
+        assertEq(pool.escrowOf(BOB), 0);
         assertEq(pool.feesTaken(), fees + fee, "the fee is the treasury's");
         assertEq(pool.treasuryOwed(), fees + fee);
-        assertEq(pool.refunded(), fromEscrow);
-        assertEq(pool.price(), priceAfter);
+        assertEq(pool.refunded(), out);
         (,,,,,, uint256 leftWith,) = pool.milestones(1);
         assertEq(leftWith, fromEscrow);
         assertFalse(pool.canLeave(BOB));
+        _assertSolvent();
+    }
+
+    /// @dev The fee never exceeds the refund, so leaving is never blocked: with the price run up far enough
+    /// that the units are worth more than the whole escrow part, the leaver gets nothing back and is out anyway.
+    function test_the_notional_fee_is_capped_at_the_refund_so_leaving_is_never_blocked() public {
+        _pastEarly();
+        _buy(ALICE, 1_000e18);
+        // A whale pushes the price far up: Alice's units are now worth many times what she paid.
+        _buy(CAROL, 8_000_000e18);
+        _post();
+        uint256 units = pool.balanceOf(ALICE);
+        (, uint256 sellFee,,) = pool.quoteSell(ALICE, units);
+        uint256 due = pool.escrowOf(ALICE);
+        assertGt(sellFee, due, "the units' ordinary fee is more than her escrow part");
+        (uint256 q, uint256 fromEscrow, uint256 fee) = pool.quoteLeave(ALICE);
+        assertEq(fee, fromEscrow, "the fee takes the whole refund and no more");
+        assertEq(q, 0);
+        assertEq(_leave(ALICE), 0);
+        assertEq(pool.weightOf(ALICE), 0);
+        assertEq(pool.balanceOf(ALICE), units);
+        _assertSolvent();
+        // And she can still sell her units afterwards.
+        assertGt(_sell(ALICE, units), 0);
+        _assertSolvent();
+    }
+
+    /// @dev A leaver who sold the units first, or sells them after, is out either way, in either order.
+    function test_leaving_then_selling_and_selling_then_leaving_both_work() public {
+        _threeBackers();
+        _post();
+        uint256 bobUnits = pool.balanceOf(BOB);
+        _leave(BOB);
+        assertGt(_sell(BOB, bobUnits), 0);
+        assertEq(pool.balanceOf(BOB), 0);
+        assertEq(pool.weightOf(BOB), 0);
+        // Carol the other way round: a part sold first, the rest of her weight leaves.
+        uint256 carolUnits = pool.balanceOf(CAROL);
+        _sell(CAROL, carolUnits / 2);
+        assertTrue(pool.canLeave(CAROL));
+        _leave(CAROL);
+        assertGt(_sell(CAROL, pool.balanceOf(CAROL)), 0);
         _assertSolvent();
     }
 
@@ -312,13 +347,13 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         _assertSolvent();
     }
 
-    function test_leaving_is_only_for_a_running_window_and_a_wallet_with_units() public {
+    function test_leaving_is_only_for_a_running_window_and_a_wallet_with_a_weight() public {
         _threeBackers();
         vm.prank(ALICE);
         vm.expectRevert(BackingPool.WindowOver.selector);
         pool.leave(0, type(uint256).max);
         assertFalse(pool.canLeave(ALICE));
-        (uint256 q,,,,) = pool.quoteLeave(ALICE);
+        (uint256 q,,) = pool.quoteLeave(ALICE);
         assertEq(q, 0);
 
         _post();
@@ -328,7 +363,7 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         vm.prank(ALICE);
         vm.expectRevert(BackingPool.Expired.selector);
         pool.leave(0, _now() - 1);
-        (q,,,,) = pool.quoteLeave(ALICE);
+        (q,,) = pool.quoteLeave(ALICE);
         vm.prank(ALICE);
         vm.expectRevert(BackingPool.Slippage.selector);
         pool.leave(q + 1, type(uint256).max);
@@ -368,7 +403,7 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         _leave(MALLORY);
     }
 
-    function test_leaving_and_buying_back_gives_no_second_exit() public {
+    function test_leaving_and_buying_again_gives_no_second_exit() public {
         _threeBackers();
         _post();
         _leave(BOB);
@@ -394,8 +429,10 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         assertGt(rest, 297e18 / 2);
         assertLt(rest, 297e18 * 6 / 10);
         uint256 refunded = pool.refunded();
+        (, uint256 fromEscrow, uint256 fee) = pool.quoteLeave(BOB);
+        assertEq(fromEscrow, rest);
         _leave(BOB);
-        assertEq(pool.refunded() - refunded, rest);
+        assertEq(pool.refunded() - refunded + fee, rest);
         // What he gave up with the ordinary sale stays, and its part of the tranche is still released.
         _skip(7 days);
         (, uint256 amount) = pool.resolveMilestone();
@@ -408,8 +445,9 @@ contract BackingPoolMilestonesTest is BackingPoolFixture {
         _post();
         _leave(ALICE);
         _leave(BOB);
+        uint256 supply = pool.totalSupply();
         _leave(CAROL);
-        assertEq(pool.totalSupply(), 0);
+        assertEq(pool.totalSupply(), supply, "nobody sold: the units are all still held");
         assertEq(pool.totalWeight(), 0);
         assertLe(pool.escrow(), 3, "only rounding is left");
         _skip(7 days);

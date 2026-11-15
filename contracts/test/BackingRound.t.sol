@@ -102,6 +102,7 @@ interface IBackingPool {
     function weightOf(address) external view returns (uint256);
     function escrowOf(address) external view returns (uint256);
     function canLeave(address) external view returns (bool);
+    function quoteLeave(address) external view returns (uint256 quoteOut, uint256 fromEscrow, uint256 fee);
     function abandoned() external view returns (bool);
     function nextClaimAt() external view returns (uint64);
     function abandonableAt() external view returns (uint64);
@@ -731,10 +732,16 @@ contract BackingRoundTest is BackingRoundFixture {
         assertTrue(pool.canLeave(ALICE));
         assertApproxEqRel(pool.escrowOf(ALICE), alicePart, 1e12);
         uint256 before = currency.balanceOf(ALICE);
+        (uint256 quoted, uint256 fromEscrow, uint256 fee) = pool.quoteLeave(ALICE);
         vm.prank(ALICE);
         pool.leave(0, type(uint256).max);
-        assertApproxEqRel(pool.refunded(), alicePart, 1e12);
-        assertGt(currency.balanceOf(ALICE) - before, alicePart);
+        // Leaving sells nothing: she gets her part less the ordinary fee on what her units are worth, and keeps them.
+        assertApproxEqRel(fromEscrow, alicePart, 1e12);
+        assertEq(currency.balanceOf(ALICE) - before, quoted);
+        assertEq(quoted, fromEscrow - fee);
+        assertEq(pool.refunded(), quoted);
+        assertEq(pool.balanceOf(ALICE), aliceTokens);
+        assertEq(pool.weightOf(ALICE), 0);
 
         vm.warp(block.timestamp + 7 days);
         (bool wasReleased, uint256 amount) = pool.resolveMilestone();
@@ -1572,11 +1579,15 @@ contract BackingRoundInvariantTest is BackingRoundFixture {
                 }
                 uint256 held = pool.balanceOf(actor);
                 if (held == 0) continue;
-                bool leaves = pool.canLeave(actor);
+                // Leaving sells nothing, so a wallet that can leave does, and then sells what it holds.
+                if (pool.canLeave(actor)) {
+                    vm.prank(actor);
+                    pool.leave(0, block.timestamp);
+                }
                 vm.prank(actor);
-                if (leaves) pool.leave(0, block.timestamp);
-                else pool.sell(held, 0, block.timestamp);
+                pool.sell(held, 0, block.timestamp);
             }
+            assertEq(pool.totalSupply(), pool.unredeemedUnits());
             assertGe(currency.balanceOf(address(pool)), pool.reserve() + pool.escrow() + pool.treasuryOwed());
             vm.revertToState(state);
         }

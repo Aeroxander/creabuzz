@@ -179,7 +179,7 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
         uint256 start = quote.balanceOf(MALLORY);
         _buy(MALLORY, 1e18);
         _post();
-        (,, uint256 fromEscrow,,) = pool.quoteLeave(MALLORY);
+        (, uint256 fromEscrow,) = pool.quoteLeave(MALLORY);
         assertLe(fromEscrow, 0.099e18);
         _leave(MALLORY);
         assertGt(_spent(MALLORY, start), 0);
@@ -214,8 +214,8 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
         pool.leave(0, type(uint256).max);
     }
 
-    /// @dev Leave, buy back, leave again: each exit would skip a fee and the second would take the tranche
-    /// part twice. The buy back closes the door until the next milestone.
+    /// @dev Leave, buy again, leave again: the second would take the tranche part twice. Leaving ends the weight,
+    /// and a buy in the window closes the door until the next milestone.
     function test_A3_leaving_twice_on_one_milestone_is_refused() public {
         _buy(ALICE, 100_000e18);
         _buy(MALLORY, 100_000e18);
@@ -225,7 +225,8 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
         vm.prank(MALLORY);
         vm.expectRevert(BackingPool.NoSay.selector);
         pool.leave(0, type(uint256).max);
-        // And having left, with nothing bought back, there is nothing to leave with.
+        // And having left, with nothing bought back, there is no weight to leave with (she still holds her units).
+        assertGt(pool.balanceOf(ALICE), 0);
         _leave(ALICE);
         vm.prank(ALICE);
         vm.expectRevert(BackingPool.NoSay.selector);
@@ -250,9 +251,12 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
         for (uint256 i; i < 3; ++i) {
             if (who & (1 << i) != 0) {
                 uint256 refunded = pool.refunded();
+                uint256 fees = pool.feesTaken();
                 _leave(backers[i]);
-                assertApproxEqAbs(pool.refunded() - refunded, due[i], 2);
-                took += pool.refunded() - refunded;
+                // What left the escrow is her whole part: the refund and the notional fee, which the treasury gets.
+                uint256 gone = pool.refunded() - refunded + pool.feesTaken() - fees;
+                assertApproxEqAbs(gone, due[i], 2);
+                took += gone;
             } else {
                 stayed += due[i];
             }
@@ -437,7 +441,7 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
         _buy(FOUNDER, 405_000e18);
         uint256 founderDue = pool.escrowOf(FOUNDER);
         _post();
-        (,, uint256 fromEscrow,,) = pool.quoteLeave(ALICE);
+        (, uint256 fromEscrow,) = pool.quoteLeave(ALICE);
         assertApproxEqAbs(fromEscrow, aliceDue, 1);
         _leave(ALICE);
         _skip(7 days);
@@ -469,39 +473,56 @@ contract BackingPoolAdversaryTest is BackingPoolFixture {
         vm.expectRevert(abi.encodeWithSelector(BackingPool.TooSoon.selector, notBefore));
         pool.postMilestone(REF);
         _post();
+        (uint256 quoted, uint256 fromEscrow, uint256 fee) = pool.quoteLeave(ALICE);
         uint256 out = _leave(ALICE);
-        // She leaves with what the first milestone did not release, and her units sold at the ordinary fee.
-        assertApproxEqAbs(pool.refunded(), aliceDue - aliceDue / 4, 2);
-        assertGt(out, 100_000e18 * 94 / 100);
+        // She leaves with what the first milestone did not release, less the ordinary fee on her units' worth,
+        // and she keeps the units.
+        assertEq(out, quoted);
+        assertEq(pool.refunded(), out);
+        assertApproxEqAbs(fromEscrow, aliceDue - aliceDue / 4, 2);
+        assertEq(out, fromEscrow - fee);
+        assertGt(pool.balanceOf(ALICE), 0);
     }
 
     // ---- limits, recorded ------------------------------------------------------------------------------------------
 
-    /// @dev Leaving is not final: a backer can leave at a milestone and buy back straight away. They pay the
-    /// 1% fee on the way out and again on the way back in, about 2% of their position, and keep their project
-    /// money out of that tranche. Staying costs a quarter of their escrow part: about 2.5% of the position
-    /// while none of it has been released, less after every release. So the dodge is barely worth it at the
-    /// first milestone and a loss afterwards. Recorded with its numbers, not prevented.
-    function test_limit_leaving_and_buying_back_costs_two_fees_to_skip_a_tranche() public {
+    /// @dev Leaving ends a backer's claim on every later tranche, for good, while the units stay: so the units
+    /// that stay stop funding the project. To keep that from being free, leaving pays the ordinary sale fee on
+    /// what the units would fetch now, without selling them. Recorded with its numbers, not prevented: staying
+    /// costs a quarter of the escrow part (about 2.5% of the position at the first milestone, 1.9% at the next,
+    /// less after each), and the notional fee is 1% of the units' curve value, so leaving is cheaper than
+    /// staying at every milestone, and the project then gets only that fee, not the tranche.
+    function test_limit_leaving_skips_every_later_tranche_for_the_units_that_stay() public {
         _buy(BOB, 100_000e18);
         uint256 units = _buy(ALICE, 100_000e18);
-        uint256 start = quote.balanceOf(ALICE);
+        uint256 aliceDue = pool.escrowOf(ALICE);
+        uint256 bobDue = pool.escrowOf(BOB);
         _post();
+        uint256 price = pool.price();
+        (, uint256 sellFee,,) = pool.quoteSell(ALICE, units);
         uint256 feesBefore = pool.feesTaken();
         uint256 out = _leave(ALICE);
-        uint256 back = _buy(ALICE, out);
+        // The fee is exactly what selling the same units would cost, and the units were not sold.
+        assertEq(pool.feesTaken() - feesBefore, sellFee);
+        assertEq(pool.balanceOf(ALICE), units);
+        assertEq(pool.price(), price, "leaving does not touch the curve");
+        assertEq(pool.weightOf(ALICE), 0);
+        // The leave costs her about 0.9% of her position: less than the quarter she would have paid to stay.
+        assertApproxEqAbs(out + sellFee, aliceDue, 2, "her whole part, less the notional fee");
+        assertLt(sellFee, aliceDue / 4);
         _skip(7 days);
         pool.resolveMilestone();
-        assertEq(_spent(ALICE, start), 0);
-        // What it cost her: two fees to the treasury, about 1,870 on a 99,000 position (1.9%), and with them
-        // some of her units.
-        assertApproxEqAbs(pool.feesTaken() - feesBefore, 1_872e18, 2e18);
-        assertLt(back, units);
-        assertGt(back, units * 98 / 100);
-        // What she kept out of the tranche: a quarter of 9,900, about 2,475 (2.5%). Her project money is whole.
-        assertApproxEqRel(pool.escrowOf(ALICE), 9_900e18 * 981 / 1000, 0.002e18);
-        // Bob, who stayed, carried his own quarter.
-        assertApproxEqAbs(pool.escrowOf(BOB), 9_900e18 * 3 / 4, 2);
+        // Four more milestones (five in all, so 1 - 0.75^5 of Bob's part): her units fund none of them. Bob alone does.
+        for (uint256 i; i < 4; ++i) {
+            _release();
+        }
+        assertEq(pool.escrowOf(ALICE), 0);
+        assertApproxEqRel(pool.released(), bobDue * (10_000 - 2373) / 10_000, 0.001e18);
+        // And she can still sell, at the ordinary fee, with no refund because the units carry no weight.
+        (uint256 saleOut,, uint256 refund,) = pool.quoteSell(ALICE, units);
+        assertEq(refund, 0);
+        assertEq(_sell(ALICE, units), saleOut);
+        _assertSolvent();
     }
 
     /// @dev Review, its proof P3b: project money given up by ordinary sellers goes to those who stay, so a

@@ -331,6 +331,45 @@ contract BackingPoolAbandonmentTest is BackingPoolFixture {
         _post();
         _leave(BOB);
         assertEq(pool.abandonVotes(), 0);
+        // The vote is withdrawn, not just uncounted, and Bob still holds his units with nothing behind them.
+        assertFalse(pool.votedAbandon(BOB));
+        assertGt(pool.balanceOf(BOB), 0);
+        assertEq(pool.weightOf(BOB), 0);
+        // So he cannot vote again: a vote needs a weight.
+        _skip(7 days);
+        vm.prank(BOB);
+        vm.expectRevert(BackingPool.NoSay.selector);
+        pool.voteAbandon();
+    }
+
+    /// @dev Units that carry no weight (their holder left at a milestone) get no refund after abandonment: the
+    /// refund follows the weight, and what the leaver already took is not paid twice. Whoever still holds a weight
+    /// is refunded in full, and the leaver can still sell the units for the curve, with no fee.
+    function test_units_without_weight_get_no_refund_after_abandonment() public {
+        _threeBackers();
+        _post();
+        uint256 bobUnits = pool.balanceOf(BOB);
+        _leave(BOB);
+        _skip(7 days);
+        pool.resolveMilestone();
+        vm.warp(pool.abandonableAt());
+        assertTrue(pool.abandoned());
+        assertEq(pool.escrowOf(BOB), 0);
+        (uint256 out, uint256 fee, uint256 refund,) = pool.quoteSell(BOB, bobUnits);
+        assertEq(refund, 0, "nothing behind these units");
+        assertEq(fee, 0, "and no fee once abandoned");
+        uint256 refunded = pool.refunded();
+        assertEq(_sell(BOB, bobUnits), out);
+        assertEq(pool.refunded(), refunded, "his sale refunded nothing");
+        // Alice and Carol are still refunded their whole parts.
+        uint256 aliceDue = pool.escrowOf(ALICE);
+        assertGt(aliceDue, 0);
+        uint256 before = quote.balanceOf(ALICE);
+        (uint256 aliceOut,, uint256 aliceRefund,) = pool.quoteSell(ALICE, pool.balanceOf(ALICE));
+        assertEq(_sellAll(ALICE), aliceOut);
+        assertEq(aliceRefund, aliceDue);
+        assertGt(quote.balanceOf(ALICE) - before, aliceDue);
+        _assertSolvent();
     }
 
     function test_a_vote_ends_an_open_milestone_without_a_release() public {

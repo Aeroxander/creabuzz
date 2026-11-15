@@ -58,13 +58,17 @@ interface IRoundAuction {
 /// MILESTONES: STAY OR LEAVE. The founder (or the DAO) posts "milestone reached" with the id of the
 /// public record event. The post fixes the tranche: `trancheBps` of the escrow as it stands at that
 /// moment (`pending`), carried by the weight that exists at that moment (`staked`). For
-/// `objectionWindow` after the post, a backer who held before it and has not bought since may `leave`:
-/// all their units go back to the curve at the ordinary sale fee, and they get their whole part of the escrow,
-/// their part of the tranche included. Nobody can stop a release and nobody is made to fund a milestone
-/// they reject. When the window ends anyone resolves it and the tranche, less what the leavers took of
-/// it, goes to the DAO treasury. Money that arrives after the post is not touched by that milestone: a
-/// buyer's weight is priced on the escrow with the tranche already taken off. A milestone nobody
-/// resolves within `resolveWindow` of its window's end can only be voided, and releases nothing.
+/// `objectionWindow` after the post, a backer who holds a weight from before it and has not bought since may
+/// `leave`: they get their whole part of the escrow back, their part of the tranche included, and their weight
+/// goes to zero, so they fund no later milestone. Leaving sells nothing: the backer keeps every unit, the curve
+/// does not move (so a milestone can never start a run on the curve), and they can sell the units later, at the
+/// ordinary fee, in the ordinary way. To keep leaving from being free, the ordinary sale fee is charged on what
+/// the units would fetch on the curve now, as if sold, and is paid out of the refund (never more than the
+/// refund, so leaving cannot be blocked). Nobody can stop a release and nobody is made to fund a milestone
+/// they reject. When the window ends anyone resolves it and the tranche, less what the leavers took of it, goes
+/// to the DAO treasury. Money that arrives after the post is not touched by that milestone: a buyer's weight is
+/// priced on the escrow with the tranche already taken off. A milestone nobody resolves within `resolveWindow` of
+/// its window's end can only be voided, and releases nothing.
 ///
 /// ABANDONMENT. While any wallet holds a weight (round weight in claim tokens nobody has exchanged, and the
 /// few base units of a round that can never be exchanged, are not a wallet), `abandonAfter` without a
@@ -83,6 +87,11 @@ interface IRoundAuction {
 /// against the escrow by a third per release at the default tranche. After about 300 releases (more
 /// than twenty years at one a month) a buy could overflow and revert; sales, leaving and refunds divide
 /// and never do.
+///
+/// UNITS WITHOUT WEIGHT. Leaving keeps the units and ends the weight, so a wallet can hold units that carry no
+/// part of the escrow. They sell like any other units; they never get a refund after abandonment (the refund
+/// follows the weight); and they cannot leave again (leaving needs a weight). A wallet that buys again gets a
+/// weight for the new money only.
 ///
 /// THE OPENING ROUND (optional). A pool can be created waiting for a round: an auction (Uniswap's
 /// Continuous Clearing Auction, as deployed, unchanged) sells a fixed supply of claim tokens for the quote
@@ -374,19 +383,11 @@ contract BackingPool {
         uint256 supplyAfter,
         uint256 reserveAfter
     );
-    /// @notice A backer left at a milestone: all their units sold (`fromCurve`, after the ordinary `fee`)
-    /// and their whole part of the escrow handed back (`fromEscrow`). `quoteOut` is the two together.
+    /// @notice A backer left at a milestone: their whole part of the escrow (`fromEscrow`) was handed back, less
+    /// the ordinary sale fee on what their units are worth on the curve now (`fee`, owed to the DAO treasury);
+    /// `quoteOut` is what they received. Their units (`unitsKept`) were not sold and the curve did not move.
     event Left(
-        uint256 indexed id,
-        address indexed backer,
-        uint256 unitsIn,
-        uint256 quoteOut,
-        uint256 fromCurve,
-        uint256 fromEscrow,
-        uint256 fee,
-        uint256 priceAfter,
-        uint256 supplyAfter,
-        uint256 reserveAfter
+        uint256 indexed id, address indexed backer, uint256 unitsKept, uint256 quoteOut, uint256 fromEscrow, uint256 fee
     );
     /// @notice A milestone was posted: backers may leave until `windowEndsAt`, and it can be resolved
     /// from then until `resolveBy`. `tranche` is what it releases if nobody leaves.
@@ -782,9 +783,12 @@ contract BackingPool {
         emit Sold(msg.sender, unitsIn, quoteOut, fee, refund, price(), totalSupply, reserve);
     }
 
-    /// @notice Leave at the open milestone: sell all your units to the curve, at the ordinary sale fee, and take back
-    /// your whole part of the escrow, your part of the tranche included. Only while the milestone's
-    /// window runs, and only for a wallet that held before the post and has not bought since.
+    /// @notice Leave at the open milestone: take back your whole part of the escrow, your part of the tranche
+    /// included, and stop funding later milestones. Nothing is sold: you keep your units and the curve does not
+    /// move. The ordinary sale fee on what your units are worth on the curve now is taken from the refund (never
+    /// more than the refund). Only while the milestone's window runs, and only for a wallet that holds a weight
+    /// from before the post and has not bought since. Your weight is zero afterwards, and the units you keep carry
+    /// no part of the escrow until you buy again.
     /// @param minQuoteOut The least quote you accept; the call reverts below it.
     /// @param deadline The latest time this may happen.
     /// @return quoteOut The quote you received.
@@ -792,19 +796,23 @@ contract BackingPool {
         if (block.timestamp > deadline) revert Expired();
         uint256 id = _liveMilestone();
         if (id == 0) revert WindowOver();
-        uint256 units = balanceOf[msg.sender];
-        if (units == 0 || boughtDuring[msg.sender] == id) revert NoSay();
-        (uint256 gross, uint256 fromTranche, uint256 fromEscrow, uint256 weight) = _quoteLeave(msg.sender, units);
-        uint256 fee = _bpsUp(gross, feeBps);
-        quoteOut = gross - fee + fromEscrow;
+        if (weightOf[msg.sender] == 0 || boughtDuring[msg.sender] == id) revert NoSay();
+        (uint256 fromTranche, uint256 fromEscrow, uint256 weight, uint256 fee) = _quoteLeave(msg.sender);
+        quoteOut = fromEscrow - fee;
         if (quoteOut < minQuoteOut) revert Slippage();
 
-        _burn(msg.sender, units, weight, gross);
-        // The leaver's weight stops carrying the tranche, and takes its part of the tranche with it.
+        // The leaver's weight stops carrying the tranche, takes its part of the tranche with it, and no longer
+        // counts in a vote to declare the project abandoned.
+        if (votedAbandon[msg.sender]) {
+            votedAbandon[msg.sender] = false;
+            abandonVotes -= weight;
+        }
+        weightOf[msg.sender] = 0;
+        totalWeight -= weight;
         staked -= weight;
         pending -= fromTranche;
         escrow -= fromEscrow;
-        refunded += fromEscrow;
+        refunded += quoteOut;
         milestones[id].leftWith += fromEscrow;
 
         if (fee != 0) {
@@ -813,7 +821,7 @@ contract BackingPool {
         }
 
         quote.safeTransfer(msg.sender, quoteOut);
-        emit Left(id, msg.sender, units, quoteOut, gross - fee, fromEscrow, fee, price(), totalSupply, reserve);
+        emit Left(id, msg.sender, balanceOf[msg.sender], quoteOut, fromEscrow, fee);
     }
 
     // ---- milestones -----------------------------------------------------------------------------------------------
@@ -975,32 +983,22 @@ contract BackingPool {
             Math.mulDiv(virtualQuote + reserve - gross, 1e18 * PRICE_SCALE, virtualUnits - totalSupply + unitsIn);
     }
 
-    /// @notice Whether `holder` may leave now: a milestone's window is running, and they hold units they
+    /// @notice Whether `holder` may leave now: a milestone's window is running, and they hold a weight they
     /// had before it was posted and have not bought since.
     function canLeave(address holder) public view returns (bool) {
         uint256 id = _liveMilestone();
-        return id != 0 && balanceOf[holder] != 0 && boughtDuring[holder] != id;
+        return id != 0 && weightOf[holder] != 0 && boughtDuring[holder] != id;
     }
 
-    /// @notice What `holder` gets by leaving now; all zero when they cannot.
-    /// @return quoteOut Quote received: `fromCurve` plus `fromEscrow`.
-    /// @return fromCurve What their units sell for, after the fee.
-    /// @return fromEscrow Their whole part of the escrow.
-    /// @return priceAfter The curve price after they left (see `price`).
-    /// @return fee The ordinary sale fee on the curve part, owed to the DAO treasury.
-    function quoteLeave(address holder)
-        public
-        view
-        returns (uint256 quoteOut, uint256 fromCurve, uint256 fromEscrow, uint256 priceAfter, uint256 fee)
-    {
-        if (!canLeave(holder)) return (0, 0, 0, 0, 0);
-        uint256 units = balanceOf[holder];
-        uint256 gross;
-        (gross,, fromEscrow,) = _quoteLeave(holder, units);
-        fee = _bpsUp(gross, feeBps);
-        fromCurve = gross - fee;
-        quoteOut = fromCurve + fromEscrow;
-        priceAfter = Math.mulDiv(virtualQuote + reserve - gross, 1e18 * PRICE_SCALE, virtualUnits - totalSupply + units);
+    /// @notice What `holder` gets by leaving now; all zero when they cannot. Leaving sells nothing.
+    /// @return quoteOut Quote received: `fromEscrow` less `fee`.
+    /// @return fromEscrow Their whole part of the escrow, which leaves it.
+    /// @return fee The ordinary sale fee on what their units are worth on the curve now, owed to the DAO
+    /// treasury and taken from `fromEscrow` (never more than it).
+    function quoteLeave(address holder) public view returns (uint256 quoteOut, uint256 fromEscrow, uint256 fee) {
+        if (!canLeave(holder)) return (0, 0, 0);
+        (, fromEscrow,, fee) = _quoteLeave(holder);
+        quoteOut = fromEscrow - fee;
     }
 
     /// @notice `holder`'s part of the escrow now: what leaving would hand back while they can leave,
@@ -1011,7 +1009,7 @@ contract BackingPool {
         if (_abandonedWritten) return Math.mulDiv(escrow, weight, totalWeight);
         if (_clockRanOut()) return Math.mulDiv(escrow - _orphaned(), weight, totalWeight);
         if (canLeave(holder)) {
-            (,, uint256 fromEscrow,) = _quoteLeave(holder, balanceOf[holder]);
+            (, uint256 fromEscrow,,) = _quoteLeave(holder);
             return fromEscrow;
         }
         return Math.mulDiv(escrow - pending, weight, totalWeight + WEIGHT_OFFSET);
@@ -1075,7 +1073,7 @@ contract BackingPool {
         s.holderEscrow = escrowOf(holder);
         if (s.holderUnits != 0) (s.holderSellValue,,,) = quoteSell(holder, s.holderUnits);
         s.holderCanLeave = canLeave(holder);
-        (s.holderLeaveValue,,,,) = quoteLeave(holder);
+        (s.holderLeaveValue,,) = quoteLeave(holder);
         s.holderVotedAbandon = votedAbandon[holder];
         s.round = roundInfo(holder);
         if (earlyCap != 0 && block.timestamp < uint256(openedAt) + earlyWindow) {
@@ -1133,19 +1131,18 @@ contract BackingPool {
         }
     }
 
-    /// @dev What leaving pays before the fee: the curve, and the leaver's whole part of the escrow, which is
-    /// their part of the escrow with the tranche taken off plus their part of the tranche.
-    function _quoteLeave(address holder, uint256 units)
+    /// @dev What leaving hands back: the leaver's whole part of the escrow (their part with the tranche taken off
+    /// plus their part of the tranche), their weight, and the fee. The fee is the ordinary sale fee on what their
+    /// units would fetch on the curve now, as if sold, but capped at the refund so that leaving is never blocked.
+    function _quoteLeave(address holder)
         private
         view
-        returns (uint256 gross, uint256 fromTranche, uint256 fromEscrow, uint256 weight)
+        returns (uint256 fromTranche, uint256 fromEscrow, uint256 weight, uint256 fee)
     {
-        gross = _curveOut(units);
         weight = weightOf[holder];
-        if (weight != 0) {
-            fromTranche = Math.mulDiv(pending, weight, staked);
-            fromEscrow = Math.mulDiv(escrow - pending, weight, totalWeight + WEIGHT_OFFSET) + fromTranche;
-        }
+        fromTranche = Math.mulDiv(pending, weight, staked);
+        fromEscrow = Math.mulDiv(escrow - pending, weight, totalWeight + WEIGHT_OFFSET) + fromTranche;
+        fee = Math.min(_bpsUp(_curveOut(balanceOf[holder]), feeBps), fromEscrow);
     }
 
     /// @dev Take `units` and `weight` from `holder` and `gross` from the reserve.

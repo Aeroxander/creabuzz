@@ -22,6 +22,9 @@ contract BackingPoolHandler is Test {
     uint256 public leftThisMilestone;
     /// @dev How often each path was really taken, so a green run is known to have exercised them.
     uint256 public leaves;
+    uint256 public leavesWhileVoting;
+    /// @dev The ordinary-fee-on-notional-value that leavers paid out of their refunds: it is a fee, not a refund.
+    uint256 public leaveFees;
     uint256 public releases;
     uint256 public voids;
     uint256 public abandonments;
@@ -80,21 +83,46 @@ contract BackingPoolHandler is Test {
         if (wasAbandoned && abandonments == 0) abandonments = 1;
     }
 
+    /// @dev Leaving sells nothing: the units, the supply, the reserve and the price are exactly as they were, the
+    /// weight is gone and so is its vote, the refund is the escrow part less a fee that is the ordinary sale fee
+    /// on the units' value, capped at the refund, and a second leave on the same milestone is refused.
     function leave(uint256 who) external {
         address actor = actors[who % 5];
         if (!pool.canLeave(actor)) return;
         uint256 mine = pool.escrowOf(actor);
-        (uint256 out, uint256 fromCurve, uint256 fromEscrow,, uint256 fee) = pool.quoteLeave(actor);
+        uint256 units = pool.balanceOf(actor);
+        uint256 supply = pool.totalSupply();
+        uint256 reserve = pool.reserve();
+        uint256 price = pool.price();
+        uint256 weight = pool.weightOf(actor);
+        bool voted = pool.votedAbandon(actor);
+        uint256 votes = pool.abandonVotes();
+        (uint256 out, uint256 fromEscrow, uint256 fee) = pool.quoteLeave(actor);
+        (, uint256 sellFee,,) = pool.quoteSell(actor, units);
         assertEq(fromEscrow, mine);
+        assertEq(out, fromEscrow - fee);
+        assertEq(
+            fee, sellFee < fromEscrow ? sellFee : fromEscrow, "the sale fee on the units' value, at most the refund"
+        );
         uint256 fees = pool.feesTaken();
         vm.prank(actor);
         assertEq(pool.leave(out, block.timestamp), out);
-        assertEq(out, fromCurve + fromEscrow);
         assertEq(pool.feesTaken(), fees + fee);
-        assertEq(pool.balanceOf(actor), 0);
+        assertEq(pool.balanceOf(actor), units, "no unit was sold");
+        assertEq(pool.totalSupply(), supply);
+        assertEq(pool.reserve(), reserve);
+        assertEq(pool.price(), price, "a leave never moves the price");
+        assertEq(pool.weightOf(actor), 0);
+        assertFalse(pool.votedAbandon(actor));
+        assertEq(pool.abandonVotes(), voted ? votes - weight : votes);
+        vm.prank(actor);
+        vm.expectRevert(BackingPool.NoSay.selector);
+        pool.leave(0, block.timestamp);
         paidOut += out;
+        leaveFees += fee;
         leftThisMilestone += fromEscrow;
         ++leaves;
+        if (voted) ++leavesWhileVoting;
     }
 
     function post(uint256 ref) external {
@@ -223,8 +251,7 @@ contract BackingPoolInvariantTest is Test {
     /// strangers sent it. Nothing a backer or the project is owed is ever missing.
     function invariant_the_pool_holds_what_its_books_say() public view {
         assertEq(
-            quote.balanceOf(address(pool)),
-            pool.reserve() + pool.escrow() + pool.treasuryOwed() + handler.donated()
+            quote.balanceOf(address(pool)), pool.reserve() + pool.escrow() + pool.treasuryOwed() + handler.donated()
         );
     }
 
@@ -232,15 +259,14 @@ contract BackingPoolInvariantTest is Test {
     /// was paid out.
     function invariant_money_in_equals_money_held_released_and_paid_out() public view {
         assertEq(
-            handler.paidIn(),
-            pool.reserve() + pool.escrow() + pool.released() + pool.feesTaken() + handler.paidOut()
+            handler.paidIn(), pool.reserve() + pool.escrow() + pool.released() + pool.feesTaken() + handler.paidOut()
         );
     }
 
-    /// @dev The project money alone: what entered the escrow is still there, was released, or was handed
-    /// back (to leavers, or after abandonment).
+    /// @dev The project money alone: what entered the escrow is still there, was released, was handed back (to
+    /// leavers, or after abandonment), or was taken as a leaver's fee.
     function invariant_escrow_released_and_refunded_add_up() public view {
-        assertEq(handler.escrowIn(), pool.escrow() + pool.released() + pool.refunded());
+        assertEq(handler.escrowIn(), pool.escrow() + pool.released() + pool.refunded() + handler.leaveFees());
         assertEq(quote.balanceOf(treasury) + pool.treasuryOwed(), pool.released() + pool.feesTaken());
     }
 
@@ -253,12 +279,30 @@ contract BackingPoolInvariantTest is Test {
             units += pool.balanceOf(actor);
             weight += pool.weightOf(actor);
             if (pool.votedAbandon(actor)) votes += pool.weightOf(actor);
-            // No weight without units: a wallet that sold everything has no claim left.
+            // No weight without units: a wallet that sold everything has no claim left. (The other way round is
+            // allowed: a wallet that left at a milestone keeps its units with no weight.)
             if (pool.balanceOf(actor) == 0) assertEq(pool.weightOf(actor), 0);
         }
         assertEq(units, pool.totalSupply());
         assertEq(weight, pool.totalWeight());
         assertEq(votes, pool.abandonVotes());
+    }
+
+    /// @dev Units with no weight carry no part of the escrow: no refund after abandonment, nothing to leave
+    /// with. (A vote flag a seller left standing is harmless, it counts for a weight of zero: the votes invariant
+    /// above covers it.)
+    function invariant_units_without_weight_have_no_escrow_part() public view {
+        for (uint256 i; i < handler.actorCount(); ++i) {
+            address actor = handler.actors(i);
+            if (pool.weightOf(actor) != 0) continue;
+            assertEq(pool.escrowOf(actor), 0);
+            assertFalse(pool.canLeave(actor));
+            uint256 units = pool.balanceOf(actor);
+            if (units != 0) {
+                (,, uint256 refund,) = pool.quoteSell(actor, units);
+                assertEq(refund, 0);
+            }
+        }
     }
 
     /// @dev The curve's product never falls below where it started, which is what keeps the reserve from
@@ -301,20 +345,30 @@ contract BackingPoolInvariantTest is Test {
         assertLe(owed, pool.escrow());
     }
 
-    /// @dev From any state, every wallet that can leave does, and then every holder sells everything, in
-    /// either order, and the pool still holds its books; once abandoned, that empties the escrow too.
+    /// @dev From any state, everyone can get out, in any order: every wallet that can leave does and then sells
+    /// everything (forwards, then backwards), and a third way round sells half first, leaves, and sells the
+    /// rest. The pool still holds its books; once abandoned, that empties the escrow too.
     function invariant_everyone_can_always_get_out() public {
         uint256 state = vm.snapshotState();
-        for (uint256 pass; pass < 2; ++pass) {
+        for (uint256 pass; pass < 3; ++pass) {
             uint256 n = handler.actorCount();
             for (uint256 i; i < n; ++i) {
-                address actor = handler.actors(pass == 0 ? i : n - 1 - i);
+                address actor = handler.actors(pass == 1 ? n - 1 - i : i);
                 uint256 held = pool.balanceOf(actor);
                 if (held == 0) continue;
-                bool leaves = pool.canLeave(actor);
-                vm.prank(actor);
-                if (leaves) pool.leave(0, block.timestamp);
-                else pool.sell(held, 0, block.timestamp);
+                if (pass == 2) {
+                    vm.prank(actor);
+                    pool.sell(held / 2 == 0 ? held : held / 2, 0, block.timestamp);
+                }
+                if (pool.canLeave(actor)) {
+                    vm.prank(actor);
+                    pool.leave(0, block.timestamp);
+                }
+                held = pool.balanceOf(actor);
+                if (held != 0) {
+                    vm.prank(actor);
+                    pool.sell(held, 0, block.timestamp);
+                }
             }
             assertEq(pool.totalSupply(), 0);
             assertEq(pool.totalWeight(), 0);
@@ -328,6 +382,7 @@ contract BackingPoolInvariantTest is Test {
     /// Kept loose (a single short run may miss one), and printed by `forge test -vv`.
     function invariant_the_handler_reaches_the_leave_path() public {
         emit log_named_uint("leaves", handler.leaves());
+        emit log_named_uint("leaves while voting", handler.leavesWhileVoting());
         emit log_named_uint("releases", handler.releases());
         emit log_named_uint("voids", handler.voids());
         emit log_named_uint("abandonments", handler.abandonments());
