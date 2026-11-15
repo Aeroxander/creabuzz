@@ -45,6 +45,16 @@ test("an idea's sale steps show only where the build offers raises", () => {
   assert.doesNotMatch(after, /\bearn/i);
 });
 
+test("an idea asks for supporters, and reads who they are, only where the build offers raises", () => {
+  const card = source("./IdeaProgressCard.tsx");
+  // The count of supporters is the gate to a sale: a build with no raises shows neither the step nor its number.
+  const branch = between(card, "{raises ? (", ") : null}");
+  assert.match(branch, /Gather supporters/);
+  assert.match(branch, /"idea-supporters"/);
+  assert.equal(card.split('"idea-supporters"').length - 1, 1);
+  assert.match(card, /useSupporters\(raises \? \[coord\] : \[\]\)/);
+});
+
 test("an idea promises a sale only where the build offers raises", () => {
   const overview = source("./IdeaOverview.tsx");
   assert.match(overview, /const raises = raisesOffered\(\);/);

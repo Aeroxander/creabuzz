@@ -109,49 +109,49 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
         </Step>
         {/* The supporter gate belongs to a raise: a build that offers none asks nobody to gather supporters first. */}
         {raises ? (
-          <Step done={progress.open} title="Gather supporters">
-            <div className="mt-1.5 flex items-center gap-3">
-              <div
-                aria-hidden
-                className="h-2 w-40 overflow-hidden rounded-full bg-foreground/10"
-              >
+          <>
+            <Step done={progress.open} title="Gather supporters">
+              <div className="mt-1.5 flex items-center gap-3">
                 <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${progress.percent}%` }}
-                />
-              </div>
-              <span
-                className="text-xs tabular-nums text-muted-foreground"
-                data-testid="idea-supporters"
-              >
-                {count === null ? "…" : count} of {progress.needed}
-              </span>
-            </div>
-          </Step>
-        ) : null}
-        {raises ? (
-          <Step done={false} title="Prepare the sale">
-            <div className="mt-1.5 flex flex-wrap items-center gap-3">
-              <Button
-                data-testid="idea-prepare-sale"
-                disabled={!progress.open}
-                onClick={() => setPreparing(true)}
-                size="sm"
-              >
-                Prepare the sale
-              </Button>
-              {!progress.open ? (
-                <button
-                  className="text-xs text-muted-foreground underline"
-                  data-testid="idea-prepare-anyway"
-                  onClick={() => setPreparing(true)}
-                  type="button"
+                  aria-hidden
+                  className="h-2 w-40 overflow-hidden rounded-full bg-foreground/10"
                 >
-                  I already have backers elsewhere. Prepare anyway.
-                </button>
-              ) : null}
-            </div>
-          </Step>
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${progress.percent}%` }}
+                  />
+                </div>
+                <span
+                  className="text-xs tabular-nums text-muted-foreground"
+                  data-testid="idea-supporters"
+                >
+                  {count === null ? "…" : count} of {progress.needed}
+                </span>
+              </div>
+            </Step>
+            <Step done={false} title="Prepare the sale">
+              <div className="mt-1.5 flex flex-wrap items-center gap-3">
+                <Button
+                  data-testid="idea-prepare-sale"
+                  disabled={!progress.open}
+                  onClick={() => setPreparing(true)}
+                  size="sm"
+                >
+                  Prepare the sale
+                </Button>
+                {!progress.open ? (
+                  <button
+                    className="text-xs text-muted-foreground underline"
+                    data-testid="idea-prepare-anyway"
+                    onClick={() => setPreparing(true)}
+                    type="button"
+                  >
+                    I already have backers elsewhere. Prepare anyway.
+                  </button>
+                ) : null}
+              </div>
+            </Step>
+          </>
         ) : null}
         <Step done={false} title="Set up Shares for people who help">
           <p className="mt-0.5 text-xs text-muted-foreground">
