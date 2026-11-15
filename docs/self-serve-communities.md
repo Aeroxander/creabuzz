@@ -68,6 +68,10 @@ that should be private (a founders' room, a backers' room) are rooms inside an o
   not lose it. Opening a community drops nobody.
 - **The server-wide switch still wins.** With `BUZZ_REQUIRE_RELAY_MEMBERSHIP=true` every community is invite-only,
   whatever its own setting says.
+- **The operator's "public project records" setting does not open a community that chose invite-only.**
+  `BUZZ_PUBLIC_PROJECT_READS` lets anyone read a public project's record only where the operator made the whole server
+  invite-only. A community whose own owner chose invite-only keeps its project records, and their link previews, for
+  members: the owner has no setting yet to make them public.
 - **Anyone can read the answer.** The community's information document (`GET /info`, or `GET /` asking for
   `application/nostr+json`) carries `"access": "open"` or `"invite_only"`, so an app can say "ask the owner for an
   invite" before someone tries to sign in. An unknown host gets no `access` field rather than a guess.

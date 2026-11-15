@@ -195,14 +195,44 @@ record while everything else stays for members. Someone with no invite who opens
 or `/launchpad/<project>`) sees that project's goal, its weekly updates, which promises were kept and missed, and the work
 that was accepted, read only, with one line saying that taking part needs an invite and a Sign in button. The same link
 shows a real preview in a chat app. It covers only projects the preview rule above allows (listed, not removed, founder not
-muted or banned) and only those records; records signed by someone muted or banned are left out. Rooms, boards, direct
-messages, profiles, Home and every list stay members only, and so does posting anything. Such a visitor cannot browse:
-they need the link.
+muted or banned). Such a visitor cannot browse: they need the link.
+
+What the server gives someone with no invite is a fixed list, checked record by record on the server, not only what the
+page happens to show:
+
+- The project's own record, whole. Besides the name, pitch and picture it holds the account ids of the team and, for a
+  project that has them, its chain addresses and sale terms (price floor, amount to raise, budget). The page shows none of
+  the money fields, but anyone who asks the server directly gets the record as the founder signed it.
+- The founder's goals and promises with their answers, and the updates the founder or the team posted.
+- For work the team accepted and nobody on the team sent back: the task, the work handed in (its words, links and files)
+  and the confirmation.
+
+Everything else stays for members: work handed in that is still waiting or was sent back, and the reasons given; asks for
+more time; offers of help and the replies to them; check notes; every record about on-chain work (submitted evidence,
+reviewers' reasons, agreements, work areas, challenges); rooms, boards, direct messages, profiles, Home and every list;
+and posting anything. Records signed by someone muted or banned are left out.
+
+It opens records only on a server whose operator made the whole server invite-only (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`,
+as the bundle's `.env.example` does). On a server that lets communities choose (`docs/self-serve-communities.md`), a
+community that chose invite-only for itself is not opened by this setting: its owner decided who reads there, and has no
+way yet to choose public records.
 
 To turn it off, set `BUZZ_PUBLIC_PROJECT_READS=false` (or delete the line) and run `./run.sh restart`. No rebuild is
 needed. A visitor with no invite is then told "You need an invite to open this project", and previews go back to the plain
-page. Everyone without an invite shares one budget of reads a minute (`BUZZ_PUBLIC_PROJECT_READS_PER_MIN`, default 300),
-so a crowd of strangers cannot slow the server for members; past it they see the invite sentence until the minute ends.
+page.
+
+Limits, so a crowd of strangers cannot slow the server for members:
+
+- A project's public record is read from the database once in `BUZZ_PUBLIC_PROJECT_READS_CACHE_SECS` (default 30; 0 keeps
+  nothing) and every visitor is answered from that copy. A link many people open costs one read. The price: a new update,
+  a mute, a ban or a removal reaches visitors up to that many seconds later.
+- Only those database reads count against the budget all visitors share, `BUZZ_PUBLIC_PROJECT_READS_PER_MIN` (default
+  300). When it is spent, a project read in the last 5 minutes is still answered from the older copy; any other gets "This
+  project's record can't be opened right now" with Try again, not the invite sentence.
+- One address may make `BUZZ_PUBLIC_PROJECT_READS_PER_ADDRESS_MIN` (default 120) public reads a minute, counted before the
+  shared budget, so one machine cannot spend it for everyone. The address is the last entry of `X-Forwarded-For`, which
+  the bundled Caddy writes. Behind a different proxy, make sure it sets that header itself and does not pass on what the
+  client sent; with no such header only the shared budget applies.
 
 `BUZZ_EXAMPLE_PROJECT=<what follows /p/ in the project's shared address>` names the server's own example project. With
 it, someone with no account who lands on Home is offered "See a record", which opens that project's public record. Set it
