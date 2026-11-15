@@ -35,6 +35,7 @@ import { PageHeader } from "@/shared/ui/PageHeader";
 import { QueryError, errorMessage } from "@/shared/ui/query-error";
 import { CategoryBrowse } from "./CategoryBrowse";
 import { ProjectBoard } from "./ProjectBoard";
+import { ProjectRecordLine } from "./ProjectRecordLine";
 
 import {
   directoryNotice,
@@ -46,6 +47,7 @@ import {
   type DiscoverFilter,
 } from "../lib/directory";
 import { useDiscover } from "../use-discover";
+import { useLeaderboard } from "../use-leaderboard";
 import {
   DiscoverDaoCard,
   DiscoverLaunchCard,
@@ -155,6 +157,8 @@ export function DiscoverPage() {
     [paged.data, raises, chainHead],
   );
   const launches = launchesForFilter(allLaunches, filter, raises);
+  // The same read the scoreboard makes (one query), so a card can carry its project's one line and promises kept.
+  const board = useLeaderboard(allLaunches);
   const projects = snapshot?.projects ?? [];
   const founders = [
     ...daos.map((card) => card.founder),
@@ -386,6 +390,9 @@ export function DiscoverPage() {
                           key={`${launch.record.author}:${launch.record.id}`}
                           launch={launch}
                           raises={raises}
+                          summary={
+                            <ProjectRecordLine score={board.scoreOf(launch)} />
+                          }
                         />
                       ))}
                     </ul>

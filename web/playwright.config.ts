@@ -154,6 +154,8 @@ export default defineConfig({
         "**/agent-account.spec.ts",
         // Projects as a scoreboard: streaks, kept promises, open requests; nothing a founder can inflate by re-saving.
         "**/project-board.spec.ts",
+        // Finding AI projects: the category chip, and the order that pairs weeks in a row with kept promises.
+        "**/discover-ai-projects.spec.ts",
         // The weekly rhythm: due and late words, the pre-filled update dialog, the note after posting, sharing.
         "**/weekly-rhythm.spec.ts",
         // The update loop: draft from the record, the update day, the weekly calendar reminder, the AI limit's own words.

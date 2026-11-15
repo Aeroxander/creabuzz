@@ -14,6 +14,7 @@
  */
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, Users } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { DaoCard } from "@/features/discover/lib/directory";
 import {
@@ -283,10 +284,13 @@ export function DiscoverDaoCard({
 export function DiscoverLaunchCard({
   launch,
   raises,
+  summary,
 }: {
   launch: Launch;
   /** Whether this build offers raises (`raisesOffered`): without them nothing offers to back a launch. */
   raises: boolean;
+  /** The project's one line and promises kept (`ProjectRecordLine`), shown above the card's action. */
+  summary?: ReactNode;
 }) {
   const follows = useLaunchFollows();
   const { data: profiles } = useProfiles([launch.record.author]);
@@ -308,6 +312,7 @@ export function DiscoverLaunchCard({
         followed={follows.followed.has(key)}
         footer={
           <div className="space-y-3">
+            {summary}
             {dao ? (
               <p
                 className="flex flex-wrap items-center gap-2 text-2xs text-black/70 dark:text-white/70"

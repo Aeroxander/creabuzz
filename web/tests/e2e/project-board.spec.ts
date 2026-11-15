@@ -153,10 +153,12 @@ test("the scoreboard ranks by real activity, kept promises and open requests; on
   await install(page, relay, null);
   await page.goto("/discover");
   const board = page.getByTestId("project-board");
-  await expect(board.getByTestId("project-board-tab-moving")).toHaveAttribute(
+  // The page opens on "Most reliable" (`discover-ai-projects.spec.ts` covers its order); this spec reads the others.
+  await expect(board.getByTestId("project-board-tab-reliable")).toHaveAttribute(
     "aria-selected",
     "true",
   );
+  await board.getByTestId("project-board-tab-moving").click();
   // Moving now: days posted on this week, then the longer streak. Birch posted on two days; Atlas and Dune on one,
   // and Atlas has the streak. Cedar has posted nothing, and the project that is not listed is not here.
   await expect.poll(() => names(page)).toEqual(["Birch", "Atlas", "Dune"]);
@@ -232,6 +234,7 @@ test("when the scores cannot be read the board says so, with a retry; the list o
   ).toBeVisible();
   relay.setClosingSockets(false);
   await board.getByRole("button", { name: "Try again" }).click();
+  await board.getByTestId("project-board-tab-moving").click();
   await expect
     .poll(() => names(page), { timeout: 30_000 })
     .toEqual(["Birch", "Atlas", "Dune"]);
@@ -245,6 +248,7 @@ test("at 390px the scoreboard fits with no sideways scroll", async ({
   seedBoard(relay);
   await install(page, relay, null);
   await page.goto("/discover");
+  await page.getByTestId("project-board-tab-moving").click();
   await expect(rows(page)).toHaveCount(3);
   expect(
     await page.evaluate(

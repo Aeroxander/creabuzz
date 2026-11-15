@@ -24,6 +24,8 @@ import { useLeaderboard } from "../use-leaderboard";
 const ROWS = 10;
 
 const EMPTY: Record<BoardTab, string> = {
+  reliable:
+    "No project has posted a real update yet. The first weekly update that makes or answers a promise puts it here.",
   moving: "No project has posted this week yet.",
   new: "No projects yet.",
   kept: "No project has kept a promise yet. The first weekly update that answers one puts it here.",
@@ -32,7 +34,7 @@ const EMPTY: Record<BoardTab, string> = {
 
 export function ProjectBoard({ launches }: { launches: readonly Launch[] }) {
   const board = useLeaderboard(launches);
-  const [tab, setTab] = useState<BoardTab>("moving");
+  const [tab, setTab] = useState<BoardTab>(BOARD_TABS[0].id);
   const [shown, setShown] = useState(ROWS);
   const byCoordinate = useMemo(
     () =>
@@ -84,6 +86,16 @@ export function ProjectBoard({ launches }: { launches: readonly Launch[] }) {
           </button>
         ))}
       </div>
+      {tab === "reliable" ? (
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="project-board-note"
+        >
+          Ordered by weeks posted in a row and promises kept, then by the newest
+          real update. A run of weeks counts once a project has answered at
+          least two promises and kept at least as many as it missed.
+        </p>
+      ) : null}
       {board.failed ? (
         <p className="text-sm" data-testid="project-board-failed" role="alert">
           Couldn't load the scores.{" "}
@@ -149,6 +161,14 @@ export function ProjectBoard({ launches }: { launches: readonly Launch[] }) {
                     {record.pitch ? (
                       <span className="block truncate text-xs text-muted-foreground">
                         {record.pitch}
+                      </span>
+                    ) : null}
+                    {score.line ? (
+                      <span
+                        className="line-clamp-2 text-xs text-foreground/80"
+                        data-testid="project-board-line"
+                      >
+                        {score.line}
                       </span>
                     ) : null}
                     <span
