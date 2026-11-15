@@ -224,7 +224,8 @@ reviewers' reasons, agreements, work areas, challenges); rooms, boards, direct m
 and posting anything. Records signed by someone muted or banned are left out.
 
 It opens records only on a server whose operator made the whole server invite-only (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`,
-as the bundle's `.env.example` does). On a server that lets communities choose (`docs/self-serve-communities.md`), a
+as the bundle's `.env.example` does), and there it covers every community the server hosts: it is one setting for the
+server, not one per community. On a server that lets communities choose (`docs/self-serve-communities.md`), a
 community that chose invite-only for itself is not opened by this setting: its owner decided who reads there, and has no
 way yet to choose public records.
 
