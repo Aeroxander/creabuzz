@@ -1,5 +1,5 @@
 /**
- * Two AI helpers for contributors (`docs/v3-review/CHECK-AND-NEWCOMER-PLAN.md`, step 3), offered only when the server's
+ * Three AI helpers for contributors (`docs/v3-review/CHECK-AND-NEWCOMER-PLAN.md`, step 3), offered only when the server's
  * AI service is on:
  *
  * - **Checking work before it is submitted:** the evidence and the person's own check, compared with the work area's
@@ -7,6 +7,8 @@
  *   words do go to the server's AI service, `AI_DISCLOSURE`).
  * - **The newcomer interviewer:** three short answers (what they are good at, how much time they have, what they care
  *   about here) turned into a first "taking this on" draft for them to edit.
+ * - **Sharper "done means" words for a task:** a rewrite of what the team wrote, shown to the team to use or edit; it
+ *   adds no number or link the team did not write.
  *
  * The AI sees only what is given here, adds nothing, judges no one and decides nothing. It cannot open links: it is told
  * so, and says so. Pure: prompts out, readings in, driven by `helperAi.test.mjs`.
@@ -99,6 +101,42 @@ export function parseWorkCheck(reply: string): string[] | null {
     if (!gaps.includes(gap)) gaps.push(gap);
   }
   return gaps.slice(0, 5);
+}
+
+// ---- sharper "done means" words for a task ------------------------------------------------
+
+/** The longest "done means" a task takes (`TASK_LIMITS.done` in the web app); a proposal is cut to it. */
+const DONE_MEANS_MAX = 500;
+
+/**
+ * The prompt that asks for a sharper wording of what "done" means for a task. The AI only rewrites the words it is
+ * given: it may not add a number, a link or a fact the team did not write, and it asks no one to agree to anything.
+ */
+export function doneMeansPrompt(input: { what: string; done: string }): {
+  system: string;
+  user: string;
+} {
+  return {
+    system: [
+      ...RULES,
+      'Rewrite what "done means" so that a stranger could check it without asking the team: say what will exist (a link, a file, a result), and a number or a limit where the words already imply one.',
+      "Keep the team's meaning. Do not add a number, a name, a link or a requirement that is not in the words you were given: when a number is missing, write a short placeholder in square brackets such as [how many] for the team to fill in.",
+      `One or two sentences, under ${DONE_MEANS_MAX} characters.`,
+      'Reply with JSON only: {"done": string}.',
+    ].join("\n"),
+    user: [
+      `The task: ${input.what.trim() || "(not written yet)"}`,
+      `What the team wrote for "done means": ${input.done.trim() || "(nothing yet)"}`,
+    ].join("\n"),
+  };
+}
+
+/** The proposed words out of a reply, cut to the task's limit, or null when it is not the JSON asked for. */
+export function parseDoneMeans(reply: string): string | null {
+  const body = json(reply);
+  if (!body || typeof body.done !== "string") return null;
+  const words = body.done.trim();
+  return words ? words.slice(0, DONE_MEANS_MAX) : null;
 }
 
 // ---- the newcomer interviewer ----------------------------------------------------------------

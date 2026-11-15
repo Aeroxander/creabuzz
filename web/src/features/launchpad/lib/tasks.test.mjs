@@ -855,3 +855,110 @@ test("a task can name the goal it is for and the limits to stay within, and both
     false,
   );
 });
+
+test("a hand-in carries the numbers its helper reports, and they are shown as the helper's, one piece at a time", () => {
+  const task = make();
+  const results = [
+    {
+      name: "pass_rate",
+      value: "0.82",
+      unit: "ratio",
+      baseline: "0.71",
+      sampleSize: "40",
+      producedBy: "commit abc123",
+    },
+    {
+      name: "latency",
+      value: "120",
+      unit: "ms",
+      baseline: "",
+      sampleSize: "",
+      producedBy: "",
+    },
+  ];
+  const withNumbers = hand(task, { note: "Done.", results });
+  const plain = hand(task, { note: "Also this." });
+  // The tags are the ones the server holds to bounds, in the order the command line writes them.
+  assert.deepEqual(
+    withNumbers.tags.filter((t) => t[0] === "task-result"),
+    [
+      ["task-result", "pass_rate", "0.82", "ratio", "0.71", "40", "commit abc123"],
+      ["task-result", "latency", "120", "ms", "", "", ""],
+    ],
+  );
+  const read = one([task, withNumbers, plain]);
+  const piece = read.evidence.find((p) => p.id === withNumbers.id);
+  assert.deepEqual(piece.results, results);
+  assert.equal(piece.resultsBroken, false);
+  assert.deepEqual(
+    read.evidence.find((p) => p.id === plain.id).results,
+    [],
+  );
+});
+
+test("numbers are written only on a hand-in, and at most the bound allows", () => {
+  const task = make();
+  const result = {
+    name: "x",
+    value: "1",
+    unit: "",
+    baseline: "",
+    sampleSize: "",
+    producedBy: "",
+  };
+  const other = taskStepEvent({
+    part: "send-back",
+    taskId: task.id,
+    tell: [],
+    note: "no",
+    evidenceId: "9".repeat(64),
+    results: [result],
+  });
+  assert.equal(other.tags.some((t) => t[0] === "task-result"), false);
+  const many = taskStepEvent({
+    part: "evidence",
+    taskId: task.id,
+    tell: [],
+    note: "n",
+    results: Array.from({ length: 14 }, (_, i) => ({ ...result, name: `m${i}` })),
+  });
+  assert.equal(many.tags.filter((t) => t[0] === "task-result").length, 10);
+});
+
+test("a hand-in whose number tags break a bound shows none of them, and its words still show", () => {
+  const task = make();
+  const good = hand(task, { note: "Words stay." });
+  const broken = {
+    ...good,
+    id: "e".repeat(64),
+    tags: [
+      ...good.tags,
+      ["task-result", "ok", "1", "", "", "", ""],
+      ["task-result", "bad", "high", "", "", "", ""],
+    ],
+  };
+  const piece = one([task, broken]).evidence[0];
+  assert.equal(piece.resultsBroken, true);
+  assert.deepEqual(piece.results, []);
+  assert.equal(piece.note, "Words stay.");
+  // The same tags on any other step are not read at all.
+  const confirmLike = step(MATE, task, "confirm", { evidenceId: good.id });
+  const stray = parseTaskRecord({
+    ...confirmLike,
+    tags: [...confirmLike.tags, ["task-result", "ok", "1", "", "", "", ""]],
+  });
+  assert.deepEqual(stray.extras.results, []);
+});
+
+test("a run log and a run record id are kept on the piece they came with", () => {
+  const task = make();
+  const logged = hand(task, { note: "Ran it." });
+  const extra = [
+    ["task-run-log", "a".repeat(64), "run.log"],
+    ["task-run-record", "b".repeat(64)],
+  ];
+  const piece = one([task, { ...logged, tags: [...logged.tags, ...extra] }])
+    .evidence[0];
+  assert.deepEqual(piece.runLog, { sha256: "a".repeat(64), name: "run.log" });
+  assert.equal(piece.runRecord, "b".repeat(64));
+});

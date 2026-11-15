@@ -3,7 +3,9 @@ import { test } from "node:test";
 
 import {
   AI_DISCLOSURE,
+  doneMeansPrompt,
   fenceAiRequest,
+  parseDoneMeans,
   parseTakeOnDraft,
   parseWorkCheck,
   takeOnDraftPrompt,
@@ -101,4 +103,37 @@ test("the interviewer's answers become a draft, kept within the limits", () => {
   );
   assert.equal(parseTakeOnDraft('{"deliver":"x","days":3}'), null);
   assert.equal(parseTakeOnDraft("Sure, here you go"), null);
+});
+
+test("the done-means prompt gives only the team's words, forbids invented numbers, and a proposal is read back whole or not at all", () => {
+  const p = doneMeansPrompt({
+    what: "Test sign-up on an old phone",
+    done: "It works well",
+  });
+  assert.match(p.system, /Do not add a number, a name, a link/);
+  assert.match(p.system, /\[how many\]/);
+  assert.match(p.user, /The task: Test sign-up on an old phone/);
+  assert.match(p.user, /"done means": It works well/);
+  assert.match(
+    doneMeansPrompt({ what: "", done: "" }).user,
+    /\(not written yet\)[\s\S]*\(nothing yet\)/,
+  );
+  assert.equal(
+    parseDoneMeans('{"done":"  A screen recording of sign-up on Android 9. "}'),
+    "A screen recording of sign-up on Android 9.",
+  );
+  assert.equal(
+    parseDoneMeans('```json\n{"done":"A link to the recording"}\n```'),
+    "A link to the recording",
+  );
+  assert.equal(parseDoneMeans(`{"done":"${"x".repeat(900)}"}`)?.length, 500);
+  for (const bad of [
+    '{"done":""}',
+    '{"done":"   "}',
+    '{"done":7}',
+    '{"words":"x"}',
+    '["x"]',
+    "Sure! Here you go.",
+  ])
+    assert.equal(parseDoneMeans(bad), null, bad);
 });

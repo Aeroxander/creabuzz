@@ -10,7 +10,9 @@
  *              and offer it came from (`task-update`, `task-offer`). The record's own id is the task's id, so its
  *              words can never be swapped later.
  *   accept     the helper agrees to a task that was given to them without an offer
- *   evidence   the helper hands work in: words (the body), links (`task-link`) and files by fingerprint (`task-file`)
+ *   evidence   the helper hands work in: words (the body), links (`task-link`) and files by fingerprint (`task-file`),
+ *              and optionally numbers they report (`task-result`), a run log's fingerprint (`task-run-log`) and the id of
+ *              a run record they signed (`task-run-record`): `task-results.ts`, held to the bounds in `task_result.rs`
  *   send-back  the team returns one handed-in piece (`task-evidence`) with a reason
  *   confirm    a team member who is not the helper accepts one handed-in piece (`task-evidence`)
  *   more-time  the helper asks for more time, with a reason and the date they ask for
@@ -44,6 +46,14 @@ import {
   agentClaim,
   verifiedAgent,
 } from "./agent-label.ts";
+import {
+  type HandInExtras,
+  type ReportedResult,
+  type RunLog,
+  readHandInExtras,
+  RESULT_LIMITS,
+  resultTag,
+} from "./task-results.ts";
 import { HELP_SIZES, type HelpSize } from "./weekly-update.ts";
 
 /** The `l` label every task record carries. */
@@ -146,6 +156,8 @@ export interface TaskRecord {
   askId: string | null;
   links: string[];
   files: TaskFile[];
+  /** The numbers, run log and run record an evidence step reports (empty on any other step). */
+  extras: HandInExtras;
   agent: AgentClaim | null;
 }
 
@@ -224,6 +236,7 @@ export function parseTaskRecord(event: EventLike): TaskRecord | null {
     askId: null,
     links: [],
     files: [],
+    extras: { results: [], runLog: null, runRecord: null, broken: false },
     agent: agentClaim(event),
   };
   if (part === "task") {
@@ -280,6 +293,7 @@ export function parseTaskRecord(event: EventLike): TaskRecord | null {
     if (links.length === 0 && files.length === 0 && note === "") return null;
     record.links = links;
     record.files = files;
+    record.extras = readHandInExtras(event.tags);
   }
   if (part === "send-back" || part === "confirm") {
     const evidence = first(event.tags, TAG_EVIDENCE);
@@ -376,6 +390,8 @@ export function taskStepEvent(input: {
   due?: string | null;
   links?: readonly string[];
   files?: readonly TaskFile[];
+  /** Numbers the helper reports with a hand-in (an `evidence` step only). The caller has checked them. */
+  results?: readonly ReportedResult[];
 }): TaskEvent {
   const note = clip(input.note ?? "", TASK_LIMITS.note);
   const due = validDate(input.due);
@@ -409,6 +425,11 @@ export function taskStepEvent(input: {
         clip(file.name, TASK_LIMITS.fileName),
         validLink(file.url) ?? "",
       ]),
+      ...(input.part === "evidence"
+        ? (input.results ?? [])
+            .slice(0, RESULT_LIMITS.results)
+            .map((result) => resultTag(result))
+        : []),
     ],
   };
 }
@@ -454,6 +475,13 @@ export interface TaskEvidence {
   note: string;
   links: string[];
   files: TaskFile[];
+  /** Numbers the helper reported with this piece. Reported, never run by anyone else. */
+  results: ReportedResult[];
+  /** The fingerprint of a log file the helper kept, and the id of a run record they say they signed. */
+  runLog: RunLog | null;
+  runRecord: string | null;
+  /** The piece's number tags broke the bounds the server holds them to, so none of them is shown. */
+  resultsBroken: boolean;
   sentBack: Answer[];
   confirmed: Answer[];
   /** Answers from people who are not on the team now (they may have been). At most {@link OUTSIDE_SHOWN}. */
@@ -616,6 +644,10 @@ export function projectTasks(input: {
           note: step.note,
           links: step.links,
           files: step.files,
+          results: step.extras.results,
+          runLog: step.extras.runLog,
+          runRecord: step.extras.runRecord,
+          resultsBroken: step.extras.broken,
           sentBack: [],
           confirmed: [],
           outside: [],
