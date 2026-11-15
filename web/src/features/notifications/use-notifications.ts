@@ -8,6 +8,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  parseLaunchRecord,
+  launchCoordinate,
+} from "@/features/launchpad/models";
+import { KIND_LAUNCH_RECORD, KIND_REACTION } from "@/shared/constants/kinds";
 import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { existingUserPubkey } from "@/shared/lib/identity";
@@ -16,6 +21,7 @@ import { TIMELINE_CONTENT_KINDS } from "@/features/channels/use-channel-messages
 import { useMutedSet } from "@/features/social/use-social-actions";
 
 import { type BellView, bellState } from "./lib/bell-state";
+import { type CheerLine, cheerLines } from "./lib/cheer-lines";
 import {
   KIND_BOARD_MODERATION_LOG,
   moderationItem,
@@ -232,4 +238,74 @@ export function useNotifications(): {
     error: feed.error ?? null,
     retry,
   };
+}
+
+/** Cheers are read for today and yesterday; a cheer older than that is no longer news. */
+const CHEER_READ_DAYS = 3;
+const CHEER_READ = 100;
+/** The most projects a cheer line looks up the name of. */
+const CHEER_PROJECTS = 20;
+
+/**
+ * The founder's cheer lines: one per project and day ("3 people cheered Nebula today."), from the cheers other people
+ * signed on the reader's records (`lib/cheer-lines.ts`). Read every minute while Home is open. A read that fails shows
+ * no line: a cheer is a kindness, never something the reader is waiting on, so nothing is said about the failure.
+ */
+export function useCheerLines(): { lines: CheerLine[] } {
+  const me = existingUserPubkey();
+  const url = relayWsUrl();
+  const muted = useMutedSet();
+  const read = useQuery({
+    queryKey: ["notifications", "cheers", url, me],
+    enabled: me !== null,
+    refetchInterval: 60_000,
+    retry: false,
+    queryFn: async () => {
+      const person = me ?? "";
+      const now = Math.floor(Date.now() / 1000);
+      const reactions = await queryEvents(url, {
+        kinds: [KIND_REACTION],
+        "#p": [person],
+        "#k": ["47003"],
+        since: now - CHEER_READ_DAYS * 86_400,
+        limit: CHEER_READ,
+      });
+      // The names of the projects those cheers are about: one read, by the accounts that started them.
+      const coordinates = new Set(
+        reactions.flatMap((e) => e.tags.find((t) => t[0] === "a")?.[1] ?? []),
+      );
+      const authors = [...new Set([...coordinates].map((c) => c.split(":")[1]))]
+        .filter((a): a is string => /^[0-9a-f]{64}$/.test(a ?? ""))
+        .slice(0, CHEER_PROJECTS);
+      const names = new Map<string, string>();
+      if (authors.length > 0) {
+        const records = await queryEvents(url, {
+          kinds: [KIND_LAUNCH_RECORD],
+          authors,
+          limit: 100,
+        });
+        for (const event of records) {
+          const record = parseLaunchRecord(event);
+          if (record)
+            names.set(launchCoordinate(event.pubkey, record.id), record.name);
+        }
+      }
+      return { reactions, names, now };
+    },
+  });
+  const lines = useMemo(
+    () =>
+      me && read.data
+        ? cheerLines({
+            reactions: read.data.reactions,
+            me,
+            // The clock now, not the read's: a line from yesterday must not stay "today" past midnight.
+            now: Math.floor(Date.now() / 1000),
+            names: read.data.names,
+            muted,
+          })
+        : [],
+    [me, read.data, muted],
+  );
+  return { lines };
 }

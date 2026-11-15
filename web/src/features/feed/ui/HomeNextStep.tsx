@@ -11,6 +11,7 @@
  */
 
 import { Link } from "@tanstack/react-router";
+import { PartyPopper } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 
 import {
@@ -22,6 +23,7 @@ import { needWords, orderNeeds } from "@/features/launchpad/lib/project-state";
 import { NeedLink } from "@/features/launchpad/ui/NeedLink";
 import { useBackingPositions } from "@/features/launchpad/use-backing-positions";
 import { useMyNeeds } from "@/features/launchpad/use-my-projects";
+import { useCheerLines } from "@/features/notifications/use-notifications";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 
@@ -42,7 +44,53 @@ export function readerScrolled(): boolean {
   return (shell?.scrollTop ?? 0) + window.scrollY > 8;
 }
 
+/**
+ * The founder's line about cheers: "3 people cheered Nebula today." One quiet line per project and day. It is about
+ * records only, so it never mentions Shares or a price. Like the next step, it never arrives under a reader who has
+ * already scrolled down the page; it shows nothing until there is a cheer.
+ */
+function HomeCheers() {
+  const { lines } = useCheerLines();
+  const mayAppear = useRef<boolean | null>(null);
+  if (lines.length > 0 && mayAppear.current === null)
+    mayAppear.current = !readerScrolled();
+  if (lines.length === 0 || mayAppear.current === false) return null;
+  return (
+    <section
+      aria-label="Cheers"
+      className="glass rounded-2xl border px-4 py-3"
+      data-testid="home-cheers"
+    >
+      <ul className="flex flex-col gap-1">
+        {lines.map((line) => (
+          <li
+            className="flex items-center gap-2 text-sm"
+            data-testid="home-cheers-line"
+            key={line.id}
+          >
+            <PartyPopper
+              aria-hidden
+              className="h-4 w-4 shrink-0 text-primary"
+            />
+            {line.text}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Home's next step, and the line about cheers under it. */
 export function HomeNextStep({ me }: { me: string }) {
+  return (
+    <>
+      <NextStep me={me} />
+      <HomeCheers />
+    </>
+  );
+}
+
+function NextStep({ me }: { me: string }) {
   const scope = `${relayWsUrl()}|${me}`;
   const [away, setAway] = useState(() =>
     nextStepDismissed(storage(), scope, Math.floor(Date.now() / 1000)),

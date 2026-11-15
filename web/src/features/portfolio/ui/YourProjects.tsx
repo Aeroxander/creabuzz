@@ -21,6 +21,11 @@ import {
 } from "@/features/launchpad/lib/project-state";
 import { promiseTotalsLine } from "@/features/launchpad/lib/promises";
 import {
+  streakAtRisk,
+  streakRiskWords,
+} from "@/features/launchpad/lib/streak-risk";
+import { dueOnDay } from "@/features/launchpad/lib/update-day";
+import {
   dueLine,
   TASK_STATE_LABEL,
   type TaskView,
@@ -35,6 +40,7 @@ import {
   type LaunchRecord,
 } from "@/features/launchpad/models";
 import { NeedLink } from "@/features/launchpad/ui/NeedLink";
+import { useUpdateDay } from "@/features/launchpad/ui/use-update-day";
 import {
   useMyProjects,
   useProjectState,
@@ -98,6 +104,17 @@ function ProjectCard({
     state?.streak != null && state.streak >= 2
       ? streakLine(state.streak)
       : null;
+  // The founder's own run, when their update day has come and nothing is posted yet this calendar week.
+  const updateDay = useUpdateDay(record);
+  const atRisk =
+    me !== null && record.author === me && state?.updatesKnown
+      ? streakAtRisk({
+          streak: state.streak,
+          lastUpdateAt: state.lastUpdateAt,
+          due: dueOnDay(updateDay.weekday, state.lastUpdateAt, now),
+          now,
+        })
+      : null;
   const needs: Need[] = orderNeeds([
     ...(state ? stateNeeds(state) : []),
     ...(me ? taskNeeds(tasks, me, now) : []),
@@ -157,7 +174,17 @@ function ProjectCard({
           {streak ? (
             <>
               <dt className="text-muted-foreground">Run</dt>
-              <dd data-testid="your-project-streak">{streak}</dd>
+              <dd>
+                <span data-testid="your-project-streak">{streak}</span>
+                {atRisk !== null ? (
+                  <span
+                    className="ml-2 text-xs font-semibold text-muted-foreground"
+                    data-testid="your-project-streak-risk"
+                  >
+                    {streakRiskWords(atRisk)}
+                  </span>
+                ) : null}
+              </dd>
             </>
           ) : null}
           <dt className="text-muted-foreground">Promises</dt>
