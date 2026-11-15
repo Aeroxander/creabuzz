@@ -4,12 +4,12 @@
  *
  * Some servers let anyone read these records while everything else stays for members. The server decides: it answers
  * only the two reads below, only for a project it would also show in a link preview (listed, not removed, its founder
- * in good standing), and at most `PUBLIC_READ_LIMIT` records each. Of the records about a project it gives only the
- * founder's goals and promises, the team's updates, and the three steps of work that was accepted (the task, the work
- * handed in, the confirmation). Work still waiting or sent back, offers of help and everything else stay for members,
- * so nothing here can be worked out from them. This file names the project an address is about,
- * builds those reads, and works out what the page may state from what came back. A number whose read hit the limit is
- * null and the page leaves it out; nothing here guesses.
+ * in good standing) whose record states no terms of a sale, and at most `PUBLIC_READ_LIMIT` records each. Of the
+ * records about a project it gives only the founder's goals and promises, the team's updates, and the three steps of
+ * work that was accepted (the task, the work handed in, the confirmation). Work still waiting or sent back, offers of
+ * help and everything else stay for members, so nothing here can be worked out from them. This file names the project
+ * an address is about, builds those reads, and works out what the page may state from what came back. A number whose
+ * read hit the limit is null and the page leaves it out; nothing here guesses.
  *
  * Pure and alias-free: `public-record.test.mjs` drives it under `node --test`.
  */
