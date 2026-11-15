@@ -1,21 +1,26 @@
 /**
  * The top of Home for someone who just arrived: one sentence on what this is, and two ways in. Start a project (four
- * answers; the account is asked for when it is needed) or find work on someone else's. What is happening right now
- * is the feed under it.
+ * answers; the account is asked for when it is needed) or find work on someone else's. When the server has a project
+ * of its own, "See a record" opens its public page. What is happening right now is the feed under it.
  *
  * Signed in, there is nothing here.
  */
 
 import { Link } from "@tanstack/react-router";
 
+import { projectSharePath } from "@/features/launchpad/lib/share";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
+
+import { useExampleProject } from "../use-example-project";
 
 export function HomeHero() {
   return existingUserPubkey() ? null : <Welcome />;
 }
 
 function Welcome() {
+  // The server's own project, when it has one: a real record to read before deciding anything.
+  const example = useExampleProject();
   return (
     <section
       aria-labelledby="welcome-title"
@@ -48,6 +53,19 @@ function Welcome() {
             Find work
           </Link>
         </Button>
+        {example ? (
+          <Button asChild className="max-sm:h-11" size="lg" variant="ghost">
+            <Link
+              data-testid="home-welcome-record"
+              params={{
+                slug: projectSharePath(example.record).slice("/p/".length),
+              }}
+              to="/p/$slug"
+            >
+              See a record
+            </Link>
+          </Button>
+        ) : null}
       </div>
     </section>
   );

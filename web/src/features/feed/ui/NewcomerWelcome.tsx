@@ -16,7 +16,9 @@ import { useMyNeeds } from "@/features/launchpad/use-my-projects";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 
+import { exampleFirst } from "../lib/example-project";
 import { markWelcomeSeen, welcomePicks, welcomeSeen } from "../lib/welcome";
+import { useExampleProject } from "../use-example-project";
 import { FollowButton } from "./FollowButton";
 import { readerScrolled } from "./HomeNextStep";
 import { ProjectMark } from "./MovingNow";
@@ -34,16 +36,22 @@ const CHOICE_CLASS =
 
 function FollowSome({ me }: { me: string }) {
   const launches = useLaunches();
+  // The server's own project, when it has one, comes first: it is the one place to read what a record looks like.
+  const example = useExampleProject();
   const picks = useMemo(() => {
     const raises = raisesOffered();
-    return welcomePicks(
-      (launches.data ?? []).filter((l) =>
-        listedProject(l.record, effectiveStage(l), raises),
+    return exampleFirst(
+      welcomePicks(
+        (launches.data ?? []).filter((l) =>
+          listedProject(l.record, effectiveStage(l), raises),
+        ),
+        Math.floor(Date.now() / 1000),
+        me,
       ),
-      Math.floor(Date.now() / 1000),
+      example,
       me,
     );
-  }, [launches.data, me]);
+  }, [launches.data, me, example]);
   if (launches.isError && !launches.data)
     return (
       <p className="text-sm" data-testid="welcome-follow-failed" role="alert">
