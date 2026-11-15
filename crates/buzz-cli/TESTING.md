@@ -516,8 +516,11 @@ as). Post the update that asks for help, accept the offer and confirm the work f
 buzz launchpad tasks list "$LAUNCH" --author "$FOUNDER_HEX" | jq .
 # → {schema, project, help_requests:[{update_id,text,size,offers,offered_by_me}], tasks:[{task_id,project,state,
 #    late,helper,helper_is_agent,helper_run_by,goal_id,goal,what,done_means,size,due,limits,mine,next,checked_by,
-#    evidence:[{links,files:[{sha256,name,url}],confirmed_by,sent_back}],more_time,gave_up,cancelled}],
+#    self_checked,evidence:[{links,files:[{sha256,name,url}],confirmed_by,sent_back}],more_time,gave_up,cancelled}],
 #    complete:{help_requests,tasks,goals,helper_labels}, rewards}
+# self_checked is true when the only check is the project's founder's own, on their own work or their agent's: the
+# server takes that check only while nobody else on the project could make it. The task is done ("confirmed"), and
+# it is not work someone else accepted.
 
 # open: help requests anyone may offer on, across all projects, newest first, a bounded page at a time
 buzz launchpad tasks open --scan 500 | jq '{scanned, cut, next_until, open: [.open[] | {project: .project.id, text, may_offer}]}'

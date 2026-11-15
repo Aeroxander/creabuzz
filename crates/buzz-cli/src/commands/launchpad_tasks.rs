@@ -24,6 +24,13 @@
 //! There is deliberately no command to confirm work, send it back, cancel a task, vote or award anything: the one who
 //! did the work never checks it, and those steps need a person on the project's team.
 //!
+//! One check by the person who did the work does count, and is read here as the server and the web app read it: a
+//! project's founder, working alone, may mark their own work (or the work of an agent they run) as done while nobody
+//! else on the project could check it. The server holds that rule when the check is written. A task finished that way
+//! says `"self_checked": true` and `"next": "none"`; it is done, and it is never listed as work someone else accepted.
+//! The founder makes that check on the project's page, as a person: this tool still has no command for it, and an
+//! agent account can never make it.
+//!
 //! A write first reads what it answers and refuses when that is not there or not this account's to answer, and it
 //! refuses to send what this account already sent, so a retry after a lost answer never makes a second record.
 
@@ -558,6 +565,7 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
 /// Every task of one project as JSON, from its task records. Each task is one object with the same fields every
 /// time: `task_id`, `project`, `created_at`, `state`, `late`, `helper`, `helper_is_agent`, `made_by`, `goal_id`,
 /// `what`, `done_means`, `size`, `due`, `limits`, `update_id`, `offer_id`, `agreed`, `mine`, `next`, `checked_by`,
+/// `self_checked` (the only check is the project's founder's own, on their own work or their agent's),
 /// `evidence` (each with `links`, `files` by sha256 fingerprint, `confirmed_by`, `sent_back`), `more_time`, and what
 /// closed it. The commands add `goal` (the goal's words) beside `goal_id`, and `helper_run_by` (who runs the helper,
 /// when its account is labelled as an agent).
@@ -565,6 +573,7 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
 /// The rules are the web app's `projectTasks`:
 /// a step counts only when the right party signed it, nothing is ordered by the time a record carries, a
 /// confirmation counts only from a team member who is not the helper (nor an agent, nor whoever runs the helper),
+/// except the project's founder checking their own work or their own agent's, which is kept and marked `self_checked`,
 /// and a helper is on a task only once they signed a step for that very task (a yes, work handed in, an ask for
 /// more time). An offer to help is never agreement. A task nobody has agreed to is listed only for the project's
 /// team and for the person it names; the record itself is public all the same.
@@ -627,12 +636,27 @@ pub(crate) fn project_tasks(
         // When the confirmation was signed, as its signer wrote it: the earliest of those for a piece of work.
         let mut confirmed_at: BTreeMap<&str, u64> = BTreeMap::new();
         let mut confirmed_without_evidence = false;
-        for step in from_team("confirm") {
-            // Nobody grades their own work: not whoever runs the helper, and not an agent.
-            if owners.contains(step.author.as_str()) || step.agent {
+        // The pieces whose only check is the founder's own: done, and never work someone else accepted.
+        let mut self_confirmed: BTreeMap<&str, u64> = BTreeMap::new();
+        let founder = split_coordinate(coordinate).map_or("", |(founder, _)| founder);
+        for step in mine
+            .iter()
+            .copied()
+            .filter(|s| s.part == "confirm" && team.contains(&s.author))
+        {
+            // Nobody grades their own work: not the helper, not whoever runs the helper, and not an agent.
+            let own = step.author == helper || owners.contains(step.author.as_str());
+            // Except the project's founder with nobody else to ask, which the server holds when the check is
+            // written: it is kept, apart from what someone else accepted.
+            let by_founder_alone = own && step.author == founder;
+            if step.agent || (own && !by_founder_alone) {
                 continue;
             }
             match step.evidence_id.as_deref() {
+                Some(id) if ids.contains(id) && by_founder_alone => {
+                    let at = self_confirmed.entry(id).or_insert(step.at);
+                    *at = (*at).min(step.at);
+                }
                 Some(id) if ids.contains(id) => {
                     confirmed.entry(id).or_default().push(step.author.as_str());
                     let at = confirmed_at.entry(id).or_insert(step.at);
@@ -653,14 +677,29 @@ pub(crate) fn project_tasks(
         for list in confirmed.values_mut() {
             list.sort_unstable();
         }
-        let accepted = evidence.iter().find(|e| {
+        let by_others = evidence.iter().find(|e| {
             confirmed.contains_key(e.id.as_str()) && !sent_back.contains_key(e.id.as_str())
         });
+        // A piece someone else accepted stands for the task before one only the founder checked for themself.
+        let by_self = evidence.iter().find(|e| {
+            self_confirmed.contains_key(e.id.as_str()) && !sent_back.contains_key(e.id.as_str())
+        });
+        let self_checked = by_others.is_none() && by_self.is_some();
+        let accepted = by_others.or(by_self);
+        if self_checked {
+            // Who checked it, and when, is the founder's own check.
+            for (id, at) in &self_confirmed {
+                confirmed.entry(*id).or_default().push(founder);
+                confirmed_at.entry(*id).or_insert(*at);
+            }
+        }
         // Every piece nobody on the team has answered waits for a check.
         let waiting: Vec<&str> = evidence
             .iter()
             .filter(|e| {
-                !confirmed.contains_key(e.id.as_str()) && !sent_back.contains_key(e.id.as_str())
+                !confirmed.contains_key(e.id.as_str())
+                    && !self_confirmed.contains_key(e.id.as_str())
+                    && !sent_back.contains_key(e.id.as_str())
             })
             .map(|e| e.id.as_str())
             .collect();
@@ -734,7 +773,7 @@ pub(crate) fn project_tasks(
             .and_then(|e| confirmed.get(e.id.as_str()))
             .cloned()
             .unwrap_or_default();
-        out.push(json!({
+        let mut entry = json!({
             "task_id": task.id,
             "project": task.coordinate,
             "created_at": task.at,
@@ -799,7 +838,11 @@ pub(crate) fn project_tasks(
             })).collect::<Vec<_>>(),
             "gave_up": gave_up.map(|s| json!({ "note": s.note })),
             "cancelled": cancelled.map(|s| json!({ "by": s.author, "reason": s.note })),
-        }));
+        });
+        // The only check is the founder's own, on their own work or their agent's: done, not accepted by someone
+        // else. Set here because the object above is as large as one `json!` can be.
+        entry["self_checked"] = json!(self_checked);
+        out.push(entry);
     }
     // Late first, then soonest due, then by id: never by a signer's own date.
     out.sort_by(|a, b| {
@@ -2425,6 +2468,118 @@ mod tests {
     }
 
     #[test]
+    fn a_founder_working_alone_checks_their_own_work_and_it_is_never_called_accepted_by_someone_else(
+    ) {
+        let w = World::new();
+        let (founder, mate, helper) = (w.founder.clone(), w.mate.clone(), w.helper.clone());
+        let founder_hex = founder.public_key().to_hex();
+        let mate_hex = mate.public_key().to_hex();
+        // The founder's own project: its coordinate carries their key, as the server reads it.
+        let coord = format!("37001:{founder_hex}:orbit");
+        let mut at = 1_794_000_000u64;
+        let mut sign = |who: &Keys, tags: Vec<Vec<String>>| {
+            at += 1;
+            let mut all = vec![Tag::parse(["a", coord.as_str()]).expect("tag")];
+            all.extend(tags.into_iter().map(|t| Tag::parse(t).expect("tag")));
+            EventBuilder::new(
+                Kind::Custom(KIND_LAUNCH_UPDATE as u16),
+                json!({ "note": "Done." }).to_string(),
+            )
+            .tags(all)
+            .custom_created_at(Timestamp::from(at))
+            .sign_with_keys(who)
+            .expect("signed")
+        };
+        let strs = |tags: &[&[&str]]| -> Vec<Vec<String>> {
+            tags.iter()
+                .map(|t| t.iter().map(|p| (*p).to_string()).collect())
+                .collect()
+        };
+        let task_for = |sign: &mut dyn FnMut(&Keys, Vec<Vec<String>>) -> Event, who: &Keys| {
+            let hex = who.public_key().to_hex();
+            sign(
+                &founder,
+                strs(&[
+                    &["l", TASK_LABEL],
+                    &["task-part", "task"],
+                    &["task-helper", &hex],
+                    &["task-what", "Write the changelog."],
+                    &["task-done", "A changelog page is live."],
+                    &["task-size", "small"],
+                ]),
+            )
+        };
+        let step = |sign: &mut dyn FnMut(&Keys, Vec<Vec<String>>) -> Event,
+                    who: &Keys,
+                    task: &Event,
+                    part: &str,
+                    extra: Vec<Vec<String>>| {
+            let id = task.id.to_hex();
+            let mut tags = strs(&[&["l", TASK_LABEL], &["task-part", part], &["task", &id]]);
+            tags.extend(extra);
+            sign(who, tags)
+        };
+        let view = |events: &[&Event], team: &[&str]| {
+            let records: Vec<TaskRecord> =
+                events.iter().filter_map(|e| parse_task_record(e)).collect();
+            let team: HashSet<String> = team.iter().map(|k| (*k).to_string()).collect();
+            project_tasks(&records, &coord, &team, TODAY, &founder_hex)
+        };
+        let solo = [founder_hex.as_str()];
+        let duo = [founder_hex.as_str(), mate_hex.as_str()];
+
+        // The founder's own task, handed in and checked by the founder: done, by their own check.
+        let own = task_for(&mut sign, &founder);
+        let work = step(&mut sign, &founder, &own, "evidence", vec![]);
+        let ev = strs(&[&["task-evidence", &work.id.to_hex()]]);
+        let waits = view(&[&own, &work], &solo);
+        assert_eq!(waits[0]["state"], "submitted");
+        assert_eq!(waits[0]["self_checked"], false);
+        let check = step(&mut sign, &founder, &own, "confirm", ev.clone());
+        let done = view(&[&own, &work, &check], &solo);
+        assert_eq!(done[0]["state"], "confirmed");
+        assert_eq!(done[0]["self_checked"], true);
+        assert_eq!(done[0]["checked_by"], json!([founder_hex]));
+        assert_eq!(done[0]["next"], "none");
+        assert_eq!(done[0]["waiting"], json!([]));
+        // Someone else's check of the same piece is the one that counts, once it is there.
+        let by_mate = step(&mut sign, &mate, &own, "confirm", ev.clone());
+        let accepted = view(&[&own, &work, &check, &by_mate], &duo);
+        assert_eq!(accepted[0]["state"], "confirmed");
+        assert_eq!(accepted[0]["self_checked"], false);
+        assert_eq!(accepted[0]["checked_by"], json!([mate_hex]));
+
+        // An agent the founder runs: its handed-in work proves who runs it, and the founder's check is their own.
+        let auth =
+            buzz_sdk::nip_oa::compute_auth_tag(&founder, &helper.public_key(), "").expect("auth");
+        let auth: Vec<String> = serde_json::from_str(&auth).expect("tag");
+        let agents = task_for(&mut sign, &helper);
+        let agents_work = step(&mut sign, &helper, &agents, "evidence", vec![auth]);
+        let agents_ev = strs(&[&["task-evidence", &agents_work.id.to_hex()]]);
+        let agents_check = step(&mut sign, &founder, &agents, "confirm", agents_ev);
+        let ran = view(&[&agents, &agents_work, &agents_check], &solo);
+        assert_eq!(ran[0]["state"], "confirmed");
+        assert_eq!(ran[0]["self_checked"], true);
+        assert_eq!(ran[0]["helper_is_agent"], true);
+
+        // It is the founder's alone: a team member who is not the founder never checks their own work.
+        let mates = task_for(&mut sign, &mate);
+        let mates_work = step(&mut sign, &mate, &mates, "evidence", vec![]);
+        let mates_ev = strs(&[&["task-evidence", &mates_work.id.to_hex()]]);
+        let mates_check = step(&mut sign, &mate, &mates, "confirm", mates_ev);
+        let held = view(&[&mates, &mates_work, &mates_check], &duo);
+        assert_eq!(held[0]["state"], "submitted");
+        assert_eq!(held[0]["self_checked"], false);
+        // And an agent's signature is never the founder's own check.
+        let mut as_agent = ev;
+        as_agent.push(vec!["agent".into(), founder_hex.clone()]);
+        let agent_check = step(&mut sign, &founder, &own, "confirm", as_agent);
+        let refused = view(&[&own, &work, &agent_check], &solo);
+        assert_eq!(refused[0]["state"], "submitted");
+        assert_eq!(refused[0]["self_checked"], false);
+    }
+
+    #[test]
     fn forged_and_conflicting_records_change_nothing() {
         let mut w = World::new();
         let (founder, mate, helper, stranger) = (
@@ -2793,6 +2948,7 @@ mod tests {
             "mine",
             "next",
             "checked_by",
+            "self_checked",
             "evidence",
             "more_time",
             "gave_up",
@@ -2805,6 +2961,7 @@ mod tests {
         assert_eq!(t["limits"], Value::Null);
         assert_eq!(t["due"], Value::Null);
         assert_eq!(t["checked_by"], json!([]));
+        assert_eq!(t["self_checked"], false);
         assert_eq!(t["evidence"], json!([]));
 
         // A goal id the project has no goal under is given back bare, never guessed at.

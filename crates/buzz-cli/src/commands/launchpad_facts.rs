@@ -141,6 +141,8 @@ pub(crate) fn facts_from(
                 "helper_is_agent": t["helper_is_agent"],
                 "accepted_at": t["accepted_at"],
                 "checked_by": t["checked_by"],
+                // True when the only check is the founder's own, on their own work: done, not accepted by anyone else.
+                "self_checked": t["self_checked"].as_bool().unwrap_or(false),
                 "accepted_work": checked,
             })
         })
@@ -180,6 +182,7 @@ pub(crate) fn facts_from(
             "What is next is plans, not promises: post with --no-promises. A promise must be signed by a person.",
             "Answering last update's promises (--mark) is the founder's, and a person's.",
             "Results in accepted work are reported by the helper, not run by anyone else; say so if you quote them.",
+            "Work marked self_checked was done by the founder alone and checked only by them: say it was done, never that someone else accepted it.",
         ],
         "post_command": format!(
             "buzz launchpad updates post {project_id} --title \"<title>\" --done \"<what happened, from the facts>\" --next \"<plans>\" --help-needed \"<help, if any>\" --no-promises"
