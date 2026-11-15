@@ -179,7 +179,9 @@ test("a backer bids in an opening round; once settled, the round tokens become u
   // The round's auction, as the pool itself names it.
   const AUCTION = `0x${(await call(ROUND_POOL, noArgs("auction()"))).toString(16).padStart(40, "0")}`;
   await block.getByTestId("backing-bid").click();
-  await block.getByTestId("backing-bid-amount").fill("3000");
+  // The fixture opens this round at the 50,000 curve depth, whose round must raise at least 5,000 (the default depth's is
+  // 2,500): the bid is above it, or the round would fail and nothing would open.
+  await block.getByTestId("backing-bid-amount").fill("6000");
   await block.getByTestId("backing-confirm-bid").click();
   // The bid is on the auction's own log (its raised total is only counted at the next checkpoint).
   const bids = async () =>
