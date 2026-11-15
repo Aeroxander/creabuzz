@@ -134,6 +134,10 @@ contract BackingPoolFactory is BlockNumberish {
 
     /// @notice A project's pool was opened.
     event PoolOpened(address indexed dao, address indexed pool, address indexed founder, address openedBy);
+    /// @notice The curve depth a pool was opened with (emitted right after `PoolOpened`): the chosen tier, or the
+    /// default when the founder named none. A pool opened behind a round sets its own paper reserve when the round is
+    /// settled, so this is where the founder's choice stays readable.
+    event DepthChosen(address indexed pool, uint256 depth);
     /// @notice A project's pool was opened behind an opening round (`PoolOpened` is emitted too).
     event RoundOpened(
         address indexed dao,
@@ -182,8 +186,12 @@ contract BackingPoolFactory is BlockNumberish {
         );
         quote = quote_;
         authorizedKit = authorizedKit_;
-        // The tiers are fifths of the default depth, so the default must divide by five.
-        if (terms_.virtualQuote == 0 || terms_.virtualQuote % 5 != 0) revert InvalidSetup();
+        // The tiers are fifths of the default depth, so the default must divide by five, and the deepest tier (twenty
+        // fifths) must stay within the pool's own limit (a uint112), which also keeps a round's `depth << 96` far
+        // from overflowing. This holds whether or not rounds are on.
+        if (terms_.virtualQuote == 0 || terms_.virtualQuote % 5 != 0 || terms_.virtualQuote > type(uint112).max / 20) {
+            revert InvalidSetup();
+        }
         _terms = terms_;
         defaultDepth = terms_.virtualQuote;
         _virtualUnits = terms_.virtualUnits;
@@ -388,5 +396,6 @@ contract BackingPoolFactory is BlockNumberish {
         poolOf[dao] = address(pool);
         pools.push(address(pool));
         emit PoolOpened(dao, address(pool), founder, msg.sender);
+        emit DepthChosen(address(pool), chosen);
     }
 }

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ActivationVoting} from "../src/ActivationVoting.sol";
 import {BackingPool} from "../src/BackingPool.sol";
@@ -104,6 +105,7 @@ contract ContributorKitV3Test is Test {
     ContributorKitV3 internal kit;
 
     event PoolOpened(address indexed dao, address indexed pool, address indexed founder, address openedBy);
+    event DepthChosen(address indexed pool, uint256 depth);
 
     function terms() internal pure returns (BackingPool.Params memory p) {
         p.virtualQuote = 25_000e18;
@@ -624,6 +626,98 @@ contract ContributorKitV3Test is Test {
         // Under the cap with at least 5% to spare. (The gas limit the transaction has to carry is a little above
         // what it uses, about half a percent more, measured by searching for the least limit that succeeds.)
         assertLt(used, uint256(1 << 24) * 95 / 100);
+    }
+
+    /// @dev The same heaviest launch at the deepest tier (the one with the most to scale: the early cap and the tier
+    /// lookup), against the cap of 2**24 = 16,777,216 gas. It is its own test, as the default one is, so both start
+    /// from the same cold state and their figures compare. Run with `-vv` to print them.
+    function test_gas_the_largest_launch_at_the_deepest_tier_fits_one_transaction() public {
+        ContributorKitV2.LaunchParams memory p = _heaviestLaunch();
+        vm.prank(FOUNDER);
+        kit.launchWithPool(p, 500_000e18);
+        uint256 used = vm.lastCallGas().gasTotalUsed;
+        emit log_named_uint("create: launchWithPool, heaviest, 500k tier", used);
+        emit log_named_uint("left under the 2**24 cap, 500k tier", uint256(1 << 24) - used);
+        assertLt(used, uint256(1 << 24) * 95 / 100);
+    }
+
+    // ---- the chosen depth is recorded ------------------------------------------------------------------------------
+
+    function _depthEvents(Vm.Log[] memory logs)
+        internal
+        view
+        returns (address[] memory pools, uint256[] memory depths)
+    {
+        uint256 n;
+        pools = new address[](logs.length);
+        depths = new uint256[](logs.length);
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(poolFactory) && logs[i].topics[0] == DepthChosen.selector) {
+                pools[n] = address(uint160(uint256(logs[i].topics[1])));
+                depths[n] = abi.decode(logs[i].data, (uint256));
+                ++n;
+            }
+        }
+        assembly ("memory-safe") {
+            mstore(pools, n)
+            mstore(depths, n)
+        }
+    }
+
+    /// @dev Whoever opens a pool, by any road, finds the depth the founder chose in one extra event (zero opens at the
+    /// default, and the event says the default). A round pool re-sets its own paper reserve when the round is
+    /// settled, so the event is where the choice stays readable.
+    function test_every_way_of_opening_a_pool_records_the_depth_chosen() public {
+        // Through the kit, at birth.
+        ContributorKitV2.LaunchParams memory p = _params("depth event");
+        vm.recordLogs();
+        vm.prank(FOUNDER);
+        (,,, address made) = kit.launchWithPool(p, 100_000e18);
+        (address[] memory pools, uint256[] memory depths) = _depthEvents(vm.getRecordedLogs());
+        assertEq(pools.length, 1);
+        assertEq(pools[0], made);
+        assertEq(depths[0], 100_000e18);
+
+        // Later, by the founder, naming nothing: the default.
+        Moloch plain = _launchV2("depth event default");
+        vm.recordLogs();
+        vm.prank(FOUNDER);
+        BackingPool byDefault = poolFactory.open(address(plain), 0);
+        (pools, depths) = _depthEvents(vm.getRecordedLogs());
+        assertEq(pools.length, 1);
+        assertEq(pools[0], address(byDefault));
+        assertEq(depths[0], 25_000e18);
+
+        // Behind a round, at the deepest tier.
+        Moloch roundDao = _launchV2("depth event round");
+        vm.recordLogs();
+        vm.prank(FOUNDER);
+        (BackingPool roundPool,) = poolFactory.openWithRound(address(roundDao), 0, 500_000e18);
+        (pools, depths) = _depthEvents(vm.getRecordedLogs());
+        assertEq(pools.length, 1);
+        assertEq(pools[0], address(roundPool));
+        assertEq(depths[0], 500_000e18);
+    }
+
+    /// @dev The deepest tier is twenty fifths of the default and must fit the pool's own uint112 limit, rounds or no
+    /// rounds: a default one unit over the limit is refused at deployment (it used to deploy, and every open at the
+    /// deepest tier then reverted), and the largest default that fits really opens a pool at its deepest tier.
+    function test_a_factory_refuses_a_default_whose_deepest_tier_would_not_fit_a_pool() public {
+        uint256 most = uint256(type(uint112).max) / 20;
+        BackingPool.Params memory p = terms();
+        p.virtualQuote = most / 5 * 5;
+        BackingPoolFactory fits = new BackingPoolFactory(summoner, IERC20(address(quote)), p, address(0), noRound());
+        Moloch dao = _launchV2("deepest");
+        vm.prank(FOUNDER);
+        BackingPool deepest = fits.open(address(dao), p.virtualQuote * 20);
+        assertEq(deepest.virtualQuote(), p.virtualQuote * 20);
+        assertLe(deepest.virtualQuote(), type(uint112).max);
+
+        p.virtualQuote = (most / 5 + 1) * 5;
+        vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
+        new BackingPoolFactory(summoner, IERC20(address(quote)), p, address(0), noRound());
+        vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
+        new BackingPoolFactory(summoner, IERC20(address(quote)), p, address(0), rounds());
     }
 
     /// @dev The caps are the ones the gas figure above holds for, and nothing but this kit has them.
