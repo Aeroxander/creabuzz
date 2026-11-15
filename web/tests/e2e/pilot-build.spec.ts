@@ -8,8 +8,8 @@ import { COMMUNITY_HOST, createMockRelay } from "./mock-relay";
  * The pilot build in the browser: the app built the way the hosted image builds it (`VITE_CONTRIBUTOR_ONLY=1`), against
  * a stubbed server. Run by `scripts/web-pilot-e2e.sh`, which makes that build in a folder of its own and serves it on
  * :4186 (E2E_DIST / E2E_PORT), so it never touches the shared suite's build on :4173. The default build's specs prove the
- * raise screens work; this one proves a pilot member never meets them, and meets what replaced them: Discover's projects
- * and ideas, Start's contributor project, "Your projects", the community Tasks board as plain to-dos, and setup with no AI
+ * raise screens work; this one proves a pilot member never meets them, and meets what replaced them: Discover's one list
+ * of projects, Start's contributor project, "Your projects", the community Tasks board as plain to-dos, and setup with no AI
  * helpers. The rules themselves are unit-tested with the same settings (`src/app/lib/pilot-gates.test.mjs`).
  */
 
@@ -263,7 +263,7 @@ test("the communities page offers no Repositories", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Repositories" })).toHaveCount(0);
 });
 
-test("Discover lists projects and ideas, never a raise or a way to back one, and starts a project", async ({
+test("Discover lists every project as a project, with no Projects/Ideas split, never a raise or a way to back one", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -274,49 +274,27 @@ test("Discover lists projects and ideas, never a raise or a way to back one, and
   await relay.install(page);
   await signIn(page);
   await page.goto("/discover");
-  for (const [id, label] of [
-    ["all", "All"],
-    ["fundraising", "Projects"],
-    ["ideas", "Ideas"],
-  ]) {
-    await expect(page.getByTestId(`discover-filter-${id}`)).toHaveText(label);
-  }
-  await expect(page.getByTestId("discover-filter-daos")).toHaveCount(0);
-  await expect(page.getByTestId("discover-filter-hiring")).toHaveCount(0);
   const list = page.getByTestId("discover-launch-list");
   await expect(list).toContainText("Docs Commons", { timeout: 20_000 });
+  // A project with no sale terms (what Start makes) is listed and counted as a project, not filed as an idea.
   await expect(list).toContainText("Night Sky Atlas");
+  await expect(page.getByTestId("discover-count-line")).toHaveText(
+    "2 projects",
+  );
+  // No sales are offered here, so there is nothing to split: no filter chips at all.
+  await expect(
+    page.getByRole("tablist", { name: "Filter what is shown" }),
+  ).toHaveCount(0);
+  for (const id of ["all", "fundraising", "ideas", "daos", "hiring"]) {
+    await expect(page.getByTestId(`discover-filter-${id}`)).toHaveCount(0);
+  }
+  await expect(list).not.toContainText(/\bideas?\b/i);
   await expect(page.getByText("Quasar Telescope")).toHaveCount(0);
   await expect(page.getByText(/Back this launch/)).toHaveCount(0);
   await expect(page.getByTestId("discover-start-project")).toHaveAttribute(
     "href",
     "/start/contributor",
   );
-
-  await page.getByTestId("discover-filter-ideas").click();
-  await expect(list).toContainText("Night Sky Atlas");
-  await expect(list).not.toContainText("Docs Commons");
-});
-
-test("with no ideas yet, the Ideas list says so and offers to share one", async ({
-  page,
-}) => {
-  const relay = createMockRelay();
-  relay.seed(contributorProject);
-  await quietChain(page);
-  await relay.install(page);
-  await signIn(page);
-  await page.goto("/discover");
-  await expect(page.getByTestId("discover-launch-list")).toContainText(
-    "Docs Commons",
-    { timeout: 20_000 },
-  );
-  await page.getByTestId("discover-filter-ideas").click();
-  const empty = page.getByTestId("discover-launches-empty");
-  await expect(empty).toContainText(
-    "No ideas yet. Share one and it shows up here.",
-  );
-  await expect(empty.getByTestId("discover-share-idea")).toBeVisible();
 });
 
 test("the sale list and its wizard are not served: the address leads to Discover", async ({
@@ -328,7 +306,7 @@ test("the sale list and its wizard are not served: the address leads to Discover
   for (const path of ["/launchpad", "/launchpad?start=sale"]) {
     await page.goto(path);
     await expect(page).toHaveURL(/\/discover$/, { timeout: 20_000 });
-    await expect(page.getByTestId("discover-filter-all")).toBeVisible();
+    await expect(page.getByTestId("discover-count-line")).toBeVisible();
     await expect(
       page.getByRole("button", { name: /Set up a sale/ }),
     ).toHaveCount(0);

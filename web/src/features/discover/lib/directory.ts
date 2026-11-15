@@ -38,6 +38,7 @@ import {
 import { listedProject } from "../../launchpad/lib/listing.ts";
 import { daoOfLaunch } from "../../launchpad/lib/dao-of-launch.ts";
 import { isIdea } from "../../launchpad/lib/idea.ts";
+import { countOf } from "../../../shared/lib/count-of.ts";
 import {
   effectiveFunding,
   isContributorProject,
@@ -185,24 +186,42 @@ export function deploymentRoleName(role: string): string {
 
 /**
  * The chips this build shows. A contributor-only build (`raisesOffered()` false) has no fundraising and no pitch board,
- * and every project there is a DAO from day one, so a DAOs chip would list the same projects again: its chips are the
- * projects and the ideas.
+ * and every project there is a DAO from day one, so a DAOs chip would list the same projects again.
+ *
+ * `ideasSplit` is whether such a build sets projects apart from ideas, which it does only where investing is on. With no
+ * sale to set up, a project made with Start has no sale terms and never will, so calling it an "idea" would be wrong:
+ * the build then shows one list of projects and no chips at all.
  */
 export function discoverFilters(
   raises: boolean,
+  ideasSplit = true,
 ): readonly { id: DiscoverFilter; label: string }[] {
-  return raises
-    ? [
-        { id: "all", label: "All" },
-        { id: "daos", label: "DAOs" },
-        { id: "fundraising", label: "Fundraising" },
-        { id: "hiring", label: "Project board" },
-      ]
-    : [
-        { id: "all", label: "All" },
-        { id: "fundraising", label: "Projects" },
-        { id: "ideas", label: "Ideas" },
-      ];
+  if (raises)
+    return [
+      { id: "all", label: "All" },
+      { id: "daos", label: "DAOs" },
+      { id: "fundraising", label: "Fundraising" },
+      { id: "hiring", label: "Project board" },
+    ];
+  if (!ideasSplit) return [];
+  return [
+    { id: "all", label: "All" },
+    { id: "fundraising", label: "Projects" },
+    { id: "ideas", label: "Ideas" },
+  ];
+}
+
+/**
+ * How many a contributor-only build says it lists: "2 projects · 1 idea" where it sets ideas apart (`ideasSplit`), and
+ * every one of them a project where it does not.
+ */
+export function projectCountLine(
+  launches: readonly { record: Parameters<typeof isIdea>[0] }[],
+  ideasSplit: boolean,
+): string {
+  if (!ideasSplit) return countOf(launches.length, "project");
+  const ideas = launches.filter((launch) => isIdea(launch.record)).length;
+  return `${countOf(launches.length - ideas, "project")} · ${countOf(ideas, "idea")}`;
 }
 
 export interface SectionVisibility {

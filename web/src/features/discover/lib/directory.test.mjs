@@ -15,6 +15,7 @@ import {
   directoryNotice,
   discoverFilters,
   launchesForFilter,
+  projectCountLine,
   visibleSections,
 } from "./directory.ts";
 
@@ -483,6 +484,35 @@ describe("a contributor-only build", () => {
       project,
       idea,
     ]);
+  });
+
+  it("with no sales (investing off) there is no Projects/Ideas split: no chips, and every one counts as a project", () => {
+    const record = (stage, token) => ({
+      record: {
+        stage,
+        auction: null,
+        token,
+        requiredRaised: null,
+        floorPrice: null,
+      },
+    });
+    // A project made with Start has no sale terms, the same shape an idea has.
+    const launches = [
+      record("graduated", "0x1"),
+      record("draft", null),
+      record("draft", null),
+    ];
+    assert.deepEqual(discoverFilters(false, false), []);
+    assert.equal(projectCountLine(launches, false), "3 projects");
+    assert.equal(projectCountLine(launches.slice(0, 1), false), "1 project");
+    // Investing on keeps the split as it was.
+    assert.deepEqual(
+      discoverFilters(false, true).map((f) => f.label),
+      ["All", "Projects", "Ideas"],
+    );
+    assert.equal(projectCountLine(launches, true), "1 project · 2 ideas");
+    // A build with raises never had the split, whatever the second answer.
+    assert.equal(discoverFilters(true, false).length, 4);
   });
 
   it("never offers to back a launch, whatever its stage", () => {

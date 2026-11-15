@@ -20,7 +20,7 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Lightbulb, Plus, Search } from "lucide-react";
 
 import { useChainBlockHeight } from "@/features/feed/use-feed";
-import { isIdea } from "@/features/launchpad/lib/idea";
+import { investingOffered } from "@/features/launchpad/lib/investing-offered";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { MoreProjects } from "@/features/launchpad/ui/MoreProjects";
 import { StartIdeaDialog } from "@/features/launchpad/ui/StartIdeaDialog";
@@ -41,6 +41,7 @@ import {
   directoryNotice,
   discoverFilters,
   launchesForFilter,
+  projectCountLine,
   listedLaunches,
   visibleSections,
   DISCOVER_EVENT_KINDS,
@@ -136,6 +137,9 @@ export function DiscoverPage() {
   // A contributor-only build (the hosted pilot) lists no raise, offers no backing and no pitch board: its projects are
   // contributor projects, and starting one is the only way in.
   const raises = raisesOffered();
+  // With no sale to set up (investing off), a project made with Start is a project, not an "idea": one list, no chips.
+  const ideasSplit = investingOffered();
+  const filters = discoverFilters(raises, ideasSplit);
   const [filter, setFilter] = useState<DiscoverFilter>("all");
   const [pitchOpen, setPitchOpen] = useState(false);
   // `?start=idea` (the Start page's "Share an idea", where a contributor-only build sends it here) opens the idea dialog
@@ -233,36 +237,43 @@ export function DiscoverPage() {
         }
       />
 
-      <div
-        aria-label="Filter what is shown"
-        className="flex flex-wrap items-center gap-x-6 gap-y-2 max-sm:gap-x-4"
-        role="tablist"
-      >
-        {discoverFilters(raises).map((entry) => (
-          <button
-            aria-selected={filter === entry.id}
-            className={cn(
-              "border-b-[3px] px-1 pb-1.5 text-base font-semibold transition-colors max-sm:min-h-11",
-              filter === entry.id
-                ? "border-primary text-foreground"
-                : "border-transparent text-foreground/60 hover:text-foreground",
-            )}
-            key={entry.id}
-            onClick={() => setFilter(entry.id)}
-            role="tab"
-            type="button"
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 max-sm:gap-x-4">
+        {filters.length > 0 ? (
+          <div
+            aria-label="Filter what is shown"
+            className="flex flex-wrap items-center gap-x-6 gap-y-2 max-sm:gap-x-4"
+            role="tablist"
           >
-            <span data-testid={`discover-filter-${entry.id}`}>
-              {entry.label}
-            </span>
-          </button>
-        ))}
-        <span className="ml-auto text-xs text-black/60 dark:text-white/60">
+            {filters.map((entry) => (
+              <button
+                aria-selected={filter === entry.id}
+                className={cn(
+                  "border-b-[3px] px-1 pb-1.5 text-base font-semibold transition-colors max-sm:min-h-11",
+                  filter === entry.id
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-foreground/60 hover:text-foreground",
+                )}
+                key={entry.id}
+                onClick={() => setFilter(entry.id)}
+                role="tab"
+                type="button"
+              >
+                <span data-testid={`discover-filter-${entry.id}`}>
+                  {entry.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <span
+          className="ml-auto text-xs text-black/60 dark:text-white/60"
+          data-testid="discover-count-line"
+        >
           {isLoading
             ? "Loading…"
             : raises
               ? `${countOf(daos.length, "DAO")} · ${countOf(launches.length, "launch", "launches")} · ${countOf(projects.length, "project")}`
-              : `${countOf(allLaunches.filter((l) => !isIdea(l.record)).length, "project")} · ${countOf(allLaunches.filter((l) => isIdea(l.record)).length, "idea")}`}
+              : projectCountLine(allLaunches, ideasSplit)}
         </span>
       </div>
 
@@ -331,7 +342,9 @@ export function DiscoverPage() {
                         ? "Projects on this server. A raise shows its stage, target and progress as the sale itself reports them."
                         : filter === "ideas"
                           ? "Ideas people shared before starting a project."
-                          : "Projects looking for people to help, and ideas shared before one starts."
+                          : ideasSplit
+                            ? "Projects looking for people to help, and ideas shared before one starts."
+                            : "Projects on this server, and who they are looking for."
                     }
                     title={
                       raises

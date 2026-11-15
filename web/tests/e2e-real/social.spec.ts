@@ -1033,7 +1033,12 @@ test("an idea starts in one step with an open supporters room, and a supporter j
   // The Ideas filter finds it (on Discover in the contributor-only build).
   if (CONTRIBUTOR_ONLY) {
     await page.goto("/discover");
-    await page.getByTestId("discover-filter-ideas").click();
+    // The Ideas chip is there only where investing is on; with it off Discover is one list of projects.
+    const ideas = page.getByTestId("discover-filter-ideas");
+    await expect(page.getByTestId("discover-count-line")).toBeVisible({
+      timeout: 30_000,
+    });
+    if ((await ideas.count()) > 0) await ideas.click();
   } else {
     await page.goto("/launchpad");
     await page.getByTestId("launch-filter-ideas").click();
