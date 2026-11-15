@@ -6,7 +6,8 @@
  * Some invite-only servers let anyone read a project's public record. So when the reader was turned away and the
  * address names a project (its scorecard or its page), the server is asked once for that record: when it answers,
  * the record is shown read only with one line about invites (`PublicRecord`); when it does not, the reader sees the
- * invite sentence exactly as before.
+ * invite sentence exactly as before. When the server does show public records but could not answer this time (it is
+ * busy), the reader is told that and offered "Try again", never told to go and find an invite.
  */
 
 import { useMemo } from "react";
@@ -15,7 +16,12 @@ import { SIGN_IN_EVENT } from "@/features/identity/lib/account-copy";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 import { projectAtAddress } from "../lib/public-record";
-import { projectLoadFailure } from "../lib/refusal-copy";
+import {
+  PUBLIC_RECORD_BUSY_TEXT,
+  PUBLIC_RECORD_BUSY_TITLE,
+  projectLoadFailure,
+  publicRecordFailure,
+} from "../lib/refusal-copy";
 import { usePublicRecord } from "../use-public-record";
 import { PublicRecord } from "./PublicRecord";
 
@@ -46,6 +52,28 @@ export function ProjectLoadError({
       </p>
     );
   if (open.data) return <PublicRecord signedIn={signedIn} view={open.data} />;
+  // The server does show public records but could not answer this time: that is not "you need an invite".
+  if (address && open.isError && publicRecordFailure(open.error) === "busy")
+    return (
+      <div
+        className="flex flex-col items-start gap-2 text-sm"
+        data-outcome="busy"
+        data-testid={testId}
+        role="alert"
+      >
+        <p className="font-medium">{PUBLIC_RECORD_BUSY_TITLE}</p>
+        <p className="text-muted-foreground">{PUBLIC_RECORD_BUSY_TEXT}</p>
+        <Button
+          disabled={open.isFetching}
+          onClick={() => void open.refetch()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Try again
+        </Button>
+      </div>
+    );
   return (
     <div
       className="flex flex-col items-start gap-2 text-sm"

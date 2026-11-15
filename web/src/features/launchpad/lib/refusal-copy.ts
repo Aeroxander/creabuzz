@@ -27,6 +27,25 @@ export const ALREADY_MEMBER_TEXT = "Already on this server? Sign in.";
 export const PUBLIC_RECORD_TEXT =
   "Anyone can read this project's record. To follow it, help or post, you need an invite.";
 
+/**
+ * Said when the server does let anyone read a project's record but could not answer this time: too many people are
+ * reading at once, or it took too long. It is not "you need an invite": the reader is asked to try again.
+ */
+export const PUBLIC_RECORD_BUSY_TITLE =
+  "This project's record can't be opened right now.";
+export const PUBLIC_RECORD_BUSY_TEXT =
+  "The server is busy. Try again in a minute.";
+
+/**
+ * What the read of a project's public record ended as, when it failed. "closed": the server turned the reader away
+ * as someone who is not on its list, so it shows no public record and the invite sentence is the truth. "busy": it
+ * answered anything else (a limit reached, a read that took too long) or did not answer, so asking for an invite
+ * would send the reader the wrong way.
+ */
+export function publicRecordFailure(error: unknown): "closed" | "busy" {
+  return isInviteOnlyRefusal(error) ? "closed" : "busy";
+}
+
 /** What the page says when it failed for any other reason. */
 export const COULDNT_OPEN_TEXT = "Couldn't open this project.";
 
