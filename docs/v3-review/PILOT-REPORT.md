@@ -7,7 +7,10 @@ be read from the app (the page named beside it) or from the chain; write down wh
 **Run:** Pilot A (founders, no chain) / contributor project / milestone test / raise · **Dates:** … · **Hosted build:** `VITE_APP_RELEASE` … ·
 **People:** founders …, (contributor run: reviewers …, contributors … (who was new to crypto, who joined late))
 
-**What counts as a yes for the one number** (written before day 1, from [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Pilot A"): …
+**What counts as a yes for the one number** (written before day 1, from [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Pilot A"):
+**at least 3 founders with a third update, and at most 1 of those after a message from the owner.** Set on 2026-11-15 by the
+assistant at the owner's request (D200 in [DECISIONS.md](DECISIONS.md)). "After a message" is read from the log of messages in
+section 1. The owner may change this line, but only before day 1: write the new line and its date here.
 
 ## Before the run: the operator's own checks
 
