@@ -48,7 +48,8 @@ const LOOKUP_DEADLINE: Duration = Duration::from_secs(2);
 /// How many records of one project id are read: more than one founder may use
 /// the same id, and the address says which.
 const RECORD_READ_LIMIT: i64 = 20;
-const FOUNDER_PART: usize = 16;
+/// How many characters of the founder's key a scorecard address carries.
+pub(crate) const FOUNDER_PART: usize = 16;
 
 /// Which project an address names.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,25 +146,65 @@ pub(crate) struct PublicProject {
     pub(crate) coordinate: String,
 }
 
-/// The project records stored under `id` in `community`, whoever signed them
-/// (several founders may use one id), at most [`RECORD_READ_LIMIT`].
+/// How many records under one project id are looked through for the founder
+/// a scorecard address names. The address carries only the start of the
+/// founder's key, which the database cannot ask for, so the start is matched
+/// here; this is how many other founders may share the id before the one
+/// meant can no longer be found.
+const FOUNDER_START_READ_LIMIT: i64 = 200;
+
+/// Which founder's record under a project id is wanted.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum Founder {
+    /// Whoever signed one: an address that names no founder.
+    Anyone,
+    /// The founder with exactly this key (64 lowercase hex characters).
+    Key(String),
+    /// Founders whose key begins with these characters (a scorecard address).
+    Start(String),
+}
+
+/// The project records stored under `id` in `community` for `founder`.
+///
+/// Several founders may use one id, and anyone on the member list can add a
+/// newer record under an id that is already taken. So the founder is asked of
+/// the database where it can be (a whole key), and a key's start is matched
+/// over [`FOUNDER_START_READ_LIMIT`] records, before anything is cut to
+/// [`RECORD_READ_LIMIT`]: other people's records under the same id cannot push
+/// the one the address names out of the answer.
 pub(crate) async fn records_named(
     state: &AppState,
     community: CommunityId,
     id: &str,
+    founder: &Founder,
 ) -> Result<Vec<nostr::Event>, DbError> {
+    let (authors, limit) = match founder {
+        Founder::Anyone => (None, RECORD_READ_LIMIT),
+        Founder::Key(key) => match hex::decode(key) {
+            Ok(bytes) => (Some(vec![bytes]), RECORD_READ_LIMIT),
+            Err(_) => return Ok(Vec::new()),
+        },
+        Founder::Start(_) => (None, FOUNDER_START_READ_LIMIT),
+    };
     Ok(state
         .db
         .query_events(&buzz_db::EventQuery {
             kinds: Some(vec![KIND_LAUNCH_RECORD as i32]),
             d_tag: Some(id.to_string()),
+            authors,
             global_only: true,
-            limit: Some(RECORD_READ_LIMIT),
+            limit: Some(limit),
             ..buzz_db::EventQuery::for_community(community)
         })
         .await?
         .into_iter()
         .map(|stored| stored.event)
+        .filter(|event| match founder {
+            Founder::Anyone => true,
+            Founder::Key(key) => event.pubkey.to_hex() == *key,
+            Founder::Start(start) => event.pubkey.to_hex().starts_with(start.as_str()),
+        })
+        .take(RECORD_READ_LIMIT as usize)
         .collect())
 }
 
@@ -240,7 +281,7 @@ async fn shown_project(
     // these words, and the preview may say them.
     match state.membership_required(community, false).await {
         Ok(false) => {}
-        Ok(true) if state.config.public_project_reads => {}
+        Ok(true) if state.public_project_reads() => {}
         Ok(true) => return None,
         Err(error) => {
             tracing::warn!(%error, "share preview: could not read the access setting");
@@ -248,24 +289,21 @@ async fn shown_project(
         }
     }
 
-    let id = match route {
-        ProjectRoute::Scorecard { id, .. } | ProjectRoute::ProjectPage { id, .. } => id,
+    let (id, founder) = match route {
+        ProjectRoute::Scorecard { id, founder_start } => {
+            (id, Founder::Start(founder_start.clone()))
+        }
+        ProjectRoute::ProjectPage {
+            id,
+            author: Some(author),
+        } => (id, Founder::Key(author.clone())),
+        ProjectRoute::ProjectPage { id, author: None } => (id, Founder::Anyone),
     };
-    let records = records_named(state, community, id)
+    let mut matching = records_named(state, community, id, &founder)
         .await
         .map_err(|error| tracing::warn!(%error, "share preview: record read failed"))
-        .ok()?;
-    let mut matching = records.into_iter().filter(|e| {
-        let author = e.pubkey.to_hex();
-        match route {
-            ProjectRoute::Scorecard { founder_start, .. } => author.starts_with(founder_start),
-            ProjectRoute::ProjectPage {
-                author: Some(wanted),
-                ..
-            } => author == *wanted,
-            ProjectRoute::ProjectPage { author: None, .. } => true,
-        }
-    });
+        .ok()?
+        .into_iter();
     let record = matching.next()?;
     // Two founders on one address: which one is meant is the web app's to ask.
     if matching.next().is_some() {
@@ -285,11 +323,21 @@ async fn shown_project(
 /// it here, so the web app never offers a link that leads nowhere.
 pub(crate) async fn example_project(state: &AppState, community: CommunityId) -> Option<String> {
     let slug = state.config.example_project.as_deref()?;
+    // The information document is fetched by every client on load, without an account: the lookups below are made
+    // once in a while per community, not once per request.
+    if let Some(remembered) = state.public_reads.example(community) {
+        return remembered;
+    }
     let route = route_of(&format!("/p/{slug}"), None)?;
-    tokio::time::timeout(LOOKUP_DEADLINE, shown_project(state, community, &route))
+    let shown = tokio::time::timeout(LOOKUP_DEADLINE, shown_project(state, community, &route))
         .await
-        .ok()??;
-    Some(slug.to_string())
+        .ok()
+        .flatten()
+        .map(|_| slug.to_string());
+    state
+        .public_reads
+        .remember_example(community, shown.clone());
+    shown
 }
 
 async fn lookup(state: &AppState, raw_host: &str, route: &ProjectRoute) -> Option<Preview> {
@@ -859,6 +907,10 @@ mod tests {
                 config.web_spa_full = true;
                 config.new_account_posts_per_hour = 0;
                 config.public_project_reads = public_reads;
+                // Invite-only as the operator sets it for the whole server: the only kind public records open.
+                config.require_relay_membership = invite_only;
+                // Nothing kept between requests: each test reads what is there now.
+                config.public_project_reads_cache_secs = 0;
                 config.example_project = example;
             })
             .await;
@@ -869,13 +921,6 @@ mod tests {
                 .await
                 .expect("community")
                 .id;
-            if invite_only {
-                state
-                    .db
-                    .set_community_membership_required(community, true)
-                    .await
-                    .expect("close the community");
-            }
             state
                 .db
                 .add_relay_member(community, &founder.public_key().to_hex(), "member", None)
@@ -1114,9 +1159,20 @@ mod tests {
             assert_eq!(page(&w, &slug(&w, "muted")).await, PLAIN);
         }
 
+        /// The community's own owner makes it invite-only (or opens it again), on a server that lets communities choose.
+        async fn community_chooses(w: &World, invite_only: bool) {
+            w.state
+                .db
+                .set_community_membership_required(w.tenant.community(), invite_only)
+                .await
+                .expect("the community's own setting");
+            w.state.forget_membership_policy(w.tenant.community());
+        }
+
         #[tokio::test]
         #[ignore = "requires Postgres and Redis"]
         async fn an_invite_only_server_shows_a_signed_out_crawler_nothing() {
+            // The operator made the whole server invite-only.
             let w = world(true).await;
             project(&w, "nebula", "Nebula", r#"{"pitch":"A weekly map."}"#).await;
             let html = page(&w, &slug(&w, "nebula")).await;
@@ -1125,16 +1181,115 @@ mod tests {
                 "the generic page, with nothing about the project"
             );
             assert!(!html.contains("Nebula"));
+
+            // A community that chose invite-only for itself, on a server that lets communities choose.
+            let w = world(false).await;
+            project(&w, "nebula", "Nebula", r#"{"pitch":"A weekly map."}"#).await;
+            community_chooses(&w, true).await;
+            assert_eq!(page(&w, &slug(&w, "nebula")).await, PLAIN);
             // Opening the community makes the same link a real preview.
-            w.state
-                .db
-                .set_community_membership_required(w.tenant.community(), false)
-                .await
-                .expect("open");
-            w.state.forget_membership_policy(w.tenant.community());
+            community_chooses(&w, false).await;
             assert!(page(&w, &slug(&w, "nebula"))
                 .await
                 .contains("Nebula on Creaton"));
+        }
+
+        /// The operator's setting opens records where the operator made the server invite-only. It does not open a
+        /// community whose own owner chose invite-only: that owner chose who reads there.
+        #[tokio::test]
+        #[ignore = "requires Postgres and Redis"]
+        async fn public_records_do_not_open_a_community_that_chose_invite_only_itself() {
+            let founder = Keys::generate();
+            let named = format!("nebula-{}", &founder.public_key().to_hex()[..16]);
+            let w = world_for(false, true, founder, Some(named.clone())).await;
+            project(&w, "nebula", "Nebula", r#"{"pitch":"A weekly map."}"#).await;
+            // Open: previewed and named, as on any open community.
+            assert!(page(&w, &slug(&w, "nebula"))
+                .await
+                .contains("Nebula on Creaton"));
+            assert_eq!(example_named(&w).await, serde_json::json!(named));
+
+            community_chooses(&w, true).await;
+            let html = page(&w, &slug(&w, "nebula")).await;
+            assert_eq!(html, PLAIN, "the owner's choice stands");
+            assert_eq!(example_named(&w).await, serde_json::Value::Null);
+        }
+
+        /// Anyone on the member list can publish a project under an id that is taken. However many do, the address
+        /// still finds the founder it names.
+        #[tokio::test]
+        #[ignore = "requires Postgres and Redis"]
+        async fn other_founders_under_the_same_id_do_not_hide_the_one_the_address_names() {
+            let w = world_with(true, true).await;
+            project(&w, "nebula", "Nebula", r#"{"pitch":"A weekly map."}"#).await;
+            // Thirty newer projects under the same id, more than one read of an id returns.
+            for n in 0..30u64 {
+                let other = Keys::generate();
+                w.state
+                    .db
+                    .add_relay_member(
+                        w.tenant.community(),
+                        &other.public_key().to_hex(),
+                        "member",
+                        None,
+                    )
+                    .await
+                    .expect("member");
+                publish(
+                    &w,
+                    signed(
+                        &other,
+                        KIND_LAUNCH_RECORD,
+                        &[&["d", "nebula"], &["name", "Impostor"]],
+                        "{}",
+                        10 + n,
+                    ),
+                )
+                .await;
+            }
+            let html = page(&w, &slug(&w, "nebula")).await;
+            assert!(html.contains("<title>Nebula on Creaton</title>"), "{html}");
+            let by_key = format!(
+                "/launchpad/nebula?author={}",
+                w.founder.public_key().to_hex()
+            );
+            assert!(page(&w, &by_key)
+                .await
+                .contains("<title>Nebula on Creaton</title>"));
+        }
+
+        /// The information document is fetched on every page load. With answers kept, the example project is looked
+        /// up once in a while, not on every request.
+        #[tokio::test]
+        #[ignore = "requires Postgres and Redis"]
+        async fn the_example_project_is_remembered_between_requests_when_answers_are_kept() {
+            let founder = Keys::generate();
+            let named = format!("nebula-{}", &founder.public_key().to_hex()[..16]);
+            let dir = tempfile::tempdir().expect("bundle dir");
+            let example = named.clone();
+            let state = crate::test_support::test_state_with(move |config| {
+                config.public_project_reads_cache_secs = 30;
+                config.example_project = Some(example);
+            })
+            .await;
+            let host = format!("share-preview-{}.example", Uuid::new_v4().simple());
+            let community = state
+                .db
+                .ensure_configured_community(&host)
+                .await
+                .expect("community")
+                .id;
+            let w = World {
+                state,
+                tenant: TenantContext::resolved(community, host),
+                founder,
+                _dir: dir,
+            };
+            project(&w, "nebula", "Nebula", "{}").await;
+            assert_eq!(example_named(&w).await, serde_json::json!(named));
+            // Closing the community is not seen until what is kept runs out: the lookups were not made again.
+            community_chooses(&w, true).await;
+            assert_eq!(example_named(&w).await, serde_json::json!(named));
         }
 
         #[tokio::test]

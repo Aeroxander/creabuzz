@@ -1358,6 +1358,9 @@ pub struct AppState {
     /// a database read on every request. Closing a community invalidates its entry here at once; another server process
     /// learns within the cache's lifetime (`MEMBERSHIP_POLICY_TTL`), and the authoritative checks bypass it.
     pub membership_policy_cache: Arc<moka::sync::Cache<CommunityId, bool>>,
+    /// What people who are not members were last answered about public projects, kept for a short time
+    /// (`crate::api::public_read`): everyone gets the same answer, so it is read from the database once.
+    pub(crate) public_reads: Arc<crate::api::public_read::Kept>,
     /// Communities whose members-only setting this pod has already enforced on its live sockets, by what the setting
     /// was when it did. The periodic revalidation closes the sockets of anyone who is not a member of a community that
     /// became members-only without this pod hearing of it (a lost cross-server message), once per change.
@@ -1443,6 +1446,15 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Whether this server lets anyone read a public project's record (`BUZZ_PUBLIC_PROJECT_READS`).
+    ///
+    /// Only where the operator made the whole server invite-only (`BUZZ_REQUIRE_RELAY_MEMBERSHIP`). On a server that
+    /// lets each community choose, a community that chose invite-only stays closed whatever this setting says: its
+    /// owner chose who reads there, and has no way yet to choose that records are public.
+    pub fn public_project_reads(&self) -> bool {
+        self.config.public_project_reads && self.config.require_relay_membership
+    }
+
     /// Whether people must be members of `community` before they may read or write in it: true when the whole server
     /// requires it, or when this community has chosen to. An `authoritative` check reads the database and skips the
     /// short-lived cache (the final admission fence, where a stale "open" would grant lasting access).
@@ -1534,6 +1546,9 @@ impl AppState {
         let audit_enabled = audit_arc.is_some();
         // Build NIP-FI components before moving config into the state Arc.
         let (nip_fi_verifier, nip_fi_jwks_source) = build_nip_fi_components(&config);
+        let public_reads = Arc::new(crate::api::public_read::Kept::new(
+            config.public_project_reads_cache_secs,
+        ));
         let state = Self {
             config: Arc::new(config),
             db,
@@ -1621,6 +1636,7 @@ impl AppState {
                     .time_to_live(MEMBERSHIP_POLICY_TTL)
                     .build(),
             ),
+            public_reads,
             membership_sweep_seen: Arc::new(DashMap::new()),
             self_serve_limiter: Arc::new(crate::api::self_serve::SelfServeLimiter::new()),
             media_uploads_in_flight: Arc::new(DashMap::new()),

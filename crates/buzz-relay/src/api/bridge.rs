@@ -1367,7 +1367,7 @@ async fn query_events_authed(
         // Not a member. The one read such a caller may be answered is a public
         // project's record, when the server says so (`BUZZ_PUBLIC_PROJECT_READS`);
         // everything else, and everything when it is off, is this refusal unchanged.
-        return super::public_read::answer(state, tenant, &pubkey, body, refusal).await;
+        return super::public_read::answer(state, tenant, &pubkey, headers, body, refusal).await;
     }
 
     // Two-pass parse: preserve raw JSON for custom extension fields (before_id,

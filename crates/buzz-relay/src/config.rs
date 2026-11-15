@@ -617,9 +617,14 @@ pub struct Config {
     /// off the route answers 404, exactly like a relay that predates it (the
     /// web client already falls back gracefully).
     pub public_community_directory: bool,
-    /// Whether anyone may read a public project's record on a community that
-    /// otherwise requires membership (`BUZZ_PUBLIC_PROJECT_READS=1`). Default
-    /// off: a caller who is not a member is refused exactly as before. When on,
+    /// Whether anyone may read a public project's record on a server that
+    /// requires membership (`BUZZ_PUBLIC_PROJECT_READS=1`). Default off: a
+    /// caller who is not a member is refused exactly as before. It opens
+    /// records only where the operator made the whole server invite-only
+    /// (`BUZZ_REQUIRE_RELAY_MEMBERSHIP`): a community that chose invite-only
+    /// for itself on a server that lets communities choose stays closed,
+    /// because its owner never chose this
+    /// ([`crate::state::AppState::public_project_reads`]). When on,
     /// `POST /query` answers such a caller for the project record kinds in
     /// [`crate::api::public_read`] only, and only for a project its link preview
     /// would show (listed, not removed, founder not muted or banned); the link
@@ -631,6 +636,20 @@ pub struct Config {
     /// who is not signed in can use a new key for every request, so the
     /// per-caller limit alone does not bound them.
     pub public_project_reads_per_min: u64,
+    /// The most public project reads one client address may make in a minute
+    /// (`BUZZ_PUBLIC_PROJECT_READS_PER_ADDRESS_MIN`), counted before the shared
+    /// budget so one machine cannot spend it for everyone. The address is the
+    /// last entry of `X-Forwarded-For`, which the proxy in front of the relay
+    /// writes; a request without that header is held only to the shared budget.
+    pub public_project_reads_per_address_min: u64,
+    /// How long a project's public record is kept in memory and answered from
+    /// there, in seconds (`BUZZ_PUBLIC_PROJECT_READS_CACHE_SECS`, 0 keeps
+    /// nothing). Everyone who is not a member gets the same answer, so a link
+    /// many people open costs one read of the database in this time, and only
+    /// that read is counted against the shared budget. A change (a new update,
+    /// a founder muted or banned, a project removed) shows to them at most
+    /// this much later.
+    pub public_project_reads_cache_secs: u64,
     /// The server's own example project, as its scorecard address without the
     /// `/p/` (`BUZZ_EXAMPLE_PROJECT=<project id>-<first 16 characters of the
     /// founder's key>`). The information document names it (`example_project`)
@@ -1730,6 +1749,18 @@ impl Config {
             .unwrap_or(false);
         let public_project_reads_per_min =
             positive_u64_from_env("BUZZ_PUBLIC_PROJECT_READS_PER_MIN", 300)?;
+        let public_project_reads_per_address_min =
+            positive_u64_from_env("BUZZ_PUBLIC_PROJECT_READS_PER_ADDRESS_MIN", 120)?;
+        let public_project_reads_cache_secs =
+            match std::env::var("BUZZ_PUBLIC_PROJECT_READS_CACHE_SECS") {
+                Err(_) => 30,
+                Ok(value) => value.trim().parse::<u64>().map_err(|_| {
+                    ConfigError::InvalidValue(
+                        "BUZZ_PUBLIC_PROJECT_READS_CACHE_SECS must be a whole number of seconds (0 keeps nothing)"
+                            .to_string(),
+                    )
+                })?,
+            };
 
         let example_project = std::env::var("BUZZ_EXAMPLE_PROJECT")
             .ok()
@@ -1853,6 +1884,8 @@ impl Config {
             public_community_directory,
             public_project_reads,
             public_project_reads_per_min,
+            public_project_reads_per_address_min,
+            public_project_reads_cache_secs,
             example_project,
         })
     }
