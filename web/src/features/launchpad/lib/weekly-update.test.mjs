@@ -1,17 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { UPDATE_DRAFT_LIMITS } from "@creaton/core/launchpad/updateAi.ts";
+
 import {
   daysSince,
+  firstSentence,
   founderNudge,
   freshnessLine,
   inARowLine,
   isWeeklyUpdateTags,
   nudgeDismissed,
+  oneLineFromTags,
   partsFromTags,
   updateEvent,
   updateFacts,
   updateLayout,
+  updateOneLine,
   UPDATE_LIMITS,
   weeksInARow,
 } from "./weekly-update.ts";
@@ -149,7 +154,7 @@ test("everyone reads how fresh the news is", () => {
 test("the founder is prompted after a week, and told when the next one is due before that", () => {
   assert.deepEqual(founderNudge(NOW - 9 * DAY, NOW), {
     due: true,
-    text: "It's been 9 days since your last update.",
+    text: "Your weekly update is due. The last one was 9 days ago.",
   });
   assert.deepEqual(founderNudge(NOW - 7 * DAY, NOW).due, true);
   assert.deepEqual(founderNudge(NOW - DAY, NOW), {
@@ -162,6 +167,18 @@ test("the founder is prompted after a week, and told when the next one is due be
   });
   assert.equal(founderNudge(NOW, NOW).text, "Next update due in 7 days.");
   assert.equal(founderNudge(null, NOW).due, true);
+});
+
+test("the founder's prompt says 'due' and never that they have not posted", () => {
+  for (const at of [null, NOW - 7 * DAY, NOW - 30 * DAY]) {
+    const { text } = founderNudge(at, NOW);
+    assert.match(text, /is due\./);
+    assert.doesNotMatch(text, /haven't|have not|didn't|since your last/i);
+  }
+  assert.equal(
+    founderNudge(null, NOW).text,
+    "Your first update is due. A short one each week keeps the people following you close.",
+  );
 });
 
 test("weeks in a row count Monday-to-Sunday weeks back from this one", () => {
@@ -358,4 +375,116 @@ test("only the first three lines of what's next become promises", async () => {
     dropped: 2,
   });
   assert.deepEqual(firstPromises("one"), { text: "one", dropped: 0 });
+});
+
+test("'In one line' is signed as a part, and reads back the same", () => {
+  const event = updateEvent(
+    draft({ line: "  Sign-up shipped\n and works.  " }),
+  );
+  assert.deepEqual(
+    event.tags.filter((t) => t[1] === "line"),
+    [["update-part", "line", "Sign-up shipped and works."]],
+  );
+  assert.equal(oneLineFromTags(event.tags), "Sign-up shipped and works.");
+  // It is not a prompt: it does not appear in the body, and the prompts read back as before.
+  assert.doesNotMatch(event.content.body, /Sign-up shipped and works/);
+  assert.deepEqual(partsFromTags(event.tags), {
+    done: "Shipped sign-up.",
+    next: "Invite the first ten people.",
+    help: null,
+  });
+  assert.deepEqual(
+    updateLayout(event.content.body, partsFromTags(event.tags)),
+    { free: "", showParts: true },
+  );
+});
+
+test("'In one line' is optional: without it no tag is written", () => {
+  for (const line of [undefined, "", "   "])
+    assert.equal(
+      updateEvent(draft({ line })).tags.some((t) => t[1] === "line"),
+      false,
+    );
+});
+
+test("'In one line' is held to its limit, and the limits match the AI draft's", () => {
+  assert.equal(UPDATE_LIMITS.line, UPDATE_DRAFT_LIMITS.line);
+  assert.equal(UPDATE_LIMITS.part, UPDATE_DRAFT_LIMITS.done);
+  assert.equal(UPDATE_LIMITS.help, UPDATE_DRAFT_LIMITS.help);
+  const event = updateEvent(draft({ line: "w".repeat(400) }));
+  assert.equal(oneLineFromTags(event.tags).length, UPDATE_LIMITS.line);
+  // Tags written by something else are cut the same way.
+  assert.equal(
+    oneLineFromTags([["update-part", "line", "z".repeat(900)]]).length,
+    UPDATE_LIMITS.line,
+  );
+});
+
+test("a record carrying the new part is a weekly update, and one that only looks like it is not", () => {
+  assert.equal(
+    isWeeklyUpdateTags([["update-part", "line", "A quiet week."]]),
+    true,
+  );
+  // Written freely with a line: the part alone says it is weekly, so no second mark is added.
+  const free = updateEvent(
+    draft({ done: "", next: "", body: "A quiet week.", line: "A quiet week." }),
+  );
+  assert.deepEqual(free.tags, [["update-part", "line", "A quiet week."]]);
+  assert.equal(isWeeklyUpdateTags(free.tags), true);
+  // A tag of another name, or a part with no kind, does not count.
+  assert.equal(isWeeklyUpdateTags([["update-line", "A quiet week."]]), false);
+  assert.equal(isWeeklyUpdateTags([["line", "A quiet week."]]), false);
+  assert.equal(
+    isWeeklyUpdateTags([
+      ["a", "37001:x:y"],
+      ["help-size", "small"],
+    ]),
+    false,
+  );
+  // Parts a free-form update carries are still not prompts.
+  assert.equal(partsFromTags(free.tags), null);
+});
+
+test("with no stored line, the first sentence of 'What happened' is the line; a stored line wins", () => {
+  const stored = updateEvent(draft({ line: "Sign-up is live." }));
+  assert.equal(
+    updateOneLine({ tags: stored.tags, body: stored.content.body }),
+    "Sign-up is live.",
+  );
+  const plain = updateEvent(
+    draft({
+      done: "Work accepted: fix the invite email.\nShipped sign-up. More later.",
+    }),
+  );
+  assert.equal(
+    updateOneLine({ tags: plain.tags, body: plain.content.body }),
+    "Work accepted: fix the invite email.",
+  );
+  // A free-form update: the first sentence of its words.
+  const free = updateEvent(
+    draft({ done: "", next: "", body: "We moved studios. More soon." }),
+  );
+  assert.equal(
+    updateOneLine({ tags: free.tags, body: free.content.body }),
+    "We moved studios.",
+  );
+  // The next part and the help are never the line.
+  const onlyNext = updateEvent(draft({ done: "", next: "Invite ten people." }));
+  assert.equal(
+    updateOneLine({ tags: onlyNext.tags, body: onlyNext.content.body }),
+    "",
+  );
+});
+
+test("the first sentence stops at a full stop, not inside a version number, and is cut at a word", () => {
+  assert.equal(
+    firstSentence("Released v1.2 to testers. Then more."),
+    "Released v1.2 to testers.",
+  );
+  assert.equal(firstSentence("\n\n  Did we ship?  Yes."), "Did we ship?");
+  assert.equal(firstSentence("No full stop here"), "No full stop here");
+  assert.equal(firstSentence(""), "");
+  const long = firstSentence(`${"word ".repeat(80)}end.`);
+  assert.ok(long.length <= UPDATE_LIMITS.line);
+  assert.ok(long.endsWith("word…"));
 });

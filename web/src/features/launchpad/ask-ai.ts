@@ -1,12 +1,16 @@
 /**
  * One question to the server's AI service (`/llm/chat/completions`, `api/llm_gateway.rs`): signed as the person asking,
  * so only members can use it and its cost lands on their metered budget. The model is the operator's (or a build's
- * `VITE_AGENT_MODEL`). Returns the reply's text, or throws a sentence saying what went wrong.
+ * `VITE_AGENT_MODEL`). Returns the reply's text, or throws a sentence saying what went wrong. When the server refuses
+ * because a daily limit or the pace of asking was reached (a 429), the sentence is the server's own words as they are
+ * (`lib/ai-refusal.ts`): they say what ran out and when it comes back.
  */
 
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
 import { isServerTimeout, timedFetchStreamed } from "@/shared/lib/timed-fetch";
+
+import { aiRefusalWords } from "./lib/ai-refusal";
 
 /** How long one AI answer may take. */
 const AI_TIMEOUT_MS = 120_000;
@@ -39,9 +43,7 @@ export async function askAi(system: string, user: string): Promise<string> {
     timeoutMs: AI_TIMEOUT_MS,
   }).catch(inTime);
   if (response.status === 429)
-    throw new Error(
-      "The AI service is busy or your allowance is used up. Try again later, or write it yourself.",
-    );
+    throw new Error(aiRefusalWords(await response.json().catch(() => null)));
   if (!response.ok)
     throw new Error(
       "The AI service didn't answer. Write it yourself, or try again later.",

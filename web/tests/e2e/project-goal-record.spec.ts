@@ -258,7 +258,7 @@ test("one person starts a project alone with four answers and lands on its page 
   ]);
   // A goal is not news: it is not counted as a weekly update.
   await expect(page.getByTestId("update-nudge")).toContainText(
-    "You haven't posted an update yet.",
+    "Your first update is due.",
   );
 
   // The other ways to start are one press away.

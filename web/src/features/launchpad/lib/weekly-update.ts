@@ -40,9 +40,13 @@ export const UPDATE_LIMITS = {
   part: 2000,
   help: 500,
   helpTime: 40,
+  /** "In one line": a sentence for a feed or a card, not a summary. */
+  line: 160,
 } as const;
 
 const TAG_PART = "update-part";
+/** The value of an `update-part` tag that carries "In one line" (the others are "done" and "next"). */
+const PART_LINE = "line";
 const TAG_HELP = "help-needed";
 const TAG_HELP_SIZE = "help-size";
 const TAG_HELP_TIME = "help-time";
@@ -91,6 +95,12 @@ export interface UpdateDraft {
   help: string;
   helpSize: HelpSize;
   helpTime: string;
+  /**
+   * "In one line": optional, about {@link UPDATE_LIMITS.line} characters. The author's own words, written or drafted by
+   * the AI and then edited by them; it is signed with the update. Home and Discover show this stored line and never ask
+   * a model for one (`updateOneLine`).
+   */
+  line?: string;
   /** The founder's answers to the promises earlier updates made (`lib/promises.ts`). */
   marks?: readonly MarkDraft[];
 }
@@ -144,6 +154,7 @@ export function updateEvent(
   const free = clip(draft.body, UPDATE_LIMITS.part * 2);
   const helpText = clip(draft.help, UPDATE_LIMITS.help);
   const helpTime = clip(draft.helpTime, UPDATE_LIMITS.helpTime);
+  const line = oneLine(draft.line ?? "");
   const size = isHelpSize(draft.helpSize) ? draft.helpSize : "small";
   const parts: UpdateParts = {
     done,
@@ -156,6 +167,7 @@ export function updateEvent(
   const tags: string[][] = [];
   if (done) tags.push([TAG_PART, "done", done]);
   if (next) tags.push([TAG_PART, "next", next]);
+  if (line) tags.push([TAG_PART, PART_LINE, line]);
   // Each line of "What's next" is also its own tag: a promise the next update answers.
   if (withPromises) tags.push(...promiseTags(next), ...markTags(marks));
   if (helpText) {
@@ -176,6 +188,63 @@ export function updateEvent(
     },
     tags,
   };
+}
+
+/** One line of text: whitespace made single, cut to {@link UPDATE_LIMITS.line}. */
+function oneLine(value: string): string {
+  return clip(value.replace(/\s+/g, " "), UPDATE_LIMITS.line);
+}
+
+/**
+ * The "In one line" an update was signed with, or an empty string when it carries none. Only what the author signed is
+ * read here: nothing is made up.
+ */
+export function oneLineFromTags(tags: readonly (readonly string[])[]): string {
+  for (const tag of tags)
+    if (
+      tag[0] === TAG_PART &&
+      tag[1] === PART_LINE &&
+      typeof tag[2] === "string"
+    ) {
+      const line = oneLine(tag[2]);
+      if (line) return line;
+    }
+  return "";
+}
+
+/**
+ * The first sentence of some words, for a feed or a card: the first line that says anything, up to its first full
+ * stop, question mark or exclamation mark followed by a space (so "v1.2" and "e.g." in the middle of a word are not a
+ * stop), cut at a word to {@link UPDATE_LIMITS.line} characters with an ellipsis when it runs on.
+ */
+export function firstSentence(text: string): string {
+  const first =
+    text
+      .split("\n")
+      .map((line) => line.replace(/\s+/g, " ").trim())
+      .find((line) => line !== "") ?? "";
+  const stop = /^.*?[.!?](?=\s|$)/.exec(first);
+  const sentence = stop ? stop[0] : first;
+  if (sentence.length <= UPDATE_LIMITS.line) return sentence;
+  const cut = sentence.slice(0, UPDATE_LIMITS.line - 1);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > UPDATE_LIMITS.line / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:]+$/, "")}…`;
+}
+
+/**
+ * The one line to show for an update: the "In one line" its author signed, and otherwise the first sentence of "What
+ * happened this week" (or of the body, for an update written freely). It reads what is stored and never asks a model,
+ * so a feed or a card shows the same words every time and nothing is invented at read time. Empty when there is
+ * nothing to show.
+ */
+export function updateOneLine(update: {
+  tags: readonly (readonly string[])[];
+  body: string;
+}): string {
+  const stored = oneLineFromTags(update.tags);
+  if (stored) return stored;
+  const parts = partsFromTags(update.tags);
+  return firstSentence(parts ? parts.done : update.body);
 }
 
 /** The parts an update's tags carry, or null when it carries none (a free-form update, or one from before this). */
@@ -267,13 +336,13 @@ export function founderNudge(
   if (lastAt === null)
     return {
       due: true,
-      text: "You haven't posted an update yet. A short one each week keeps the people following you close.",
+      text: "Your first update is due. A short one each week keeps the people following you close.",
     };
   const n = daysSince(lastAt, now);
   if (n >= UPDATE_EVERY_DAYS)
     return {
       due: true,
-      text: `It's been ${days(n)} since your last update.`,
+      text: `Your weekly update is due. The last one was ${days(n)} ago.`,
     };
   const left = UPDATE_EVERY_DAYS - n;
   return { due: false, text: `Next update due in ${days(left)}.` };

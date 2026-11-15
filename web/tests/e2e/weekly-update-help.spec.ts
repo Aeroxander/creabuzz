@@ -174,7 +174,7 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
     "No update in 9 days",
   );
   await expect(card.getByTestId("update-nudge")).toContainText(
-    "It's been 9 days since your last update.",
+    "Your weekly update is due. The last one was 9 days ago.",
   );
   await card.getByRole("button", { name: "Post one" }).click();
 
@@ -498,7 +498,7 @@ test("an update the server refuses stays in the dialog with what was written, an
   await page.goto(PROJECT);
   // Never posted: the prompt says so instead of counting days.
   await expect(page.getByTestId("update-nudge")).toContainText(
-    "You haven't posted an update yet.",
+    "Your first update is due.",
   );
   await page.getByRole("button", { name: "Post update" }).click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
@@ -546,7 +546,7 @@ test("the weekly prompt can be put away for the week, and everyone sees weeks in
   await page.goto(PROJECT);
   const card = page.getByTestId("project-update-card");
   await expect(card.getByTestId("update-nudge")).toContainText(
-    "It's been 7 days since your last update.",
+    "Your weekly update is due. The last one was 7 days ago.",
   );
   await card
     .getByRole("button", { name: "Not now: hide this reminder for a week" })
