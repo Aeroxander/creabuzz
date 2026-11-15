@@ -32,6 +32,7 @@ import {
 import { useContributorProvenance } from "@/features/launchpad/use-contributor-provenance";
 import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
 import { isIdea } from "@/features/launchpad/lib/idea";
+import { openCardLabel } from "@/features/launchpad/lib/project-list-copy";
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
 import { ProgressBar } from "@/features/launchpad/ui/widgets";
@@ -354,7 +355,7 @@ export function DiscoverLaunchCard({
                   search={{ action: undefined, author: launch.record.author }}
                   to="/launchpad/$launchId"
                 >
-                  {contributor ? "Open project" : "View launch"}
+                  {openCardLabel({ contributor, raises })}
                   <ArrowRight aria-hidden className="ml-1 h-3.5 w-3.5" />
                 </Link>
               </Button>

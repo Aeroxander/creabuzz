@@ -7,6 +7,8 @@ import { Link } from "@tanstack/react-router";
 import { ArrowLeft, Star } from "lucide-react";
 
 import { isContributorProject } from "../lib/funding";
+import { listLink } from "../lib/project-list-copy";
+import { raisesOffered } from "../lib/raises-offered";
 import type { ReactNode } from "react";
 
 import { resolveUserName, useProfiles } from "@/features/profiles/use-profiles";
@@ -58,6 +60,10 @@ export function LaunchHero({
   const { data: profiles } = useProfiles([record.author]);
   const founder = profiles?.[record.author];
   const founderName = resolveUserName(founder, record.author);
+  const back = listLink({
+    contributor: isContributorProject(record),
+    raises: raisesOffered(),
+  });
   const { data: progress } = useAuctionProgress(record);
   const measurable =
     progress !== undefined && progress.source !== "unavailable";
@@ -90,13 +96,12 @@ export function LaunchHero({
 
   return (
     <header className="flex flex-col gap-4" data-testid="launch-hero">
-      {/* A contributor project is found on Discover, not among the raises. */}
+      {/* The way back is the list of projects, named as the top bar names it; "Launchpad" only where sales are offered. */}
       <Link
         className="flex items-center gap-1 text-sm text-muted-foreground hover:underline"
-        to={isContributorProject(record) ? "/discover" : "/launchpad"}
+        to={back.to}
       >
-        <ArrowLeft aria-hidden className="h-4 w-4" />{" "}
-        {isContributorProject(record) ? "Discover" : "Launchpad"}
+        <ArrowLeft aria-hidden className="h-4 w-4" /> {back.label}
       </Link>
       <div className="relative">
         <div

@@ -98,6 +98,11 @@ test("a founder takes their project off the lists and puts it back, keeping the 
   await expect(page.getByTestId("project-listing-state")).toContainText(
     "Listed.",
   );
+  // The button says what it does. While the line above it says "Listed.", a button reading "Not listed yet" looks like
+  // a contradiction.
+  await expect(page.getByTestId("project-listing-toggle")).toHaveText(
+    "Take it off the lists",
+  );
   await page.getByTestId("project-listing-toggle").click();
   await expect(page.getByTestId("project-listing-state")).toHaveText(
     "Not listed yet. Only people with the link can find this project.",

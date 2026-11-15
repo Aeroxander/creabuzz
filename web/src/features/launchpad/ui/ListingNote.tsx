@@ -6,6 +6,7 @@ import { FailureNote } from "@/shared/ui/failure-note";
 
 import { isIdea } from "../lib/idea";
 import { NOT_LISTED_LINE, notListedYet } from "../lib/listing";
+import { listingToggleLabel } from "../lib/project-list-copy";
 import type { Launch, LaunchStage } from "../models";
 import { useChangeOwnRecord } from "../use-own-record";
 import { LOST_CHANGE_WORDS, useRecordAgreement } from "../use-record-agreement";
@@ -101,11 +102,7 @@ export function ListingNote({
             type="button"
             variant="outline"
           >
-            {busy
-              ? "Saving…"
-              : unlisted
-                ? "List this project"
-                : "Not listed yet"}
+            {busy ? "Saving…" : listingToggleLabel(unlisted)}
           </Button>
           <span className="text-xs text-muted-foreground">
             {unlisted
