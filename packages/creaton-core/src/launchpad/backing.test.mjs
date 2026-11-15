@@ -262,32 +262,50 @@ test("the depth tiers are the contracts' own, in whole quote units", () => {
       /t\[(\d)\] = ([\d_]+);/g,
     ),
   ].map((m) => Number(m[2].replaceAll("_", "")));
-  assert.equal(tiers.length, 7);
+  assert.equal(tiers.length, 6);
   assert.deepEqual([...BACKING_DEPTH_TIERS_WHOLE], tiers);
-  // The default is the 25,000 the terms set, which the factory derives the tiers from as fifths and multiples.
+  // The default is the 25,000 the terms set, which the factory derives the tiers from: two fifths, then multiples.
   assert.match(terms, /p\.virtualQuote = 25_000 \* one;/);
   assert.equal(BACKING_DEFAULT_DEPTH_WHOLE, 25_000);
   const factory = read("../../../../contracts/src/BackingPoolFactory.sol");
-  const fifth = BACKING_DEFAULT_DEPTH_WHOLE / 5;
   assert.deepEqual(
-    [fifth, fifth * 2, 1, 2, 4, 10, 20].map((n, i) =>
-      i < 2 ? n : n * BACKING_DEFAULT_DEPTH_WHOLE,
+    [(BACKING_DEFAULT_DEPTH_WHOLE / 5) * 2].concat(
+      [1, 2, 4, 10, 20].map((n) => n * BACKING_DEFAULT_DEPTH_WHOLE),
     ),
     tiers,
   );
-  assert.match(factory, /t\[4\] = base \* 4;/);
-  assert.match(factory, /t\[6\] = base \* 20;/);
+  // The factory's own list, line for line: six depths, none of them a fifth of the default.
+  const derived = /function _tiersOf[\s\S]*?\n {4}\}/.exec(factory)?.[0] ?? "";
+  assert.deepEqual(
+    [...derived.matchAll(/t\[(\d)\] = ([^;]+);/g)].map((m) => m[2]),
+    ["base / 5 * 2", "base", "base * 2", "base * 4", "base * 10", "base * 20"],
+  );
+  assert.match(
+    factory,
+    /function depthTiers\(\) external view returns \(uint256\[6\] memory\)/,
+  );
+});
+
+test("no depth on the menu is shallower than 10,000, and the suggestion for a small raise is the shallowest left", () => {
+  // The 5,000 depth was dropped: the same money multiplied the price most there (BACKING-POOL.md, "What the first
+  // buyers hold"). Nothing the app names, suggests or explains may bring it back.
+  assert.equal(Math.min(...BACKING_DEPTH_TIERS_WHOLE), 10_000);
+  assert.ok(!BACKING_DEPTH_TIERS_WHOLE.includes(5_000));
+  for (const hoped of [1, 500, 2_000, 2_500, 4_999, 5_000]) {
+    assert.equal(suggestDepthTier(hoped), 10_000);
+  }
+  // 25,000 is still what the factory uses when a founder names none, and it is on the menu.
+  assert.ok(BACKING_DEPTH_TIERS_WHOLE.includes(BACKING_DEFAULT_DEPTH_WHOLE));
 });
 
 test("a depth is written in base units, suggested from the hoped raise, and explained without a price", () => {
   assert.equal(depthInBaseUnits(25_000, 6), 25_000_000_000n);
-  assert.equal(depthInBaseUnits(5_000, 18), 5_000n * 10n ** 18n);
+  assert.equal(depthInBaseUnits(10_000, 18), 10_000n * 10n ** 18n);
   assert.throws(() => depthInBaseUnits(0, 6), /above zero/);
   assert.throws(() => depthInBaseUnits(1.5, 6), /whole number/);
   // About twice the hoped raise, at the next tier up; the deepest when nothing is deep enough; the usual when unsure.
-  assert.equal(suggestDepthTier(2_000), 5_000);
-  assert.equal(suggestDepthTier(2_500), 5_000);
   assert.equal(suggestDepthTier(2_501), 10_000);
+  assert.equal(suggestDepthTier(5_001), 25_000);
   assert.equal(suggestDepthTier(12_000), 25_000);
   assert.equal(suggestDepthTier(40_000), 100_000);
   assert.equal(suggestDepthTier(10_000_000), 500_000);
@@ -301,17 +319,16 @@ test("a depth is written in base units, suggested from the hoped raise, and expl
   }
   assert.match(explainDepthTier(25_000, "USDC"), /usual depth/);
   assert.match(explainDepthTier(25_000, "USDC"), /12,500 USDC/);
-  assert.match(explainDepthTier(5_000, "USDC"), /moves more/);
+  assert.match(explainDepthTier(10_000, "USDC"), /moves more/);
+  assert.match(explainDepthTier(10_000, "USDC"), /5,000 USDC/);
   assert.match(explainDepthTier(500_000, "USDC"), /moves less/);
 });
 
 test("the factory's menu is read in one bounded step and its default must be on it", async () => {
-  const tiers = [5, 10, 25, 50, 100, 250, 500].map(
-    (n) => BigInt(n) * 10n ** 9n,
-  );
-  const chain = (def) => ({
+  const tiers = [10, 25, 50, 100, 250, 500].map((n) => BigInt(n) * 10n ** 9n);
+  const chain = (def, menu = tiers) => ({
     async call(_to, data) {
-      if (data.startsWith(selectorOf("depthTiers()"))) return wordsOf(tiers);
+      if (data.startsWith(selectorOf("depthTiers()"))) return wordsOf(menu);
       if (data.startsWith(selectorOf("defaultDepth()"))) return wordOf(def);
       throw new Error("unexpected");
     },
@@ -322,12 +339,19 @@ test("the factory's menu is read in one bounded step and its default must be on 
     readDepthTiers(chain(26n * 10n ** 9n), FACTORY),
     /not one of its depths/,
   );
+  // A factory deployed before the 5,000 depth was dropped answers seven depths. Its menu is not read as if it were
+  // today's (the first six would put 5,000 back on offer): it is refused, and the founder is offered nothing from it.
+  const seven = [5n * 10n ** 9n, ...tiers];
+  await assert.rejects(
+    readDepthTiers(chain(25n * 10n ** 9n, seven), FACTORY),
+    /depthTiers\(\) answered 448 characters of hex, not 6 32-byte words/,
+  );
 });
 
 test("the founder's menu is the factory's tiers, each with the round minimum at that depth, and no round terms when rounds are off", async () => {
   const chain = fakeChain();
   const menu = await readOpenMenu(chain, FACTORY, true);
-  assert.equal(menu.defaultDepth, TIERS[2]);
+  assert.equal(menu.defaultDepth, TIER_DEFAULT);
   assert.deepEqual(
     menu.tiers.map((t) => t.depth),
     TIERS,
@@ -1161,7 +1185,10 @@ const ME = `0x${"1e".repeat(20)}`;
 const wordOf = (v) => `0x${BigInt(v).toString(16).padStart(64, "0")}`;
 const wordsOf = (values) =>
   `0x${values.map((v) => BigInt(v).toString(16).padStart(64, "0")).join("")}`;
-const TIERS = [5, 10, 25, 50, 100, 250, 500].map((n) => BigInt(n) * 10n ** 9n);
+const TIERS = [10, 25, 50, 100, 250, 500].map((n) => BigInt(n) * 10n ** 9n);
+/** The factory's default (25,000) and the depth the fake's waiting pool opened at (50,000). */
+const TIER_DEFAULT = TIERS[1];
+const TIER_POOL = TIERS[2];
 const stringHex = (text) => encodeParameters(["string"], [text]);
 
 function fakeChain(overrides = {}) {
@@ -1174,7 +1201,7 @@ function fakeChain(overrides = {}) {
     [`${FACTORY}:${sel("roundFloorPriceX96()")}`]: () => wordOf(1111n),
     [`${FACTORY}:${sel("roundTickSpacingX96()")}`]: () => wordOf(11n),
     [`${FACTORY}:${sel("depthTiers()")}`]: () => wordsOf(TIERS),
-    [`${FACTORY}:${sel("defaultDepth()")}`]: () => wordOf(TIERS[2]),
+    [`${FACTORY}:${sel("defaultDepth()")}`]: () => wordOf(TIER_DEFAULT),
     // A round at depth d: the step and floor are a hundredth and the whole of d / 10; the minimum is d / 10.
     [`${FACTORY}:${sel("roundTerms(uint256)")}`]: (data) => {
       const depth = BigInt(`0x${data.slice(10)}`);
@@ -1182,7 +1209,7 @@ function fakeChain(overrides = {}) {
         .map((v) => v.toString(16).padStart(64, "0"))
         .join("")}`;
     },
-    [`${POOL}:${sel("virtualQuote()")}`]: () => wordOf(TIERS[3]),
+    [`${POOL}:${sel("virtualQuote()")}`]: () => wordOf(TIER_POOL),
     [`${FACTORY}:${sel("founderOf(address)")}`]: () => wordOf(ME),
     [`${FACTORY}:${sel("auctionFactory()")}`]: () =>
       wordOf(`0x${"af".repeat(20)}`),
@@ -1326,8 +1353,8 @@ test("a waiting round also reads its tick grid and what Permit2 may already take
   assert.equal(view.phase, "waiting");
   // The grid is the one at the pool's own depth (the 50-unit tier here), not the default depth's.
   assert.deepEqual(view.round, {
-    floorPriceX96: TIERS[3] / 10n,
-    tickSpacingX96: TIERS[3] / 1000n,
+    floorPriceX96: TIER_POOL / 10n,
+    tickSpacingX96: TIER_POOL / 1000n,
     permit2Allowance: 77n,
   });
 });

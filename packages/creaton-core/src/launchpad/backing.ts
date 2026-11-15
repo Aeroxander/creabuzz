@@ -565,14 +565,21 @@ export function encodeOpenWithRound(
 // ---- curve depth ---------------------------------------------------------------------------------
 
 /**
- * The curve depths a founder may pick from, in WHOLE quote units: `BackingTerms.depthTiersWhole()`, which is fifths of the
- * factory's default (25,000) as the factory derives them. The factory is the authority (`depthTiers()` returns them in
- * base units and refuses any other number with `BadDepth`): this list is for the words and for tests that bind it to the
- * Solidity source, and `readDepthTiers` reads the real menu.
+ * The curve depths a founder may pick from, in WHOLE quote units: `BackingTerms.depthTiersWhole()`, which is two fifths of
+ * the factory's default (25,000), the default, and 2, 4, 10 and 20 times it, as the factory derives them. The factory is
+ * the authority (`depthTiers()` returns them in base units and refuses any other number with `BadDepth`): this list is
+ * for the words and for tests that bind it to the Solidity source, and `readDepthTiers` reads the real menu.
+ *
+ * There is no 5,000: how far a pool's price multiplies follows what it took in next to its depth alone, so the
+ * shallowest depth is where the least money multiplies the price the most, which rewards being first
+ * (docs/v3-review/BACKING-POOL.md, "What the first buyers hold").
  */
 export const BACKING_DEPTH_TIERS_WHOLE: readonly number[] = [
-  5_000, 10_000, 25_000, 50_000, 100_000, 250_000, 500_000,
+  10_000, 25_000, 50_000, 100_000, 250_000, 500_000,
 ];
+
+/** How many depths the factory's `depthTiers()` returns: a fixed-size list, so a reply of any other length is refused. */
+const BACKING_DEPTH_TIER_COUNT = BACKING_DEPTH_TIERS_WHOLE.length;
 
 /** The tier the factory uses when a founder names none (zero on the wire). */
 export const BACKING_DEFAULT_DEPTH_WHOLE = 25_000;
@@ -1410,7 +1417,7 @@ export async function readDepthTiers(
     chain.call(to, encodeNoArgs(BACKING_SIGNATURES.depthTiers)),
     chain.call(to, encodeNoArgs(BACKING_SIGNATURES.defaultDepth)),
   ]);
-  const tiers = words(tiersHex, 7, "depthTiers()");
+  const tiers = words(tiersHex, BACKING_DEPTH_TIER_COUNT, "depthTiers()");
   const defaultDepth = words(defaultHex, 1, "defaultDepth()")[0];
   if (!tiers.includes(defaultDepth)) {
     throw new Error("The factory's default depth is not one of its depths");
