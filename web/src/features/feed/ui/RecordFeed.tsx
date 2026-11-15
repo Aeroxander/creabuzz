@@ -15,6 +15,7 @@ import { Link as LinkIcon, PartyPopper } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  CREATE_ACCOUNT,
   needAccountTo,
   SIGN_UP_EVENT,
 } from "@/features/identity/lib/account-copy";
@@ -208,6 +209,18 @@ export function RecordFeed() {
                   ? "This shows every listed project, because which projects you follow could not be read."
                   : "You follow no projects yet, so this shows every listed project. Follow one and this becomes your own feed."}
           </p>
+          {me === null && scope.mode !== "yours" ? (
+            // A phone's bar has Sign in only, so the sentence above would name an action with nothing to press.
+            <Button
+              className="self-start sm:hidden max-sm:h-11"
+              data-testid="record-feed-create-account"
+              onClick={() => window.dispatchEvent(new Event(SIGN_UP_EVENT))}
+              size="sm"
+              type="button"
+            >
+              {CREATE_ACCOUNT}
+            </Button>
+          ) : null}
           {scoped.followsFailed ? (
             <p
               className="text-sm"

@@ -282,6 +282,28 @@ test("a visitor reads every listed project's records, one card each, and only fr
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Nebula");
 });
 
+test("on a phone a visitor told to create an account is given the button for it; a wide screen has Sign up in its header", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  seedWorld(relay);
+  await install(page, relay, null);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/?tab=updates");
+  const feed = page.getByTestId("record-feed");
+  await expect(feed.getByTestId("record-feed-scope")).toContainText(
+    "Create your account to follow the ones you care about.",
+  );
+  const create = feed.getByTestId("record-feed-create-account");
+  await expect(create).toBeVisible();
+  await expect(create).toHaveText("Create your account");
+  await create.click();
+  await expect(page.getByTestId("onboarding-dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(create).toBeHidden();
+});
+
 test("someone new is told the feed is everyone's, follows a project from a card, and the feed becomes theirs", async ({
   page,
 }) => {
