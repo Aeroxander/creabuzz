@@ -20,6 +20,13 @@ export const ASK_FOR_INVITE_TEXT =
 /** The line before "Sign in" for someone who may already be on the server's list. */
 export const ALREADY_MEMBER_TEXT = "Already on this server? Sign in.";
 
+/**
+ * Said with a project's public record, to someone the server does not let in. Some invite-only servers let anyone
+ * read a project's record (its goal, updates, promises and accepted work); everything else is for people on the list.
+ */
+export const PUBLIC_RECORD_TEXT =
+  "Anyone can read this project's record. To follow it, help or post, you need an invite.";
+
 /** What the page says when it failed for any other reason. */
 export const COULDNT_OPEN_TEXT = "Couldn't open this project.";
 
