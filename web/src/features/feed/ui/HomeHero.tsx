@@ -1,5 +1,5 @@
 /**
- * The top of Home for someone who just arrived: one sentence on what this is, and two ways in. Start a project (four
+ * The top of Home for someone who just arrived: one sentence on what this is, and two ways in. Start a project (three
  * answers; the account is asked for when it is needed) or find work on someone else's. When the server has a project
  * of its own, "See a record" opens its public page: the owner's listed project when this visitor can read the lists
  * (an open server), else the one the server names for itself (an invite-only server that lets anyone read a public

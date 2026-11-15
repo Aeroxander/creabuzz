@@ -83,12 +83,18 @@ test("no line about starting a project names another number of answers", () => {
       // This file lists every number word, and the real-server loop spec belongs to another change.
       if (path.endsWith("start-answers.test.mjs")) continue;
       if (path.endsWith("e2e-real/project-loop.spec.ts")) continue;
-      readFileSync(path, "utf8")
-        .split("\n")
-        .forEach((line, index) => {
-          if (wrong.test(line) && /start|project|live/i.test(line))
-            offenders.push(`${path.slice(web.length)}:${index + 1}`);
-        });
+      const text = readFileSync(path, "utf8");
+      text.split("\n").forEach((line, index) => {
+        if (wrong.test(line) && /start|project|live/i.test(line))
+          offenders.push(`${path.slice(web.length)}:${index + 1}`);
+      });
+      // The same sentence wrapped over two lines of a comment ("(four" at one line's end, "answers" on the next).
+      const wrapped = new RegExp(
+        `\\b(${others}|\\d+)[ \\t]*\\n[ \\t]*(?:\\*|//)?[ \\t]*answers\\b`,
+        "i",
+      );
+      if (wrapped.test(text))
+        offenders.push(`${path.slice(web.length)}: wrapped over two lines`);
     }
   }
   assert.deepEqual(offenders, []);
