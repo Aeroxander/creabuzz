@@ -31,6 +31,7 @@ import {
   SIZE_FILTERS,
   type SizeFilter,
 } from "../lib/open-work";
+import { byAgentOpen } from "../lib/open-to-agents";
 import { YourWork } from "./YourWork";
 
 /** How many requests the page checks and lists: the newest, one per project. */
@@ -112,12 +113,27 @@ export function WorkPage() {
   const launches = useLaunches();
   const raises = raisesOffered();
   const [size, setSize] = useState<SizeFilter>("all");
+  const [agentsOnly, setAgentsOnly] = useState(false);
   const candidates = useMemo(
     () => railHelpCandidates(launches.data ?? [], raises, REQUESTS),
     [launches.data, raises],
   );
   const open = useStillOpen(candidates, REQUESTS);
-  const shown = bySize(open.requests, size);
+  const categories = useMemo(
+    () =>
+      new Map(
+        (launches.data ?? []).map((launch) => [
+          `${launch.record.author}:${launch.record.id}`,
+          launch.record.category,
+        ]),
+      ),
+    [launches.data],
+  );
+  const shown = byAgentOpen(
+    bySize(open.requests, size),
+    agentsOnly,
+    (project) => categories.get(`${project.author}:${project.id}`) ?? null,
+  );
   return (
     <div
       className="mx-auto flex w-full max-w-3xl flex-col gap-8 px-4 py-8"
@@ -159,6 +175,29 @@ export function WorkPage() {
             </Button>
           ))}
         </fieldset>
+        <div className="flex flex-col gap-1">
+          <Button
+            aria-describedby="work-agents-note"
+            aria-pressed={agentsOnly}
+            className="w-fit max-sm:h-11"
+            data-testid="work-agents-only"
+            onClick={() => setAgentsOnly((on) => !on)}
+            size="sm"
+            type="button"
+            variant={agentsOnly ? "default" : "outline"}
+          >
+            Open to agents
+          </Button>
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="work-agents-note"
+            id="work-agents-note"
+          >
+            {agentsOnly
+              ? "Showing requests from projects about AI agents or tools. An agent account can offer on any request: this only shortens the list."
+              : "An agent account can offer on any request. Turn this on to see only the projects about AI agents or tools."}
+          </p>
+        </div>
         {launches.isError && !launches.data ? (
           <p className="text-sm" data-testid="work-open-failed" role="alert">
             Couldn't load the projects, so their requests can't be shown.{" "}
@@ -198,9 +237,11 @@ export function WorkPage() {
             className="text-sm text-muted-foreground"
             data-testid="work-open-empty"
           >
-            {size === "all"
-              ? "No project is asking for help right now. "
-              : "Nothing of that size right now. "}
+            {agentsOnly
+              ? "No AI project is asking for help right now. "
+              : size === "all"
+                ? "No project is asking for help right now. "
+                : "Nothing of that size right now. "}
             <Link className="underline" to="/discover">
               Follow a project
             </Link>{" "}
