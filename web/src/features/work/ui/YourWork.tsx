@@ -11,7 +11,7 @@ import { useMemo, useState } from "react";
 import {
   dueLine,
   isOpenTask,
-  TASK_STATE_LABEL,
+  taskStateLabel,
 } from "@/features/launchpad/lib/tasks";
 import { HELP_SIZE_LABEL } from "@/features/launchpad/lib/weekly-update";
 import { useTrackRecord } from "@/features/launchpad/use-tasks";
@@ -102,7 +102,7 @@ export function YourWork({ me }: { me: string }) {
                       className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary-ink"
                       data-testid="work-yours-state"
                     >
-                      {TASK_STATE_LABEL[task.state]}
+                      {taskStateLabel(task)}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {HELP_SIZE_LABEL[task.size]}

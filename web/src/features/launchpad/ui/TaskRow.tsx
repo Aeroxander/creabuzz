@@ -4,8 +4,11 @@
  *
  * The helper can say yes or no, hand work in, ask for more time, or give up. Someone else on the team can confirm a
  * piece of work, send it back with a reason, give more time, or cancel. The person who did the work is never offered
- * "Confirm": when they are also on the team the row says someone else has to, and when there is nobody else it says
- * that too.
+ * "Confirm": when they are also on the team the row says someone else has to.
+ *
+ * A founder working alone is the one exception, and the server holds the same rule: while nobody else on the
+ * project could check it, the founder marks their own work (or the work of an agent they run) as done with one
+ * press. The row says before the press that it will show as checked by them alone, and afterwards it does.
  *
  * A check is of one piece of work: the box shows that piece, and if more work arrives while it is open it closes
  * and says so, so nobody confirms what they did not read.
@@ -15,18 +18,23 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { AGENT_NEEDS_PERSON, useViewerIsAgent } from "../use-account-agent";
+import {
+  AGENT_NEEDS_PERSON,
+  useAgentAccounts,
+  useViewerIsAgent,
+} from "../use-account-agent";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Chip, type ChipTone } from "@/shared/ui/chip";
 
 import { agentLabel } from "../lib/agent-label";
+import { confirmRule } from "../lib/task-checks";
 import {
-  confirmRule,
   dueLine,
+  founderOfCoordinate,
   REWARDS_LINE,
-  TASK_STATE_LABEL,
+  taskStateLabel,
   type TaskEvidence,
   type TaskState,
   type TaskView,
@@ -180,7 +188,21 @@ export function TaskRow({
   const onTeam = viewer !== null && team.has(viewer);
   /** The team's side of a task is someone on the team who is not doing it. */
   const checks = onTeam && !isHelper;
-  const rule = confirmRule(task, team, viewer);
+  // A founder whose own work (or their agent's) waits is alone when every other team member is an agent account:
+  // those are looked up only then.
+  const founder = founderOfCoordinate(task.coordinate);
+  const ownWork =
+    isHelper || (viewer !== null && viewer === task.helperAgent?.owner);
+  const others = [...team].filter(
+    (member) => member !== founder && member !== task.helper,
+  );
+  const agents = useAgentAccounts(
+    others,
+    viewer === founder && ownWork && task.state === "submitted",
+  );
+  const rule = confirmRule(task, team, viewer, agents);
+  /** The founder checks their own work, with nobody else on the project who could. */
+  const alone = rule.may && rule.alone;
   // An agent account on the team may send work back or cancel, never confirm or give more time: the server takes
   // those from a person only, so the buttons are not offered and the page says why.
   const agentViewer = useViewerIsAgent();
@@ -260,6 +282,28 @@ export function TaskRow({
         ),
       },
     );
+  /**
+   * The founder, alone, marks their own work as done: one press, one record. It is not offered as a picture of
+   * "work accepted", because nobody else accepted it.
+   */
+  const aloneId = useId();
+  const [marking, setMarking] = useState<string | null>(null);
+  const markDone = (piece: TaskEvidence) =>
+    actions.confirm.mutate(
+      {
+        task: reference,
+        evidenceId: piece.id,
+        seen: task.evidence.map((p) => p.id),
+      },
+      {
+        onSuccess: done(
+          "Marked as done. It shows as checked by you alone, with nobody else on the project.",
+        ),
+        onError: notAsRead(
+          "That work was removed before you marked it as done, so nothing was saved.",
+        ),
+      },
+    );
 
   return (
     <li
@@ -274,7 +318,7 @@ export function TaskRow({
     >
       <div className="flex flex-wrap items-center gap-2">
         <Chip data-testid="task-state" tone={TONE[task.state]}>
-          {TASK_STATE_LABEL[task.state]}
+          {taskStateLabel(task)}
         </Chip>
         {task.late ? (
           <Chip data-testid="task-late" tone="danger">
@@ -573,7 +617,11 @@ export function TaskRow({
               actions.evidence.mutate(
                 { task: reference, ...handIn },
                 {
-                  onSuccess: done("Your work is handed in. The team is told."),
+                  onSuccess: done(
+                    alone
+                      ? "Your work is handed in. You can mark it as done below."
+                      : "Your work is handed in. The team is told.",
+                  ),
                 },
               )
             }
@@ -661,7 +709,62 @@ export function TaskRow({
 
       {/* Checking: only someone on the team who did not do the work, and one piece at a time. */}
       {task.state === "submitted" && task.waiting.length > 0 && onTeam ? (
-        rule.may ? (
+        alone ? (
+          box === null ? (
+            <div className="mt-2" data-testid="task-check-alone">
+              <p className="text-sm" id={`${aloneId}-says`}>
+                Nobody else is on this project yet, so you check this work
+                yourself. It will be shown as checked by you alone. Work checked
+                by someone else counts for more once you have a team.
+              </p>
+              {agentViewer ? (
+                <p
+                  className="mt-1 text-xs text-muted-foreground"
+                  data-testid="task-agent-no-confirm"
+                >
+                  {AGENT_NEEDS_PERSON}
+                </p>
+              ) : (
+                <ul className="mt-2 flex flex-col gap-2">
+                  {task.waiting.map((piece) => (
+                    <li key={piece.id}>
+                      <Button
+                        aria-describedby={`${aloneId}-says`}
+                        data-task-focus={`done-alone-${piece.id}`}
+                        data-testid="task-mark-done"
+                        disabled={actions.confirm.isPending}
+                        onClick={() => {
+                          setMarking(piece.id);
+                          markDone(piece);
+                        }}
+                        size="sm"
+                        type="button"
+                      >
+                        {actions.confirm.isPending && marking === piece.id
+                          ? "Saving…"
+                          : `Mark as done${pieceName(piece)}`}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {actions.confirm.isError && !expected(actions.confirm.error) ? (
+                <SendFailed
+                  onRetry={() => {
+                    const piece = task.waiting.find((p) => p.id === marking);
+                    if (piece) markDone(piece);
+                  }}
+                  testId="task-mark-done-failed"
+                >
+                  {withReason(
+                    "The work was not marked as done.",
+                    actions.confirm.error,
+                  )}
+                </SendFailed>
+              ) : null}
+            </div>
+          ) : null
+        ) : rule.may ? (
           check ? (
             (() => {
               const piece = task.waiting.find((p) => p.id === check.piece);
@@ -813,7 +916,7 @@ export function TaskRow({
               : "You did this work, so someone else on the team has to confirm it."}
             {rule.someoneCan
               ? null
-              : " Nobody else is on this project's team yet: add a team member to the project before this can be confirmed."}
+              : " Until someone else joins the team, the project's founder can mark it as done."}
           </p>
         )
       ) : null}

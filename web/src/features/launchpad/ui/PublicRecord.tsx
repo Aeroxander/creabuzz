@@ -162,6 +162,22 @@ export function PublicRecord({
                   : `${view.accepted} pieces`
           }
         />
+        {view.doneAlone ? (
+          <Fact
+            label="Done alone"
+            testId="public-record-done-alone"
+            value={
+              <>
+                <span className="block">
+                  {view.doneAlone === 1
+                    ? "1 piece"
+                    : `${view.doneAlone} pieces`}
+                </span>
+                <span className="block">checked by the founder</span>
+              </>
+            }
+          />
+        ) : null}
       </dl>
       {view.complete ? null : (
         <p
@@ -256,7 +272,7 @@ export function PublicRecord({
             className="text-base font-semibold"
             id="public-record-work-heading"
           >
-            Work accepted
+            Work done
           </h2>
           <ul className="flex flex-col gap-2">
             {view.work.map((piece) => (
@@ -266,9 +282,17 @@ export function PublicRecord({
                 key={piece.id}
               >
                 <span className="block break-words">{piece.what}</span>
-                <span className="block text-xs text-muted-foreground">
-                  Accepted {day(piece.acceptedAt)}, checked by someone other
-                  than the person who did it.
+                <span
+                  className="block text-xs text-muted-foreground"
+                  data-testid={
+                    piece.selfChecked
+                      ? "public-record-work-alone"
+                      : "public-record-work-accepted"
+                  }
+                >
+                  {piece.selfChecked
+                    ? `Done ${day(piece.acceptedAt)}, checked by the founder, working alone.`
+                    : `Accepted ${day(piece.acceptedAt)}, checked by someone other than the person who did it.`}
                 </span>
               </li>
             ))}

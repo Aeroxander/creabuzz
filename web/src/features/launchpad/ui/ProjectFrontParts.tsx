@@ -11,6 +11,7 @@ import type { LaunchTab, TabUse } from "../lib/launch-tabs";
 import { duePromises } from "../lib/promises";
 import { teamOf } from "../lib/help-request";
 import { starterPromiseKinds } from "../lib/ai-starters";
+import { acceptedByOthers } from "../lib/task-checks";
 import { acceptedSince, type UpdateDraft } from "../lib/weekly-update";
 import { useProjectTasks } from "../use-tasks";
 import type { Launch } from "../models";
@@ -95,8 +96,10 @@ export function UpdateDialogWithPromises({
     const times = updates.data.updates
       .filter((u) => team.has(u.author) && u.weekly && u.createdAt <= now)
       .map((u) => u.createdAt);
+    // Only work someone else accepted is offered as a "Work accepted" line: what the founder did alone is theirs
+    // to write in their own words.
     return acceptedSince(
-      work.tasks,
+      acceptedByOthers(work.tasks),
       times.length > 0 ? Math.max(...times) : null,
       now,
     ).map((task) => ({ id: task.id, what: task.what }));

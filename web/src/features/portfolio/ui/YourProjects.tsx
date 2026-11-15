@@ -27,7 +27,7 @@ import {
 import { dueOnDay } from "@/features/launchpad/lib/update-day";
 import {
   dueLine,
-  TASK_STATE_LABEL,
+  taskStateLabel,
   type TaskView,
 } from "@/features/launchpad/lib/tasks";
 import {
@@ -223,7 +223,7 @@ function ProjectCard({
                   {task.what}
                 </Link>{" "}
                 <span className="text-xs text-muted-foreground">
-                  {TASK_STATE_LABEL[task.state]}
+                  {taskStateLabel(task)}
                   {dueLine(task, day) ? ` · ${dueLine(task, day)}` : ""}
                 </span>
               </li>

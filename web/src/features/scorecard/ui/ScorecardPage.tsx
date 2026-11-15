@@ -33,6 +33,7 @@ import {
   cardVariantsFor,
   type ShareCardVariant,
 } from "@/features/launchpad/lib/share-card";
+import { acceptedByOthers } from "@/features/launchpad/lib/task-checks";
 import {
   freshnessLine,
   updateDueWords,
@@ -120,9 +121,8 @@ function Scorecard({ launch }: { launch: Launch }) {
   const followed = follows.followed.has(coordinate);
   const goal = record?.goals.primary?.text || project.pitch || "";
   // The picture and its sentence state only what the record shows: which of the three it can back is worked out here.
-  const accepted = s?.tasksKnown
-    ? s.tasks.filter((task) => task.state === "confirmed").length
-    : null;
+  // Work someone else accepted. What a founder checked for themself, working alone, is never shared as "accepted".
+  const accepted = s?.tasksKnown ? acceptedByOthers(s.tasks).length : null;
   // Nothing posted, answered or accepted yet: a brand-new project says it just started, and no more.
   const fresh = Boolean(s?.updatesKnown && s.lastUpdateAt === null);
   const kinds = cardVariantsFor({ answered, accepted, fresh });

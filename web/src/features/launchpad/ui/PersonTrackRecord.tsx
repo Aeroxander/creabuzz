@@ -27,6 +27,7 @@ import {
   confirmedByLine,
   missesLine,
   tieLine,
+  doneAloneLine,
   updatesLine,
 } from "../lib/track-record";
 import { useTrackRecord } from "../use-tasks";
@@ -88,8 +89,10 @@ export function PersonTrackRecord({
   const promises = promiseTotalsLine(founder.promises);
   const removedText = removedLine(removed, day);
   const helperKnown = data.helperComplete;
+  const alone = doneAloneLine(helper);
   const nothing =
     helper.accepted.length === 0 &&
+    helper.doneAlone.length === 0 &&
     !misses &&
     helper.open === 0 &&
     helper.unreadProjects === 0 &&
@@ -154,6 +157,12 @@ export function PersonTrackRecord({
             <p className="font-semibold" data-testid="track-record-accepted">
               {acceptedLine(helper)}
             </p>
+            {alone ? (
+              <p data-testid="track-record-alone">
+                {alone}. Nobody else was on the project to check it, so it is
+                not counted as accepted.
+              </p>
+            ) : null}
             {helper.soleConfirmer.map((sole) => (
               <p data-testid="track-record-sole" key={sole.coordinate}>
                 On {projectName(sole.coordinate)}, one person ({names(sole.by)})
@@ -265,6 +274,52 @@ export function PersonTrackRecord({
         ) : null;
       })}
 
+      {helperKnown && helper.doneAlone.length > 0 ? (
+        <>
+          <h3 className="mt-4 text-sm font-bold text-black dark:text-white">
+            Work done alone
+          </h3>
+          <ol
+            className="mt-2 flex flex-col gap-3"
+            data-testid="track-work-alone"
+          >
+            {helper.doneAlone.slice(0, PAGE).map((work) => {
+              const project = projects[work.coordinate];
+              return (
+                <li
+                  className="min-w-0 text-sm"
+                  data-testid="track-work-alone-item"
+                  key={work.taskId}
+                >
+                  <p className="break-words">{work.what}</p>
+                  <p className="break-words text-xs text-muted-foreground">
+                    {project ? (
+                      <Link
+                        className="text-foreground underline"
+                        params={{ launchId: project.id }}
+                        search={{ author: project.author }}
+                        to="/launchpad/$launchId"
+                      >
+                        {project.name}
+                      </Link>
+                    ) : (
+                      "A project"
+                    )}
+                    {" · "}
+                    checked by the founder, working alone, dated {day(work.at)}
+                  </p>
+                  <EvidenceLinks files={work.files} links={work.links} />
+                </li>
+              );
+            })}
+          </ol>
+          {helper.doneAlone.length > PAGE ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              And {helper.doneAlone.length - PAGE} more.
+            </p>
+          ) : null}
+        </>
+      ) : null}
       {helperKnown && helper.accepted.length > 0 ? (
         <>
           <h3 className="mt-4 text-sm font-bold text-black dark:text-white">

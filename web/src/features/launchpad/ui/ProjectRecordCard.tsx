@@ -34,9 +34,11 @@ import {
 } from "../lib/promises";
 import { teamOf } from "../lib/help-request";
 import { memberRemovedLine, removedLine } from "../lib/removed-records";
+import { acceptedByOthers, doneAlone, doneAloneLine } from "../lib/task-checks";
 import {
   acceptedTasks,
   orderTime,
+  SELF_CHECKED_LABEL,
   type TaskFile,
   type TaskView,
 } from "../lib/tasks";
@@ -101,18 +103,25 @@ function taskLines(
             at: orderTime(task.accepted.confirmedAt, now),
             tone: "success" as const,
             // A cut read may have missed a send-back of the same piece: it is not called accepted outright.
-            label: complete
-              ? "Work accepted"
-              : "Work accepted, as far as was read",
+            // Work only the founder checked for themself is never called accepted at all.
+            label: task.selfChecked
+              ? SELF_CHECKED_LABEL
+              : complete
+                ? "Work accepted"
+                : "Work accepted, as far as was read",
             text: task.what,
             detail: [
               `Done by ${names(task.helper)}${team.has(task.helper) ? ", who is on this project's team" : ""}`,
-              `Checked by ${task.accepted.confirmed.map((c) => names(c.by)).join(", ")}`,
+              task.selfChecked
+                ? `Checked by ${names(task.accepted.by)}, the founder, and by nobody else`
+                : `Checked by ${task.accepted.confirmed.map((c) => names(c.by)).join(", ")}`,
               `Done meant: ${task.done}`,
             ].join(". "),
             links: task.accepted.links,
             files: task.accepted.files,
-            testId: "record-work-accepted",
+            testId: task.selfChecked
+              ? "record-work-alone"
+              : "record-work-accepted",
           },
         ]
       : [],
@@ -240,11 +249,11 @@ export function ProjectRecordCard({
     ].sort((a, b) => b.at - a.at || (a.key < b.key ? -1 : 1));
     return {
       lines,
+      // Two numbers, never one: what someone else accepted, and what the founder did alone and checked themself.
       work: work.tasks
-        ? projectAcceptedLine(
-            closed.filter((t) => t.state === "confirmed").length,
-          )
+        ? projectAcceptedLine(acceptedByOthers(closed).length)
         : null,
+      alone: work.tasks ? doneAloneLine(doneAlone(closed).length) : null,
       removed: removedLine(record.removed, day),
       promises: promiseTotalsLine(promiseTotals(record.promises)),
       goals: goalTotalsLine(goalTotals(goals)),
@@ -295,8 +304,9 @@ export function ProjectRecordCard({
       </h2>
       <p className="text-xs text-muted-foreground">
         What this project said it would do, what came of it, and the work it
-        accepted. Work counts when someone on the team now, other than the
-        person who did it, confirmed it; a project's team can change.
+        accepted. Work counts as accepted when someone on the team now, other
+        than the person who did it, confirmed it; a project's team can change.
+        Work a founder did alone and checked themself is shown apart.
       </p>
       <JustAcceptedShare launch={launch} />
       {work.failed ? (
@@ -321,12 +331,24 @@ export function ProjectRecordCard({
           much work it accepted can't be worked out. What was read is below.
         </p>
       ) : view.work && closed.some((t) => t.state === "confirmed") ? (
-        <p
-          className="mt-2 text-sm font-semibold"
-          data-testid="record-work-totals"
-        >
-          {view.work}
-        </p>
+        <>
+          {acceptedByOthers(closed).length > 0 ? (
+            <p
+              className="mt-2 text-sm font-semibold"
+              data-testid="record-work-totals"
+            >
+              {view.work}
+            </p>
+          ) : null}
+          {view.alone ? (
+            <p
+              className="mt-2 text-sm font-semibold"
+              data-testid="record-work-alone-totals"
+            >
+              {view.alone}
+            </p>
+          ) : null}
+        </>
       ) : null}
       {record.facts.totals ? (
         view.promises || view.goals ? (

@@ -23,10 +23,13 @@ import { Card } from "@/shared/ui/card";
 import { handOffIdea } from "@/features/start/lib/from-idea";
 
 import { gateProgress } from "../lib/idea";
-import { contributorKitNamed, sharesSetupOffered } from "../lib/money-offered";
+import {
+  contributorKitNamed,
+  sharesAcceptedWork,
+  sharesSetupOffered,
+} from "../lib/money-offered";
 import { raisesOffered } from "../lib/raises-offered";
 import { recordToInput } from "../lib/record-input";
-import { acceptedTasks } from "../lib/tasks";
 import type { Launch } from "../models";
 import { ensureRooms, setupNotice } from "../use-launch-chat";
 import { useCreateLaunch, type CreateLaunchInput } from "../use-launches";
@@ -48,15 +51,13 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
   const announced =
     launch.updates.length > 0 ||
     (notes.data ?? []).some((note) => note.author === record.author);
-  // Shares wait for the first piece of accepted work, and for a build that can set them up.
+  // Shares wait for the first piece of work someone else accepted, and for a build that can set them up. Work a
+  // founder did alone and checked themself does not count: Shares are for people who help.
   const work = useProjectTasks(record);
   const kitNamed = contributorKitNamed();
   const sharesOffered = sharesSetupOffered({
     kitNamed,
-    acceptedWork:
-      work.tasks === null
-        ? null
-        : acceptedTasks(work.tasks, Math.floor(Date.now() / 1000)).length,
+    acceptedWork: work.tasks === null ? null : sharesAcceptedWork(work.tasks),
   });
   const save = useCreateLaunch();
   const [preparing, setPreparing] = useState(false);

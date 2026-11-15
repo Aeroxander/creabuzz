@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
 
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { queryEvents } from "@/shared/lib/nostr-client";
@@ -52,3 +53,32 @@ export function useViewerIsAgent(): boolean {
 /** Said wherever a control is left out for an agent account. */
 export const AGENT_NEEDS_PERSON =
   "This account is an agent. Confirming work, giving more time, and setting goals and promises need a person, so the server takes those only from one.";
+
+/** How many team members are looked up to learn whether a founder is working alone. Past it, they count as people. */
+const TEAM_LOOKUPS = 8;
+
+/**
+ * Which of `pubkeys` are agent accounts, from their own profiles. An agent can never confirm work, so a team of a
+ * founder and agents is still one person. Nothing is read while `enabled` is false or the list is empty; until the
+ * read answers, nobody is taken to be an agent (so nothing is offered that the server would refuse).
+ */
+export function useAgentAccounts(
+  pubkeys: readonly string[],
+  enabled: boolean,
+): ReadonlySet<string> {
+  const relay = relayWsUrl();
+  const asked = [...new Set(pubkeys)].sort().slice(0, TEAM_LOOKUPS);
+  const read = useQuery({
+    queryKey: ["launchpad", "account-agents", relay, asked.join(",")],
+    enabled: enabled && asked.length > 0,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const marks = await Promise.all(
+        asked.map((pubkey) => readAccountAgent(relay, pubkey)),
+      );
+      return asked.filter((_, i) => marks[i] !== null);
+    },
+  });
+  return useMemo(() => new Set(read.data ?? []), [read.data]);
+}

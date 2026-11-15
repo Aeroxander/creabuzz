@@ -17,9 +17,10 @@ import { Button } from "@/shared/ui/button";
 
 import { aiStarterKinds } from "../lib/ai-starters";
 import { teamOf } from "../lib/help-request";
+import { founderWorksAlone } from "../lib/task-checks";
 import { mayViewTask, openTasks } from "../lib/tasks";
 import { withReason } from "../lib/removals";
-import type { Launch } from "../models";
+import { type Launch, launchCoordinate } from "../models";
 import { useProjectTasks, useTaskActions } from "../use-tasks";
 import { TaskForm } from "./TaskForm";
 import { TaskRow } from "./TaskRow";
@@ -43,6 +44,7 @@ function DirectTask({
   onCancel: () => void;
 }) {
   const { make } = useTaskActions(launch.record);
+  const alone = foundsAlone(launch, me);
   const [helper, setHelper] = useState<string | null>(null);
   const names = useUserNames(helper ? [helper] : []);
   // The form opens because the person asked for it: the keyboard starts on its first control.
@@ -69,7 +71,9 @@ function DirectTask({
                 sent.adopted
                   ? "An earlier try had already gone through, so nothing new was sent. The task is below."
                   : helper === me
-                    ? "Task made. Someone else on the team checks it when you hand it in."
+                    ? alone
+                      ? "Task made. Hand it in when it is done, then mark it as done yourself: nobody else is on this project yet."
+                      : "Task made. Someone else on the team checks it when you hand it in."
                     : `Task made. It is ${names(helper)}'s once they say yes.`,
               ),
           },
@@ -131,6 +135,25 @@ function DirectTask({
         )}
       </div>
     </TaskForm>
+  );
+}
+
+/**
+ * Whether `me` is this project's founder with nobody else on its team: the one person who checks their own work.
+ * The same rule the task rows use (`founderWorksAlone`), asked of a task the founder would make for themself.
+ */
+function foundsAlone(launch: Launch, me: string | null): boolean {
+  const { record } = launch;
+  return (
+    me === record.author &&
+    founderWorksAlone(
+      {
+        helper: record.author,
+        helperAgent: null,
+        coordinate: launchCoordinate(record.author, record.id),
+      },
+      teamOf(record),
+    )
   );
 }
 
@@ -214,11 +237,20 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
       <h2 className="text-sm font-bold" id="project-tasks-heading">
         Tasks
       </h2>
-      <p className="text-xs text-muted-foreground">
-        Work with a finish line: “Done means” is written before anyone starts,
-        and someone other than the person who did the work checks it. A
-        project's team can change: steps count by who is on the team now.
-      </p>
+      {foundsAlone(launch, me) ? (
+        <p className="text-xs text-muted-foreground" data-testid="tasks-alone">
+          Work with a finish line: “Done means” is written before anyone starts.
+          You are the only person on this project, so you check your own work
+          and it is shown as checked by you alone. Once someone else is on the
+          team, they check it.
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Work with a finish line: “Done means” is written before anyone starts,
+          and someone other than the person who did the work checks it. A
+          project's team can change: steps count by who is on the team now.
+        </p>
+      )}
       {said ? (
         <p className="mt-2 text-sm" data-testid="tasks-said" role="status">
           {said}
