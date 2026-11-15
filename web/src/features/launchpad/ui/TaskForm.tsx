@@ -9,6 +9,7 @@ import { type ReactNode, useId, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 
+import type { AiStarterKind } from "../lib/ai-starters";
 import { REWARDS_LINE, TASK_LIMITS, taskProblem } from "../lib/tasks";
 import {
   HELP_SIZE_LABEL,
@@ -16,6 +17,7 @@ import {
   type HelpSize,
 } from "../lib/weekly-update";
 import { DoneMeansHelp } from "./DoneMeansHelp";
+import { StarterTasks } from "./StarterWording";
 import { FIELD_CLASS, SendFailed, todayDate } from "./TaskParts";
 
 export interface TaskDraft {
@@ -40,7 +42,13 @@ export function TaskForm({
   onCancel,
   children,
   goals = [],
+  starters,
 }: {
+  /**
+   * Starter tasks to offer above the form's words (an AI project's, `lib/ai-starters.ts`), with the words of the tasks
+   * the project already has. A press fills "What is the task" and "Done means" for the person to change.
+   */
+  starters?: { kinds: readonly AiStarterKind[]; made: readonly string[] };
   /** The project's open goals, to say which one the task is for. With none, the choice is not shown. */
   goals?: readonly { id: string; text: string }[];
   testId: string;
@@ -122,6 +130,18 @@ export function TaskForm({
         </p>
       ) : (
         <>
+          {starters ? (
+            <StarterTasks
+              done={done}
+              kinds={starters.kinds}
+              made={starters.made}
+              onUse={(task) => {
+                setWhat(task.title);
+                setDone(task.done);
+              }}
+              what={what}
+            />
+          ) : null}
           <label className="text-sm font-medium" htmlFor={`${id}-what`}>
             What is the task
           </label>

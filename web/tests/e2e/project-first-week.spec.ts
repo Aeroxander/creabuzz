@@ -564,6 +564,138 @@ test("an AI project's founder gets the commands for an agent to post updates, cl
   await expect(second.getByTestId("agent-post-card")).toHaveCount(0);
 });
 
+test("an AI project's first update offers a kind's three first promises for What's next; the founder edits them and nothing is sent until they publish", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedNew(relay, [["t", "AI agent or tool"]]);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  await page.getByTestId("first-week-post").click();
+  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const starters = dialog.getByTestId("update-starters");
+  await expect(starters).toBeVisible({ timeout: 20_000 });
+  const next = dialog.getByLabel("What's next");
+  await expect(next).toHaveValue("");
+  // The kind is not kept on the project, so all four are offered by name; the keyboard presses one.
+  await expect(starters.getByRole("button")).toHaveText([
+    "AI app",
+    "Agent or tool",
+    "Dataset or benchmark",
+    "AI media",
+  ]);
+  const tool = starters.getByRole("button", { name: "Agent or tool" });
+  await expect(tool).toHaveAttribute("aria-pressed", "false");
+  await tool.focus();
+  await page.keyboard.press("Enter");
+  await expect(tool).toHaveAttribute("aria-pressed", "true");
+  await expect(next).toHaveValue(
+    [
+      "Write down the one job it does, and what it will never do.",
+      "Run it on ten real jobs and publish what it got right and wrong.",
+      "Name the person who answers for its work and how to reach them.",
+    ].join("\n"),
+  );
+  // Pressing it again clears the box; another kind replaces an unedited starter.
+  await tool.click();
+  await expect(next).toHaveValue("");
+  await starters.getByRole("button", { name: "AI app" }).click();
+  await expect(next).toHaveValue(/^Put a first working version online/);
+  await tool.click();
+  await expect(next).toHaveValue(/^Write down the one job it does/);
+  // Filling a box sends nothing.
+  expect(founderUpdates(relay)).toHaveLength(0);
+  // The founder's own words: the starters step aside and can no longer replace them.
+  await next.fill(
+    "Write down the one job it does.\nRun it on three real jobs and publish the results.",
+  );
+  await expect(starters).toHaveCount(0);
+  await dialog.getByLabel("Title").fill("Week one");
+  await dialog.getByRole("button", { name: "Publish update" }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => founderUpdates(relay).length).toBe(1);
+  // What was signed is what the founder left in the box, as two promises.
+  expect(
+    founderUpdates(relay)[0]
+      .tags.filter((t) => t[0] === "promise")
+      .map((t) => t[2]),
+  ).toEqual([
+    "Write down the one job it does.",
+    "Run it on three real jobs and publish the results.",
+  ]);
+
+  // The second update is not a first one: no starters.
+  await page
+    .getByTestId("update-posted")
+    .getByRole("button", { name: "Done" })
+    .click();
+  await page.goto(`${PROJECT}&action=update`);
+  const again = page.getByRole("dialog", { name: "Post update" });
+  await expect(again.getByTestId("update-due")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(again.getByTestId("update-starters")).toHaveCount(0);
+});
+
+test("a project that is not about AI gets no starter promises and no starter tasks", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedNew(relay, [["t", "Software"]]);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  await page.getByTestId("first-week-post").click();
+  const dialog = page.getByRole("dialog", { name: "Post update" });
+  await expect(dialog.getByTestId("update-draft-button")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(dialog.getByLabel("What's next")).toBeVisible();
+  await expect(dialog.getByTestId("update-starters")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await page.getByTestId("set-up-more").click();
+  await page.getByTestId("give-task").click();
+  await expect(page.getByTestId("direct-task-form")).toBeVisible();
+  await expect(page.getByTestId("task-starters")).toHaveCount(0);
+});
+
+test("an AI project's task form offers starter tasks: a kind, then one press fills the task and its finish line", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedNew(relay, [["t", "AI agent or tool"]]);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  await page.getByTestId("set-up-more").click();
+  await page.getByTestId("give-task").click();
+  const form = page.getByTestId("direct-task-form");
+  const starters = form.getByTestId("task-starters");
+  await expect(starters).toBeVisible();
+  await expect(form.getByTestId("task-starter")).toHaveCount(0);
+  const kind = starters.getByRole("button", { name: "Dataset or benchmark" });
+  await kind.click();
+  await expect(kind).toHaveAttribute("aria-pressed", "true");
+  const tasks = form.getByTestId("task-starter");
+  await expect(tasks).toHaveCount(5);
+  await tasks.nth(1).click();
+  await expect(form.getByLabel("What is the task")).toHaveValue(
+    "Collect the first 100 examples with their sources",
+  );
+  await expect(form.getByLabel("Done means")).toHaveValue(
+    "A file of 100 examples, each with a link or note saying where it came from.",
+  );
+  await expect(tasks.nth(1)).toHaveAttribute("aria-pressed", "true");
+  // Nothing is made by the press: the task is a record only once the form is sent.
+  expect(
+    relay.events.filter(
+      (e) =>
+        e.pubkey === FOUNDER && e.created_at > now() - 60 && e.kind !== 47003,
+    ),
+  ).toHaveLength(0);
+  // The founder's own words put the suggestions away.
+  await form.getByLabel("Done means").fill("A file of 80 examples.");
+  await expect(starters).toHaveCount(0);
+});
+
 test("at 390px the welcome, the first-week list and the set-up row fit with no sideways scroll", async ({
   page,
 }) => {

@@ -20,9 +20,11 @@ import {
   PROMISE_LIMITS,
   type PromiseEntry,
 } from "../lib/promises";
+import type { AiStarterKind } from "../lib/ai-starters";
 import type { Launch } from "../models";
 import { DraftFromRecord } from "./DraftFromRecord";
 import { Modal } from "./Modal";
+import { StarterPromises } from "./StarterWording";
 
 const AREA_CLASS =
   "mt-1 w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white";
@@ -41,8 +43,12 @@ const AREA_CLASS =
  * "In one line" is an optional sentence for feeds and cards. "Draft from the record" asks the server's AI service for a
  * first version of what happened, the help needed and that line, from the project's own record only; it goes only into
  * boxes the founder has not written in, and "What's next" is never drafted.
+ *
+ * On an AI project's first weekly update the founder may fill "What's next" with a kind's three first promises
+ * (`starters`), to edit or clear: they become promises only as part of the update the founder publishes.
  */
 const NONE_ACCEPTED: readonly { id: string; what: string }[] = [];
+const NO_STARTERS: readonly AiStarterKind[] = [];
 
 export function PostUpdateDialog({
   isPublishing,
@@ -57,7 +63,10 @@ export function PostUpdateDialog({
   accepted = NONE_ACCEPTED,
   project,
   startAt,
+  starters = NO_STARTERS,
 }: {
+  /** The kinds whose first promises are offered above "What's next": an AI project's first weekly update, else none. */
+  starters?: readonly AiStarterKind[];
   /** Where the cursor starts: "help" opens the dialog in "Help needed" (the first-week card's "Ask for help"). */
   startAt?: "help";
   /**
@@ -387,6 +396,9 @@ export function PostUpdateDialog({
               />
             </div>
             <div>
+              {asFounder ? (
+                <StarterPromises kinds={starters} next={next} onUse={setNext} />
+              ) : null}
               <label className="text-sm font-medium" htmlFor="update-next">
                 {PART_HEADINGS.next}
               </label>

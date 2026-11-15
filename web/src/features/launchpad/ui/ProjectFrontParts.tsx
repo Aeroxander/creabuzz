@@ -10,6 +10,7 @@ import { ProjectProgressFeed } from "@/features/feed/ui/ProjectProgressFeed";
 import type { LaunchTab, TabUse } from "../lib/launch-tabs";
 import { duePromises } from "../lib/promises";
 import { teamOf } from "../lib/help-request";
+import { starterPromiseKinds } from "../lib/ai-starters";
 import { acceptedSince, type UpdateDraft } from "../lib/weekly-update";
 import { useProjectTasks } from "../use-tasks";
 import type { Launch } from "../models";
@@ -100,9 +101,23 @@ export function UpdateDialogWithPromises({
       now,
     ).map((task) => ({ id: task.id, what: task.what }));
   }, [updates.data, work.tasks, work.complete, project]);
+  // An AI project's first weekly update: the kinds' first promises are offered for "What's next".
+  const starters = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    const team = teamOf(project);
+    return starterPromiseKinds({
+      category: project.category,
+      weeklyPosted: updates.data?.complete
+        ? updates.data.updates.filter(
+            (u) => team.has(u.author) && u.weekly && u.createdAt <= now,
+          ).length
+        : null,
+    });
+  }, [updates.data, project]);
   return (
     <PostUpdateDialog
       accepted={accepted}
+      starters={starters}
       due={due}
       failed={failed}
       failedWhy={failedWhy}

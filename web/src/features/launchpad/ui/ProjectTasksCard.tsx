@@ -15,6 +15,7 @@ import { PersonSearch } from "@/features/social/ui/PersonSearch";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 
+import { aiStarterKinds } from "../lib/ai-starters";
 import { teamOf } from "../lib/help-request";
 import { mayViewTask, openTasks } from "../lib/tasks";
 import { withReason } from "../lib/removals";
@@ -30,9 +31,12 @@ const PAGE = 10;
 function DirectTask({
   launch,
   me,
+  made,
   onDone,
   onCancel,
 }: {
+  /** The words of the tasks the project already has: a starter task already made is not offered again. */
+  made: readonly string[];
   launch: Launch;
   me: string;
   onDone: (said: string) => void;
@@ -44,8 +48,11 @@ function DirectTask({
   // The form opens because the person asked for it: the keyboard starts on its first control.
   const who = useRef<HTMLInputElement | null>(null);
   useEffect(() => who.current?.focus(), []);
+  // An AI project is offered starter tasks to begin from; any other project none.
+  const kinds = aiStarterKinds(launch.record.category);
   return (
     <TaskForm
+      starters={kinds.length > 0 ? { kinds, made } : undefined}
       blocked={helper ? null : "Pick who the task is for."}
       busy={make.isPending}
       failed={
@@ -293,6 +300,7 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
         giving ? (
           <DirectTask
             launch={launch}
+            made={(tasks ?? []).map((task) => task.what)}
             me={me}
             onCancel={() => {
               setGiving(false);
