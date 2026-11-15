@@ -80,7 +80,7 @@ test("Home on an invite-only server tells a non-member to open their invite link
   await quietChain(page);
   await relay.install(page);
   await signIn(page);
-  await page.goto("/");
+  await page.goto("/?tab=everyone");
 
   const error = page.getByTestId("social-feed-error");
   await expect(error).toBeVisible({ timeout: 20_000 });
@@ -129,7 +129,7 @@ test("a refused read says the request limit in plain words, not the server's", a
     });
   });
   await signIn(page);
-  await page.goto("/");
+  await page.goto("/?tab=everyone");
 
   await expect(page.getByTestId("social-feed-error-description")).toHaveText(
     "You're doing that a bit fast. Try again in 4 seconds.",

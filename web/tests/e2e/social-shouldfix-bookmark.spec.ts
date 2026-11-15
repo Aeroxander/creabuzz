@@ -64,7 +64,7 @@ test("a click saves the post, shows it saved, and the Bookmarks page lists it", 
   const relay = createMockRelay();
   const saved = note("Remember this one.");
   relay.seed(saved);
-  await open(page, relay, "/");
+  await open(page, relay, "/?tab=everyone");
 
   await expect(button(page, "Remember this one.")).toHaveAttribute(
     "aria-pressed",
@@ -99,7 +99,7 @@ test("the keyboard saves a post too, and two quick saves both stay", async ({
   const relay = createMockRelay();
   relay.seed(note("First post."));
   relay.seed(note("Second post."));
-  await open(page, relay, "/");
+  await open(page, relay, "/?tab=everyone");
 
   await button(page, "First post.").focus();
   await page.keyboard.press("Enter");
@@ -130,7 +130,7 @@ test("a save the server refuses says so in plain words, goes back to unsaved, an
       refuse && event.kind === 10003 ? "error: database error: down" : null,
   });
   relay.seed(note("Hold on to this."));
-  await open(page, relay, "/");
+  await open(page, relay, "/?tab=everyone");
 
   await button(page, "Hold on to this.").click();
   const toast = page.locator("[data-sonner-toast]").filter({
@@ -182,7 +182,7 @@ test("a save does not wipe a launch follow already in the list", async ({
     sig: "sig",
   });
   relay.seed(note("Keep both."));
-  await open(page, relay, "/");
+  await open(page, relay, "/?tab=everyone");
 
   await button(page, "Keep both.").click();
   await expect(button(page, "Keep both.")).toHaveAttribute(

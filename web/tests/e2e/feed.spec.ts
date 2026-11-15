@@ -62,7 +62,7 @@ test("a post appears on Home and a reply opens its thread", async ({
   const relay = createMockRelay();
   await relay.install(page);
   await signIn(page);
-  await page.goto("/");
+  await page.goto("/?tab=everyone");
   await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
 
   await page
@@ -94,7 +94,7 @@ test("a note's author can delete it from Home", async ({ page }) => {
   relay.seed(event({ kind: 1, pubkey: ALICE, content: "Someone else's note" }));
   await relay.install(page);
   await signIn(page);
-  await page.goto("/");
+  await page.goto("/?tab=everyone");
   await page.getByTestId("social-composer-input").fill("A note I will delete");
   await page.getByTestId("social-composer-submit").click();
   const mine = page
@@ -412,7 +412,7 @@ test("a post is copied to public relays only when its author ticks the box for t
     window.localStorage.setItem("buzz.feed.mirror", "1"),
   );
   await signIn(page);
-  await page.goto("/");
+  await page.goto("/?tab=everyone");
 
   const box = page.getByTestId("social-composer-mirror");
   await expect(box).not.toBeChecked();

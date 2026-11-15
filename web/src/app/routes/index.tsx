@@ -13,7 +13,7 @@ const TAB_ALIASES: Readonly<Record<string, HomeTab>> = {
 interface HomeSearch {
   /**
    * The timeline tab, kept in the address so Back from a board post returns to it. Left out, it is the one the
-   * reader starts on: Everyone for someone signed in, the projects' live records for a visitor.
+   * reader starts on: the projects' live records, or the tab a signed-in person last picked (`social/lib/home-tab.ts`).
    */
   tab?: HomeTab;
 }

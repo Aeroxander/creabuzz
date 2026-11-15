@@ -337,6 +337,36 @@ test("someone new is told the feed is everyone's, follows a project from a card,
   await expect(feed.getByTestId("record-card-follow")).toHaveCount(0);
 });
 
+test("signed in, Home opens on the feed of project records; another tab is one press away and the pick is kept", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedWorld(relay);
+  await install(page, relay, READER_KEY);
+  // The bare address: no tab named, and nothing picked before.
+  await page.goto("/");
+  const tabs = page.getByRole("tablist", { name: "Timeline" });
+  const updates = tabs.getByRole("tab", { name: "Updates" });
+  const everyone = tabs.getByRole("tab", { name: "Everyone" });
+  await expect(updates).toHaveAttribute("aria-selected", "true");
+  await expect(cards(page)).not.toHaveCount(0);
+  await expect(page).toHaveURL(/\/$/);
+  // The other tabs are one press away.
+  await everyone.click();
+  await expect(everyone).toHaveAttribute("aria-selected", "true");
+  // The pick is this person's: the bare address opens on it from now on.
+  await page.goto("/");
+  await expect(everyone).toHaveAttribute("aria-selected", "true");
+  // A tab named in the address still wins, and going back to Updates is kept the same way.
+  await page.goto("/?tab=updates");
+  await expect(updates).toHaveAttribute("aria-selected", "true");
+  await page.goto("/");
+  await expect(everyone).toHaveAttribute("aria-selected", "true");
+  await updates.click();
+  await page.goto("/");
+  await expect(updates).toHaveAttribute("aria-selected", "true");
+});
+
 test("help wanted is answered from the card", async ({ page }) => {
   const relay = createMockRelay({ applyDeletions: true });
   seedWorld(relay);

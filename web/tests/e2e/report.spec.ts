@@ -185,7 +185,7 @@ test("a post by someone else on Home can be reported, and your own cannot", asyn
   });
   await relay.install(page);
   await signIn(page);
-  await page.goto("/");
+  await page.goto("/?tab=everyone");
   await page.getByTestId("social-composer-input").fill("A note of my own");
   await page.getByTestId("social-composer-submit").click();
   const mine = page
@@ -503,7 +503,7 @@ test("a post by someone else on Home can be banned for, by the owner, and the di
   });
   await relay.install(page);
   await signIn(page);
-  await page.goto("/");
+  await page.goto("/?tab=everyone");
   const theirs = page
     .getByTestId("social-post")
     .filter({ hasText: "Send me your seed phrase" });

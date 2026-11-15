@@ -34,6 +34,13 @@ import {
   notMuted,
   writeLastVisit,
 } from "../lib/home-fresh";
+import {
+  type HomeTab as Tab,
+  homeTab,
+  homeTabSearch,
+  rememberHomeTab,
+  storedHomeTab,
+} from "../lib/home-tab";
 import { useHomeFresh } from "../use-home-fresh";
 import { useMutedSet } from "../use-social-actions";
 import { NewPostsBar } from "./HomeFreshParts";
@@ -45,8 +52,6 @@ import { TabStrip, tabPanelProps } from "./TabStrip";
 import { type TimelineSort, useMixedTimeline } from "../use-mixed-timeline";
 import { useFollowing } from "../use-social-data";
 import { needAccountTo } from "@/features/identity/lib/account-copy";
-
-type Tab = "everyone" | "following" | "boards" | "updates";
 
 const TABS: readonly { id: Tab; label: string; testId?: string }[] = [
   { id: "everyone", label: "Everyone" },
@@ -62,8 +67,18 @@ const BoardDirectory = lazy(() =>
   })),
 );
 
+/** This browser's own storage, or null where it refuses to be read (the tab pick is then kept in the address). */
+function browserStore(): Storage | null {
+  try {
+    return localStorage;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Home. Everyone is the General board: every post on this server, short posts and board posts together, ranked by
+ * Home. It opens on Updates, the feed of project records, unless the address or the person's own earlier pick says
+ * another tab (`lib/home-tab.ts`). Everyone is the General board: every post on this server, short posts and board posts together, ranked by
  * recency lifted by votes. Following is the people you follow, from General and every board, newest first. Boards
  * lists the boards to browse and join, and Updates is the feed of project records: updates, promises kept and missed,
  * goals, help wanted and work accepted, from the projects the reader follows or helps (every listed project otherwise). One composer on top posts to
@@ -73,15 +88,27 @@ const BoardDirectory = lazy(() =>
 export function SocialHomePage() {
   const me = existingUserPubkey();
   const search = useSearch({ from: "/" });
-  // A visitor lands on what projects are doing right now; someone signed in, on the people they came to talk with.
-  const tab: Tab = search.tab ?? (me ? "everyone" : "updates");
+  // Home is the feed of project records: it opens on Updates for everyone. A tab in the address wins, and someone who
+  // picked a tab before keeps it (kept in this browser, for this person on this server).
+  const tabScope = me ? `${communityHostName()}:${me}` : null;
+  // The pick is read once and then held here: pressing a tab the bare address now opens on changes no address, so
+  // the page would not draw again from the address alone.
+  const [picked, setPicked] = useState(() =>
+    storedHomeTab(browserStore(), tabScope),
+  );
+  const tab: Tab = homeTab({ asked: search.tab, stored: picked });
   const navigate = useNavigate();
-  const setTab = (next: Tab) =>
+  const setTab = (next: Tab) => {
+    rememberHomeTab(browserStore(), tabScope, next);
+    // What the browser really kept: one that refused keeps nothing, and the tab then rides in the address.
+    const kept = storedHomeTab(browserStore(), tabScope);
+    setPicked(kept);
     void navigate({
       to: "/",
-      search: next === (me ? "everyone" : "updates") ? {} : { tab: next },
+      search: homeTabSearch(next, kept),
       replace: true,
     });
+  };
   const following = useFollowing(me);
 
   const authors =
