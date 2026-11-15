@@ -882,7 +882,15 @@ test("a hand-in carries the numbers its helper reports, and they are shown as th
   assert.deepEqual(
     withNumbers.tags.filter((t) => t[0] === "task-result"),
     [
-      ["task-result", "pass_rate", "0.82", "ratio", "0.71", "40", "commit abc123"],
+      [
+        "task-result",
+        "pass_rate",
+        "0.82",
+        "ratio",
+        "0.71",
+        "40",
+        "commit abc123",
+      ],
       ["task-result", "latency", "120", "ms", "", "", ""],
     ],
   );
@@ -890,10 +898,7 @@ test("a hand-in carries the numbers its helper reports, and they are shown as th
   const piece = read.evidence.find((p) => p.id === withNumbers.id);
   assert.deepEqual(piece.results, results);
   assert.equal(piece.resultsBroken, false);
-  assert.deepEqual(
-    read.evidence.find((p) => p.id === plain.id).results,
-    [],
-  );
+  assert.deepEqual(read.evidence.find((p) => p.id === plain.id).results, []);
 });
 
 test("numbers are written only on a hand-in, and at most the bound allows", () => {
@@ -914,13 +919,19 @@ test("numbers are written only on a hand-in, and at most the bound allows", () =
     evidenceId: "9".repeat(64),
     results: [result],
   });
-  assert.equal(other.tags.some((t) => t[0] === "task-result"), false);
+  assert.equal(
+    other.tags.some((t) => t[0] === "task-result"),
+    false,
+  );
   const many = taskStepEvent({
     part: "evidence",
     taskId: task.id,
     tell: [],
     note: "n",
-    results: Array.from({ length: 14 }, (_, i) => ({ ...result, name: `m${i}` })),
+    results: Array.from({ length: 14 }, (_, i) => ({
+      ...result,
+      name: `m${i}`,
+    })),
   });
   assert.equal(many.tags.filter((t) => t[0] === "task-result").length, 10);
 });

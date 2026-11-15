@@ -68,7 +68,9 @@ test("the web bounds are the bounds fixed in task_result.rs", () => {
 });
 
 test("the web bounds are the ones the agent guide documents, and the tag names match", () => {
-  const row = DOCS.split("\n").find((line) => line.startsWith("| `task-result`"));
+  const row = DOCS.split("\n").find((line) =>
+    line.startsWith("| `task-result`"),
+  );
   assert.ok(row, "the guide documents the task-result tag");
   const claims = {
     results: /at most (\d+) per hand-in/.exec(row),
@@ -81,7 +83,9 @@ test("the web bounds are the ones the agent guide documents, and the tag names m
     assert.ok(found, `the guide states the ${key} bound`);
     assert.equal(Number(found[1]), RESULT_LIMITS[key], key);
   }
-  const log = DOCS.split("\n").find((line) => line.startsWith("| `task-run-log`"));
+  const log = DOCS.split("\n").find((line) =>
+    line.startsWith("| `task-run-log`"),
+  );
   assert.equal(
     Number(/name at most (\d+)/.exec(log ?? "")?.[1]),
     RESULT_LIMITS.logName,
@@ -181,12 +185,18 @@ test("a hand-in's extras are read together; one broken bound shows none of them"
   assert.deepEqual(ok.runLog, { sha256: hash, name: "run.log" });
   assert.equal(ok.runRecord, "b".repeat(64));
   assert.equal(hasExtras(ok), true);
-  assert.equal(hasExtras(readHandInExtras([["task-link", "https://x.org"]])), false);
+  assert.equal(
+    hasExtras(readHandInExtras([["task-link", "https://x.org"]])),
+    false,
+  );
 
   const many = Array.from({ length: RESULT_LIMITS.results + 1 }, (_, i) =>
     result(`m${i}`, "1"),
   );
-  assert.equal(readHandInExtras(many.slice(0, RESULT_LIMITS.results)).broken, false);
+  assert.equal(
+    readHandInExtras(many.slice(0, RESULT_LIMITS.results)).broken,
+    false,
+  );
   for (const tags of [
     many,
     [result("Score", "1"), result("score", "2")],
@@ -215,38 +225,76 @@ test("a limit written beside a number's name is held against that number", () =>
   assert.equal(meetsThreshold(done, [R("pass_rate", "80", "%")]), "yes");
   assert.equal(meetsThreshold(done, [R("pass_rate", "79.9", "%")]), "no");
   const speed = "Median latency under 200 ms.";
-  assert.equal(meetsThreshold(speed, [R("median latency", "120", "ms")]), "yes");
+  assert.equal(
+    meetsThreshold(speed, [R("median latency", "120", "ms")]),
+    "yes",
+  );
   assert.equal(meetsThreshold(speed, [R("Median_Latency", "200", "ms")]), "no");
-  assert.equal(meetsThreshold("At most 3 errors in the log", [R("errors", "3")]), "yes");
-  assert.equal(meetsThreshold("More than 1,000 users signed up", [R("users", "1200")]), "yes");
-  assert.equal(meetsThreshold("Exactly 12 pages", [R("pages", "12", "pages")]), "yes");
-  assert.equal(meetsThreshold("Exactly 12 pages", [R("pages", "13", "pages")]), "no");
+  assert.equal(
+    meetsThreshold("At most 3 errors in the log", [R("errors", "3")]),
+    "yes",
+  );
+  assert.equal(
+    meetsThreshold("More than 1,000 users signed up", [R("users", "1200")]),
+    "yes",
+  );
+  assert.equal(
+    meetsThreshold("Exactly 12 pages", [R("pages", "12", "pages")]),
+    "yes",
+  );
+  assert.equal(
+    meetsThreshold("Exactly 12 pages", [R("pages", "13", "pages")]),
+    "no",
+  );
 });
 
 test("when nothing is stated or the units do not fit, it says not stated and never guesses", () => {
   // No number in the words.
-  assert.equal(meetsThreshold("It works well on an old phone.", [R("pass_rate", "99", "%")]), "not stated");
+  assert.equal(
+    meetsThreshold("It works well on an old phone.", [
+      R("pass_rate", "99", "%"),
+    ]),
+    "not stated",
+  );
   // A percent limit never meets a unit-less number.
-  assert.equal(meetsThreshold("Accuracy at least 80%", [R("accuracy", "0.9")]), "not stated");
+  assert.equal(
+    meetsThreshold("Accuracy at least 80%", [R("accuracy", "0.9")]),
+    "not stated",
+  );
   // One limit, one number, but another unit.
-  assert.equal(meetsThreshold("At least 3 reviewers say yes", [R("latency", "50", "ms")]), "not stated");
+  assert.equal(
+    meetsThreshold("At least 3 reviewers say yes", [R("latency", "50", "ms")]),
+    "not stated",
+  );
   // One limit, one number, no unit on the limit and no name: too loose to call.
-  assert.equal(meetsThreshold("Reach at least 3 today", [R("latency", "50", "ms")]), "not stated");
+  assert.equal(
+    meetsThreshold("Reach at least 3 today", [R("latency", "50", "ms")]),
+    "not stated",
+  );
   // Nothing reported.
   assert.equal(meetsThreshold("At least 80% pass rate", []), "not stated");
   // A word that only ends in an operator is not one.
-  assert.equal(meetsThreshold("We recover 5 files", [R("files", "5")]), "not stated");
+  assert.equal(
+    meetsThreshold("We recover 5 files", [R("files", "5")]),
+    "not stated",
+  );
 });
 
 test("one limit left without a number keeps a yes from being said; a miss is still a no", () => {
   const done = "The pass rate is at least 80% and latency under 200 ms.";
   assert.equal(meetsThreshold(done, [R("pass rate", "90", "%")]), "not stated");
   assert.equal(
-    meetsThreshold(done, [R("pass rate", "90", "%"), R("latency", "150", "ms")]),
+    meetsThreshold(done, [
+      R("pass rate", "90", "%"),
+      R("latency", "150", "ms"),
+    ]),
     "yes",
   );
   assert.equal(
-    meetsThreshold(done, [R("pass rate", "90", "%"), R("latency", "250", "ms")]),
+    meetsThreshold(done, [
+      R("pass rate", "90", "%"),
+      R("latency", "250", "ms"),
+    ]),
     "no",
   );
   assert.equal(meetsThreshold(done, [R("pass rate", "50", "%")]), "no");

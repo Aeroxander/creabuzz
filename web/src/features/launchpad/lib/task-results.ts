@@ -303,10 +303,11 @@ interface Clause {
   to: number;
 }
 
-const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegExp = (text: string) =>
+  text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** A word operator starts at a word's start ("over 5" but not "recover 5"); a sign may follow anything. */
 const operatorPattern = (word: string) =>
-  /^[a-z]/.test(word) ? `(?<![a-z])${escape(word)}` : escape(word);
+  /^[a-z]/.test(word) ? `(?<![a-z])${escapeRegExp(word)}` : escapeRegExp(word);
 const CLAUSE = new RegExp(
   `(${OPERATORS.map(([word]) => operatorPattern(word)).join("|")})\\s*(-?\\d+(?:\\.\\d+)?)\\s*(%|[a-z]+)?`,
   "g",
