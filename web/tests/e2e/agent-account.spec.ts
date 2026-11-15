@@ -250,6 +250,8 @@ test("a task can say what its helper must stay within, and the task shows it", a
   relay.seed(projectRecord(FOUNDER, "nebula", "Nebula", now() - 30 * DAY));
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
+  // A new project has no tasks card until the founder asks for it.
+  await page.getByTestId("set-up-more").click();
   const tasks = page.getByTestId("project-tasks");
   await tasks.getByRole("button", { name: "Give someone a task" }).click();
   const form = tasks.getByRole("form", { name: "Give someone a task" });

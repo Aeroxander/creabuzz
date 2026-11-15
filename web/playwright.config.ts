@@ -122,6 +122,8 @@ export default defineConfig({
         "**/weekly-update-help.spec.ts",
         // The goal, the promises updates make and answer, the record, and starting a project alone.
         "**/project-goal-record.spec.ts",
+        // A new project's first week: the welcome, the first-week list, no empty cards, the recovery key and the agent line.
+        "**/project-first-week.spec.ts",
         // Start in one press: sign up from the form and land on the live project, made once.
         "**/start-one-press.spec.ts",
         // Tasks with a finish line: made from an offer, handed in, sent back, confirmed by someone else; the profile.

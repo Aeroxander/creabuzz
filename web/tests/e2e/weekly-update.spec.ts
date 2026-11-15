@@ -481,7 +481,7 @@ test("after posting, 'Add a weekly reminder' gives a weekly calendar file for th
   expect(text).toContain("SUMMARY:Weekly update due: Loop\r\n");
   expect(text).toMatch(
     new RegExp(
-      `URL:http://127\\.0\\.0\\.1:\\d+/launchpad/loop\\?author=${ME}\\r\\n`,
+      `URL:http://127\\.0\\.0\\.1:\\d+/launchpad/loop\\?author=${ME}&action=update\\r\\n`,
     ),
   );
   expect(raw).not.toMatch(/(?<!\r)\n/);

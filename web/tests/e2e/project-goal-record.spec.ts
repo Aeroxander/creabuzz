@@ -254,10 +254,18 @@ test("one person starts a project alone with three answers and lands on its page
     ["goal-how", "Ten people sign in in a week"],
     ["goal-state", "open"],
   ]);
-  // A goal is not news: it is not counted as a weekly update.
-  await expect(page.getByTestId("update-nudge")).toContainText(
-    "Your first update is due.",
+  // Start opened the page with `?started=1`: the welcome says it is live, and the first-week list asks for the first
+  // update. A goal is not news: it is not counted as a weekly update, so no "update due" nudge says otherwise.
+  await expect(page.getByTestId("started-card")).toContainText(
+    "Your project is live",
   );
+  await expect(page.getByTestId("first-week-due")).toContainText(
+    "Your first update is due in 7 days.",
+  );
+  await expect(page.getByTestId("update-nudge")).toHaveCount(0);
+  // Tasks, Team and Record are not on a page that has nothing for them yet.
+  for (const id of ["project-tasks", "project-team", "project-record"])
+    await expect(page.getByTestId(id)).toHaveCount(0);
 
   // The other ways to start are one press away.
   await page.goto("/start");
@@ -317,8 +325,11 @@ test("an update's next steps are promises; the next update answers each, and eve
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
 
-  // Nothing promised yet: the record says how it fills.
+  // Nothing promised yet: the record is not on the page until the founder asks for it, and then says how it fills.
   const record = page.getByTestId("project-record");
+  await expect(page.getByTestId("first-week")).toBeVisible();
+  await expect(record).toHaveCount(0);
+  await page.getByTestId("set-up-more").click();
   await expect(record.getByTestId("record-empty")).toContainText(
     "No promises yet.",
   );

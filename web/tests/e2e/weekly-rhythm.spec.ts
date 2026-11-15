@@ -205,7 +205,7 @@ test("a late update is said to everyone; the dialog starts from last week's prom
   await expect(card.getByTestId("update-due-words")).toHaveCount(0);
 });
 
-test("a run of weeks shows on Your projects and in the note; when copying fails the words are shown instead", async ({
+test("a run of weeks shows on Your projects, and in the note and the shared words only once two promises are answered; when copying fails the words are shown instead", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -239,12 +239,13 @@ test("a run of weeks shows on Your projects and in the note; when copying fails 
   await dialog.getByLabel("What happened this week").fill("Kept going.");
   await dialog.getByRole("button", { name: "Publish update" }).click();
   const note = page.getByTestId("update-posted");
+  // Three weeks in a row, but no promise answered: the note and the picture state no run (the same rule), only the post.
   await expect(note.getByTestId("update-posted-streak")).toHaveText(
-    "That's 3 weeks in a row. Keep it going next week.",
+    "It's on your project's record. Post again next week to keep it going.",
   );
   await note.getByTestId("share-record").click();
   await expect(note.getByTestId("share-record-words")).toHaveValue(
-    /Rhythm on Creaton: 3 weeks in a row\. http/,
+    /Rhythm on Creaton: follow along as it gets built\. http/,
   );
   await expect(note.getByTestId("share-record-status")).toHaveText("");
 });

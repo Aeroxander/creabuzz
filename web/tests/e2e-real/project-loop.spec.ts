@@ -197,6 +197,10 @@ async function setTeam(team: Account[]) {
 async function addMateThroughTheTeamSection() {
   await founderPage.goto(projectPath);
   const team = founderPage.getByTestId("project-team");
+  // A project with nobody on its team shows the Team card once the founder asks for it ("Set up more").
+  const more = founderPage.getByTestId("set-up-more");
+  await expect(more.or(team.getByTestId("team-add"))).toBeVisible();
+  if (await more.isVisible()) await more.click();
   await team.getByTestId("team-add").click();
   await expect(founderPage.getByTestId("team-add-warning")).toContainText(
     "They can act for this project as soon as you add them.",

@@ -496,10 +496,11 @@ test("an update the server refuses stays in the dialog with what was written, an
   seedProject(relay);
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
-  // Never posted: the prompt says so instead of counting days.
-  await expect(page.getByTestId("update-nudge")).toContainText(
-    "Your first update is due.",
+  // Never posted: the first-week list says when the first update is due instead of counting days.
+  await expect(page.getByTestId("first-week-due")).toContainText(
+    "Your first update is due",
   );
+  await expect(page.getByTestId("update-nudge")).toHaveCount(0);
   await page.getByRole("button", { name: "Post update" }).click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
   // Free-form is still there: one open box instead of the two prompts.

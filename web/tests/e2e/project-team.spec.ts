@@ -101,7 +101,12 @@ const answers = (relay: Relay, pubkey: string) =>
   );
 
 async function addMember(page: import("@playwright/test").Page) {
-  await page.getByTestId("team-add").click();
+  // A project with nobody on its team shows the Team card once the founder asks for it ("Set up more").
+  const more = page.getByTestId("set-up-more");
+  const add = page.getByTestId("team-add");
+  await expect(more.or(add).first()).toBeVisible({ timeout: 20_000 });
+  if (await more.isVisible()) await more.click();
+  await add.click();
   await page.getByTestId("team-add-search").fill(MEMBER);
   await page.getByTestId("person-search-result").first().click();
   await expect(page.getByTestId("team-add-picked")).toContainText(
@@ -142,6 +147,8 @@ test("the founder adds a person, they say yes, post an update and confirm work; 
   );
 
   // The dialog says exactly what the server does before anyone is added.
+  // Alone, the team card is not on the page: the founder asks for it.
+  await page.getByTestId("set-up-more").click();
   const team = page.getByTestId("project-team");
   await team.getByTestId("team-add").click();
   await expect(page.getByTestId("team-add-warning")).toContainText(
@@ -419,6 +426,7 @@ test("two changes to the record pressed close together both land, whichever part
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
   const team = page.getByTestId("project-team");
+  await page.getByTestId("set-up-more").click();
   await expect(team.getByTestId("team-add")).toBeVisible();
   await expect(page.getByTestId("project-listing-toggle")).toBeVisible();
   // The server is slow to answer the read of the founder's own record: both changes are started before either has
