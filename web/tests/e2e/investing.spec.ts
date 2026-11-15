@@ -3,6 +3,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { expectAccessible } from "../helpers/a11y";
 import {
   boughtEvent,
+  DEFAULT_DEPTH,
+  DEPTH_TIERS,
   FIXTURE,
   installBackingChain,
   POOL_DEFAULTS,
@@ -165,8 +167,66 @@ test.describe("the switch is on", () => {
     await block(page).getByTestId("backing-confirm-open").click();
     await expect.poll(() => chain.sent.length, { timeout: 15_000 }).toBe(1);
     expect(chain.sent[0].to).toBe(FIXTURE.factory);
-    expect(chain.sent[0].data.slice(0, 10)).toBe("0xb95460f8"); // open(address)
+    expect(chain.sent[0].data.slice(0, 10)).toBe("0x0a0e5c9d"); // open(address,uint256)
     expect(chain.sent[0].data.toLowerCase()).toContain(FIXTURE.dao.slice(2));
+    // The depth left on its preselected choice, the usual one, goes as the second word.
+    expect(BigInt(`0x${chain.sent[0].data.slice(10 + 64, 10 + 128)}`)).toBe(
+      DEFAULT_DEPTH,
+    );
+  });
+
+  test("a founder opening backing picks how deep the curve is: the usual depth is preselected, one sentence says what it means, and the pick is what is sent", async ({
+    page,
+  }) => {
+    const { chain } = await open(page, {
+      pool: null,
+      as: "founder",
+      wallet: FIXTURE.founderWallet,
+    });
+    await expect(block(page).getByTestId("backing-open-round")).toBeVisible({
+      timeout: 30_000,
+    });
+    await block(page).getByTestId("backing-open-round").click();
+    const select = block(page).getByTestId("backing-depth-select");
+    await expect(select).toBeVisible({ timeout: 15_000 });
+    await expect(select.locator("option")).toHaveText([
+      "5,000 tTEST",
+      "10,000 tTEST",
+      "25,000 tTEST (usual)",
+      "50,000 tTEST",
+      "100,000 tTEST",
+      "250,000 tTEST",
+      "500,000 tTEST",
+    ]);
+    await expect(select).toHaveValue(DEFAULT_DEPTH.toString());
+    const note = block(page).getByTestId("backing-depth-note");
+    await expect(note).toContainText("The usual depth.");
+    await expect(note).toContainText(
+      "A deeper curve moves the price less when people buy or leave; pick one about twice the amount you hope to raise.",
+    );
+    // No price, no return: only the depth, in words.
+    await expect(
+      block(page).getByTestId("backing-open-form"),
+    ).not.toContainText(/profit|return|earn|price of/i);
+    // The round's usual minimum follows the depth.
+    await expect(block(page).getByTestId("backing-minimum")).toHaveAttribute(
+      "placeholder",
+      "2,500 tTEST",
+    );
+    await select.selectOption({ value: DEPTH_TIERS[4].toString() });
+    await expect(note).toContainText("Deeper than usual");
+    await expect(block(page).getByTestId("backing-minimum")).toHaveAttribute(
+      "placeholder",
+      "10,000 tTEST",
+    );
+    await block(page).getByTestId("backing-confirm-open").click();
+    await expect.poll(() => chain.sent.length, { timeout: 15_000 }).toBe(1);
+    // openWithRound(address,uint128,uint256): the minimum is left empty (zero asks for the default), then the depth.
+    expect(chain.sent[0].data.slice(0, 10)).toBe("0x45a3454f");
+    const wordAt = (i: number) =>
+      BigInt(`0x${chain.sent[0].data.slice(10 + 64 * i, 10 + 64 * (i + 1))}`);
+    expect(wordAt(1)).toBe(0n);
+    expect(wordAt(2)).toBe(DEPTH_TIERS[4]);
   });
 
   test("a founder on another account is told to switch, and is offered nothing to send", async ({
@@ -202,7 +262,7 @@ test.describe("the switch is on", () => {
     await expect(b.getByTestId("backing-released")).toHaveText("40 tTEST");
     await expect(b.getByTestId("backing-paid-in")).toHaveText("150 tTEST");
     await expect(b.getByTestId("backing-honest")).toHaveText(
-      "You can sell any time. At each milestone you can stay or leave with your held money back.",
+      "You can sell any time. At each milestone you can stay, or leave: you keep your units and get your held money back, less a small fee.",
     );
     // The legal lines are on the page, whole, beside the action: never collapsed.
     await expect(b.getByTestId("backing-limits")).toContainText(
@@ -344,19 +404,30 @@ test.describe("the switch is on", () => {
       "you can stay",
     );
     await expect(b.getByTestId("backing-milestone-note")).toContainText(
-      "leave and take all of your held money back",
+      "you keep your units and take your held money back, less a small fee",
     );
     await b.getByTestId("backing-leave").click();
-    await expect(b.getByTestId("backing-leave-plan")).toContainText(
-      "You get about 99 tTEST",
-      { timeout: 15_000 },
+    const plan = b.getByTestId("backing-leave-plan");
+    await expect(plan).toContainText("You get about 99 tTEST", {
+      timeout: 15_000,
+    });
+    // The pool's own fee is shown (the fake's quote says 1 tTEST) and the units are kept: nothing is sold.
+    await expect(plan).toContainText(
+      "100 tTEST held for you, less a fee of 1 tTEST",
     );
-    await expect(b.getByTestId("backing-leave-plan")).toContainText(
-      "Nothing is taken for this milestone.",
+    await expect(plan).toContainText("You keep your 4,000,000 units.");
+    await expect(plan).toContainText("no money is held behind them any more");
+    await expect(plan).toContainText(
+      "never more than staying one more step would cost",
     );
+    await expect(plan).not.toContainText(/sells|from selling|profit|return/i);
     await b.getByTestId("backing-confirm-leave").click();
     await expect.poll(() => chain.sent.length, { timeout: 20_000 }).toBe(1);
     expect(chain.sent[0].data.slice(0, 10)).toBe("0xe02ae075"); // leave(uint256,uint256)
+    // The limit comes from the quote (99 tTEST less the 1% allowed move) and is never zero.
+    const minOut = BigInt(`0x${chain.sent[0].data.slice(10, 10 + 64)}`);
+    expect(minOut).toBe((99n * ONE * 99n) / 100n);
+    expect(minOut > 0n).toBe(true);
     // The milestone is in the list, pointing at a record this project does not have: said so.
     await expect(b.getByTestId("backing-milestone").first()).toContainText(
       "cannot find among the project's own",

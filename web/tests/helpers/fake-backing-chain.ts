@@ -22,6 +22,20 @@ const MAX = (1n << 256n) - 1n;
 /** The round's floor: 0.000025 whole tokens per whole claim token, in a 6-decimal quote, in the auction's fixed point. */
 const FLOOR_X96 = ((1n << 96n) * 25n) / 10n ** 18n;
 const TICK_X96 = FLOOR_X96 / 100n;
+/**
+ * The curve depths the factory offers, in the 6-decimal quote's base units: fifths of the default as the real factory
+ * derives them (`BackingPoolFactory.depthTiers`), and the default (25,000 whole units).
+ */
+export const DEPTH_TIERS: readonly bigint[] = [
+  5_000n * ONE,
+  10_000n * ONE,
+  25_000n * ONE,
+  50_000n * ONE,
+  100_000n * ONE,
+  250_000n * ONE,
+  500_000n * ONE,
+];
+export const DEFAULT_DEPTH = DEPTH_TIERS[2];
 
 export const FIXTURE = {
   chainId: 31337,
@@ -48,7 +62,10 @@ export interface PoolFixture {
   holderEscrow: bigint;
   holderSellValue: bigint;
   holderCanLeave: boolean;
+  /** What leaving pays the wallet (`quoteLeave`'s first word): its held money less the fee. */
   holderLeaveValue: bigint;
+  /** The fee leaving takes from the held money (`quoteLeave`'s third word); the pool's own number, whatever its rule. */
+  holderLeaveFee?: bigint;
   holderClaimTokens: bigint;
   holderEarlyLeft: bigint | null;
   /** Seconds from the chain's now: when the window to leave ends, or null for no open milestone. */
@@ -107,6 +124,10 @@ const SELECTORS = {
   founderOf: selectorOf("founderOf(address)"),
   auctionFactory: selectorOf("auctionFactory()"),
   defaultMinimum: selectorOf("defaultMinimumRaise()"),
+  depthTiers: selectorOf("depthTiers()"),
+  defaultDepth: selectorOf("defaultDepth()"),
+  roundTerms: selectorOf("roundTerms(uint256)"),
+  virtualQuote: selectorOf("virtualQuote()"),
   floor: selectorOf("roundFloorPriceX96()"),
   tick: selectorOf("roundTickSpacingX96()"),
   snapshot: selectorOf("snapshot(address)"),
@@ -453,6 +474,24 @@ export async function installBackingChain(
       if (selector === SELECTORS.defaultMinimum) return ok(w(2_500n * ONE));
       if (selector === SELECTORS.floor) return ok(w(FLOOR_X96));
       if (selector === SELECTORS.tick) return ok(w(TICK_X96));
+      if (selector === SELECTORS.depthTiers)
+        return ok(`0x${DEPTH_TIERS.map(word).join("")}`);
+      if (selector === SELECTORS.defaultDepth) return ok(w(DEFAULT_DEPTH));
+      if (selector === SELECTORS.roundTerms) {
+        // A round at depth d: step, floor and default minimum all scale with d, as the real factory's do.
+        const depth = BigInt(`0x${data.slice(10, 74)}`) || DEFAULT_DEPTH;
+        if (!DEPTH_TIERS.includes(depth))
+          return reply({
+            error: {
+              code: 3,
+              message: "execution reverted: BadDepth()",
+              data: "0x0a589ca3",
+            },
+          });
+        return ok(
+          `0x${[(TICK_X96 * depth) / DEFAULT_DEPTH, (FLOOR_X96 * depth) / DEFAULT_DEPTH, (2_500n * ONE * depth) / DEFAULT_DEPTH].map(word).join("")}`,
+        );
+      }
     }
     if (to === FIXTURE.pool && state.pool) {
       if (selector === SELECTORS.snapshot)
@@ -464,6 +503,7 @@ export async function installBackingChain(
           ),
         );
       if (selector === SELECTORS.factoryQuote) return ok(w(FIXTURE.token));
+      if (selector === SELECTORS.virtualQuote) return ok(w(DEFAULT_DEPTH));
       if (selector === SELECTORS.quoteBuy) {
         const quoteIn = BigInt(`0x${data.slice(10, 74)}`);
         return ok(
@@ -479,12 +519,11 @@ export async function installBackingChain(
       }
       if (selector === SELECTORS.quoteLeave) {
         return ok(
+          // (quoteOut, fromEscrow, fee): three words. Leaving sells nothing, so there is no curve leg and no price.
           `0x${[
             state.pool.holderLeaveValue,
-            state.pool.holderLeaveValue - state.pool.holderEscrow,
-            state.pool.holderEscrow,
-            1n,
-            1n,
+            state.pool.holderLeaveValue + (state.pool.holderLeaveFee ?? ONE),
+            state.pool.holderLeaveFee ?? ONE,
           ]
             .map(word)
             .join("")}`,
