@@ -18,7 +18,9 @@
 //!   project must pass [`crate::share_preview::public_standing`], the rule the
 //!   link preview uses: listed, not removed, founder neither muted nor banned.
 //!   A project that does not pass yields nothing, the same as one that does
-//!   not exist.
+//!   not exist. Neither does a project whose record states the terms of a
+//!   sale ([`states_sale_terms`]): the record is given whole, as its founder
+//!   signed it, so its goal cannot be given without its price.
 //! - **Which records about it.** Kind 47003 holds many families of record, and
 //!   most are for members. The ones served are listed, one by one, in
 //!   [`is_served`]: the founder's goals and promises, the team's weekly
@@ -471,6 +473,56 @@ fn has_tag(event: &nostr::Event, name: &str, value: &str) -> bool {
     })
 }
 
+/// The fields of a project record's body that state the terms of a sale: its
+/// price floor and price step, the amount it must raise, the monthly budget
+/// buyers price, and how the supply is split and released.
+const SALE_TERM_KEYS: [&str; 7] = [
+    "floorPrice",
+    "tickSpacing",
+    "requiredRaised",
+    "budget",
+    "allocation",
+    "vesting",
+    "unlocks",
+];
+
+/// Whether a project record states the terms of a sale: something under one
+/// of [`SALE_TERM_KEYS`] in its body, or the address of a sale (an `auction`
+/// tag).
+///
+/// Such a project is not given to someone who is not a member: not its
+/// record, and so nothing about it. A record is sent whole, as its founder
+/// signed it, so there is no giving the name and the goal without the price.
+/// What a sale offers stays with the people the server let in until the
+/// server's owner decides otherwise. A field that is there but empty states
+/// nothing.
+pub(crate) fn states_sale_terms(record: &nostr::Event) -> bool {
+    let stated = |value: &Value| match value {
+        Value::Null => false,
+        Value::String(text) => !text.trim().is_empty(),
+        _ => true,
+    };
+    let body = serde_json::from_str::<Value>(record.content.as_str()).ok();
+    body.as_ref()
+        .and_then(Value::as_object)
+        .is_some_and(|body| {
+            SALE_TERM_KEYS
+                .iter()
+                .any(|key| body.get(*key).is_some_and(stated))
+        })
+        || tag_value(record, "auction").is_some_and(|sale| !sale.trim().is_empty())
+}
+
+/// Whether a stored record is one the public read of the project at
+/// `coordinate` may look at: a record about a project, kept for the whole
+/// community (one stored for a room is the room's, whatever address it
+/// carries), and carrying this project's address.
+fn is_the_projects_own(record: &StoredEvent, coordinate: &str) -> bool {
+    u32::from(record.event.kind.as_u16()) == KIND_LAUNCH_UPDATE
+        && record.channel_id.is_none()
+        && has_tag(&record.event, "a", coordinate)
+}
+
 /// A project's founder and the team its record lists, as far as it is read for.
 struct Team {
     founder: String,
@@ -704,6 +756,10 @@ impl<'a> Lookups<'a> {
             .into_iter()
             .take(MAX_STANDING_CHECKS)
         {
+            // The terms of a sale are for the people the server let in: see `states_sale_terms`.
+            if states_sale_terms(&record) {
+                continue;
+            }
             if let Some(project) = public_standing(self.state, self.community, record).await? {
                 shown.push(project.record);
             }
@@ -738,15 +794,11 @@ impl<'a> Lookups<'a> {
                 ..buzz_db::EventQuery::for_community(self.community)
             })
             .await?;
-        // Asked of the database, and checked again on what came back: only this kind, only a record kept for the
-        // whole community (never a room's), only one that carries this project's address.
+        // Asked of the database (`global_only`: a room's records are not read at all, so however many a room holds
+        // they cannot fill the limit and crowd the project's own records out), and checked again on what came back.
         Ok(stored
             .into_iter()
-            .filter(|record| {
-                u32::from(record.event.kind.as_u16()) == KIND_LAUNCH_UPDATE
-                    && record.channel_id.is_none()
-                    && has_tag(&record.event, "a", coordinate)
-            })
+            .filter(|record| is_the_projects_own(record, coordinate))
             .collect())
     }
 
@@ -1175,6 +1227,104 @@ mod tests {
             .expect("sign")
     }
 
+    /// A record kept for a room is the room's, whatever address it carries; so is anything of another kind or about
+    /// another project. This is the check made again on what the database gave back.
+    #[test]
+    fn only_a_record_kept_for_the_whole_community_about_this_project_is_looked_at() {
+        let founder = nostr::Keys::generate();
+        let coordinate = format!("37001:{}:nebula", founder.public_key().to_hex());
+        let about = record(
+            &founder,
+            &[&["a", &coordinate], &["update-part", "done", "x"]],
+            "{}",
+        );
+        assert!(is_the_projects_own(
+            &StoredEvent::new(about.clone(), None),
+            &coordinate
+        ));
+        assert!(
+            !is_the_projects_own(
+                &StoredEvent::new(about.clone(), Some(uuid::Uuid::new_v4())),
+                &coordinate
+            ),
+            "stored for a room"
+        );
+        assert!(
+            !is_the_projects_own(
+                &StoredEvent::new(about, None),
+                &format!("37001:{}:other", founder.public_key().to_hex())
+            ),
+            "about another project"
+        );
+        let note = nostr::EventBuilder::new(nostr::Kind::TextNote, "words")
+            .tags([nostr::Tag::parse(["a", coordinate.as_str()]).expect("tag")])
+            .sign_with_keys(&founder)
+            .expect("sign");
+        assert!(
+            !is_the_projects_own(&StoredEvent::new(note, None), &coordinate),
+            "another kind"
+        );
+    }
+
+    /// The terms of a sale on a project record: any of the money fields with something in it, or a sale's address.
+    #[test]
+    fn a_record_that_states_the_terms_of_a_sale_is_told_from_one_that_does_not() {
+        let founder = nostr::Keys::generate();
+        let project = |tags: &[&[&str]], body: &str| {
+            nostr::EventBuilder::new(nostr::Kind::Custom(KIND_LAUNCH_RECORD as u16), body)
+                .tags(
+                    tags.iter()
+                        .map(|tag| nostr::Tag::parse(tag.to_vec()).expect("tag")),
+                )
+                .sign_with_keys(&founder)
+                .expect("sign")
+        };
+        let plain: &[&[&str]] = &[&["d", "nebula"], &["name", "Nebula"]];
+        // What Start, an idea and a contributor project write: no terms, or the fields left empty.
+        for body in [
+            "{}",
+            r#"{"pitch":"A weekly map.","stage":"draft","started":1}"#,
+            r#"{"pitch":"x","currency":"0xabc","floorPrice":"","tickSpacing":"","requiredRaised":""}"#,
+            r#"{"pitch":"x","floorPrice":"  ","budget":null,"unlocks":null}"#,
+            r#"{"pitch":"x","tokenPlan":{"mode":"dao","supply":"1000"},"funding":{"stance":"not-raising"}}"#,
+            "not json",
+            "[]",
+        ] {
+            assert!(!states_sale_terms(&project(plain, body)), "{body}");
+        }
+        for body in [
+            r#"{"pitch":"x","floorPrice":"792281625140000"}"#,
+            r#"{"pitch":"x","floorPrice":792281625140000}"#,
+            r#"{"tickSpacing":"7922816251400"}"#,
+            r#"{"requiredRaised":"299999999998"}"#,
+            r#"{"budget":"5000000000"}"#,
+            r#"{"allocation":{"sale":40}}"#,
+            r#"{"vesting":{"tranches":[]}}"#,
+            r#"{"unlocks":{"rows":[]}}"#,
+        ] {
+            assert!(states_sale_terms(&project(plain, body)), "{body}");
+        }
+        // The address of a sale, and not an empty one or another chain address.
+        let sale = "0x00000000000000000000000000000000000000aa";
+        assert!(states_sale_terms(&project(
+            &[&["d", "nebula"], &["name", "Nebula"], &["auction", sale]],
+            "{}"
+        )));
+        assert!(!states_sale_terms(&project(
+            &[&["d", "nebula"], &["name", "Nebula"], &["auction", ""]],
+            "{}"
+        )));
+        assert!(!states_sale_terms(&project(
+            &[
+                &["d", "nebula"],
+                &["name", "Nebula"],
+                &["token", sale],
+                &["treasury", sale]
+            ],
+            "{}"
+        )));
+    }
+
     /// The list in [`is_served`], family by family and signer by signer.
     #[test]
     fn only_the_listed_families_are_served_and_only_from_the_right_signer() {
@@ -1314,6 +1464,14 @@ mod tests {
             assert!(served(step, &accepted));
             assert!(!served(step, &nothing), "not before the work is accepted");
         }
+        // Another piece the same helper handed in on the same task (an earlier try, sent back or still waiting) is
+        // not the piece that was accepted.
+        let earlier = record(
+            &helper,
+            &[&["task-part", "evidence"], &["task", &task_id]],
+            r#"{"title":"Work handed in","body":"A first try"}"#,
+        );
+        assert!(!served(&earlier, &accepted));
         // Work handed in by someone the task does not name, though the team confirmed it.
         let stray = record(
             &teammate,

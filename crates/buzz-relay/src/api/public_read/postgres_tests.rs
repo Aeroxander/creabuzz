@@ -695,6 +695,49 @@ async fn records_kept_for_members_are_not_served_to_someone_who_is_not_one() {
     let done = handed_in(&w, "nebula", "The logo, as a file", 40).await;
     let confirmed = answered(&w, &teammate, "nebula", "confirm", &done, 42).await;
 
+    // A task whose helper is on the team: a first try sent back, a second accepted. Everything the team signed
+    // about the project is read, so the first try is there to be given; only the piece that was accepted is.
+    let mate = teammate.public_key().to_hex();
+    let guide = step(
+        &w,
+        &w.founder,
+        "nebula",
+        &[
+            &["task-part", "task"],
+            &["task-helper", &mate],
+            &["p", &mate],
+            &["task-what", "Write the guide"],
+            &["task-done", "A guide a newcomer can follow"],
+            &["task-size", "small"],
+        ],
+        "{}",
+        60,
+    )
+    .await;
+    let mut tries = Vec::new();
+    for (words, ahead) in [("SECRET-FIRST-TRY", 61), ("The guide, second version", 63)] {
+        tries.push(
+            step(
+                &w,
+                &teammate,
+                "nebula",
+                &[
+                    &["task-part", "evidence"],
+                    &["task", &guide],
+                    &["e", &guide],
+                ],
+                &json!({"title": "Work handed in", "body": words}).to_string(),
+                ahead,
+            )
+            .await,
+        );
+    }
+    let first_try = [guide.clone(), tries[0].clone()];
+    let second_try = [guide.clone(), tries[1].clone()];
+    kept.push(tries[0].clone());
+    kept.push(answered(&w, &w.founder, "nebula", "send-back", &first_try, 62).await);
+    let guide_confirmed = answered(&w, &w.founder, "nebula", "confirm", &second_try, 64).await;
+
     // A member reads every one of them with this filter, so they are there to be leaked.
     let filter = json!([{"kinds": [47003], "#a": [about_project], "limit": 200}]);
     let (status, body) = post(&w, &w.helper, "/query", &filter).await;
@@ -712,9 +755,12 @@ async fn records_kept_for_members_are_not_served_to_someone_who_is_not_one() {
             plain,
             done[0].clone(),
             done[1].clone(),
-            confirmed.clone()
+            confirmed.clone(),
+            guide,
+            tries[1].clone(),
+            guide_confirmed,
         ]),
-        "the updates and the three steps of the accepted work, and nothing else"
+        "the updates and the three steps of each piece of accepted work, and nothing else"
     );
     let text = body.to_string();
     assert!(!text.contains("SECRET"), "{text}");
@@ -743,7 +789,11 @@ async fn records_kept_for_members_are_not_served_to_someone_who_is_not_one() {
     // Sent back afterwards by someone on the team: no longer accepted, and its steps go back to members.
     answered(&w, &w.founder, "nebula", "send-back", &done, 50).await;
     let body = about(&w, "nebula").await;
-    assert_eq!(ids(&body).len(), 2, "the two updates: {body}");
+    assert_eq!(
+        ids(&body).len(),
+        5,
+        "the two updates and the guide's three steps: {body}"
+    );
     assert!(!body.to_string().contains("The logo, as a file"));
 }
 
@@ -790,8 +840,81 @@ async fn a_record_stored_for_a_room_is_never_served() {
     assert_eq!(stored.channel_id, Some(room));
 
     let body = about(&w, "nebula").await;
-    assert_eq!(ids(&body), sorted(vec![goal, weekly]));
+    assert_eq!(ids(&body), sorted(vec![goal.clone(), weekly.clone()]));
     assert!(!body.to_string().contains("SECRET-ROOM-WORDS"));
+
+    // A room's records are not read at all, so however many it holds they cannot fill the read and crowd the
+    // project's own records out of it: as many as one read takes, every one newer than the goal and the update.
+    for n in 0..super::TEAM_RECORDS_READ as u64 {
+        let in_room = signed(
+            &w.founder,
+            KIND_LAUNCH_UPDATE,
+            &[
+                &["a", &coordinate(&w, "nebula")],
+                &["h", &room.to_string()],
+                &["update-part", "done", &format!("SECRET-ROOM-WORDS {n}")],
+            ],
+            r#"{"title":"For the room"}"#,
+            4 + n % 50,
+        );
+        w.state
+            .db
+            .insert_event(w.tenant.community(), &in_room, Some(room))
+            .await
+            .expect("stored for the room");
+    }
+    let body = about(&w, "nebula").await;
+    assert_eq!(
+        ids(&body),
+        sorted(vec![goal, weekly]),
+        "the room's records took no place in the read"
+    );
+}
+
+/// A project whose record states the terms of a sale (a price floor, an amount
+/// to raise) is for the people the server let in: someone who is not a member
+/// is given neither its record, which would carry the price, nor anything
+/// about it.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_project_that_states_the_terms_of_a_sale_is_not_given_to_someone_who_is_not_a_member() {
+    let w = world(true).await;
+    let terms = r#"{"pitch":"A weekly map.","currency":"0xabc","floorPrice":"792281625140000","requiredRaised":"299999999998"}"#;
+    project(&w, "nebula", terms).await;
+    // A member reads it whole, as before: the record, its goal, its update and the offer.
+    let (status, body) = post(&w, &w.helper, "/query", &record_read(&w, "nebula")).await;
+    assert_eq!((status, ids(&body).len()), (StatusCode::OK, 4));
+    assert!(body.to_string().contains("792281625140000"));
+
+    let founder = w.founder.public_key().to_hex();
+    for read in [
+        record_read(&w, "nebula"),
+        json!([{"kinds": [37001], "#d": ["nebula"], "authors": [founder]}]),
+        json!([{"kinds": [37001], "#d": ["nebula"], "founder_start": &founder[..16]}]),
+        json!([{"kinds": [47003], "#a": [coordinate(&w, "nebula")], "limit": 200}]),
+    ] {
+        assert_eq!(
+            post(&w, &w.visitor, "/query", &read).await,
+            (StatusCode::OK, json!([])),
+            "{read}"
+        );
+    }
+
+    // The founder takes the terms off the record: it is a project like any other again.
+    publish(
+        &w,
+        signed(
+            &w.founder,
+            KIND_LAUNCH_RECORD,
+            &[&["d", "nebula"], &["name", "Nebula"]],
+            r#"{"pitch":"A weekly map.","floorPrice":""}"#,
+            5,
+        ),
+    )
+    .await;
+    let (status, body) = post(&w, &w.visitor, "/query", &record_read(&w, "nebula")).await;
+    assert_eq!((status, ids(&body).len()), (StatusCode::OK, 3), "{body}");
+    assert!(!body.to_string().contains("792281625140000"));
 }
 
 #[tokio::test]
@@ -899,8 +1022,52 @@ async fn a_record_signed_by_someone_muted_or_banned_is_left_out() {
     mute(&w, &w.helper).await;
     assert_eq!(
         ids(&about(&w, "nebula").await),
-        sorted(vec![updates[1].clone(), done[0].clone(), confirmed])
+        sorted(vec![updates[1].clone(), done[0].clone(), confirmed.clone()])
     );
+
+    // Work whose only confirmation is from a teammate who is then muted is not accepted work for a visitor: none of
+    // its steps is given, though the founder made the task and the helper may be shown.
+    unmute(&w, &w.helper).await;
+    let poster = handed_in(&w, "nebula", "The poster", 20).await;
+    let by_teammate = answered(&w, &team[1], "nebula", "confirm", &poster, 22).await;
+    let shown = ids(&about(&w, "nebula").await);
+    for id in [&poster[0], &poster[1], &by_teammate] {
+        assert!(shown.contains(id), "accepted, so given: {id}");
+    }
+    mute(&w, &team[1]).await;
+    assert_eq!(
+        ids(&about(&w, "nebula").await),
+        sorted(vec![done[0].clone(), done[1].clone(), confirmed])
+    );
+}
+
+/// Anyone on the member list may offer help on a project, as often as they like. Records from outside the team
+/// are not read at all, so however many there are they cannot fill the read and crowd the team's records out.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn records_from_outside_the_team_take_no_place_in_the_read() {
+    let w = world(true).await;
+    let [goal, weekly, _] = project(&w, "nebula", "{}").await;
+    // As many as one read takes, every one newer than the goal and the update.
+    for n in 0..super::TEAM_RECORDS_READ as u64 {
+        let offer = signed(
+            &w.helper,
+            KIND_LAUNCH_UPDATE,
+            &[
+                &["a", &coordinate(&w, "nebula")],
+                &["e", &weekly],
+                &["help-offer", &weekly],
+            ],
+            &json!({"note": format!("Offer {n}")}).to_string(),
+            4 + n % 50,
+        );
+        w.state
+            .db
+            .insert_event(w.tenant.community(), &offer, None)
+            .await
+            .expect("stored");
+    }
+    assert_eq!(ids(&about(&w, "nebula").await), sorted(vec![goal, weekly]));
 }
 
 /// Each signer's standing is one lookup. Past the bound a signer is not looked

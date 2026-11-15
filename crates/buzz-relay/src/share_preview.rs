@@ -269,7 +269,10 @@ pub(crate) async fn public_standing(
 /// in may be shown it there: `None` when the community is invite-only and the
 /// server does not let anyone read public records, when the address fits no
 /// project or more than one, when the project does not pass
-/// [`public_standing`], or when a lookup fails.
+/// [`public_standing`], or when a lookup fails. On an invite-only community
+/// the visitor's only way in is the public record read, so a project that
+/// read does not give (one whose record states the terms of a sale) is not
+/// shown here either: a preview never says what the visitor could not open.
 async fn shown_project(
     state: &AppState,
     community: CommunityId,
@@ -279,15 +282,15 @@ async fn shown_project(
     // preview must not tell a crawler what the visitor could not read. When the
     // server lets anyone read a public project's record, the visitor can read
     // these words, and the preview may say them.
-    match state.membership_required(community, false).await {
-        Ok(false) => {}
-        Ok(true) if state.public_project_reads() => {}
+    let by_public_read = match state.membership_required(community, false).await {
+        Ok(false) => false,
+        Ok(true) if state.public_project_reads() => true,
         Ok(true) => return None,
         Err(error) => {
             tracing::warn!(%error, "share preview: could not read the access setting");
             return None;
         }
-    }
+    };
 
     let (id, founder) = match route {
         ProjectRoute::Scorecard { id, founder_start } => {
@@ -307,6 +310,9 @@ async fn shown_project(
     let record = matching.next()?;
     // Two founders on one address: which one is meant is the web app's to ask.
     if matching.next().is_some() {
+        return None;
+    }
+    if by_public_read && crate::api::public_read::states_sale_terms(&record) {
         return None;
     }
 
@@ -1313,6 +1319,28 @@ mod tests {
             )
             .await;
             assert_eq!(page(&w, &slug(&w, "quiet")).await, PLAIN);
+            // A project whose record states the terms of a sale is not given to a visitor here, so its link
+            // says nothing about it either.
+            project(
+                &w,
+                "sale",
+                "Sale",
+                r#"{"pitch":"Buy in.","floorPrice":"792281625140000"}"#,
+            )
+            .await;
+            assert_eq!(page(&w, &slug(&w, "sale")).await, PLAIN);
+            // On an open server a visitor reads everything, and such a project's link is previewed as before.
+            let open = world(false).await;
+            project(
+                &open,
+                "sale",
+                "Sale",
+                r#"{"pitch":"Buy in.","floorPrice":"792281625140000"}"#,
+            )
+            .await;
+            assert!(page(&open, &slug(&open, "sale"))
+                .await
+                .contains("<title>Sale on Creaton</title>"));
             let actor = Keys::generate();
             w.state
                 .db
@@ -1369,6 +1397,31 @@ mod tests {
             let shown = world_for(true, true, founder.clone(), Some(named.clone())).await;
             project(&shown, "nebula", "Nebula", "{}").await;
             assert_eq!(example_named(&shown).await, serde_json::json!(named));
+            // With the terms of a sale on its record the visitor could no longer open it: not offered.
+            publish(
+                &shown,
+                signed(
+                    &shown.founder,
+                    KIND_LAUNCH_RECORD,
+                    &[&["d", "nebula"], &["name", "Nebula"]],
+                    r#"{"requiredRaised":"299999999998"}"#,
+                    4,
+                ),
+            )
+            .await;
+            assert_eq!(example_named(&shown).await, null);
+            publish(
+                &shown,
+                signed(
+                    &shown.founder,
+                    KIND_LAUNCH_RECORD,
+                    &[&["d", "nebula"], &["name", "Nebula"]],
+                    "{}",
+                    5,
+                ),
+            )
+            .await;
+            assert_eq!(example_named(&shown).await, serde_json::json!(named));
             publish(
                 &shown,
                 signed(
@@ -1376,7 +1429,7 @@ mod tests {
                     KIND_LAUNCH_RECORD,
                     &[&["d", "nebula"], &["name", "Nebula"]],
                     r#"{"listing":"unlisted"}"#,
-                    5,
+                    6,
                 ),
             )
             .await;

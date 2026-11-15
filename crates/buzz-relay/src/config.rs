@@ -627,8 +627,9 @@ pub struct Config {
     /// ([`crate::state::AppState::public_project_reads`]). When on,
     /// `POST /query` answers such a caller for the project record kinds in
     /// [`crate::api::public_read`] only, and only for a project its link preview
-    /// would show (listed, not removed, founder not muted or banned); the link
-    /// preview itself is then served on an invite-only community too. Writes
+    /// would show (listed, not removed, founder not muted or banned) whose
+    /// record states no terms of a sale; the link preview itself is then
+    /// served on an invite-only community too, for the same projects. Writes
     /// and every other read stay for members.
     pub public_project_reads: bool,
     /// The most public project reads one community answers in a minute, for
