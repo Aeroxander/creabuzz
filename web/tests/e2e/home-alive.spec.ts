@@ -483,6 +483,41 @@ test("without an owner's project there is no 'See a record'", async ({
   await expect(page.getByTestId("home-welcome-record")).toHaveCount(0);
 });
 
+test("a server that names its example project offers 'See a record' when the lists show none", async ({
+  page,
+}) => {
+  // No owner is on the member list (as for a visitor an invite-only server does not let read it), so the page cannot
+  // find the owner's project itself. The server's information document names one.
+  const relay = createMockRelay({ applyDeletions: true });
+  relay.seed(projectRecord(ASTER, "aster", "Aster", now() - 5 * DAY));
+  await install(page, relay, null);
+  const named = `aster-${ASTER.slice(0, 16)}`;
+  await page.route("**/info", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/nostr+json",
+      body: JSON.stringify({ name: "Mock server", example_project: named }),
+    }),
+  );
+  await page.goto("/");
+  const link = page.getByTestId("home-welcome-record");
+  await expect(link).toHaveText("See a record");
+  await expect(link).toHaveAttribute("href", `/p/${named}`);
+
+  // Something that is not a project's address is not offered.
+  await page.unroute("**/info");
+  await page.route("**/info", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/nostr+json",
+      body: JSON.stringify({ example_project: "/u/someone" }),
+    }),
+  );
+  await page.reload();
+  await expect(page.getByTestId("home-welcome")).toBeVisible();
+  await expect(page.getByTestId("home-welcome-record")).toHaveCount(0);
+});
+
 test("'Copy update link' copies the project's scorecard address", async ({
   page,
 }) => {
