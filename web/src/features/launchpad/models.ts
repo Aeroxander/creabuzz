@@ -421,6 +421,7 @@ function parseLaunchChat(value: unknown): LaunchChat {
 export const LAUNCH_CATEGORIES = [
   "Software",
   "AI agents",
+  "AI agent or tool",
   "Creative",
   "Media",
   "Games",
