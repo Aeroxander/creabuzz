@@ -259,8 +259,11 @@ test("one person starts a project alone with three answers and lands on its page
   await expect(page.getByTestId("started-card")).toContainText(
     "Your project is live",
   );
-  await expect(page.getByTestId("first-week-due")).toContainText(
+  await expect(page.getByTestId("started-first-update")).toHaveText(
     "Your first update is due in 7 days.",
+  );
+  await expect(page.getByTestId("first-week-due")).toHaveText(
+    "A few lines are enough.",
   );
   await expect(page.getByTestId("update-nudge")).toHaveCount(0);
   // Tasks, Team and Record are not on a page that has nothing for them yet.

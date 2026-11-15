@@ -172,7 +172,7 @@ export function DraftFromRecord({
           <Sparkles aria-hidden className="mr-1.5 h-4 w-4" />
           {busy ? "Drafting…" : "Draft from the record"}
         </Button>
-        <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+        <p className="min-w-48 flex-1 text-xs text-muted-foreground">
           Writes a first version of what happened, the help needed and one line
           from your accepted work, last week's promises, goals and open help
           requests. It is sent to this server's AI service. You read it and

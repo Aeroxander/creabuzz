@@ -59,3 +59,16 @@ test("the first week says week one, and an unread record claims nothing", () => 
     "It's on your project's record for everyone to read.",
   );
 });
+
+test("the first-week card does not say when the first update is due while the welcome card, which says it, is on the page", async () => {
+  const { firstWeekDueLine } = await import("./first-week.ts");
+  const started = 1_000_000;
+  assert.equal(
+    firstWeekDueLine(started, started, false),
+    "Your first update is due in 7 days. A few lines are enough.",
+  );
+  assert.equal(
+    firstWeekDueLine(started, started, true),
+    "A few lines are enough.",
+  );
+});

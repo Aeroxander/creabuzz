@@ -77,7 +77,7 @@ export function StartedCard({
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <input
           aria-label="Your project's link"
-          className="h-9 min-w-0 flex-1 rounded-lg border bg-background px-2 text-sm"
+          className="h-9 min-w-48 flex-1 rounded-lg border bg-background px-2 text-sm"
           data-testid="started-link"
           onFocus={(event) => event.currentTarget.select()}
           readOnly

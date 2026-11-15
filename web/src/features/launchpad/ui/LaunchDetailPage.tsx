@@ -628,6 +628,7 @@ export function LaunchDetailPage({
           onOpenUpdates={() => setTab("updates")}
           onPostUpdate={() => setUpdateOpen(true)}
           showCard={shown !== "updates"}
+          welcomeShown={Boolean(founderPerson && welcome)}
           workTab={hasWorkTab}
         />
       )}

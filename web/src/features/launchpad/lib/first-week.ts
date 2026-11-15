@@ -22,6 +22,21 @@ export function firstUpdateWords(startedAt: number, now: number): string {
 }
 
 /**
+ * The line under "First week": when the first update is due, unless the welcome card above it, which says so, is on the
+ * page (the same sentence twice on one screen), and that a few lines are enough.
+ */
+export function firstWeekDueLine(
+  startedAt: number,
+  now: number,
+  welcomeShown: boolean,
+): string {
+  const enough = "A few lines are enough.";
+  return welcomeShown
+    ? enough
+    : `${firstUpdateWords(startedAt, now)} ${enough}`;
+}
+
+/**
  * The line in the note after an update is posted, from what the project's own records show: weeks in a row (this
  * update included) and promises answered. A run of weeks is stated only once at least two promises are answered, the
  * same rule the share picture uses, so the sentence and the picture never disagree. `null` facts: the record has not

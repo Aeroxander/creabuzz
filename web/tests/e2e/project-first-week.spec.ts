@@ -148,8 +148,9 @@ test("a founder lands on the live project with one welcome card and one first-we
   // One list of next steps: the goal is ticked, and nothing else asks for the first update.
   const week = page.getByTestId("first-week");
   await expect(week.getByRole("heading")).toHaveText("First week");
-  await expect(week.getByTestId("first-week-due")).toContainText(
-    "Your first update is due in 7 days.",
+  // The welcome card above already says when the first update is due, so this card does not say it a second time.
+  await expect(week.getByTestId("first-week-due")).toHaveText(
+    "A few lines are enough.",
   );
   await expect(
     week.locator("li", { hasText: "Set your goal" }),
@@ -566,7 +567,16 @@ test("at 390px the welcome, the first-week list and the set-up row fit with no s
   await expect(page.getByTestId("recovery-key-prompt")).toBeVisible();
   await expect(page.getByTestId("agent-post-card")).toBeVisible();
   expect(await noSidewaysScroll(page)).toBe(true);
+  // The link is the point of the welcome card: wide enough to read, not squeezed beside three buttons.
+  const link = await page.getByTestId("started-link").boundingBox();
+  expect(link?.width ?? 0).toBeGreaterThanOrEqual(190);
   await page.getByTestId("set-up-more").click();
   await expect(page.getByTestId("project-team")).toBeVisible();
   expect(await noSidewaysScroll(page)).toBe(true);
+  // The update form's "Draft from the record" explains itself in a line you can read, below its button on a phone.
+  await page.getByRole("button", { name: "Post update" }).first().click();
+  const draft = page.getByTestId("update-draft");
+  await expect(draft).toBeVisible();
+  const note = await draft.locator("p").first().boundingBox();
+  expect(note?.width ?? 0).toBeGreaterThanOrEqual(250);
 });

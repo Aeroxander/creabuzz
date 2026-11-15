@@ -13,7 +13,7 @@ import { useId, useMemo } from "react";
 import { projectProgress } from "@/features/feed/lib/project-progress";
 import { Button } from "@/shared/ui/button";
 
-import { firstUpdateWords } from "../lib/first-week";
+import { firstWeekDueLine } from "../lib/first-week";
 import type { Launch } from "../models";
 import { useProjectUpdates } from "../use-help-requests";
 import { useProjectRecord } from "../use-project-record";
@@ -72,10 +72,13 @@ function Step({
 
 function FirstWeekCard({
   launch,
+  welcomeShown,
   onPostUpdate,
   onAskForHelp,
 }: {
   launch: Launch;
+  /** The "Your project is live" card, which says when the first update is due, is on the page. */
+  welcomeShown: boolean;
   onPostUpdate: () => void;
   /** Opens the update form with the cursor in "Help needed". */
   onAskForHelp: () => void;
@@ -93,8 +96,11 @@ function FirstWeekCard({
         First week
       </h2>
       <p className="text-xs text-muted-foreground" data-testid="first-week-due">
-        {firstUpdateWords(record.startedAt, Math.floor(Date.now() / 1000))} A
-        few lines are enough.
+        {firstWeekDueLine(
+          record.startedAt,
+          Math.floor(Date.now() / 1000),
+          welcomeShown,
+        )}
       </p>
       <ol className="mt-1 divide-y divide-border/60">
         <Step done={goal !== null} title="Set your goal">
@@ -160,11 +166,14 @@ export function ProjectNews({
   firstWeek,
   showCard,
   workTab,
+  welcomeShown = false,
   onPostUpdate,
   onAskForHelp,
   onOpenUpdates,
 }: {
   launch: Launch;
+  /** The welcome card is on the page, so the first-week card does not say when the first update is due again. */
+  welcomeShown?: boolean;
   isFounder: boolean;
   /** The viewer may post as the founder (not an agent account), so the first-week card is theirs to see. */
   firstWeek: boolean;
@@ -180,6 +189,7 @@ export function ProjectNews({
     return (
       <FirstWeekCard
         launch={launch}
+        welcomeShown={welcomeShown}
         onAskForHelp={onAskForHelp}
         onPostUpdate={onPostUpdate}
       />
