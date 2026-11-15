@@ -113,6 +113,8 @@ pub struct LlmConfig {
     api_key: Option<String>,
     rate_per_min: u64,
     max_calls_per_day: u32,
+    /// Daily AI calls for the whole community, whoever asks.
+    max_calls_per_day_total: u32,
     max_tokens: u64,
     model: Option<String>,
     /// Price of input tokens in milli-cents per million tokens (0 = unpriced).
@@ -130,10 +132,31 @@ pub const DEFAULT_LLM_RATE_PER_MIN: u64 = 20;
 /// Default per-caller daily LLM call cap when no budget covers the caller
 /// (`BUZZ_LLM_MAX_CALLS_PER_DAY`).
 pub const DEFAULT_LLM_MAX_CALLS_PER_DAY: u32 = 500;
+/// Default daily AI call cap for a whole community, all accounts together
+/// (`BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL`). It bounds the operator's bill when many
+/// accounts each stay under their own cap.
+pub const DEFAULT_LLM_MAX_CALLS_PER_DAY_TOTAL: u32 = 2000;
 /// Default ceiling on `max_tokens` per gateway request (`BUZZ_LLM_MAX_TOKENS`).
 pub const DEFAULT_LLM_MAX_TOKENS: u64 = 4096;
 
 impl LlmConfig {
+    /// A gateway pointed at `proxy_url` with these daily caps, everything else
+    /// at its default, for tests that drive the real route.
+    #[cfg(test)]
+    pub(crate) fn for_test(proxy_url: String, per_account: u32, community: u32) -> Self {
+        Self {
+            proxy_url,
+            api_key: None,
+            rate_per_min: DEFAULT_LLM_RATE_PER_MIN,
+            max_calls_per_day: per_account,
+            max_calls_per_day_total: community,
+            max_tokens: DEFAULT_LLM_MAX_TOKENS,
+            model: None,
+            price_input_mc_per_mtok: 0,
+            price_output_mc_per_mtok: 0,
+        }
+    }
+
     /// Upstream OpenAI-compatible `/chat/completions` URL.
     pub(crate) fn proxy_url(&self) -> &str {
         &self.proxy_url
@@ -153,6 +176,12 @@ impl LlmConfig {
     /// (`BUZZ_LLM_MAX_CALLS_PER_DAY`, default 500).
     pub(crate) fn max_calls_per_day(&self) -> u32 {
         self.max_calls_per_day
+    }
+
+    /// Daily call cap for the whole community, all accounts together
+    /// (`BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL`, default 2000).
+    pub(crate) fn max_calls_per_day_total(&self) -> u32 {
+        self.max_calls_per_day_total
     }
 
     /// Ceiling on `max_tokens` per request (`BUZZ_LLM_MAX_TOKENS`, default 4096).
@@ -208,6 +237,7 @@ impl std::fmt::Debug for LlmConfig {
             .field("api_key", &self.api_key.as_ref().map(|_| "[REDACTED]"))
             .field("rate_per_min", &self.rate_per_min)
             .field("max_calls_per_day", &self.max_calls_per_day)
+            .field("max_calls_per_day_total", &self.max_calls_per_day_total)
             .field("max_tokens", &self.max_tokens)
             .field("model", &self.model)
             .field("price_input_mc_per_mtok", &self.price_input_mc_per_mtok)
@@ -1032,6 +1062,15 @@ impl Config {
                     "BUZZ_LLM_MAX_CALLS_PER_DAY must fit in 32 bits".to_string(),
                 )
             })?;
+            let max_calls_per_day_total = u32::try_from(positive_u64_from_env(
+                "BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL",
+                u64::from(DEFAULT_LLM_MAX_CALLS_PER_DAY_TOTAL),
+            )?)
+            .map_err(|_| {
+                ConfigError::InvalidValue(
+                    "BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL must fit in 32 bits".to_string(),
+                )
+            })?;
             let max_tokens = positive_u64_from_env("BUZZ_LLM_MAX_TOKENS", DEFAULT_LLM_MAX_TOKENS)?;
             let price_input_mc_per_mtok =
                 price_mc_per_mtok_from_env("BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK")?;
@@ -1042,6 +1081,7 @@ impl Config {
                 api_key,
                 rate_per_min,
                 max_calls_per_day,
+                max_calls_per_day_total,
                 max_tokens,
                 model,
                 price_input_mc_per_mtok,
@@ -2094,10 +2134,11 @@ mod tests {
     #[test]
     fn llm_gateway_limits_default_and_override() {
         let _guard = ENV_MUTEX.lock().unwrap();
-        const KNOBS: [&str; 5] = [
+        const KNOBS: [&str; 6] = [
             "BUZZ_LLM_PROXY_URL",
             "BUZZ_LLM_RATE_PER_MIN",
             "BUZZ_LLM_MAX_CALLS_PER_DAY",
+            "BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL",
             "BUZZ_LLM_MAX_TOKENS",
             "BUZZ_LLM_MODEL",
         ];
@@ -2115,11 +2156,13 @@ mod tests {
             .expect("gateway configured");
         assert_eq!(llm.rate_per_min(), 20);
         assert_eq!(llm.max_calls_per_day(), 500);
+        assert_eq!(llm.max_calls_per_day_total(), 2000);
         assert_eq!(llm.max_tokens(), 4096);
         assert_eq!(llm.model(), None);
 
         std::env::set_var("BUZZ_LLM_RATE_PER_MIN", "7");
         std::env::set_var("BUZZ_LLM_MAX_CALLS_PER_DAY", "42");
+        std::env::set_var("BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL", "99");
         std::env::set_var("BUZZ_LLM_MAX_TOKENS", "256");
         std::env::set_var("BUZZ_LLM_MODEL", " tiny-model ");
         let llm = Config::from_env()
@@ -2128,6 +2171,7 @@ mod tests {
             .expect("gateway configured");
         assert_eq!(llm.rate_per_min(), 7);
         assert_eq!(llm.max_calls_per_day(), 42);
+        assert_eq!(llm.max_calls_per_day_total(), 99);
         assert_eq!(llm.max_tokens(), 256);
         assert_eq!(llm.model(), Some("tiny-model"));
 
@@ -2136,6 +2180,15 @@ mod tests {
             std::env::set_var("BUZZ_LLM_RATE_PER_MIN", bad);
             let err = Config::from_env().expect_err("bad rate must fail startup");
             assert!(err.to_string().contains("BUZZ_LLM_RATE_PER_MIN"), "{err}");
+        }
+        std::env::set_var("BUZZ_LLM_RATE_PER_MIN", "7");
+        for bad in ["0", "many"] {
+            std::env::set_var("BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL", bad);
+            let err = Config::from_env().expect_err("bad community cap must fail startup");
+            assert!(
+                err.to_string().contains("BUZZ_LLM_MAX_CALLS_PER_DAY_TOTAL"),
+                "{err}"
+            );
         }
 
         for k in KNOBS {

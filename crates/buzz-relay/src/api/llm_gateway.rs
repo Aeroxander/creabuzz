@@ -9,9 +9,16 @@
 //!
 //! The gateway spends the operator's money, so it is metered (DAO OS rule R2/R6):
 //! a per-caller per-minute rate limit, the caller's `llm_calls` budget (falling
-//! back to a daily operator cap when no budget covers them), a clamped
-//! `max_tokens`, an operator-pinned `model`, forced non-streaming responses, and
-//! a hard cap on the upstream body the relay will buffer.
+//! back to a daily operator cap when no budget covers them), a daily cap for the
+//! whole community whoever asks, a clamped `max_tokens`, an operator-pinned
+//! `model`, forced non-streaming responses, and a hard cap on the upstream body
+//! the relay will buffer.
+//!
+//! Every refusal is a 429 whose `error` is a sentence the person can act on
+//! (what ran out, when it comes back, that they can write it themselves) with a
+//! stable `code` (`ai_too_fast`, `ai_limit_account`, `ai_limit_community`,
+//! `ai_limit_spend`) and `retry_after_secs`, so a client can show the words as
+//! they are.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -107,23 +114,24 @@ pub async fn chat_completions(
     .await?;
 
     // Metering: rate limit, then the caller's llm_calls budget (or the
-    // operator's daily cap), then request sanitising — all before any spend.
+    // operator's daily cap), then the community's daily total, then request
+    // sanitising — all before any spend.
     enforce_llm_rate_limit(&state, &tenant, &pubkey, llm.rate_per_min()).await?;
-    crate::handlers::budget_enforcement::enforce_llm_call(
+    enforce_daily_caps(
         &state,
         &tenant,
         &pubkey.to_hex(),
         llm.max_calls_per_day(),
+        llm.max_calls_per_day_total(),
     )
-    .await
-    .map_err(ingest_error_response)?;
+    .await?;
     // LLM spend budgets: refuse now if the caller is already at its limit, and
     // charge the real cost once the upstream reports it. With no price table a
     // cost budget cannot be metered, so refuse instead of running unmetered.
     let cost_meter =
         crate::handlers::budget_enforcement::begin_llm_cost(&state, &tenant, &pubkey.to_hex())
             .await
-            .map_err(ingest_error_response)?;
+            .map_err(spend_error_response)?;
     let prices = llm.pricing();
     if cost_meter.is_some() && prices.is_none() {
         return Err(api_error(
@@ -190,7 +198,7 @@ pub async fn chat_completions(
             );
             crate::handlers::budget_enforcement::record_llm_cost(&state, &tenant, meter, cost)
                 .await
-                .map_err(ingest_error_response)?;
+                .map_err(spend_error_response)?;
         }
     }
 
@@ -257,14 +265,197 @@ async fn enforce_llm_rate_limit(
     .await
     {
         Ok(()) => Ok(()),
-        Err(crate::admission::AdmissionError::Exceeded { reset_in_secs }) => Err(api_error(
+        Err(crate::admission::AdmissionError::Exceeded { reset_in_secs }) => Err(refusal(
             StatusCode::TOO_MANY_REQUESTS,
-            &format!("rate-limited: LLM quota exceeded; retry in {reset_in_secs}s"),
+            "ai_too_fast",
+            too_fast_words(reset_in_secs),
+            reset_in_secs,
         )),
         Err(crate::admission::AdmissionError::Unavailable) => Err(api_error(
             StatusCode::SERVICE_UNAVAILABLE,
-            "rate-limited: LLM admission unavailable",
+            "The AI helper is not available right now. Try again in a minute, or write this yourself.",
         )),
+    }
+}
+
+/// Counter the community's whole-day AI calls are added to. It is not an
+/// account's counter: [`counter_limit`](crate::handlers::budget_enforcement::counter_limit)
+/// reads no budget for this name, so only the operator's configured total binds it.
+const COUNTER_LLM_CALLS_COMMUNITY: &str = "llm_calls_total";
+/// The row the community's counter is kept under. Not a public key, so it can
+/// never be an account's own row or carry a budget.
+const COMMUNITY_COUNTER_SUBJECT: &str = "llm-community-total";
+const DAY_SECS: u64 = 86_400;
+
+/// Both daily call caps, the account's then the community's.
+///
+/// The account is checked first on purpose: a call refused because that
+/// account is out of its own allowance must not use up one of the community's
+/// calls, or one person hammering a closed door would drain it for everyone.
+pub(crate) async fn enforce_daily_caps(
+    state: &Arc<AppState>,
+    tenant: &buzz_core::TenantContext,
+    caller_pubkey_hex: &str,
+    account_cap: u32,
+    community_cap: u32,
+) -> Result<(), (StatusCode, Json<serde_json::Value>)> {
+    let now = chrono::Utc::now().timestamp();
+    crate::handlers::budget_enforcement::enforce_llm_call(
+        state,
+        tenant,
+        caller_pubkey_hex,
+        account_cap,
+    )
+    .await
+    .map_err(|error| account_cap_response(error, now))?;
+    crate::handlers::budget_enforcement::enforce_counter_with_fallback(
+        state,
+        tenant,
+        COMMUNITY_COUNTER_SUBJECT,
+        COUNTER_LLM_CALLS_COMMUNITY,
+        Some(crate::handlers::budget_enforcement::FallbackLimit {
+            window: "day",
+            limit: i64::from(community_cap),
+        }),
+    )
+    .await
+    .map_err(|error| community_cap_response(error, now))?;
+    Ok(())
+}
+
+/// Seconds until the daily window rolls over. Windows are the fixed UTC days
+/// the budget counters use (`unix / 86400`), so this is time to midnight UTC.
+fn secs_until_next_day(now_unix: i64) -> u64 {
+    let into_day = u64::try_from(now_unix.rem_euclid(DAY_SECS as i64)).unwrap_or(0);
+    DAY_SECS - into_day
+}
+
+/// "at midnight UTC, in about 5 hours": when a daily limit comes back.
+fn comes_back_words(retry_after_secs: u64) -> String {
+    let hours = retry_after_secs.div_ceil(3600);
+    match hours {
+        0 | 1 => "at midnight UTC, within the hour".to_string(),
+        n => format!("at midnight UTC, in about {n} hours"),
+    }
+}
+
+fn too_fast_words(wait_secs: u64) -> String {
+    format!(
+        "You are asking the AI helper too quickly. Wait {} and try again.",
+        match wait_secs {
+            0 | 1 => "a second".to_string(),
+            n => format!("{n} seconds"),
+        }
+    )
+}
+
+fn account_cap_words(retry_after_secs: u64) -> String {
+    format!(
+        "You have used all of today's AI help for your account. It comes back {}. \
+         You can write this yourself in the meantime.",
+        comes_back_words(retry_after_secs)
+    )
+}
+
+/// A budget that asks a person before it refuses says so, and so do the words.
+fn with_approval_note(words: String, message: &str) -> String {
+    if message.contains("approval request") {
+        format!("{words} A request for more has been sent to the people who set the limit.")
+    } else {
+        words
+    }
+}
+
+fn community_cap_words(retry_after_secs: u64) -> String {
+    format!(
+        "The AI helper has reached today's limit for this whole server, so it is paused for \
+         everyone. It comes back {}. You can write this yourself in the meantime.",
+        comes_back_words(retry_after_secs)
+    )
+}
+
+/// A 429 (or other refusal) with a plain-words `error`, a stable `code` and
+/// the seconds until a retry can work.
+fn refusal(
+    status: StatusCode,
+    code: &str,
+    message: String,
+    retry_after_secs: u64,
+) -> (StatusCode, Json<serde_json::Value>) {
+    (
+        status,
+        Json(serde_json::json!({
+            "error": message,
+            "code": code,
+            "retry_after_secs": retry_after_secs,
+        })),
+    )
+}
+
+/// The account's own allowance ran out (its budget or the operator's per-account cap).
+fn account_cap_response(
+    error: crate::handlers::ingest::IngestError,
+    now_unix: i64,
+) -> (StatusCode, Json<serde_json::Value>) {
+    use crate::handlers::ingest::IngestError;
+    let retry = secs_until_next_day(now_unix);
+    match error {
+        IngestError::Rejected(message) if message.starts_with("budget exceeded: llm_calls") => {
+            refusal(
+                StatusCode::TOO_MANY_REQUESTS,
+                "ai_limit_account",
+                with_approval_note(account_cap_words(retry), &message),
+                retry,
+            )
+        }
+        other => ingest_error_response(other),
+    }
+}
+
+/// The community's daily total ran out.
+fn community_cap_response(
+    error: crate::handlers::ingest::IngestError,
+    now_unix: i64,
+) -> (StatusCode, Json<serde_json::Value>) {
+    use crate::handlers::ingest::IngestError;
+    let retry = secs_until_next_day(now_unix);
+    match error {
+        IngestError::Rejected(message)
+            if message.starts_with(&format!("budget exceeded: {COUNTER_LLM_CALLS_COMMUNITY}")) =>
+        {
+            refusal(
+                StatusCode::TOO_MANY_REQUESTS,
+                "ai_limit_community",
+                community_cap_words(retry),
+                retry,
+            )
+        }
+        other => ingest_error_response(other),
+    }
+}
+
+/// An AI spending limit (a budget with a cost) ran out.
+fn spend_error_response(
+    error: crate::handlers::ingest::IngestError,
+) -> (StatusCode, Json<serde_json::Value>) {
+    use crate::handlers::ingest::IngestError;
+    match error {
+        IngestError::Rejected(message)
+            if message.starts_with("budget exceeded: LLM spend limit") =>
+        {
+            refusal(
+                StatusCode::TOO_MANY_REQUESTS,
+                "ai_limit_spend",
+                with_approval_note(
+                    "The AI spending limit set for your account is used up. Ask the person who \
+                     set it to raise it, or write this yourself."
+                        .to_string(),
+                    &message,
+                ),
+                secs_until_next_day(chrono::Utc::now().timestamp()),
+            )
+        }
+        other => ingest_error_response(other),
     }
 }
 
@@ -445,6 +636,308 @@ mod tests {
             "cheap"
         );
         assert_eq!(rewritten(r#"{"model": "mine"}"#, 10, None)["model"], "mine");
+    }
+
+    #[test]
+    fn a_daily_limit_says_when_it_comes_back() {
+        // 19:00 UTC: five hours to midnight.
+        let seven_pm = 19 * 3600;
+        assert_eq!(secs_until_next_day(seven_pm), 5 * 3600);
+        assert_eq!(
+            secs_until_next_day(0),
+            86_400,
+            "a fresh day has all of it left"
+        );
+        assert_eq!(secs_until_next_day(86_399), 1);
+        assert_eq!(
+            comes_back_words(5 * 3600),
+            "at midnight UTC, in about 5 hours"
+        );
+        assert_eq!(
+            comes_back_words(5 * 3600 - 1),
+            "at midnight UTC, in about 5 hours",
+            "partial hours round up, never down to a promise of sooner"
+        );
+        assert_eq!(comes_back_words(90), "at midnight UTC, within the hour");
+    }
+
+    #[test]
+    fn the_refusals_are_plain_words_with_a_code() {
+        use crate::handlers::ingest::IngestError;
+        let now = 19 * 3600;
+        let account = account_cap_response(
+            IngestError::Rejected("budget exceeded: llm_calls limit 500 reached".into()),
+            now,
+        );
+        assert_eq!(account.0, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(account.1 .0["code"], "ai_limit_account");
+        assert_eq!(account.1 .0["retry_after_secs"], 5 * 3600);
+        let words = account.1 .0["error"].as_str().expect("words");
+        assert!(words.contains("your account") && words.contains("write this yourself"));
+        assert!(
+            !words.contains("llm_calls") && !words.contains("budget"),
+            "no internal names in what a person reads: {words}"
+        );
+
+        let community = community_cap_response(
+            IngestError::Rejected("budget exceeded: llm_calls_total limit 2000 reached".into()),
+            now,
+        );
+        assert_eq!(community.1 .0["code"], "ai_limit_community");
+        let words = community.1 .0["error"].as_str().expect("words");
+        assert!(
+            words.contains("whole server") && words.contains("everyone"),
+            "{words}"
+        );
+        assert!(!words.contains("llm_calls"), "{words}");
+
+        let spend = spend_error_response(IngestError::Rejected(
+            "budget exceeded: LLM spend limit of 5 cents reached".into(),
+        ));
+        assert_eq!(spend.1 .0["code"], "ai_limit_spend");
+
+        // A budget that asks a person first says a request was sent.
+        let asked = account_cap_response(
+            IngestError::Rejected(
+                "budget exceeded: llm_calls limit 3 reached — a budget approval request was recorded; it must be granted before this action can proceed".into(),
+            ),
+            now,
+        );
+        assert!(asked.1 .0["error"]
+            .as_str()
+            .expect("words")
+            .contains("A request for more has been sent"));
+
+        // Anything else keeps its own status: a database fault is not "you ran out".
+        let broken = account_cap_response(IngestError::Internal("db down".into()), now);
+        assert_eq!(broken.0, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn asking_too_fast_names_the_wait() {
+        assert_eq!(
+            too_fast_words(12),
+            "You are asking the AI helper too quickly. Wait 12 seconds and try again."
+        );
+        assert!(too_fast_words(0).contains("a second"));
+    }
+
+    /// The caps through the real counters. Needs Postgres:
+    /// `cargo test -p buzz-relay --lib -- llm_gateway -- --ignored`.
+    mod postgres_tests {
+        use super::super::*;
+        use uuid::Uuid;
+
+        const ALICE: &str = "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1";
+        const BOB: &str = "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2";
+
+        async fn world() -> (Arc<AppState>, buzz_core::TenantContext) {
+            let state = crate::test_support::test_state().await;
+            let host = format!("ai-cap-{}.example", Uuid::new_v4().simple());
+            let community = state
+                .db
+                .ensure_configured_community(&host)
+                .await
+                .expect("create community")
+                .id;
+            (state, buzz_core::TenantContext::resolved(community, host))
+        }
+
+        fn code(refused: &(StatusCode, Json<serde_json::Value>)) -> String {
+            refused.1 .0["code"].as_str().unwrap_or("").to_string()
+        }
+
+        #[tokio::test]
+        #[ignore = "requires Postgres and Redis"]
+        async fn the_whole_community_stops_at_its_daily_total_whoever_asks() {
+            let (state, tenant) = world().await;
+            // Each account may make 5 calls; the community only 3 in all.
+            enforce_daily_caps(&state, &tenant, ALICE, 5, 3)
+                .await
+                .expect("1");
+            enforce_daily_caps(&state, &tenant, ALICE, 5, 3)
+                .await
+                .expect("2");
+            enforce_daily_caps(&state, &tenant, BOB, 5, 3)
+                .await
+                .expect("3");
+            for who in [ALICE, BOB] {
+                let refused = enforce_daily_caps(&state, &tenant, who, 5, 3)
+                    .await
+                    .expect_err("the community total is used up for everyone");
+                assert_eq!(refused.0, StatusCode::TOO_MANY_REQUESTS);
+                assert_eq!(code(&refused), "ai_limit_community");
+                assert!(refused.1 .0["retry_after_secs"].as_u64().unwrap_or(0) > 0);
+            }
+        }
+
+        #[tokio::test]
+        #[ignore = "requires Postgres and Redis"]
+        async fn one_account_at_its_own_cap_does_not_use_up_the_communitys_calls() {
+            let (state, tenant) = world().await;
+            // Each account may make 1 call; the community 2 in all.
+            enforce_daily_caps(&state, &tenant, ALICE, 1, 2)
+                .await
+                .expect("alice 1");
+            for _ in 0..4 {
+                let refused = enforce_daily_caps(&state, &tenant, ALICE, 1, 2)
+                    .await
+                    .expect_err("alice is out of her own allowance");
+                assert_eq!(code(&refused), "ai_limit_account");
+            }
+            // Four refused tries later the community still has its second call.
+            enforce_daily_caps(&state, &tenant, BOB, 1, 2)
+                .await
+                .expect("a refused account must not burn the community's calls");
+            let refused = enforce_daily_caps(&state, &tenant, BOB, 1, 2)
+                .await
+                .expect_err("bob is now at his own cap");
+            assert_eq!(code(&refused), "ai_limit_account");
+        }
+
+        /// The whole route, as the web app calls it: a signed request in, a fake
+        /// provider behind. Once the community's total is used up the answer is
+        /// a 429 in plain words, and the provider is never asked again.
+        #[tokio::test]
+        #[ignore = "requires Postgres and Redis"]
+        async fn the_route_refuses_in_plain_words_and_stops_calling_the_provider() {
+            use axum::body::Body;
+            use axum::http::Request;
+            use base64::Engine;
+            use nostr::{EventBuilder, Keys, Kind, Tag, TagKind};
+            use sha2::{Digest, Sha256};
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            use tower::ServiceExt;
+
+            // A provider that answers every call and counts them.
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("bind provider");
+            let provider = format!(
+                "http://{}/v1/chat/completions",
+                listener.local_addr().unwrap()
+            );
+            let calls = Arc::new(AtomicUsize::new(0));
+            let seen = calls.clone();
+            tokio::spawn(async move {
+                loop {
+                    let Ok((mut socket, _)) = listener.accept().await else {
+                        return;
+                    };
+                    seen.fetch_add(1, Ordering::SeqCst);
+                    tokio::spawn(async move {
+                        let mut buffer = vec![0u8; 16 * 1024];
+                        let _ = socket.read(&mut buffer).await;
+                        let body = r#"{"choices":[{"message":{"content":"a draft"}}],"usage":{"prompt_tokens":3,"completion_tokens":2}}"#;
+                        let reply = format!(
+                            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                            body.len()
+                        );
+                        let _ = socket.write_all(reply.as_bytes()).await;
+                    });
+                }
+            });
+
+            let state = crate::test_support::test_state_with(move |config| {
+                config.llm = Some(crate::config::LlmConfig::for_test(provider, 100, 2));
+            })
+            .await;
+            let host = format!("ai-route-{}.example", Uuid::new_v4().simple());
+            state
+                .db
+                .ensure_configured_community(&host)
+                .await
+                .expect("community");
+
+            let ask = |who: Keys, n: usize| {
+                let state = state.clone();
+                let host = host.clone();
+                async move {
+                    let body = format!(r#"{{"messages":[{{"role":"user","content":"hi {n}"}}]}}"#);
+                    let url = format!("https://{host}{LLM_CHAT_PATH}");
+                    let payload = hex::encode(Sha256::digest(body.as_bytes()));
+                    let auth = EventBuilder::new(Kind::HttpAuth, "")
+                        .tags([
+                            Tag::parse(["u", url.as_str()]).unwrap(),
+                            Tag::parse(["method", "POST"]).unwrap(),
+                            Tag::parse(["payload", payload.as_str()]).unwrap(),
+                            Tag::custom(TagKind::custom("nonce"), [Uuid::new_v4().to_string()]),
+                        ])
+                        .sign_with_keys(&who)
+                        .expect("sign");
+                    let header = format!(
+                        "Nostr {}",
+                        base64::engine::general_purpose::STANDARD
+                            .encode(serde_json::to_string(&auth).expect("json"))
+                    );
+                    let response = crate::router::build_router(state)
+                        .oneshot(
+                            Request::post(LLM_CHAT_PATH)
+                                .header(header::HOST, host)
+                                .header(header::CONTENT_TYPE, "application/json")
+                                .header(header::AUTHORIZATION, header)
+                                .body(Body::from(body))
+                                .expect("request"),
+                        )
+                        .await
+                        .expect("response");
+                    let status = response.status();
+                    let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
+                        .await
+                        .expect("body");
+                    (
+                        status,
+                        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap_or_default(),
+                    )
+                }
+            };
+
+            let (alice, bob) = (Keys::generate(), Keys::generate());
+            let (status, _) = ask(alice.clone(), 1).await;
+            assert_eq!(status, StatusCode::OK, "the first call goes through");
+            let (status, _) = ask(bob.clone(), 2).await;
+            assert_eq!(status, StatusCode::OK, "so does a second account's");
+            assert_eq!(calls.load(Ordering::SeqCst), 2);
+
+            for (who, n) in [(alice, 3), (bob, 4)] {
+                let (status, body) = ask(who, n).await;
+                assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+                assert_eq!(body["code"], "ai_limit_community");
+                let words = body["error"].as_str().expect("words");
+                assert!(
+                    words.contains("whole server") && words.contains("write this yourself"),
+                    "{words}"
+                );
+                assert!(body["retry_after_secs"].as_u64().unwrap_or(0) > 0);
+            }
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                2,
+                "a refused call must never reach the provider"
+            );
+        }
+
+        #[tokio::test]
+        #[ignore = "requires Postgres and Redis"]
+        async fn one_communitys_total_is_not_anothers() {
+            let (state, one) = world().await;
+            let (_, two) = world().await;
+            enforce_daily_caps(&state, &one, ALICE, 5, 1)
+                .await
+                .expect("one");
+            assert_eq!(
+                code(
+                    &enforce_daily_caps(&state, &one, ALICE, 5, 1)
+                        .await
+                        .expect_err("full")
+                ),
+                "ai_limit_community"
+            );
+            enforce_daily_caps(&state, &two, ALICE, 5, 1)
+                .await
+                .expect("another community has its own total");
+        }
     }
 
     #[test]
