@@ -26,6 +26,10 @@ run writes down is there to explain that number.
    of the `VITE_` chain, kit or ZeroDev settings set. Starting a project, weekly updates, promises, help requests and tasks
    are records on this server: the real-server journey (`scripts/real-loop-e2e.sh`) runs them with no chain at all.
    Invite-only is the default of the stack (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`), and Pilot A runs on it.
+   **"Draft from the record" needs the server's AI service** (the operator's key; limits of 500 calls a day per person and
+   2,000 a day for the whole server, `BUZZ_LLM_MAX_CALLS_PER_DAY` and `..._TOTAL`). Press it once on Creaton's own project
+   before day 1. If the service is off or the limit is reached the founder sees the server's own sentence and can still
+   write the update by hand; the pilot does not depend on it.
 2. **The terms and privacy note finished and stamped**, the backup key made, and **one restore rehearsal done**
    ([RESTORE-REHEARSAL.md](RESTORE-REHEARSAL.md)), before anyone is invited. Founders' misses will be on the record: a
    server that loses its data loses that.
@@ -44,22 +48,28 @@ run writes down is there to explain that number.
    link of their own** (People, "Make invite link", "One person", lasting a week), sent privately. Making the first
    founder's link a day before the others lets you find a broken server before five people do.
 7. **Onboard by hand, once.** A 15-minute call with each founder on day 1: you help them open the invite, sign up and find
-   Start. You do not write their goal, their promises or their first update, and you do not explain "what a good promise is":
-   what they write unprompted is what you came to see. After the call, no help unless they ask.
+   Start. Start is one press: three answers (name, goal, how we will know) and a button; signing up finishes it, and the
+   project opens on a first-week page that asks for one thing at a time. You do not write their goal, their promises or their
+   first update, and you do not explain "what a good promise is": what they write unprompted is what you came to see. After
+   the call, no help unless they ask.
 8. **Your own weekly post is promised** (below, "The operator's cadence"), and **a copy of [PILOT-REPORT.md](PILOT-REPORT.md)**
    is open, with what counts as a yes for the one number written in its header *before* day 1. Suggested: at least three
    founders with a third update, and no more than one of those posted after you messaged them. It is the owner's call.
 
 ### The fourteen days
 
-Outside the app, nothing reaches founders: no email, no browser notification. So **you** are the reminder, and every
-message you send is a measurement: write its date and wording in the report, because the database cannot see it.
+Outside the app, nothing reaches founders: no email, no browser notification. The app does two things on its own: an
+"update due" prompt on the founder's project page, and a weekly calendar file the founder can add to any calendar app (the
+update day is kept in that browser only). Neither is sent by the server. So **you** are still the only reminder from outside,
+and every message you send is a measurement: write its date and wording in the report, because the database cannot see it.
+Ask each founder whether they added the calendar file, because a post after a calendar alert is not a post "without being
+asked" in the same way as one after your message, and the database cannot tell them apart.
 
 | Day | Who | What |
 |---|---|---|
 | 0 | You | Send each founder their invite link and ask for the 15-minute call |
-| 1 | Founder | On the call, with you: signs up, starts the project (four answers), posts a first weekly update with promises |
-| 1 | You | `./run.sh founders`: each project and each first update is there; write down how long from invite to first update |
+| 1 | Founder | On the call, with you: signs up, presses Start once (three answers), lands on the first-week page, posts a first weekly update with promises (may use "Draft from the record") |
+| 1 | You | `./run.sh founders`: each project and each first update is there; write down how long from invite to first update. Open one project's shared address in a private window: it should say "You need an invite to open this project" and who to ask |
 | 2 to 6 | You | `./run.sh daily` each morning and evening: nothing is due, nothing is in reports; answer anything founders ask |
 | 7 | You | Morning: `./run.sh due`. Message only the founders on that list, neutrally ("your update is due"), once. Log each message |
 | 8 to 9 | You | `./run.sh founders`: who has posted a second update, and which of them had been messaged |
@@ -78,19 +88,24 @@ messaged. Do not move a due date for anyone.
 4. "Did anything come of the help you asked for?"
 5. "What would make you stop posting here?"
 6. "Would you show your project's page to a stranger today? Why or why not?"
+7. "Did you use 'Draft from the record'? What did you change, and was anything in it wrong?"
+8. "Did you add the weekly reminder to your calendar? Did it make you post?"
 
 ### Watch, and write in the report
 
-How long from invite to first update; every place someone stopped on sign-up, Start or "Post update" and what they said
+How long from invite to first update; every place someone stopped on sign-up, Start, the first-week page or "Post update" and what they said
 about it; whether promises are real or vague; whether a miss was marked honestly; whether help requests got offers; every
 error message and whether the person knew what to do next; and every message you sent and what followed it. A good Pilot A
 is one in which founders post again without being asked, mark a miss in public without being told to, and nobody needs help
 after day 1.
 
-**What a visitor gets.** A project's page, and its shared address (`/p/<name>-<founder>`), are made to be read signed out.
-This server is invite-only, so see what that address gives someone without an account before you tell founders to share
-it: [PILOT-REPORT.md](PILOT-REPORT.md), "Findings from the loop journey", records what the journey saw on an invite-only
-server. Until that is decided, tell founders to share only with people they will invite.
+**What a visitor gets.** This server is invite-only, so a project's page and its shared address (`/p/<name>-<founder>`)
+open for members only. Someone without an account now sees "You need an invite to open this project", "No invite yet? Ask the
+person who sent you this link for one", and a Sign in button; a pasted link in a chat shows the plain Creaton page and nothing
+about the project (a private project's name is never shown). **Tell founders this on day 1:** a link they share reaches
+people they have invited. Whether to open public reads is the owner's open question
+([STATUS.md](STATUS.md), "Waiting on you" 5); the earlier finding is in [PILOT-REPORT.md](PILOT-REPORT.md), "Findings from
+the loop journey".
 
 ### The operator's cadence (a promise to keep for the whole run)
 
