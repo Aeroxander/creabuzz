@@ -56,6 +56,47 @@ export const WS_URL = HTTP_URL.replace(/^http/, "ws");
 const now = () => Math.floor(Date.now() / 1000);
 
 /**
+ * Whether the server is invite-only, as the pilot server is (`scripts/real-loop-e2e.sh` with
+ * BUZZ_REQUIRE_RELAY_MEMBERSHIP=true): only members read or post. Then the run has an owner, who makes an invite link for
+ * each browser, and the member list is filled in by hand for the people who only use a socket or the command line.
+ */
+export const INVITE_ONLY = process.env.E2E_INVITE_ONLY === "1";
+export const OWNER_KEY = process.env.BUZZ_REAL_OWNER_KEY ?? "";
+
+/**
+ * Put people on the member list of the run's community directly, in the database (an invite link needs a browser to open
+ * it, and these people have none). Only for an invite-only run.
+ */
+export function addMembers(pubkeys: string[]): Promise<void> {
+  const database = process.env.BUZZ_REAL_DATABASE_URL;
+  if (!INVITE_ONLY || !database)
+    throw new Error(
+      "addMembers is for an invite-only run (scripts/real-loop-e2e.sh sets BUZZ_REAL_DATABASE_URL)",
+    );
+  const host = new URL(HTTP_URL).host.toLowerCase();
+  const values = pubkeys.map((key) => `('${key}')`).join(", ");
+  return new Promise((resolve, reject) => {
+    execFile(
+      "psql",
+      [
+        database,
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-qc",
+        `insert into relay_members (community_id, pubkey, role)
+         select c.id, v.key, 'member' from communities c cross join (values ${values}) as v(key)
+         where lower(c.host) = '${host}' on conflict do nothing`,
+      ],
+      { timeout: 30_000 },
+      (error, _stdout, stderr) =>
+        error
+          ? reject(new Error(`adding members failed: ${stderr}`))
+          : resolve(),
+    );
+  });
+}
+
+/**
  * A signed-in socket for `who`: resolves once the server accepted the sign-in. `run` gets `send` and a way to wait for
  * the next frame that `pick` accepts; the socket is closed however `run` ends, and nothing waits longer than 20 s.
  */

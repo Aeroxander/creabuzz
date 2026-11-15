@@ -3,10 +3,14 @@ import { decrypt as nip49Decrypt } from "nostr-tools/nip49";
 
 import {
   type Account,
+  INVITE_ONLY,
+  OWNER_KEY,
   type StoredEvent,
   accountFromKey,
+  addMembers,
   buzz,
   closeBrowsers,
+  HTTP_URL,
   newAccount,
   ownBrowserPage,
   publishAs,
@@ -24,6 +28,11 @@ import {
  *
  * The tests share one project and run in order; each one is a flow a person would name. A later test needs what an
  * earlier one made, so the file stops at the first failure.
+ *
+ * Two kinds of server (`scripts/real-loop-e2e.sh`). On the default one anyone who signs up may post. On an invite-only
+ * one, as the pilot server is (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`, INVITE_ONLY here), the owner makes an invite link for
+ * each browser in the People page and each person joins by theirs; the two people with no browser are put on the member
+ * list; and the visitor with no account is shown what such a server gives them, which `visitorSees` records.
  */
 
 // A page here makes a few dozen signed-in reads, each on a connection of its own, with three browsers open at once:
@@ -59,6 +68,82 @@ let projectPath = "";
 let helpUpdateId = "";
 let webTaskId = "";
 let cliTaskId = "";
+
+/** The owner's browser on an invite-only server (the only one that makes invite links). */
+let ownerPage: Page | null = null;
+const hostOfServer = new URL(HTTP_URL).host;
+
+/** One invite link for one person, made in the owner's People page, as the pilot runbook's step 5 does it. */
+async function makeInvite(): Promise<string> {
+  if (!ownerPage) throw new Error("the owner's browser is not open");
+  await ownerPage.goto(`/c/${hostOfServer}`);
+  await ownerPage.getByTestId("people-toggle").click();
+  await ownerPage.getByTestId("invite-make").click();
+  const link = await ownerPage.getByTestId("invite-link").inputValue();
+  expect(link, "the link names this server").toContain(
+    `${hostOfServer}/invite/`,
+  );
+  return link;
+}
+
+/** A browser that already holds an account joins with its own invite link. */
+async function joinWithOwnLink(page: Page) {
+  await page.goto(await makeInvite());
+  await page.getByTestId("invite-join").click();
+  await page.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
+}
+
+/** A browser with no account follows its invite link, picks a name, and gets an account and a place in one step. */
+async function joinAsNewPerson(page: Page, name: string) {
+  await page.goto(await makeInvite());
+  await page.getByTestId("invite-name").fill(name);
+  await page.getByTestId("invite-create-and-join").click();
+  await page.waitForURL((url) => url.pathname === "/", { timeout: 30_000 });
+}
+
+/**
+ * What a person with no account sees at a project's shared address. On an open server it is the project's scorecard. On an
+ * invite-only one it is whatever the server gives a non-member, which is written into the run's output (so the finding is
+ * read from a run, not from a guess) and must be one of three things: the scorecard, the plain words that the server is
+ * invite-only, or the app's own "Couldn't open this project" with a way to sign in or sign up (what a visitor is given
+ * today: [PILOT-REPORT.md](docs/v3-review/PILOT-REPORT.md), "Findings from the loop journey"). Anything else (a blank page,
+ * a spinner that never ends, an error with no way forward) fails the run.
+ */
+async function visitorSees(
+  page: Page,
+  path: string,
+): Promise<"scorecard" | "invite-only words" | "couldn't open this project"> {
+  await page.goto(path);
+  const scorecard = page.getByTestId("scorecard");
+  const refused = page.getByText(/invite-only|invite link/i).first();
+  const generic = page
+    .getByRole("alert")
+    .filter({ hasText: /Couldn't open this project/i });
+  await expect(scorecard.or(refused).or(generic)).toBeVisible();
+  const outcome =
+    (await scorecard.count()) > 0
+      ? "scorecard"
+      : (await refused.count()) > 0
+        ? "invite-only words"
+        : "couldn't open this project";
+  // A way forward: the page still offers to sign in or sign up.
+  if (outcome !== "scorecard") {
+    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign up" })).toBeVisible();
+  }
+  const words = (await page.locator("main").innerText())
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 300);
+  const finding = `${outcome}: "${words}"`;
+  test
+    .info()
+    .annotations.push({ type: "visitor-on-invite-only", description: finding });
+  console.log(
+    `[visitor with no account, invite-only server] ${path} gives ${finding}`,
+  );
+  return outcome;
+}
 
 const record = (page: Page) => page.getByTestId("project-record");
 const taskRow = (page: Page, what: string) =>
@@ -279,12 +364,42 @@ test("1. three people arrive: one signs up, one signs in with a saved key, one i
 }) => {
   test.setTimeout(120_000);
 
-  // The founder has nothing: no key, no invite. They sign up in the app.
-  founderPage = await ownBrowserPage(browser);
-  await founderPage.goto("/");
-  await founderPage.getByTestId("create-identity-cta").first().click();
-  await founderPage.getByTestId("onboarding-name").fill(FOUNDER_NAME);
-  await founderPage.getByTestId("onboarding-create").click();
+  if (INVITE_ONLY) {
+    // The people who only use a socket or the command line have no browser to open a link in: they are put on the
+    // member list. (The one who reads the server for the checks is among them, so they come first.)
+    await addMembers([cliHelper.pubkey, stranger.pubkey]);
+    // The run is not vacuous: an account with no invite is turned away by the server itself.
+    const outsider = newAccount(`Olive ${RUN}`);
+    const turnedAway = await publishAs(outsider, {
+      kind: 0,
+      content: JSON.stringify({ name: outsider.name }),
+      tags: [],
+    }).catch((error: Error) => ({ accepted: false, reason: error.message }));
+    expect(turnedAway.accepted, "a non-member's record is refused").toBe(false);
+    console.log(
+      `[invite-only] a non-member's own profile: ${turnedAway.reason}`,
+    );
+    // The owner is signed in already (the run made their key); they make one invite link per person.
+    ownerPage = await ownBrowserPage(browser);
+    await ownerPage.addInitScript((key) => {
+      if (!window.localStorage.getItem("buzz.identity.nsec")) {
+        window.localStorage.setItem("buzz.identity.nsec", key);
+        window.localStorage.setItem("buzz.identity.backedUp", "1");
+      }
+    }, OWNER_KEY);
+    await ownerPage.goto("/");
+    await expect(ownerPage.getByTestId("user-chip")).toBeVisible();
+    // Nobody can sign up here without a link. The founder has no account: their link makes one and joins.
+    founderPage = await ownBrowserPage(browser);
+    await joinAsNewPerson(founderPage, FOUNDER_NAME);
+  } else {
+    // The founder has nothing: no key, no invite. They sign up in the app.
+    founderPage = await ownBrowserPage(browser);
+    await founderPage.goto("/");
+    await founderPage.getByTestId("create-identity-cta").first().click();
+    await founderPage.getByTestId("onboarding-name").fill(FOUNDER_NAME);
+    await founderPage.getByTestId("onboarding-create").click();
+  }
   await expect(founderPage.getByTestId("user-chip")).toBeVisible();
   // The key is stored sealed beside what unseals it; the test reads whose it is, to act as the founder on a socket.
   const [sealed, wrap] = await founderPage.evaluate(() => [
@@ -305,15 +420,20 @@ test("1. three people arrive: one signs up, one signs in with a saved key, one i
     })
     .toBe(FOUNDER_NAME);
 
+  // Each person publishes their name. On an invite-only server that is after they have joined, not before.
+  const nameThePeople = async () => {
+    for (const person of [helper, mate, cliHelper]) {
+      const named = await publishAs(person, {
+        kind: 0,
+        content: JSON.stringify({ name: person.name }),
+        tags: [],
+      });
+      expect(named.reason).toBe("");
+    }
+  };
+  if (!INVITE_ONLY) await nameThePeople();
+
   // The helper has an account from elsewhere: they sign in with the key they saved.
-  for (const person of [helper, mate, cliHelper]) {
-    const named = await publishAs(person, {
-      kind: 0,
-      content: JSON.stringify({ name: person.name }),
-      tags: [],
-    });
-    expect(named.reason).toBe("");
-  }
   helperPage = await ownBrowserPage(browser);
   await helperPage.goto("/");
   await helperPage.getByTestId("create-identity-cta").first().click();
@@ -321,6 +441,7 @@ test("1. three people arrive: one signs up, one signs in with a saved key, one i
   await helperPage.getByTestId("onboarding-signin-key").fill(helper.hexKey);
   await helperPage.getByTestId("onboarding-signin-submit").click();
   await expect(helperPage.getByTestId("user-chip")).toBeVisible();
+  if (INVITE_ONLY) await joinWithOwnLink(helperPage);
 
   // The second team member comes back to a browser that already holds their account.
   matePage = await ownBrowserPage(browser);
@@ -332,6 +453,12 @@ test("1. three people arrive: one signs up, one signs in with a saved key, one i
   }, mate.hexKey);
   await matePage.goto("/");
   await expect(matePage.getByTestId("user-chip")).toBeVisible();
+  if (INVITE_ONLY) {
+    await joinWithOwnLink(matePage);
+    await nameThePeople();
+    await helperPage.reload();
+    await matePage.reload();
+  }
 });
 
 test("2. Quick Start: four answers make the project and its goal, and a reload keeps them", async () => {
@@ -1073,6 +1200,10 @@ test("7. a project's records are still read when more than 500 newer records of 
   test.setTimeout(240_000);
   // Another project, and 620 records about it, all newer than everything this project has.
   const other = newAccount(`Olive ${RUN}`);
+  const writers = [0, 1, 2, 3].map((writer) => newAccount(`Writer ${writer}`));
+  // On an invite-only server these made-up people are members too: the test is about reading, not about who may write.
+  if (INVITE_ONLY)
+    await addMembers([other.pubkey, ...writers.map((w) => w.pubkey)]);
   const made = await publishAs(other, {
     kind: 37001,
     content: JSON.stringify({ pitch: "Noise.", stage: "draft" }),
@@ -1099,10 +1230,7 @@ test("7. a project's records are still read when more than 500 newer records of 
       tags: [["a", otherCoord]],
     }));
   for (const writer of [0, 1, 2, 3]) {
-    const seeded = await publishManyAs(
-      newAccount(`Writer ${writer}`),
-      noise(writer),
-    );
+    const seeded = await publishManyAs(writers[writer], noise(writer));
     expect(seeded).toEqual({ accepted: 155, firstRefusal: null });
   }
 
@@ -1325,9 +1453,13 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
 }) => {
   test.setTimeout(240_000);
 
-  // A visitor with no account opens the project's scorecard at its short address.
-  const visitor = await ownBrowserPage(browser);
-  await visitor.goto(`/p/${SLUG}-${founder.pubkey.slice(0, 16)}`);
+  // A visitor with no account opens the project's scorecard at its short address. On an invite-only server that visitor
+  // is not a member: `visitorSees` records what they are given, and the checks below are read as a signed-in member.
+  const cardPath = `/p/${SLUG}-${founder.pubkey.slice(0, 16)}`;
+  const visitorBrowser = await ownBrowserPage(browser);
+  if (INVITE_ONLY) await visitorSees(visitorBrowser, cardPath);
+  const visitor = INVITE_ONLY ? helperPage : visitorBrowser;
+  await visitor.goto(cardPath);
   const scorecard = visitor.getByTestId("scorecard");
   await expect(scorecard.getByRole("heading", { level: 1 })).toHaveText(
     PROJECT_NAME,
@@ -1541,8 +1673,9 @@ test("10. the next update starts from last time's promises, Home shows it live, 
   });
   await shot(helperPage, "14-work-offer");
 
-  // The scorecard reads for a visitor with no account: the open request, and the answers just given.
-  const visitor = await ownBrowserPage(browser);
+  // The scorecard reads for a visitor with no account: the open request, and the answers just given. (On an invite-only
+  // server a visitor is not let in, which test 9 recorded; here it is read as a signed-in member.)
+  const visitor = INVITE_ONLY ? helperPage : await ownBrowserPage(browser);
   await visitor.goto(`/p/${SLUG}-${founder.pubkey.slice(0, 16)}`);
   const scorecard = visitor.getByTestId("scorecard");
   await expect(scorecard.getByTestId("scorecard-open-help")).toContainText(
@@ -1557,10 +1690,14 @@ test("10. the next update starts from last time's promises, Home shows it live, 
   // A newcomer: a new account tied to no project is welcomed once, with three ways in; following a project from
   // the welcome is stored by the server as that account's own follow.
   const newcomer = await ownBrowserPage(browser);
-  await newcomer.goto("/");
-  await newcomer.getByTestId("create-identity-cta").first().click();
-  await newcomer.getByTestId("onboarding-name").fill(`Nia ${RUN}`);
-  await newcomer.getByTestId("onboarding-create").click();
+  if (INVITE_ONLY) {
+    await joinAsNewPerson(newcomer, `Nia ${RUN}`);
+  } else {
+    await newcomer.goto("/");
+    await newcomer.getByTestId("create-identity-cta").first().click();
+    await newcomer.getByTestId("onboarding-name").fill(`Nia ${RUN}`);
+    await newcomer.getByTestId("onboarding-create").click();
+  }
   await expect(newcomer.getByTestId("user-chip")).toBeVisible();
   const [sealed, wrap] = await newcomer.evaluate(() => [
     window.localStorage.getItem("buzz.identity.nsec") ?? "",
