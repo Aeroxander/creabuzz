@@ -677,18 +677,17 @@ test("tabs show once the project uses them; the founder always has the way to se
     "Follow to get this project's updates in your Home, under Updates.",
   );
 
-  // The founder of the same project gets every tab, used or not, and the one way to set up Shares.
+  // The founder of the same project gets every tab, used or not, and next steps with no Shares on day one.
   await openAs(page, FOUNDER_KEY, PROJECT);
   await expect(page.getByTestId("goal-text")).toBeVisible();
   for (const name of [/^Updates/, "Boards", "Manage"])
     await expect(tabs.getByRole("tab", { name })).toBeVisible();
   const next = page.getByTestId("idea-progress");
-  await expect(next).toContainText("Set up Shares for people who help");
+  await expect(next).toContainText("Announce it");
+  // Day one, no work accepted yet (and this build names no contributor kit): Shares are not offered.
+  await expect(next).not.toContainText("Shares");
+  await expect(next.getByTestId("idea-start-contributor")).toHaveCount(0);
   await expect(next).not.toContainText(/\bearn/i);
-  await expect(next.getByTestId("idea-start-contributor")).toHaveAttribute(
-    "href",
-    "/start/contributor",
-  );
   // From the keyboard: the tab is a button like the rest.
   await tabs.getByRole("tab", { name: "Boards" }).focus();
   await page.keyboard.press("Enter");

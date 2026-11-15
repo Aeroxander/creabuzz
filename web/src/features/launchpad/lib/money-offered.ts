@@ -1,5 +1,5 @@
 /**
- * Whether this build has anything to do with money or Shares at all.
+ * Whether this build has anything to do with money or Shares at all, and when a project is offered Shares.
  *
  * A server whose build offers no sales, keeps investing off and names no contributor kit cannot make Shares, hold them
  * or pay anyone. Cards that only make sense with one of those (the Shares someone holds, a payment wallet, a score
@@ -28,4 +28,16 @@ export function moneyOffered(env: ChainEnv | undefined = viteEnv()): boolean {
   return (
     raisesOffered(env) || investingOffered(env) || contributorKitNamed(env)
   );
+}
+
+/**
+ * Whether a project's next steps offer "Set up Shares for people who help". Shares thank people whose work was
+ * accepted, so the offer waits for the first piece of accepted work, and it is never made where the build has no kit to
+ * set them up with. `acceptedWork` is how many of the project's tasks were confirmed; null while that is still read.
+ */
+export function sharesSetupOffered(input: {
+  kitNamed: boolean;
+  acceptedWork: number | null;
+}): boolean {
+  return input.kitNamed && (input.acceptedWork ?? 0) >= 1;
 }

@@ -3,9 +3,10 @@
  * what comes later. The later steps are the heavy part, so they wait until people have shown up.
  *
  * The supporter count is the gate to preparing a sale, so it shows only in a build that offers raises. Setting up
- * Shares for people who help is always here. It is the founder's one way to it from the project page, so
- * no other card or tab may take its place (a guard must not hide the only way back). A build that offers raises
- * (`raisesOffered`) also offers to prepare a sale.
+ * Shares for people who help is offered from the project's first piece of accepted work, and only where the build names
+ * a contributor kit (`lib/money-offered.ts`): Shares thank people whose work was accepted, so there is nobody to thank
+ * on a project's first day. Until then a build with a kit says when the step opens, so the way to it is never a
+ * surprise. A build that offers raises (`raisesOffered`) also offers to prepare a sale.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -22,12 +23,15 @@ import { Card } from "@/shared/ui/card";
 import { handOffIdea } from "@/features/start/lib/from-idea";
 
 import { gateProgress } from "../lib/idea";
+import { contributorKitNamed, sharesSetupOffered } from "../lib/money-offered";
 import { raisesOffered } from "../lib/raises-offered";
 import { recordToInput } from "../lib/record-input";
+import { acceptedTasks } from "../lib/tasks";
 import type { Launch } from "../models";
 import { ensureRooms, setupNotice } from "../use-launch-chat";
 import { useCreateLaunch, type CreateLaunchInput } from "../use-launches";
 import { useSupporters } from "../use-supporters";
+import { useProjectTasks } from "../use-tasks";
 import { CreateLaunchDialog } from "./CreateLaunchDialog";
 import { ProgressStep as Step } from "./ProgressStep";
 
@@ -44,6 +48,16 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
   const announced =
     launch.updates.length > 0 ||
     (notes.data ?? []).some((note) => note.author === record.author);
+  // Shares wait for the first piece of accepted work, and for a build that can set them up.
+  const work = useProjectTasks(record);
+  const kitNamed = contributorKitNamed();
+  const sharesOffered = sharesSetupOffered({
+    kitNamed,
+    acceptedWork:
+      work.tasks === null
+        ? null
+        : acceptedTasks(work.tasks, Math.floor(Date.now() / 1000)).length,
+  });
   const save = useCreateLaunch();
   const [preparing, setPreparing] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
@@ -153,35 +167,45 @@ export function IdeaProgressCard({ launch }: { launch: Launch }) {
             </Step>
           </>
         ) : null}
-        <Step done={false} title="Set up Shares for people who help">
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Set up the work and who reviews it. People who help get Shares,
-            which are votes in the project, when the project votes to award
-            them. It stays the same project, with its goal and updates.
-          </p>
-          <Button
-            asChild
-            className="mt-1.5"
-            data-testid="idea-start-contributor"
-            size="sm"
-            variant={raises ? "outline" : "default"}
-          >
-            <Link
-              onClick={() =>
-                handOffIdea(localStorage, {
-                  server: relayWsUrl(),
-                  id: record.id,
-                  author: record.author,
-                  name: record.name,
-                  pitch: record.pitch,
-                })
-              }
-              to="/start/contributor"
+        {sharesOffered ? (
+          <Step done={false} title="Set up Shares for people who help">
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Set up the work and who reviews it. People who help get Shares,
+              which are votes in the project, when the project votes to award
+              them. It stays the same project, with its goal and updates.
+            </p>
+            <Button
+              asChild
+              className="mt-1.5"
+              data-testid="idea-start-contributor"
+              size="sm"
+              variant={raises ? "outline" : "default"}
             >
-              Set up Shares
-            </Link>
-          </Button>
-        </Step>
+              <Link
+                onClick={() =>
+                  handOffIdea(localStorage, {
+                    server: relayWsUrl(),
+                    id: record.id,
+                    author: record.author,
+                    name: record.name,
+                    pitch: record.pitch,
+                  })
+                }
+                to="/start/contributor"
+              >
+                Set up Shares
+              </Link>
+            </Button>
+          </Step>
+        ) : kitNamed ? (
+          <li
+            className="py-2 text-xs text-muted-foreground"
+            data-testid="idea-shares-later"
+          >
+            Once a piece of work is accepted, you can set up Shares for the
+            people who help.
+          </li>
+        ) : null}
       </ul>
       {raises && preparing ? (
         <CreateLaunchDialog

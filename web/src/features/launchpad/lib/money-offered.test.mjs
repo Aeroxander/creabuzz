@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { contributorKitNamed, moneyOffered } from "./money-offered.ts";
+import {
+  contributorKitNamed,
+  moneyOffered,
+  sharesSetupOffered,
+} from "./money-offered.ts";
 
 const KIT = `{"31337":"0x${"b2".repeat(20)}"}`;
 const FACTORY = `{"31337":"0x${"fa".repeat(20)}"}`;
@@ -44,4 +48,16 @@ test("a contributor kit is named by the plain kit, or by the pooled one only whe
     }),
     true,
   );
+});
+
+test("Shares are offered from the first piece of accepted work, never on a project's first day, never without a kit", () => {
+  assert.equal(sharesSetupOffered({ kitNamed: true, acceptedWork: 0 }), false);
+  // Still reading the tasks: nothing is offered on a guess.
+  assert.equal(
+    sharesSetupOffered({ kitNamed: true, acceptedWork: null }),
+    false,
+  );
+  assert.equal(sharesSetupOffered({ kitNamed: true, acceptedWork: 1 }), true);
+  assert.equal(sharesSetupOffered({ kitNamed: true, acceptedWork: 4 }), true);
+  assert.equal(sharesSetupOffered({ kitNamed: false, acceptedWork: 4 }), false);
 });
