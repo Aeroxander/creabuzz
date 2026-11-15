@@ -211,8 +211,8 @@ Three things follow:
   times at 25,000, which looks dead. At a depth of 6,000 (twice the raise) it moves 2.09 times and a half-sale drops it
   33%.
 - **The founder cannot know the raise in advance.** If the raise comes in at three times what was expected, the drop at
-  "depth 2" returns to 64%. A menu of depths (5,000 up to 500,000) with a plain "how much do you hope to raise?" question
-  narrows this; it does not remove it.
+  "depth 2" returns to 64%. A menu of depths (10,000 up to 500,000; the 5,000 choice first written here was dropped on
+  2026-11-15, D208) with a plain "how much do you hope to raise?" question narrows this; it does not remove it.
 
 ### Why the leave change matters
 
