@@ -38,7 +38,9 @@
 #         WEB_DIST (where the web build goes; default target/web-real-loop), POSTGRES_ADMIN_URL, REDIS_URL,
 #         PW_CHROMIUM_PATH / PW_CHROMIUM_EXTRA_ARGS (a Chromium other than the pinned one; see the Playwright config),
 #         E2E_SHOTS=<dir> (save a few screenshots), RUN_TIMEOUT (seconds for the browser run; default 900),
-#         RELAY_LOG_COPY=<file> (keep the relay's whole log there when the run ends)
+#         RELAY_LOG_COPY=<file> (keep the relay's whole log there when the run ends),
+#         RELAY_BIN=<file> (run this relay instead of target/debug/buzz-relay, to try a build of your own without
+#         replacing the one everyone shares)
 # Exit:   0 every flow passed; 1 a flow failed (Playwright's own code); 2 the world could not be set up
 
 set -uo pipefail
@@ -134,11 +136,14 @@ if [[ "${SKIP_BUILD:-}" != "1" ]]; then
     || { tail -30 "$STATE/web-build.log" >&2; fail "web build failed"; }
   cargo build -q -p buzz-relay -p buzz-cli || fail "relay or command-line build failed"
 fi
-[[ -x target/debug/buzz-relay ]] || fail "no target/debug/buzz-relay (build it, or unset SKIP_BUILD)"
+OWN_RELAY="${RELAY_BIN:-}"
+RELAY_BIN="${RELAY_BIN:-target/debug/buzz-relay}"
+[[ -x "$RELAY_BIN" ]] || fail "no $RELAY_BIN (build it, or unset SKIP_BUILD)"
 [[ -x target/debug/buzz ]] || fail "no target/debug/buzz (build it, or unset SKIP_BUILD)"
 [[ -f "$WEB_DIST/index.html" ]] || fail "no web build in $WEB_DIST (build it, or unset SKIP_BUILD)"
-# Copies, so another build replacing the binaries mid-run cannot change what is running.
-cp target/debug/buzz-relay "$STATE/buzz-relay"
+# Copies, so another build replacing the binaries mid-run cannot change what is running. A relay named with RELAY_BIN is
+# the caller's own file, which no build replaces: it is linked when it can be (it is close to 300 MB), else copied.
+if [[ -n "$OWN_RELAY" ]] && ln "$RELAY_BIN" "$STATE/buzz-relay" 2>/dev/null; then :; else cp "$RELAY_BIN" "$STATE/buzz-relay"; fi
 cp target/debug/buzz "$STATE/buzz"
 
 step "a scratch database ($DB)"
