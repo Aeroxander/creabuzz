@@ -263,6 +263,8 @@ export function StepBox({
   sending,
   busy,
   failed,
+  extra,
+  extraProblem,
   onSend,
   onCancel,
   children,
@@ -281,6 +283,10 @@ export function StepBox({
   busy: boolean;
   /** What to say when the last send failed, or null. */
   failed: string | null;
+  /** More fields, drawn after the files (the hand-in's checks and numbers), given what was typed above them. */
+  extra?: (typed: { note: string; links: string[] }) => ReactNode;
+  /** Said before a send: the reason the extra fields cannot be sent yet, or null. */
+  extraProblem?: (typed: { note: string; links: string[] }) => string | null;
   onSend: (draft: StepDraft) => void;
   onCancel: () => void;
   children?: ReactNode;
@@ -338,6 +344,8 @@ export function StepBox({
           "note",
         );
     }
+    const extraBad = extraProblem?.({ note: words, links });
+    if (extraBad) return setProblem(extraBad);
     setProblem(null);
     onSend({ note: words, date: when, links, files });
   };
@@ -481,6 +489,7 @@ export function StepBox({
           ) : null}
         </>
       ) : null}
+      {extra ? extra({ note: words, links: readLinks(linkText).links }) : null}
       {date ? (
         <>
           <label

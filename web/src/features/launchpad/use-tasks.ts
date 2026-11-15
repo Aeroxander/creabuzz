@@ -41,6 +41,7 @@ import {
   taskNotices,
 } from "./lib/task-notices";
 import { readPersonTasks, readProjectTasks } from "./lib/task-reads";
+import type { ReportedResult } from "./lib/task-results";
 import {
   isTaskRecordTags,
   parseTaskRecord,
@@ -367,6 +368,8 @@ export function useTaskActions(project: Project) {
       note: string;
       links: readonly string[];
       files: readonly TaskFile[];
+      /** Numbers the helper reports, already checked (`readResultDrafts`). */
+      results?: readonly ReportedResult[];
     }) =>
       step(
         input.task,
@@ -376,6 +379,7 @@ export function useTaskActions(project: Project) {
           note: input.note,
           links: input.links,
           files: input.files,
+          results: input.results,
         },
         toTeam(input.task),
       ),

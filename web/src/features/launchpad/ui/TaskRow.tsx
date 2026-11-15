@@ -14,6 +14,7 @@
  * everyone else). The record itself is public; the form that makes a task says so.
  */
 
+import { useQueryClient } from "@tanstack/react-query";
 import { AGENT_NEEDS_PERSON, useViewerIsAgent } from "../use-account-agent";
 import { useEffect, useId, useRef, useState } from "react";
 
@@ -39,6 +40,10 @@ import {
   type TaskSent,
   useTaskActions,
 } from "../use-tasks";
+import { markJustAccepted } from "../use-just-accepted";
+import { useTaskRunRecords } from "../use-task-run-records";
+import { HandedInExtras } from "./TaskEvidenceExtras";
+import { TaskHandInBox } from "./TaskHandInBox";
 import {
   dateWords,
   EvidencePiece,
@@ -165,6 +170,7 @@ export function TaskRow({
   onSaid: (text: string) => void;
 }) {
   const actions = useTaskActions(launch.record);
+  const queryClient = useQueryClient();
   const [box, setBox] = useState<Box | null>(null);
   const row = useRef<HTMLLIElement | null>(null);
   /** The control that opened the box: where the keyboard goes back to when the box closes. */
@@ -178,6 +184,8 @@ export function TaskRow({
   // An agent account on the team may send work back or cancel, never confirm or give more time: the server takes
   // those from a person only, so the buttons are not offered and the page says why.
   const agentViewer = useViewerIsAgent();
+  // The run records the helper signed for the pieces handed in: one read for the task.
+  const runs = useTaskRunRecords(task);
   const open = (next: Box, opener: string) => {
     for (const action of Object.values(actions)) action.reset();
     setReturnTo(null);
@@ -242,7 +250,11 @@ export function TaskRow({
     actions.confirm.mutate(
       { task: reference, evidenceId: piece.id, seen },
       {
-        onSuccess: done("You confirmed this work."),
+        onSuccess: (sent) => {
+          // This row leaves the list now. The picture of the accepted work is offered on the record, where it stays.
+          markJustAccepted(queryClient, launch.record, task);
+          done("You confirmed this work.")(sent);
+        },
         onError: notAsRead(
           "That work was removed before you confirmed it, so nothing was confirmed.",
         ),
@@ -323,16 +335,24 @@ export function TaskRow({
       {task.evidence.length > 0 ? (
         <div className="mt-2 space-y-2">
           {task.evidence.map((piece, i) => (
-            <EvidencePiece
-              heading={
-                task.evidence.length > 1
-                  ? `Work handed in (piece ${i + 1} of ${task.evidence.length})`
-                  : "Work handed in"
-              }
-              key={piece.id}
-              names={names}
-              piece={piece}
-            />
+            <div key={piece.id}>
+              <EvidencePiece
+                heading={
+                  task.evidence.length > 1
+                    ? `Work handed in (piece ${i + 1} of ${task.evidence.length})`
+                    : "Work handed in"
+                }
+                names={names}
+                piece={piece}
+              />
+              <HandedInExtras
+                done={task.done}
+                helperName={names(task.helper)}
+                piece={piece}
+                readNotes={i === 0}
+                runs={runs}
+              />
+            </div>
           ))}
         </div>
       ) : null}
@@ -536,9 +556,10 @@ export function TaskRow({
       ) : null}
       {isHelper && (canWork || task.state === "submitted") ? (
         box === "hand-in" ? (
-          <StepBox
+          <TaskHandInBox
+            agent={agentViewer}
             busy={actions.evidence.isPending}
-            evidence
+            done={task.done}
             failed={
               actions.evidence.isError
                 ? withReason(
@@ -547,29 +568,15 @@ export function TaskRow({
                   )
                 : null
             }
-            hint="What you hand in is public: anyone can read it."
-            note={{
-              label: "What you did",
-              placeholder: "What was done, and where to look.",
-            }}
             onCancel={close}
-            onSend={(draft) =>
+            onSend={(handIn) =>
               actions.evidence.mutate(
-                {
-                  task: reference,
-                  note: draft.note,
-                  links: draft.links,
-                  files: draft.files,
-                },
+                { task: reference, ...handIn },
                 {
                   onSuccess: done("Your work is handed in. The team is told."),
                 },
               )
             }
-            send="Hand in"
-            sending="Handing in…"
-            testId="task-hand-in-box"
-            title="Hand in work"
           />
         ) : box === "more-time" ? (
           <StepBox
@@ -691,6 +698,12 @@ export function TaskRow({
                       heading="The work you are confirming"
                       names={names}
                       piece={piece}
+                    />
+                    <HandedInExtras
+                      done={task.done}
+                      helperName={names(task.helper)}
+                      piece={piece}
+                      runs={runs}
                     />
                   </div>
                   <p
