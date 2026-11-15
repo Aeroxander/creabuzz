@@ -49,7 +49,9 @@ left for you is its "Still yours" list. Nothing was pushed, deployed or turned o
 - **Not yet brought in line with this push** (other people's files): "What a visitor gets" in
   [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), which still says shared links reach members only;
   [HOLDER-ACCESS-MODEL.md](HOLDER-ACCESS-MODEL.md); the dated "Decision for you" under the loop findings in
-  [PILOT-REPORT.md](PILOT-REPORT.md); and the repository's root `.env.example`, which lacks the two public-read settings.
+  [PILOT-REPORT.md](PILOT-REPORT.md); [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md), which has no step for
+  `BUZZ_EXAMPLE_PROJECT` (the step is in "Waiting on you" 4); and the repository's root `.env.example`, which lacks the two
+  public-read settings.
 
 ## Scope
 
