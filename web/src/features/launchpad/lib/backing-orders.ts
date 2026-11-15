@@ -125,7 +125,32 @@ export function sellCalls(input: {
   ];
 }
 
-/** Leaving at the open milestone: all the wallet's units, and all of its held money back, with a limit. */
+/**
+ * Why leaving cannot go now, in words, or null. A leave that would hand back nothing is not offered: the call carries a
+ * limit that is never zero, so it could only fail, and leaving for nothing is not what anyone means by it.
+ */
+export function leaveIssue(quote: LeaveQuote | null): string | null {
+  if (quote !== null && quote.quoteOut <= 0n)
+    return "Leaving would hand back nothing right now, so there is nothing to take.";
+  return null;
+}
+
+/**
+ * The least a leave accepts: what was quoted less the allowed move, and NEVER zero. The pool's own fee is part of the
+ * quote and is never worked out here, so the limit follows whatever the pool says now. A limit of zero would let anything
+ * through, including a fee that grew between the quote and the step, so a quote of nothing is refused instead.
+ */
+export function leaveMinOut(quote: LeaveQuote, slippageBps: number): bigint {
+  const issue = leaveIssue(quote);
+  if (issue !== null) throw new Error(issue);
+  const least = withSlippage(quote.quoteOut, slippageBps);
+  return least > 0n ? least : 1n;
+}
+
+/**
+ * Leaving at the open milestone: the held money handed back, less the pool's small fee, with a limit set from the quote.
+ * The wallet keeps all its units; nothing is sold.
+ */
 export function leaveCalls(input: {
   pool: string;
   quote: LeaveQuote;
@@ -136,7 +161,7 @@ export function leaveCalls(input: {
     {
       to: input.pool,
       data: encodeLeave(
-        withSlippage(input.quote.quoteOut, input.slippageBps),
+        leaveMinOut(input.quote, input.slippageBps),
         tradeDeadline(input.clocks.chainNow, input.clocks.browserNow),
       ),
     },
@@ -166,19 +191,23 @@ export function redeemCalls(pool: string, amount: bigint): SenderCall[] {
   return [{ to: pool, data: encodeRedeem(amount) }];
 }
 
-/** The founder opens backing: now, or behind a fair round with a minimum (zero asks for the default). */
+/**
+ * The founder opens backing: now, or behind a fair round with a minimum (zero asks for the default). `depth` is one of the
+ * factory's curve depths in the quote's base units, or zero for the default; the factory refuses any other.
+ */
 export function openBackingCalls(
   factory: string,
   dao: string,
   how: { kind: "now" } | { kind: "round"; minimum: bigint },
+  depth: bigint = 0n,
 ): SenderCall[] {
   return [
     {
       to: factory,
       data:
         how.kind === "now"
-          ? encodeOpenPool(dao)
-          : encodeOpenWithRound(dao, how.minimum),
+          ? encodeOpenPool(dao, depth)
+          : encodeOpenWithRound(dao, how.minimum, depth),
     },
   ];
 }

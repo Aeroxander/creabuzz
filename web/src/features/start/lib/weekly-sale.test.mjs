@@ -381,10 +381,13 @@ test("a node that does not answer about the pool factory is an error, not a plai
 });
 
 test("the pool launch is the weekly launch under its own name, with the same terms", () => {
+  // Its own name, and the curve depth after the tuple: `launchWithPool(<the same tuple>,uint256)`.
   assert.equal(
     KIT_LAUNCH_V3_SIGNATURE,
-    KIT_LAUNCH_V2_SIGNATURE.replace("launch(", "launchWithPool("),
+    `${KIT_LAUNCH_V2_SIGNATURE.replace("launch(", "launchWithPool(").slice(0, -1)},uint256)`,
   );
+  // The selector `cast sig` gives for that signature (the kit's `launchWithPool(LaunchParams,uint256)`).
+  assert.equal(selectorOf(KIT_LAUNCH_V3_SIGNATURE), "0x1b42b0d9");
   const launch = {
     terms: contributorTerms(draft(), FOUNDER),
     salt: SALT,
@@ -397,9 +400,24 @@ test("the pool launch is the weekly launch under its own name, with the same ter
   };
   const v2 = encodeKitLaunchV2(launch);
   const v3 = encodeKitLaunchV3(launch);
+  const word = (hex, i) => hex.slice(10 + 64 * i, 10 + 64 * (i + 1));
   assert.notEqual(v2.slice(0, 10), v3.slice(0, 10));
-  assert.equal(v2.slice(10), v3.slice(10));
   assert.equal(v3.slice(0, 10), selectorOf(KIT_LAUNCH_V3_SIGNATURE));
+  // Two heads now (where the terms start, then the depth): the terms themselves are byte for byte the weekly launch's.
+  assert.equal(word(v2, 0), `${"0".repeat(62)}20`);
+  assert.equal(word(v3, 0), `${"0".repeat(62)}40`);
+  assert.equal(
+    word(v3, 1),
+    "0".repeat(64),
+    "no depth named is the default, zero",
+  );
+  assert.equal(v3.slice(10 + 128), v2.slice(10 + 64));
+  // A depth named is the second head, as the pool factory's tiers are: base units of the quote token.
+  const deep = encodeKitLaunchV3(launch, 100_000_000_000n);
+  assert.equal(word(deep, 1), "0".repeat(54) + "174876e800");
+  assert.equal(deep.slice(10 + 128), v2.slice(10 + 64));
+  assert.throws(() => encodeKitLaunchV3(launch, -1n), /The depth/);
+  assert.throws(() => encodeKitLaunchV3(launch, 1n << 256n), /The depth/);
 });
 
 test("the pool kit's limits are said in the form before anything is sent", () => {

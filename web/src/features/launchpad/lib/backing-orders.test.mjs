@@ -8,6 +8,8 @@ import {
   buyIssue,
   DEFAULT_SLIPPAGE_BPS,
   leaveCalls,
+  leaveIssue,
+  leaveMinOut,
   openBackingCalls,
   postMilestoneCalls,
   redeemCalls,
@@ -133,18 +135,50 @@ test("a sale and a leave send one call each, with the limit taken off what was q
   assert.equal(BigInt(`0x${sold[0].data.slice(10 + 64, 10 + 128)}`), 990n);
   const left = leaveCalls({
     pool: POOL,
-    quote: {
-      quoteOut: 2_000n,
-      fromCurve: 1n,
-      fromEscrow: 1n,
-      priceAfter: 1n,
-      fee: 1n,
-    },
+    quote: { quoteOut: 2_000n, fromEscrow: 2_100n, fee: 100n },
     slippageBps: 100,
     clocks,
   });
   assert.equal(sel(left, 0), selectorOf("leave(uint256,uint256)"));
   assert.equal(BigInt(`0x${left[0].data.slice(10, 10 + 64)}`), 1_980n);
+});
+
+test("a leave's limit follows the pool's quote and is never zero, so a fee that grew cannot slip through", () => {
+  const quoteOf = (quoteOut) => ({
+    quoteOut,
+    fromEscrow: quoteOut + 5n,
+    fee: 5n,
+  });
+  assert.equal(leaveMinOut(quoteOf(10_000n), 100), 9_900n);
+  assert.equal(leaveMinOut(quoteOf(10_000n), 0), 10_000n);
+  // Rounds down to nothing for a tiny quote: the limit is still at least one base unit.
+  assert.equal(leaveMinOut(quoteOf(1n), 100), 1n);
+  assert.equal(leaveMinOut(quoteOf(50n), 300), 48n);
+  assert.equal(leaveMinOut(quoteOf(1n), 10_000), 1n);
+  // A quote of nothing is not a leave at all: refused in words before anything is signed, never sent with a zero limit.
+  const nothing = { quoteOut: 0n, fromEscrow: 5n, fee: 5n };
+  assert.match(leaveIssue(nothing), /nothing/);
+  assert.equal(leaveIssue(quoteOf(1n)), null);
+  assert.equal(leaveIssue(null), null);
+  assert.throws(() => leaveMinOut(nothing, 100), /nothing/);
+  assert.throws(() =>
+    leaveCalls({ pool: POOL, quote: nothing, slippageBps: 100, clocks }),
+  );
+  // Whatever the call carries, its first word is a limit above zero.
+  for (const out of [1n, 2n, 99n, 100n, 12_345n]) {
+    for (const bps of [0, 50, 100, 300, 10_000]) {
+      const call = leaveCalls({
+        pool: POOL,
+        quote: quoteOf(out),
+        slippageBps: bps,
+        clocks,
+      });
+      assert.ok(
+        BigInt(`0x${call[0].data.slice(10, 10 + 64)}`) > 0n,
+        `${out} at ${bps}`,
+      );
+    }
+  }
 });
 
 test("a founder's steps go to the right contract", () => {
@@ -158,7 +192,15 @@ test("a founder's steps go to the right contract", () => {
   const now = openBackingCalls(FACTORY, DAO, { kind: "now" });
   assert.deepEqual(
     [now[0].to, sel(now, 0)],
-    [FACTORY, selectorOf("open(address)")],
+    [FACTORY, selectorOf("open(address,uint256)")],
+  );
+  const word = (calls, i) =>
+    BigInt(`0x${calls[0].data.slice(10 + 64 * i, 10 + 64 * (i + 1))}`);
+  // No depth named is the default, zero; a tier named is carried as the last word.
+  assert.equal(word(now, 1), 0n);
+  assert.equal(
+    word(openBackingCalls(FACTORY, DAO, { kind: "now" }, 50_000_000_000n), 1),
+    50_000_000_000n,
   );
   const round = openBackingCalls(FACTORY, DAO, {
     kind: "round",
@@ -166,7 +208,19 @@ test("a founder's steps go to the right contract", () => {
   });
   assert.deepEqual(
     [round[0].to, sel(round, 0)],
-    [FACTORY, selectorOf("openWithRound(address,uint128)")],
+    [FACTORY, selectorOf("openWithRound(address,uint128,uint256)")],
+  );
+  assert.equal(word(round, 1), 25_000n);
+  assert.equal(word(round, 2), 0n);
+  const deepRound = openBackingCalls(
+    FACTORY,
+    DAO,
+    { kind: "round", minimum: 0n },
+    100_000_000_000n,
+  );
+  assert.deepEqual(
+    [word(deepRound, 1), word(deepRound, 2)],
+    [0n, 100_000_000_000n],
   );
   assert.equal(
     sel(settleMilestoneCalls(POOL), 0),

@@ -194,18 +194,27 @@ export function encodeKitLaunchV2(launch: KitLaunchV2): string {
 }
 
 /**
- * `ContributorKitV3.launchWithPool(LaunchParams)`: the same terms as the weekly-sale launch, and the project's backing pool
- * is opened in the same step. The tuple is the weekly-sale kit's, so a project made either way is the same project.
+ * `ContributorKitV3.launchWithPool(LaunchParams, depth)`: the same terms as the weekly-sale launch, and the project's backing
+ * pool is opened in the same step. The tuple is the weekly-sale kit's, so a project made either way is the same project.
+ * `depth` is the pool's curve depth, one of the pool factory's tiers in the quote's base units, or zero for the default.
  */
-export const KIT_LAUNCH_V3_SIGNATURE = `launchWithPool((${KIT_PARAMS_SIGNATURE},uint64,uint64,uint64,address,uint256))`;
+export const KIT_LAUNCH_V3_SIGNATURE = `launchWithPool((${KIT_PARAMS_SIGNATURE},uint64,uint64,uint64,address,uint256),uint256)`;
 
-/** The weekly launch with its pool: one transaction, at most the kit's own limits (`poolKitIssue`). */
-export function encodeKitLaunchV3(launch: KitLaunchV2): string {
+/**
+ * The weekly launch with its pool: one transaction, at most the kit's own limits (`poolKitIssue`). A launch that names no
+ * depth gets the factory's default, as zero.
+ */
+export function encodeKitLaunchV3(
+  launch: KitLaunchV2,
+  depth: bigint = 0n,
+): string {
   if (!/^0x[0-9a-fA-F]{40}$/.test(launch.quote))
     throw new Error("invalid price token address");
+  if (typeof depth !== "bigint" || depth < 0n || depth >= 1n << 256n)
+    throw new Error("The depth does not fit in 256 bits");
   return encodeFunctionData(
     KIT_LAUNCH_V3_SIGNATURE,
-    [LAUNCH_V2_PARAMS],
+    [LAUNCH_V2_PARAMS, "uint256"],
     [
       [
         kitParamsValue(launch),
@@ -215,6 +224,7 @@ export function encodeKitLaunchV3(launch: KitLaunchV2): string {
         launch.quote,
         launch.sale.lotSize,
       ],
+      depth,
     ],
   );
 }
