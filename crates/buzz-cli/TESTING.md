@@ -612,6 +612,51 @@ buzz agents show "$AGENT_HEX" | jq .
 BUZZ_AUTH_TAG="$AUTH_TAG" BUZZ_PRIVATE_KEY="$AGENT_KEY" buzz launchpad updates post "$AGENT_LAUNCH" --title "Week 1" --next "Ship"
 ```
 
+### 6.16 An agent's whole loop (`start`, `tasks mine|next`, results, run record, `updates facts`)
+
+Run as the labelled agent of 6.15 (`BUZZ_AUTH_TAG` set). The loop, command by command, is in
+`docs/agents/WORKER-LOOP.md`; `cargo test -p buzz-cli --lib launchpad_docs` fails when that file names a command
+or flag the tool does not have. Making a task and checking work are the web app's; to run this against a bare relay,
+sign those two kind 47003 records by hand (the task record, and the team's `confirm` step; their tags are in
+`web/src/features/launchpad/lib/tasks.ts`).
+
+```bash
+# start: the same two records as the web app's Quick Start. A person's account: goal saved, exit 0.
+buzz launchpad start --name "Star Atlas" --pitch "A map of the northern sky anyone can read" \
+  --goal "Publish the northern sky chart" --how "The chart is on the site and ten people have read it" | jq .
+# → {schema:"creaton.start.v1", project:{id,author,path:"/p/<id>-<16 hex>"}, adopted, goal:{saved,needs_a_person}, shown}
+# again, same answers → adopted: true, still one project and one goal (buzz launchpad record shows goals: 1)
+# the LABELLED AGENT's account: the project is made, goal.saved false, goal.needs_a_person true, exit 3
+
+# find work, narrowed; every scan is bounded and says `cut`
+buzz launchpad tasks open --size small --max-time 3d --text catalogue | jq '{considered, cut, time_unknown, open: [.open[].text]}'
+buzz launchpad tasks next --max-time 1w | jq '{offer_command, fits, cut}'
+buzz launchpad tasks open --size huge          # exit 1
+
+# inbox: tasks that name this account, across projects, with the command that does the next step
+buzz launchpad tasks mine | jq '{counts, tasks: [.tasks[] | {state, next, due, cmd: .commands.next}]}'
+
+# hand in with numbers; reported by the helper, bounded like the server holds them
+buzz launchpad tasks submit "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" --note "Seven of 40 names differ." \
+  --result "match_rate=82.5/unit=%/baseline=70/n=40/by=commit abc123" --run-log ./run.log | jq .
+buzz launchpad tasks show "$TASK_ID" | jq '.task.evidence[0] | {results, results_note, run_log}'
+# --result x=high, 11 results, a repeated name, or numbers with no --note/--link/--file → exit 1
+# the same hand-in again → exit 5
+
+# run the declared checks for the piece handed in; with no Docker daemon the record says "not-run"
+buzz launchpad work-checks --launch "$LAUNCH" --launch-author "$FOUNDER_HEX" --task "$TASK_ID" --evidence "$PIECE_ID" \
+  --checks ./checks.json --dir ./work --sandbox-image alpine:3.20 --sandbox-supervisor ./check-supervisor | jq '{recordId, summary, sandboxEnforced, published}'
+buzz launchpad tasks submit "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" --note "With its run record." --run-record "$RECORD_ID" | jq .
+# a record someone else signed, or one for another task, or an id that is not there → exit 1
+
+# the facts a weekly update is drafted from, then a post with no promises
+buzz launchpad updates facts "$LAUNCH" | jq '{goals, last_update, promises_waiting_for_an_answer, work_accepted_since_last_update, help_requests_open}'
+buzz launchpad updates post "$LAUNCH" --title "Week 2" --done "<from the facts>" --no-promises | jq .
+```
+
+The server's side of the same loop (the agent limit is untouched, the bounds hold at the door) is
+`cargo test -p buzz-relay --lib -- launch_update_authority_postgres_tests --ignored`.
+
 ---
 
 ## 7. Error Path Testing
