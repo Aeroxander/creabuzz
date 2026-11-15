@@ -37,7 +37,8 @@
 #         journey's records in it, and print its address; drop it yourself), SKIP_BUILD=1 (reuse the web build, target/debug/buzz-relay and target/debug/buzz),
 #         WEB_DIST (where the web build goes; default target/web-real-loop), POSTGRES_ADMIN_URL, REDIS_URL,
 #         PW_CHROMIUM_PATH / PW_CHROMIUM_EXTRA_ARGS (a Chromium other than the pinned one; see the Playwright config),
-#         E2E_SHOTS=<dir> (save a few screenshots), RUN_TIMEOUT (seconds for the browser run; default 900)
+#         E2E_SHOTS=<dir> (save a few screenshots), RUN_TIMEOUT (seconds for the browser run; default 900),
+#         RELAY_LOG_COPY=<file> (keep the relay's whole log there when the run ends)
 # Exit:   0 every flow passed; 1 a flow failed (Playwright's own code); 2 the world could not be set up
 
 set -uo pipefail
@@ -96,6 +97,8 @@ cleanup() {
   stop_pid "$REDIS_PID"
   # shellcheck disable=SC2086
   [[ -n "$PG_CLUSTER" ]] && pg_ctlcluster $PG_CLUSTER stop >/dev/null 2>&1
+  # The relay's whole log, for a run that failed in a way its last lines do not explain.
+  [[ -n "${RELAY_LOG_COPY:-}" && -f "$STATE/relay.log" ]] && cp "$STATE/relay.log" "$RELAY_LOG_COPY"
   rm -rf "$STATE"
   exit "$code"
 }

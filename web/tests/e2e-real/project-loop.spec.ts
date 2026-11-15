@@ -1341,7 +1341,8 @@ test("8. boards made inside the project, Home's Boards tab, a private bookmark, 
 
   // A post, a reply, and a reply to the reply.
   const rootText = `Where should we meet? ${RUN}`;
-  await founderPage.goto("/social");
+  // Home opens on Updates, the feed of project records; posts are on Everyone, one press away.
+  await founderPage.goto("/?tab=everyone");
   await founderPage.getByTestId("social-composer-input").fill(rootText);
   await founderPage.getByTestId("social-composer-submit").click();
   const post = (page: Page, text: string) =>
@@ -1383,7 +1384,7 @@ test("8. boards made inside the project, Home's Boards tab, a private bookmark, 
   );
 
   // The helper saves the founder's post: nothing public says which, and it is listed after a reload.
-  await helperPage.goto("/social");
+  await helperPage.goto("/?tab=everyone");
   const card = post(helperPage, rootText);
   await card.getByTestId("social-bookmark").click();
   await expect(card.getByTestId("social-bookmark")).toHaveAttribute(
@@ -1486,6 +1487,22 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
   const visitorBrowser = await ownBrowserPage(browser);
   const pagePath = `/launchpad/${SLUG}?author=${founder.pubkey}`;
   if (INVITE_ONLY && PUBLIC_READS) {
+    // Everything the server sends this visitor in answer to a read, kept to be looked at below: what the page shows is
+    // one thing, what was sent to the browser is the thing that matters.
+    const sent: Array<{ kind: number; tags: string[][]; content: string }> = [];
+    let answers = 0;
+    visitorBrowser.on("response", (response) => {
+      if (!response.url().endsWith("/query") || response.status() !== 200)
+        return;
+      void response
+        .json()
+        .then((body: unknown) => {
+          if (!Array.isArray(body)) return;
+          answers += 1;
+          sent.push(...body);
+        })
+        .catch(() => {});
+    });
     // The server lets anyone read a public project's record: the visitor sees it, read only, at both shared addresses.
     for (const path of [cardPath, pagePath]) {
       expect(await visitorSees(visitorBrowser, path)).toBe("public record");
@@ -1539,6 +1556,105 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
       await expect(record).not.toContainText(/\$|earn|price/i);
     }
     await shot(visitorBrowser, "10a-public-record");
+    // What was sent: the project's record and records about it, and of those only the families made to be shown.
+    // Tests 3 to 5 left plenty that is for members (the helper's offer and the reply to it, the helper's yes to the
+    // task, anything sent back): none of it may have reached this browser.
+    const about = sent.filter((event) => event.kind === 47003);
+    expect(sent.length, "the server answered the visitor's reads").not.toBe(0);
+    expect(about.length, "records about the project").not.toBe(0);
+    expect(sent.every((event) => [37001, 47003].includes(event.kind))).toBe(
+      true,
+    );
+    const steps = new Set<string>();
+    for (const event of about) {
+      const names = event.tags.map((tag) => tag[0]);
+      for (const kept of [
+        "help-offer",
+        "help-reply",
+        "help-found",
+        "team-answer",
+      ])
+        expect(names, `a ${kept} record is for members`).not.toContain(kept);
+      for (const tag of event.tags)
+        if (tag[0] === "task-part") steps.add(tag[1] ?? "");
+      const body: unknown = JSON.parse(event.content || "{}");
+      for (const key of ["claim", "review", "agreement", "workArea", "check"])
+        expect(body, `a ${key} record is for members`).not.toHaveProperty(key);
+    }
+    // Of a task's steps, only the three that make accepted work.
+    expect([...steps].sort()).toEqual(["confirm", "evidence", "task"]);
+    // The server is busy (it answers the public read with "try again later", as it does when too many people read
+    // at once): the visitor is told that and offered Try again, not told to go and find an invite.
+    await visitorBrowser.route("**/query", (route) =>
+      route.fulfill({
+        status: 429,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "rate-limited: public reads are busy; retry in 30s",
+        }),
+      }),
+    );
+    await visitorBrowser.goto(cardPath);
+    const busy = visitorBrowser.locator('[data-outcome="busy"]');
+    await expect(busy).toContainText(
+      "This project's record can't be opened right now.",
+    );
+    await expect(busy).not.toContainText(/invite/i);
+    await expect(visitorBrowser.getByTestId("public-record")).toHaveCount(0);
+    await visitorBrowser.unroute("**/query");
+    await busy.getByRole("button", { name: "Try again" }).click();
+    await expect(visitorBrowser.getByTestId("public-record")).toBeVisible();
+    // A project whose record states the terms of a sale (a price floor, an amount to raise) is for members: the
+    // record is sent whole, so the server gives a visitor none of it. A member starts one straight on the server; the
+    // visitor at its link is told to ask for an invite, and neither the answer to their read nor the link's preview
+    // says anything about it.
+    const saleSlug = `sale-${RUN}`;
+    const saleName = `Sale ${RUN}`;
+    const floor = "792281625140000";
+    const sale = await publishAs(stranger, {
+      kind: 37001,
+      content: JSON.stringify({
+        pitch: "Shares on sale from the first day.",
+        stage: "draft",
+        floorPrice: floor,
+        requiredRaised: "299999999998",
+      }),
+      tags: [
+        ["d", saleSlug],
+        ["name", saleName],
+        ["t", "dao-launchpad"],
+        ["admission", "curated"],
+      ],
+    });
+    expect(sale.reason, "a member's own project record is stored").toBe("");
+    const [stored] = await readAs(stranger, {
+      kinds: [37001],
+      authors: [stranger.pubkey],
+      "#d": [saleSlug],
+    });
+    expect(stored?.content, "a member reads it whole").toContain(floor);
+    const salePath = `/p/${saleSlug}-${stranger.pubkey.slice(0, 16)}`;
+    const answersBefore = answers;
+    expect(await visitorSees(visitorBrowser, salePath)).toBe(
+      "invite-only words",
+    );
+    await expect(visitorBrowser.getByTestId("public-record")).toHaveCount(0);
+    // The server did answer their read of it (it shows public records), and the answer held nothing of the project.
+    await expect
+      .poll(() => answers, "the visitor's read of the project is answered")
+      .toBeGreaterThan(answersBefore);
+    expect(
+      sent.some((event) =>
+        event.tags.some((tag) => tag[0] === "d" && tag[1] === saleSlug),
+      ),
+    ).toBe(false);
+    expect(JSON.stringify(sent)).not.toContain(floor);
+    const saleHtml = await (
+      await visitorBrowser.request.get(`${HTTP_URL}${salePath}`, {
+        headers: { Accept: "text/html" },
+      })
+    ).text();
+    expect(saleHtml).not.toContain(saleName);
     // The rest of the server stays closed to them: another member's profile gives the invite words, not a page.
     await visitorBrowser.goto(`/u/${founder.pubkey}`);
     await expect(visitorBrowser.getByTestId("public-record")).toHaveCount(0);
