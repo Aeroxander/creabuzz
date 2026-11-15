@@ -29,6 +29,7 @@ export const HELP_SIZE_LABEL: Record<HelpSize, string> = {
 
 /** The three prompts, as the dialog and the page head them. */
 export const PART_HEADINGS = {
+  line: "In one line",
   done: "What happened this week",
   next: "What's next",
   help: "Help needed",
@@ -82,6 +83,8 @@ export interface UpdateParts {
   done: string;
   next: string;
   help: HelpAsk | null;
+  /** "In one line", when the author signed one. Absent otherwise. */
+  line?: string;
 }
 
 export interface UpdateDraft {
@@ -98,7 +101,7 @@ export interface UpdateDraft {
   /**
    * "In one line": optional, about {@link UPDATE_LIMITS.line} characters. The author's own words, written or drafted by
    * the AI and then edited by them; it is signed with the update. Home and Discover show this stored line and never ask
-   * a model for one (`updateOneLine`).
+   * a model for one (`oneLineOf`).
    */
   line?: string;
   /** The founder's answers to the promises earlier updates made (`lib/promises.ts`). */
@@ -123,6 +126,7 @@ function helpSizeLine(ask: Pick<HelpAsk, "size" | "time">): string {
 /** The body's sections for these parts, exactly as {@link updateEvent} writes them after any free words. */
 function partSections(parts: UpdateParts): string[] {
   const sections: string[] = [];
+  if (parts.line) sections.push(`${PART_HEADINGS.line}\n${parts.line}`);
   if (parts.done) sections.push(`${PART_HEADINGS.done}\n${parts.done}`);
   if (parts.next) sections.push(`${PART_HEADINGS.next}\n${parts.next}`);
   if (parts.help)
@@ -160,6 +164,7 @@ export function updateEvent(
     done,
     next,
     help: helpText ? { text: helpText, size, time: helpTime } : null,
+    ...(line ? { line } : {}),
   };
 
   const answered = marksSection(marks);
@@ -232,19 +237,18 @@ export function firstSentence(text: string): string {
 }
 
 /**
- * The one line to show for an update: the "In one line" its author signed, and otherwise the first sentence of "What
- * happened this week" (or of the body, for an update written freely). It reads what is stored and never asks a model,
- * so a feed or a card shows the same words every time and nothing is invented at read time. Empty when there is
+ * The one line to show for an update in a feed or on a card: the "In one line" its author signed, and otherwise the
+ * first sentence of "What happened this week" (or of the body, for an update written freely). It reads what is stored
+ * and never asks a model, so the same words show every time and nothing is invented at read time. Empty when there is
  * nothing to show.
  */
-export function updateOneLine(update: {
-  tags: readonly (readonly string[])[];
+export function oneLineOf(update: {
+  parts?: UpdateParts | null;
   body: string;
 }): string {
-  const stored = oneLineFromTags(update.tags);
-  if (stored) return stored;
-  const parts = partsFromTags(update.tags);
-  return firstSentence(parts ? parts.done : update.body);
+  if (update.parts?.line) return update.parts.line;
+  const parts = update.parts ?? null;
+  return firstSentence(parts?.done || updateLayout(update.body, parts).free);
 }
 
 /** The parts an update's tags carry, or null when it carries none (a free-form update, or one from before this). */
@@ -256,6 +260,7 @@ export function partsFromTags(
   let helpText = "";
   let size: HelpSize = "small";
   let time = "";
+  const line = oneLineFromTags(tags);
   for (const tag of tags) {
     const value = typeof tag[1] === "string" ? tag[1] : "";
     if (tag[0] === TAG_PART && typeof tag[2] === "string") {
@@ -269,11 +274,12 @@ export function partsFromTags(
       time = clip(value, UPDATE_LIMITS.helpTime);
     }
   }
-  if (!done && !next && !helpText) return null;
+  if (!done && !next && !helpText && !line) return null;
   return {
     done,
     next,
     help: helpText ? { text: helpText, size, time } : null,
+    ...(line ? { line } : {}),
   };
 }
 

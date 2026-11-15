@@ -1,7 +1,8 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import type { DraftField, DraftFields } from "../lib/update-draft-facts";
 import {
   doneWithAccepted,
   firstPromises,
@@ -19,6 +20,8 @@ import {
   PROMISE_LIMITS,
   type PromiseEntry,
 } from "../lib/promises";
+import type { Launch } from "../models";
+import { DraftFromRecord } from "./DraftFromRecord";
 import { Modal } from "./Modal";
 
 const AREA_CLASS =
@@ -34,6 +37,10 @@ const AREA_CLASS =
  * is not forced ("Not answering yet" is the choice each starts on, and the way to take a tapped answer back before
  * publishing): a promise left without an answer shows as not answered, and is asked about again. Once published an
  * answer stays, and the dialog says so.
+ *
+ * "In one line" is an optional sentence for feeds and cards. "Draft from the record" asks the server's AI service for a
+ * first version of what happened, the help needed and that line, from the project's own record only; it goes only into
+ * boxes the founder has not written in, and "What's next" is never drafted.
  */
 const NONE_ACCEPTED: readonly { id: string; what: string }[] = [];
 
@@ -48,7 +55,13 @@ export function PostUpdateDialog({
   asFounder = true,
   agent = false,
   accepted = NONE_ACCEPTED,
+  project,
 }: {
+  /**
+   * The project, for "Draft from the record" (it reads this project's record). Without it the button is not shown: a
+   * team member's update makes no promises and the draft has no founder's record to go on.
+   */
+  project?: Launch["record"];
   /** Work accepted since the last update: offered as lines of "What happened", each one removable. */
   accepted?: readonly { id: string; what: string }[];
   /** The account posting is an agent: promises need a person, whoever's project it is. */
@@ -84,17 +97,37 @@ export function PostUpdateDialog({
     Record<string, { state: MarkState; note: string }>
   >({});
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
+  const [line, setLine] = useState("");
+  // A draft already says the accepted work, so the lines that would add it again are not added.
+  const [covered, setCovered] = useState(false);
   const offered = accepted.filter((task) => !removed.has(task.id));
   // A founder's lines become promises: a week holds about three, and only those are sent.
   const promised = asFounder ? firstPromises(next) : { text: next, dropped: 0 };
   const headingId = useId();
   const asksHelp = help.trim() !== "";
 
+  // The boxes as they are now, for a draft that arrives later to check against.
+  const boxes = useRef({ done, help, line });
+  boxes.current = { done, help, line };
+  const fillFromDraft = (next: DraftFields, filled: readonly DraftField[]) => {
+    setDone(next.done);
+    setHelp(next.help);
+    setLine(next.line);
+    if (filled.includes("done")) setCovered(true);
+  };
+
   const publish = () =>
     void onPublish({
       title: title.trim(),
       // Only the boxes on screen are sent: words left in the hidden ones are not published behind the founder's back.
-      done: freely ? "" : doneWithAccepted(done, accepted, removed),
+      done: freely
+        ? ""
+        : doneWithAccepted(
+            done,
+            accepted,
+            covered ? new Set(accepted.map((task) => task.id)) : removed,
+          ),
+      line,
       next: freely ? "" : promised.text,
       body: freely ? body : "",
       help,
@@ -258,6 +291,16 @@ export function PostUpdateDialog({
           </div>
         ) : (
           <>
+            {project && asFounder ? (
+              <DraftFromRecord
+                accepted={offered}
+                current={() => boxes.current}
+                due={due}
+                marks={marks}
+                onFill={fillFromDraft}
+                project={project}
+              />
+            ) : null}
             {offered.length > 0 ? (
               <section
                 aria-labelledby="update-accepted-heading"
@@ -270,10 +313,29 @@ export function PostUpdateDialog({
                 >
                   Work accepted since your last update
                 </h3>
-                <p className="text-xs text-muted-foreground">
-                  These go in as the first lines of what happened. Take off any
-                  you'd rather not mention.
-                </p>
+                {covered ? (
+                  <p
+                    className="text-xs text-muted-foreground"
+                    data-testid="update-accepted-covered"
+                  >
+                    The draft already says this, so these lines are not added
+                    again.{" "}
+                    <Button
+                      className="h-auto p-0 text-xs"
+                      onClick={() => setCovered(false)}
+                      size="sm"
+                      type="button"
+                      variant="link"
+                    >
+                      Add these lines too
+                    </Button>
+                  </p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    These go in as the first lines of what happened. Take off
+                    any you'd rather not mention.
+                  </p>
+                )}
                 <ul className="mt-2 flex flex-col gap-1">
                   {offered.map((task) => (
                     <li
@@ -362,6 +424,24 @@ export function PostUpdateDialog({
           >
             {freely ? "Use the weekly prompts" : "Write freely instead"}
           </Button>
+        </div>
+        <div>
+          <label className="text-sm font-medium" htmlFor="update-line">
+            {PART_HEADINGS.line} (optional)
+          </label>
+          <p className="text-xs text-muted-foreground" id="update-line-hint">
+            A short line for feeds and cards. Left empty, the first sentence of
+            what happened is used.
+          </p>
+          <Input
+            aria-describedby="update-line-hint"
+            id="update-line"
+            className="mt-1"
+            maxLength={UPDATE_LIMITS.line}
+            onChange={(e) => setLine(e.target.value)}
+            placeholder="Sign-up works on older phones."
+            value={line}
+          />
         </div>
         <div className="rounded-xl border border-border p-3">
           <label className="text-sm font-medium" htmlFor="update-help">

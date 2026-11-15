@@ -107,6 +107,7 @@ export function UpdateDialogWithPromises({
       onClose={onClose}
       onPublish={onPublish}
       onRetryDue={retry}
+      project={project}
     />
   );
 }

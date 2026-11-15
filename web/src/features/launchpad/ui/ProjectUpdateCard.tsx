@@ -2,9 +2,12 @@
  * A project's news at the top of its page: how long ago the team last posted, how many weeks in a row it has, and the
  * latest update itself with any help it asks for.
  *
- * The founder also gets one quiet prompt here when a week has passed with no update, which they can put away for the
- * week, and otherwise a line saying when the next one is due. There is no dialog and no reminder anywhere else. The
- * count of weeks in a row is this project's own: it is never a score and never compared with another project.
+ * The founder also gets one quiet prompt here when their update is due (their update day has come round, or a week has
+ * passed), which they can put away for the week, and otherwise a line saying when the next one is due. Their update day
+ * starts as the weekday the project was started and can be changed, or the reminder turned off (`lib/update-day.ts`).
+ * The words say "due" and nothing else. There is no email or push: the other reminder is a calendar file offered after
+ * posting (`UpdatePosted`). The count of weeks in a row is this project's own: it is never a score and never compared
+ * with another project.
  *
  * All of it is worked out from this project's own records, read for it alone and to their end where that is possible
  * (`useProjectUpdates`), not from the list of every project, which is cut at a fixed size. What a cut read cannot settle
@@ -21,6 +24,7 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { Chip } from "@/shared/ui/chip";
 
+import { dueOnDay, dueOnDayWords, WEEKDAY_NAMES } from "../lib/update-day";
 import {
   founderNudge,
   updateDueWords,
@@ -33,6 +37,7 @@ import {
 import { launchCoordinate, type Launch } from "../models";
 import { useProjectUpdates } from "../use-help-requests";
 import { UpdateBody } from "./UpdateBody";
+import { useUpdateDay } from "./use-update-day";
 
 const DISMISSED_KEY = "creaton.update-nudge.v1";
 /** How many projects' dismissals this browser remembers. */
@@ -86,6 +91,7 @@ export function ProjectUpdateCard({
 }) {
   const me = existingUserPubkey();
   const read = useProjectUpdates(launch.record);
+  const day = useUpdateDay(launch.record);
   const scope = progressScope(
     relayWsUrl(),
     me,
@@ -157,10 +163,14 @@ export function ProjectUpdateCard({
   const dueWords = facts.freshness
     ? updateDueWords(latest?.at ?? null, now)
     : null;
+  // Due by the founder's own update day, or because a week has passed. A founder who turned the reminder off sees none.
+  const dayDue = dueOnDay(day.weekday, latest?.at ?? null, now);
+  const founderDue = !day.off && (nudge.due || dayDue);
+  const nudgeText = nudge.due ? nudge.text : dueOnDayWords(day.weekday);
   const showNudge =
     facts.freshness &&
     isFounder &&
-    nudge.due &&
+    founderDue &&
     !nudgeDismissed(dismissedAt, now);
 
   // Nothing to say to a visitor about a project that has not posted: no empty card.
@@ -199,7 +209,7 @@ export function ProjectUpdateCard({
             {dueWords.text}
           </Chip>
         ) : null}
-        {facts.freshness && isFounder && !nudge.due ? (
+        {facts.freshness && isFounder && !nudge.due && !dayDue ? (
           <p
             className="text-xs text-muted-foreground"
             data-testid="update-next-due"
@@ -222,12 +232,42 @@ export function ProjectUpdateCard({
         ) : null}
       </div>
 
+      {facts.freshness && isFounder ? (
+        <div
+          className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+          data-testid="update-day"
+        >
+          <label htmlFor="update-day-select">Your update day</label>
+          <select
+            className="h-8 rounded-md border border-black/15 bg-white px-2 text-xs text-black dark:border-white/15 dark:bg-white/5 dark:text-white"
+            data-testid="update-day-select"
+            id="update-day-select"
+            onChange={(event) =>
+              day.choose(
+                event.target.value === "off"
+                  ? "off"
+                  : Number(event.target.value),
+              )
+            }
+            value={day.off ? "off" : String(day.weekday)}
+          >
+            {WEEKDAY_NAMES.map((name, weekday) => (
+              <option key={name} value={String(weekday)}>
+                {name}
+              </option>
+            ))}
+            <option value="off">No reminder</option>
+          </select>
+          <span>A reminder shows here when your update is due.</span>
+        </div>
+      ) : null}
+
       {showNudge ? (
         <div
           className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-muted/60 p-3 text-sm"
           data-testid="update-nudge"
         >
-          <p className="min-w-0 flex-1">{nudge.text}</p>
+          <p className="min-w-0 flex-1">{nudgeText}</p>
           <Button onClick={onPostUpdate} size="sm" type="button">
             Post one
           </Button>

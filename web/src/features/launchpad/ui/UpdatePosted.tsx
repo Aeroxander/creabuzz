@@ -1,20 +1,42 @@
 /**
  * After an update is published: a small, still note on the project page that it is out, how many weeks in a row
- * that makes, and one button to share the record. It sits in the page and covers nothing; nothing moves, so there is
+ * that makes, one button to share the record and one to add a weekly reminder to the founder's own calendar (a
+ * calendar file; nothing is sent from here). It sits in the page and covers nothing; nothing moves, so there is
  * nothing for "reduce motion" to stop.
  */
 
 import { PartyPopper } from "lucide-react";
 import { useId, useMemo } from "react";
 
+import {
+  projectPageUrl,
+  weeklyReminderFileName,
+  weeklyReminderIcs,
+} from "../lib/calendar-reminder";
 import { teamOf } from "../lib/help-request";
 import { promiseRecord, promiseTotals } from "../lib/promises";
+import { WEEKDAY_NAMES } from "../lib/update-day";
 import { weeksInARow } from "../lib/weekly-update";
 import type { Launch } from "../models";
 import { useProjectUpdates } from "../use-help-requests";
 import { Button } from "@/shared/ui/button";
 
 import { ShareRecordButton } from "./ShareRecordButton";
+import { useUpdateDay } from "./use-update-day";
+
+/** Hands the person a calendar file to open in their own calendar app. */
+function downloadCalendarFile(name: string, text: string) {
+  const url = URL.createObjectURL(
+    new Blob([text], { type: "text/calendar;charset=utf-8" }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
 
 export function UpdatePosted({
   project,
@@ -24,6 +46,7 @@ export function UpdatePosted({
   onClose: () => void;
 }) {
   const headingId = useId();
+  const day = useUpdateDay(project);
   const read = useProjectUpdates(project);
   const facts = useMemo(() => {
     const data = read.data;
@@ -79,6 +102,36 @@ export function UpdatePosted({
           <Button onClick={onClose} type="button" variant="outline">
             Done
           </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            data-testid="update-posted-reminder"
+            onClick={() =>
+              downloadCalendarFile(
+                weeklyReminderFileName(project),
+                weeklyReminderIcs(
+                  {
+                    id: project.id,
+                    name: project.name,
+                    url: projectPageUrl(window.location.origin, project),
+                  },
+                  { weekday: day.weekday },
+                ),
+              )
+            }
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Add a weekly reminder
+          </Button>
+          <p
+            className="min-w-0 flex-1 text-xs text-muted-foreground"
+            data-testid="update-posted-reminder-note"
+          >
+            A repeating event for your calendar app, every{" "}
+            {WEEKDAY_NAMES[day.weekday]}. Nothing is sent from here.
+          </p>
         </div>
       </div>
     </section>

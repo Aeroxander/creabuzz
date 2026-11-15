@@ -12,11 +12,11 @@ import {
   isWeeklyUpdateTags,
   nudgeDismissed,
   oneLineFromTags,
+  oneLineOf,
   partsFromTags,
   updateEvent,
   updateFacts,
   updateLayout,
-  updateOneLine,
   UPDATE_LIMITS,
   weeksInARow,
 } from "./weekly-update.ts";
@@ -377,7 +377,7 @@ test("only the first three lines of what's next become promises", async () => {
   assert.deepEqual(firstPromises("one"), { text: "one", dropped: 0 });
 });
 
-test("'In one line' is signed as a part, and reads back the same", () => {
+test("'In one line' is signed as a part, reads back the same, and the body carries it as a section", () => {
   const event = updateEvent(
     draft({ line: "  Sign-up shipped\n and works.  " }),
   );
@@ -386,17 +386,22 @@ test("'In one line' is signed as a part, and reads back the same", () => {
     [["update-part", "line", "Sign-up shipped and works."]],
   );
   assert.equal(oneLineFromTags(event.tags), "Sign-up shipped and works.");
-  // It is not a prompt: it does not appear in the body, and the prompts read back as before.
-  assert.doesNotMatch(event.content.body, /Sign-up shipped and works/);
-  assert.deepEqual(partsFromTags(event.tags), {
+  assert.equal(
+    event.content.body,
+    "In one line\nSign-up shipped and works.\n\nWhat happened this week\nShipped sign-up.\n\nWhat's next\nInvite the first ten people.",
+  );
+  const parts = partsFromTags(event.tags);
+  assert.deepEqual(parts, {
     done: "Shipped sign-up.",
     next: "Invite the first ten people.",
     help: null,
+    line: "Sign-up shipped and works.",
   });
-  assert.deepEqual(
-    updateLayout(event.content.body, partsFromTags(event.tags)),
-    { free: "", showParts: true },
-  );
+  // The page lays the parts out and has nothing of the body left to repeat.
+  assert.deepEqual(updateLayout(event.content.body, parts), {
+    free: "",
+    showParts: true,
+  });
 });
 
 test("'In one line' is optional: without it no tag is written", () => {
@@ -427,9 +432,9 @@ test("a record carrying the new part is a weekly update, and one that only looks
   );
   // Written freely with a line: the part alone says it is weekly, so no second mark is added.
   const free = updateEvent(
-    draft({ done: "", next: "", body: "A quiet week.", line: "A quiet week." }),
+    draft({ done: "", next: "", body: "A quiet week.", line: "Quiet." }),
   );
-  assert.deepEqual(free.tags, [["update-part", "line", "A quiet week."]]);
+  assert.deepEqual(free.tags, [["update-part", "line", "Quiet."]]);
   assert.equal(isWeeklyUpdateTags(free.tags), true);
   // A tag of another name, or a part with no kind, does not count.
   assert.equal(isWeeklyUpdateTags([["update-line", "A quiet week."]]), false);
@@ -441,37 +446,65 @@ test("a record carrying the new part is a weekly update, and one that only looks
     ]),
     false,
   );
-  // Parts a free-form update carries are still not prompts.
-  assert.equal(partsFromTags(free.tags), null);
+  // Its free words stay whole above the line's section.
+  const parts = partsFromTags(free.tags);
+  assert.deepEqual(parts, { done: "", next: "", help: null, line: "Quiet." });
+  assert.deepEqual(updateLayout(free.content.body, parts), {
+    free: "A quiet week.",
+    showParts: true,
+  });
 });
 
 test("with no stored line, the first sentence of 'What happened' is the line; a stored line wins", () => {
-  const stored = updateEvent(draft({ line: "Sign-up is live." }));
+  const read = (event) =>
+    oneLineOf({
+      parts: partsFromTags(event.tags),
+      body: event.content.body,
+    });
   assert.equal(
-    updateOneLine({ tags: stored.tags, body: stored.content.body }),
+    read(updateEvent(draft({ line: "Sign-up is live." }))),
     "Sign-up is live.",
   );
-  const plain = updateEvent(
-    draft({
-      done: "Work accepted: fix the invite email.\nShipped sign-up. More later.",
-    }),
-  );
   assert.equal(
-    updateOneLine({ tags: plain.tags, body: plain.content.body }),
+    read(
+      updateEvent(
+        draft({
+          done: "Work accepted: fix the invite email.\nShipped sign-up. More later.",
+        }),
+      ),
+    ),
     "Work accepted: fix the invite email.",
   );
-  // A free-form update: the first sentence of its words.
-  const free = updateEvent(
-    draft({ done: "", next: "", body: "We moved studios. More soon." }),
-  );
+  // A free-form update: the first sentence of its words, with or without a help request beside them.
   assert.equal(
-    updateOneLine({ tags: free.tags, body: free.content.body }),
+    read(
+      updateEvent(
+        draft({ done: "", next: "", body: "We moved studios. More soon." }),
+      ),
+    ),
     "We moved studios.",
   );
-  // The next part and the help are never the line.
-  const onlyNext = updateEvent(draft({ done: "", next: "Invite ten people." }));
   assert.equal(
-    updateOneLine({ tags: onlyNext.tags, body: onlyNext.content.body }),
+    read(
+      updateEvent(
+        draft({
+          done: "",
+          next: "",
+          body: "A quiet week. Bye.",
+          help: "A logo.",
+        }),
+      ),
+    ),
+    "A quiet week.",
+  );
+  // An update from before parts existed: its body.
+  assert.equal(
+    oneLineOf({ parts: null, body: "Old news. Older news." }),
+    "Old news.",
+  );
+  // The next part and the help are never the line.
+  assert.equal(
+    read(updateEvent(draft({ done: "", next: "Invite ten people." }))),
     "",
   );
 });
