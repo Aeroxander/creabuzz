@@ -21,7 +21,7 @@ import { ProjectUpdateCard } from "./ProjectUpdateCard";
 import { ShareRecordButton } from "./ShareRecordButton";
 
 /** Whether this project has posted no update at all: read to the end and none found. */
-export function useNoUpdatesYet(launch: Launch): boolean {
+function useNoUpdatesYet(launch: Launch): boolean {
   const data = useProjectUpdates(launch.record).data;
   return useMemo(
     () =>
@@ -70,7 +70,7 @@ function Step({
   );
 }
 
-export function FirstWeekCard({
+function FirstWeekCard({
   launch,
   onPostUpdate,
   onAskForHelp,

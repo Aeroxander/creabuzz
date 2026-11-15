@@ -33,7 +33,7 @@ import { ProjectTeamCard } from "./ProjectTeamCard";
 const SET_UP_CARDS: readonly SetUpCard[] = ["tasks", "team", "record"];
 
 /** What each of the three cards would hold, for this viewer. */
-export function useSetUpUses(launch: Launch): {
+function useSetUpUses(launch: Launch): {
   uses: Record<SetUpCard, TabUse>;
   /** The project's tasks were read, or could not be: what the cards say about work is settled. */
   tasksRead: boolean;
