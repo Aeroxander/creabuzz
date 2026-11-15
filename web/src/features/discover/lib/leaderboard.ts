@@ -36,7 +36,7 @@ import { weeksInARow } from "../../launchpad/lib/weekly-update.ts";
 const DAY = 86_400;
 
 /** A run of weeks counts for ranking only with this many promises answered, the same rule the share picture uses. */
-export const MIN_ANSWERED = 2;
+const MIN_ANSWERED = 2;
 
 /** A weekly update with no promise and no answer is "real" when its one line says at least this much. */
 const MIN_REAL_LINE = 24;

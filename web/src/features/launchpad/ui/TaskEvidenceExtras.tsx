@@ -25,7 +25,7 @@ import type { TaskEvidence } from "../lib/tasks";
 import type { TaskRunRecords } from "../use-task-run-records";
 import { day } from "./TaskParts";
 
-export const REPORTED_LABEL = "Reported by the helper, not run by anyone else";
+const REPORTED_LABEL = "Reported by the helper, not run by anyone else";
 
 const VERDICT_WORDS: Record<ThresholdVerdict, string> = {
   yes: "yes",

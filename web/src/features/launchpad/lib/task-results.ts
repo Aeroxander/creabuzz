@@ -14,9 +14,9 @@
  * Pure and alias-free: `task-results.test.mjs` drives it under `node --test`.
  */
 
-export const TAG_RESULT = "task-result";
-export const TAG_RUN_LOG = "task-run-log";
-export const TAG_RUN_RECORD = "task-run-record";
+const TAG_RESULT = "task-result";
+const TAG_RUN_LOG = "task-run-log";
+const TAG_RUN_RECORD = "task-run-record";
 
 /** The bounds a hand-in's extra tags are held to. Same names and values as `task_result.rs`. */
 export const RESULT_LIMITS = {
