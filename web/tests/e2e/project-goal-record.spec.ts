@@ -192,7 +192,7 @@ const tagsNamed = (e: { tags: string[][] }, name: string) =>
 const noSidewaysScroll = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 
-test("one person starts a project alone with four answers and lands on its page with the goal", async ({
+test("one person starts a project alone with three answers and lands on its page with the goal", async ({
   page,
 }) => {
   const relay = createMockRelay({ applyDeletions: true });
@@ -203,8 +203,8 @@ test("one person starts a project alone with four answers and lands on its page 
   const form = page.getByTestId("quick-start");
   await expect(form).toBeVisible();
   await expect(page.getByTestId("start-go-contributor")).toBeHidden();
-  // Only four things are asked.
-  await expect(form.locator("input, textarea, select")).toHaveCount(4);
+  // Only three things are asked: the name, the goal and how we will know. The one-liner has a default.
+  await expect(form.locator("input, textarea, select")).toHaveCount(3);
 
   // Each missing answer is named, and nothing is sent.
   await form.getByRole("button", { name: "Start the project" }).click();
@@ -212,9 +212,6 @@ test("one person starts a project alone with four answers and lands on its page 
     "Give your project a name.",
   );
   await form.getByLabel("Project name").fill("Nebula");
-  await form
-    .getByLabel("What is it, in one sentence?")
-    .fill("A map of the night sky for everyone.");
   await form.getByLabel("The goal").fill("A first version ten people use");
   await form.getByRole("button", { name: "Start the project" }).click();
   await expect(form.getByTestId("quick-issue")).toHaveText(
@@ -240,7 +237,8 @@ test("one person starts a project alone with four answers and lands on its page 
   const [project] = records(relay, 37001);
   // (`started` is when it was first published: what lists order by, so saving it again never moves it.)
   expect(JSON.parse(project.content)).toEqual({
-    pitch: "A map of the night sky for everyone.",
+    // No one-liner was typed: it is the goal's first words.
+    pitch: "A first version ten people use",
     stage: "draft",
     started: expect.any(Number),
   });
@@ -279,6 +277,7 @@ test("when the goal is not saved the project is not made twice: Try again sends 
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill("Nebula");
+  await form.getByText("Edit the one-liner").click();
   await form
     .getByLabel("What is it, in one sentence?")
     .fill("A map of the night sky for everyone.");
@@ -738,6 +737,7 @@ test("a visitor with no account reads the page, and Follow or Start asks them to
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill("Comet");
+  await form.getByText("Edit the one-liner").click();
   await form
     .getByLabel("What is it, in one sentence?")
     .fill("A tiny telescope anyone can build.");
@@ -1029,6 +1029,7 @@ test("a new project never takes the id of an older one of the founder's that the
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill("Nebula");
+  await form.getByText("Edit the one-liner").click();
   await form
     .getByLabel("What is it, in one sentence?")
     .fill("A second project with the same name.");
@@ -1524,6 +1525,7 @@ test("a problem with an answer is said beside it, and the keyboard goes to that 
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill("Comet");
+  await form.getByText("Edit the one-liner").click();
   await form
     .getByLabel("What is it, in one sentence?")
     .fill("A tiny telescope anyone can build.");

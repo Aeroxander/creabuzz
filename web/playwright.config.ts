@@ -122,6 +122,8 @@ export default defineConfig({
         "**/weekly-update-help.spec.ts",
         // The goal, the promises updates make and answer, the record, and starting a project alone.
         "**/project-goal-record.spec.ts",
+        // Start in one press: sign up from the form and land on the live project, made once.
+        "**/start-one-press.spec.ts",
         // Tasks with a finish line: made from an offer, handed in, sent back, confirmed by someone else; the profile.
         "**/project-tasks.spec.ts",
         // The moment between making a task and reading it back, on a server that is slow to answer.

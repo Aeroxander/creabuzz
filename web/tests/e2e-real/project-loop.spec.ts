@@ -467,6 +467,7 @@ test("2. Quick Start: four answers make the project and its goal, and a reload k
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill(PROJECT_NAME);
+  await form.getByText("Edit the one-liner").click();
   await form
     .getByLabel("What is it, in one sentence?")
     .fill("A star map anyone can add to");
