@@ -307,11 +307,11 @@ mod tests {
         assert!(check_hand_in_tags(&[result("Score", "1"), result("score", "2")]).is_err());
         let hash = "a".repeat(64);
         let log = tag(&["task-run-log", &hash, "run.log"]);
-        assert!(check_hand_in_tags(&[log.clone()]).is_ok());
+        assert!(check_hand_in_tags(std::slice::from_ref(&log)).is_ok());
         assert!(check_hand_in_tags(&[log.clone(), log]).is_err());
         assert!(check_hand_in_tags(&[tag(&["task-run-log", "abc", "run.log"])]).is_err());
         let record = tag(&["task-run-record", &hash]);
-        assert!(check_hand_in_tags(&[record.clone()]).is_ok());
+        assert!(check_hand_in_tags(std::slice::from_ref(&record)).is_ok());
         assert!(check_hand_in_tags(&[record.clone(), record]).is_err());
         assert!(check_hand_in_tags(&[tag(&["task-run-record", "nope"])]).is_err());
         // Tags of other names are not this module's business.
