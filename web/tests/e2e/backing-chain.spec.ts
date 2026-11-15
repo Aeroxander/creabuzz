@@ -25,7 +25,7 @@ import {
  * The story, each step a button on the page and a transaction on the chain, each checked against the chain:
  *   1. a backer puts money in (one approval and one buy) and sells half again; a second backer buys too;
  *   2. past the first milestone date the founder posts a milestone by picking one of the project's own records;
- *   3. the second backer leaves at it: all their units sold and all their held money back;
+ *   3. the second backer leaves at it: their held money comes back, less the pool's fee, and they KEEP their units;
  *   4. the window ends and a visitor settles the milestone: the money reaches the project's treasury;
  *   5. a backer bids in the opening round of another project (Permit2, the auction's approval, the bid), the round is mined
  *      to its end, a visitor settles it, and the backer exchanges the round tokens for units. (The exit and the claim from
@@ -73,7 +73,14 @@ const call = async (to: string, data: string) =>
   BigInt(await rpc("eth_call", [{ to, data }, "latest"]));
 const word = (address: string) =>
   encodeFunctionData("balanceOf(address)", ["address"], [address]);
+/** Every 32-byte word of an answer, as numbers (for the calls that answer more than one). */
+const callWords = async (to: string, data: string) => {
+  const hex = (await rpc("eth_call", [{ to, data }, "latest"])).slice(2);
+  return (hex.match(/.{64}/g) ?? []).map((w) => BigInt(`0x${w}`));
+};
 const noArgs = (signature: string) => selectorOf(signature);
+const word2 = (signature: string, address: string) =>
+  encodeFunctionData(signature, ["address"], [address]);
 const unitsOf = (who: string) => call(POOL, word(who));
 const quoteOf = (who: string) => call(QUOTE, word(who));
 const warp = async (seconds: number) => {
@@ -325,24 +332,58 @@ test("past the first milestone date the founder posts a milestone by picking one
   );
 });
 
-test("the second backer leaves at the milestone: all their units sold and all their held money back", async ({
+test("the second backer leaves at the milestone: held money back less the pool's fee, and the units are kept", async ({
   page,
 }) => {
   const block = await openAs(page, "born", visitor(BACKER_B));
   const refundedBefore = await call(POOL, noArgs("refunded()"));
+  const unitsBefore = await unitsOf(BACKER_B);
+  const moneyBefore = await quoteOf(BACKER_B);
+  const supplyBefore = await call(POOL, noArgs("totalSupply()"));
+  expect(unitsBefore).toBeGreaterThan(0n);
+  expect(
+    await call(POOL, word2("weightOf(address)", BACKER_B)),
+  ).toBeGreaterThan(0n);
+  // The pool's own quote: (what the backer gets, the held money handed back, the fee). Three words, and the fee is the
+  // pool's, whatever its rule: the page must show these and set its limit from them.
+  const [quotedOut, quotedEscrow, quotedFee] = await callWords(
+    POOL,
+    word2("quoteLeave(address)", BACKER_B),
+  );
+  expect(quotedOut).toBe(quotedEscrow - quotedFee);
+  expect(quotedOut).toBeGreaterThan(0n);
   await expect(block.getByTestId("backing-milestone-note")).toContainText(
     "you can stay",
     { timeout: 60_000 },
   );
   await block.getByTestId("backing-leave").click();
-  await expect(block.getByTestId("backing-leave-plan")).toContainText(
-    "You get about",
-    { timeout: 30_000 },
-  );
+  const plan = block.getByTestId("backing-leave-plan");
+  await expect(plan).toContainText("You get about", { timeout: 30_000 });
+  await expect(plan).toContainText("You keep your");
+  await expect(plan).toContainText("less a fee of");
   await block.getByTestId("backing-confirm-leave").click();
-  await expect.poll(() => unitsOf(BACKER_B), { timeout: 60_000 }).toBe(0n);
+  await expect(block.getByTestId("backing-done")).toContainText(
+    "you still hold your units",
+    { timeout: 60_000 },
+  );
+  // Nothing was sold: the units and the supply are exactly as they were; the weight (what funds later milestones) is gone.
+  expect(await unitsOf(BACKER_B)).toBe(unitsBefore);
+  expect(await call(POOL, noArgs("totalSupply()"))).toBe(supplyBefore);
+  expect(await call(POOL, word2("weightOf(address)", BACKER_B))).toBe(0n);
+  // The backer got what the quote said (the chain may have moved by a block, never against the backer).
+  expect(await quoteOf(BACKER_B)).toBeGreaterThanOrEqual(
+    moneyBefore + quotedOut,
+  );
   expect(await call(POOL, noArgs("refunded()"))).toBeGreaterThan(
     refundedBefore,
+  );
+  // They cannot leave again, and the units stay sellable: the page offers Sell and not Leave.
+  await expect(block.getByTestId("backing-leave")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  await expect(block.getByTestId("backing-sell")).toBeVisible();
+  await expect(block.getByTestId("backing-position")).toContainText(
+    "No money is held behind your units",
   );
 });
 

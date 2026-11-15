@@ -475,6 +475,21 @@ What the web needs that is not obvious from the contracts:
   it can and otherwise closes the pool (`Failed`); it needs about 1.1 million gas available (`NotEnoughGas()`
   otherwise). Show a closed pool whose raise was at or above its minimum as "the raise could not be collected".
 
+What the web app does with the two changes above (the adapter is `packages/creaton-core/src/launchpad/backing.ts`; its
+test binds it to these contracts' source):
+
+- **Leaving.** The leave form shows what `quoteLeave` says: what the backer gets, the held money it comes from and the
+  fee, and that the units stay. It never works out the fee: whatever rule the pool uses, the form shows the pool's number,
+  and its words say only "a small fee, never more than staying one more step would cost". `leave`'s `minQuoteOut` is the
+  quote less the allowed drop and is never zero (a quote of nothing is not offered as a leave at all). After leaving, the
+  Backing block says no money is held behind the units, and Home's feed reads `Left` without a price (leaving moves
+  none).
+- **Depth.** A founder opening backing picks from `depthTiers()` (read from the factory, default `defaultDepth()` preselected,
+  with one sentence of help) and the choice goes as the last argument of `open`, `openWithRound` or `launchWithPool`. The
+  Start page's launch sends zero, the default. A waiting round's price grid is `roundTerms(pool.virtualQuote())`, not the
+  three default-depth getters, which stay for old readers and answer for the default depth only. The depth picker shows
+  amounts of the quote token and words, never a price.
+
 ## Deploying (Sepolia)
 
 `contracts/script/DeployBackingSepolia.s.sol` deploys a market factory, the pool factory and `ContributorKitV3`

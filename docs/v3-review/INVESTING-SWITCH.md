@@ -27,6 +27,14 @@ address is named without the switch, or when the switch is anything but `1`.
   was released, the next milestone and the date backers may leave by. No price or returns there.
 - Actions for a signed-in person: back a project, sell, leave at a milestone, take part in the opening round, collect.
   For a founder: open backing, post a milestone. For anyone: settle a round or a milestone once its time has come.
+- **Leaving keeps your units.** At a milestone a backer can stay or leave. Leaving gives back the money held for the project
+  for that backer, less a small fee (never more than staying one more step would cost). The backer keeps their units and can
+  still sell them, but no money is held behind them any more, so they get none back if the project is closed for good. The
+  form shows the pool's own quote (what you get, and the fee) and sends a limit made from it, never zero. The page does not
+  work the fee out and does not describe any return.
+- **The curve's depth.** A founder opening backing picks how deep the curve is from the factory's seven choices (the usual
+  one is preselected), with one sentence of help: a deeper curve moves the price less when people buy or leave, so pick one
+  about twice the amount hoped for. The Start page's one-step launch uses the usual depth. No price is shown for it.
 - Backing cards in **Home's feed** only (the one place a price line appears), always below updates and promises.
 - Your positions under **You** and in Home's next step.
 - Projects set up from the Start page are made by the V3 kit, so they have a pool at birth. A project made earlier by the
@@ -61,6 +69,7 @@ To turn it off, remove the four lines and build again: nothing is left on any pa
 - `./run.sh build` prints `Investing: on (...)` or `Investing: off` before the long build.
 - `scripts/web-investing-mock-e2e.sh` builds the app twice (switch on, and every address named with the switch unset) and runs
   `web/tests/e2e/investing.spec.ts` against a stand-in chain node: every state of the Backing block, the steps it sends, Home's
-  feed, "Projects you back", and that the switch alone turns the page on.
-- `scripts/web-backing-e2e.sh` runs the same pages against the real contracts on a local chain (buy, sell, a milestone, leaving,
-  settling it, and an opening round bid and exchange).
+  feed, "Projects you back", the depth picker and the leave that keeps units, and that the switch alone turns the page on.
+- `scripts/web-backing-e2e.sh` runs the same pages against the real contracts on a local chain (buy, sell, a milestone, leaving
+  with the units kept and the pool's own fee, settling it, and an opening round bid and exchange). It needs the compiled
+  contracts of the current checkout: after a contract change run it again.
