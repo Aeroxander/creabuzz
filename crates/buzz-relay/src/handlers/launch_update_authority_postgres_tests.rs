@@ -733,3 +733,156 @@ async fn a_deletion_hides_the_record_and_stays_readable_itself() {
     .await;
     assert!(!stored(&state, &tenant, &second).await);
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn an_agent_hands_in_reported_numbers_and_the_bounds_hold_at_the_door() {
+    let (state, tenant, p, coord) = world().await;
+    // The helper is an agent account its operator (the mate) runs, as the relay's own records say.
+    let community = tenant.community();
+    for keys in [&p.mate, &p.helper] {
+        state
+            .db
+            .ensure_user(community, &keys.public_key().to_bytes())
+            .await
+            .expect("user row");
+    }
+    assert!(state
+        .db
+        .set_agent_owner(
+            community,
+            &p.helper.public_key().to_bytes(),
+            &p.mate.public_key().to_bytes(),
+        )
+        .await
+        .expect("set owner"));
+    let made = task(&p.founder, &coord, &p.helper, "Evaluate the model");
+    accept(&state, &tenant, made.clone(), "the task").await;
+    let id = made.id.to_hex();
+    let hand_in = |note: &str, extra: &[&[&str]]| {
+        let task_tag = ["task", id.as_str()];
+        let note_tag = ["note", note];
+        let mut tags: Vec<&[&str]> = vec![
+            &["l", "creaton-task"],
+            &["task-part", "evidence"],
+            &task_tag,
+            &note_tag,
+        ];
+        tags.extend_from_slice(extra);
+        record(&p.helper, &coord, &tags)
+    };
+
+    // Numbers, a run log and a run record go in with the work and come back as they were signed.
+    let log = "a".repeat(64);
+    let run = "b".repeat(64);
+    let good = hand_in(
+        "ran it",
+        &[
+            &[
+                "task-result",
+                "pass_rate",
+                "0.82",
+                "ratio",
+                "0.71",
+                "40",
+                "commit abc",
+            ],
+            &["task-run-log", &log, "run.log"],
+            &["task-run-record", &run],
+        ],
+    );
+    accept(&state, &tenant, good.clone(), "an agent hands in numbers").await;
+    let back = state
+        .db
+        .get_event_by_id(tenant.community(), &good.id.to_bytes())
+        .await
+        .expect("read")
+        .expect("stored");
+    assert!(back
+        .event
+        .tags
+        .iter()
+        .any(|t| t.as_slice().first().map(String::as_str) == Some("task-result")));
+
+    // The bounds hold at the door: each of these is refused, and none is stored.
+    let eleven: Vec<Vec<String>> = (0..11)
+        .map(|i| {
+            ["task-result", &format!("m{i}"), "1", "", "", "", ""]
+                .iter()
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .collect();
+    let eleven: Vec<Vec<&str>> = eleven
+        .iter()
+        .map(|t| t.iter().map(String::as_str).collect())
+        .collect();
+    let eleven: Vec<&[&str]> = eleven.iter().map(Vec::as_slice).collect();
+    for (what, event) in [
+        (
+            "a value that is not a number",
+            hand_in(
+                "one",
+                &[&["task-result", "pass_rate", "high", "", "", "", ""]],
+            ),
+        ),
+        (
+            "a result missing its fields",
+            hand_in("two", &[&["task-result", "pass_rate", "0.8"]]),
+        ),
+        (
+            "the same result twice",
+            hand_in(
+                "three",
+                &[
+                    &["task-result", "score", "1", "", "", "", ""],
+                    &["task-result", "SCORE", "2", "", "", "", ""],
+                ],
+            ),
+        ),
+        (
+            "more results than a hand-in may carry",
+            hand_in("four", &eleven),
+        ),
+        (
+            "a run record that is not an id",
+            hand_in("five", &[&["task-run-record", "nope"]]),
+        ),
+    ] {
+        refuse(&state, &tenant, event.clone(), "invalid", what).await;
+        assert!(!stored(&state, &tenant, &event).await, "{what}");
+    }
+
+    // Numbers ride only on work handed in: a team member's confirmation cannot carry them.
+    refuse(
+        &state,
+        &tenant,
+        record(
+            &p.founder,
+            &coord,
+            &[
+                &["task-part", "confirm"],
+                &["task", &id],
+                &["task-evidence", &good.id.to_hex()],
+                &["task-result", "pass_rate", "0.99", "", "", "", ""],
+            ],
+        ),
+        "handed in",
+        "numbers on a confirmation",
+    )
+    .await;
+
+    // The agent limit is untouched: it still cannot confirm, and still cannot sign a goal.
+    refuse(
+        &state,
+        &tenant,
+        record(
+            &p.helper,
+            &coord,
+            &[&["task-part", "confirm"], &["task", &id]],
+        ),
+        NOT_TEAM,
+        "an agent confirming its own work",
+    )
+    .await;
+}

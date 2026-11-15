@@ -37,6 +37,13 @@
 //! plain update, a team answer, a check note, a tag this module has never
 //! heard of) is stored only from the founder or the team.
 //!
+//! # Reported numbers on a hand-in
+//!
+//! A helper's `evidence` step may carry `task-result`, `task-run-log` and `task-run-record` tags: numbers the helper
+//! reports, the fingerprint of a log, and the id of a run record. They are bounded (`buzz_core::task_result`: at most
+//! ten results, plain numbers, short words) and are refused on any other step. Nothing about them says the numbers are
+//! true; readers show them as reported by the helper.
+//!
 //! # Agent accounts
 //!
 //! An account the server has on record as an agent (someone runs it, and both
@@ -272,6 +279,8 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
         _ => return Err("a record can carry only one `task-part` tag".into()),
     };
 
+    check_hand_in_extras(event, step.map(|(part, _)| part))?;
+
     if !(founder || team || known || step.is_some()) {
         if is_open_work_record(event) {
             return Ok(None);
@@ -284,6 +293,32 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
         team,
         step,
     }))
+}
+
+/// Hold the reported-result tags of a hand-in to their bounds (`buzz_core::task_result`).
+///
+/// `task-result`, `task-run-log` and `task-run-record` belong to work handed in and nowhere else: on any other record
+/// they are refused, and on a hand-in they must keep to the bounds, so a record can never carry an unbounded pile of
+/// numbers. Nothing here says the numbers are true; they are the helper's own report, and readers say so.
+fn check_hand_in_extras(event: &Event, part: Option<TaskPart>) -> Result<(), String> {
+    let extras: Vec<Vec<String>> = event
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice().to_vec())
+        .filter(|fields| buzz_core::task_result::is_hand_in_extra(fields))
+        .collect();
+    if extras.is_empty() {
+        return Ok(());
+    }
+    if part != Some(TaskPart::Evidence) {
+        return Err("results and run records can only be sent with work handed in".into());
+    }
+    let all: Vec<Vec<String>> = event
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice().to_vec())
+        .collect();
+    buzz_core::task_result::check_hand_in_tags(&all).map(|_| ())
 }
 
 /// A project's founder and team, read from its project record (kind 37001).
@@ -1057,5 +1092,80 @@ mod tests {
             ],
         );
         assert_eq!(w.verdict(&dressed, Some(&task)), Err(NOT_TEAM));
+    }
+
+    #[test]
+    fn reported_results_ride_only_on_work_handed_in_and_stay_in_bounds() {
+        let w = World::new();
+        let task = w.task(&w.founder);
+        let id = task.id.to_hex();
+        let hand_in = |extra: &[&[&str]]| {
+            let mut tags: Vec<&[&str]> = vec![&["task-part", "evidence"]];
+            let task_tag = ["task", id.as_str()];
+            tags.push(&task_tag);
+            tags.extend_from_slice(extra);
+            w.record(&w.helper, &tags)
+        };
+        let ok: &[&[&str]] = &[
+            &[
+                "task-result",
+                "pass_rate",
+                "0.82",
+                "ratio",
+                "0.71",
+                "40",
+                "commit abc",
+            ],
+            &["task-run-log", &"a".repeat(64), "run.log"],
+            &["task-run-record", &"b".repeat(64)],
+        ];
+        assert!(classify(&hand_in(ok)).is_ok());
+        assert_eq!(w.verdict(&hand_in(ok), Some(&task)), Ok(()));
+        // Out of bounds: not a number, a missing field, a repeated name, a run record that is not an id.
+        for bad in [
+            &["task-result", "pass_rate", "high", "", "", "", ""][..],
+            &["task-result", "pass_rate", "0.8"][..],
+            &["task-run-record", "nope"][..],
+        ] {
+            let error = classify(&hand_in(&[bad])).unwrap_err();
+            assert!(!error.is_empty(), "{bad:?}");
+        }
+        let twice: &[&[&str]] = &[
+            &["task-result", "score", "1", "", "", "", ""],
+            &["task-result", "Score", "2", "", "", "", ""],
+        ];
+        assert!(classify(&hand_in(twice)).unwrap_err().contains("twice"));
+        let eleven: Vec<Vec<String>> = (0..11)
+            .map(|i| {
+                ["task-result", &format!("m{i}"), "1", "", "", "", ""]
+                    .iter()
+                    .map(|p| (*p).to_string())
+                    .collect()
+            })
+            .collect();
+        let eleven: Vec<Vec<&str>> = eleven
+            .iter()
+            .map(|t| t.iter().map(String::as_str).collect())
+            .collect();
+        let eleven: Vec<&[&str]> = eleven.iter().map(Vec::as_slice).collect();
+        assert!(classify(&hand_in(&eleven)).unwrap_err().contains("at most"));
+        // On any other step they are refused: the team's confirmation cannot carry a helper's numbers.
+        let confirm = w.record(
+            &w.mate,
+            &[
+                &["task-part", "confirm"],
+                &["task", &id],
+                &["task-result", "pass_rate", "0.9", "", "", "", ""],
+            ],
+        );
+        assert!(classify(&confirm).unwrap_err().contains("handed in"));
+        let plain = w.record(
+            &w.founder,
+            &[
+                &["update-part", "done", "x"],
+                &["task-result", "a", "1", "", "", "", ""],
+            ],
+        );
+        assert!(classify(&plain).unwrap_err().contains("handed in"));
     }
 }

@@ -42,6 +42,8 @@ pub mod presence;
 pub mod private_managed_agent;
 /// Canonical relay runtime identities.
 pub mod relay;
+/// The tags a task hand-in may carry for reported results and run records.
+pub mod task_result;
 /// Tenant identity — the server-resolved community key carried on scoped paths.
 pub mod tenant;
 /// NIP-CW thread-mode normalized newest-first window contract.
