@@ -1308,14 +1308,6 @@ export interface NoPoolView {
   quoteMatchesFactory: boolean;
   /** Set when the factory offers a fair opening round: its default minimum at the default depth, in the token's base units. */
   round: { defaultMinimum: bigint } | null;
-  /**
-   * The curve depths the factory offers, shallowest first, in the token's base units, with the one it uses when none is
-   * named. For a factory that offers rounds each tier also carries the minimum a round raises by default at that depth.
-   */
-  depth: {
-    defaultDepth: bigint;
-    tiers: { depth: bigint; defaultMinimum: bigint | null }[];
-  };
   now: number;
   block: number;
 }
@@ -1375,6 +1367,36 @@ export async function readRoundTerms(
   return { tickSpacingX96: w[0], floorPriceX96: w[1], defaultMinimum: w[2] };
 }
 
+/** One depth a founder may pick, with the minimum a round raises by default at that depth (null when rounds are off). */
+export interface DepthChoice {
+  depth: bigint;
+  defaultMinimum: bigint | null;
+}
+
+/**
+ * What a founder opening backing chooses from: the factory's curve depths, shallowest first, in the token's base units,
+ * the one it uses when none is named, and for each the minimum a round raises by default at that depth. A fixed number of
+ * reads: two, and one more per depth when rounds are offered.
+ */
+export async function readOpenMenu(
+  chain: Pick<BackingChain, "call">,
+  factory: string,
+  roundsOffered: boolean,
+): Promise<{ defaultDepth: bigint; tiers: DepthChoice[] }> {
+  const { defaultDepth, tiers } = await readDepthTiers(chain, factory);
+  const choices = await Promise.all(
+    tiers.map(
+      async (depth): Promise<DepthChoice> => ({
+        depth,
+        defaultMinimum: roundsOffered
+          ? (await readRoundTerms(chain, factory, depth)).defaultMinimum
+          : null,
+      }),
+    ),
+  );
+  return { defaultDepth, tiers: choices };
+}
+
 /**
  * The curve depths a factory offers and its default, in the token's base units. A factory that does not answer is not
  * guessed at: the menu is the factory's, and it refuses any depth that is not on it.
@@ -1424,7 +1446,6 @@ export async function readPool(
       factoryQuoteHex,
       auctionFactoryHex,
       minimumHex,
-      menu,
       now,
       block,
     ] = await Promise.all([
@@ -1432,23 +1453,12 @@ export async function readPool(
       chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.factoryQuote)),
       chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.auctionFactory)),
       chain.call(factory, encodeNoArgs(BACKING_SIGNATURES.defaultMinimumRaise)),
-      readDepthTiers(chain, factory),
       chain.now(),
       chain.blockNumber(),
     ]);
     const factoryQuote = wordToAddress(factoryQuoteHex, "quote()");
     const roundsOffered =
       wordToAddress(auctionFactoryHex, "auctionFactory()") !== ZERO_ADDRESS;
-    // A round's default minimum follows the depth: one bounded read per tier, only when rounds are offered.
-    const minimums = roundsOffered
-      ? await Promise.all(
-          menu.tiers.map(async (depth) => ({
-            depth,
-            defaultMinimum: (await readRoundTerms(chain, factory, depth))
-              .defaultMinimum as bigint | null,
-          })),
-        )
-      : menu.tiers.map((depth) => ({ depth, defaultMinimum: null }));
     return {
       kind: "none",
       factory,
@@ -1459,7 +1469,6 @@ export async function readPool(
       round: roundsOffered
         ? { defaultMinimum: words(minimumHex, 1, "defaultMinimumRaise()")[0] }
         : null,
-      depth: { defaultDepth: menu.defaultDepth, tiers: minimums },
       now,
       block,
     };

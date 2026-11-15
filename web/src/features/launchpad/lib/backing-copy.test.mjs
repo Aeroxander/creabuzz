@@ -9,7 +9,14 @@ import {
   backingFailure,
   backingLimits,
   cutLine,
+  DEPTH_HELP,
+  depthExplanation,
+  depthOptionLabel,
   HONEST_LINE,
+  LEAVE_KEEPS_LINE,
+  LEAVE_LIMIT_LABEL,
+  LEAVE_WHAT_IT_IS,
+  leavePlanLine,
   milestoneLine,
   milestoneOutcomeLine,
   money,
@@ -36,6 +43,19 @@ const PROTOCOL_WORDS =
 
 const everySentence = () => [
   HONEST_LINE,
+  LEAVE_WHAT_IT_IS,
+  LEAVE_KEEPS_LINE,
+  LEAVE_LIMIT_LABEL,
+  DEPTH_HELP,
+  leavePlanLine(
+    { quoteOut: 9_000_000n, fromEscrow: 10_000_000n, fee: 1_000_000n },
+    3n * 10n ** 18n,
+    token,
+  ),
+  ...[5_000, 25_000, 500_000].flatMap((whole) => [
+    depthExplanation(BigInt(whole) * 10n ** 6n, token),
+    depthOptionLabel(BigInt(whole) * 10n ** 6n, whole === 25_000, token),
+  ]),
   WHAT_IT_IS,
   NOT_SHARES_LINE,
   OPEN_NOW_HELP,
@@ -91,8 +111,96 @@ test("the legal lines are whole and always in the list a backer reads", () => {
   );
   assert.equal(
     HONEST_LINE,
-    "You can sell any time. At each milestone you can stay or leave with your held money back.",
+    "You can sell any time. At each milestone you can stay, or leave: you keep your units and get your held money back, less a small fee.",
   );
+  // What leaving costs a backer is told before they back: the fee, that units stay, and that nothing is held behind them.
+  assert.ok(
+    limits.some((l) =>
+      /Leaving at a milestone costs a small fee\. You keep your units and can still sell them, but no money is held behind them any more/.test(
+        l,
+      ),
+    ),
+  );
+});
+
+test("leaving is said as the pool's own quote says it: held money back, a small fee, the units kept, and no return", () => {
+  const quote = {
+    quoteOut: 9_000_000n,
+    fromEscrow: 10_000_000n,
+    fee: 1_000_000n,
+  };
+  const line = leavePlanLine(quote, 3n * 10n ** 18n, token);
+  assert.match(
+    line,
+    /^Leaving gives back the money held for the project for you, less a small fee, never more than staying one more step would cost\./,
+  );
+  assert.match(
+    line,
+    /You get about 9 tTEST: 10 tTEST held for you, less a fee of 1 tTEST\./,
+  );
+  assert.match(line, /You keep your 3 units\./);
+  assert.match(line, /no money is held behind them any more/);
+  // The old words, which said leaving sells everything, are gone; the fee rule is not stated; nothing hints at a return.
+  assert.doesNotMatch(
+    line,
+    /sells all|from selling|1%|per ?cent|of the value/i,
+  );
+  assert.doesNotMatch(line, /profit|return|gain|yield|earn|ragequit/i);
+  assert.match(
+    milestoneLine(
+      { kind: "window", leaveBy: 1_700_000_000, releasableFrom: 1_700_000_000 },
+      "3 tTEST",
+    ),
+    /you keep your units and take your held money back, less a small fee \(held for you now: 3 tTEST\)/,
+  );
+  // The fee shown is the quote's, never worked out: another fee in, another fee out, with the same sentence around it.
+  assert.match(
+    leavePlanLine(
+      { ...quote, quoteOut: 9_500_000n, fee: 500_000n },
+      10n ** 18n,
+      token,
+    ),
+    /You get about 9\.5 tTEST: 10 tTEST held for you, less a fee of 0\.5 tTEST\. You keep your 1 unit\./,
+  );
+});
+
+test("a backer with units and no held money is told no money stands behind them", () => {
+  const snapshot = {
+    holderUnits: 3n * 10n ** 18n,
+    holderSellValue: 4_000_000n,
+    holderEscrow: 0n,
+    holderWeight: 0n,
+  };
+  assert.match(
+    positionLine(snapshot, token),
+    /No money is held behind your units, so if the project is closed for good they get none back\. You can still sell them\.$/,
+  );
+  // With a weight that simply holds nothing yet, the line is not claimed.
+  assert.doesNotMatch(
+    positionLine({ ...snapshot, holderWeight: 5n }, token),
+    /No money is held/,
+  );
+});
+
+test("the depth is said without a price, one sentence of help, and the usual one marked", () => {
+  assert.equal(
+    DEPTH_HELP,
+    "A deeper curve moves the price less when people buy or leave; pick one about twice the amount you hope to raise.",
+  );
+  assert.equal(
+    depthOptionLabel(25_000_000_000n, true, token),
+    "25,000 tTEST (usual)",
+  );
+  assert.equal(depthOptionLabel(50_000_000_000n, false, token), "50,000 tTEST");
+  assert.match(
+    depthExplanation(25_000_000_000n, token),
+    /usual depth\. Suits raising up to about 12,500 tTEST\.$/,
+  );
+  assert.match(
+    depthExplanation(5_000_000_000n, token),
+    /^Shallower than usual/,
+  );
+  assert.match(depthExplanation(500_000_000_000n, token), /^Deeper than usual/);
 });
 
 test("each state says one thing and the founder is told how to open it", () => {

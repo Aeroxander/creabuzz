@@ -44,6 +44,7 @@ import {
   priceMovePercent,
   readDepthTiers,
   readLeaveQuote,
+  readOpenMenu,
   readPool,
   readPoolAddress,
   readPoolEvents,
@@ -320,6 +321,26 @@ test("the factory's menu is read in one bounded step and its default must be on 
   await assert.rejects(
     readDepthTiers(chain(26n * 10n ** 9n), FACTORY),
     /not one of its depths/,
+  );
+});
+
+test("the founder's menu is the factory's tiers, each with the round minimum at that depth, and no round terms when rounds are off", async () => {
+  const chain = fakeChain();
+  const menu = await readOpenMenu(chain, FACTORY, true);
+  assert.equal(menu.defaultDepth, TIERS[2]);
+  assert.deepEqual(
+    menu.tiers.map((t) => t.depth),
+    TIERS,
+  );
+  assert.deepEqual(
+    menu.tiers.map((t) => t.defaultMinimum),
+    TIERS.map((d) => d / 10n),
+  );
+  const off = fakeChain();
+  const noRounds = await readOpenMenu(off, FACTORY, false);
+  assert.ok(noRounds.tiers.every((t) => t.defaultMinimum === null));
+  assert.ok(
+    !off.calls.some(([, s]) => s === selectorOf("roundTerms(uint256)")),
   );
 });
 
@@ -1206,16 +1227,6 @@ test("a project's pool is found by its DAO through the factory, and the zero add
   assert.deepEqual(read.quote, { address: QUOTE, decimals: 6, symbol: "TEST" });
   assert.equal(read.quoteMatchesFactory, true);
   assert.deepEqual(read.round, { defaultMinimum: 2_500_000_000n });
-  // The depth menu is the factory's own, each tier with the minimum a round raises by default at that depth.
-  assert.equal(read.depth.defaultDepth, TIERS[2]);
-  assert.deepEqual(
-    read.depth.tiers.map((t) => t.depth),
-    TIERS,
-  );
-  assert.deepEqual(
-    read.depth.tiers.map((t) => t.defaultMinimum),
-    TIERS.map((d) => d / 10n),
-  );
   // A factory with no auction factory offers no round.
   const noRounds = await readPool(
     fakeChain({
@@ -1225,8 +1236,8 @@ test("a project's pool is found by its DAO through the factory, and the zero add
     { factory: FACTORY, dao: DAO, holder: null },
   );
   assert.equal(noRounds.round, null);
-  assert.ok(noRounds.depth.tiers.every((t) => t.defaultMinimum === null));
-  assert.equal(noRounds.depth.tiers.length, 7);
+  // Reading a project with no pool asks the factory nothing about depth: only the founder's form needs the menu.
+  assert.equal(noRounds.depth, undefined);
   // A node that does not answer, or answers with nonsense, is a failed read and never "no pool".
   const down = fakeChain({
     [`${FACTORY}:${selectorOf("poolOf(address)")}`]: () => {

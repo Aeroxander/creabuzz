@@ -15,6 +15,8 @@ import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 
 import {
+  DEPTH_HELP,
+  DEPTH_LABEL,
   FOUNDER_ACCOUNT_LINE,
   NO_FOUNDER_LINE,
   NO_RECORDS_LINE,
@@ -23,12 +25,15 @@ import {
   OPEN_ROUND_HELP,
   OPEN_ROUND_LABEL,
   POST_MILESTONE_HELP,
+  depthExplanation,
+  depthOptionLabel,
   money,
   whenWords,
 } from "../lib/backing-copy";
 import { openBackingCalls, postMilestoneCalls } from "../lib/backing-orders";
 import { KIND_WORD, milestoneChoices } from "../lib/backing-records";
 import type { Launch } from "../models";
+import { useOpenMenu } from "../use-backing";
 import { useProjectUpdates } from "../use-help-requests";
 import { useProjectTasks } from "../use-tasks";
 import type { Place } from "./TradingOrderForms";
@@ -69,9 +74,24 @@ export function OpenBacking({
   const field = useRef<HTMLInputElement>(null);
   const [how, setHow] = useState<"now" | "round" | null>(null);
   const [minimum, setMinimum] = useState("");
+  const [chosenDepth, setChosenDepth] = useState<string | null>(null);
   const [tried, setTried] = useState(false);
   const rounds = view.kind === "none" ? view.round : { defaultMinimum: 0n };
   const allowed = isFounderAccount(me, view.founder, target.dao);
+  // The factory's own list of depths, read only for the founder with the form open.
+  const menu = useOpenMenu(
+    target.factory,
+    Boolean(rounds),
+    allowed && how !== null,
+  );
+  const depth = menu.data
+    ? (menu.data.tiers.find((t) => t.depth.toString() === chosenDepth)?.depth ??
+      menu.data.defaultDepth)
+    : null;
+  const minimumHere =
+    menu.data?.tiers.find((t) => t.depth === depth)?.defaultMinimum ??
+    rounds?.defaultMinimum ??
+    0n;
   if (!allowed && /^0x0{40}$/.test(view.founder)) {
     return (
       <p
@@ -114,6 +134,8 @@ export function OpenBacking({
         how === "now"
           ? { kind: "now" }
           : { kind: "round", minimum: typed ?? 0n },
+        // Nothing chosen (the list could not be read) is the factory's usual depth, as zero.
+        depth ?? 0n,
       ),
     );
     if (placed) setHow(null);
@@ -157,6 +179,53 @@ export function OpenBacking({
             <p className="text-sm">
               {how === "now" ? OPEN_NOW_HELP : OPEN_ROUND_HELP}
             </p>
+            <div className="flex flex-col gap-1" data-testid="backing-depth">
+              <label className="text-sm font-medium" htmlFor={`${base}-depth`}>
+                {DEPTH_LABEL}
+              </label>
+              {menu.data && depth !== null ? (
+                <>
+                  <select
+                    aria-describedby={`${base}-depth-help`}
+                    className="h-9 rounded-md border border-input bg-background px-2 text-sm max-sm:h-11"
+                    data-testid="backing-depth-select"
+                    id={`${base}-depth`}
+                    onChange={(event) => setChosenDepth(event.target.value)}
+                    value={depth.toString()}
+                  >
+                    {menu.data.tiers.map((tier) => (
+                      <option
+                        key={tier.depth.toString()}
+                        value={tier.depth.toString()}
+                      >
+                        {depthOptionLabel(
+                          tier.depth,
+                          tier.depth === menu.data.defaultDepth,
+                          view.quote,
+                        )}
+                      </option>
+                    ))}
+                  </select>
+                  <p
+                    className="text-xs text-muted-foreground"
+                    data-testid="backing-depth-note"
+                    id={`${base}-depth-help`}
+                  >
+                    {depthExplanation(depth, view.quote)} {DEPTH_HELP}
+                  </p>
+                </>
+              ) : (
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="backing-depth-note"
+                  id={`${base}-depth-help`}
+                >
+                  {menu.isError
+                    ? "The choices could not be read just now, so the usual depth will be used."
+                    : "Reading the choices…"}
+                </p>
+              )}
+            </div>
             {how === "round" && rounds ? (
               <>
                 <label className="text-sm font-medium" htmlFor={`${base}-min`}>
@@ -173,9 +242,7 @@ export function OpenBacking({
                   inputMode="decimal"
                   onChange={(event) => setMinimum(event.target.value)}
                   placeholder={
-                    rounds.defaultMinimum > 0n
-                      ? money(rounds.defaultMinimum, view.quote)
-                      : ""
+                    minimumHere > 0n ? money(minimumHere, view.quote) : ""
                   }
                   ref={field}
                   value={minimum}
@@ -185,8 +252,8 @@ export function OpenBacking({
                   id={`${base}-min-help`}
                 >
                   Leave it empty to ask for{" "}
-                  {rounds.defaultMinimum > 0n
-                    ? money(rounds.defaultMinimum, view.quote)
+                  {minimumHere > 0n
+                    ? money(minimumHere, view.quote)
                     : "the usual minimum"}
                   , the most a round of this size can ask for. A round that
                   raises less opens nothing.

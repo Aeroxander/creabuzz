@@ -24,10 +24,17 @@ import {
   buyCalls,
   buyIssue,
   leaveCalls,
+  leaveIssue,
   SLIPPAGE_CHOICES,
   sellCalls,
 } from "../lib/backing-orders";
-import { money, unitsPhrase, whenWords } from "../lib/backing-copy";
+import {
+  LEAVE_LIMIT_LABEL,
+  leavePlanLine,
+  money,
+  unitsPhrase,
+  whenWords,
+} from "../lib/backing-copy";
 import { useBuyQuote, useLeaveQuote, useSellQuote } from "../use-backing";
 import type { Place } from "./TradingOrderForms";
 
@@ -61,15 +68,17 @@ function Slippage({
   bps,
   onChange,
   idPrefix,
+  label = "Allow the price to move by up to",
 }: {
   bps: number;
   onChange: (bps: number) => void;
   idPrefix: string;
+  label?: string;
 }) {
   const id = `${idPrefix}-move`;
   return (
     <div className="flex flex-wrap items-center gap-2 text-sm">
-      <label htmlFor={id}>Allow the price to move by up to</label>
+      <label htmlFor={id}>{label}</label>
       <select
         className="h-9 rounded-md border border-input bg-background px-2 text-sm max-sm:h-11"
         data-testid="backing-move"
@@ -361,7 +370,10 @@ export function SellForm({
   );
 }
 
-/** "Leave at this milestone": all the wallet's units sold and all of its held money back, before the date shown. */
+/**
+ * "Leave at this milestone": the wallet's held money back, less the pool's small fee, before the date shown. Nothing is
+ * sold and the wallet keeps its units. The figures are the pool's own quote; the limit is set from it and is never zero.
+ */
 export function LeavePanel({
   view,
   place,
@@ -378,7 +390,7 @@ export function LeavePanel({
   const quote: LeaveQuote | null = priced.data ?? null;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (quote === null) return;
+    if (quote === null || leaveIssue(quote) !== null) return;
     const placed = await place("backing-leave", () =>
       leaveCalls({
         pool: view.pool,
@@ -404,7 +416,8 @@ export function LeavePanel({
         role="status"
       >
         {quote
-          ? `Leaving sells all ${unitsPhrase(snapshot.holderUnits)} and hands back all of your held money. You get about ${money(quote.quoteOut, token)}: ${money(quote.fromCurve, token)} from selling, after a fee of ${money(quote.fee, token)}, and ${money(quote.fromEscrow, token)} of held money. Nothing is taken for this milestone.`
+          ? (leaveIssue(quote) ??
+            leavePlanLine(quote, snapshot.holderUnits, token))
           : priced.isError
             ? "Couldn't work out what leaving pays. Try again in a moment."
             : "Working out what leaving pays…"}
@@ -413,18 +426,23 @@ export function LeavePanel({
         You can leave until {whenWords(snapshot.milestone.windowEndsAt)}. If you
         stay, a part of your held money goes to the project.
       </p>
-      <Slippage bps={bps} idPrefix={base} onChange={setBps} />
+      <Slippage
+        bps={bps}
+        idPrefix={base}
+        label={LEAVE_LIMIT_LABEL}
+        onChange={setBps}
+      />
       <div className="flex flex-wrap gap-2">
         <Button
           aria-describedby={`${base}-plan${gateNoteId ? ` ${gateNoteId}` : ""}`}
           className="max-sm:h-11"
           data-testid="backing-confirm-leave"
-          disabled={blocked || quote === null}
+          disabled={blocked || quote === null || leaveIssue(quote) !== null}
           type="submit"
         >
           {busy === "backing-leave"
             ? "Leaving…"
-            : "Leave and take my money back"}
+            : "Leave and take my held money back"}
         </Button>
         <Button
           className="max-sm:h-11"

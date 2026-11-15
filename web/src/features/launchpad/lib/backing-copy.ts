@@ -14,7 +14,9 @@
 import {
   type BackingErrorName,
   backingErrorIn,
+  explainDepthTier,
   formatAmount,
+  type LeaveQuote,
   type NextMilestone,
   type PoolPhase,
   type PoolSnapshot,
@@ -77,7 +79,7 @@ export const BACKING_HEADING = "Backing";
 
 /** The one line that says what a backer can and cannot do, shown with every state that takes money. */
 export const HONEST_LINE =
-  "You can sell any time. At each milestone you can stay or leave with your held money back.";
+  "You can sell any time. At each milestone you can stay, or leave: you keep your units and get your held money back, less a small fee.";
 
 /** What backing is, in one line, for a project that has not opened it and for someone who has never seen it. */
 export const WHAT_IT_IS =
@@ -155,7 +157,7 @@ export function milestoneLine(
 ): string | null {
   switch (next.kind) {
     case "window":
-      return `A milestone was posted. Until ${whenWords(next.leaveBy)} you can stay, and a part of your held money goes to the project, or leave and take all of your held money back${held ? ` (now ${held})` : ""}.`;
+      return `A milestone was posted. Until ${whenWords(next.leaveBy)} you can stay, and a part of your held money goes to the project, or leave: you keep your units and take your held money back, less a small fee${held ? ` (held for you now: ${held})` : ""}.`;
     case "release":
       return "The time to leave is over. Anyone can settle the milestone now, which sends the part that was not taken back to the project.";
     case "cancel":
@@ -180,6 +182,10 @@ export function positionLine(
     parts.push(
       `${money(snapshot.holderEscrow, quote)} of what you paid is held for the project.`,
     );
+  else if (snapshot.holderWeight === 0n)
+    parts.push(
+      "No money is held behind your units, so if the project is closed for good they get none back. You can still sell them.",
+    );
   return parts.join(" ");
 }
 
@@ -190,6 +196,7 @@ export function backingLimits(): string[] {
   return [
     "You may get back less than you paid.",
     "Selling before a milestone gives up the part of your money that is held for the project to the backers who stay. To take it back, leave at a milestone.",
+    "Leaving at a milestone costs a small fee. You keep your units and can still sell them, but no money is held behind them any more, so if the project is closed for good they get none back.",
     "A milestone is the founder's word that a step was reached, with a public record behind it. Nothing checks that it is true except backers choosing to leave.",
     "Money released at a milestone goes to the project's shared money, which Share holders control.",
     NOT_SHARES_LINE,
@@ -266,6 +273,54 @@ export const POST_MILESTONE_HELP =
 export const NO_RECORDS_LINE =
   "There is no record to point at yet. Post an update, mark a goal as reached, or accept a piece of work, then come back.";
 
+// ---- leaving at a milestone ------------------------------------------------------------------------
+
+/** What leaving is, in one sentence. The fee rule is the pool's and is never worked out or stated here. */
+export const LEAVE_WHAT_IT_IS =
+  "Leaving gives back the money held for the project for you, less a small fee, never more than staying one more step would cost.";
+
+/** What a leaver keeps, and what no longer stands behind it. */
+export const LEAVE_KEEPS_LINE =
+  "You keep your units and can still sell them, but no money is held behind them any more.";
+
+/**
+ * What leaving pays right now, as the pool's own quote says it (`quoteLeave`): what the person gets, the held money it
+ * comes from and the fee, and that the units stay. The figures are the pool's; none is computed here.
+ */
+export function leavePlanLine(
+  quote: LeaveQuote,
+  units: bigint,
+  token: QuoteFacts,
+): string {
+  return `${LEAVE_WHAT_IT_IS} You get about ${money(quote.quoteOut, token)}: ${money(quote.fromEscrow, token)} held for you, less a fee of ${money(quote.fee, token)}. You keep your ${unitsPhrase(units)}. ${LEAVE_KEEPS_LINE}`;
+}
+
+/** The note on the leave form's allowed drop: the fee comes from the pool, so it can change before the step lands. */
+export const LEAVE_LIMIT_LABEL = "Allow what you get to be lower by up to";
+
+// ---- the curve depth a founder picks -----------------------------------------------------------------
+
+export const DEPTH_LABEL = "How deep the curve is";
+
+/** The one sentence of help beside the depth picker. */
+export const DEPTH_HELP =
+  "A deeper curve moves the price less when people buy or leave; pick one about twice the amount you hope to raise.";
+
+/** A depth as one option: the amount, and "usual" for the one the factory picks when nothing is named. */
+export function depthOptionLabel(
+  depth: bigint,
+  isDefault: boolean,
+  quote: QuoteFacts,
+): string {
+  return `${money(depth, quote)}${isDefault ? " (usual)" : ""}`;
+}
+
+/** What one depth means, with no price: see `explainDepthTier`. */
+export function depthExplanation(depth: bigint, quote: QuoteFacts): string {
+  const whole = Number(depth / 10n ** BigInt(quote.decimals));
+  return explainDepthTier(whole, quote.symbol || "units");
+}
+
 // ---- the contract's own refusals ------------------------------------------------------------------
 
 /** A failed step as people read it: what happened and what to do next, and the raw words for Technical details. */
@@ -299,7 +354,7 @@ const REFUSALS: Record<BackingErrorName, string> = {
   WindowNotOver:
     "Backers can still leave at this milestone, so it cannot be settled yet.",
   NoSay:
-    "You cannot do that here: you hold nothing, you bought after this milestone was posted, or you have no part in it.",
+    "You cannot do that here: you have no held money in this milestone, you bought after it was posted, or you have already left.",
   AlreadyDone: "That was already done.",
   NotAbandonable: "This project is not at the point where it can be closed.",
   NothingOwed: "Nothing is waiting to be paid.",
@@ -318,6 +373,8 @@ const REFUSALS: Record<BackingErrorName, string> = {
   MinimumTooLow: "That minimum is lower than the least a round may ask for.",
   NotEnoughGas:
     "The step ran short of network fee before it could finish, so nothing changed. Try again and allow a higher fee.",
+  BadDepth:
+    "That curve depth is not one of the choices on offer, so nothing was opened. Pick one from the list.",
   ERC20InsufficientBalance:
     "Your account does not hold enough of the backing token for that.",
   ERC20InsufficientAllowance:

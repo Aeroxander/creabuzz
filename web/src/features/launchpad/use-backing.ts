@@ -17,6 +17,7 @@ import {
   type PoolLog,
   readBuyQuote,
   readLeaveQuote,
+  readOpenMenu,
   readPool,
   readPoolEvents,
   readSellQuote,
@@ -327,6 +328,31 @@ export function useLeaveQuote(
         backingChain(getRpcEndpoint()),
         pool as string,
         holder as string,
+      ),
+  });
+}
+
+/**
+ * The curve depths a founder may pick when opening backing, with the minimum a round raises by default at each. Read from
+ * the factory itself (it refuses any depth that is not on its list), only for the founder's own form: nobody else's page
+ * asks. A read that fails leaves the form on the factory's usual depth, said in words, and never blocks opening.
+ */
+export function useOpenMenu(
+  factory: string | null,
+  roundsOffered: boolean,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: [...BACKING_QUERY, "open-menu", factory, roundsOffered],
+    enabled: enabled && factory !== null,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    queryFn: () =>
+      readOpenMenu(
+        backingChain(getRpcEndpoint()),
+        factory as string,
+        roundsOffered,
       ),
   });
 }

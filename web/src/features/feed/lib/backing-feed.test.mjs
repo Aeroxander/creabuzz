@@ -42,10 +42,10 @@ const left = (block, id) => ({
   tx: "",
   id,
   backer: A,
-  unitsIn: 1n,
+  unitsKept: 1n,
   quoteOut: 1n,
-  fromEscrow: 1n,
-  priceAfter: 1n,
+  fromEscrow: 2n,
+  fee: 1n,
 });
 const posted = (block, id, windowEndsAt) => ({
   kind: "milestone-posted",
@@ -308,4 +308,19 @@ test("a line says nothing of returns: the only price words are the price line on
     assert.doesNotMatch(line, /return|profit|gain|earn|yield/i, line);
     if (item.card.kind !== "backed") assert.doesNotMatch(line, /price/i, line);
   }
+});
+
+test("a leave does not move the price, so the day's buys still move from the last trade and not from a leave", () => {
+  const items = backingFeedItems(
+    [
+      pool([sold(5, 1000n), left(8, 1n), bought(10, A, ONE, 1100n)], {
+        5: NOON - 3 * DAY,
+        8: NOON - DAY,
+        10: NOON,
+      }),
+    ],
+    NOON + 10,
+  );
+  const backed = items.find((i) => i.card.kind === "backed");
+  assert.equal(backed.card.moved, 10);
 });

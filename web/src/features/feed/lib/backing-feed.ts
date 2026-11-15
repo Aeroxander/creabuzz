@@ -91,8 +91,8 @@ export function backingFeedItems(
       let found: bigint | null = null;
       for (const e of oldestFirst) {
         if (order(e) >= order(first)) break;
-        if (e.kind === "bought" || e.kind === "sold" || e.kind === "left")
-          found = e.priceAfter;
+        // Leaving sells nothing and does not move the price, so only a buy or a sale sets it.
+        if (e.kind === "bought" || e.kind === "sold") found = e.priceAfter;
       }
       return found;
     };

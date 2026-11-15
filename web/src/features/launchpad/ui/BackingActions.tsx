@@ -272,7 +272,11 @@ export function BackingActions({
           <LeavePanel
             {...common}
             onCancel={() => setForm(null)}
-            onDone={() => finish("You left. Your held money is back with you.")}
+            onDone={() =>
+              finish(
+                "You left. Your held money is back with you, and you still hold your units.",
+              )
+            }
             view={view}
           />
         ) : null}
