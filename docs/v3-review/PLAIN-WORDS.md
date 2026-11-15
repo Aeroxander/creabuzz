@@ -79,7 +79,7 @@ one-line explanation (the quoted line). Counts are rough usage in visible string
 | seat | seat | Keep in court. "A seat is the smallest deposit a juror can hold." |
 | burn | destroy; remove for good | Never. |
 | mint, minted | create; created | Never. |
-| unearned Shares | Shares not yet earned | Keep. |
+| unearned Shares | Shares not yet freed | Say "not yet freed". Never "earn" next to Shares (check:copy fails on it). |
 | pro rata | in proportion to what each holds | Never. |
 | token | token | Keep. "A token is a unit the project issues; Shares are its voting token." |
 | USDC, ETH, CREATE | same, always after the number | Keep exactly. Explain once: "USDC is a digital dollar." CREATE: "the court's deposit token." |
