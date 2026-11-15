@@ -83,16 +83,12 @@ export function tabAlias(tab: LaunchTab, kind: PageKind): LaunchTab {
 }
 
 /**
- * The founder's settings: a contributor project, and an idea in a build without raises, get the small edit-or-remove
- * panel; everything else gets the sale's own manage panel.
+ * The founder's settings: a contributor project and an idea get the small edit-or-remove panel, in every build. An
+ * idea has no sale yet, so the sale's own manage panel (with its fields for people who run sales by hand) is never
+ * an idea's; only a project with a sale gets it.
  */
-export function founderSettings(
-  kind: PageKind,
-  raises: boolean,
-): "settings" | "sale" {
-  if (kind === "contributor") return "settings";
-  if (kind === "idea" && !raises) return "settings";
-  return "sale";
+export function founderSettings(kind: PageKind): "settings" | "sale" {
+  return kind === "contributor" || kind === "idea" ? "settings" : "sale";
 }
 
 /** Whether an idea's overview lists the older team surfaces (community work board, helpers). */

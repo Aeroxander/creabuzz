@@ -124,8 +124,8 @@ test("the pilot's Start page offers a contributor project and an idea, and no ra
 
 test("the pilot's project pages: no helpers on an idea, small settings, the same contributor tabs", () => {
   assert.equal(allowedTabs("idea", raises)?.has("agents"), false);
-  assert.equal(founderSettings("idea", raises), "settings");
-  assert.equal(founderSettings("contributor", raises), "settings");
+  assert.equal(founderSettings("idea"), "settings");
+  assert.equal(founderSettings("contributor"), "settings");
   assert.equal(ideaShowsTeamSurfaces(raises), false);
 });
 

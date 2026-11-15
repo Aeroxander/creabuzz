@@ -874,7 +874,7 @@ export function LaunchDetailPage({
       ) : null}
       {shown === "manage" &&
       isFounder &&
-      founderSettings(kind, raises) === "settings" ? (
+      founderSettings(kind) === "settings" ? (
         <ContributorSettings
           idea={idea}
           isDeleting={remove.isPending}

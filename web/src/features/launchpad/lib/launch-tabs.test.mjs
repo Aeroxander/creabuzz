@@ -57,12 +57,11 @@ test("a link to the old proposals tab opens the decisions, for every kind of pag
   assert.equal(tabAlias("record", "raise"), "record");
 });
 
-test("an idea's founder gets the small settings, not the sale checklist, where no sale can open", () => {
-  assert.equal(founderSettings("idea", false), "settings");
-  assert.equal(founderSettings("idea", true), "sale");
-  assert.equal(founderSettings("contributor", true), "settings");
-  assert.equal(founderSettings("contributor", false), "settings");
-  assert.equal(founderSettings("raise", true), "sale");
+test("an idea's founder gets the small settings in every build, never the sale's manage panel", () => {
+  // An idea has no sale: the panel with fields for people who run sales by hand is never shown for one.
+  assert.equal(founderSettings("idea"), "settings");
+  assert.equal(founderSettings("contributor"), "settings");
+  assert.equal(founderSettings("raise"), "sale");
 });
 
 test("an idea's overview leaves out the community work board where raises are not offered", () => {
