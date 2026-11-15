@@ -532,6 +532,8 @@ test("when the founder does the work, someone else must confirm; with nobody els
   seedProject(relay, { mate: false, offer: false });
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
+  // A new project has no tasks card until the founder asks for it.
+  await page.getByTestId("set-up-more").click();
   const tasks = page.getByTestId("project-tasks");
   await tasks.getByRole("button", { name: "Give someone a task" }).click();
   const form = tasks.getByRole("form", { name: "Give someone a task" });
@@ -611,6 +613,8 @@ test("a task given directly names the person only once they say yes", async ({
   seedProject(relay, { offer: false });
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
+  // A new project has no tasks card until the founder asks for it.
+  await page.getByTestId("set-up-more").click();
   const tasks = page.getByTestId("project-tasks");
   await tasks.getByRole("button", { name: "Give someone a task" }).click();
   const form = tasks.getByRole("form", { name: "Give someone a task" });
@@ -654,9 +658,9 @@ test("a task given directly names the person only once they say yes", async ({
 
   // A visitor is not shown a task nobody has said yes to, and the person's profile says nothing of it.
   await openAs(page, null, PROJECT);
-  // Once the tasks were read (the record card says when), the card that lists them is not there.
-  await expect(page.getByTestId("project-record")).toHaveAttribute(
-    "data-work-read",
+  // Once the tasks were read (the page says when), the card that lists them is not there.
+  await expect(page.getByTestId("set-up-state")).toHaveAttribute(
+    "data-tasks-read",
     "true",
     { timeout: 15_000 },
   );
@@ -699,6 +703,8 @@ test("a task whose answer was lost is carried on by Try again, with the draft ke
   seedProject(relay, { offer: false });
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
+  // A new project has no tasks card until the founder asks for it.
+  await page.getByTestId("set-up-more").click();
   const tasks = page.getByTestId("project-tasks");
   await tasks.getByRole("button", { name: "Give someone a task" }).click();
   const form = tasks.getByRole("form", { name: "Give someone a task" });
@@ -929,9 +935,9 @@ test("naming someone's offer puts them on nothing: no public task, nothing on th
 
   // The public: no task, nothing late, nothing on the record.
   await page.goto(PROJECT);
-  // Once the tasks were read (the record card says when), the card that lists them is not there.
-  await expect(page.getByTestId("project-record")).toHaveAttribute(
-    "data-work-read",
+  // Once the tasks were read (the page says when), the card that lists them is not there.
+  await expect(page.getByTestId("set-up-state")).toHaveAttribute(
+    "data-tasks-read",
     "true",
     { timeout: 15_000 },
   );
@@ -967,9 +973,9 @@ test("naming someone's offer puts them on nothing: no public task, nothing on th
 
   // After the no: still nothing public, no line on the project's record, nothing on the profile.
   await openAs(page, null, PROJECT);
-  // Once the tasks were read (the record card says when), the card that lists them is not there.
-  await expect(page.getByTestId("project-record")).toHaveAttribute(
-    "data-work-read",
+  // Once the tasks were read (the page says when), the card that lists them is not there.
+  await expect(page.getByTestId("set-up-state")).toHaveAttribute(
+    "data-tasks-read",
     "true",
     { timeout: 15_000 },
   );

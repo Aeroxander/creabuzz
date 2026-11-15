@@ -25,7 +25,7 @@ import {
 import { mayViewTask, openTasks } from "../lib/tasks";
 import type { Launch } from "../models";
 import { useProjectRecord } from "../use-project-record";
-import { useProjectTasks } from "../use-tasks";
+import { useProjectTasks, useTeamRemovals } from "../use-tasks";
 import { ProjectRecordCard } from "./ProjectRecordCard";
 import { ProjectTasksCard } from "./ProjectTasksCard";
 import { ProjectTeamCard } from "./ProjectTeamCard";
@@ -33,13 +33,19 @@ import { ProjectTeamCard } from "./ProjectTeamCard";
 const SET_UP_CARDS: readonly SetUpCard[] = ["tasks", "team", "record"];
 
 /** What each of the three cards would hold, for this viewer. */
-export function useSetUpUses(launch: Launch): Record<SetUpCard, TabUse> {
+export function useSetUpUses(launch: Launch): {
+  uses: Record<SetUpCard, TabUse>;
+  /** The project's tasks were read, or could not be: what the cards say about work is settled. */
+  tasksRead: boolean;
+} {
   const { record } = launch;
   const me = existingUserPubkey();
   const team = useMemo(() => teamOf(record), [record]);
   const work = useProjectTasks(record);
   const promises = useProjectRecord(record);
-  return useMemo(() => {
+  // What team members removed is part of the record, and is never kept off the page.
+  const removals = useTeamRemovals(record);
+  const uses = useMemo((): Record<SetUpCard, TabUse> => {
     const tasks = work.tasks;
     const open = tasks
       ? openTasks(tasks).filter((task) => mayViewTask(task, team, me)).length
@@ -60,6 +66,7 @@ export function useSetUpUses(launch: Launch): Record<SetUpCard, TabUse> {
           goalRecordEntries(allGoals(read.goals)).length +
           read.removed.count +
           read.removed.unnamed +
+          (removals ? removals.members.length + removals.unchecked : 0) +
           closed
         : null;
     return {
@@ -76,7 +83,8 @@ export function useSetUpUses(launch: Launch): Record<SetUpCard, TabUse> {
         complete: Boolean(read?.facts.totals) && work.complete,
       }),
     };
-  }, [work, promises, team, me, record.team, record.formerTeam]);
+  }, [work, promises, removals, team, me, record.team, record.formerTeam]);
+  return { uses, tasksRead: Boolean(work.tasks) || work.failed };
 }
 
 /**
@@ -95,7 +103,7 @@ export function SetUpCards({
   opened: boolean;
   onOpen: () => void;
 }) {
-  const uses = useSetUpUses(launch);
+  const { uses, tasksRead } = useSetUpUses(launch);
   const me = existingUserPubkey();
   const onTeam = isFounder || (me !== null && teamOf(launch.record).has(me));
   // A card that has been on the page stays for this visit. A card that appears only because its read failed would
@@ -113,6 +121,12 @@ export function SetUpCards({
   const left = setUpMore(uses, opened).filter((card) => !kept.has(card));
   return (
     <>
+      {/* Says when the tasks were read, so a page with nothing to show for them can be told from one still reading. */}
+      <span
+        data-tasks-read={tasksRead ? "true" : undefined}
+        data-testid="set-up-state"
+        hidden
+      />
       {shown("tasks") ? <ProjectTasksCard launch={launch} /> : null}
       {shown("team") ? (
         <ProjectTeamCard isFounder={isFounder} launch={launch} />

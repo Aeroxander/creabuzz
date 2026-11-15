@@ -5,6 +5,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { expect, type Page, test } from "@playwright/test";
 
+import { expectAccessible } from "../helpers/a11y";
 import { createMockRelay } from "./mock-relay";
 import {
   coordOf,
@@ -79,13 +80,18 @@ function seedNew(
   );
 }
 
-/** The key this account backed up is not remembered, at the first load of the tab (a reload keeps what was saved since). */
-async function notBackedUp(page: Page) {
-  await page.addInitScript(() => {
-    if (sessionStorage.getItem("e2e.cleared")) return;
-    sessionStorage.setItem("e2e.cleared", "1");
+/**
+ * The key this account backed up is not remembered. By default on every load; with `firstLoadOnly` only at the first
+ * load of the tab, so what the page saves afterwards (a copied key) is still there after a reload.
+ */
+async function notBackedUp(page: Page, firstLoadOnly = false) {
+  await page.addInitScript((once) => {
+    if (once) {
+      if (sessionStorage.getItem("e2e.cleared")) return;
+      sessionStorage.setItem("e2e.cleared", "1");
+    }
     localStorage.removeItem("buzz.identity.backedUp");
-  });
+  }, firstLoadOnly);
 }
 
 const noSidewaysScroll = (page: Page) =>
@@ -157,6 +163,7 @@ test("a founder lands on the live project with one welcome card and one first-we
     await expect(page.getByTestId(id)).toHaveCount(0);
   await expect(page.getByTestId("set-up-more")).toBeVisible();
   expect(await noSidewaysScroll(page)).toBe(true);
+  await expectAccessible(page, "the project page in its first week");
 });
 
 test("the welcome card can be put away, and a reload or a shared copy of the address does not bring it back", async ({
@@ -389,7 +396,7 @@ test("the first page asks for the recovery key until it is saved, and not on any
   const relay = createMockRelay();
   seedNew(relay);
   await install(page, relay, FOUNDER_KEY);
-  await notBackedUp(page);
+  await notBackedUp(page, true);
   await page.goto(STARTED);
   const prompt = page.getByTestId("recovery-key-prompt");
   await expect(prompt).toBeVisible({ timeout: 20_000 });
