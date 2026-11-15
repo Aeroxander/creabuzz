@@ -185,8 +185,30 @@ A project's link (`/p/<project>-<founder>` and `/launchpad/<project>`) shows the
 the Creaton card as the image, when it is pasted into a chat app. The server writes these into the page itself, so nothing
 needs setting: the image is part of the web build (`web/public/assets/share-card.png`) and the proxy only has to pass the
 `Host` and `X-Forwarded-Proto` headers, which Caddy does. A preview shows only what a signed-out visitor could already read:
-on a server where people must be members to read (invite-only) the link shows the plain Creaton page, and so does a project
-that is removed, not listed, or whose founder is muted or banned.
+on a server where people must be members to read (invite-only) the link shows the plain Creaton page, unless public
+records are on (next section); and so does a project that is removed, not listed, or whose founder is muted or banned.
+
+### Public project records on an invite-only server
+
+`BUZZ_PUBLIC_PROJECT_READS=true` in `.env` (it is on in `.env.creaton.example`) lets anyone read a public project's
+record while everything else stays for members. Someone with no invite who opens a project's link (`/p/<project>-<founder>`
+or `/launchpad/<project>`) sees that project's goal, its weekly updates, which promises were kept and missed, and the work
+that was accepted, read only, with one line saying that taking part needs an invite and a Sign in button. The same link
+shows a real preview in a chat app. It covers only projects the preview rule above allows (listed, not removed, founder not
+muted or banned) and only those records; records signed by someone muted or banned are left out. Rooms, boards, direct
+messages, profiles, Home and every list stay members only, and so does posting anything. Such a visitor cannot browse:
+they need the link.
+
+To turn it off, set `BUZZ_PUBLIC_PROJECT_READS=false` (or delete the line) and run `./run.sh restart`. No rebuild is
+needed. A visitor with no invite is then told "You need an invite to open this project", and previews go back to the plain
+page. Everyone without an invite shares one budget of reads a minute (`BUZZ_PUBLIC_PROJECT_READS_PER_MIN`, default 300),
+so a crowd of strangers cannot slow the server for members; past it they see the invite sentence until the minute ends.
+
+`BUZZ_EXAMPLE_PROJECT=<what follows /p/ in the project's shared address>` names the server's own example project. With
+it, someone with no account who lands on Home is offered "See a record", which opens that project's public record. Set it
+once Creaton's own project exists and run `./run.sh restart`. The server offers it only while a visitor could open that
+project (so not when public records are off on an invite-only server, and not when the project is removed or not listed);
+unset, the button is not shown to them. The server refuses to start on a value that is not such an address.
 
 ### First start
 
