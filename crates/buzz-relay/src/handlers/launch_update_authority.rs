@@ -18,7 +18,9 @@
 //! | `help-reply`, `help-found`                        | the founder or a team member         |
 //! | `help-offer`                                      | anyone (the project must exist)      |
 //! | `task-part` = task, send-back, grant, cancel      | the founder or a team member         |
-//! | `task-part` = confirm                             | founder or team, never the helper    |
+//! | `task-part` = confirm                             | founder or team, never the helper;   |
+//! |                                                   | a founder working alone may check    |
+//! |                                                   | their own work (see below)           |
 //! | `task-part` = accept, evidence, more-time, give-up| the helper the task names            |
 //! | none of the above, body names on-chain work       | anyone, as before (no lookup)        |
 //! | none of the above (a plain update, anything else) | the founder or a team member         |
@@ -58,6 +60,20 @@
 //! person manage their agent's records, it does not lend the agent the
 //! person's place on a team. The link is used once, to refuse: nobody confirms
 //! work done by an agent they run, or by the person who runs them.
+//!
+//! # A founder working alone
+//!
+//! The one exception to "nobody confirms their own work" is a project with
+//! nobody else to do it. The founder may confirm a task whose helper is the
+//! founder, or an agent the founder runs, while the project record lists no
+//! other person: every other team member is either that helper or an account
+//! the server has on record as an agent (an agent can never confirm, so a team
+//! of the founder and agents is still one person). The moment the record lists
+//! another person the refusal is back, whether or not that person ever checks
+//! anything. It is the founder's exception alone: a team member who is not the
+//! founder never confirms their own work, and an agent account never confirms
+//! at all. Readers show such a confirmation as the founder's own check, never
+//! as work accepted by someone else.
 //!
 //! Records stored before this check existed are not looked at again.
 
@@ -353,6 +369,21 @@ impl ProjectTeam {
     fn has(&self, who: &str) -> bool {
         self.is_founder(who) || self.members.contains(who)
     }
+
+    /// The team members who are neither the founder nor `helper`: the only
+    /// people who could check the founder's own work in the founder's place.
+    pub(crate) fn others<'a>(&'a self, helper: &'a str) -> impl Iterator<Item = &'a String> + 'a {
+        self.members
+            .iter()
+            .filter(move |member| !self.is_founder(member) && member.as_str() != helper)
+    }
+
+    /// Whether someone other than the founder and `helper` could confirm work
+    /// here: a listed team member the server does not have on record as an
+    /// agent account (`agents`).
+    fn has_another_person(&self, helper: &str, agents: &HashSet<String>) -> bool {
+        self.others(helper).any(|member| !agents.contains(member))
+    }
 }
 
 /// What a stored task record says: its project and its helper.
@@ -391,12 +422,51 @@ pub(crate) fn task_facts(task: &Event) -> Option<TaskFacts> {
     })
 }
 
+/// How a confirmation's signer and the task's helper are tied in the relay's
+/// agent-owner records.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HelperLink {
+    /// Neither runs the other.
+    None,
+    /// The signer runs the helper: the helper is the signer's agent.
+    SignerRunsHelper,
+    /// The helper runs the signer: the signer is the helper's agent.
+    HelperRunsSigner,
+}
+
+/// What the server knows beyond the project record when a confirmation is
+/// decided. Both are empty for every other record.
+#[derive(Debug)]
+pub(crate) struct ConfirmFacts {
+    /// How the signer and the task's helper are tied.
+    pub(crate) link: HelperLink,
+    /// The team members the server has on record as agent accounts. Only
+    /// looked up when the founder confirms their own work; a member missing
+    /// from it counts as a person.
+    pub(crate) agents: HashSet<String>,
+}
+
+impl ConfirmFacts {
+    /// Nothing known: no tie, and every team member counts as a person.
+    pub(crate) fn none() -> Self {
+        Self {
+            link: HelperLink::None,
+            agents: HashSet::new(),
+        }
+    }
+}
+
+/// The most team members whose accounts are looked up to learn whether a
+/// founder is working alone. A longer team is taken to hold another person.
+const TEAM_LOOKUPS: usize = 32;
+
 /// Decide whether `signer` may post a record with these requirements on the
 /// project `coordinate`.
 ///
 /// `task` is the stored task a step names (`None` when the server does not
-/// hold a task record under that id). `linked_to_helper` says the signer runs
-/// the task's helper, or is run by it, in the relay's agent-owner records.
+/// hold a task record under that id). `confirm` says how the signer and the
+/// task's helper are tied in the relay's agent-owner records, and which team
+/// members are agent accounts (see [`ConfirmFacts`]).
 /// `signer_is_agent` says the server has the signer on record as an agent
 /// account; it matters only for records that need a person.
 ///
@@ -409,17 +479,10 @@ pub(crate) fn decide(
     coordinate: &str,
     team: &ProjectTeam,
     task: Option<&TaskFacts>,
-    linked_to_helper: bool,
+    confirm: &ConfirmFacts,
     signer_is_agent: bool,
 ) -> Result<(), &'static str> {
-    decide_by_place(
-        requirement,
-        signer,
-        coordinate,
-        team,
-        task,
-        linked_to_helper,
-    )?;
+    decide_by_place(requirement, signer, coordinate, team, task, confirm)?;
     if signer_is_agent && requirement.needs_a_person() {
         return Err(AGENT_LIMIT);
     }
@@ -432,7 +495,7 @@ fn decide_by_place(
     coordinate: &str,
     team: &ProjectTeam,
     task: Option<&TaskFacts>,
-    linked_to_helper: bool,
+    confirm: &ConfirmFacts,
 ) -> Result<(), &'static str> {
     if requirement.founder && !team.is_founder(signer) {
         return Err(NOT_FOUNDER);
@@ -465,10 +528,27 @@ fn decide_by_place(
     if !team.has(signer) {
         return Err(NOT_TEAM);
     }
-    if part == TaskPart::Confirm && (task.helper == signer || linked_to_helper) {
+    let own_work = task.helper == signer || confirm.link != HelperLink::None;
+    if part == TaskPart::Confirm && own_work && !founder_alone(signer, team, task, confirm) {
         return Err(OWN_WORK);
     }
     Ok(())
+}
+
+/// Whether `signer` is the founder checking their own work with nobody else to
+/// check it: the helper is the founder, or an agent the founder runs, and the
+/// project record lists no other person. An agent that runs nothing is never
+/// the founder's own work, and a founder that is itself run by the helper is
+/// an agent account, which the agent limit refuses after this.
+fn founder_alone(
+    signer: &str,
+    team: &ProjectTeam,
+    task: &TaskFacts,
+    confirm: &ConfirmFacts,
+) -> bool {
+    team.is_founder(signer)
+        && (task.helper == signer || confirm.link == HelperLink::SignerRunsHelper)
+        && !team.has_another_person(&task.helper, &confirm.agents)
 }
 
 fn internal(what: &str, error: impl std::fmt::Display) -> IngestError {
@@ -530,7 +610,7 @@ pub(crate) async fn enforce_launch_update_authority(
 
     let signer = event.pubkey.to_hex();
     let mut task = None;
-    let mut linked_to_helper = false;
+    let mut confirm = ConfirmFacts::none();
     if let Some((part, Some(task_id))) = requirement.step {
         task = state
             .db
@@ -544,28 +624,36 @@ pub(crate) async fn enforce_launch_update_authority(
         ) {
             let signer_bytes = event.pubkey.to_bytes();
             if helper != signer_bytes {
-                linked_to_helper = state
+                if state
                     .db
                     .is_agent_owner(community, &helper, &signer_bytes)
                     .await
                     .map_err(|e| internal("checking who runs the helper", e))?
-                    || state
-                        .db
-                        .is_agent_owner(community, &signer_bytes, &helper)
-                        .await
-                        .map_err(|e| internal("checking who runs the signer", e))?;
+                {
+                    confirm.link = HelperLink::SignerRunsHelper;
+                } else if state
+                    .db
+                    .is_agent_owner(community, &signer_bytes, &helper)
+                    .await
+                    .map_err(|e| internal("checking who runs the signer", e))?
+                {
+                    confirm.link = HelperLink::HelperRunsSigner;
+                }
+            }
+            // The founder checking their own work, or their agent's: allowed only while the project record lists
+            // no other person. Which of the other team members are agent accounts is asked here and nowhere else.
+            let helper_hex = hex::encode(helper);
+            if team.is_founder(&signer)
+                && (helper == signer_bytes || confirm.link == HelperLink::SignerRunsHelper)
+            {
+                confirm.agents = agents_among(state, community, team.others(&helper_hex)).await?;
             }
         }
     }
 
     // Only a record that needs a person asks whether its signer is an agent.
     let signer_is_agent = if requirement.needs_a_person() {
-        state
-            .db
-            .get_agent_channel_policy(community, &event.pubkey.to_bytes())
-            .await
-            .map_err(|e| internal("checking whether the signer is an agent account", e))?
-            .is_some_and(|(_, owner)| owner.is_some())
+        is_agent_account(state, community, &event.pubkey.to_bytes()).await?
     } else {
         false
     };
@@ -576,7 +664,7 @@ pub(crate) async fn enforce_launch_update_authority(
         &coordinate,
         &team,
         task.as_ref(),
-        linked_to_helper,
+        &confirm,
         signer_is_agent,
     )
     .map_err(|reason| {
@@ -586,6 +674,43 @@ pub(crate) async fn enforce_launch_update_authority(
             IngestError::Rejected(reason.into())
         }
     })
+}
+
+/// Whether the server has `account` on record as an agent account: someone runs it.
+async fn is_agent_account(
+    state: &Arc<AppState>,
+    community: buzz_core::tenant::CommunityId,
+    account: &[u8],
+) -> Result<bool, IngestError> {
+    Ok(state
+        .db
+        .get_agent_channel_policy(community, account)
+        .await
+        .map_err(|e| internal("checking whether an account is an agent account", e))?
+        .is_some_and(|(_, owner)| owner.is_some()))
+}
+
+/// The team members among `others` that the server has on record as agent
+/// accounts, read until the first one that is a person: one person is enough
+/// to say the founder is not alone, so nothing after it is asked. At most
+/// [`TEAM_LOOKUPS`] accounts are looked up; a member past that, or one whose
+/// key cannot be read, is left out and so counts as a person.
+async fn agents_among<'a>(
+    state: &Arc<AppState>,
+    community: buzz_core::tenant::CommunityId,
+    others: impl Iterator<Item = &'a String>,
+) -> Result<HashSet<String>, IngestError> {
+    let mut agents = HashSet::new();
+    for member in others.take(TEAM_LOOKUPS) {
+        let Some(key) = id_bytes(member) else {
+            break;
+        };
+        if !is_agent_account(state, community, &key).await? {
+            break;
+        }
+        agents.insert(member.clone());
+    }
+    Ok(agents)
 }
 
 #[cfg(test)]
@@ -696,17 +821,57 @@ mod tests {
             linked: bool,
             agent: bool,
         ) -> Result<(), &'static str> {
+            let link = if linked {
+                HelperLink::SignerRunsHelper
+            } else {
+                HelperLink::None
+            };
+            self.verdict_on(event, task, &self.team(), link, &[], agent)
+        }
+
+        /// The verdict against any team, with the server's agent-owner tie and the team members it has on record
+        /// as agent accounts.
+        fn verdict_on(
+            &self,
+            event: &Event,
+            task: Option<&Event>,
+            team: &ProjectTeam,
+            link: HelperLink,
+            agents: &[&Keys],
+            signer_is_agent: bool,
+        ) -> Result<(), &'static str> {
             let requirement = classify(event).expect("readable").expect("a known family");
             let facts = task.and_then(task_facts);
+            let confirm = ConfirmFacts {
+                link,
+                agents: agents.iter().map(|k| k.public_key().to_hex()).collect(),
+            };
             decide(
                 &requirement,
                 &event.pubkey.to_hex(),
                 &self.coordinate(),
-                &self.team(),
+                team,
                 facts.as_ref(),
-                linked,
-                agent,
+                &confirm,
+                signer_is_agent,
             )
+        }
+
+        /// The project record with exactly these team members.
+        fn team_of(&self, members: &[&Keys]) -> ProjectTeam {
+            let keys: Vec<String> = members.iter().map(|k| k.public_key().to_hex()).collect();
+            let mut tags: Vec<Vec<&str>> = vec![vec!["d", "orbit"], vec!["name", "Orbit"]];
+            for key in &keys {
+                tags.push(vec!["team", key, "engineer"]);
+            }
+            let tags: Vec<&[&str]> = tags.iter().map(Vec::as_slice).collect();
+            ProjectTeam::from_record(&sign(&self.founder, KIND_LAUNCH_RECORD, &tags))
+        }
+
+        /// A task on this project that `who` makes for `helper`.
+        fn task_for(&self, who: &Keys, helper: &Keys) -> Event {
+            let helper = helper.public_key().to_hex();
+            self.record(who, &[&["task-part", "task"], &["task-helper", &helper]])
         }
     }
 
@@ -997,6 +1162,152 @@ mod tests {
         assert_eq!(
             w.verdict(&w.step(&w.mate, "cancel", &own), Some(&own)),
             Ok(())
+        );
+    }
+
+    #[test]
+    fn a_founder_working_alone_checks_their_own_work() {
+        let w = World::new();
+        let none = HelperLink::None;
+        let runs = HelperLink::SignerRunsHelper;
+        let alone = w.team_of(&[]);
+        let own = w.task_for(&w.founder, &w.founder);
+        let confirm = w.step(&w.founder, "confirm", &own);
+        // Nobody else is on the project: the founder's own task is theirs to check.
+        assert_eq!(
+            w.verdict_on(&confirm, Some(&own), &alone, none, &[], false),
+            Ok(())
+        );
+        // So is the work of an agent the founder runs, whether or not that agent is listed on the team.
+        let agents_task = w.task_for(&w.founder, &w.helper);
+        let agents_confirm = w.step(&w.founder, "confirm", &agents_task);
+        for team in [w.team_of(&[]), w.team_of(&[&w.helper])] {
+            assert_eq!(
+                w.verdict_on(&agents_confirm, Some(&agents_task), &team, runs, &[], false),
+                Ok(())
+            );
+        }
+        // The founder listing themself on the team adds nobody.
+        assert_eq!(
+            w.verdict_on(
+                &confirm,
+                Some(&own),
+                &w.team_of(&[&w.founder]),
+                none,
+                &[],
+                false
+            ),
+            Ok(())
+        );
+
+        // One other person on the team, and the refusal is back: for the founder's own task and their agent's.
+        let with_mate = w.team_of(&[&w.mate]);
+        assert_eq!(
+            w.verdict_on(&confirm, Some(&own), &with_mate, none, &[], false),
+            Err(OWN_WORK)
+        );
+        assert_eq!(
+            w.verdict_on(
+                &agents_confirm,
+                Some(&agents_task),
+                &with_mate,
+                runs,
+                &[],
+                false
+            ),
+            Err(OWN_WORK)
+        );
+        // That person checks it as before.
+        assert_eq!(
+            w.verdict_on(
+                &w.step(&w.mate, "confirm", &own),
+                Some(&own),
+                &with_mate,
+                none,
+                &[],
+                false
+            ),
+            Ok(())
+        );
+
+        // A team whose only other member is an agent account: an agent can never confirm, so the founder is
+        // still the only person and may check their own work.
+        assert_eq!(
+            w.verdict_on(&confirm, Some(&own), &with_mate, none, &[&w.mate], false),
+            Ok(())
+        );
+        // An agent and a person: not alone.
+        let two = w.team_of(&[&w.mate, &w.stranger]);
+        assert_eq!(
+            w.verdict_on(&confirm, Some(&own), &two, none, &[&w.mate], false),
+            Err(OWN_WORK)
+        );
+
+        // It is the founder's exception alone. A team member who is not the founder never checks their own work,
+        // even when nobody but the founder could (and the founder can).
+        let mates = w.task_for(&w.founder, &w.mate);
+        assert_eq!(
+            w.verdict_on(
+                &w.step(&w.mate, "confirm", &mates),
+                Some(&mates),
+                &with_mate,
+                none,
+                &[],
+                false
+            ),
+            Err(OWN_WORK)
+        );
+        // Nor the work of an agent they run.
+        assert_eq!(
+            w.verdict_on(
+                &w.step(&w.mate, "confirm", &agents_task),
+                Some(&agents_task),
+                &with_mate,
+                runs,
+                &[],
+                false
+            ),
+            Err(OWN_WORK)
+        );
+        // An agent account never confirms: not as the founder alone, and not as the founder's agent.
+        assert_eq!(
+            w.verdict_on(&confirm, Some(&own), &alone, none, &[], true),
+            Err(AGENT_LIMIT)
+        );
+        assert_eq!(
+            w.verdict_on(
+                &w.step(&w.helper, "confirm", &agents_task),
+                Some(&agents_task),
+                &w.team_of(&[&w.helper]),
+                none,
+                &[],
+                true
+            ),
+            Err(OWN_WORK)
+        );
+        // A founder the helper runs is that helper's agent, not a person working alone.
+        assert_eq!(
+            w.verdict_on(
+                &agents_confirm,
+                Some(&agents_task),
+                &alone,
+                HelperLink::HelperRunsSigner,
+                &[],
+                false
+            ),
+            Err(OWN_WORK)
+        );
+        // A stranger with no place on the project is told so, alone or not.
+        assert_eq!(
+            w.verdict_on(
+                &w.step(&w.stranger, "confirm", &own),
+                Some(&own),
+                &alone,
+                none,
+                &[],
+                false
+            ),
+            Err(NOT_TEAM)
         );
     }
 

@@ -652,6 +652,112 @@ async fn whoever_runs_the_helper_cannot_confirm_its_work() {
     .await;
 }
 
+/// The founder makes a task for `helper` on `coord`, the helper hands work in, and the founder's confirmation of it
+/// is returned unsent.
+async fn handed_in(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    founder: &Keys,
+    helper: &Keys,
+    coord: &str,
+    what: &str,
+) -> Event {
+    let made = task(founder, coord, helper, what);
+    accept(state, tenant, made.clone(), "the task").await;
+    accept(
+        state,
+        tenant,
+        step(helper, coord, "evidence", &made, what),
+        "the work handed in",
+    )
+    .await;
+    step(founder, coord, "confirm", &made, what)
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_founder_working_alone_checks_their_own_work_and_their_agents() {
+    let (state, tenant, p, _) = world().await;
+    let community = tenant.community();
+    // The helper is an agent the founder runs, as the relay's own records say.
+    for keys in [&p.founder, &p.helper] {
+        state
+            .db
+            .ensure_user(community, &keys.public_key().to_bytes())
+            .await
+            .expect("user row");
+    }
+    assert!(state
+        .db
+        .set_agent_owner(
+            community,
+            &p.helper.public_key().to_bytes(),
+            &p.founder.public_key().to_bytes(),
+        )
+        .await
+        .expect("set owner"));
+
+    // A project with nobody on it but its founder.
+    accept(&state, &tenant, project(&p.founder, "solo", &[], 0), "solo").await;
+    let solo = coordinate(&p.founder, "solo");
+    let own = handed_in(&state, &tenant, &p.founder, &p.founder, &solo, "own").await;
+    accept(&state, &tenant, own, "the founder alone, their own work").await;
+    let agents = handed_in(&state, &tenant, &p.founder, &p.helper, &solo, "agent").await;
+    accept(
+        &state,
+        &tenant,
+        agents,
+        "the founder alone, their agent's work",
+    )
+    .await;
+
+    // A team whose only other member is the founder's agent: an agent never confirms, so the founder is still the
+    // only person.
+    accept(
+        &state,
+        &tenant,
+        project(&p.founder, "bots", &[&p.helper], 0),
+        "bots",
+    )
+    .await;
+    let bots = coordinate(&p.founder, "bots");
+    let own = handed_in(&state, &tenant, &p.founder, &p.founder, &bots, "own").await;
+    accept(&state, &tenant, own, "the founder and an agent, own work").await;
+
+    // The project `world` made has another person on it: the refusal stands, for both.
+    let duo = coordinate(&p.founder, "orbit");
+    let own = handed_in(&state, &tenant, &p.founder, &p.founder, &duo, "own").await;
+    refuse(&state, &tenant, own, OWN_WORK, "own work, with a team").await;
+    let agents = handed_in(&state, &tenant, &p.founder, &p.helper, &duo, "agent").await;
+    refuse(
+        &state,
+        &tenant,
+        agents,
+        OWN_WORK,
+        "agent's work, with a team",
+    )
+    .await;
+
+    // The agent itself never confirms, alone or not, and a helper who is not the founder never checks their own.
+    let made = task(&p.founder, &solo, &p.helper, "again");
+    accept(&state, &tenant, made.clone(), "the task").await;
+    accept(
+        &state,
+        &tenant,
+        step(&p.helper, &solo, "evidence", &made, "again"),
+        "handed in",
+    )
+    .await;
+    refuse(
+        &state,
+        &tenant,
+        step(&p.helper, &solo, "confirm", &made, "mine"),
+        NOT_TEAM,
+        "the agent confirming its own work",
+    )
+    .await;
+}
+
 #[tokio::test]
 #[ignore = "requires Postgres and Redis"]
 async fn a_deletion_hides_the_record_and_stays_readable_itself() {
