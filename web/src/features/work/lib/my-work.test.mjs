@@ -81,6 +81,11 @@ test("handed in and accepted work carries all four dates; a date ahead of now sh
     ["checked", true, NOW],
   ]);
   assert.equal(item.steps[3].label, "Work accepted");
+  // One word, one event: the helper's yes is not called "Accepted", which is what the team does with finished work.
+  assert.deepEqual(
+    item.steps.map((s) => s.label),
+    ["Offered", "Said yes", "Handed in", "Work accepted"],
+  );
 });
 
 test("work sent back says so on the last step", () => {

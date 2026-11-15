@@ -77,7 +77,8 @@ function stepsOf(
     { id: "offered", label: "Offered", at: clamp(task.madeAt), done: true },
     {
       id: "accepted",
-      label: task.agreed === "self" ? "Started" : "Accepted",
+      // "Accepted" is the word for the team taking the finished work, in the last step; the helper's own yes is "Said yes".
+      label: task.agreed === "self" ? "Started" : "Said yes",
       at: yes
         ? clamp(yes.at)
         : task.agreed === "self"
