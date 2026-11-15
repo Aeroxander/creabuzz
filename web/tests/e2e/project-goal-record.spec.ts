@@ -8,7 +8,7 @@ import { expectAccessible } from "../helpers/a11y";
 import { COMMUNITY_HOST, createMockRelay, matches } from "./mock-relay";
 
 /**
- * A project keeps its promises on the record: starting one alone with four answers, the goal on its page and what
+ * A project keeps its promises on the record: starting one alone with three answers, the goal on its page and what
  * became of it, the promises each update makes and the next one answers, and the record everyone reads. Around it: who
  * sees which tabs, what a visitor without an account gets, sends the server refuses, reads that fail or are cut short,
  * and a phone-width screen.

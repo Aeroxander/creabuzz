@@ -170,7 +170,7 @@ export function NewcomerWelcome({
           <Rocket aria-hidden className="h-5 w-5 text-primary" />
           <span className="text-sm font-bold">Start a project</span>
           <span className="text-xs text-muted-foreground">
-            Four answers and it's live.
+            Three answers and it's live.
           </span>
         </Link>
         <Link

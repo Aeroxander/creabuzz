@@ -176,7 +176,7 @@ function NextStep({ me }: { me: string }) {
     body = (
       <>
         <p className="min-w-0 flex-1 text-sm" data-testid="home-next-step-text">
-          You have no project yet. Start one with four answers, or{" "}
+          You have no project yet. Start one with three answers, or{" "}
           <Link
             className="underline"
             data-testid="home-next-step-work"

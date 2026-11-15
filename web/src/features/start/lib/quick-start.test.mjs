@@ -278,7 +278,7 @@ test("what was typed, its category and its kind survive the visit; an old draft 
   const chosen = draft({ category: "AI agent or tool", kind: "ai-media" });
   saveQuickStart(store, chosen);
   assert.deepEqual(loadQuickStart(store), chosen);
-  // A draft saved before categories existed (four answers, no category or kind) loads as one with none.
+  // A draft saved before categories existed (a name, a one-liner, a goal and how; no category or kind) loads as one with none.
   map.set(
     "creaton.start.quick",
     JSON.stringify({ name: "Old", pitch: "p", goal: "g", how: "h" }),

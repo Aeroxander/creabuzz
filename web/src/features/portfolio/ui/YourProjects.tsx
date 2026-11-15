@@ -391,7 +391,7 @@ export function YourProjects() {
             <Link className="underline" to="/start">
               Start one
             </Link>{" "}
-            with four answers.
+            with three answers.
           </>
         }
         id="your-projects-started"

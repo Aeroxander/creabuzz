@@ -189,7 +189,7 @@ const taskIn = (page: Page, helper: string, text: string) =>
     .getByTestId("task")
     .filter({ hasText: helper })
     .filter({ hasText: text });
-/** Fill Start's four answers and press the button, as a person new to Creaton would. */
+/** Fill Start's three answers and press the button, as a person new to Creaton would. */
 const quickStartAnswers =
   (input: { name: string; goal: string; how: string; category?: string }) =>
   async (page: Page) => {
