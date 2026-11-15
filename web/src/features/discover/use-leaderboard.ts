@@ -6,7 +6,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import { isGoalRecordTags } from "@/features/launchpad/lib/goals";
 import {
@@ -21,6 +21,7 @@ import {
   launchCoordinate,
   parseLaunchUpdate,
 } from "@/features/launchpad/models";
+import { oneLineOf } from "@/features/launchpad/lib/weekly-update";
 import { useSupporters } from "@/features/launchpad/use-supporters";
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { queryEvents } from "@/shared/lib/nostr-client";
@@ -29,6 +30,7 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import {
   type BoardProject,
   type BoardUpdate,
+  type ProjectScore,
   projectScore,
 } from "./lib/leaderboard";
 
@@ -118,6 +120,10 @@ export function useLeaderboard(launches: readonly Launch[]) {
         promises: update.promises,
         marks: update.marks,
         asks: Boolean(update.help),
+        // The stored line, never one made up here; only a weekly update has one to show.
+        line: update.weekly
+          ? oneLineOf({ parts: update.parts ?? null, body: update.body })
+          : "",
       });
       updates.set(coordinate, list);
     }
@@ -125,8 +131,21 @@ export function useLeaderboard(launches: readonly Launch[]) {
       projectScore(project, updates.get(project.coordinate) ?? [], found, now),
     );
   }, [read.data, projects]);
+  const byCoordinate = useMemo(
+    () => new Map((scores ?? []).map((s) => [s.coordinate, s])),
+    [scores],
+  );
+  const scoreOf = useCallback(
+    (launch: Launch): ProjectScore | undefined =>
+      byCoordinate.get(
+        launchCoordinate(launch.record.author, launch.record.id),
+      ),
+    [byCoordinate],
+  );
   return {
     scores,
+    /** One project's score, for a card, or undefined while the read is out or when the project was not read. */
+    scoreOf,
     followers: followers.data ?? null,
     failed: read.isError && !read.data,
     retry: () => void read.refetch(),

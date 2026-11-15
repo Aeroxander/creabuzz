@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   boardOrder,
+  isRealUpdate,
   keptWords,
   projectScore,
   streakWords,
@@ -106,6 +107,11 @@ test("each tab lists and orders by its own measure, and saving a record again mo
     streak: 0,
     kept: 0,
     answered: 0,
+    missed: 0,
+    unanswered: 0,
+    rankStreak: 0,
+    lastRealAt: 0,
+    line: "",
     openHelp: 0,
     askedAt: 0,
     days: 0,
@@ -136,4 +142,171 @@ test("a record dated ahead of now adds no day, no request and no kept promise", 
   assert.equal(s.openHelp, 0);
   assert.equal(s.streak, 0);
   assert.equal(boardOrder([s], "moving").length, 0);
+});
+
+// A project whose founder made three promises and, a week later, answered them as given, with a weekly update in each of
+// the weeks around them.
+function answered(states, extra = []) {
+  const first = up(F, NOW - 3 * WEEK, {
+    promises: states.map((_, index) => ({ index, text: `P${index}` })),
+  });
+  const second = up(F, NOW - 2 * WEEK, {
+    marks: states.map((state, index) => ({
+      promiseId: `${first.id}:${index}`,
+      state,
+      note: "",
+    })),
+  });
+  return [
+    first,
+    second,
+    up(F, NOW - WEEK, { line: "Shipped the signup page this week." }),
+    up(F, NOW - DAY, { line: "Fixed the login bug and wrote it up." }),
+    ...extra,
+  ];
+}
+
+test("a run of weeks ranks only when it is paired with answered promises, kept at least as often as missed", () => {
+  // Four weeks in a row, two answered and both kept: the run counts.
+  const good = score(answered(["done", "done"]));
+  assert.equal(good.streak, 4);
+  assert.equal(good.rankStreak, 4);
+  // The same four weeks with one promise answered: a run with almost no record behind it ranks as none.
+  assert.equal(score(answered(["done"])).streak, 4);
+  assert.equal(score(answered(["done"])).rankStreak, 0);
+  // Posting every week and answering nothing.
+  const quiet = Array.from({ length: 6 }, (_, i) =>
+    up(F, NOW - i * WEEK - 60, { line: "Still working on it all." }),
+  );
+  assert.equal(score(quiet).streak, 6);
+  assert.equal(score(quiet).rankStreak, 0);
+  // More missed than kept: the run is real but does not rank.
+  const bad = score(answered(["done", "not-done", "not-done"]));
+  assert.equal(bad.streak, 4);
+  assert.equal(bad.missed, 2);
+  assert.equal(bad.rankStreak, 0);
+  // Promises a later update left unanswered count against the run as well.
+  const left = answered(["done", "done"]);
+  left[0].promises.push({ index: 2, text: "P2" });
+  assert.equal(score(left).unanswered, 1);
+  assert.equal(score(left).rankStreak, 4);
+  left[0].promises.push({ index: 3, text: "P3" }, { index: 4, text: "P4" });
+  assert.equal(score(left).unanswered, 3);
+  assert.equal(score(left).rankStreak, 0);
+});
+
+test("only a weekly update that says something is real, and a bare one cannot place a project", () => {
+  assert.equal(isRealUpdate(up(F, NOW, { line: "Done." })), false);
+  assert.equal(isRealUpdate(up(F, NOW, {})), false);
+  assert.equal(
+    isRealUpdate(up(F, NOW, { line: "Shipped the signup page this week." })),
+    true,
+  );
+  assert.equal(
+    isRealUpdate(up(F, NOW, { promises: [{ index: 0, text: "A" }] })),
+    true,
+  );
+  assert.equal(
+    isRealUpdate(
+      up(F, NOW, {
+        marks: [{ promiseId: `${"a".repeat(64)}:0`, state: "done" }],
+      }),
+    ),
+    true,
+  );
+  // Not weekly: a help request or a free post is not a weekly update.
+  assert.equal(
+    isRealUpdate(
+      up(F, NOW, { weekly: false, line: "Shipped the signup page this week." }),
+    ),
+    false,
+  );
+  const trivial = score([up(F, NOW - DAY, { line: "ok" })]);
+  assert.equal(trivial.lastRealAt, 0);
+  const said = up(F, NOW - 2 * DAY, { line: "Shipped the signup page today." });
+  assert.equal(
+    score([said, up(F, NOW - DAY, { line: "ok" })]).lastRealAt,
+    said.createdAt,
+  );
+});
+
+test("a card's line is the stored one line of the newest weekly update, and a stranger's never shows", () => {
+  const older = up(F, NOW - 2 * DAY, { line: "Older words." });
+  const newer = up(MATE, NOW - DAY, { line: "  Newer words from the team.  " });
+  const stranger = up(STRANGER, NOW - 60, { line: "Buy my coin now." });
+  const ahead = up(F, NOW + DAY, { line: "From the future." });
+  const free = up(F, NOW - 30, { weekly: false, line: "A free post." });
+  assert.equal(
+    score([older, newer, stranger, ahead, free]).line,
+    "Newer words from the team.",
+  );
+  assert.equal(score([up(F, NOW - DAY)]).line, "");
+});
+
+test("Most reliable: paired run first, then kept, then fewer misses, then the newest real update; money has no place in it", () => {
+  const s = (coordinate, over) => ({
+    coordinate,
+    streak: 0,
+    kept: 0,
+    answered: 0,
+    missed: 0,
+    unanswered: 0,
+    rankStreak: 0,
+    lastRealAt: 100,
+    line: "",
+    openHelp: 0,
+    askedAt: 0,
+    days: 0,
+    startedAt: 0,
+    ...over,
+  });
+  const scores = [
+    // Posts every week for ten weeks and answers nothing: ranks on recency alone.
+    s("gamer", { streak: 10, lastRealAt: 900 }),
+    s("long", {
+      streak: 6,
+      rankStreak: 6,
+      kept: 4,
+      answered: 5,
+      missed: 1,
+      lastRealAt: 200,
+    }),
+    s("longer", {
+      streak: 6,
+      rankStreak: 6,
+      kept: 5,
+      answered: 5,
+      lastRealAt: 150,
+    }),
+    s("longest", {
+      streak: 8,
+      rankStreak: 8,
+      kept: 2,
+      answered: 2,
+      lastRealAt: 120,
+    }),
+    // Same run and kept as "long", one fewer miss.
+    s("tidy", {
+      streak: 6,
+      rankStreak: 6,
+      kept: 4,
+      answered: 4,
+      lastRealAt: 100,
+    }),
+    // Same everything as "tidy", newer.
+    s("tidy-new", {
+      streak: 6,
+      rankStreak: 6,
+      kept: 4,
+      answered: 4,
+      lastRealAt: 300,
+    }),
+    s("new-real", { lastRealAt: 800 }),
+    // No real update: not in the list at all.
+    s("empty", { streak: 5, lastRealAt: 0 }),
+  ];
+  assert.deepEqual(
+    boardOrder(scores, "reliable").map((x) => x.coordinate),
+    ["longest", "longer", "tidy-new", "tidy", "long", "gamer", "new-real"],
+  );
 });

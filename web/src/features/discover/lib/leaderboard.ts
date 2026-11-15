@@ -14,6 +14,15 @@
  * What the dates alone cannot rule out is a record dated back into an empty week after the fact: the server does not
  * say when it received a record. Until it does, a streak is "weeks the team says it posted in", bounded as above.
  *
+ * How the default order ("Most reliable") is made, and why money is not in it:
+ * - weeks posted in a row come first, but a run counts for ranking only when it is paired with the record: at least
+ *   {@link MIN_ANSWERED} promises answered, and no more missed (or left unanswered) than kept. A project that posts a
+ *   line every week and answers nothing has a run to show and nothing to rank on;
+ * - then promises kept, then fewer misses, then the newest real update (a weekly update that made or answered a
+ *   promise, or says something in a sentence), so a short "done." every week does not move a project up;
+ * - a project with no real update is not in that list at all; "New" and "Moving now" still show it.
+ * No price, raise or amount is read anywhere here.
+ *
  * Pure and alias-free: `leaderboard.test.mjs` drives it under `node --test`.
  */
 
@@ -26,9 +35,30 @@ import { weeksInARow } from "../../launchpad/lib/weekly-update.ts";
 
 const DAY = 86_400;
 
+/** A run of weeks counts for ranking only with this many promises answered, the same rule the share picture uses. */
+export const MIN_ANSWERED = 2;
+
+/** A weekly update with no promise and no answer is "real" when its one line says at least this much. */
+const MIN_REAL_LINE = 24;
+
 export interface BoardUpdate extends RecordUpdate {
   /** The update asks for help. */
   asks?: boolean;
+  /** The stored "In one line" of a weekly update (`oneLineOf`), or "". */
+  line?: string;
+}
+
+/**
+ * Whether a weekly update says something: it made a promise, answered one, or its one line is a sentence's worth. A
+ * bare "done." or an empty post is not, and so cannot place a project in the default order.
+ */
+export function isRealUpdate(update: BoardUpdate): boolean {
+  if (!update.weekly) return false;
+  return (
+    (update.promises?.length ?? 0) > 0 ||
+    (update.marks?.length ?? 0) > 0 ||
+    (update.line ?? "").trim().length >= MIN_REAL_LINE
+  );
 }
 
 export interface BoardProject {
@@ -47,6 +77,18 @@ export interface ProjectScore {
   /** Promises the founder marked kept, and how many they answered at all (kept, missed or changed). */
   kept: number;
   answered: number;
+  /** Promises answered "not done", and promises a later update left unanswered. Both count against a run. */
+  missed: number;
+  unanswered: number;
+  /**
+   * The streak as ranking counts it: the run of weeks only when it is paired with the record (at least
+   * {@link MIN_ANSWERED} answered and no more missed or unanswered than kept), otherwise 0. Never shown.
+   */
+  rankStreak: number;
+  /** When the newest real update ({@link isRealUpdate}) was posted, or 0 when there is none. */
+  lastRealAt: number;
+  /** The newest weekly update's stored one line, for the card; "" when there is none. */
+  line: string;
   /** Requests for help nobody on the team has marked as found. */
   openHelp: number;
   /** When the newest open request was made, for ordering "Looking for help". */
@@ -76,6 +118,20 @@ export function projectScore(
       project.founder,
     ),
   );
+  const streak = weeksInARow(
+    weekly.map((u) => u.createdAt),
+    now,
+  );
+  const paired =
+    totals.kept + totals.missed + totals.changed >= MIN_ANSWERED &&
+    totals.kept >= totals.missed + totals.unanswered;
+  const real = counted.filter(isRealUpdate);
+  const newestLine = weekly
+    .filter((u) => (u.line ?? "").trim() !== "")
+    .reduce<BoardUpdate | null>(
+      (best, u) => (best === null || u.createdAt > best.createdAt ? u : best),
+      null,
+    );
   const asking = counted.filter((u) => u.asks && !found.has(u.id));
   const days = new Set(
     counted
@@ -84,12 +140,14 @@ export function projectScore(
   );
   return {
     coordinate: project.coordinate,
-    streak: weeksInARow(
-      weekly.map((u) => u.createdAt),
-      now,
-    ),
+    streak,
     kept: totals.kept,
     answered: totals.kept + totals.missed + totals.changed,
+    missed: totals.missed,
+    unanswered: totals.unanswered,
+    rankStreak: paired ? streak : 0,
+    lastRealAt: Math.max(0, ...real.map((u) => u.createdAt)),
+    line: newestLine?.line?.trim() ?? "",
     openHelp: asking.length,
     askedAt: Math.max(0, ...asking.map((u) => u.createdAt)),
     days: days.size,
@@ -97,9 +155,11 @@ export function projectScore(
   };
 }
 
-export type BoardTab = "moving" | "new" | "kept" | "help";
+export type BoardTab = "reliable" | "moving" | "new" | "kept" | "help";
 
+/** The tabs in the order they show; the first is the one the page opens on. */
 export const BOARD_TABS: readonly { id: BoardTab; label: string }[] = [
+  { id: "reliable", label: "Most reliable" },
   { id: "moving", label: "Moving now" },
   { id: "new", label: "New" },
   { id: "kept", label: "Most kept promises" },
@@ -108,6 +168,8 @@ export const BOARD_TABS: readonly { id: BoardTab; label: string }[] = [
 
 /**
  * The projects a tab lists, in its order. Ties always end on the coordinate, so the order never flickers.
+ * - Most reliable: has a real update; longest run of weeks that is paired with the record, then most kept, then fewer
+ *   misses, then the newest real update. Never a price or an amount.
  * - Moving now: posted this week, most days first, then the longer streak.
  * - New: first published most recently (saving a record again moves nothing).
  * - Most kept promises: at least one kept, most kept first, then the fewer misses.
@@ -120,6 +182,17 @@ export function boardOrder(
   const tie = (a: ProjectScore, b: ProjectScore) =>
     a.coordinate < b.coordinate ? -1 : a.coordinate > b.coordinate ? 1 : 0;
   switch (tab) {
+    case "reliable":
+      return scores
+        .filter((s) => s.lastRealAt > 0)
+        .sort(
+          (a, b) =>
+            b.rankStreak - a.rankStreak ||
+            b.kept - a.kept ||
+            a.missed + a.unanswered - (b.missed + b.unanswered) ||
+            b.lastRealAt - a.lastRealAt ||
+            tie(a, b),
+        );
     case "moving":
       return scores
         .filter((s) => s.days > 0)
