@@ -44,6 +44,7 @@ import { projectAcceptedLine } from "../lib/track-record";
 import type { Launch } from "../models";
 import { useProjectRecord } from "../use-project-record";
 import { useProjectTasks, useTeamRemovals } from "../use-tasks";
+import { JustAcceptedShare } from "./JustAcceptedShare";
 import { EvidenceLinks } from "./TaskParts";
 
 /** How many lines of the record show at first, and how many more each press adds. */
@@ -298,6 +299,7 @@ export function ProjectRecordCard({
         accepted. Work counts when someone on the team now, other than the
         person who did it, confirmed it; a project's team can change.
       </p>
+      <JustAcceptedShare launch={launch} />
       {work.failed ? (
         <p
           className="mt-2 text-sm"
