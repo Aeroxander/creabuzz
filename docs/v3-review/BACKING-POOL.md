@@ -12,9 +12,11 @@ only low issues, all fixed or written down: a dust buy restarting the abandonmen
 clock than the factory leaving a pool waiting, a round whose sweep cannot be made blocking the project for ever,
 and the corrections in "For the app" and "Not protected". A fourth change (2026-11-15) answers the owner's worry that a
 project doing fine can still be run on: leaving at a milestone no longer sells (see "Runs on the curve"), and a founder
-chooses how deep the curve is from seven tiers (see "Curve depth"). A review of those changes (2026-11-15) found that the
+chooses how deep the curve is from a short list of tiers (see "Runs on the curve"). A review of those changes (2026-11-15) found that the
 leaving fee outgrew the refund over time, and that units that had already left were charged again and burned later
-weight; both are fixed (see "Why leaving has a fee" and "Units that already left"). No outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
+weight; both are fixed (see "Why leaving has a fee" and "Units that already left"). A fifth change (2026-11-15) dropped the
+shallowest tier, 5,000, after the arithmetic of what the first buyers hold was written down: six tiers, 10,000 the
+shallowest, 25,000 still the default (see "What the first buyers hold"). No outside audit. The numbers below are defaults for a testnet trial, not production terms, and the questions
 for counsel at the end are open.
 
 ## What it is
@@ -91,10 +93,11 @@ Every buy is split three ways:
   project made with `ContributorKitV2` opens one with a single call from the founder
   (`BackingPoolFactory.open(dao, depth)`). No vote either way. A project from the older kit has no founder on
   record, so its pool takes one passed decision.
-- **You choose one thing: how deep the curve is.** The depth is one of seven tiers (`BackingPoolFactory.depthTiers()`:
-  5,000, 10,000, 25,000, 50,000, 100,000, 250,000 and 500,000 whole quote units), or zero for the default (25,000).
+- **You choose one thing: how deep the curve is.** The depth is one of six tiers (`BackingPoolFactory.depthTiers()`:
+  10,000, 25,000, 50,000, 100,000, 250,000 and 500,000 whole quote units), or zero for the default (25,000).
   Every other term is fixed in the factory. A deeper curve moves the price less when people sell; the rule of thumb
-  is the first tier that is at least twice the raise you hope for. See "Curve depth" for the numbers.
+  is the first tier that is at least twice the raise you hope for. See "Runs on the curve" and "What the first buyers
+  hold" for the numbers.
 - **Getting the money:** fees arrive as people trade. For the rest, post "milestone reached" with the id of
   the public record event. That fixes the tranche: a quarter of what is held at that moment. Seven days
   later anyone can release it to the project treasury, less the part of those who left. Release it within
@@ -118,7 +121,7 @@ never abandoned; the clock starts again with the next backer.
 
 | Setting | Default | Why |
 |---|---|---|
-| Curve: paper reserve (the depth) | 25,000 quote, or a tier: 5,000, 10,000, 25,000, 50,000, 100,000, 250,000, 500,000 | The founder picks the tier when the pool is opened. At the default the opening price is 0.000025 a unit and raising 50,000 in total moves the price about 7.7 times. Deeper is flatter and gentler on sellers; see "Curve depth". |
+| Curve: paper reserve (the depth) | 25,000 quote, or a tier: 10,000, 25,000, 50,000, 100,000, 250,000, 500,000 | The founder picks the tier when the pool is opened. At the default the opening price is 0.000025 a unit and raising 50,000 in total moves the price about 7.7 times. Deeper is flatter and gentler on sellers; see "Runs on the curve". There is no 5,000: see "What the first buyers hold". |
 | Curve: paper units | 1,000,000,000 | The supply approaches this and never reaches it, so there is no sell-out and no "graduation". |
 | Project part | 10% of each buy after the fee | With 30% a round trip lost 31% and needed +46% to break even, which nobody would use next to other apps. At 10% a round trip returns about 88%. |
 | Fee | 1% on buys and on sales, to the treasury | Makes churn and sandwiching pay the project. Leaving at a milestone pays it on what the units that carry held money would fetch, without selling them, out of the refund and never more than the leaver's own part of the next tranche; refunds after abandonment pay none. |
@@ -132,7 +135,7 @@ never abandoned; the clock starts again with the next backer.
 | Early cap | A twenty-fifth of the depth per wallet (1,000 quote at the default) for the first 24 hours | Blunts a sniper taking the opening price in one transaction. Scales with the chosen depth. Only matters for "open now": a round lasts longer than the cap. |
 | Round: length | 50,000 blocks (about a week at 12 s) | Long enough to be seen. The number must divide 10,000,000: the auction sells an equal part every block. |
 | Round: supply | 100,000,000 claim tokens | A tenth of the curve's paper units, so most of the curve is left for after. |
-| Round: floor price | The "open now" starting price at the chosen depth: 0.000025 at the default, 0.000005 to 0.0005 across the tiers | A round never sells below what opening now would have charged. |
+| Round: floor price | The "open now" starting price at the chosen depth: 0.000025 at the default, 0.00001 to 0.0005 across the tiers | A round never sells below what opening now would have charged. |
 | Round: minimum raise | The supply at the floor (2,500 at the default depth, a tenth of the depth); the founder may set another | Under it, everyone is refunded and nothing opens. |
 
 "Weight" is a backer's part of the held project money. A new backer's weight is worth exactly what they
@@ -208,8 +211,12 @@ notional value (a per-pool constant), or a fee floor tied to the size of the tra
 owner's decision.
 
 Leaving then selling the same units costs the ordinary 1% twice (about 1.8% in all at a flat price at the first
-milestone, against 0.9% when leaving sold the units itself). That is a pricing choice: the app should show leave and
-sell as two steps with the cost of each, and never present Leave as a way to sell.
+milestone, against 0.9% when leaving sold the units itself). That is a pricing choice, and it is kept (MVP-READY decision
+27, 2026-11-15): one step that left and sold would be the old exit again, the one that dumped every leaver's units on the
+curve at the milestone. The app shows leave and sell as two steps with the cost of each, never presents Leave as a way to
+sell, and tells the person before they press Leave: the last sentence of the leave form's plan, which is also read out
+with the button, is "Selling them later is a separate step with its own fee, so leaving and then selling pays a fee
+twice." It states no rate (the rates are the pool's) and nothing about price.
 
 ## Units that already left
 
@@ -286,18 +293,19 @@ the first tier at least twice the raise you hope for.
 **What depth costs.** The price multiple from the opening to the end of the raise is about `(1 + raised / depth)^2`, so a
 deeper curve is flatter: `d = 2` gives 2.1x, `d = 4` gives 1.5x, `d = 8` gives 1.24x. A deeper curve trades
 excitement for stability. A founder who expects 10,000 and picks the 500,000 tier gets a price that barely moves
-(about 1.04x); one who picks the 5,000 tier gets a fragile curve. The tiers limit the footguns; the number is the
+(about 1.04x); one who picks the 10,000 tier gets a fragile curve. The tiers limit the footguns; the number is the
 founder's, because the factory cannot know the raise to come, and the app is where it is steered. A raise that
 overshoots the plan by three times at `d = 2` has a drop of 64% for a sale of half the units, not 33%.
 
 **Small raises.** At the old fixed depth of 25,000 a raise of 3,000 moved the price only 1.22 times, which is dull.
-A founder expecting 2,500 picks the 5,000 tier (`d = 2`): the price moves 2.1 times and a sale of half the units
-drops it by 33%. One expecting 3,000 sits between tiers: 5,000 is `d` of 1.7 (a 2.4 times move, about a 37% drop), 10,000
-is `d` of 3.3 (a 1.6 times move, about a 22% drop).
+A founder expecting 5,000 picks the 10,000 tier (`d = 2`): the price moves 2.1 times and a sale of half the units
+drops it by 33%. One expecting 3,000 picks it too (`d` of 3.3: a 1.6 times move, about a 22% drop), and one expecting
+2,500 gets a 1.5 times move and a 19% drop. A raise under about 1,500 moves the price less than 1.3 times at any tier
+now: that is the price of dropping the 5,000 tier, and it is paid only by the smallest raises (see "What the first
+buyers hold").
 
 | Hoped-for raise | Tier (first at or above twice the raise) |
 |---|---|
-| up to 2,500 | 5,000 |
 | up to 5,000 | 10,000 |
 | up to 12,500 | 25,000 |
 | up to 25,000 | 50,000 |
@@ -311,8 +319,100 @@ the round's *floor price* (the opening price at that depth, the least a bidder p
 so the curve that opens is about `0.89 x depth x (1 - sold / paper units)` when the round clears at the floor
 (0.85 of the depth when a twentieth of the paper units sold, 0.80 when the whole supply sells at the floor), and
 deeper when demand is heavier. `BackingRound.t.sol` runs a round at each of the
-seven tiers (`BackingRoundDepthTest`): the paper reserve is exactly the formula, the product starts at or above its
+six tiers (`BackingRoundDepthTest`): the paper reserve is exactly the formula, the product starts at or above its
 floor, the books are exact, and every round buyer gets out.
+
+## What the first buyers hold
+
+The worry (MVP-READY decision 23): a shallow curve gives the first buyers a very large price multiple if the project
+takes in much more than its depth, which rewards being first, not the project doing well. That is the shape this
+product exists to avoid. The arithmetic first, then the decision.
+
+**The curve.** With `x = depth + reserve` and `y = paper units - units sold`, the pool keeps `x * y` at `depth * paper
+units` (`BackingPool._quoteBuy`, `_curveOut`), and the price is `x / y` (`price()`). So the price is `(depth + reserve)^2 /
+(depth * paper units)`, and from the first unit to the last it multiplies by `(1 + reserve / depth)^2`. The reserve is
+89.1% of what was paid in (1% fee, then 10% of the rest held for the project). **The multiple is `(1 + 0.891 * taken in /
+depth)^2`: it depends on how much came in next to the depth and on nothing else. Every tier gives the same row.**
+
+| Taken in, next to the depth | Price multiple, first unit to last | The first buyer of 1% of the raise holds, at the last price | The same, sold all at once (fee taken) | Price drop if half the units are then sold |
+|---|---|---|---|---|
+| half | 2.09 times | 1.85 times what they paid | 1.82 times | 33% |
+| once | 3.58 times | 3.16 times | 3.08 times | 52% |
+| twice | 7.74 times | 6.78 times | 6.40 times | 72% |
+| 5 times | 29.8 times | 25.4 times | 20.4 times | 90% |
+| 10 times | 98.2 times | 80.3 times | 43.9 times | 97% |
+
+Measured on the pool itself, at all seven depths, by `contracts/test/BackingPoolDepthMultiple.t.sol` (the pool's own
+`buy`, `price` and `quoteSell`; every cell of the first four columns is within one part in a hundred of the closed form at
+every depth, for example 2,975 hundredths against 29.76 at 5 times). The last column is the float model of "Runs on the
+curve". "Holds at the last price" is the units times `price()`; nobody can sell at that price, which is why the sold
+column is lower, and by more the bigger the holding is next to the pool. The first buyer also has 9.9% of what they paid
+held for the project, which an ordinary sale gives up. The rule of thumb (a depth of at least twice the hoped-for raise)
+is the first row: a price that about doubles over the raise.
+
+**What a tier decides is how much money that takes.** The same table in money, with what the first buyer of 1% paid and
+what their units are worth at the last price:
+
+| Depth | 2.09 times at | 3.58 times at | 7.74 times at | 29.8 times at (first 1%: paid, holds) | 98.2 times at (first 1%: paid, holds) |
+|---|---|---|---|---|---|
+| 5,000 (dropped) | 2,500 | 5,000 | 10,000 | 25,000 (250, 6,346) | 50,000 (500, 40,172) |
+| 10,000 | 5,000 | 10,000 | 20,000 | 50,000 (500, 12,691) | 100,000 (1,000, 80,345) |
+| 25,000 (the default) | 12,500 | 25,000 | 50,000 | 125,000 (1,250, 31,728) | 250,000 (2,500, 200,862) |
+| 50,000 | 25,000 | 50,000 | 100,000 | 250,000 (2,500, 63,457) | 500,000 (5,000, 401,724) |
+| 100,000 | 50,000 | 100,000 | 200,000 | 500,000 (5,000, 126,914) | 1,000,000 (10,000, 803,447) |
+| 250,000 | 125,000 | 250,000 | 500,000 | 1,250,000 (12,500, 317,284) | 2,500,000 (25,000, 2,008,618) |
+| 500,000 | 250,000 | 500,000 | 1,000,000 | 2,500,000 (25,000, 634,568) | 5,000,000 (50,000, 4,017,235) |
+
+And the same money at each depth (`test_the_same_money_multiplies_the_price_most_at_the_shallowest_depth`):
+
+| Paid in | 5,000 (dropped) | 10,000 | 25,000 | 50,000 | 100,000 | 250,000 | 500,000 |
+|---|---|---|---|---|---|---|---|
+| 2,500 | 2.09 | 1.50 | 1.19 | 1.09 | 1.05 | 1.02 | 1.01 |
+| 5,000 | 3.58 | 2.09 | 1.39 | 1.19 | 1.09 | 1.04 | 1.02 |
+| 10,000 | 7.74 | 3.58 | 1.84 | 1.39 | 1.19 | 1.07 | 1.04 |
+| 25,000 | 29.8 | 10.4 | 3.58 | 2.09 | 1.50 | 1.19 | 1.09 |
+| 50,000 | 98.2 | 29.8 | 7.74 | 3.58 | 2.09 | 1.39 | 1.19 |
+| 100,000 | 354 | 98.2 | 20.8 | 7.74 | 3.58 | 1.84 | 1.39 |
+
+Two limits on reading these as "what a first buyer gets". In a pool opened now, one wallet can put in at most a
+twenty-fifth of the depth in the first 24 hours (the early cap), so a single wallet cannot be "the first 1%" of a raise of
+five or ten times the depth; several wallets can. In a pool opened behind a round nobody is first: every bidder gets
+units at the round's own price and the curve opens at the average the round paid, so the table starts from there.
+
+**Decision (2026-11-15): the 5,000 tier is dropped.** Six tiers, 10,000 the shallowest, 25,000 still the default. A depth
+of 5,000 is refused like any other number that is not a tier (`BadDepth`).
+
+- **Why drop it.** The shape is the same at every tier, so the shallowest tier is simply where it is cheapest: 25,000
+  paid in, an ordinary amount, moved the price 29.8 times at 5,000 and left the first 1% holding 25 times their money. At
+  10,000 the same money moves it 10.4 times, at the default 3.58 times. Dropping the tier doubles the money every
+  multiple takes at the shallow end.
+- **What it costs.** The 5,000 tier fitted one case, a raise of up to 2,500. At 10,000 that raise still moves the price
+  1.5 times (and a sale of half the units drops it 19%, not 33%), and a raise of 5,000 gets the 2.09 times the old tier
+  gave at 2,500. Only raises under about 1,500 lose their movement (under 1.3 times). That is a small price in fun for
+  cutting the worst row in half.
+- **Why not keep seven tiers and only steer the picker.** The factory is open to any caller, and the worry is a founder
+  who wants the steep curve, not one who picks it by mistake. A guard that lives only in the web app does not hold
+  against intent; the list has to change where it is enforced.
+- **What it does not do.** It moves the line; it does not remove the shape. A 10,000 pool that takes in 50,000 is
+  exactly as lopsided as a 5,000 pool that took in 25,000, and the default depth reaches 29.8 times at 125,000. Two
+  things bound it. One exists only as advice: a founder choosing the depth honestly (the picker's one sentence, "pick
+  one about twice the amount you hope to raise"). The other is not built: a limit on how much a pool takes in next to
+  its depth. A reserve capped at twice the depth would hold the multiple at 9 times at most, and at once the depth at 4
+  times, for what should be a few dozen bytes of the pool (an estimate, not measured). It is not built because it
+  changes what the pool is: a pool that can fill up sells out, which brings back the rush to be in before it closes,
+  and a round pool sets its own depth from what the round raised. That is the owner's decision, with counsel's
+  question 10.
+- **The balance this leaves.** A founder who follows the rule of thumb, and whose raise comes in as hoped, gets a price
+  that moves between about 1.4 and 2.1 times over the raise at any size from 5,000 up (1.5 times at 2,500): enough to
+  be worth watching, with a sale of half the units costing a third of the price at worst. A raise that overshoots the
+  plan four times moves it 7.7 times, and from there on the table above is a first-buyers' game at every tier.
+- **What changed in the contracts.** `BackingPoolFactory._tiersOf` returns six depths (two fifths of the default, then 1,
+  2, 4, 10 and 20 times), so the default must still divide by five and the deepest is still twenty times it. `open`,
+  `openWithRound`, `launchWithPool`, `roundTerms` and `DepthChosen` are unchanged. `depthTiers()` keeps its name and
+  selector and now returns six numbers, not seven: a reader that expects seven must be updated (the core adapter
+  refuses a reply of any other length, so a factory deployed before this change is not read as if it were today's: the
+  founder's form then says the choices could not be read and opens at the usual depth).
+  Sizes and gas are in "Known limits".
 
 ## Considered and rejected
 
@@ -468,8 +568,10 @@ Not protected. Say these plainly in the app:
 - **Contract size.** The pool deploys from its factory's deployer, whose runtime code is the pool's whole creation code
   (the claim token's included). Measured with `forge build --sizes` on 2026-11-15, after the review fixes: pool 18,987 bytes, deployer
   23,548 of the 24,576 allowed (1,028 spare; 1,251 before the per-wallet record of units that left, 988 before the leave
-  rewrite), factory 6,716 runtime and 32,935 initcode of 49,152, kit 16,375. The local fixture deploys all of them on a
-  node that enforces the limits. There is little room left for new pool logic: a pool feature of more than about a
+  rewrite), factory 6,716 runtime and 32,935 initcode of 49,152, kit 16,375. After the 5,000 tier was dropped (measured
+  the same day): pool 18,987 and deployer 23,548, both unchanged (the deployer holds the pool's code, not the factory's),
+  factory 6,734 runtime (18 more, with 17,842 spare) and 33,045 initcode (33,046 just before the change), kit 16,375. The
+  local fixture deploys all of them on a node that enforces the limits. There is little room left for new pool logic: a pool feature of more than about a
   kilobyte needs the factory to create the claim token first (pass its address to the deployer and have the claim token
   bind to the pool once) before it fits.
 - The quote token must move exactly what is asked. A token that takes a cut is refused at the first buy;
@@ -491,7 +593,7 @@ Not protected. Say these plainly in the app:
 | Step | Gas |
 |---|---|
 | Create project with pool, open now (`launchWithPool`), 1 first project / 8 | 14,761,000 / about 15,517,000 (the second is the one-project figure plus the 756,000 that eight projects added in an earlier measurement, not measured again; the V2 launch alone is 10,754,000) |
-| The heaviest launch the kit accepts (8 first projects, 8 reviewers, 64-byte name, 12-byte symbol) | 15,708,000 used as the test measures it (15,748,000 run as its own transaction with `--isolate`). At the deepest curve depth: 15,710,000 and 15,750,000, which leaves 1,068,000 (1,028,000 isolated) under the 16,777,216 cap; any tier costs about 1,500 gas more than the default (the tier lookup, the early-cap scaling and one more event). The rest of this row was measured before the review fixes and moves by well under 0.1%. The transaction's gas limit has to be about 15.81 million: the least call gas that succeeds is 15,773,000, and this call data (with the depth argument) adds about 38,000 of intrinsic gas. That is 5.7% under the 16,777,216 per-transaction cap some chains enforce. On V2 (no caps) each reviewer costs about 31,000 and each name byte about 770, which is why the kit caps them. Estimated on top of this launch (V2 measured, plus what the pool and market add), with the gas limit about 130,000 above what is used: 32 reviewers, 16,498,000 used (limit 16.63 million, 0.9% under the cap); a 300-byte name with 8 reviewers, 15,934,000 (limit 16.06 million, 4.3% under); 32 reviewers and a 300-byte name together, 16,679,000 (limit 16.81 million, over the cap): each figure holds only for the shape it names, and these estimates were made before the depth argument and the lighter leave and move by about 0.4% |
+| The heaviest launch the kit accepts (8 first projects, 8 reviewers, 64-byte name, 12-byte symbol) | 15,708,000 used as the test measures it (15,748,000 run as its own transaction with `--isolate`). At the deepest curve depth: 15,710,000 and 15,750,000, which leaves 1,068,000 (1,028,000 isolated) under the 16,777,216 cap; any tier costs about 1,500 gas more than the default (the tier lookup, the early-cap scaling and one more event). With six tiers (2026-11-15) the default-depth launch is unchanged to the unit (15,708,127 used; 15,748,119 isolated) and the deepest tier is 95 gas lighter (15,709,441 used, 15,709,536 before; 15,749,529 isolated), one fewer tier to look through. The rest of this row was measured before the review fixes and moves by well under 0.1%. The transaction's gas limit has to be about 15.81 million: the least call gas that succeeds is 15,773,000, and this call data (with the depth argument) adds about 38,000 of intrinsic gas. That is 5.7% under the 16,777,216 per-transaction cap some chains enforce. On V2 (no caps) each reviewer costs about 31,000 and each name byte about 770, which is why the kit caps them. Estimated on top of this launch (V2 measured, plus what the pool and market add), with the gas limit about 130,000 above what is used: 32 reviewers, 16,498,000 used (limit 16.63 million, 0.9% under the cap); a 300-byte name with 8 reviewers, 15,934,000 (limit 16.06 million, 4.3% under); 32 reviewers and a 300-byte name together, 16,679,000 (limit 16.81 million, over the cap): each figure holds only for the shape it names, and these estimates were made before the depth argument and the lighter leave and move by about 0.4% |
 | Open a pool for an existing project, open now (`open`) | 3,962,000 |
 | Open a pool behind a round (`openWithRound`: pool, claim token, auction, and the auction's first checkpoint, about 114,000 of it) | 7,915,000 |
 | Bid in a round (the auction's own call) | 296,000 |
@@ -531,7 +633,9 @@ What the web needs that is not obvious from the contracts:
   The factory also emits `DepthChosen(pool indexed, depth)` right after `PoolOpened` (the tier, or the default when
   zero was passed): that is where a round pool's chosen depth stays readable once the round has set its own paper
   reserve. `PoolOpened` and `RoundOpened` did not change. A factory refuses at deployment a default depth whose
-  deepest tier (twenty fifths) would not fit the pool's own limit (`type(uint112).max`), rounds or no rounds.
+  deepest tier (twenty times the default) would not fit the pool's own limit (`type(uint112).max`), rounds or no rounds.
+  **`depthTiers()` returns six depths since 2026-11-15** (it returned seven; the 5,000 one is gone and is refused with
+  `BadDepth()` like any other number). Its name and selector are the same; the reply is six words long.
 
 - **Hide or label the claim tokens of any pool that is not `Waiting` or `Live`.** A `Failed` pool's claim token
   cannot be exchanged (not on that pool, which is closed, and not on a pool the project opens afterwards, which
@@ -568,8 +672,8 @@ test binds it to these contracts' source):
   quote less the allowed drop and is never zero (a quote of nothing is not offered as a leave at all). After leaving, the
   Backing block says no money is held behind the units, and Home's feed reads `Left` without a price (leaving moves
   none).
-- **Depth.** A founder opening backing picks from `depthTiers()` (read from the factory, default `defaultDepth()` preselected,
-  with one sentence of help) and the choice goes as the last argument of `open`, `openWithRound` or `launchWithPool`. The
+- **Depth.** A founder opening backing picks from `depthTiers()` (read from the factory, six choices from 10,000, default
+  `defaultDepth()` preselected, with one sentence of help) and the choice goes as the last argument of `open`, `openWithRound` or `launchWithPool`. The
   Start page's launch sends zero, the default. A waiting round's price grid is `roundTerms(pool.virtualQuote())`, not the
   three default-depth getters, which stay for old readers and answer for the default depth only. The depth picker shows
   amounts of the quote token and words, never a price.
@@ -581,12 +685,13 @@ beside the weekly-sale set, reusing its summoner and its free-mint test token, a
 is already on Sepolia (the one in `dao-launch-kit-11155111.json`). It writes
 `contracts/deployments/backing-sepolia-11155111.json`. It was rehearsed on a local node only
 (`script/BackingLocalFixture.s.sol`, which also opens a pool behind a round on a real auction factory, then
-the deploy script), never on a public network. The deploy script also checks that the factory's seven depth tiers are the
+the deploy script), never on a public network. The deploy script also checks that the factory's six depth tiers are the
 documented ones (`BackingTerms.depthTiersWhole`) and that the default depth is 25,000 whole units; the local fixture
 opens a pool at birth at the 100,000 tier, a pool later at the default, and a round pool at the 50,000 tier, and checks all three.
 The fixture was run again on 2026-11-15 on a local node that enforces the real size limits (it passed, with the tiers
-and the three depths checked); the Sepolia script itself only runs on Sepolia (it checks the chain id) and was compiled
-after the change, not run.
+and the three depths checked), and once more the same day with the six-tier factory, as the first step of
+`scripts/web-backing-e2e.sh` (5 of 5 browser steps passed against it); the Sepolia script itself only runs on Sepolia (it
+checks the chain id) and was compiled after each change, not run.
 
 ## Questions for counsel
 
@@ -604,6 +709,6 @@ after the change, not run.
 9. A backer can leave at a milestone, get their held money back and keep their units, paying the ordinary sale fee on
    what the units are worth without selling them. Is a fee on a value that was never realised a fee on a sale, and does
    keeping units with no money held behind them change the answers to questions 1 and 4?
-10. The founder picks the curve's depth from seven tiers, which sets how fast the price moves for a given raise. Does
+10. The founder picks the curve's depth from six tiers, which sets how fast the price moves for a given raise. Does
     choosing that, and the opening price that comes with it, make the founder more clearly the issuer or offeror
     (question 3), and what must the choice screen tell them and the backers?
