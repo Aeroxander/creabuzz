@@ -284,15 +284,23 @@ export const LEAVE_KEEPS_LINE =
   "You keep your units and can still sell them, but no money is held behind them any more.";
 
 /**
+ * What leaving does not cover: a later sale of the units kept is its own step and pays the sale fee too, so someone who
+ * leaves and then sells pays a fee twice. Said before the person presses Leave, with no rate (the rates are the pool's).
+ */
+export const LEAVE_THEN_SELL_LINE =
+  "Selling them later is a separate step with its own fee, so leaving and then selling pays a fee twice.";
+
+/**
  * What leaving pays right now, as the pool's own quote says it (`quoteLeave`): what the person gets, the held money it
- * comes from and the fee, and that the units stay. The figures are the pool's; none is computed here.
+ * comes from and the fee, that the units stay, and that selling them later pays a fee again. The figures are the pool's;
+ * none is computed here.
  */
 export function leavePlanLine(
   quote: LeaveQuote,
   units: bigint,
   token: QuoteFacts,
 ): string {
-  return `${LEAVE_WHAT_IT_IS} You get about ${money(quote.quoteOut, token)}: ${money(quote.fromEscrow, token)} held for you, less a fee of ${money(quote.fee, token)}. You keep your ${unitsPhrase(units)}. ${LEAVE_KEEPS_LINE}`;
+  return `${LEAVE_WHAT_IT_IS} You get about ${money(quote.quoteOut, token)}: ${money(quote.fromEscrow, token)} held for you, less a fee of ${money(quote.fee, token)}. You keep your ${unitsPhrase(units)}. ${LEAVE_KEEPS_LINE} ${LEAVE_THEN_SELL_LINE}`;
 }
 
 /** The note on the leave form's allowed drop: the fee comes from the pool, so it can change before the step lands. */

@@ -23,11 +23,11 @@ const MAX = (1n << 256n) - 1n;
 const FLOOR_X96 = ((1n << 96n) * 25n) / 10n ** 18n;
 const TICK_X96 = FLOOR_X96 / 100n;
 /**
- * The curve depths the factory offers, in the 6-decimal quote's base units: fifths of the default as the real factory
- * derives them (`BackingPoolFactory.depthTiers`), and the default (25,000 whole units).
+ * The curve depths the factory offers, in the 6-decimal quote's base units, as the real factory derives them from its
+ * default (`BackingPoolFactory.depthTiers`: two fifths of it, then 1, 2, 4, 10 and 20 times), and the default (25,000
+ * whole units). There is no 5,000: the factory dropped it (docs/v3-review/BACKING-POOL.md, "What the first buyers hold").
  */
-export const DEPTH_TIERS: readonly bigint[] = [
-  5_000n * ONE,
+const DEPTH_TIERS: readonly bigint[] = [
   10_000n * ONE,
   25_000n * ONE,
   50_000n * ONE,
@@ -35,7 +35,9 @@ export const DEPTH_TIERS: readonly bigint[] = [
   250_000n * ONE,
   500_000n * ONE,
 ];
-export const DEFAULT_DEPTH = DEPTH_TIERS[2];
+export const DEFAULT_DEPTH = 25_000n * ONE;
+/** A deeper choice than the usual one, for a spec that picks another depth. */
+export const DEEPER_DEPTH = 100_000n * ONE;
 
 export const FIXTURE = {
   chainId: 31337,

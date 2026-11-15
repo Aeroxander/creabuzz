@@ -15,6 +15,7 @@ import {
   HONEST_LINE,
   LEAVE_KEEPS_LINE,
   LEAVE_LIMIT_LABEL,
+  LEAVE_THEN_SELL_LINE,
   LEAVE_WHAT_IT_IS,
   leavePlanLine,
   milestoneLine,
@@ -45,6 +46,7 @@ const everySentence = () => [
   HONEST_LINE,
   LEAVE_WHAT_IT_IS,
   LEAVE_KEEPS_LINE,
+  LEAVE_THEN_SELL_LINE,
   LEAVE_LIMIT_LABEL,
   DEPTH_HELP,
   leavePlanLine(
@@ -52,7 +54,7 @@ const everySentence = () => [
     3n * 10n ** 18n,
     token,
   ),
-  ...[5_000, 25_000, 500_000].flatMap((whole) => [
+  ...[10_000, 25_000, 500_000].flatMap((whole) => [
     depthExplanation(BigInt(whole) * 10n ** 6n, token),
     depthOptionLabel(BigInt(whole) * 10n ** 6n, whole === 25_000, token),
   ]),
@@ -140,6 +142,18 @@ test("leaving is said as the pool's own quote says it: held money back, a small 
   );
   assert.match(line, /You keep your 3 units\./);
   assert.match(line, /no money is held behind them any more/);
+  // Before pressing Leave the person is told that selling the kept units later pays a fee again: it is the last thing
+  // the plan says, after "you keep your units", whatever the quote.
+  assert.equal(
+    LEAVE_THEN_SELL_LINE,
+    "Selling them later is a separate step with its own fee, so leaving and then selling pays a fee twice.",
+  );
+  assert.ok(
+    line.endsWith(
+      "You keep your units and can still sell them, but no money is held behind them any more. Selling them later is a separate step with its own fee, so leaving and then selling pays a fee twice.",
+    ),
+  );
+  assert.doesNotMatch(LEAVE_THEN_SELL_LINE, /price|worth|value|\d/i);
   // The old words, which said leaving sells everything, are gone; the fee rule is not stated; nothing hints at a return.
   assert.doesNotMatch(
     line,
@@ -196,9 +210,10 @@ test("the depth is said without a price, one sentence of help, and the usual one
     depthExplanation(25_000_000_000n, token),
     /usual depth\. Suits raising up to about 12,500 tTEST\.$/,
   );
-  assert.match(
-    depthExplanation(5_000_000_000n, token),
-    /^Shallower than usual/,
+  // The shallowest depth on offer is 10,000 (there is no 5,000 to explain).
+  assert.equal(
+    depthExplanation(10_000_000_000n, token),
+    "Shallower than usual: the price moves more when people buy or leave. Suits raising up to about 5,000 tTEST.",
   );
   assert.match(depthExplanation(500_000_000_000n, token), /^Deeper than usual/);
 });

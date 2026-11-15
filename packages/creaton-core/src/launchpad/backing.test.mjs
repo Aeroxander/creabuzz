@@ -340,7 +340,7 @@ test("the factory's menu is read in one bounded step and its default must be on 
     /not one of its depths/,
   );
   // A factory deployed before the 5,000 depth was dropped answers seven depths. Its menu is not read as if it were
-  // today's (the first six would put 5,000 back on offer): it is refused, and the founder is offered nothing from it.
+  // today's (the first six would put 5,000 back on offer): the read is refused, so the form offers no list from it.
   const seven = [5n * 10n ** 9n, ...tiers];
   await assert.rejects(
     readDepthTiers(chain(25n * 10n ** 9n, seven), FACTORY),

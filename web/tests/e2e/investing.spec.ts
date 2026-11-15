@@ -3,8 +3,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { expectAccessible } from "../helpers/a11y";
 import {
   boughtEvent,
+  DEEPER_DEPTH,
   DEFAULT_DEPTH,
-  DEPTH_TIERS,
   FIXTURE,
   installBackingChain,
   POOL_DEFAULTS,
@@ -189,8 +189,8 @@ test.describe("the switch is on", () => {
     await block(page).getByTestId("backing-open-round").click();
     const select = block(page).getByTestId("backing-depth-select");
     await expect(select).toBeVisible({ timeout: 15_000 });
+    // Six depths, the shallowest 10,000: there is no 5,000 to pick.
     await expect(select.locator("option")).toHaveText([
-      "5,000 tTEST",
       "10,000 tTEST",
       "25,000 tTEST (usual)",
       "50,000 tTEST",
@@ -213,7 +213,7 @@ test.describe("the switch is on", () => {
       "placeholder",
       "2,500 tTEST",
     );
-    await select.selectOption({ value: DEPTH_TIERS[4].toString() });
+    await select.selectOption({ value: DEEPER_DEPTH.toString() });
     await expect(note).toContainText("Deeper than usual");
     await expect(block(page).getByTestId("backing-minimum")).toHaveAttribute(
       "placeholder",
@@ -226,7 +226,7 @@ test.describe("the switch is on", () => {
     const wordAt = (i: number) =>
       BigInt(`0x${chain.sent[0].data.slice(10 + 64 * i, 10 + 64 * (i + 1))}`);
     expect(wordAt(1)).toBe(0n);
-    expect(wordAt(2)).toBe(DEPTH_TIERS[4]);
+    expect(wordAt(2)).toBe(DEEPER_DEPTH);
   });
 
   test("a founder on another account is told to switch, and is offered nothing to send", async ({
@@ -420,6 +420,13 @@ test.describe("the switch is on", () => {
     await expect(plan).toContainText(
       "never more than staying one more step would cost",
     );
+    // Said before the press, and read out with the button: selling the kept units later pays a fee again.
+    await expect(plan).toContainText(
+      "Selling them later is a separate step with its own fee, so leaving and then selling pays a fee twice.",
+    );
+    await expect(
+      b.getByTestId("backing-confirm-leave"),
+    ).toHaveAccessibleDescription(/leaving and then selling pays a fee twice/);
     await expect(plan).not.toContainText(/sells|from selling|profit|return/i);
     await b.getByTestId("backing-confirm-leave").click();
     await expect.poll(() => chain.sent.length, { timeout: 20_000 }).toBe(1);
