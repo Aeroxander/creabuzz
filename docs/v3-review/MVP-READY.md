@@ -76,15 +76,15 @@ Reported by the engineers who built each part, on their own machines; none is a 
 
 | What | Result | What it does not prove |
 |---|---|---|
-| Web unit tests (`pnpm test`) | 3,338 pass, 0 fail (backing batch); 3,418 run in the first-week batch with 1 failure it then fixed | Not re-run as one final pass after the last commits |
-| Core package tests | 1,001 pass, 0 fail | The page is not exercised, only the logic |
+| Web unit tests (`pnpm test`) | 3,432 of 3,433 pass, 0 fail, 1 skipped, run as one pass on the final tree (2026-11-15), with the type check and the full `pnpm check` (knip included) | The page is not exercised by these |
+| Core package tests | 1,002 pass, 0 fail | The page is not exercised, only the logic |
 | Contracts (`forge test`) | 100 suites, 1,115 pass, 0 fail, 2 skipped (Sepolia fork) | Nobody outside the team has read the Solidity |
 | Rust (relay, CLI, core) | Relay link preview and AI cap: 166 unit tests and 9 database tests; CLI 822 unit tests; hand-in bounds 4 + 12 + 7 | The whole workspace and `just test` were not run as one |
 | Mocked browser specs | Each batch ran its own: Start 6 of 6, project page 27 of 27, first week 14 of 14, update loop 7 of 7, share pictures 7 of 7, tasks 10 of 10, Home 12 tests, Discover 4 of 4 | A mocked page is not a real server; the full mocked suite was not run in one go |
 | Real-chain backing journey | 5 of 5 against a local chain, including a real leave that keeps units | The depth picker is exercised only in the mocked spec, not from the page against real contracts |
-| Project loop on a real server | 10 of 10 open and 10 of 10 invite-only, on 2026-11-15 **before** the first-week page, Start in one press and the new Discover tab | **Not re-run since.** The specs for those pages were edited without a real server; run `scripts/real-loop-e2e.sh` first |
+| Project loop on a real server | 10 of 10 open on the final tree (2026-11-15), after Start in one press, the first-week page and the new Discover tab; 10 of 10 invite-only on the tree before the last screen-audit fixes | Not a hosted server and not a stranger; the invite-only run was not repeated after the last small web fixes |
 | Pilot gate (`scripts/mvp-gate.sh --pilot`, 11 journeys) | Each journey passed alone earlier; the set in one run was never run, and no CI run is recorded | A green gate does not replace the hand checks in [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md) |
-| Guards (copy, text sizes, types, lint) | Passed by each engineer on their files; the full `pnpm check` (which includes knip) was not run by anyone | Run it before merging |
+| Guards (copy, text sizes, types, lint) | `pnpm check` (includes knip) and the type check pass on the final tree | The mocked browser suite and CI were not run as a whole |
 
 Every new test was shown to fail when the production code it guards was broken (the engineers' mutation checks are in their reports).
 **Not reviewed:** an independent review of the backing contract found 1 blocker and 3 important points; all four were fixed
