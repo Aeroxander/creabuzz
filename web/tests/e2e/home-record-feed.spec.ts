@@ -251,7 +251,10 @@ test("a visitor reads every listed project's records, one card each, and only fr
     second.getByRole("button", { name: "I can help" }),
   ).toBeVisible();
   const first = cards(page).nth(4);
-  await expect(first.getByTestId("record-card-label")).toHaveText("Update");
+  // The oldest update on a project whose whole record was read is its first.
+  await expect(first.getByTestId("record-card-label")).toHaveText(
+    "First update",
+  );
   await expect(first).toContainText(
     "What's next: Ship sign-up; Write the guide",
   );
@@ -587,8 +590,14 @@ test("a kept promise and accepted work can be cheered, once per account", async 
     );
   await page.reload();
   await expect(work.getByTestId("record-card-cheers")).toHaveText("1");
-  // Nothing else can be cheered: not a missed goal, not an update that kept nothing.
-  await expect(page.getByTestId("record-card-cheer")).toHaveCount(2);
+  // What can be cheered: the work, the update that kept a promise, the first update, and the honest miss (thanked, not
+  // cheered). An update that answered nothing and is not the first has no button.
+  await expect(page.getByTestId("record-card-cheer")).toHaveCount(4);
+  await expect(
+    cards(page)
+      .filter({ hasText: "Only six came." })
+      .getByTestId("record-card-cheer"),
+  ).toHaveText(/Thanks for saying so/);
 
   await work.getByTestId("record-card-cheer").click();
   await expect(work.getByTestId("record-card-cheers")).toHaveText("2");

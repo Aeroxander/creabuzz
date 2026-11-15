@@ -5,6 +5,9 @@
  *
  * Someone signed in reads the projects they started, help or follow. A visitor, or someone tied to no project yet,
  * reads every listed project instead, is told so, and can follow a project from any of its cards.
+ *
+ * Above the records: the "Update day" rail (how many projects have posted, how many are due), a "Just started" strip, and
+ * "This week on Creaton" from the server's second week. Each shows nothing until it has something true to say.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -16,7 +19,11 @@ import {
   SIGN_UP_EVENT,
 } from "@/features/identity/lib/account-copy";
 import { GOAL_STATE_LABEL } from "@/features/launchpad/lib/goals";
-import { PART_HEADINGS } from "@/features/launchpad/lib/weekly-update";
+import { projectSharePath } from "@/features/launchpad/lib/share";
+import {
+  oneLineOf,
+  PART_HEADINGS,
+} from "@/features/launchpad/lib/weekly-update";
 import {
   launchCoordinate,
   type Launch,
@@ -30,12 +37,21 @@ import { relativeTime } from "@/shared/lib/relative-time";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 
-import { cheerCountWords, cheerTarget } from "../lib/cheers";
+import {
+  type CheerKind,
+  cheerKind,
+  cheerLabel,
+  cheerTarget,
+  cheerWords,
+} from "../lib/cheers";
 import { newPillWords, splitLive } from "../lib/live-feed";
 import { progressArtifacts } from "../lib/project-progress";
 import { answersLine, type FeedItem, itemLabel } from "../lib/record-feed";
 import { BackingFeed } from "./BackingFeed";
+import { JustStarted } from "./JustStarted";
 import { ProjectMark } from "./MovingNow";
+import { UpdateDayRail } from "./UpdateDayRail";
+import { WeekInReview } from "./WeekInReview";
 import { useCheers } from "../use-cheers";
 import { useLaunchFollows } from "../use-launch-follows";
 import { progressScope, useProgressSeen } from "../use-progress-seen";
@@ -115,16 +131,31 @@ export function RecordFeed() {
   );
   const cheer = (item: FeedItem) => {
     const target = cheerTarget(item);
-    if (!target) return;
+    const record = byCoordinate.get(item.coordinate);
+    if (!target || !record) return;
     if (me === null) {
       window.dispatchEvent(new Event(SIGN_UP_EVENT));
       return;
     }
-    cheers.cheer.mutate(target, {
-      onError: () =>
-        setMessage("Your cheer was not sent. Try again in a moment."),
-    });
+    // The cheer names the project, so its founder's line can say which one it was for.
+    cheers.cheer.mutate(
+      { ...target, launch: { pubkey: record.author, id: record.id } },
+      {
+        onError: () =>
+          setMessage("Your cheer was not sent. Try again in a moment."),
+      },
+    );
   };
+  // The projects the feed announces with their own "Just started" card: the strip does not say them twice.
+  const announced = useMemo(
+    () =>
+      new Set(
+        feed.items.flatMap((item) =>
+          item.kind === "started" ? [item.coordinate] : [],
+        ),
+      ),
+    [feed.items],
+  );
   const follow = (coordinate: string) => {
     // Signed out: the account dialog, then the person can come back to the same button.
     if (me === null) {
@@ -200,6 +231,9 @@ export function RecordFeed() {
               {fresh} new to you
             </p>
           ) : null}
+          <UpdateDayRail />
+          <JustStarted announced={announced} />
+          <WeekInReview />
           {scope.cut ? (
             <p
               className="text-xs"
@@ -264,6 +298,12 @@ export function RecordFeed() {
                 const record = byCoordinate.get(item.coordinate);
                 if (!record) return null;
                 const target = cheerTarget(item);
+                const kind = cheerKind(item);
+                // Nobody wishes themselves luck on their own start.
+                const cheerable =
+                  target &&
+                  kind &&
+                  !(item.kind === "started" && record.author === me);
                 return (
                   <li
                     className={
@@ -275,8 +315,9 @@ export function RecordFeed() {
                   >
                     <RecordCard
                       cheer={
-                        target
+                        cheerable
                           ? {
+                              kind,
                               count: cheers.count(target.id),
                               atLeast: cheers.cut,
                               mine: cheers.mine(target.id),
@@ -393,8 +434,9 @@ function RecordCard({
   onMessage,
   cheer,
 }: {
-  /** Set for a kept promise or accepted work: the count, whether the reader cheered, and the tap. */
+  /** Set for a record worth a word (a start, a win, an honest miss): the count, whether the reader cheered, and the tap. */
   cheer: {
+    kind: CheerKind;
     count: number;
     /** The cheers could not all be read: the count is "at least". */
     atLeast: boolean;
@@ -480,7 +522,18 @@ function RecordCard({
           </Button>
         ) : null}
       </div>
-      {item.kind === "goal" ? (
+      {item.kind === "started" ? (
+        <div className="mt-2 text-sm" data-testid="record-card-started">
+          <p className="break-words">
+            <span className="font-semibold">Goal:</span> {item.text}
+          </p>
+          {item.how ? (
+            <p className="mt-1 break-words text-muted-foreground">
+              How we'll know: {item.how}
+            </p>
+          ) : null}
+        </div>
+      ) : item.kind === "goal" ? (
         <div className="mt-2 text-sm">
           <p className="break-words">
             <span className="font-semibold">
@@ -507,13 +560,9 @@ function RecordCard({
           <p className="text-xs text-muted-foreground">
             By {names(item.author)}
           </p>
-          {item.update.parts?.done ? (
-            <p className="mt-1 whitespace-pre-wrap break-words">
-              {clip(item.update.parts.done, 280)}
-            </p>
-          ) : !item.update.parts && item.update.body ? (
-            <p className="mt-1 whitespace-pre-wrap break-words">
-              {clip(item.update.body, 280)}
+          {oneLineOf(item.update) ? (
+            <p className="mt-1 break-words" data-testid="record-card-line">
+              {oneLineOf(item.update)}
             </p>
           ) : null}
           {answersLine(item.answers) ? (
@@ -557,21 +606,17 @@ function RecordCard({
               aria-label="Copy update link"
               className="max-sm:h-11 max-sm:w-11"
               onClick={async () => {
-                const url = new URL(
-                  `/launchpad/${encodeURIComponent(record.id)}`,
-                  location.origin,
-                );
-                url.searchParams.set("author", record.author);
-                url.searchParams.set("tab", "updates");
-                url.hash = `update-${item.id}`;
+                // The project's public scorecard: made to be shared, and readable without an account.
+                const href = new URL(projectSharePath(record), location.origin)
+                  .href;
                 try {
                   if (!navigator.clipboard)
                     throw new Error("Clipboard unavailable");
-                  await navigator.clipboard.writeText(url.href);
+                  await navigator.clipboard.writeText(href);
                   onMessage("Update link copied.");
                 } catch {
                   onMessage(
-                    "Could not copy the link. Open the project's Updates tab to share it.",
+                    "Could not copy the link. Open the project's page to share it.",
                   );
                 }
               }}
@@ -588,11 +633,7 @@ function RecordCard({
       {cheer ? (
         <div className="mt-3">
           <Button
-            aria-label={
-              cheer.mine
-                ? `You cheered this. ${cheerCountWords(cheer.count)}`
-                : `Cheer this. ${cheerCountWords(cheer.count)}`
-            }
+            aria-label={cheerLabel(cheer.kind, cheer.mine, cheer.count)}
             aria-pressed={cheer.mine}
             className="max-sm:h-11"
             data-testid="record-card-cheer"
@@ -603,7 +644,9 @@ function RecordCard({
             variant={cheer.mine ? "default" : "outline"}
           >
             <PartyPopper aria-hidden className="mr-1 h-4 w-4" />
-            {cheer.mine ? "Cheered" : "Cheer"}
+            {cheer.mine
+              ? cheerWords(cheer.kind).sent
+              : cheerWords(cheer.kind).button}
             {cheer.count > 0 ? (
               <span
                 className="ml-1.5 font-bold"

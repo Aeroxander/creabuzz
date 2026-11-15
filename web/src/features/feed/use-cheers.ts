@@ -43,11 +43,25 @@ export function useCheers(ids: readonly string[]) {
     [read.data, asked],
   );
   const cheer = useMutation({
-    mutationFn: (target: { id: string; pubkey: string; kind: number }) =>
+    mutationFn: (target: {
+      id: string;
+      pubkey: string;
+      kind: number;
+      /** The project the record is about: named in the cheer, so its founder's notice can say which project. */
+      launch?: { pubkey: string; id: string };
+    }) =>
       publishFeedEvent(
         buildVote({
-          target: { ...target, created_at: 0, tags: [], content: "" },
+          target: {
+            id: target.id,
+            pubkey: target.pubkey,
+            kind: target.kind,
+            created_at: 0,
+            tags: [],
+            content: "",
+          },
           direction: "+",
+          launch: target.launch ?? null,
         }),
       ),
     onSuccess: (event) => {

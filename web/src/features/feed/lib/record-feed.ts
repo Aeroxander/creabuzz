@@ -37,9 +37,20 @@ export const FEED_MAX_PAGES = 10;
 export const FEED_PROJECTS = 40;
 export const FEED_AUTHORS = 200;
 
+/** A project's start counts as news for this long: an older start is no longer announced. */
+const STARTED_NEWS_DAYS = 30;
+const DAY = 86_400;
+
 export interface FeedProject {
   coordinate: string;
   founder: string;
+  /**
+   * When the project was first published (`LaunchRecord.startedAt`), in seconds. Without it nothing is said about a
+   * project's start: neither "just started" nor "first update" can be told from what was read.
+   */
+  startedAt?: number;
+  /** False when its founder chose "Not listed yet": nothing is announced about a project nobody can find. */
+  listed?: boolean;
   /** The founder and everyone on the founder's record: who the server lets make and check the project's tasks. */
   team: ReadonlySet<string>;
   /**
@@ -78,6 +89,19 @@ export interface UpdateItem extends ItemBase {
   answers: { kept: number; missed: number; changed: number };
   /** The promises this update makes (the founder's only). */
   promises: string[];
+  /**
+   * The project's first update: the oldest one on its record, and the read is known to reach back to the project's
+   * start, so nothing older can be missing. False when that cannot be told.
+   */
+  first: boolean;
+}
+
+/** A project's start, from the founder's signed first open goal. Cheered with "Good luck". */
+interface StartedItem extends ItemBase {
+  kind: "started";
+  /** The goal in the founder's words, and how everyone will know it was reached. */
+  text: string;
+  how: string;
 }
 
 interface GoalItem extends ItemBase {
@@ -94,7 +118,7 @@ interface WorkItem extends ItemBase {
   helper: string;
 }
 
-export type FeedItem = UpdateItem | GoalItem | WorkItem;
+export type FeedItem = UpdateItem | GoalItem | WorkItem | StartedItem;
 
 /**
  * The feed's items from the records read. `events` are update records naming the projects in view; `taskRecords` are
@@ -106,9 +130,24 @@ export function feedItems(input: {
   taskRecords: readonly TaskRecord[];
   /** Now, in seconds. */
   now: number;
+  /**
+   * How far back the records read reach: `null` when the read ran to the end, otherwise the signing time of the oldest
+   * record read. Left out, nothing is known about how far back it went. A start or a first update is told only when
+   * the read reaches back to the project's own start, so an older record that was not read cannot make it wrong.
+   */
+  readBack?: number | null;
 }): FeedItem[] {
   const { projects, now } = input;
   const out = new Map<string, FeedItem>();
+  // The earliest open primary goal each founder signed, and the earliest update each project's voices signed.
+  const starts = new Map<string, StartedItem>();
+  const firsts = new Map<string, UpdateItem>();
+  const reaches = (project: FeedProject): boolean =>
+    project.startedAt !== undefined &&
+    input.readBack !== undefined &&
+    (input.readBack === null || input.readBack <= project.startedAt);
+  const earlier = (a: ItemBase, b: ItemBase) =>
+    a.at < b.at || (a.at === b.at && a.id < b.id);
   for (const event of input.events) {
     if (event.kind !== 47003 || out.has(event.id)) continue;
     const coordinate = event.tags.find(
@@ -126,7 +165,21 @@ export function feedItems(input: {
       // A goal is the founder's alone.
       if (event.pubkey !== project.founder) continue;
       const goal = parseGoalVersion(event);
-      if (!goal || goal.state === "open") continue;
+      if (!goal) continue;
+      if (goal.state === "open") {
+        // Not an item of its own (an edit of an open goal is not news); the first one is the project's start.
+        if (goal.level === "primary") {
+          const start: StartedItem = {
+            ...base,
+            kind: "started",
+            text: goal.text,
+            how: goal.how,
+          };
+          const was = starts.get(coordinate);
+          if (!was || earlier(start, was)) starts.set(coordinate, start);
+        }
+        continue;
+      }
       out.set(event.id, {
         ...base,
         kind: "goal",
@@ -152,7 +205,7 @@ export function feedItems(input: {
     if (!update || update.claim || update.checkNote) continue;
     const byFounder = event.pubkey === project.founder;
     const marks = byFounder ? (update.marks ?? []) : [];
-    out.set(event.id, {
+    const item: UpdateItem = {
       ...base,
       kind: "update",
       update,
@@ -163,7 +216,22 @@ export function feedItems(input: {
         changed: marks.filter((m) => m.state === "changed").length,
       },
       promises: byFounder ? (update.promises ?? []).map((p) => p.text) : [],
-    });
+      first: false,
+    };
+    out.set(event.id, item);
+    const was = firsts.get(coordinate);
+    if (!was || earlier(item, was)) firsts.set(coordinate, item);
+  }
+  for (const [coordinate, item] of firsts) {
+    const project = projects.get(coordinate);
+    if (project && reaches(project)) item.first = true;
+  }
+  for (const [coordinate, start] of starts) {
+    const project = projects.get(coordinate);
+    if (!project || project.listed === false || !reaches(project)) continue;
+    // A start is news for a while; a year-old project's start is just its history.
+    if (now - start.at > STARTED_NEWS_DAYS * DAY) continue;
+    out.set(start.id, start);
   }
   for (const project of projects.values()) {
     const tasks = projectTasks({
@@ -214,8 +282,10 @@ export function itemLabel(item: FeedItem): string {
           : "Goal changed";
     case "work":
       return "Work accepted";
+    case "started":
+      return "Just started";
     case "update":
-      return item.help ? "Help wanted" : "Update";
+      return item.help ? "Help wanted" : item.first ? "First update" : "Update";
   }
 }
 

@@ -220,3 +220,86 @@ test("a record about a project that is not in view is not an item", () => {
   other.tags[0] = ["a", `37001:${FOUNDER}:other`];
   assert.deepEqual(items([other]), []);
 });
+
+// A project with a known start: what a start and a first update are told from.
+const DAYS = 86_400;
+const STARTED = NOW - 3 * DAYS;
+const started = (extra = {}) =>
+  new Map([[COORD, { ...projects.get(COORD), startedAt: STARTED, ...extra }]]);
+const itemsFor = (events, map, readBack) =>
+  feedItems({ events, projects: map, taskRecords: [], now: NOW, readBack });
+const goalEv = (by, level, state, at, id = "g1abcdef") =>
+  ev(
+    by,
+    [
+      ["goal", id],
+      ["goal-level", level],
+      ["goal-text", "Ten people sign in"],
+      ["goal-how", "Ten sign-ins"],
+      ["goal-state", state],
+    ],
+    at,
+  );
+
+test("the founder's first open primary goal is the project's start, when the read reaches back to the start", () => {
+  const first = goalEv(FOUNDER, "primary", "open", STARTED + 60);
+  const edit = goalEv(FOUNDER, "primary", "open", STARTED + DAYS);
+  const out = itemsFor([edit, first], started(), null);
+  assert.deepEqual(
+    out.map((i) => [i.kind, i.id]),
+    [["started", first.id]],
+  );
+  assert.equal(out[0].text, "Ten people sign in");
+  assert.equal(out[0].how, "Ten sign-ins");
+  assert.equal(itemLabel(out[0]), "Just started");
+  // A read that stopped after the start cannot tell which version was first: nothing is said.
+  assert.deepEqual(itemsFor([edit], started(), NOW - DAYS), []);
+  assert.deepEqual(itemsFor([first], started(), undefined), []);
+  // And a read that did reach the start says it.
+  assert.equal(itemsFor([first], started(), STARTED).length, 1);
+});
+
+test("only the founder's open primary goal starts a project; a shorter goal, a mate or a stranger do not", () => {
+  const week = goalEv(FOUNDER, "week", "open", STARTED + 60);
+  const mate = goalEv(MATE, "primary", "open", STARTED + 60);
+  assert.deepEqual(itemsFor([week, mate], started(), null), []);
+});
+
+test("a start is not announced for a project its founder did not list, or for one that began long ago", () => {
+  const first = goalEv(FOUNDER, "primary", "open", STARTED + 60);
+  assert.deepEqual(itemsFor([first], started({ listed: false }), null), []);
+  assert.equal(itemsFor([first], started({ listed: true }), null).length, 1);
+  const old = goalEv(FOUNDER, "primary", "open", NOW - 40 * DAYS);
+  assert.deepEqual(
+    itemsFor([old], started({ startedAt: NOW - 40 * DAYS }), null),
+    [],
+  );
+});
+
+test("a project that is not in view (removed, or not followed) has no start item", () => {
+  const first = goalEv(FOUNDER, "primary", "open", STARTED + 60);
+  assert.deepEqual(itemsFor([first], new Map(), null), []);
+});
+
+test("the oldest update is the first update only when the read reaches the start", () => {
+  const one = ev(FOUNDER, [["update-kind", "weekly"]], STARTED + DAYS);
+  const two = ev(FOUNDER, [["update-kind", "weekly"]], STARTED + 2 * DAYS);
+  const out = itemsFor([two, one], started(), null);
+  assert.deepEqual(
+    out.map((i) => [i.id, i.first]),
+    [
+      [two.id, false],
+      [one.id, true],
+    ],
+  );
+  assert.equal(itemLabel(out[1]), "First update");
+  // Cut short of the start: an older update may exist, so none is called the first.
+  assert.deepEqual(
+    itemsFor([two, one], started(), NOW - 2 * DAYS).map((i) => i.first),
+    [false, false],
+  );
+  assert.deepEqual(
+    itemsFor([two, one], projects, null).map((i) => i.first),
+    [false, false],
+  );
+});

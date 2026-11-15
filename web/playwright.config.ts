@@ -140,6 +140,8 @@ export default defineConfig({
         "**/project-team.spec.ts",
         // Home's Updates tab: a feed of project records, yours or everyone's, paged, from who may sign them.
         "**/home-record-feed.spec.ts",
+        // Home on a quiet server: a project's start, "Just started", the update-day rail, the week in review, cheers, "See a record".
+        "**/home-alive.spec.ts",
         // "Your projects": what you started, help and follow, with the record and what needs you in each.
         "**/your-projects.spec.ts",
         // Home's next step: one line, one action, from facts read off signed records.

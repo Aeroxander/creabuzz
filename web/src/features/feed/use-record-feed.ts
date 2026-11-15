@@ -22,7 +22,7 @@ import {
   nextProjectPage,
   projectListCut,
 } from "@/features/launchpad/lib/launch-query";
-import { listedProject } from "@/features/launchpad/lib/listing";
+import { listedProject, notListedYet } from "@/features/launchpad/lib/listing";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import {
   parseTaskRecord,
@@ -239,6 +239,9 @@ export function useRecordFeed(scope: FeedScope | null) {
       map.set(coordinate, {
         coordinate,
         founder: record.author,
+        startedAt: record.startedAt,
+        // A project its founder chose not to list is never announced, whoever follows it.
+        listed: !notListedYet(record),
         team: teamOf(record),
         voices: voices.get(coordinate) ?? new Map([[record.author, null]]),
       });
@@ -274,18 +277,31 @@ export function useRecordFeed(scope: FeedScope | null) {
     refetchInterval: LIVE_POLL_MS,
   });
   const pages = query.data?.pages;
-  const items = useMemo(
-    () =>
-      pages
-        ? feedItems({
-            events: joinProjectPages(pages),
-            projects,
-            taskRecords: pages.flatMap((page) => page.taskRecords),
-            now: Math.floor(Date.now() / 1000),
-          })
-        : [],
-    [pages, projects],
-  );
+  // Whether the records read reach back to where the projects began: a start or a first update is only told then.
+  const reachedEnd =
+    pages !== undefined &&
+    !query.hasNextPage &&
+    !projectListCut(pages, FEED_PAGE, FEED_MAX_PAGES) &&
+    // Every team is asked for, and every answer about who speaks for a project was read.
+    everyone.length <= FEED_AUTHORS &&
+    !said.data?.cut;
+  const items = useMemo(() => {
+    if (!pages) return [];
+    const events = joinProjectPages(pages);
+    const now = Math.floor(Date.now() / 1000);
+    return feedItems({
+      events,
+      projects,
+      taskRecords: pages.flatMap((page) => page.taskRecords),
+      now,
+      readBack: reachedEnd
+        ? null
+        : events.reduce(
+            (oldest, event) => Math.min(oldest, event.created_at),
+            now,
+          ),
+    });
+  }, [pages, projects, reachedEnd]);
   const { fetchNextPage, refetch } = query;
   return {
     items,
