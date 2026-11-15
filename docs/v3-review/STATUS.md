@@ -1,7 +1,7 @@
 # Where Creaton stands
 
-Updated 2026-11-02 (v5 development scope; prior v4 validation remains historical); the weekly-sales items in Scope, Known gaps and Waiting on you were updated 2026-11-05, and again the same day after the low-severity run. **"Scope", "The gates" (the project-loop journey) and "Waiting on you" were rewritten 2026-11-15 to the direction of 2026-11-10 ([DIRECTION.md](DIRECTION.md)), and refreshed again on 2026-11-15 after the MVP push (Start in one press, the update loop, tasks with a finish line, share pictures, Discover, the AI project kit, the backing pool's leave and depth changes).** **For a one-page answer to "is it ready, and what is left for me", read [MVP-READY.md](MVP-READY.md).** The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
-Each decision is a row in [DECISIONS.md](DECISIONS.md) (through D199; D189 to D199 record the MVP push as built, not yet approved by you). The hand tests for the pilot, in order, are in
+Updated 2026-11-02 (v5 development scope; prior v4 validation remains historical); the weekly-sales items in Scope, Known gaps and Waiting on you were updated 2026-11-05, and again the same day after the low-severity run. **"Scope", "The gates" (the project-loop journey) and "Waiting on you" were rewritten 2026-11-15 to the direction of 2026-11-10 ([DIRECTION.md](DIRECTION.md)), and refreshed again on 2026-11-15 after the MVP push (Start in one press, the update loop, tasks with a finish line, share pictures, Discover, the AI project kit, the backing pool's leave and depth changes).** **Later on 2026-11-15 the assistant made the owner decisions at your request and built on them: see "2026-11-15, later: the decisions push" below.** **For a one-page answer to "is it ready, and what is left for me", read [MVP-READY.md](MVP-READY.md).** The index to start from; it replaces [STATUS-2026-10-22.md](STATUS-2026-10-22.md), kept as history.
+Each decision is a row in [DECISIONS.md](DECISIONS.md) (through D217; D189 to D199 record the MVP push as built; D200 to D217 record the calls the assistant made at your request on 2026-11-15 and what was built from them). The hand tests for the pilot, in order, are in
 [PILOT-TEST-GUIDE.md](PILOT-TEST-GUIDE.md); every hand test ever written is in [TEST-STEPS.md](TEST-STEPS.md), a log in
 date order. What the 2026-10-31 pass hid or retired, and what waits on your call, is in
 [DEPRECATION-2026-10-31.md](DEPRECATION-2026-10-31.md).
@@ -11,6 +11,45 @@ How Creaton pays its way and how a project is funded when backers are scarce, on
 The branch `v4-governance-rework` is pushed to the fork (https://github.com/Aeroxander/creabuzz, since 2026-11-01); draft PR Aeroxander/creabuzz#1 runs CI against `ci-base`, not the fork's `main`, which still holds 12 older SIWE commits this branch reworked. D146 to D150 are committed locally (D150 removed the LBAMM market, the pre-kit raise path, the old tokenomics and money forecasts from the app; tag `pre-deprecation-2026-10-31` keeps them).
 
 A plain-words copy pass rewrote the web app's user-facing text for readers new to crypto and DAOs (no number, economic setting or trading switch changed); what changed, and the legal lines left for you and counsel, is in [COPY-PASS-1.md](COPY-PASS-1.md).
+
+## 2026-11-15, later: the decisions push
+
+You asked the assistant to make the owner decisions in [MVP-READY.md](MVP-READY.md) itself and work on them. It did, the same
+day. Every call is a row in [DECISIONS.md](DECISIONS.md) (D200 to D217) and a line in MVP-READY's "Decided" tables; what is
+left for you is its "Still yours" list. Nothing was pushed, deployed or turned on, and investing and trading stay off.
+
+- **Built from the calls:** anyone can read a public project's record on an invite-only server when the operator's setting
+  is on, and the server can name its own example project (D201, D202; on for Creaton's own server in the deploy example,
+  and counsel has not read it); the 5,000 depth tier is dropped, six remain, and the leave form says leaving then selling
+  pays a fee twice (D208, D209); Home opens on the feed of project records for everyone (D212); Start says three answers
+  everywhere, and Discover counts a Start project as a project where no sales are offered (D213); a server with no money
+  shows no money cards, and "Set up Shares for people who help" waits for accepted work (D214); one way to write a day and
+  "followers" on the weekly loop's pages (D215); the agent line says "answers for them" and the agent commands sit under a
+  closed disclosure (D203); an AI project's starter promises and tasks are offered as a one-press prefill, never written for
+  the founder (D206).
+- **Decided for later, not built:** retiring the older AI category, and saving the update day on the server (D205).
+  **Not built, and yours to call:** a public-reads setting each community's owner can change, a hard bound on the pool's
+  price multiple, and storing the AI kind chosen on Start.
+- **Kept as built, nothing new:** decisions 5, 6, 8 to 11, 15 to 18, 20 to 22, 24 to 26 and 28; and the long team sentences,
+  "Free to start. No token needed." and the contributor form with no goal (D216).
+- **Also in the tree from this push, reported to this record by no engineer:** a founder with nobody else on the project may
+  mark their own work as done, shown and counted as checked by them alone (D217, not yet approved by you); and an idea's
+  Manage tab is the plain settings in every build (1b13a90).
+- **Checked, as the engineers reported** (numbers in the last row of MVP-READY's table): the contract suite after the tier
+  change; the relay's public-read tests, with a mutation for each guard; the web unit tests over the changed features; mocked
+  browser specs in batches; and the project loop on a real server, now eleven steps: 11 of 11 invite-only with public reads
+  on, 11 of 11 with them off, 11 of 11 open. **Not run:** the pilot gate as a whole, the full mocked suite in one go, the
+  investing specs, `pnpm check` as a whole, any hosted server, any hand test.
+- **Found and fixed on the way:** the first version of public reads served every record about a project, evidence under
+  review included. A review caught that and four more important points; all five were fixed with tests. No second review
+  of those fixes is reported.
+- **Still yours:** your weekly posting promise, your money and the cost ceiling, the token design choices
+  ([CREATE-BILLION-REVIEW.md](CREATE-BILLION-REVIEW.md)), counsel's reads (now with public reads among them), and the smaller
+  calls the engineers left ([MVP-READY.md](MVP-READY.md), "Still yours").
+- **Not yet brought in line with this push** (other people's files): "What a visitor gets" in
+  [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), which still says shared links reach members only;
+  [HOLDER-ACCESS-MODEL.md](HOLDER-ACCESS-MODEL.md); the dated "Decision for you" under the loop findings in
+  [PILOT-REPORT.md](PILOT-REPORT.md); and the repository's root `.env.example`, which lacks the two public-read settings.
 
 ## Scope
 
@@ -51,10 +90,12 @@ are not the point of it. Nothing in DIRECTION.md changes a contract or an econom
 **Also in development, off the MVP's path** (the contract work of the earlier direction; none of it is deployed or on by
 default):
 
-- **The backing pool (investing, off by default; D188 to D191).** Backers leave at a milestone without selling and keep their
+- **The backing pool (investing, off by default; D188 to D191, D208, D209).** Backers leave at a milestone without selling and keep their
   units; the leave fee is capped at what staying one more step costs; units that already left are tracked separately; a
-  founder picks the curve depth from seven tiers ([BACKING-POOL.md](BACKING-POOL.md), [INVESTING-SWITCH.md](INVESTING-SWITCH.md)).
-  Built and checked on 2026-11-14 and 2026-11-15: the full contract suite (100 suites, 1,115 passed, 0 failed, 2 skipped),
+  founder picks the curve depth from six tiers (seven when built; the 5,000 tier was dropped later on 2026-11-15, D208;
+  [BACKING-POOL.md](BACKING-POOL.md), [INVESTING-SWITCH.md](INVESTING-SWITCH.md)).
+  Built and checked on 2026-11-14 and 2026-11-15: the full contract suite (100 suites, 1,115 passed, 0 failed, 2 skipped;
+  1,117 passed after the tier change, as its engineer reported),
   the real-chain backing journey 5 of 5 on a local chain, the mocked investing journey (32 specs: 31 passed and 1 skipped with
   the switch on). Not audited, not deployed (the pool changed, so any copy on Sepolia is out of date), not hand-tested.
   An independent review found 1 blocker and 3 important points; all were fixed (871b0e8, a20d191), the fixes have had no
@@ -108,8 +149,9 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 | Passkey accounts for every contributor step, fees covered, money sent out | D139, D141 | `scripts/web-passkey-contributor-e2e.sh` (Sepolia fork, built like the image) |
 | The hosted image and server: first start, backups, contributor-only build | D107, D140 | `scripts/test-compose-backup.sh` (a scratch stack); `deploy-env` tests; your own backup only by [RESTORE-REHEARSAL.md](RESTORE-REHEARSAL.md), not yet run |
 | The project loop: Start, weekly updates and promises, help requests and offers, tasks and their checks, the scorecard, Home and Work; and the owner's `./run.sh founders`, `due` and `daily` | DIRECTION.md (2026-11-10) | `scripts/real-loop-e2e.sh` (open and invite-only; run before the 2026-11-15 pages below), `scripts/test-pilot-commands.sh` |
-| The MVP push of 2026-11-15: Start in one press and AI project kinds, the first-week page, the update loop (AI draft, update day, calendar file), tasks with reported numbers and run records, share pictures, Home that feels alive, Discover by kept promises, the invite-only visitor words, link previews, the AI service's daily caps, the agent command line | D192 to D199 | Each part by its own mocked browser spec, unit tests and mutation checks (numbers in [MVP-READY.md](MVP-READY.md)); the real server only for the visitor words and the command line. **Not run since the pages changed: `real-loop-e2e`, the pilot gate as a whole, the full `pnpm check`** |
-| The backing pool's leave, units that left and depth tiers (investing, off by default) | D188 to D191 | Forge suite (1,115 passed), `scripts/web-backing-e2e.sh` (5 of 5, local chain), `scripts/web-investing-mock-e2e.sh` |
+| The MVP push of 2026-11-15: Start in one press and AI project kinds, the first-week page, the update loop (AI draft, update day, calendar file), tasks with reported numbers and run records, share pictures, Home that feels alive, Discover by kept promises, the invite-only visitor words, link previews, the AI service's daily caps, the agent command line | D192 to D199 | Each part by its own mocked browser spec, unit tests and mutation checks (numbers in [MVP-READY.md](MVP-READY.md)); the real server only for the visitor words and the command line. **Not run since the pages changed: `real-loop-e2e`, the pilot gate as a whole, the full `pnpm check`** (the loop has been run since, in the decisions push: next row) |
+| The decisions push, later on 2026-11-15: public reads on an invite-only server and the server's example project, Home's opening tab, three answers, Discover with no ideas where no sales are offered, no money cards on a server with no money, the date format and "followers", the AI starters as a prefill, the founder-alone check | D200 to D217 | Relay Postgres and unit tests with mutation checks, web unit tests, mocked browser specs in batches, and `scripts/real-loop-e2e.sh` (eleven steps; invite-only with public reads on and off, and open), as the engineers reported ([MVP-READY.md](MVP-READY.md), last table row). **Not run: the pilot gate as a whole, the full mocked suite, `pnpm check` as a whole** |
+| The backing pool's leave, units that left and depth tiers (investing, off by default) | D188 to D191, D208, D209 | Forge suite (1,115 passed; 1,117 after the 5,000 tier was dropped, as reported), `scripts/web-backing-e2e.sh` (5 of 5, local chain), `scripts/web-investing-mock-e2e.sh` |
 | Every screen, read as the pilot sees it | D108 to D111, D146 | `WEB_FEATURES=mvp scripts/web-screen-audit.sh`; [SCREEN-AUDIT-2026-10-24.md](SCREEN-AUDIT-2026-10-24.md) |
 | Sepolia readiness: the deploy rehearsed on a fork, every contract checked, the largest transaction under the gas cap | D85, D140 | `scripts/sepolia-deploy.sh` (rehearsal); `web-contributor-e2e.sh --sepolia-fork` |
 | Test networks only, off in the hosted build and frozen: bounties, forecasts, CREATE and the court, money forecasts (removed from the app in D150 and from the contracts in D151, see tag pre-deprecation-2026-10-31), matched exits (retired in D152), payouts, remixes, weekly rounds, funding terms | D113 to D136 | Forge suite, mutation check, `web-post-bounty-e2e.sh`, `web-rounds-e2e.sh` |
@@ -141,7 +183,10 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
   invite-only server by hand, and the journey's visitor step now demands those words; see "Waiting on you" 5 and
   [PILOT-REPORT.md](PILOT-REPORT.md), "Findings from the loop journey"). **That 10 of 10 ran before the first-week page,
   Start in one press and the new Discover tab; the journey's spec was edited for them without a real server and has not been
-  run since.** Run `scripts/real-loop-e2e.sh` (open and invite-only) before relying on it. `scripts/test-mvp-gate.sh` passes (its one
+  run since.** **Run again in the decisions push, later on 2026-11-15, as its engineer reported: the journey now has eleven
+  steps (the eleventh is a founder working alone), and it passed 11 of 11 on an invite-only server with public reads on, 11
+  of 11 with them off, and 11 of 11 on an open server.** Still run `scripts/real-loop-e2e.sh` (open and invite-only) on the
+  build you host before relying on it. `scripts/test-mvp-gate.sh` passes (its one
   check that a stopped stand-in is gone failed in a container that never reaps orphans, a zombie answering `kill -0`; it now
   reads the process's state). `scripts/test-pilot-commands.sh` passes against seeded records. The gate as a whole (the 11
   pilot journeys in one run) was not run.
@@ -186,17 +231,19 @@ and screens captured on a real server. None of it is an audit or a hosted run wi
 
 ## Waiting on you
 
-Rewritten 2026-11-15 to the direction of 2026-11-10, and refreshed after the MVP push. The first four are what stands between
-the repository and inviting three to five founders; the rest wait on what that run shows. **[MVP-READY.md](MVP-READY.md) is
-the same list as one page for you: nine chores only you can do, and 29 numbered decisions, each with a recommendation and what
-changes if you say no.**
+Rewritten 2026-11-15 to the direction of 2026-11-10, refreshed after the MVP push, and again after the decisions push. The
+first four are what stands between the repository and inviting three to five founders; the rest wait on what that run shows.
+**[MVP-READY.md](MVP-READY.md) is the same list as one page for you: nine chores only you can do, the 29 decisions and the
+screen audit's list as the assistant made them at your request on 2026-11-15 (each marked built or not), and a short "Still
+yours" list.**
 
-1. **Decide the order: Pilot A (founders, no chain) before the contributor run.** This changes the old item 6, which put the
+1. **Decided 2026-11-15 (D200): Pilot A (founders, no chain) runs before the contributor run, and the yes line for its one
+   number is written in the header of [PILOT-REPORT.md](PILOT-REPORT.md).** This changes the old item 6, which put the
    social run and then the contributor run first. Pilot A needs none of the contributor run's setup (no Sepolia deploy, no
    ZeroDev project, no chain node, no synced passkeys, no reviewers). It is written as
-   [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Pilot A", with the day-by-day plan, the questions and what counts as a yes; it
-   stays a proposal until you say yes. **With it, approve the operator posting weekly on Creaton's own project for the
-   whole pilot** (the runbook's "operator's cadence"): if you will not, say so before the run and the example project is
+   [PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Pilot A", with the day-by-day plan, the questions and what counts as a yes; you may
+   still change the yes line, but only before day 1. **Still yours: approve the operator posting weekly on Creaton's own
+   project for the whole pilot** (the runbook's "operator's cadence"): if you will not, say so before the run and the example project is
    taken down rather than left to go quiet.
 2. **Run the gate** on the build you host: `scripts/mvp-gate.sh --pilot` (eleven journeys; the project loop is one of them),
    and the loop again on an invite-only server, as the pilot is: `BUZZ_REQUIRE_RELAY_MEMBERSHIP=true scripts/real-loop-e2e.sh`.
@@ -212,14 +259,18 @@ changes if you say no.**
      checks, a test monitor that fails on purpose). Not set up: it needs your account with a monitoring service and your phone.
 4. **Start Creaton's own project** from [CREATON-EXAMPLE-PROJECT.md](CREATON-EXAMPLE-PROJECT.md), Part A, before inviting
    anyone: Start's three answers, a first update, a label ("the server's own") in its sentence, and your key (or
-   `BUZZ_PILOT_EXCLUDE`) so it stays out of the pilot's numbers. Then the invites, one per founder
-   ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Pilot A").
-5. **Decide whether a visitor with no account may read a scorecard on an invite-only server.** Built since 2026-11-15: the
-   page says "You need an invite to open this project", who to ask, and offers Sign in; a pasted link shows the plain Creaton
-   page with nothing about the project; a private project's name is never shown. So today shared links reach members only
-   (the runbook tells founders so). The open question is whether to allow public reads of a project's scorecard (which would
-   also make link previews and the example project's link work signed out), a moderation and counsel question: invite-only was chosen for abuse and moderation reasons (D107), and
-   [HOLDER-ACCESS-MODEL.md](HOLDER-ACCESS-MODEL.md) assumes membership gates reads. Nothing has been weakened.
+   `BUZZ_PILOT_EXCLUDE`) so it stays out of the pilot's numbers. Then put the end of its shared address in
+   `BUZZ_EXAMPLE_PROJECT` and restart, so a visitor with no account is offered "See a record" on Home (D202). Then the
+   invites, one per founder ([PILOT-RUNBOOK.md](PILOT-RUNBOOK.md), "Pilot A").
+5. **Decided and built 2026-11-15 (D201, D202): a visitor with no account may read a public project's record on an
+   invite-only server, when the server's setting is on.** `BUZZ_PUBLIC_PROJECT_READS=true` is set for Creaton's own server in
+   `deploy/compose/.env.creaton.example`; with it off the page says "You need an invite to open this project", who to ask,
+   and offers Sign in, as before. The visitor is sent the project's own record, the founder's goals and promises, the team's
+   updates and accepted work, and nothing else; a project that states the terms of a sale stays closed to them, and a private
+   project's name is never shown. Link previews and the server's example project follow the same setting. **Still yours:**
+   counsel's read before the pilot server starts with it on (invite-only was chosen for abuse and moderation reasons, D107),
+   and the calls listed in [MVP-READY.md](MVP-READY.md), "Still yours" 4 and 5. [HOLDER-ACCESS-MODEL.md](HOLDER-ACCESS-MODEL.md)
+   and the runbook's "What a visitor gets" still describe reads for members only and are not yet brought in line.
 6. **The policy drafts** in `docs/policies/`, with a lawyer. Since the lawyer's review (D183, D184) the web app asks members to agree again when the text changes, the age box is on by default in the compose stack, the start guard is stricter and backups are encrypted to a key kept off the server; the desktop and mobile apps (decide: offer no mobile build), the pin and days-ahead of a change notice and every owner or counsel bracket are still open (see "Counsel's second round" and the Code follow-ups in `docs/policies/LAWYER-FEEDBACK-RESPONSE.md`). Showing returns, even only in Home's feed, is for counsel to read before it ships. Also for counsel: the words "Thanks for saying so", "Good luck" and "Cheer" on Home, and questions 9 and 10 added to [BACKING-POOL.md](BACKING-POOL.md) (is a fee on units that never sold a sale fee; does the founder choosing the curve depth make the founder more clearly the issuer).
 
 **Later, not before Pilot A has been read:**
@@ -253,13 +304,24 @@ device. What to measure is in [PILOT-REPORT.md](PILOT-REPORT.md).
   run in one go; the page's depth picker is exercised only by the mocked spec, not against the real contracts; the run-record
   and reported-numbers reads were checked against a mocked server only (several piece ids in one read are unchecked on a real
   server); the "Draft from the record" button is only in the founder's update dialog; the update day is kept in the browser;
-  the first promises and starter tasks of an AI kind are shown, not written to the project; "Open to agents" is a category
-  filter; the accepted-work picture is offered once, to the person who confirmed; the link preview carries no counts;
+  the first promises and starter tasks of an AI kind are offered as a one-press prefill, with the kind picked again by name
+  because Start does not store it (D206); "Open to agents" is a category filter; the accepted-work picture is offered once, to the person who confirmed; the link preview carries no counts;
   the agent command line cannot set a goal for an agent-started project.
 - **The backing pool fixes (871b0e8, a20d191) were not reviewed again**, 14 optional review points remain (mostly that the leave
-  fee follows the live price, bounded by the tranche cap and the app's limit), the 5k depth tier gives early buyers a large
-  price multiple, and the review's advice to ask for a confirmation when a founder picks a tier below the rule of thumb is not
+  fee follows the live price, bounded by the tranche cap and the app's limit), the 5,000 depth tier is dropped (D208) but
+  nothing bounds the price multiple itself when a raise comes in at many times the depth, and the review's advice to ask for a confirmation when a founder picks a tier below the rule of thumb is not
   recorded as built.
+
+- **The decisions push of later 2026-11-15 has had no hand test and no hosted run, and counsel has not read public reads.**
+  Gaps its engineers recorded: public reads are one setting for the whole server, with no setting a community's owner can
+  change; the limits are guesses and were not load-tested, and the limit for one address trusts the proxy's forwarded
+  address; a change (a new update, a mute, a removal) reaches visitors up to 30 seconds late, and up to 5 minutes late while
+  the shared budget is spent; a visitor to a project the server does not open sees the same invite sentence as for a project
+  that does not exist; a signed-in person who is not a member was not tried in a browser; there is no mocked browser spec for
+  the public record page; `dao-os.spec.ts:167` fails on a label that changed in an earlier commit; a relay test for the mesh
+  demo (`demo_join_forwarded_arm_round_trips_echo`) fails on the engineers' machine and was not looked into; the step where
+  "Set up Shares for people who help" opens has a unit test only; and the founder-alone check (D217) is recorded from its
+  commits, not from a report.
 
 - **Weekly sales: not audited, not legally reviewed, not released, not deployed, not hand-tested (D181, D182).** Every
   check is an agent's, on a scratch chain. No outside party has read the code; no lawyer has read the copy or the brief;
