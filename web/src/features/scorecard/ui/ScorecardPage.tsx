@@ -10,7 +10,7 @@
  */
 
 import { Link, useParams } from "@tanstack/react-router";
-import { type ReactNode, useMemo } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { ProjectMark } from "@/features/feed/ui/MovingNow";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
@@ -24,7 +24,15 @@ import {
   PROMISE_STATE_LABEL,
   type PromiseState,
 } from "@/features/launchpad/lib/promises";
-import { parseScorecardSlug } from "@/features/launchpad/lib/share";
+import {
+  parseScorecardSlug,
+  projectSharePath,
+  shareWords,
+} from "@/features/launchpad/lib/share";
+import {
+  cardVariantsFor,
+  type ShareCardVariant,
+} from "@/features/launchpad/lib/share-card";
 import {
   freshnessLine,
   updateDueWords,
@@ -32,6 +40,7 @@ import {
 import { type Launch, launchCoordinate } from "@/features/launchpad/models";
 import { BackingBlock } from "@/features/launchpad/ui/BackingBlock";
 import { ProjectLoadError } from "@/features/launchpad/ui/ProjectLoadError";
+import { ShareCardPanel } from "@/features/launchpad/ui/ShareCardPanel";
 import { ShareRecordButton } from "@/features/launchpad/ui/ShareRecordButton";
 import { useProjectUpdates } from "@/features/launchpad/use-help-requests";
 import { useLaunch } from "@/features/launchpad/use-launches";
@@ -110,6 +119,39 @@ function Scorecard({ launch }: { launch: Launch }) {
   const due = s?.updatesKnown ? updateDueWords(s.lastUpdateAt, now) : null;
   const followed = follows.followed.has(coordinate);
   const goal = record?.goals.primary?.text || project.pitch || "";
+  // The picture and its sentence state only what the record shows: which of the three it can back is worked out here.
+  const accepted = s?.tasksKnown
+    ? s.tasks.filter((task) => task.state === "confirmed").length
+    : null;
+  // Nothing posted, answered or accepted yet: a brand-new project says it just started, and no more.
+  const fresh = Boolean(s?.updatesKnown && s.lastUpdateAt === null);
+  const kinds = cardVariantsFor({ answered, accepted, fresh });
+  const [chosenKind, setChosenKind] = useState<ShareCardVariant | null>(null);
+  const kind = chosenKind && kinds.includes(chosenKind) ? chosenKind : kinds[0];
+  const kept = totals?.kept ?? null;
+  const picture = useMemo(
+    () => ({
+      variant: kind,
+      name: project.name,
+      goal,
+      app: APP_NAME,
+      streak,
+      kept,
+      answered,
+      accepted,
+    }),
+    [kind, project.name, goal, streak, kept, answered, accepted],
+  );
+  const words = shareWords({
+    name: project.name,
+    app: APP_NAME,
+    streak,
+    kept,
+    answered,
+    url: `${window.location.origin}${projectSharePath(project)}`,
+    variant: kind,
+    accepted,
+  });
 
   usePageMeta({
     title: `${project.name} on ${APP_NAME}`,
@@ -174,6 +216,7 @@ function Scorecard({ launch }: { launch: Launch }) {
           <ShareRecordButton
             answered={answered}
             kept={totals?.kept ?? null}
+            card={kind}
             label="Share"
             project={project}
             streak={streak}
@@ -398,6 +441,48 @@ function Scorecard({ launch }: { launch: Launch }) {
           ) : null}
         </ul>
       </section>
+
+      {s ? (
+        <section
+          aria-labelledby="scorecard-share-heading"
+          className="glass flex flex-col gap-3 rounded-2xl border p-4"
+          data-testid="scorecard-share"
+        >
+          <h2 className="text-base font-semibold" id="scorecard-share-heading">
+            Share this scorecard
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            A picture with the goal and what the record says, and a link to this
+            page.
+          </p>
+          {kinds.length > 1 ? (
+            <fieldset className="m-0 flex min-w-0 flex-wrap gap-2 border-0 p-0">
+              <legend className="sr-only">What the picture shows</legend>
+              {kinds.map((option) => (
+                <Button
+                  aria-pressed={kind === option}
+                  className="max-sm:h-11"
+                  data-testid={`scorecard-share-${option}`}
+                  key={option}
+                  onClick={() => setChosenKind(option)}
+                  size="sm"
+                  type="button"
+                  variant={kind === option ? "default" : "outline"}
+                >
+                  {option === "kept" ? "Promises kept" : "Work accepted"}
+                </Button>
+              ))}
+            </fieldset>
+          ) : null}
+          <ShareCardPanel
+            card={picture}
+            postToHome
+            preview
+            project={project}
+            words={words}
+          />
+        </section>
+      ) : null}
 
       <p>
         <Link

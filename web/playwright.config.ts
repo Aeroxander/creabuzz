@@ -154,6 +154,8 @@ export default defineConfig({
         "**/scorecard.spec.ts",
         // The newcomer's welcome on Home: three ways in, once.
         "**/newcomer-welcome.spec.ts",
+        // The share picture for a project, a kept promise and accepted work: download, share sheet, post to Home.
+        "**/share-card.spec.ts",
         // Browser notifications: asked for only from a button, shown by count while the page is hidden.
         "**/browser-notifications.spec.ts",
       ],

@@ -26,7 +26,35 @@ export function parseScorecardSlug(
   return match ? { id: match[1], founderStart: match[2] } : null;
 }
 
-/** "Nebula on Creaton: 4 weeks in a row, 3 of 4 promises kept." and then the link. */
+const TITLE_CHARS = 80;
+
+/**
+ * What the record says about accepted work: the piece just accepted by its title, else how many pieces were
+ * accepted. Null when it says neither. Never a price and never Shares.
+ */
+export function acceptedWords(input: {
+  accepted?: number | null;
+  workTitle?: string | null;
+}): string | null {
+  const title = (input.workTitle ?? "").replace(/\s+/g, " ").trim();
+  if (title) {
+    const chars = [...title];
+    return `Work accepted: ${chars.length > TITLE_CHARS ? `${chars.slice(0, TITLE_CHARS - 1).join("")}…` : title}`;
+  }
+  const n = input.accepted ?? 0;
+  if (n > 0)
+    return `${n} ${n === 1 ? "piece of work" : "pieces of work"} accepted`;
+  return null;
+}
+
+/**
+ * "Nebula on Creaton: 4 weeks in a row, 3 of 4 promises kept." and then the link.
+ *
+ * `variant` "started" is for a brand-new project: "Nebula on Creaton: just started. Follow along as it gets built."
+ * "accepted" leads with the accepted work. Without one, or when the record holds nothing for the variant, the
+ * sentence is the record's own facts, and with none of those it only says to follow along. Given a variant, weeks in a
+ * row are stated only once at least two promises are answered, as on the picture; without one, from two weeks.
+ */
 export function shareWords(input: {
   name: string;
   app: string;
@@ -34,14 +62,23 @@ export function shareWords(input: {
   kept: number | null;
   answered: number | null;
   url: string;
+  variant?: "started" | "kept" | "accepted";
+  accepted?: number | null;
+  workTitle?: string | null;
 }): string {
+  const head = `${input.name} on ${input.app}`;
+  if (input.variant === "started")
+    return `${head}: just started. Follow along as it gets built. ${input.url}`;
   const facts: string[] = [];
-  if (input.streak && input.streak >= 2)
+  const work = input.variant === "accepted" ? acceptedWords(input) : null;
+  if (work) facts.push(work);
+  const streakStated =
+    input.variant === undefined || (input.answered ?? 0) >= 2;
+  if (streakStated && input.streak && input.streak >= 2)
     facts.push(`${input.streak} weeks in a row`);
   if (input.kept !== null && input.answered)
     facts.push(
       `${input.kept} of ${input.answered} ${input.answered === 1 ? "promise" : "promises"} kept`,
     );
-  const head = `${input.name} on ${input.app}`;
   return `${facts.length > 0 ? `${head}: ${facts.join(", ")}.` : `${head}: follow along as it gets built.`} ${input.url}`;
 }
