@@ -4,37 +4,48 @@ import { test } from "node:test";
 import { goalEvent } from "../../launchpad/lib/goals.ts";
 import { ideaToInput } from "../../launchpad/lib/idea.ts";
 import {
+  applySuggestion,
+  clearStartAfterSignUp,
   EMPTY_QUICK_START,
+  HOW_EXAMPLES,
   loadMadeProject,
   loadStartAttempt,
   projectToStart,
   saveStartAttempt,
   loadQuickStart,
   quickStartGoal,
+  markStartAfterSignUp,
   quickStartIssue,
+  quickStartPitch,
   quickStartProblem,
   readableSoon,
   saveMadeProject,
   saveQuickStart,
+  startAfterSignUpWaiting,
+  takeStartAfterSignUp,
 } from "./quick-start.ts";
 
+// The one-liner is not asked: it comes from the goal unless the founder edits it, so `pitch` is empty here.
 const draft = (over = {}) => ({
   name: "Nebula",
-  pitch: "A map of the night sky for everyone.",
+  pitch: "",
   goal: "A first version ten people use",
   how: "Ten people sign in during one week",
+  category: "",
+  kind: "",
   ...over,
 });
 
-test("four answers are enough, and each missing one is named in the form's order", () => {
+test("three answers are enough, and each missing one is named in the form's order", () => {
   assert.equal(quickStartIssue(draft()), null);
   assert.equal(
     quickStartIssue(draft({ name: "" })),
     "Give your project a name.",
   );
+  // No one-liner was written, so a goal too short to be one is a problem with the goal, not with a box nobody saw.
   assert.equal(
-    quickStartIssue(draft({ pitch: "Short" })),
-    "Say what it is in a sentence.",
+    quickStartIssue(draft({ goal: "Ship it" })),
+    "Say the goal in a sentence.",
   );
   assert.equal(quickStartIssue(draft({ goal: "" })), "Say what the goal is.");
   assert.equal(
@@ -47,6 +58,7 @@ test("the project made has no Shares, no money, no network and no rooms to wait 
   const input = ideaToInput({
     id: "nebula",
     ...draft(),
+    pitch: quickStartPitch(draft()),
     chat: { team: null, supporters: null, backers: null, board: null },
   });
   assert.equal(input.stage, "draft");
@@ -123,7 +135,9 @@ test("a project made whose goal is still to be saved is remembered for its found
 
 test("each problem names the answer it is about, so the form can point at it", () => {
   assert.equal(quickStartProblem(draft({ name: "" })).field, "name");
+  // An edited one-liner that is too short is pointed at in its own box, which is open because it was edited.
   assert.equal(quickStartProblem(draft({ pitch: "Short" })).field, "pitch");
+  assert.equal(quickStartProblem(draft({ goal: "Ship it" })).field, "goal");
   assert.equal(quickStartProblem(draft({ goal: "" })).field, "goal");
   assert.equal(quickStartProblem(draft({ how: "" })).field, "how");
   assert.equal(quickStartProblem(draft()), null);
@@ -230,4 +244,126 @@ test("the id a press is about to publish under is kept for its own account only"
   assert.equal(loadStartAttempt(store, "someone-else"), null);
   saveStartAttempt(store, null);
   assert.equal(loadStartAttempt(store, "me"), null);
+});
+
+test("the one-liner is the goal's first 140 characters until the founder writes their own", () => {
+  assert.equal(quickStartPitch(draft()), "A first version ten people use");
+  const long = `${"word ".repeat(60)}end`;
+  const cut = quickStartPitch(draft({ goal: long }));
+  assert.ok(cut.length <= 140);
+  assert.equal(cut, long.trim().slice(0, 140).trim());
+  // Their own words win, trimmed, and an emptied box goes back to the goal.
+  assert.equal(
+    quickStartPitch(draft({ pitch: "  A map of the night sky.  " })),
+    "A map of the night sky.",
+  );
+  assert.equal(
+    quickStartPitch(draft({ pitch: "   " })),
+    "A first version ten people use",
+  );
+  // A goal of 200 characters still makes a valid project: the one-liner is cut, not refused.
+  assert.equal(
+    quickStartIssue(draft({ goal: "g".repeat(10) + "x".repeat(190) })),
+    null,
+  );
+});
+
+test("what was typed, its category and its kind survive the visit; an old draft without them loads", () => {
+  const map = new Map();
+  const store = {
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => void map.set(k, v),
+    removeItem: (k) => void map.delete(k),
+  };
+  const chosen = draft({ category: "AI agent or tool", kind: "ai-media" });
+  saveQuickStart(store, chosen);
+  assert.deepEqual(loadQuickStart(store), chosen);
+  // A draft saved before categories existed (four answers, no category or kind) loads as one with none.
+  map.set(
+    "creaton.start.quick",
+    JSON.stringify({ name: "Old", pitch: "p", goal: "g", how: "h" }),
+  );
+  assert.deepEqual(loadQuickStart(store), {
+    name: "Old",
+    pitch: "p",
+    goal: "g",
+    how: "h",
+    category: "",
+    kind: "",
+  });
+  // A category outside the fixed set is dropped rather than published.
+  map.set(
+    "creaton.start.quick",
+    JSON.stringify({ ...chosen, category: "Crypto" }),
+  );
+  assert.equal(loadQuickStart(store).category, "");
+});
+
+test("the three examples for how we'll know are a number by a date, a link, and a named person", () => {
+  assert.deepEqual(
+    HOW_EXAMPLES.map((example) => example.label),
+    ["A number by a date", "A link people can open", "A named person confirms"],
+  );
+  assert.match(HOW_EXAMPLES[0].text, /\d/);
+  for (const example of HOW_EXAMPLES) assert.ok(example.text.length <= 200);
+});
+
+test("tapping a suggestion fills an empty box, replaces another suggestion, and never throws away typed words", () => {
+  const known = HOW_EXAMPLES.map((example) => example.text);
+  const [first, second] = known;
+  assert.equal(applySuggestion("", first, known, 200), first);
+  assert.equal(applySuggestion("  ", first, known, 200), first);
+  // A second tap on another chip swaps the example instead of stacking two.
+  assert.equal(applySuggestion(first, second, known, 200), second);
+  // The founder's own words are kept, with the example under them.
+  assert.equal(
+    applySuggestion("Ten people sign in", second, known, 200),
+    `Ten people sign in\n${second}`,
+  );
+  // Never past the box's own limit.
+  assert.equal(
+    applySuggestion("x".repeat(190), second, known, 200).length,
+    200,
+  );
+});
+
+test("a press waiting for an account is used up once, goes stale, and is taken back when the form changes", () => {
+  const map = new Map();
+  const store = {
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => void map.set(k, v),
+    removeItem: (k) => void map.delete(k),
+  };
+  assert.equal(startAfterSignUpWaiting(store, 1_000), false);
+  assert.equal(takeStartAfterSignUp(store, 1_000), false);
+  markStartAfterSignUp(store, 1_000);
+  assert.equal(startAfterSignUpWaiting(store, 2_000), true);
+  // Asking is not using it up; taking is, and the second take (a re-render, a second announcement) is false.
+  assert.equal(startAfterSignUpWaiting(store, 2_000), true);
+  assert.equal(takeStartAfterSignUp(store, 2_000), true);
+  assert.equal(takeStartAfterSignUp(store, 2_000), false);
+  assert.equal(startAfterSignUpWaiting(store, 2_000), false);
+  // A press made long ago, abandoned at the sign-up dialog, does not start a project on a later sign-up.
+  markStartAfterSignUp(store, 1_000);
+  assert.equal(takeStartAfterSignUp(store, 1_000 + 16 * 60_000), false);
+  assert.equal(startAfterSignUpWaiting(store, 1_000 + 16 * 60_000), false);
+  // Changing the form takes the press back.
+  markStartAfterSignUp(store, 1_000);
+  clearStartAfterSignUp(store);
+  assert.equal(takeStartAfterSignUp(store, 2_000), false);
+  // Storage that refuses means no automatic start, never a crash.
+  const refusing = {
+    getItem() {
+      throw new Error("no");
+    },
+    setItem() {
+      throw new Error("no");
+    },
+    removeItem() {
+      throw new Error("no");
+    },
+  };
+  markStartAfterSignUp(refusing);
+  assert.equal(takeStartAfterSignUp(refusing), false);
+  assert.equal(takeStartAfterSignUp(null), false);
 });

@@ -1,19 +1,28 @@
 /**
- * Start a project with four answers: its name, one sentence, the goal, and how everyone will know.
+ * Start a project with three answers: its name, the goal, and how everyone will know.
  *
  * It makes a public project page with no Shares, no money and no reviewers, so one person can finish it alone in under
- * a minute. Everything else (rooms, boards, Shares for people who help) is set up later from the project page.
+ * a minute. Everything else (rooms, boards, Shares for people who help) is set up later from the project page. The
+ * one-liner under the name is the goal's first 140 characters unless "Edit the one-liner" is opened, and a kind of
+ * project (and, for an AI project, starter wording) is an optional row of chips.
  *
  * The project is published first, then its goal (`lib/quick-start.ts`). When the goal does not go through, the form
  * says the project was made, keeps what was written, and "Try again" sends only the goal. Someone without an account
- * gets the sign-up dialog when they press the button, and finds what they typed still here afterwards.
+ * gets the sign-up dialog when they press the button; once the account exists the project is made, with no second
+ * press, and what they typed is still here if anything goes wrong. That one press is remembered in session storage
+ * (sign-up may reload the page), used up the moment it starts, and guarded by `running` so the project is never sent
+ * twice however many times the account is announced. The page opens with `?started=1` so it can welcome the founder.
  */
 
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
+import { AI_PROJECT_KINDS } from "@creaton/core/launchpad/aiProjectKinds.ts";
+
 import { SIGN_UP_EVENT } from "@/features/identity/lib/account-copy";
+import { onPasskeySessionChange } from "@/features/identity/lib/passkey-identity";
+import { InviteOnlySignUpNotice } from "@/features/identity/ui/InviteOnlySignUpNotice";
 import { SignRecovery } from "@/features/identity/ui/SignRecovery";
 import { GOAL_LIMITS, newGoalId } from "@/features/launchpad/lib/goals";
 import { IDEA_PITCH_MAX, ideaToInput } from "@/features/launchpad/lib/idea";
@@ -36,20 +45,41 @@ import { Input } from "@/shared/ui/input";
 
 import { freshLaunchId } from "../lib/contributor-gate";
 import {
+  applySuggestion,
+  clearStartAfterSignUp,
   EMPTY_QUICK_START,
+  HOW_EXAMPLES,
   loadMadeProject,
   loadQuickStart,
   loadStartAttempt,
   type MadeProject,
+  markStartAfterSignUp,
   projectToStart,
   saveStartAttempt,
   saveMadeProject,
   type QuickStartDraft,
+  type QuickStartField,
   quickStartGoal,
+  quickStartPitch,
   quickStartProblem,
   readableSoon,
   saveQuickStart,
+  startAfterSignUpWaiting,
+  takeStartAfterSignUp,
 } from "../lib/quick-start";
+import {
+  AI_CATEGORY,
+  AiProjectPanel,
+  CategoryChips,
+  HowExampleChips,
+} from "./QuickStartChips";
+
+/** Every suggestion a tap can put in a box, so a tap on another one replaces it instead of piling up. */
+const KNOWN_GOALS = AI_PROJECT_KINDS.flatMap((kind) => [...kind.goalHints]);
+const KNOWN_HOWS = [
+  ...HOW_EXAMPLES.map((example) => example.text),
+  ...AI_PROJECT_KINDS.flatMap((kind) => [...kind.howExamples]),
+];
 
 /** What happened in this form's own words, with the server's reason kept for whoever helps. */
 function failed(text: string, cause: unknown): FailureWords {
@@ -78,10 +108,18 @@ export function QuickStartForm() {
   // that would say it was not found.
   const [notShownYet, setNotShownYet] = useState(false);
   const fields = useRef<
-    Partial<
-      Record<keyof QuickStartDraft, HTMLInputElement | HTMLTextAreaElement>
-    >
+    Partial<Record<QuickStartField, HTMLInputElement | HTMLTextAreaElement>>
   >({});
+  // Says that a press is in flight, at once and across renders: `busy` is state and a second call from an earlier
+  // render still sees it false. Two calls (a press and the account being announced) must make one project.
+  const running = useRef(false);
+  const [pitchOpen, setPitchOpen] = useState(() => draft.pitch !== "");
+  // The passkey sign-up does not reload the page, so the form hears about the new account here.
+  const [, setAccountSeen] = useState(0);
+  useEffect(
+    () => onPasskeySessionChange(() => setAccountSeen((n) => n + 1)),
+    [],
+  );
   const [failure, setFailure] = useState<FailureWords | null>(null);
   const [busy, setBusy] = useState(false);
   // The project this visit already made, when its goal is still to be saved: a retry sends the goal, never a second
@@ -98,17 +136,38 @@ export function QuickStartForm() {
     saveQuickStart(sessionStorage, draft);
   }, [draft]);
 
-  const set = (field: keyof QuickStartDraft) => (value: string) => {
-    setDraft((was) => ({ ...was, [field]: value }));
+  // Any change to the form takes back a press that was waiting for an account: the project made is what is on screen.
+  const change = (update: (was: QuickStartDraft) => QuickStartDraft) => {
+    setDraft(update);
     setIssue(null);
+    clearStartAfterSignUp(sessionStorage);
   };
+  const set = (field: keyof QuickStartDraft) => (value: string) =>
+    change((was) => ({ ...was, [field]: value }));
+  const setCategory = (category: string) =>
+    change((was) => ({
+      ...was,
+      category,
+      kind: category === AI_CATEGORY ? was.kind : "",
+    }));
 
   // A new project's id must not be one this person used before, so both lists are read first.
   const listsFailed = me !== null && (ownIds.isError || removed.isError);
   const listsRead = me === null || (ownIds.isSuccess && removed.isSuccess);
 
   const submit = async () => {
-    if (busy) return;
+    if (busy || running.current) return;
+    running.current = true;
+    try {
+      await send();
+    } finally {
+      running.current = false;
+    }
+  };
+
+  const send = async () => {
+    // Pressing the button is the press: one waiting for an account is no longer needed.
+    clearStartAfterSignUp(sessionStorage);
     const problem = quickStartProblem(draft);
     setIssue(problem);
     if (problem) {
@@ -118,6 +177,7 @@ export function QuickStartForm() {
     }
     // Signed out: the account dialog. What was typed is kept for when they come back.
     if (me === null) {
+      markStartAfterSignUp(sessionStorage);
       window.dispatchEvent(new Event(SIGN_UP_EVENT));
       return;
     }
@@ -148,7 +208,8 @@ export function QuickStartForm() {
             ideaToInput({
               id: plan.id,
               name: draft.name,
-              pitch: draft.pitch,
+              pitch: quickStartPitch(draft),
+              category: draft.category,
               chat: EMPTY_CHAT,
             }),
           );
@@ -198,9 +259,21 @@ export function QuickStartForm() {
     void navigate({
       to: "/launchpad/$launchId",
       params: { launchId: id },
-      search: { author, action: undefined },
+      search: { author, action: undefined, started: 1 },
     });
   };
+
+  // The account now exists and Start was waiting for it: make the project, once. The press is used up before sending,
+  // so a reload or a second announcement of the same account finds nothing waiting. It waits for the earlier-projects
+  // read, as a press would; when that read failed, the person sees the failure and presses Start themselves.
+  const submitNow = useRef(submit);
+  submitNow.current = submit;
+  useEffect(() => {
+    if (me === null || !listsRead) return;
+    if (!startAfterSignUpWaiting(sessionStorage)) return;
+    if (takeStartAfterSignUp(sessionStorage)) void submitNow.current();
+  }, [me, listsRead]);
+
   return (
     <form
       aria-labelledby="quick-start-heading"
@@ -212,13 +285,17 @@ export function QuickStartForm() {
         void submit();
       }}
     >
+      {me === null ? <InviteOnlySignUpNotice where="start" /> : null}
       <div>
         <h2 className="text-base font-bold" id="quick-start-heading">
           What is your goal, and how will we know?
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Four answers make a public project page. No money, no Shares, and
+          Three answers make a public project page. No money, no Shares, and
           nobody else needed. You can change any of it later.
+        </p>
+        <p className="mt-1 text-sm font-medium" data-testid="quick-free">
+          Free to start. No token needed.
         </p>
       </div>
       <div>
@@ -239,28 +316,6 @@ export function QuickStartForm() {
           onChange={(event) => set("name")(event.target.value)}
           placeholder="Nebula"
           value={draft.name}
-        />
-      </div>
-      <div>
-        <label className="text-sm font-medium" htmlFor="quick-pitch">
-          What is it, in one sentence?
-        </label>
-        <Input
-          className="mt-1 bg-background"
-          data-testid="quick-pitch"
-          aria-describedby={
-            issue?.field === "pitch" ? "quick-issue" : undefined
-          }
-          aria-invalid={issue?.field === "pitch" || undefined}
-          ref={(el) => {
-            if (el) fields.current.pitch = el;
-          }}
-          disabled={made !== null}
-          id="quick-pitch"
-          maxLength={IDEA_PITCH_MAX}
-          onChange={(event) => set("pitch")(event.target.value)}
-          placeholder="A free map of the night sky that anyone can add to."
-          value={draft.pitch}
         />
       </div>
       <div>
@@ -302,6 +357,91 @@ export function QuickStartForm() {
           rows={2}
           value={draft.how}
         />
+        <div className="mt-2">
+          <HowExampleChips
+            onPick={(text) =>
+              change((was) => ({
+                ...was,
+                how: applySuggestion(
+                  was.how,
+                  text,
+                  KNOWN_HOWS,
+                  GOAL_LIMITS.how,
+                ),
+              }))
+            }
+          />
+        </div>
+      </div>
+      <CategoryChips onChange={setCategory} value={draft.category} />
+      {draft.category === AI_CATEGORY ? (
+        <AiProjectPanel
+          kind={draft.kind}
+          onGoal={(text) =>
+            change((was) => ({
+              ...was,
+              goal: applySuggestion(
+                was.goal,
+                text,
+                KNOWN_GOALS,
+                GOAL_LIMITS.text,
+              ),
+            }))
+          }
+          onHow={(text) =>
+            change((was) => ({
+              ...was,
+              how: applySuggestion(was.how, text, KNOWN_HOWS, GOAL_LIMITS.how),
+            }))
+          }
+          onKind={set("kind")}
+        />
+      ) : null}
+      <div>
+        <p
+          className="text-xs text-muted-foreground"
+          data-testid="quick-pitch-preview"
+        >
+          {quickStartPitch(draft) === ""
+            ? "The line under your project's name comes from your goal."
+            : `The line under your project's name: ${quickStartPitch(draft)}`}
+        </p>
+        <details
+          data-testid="quick-pitch-edit"
+          onToggle={(event) => setPitchOpen(event.currentTarget.open)}
+          open={pitchOpen}
+        >
+          <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">
+            Edit the one-liner
+          </summary>
+          {pitchOpen ? (
+            <div className="mt-2">
+              <label className="text-sm font-medium" htmlFor="quick-pitch">
+                What is it, in one sentence?
+              </label>
+              <Input
+                className="mt-1 bg-background"
+                data-testid="quick-pitch"
+                aria-describedby={
+                  issue?.field === "pitch" ? "quick-issue" : undefined
+                }
+                aria-invalid={issue?.field === "pitch" || undefined}
+                ref={(el) => {
+                  if (el) fields.current.pitch = el;
+                }}
+                disabled={made !== null}
+                id="quick-pitch"
+                maxLength={IDEA_PITCH_MAX}
+                onChange={(event) => set("pitch")(event.target.value)}
+                placeholder="A free map of the night sky that anyone can add to."
+                value={draft.pitch}
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Leave it empty to use the start of your goal.
+              </p>
+            </div>
+          ) : null}
+        </details>
       </div>
       {issue ? (
         <p
@@ -385,9 +525,22 @@ export function QuickStartForm() {
               : "Start the project"}
         </Button>
         {me === null ? (
-          <span className="text-xs text-muted-foreground">
-            You'll be asked to create your account first. What you typed stays
-            here.
+          <span
+            className="text-xs text-muted-foreground"
+            data-testid="quick-next"
+          >
+            Next: create your account, then your project is made. What you typed
+            stays here.
+          </span>
+        ) : null}
+        {me !== null && !listsRead && !listsFailed ? (
+          <span
+            className="text-xs text-muted-foreground"
+            data-testid="quick-lists-loading"
+            role="status"
+          >
+            One moment: checking your earlier projects, so this one gets an
+            address of its own.
           </span>
         ) : null}
       </div>

@@ -35,6 +35,8 @@ interface LaunchSearch {
   mandate?: string;
   /** One decision to show: its id. Opens the Decisions tab and highlights that card. */
   decision?: string;
+  /** `?started=1`: the project was just made from Start, so its page can welcome the founder. Only the number 1 counts. */
+  started?: 1;
 }
 
 export const Route = createFileRoute("/launchpad/$launchId")({
@@ -88,6 +90,8 @@ export const Route = createFileRoute("/launchpad/$launchId")({
       isDecisionId(search.decision.toLowerCase())
         ? search.decision.toLowerCase()
         : undefined,
+    // The address bar gives the number 1 (`?started=1`); a link typed by hand may give the text "1".
+    started: search.started === 1 || search.started === "1" ? 1 : undefined,
   }),
   component: LaunchDetailRoute,
 });

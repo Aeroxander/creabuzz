@@ -1,7 +1,8 @@
 /**
- * Starting a project with four answers: its name, one sentence, the goal, and how everyone will know it was reached.
+ * Starting a project with three answers: its name, the goal, and how everyone will know it was reached.
  *
- * Nothing else is asked. The project made is the lightest kind there is: a public page with no Shares, no money, no
+ * Nothing else is required. The one-sentence line that sits under the name on the project's page is the goal's first
+ * 140 characters unless the founder edits it, and a kind of project is an optional chip (`launchpad/lib/categories.ts`). The project made is the lightest kind there is: a public page with no Shares, no money, no
  * reviewers and nothing sent to the network. Everything else has a default or is set up later from the project page.
  *
  * Two records are published, in this order: the project, then its goal. If the second does not go through the project
@@ -13,7 +14,8 @@
  * Pure and alias-free: `quick-start.test.mjs` drives it under `node --test`.
  */
 
-import { ideaIssue } from "../../launchpad/lib/idea.ts";
+import { IDEA_PITCH_MAX, ideaIssue } from "../../launchpad/lib/idea.ts";
+import { startCategory } from "../../launchpad/lib/categories.ts";
 import {
   type GoalInput,
   goalProblem,
@@ -22,9 +24,14 @@ import {
 
 export interface QuickStartDraft {
   name: string;
+  /** The one-liner as the founder edited it. Empty means "use the goal's first words" ({@link quickStartPitch}). */
   pitch: string;
   goal: string;
   how: string;
+  /** One of the fixed categories, or empty for none. */
+  category: string;
+  /** The kind of AI project whose starter wording was picked (`aiProjectKinds.ts`), or empty. Never sent anywhere. */
+  kind: string;
 }
 
 export const EMPTY_QUICK_START: QuickStartDraft = {
@@ -32,7 +39,20 @@ export const EMPTY_QUICK_START: QuickStartDraft = {
   pitch: "",
   goal: "",
   how: "",
+  category: "",
+  kind: "",
 };
+
+/**
+ * The one-liner the project is made with: what the founder wrote, or else the goal's first 140 characters (the most a
+ * one-liner holds), so the form needs no separate sentence.
+ */
+export function quickStartPitch(
+  draft: Pick<QuickStartDraft, "pitch" | "goal">,
+): string {
+  const own = draft.pitch.trim();
+  return own !== "" ? own : draft.goal.trim().slice(0, IDEA_PITCH_MAX).trim();
+}
 
 /** The project's first goal, as its goal record. */
 export function quickStartGoal(
@@ -49,26 +69,40 @@ export function quickStartGoal(
   };
 }
 
+/** The answers the form can point at when one is missing or wrong. */
+export type QuickStartField = "name" | "pitch" | "goal" | "how";
+
 /** Why the project cannot be started yet and which answer it is about, or null when it can: the first in the form's order. */
 export function quickStartProblem(
   draft: QuickStartDraft,
-): { field: keyof QuickStartDraft; message: string } | null {
-  const project = ideaIssue({ name: draft.name, pitch: draft.pitch });
+): { field: QuickStartField; message: string } | null {
+  const pitch = quickStartPitch(draft);
+  const project = ideaIssue({ name: draft.name, pitch });
   if (project) {
     // The shared check speaks of an idea; here it is a project. It checks the name first, then the sentence.
     const aboutName = ideaIssue({
       name: draft.name,
       pitch: "long enough to pass",
     });
-    return aboutName
-      ? {
-          field: "name",
-          message:
-            aboutName === "Give your idea a name."
-              ? "Give your project a name."
-              : aboutName,
-        }
-      : { field: "pitch", message: project };
+    if (aboutName)
+      return {
+        field: "name",
+        message:
+          aboutName === "Give your idea a name."
+            ? "Give your project a name."
+            : aboutName,
+      };
+    // Nobody wrote a one-liner, so a short one comes from a short goal: point at the goal, not at a box they never saw.
+    if (draft.pitch.trim() === "") {
+      return {
+        field: "goal",
+        message:
+          draft.goal.trim().length < 3
+            ? "Say what the goal is."
+            : "Say the goal in a sentence.",
+      };
+    }
+    return { field: "pitch", message: project };
   }
   const goal = goalProblem(quickStartGoal(draft, "g"));
   return goal
@@ -133,6 +167,8 @@ export function loadQuickStart(
       pitch: text(raw.pitch),
       goal: text(raw.goal),
       how: text(raw.how),
+      category: startCategory(raw.category),
+      kind: typeof raw.kind === "string" ? raw.kind.slice(0, 40) : "",
     };
   } catch {
     return EMPTY_QUICK_START;
@@ -275,4 +311,104 @@ export async function projectToStart(input: {
     id = fresh(taken);
   }
   return { id, adopt: false };
+}
+
+/** A tap-to-fill example for "How we'll know": what it is called on the chip, and the sentence it fills in. */
+interface HowExample {
+  id: string;
+  label: string;
+  text: string;
+}
+
+/** Three plain ways to say how we will know. Each is a sentence to edit, not a rule. */
+export const HOW_EXAMPLES: readonly HowExample[] = [
+  {
+    id: "number",
+    label: "A number by a date",
+    text: "At least 10 people use it by the end of next month.",
+  },
+  {
+    id: "link",
+    label: "A link people can open",
+    text: "A page anyone can open at a link, with the first version working.",
+  },
+  {
+    id: "person",
+    label: "A named person confirms",
+    text: "The person I name here confirms in writing that it is done.",
+  },
+];
+
+/**
+ * What a box holds after someone taps a suggestion chip. An empty box, or one still holding another suggestion, is
+ * replaced; a box with the person's own words keeps them and gets the suggestion on a new line, so a tap never throws
+ * away what was typed. Cut at `max`, the box's own limit.
+ */
+export function applySuggestion(
+  current: string,
+  suggestion: string,
+  known: readonly string[],
+  max: number,
+): string {
+  const text = current.trim();
+  const next =
+    text === "" || known.includes(text) ? suggestion : `${text}\n${suggestion}`;
+  return next.slice(0, max);
+}
+
+const AFTER_SIGN_UP_KEY = "creaton.start.quick.after-sign-up";
+
+/** How long a press of Start that is waiting for an account stays good: after that the person presses it again. */
+const AFTER_SIGN_UP_MS = 15 * 60_000;
+
+/**
+ * Remember that Start was pressed while signed out, so the project is made as soon as the account exists, with no
+ * second press. Sign-up may reload the page, so this lives in session storage next to the draft it belongs to.
+ */
+export function markStartAfterSignUp(
+  store: DraftStore | null | undefined,
+  now: number = Date.now(),
+): void {
+  try {
+    store?.setItem(AFTER_SIGN_UP_KEY, String(now));
+  } catch {
+    // Storage refused: the person presses Start again once signed up.
+  }
+}
+
+/** Whether Start is waiting for an account, without using it up. */
+export function startAfterSignUpWaiting(
+  store: DraftStore | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  try {
+    const at = Number(store?.getItem(AFTER_SIGN_UP_KEY) ?? "");
+    return Number.isFinite(at) && at > 0 && now - at <= AFTER_SIGN_UP_MS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether Start was waiting for an account, and forget that: it answers true once per press, so the project is made
+ * once however many times the page re-renders or the account is announced. An old mark is forgotten and answers false.
+ */
+export function takeStartAfterSignUp(
+  store: DraftStore | null | undefined,
+  now: number = Date.now(),
+): boolean {
+  const waiting = startAfterSignUpWaiting(store, now);
+  clearStartAfterSignUp(store);
+  return waiting;
+}
+
+/** Forget a waiting press (the person changed the form, or pressed Start themselves). */
+export function clearStartAfterSignUp(
+  store: DraftStore | null | undefined,
+): void {
+  try {
+    store?.removeItem(AFTER_SIGN_UP_KEY);
+  } catch {
+    // Storage refused: nothing to forget.
+  }
 }
