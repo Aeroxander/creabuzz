@@ -59,7 +59,8 @@ function note(content: string) {
 async function open(
   page: Page,
   relay: ReturnType<typeof createMockRelay>,
-  path = "/",
+  // Home opens on Updates, the feed of project records; these tests are about Everyone, one press away.
+  path = "/?tab=everyone",
   signedIn = true,
 ) {
   await page.route("http://127.0.0.1:8545/**", (route) =>

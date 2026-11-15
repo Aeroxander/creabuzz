@@ -50,7 +50,8 @@ async function open(
   relay: ReturnType<typeof createMockRelay>,
   {
     signedIn = true,
-    path = "/",
+    // Home opens on Updates, the feed of project records; these tests are about Everyone, one press away.
+    path = "/?tab=everyone",
     access,
   }: { signedIn?: boolean; path?: string; access?: string } = {},
 ) {
