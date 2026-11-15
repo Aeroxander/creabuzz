@@ -15,6 +15,7 @@ import {
   HELP_SIZES,
   type HelpSize,
 } from "../lib/weekly-update";
+import { DoneMeansHelp } from "./DoneMeansHelp";
 import { FIELD_CLASS, SendFailed, todayDate } from "./TaskParts";
 
 export interface TaskDraft {
@@ -174,6 +175,7 @@ export function TaskForm({
         rows={2}
         value={done}
       />
+      <DoneMeansHelp done={done} onUse={setDone} what={what} />
       <label className="mt-2 block text-sm font-medium" htmlFor={`${id}-due`}>
         Due date (optional)
       </label>
