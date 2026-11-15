@@ -224,11 +224,16 @@ pub(crate) async fn public_standing(
     Ok(Some(PublicProject { record, coordinate }))
 }
 
-async fn lookup(state: &AppState, raw_host: &str, route: &ProjectRoute) -> Option<Preview> {
-    let tenant = crate::tenant::bind_community(&state.db, raw_host)
-        .await
-        .ok()?;
-    let community = tenant.community();
+/// The project `route` names in `community`, when a visitor who is not signed
+/// in may be shown it there: `None` when the community is invite-only and the
+/// server does not let anyone read public records, when the address fits no
+/// project or more than one, when the project does not pass
+/// [`public_standing`], or when a lookup fails.
+async fn shown_project(
+    state: &AppState,
+    community: CommunityId,
+    route: &ProjectRoute,
+) -> Option<PublicProject> {
     // Invite-only: a visitor who is not signed in reads nothing here, so the
     // preview must not tell a crawler what the visitor could not read. When the
     // server lets anyone read a public project's record, the visitor can read
@@ -267,10 +272,32 @@ async fn lookup(state: &AppState, raw_host: &str, route: &ProjectRoute) -> Optio
         return None;
     }
 
-    let PublicProject { record, coordinate } = public_standing(state, community, record)
+    public_standing(state, community, record)
         .await
         .map_err(|error| tracing::warn!(%error, "share preview: standing read failed"))
+        .ok()?
+}
+
+/// The server's own example project (`BUZZ_EXAMPLE_PROJECT`, a scorecard
+/// address without its `/p/`), when a visitor who is not signed in could open
+/// it in `community`: the same answer the link preview gives for that
+/// address. `None` when the server names none, or the visitor could not open
+/// it here, so the web app never offers a link that leads nowhere.
+pub(crate) async fn example_project(state: &AppState, community: CommunityId) -> Option<String> {
+    let slug = state.config.example_project.as_deref()?;
+    let route = route_of(&format!("/p/{slug}"), None)?;
+    tokio::time::timeout(LOOKUP_DEADLINE, shown_project(state, community, &route))
+        .await
         .ok()??;
+    Some(slug.to_string())
+}
+
+async fn lookup(state: &AppState, raw_host: &str, route: &ProjectRoute) -> Option<Preview> {
+    let tenant = crate::tenant::bind_community(&state.db, raw_host)
+        .await
+        .ok()?;
+    let community = tenant.community();
+    let PublicProject { record, coordinate } = shown_project(state, community, route).await?;
     let author = record.pubkey.to_bytes();
     let body: serde_json::Value = serde_json::from_str(&record.content).unwrap_or_default();
     let name = record
@@ -812,6 +839,17 @@ mod tests {
 
         /// `public_reads` is the server's `BUZZ_PUBLIC_PROJECT_READS`.
         async fn world_with(invite_only: bool, public_reads: bool) -> World {
+            world_for(invite_only, public_reads, Keys::generate(), None).await
+        }
+
+        /// A world whose founder is known before the server starts, so the
+        /// server's settings can name the founder's project (`example`).
+        async fn world_for(
+            invite_only: bool,
+            public_reads: bool,
+            founder: Keys,
+            example: Option<String>,
+        ) -> World {
             let dir = tempfile::tempdir().expect("bundle dir");
             std::fs::create_dir_all(dir.path().join("assets")).expect("assets");
             std::fs::write(dir.path().join("index.html"), PLAIN).expect("index");
@@ -821,6 +859,7 @@ mod tests {
                 config.web_spa_full = true;
                 config.new_account_posts_per_hour = 0;
                 config.public_project_reads = public_reads;
+                config.example_project = example;
             })
             .await;
             let host = format!("share-preview-{}.example", Uuid::new_v4().simple());
@@ -837,7 +876,6 @@ mod tests {
                     .await
                     .expect("close the community");
             }
-            let founder = Keys::generate();
             state
                 .db
                 .add_relay_member(community, &founder.public_key().to_hex(), "member", None)
@@ -1133,6 +1171,66 @@ mod tests {
                 .await
                 .expect("ban");
             assert_eq!(page(&w, &slug(&w, "nebula")).await, PLAIN);
+        }
+
+        /// What the server's information document says its example project is, on `w`'s host.
+        async fn example_named(w: &World) -> serde_json::Value {
+            serde_json::to_value(crate::nip11::nip11_document(&w.state, w.tenant.host()).await)
+                .expect("document is JSON")["example_project"]
+                .clone()
+        }
+
+        #[tokio::test]
+        #[ignore = "requires Postgres and Redis"]
+        async fn the_servers_example_project_is_named_only_where_a_visitor_can_open_it() {
+            let null = serde_json::Value::Null;
+            let founder = Keys::generate();
+            let named = format!("nebula-{}", &founder.public_key().to_hex()[..16]);
+
+            // An open server: named once the project is there.
+            let open = world_for(false, false, founder.clone(), Some(named.clone())).await;
+            assert_eq!(example_named(&open).await, null, "no such project yet");
+            project(&open, "nebula", "Nebula", "{}").await;
+            assert_eq!(example_named(&open).await, serde_json::json!(named));
+            // The same server on another community's address has no such project.
+            let elsewhere = format!("share-preview-{}.example", Uuid::new_v4().simple());
+            open.state
+                .db
+                .ensure_configured_community(&elsewhere)
+                .await
+                .expect("community");
+            assert_eq!(
+                serde_json::to_value(crate::nip11::nip11_document(&open.state, &elsewhere).await)
+                    .expect("document is JSON")["example_project"],
+                null
+            );
+
+            // Invite-only: a visitor could not open it, so it is not offered.
+            let closed = world_for(true, false, founder.clone(), Some(named.clone())).await;
+            project(&closed, "nebula", "Nebula", "{}").await;
+            assert_eq!(example_named(&closed).await, null);
+
+            // Invite-only, and anyone may read public records: offered, until the project stops being public.
+            let shown = world_for(true, true, founder.clone(), Some(named.clone())).await;
+            project(&shown, "nebula", "Nebula", "{}").await;
+            assert_eq!(example_named(&shown).await, serde_json::json!(named));
+            publish(
+                &shown,
+                signed(
+                    &shown.founder,
+                    KIND_LAUNCH_RECORD,
+                    &[&["d", "nebula"], &["name", "Nebula"]],
+                    r#"{"listing":"unlisted"}"#,
+                    5,
+                ),
+            )
+            .await;
+            assert_eq!(example_named(&shown).await, null);
+
+            // A server that names none says nothing.
+            let unset = world_for(false, false, founder, None).await;
+            project(&unset, "nebula", "Nebula", "{}").await;
+            assert_eq!(example_named(&unset).await, null);
         }
 
         #[tokio::test]

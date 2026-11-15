@@ -38,6 +38,10 @@ pub struct RelayInfo {
     /// could not be read), never guessed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access: Option<&'static str>,
+    /// The server's own example project, as its scorecard address without the `/p/`, when the operator named one
+    /// (`BUZZ_EXAMPLE_PROJECT`) and a visitor who is not signed in could open it on this community. Absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub example_project: Option<String>,
     /// Host-bound atomic read-state snapshot capability; absent on unresolved hosts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_state_snapshot: Option<serde_json::Value>,
@@ -288,6 +292,7 @@ impl RelayInfo {
             description: "A community on Creaton".to_string(),
             icon: icon.filter(|s| !s.is_empty()).map(|s| s.to_string()),
             access: None,
+            example_project: None,
             read_state_snapshot: None,
             buzz_v1: None,
             artifacts: serde_json::json!({
@@ -414,6 +419,8 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         {
             info.supported_nips.push(NIP_RELAY_MEMBERSHIP);
         }
+        info.example_project =
+            crate::share_preview::example_project(state, tenant.community()).await;
         if state.config.buzz_v1_enabled {
             use buzz_db::personal_read::{
                 ELIGIBLE_KINDS, MAX_CHANNELS, MAX_CONTEXTS, MAX_CONTEXT_MESSAGES, MAX_INTENTS,

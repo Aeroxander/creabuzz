@@ -631,6 +631,12 @@ pub struct Config {
     /// who is not signed in can use a new key for every request, so the
     /// per-caller limit alone does not bound them.
     pub public_project_reads_per_min: u64,
+    /// The server's own example project, as its scorecard address without the
+    /// `/p/` (`BUZZ_EXAMPLE_PROJECT=<project id>-<first 16 characters of the
+    /// founder's key>`). The information document names it (`example_project`)
+    /// on a community where a visitor who is not signed in could open it, so
+    /// the web app's first screen can offer a real record to read. Unset: none.
+    pub example_project: Option<String>,
 }
 
 fn parse_bind_addr(raw: &str) -> Result<SocketAddr, ConfigError> {
@@ -1725,6 +1731,21 @@ impl Config {
         let public_project_reads_per_min =
             positive_u64_from_env("BUZZ_PUBLIC_PROJECT_READS_PER_MIN", 300)?;
 
+        let example_project = std::env::var("BUZZ_EXAMPLE_PROJECT")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        if let Some(slug) = &example_project {
+            if !matches!(
+                crate::share_preview::route_of(&format!("/p/{slug}"), None),
+                Some(crate::share_preview::ProjectRoute::Scorecard { .. })
+            ) {
+                return Err(ConfigError::InvalidValue(
+                    "BUZZ_EXAMPLE_PROJECT must be a scorecard address without its /p/: the project's id, a dash, and the first 16 characters of the founder's key".to_string(),
+                ));
+            }
+        }
+
         if let Some(ref dir) = web_dir {
             if !dir.join("index.html").is_file() {
                 return Err(ConfigError::InvalidValue(format!(
@@ -1832,6 +1853,7 @@ impl Config {
             public_community_directory,
             public_project_reads,
             public_project_reads_per_min,
+            example_project,
         })
     }
 
