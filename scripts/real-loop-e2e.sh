@@ -23,10 +23,17 @@
 # spec says which answers it accepts). Two modes, one spec: `scripts/real-loop-e2e.sh` and
 # `BUZZ_REQUIRE_RELAY_MEMBERSHIP=true scripts/real-loop-e2e.sh`.
 #
+# An invite-only server may let anyone read a public project's record (BUZZ_PUBLIC_PROJECT_READS=true, as Creaton's own
+# server does: deploy/compose/.env.creaton.example). With it the visitor with no account must be shown the project's
+# record, read only, at both of its shared addresses, and the link must carry a real preview; without it (the default
+# here) they must be shown the invite sentence and the plain page. So the invite-only journey is run both ways:
+# `BUZZ_REQUIRE_RELAY_MEMBERSHIP=true BUZZ_PUBLIC_PROJECT_READS=true scripts/real-loop-e2e.sh` and the line above.
+#
 # ⚠️  DEV ONLY. Uses its own database, dropped on exit.
 #
 # Usage:  scripts/real-loop-e2e.sh [playwright args]         e.g. scripts/real-loop-e2e.sh -g "Quick Start"
-# Env:    BUZZ_REQUIRE_RELAY_MEMBERSHIP=true|false (default false: see above), KEEP_DB=1 (keep the scratch database, with the
+# Env:    BUZZ_REQUIRE_RELAY_MEMBERSHIP=true|false (default false: see above), BUZZ_PUBLIC_PROJECT_READS=true|false
+#         (default false: see above), KEEP_DB=1 (keep the scratch database, with the
 #         journey's records in it, and print its address; drop it yourself), SKIP_BUILD=1 (reuse the web build, target/debug/buzz-relay and target/debug/buzz),
 #         WEB_DIST (where the web build goes; default target/web-real-loop), POSTGRES_ADMIN_URL, REDIS_URL,
 #         PW_CHROMIUM_PATH / PW_CHROMIUM_EXTRA_ARGS (a Chromium other than the pinned one; see the Playwright config),
@@ -53,6 +60,9 @@ DB_MADE=""
 MEMBERSHIP="${BUZZ_REQUIRE_RELAY_MEMBERSHIP:-false}"
 [[ "$MEMBERSHIP" == "true" || "$MEMBERSHIP" == "false" ]] \
   || { printf '\033[31m[real-loop] BUZZ_REQUIRE_RELAY_MEMBERSHIP is true or false, not "%s"\033[0m\n' "$MEMBERSHIP" >&2; exit 2; }
+PUBLIC_READS="${BUZZ_PUBLIC_PROJECT_READS:-false}"
+[[ "$PUBLIC_READS" == "true" || "$PUBLIC_READS" == "false" ]] \
+  || { printf '\033[31m[real-loop] BUZZ_PUBLIC_PROJECT_READS is true or false, not "%s"\033[0m\n' "$PUBLIC_READS" >&2; exit 2; }
 
 for tool in psql curl node openssl python3; do
   command -v "$tool" >/dev/null 2>&1 || fail "missing tool: $tool"
@@ -133,7 +143,7 @@ psql "$ADMIN_URL" -qc "create database $DB" || fail "could not create the scratc
 DB_MADE=1
 
 PORT=$(free_port); HEALTH=$(free_port); METRICS=$(free_port)
-step "starting the relay on :$PORT ($([[ "$MEMBERSHIP" == "true" ]] && echo "invite-only: members only" || echo "open: anyone who signs up may post"))"
+step "starting the relay on :$PORT ($([[ "$MEMBERSHIP" == "true" ]] && echo "invite-only: members only" || echo "open: anyone who signs up may post")$([[ "$PUBLIC_READS" == "true" ]] && echo "; anyone may read a public project's record"))"
 # The limits are raised because three browsers, a command line and a seed share one minute, not because any step
 # needs it: each person's own writes stay far under the defaults except the seed, which the spec spreads over four
 # writers. Membership is open unless BUZZ_REQUIRE_RELAY_MEMBERSHIP=true (above): then the server has an owner, whose key
@@ -152,7 +162,7 @@ env DATABASE_URL="$DB_URL" REDIS_URL="$REDIS_URL" BUZZ_AUTO_MIGRATE=true \
   BUZZ_BIND_ADDR="127.0.0.1:$PORT" BUZZ_RELAY_URL="ws://localhost:$PORT" RELAY_URL="ws://localhost:$PORT" \
   BUZZ_HEALTH_PORT="$HEALTH" BUZZ_METRICS_PORT="$METRICS" \
   BUZZ_WEB_DIR="$WEB_DIST" BUZZ_WEB_SPA=full BUZZ_MEDIA_BASE_URL="http://localhost:$PORT/media" \
-  BUZZ_REQUIRE_RELAY_MEMBERSHIP="$MEMBERSHIP" BUZZ_GIT_CONFORMANCE_PROBE=false \
+  BUZZ_REQUIRE_RELAY_MEMBERSHIP="$MEMBERSHIP" BUZZ_PUBLIC_PROJECT_READS="$PUBLIC_READS" BUZZ_GIT_CONFORMANCE_PROBE=false \
   ${OWNER_ENV[@]+"${OWNER_ENV[@]}"} \
   BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN=600 BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC=2000 \
   BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR=0 \
@@ -183,6 +193,7 @@ if [[ "$MEMBERSHIP" == "true" ]]; then
     || fail "the owner is not this run's community's owner"
   SPEC_ENV=(E2E_INVITE_ONLY=1 BUZZ_REAL_OWNER_KEY="$OWNER_KEY" BUZZ_REAL_DATABASE_URL="$DB_URL")
 fi
+[[ "$PUBLIC_READS" == "true" ]] && SPEC_ENV+=(E2E_PUBLIC_READS=1)
 
 step "running the browser spec and the command-line steps (up to ${RUN_TIMEOUT}s)"
 cd web

@@ -43,6 +43,11 @@ test.describe.configure({ mode: "serial", retries: 0 });
 test.afterAll(closeBrowsers);
 
 // A tag of this run's own, so a second run on the same database never reads the first one's people or project.
+/**
+ * The invite-only server lets anyone read a public project's record (`BUZZ_PUBLIC_PROJECT_READS=true`, which the script
+ * passes on as this): then the visitor with no account must be shown the record, read only.
+ */
+const PUBLIC_READS = process.env.E2E_PUBLIC_READS === "1";
 const RUN = Date.now().toString(36).slice(-5);
 const PROJECT_NAME = `Nebula ${RUN}`;
 const SLUG = `nebula-${RUN}`;
@@ -104,28 +109,40 @@ async function joinAsNewPerson(page: Page, name: string) {
 /**
  * What a person with no account sees at a project's shared address. On an open server it is the project's scorecard. On an
  * invite-only one it is whatever the server gives a non-member, which is written into the run's output (so the finding is
- * read from a run, not from a guess) and must be one of three things: the scorecard, the plain words that the server is
- * invite-only, or the app's own "Couldn't open this project" with a way to sign in or sign up (what a visitor was given
- * before the invite-only words: [PILOT-REPORT.md](docs/v3-review/PILOT-REPORT.md), "Findings from the loop journey"). Anything else (a blank page,
+ * read from a run, not from a guess) and must be one of four things: the scorecard, the project's public record (read
+ * only, on a server that lets anyone read it), the plain words that the server is invite-only, or the app's own
+ * "Couldn't open this project" with a way to sign in or sign up (what a visitor was given before the invite-only words:
+ * [PILOT-REPORT.md](docs/v3-review/PILOT-REPORT.md), "Findings from the loop journey"). Anything else (a blank page,
  * a spinner that never ends, an error with no way forward) fails the run.
  */
 async function visitorSees(
   page: Page,
   path: string,
-): Promise<"scorecard" | "invite-only words" | "couldn't open this project"> {
+): Promise<
+  | "scorecard"
+  | "public record"
+  | "invite-only words"
+  | "couldn't open this project"
+> {
   await page.goto(path);
   const scorecard = page.getByTestId("scorecard");
-  const refused = page.getByText(/invite-only|invite link/i).first();
+  const record = page.getByTestId("public-record");
+  // The invite sentence the page gives when it shows nothing else (the public record has its own line about invites).
+  const refused = page
+    .getByRole("alert")
+    .filter({ hasText: /invite-only|invite link/i });
   const generic = page
     .getByRole("alert")
     .filter({ hasText: /Couldn't open this project/i });
-  await expect(scorecard.or(refused).or(generic)).toBeVisible();
+  await expect(scorecard.or(record).or(refused).or(generic)).toBeVisible();
   const outcome =
     (await scorecard.count()) > 0
       ? "scorecard"
-      : (await refused.count()) > 0
-        ? "invite-only words"
-        : "couldn't open this project";
+      : (await record.count()) > 0
+        ? "public record"
+        : (await refused.count()) > 0
+          ? "invite-only words"
+          : "couldn't open this project";
   // A way forward: the page still offers to sign in or sign up.
   if (outcome !== "scorecard") {
     // The header's buttons and, in the invite-only words, the page's own Sign in: any one of them is a way forward.
@@ -1467,11 +1484,89 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
   // is not a member: `visitorSees` records what they are given, and the checks below are read as a signed-in member.
   const cardPath = `/p/${SLUG}-${founder.pubkey.slice(0, 16)}`;
   const visitorBrowser = await ownBrowserPage(browser);
-  // They are told the server is invite-only and who to ask, not only that the project could not be opened.
-  if (INVITE_ONLY)
-    expect(await visitorSees(visitorBrowser, cardPath)).toBe(
-      "invite-only words",
-    );
+  const pagePath = `/launchpad/${SLUG}?author=${founder.pubkey}`;
+  if (INVITE_ONLY && PUBLIC_READS) {
+    // The server lets anyone read a public project's record: the visitor sees it, read only, at both shared addresses.
+    for (const path of [cardPath, pagePath]) {
+      expect(await visitorSees(visitorBrowser, path)).toBe("public record");
+      const record = visitorBrowser.getByTestId("public-record");
+      await expect(record.getByRole("heading", { level: 1 })).toHaveText(
+        PROJECT_NAME,
+      );
+      // The goal as test 3 left it: missed, with a new target set in its place.
+      await expect(record.getByTestId("public-record-goal")).toHaveText(
+        "A first version five people use",
+      );
+      // Test 3 made three promises and answered each; the totals are from the founder's own records.
+      await expect(record.getByTestId("public-record-kept")).toHaveText(
+        /^\d+ of \d+$/,
+      );
+      await expect(record.getByTestId("public-record-streak")).not.toHaveText(
+        "Not known",
+      );
+      await expect(
+        record.getByTestId("public-record-promise").first(),
+      ).toBeVisible();
+      await expect(
+        record.locator(
+          '[data-testid="public-record-promise"][data-state="missed"]',
+        ),
+      ).not.toHaveCount(0);
+      // The latest update: the teammate's from test 8, or test 3's second weekly update when test 8 was left out.
+      await expect(record.getByTestId("public-record-update")).toContainText(
+        new RegExp(`From the team ${RUN}|Week two`),
+      );
+      // Test 5 took a task from offer to confirmed work.
+      await expect(record.getByTestId("public-record-accepted")).toHaveText(
+        /^\d+ pieces?$/,
+      );
+      await expect(
+        record.getByTestId("public-record-work").first(),
+      ).toBeVisible();
+      await expect(record.getByTestId("public-record-partial")).toHaveCount(0);
+      // One line says taking part needs an invite, with Sign in; nothing a member would press is offered.
+      await expect(record.getByTestId("public-record-invite")).toContainText(
+        "you need an invite",
+      );
+      await expect(record.getByTestId("public-record-sign-in")).toBeVisible();
+      for (const members of [
+        "scorecard-follow",
+        "scorecard-help",
+        "scorecard-share",
+      ])
+        await expect(visitorBrowser.getByTestId(members)).toHaveCount(0);
+      await expect(visitorBrowser).toHaveTitle(`${PROJECT_NAME} on Creaton`);
+      await expect(record).not.toContainText(/\$|earn|price/i);
+    }
+    await shot(visitorBrowser, "10a-public-record");
+    // The rest of the server stays closed to them: another member's profile gives the invite words, not a page.
+    await visitorBrowser.goto(`/u/${founder.pubkey}`);
+    await expect(visitorBrowser.getByTestId("public-record")).toHaveCount(0);
+    // The link carries a real preview for a chat app, with the project's own words.
+    const html = await (
+      await visitorBrowser.request.get(`${HTTP_URL}${cardPath}`, {
+        headers: { Accept: "text/html" },
+      })
+    ).text();
+    expect(html).toContain(`<title>${PROJECT_NAME} on Creaton</title>`);
+    expect(html).toContain("Goal: A first version five people use");
+  } else if (INVITE_ONLY) {
+    // They are told the server is invite-only and who to ask, not only that the project could not be opened.
+    for (const path of [cardPath, pagePath]) {
+      expect(await visitorSees(visitorBrowser, path)).toBe("invite-only words");
+      await expect(visitorBrowser.getByTestId("public-record")).toHaveCount(0);
+      await expect(
+        visitorBrowser.getByText("You need an invite to open this project."),
+      ).toBeVisible();
+    }
+    // And the link's preview says nothing about the project.
+    const html = await (
+      await visitorBrowser.request.get(`${HTTP_URL}${cardPath}`, {
+        headers: { Accept: "text/html" },
+      })
+    ).text();
+    expect(html).not.toContain(PROJECT_NAME);
+  }
   const visitor = INVITE_ONLY ? helperPage : visitorBrowser;
   await visitor.goto(cardPath);
   const scorecard = visitor.getByTestId("scorecard");
