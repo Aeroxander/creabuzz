@@ -602,3 +602,77 @@ export function statusLabel(status: string): string {
     ? STATUS_WORDS[status as keyof typeof STATUS_WORDS]
     : "Unknown";
 }
+
+// ---- a run record bound to a task's hand-in --------------------------------------------------
+
+/** The mandate a run record bound to a task carries: a task has none, so it is the zero address (`TASK_MANDATE` in the CLI). */
+export const TASK_RUN_MANDATE = `0x${"0".repeat(40)}`;
+
+/** The most pieces of work one task's run records are looked up for in one read. */
+export const TASK_RUN_PIECES_LOOKED_UP = 20;
+
+const TASK_ID = /^[0-9a-f]{64}$/;
+
+/**
+ * What a run record for one piece of a task's work is bound to. The record keeps the shape of a chain claim's record so
+ * `parseVerifiedCheckRun` reads it unchanged: the claim id is `0x<task id>`, the mandate is the zero address and the
+ * evidence hash is `0x<piece id>`. Ids are 64 lower-case hex characters, as the server writes them.
+ */
+export function taskRunContext(
+  taskId: string,
+  pieceId: string,
+): { claimId: string; mandate: string; evidenceHash: string } {
+  return {
+    claimId: `0x${taskId.toLowerCase()}`,
+    mandate: TASK_RUN_MANDATE,
+    evidenceHash: `0x${pieceId.toLowerCase()}`,
+  };
+}
+
+/**
+ * One read for the run records of several pieces of one task: the check-run kind only, and the single `#c` value each
+ * piece's record carries (`checkRunContextTag`), before any limit. At most {@link TASK_RUN_PIECES_LOOKED_UP} pieces.
+ */
+export function taskRunQueryFilter(
+  taskId: string,
+  pieceIds: readonly string[],
+): NostrFilter {
+  return {
+    kinds: [KIND_WORK_CHECK_RUN],
+    "#c": pieceIds
+      .filter((id) => TASK_ID.test(id))
+      .slice(0, TASK_RUN_PIECES_LOOKED_UP)
+      .map((id) => checkRunContextTag(taskRunContext(taskId, id))),
+    limit: CHECK_RUN_QUERY_LIMIT,
+  };
+}
+
+/**
+ * The run records that belong under one piece of a task's work: verified (`parseVerifiedCheckRun`), naming this task,
+ * the zero mandate and this piece, and **signed by the task's helper**. A record anyone else signed for the same ids is
+ * counted in `others` and never shown as the helper's run. Newest first. A record is the signer's own run, never a
+ * check by someone else.
+ */
+export function taskRunRecordsFor(
+  records: readonly CheckRunRecord[],
+  task: { id: string; helper: string },
+  pieceId: string,
+): { current: CheckRunRecord[]; others: number } {
+  const wanted = taskRunContext(task.id, pieceId);
+  const current: CheckRunRecord[] = [];
+  let others = 0;
+  for (const record of records) {
+    if (
+      record.claimId !== wanted.claimId ||
+      record.mandate !== wanted.mandate ||
+      record.evidenceHash !== wanted.evidenceHash
+    )
+      continue;
+    if (record.author === task.helper) current.push(record);
+    else others += 1;
+  }
+  current.sort(
+    (a, b) => b.createdAt - a.createdAt || (a.eventId < b.eventId ? -1 : 1),
+  );
+  return { current, others };
+}

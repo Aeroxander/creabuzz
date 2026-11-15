@@ -484,3 +484,96 @@ test("the read asks the server for exactly one canonical binding value, kind 470
     `${OTHER_MANDATE}:0x${"f".repeat(64)}:${EVIDENCE}`,
   ]);
 });
+
+// ---- a run record bound to a task's hand-in ------------------------------------------------------
+
+import {
+  TASK_RUN_MANDATE,
+  TASK_RUN_PIECES_LOOKED_UP,
+  taskRunContext,
+  taskRunQueryFilter,
+  taskRunRecordsFor,
+} from "./check-runs.ts";
+
+const TASK = "c".repeat(64);
+const PIECE = "e".repeat(64);
+const OTHER_PIECE = "f".repeat(64);
+
+/** A run record as `buzz launchpad work-checks --task` signs it: the task as claim, the zero mandate, the piece as evidence. */
+const taskRun = (secret, piece = PIECE, task = TASK, parts = {}) =>
+  finalizeEvent(
+    {
+      kind: 47010,
+      created_at: 1_728_000_000,
+      tags: [
+        ["a", `37001:${"1".repeat(64)}:demo`],
+        ["c", `${TASK_RUN_MANDATE}:0x${task}:0x${piece}`],
+        ["claim", `0x${task}`],
+        ["evidence", `0x${piece}`],
+        ["mandate", TASK_RUN_MANDATE],
+        ["sandbox", "enforced"],
+        ["task", task],
+        ["task-evidence", piece],
+      ],
+      content: JSON.stringify(
+        caught({
+          claim: { id: `0x${task}`, mandate: TASK_RUN_MANDATE },
+          evidenceHash: `0x${piece}`,
+          ...parts,
+        }),
+      ),
+    },
+    secret,
+  );
+
+test("a task's run record binds to its hand-in as the CLI writes it, and the same single #c query finds it", () => {
+  const ctx = taskRunContext(TASK, PIECE);
+  assert.deepEqual(ctx, {
+    claimId: `0x${TASK}`,
+    mandate: "0x0000000000000000000000000000000000000000",
+    evidenceHash: `0x${PIECE}`,
+  });
+  // The same value the CLI puts in the record's `c` tag.
+  assert.equal(
+    checkRunContextTag(ctx),
+    `0x${"0".repeat(40)}:0x${TASK}:0x${PIECE}`,
+  );
+  const filter = taskRunQueryFilter(TASK, [PIECE, OTHER_PIECE, "not-an-id"]);
+  assert.deepEqual(filter["#c"], [
+    checkRunContextTag(ctx),
+    checkRunContextTag(taskRunContext(TASK, OTHER_PIECE)),
+  ]);
+  assert.deepEqual(filter.kinds, [47010]);
+  assert.equal(filter.limit, CHECK_RUN_QUERY_LIMIT);
+  const many = Array.from({ length: 40 }, (_, i) => i.toString(16).padStart(64, "0"));
+  assert.equal(taskRunQueryFilter(TASK, many)["#c"].length, TASK_RUN_PIECES_LOOKED_UP);
+});
+
+test("a run record shows under its piece only when it is verified, bound to that task and piece, and signed by the helper", () => {
+  const helper = generateSecretKey();
+  const stranger = generateSecretKey();
+  const mine = parseVerifiedCheckRun(taskRun(helper));
+  const forOtherPiece = parseVerifiedCheckRun(taskRun(helper, OTHER_PIECE));
+  const forOtherTask = parseVerifiedCheckRun(taskRun(helper, PIECE, "d".repeat(64)));
+  const byStranger = parseVerifiedCheckRun(taskRun(stranger));
+  assert.ok(mine && forOtherPiece && forOtherTask && byStranger);
+  const task = { id: TASK, helper: getPublicKey(helper) };
+  const got = taskRunRecordsFor(
+    [mine, forOtherPiece, forOtherTask, byStranger],
+    task,
+    PIECE,
+  );
+  assert.deepEqual(got.current, [mine]);
+  assert.equal(got.others, 1, "a stranger's record for the same ids is counted, never shown as the helper's");
+  assert.deepEqual(taskRunRecordsFor([forOtherPiece], task, PIECE).current, []);
+  // A record signed for a chain claim (another mandate) never passes for a task's.
+  const chain = parseVerifiedCheckRun(
+    taskRun(helper, PIECE, TASK, { claim: { id: `0x${TASK}`, mandate: MANDATE } }),
+  );
+  assert.ok(chain);
+  assert.deepEqual(taskRunRecordsFor([chain], task, PIECE).current, []);
+  // The tally is counted from the checks, not the record's own words.
+  assert.equal(derivedCounts(mine.checks).passed, 1);
+  // A tampered record never gets this far.
+  assert.equal(parseVerifiedCheckRun({ ...taskRun(helper), content: "{}" }), null);
+});
