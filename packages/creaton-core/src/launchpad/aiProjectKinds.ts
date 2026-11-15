@@ -99,7 +99,7 @@ export const AI_PROJECT_KINDS: readonly AiProjectKind[] = [
       {
         title:
           "Write the job in one page: what goes in, what comes out, what is off limits",
-        done: "A one-page description that someone else read and could repeat back.",
+        done: "A one-page description at a link anyone can open, with one worked example: what went in and what came out.",
       },
       {
         title: "Collect ten real jobs to test it on",
@@ -107,11 +107,11 @@ export const AI_PROJECT_KINDS: readonly AiProjectKind[] = [
       },
       {
         title: "Run the ten jobs and keep every result",
-        done: "A results file with the output for each job, marked right or wrong by a person other than the builder.",
+        done: "A results file at a link anyone can open, with the output for each job marked right or wrong against the result written down beforehand.",
       },
       {
         title: "Write how to stop it and undo what it did",
-        done: "A short page with the steps, tried once by someone other than the builder.",
+        done: "A short page with the steps, and a note of one real try: what was stopped, what was undone and how long it took.",
       },
     ],
   },
@@ -138,7 +138,7 @@ export const AI_PROJECT_KINDS: readonly AiProjectKind[] = [
     tasks: [
       {
         title: "Write the rules for what makes an example correct",
-        done: "A one-page guide with three good and three bad examples, read by someone who did not write it.",
+        done: "A one-page guide at a link anyone can open, with three good and three bad examples and the rule that decides each one.",
       },
       {
         title: "Collect the first 100 examples with their sources",
@@ -189,7 +189,7 @@ export const AI_PROJECT_KINDS: readonly AiProjectKind[] = [
       },
       {
         title: "Write who owns the work and what others may reuse",
-        done: "A short page with the owner, the allowed reuse and any source material used, read by someone else.",
+        done: "A short page at a link anyone can open, with the owner, the allowed reuse and every piece of source material used.",
       },
       {
         title:

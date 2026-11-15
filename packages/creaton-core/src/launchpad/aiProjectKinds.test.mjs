@@ -60,3 +60,13 @@ test("the accountability line says a named person answers, and that an agent doe
   assert.match(AI_PROJECT_ACCOUNTABILITY, /named person answers/);
   assert.match(AI_PROJECT_ACCOUNTABILITY, /signed by a person/);
 });
+
+test("a starter task's finish line is something its maker can show, never that somebody else read or tried it", () => {
+  // A founder with no team yet has to be able to meet "Done means" on their own first tasks: the finish line names
+  // what is handed in (a page, a file, a link), not a second reader.
+  const needsSomeoneElse =
+    /someone else|somebody else|other than the builder|someone other than|did not write it|who did not write/i;
+  for (const kind of AI_PROJECT_KINDS)
+    for (const task of kind.tasks)
+      assert.doesNotMatch(task.done, needsSomeoneElse, task.title);
+});
