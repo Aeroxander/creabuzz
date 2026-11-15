@@ -373,6 +373,37 @@ test("Home's navigation shows You only to someone with an account", async ({
   });
 });
 
+test("with no sales, no investing and no contributor kit, You and a profile carry no money cards", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed(contributorProject);
+  await quietChain(page);
+  await relay.install(page);
+  await signIn(page);
+  // You: the projects, and no "Project Shares you hold" card asking for a wallet.
+  await page.goto("/portfolio");
+  await expect(page.getByTestId("portfolio-page")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("portfolio-page")).toContainText(
+    "how each is keeping its promises.",
+  );
+  await expect(page.getByText("Project Shares you hold")).toHaveCount(0);
+  await expect(page.getByTestId("portfolio-page")).not.toContainText(
+    /wallet|Shares you hold/i,
+  );
+  // A profile: the follower counts stay; no payment wallet line, and no score beside "Nobody is scored or ranked".
+  await page.goto(`/u/${ME}`);
+  await expect(page.getByTestId("profile-following-count")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("profile-followers-count")).toBeVisible();
+  await expect(page.getByTestId("payment-wallet")).toHaveCount(0);
+  await expect(page.getByTestId("profile-score")).toHaveCount(0);
+  await expect(page.getByText("No verified payment wallet")).toHaveCount(0);
+});
+
 test("a contributor project's Funds tab shows no Trading card: trading is off in the pilot build", async ({
   page,
 }) => {

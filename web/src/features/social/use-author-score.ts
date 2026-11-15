@@ -14,8 +14,10 @@ import { socialKeys } from "./use-social-data";
 /** How many of a person's newest posts of each kind the score covers. */
 export const SCORE_POSTS = 200;
 
-export function useAuthorScore(pubkey: string) {
+/** `enabled` false reads nothing: a page that does not show the score does not ask for it. */
+export function useAuthorScore(pubkey: string, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: [...socialKeys.all, "author-score", pubkey],
     staleTime: 60_000,
     queryFn: async () => {

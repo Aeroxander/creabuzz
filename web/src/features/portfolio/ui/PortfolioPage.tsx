@@ -34,6 +34,7 @@ import {
 } from "@/features/launchpad/chain-config";
 import { formatAtomic, formatMoney } from "@/features/launchpad/lib/amounts";
 import { isContributorProject } from "@/features/launchpad/lib/funding";
+import { moneyOffered } from "@/features/launchpad/lib/money-offered";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { effectiveStage, type Launch } from "@/features/launchpad/models";
 import { useLaunches } from "@/features/launchpad/use-launches";
@@ -563,6 +564,7 @@ export function PortfolioPage() {
   const raises = useRaisesHere();
   const holdings = useHoldings();
   const holdsShares = (holdings.data?.held.length ?? 0) > 0;
+  const money = moneyOffered();
   return (
     <div
       className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-8"
@@ -572,7 +574,9 @@ export function PortfolioPage() {
         description={
           raises
             ? "The projects you started, help and follow, and how each is keeping its promises. Below: what you backed and what you hold."
-            : "The projects you started, help and follow, and how each is keeping its promises. Below: the Shares you hold."
+            : money || holdsShares
+              ? "The projects you started, help and follow, and how each is keeping its promises. Below: the Shares you hold."
+              : "The projects you started, help and follow, and how each is keeping its promises."
         }
         title={
           <span className="flex items-center gap-2">
@@ -595,7 +599,11 @@ export function PortfolioPage() {
           {/* What is waiting on a contributor leads (nothing shows when nothing waits); what they earned follows. Points
               for community task boards show only to someone who has them. */}
           <WaitingOnYou />
-          <HoldingsSection holdings={holdings} />
+          {/* Where the build can make no Shares (no sales, no investing, no contributor kit) there is nothing to hold
+              and no wallet to ask for; someone who does hold Shares still sees them. */}
+          {money || holdsShares ? (
+            <HoldingsSection holdings={holdings} />
+          ) : null}
           <WorkSection holdsShares={holdsShares} onlyWithPoints />
         </>
       )}

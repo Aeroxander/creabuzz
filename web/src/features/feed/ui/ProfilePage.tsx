@@ -64,6 +64,7 @@ import { FollowButton } from "./FollowButton";
 import { launchCoord, LaunchVoteCard } from "./LaunchVoteCard";
 import { ForecastRecordLine } from "@/features/launchpad/ui/ForecastRecordLine";
 import { AccountAgentBadge } from "@/features/launchpad/ui/AccountAgentBadge";
+import { moneyOffered } from "@/features/launchpad/lib/money-offered";
 import { PersonTrackRecord } from "@/features/launchpad/ui/PersonTrackRecord";
 
 type Tab = "posts" | "replies" | "media" | "likes" | "launches" | "record";
@@ -376,7 +377,8 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
   const name = nameless ? "Your account" : resolveUserName(profile, pubkey);
   const following = useFollowing(pubkey);
   const followers = useFollowerCount(pubkey);
-  const score = useAuthorScore(pubkey);
+  const money = moneyOffered();
+  const score = useAuthorScore(pubkey, money);
   // What points are, shown on a tap as well as on hover: a phone has no hover.
   const [pointsHelp, setPointsHelp] = useState(false);
   const hue = bannerHue(pubkey);
@@ -493,24 +495,32 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
             {profile.website.replace(/^https?:\/\//, "")}
           </a>
         ) : null}
-        <PaymentWalletCard isSelf={isSelf} key={pubkey} pubkey={pubkey} />
+        {/* A server with no sales, no investing and no contributor kit pays nobody: no wallet line, and no score
+            beside a track record that says nobody is scored (`money-offered.ts`). */}
+        {money ? (
+          <PaymentWalletCard isSelf={isSelf} key={pubkey} pubkey={pubkey} />
+        ) : null}
         {isSelf ? <AccountMoneyCard /> : null}
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
-          <button
-            aria-controls="profile-points-help"
-            aria-expanded={pointsHelp}
-            className="text-left"
-            onClick={() => setPointsHelp((open) => !open)}
-            title={`Up votes minus down votes on their newest ${SCORE_POSTS} posts and ${SCORE_POSTS} board posts: feedback on posts, not votes in any project and not Shares`}
-            type="button"
-          >
-            <Count
-              label="Score"
-              labelFirst
-              testId="profile-score"
-              value={score.data === undefined ? undefined : String(score.data)}
-            />
-          </button>
+          {money ? (
+            <button
+              aria-controls="profile-points-help"
+              aria-expanded={pointsHelp}
+              className="text-left"
+              onClick={() => setPointsHelp((open) => !open)}
+              title={`Up votes minus down votes on their newest ${SCORE_POSTS} posts and ${SCORE_POSTS} board posts: feedback on posts, not votes in any project and not Shares`}
+              type="button"
+            >
+              <Count
+                label="Score"
+                labelFirst
+                testId="profile-score"
+                value={
+                  score.data === undefined ? undefined : String(score.data)
+                }
+              />
+            </button>
+          ) : null}
           <Count
             label="Following"
             testId="profile-following-count"
@@ -526,7 +536,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
             }
           />
         </div>
-        {pointsHelp ? (
+        {money && pointsHelp ? (
           <p
             className="mt-1 text-xs text-black/60 dark:text-white/60"
             data-testid="profile-points-help"
