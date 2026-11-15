@@ -22,21 +22,23 @@ test("no agent, no line", () => {
   assert.equal(agentWorkLine([], []), null);
 });
 
-test("one proven operator answers for the agents and signs the promises", () => {
+test("one proven operator answers for the agents, and the line says nothing about who signs promises", () => {
   assert.equal(
     agentWorkLine([sam], ["Sam"]),
-    "Some of this work is done by agents. Sam answers for them and signs the promises.",
+    "Some of this work is done by agents. Sam answers for them.",
   );
+  // A promise is signed by the founder alone: the operator may be someone else, so the line never says they sign.
+  assert.doesNotMatch(agentWorkLine([sam], ["Sam"]), /promise/i);
 });
 
 test("two or more operators are listed and the verbs agree", () => {
   assert.equal(
     agentWorkLine([sam, ola], ["Sam", "Ola"]),
-    "Some of this work is done by agents. Sam and Ola answer for them and sign the promises.",
+    "Some of this work is done by agents. Sam and Ola answer for them.",
   );
   assert.equal(
     agentWorkLine([sam, ola, sam], ["Sam", "Ola", "Kim"]),
-    "Some of this work is done by agents. Sam, Ola and Kim answer for them and sign the promises.",
+    "Some of this work is done by agents. Sam, Ola and Kim answer for them.",
   );
 });
 

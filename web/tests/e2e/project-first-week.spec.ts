@@ -479,7 +479,7 @@ test("when an agent is on the team, a line says who answers for it; with no agen
   await install(page, relay, null);
   await page.goto(PROJECT);
   await expect(page.getByTestId("agent-work-note")).toHaveText(
-    "Some of this work is done by agents. Robin Owner answers for them and signs the promises.",
+    "Some of this work is done by agents. Robin Owner answers for them.",
     { timeout: 20_000 },
   );
 

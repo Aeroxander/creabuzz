@@ -57,8 +57,9 @@ function listOf(names: readonly string[]): string {
 }
 
 /**
- * The line for a page: null when no agent works on the project. With a proven operator: who answers for the agents and
- * signs the promises. With none proven, it says only that the record does not say who runs them: it never names
+ * The line for a page: null when no agent works on the project. With a proven operator: who answers for the agents,
+ * and nothing about promises, because a promise is signed by the founder alone and the operator may be someone else.
+ * With none proven, it says only that the record does not say who runs them: it never names
  * someone it cannot show.
  */
 export function agentWorkLine(
@@ -70,5 +71,5 @@ export function agentWorkLine(
   if (operatorNames.length === 0)
     return `${lead} Their records do not say who runs them.`;
   const plural = operatorNames.length > 1;
-  return `${lead} ${listOf(operatorNames)} ${plural ? "answer" : "answers"} for them and ${plural ? "sign" : "signs"} the promises.`;
+  return `${lead} ${listOf(operatorNames)} ${plural ? "answer" : "answers"} for them.`;
 }
