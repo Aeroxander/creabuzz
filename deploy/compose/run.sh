@@ -249,6 +249,82 @@ check_chain_node() {
   echo "Check that its range lasts for the run: docs/sepolia-testnet.md, section 3."
 }
 
+# The keys (64-character hex) whose projects are the operator's own, comma-separated: the owner's, the operators', and any
+# in BUZZ_PILOT_EXCLUDE (set it when Creaton's own project was started from another account). The pilot commands leave
+# these projects out of every number, because the pilot measures other people.
+pilot_exclude() {
+  local name value item items keys=()
+  for name in RELAY_OWNER_PUBKEY RELAY_OPERATOR_PUBKEYS BUZZ_PILOT_EXCLUDE; do
+    value="$(build_setting "$name")"
+    [[ -n "$value" ]] || continue
+    IFS=',' read -r -a items <<<"$value"
+    for item in "${items[@]}"; do
+      item="${item//[[:space:]]/}"
+      [[ -n "$item" ]] || continue
+      [[ "$item" =~ ^[0-9a-fA-F]{64}$ ]] || {
+        echo "$name in .env has \"${item:0:20}\", which is not a 64-character hex key (an npub does not work here: use its hex form)." >&2
+        return 1
+      }
+      keys+=("$(tr 'A-F' 'a-f' <<<"$item")")
+    done
+  done
+  (IFS=','; printf '%s' "${keys[*]:-}")
+}
+
+# Run the pilot's read-only queries (pilot/*.sql, after pilot/base.sql) on the stack's database: LATE_DAYS (a founder is late
+# after this many days without a weekly update), SUMMARY (on or off: the totals under the table), CSV (on or off), then the
+# query files. Nothing is written: the views base.sql makes are temporary. BUZZ_PILOT_AS_OF (seconds since 1970) sets the
+# clock for tests; without it, now.
+pilot_run() {
+  local late_days="$1" summary="$2" csv="$3" exclude asof format=()
+  shift 3
+  exclude="$(pilot_exclude)" || return 1
+  asof="${BUZZ_PILOT_AS_OF:-$(date +%s)}"
+  [[ "$asof" =~ ^[0-9]+$ ]] || {
+    echo "BUZZ_PILOT_AS_OF must be whole seconds since 1970." >&2
+    return 1
+  }
+  [[ "$csv" == on ]] && format=(--csv)
+  cat pilot/base.sql "$@" | compose exec -T postgres sh -c \
+    'exec psql --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" "$@"' psql \
+    -X -q -P pager=off ${format[@]+"${format[@]}"} -v ON_ERROR_STOP=1 \
+    -v "exclude=${exclude}" -v "asof=${asof}" -v "late_days=${late_days}" -v "summary=${summary}" -f -
+}
+
+# --days N and --csv, as `founders` and `due` take them. Sets PILOT_DAYS and PILOT_CSV.
+pilot_options() {
+  PILOT_DAYS=7
+  PILOT_CSV=off
+  while (($#)); do
+    case "$1" in
+      --csv) PILOT_CSV=on ;;
+      --days)
+        [[ "${2:-}" =~ ^[0-9]+$ && "$2" -ge 1 && "$2" -le 365 ]] || {
+          echo "--days takes a whole number of days, 1 to 365." >&2
+          return 1
+        }
+        PILOT_DAYS="$2"
+        shift
+        ;;
+      *)
+        echo "Unknown option: $1" >&2
+        return 1
+        ;;
+    esac
+    shift
+  done
+}
+
+# The reports the communities' moderators passed on to the owner (with --all, every report), newest first.
+escalated_reports() {
+  local which=(--escalated)
+  if [[ "${1:-}" == "--all" ]]; then
+    which=()
+    shift
+  fi
+  compose exec -T relay /usr/local/bin/buzz-admin reports ${which[@]+"${which[@]}"} "$@"
+}
+
 case "${1:-help}" in
   start|up)
     require_env
@@ -348,12 +424,38 @@ case "${1:-help}" in
     # not serve, so on that stack this is the way to read them.
     require_env
     shift
-    which=(--escalated)
-    if [[ "${1:-}" == "--all" ]]; then
-      which=()
-      shift
-    fi
-    compose exec -T relay /usr/local/bin/buzz-admin reports ${which[@]+"${which[@]}"} "$@"
+    escalated_reports "$@"
+    ;;
+  founders)
+    # One row per founder's project: weekly updates and how they came, promises kept or missed, help asked and offered,
+    # tasks accepted. Read from the database; the operator's own project is left out (pilot_exclude).
+    require_env
+    shift
+    pilot_options "$@" || exit 1
+    pilot_run "$PILOT_DAYS" "$([[ "$PILOT_CSV" == on ]] && echo off || echo on)" "$PILOT_CSV" pilot/founders.sql
+    ;;
+  due)
+    # Founders whose last weekly update is 7 or more days old, with how many days late: the list to message by hand.
+    require_env
+    shift
+    pilot_options "$@" || exit 1
+    pilot_run "$PILOT_DAYS" off "$PILOT_CSV" pilot/due.sql
+    ;;
+  daily)
+    # The owner's list for the morning and the evening of a pilot: who is due, what happened in the last day, and the
+    # reports waiting. A section that fails is said and the rest still print, then the command fails.
+    require_env
+    shift
+    pilot_options "$@" || exit 1
+    daily_status=0
+    printf '== Creaton daily list, %s\n\n== Founders due for a weekly update (%s or more days)\n' "$(date -u '+%Y-%m-%d %H:%M UTC')" "$PILOT_DAYS"
+    pilot_run "$PILOT_DAYS" off off pilot/due.sql || daily_status=1
+    printf '\n== The last 24 hours\n'
+    pilot_run "$PILOT_DAYS" off off pilot/activity.sql || daily_status=1
+    printf '\n== Reports passed on to you\n'
+    escalated_reports || daily_status=1
+    ((daily_status == 0)) || echo "A section above failed: its list is not to be read as empty." >&2
+    exit "$daily_status"
     ;;
   help|-h|--help)
     cat <<'MSG'
@@ -409,6 +511,18 @@ Commands:
   reports [--all] [--limit N]
                 List the reports passed on to the server's owner (with
                 --all, every report), newest first (default 50, up to 200)
+  founders [--days N] [--csv]
+                One row per founder's project: weekly updates and when each
+                came (a gap over N days, default 7, is "after late flag"),
+                promises kept or missed, help asked and offered, tasks
+                accepted. The server owner's own project is left out (RELAY_
+                OWNER_PUBKEY, RELAY_OPERATOR_PUBKEYS, BUZZ_PILOT_EXCLUDE).
+                Read-only. --csv prints the table alone, for the pilot report
+  due [--days N] [--csv]
+                Founders N or more days (default 7) since their last weekly
+                update, with how many days late: the list to message by hand
+  daily         The owner's list for each morning and evening: due, the last
+                24 hours, and the reports passed on to you
 
   Note: when adding multiple members in a loop, add `sleep 1` between
   invocations to avoid same-second timestamp collisions in the kind:13534
