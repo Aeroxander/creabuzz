@@ -26,6 +26,27 @@ library BackingTerms {
         p.earlyCap = 1_000 * one;
     }
 
+    /// @notice The curve depth tiers a founder may choose from, in whole quote units, in the order
+    /// `BackingPoolFactory.depthTiers()` returns them. The factory derives them from the default depth
+    /// (`defaults(..).virtualQuote`, 25,000 whole units) as fifths: a fifth, two fifths, once, twice, 4, 10 and 20 times.
+    /// Rule of thumb for the app: pick the first tier at or above twice the raise the founder hopes for. At that
+    /// depth a sale of half the units moves the price down by about a third, whatever the size of the raise
+    /// (docs/v3-review/BACKING-POOL.md, "Curve depth").
+    function depthTiersWhole() internal pure returns (uint256[7] memory t) {
+        t[0] = 5_000;
+        t[1] = 10_000;
+        t[2] = 25_000;
+        t[3] = 50_000;
+        t[4] = 100_000;
+        t[5] = 250_000;
+        t[6] = 500_000;
+    }
+
+    /// @notice A tier in quote base units: `wholeUnits` of a token with `quoteDecimals` decimals.
+    function depthOf(uint8 quoteDecimals, uint256 wholeUnits) internal pure returns (uint256) {
+        return wholeUnits * 10 ** uint256(quoteDecimals);
+    }
+
     /// @notice The default opening round: 50,000 blocks (about a week at 12 seconds a block; the number has to
     /// divide 10,000,000) selling 100,000,000 claim tokens, a tenth of the curve's paper units, on the given
     /// auction factory.

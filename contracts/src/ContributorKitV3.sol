@@ -127,11 +127,13 @@ contract ContributorKitV3 is ContributorKit {
     /// @notice The caller's project made in one transaction, with its secondary market bound and its
     /// backing pool open. Any
     /// wrong prediction or missing piece of the intended setup reverts the whole launch.
+    /// @param p The same launch inputs as `ContributorKitV2.launch`.
+    /// @param depth The pool's curve depth, one of `BackingPoolFactory.depthTiers()`, or zero for the default.
     /// @return dao The project's DAO.
     /// @return budget Its first work budget.
     /// @return policy Its voting policy.
     /// @return pool Its backing pool, open.
-    function launchWithPool(ContributorKitV2.LaunchParams calldata p)
+    function launchWithPool(ContributorKitV2.LaunchParams calldata p, uint256 depth)
         external
         returns (address dao, address budget, address policy, address pool)
     {
@@ -256,7 +258,7 @@ contract ContributorKitV3 is ContributorKit {
 
         // The one added step: the pool, opened by this kit for the founder the policy just recorded, and
         // read back like everything else.
-        BackingPool opened = poolFactory.open(dao);
+        BackingPool opened = poolFactory.open(dao, depth);
         pool = address(opened);
         if (poolFactory.poolOf(dao) != pool || opened.dao() != dao || opened.founder() != msg.sender) {
             revert SetupNotApplied();

@@ -66,7 +66,10 @@ contract BackingPoolDeployer {
 
 /// @title BackingPoolFactory
 /// @notice Opens the one `BackingPool` a project can have (docs/v3-review/BACKING-POOL.md), with terms
-/// fixed here at deployment so a founder chooses nothing. One call, no vote: a pool needs no power
+/// fixed here at deployment. The founder chooses one thing: how deep the curve is, from a short fixed list of
+/// tiers (`depthTiers`; zero means the default). A deeper curve moves less when people sell, a shallower one
+/// moves more as money comes in, so the right depth follows the size of the raise the founder hopes for.
+/// One call, no vote: a pool needs no power
 /// over the DAO (it mints no Shares and moves none), so nothing has to be authorised by the DAO first.
 ///
 /// Who may open a project's pool: the founder the DAO's own voting policy recorded at birth
@@ -121,12 +124,11 @@ contract BackingPoolFactory is BlockNumberish {
     uint64 public immutable roundBlocks;
     /// @notice Claim tokens a round offers.
     uint128 public immutable roundSupply;
-    /// @notice A round's floor price and price step, in the auction's fixed point (quote base units per base
-    /// unit of claim token, times 2**96): the floor is the price an "open now" curve starts at.
-    uint256 public immutable roundFloorPriceX96;
-    uint256 public immutable roundTickSpacingX96;
-    /// @notice The minimum a round must raise when the founder names none: the whole supply at the floor.
-    uint128 public immutable defaultMinimumRaise;
+    /// @notice The curve depth (paper reserve, in quote base units) a pool gets when its founder names none: the
+    /// `virtualQuote` of the terms this factory was deployed with. The tiers are fixed multiples of it.
+    uint256 public immutable defaultDepth;
+    /// @notice The paper units of every pool's curve, kept here to derive a round's price step.
+    uint256 private immutable _virtualUnits;
 
     BackingPool.Params private _terms;
 
@@ -150,6 +152,7 @@ contract BackingPoolFactory is BlockNumberish {
     error NotAllowed();
     error RoundsOff();
     error MinimumTooLow(uint128 least);
+    error BadDepth();
 
     /// @dev The least a round may be asked to raise, in quote base units: enough that every part of the split
     /// is more than nothing.
@@ -179,26 +182,103 @@ contract BackingPoolFactory is BlockNumberish {
         );
         quote = quote_;
         authorizedKit = authorizedKit_;
+        // The tiers are fifths of the default depth, so the default must divide by five.
+        if (terms_.virtualQuote == 0 || terms_.virtualQuote % 5 != 0) revert InvalidSetup();
         _terms = terms_;
+        defaultDepth = terms_.virtualQuote;
+        _virtualUnits = terms_.virtualUnits;
         poolDeployer = new BackingPoolDeployer();
         if (round_.auctionFactory != address(0)) {
-            // The step is a hundredth of the opening price, and the floor a whole number of steps, as the auction
-            // requires. Its own least floor is 2**32 + 1.
-            uint256 step = (terms_.virtualQuote << 96) / terms_.virtualUnits / 100;
-            uint256 minimum = uint256(round_.supply) * terms_.virtualQuote / terms_.virtualUnits;
             if (
                 round_.auctionFactory.code.length == 0 || round_.blocks == 0 || 10_000_000 % round_.blocks != 0
                     || 10_000_000 / round_.blocks > type(uint24).max || round_.supply < 1e18
-                    || round_.supply > terms_.virtualUnits / 2 || step < 2 || step * 100 <= (1 << 32)
-                    || minimum < LEAST_MINIMUM || minimum > type(uint128).max
+                    || round_.supply > terms_.virtualUnits / 2
             ) revert InvalidSetup();
+            // Every tier must give a round the auction accepts, so a bad pair of terms fails here and not at the
+            // first founder who picks the tier.
+            uint256[7] memory tiers = _tiersOf(terms_.virtualQuote);
+            for (uint256 i; i < 7; ++i) {
+                (uint256 step,, uint256 minimum) = _roundTerms(tiers[i], terms_.virtualUnits, round_.supply);
+                if (step < 2 || step * 100 <= (1 << 32) || minimum < LEAST_MINIMUM || minimum > type(uint128).max) {
+                    revert InvalidSetup();
+                }
+            }
             auctionFactory = IRoundAuctionFactory(round_.auctionFactory);
             roundBlocks = round_.blocks;
             roundSupply = round_.supply;
-            roundTickSpacingX96 = step;
-            roundFloorPriceX96 = step * 100;
-            defaultMinimumRaise = uint128(minimum);
         }
+    }
+
+    /// @dev A round's price step, floor and default minimum for a curve of paper reserve `depth`. The step is a
+    /// hundredth of the opening price, and the floor a whole number of steps, as the auction requires (its own least
+    /// floor is 2**32 + 1); the default minimum is the whole supply at the floor.
+    function _roundTerms(uint256 depth, uint256 units, uint256 supply)
+        private
+        pure
+        returns (uint256 step, uint256 floor, uint256 minimum)
+    {
+        step = (depth << 96) / units / 100;
+        floor = step * 100;
+        minimum = supply * depth / units;
+    }
+
+    /// @dev The seven depths, as fifths of `base`: with a default of 25,000 whole quote units they are 5,000,
+    /// 10,000, 25,000, 50,000, 100,000, 250,000 and 500,000.
+    function _tiersOf(uint256 base) private pure returns (uint256[7] memory t) {
+        uint256 fifth = base / 5;
+        t[0] = fifth;
+        t[1] = fifth * 2;
+        t[2] = base;
+        t[3] = base * 2;
+        t[4] = base * 4;
+        t[5] = base * 10;
+        t[6] = base * 20;
+    }
+
+    /// @notice The curve depths a founder may choose from, in quote base units: a paper reserve for the curve to
+    /// start with. Deeper means a sale moves the price less (and money coming in moves it less too). With the
+    /// default of 25,000 whole quote units: 5,000, 10,000, 25,000, 50,000, 100,000, 250,000 and 500,000.
+    function depthTiers() external view returns (uint256[7] memory) {
+        return _tiersOf(defaultDepth);
+    }
+
+    /// @dev `depth` as a curve depth: zero is the default, anything else must be one of the tiers.
+    function _depth(uint256 depth) private view returns (uint256) {
+        if (depth == 0) return defaultDepth;
+        uint256[7] memory tiers = _tiersOf(defaultDepth);
+        for (uint256 i; i < 7; ++i) {
+            if (tiers[i] == depth) return depth;
+        }
+        revert BadDepth();
+    }
+
+    /// @notice What a round at `depth` (zero for the default) asks of the auction: its price step and floor price
+    /// in the auction's fixed point, and the minimum raised when the founder names none.
+    function roundTerms(uint256 depth)
+        public
+        view
+        returns (uint256 tickSpacingX96, uint256 floorPriceX96, uint128 defaultMinimum)
+    {
+        if (address(auctionFactory) == address(0)) return (0, 0, 0);
+        uint256 minimum;
+        (tickSpacingX96, floorPriceX96, minimum) = _roundTerms(_depth(depth), _virtualUnits, roundSupply);
+        defaultMinimum = uint128(minimum);
+    }
+
+    /// @notice A round's floor price and price step at the default depth, in the auction's fixed point (quote base
+    /// units per base unit of claim token, times 2**96): the floor is the price an "open now" curve starts at.
+    function roundFloorPriceX96() external view returns (uint256 floorPrice) {
+        (, floorPrice,) = roundTerms(0);
+    }
+
+    function roundTickSpacingX96() external view returns (uint256 tickSpacing) {
+        (tickSpacing,,) = roundTerms(0);
+    }
+
+    /// @notice The minimum a round at the default depth must raise when the founder names none: the whole supply at
+    /// the floor.
+    function defaultMinimumRaise() external view returns (uint128 minimum) {
+        (,, minimum) = roundTerms(0);
     }
 
     /// @notice The terms every pool of this factory gets.
@@ -222,22 +302,31 @@ contract BackingPoolFactory is BlockNumberish {
 
     /// @notice Open `dao`'s pool with the curve live at once. Callable by the project's recorded founder, by
     /// the DAO, or by the authorised kit; once per project (again only after a round that failed).
+    /// @param depth The curve depth, one of `depthTiers()`, or zero for the default.
     /// @return pool The new pool.
-    function open(address dao) external returns (BackingPool pool) {
-        pool = _open(dao, 0);
+    function open(address dao, uint256 depth) external returns (BackingPool pool) {
+        pool = _open(dao, 0, depth);
     }
 
     /// @notice Open `dao`'s pool behind an opening round: an auction of `roundSupply` claim tokens for
-    /// `roundBlocks` blocks from this block, floor at the curve's opening price. Same callers as `open`.
+    /// `roundBlocks` blocks from this block, floor at the curve's opening price at the chosen depth. Same callers as
+    /// `open`. The curve that opens when the round is settled is set from what the round raised, at the average
+    /// price it paid; the depth sets the floor price, so the curve opens at about 0.8 to 0.9 of that depth when the
+    /// round clears at the floor, and deeper when demand lifts the price.
     /// @param minimumRaise What the round must raise for the pool to go live (bidders are refunded by the
     /// auction otherwise); zero for the default, the whole supply at the floor.
+    /// @param depth The curve depth, one of `depthTiers()`, or zero for the default.
     /// @return pool The new pool, waiting for its round.
     /// @return auction The round's auction: bids, refunds and claim tokens are handled there.
-    function openWithRound(address dao, uint128 minimumRaise) external returns (BackingPool pool, address auction) {
+    function openWithRound(address dao, uint128 minimumRaise, uint256 depth)
+        external
+        returns (BackingPool pool, address auction)
+    {
         if (address(auctionFactory) == address(0)) revert RoundsOff();
-        if (minimumRaise == 0) minimumRaise = defaultMinimumRaise;
+        (uint256 tickSpacing, uint256 floorPrice, uint128 defaultMinimum) = roundTerms(depth);
+        if (minimumRaise == 0) minimumRaise = defaultMinimum;
         if (minimumRaise < LEAST_MINIMUM) revert MinimumTooLow(LEAST_MINIMUM);
-        pool = _open(dao, roundSupply);
+        pool = _open(dao, roundSupply, depth);
         // The auction's own clock (`BlockNumberish`, the helper the auction itself uses), not `block.number`:
         // on Arbitrum and its Orbit chains the two differ, and a round whose blocks were counted on the wrong
         // one would already be over, or not yet begun, when the auction opens.
@@ -249,9 +338,9 @@ contract BackingPoolFactory is BlockNumberish {
             startBlock: start,
             endBlock: start + roundBlocks,
             claimBlock: start + roundBlocks,
-            tickSpacing: roundTickSpacingX96,
+            tickSpacing: tickSpacing,
             validationHook: address(0),
-            floorPrice: roundFloorPriceX96,
+            floorPrice: floorPrice,
             requiredCurrencyRaised: minimumRaise,
             auctionStepsData: abi.encodePacked(uint24(10_000_000 / roundBlocks), uint40(roundBlocks))
         });
@@ -271,7 +360,7 @@ contract BackingPoolFactory is BlockNumberish {
         emit RoundOpened(dao, address(pool), auction, claim, roundSupply, minimumRaise, start, start + roundBlocks);
     }
 
-    function _open(address dao, uint256 supply) private returns (BackingPool pool) {
+    function _open(address dao, uint256 supply, uint256 depth) private returns (BackingPool pool) {
         bytes32 codeHash;
         assembly ("memory-safe") {
             codeHash := extcodehash(dao)
@@ -287,7 +376,15 @@ contract BackingPoolFactory is BlockNumberish {
         {
             revert NotAllowed();
         }
-        pool = poolDeployer.deploy(dao, founder, quote, _terms, supply);
+        // The chosen depth is the curve's paper reserve, and the per-wallet early cap scales with it (it is a
+        // twenty-fifth of the depth at the defaults).
+        BackingPool.Params memory t = _terms;
+        uint256 chosen = _depth(depth);
+        if (chosen != t.virtualQuote) {
+            t.earlyCap = t.earlyCap * chosen / t.virtualQuote;
+            t.virtualQuote = chosen;
+        }
+        pool = poolDeployer.deploy(dao, founder, quote, t, supply);
         poolOf[dao] = address(pool);
         pools.push(address(pool));
         emit PoolOpened(dao, address(pool), founder, msg.sender);

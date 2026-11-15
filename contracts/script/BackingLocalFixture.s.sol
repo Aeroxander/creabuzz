@@ -59,8 +59,10 @@ contract BackingLocalFixture is Script {
         ContributorKitV3 kit = new ContributorKitV3(summoner, marketFactory, poolFactory);
 
         // A project with its pool at birth, and a first buy and sale in it.
-        (address dao,,, address poolAddress) =
-            kit.launchWithPool(_params(me, "born with a pool", address(quote), mandateFactory));
+        (address dao,,, address poolAddress) = kit.launchWithPool(
+            _params(me, "born with a pool", address(quote), mandateFactory),
+            BackingTerms.depthOf(quote.decimals(), 100_000)
+        );
         BackingPool pool = BackingPool(poolAddress);
         quote.mint(me, 1_000e18);
         quote.approve(poolAddress, type(uint256).max);
@@ -69,13 +71,24 @@ contract BackingLocalFixture is Script {
 
         // A V2 project, then its pool in one more call.
         (address daoV2,,) = kitV2.launch(_params(me, "pool later", address(quote), mandateFactory));
-        BackingPool later = poolFactory.open(daoV2);
+        BackingPool later = poolFactory.open(daoV2, 0);
 
         // A third project, opened behind a round: the pool waits, the auction holds the claim tokens.
         (address daoRound,,) = kitV2.launch(_params(me, "pool with a round", address(quote), mandateFactory));
-        (BackingPool waiting, address auction) = poolFactory.openWithRound(daoRound, 0);
+        (BackingPool waiting, address auction) =
+            poolFactory.openWithRound(daoRound, 0, BackingTerms.depthOf(quote.decimals(), 50_000));
         vm.stopBroadcast();
 
+        // The factory's menu of depths is the documented one (the same check `DeployBackingSepolia` makes).
+        uint256[7] memory tiers = poolFactory.depthTiers();
+        uint256[7] memory whole = BackingTerms.depthTiersWhole();
+        for (uint256 i; i < 7; ++i) {
+            require(tiers[i] == BackingTerms.depthOf(quote.decimals(), whole[i]), "the depth tiers differ");
+        }
+        // The chosen depths took, and the pool opened with no depth got the default.
+        require(pool.virtualQuote() == BackingTerms.depthOf(quote.decimals(), 100_000), "the tier of the pool at birth");
+        require(later.virtualQuote() == BackingTerms.depthOf(quote.decimals(), 25_000), "the default tier");
+        require(waiting.virtualQuote() == BackingTerms.depthOf(quote.decimals(), 50_000), "the tier of the round pool");
         require(waiting.roundState() == BackingPool.RoundState.Waiting && waiting.auction() == auction, "round");
         require(
             waiting.claimToken().balanceOf(auction) == waiting.roundSupply() && auction.code.length != 0,

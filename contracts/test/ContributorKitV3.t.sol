@@ -13,7 +13,7 @@ import {SecondaryMarket} from "../src/SecondaryMarket.sol";
 import {SecondaryMarketFactory} from "../src/SecondaryMarketFactory.sol";
 import {Moloch, Shares, Summoner} from "../src/majeur/MolochPatched.sol";
 import {TreasuryMandate, TreasuryMandateFactory} from "../src/TreasuryMandate.sol";
-import {PoolQuote} from "./helpers/BackingPoolFixture.sol";
+import {PoolQuote, SixDecimalQuote} from "./helpers/BackingPoolFixture.sol";
 
 /// @dev The auction, as far as these tests drive it (it pins another compiler, so it is not imported).
 interface IRoundAuctionLike {
@@ -192,7 +192,7 @@ contract ContributorKitV3Test is Test {
     function _launchWithPool(bytes32 salt) internal returns (Moloch dao, BackingPool pool) {
         ContributorKitV2.LaunchParams memory p = _params(salt);
         vm.prank(FOUNDER);
-        (address d,,, address made) = kit.launchWithPool(p);
+        (address d,,, address made) = kit.launchWithPool(p, 0);
         dao = Moloch(payable(d));
         pool = BackingPool(made);
     }
@@ -216,7 +216,7 @@ contract ContributorKitV3Test is Test {
     function test_one_transaction_makes_the_project_with_its_pool_open() public {
         ContributorKitV2.LaunchParams memory p = _params("one");
         vm.prank(FOUNDER);
-        (address dao, address budget, address policy, address made) = kit.launchWithPool(p);
+        (address dao, address budget, address policy, address made) = kit.launchWithPool(p, 0);
         BackingPool pool = BackingPool(made);
 
         assertEq(poolFactory.poolOf(dao), made);
@@ -333,7 +333,7 @@ contract ContributorKitV3Test is Test {
         vm.expectEmit(true, false, true, false, address(poolFactory));
         emit PoolOpened(address(dao), address(0), FOUNDER, FOUNDER);
         vm.prank(FOUNDER);
-        BackingPool pool = poolFactory.open(address(dao));
+        BackingPool pool = poolFactory.open(address(dao), 0);
         assertEq(poolFactory.poolOf(address(dao)), address(pool));
         assertEq(pool.founder(), FOUNDER);
         assertEq(pool.dao(), address(dao));
@@ -344,27 +344,27 @@ contract ContributorKitV3Test is Test {
         (Moloch dao, BackingPool pool) = _launchWithPool("once");
         vm.prank(FOUNDER);
         vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(pool)));
-        poolFactory.open(address(dao));
+        poolFactory.open(address(dao), 0);
         vm.prank(address(dao));
         vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(pool)));
-        poolFactory.open(address(dao));
+        poolFactory.open(address(dao), 0);
     }
 
     function test_a_stranger_cannot_open_a_projects_pool() public {
         Moloch dao = _launchV2("stranger");
         vm.prank(ALICE);
         vm.expectRevert(BackingPoolFactory.NotAllowed.selector);
-        poolFactory.open(address(dao));
+        poolFactory.open(address(dao), 0);
         // The other kit is a stranger too.
         vm.prank(address(kitV2));
         vm.expectRevert(BackingPoolFactory.NotAllowed.selector);
-        poolFactory.open(address(dao));
+        poolFactory.open(address(dao), 0);
     }
 
     function test_the_dao_can_open_its_own_pool() public {
         Moloch dao = _launchV2("dao opens");
         vm.prank(address(dao));
-        BackingPool pool = poolFactory.open(address(dao));
+        BackingPool pool = poolFactory.open(address(dao), 0);
         assertEq(pool.founder(), FOUNDER);
     }
 
@@ -377,9 +377,9 @@ contract ContributorKitV3Test is Test {
         assertEq(poolFactory.founderOf(dao), address(0));
         vm.prank(FOUNDER);
         vm.expectRevert(BackingPoolFactory.NotAllowed.selector);
-        poolFactory.open(dao);
+        poolFactory.open(dao, 0);
         vm.prank(dao);
-        BackingPool pool = poolFactory.open(dao);
+        BackingPool pool = poolFactory.open(dao, 0);
         assertEq(pool.founder(), address(0));
         vm.warp(pool.nextClaimAt());
         vm.prank(FOUNDER);
@@ -391,9 +391,9 @@ contract ContributorKitV3Test is Test {
 
     function test_only_a_dao_of_the_pinned_summoner_gets_a_pool() public {
         vm.expectRevert(BackingPoolFactory.UnprovenDao.selector);
-        poolFactory.open(address(0xDEAD));
+        poolFactory.open(address(0xDEAD), 0);
         vm.expectRevert(BackingPoolFactory.UnprovenDao.selector);
-        poolFactory.open(address(quote));
+        poolFactory.open(address(quote), 0);
         // A real DAO, from another summoner.
         TreasuryMandateFactory otherMandates = new TreasuryMandateFactory();
         Summoner other = new Summoner(address(new ActivationVoting(otherMandates)));
@@ -406,7 +406,7 @@ contract ContributorKitV3Test is Test {
         (address dao,,) = otherKit.launch(p);
         vm.prank(FOUNDER);
         vm.expectRevert(BackingPoolFactory.UnprovenDao.selector);
-        poolFactory.open(dao);
+        poolFactory.open(dao, 0);
     }
 
     // ---- construction ---------------------------------------------------------------------------------------------
@@ -446,9 +446,9 @@ contract ContributorKitV3Test is Test {
         Moloch dao = _launchV2("plain");
         vm.prank(address(0));
         vm.expectRevert(BackingPoolFactory.NotAllowed.selector);
-        plain.open(address(dao));
+        plain.open(address(dao), 0);
         vm.prank(FOUNDER);
-        plain.open(address(dao));
+        plain.open(address(dao), 0);
     }
 
     function test_a_factory_with_bad_terms_opens_nothing() public {
@@ -458,7 +458,7 @@ contract ContributorKitV3Test is Test {
         Moloch dao = _launchV2("bad terms");
         vm.prank(FOUNDER);
         vm.expectRevert(BackingPool.InvalidParams.selector);
-        broken.open(address(dao));
+        broken.open(address(dao), 0);
     }
 
     function test_the_kit_refuses_a_pool_factory_made_for_another_kit_or_summoner() public {
@@ -486,7 +486,7 @@ contract ContributorKitV3Test is Test {
         p.base.predictedBudget = address(0xB0D6E7);
         vm.prank(FOUNDER);
         vm.expectRevert();
-        kit.launchWithPool(p);
+        kit.launchWithPool(p, 0);
         assertEq(poolFactory.poolCount(), 0);
     }
 
@@ -525,7 +525,7 @@ contract ContributorKitV3Test is Test {
     function test_gas_for_every_step() public {
         ContributorKitV2.LaunchParams memory p = _params("gas");
         vm.prank(FOUNDER);
-        (address d,,, address made) = kit.launchWithPool(p);
+        (address d,,, address made) = kit.launchWithPool(p, 0);
         emit log_named_uint("create: launchWithPool (project + market + pool)", vm.lastCallGas().gasTotalUsed);
         BackingPool pool = BackingPool(made);
 
@@ -534,7 +534,7 @@ contract ContributorKitV3Test is Test {
         (address d2,,) = kitV2.launch(q);
         emit log_named_uint("(for comparison) ContributorKitV2.launch", vm.lastCallGas().gasTotalUsed);
         vm.prank(FOUNDER);
-        poolFactory.open(d2);
+        poolFactory.open(d2, 0);
         emit log_named_uint("create: BackingPoolFactory.open (existing project)", vm.lastCallGas().gasTotalUsed);
 
         vm.warp(_now() + 1 days);
@@ -617,7 +617,7 @@ contract ContributorKitV3Test is Test {
     function test_gas_the_largest_launch_fits_one_transaction() public {
         ContributorKitV2.LaunchParams memory p = _heaviestLaunch();
         vm.prank(FOUNDER);
-        (address dao,,, address pool) = kit.launchWithPool(p);
+        (address dao,,, address pool) = kit.launchWithPool(p, 0);
         uint256 used = vm.lastCallGas().gasTotalUsed;
         emit log_named_uint("create: launchWithPool, 8 first projects, 8 reviewers, longest name and symbol", used);
         assertEq(poolFactory.poolOf(dao), pool);
@@ -637,19 +637,19 @@ contract ContributorKitV3Test is Test {
         p.base.quorum = 2;
         vm.prank(FOUNDER);
         vm.expectRevert(ContributorKit.InvalidTerms.selector);
-        kit.launchWithPool(p);
+        kit.launchWithPool(p, 0);
 
         p = _params("caps name");
         p.base.name = _filled(65);
         vm.prank(FOUNDER);
         vm.expectRevert(ContributorKit.InvalidTerms.selector);
-        kit.launchWithPool(p);
+        kit.launchWithPool(p, 0);
 
         p = _params("caps symbol");
         p.base.symbol = _filled(13);
         vm.prank(FOUNDER);
         vm.expectRevert(ContributorKit.InvalidTerms.selector);
-        kit.launchWithPool(p);
+        kit.launchWithPool(p, 0);
 
         // The kit it repeats takes all three: V2 has no such caps.
         p = _params("caps v2");
@@ -698,11 +698,161 @@ contract ContributorKitV3Test is Test {
         assertEq(poolFactory.poolDeployer().owner(), address(poolFactory));
     }
 
+    // ---- curve depth -----------------------------------------------------------------------------------------------
+
+    function _tiers18() internal pure returns (uint256[7] memory t) {
+        t = [uint256(5_000e18), 10_000e18, 25_000e18, 50_000e18, 100_000e18, 250_000e18, 500_000e18];
+    }
+
+    /// @dev The founder chooses one number, the curve's depth, from seven: the default and the six around it.
+    function test_the_factory_offers_seven_depth_tiers_around_the_default() public view {
+        uint256[7] memory got = poolFactory.depthTiers();
+        uint256[7] memory want = _tiers18();
+        for (uint256 i; i < 7; ++i) {
+            assertEq(got[i], want[i]);
+        }
+        assertEq(poolFactory.defaultDepth(), 25_000e18);
+        // The default is the middle tier, and the terms every other setting of the pool comes from are unchanged.
+        assertEq(got[2], poolFactory.terms().virtualQuote);
+    }
+
+    /// @dev Each tier opens a pool whose curve starts at that depth: the opening price is the depth over the paper
+    /// units, and the per-wallet early cap grows and shrinks with it (a twenty-fifth of the depth).
+    function test_each_tier_opens_a_pool_at_that_depth_and_zero_is_the_default() public {
+        uint256[7] memory tiers = _tiers18();
+        for (uint256 i; i < 7; ++i) {
+            Moloch dao = _launchV2(bytes32(uint256(0xD00 + i)));
+            vm.prank(FOUNDER);
+            BackingPool pool = poolFactory.open(address(dao), tiers[i]);
+            assertEq(pool.virtualQuote(), tiers[i]);
+            assertEq(pool.earlyCap(), tiers[i] / 25);
+            assertEq(pool.price(), tiers[i] * 1e18 * 1e18 / pool.virtualUnits());
+            // Everything else is the factory's one set of terms.
+            assertEq(pool.projectBps(), 1000);
+            assertEq(pool.feeBps(), 100);
+            assertEq(pool.objectionWindow(), 7 days);
+        }
+        Moloch plain = _launchV2("default depth");
+        vm.prank(FOUNDER);
+        BackingPool byDefault = poolFactory.open(address(plain), 0);
+        assertEq(byDefault.virtualQuote(), 25_000e18);
+        assertEq(byDefault.earlyCap(), 1_000e18);
+    }
+
+    /// @dev Anything but a tier is refused, on every way in: `open`, `openWithRound` and the kit's launch (which then
+    /// makes no project at all).
+    function test_a_depth_that_is_not_a_tier_is_refused_everywhere() public {
+        uint256[6] memory bad = [uint256(1), 4_999e18, 25_001e18, 75_000e18, 500_000e18 + 1, 1_000_000e18];
+        for (uint256 i; i < bad.length; ++i) {
+            Moloch dao = _launchV2(bytes32(uint256(0xBAD + i)));
+            vm.startPrank(FOUNDER);
+            vm.expectRevert(BackingPoolFactory.BadDepth.selector);
+            poolFactory.open(address(dao), bad[i]);
+            vm.expectRevert(BackingPoolFactory.BadDepth.selector);
+            poolFactory.openWithRound(address(dao), 0, bad[i]);
+            ContributorKitV2.LaunchParams memory p = _params(bytes32(uint256(0xBAD0 + i)));
+            vm.expectRevert(BackingPoolFactory.BadDepth.selector);
+            kit.launchWithPool(p, bad[i]);
+            vm.stopPrank();
+            // Nothing opened, so a good depth still can.
+            assertEq(poolFactory.poolOf(address(dao)), address(0));
+        }
+    }
+
+    /// @dev The kit passes the depth through: the project is born with a pool at the tier, and a bad one reverts the
+    /// whole launch.
+    function test_the_kit_launches_a_project_with_a_pool_at_a_chosen_depth() public {
+        ContributorKitV2.LaunchParams memory p = _params("deep launch");
+        vm.prank(FOUNDER);
+        (address dao,,, address made) = kit.launchWithPool(p, 100_000e18);
+        assertEq(BackingPool(made).virtualQuote(), 100_000e18);
+        assertEq(BackingPool(made).earlyCap(), 4_000e18);
+        assertEq(poolFactory.poolOf(dao), made);
+        // The same project shape, the default depth, differs in nothing but the curve.
+        p = _params("default launch");
+        vm.prank(FOUNDER);
+        (,,, address other) = kit.launchWithPool(p, 0);
+        assertEq(BackingPool(other).virtualQuote(), 25_000e18);
+        assertGt(BackingPool(made).price(), 0);
+        assertEq(BackingPool(made).price(), 4 * BackingPool(other).price());
+    }
+
+    /// @dev A round at each tier asks the auction for a floor price at the curve's opening price at that depth, a
+    /// step of a hundredth of it, and a default minimum of the whole supply at the floor: the auction accepts all
+    /// seven (opening checkpoints it), and the pool reads the same minimum.
+    function test_each_tier_opens_a_round_the_auction_accepts() public {
+        uint256[7] memory tiers = _tiers18();
+        for (uint256 i; i < 7; ++i) {
+            Moloch dao = _launchV2(bytes32(uint256(0x1000 + i)));
+            (uint256 tick, uint256 floor, uint128 minimum) = poolFactory.roundTerms(tiers[i]);
+            uint256 opening = (tiers[i] << 96) / 1_000_000_000e18;
+            assertEq(tick, opening / 100);
+            assertEq(floor, opening / 100 * 100);
+            assertEq(minimum, uint128(100_000_000e18 * tiers[i] / 1_000_000_000e18));
+            vm.prank(FOUNDER);
+            (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0, tiers[i]);
+            assertEq(pool.virtualQuote(), tiers[i]);
+            assertEq(pool.minimumRaise(), minimum);
+            assertEq(IRoundAuctionLike(auction).floorPrice(), floor);
+            assertEq(IRoundAuctionLike(auction).tickSpacing(), tick);
+            assertEq(uint8(pool.roundState()), uint8(BackingPool.RoundState.Waiting));
+        }
+        // The views the app already reads are the default tier's.
+        (uint256 t0, uint256 f0, uint128 m0) = poolFactory.roundTerms(0);
+        assertEq(poolFactory.roundTickSpacingX96(), t0);
+        assertEq(poolFactory.roundFloorPriceX96(), f0);
+        assertEq(poolFactory.defaultMinimumRaise(), m0);
+        assertEq(m0, 2_500e18);
+    }
+
+    /// @dev A six-decimal quote token at the shallowest tier is the tightest case for the auction's price step (it
+    /// must stay above 2**32 once multiplied back by a hundred): all seven tiers open a round.
+    function test_every_tier_opens_a_round_on_a_six_decimal_quote() public {
+        SixDecimalQuote six = new SixDecimalQuote();
+        BackingPool.Params memory p = terms();
+        p.virtualQuote = 25_000e6;
+        p.earlyCap = 1_000e6;
+        BackingPoolFactory sixFactory = new BackingPoolFactory(summoner, IERC20(address(six)), p, address(0), rounds());
+        uint256[7] memory tiers = sixFactory.depthTiers();
+        assertEq(tiers[0], 5_000e6);
+        assertEq(tiers[6], 500_000e6);
+        for (uint256 i; i < 7; ++i) {
+            Moloch dao = _launchV2(bytes32(uint256(0x2000 + i)));
+            (uint256 tick, uint256 floor, uint128 minimum) = sixFactory.roundTerms(tiers[i]);
+            assertGt(floor, 1 << 32, "above the auction's own least floor");
+            assertGt(minimum, 10_000);
+            vm.prank(FOUNDER);
+            (BackingPool pool, address auction) = sixFactory.openWithRound(address(dao), 0, tiers[i]);
+            assertEq(pool.virtualQuote(), tiers[i]);
+            assertEq(IRoundAuctionLike(auction).floorPrice(), floor);
+            assertEq(IRoundAuctionLike(auction).tickSpacing(), tick);
+        }
+    }
+
+    /// @dev A factory whose terms would give the auction a round it refuses at some tier fails at deployment, not
+    /// at the first founder who picks that tier. Terms that cannot be split into fifths fail too.
+    function test_a_factory_refuses_terms_whose_tiers_the_auction_would_refuse() public {
+        BackingPool.Params memory p = terms();
+        // A paper reserve of 50 base units: its shallowest tier (10 base units) gives a price step of a few tens
+        // of units, so the floor is under the auction's own least floor.
+        p.virtualQuote = 50;
+        vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
+        new BackingPoolFactory(summoner, IERC20(address(quote)), p, address(0), rounds());
+        // The same terms are fine for a factory with no rounds (nothing for the auction to refuse).
+        new BackingPoolFactory(summoner, IERC20(address(quote)), p, address(0), noRound());
+        p.virtualQuote = 25_000e18 + 1;
+        vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
+        new BackingPoolFactory(summoner, IERC20(address(quote)), p, address(0), noRound());
+        p.virtualQuote = 0;
+        vm.expectRevert(BackingPoolFactory.InvalidSetup.selector);
+        new BackingPoolFactory(summoner, IERC20(address(quote)), p, address(0), noRound());
+    }
+
     function test_the_founder_opens_a_pool_behind_a_round_in_one_call_choosing_nothing() public {
         Moloch dao = _launchV2("round");
         vm.recordLogs();
         vm.prank(FOUNDER);
-        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0);
+        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0, 0);
 
         assertEq(poolFactory.poolOf(address(dao)), address(pool));
         assertEq(uint8(pool.roundState()), uint8(BackingPool.RoundState.Waiting));
@@ -740,9 +890,9 @@ contract ContributorKitV3Test is Test {
         Moloch dao = _launchV2("minimum");
         vm.prank(FOUNDER);
         vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.MinimumTooLow.selector, uint128(10_000)));
-        poolFactory.openWithRound(address(dao), 9_999);
+        poolFactory.openWithRound(address(dao), 9_999, 0);
         vm.prank(FOUNDER);
-        (BackingPool pool,) = poolFactory.openWithRound(address(dao), 40_000e18);
+        (BackingPool pool,) = poolFactory.openWithRound(address(dao), 40_000e18, 0);
         assertEq(pool.minimumRaise(), 40_000e18);
     }
 
@@ -750,18 +900,18 @@ contract ContributorKitV3Test is Test {
         Moloch dao = _launchV2("round auth");
         vm.prank(ALICE);
         vm.expectRevert(BackingPoolFactory.NotAllowed.selector);
-        poolFactory.openWithRound(address(dao), 0);
+        poolFactory.openWithRound(address(dao), 0, 0);
         vm.expectRevert(BackingPoolFactory.UnprovenDao.selector);
-        poolFactory.openWithRound(address(quote), 0);
+        poolFactory.openWithRound(address(quote), 0, 0);
         vm.prank(address(dao));
-        (BackingPool pool,) = poolFactory.openWithRound(address(dao), 0);
+        (BackingPool pool,) = poolFactory.openWithRound(address(dao), 0, 0);
         // Waiting counts as open: no second pool, of either kind.
         vm.prank(FOUNDER);
         vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(pool)));
-        poolFactory.openWithRound(address(dao), 0);
+        poolFactory.openWithRound(address(dao), 0, 0);
         vm.prank(FOUNDER);
         vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(pool)));
-        poolFactory.open(address(dao));
+        poolFactory.open(address(dao), 0);
         // Nobody but the factory's deployer binds a round.
         vm.prank(address(poolFactory));
         vm.expectRevert(BackingPool.NotFactory.selector);
@@ -781,7 +931,7 @@ contract ContributorKitV3Test is Test {
         Moloch dao = _launchV2("no rounds");
         vm.prank(FOUNDER);
         vm.expectRevert(BackingPoolFactory.RoundsOff.selector);
-        plain.openWithRound(address(dao), 0);
+        plain.openWithRound(address(dao), 0, 0);
     }
 
     function test_the_factory_refuses_round_settings_the_auction_would_refuse() public {
@@ -812,7 +962,7 @@ contract ContributorKitV3Test is Test {
     function test_a_round_on_a_real_project_goes_live_and_its_buyers_hold_units() public {
         Moloch dao = _launchV2("round live");
         vm.prank(FOUNDER);
-        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0);
+        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0, 0);
         uint256 a = _bid(auction, ALICE, 4_000e18);
         vm.roll(block.number + 20_000);
         uint256 b = _bid(auction, BOB, 6_000e18);
@@ -850,7 +1000,7 @@ contract ContributorKitV3Test is Test {
     function test_after_a_failed_round_the_project_may_open_again() public {
         Moloch dao = _launchV2("round failed");
         vm.prank(FOUNDER);
-        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0);
+        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0, 0);
         uint256 a = _bid(auction, ALICE, 1_000e18);
         vm.roll(IRoundAuctionLike(auction).endBlock());
         uint256 before = quote.balanceOf(ALICE);
@@ -860,16 +1010,16 @@ contract ContributorKitV3Test is Test {
 
         vm.prank(ALICE);
         vm.expectRevert(BackingPoolFactory.NotAllowed.selector);
-        poolFactory.open(address(dao));
+        poolFactory.open(address(dao), 0);
         vm.prank(FOUNDER);
-        (BackingPool second,) = poolFactory.openWithRound(address(dao), 0);
+        (BackingPool second,) = poolFactory.openWithRound(address(dao), 0, 0);
         assertTrue(address(second) != address(pool));
         assertEq(poolFactory.poolOf(address(dao)), address(second));
         assertEq(poolFactory.poolCount(), 2);
         // And a third time only if the second fails too.
         vm.prank(FOUNDER);
         vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(second)));
-        poolFactory.open(address(dao));
+        poolFactory.open(address(dao), 0);
     }
 
     /// @dev A protocol fee that takes the raise closes the pool the same way a missed minimum does, and the project
@@ -884,7 +1034,7 @@ contract ContributorKitV3Test is Test {
         BackingPoolFactory feeFactory = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), r);
         Moloch dao = _launchV2("fee round");
         vm.prank(FOUNDER);
-        (BackingPool pool, address auction) = feeFactory.openWithRound(address(dao), 0);
+        (BackingPool pool, address auction) = feeFactory.openWithRound(address(dao), 0, 0);
         _bid(auction, ALICE, 4_000e18);
         IFeeControllerLike(controller).setProtocolFeeAmount(type(uint128).max);
         vm.roll(IRoundAuctionLike(auction).endBlock());
@@ -893,7 +1043,7 @@ contract ContributorKitV3Test is Test {
         assertEq(quote.balanceOf(address(pool)), 0);
 
         vm.prank(FOUNDER);
-        (BackingPool second,) = feeFactory.openWithRound(address(dao), 0);
+        (BackingPool second,) = feeFactory.openWithRound(address(dao), 0, 0);
         assertTrue(address(second) != address(pool));
         assertEq(feeFactory.poolOf(address(dao)), address(second));
     }
@@ -910,7 +1060,7 @@ contract ContributorKitV3Test is Test {
             new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), rounds());
         Moloch dao = _launchV2("arbitrum");
         vm.prank(FOUNDER);
-        (BackingPool pool, address auction) = arbFactory.openWithRound(address(dao), 0);
+        (BackingPool pool, address auction) = arbFactory.openWithRound(address(dao), 0, 0);
         assertEq(IRoundAuctionLike(auction).endBlock(), arbBlock + 50_000, "the round runs on the chain's clock");
         assertEq(pool.roundInfo(address(0)).endBlock, arbBlock + 50_000);
 
@@ -945,14 +1095,14 @@ contract ContributorKitV3Test is Test {
         BackingPoolFactory feeFactory = new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), r);
         Moloch dao = _launchV2("stuck round");
         vm.prank(FOUNDER);
-        (BackingPool pool, address auction) = feeFactory.openWithRound(address(dao), 0);
+        (BackingPool pool, address auction) = feeFactory.openWithRound(address(dao), 0, 0);
         _bid(auction, ALICE, 4_000e18);
         vm.roll(IRoundAuctionLike(auction).endBlock());
         vm.expectRevert();
         pool.seedFromAuction();
         vm.prank(FOUNDER);
         vm.expectRevert(abi.encodeWithSelector(BackingPoolFactory.AlreadyOpen.selector, address(pool)));
-        feeFactory.openWithRound(address(dao), 0);
+        feeFactory.openWithRound(address(dao), 0, 0);
 
         uint256 held = quote.balanceOf(auction);
         vm.warp(uint256(pool.openedAt()) + 30 days);
@@ -962,7 +1112,7 @@ contract ContributorKitV3Test is Test {
         assertEq(quote.balanceOf(auction), held);
 
         vm.prank(FOUNDER);
-        (BackingPool second,) = feeFactory.openWithRound(address(dao), 0);
+        (BackingPool second,) = feeFactory.openWithRound(address(dao), 0, 0);
         assertEq(feeFactory.poolOf(address(dao)), address(second));
         assertTrue(address(second) != address(pool));
     }
@@ -983,7 +1133,7 @@ contract ContributorKitV3Test is Test {
         PickyArbSysStub(address(100)).setStrict(true);
         vm.prank(FOUNDER);
         vm.expectRevert(IRoundAuctionLike.AuctionNotStarted.selector);
-        arbFactory.openWithRound(address(dao), 0);
+        arbFactory.openWithRound(address(dao), 0, 0);
         assertEq(arbFactory.poolOf(address(dao)), address(0), "nothing was opened");
         assertEq(arbFactory.poolCount(), 0);
 
@@ -992,7 +1142,7 @@ contract ContributorKitV3Test is Test {
         BackingPoolFactory plainFactory =
             new BackingPoolFactory(summoner, IERC20(address(quote)), terms(), address(0), rounds());
         vm.prank(FOUNDER);
-        (BackingPool pool,) = plainFactory.openWithRound(address(dao), 0);
+        (BackingPool pool,) = plainFactory.openWithRound(address(dao), 0, 0);
         assertEq(uint8(pool.roundState()), uint8(BackingPool.RoundState.Waiting));
     }
 
@@ -1006,12 +1156,12 @@ contract ContributorKitV3Test is Test {
         vm.etch(address(100), address(new ArbSysStub()).code);
         ArbSysStub(address(100)).set(400_000_000);
         vm.prank(FOUNDER);
-        (BackingPool pool, address auction) = plain.openWithRound(address(dao), 0);
+        (BackingPool pool, address auction) = plain.openWithRound(address(dao), 0, 0);
         assertEq(IRoundAuctionLike(auction).endBlock(), block.number + 50_000, "counted on the factory's clock");
         assertFalse(pool.seedFromAuction());
         assertEq(uint8(pool.roundState()), uint8(BackingPool.RoundState.Failed));
         vm.prank(FOUNDER);
-        plain.openWithRound(address(dao), 0);
+        plain.openWithRound(address(dao), 0, 0);
         assertEq(plain.poolCount(), 2);
     }
 
@@ -1019,7 +1169,7 @@ contract ContributorKitV3Test is Test {
     function test_gas_opening_with_a_round() public {
         Moloch dao = _launchV2("round gas");
         vm.prank(FOUNDER);
-        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0);
+        (BackingPool pool, address auction) = poolFactory.openWithRound(address(dao), 0, 0);
         uint256 used = vm.lastCallGas().gasTotalUsed;
         emit log_named_uint("create: BackingPoolFactory.openWithRound (pool + claim token + auction)", used);
         assertLt(used, uint256(1 << 24) * 90 / 100);

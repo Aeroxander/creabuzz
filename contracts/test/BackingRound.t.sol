@@ -139,8 +139,11 @@ abstract contract BackingRoundFixture is Test {
     uint256 internal floorX96;
     uint256 internal tickX96;
 
-    function terms() internal pure returns (IBackingPool.Params memory p) {
-        p.virtualQuote = 25_000e18;
+    /// @dev The curve depth the pool is made with (the factory's tiers; the default until a test picks another).
+    uint256 internal depth = 25_000e18;
+
+    function terms() internal view returns (IBackingPool.Params memory p) {
+        p.virtualQuote = depth;
         p.virtualUnits = 1_000_000_000e18;
         p.projectBps = 1000;
         p.feeBps = 100;
@@ -1410,6 +1413,95 @@ contract BackingRoundDustTest is BackingRoundFixture {
         assertEq(plain.unredeemedWeight(), 0);
         vm.warp(plain.abandonableAt());
         assertTrue(plain.abandoned());
+    }
+}
+
+/// @notice The seeded path at every curve depth the factory offers: a round whose floor is the opening price of the
+/// chosen depth, settled, redeemed and traded. The round's pool is made here with the depth in its terms, as the
+/// factory makes it (the fixture derives the auction's floor and step from the terms the same way).
+contract BackingRoundDepthTest is BackingRoundFixture {
+    address internal constant ALICE = address(0xA11CE);
+    address internal constant BOB = address(0xB0B);
+
+    function _tiers() internal pure returns (uint256[7] memory t) {
+        t = [uint256(5_000e18), 10_000e18, 25_000e18, 50_000e18, 100_000e18, 250_000e18, 500_000e18];
+    }
+
+    /// @dev Open a round at `tier` (replacing the one `setUp` opened) with a minimum of a thousandth of the depth.
+    function _openAt(uint256 tier) internal returns (uint128 minimum) {
+        depth = tier;
+        minimum = uint128(tier / 1_000);
+        vm.roll(START);
+        _open(minimum, address(0));
+        assertEq(pool.virtualQuote(), tier, "the pool starts at the chosen depth");
+    }
+
+    function _settle(address bidder, uint128 amount) internal returns (uint256 sold) {
+        uint256 bid = _bid(bidder, amount);
+        vm.roll(END);
+        assertTrue(pool.seedFromAuction());
+        _collect(bid);
+        sold = pool.totalSupply();
+    }
+
+    /// @dev Demand under the supply keeps the clearing price at the floor, so the curve opens at the paper reserve
+    /// the round's average price supports: the reserve times the units left over the units sold. That is the depth of
+    /// the tier less what the fee and the project part take, less the units the round sold: about 0.85 of the tier
+    /// when a twentieth of the depth was bid.
+    function test_a_round_that_clears_at_the_floor_opens_the_curve_a_little_under_the_chosen_depth() public {
+        uint256[7] memory tiers = _tiers();
+        for (uint256 i; i < 7; ++i) {
+            _openAt(tiers[i]);
+            uint256 sold = _settle(ALICE, uint128(tiers[i] / 20));
+            uint256 units = pool.virtualUnits();
+            // Sold a twentieth of the paper units, at the floor.
+            assertApproxEqRel(sold, units / 20, 1e9);
+            // The paper reserve is exactly the formula, and it sits at 0.891 * 19 / 20 of the tier.
+            assertEq(pool.virtualQuote(), pool.reserve() * (units - sold) / sold);
+            assertApproxEqRel(pool.virtualQuote(), tiers[i] * 891 * 19 / (1_000 * 20), 1e9);
+            // The curve opens at the average price paid (the floor) less what the fee and project part take, scaled
+            // by the units left on the curve.
+            assertApproxEqRel(pool.openingPrice(), (tiers[i] * 1e36 / units) * 891 / 1000 * 20 / 19, 1e9);
+            _assertBooks(0);
+            // The bidder takes the units and can sell all of them back.
+            uint256 got = _redeemAll(ALICE);
+            // (to within the base units the auction's own rounding leaves)
+            assertApproxEqAbs(got, sold, 3);
+            vm.prank(ALICE);
+            pool.sell(got, 0, type(uint256).max);
+            _assertBooks(0);
+        }
+    }
+
+    /// @dev Demand over the supply lifts the clearing price above the floor: the curve opens deeper than the tier,
+    /// and the product at the open is still above its floor.
+    function test_a_round_with_heavy_demand_opens_the_curve_deeper_than_the_chosen_depth() public {
+        uint256[7] memory tiers = _tiers();
+        for (uint256 i; i < 7; ++i) {
+            _openAt(tiers[i]);
+            uint256 sold = _settle(BOB, uint128(tiers[i] * 3));
+            assertApproxEqRel(sold, pool.roundSupply(), 1e9, "the whole supply sold");
+            assertGt(pool.virtualQuote(), tiers[i], "deeper than the tier");
+            assertEq(pool.virtualQuote(), pool.reserve() * (pool.virtualUnits() - sold) / sold);
+            _assertBooks(0);
+        }
+    }
+
+    /// @dev For any tier and any raise the auction accepts: the round settles, the curve's product starts at or above
+    /// its floor, the books are exact, and every round buyer gets out.
+    function testFuzz_the_seeded_curve_holds_for_every_tier_and_raise(uint8 tierIndex, uint256 raise) public {
+        uint256 tier = _tiers()[tierIndex % 7];
+        _openAt(tier);
+        raise = bound(raise, uint256(tier / 1_000) * 2, tier * 5);
+        uint256 sold = _settle(ALICE, uint128(raise));
+        assertGt(sold, 0);
+        assertEq(pool.virtualQuote(), pool.reserve() * (pool.virtualUnits() - sold) / sold);
+        assertGt(pool.virtualQuote(), 0);
+        _assertBooks(0);
+        uint256 got = _redeemAll(ALICE);
+        vm.prank(ALICE);
+        pool.sell(got, 0, type(uint256).max);
+        _assertBooks(0);
     }
 }
 

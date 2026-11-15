@@ -27,7 +27,9 @@ import {Summoner} from "../src/majeur/MolochPatched.sol";
 /// address, so a stray transaction only wastes the factories.
 ///
 /// The pool terms are the defaults of docs/v3-review/BACKING-POOL.md (`BackingTerms`), with the amounts scaled to the quote
-/// token's decimals. They are fixed in the factory for good: other terms are another factory.
+/// token's decimals. They are fixed in the factory for good: other terms are another factory. The one thing a founder
+/// chooses is the curve depth, from the seven tiers the factory derives from the default (5,000 to 500,000 whole
+/// quote units; zero is the default, 25,000): the script checks the factory's menu against `BackingTerms`.
 ///
 /// Writes `deployments/backing-sepolia-11155111.json` (not ignored: commit it after a real deploy; a run without
 /// `--broadcast`, or against a local node, writes the file too: delete that one).
@@ -81,11 +83,25 @@ contract DeployBackingSepolia is Script {
         require(kit.poolFactory() == poolFactory, "DeployBackingSepolia: kit pins another pool factory");
         require(address(kit.summoner()) == address(summoner), "DeployBackingSepolia: kit pins another summoner");
         require(
-            address(poolFactory.summoner()) == address(summoner), "DeployBackingSepolia: pool factory on another summoner"
+            address(poolFactory.summoner()) == address(summoner),
+            "DeployBackingSepolia: pool factory on another summoner"
         );
         require(address(poolFactory.quote()) == quote, "DeployBackingSepolia: pool factory on another quote");
         require(
             address(poolFactory.auctionFactory()) == auctionFactory, "DeployBackingSepolia: another auction factory"
+        );
+        // The depth menu a founder picks from is the documented one (the default, and the six around it).
+        uint256[7] memory tiers = poolFactory.depthTiers();
+        uint256[7] memory whole = BackingTerms.depthTiersWhole();
+        uint8 decimals = IERC20Metadata(quote).decimals();
+        for (uint256 i; i < 7; ++i) {
+            require(
+                tiers[i] == BackingTerms.depthOf(decimals, whole[i]), "DeployBackingSepolia: the depth tiers differ"
+            );
+        }
+        require(
+            poolFactory.defaultDepth() == BackingTerms.depthOf(decimals, 25_000),
+            "DeployBackingSepolia: the default depth differs"
         );
         require(
             keccak256(abi.encode(poolFactory.terms())) == keccak256(abi.encode(terms)),
