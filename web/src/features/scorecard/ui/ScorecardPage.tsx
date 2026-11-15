@@ -31,6 +31,7 @@ import {
 } from "@/features/launchpad/lib/weekly-update";
 import { type Launch, launchCoordinate } from "@/features/launchpad/models";
 import { BackingBlock } from "@/features/launchpad/ui/BackingBlock";
+import { ProjectLoadError } from "@/features/launchpad/ui/ProjectLoadError";
 import { ShareRecordButton } from "@/features/launchpad/ui/ShareRecordButton";
 import { useProjectUpdates } from "@/features/launchpad/use-help-requests";
 import { useLaunch } from "@/features/launchpad/use-launches";
@@ -451,20 +452,14 @@ export function ScorecardPage() {
           Opening the project…
         </p>
       ) : error ? (
-        <p className="text-sm" data-testid="scorecard-load-failed" role="alert">
-          Couldn't open this project.{" "}
-          <Button
-            onClick={() => {
-              void first.refetch();
-              void second.refetch();
-            }}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Try again
-          </Button>
-        </p>
+        <ProjectLoadError
+          error={error}
+          onRetry={() => {
+            void first.refetch();
+            void second.refetch();
+          }}
+          testId="scorecard-load-failed"
+        />
       ) : (
         <p data-testid="scorecard-missing">
           There is no project at this link. It may have been removed.{" "}

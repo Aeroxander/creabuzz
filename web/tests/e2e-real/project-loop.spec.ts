@@ -105,8 +105,8 @@ async function joinAsNewPerson(page: Page, name: string) {
  * What a person with no account sees at a project's shared address. On an open server it is the project's scorecard. On an
  * invite-only one it is whatever the server gives a non-member, which is written into the run's output (so the finding is
  * read from a run, not from a guess) and must be one of three things: the scorecard, the plain words that the server is
- * invite-only, or the app's own "Couldn't open this project" with a way to sign in or sign up (what a visitor is given
- * today: [PILOT-REPORT.md](docs/v3-review/PILOT-REPORT.md), "Findings from the loop journey"). Anything else (a blank page,
+ * invite-only, or the app's own "Couldn't open this project" with a way to sign in or sign up (what a visitor was given
+ * before the invite-only words: [PILOT-REPORT.md](docs/v3-review/PILOT-REPORT.md), "Findings from the loop journey"). Anything else (a blank page,
  * a spinner that never ends, an error with no way forward) fails the run.
  */
 async function visitorSees(
@@ -128,8 +128,13 @@ async function visitorSees(
         : "couldn't open this project";
   // A way forward: the page still offers to sign in or sign up.
   if (outcome !== "scorecard") {
-    await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign up" })).toBeVisible();
+    // The header's buttons and, in the invite-only words, the page's own Sign in: any one of them is a way forward.
+    await expect(
+      page.getByRole("button", { name: "Sign in" }).first(),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Sign up" }).first(),
+    ).toBeVisible();
   }
   const words = (await page.locator("main").innerText())
     .replace(/\s+/g, " ")
@@ -1458,7 +1463,11 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
   // is not a member: `visitorSees` records what they are given, and the checks below are read as a signed-in member.
   const cardPath = `/p/${SLUG}-${founder.pubkey.slice(0, 16)}`;
   const visitorBrowser = await ownBrowserPage(browser);
-  if (INVITE_ONLY) await visitorSees(visitorBrowser, cardPath);
+  // They are told the server is invite-only and who to ask, not only that the project could not be opened.
+  if (INVITE_ONLY)
+    expect(await visitorSees(visitorBrowser, cardPath)).toBe(
+      "invite-only words",
+    );
   const visitor = INVITE_ONLY ? helperPage : visitorBrowser;
   await visitor.goto(cardPath);
   const scorecard = visitor.getByTestId("scorecard");

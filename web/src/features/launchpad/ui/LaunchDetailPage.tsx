@@ -22,6 +22,8 @@ import { ProjectTeamCard, TeamPostUpdate } from "./ProjectTeamCard";
 import { LaunchHero } from "./LaunchHero";
 import { LaunchChoice } from "./LaunchChoice";
 import { LaunchMissing } from "./LaunchMissing";
+import { ProjectLoadError } from "./ProjectLoadError";
+import { isInviteOnlyRefusal } from "../lib/refusal-copy";
 import { restrictionOf } from "@/shared/lib/refusal-text";
 import { Button } from "@/shared/ui/button";
 import { cn } from "@/shared/lib/cn";
@@ -267,6 +269,16 @@ export function LaunchDetailPage({
   // A link that names no author, to an id several people have a project under: the reader picks, nothing is guessed.
   if (!sandbox && !isLoading && !launch && several)
     return <LaunchChoice authors={several} launchId={launchId} />;
+  if (!sandbox && !isLoading && !launch && isInviteOnlyRefusal(readError))
+    return (
+      <div className="mx-auto w-full max-w-5xl px-4 py-8">
+        <ProjectLoadError
+          error={readError}
+          onRetry={() => void refetch()}
+          testId="launch-load-error"
+        />
+      </div>
+    );
   if (isLoading || !launch) {
     return (
       <LaunchMissing
