@@ -15,12 +15,8 @@ import {
   promiseTotals,
   type RecordUpdate,
 } from "./promises.ts";
-import {
-  confirmRule,
-  projectTasks,
-  type TaskRecord,
-  type TaskView,
-} from "./tasks.ts";
+import { confirmRule } from "./task-checks.ts";
+import { projectTasks, type TaskRecord, type TaskView } from "./tasks.ts";
 import {
   daysSince,
   founderNudge,

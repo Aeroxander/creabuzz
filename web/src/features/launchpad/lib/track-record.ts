@@ -5,6 +5,10 @@
  * counts only when a team member of that project who is not the helper signed the confirmation, and the team is read
  * from the project's own record (signed by its founder). The same rules as a project's page (`tasks.ts`) decide it.
  *
+ * A founder working alone may check their own work (the server allows it only while nobody else on the project
+ * could). That work is real and it is listed, but apart (`doneAlone`): it is never counted as accepted, never adds a
+ * project or a person to the totals, and says in words that nobody else checked it.
+ *
  * As a founder: the updates they posted on their own projects, and what came of the promises those updates made.
  *
  * There is no score here and nobody is compared with anybody. Anyone can start a project and confirm a friend's work
@@ -46,6 +50,11 @@ export interface AcceptedWork {
 export interface HelperRecord {
   /** Work accepted, newest confirmation first. Several tasks from one offer are one entry. */
   accepted: AcceptedWork[];
+  /**
+   * Work the person did on a project of their own and checked themself, with nobody else there to check it, newest
+   * first. Never part of `accepted`, `projects` or `confirmers`.
+   */
+  doneAlone: AcceptedWork[];
   /** On how many projects, and confirmed by how many different people. */
   projects: number;
   confirmers: number;
@@ -107,6 +116,7 @@ export function helperRecord(input: {
   );
   const out: HelperRecord = {
     accepted: [],
+    doneAlone: [],
     projects: 0,
     confirmers: 0,
     soleConfirmer: [],
@@ -121,6 +131,7 @@ export function helperRecord(input: {
     agent: null,
   };
   const accepted: AcceptedWork[] = [];
+  const alone: AcceptedWork[] = [];
   for (const coordinate of [...coordinates].sort()) {
     const team = teams.get(coordinate);
     const tasks = projectTasks({
@@ -159,7 +170,8 @@ export function helperRecord(input: {
       )
         out.open += 1;
       if (task.state === "confirmed" && task.accepted)
-        accepted.push({
+        // What the founder checked for themself is kept apart from what someone else accepted.
+        (task.selfChecked ? alone : accepted).push({
           taskId: task.id,
           coordinate,
           what: task.what,
@@ -191,11 +203,17 @@ export function helperRecord(input: {
       folded.set(key, clean);
     }
   }
-  out.accepted = [...folded.values()].sort(
-    (a, b) =>
-      Math.min(b.at, now) - Math.min(a.at, now) ||
-      (a.taskId < b.taskId ? -1 : 1),
-  );
+  const newestFirst = (a: AcceptedWork, b: AcceptedWork) =>
+    Math.min(b.at, now) - Math.min(a.at, now) || (a.taskId < b.taskId ? -1 : 1);
+  out.accepted = [...folded.values()].sort(newestFirst);
+  out.doneAlone = alone
+    .map((work) => {
+      const { offerId: _, ...clean } = work as AcceptedWork & {
+        offerId?: string;
+      };
+      return clean;
+    })
+    .sort(newestFirst);
   out.projects = new Set(out.accepted.map((w) => w.coordinate)).size;
   out.confirmers = new Set(out.accepted.map((w) => w.confirmedBy)).size;
   const byProject = new Map<string, AcceptedWork[]>();
@@ -278,6 +296,20 @@ export function acceptedLine(
   const base = `${count(n, "piece", "pieces")} of work accepted`;
   if (n === 0) return base;
   return `${base}, on ${count(record.projects, "project", "projects")}, confirmed by ${count(record.confirmers, "person", "people")}`;
+}
+
+/**
+ * "2 pieces of work done alone on their own project, checked by themself", or null with none. Said beside, never
+ * inside, what other people accepted.
+ */
+export function doneAloneLine(
+  record: Pick<HelperRecord, "doneAlone">,
+): string | null {
+  const n = record.doneAlone.length;
+  if (n === 0) return null;
+  const projects = new Set(record.doneAlone.map((work) => work.coordinate))
+    .size;
+  return `${count(n, "piece", "pieces")} of work done alone on their own ${projects === 1 ? "project" : "projects"}, checked by themself`;
 }
 
 /** "2 pieces of work accepted" for one project's own record. */

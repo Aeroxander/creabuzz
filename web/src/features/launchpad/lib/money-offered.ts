@@ -33,11 +33,24 @@ export function moneyOffered(env: ChainEnv | undefined = viteEnv()): boolean {
 /**
  * Whether a project's next steps offer "Set up Shares for people who help". Shares thank people whose work was
  * accepted, so the offer waits for the first piece of accepted work, and it is never made where the build has no kit to
- * set them up with. `acceptedWork` is how many of the project's tasks were confirmed; null while that is still read.
+ * set them up with. `acceptedWork` is how many of the project's tasks someone other than the person who did the work
+ * accepted (`acceptedByOthers`); null while that is still read. Work a founder did alone and checked themself is
+ * never in that number: {@link sharesAcceptedWork} is the one way to count it.
  */
 export function sharesSetupOffered(input: {
   kitNamed: boolean;
   acceptedWork: number | null;
 }): boolean {
   return input.kitNamed && (input.acceptedWork ?? 0) >= 1;
+}
+
+/**
+ * How many of a project's tasks count toward setting up Shares: the confirmed ones that someone other than the
+ * person who did the work accepted. A founder's own check of their own work (`selfChecked`) never counts.
+ */
+export function sharesAcceptedWork(
+  tasks: readonly { state: string; selfChecked: boolean }[],
+): number {
+  return tasks.filter((task) => task.state === "confirmed" && !task.selfChecked)
+    .length;
 }

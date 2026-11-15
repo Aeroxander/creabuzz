@@ -116,6 +116,8 @@ interface WorkItem extends ItemBase {
   taskId: string;
   what: string;
   helper: string;
+  /** Only the project's founder checked it, and it was their own work (or their agent's): not accepted by anyone else. */
+  selfChecked: boolean;
 }
 
 export type FeedItem = UpdateItem | GoalItem | WorkItem | StartedItem;
@@ -251,6 +253,7 @@ export function feedItems(input: {
         taskId: task.id,
         what: task.what,
         helper: task.helper,
+        selfChecked: task.selfChecked,
       });
     }
   }
@@ -281,7 +284,7 @@ export function itemLabel(item: FeedItem): string {
           ? "Goal missed"
           : "Goal changed";
     case "work":
-      return "Work accepted";
+      return item.selfChecked ? "Work done alone" : "Work accepted";
     case "started":
       return "Just started";
     case "update":

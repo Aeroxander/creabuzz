@@ -100,7 +100,13 @@ test("the two shared addresses name a project, and nothing else does", () => {
 
 test("each read names one project and stays inside what the server answers", () => {
   const scorecard = projectAtAddress("/p/nebula-ffffffffffffffff", "");
+  // A scorecard address carries the start of the founder's account id: the read names it, so other people's projects
+  // under the same id cannot crowd the one the address means out of the answer.
   assert.deepEqual(recordFilters(scorecard), [
+    { kinds: [37001], "#d": ["nebula"], founder_start: "ffffffffffffffff" },
+  ]);
+  // A project page address with no founder in it has nothing to name.
+  assert.deepEqual(recordFilters(projectAtAddress("/launchpad/nebula", "")), [
     { kinds: [37001], "#d": ["nebula"] },
   ]);
   assert.deepEqual(
@@ -286,10 +292,65 @@ test("the record shows the goal, the run of weeks, the promises kept and missed,
   assert.equal(view.latest.title, "Week 2");
   assert.equal(view.latest.at, NOW - DAY);
   assert.equal(view.accepted, 1);
+  assert.equal(view.doneAlone, 0);
   assert.deepEqual(view.work, [
-    { id: w.task.id, what: "Check the star names", acceptedAt: NOW - 3 * DAY },
+    {
+      id: w.task.id,
+      what: "Check the star names",
+      acceptedAt: NOW - 3 * DAY,
+      selfChecked: false,
+    },
   ]);
   assert.equal(view.complete, true);
+});
+
+test("work the founder did alone and checked themself is counted apart from work someone else accepted", () => {
+  const w = world();
+  const own = about(
+    FOUNDER,
+    taskEvent({
+      helper: FOUNDER,
+      what: "Draw the legend",
+      done: "The legend is on every map",
+      size: "small",
+    }),
+    NOW - 2 * DAY,
+  );
+  const handed = about(
+    FOUNDER,
+    taskStepEvent({
+      part: "evidence",
+      taskId: own.id,
+      tell: [],
+      note: "On all twelve",
+    }),
+    NOW - 2 * DAY,
+  );
+  const checked = about(
+    FOUNDER,
+    taskStepEvent({
+      part: "confirm",
+      taskId: own.id,
+      tell: [],
+      evidenceId: handed.id,
+    }),
+    NOW - 2 * DAY,
+  );
+  const view = publicRecordView({
+    ...w,
+    teamEvents: [...w.teamEvents, own, handed, checked],
+    now: NOW,
+  });
+  // The accepted number does not move; the founder's own piece has its own.
+  assert.equal(view.accepted, 1);
+  assert.equal(view.doneAlone, 1);
+  assert.deepEqual(
+    view.work.map((piece) => [piece.what, piece.selfChecked]),
+    [
+      ["Draw the legend", true],
+      ["Check the star names", false],
+    ],
+  );
 });
 
 test("a project with no goal shows its one-liner, and one with nothing yet says nothing it does not know", () => {
@@ -407,4 +468,66 @@ test("an update dated in the future is not the latest update", () => {
     now: NOW,
   });
   assert.equal(view.latest.title, "Week 2");
+});
+
+test("the record reads the same from what the server gives someone who is not a member: the steps of accepted work alone", () => {
+  const w = world();
+  // To a member the server also gives the helper's yes, a task nobody has finished, and work still waiting for the
+  // team's word. To anyone else it gives only the task, the work handed in and the confirmation of accepted work.
+  const open = about(
+    MATE,
+    taskEvent({
+      helper: HELPER,
+      what: "Draw the legend",
+      done: "The legend is on every map",
+      size: "small",
+    }),
+    NOW - 2 * DAY,
+  );
+  const waiting = about(
+    HELPER,
+    taskStepEvent({
+      part: "evidence",
+      taskId: open.id,
+      tell: [MATE],
+      note: "A first try",
+    }),
+    NOW - DAY,
+  );
+  const forMembers = publicRecordView({
+    record: w.record,
+    teamEvents: [...w.teamEvents, open],
+    helperEvents: [...w.helperEvents, waiting],
+    now: NOW,
+  });
+  const served = w.helperEvents.filter((event) =>
+    event.tags.some((tag) => tag[0] === "task-part" && tag[1] === "evidence"),
+  );
+  assert.equal(
+    served.length,
+    1,
+    "the accepted piece, without the helper's yes",
+  );
+  const forAnyone = publicRecordView({
+    record: w.record,
+    teamEvents: w.teamEvents,
+    helperEvents: served,
+    now: NOW,
+  });
+  assert.equal(forAnyone.accepted, 1);
+  assert.deepEqual(
+    forAnyone.work.map((piece) => piece.what),
+    ["Check the star names"],
+  );
+  for (const key of [
+    "accepted",
+    "work",
+    "promises",
+    "streak",
+    "answered",
+    "latest",
+    "goal",
+    "complete",
+  ])
+    assert.deepEqual(forAnyone[key], forMembers[key], key);
 });

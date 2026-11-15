@@ -26,7 +26,12 @@
  * - a record only counts when the right party signed it (the team, or the helper the task names);
  * - nothing is ordered by the time a record carries, because its signer picks that time. A send-back or a
  *   confirmation names the exact piece of evidence it answers, so "which came first" never has to be guessed;
- * - the person who did the work can never confirm it, and neither can an agent or the person who runs the helper;
+ * - the person who did the work can never confirm it, and neither can an agent or the person who runs the helper.
+ *   The one exception is a founder working alone: the server lets a project's founder check their own work (or
+ *   the work of an agent they run) while nobody else on the project could. Such a check is a real end to the task,
+ *   and it is never passed off as someone else's: the task says `selfChecked`, and every page words and counts it
+ *   apart from work accepted by someone else. Whether the founder really was alone is the server's to hold when
+ *   the check is written; a reader takes any such check by the founder and labels it;
  * - answers that disagree (one team member confirmed what another sent back) are both shown, and the work is not
  *   counted as accepted;
  * - nobody is on a task they did not agree to: a task counts as agreed only when the helper signed a step for that
@@ -445,7 +450,7 @@ export type TaskState =
   | "given-up"
   | "cancelled";
 
-export const TASK_STATE_LABEL: Record<TaskState, string> = {
+const TASK_STATE_LABEL: Record<TaskState, string> = {
   offered: "Waiting for a yes",
   "in-progress": "In progress",
   submitted: "Waiting for a check",
@@ -455,11 +460,29 @@ export const TASK_STATE_LABEL: Record<TaskState, string> = {
   cancelled: "Cancelled",
 };
 
+/** How a task that only its own founder checked is worded, wherever its state is shown. */
+export const SELF_CHECKED_LABEL =
+  "Done — checked by the founder, working alone";
+
+/** A task's state in words. Work only the founder checked for themself is never called "accepted". */
+export function taskStateLabel(
+  task: Pick<TaskView, "state" | "selfChecked">,
+): string {
+  return task.selfChecked ? SELF_CHECKED_LABEL : TASK_STATE_LABEL[task.state];
+}
+
+/** The founder a project coordinate names (`37001:<founder>:<id>`). */
+export function founderOfCoordinate(coordinate: string): string {
+  return coordinate.split(":")[1] ?? "";
+}
+
 interface Answer {
   id: string;
   by: string;
   at: number;
   note: string;
+  /** A confirmation only: the founder checking their own work, or the work of an agent they run. */
+  self?: true;
 }
 
 /** A send-back or a confirmation signed by someone who is not on the project's team now: shown, never counted. */
@@ -530,6 +553,11 @@ export interface TaskView {
   evidence: TaskEvidence[];
   /** The piece that was accepted, when the task is confirmed. */
   accepted: (TaskEvidence & { by: string; confirmedAt: number }) | null;
+  /**
+   * The task is confirmed, and only by its project's founder checking their own work (or their own agent's): done,
+   * and not work accepted by someone else. False for every other task, confirmed or not.
+   */
+  selfChecked: boolean;
   /** The pieces nobody on the team has answered. Each is checked on its own. */
   waiting: TaskEvidence[];
   /** The team sent back work that is no longer on the server. They still count as sent back. */
@@ -538,7 +566,10 @@ export interface TaskView {
   confirmedWithoutEvidence: boolean;
   /** One team member confirmed a piece that another sent back: both stand, and the work is not counted. */
   disagreement: boolean;
-  /** A confirmation was signed by someone who may not confirm (the helper, an agent, or whoever runs the helper). */
+  /**
+   * A confirmation was signed by someone who may not confirm (the helper, an agent, or whoever runs the helper),
+   * other than the project's founder checking their own work.
+   */
   ignoredConfirmation: boolean;
   /**
    * The team recorded steps that only follow a helper's step (a send-back, a confirmation, more time given), and no
@@ -610,6 +641,7 @@ export function projectTasks(input: {
     const madeByTeam = team.has(task.author);
     if (!madeByTeam && !input.outsideTasks) continue;
     const helper = task.helper;
+    const founder = founderOfCoordinate(coordinate);
     const mine = steps.get(task.id) ?? [];
     const fromHelper = mine.filter((step) => step.author === helper);
     // The team's word on the helper's work comes from someone else on the team.
@@ -673,19 +705,25 @@ export function projectTasks(input: {
         continue;
       }
       // Nobody grades their own work: not the helper, not whoever runs the helper, and not an agent.
-      if (
-        step.author === helper ||
-        owners.has(step.author) ||
-        step.agent !== null
-      ) {
+      const own = step.author === helper || owners.has(step.author);
+      // Except the founder with nobody else to ask, which the server holds when the check is written. It is
+      // kept, and marked as their own check.
+      const self = own && step.author === founder && onTeam;
+      if (step.agent !== null || (own && !self)) {
         ignoredConfirmation = true;
         continue;
       }
-      if (piece) piece.confirmed.push(answer(step));
+      if (piece)
+        piece.confirmed.push(
+          self ? { ...answer(step), self: true } : answer(step),
+        );
       else confirmedWithoutEvidence = true;
     }
+    // Someone else's check comes before the founder's own, so it is the one a piece is said to be accepted by.
+    const othersFirst = (a: Answer, b: Answer) =>
+      Number(a.self ?? false) - Number(b.self ?? false) || byId(a, b);
     for (const piece of pieces.values()) {
-      piece.confirmed.sort(byId);
+      piece.confirmed.sort(othersFirst);
       piece.sentBack.sort(byId);
       piece.outside.sort(byId);
     }
@@ -746,9 +784,13 @@ export function projectTasks(input: {
               ? "step"
               : null;
 
-    const good = evidence.find(
-      (piece) => piece.confirmed.length > 0 && piece.sentBack.length === 0,
-    );
+    const stands = (piece: TaskEvidence) =>
+      piece.confirmed.length > 0 && piece.sentBack.length === 0;
+    // A piece someone else accepted stands for the task before one only the founder checked for themself.
+    const good =
+      evidence.find(
+        (piece) => stands(piece) && piece.confirmed.some((c) => !c.self),
+      ) ?? evidence.find(stands);
     const disagreement = evidence.some(
       (piece) => piece.confirmed.length > 0 && piece.sentBack.length > 0,
     );
@@ -797,6 +839,7 @@ export function projectTasks(input: {
             confirmedAt: good.confirmed[0].at,
           }
         : null,
+      selfChecked: good ? good.confirmed.every((c) => c.self) : false,
       waiting: good ? [] : waiting,
       orphanSendBacks,
       confirmedWithoutEvidence: !good && confirmedWithoutEvidence,
@@ -874,36 +917,6 @@ export function acceptedTasks(
           orderTime(a.accepted?.confirmedAt ?? 0, now) ||
         (a.id < b.id ? -1 : 1),
     );
-}
-
-export type ConfirmRule =
-  | { may: true }
-  | {
-      may: false;
-      /**
-       * `helper`: the viewer did the work. `runs-helper`: the viewer runs the agent that did it. `not-team`: the
-       * viewer is not on the project's team. `signed-out`: nobody is signed in.
-       */
-      why: "helper" | "runs-helper" | "not-team" | "signed-out";
-      /** Whether anyone on the team could confirm this task. False: the project needs another team member first. */
-      someoneCan: boolean;
-    };
-
-/** Whether `viewer` may confirm work on `task`, and if not, whether anyone can. */
-export function confirmRule(
-  task: Pick<TaskView, "helper" | "helperAgent">,
-  team: ReadonlySet<string>,
-  viewer: string | null,
-): ConfirmRule {
-  const owner = task.helperAgent?.owner ?? null;
-  const someoneCan = [...team].some(
-    (member) => member !== task.helper && member !== owner,
-  );
-  if (!viewer) return { may: false, why: "signed-out", someoneCan };
-  if (viewer === task.helper) return { may: false, why: "helper", someoneCan };
-  if (!team.has(viewer)) return { may: false, why: "not-team", someoneCan };
-  if (viewer === owner) return { may: false, why: "runs-helper", someoneCan };
-  return { may: true };
 }
 
 /** "Due 3 Dec 2026", "Late: was due 3 Dec 2026", or null when no date was set. */

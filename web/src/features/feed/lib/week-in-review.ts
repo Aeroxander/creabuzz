@@ -52,7 +52,8 @@ export function weekInReview(input: {
       counts.updates += 1;
       counts.kept += item.answers.kept;
       counts.missed += item.answers.missed;
-    } else if (item.kind === "work") {
+    } else if (item.kind === "work" && !item.selfChecked) {
+      // Work accepted by someone else. What a founder checked for themself is on their project's own record.
       counts.work += 1;
     }
   }

@@ -61,7 +61,9 @@ function stepsOf(
   const checked: WorkStep = task.accepted
     ? {
         id: "checked",
-        label: "Work accepted",
+        label: task.selfChecked
+          ? "Done, checked by you alone"
+          : "Work accepted",
         at: clamp(task.accepted.confirmedAt),
         done: true,
       }

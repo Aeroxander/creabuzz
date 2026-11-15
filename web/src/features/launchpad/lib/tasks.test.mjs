@@ -7,8 +7,14 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
 import { buildLaunches } from "../models.ts";
 import {
-  acceptedTasks,
+  acceptedByOthers,
   confirmRule,
+  doneAlone,
+  doneAloneLine,
+  founderWorksAlone,
+} from "./task-checks.ts";
+import {
+  acceptedTasks,
   dueLine,
   isTaskRecordTags,
   mayViewTask,
@@ -17,9 +23,11 @@ import {
   projectTasks,
   readLinks,
   REWARDS_LINE,
+  SELF_CHECKED_LABEL,
   TASK_LABEL,
   taskEvent,
   taskProblem,
+  taskStateLabel,
   taskStepEvent,
   validDate,
   validLink,
@@ -390,7 +398,7 @@ test("the person who did the work can never confirm it", () => {
   );
 });
 
-test("when the founder is the helper, another team member must confirm", () => {
+test("when the founder is the helper, their own check is kept as their own, and another team member's is what accepts it", () => {
   const task = make(FOUNDER, { helper: FOUNDER });
   const work = signed(
     FOUNDER,
@@ -404,16 +412,76 @@ test("when the founder is the helper, another team member must confirm", () => {
   const self = step(FOUNDER, task, "confirm", { evidenceId: work.id });
   // Their own task needs no yes from them.
   assert.equal(one([task]).agreed, "self");
-  assert.equal(one([task, work, self]).state, "submitted");
-  assert.equal(
-    one([
-      task,
-      work,
-      self,
-      step(MATE, task, "confirm", { evidenceId: work.id }),
-    ]).state,
-    "confirmed",
+  // The founder's own check ends the task, and is never passed off as someone else's.
+  const alone = one([task, work, self]);
+  assert.equal(alone.state, "confirmed");
+  assert.equal(alone.selfChecked, true);
+  assert.equal(alone.ignoredConfirmation, false);
+  assert.equal(alone.accepted.by, FOUNDER);
+  assert.deepEqual(
+    alone.accepted.confirmed.map((c) => [c.by, c.self]),
+    [[FOUNDER, true]],
   );
+  assert.equal(taskStateLabel(alone), SELF_CHECKED_LABEL);
+  assert.equal(
+    SELF_CHECKED_LABEL,
+    "Done — checked by the founder, working alone",
+  );
+  assert.deepEqual(acceptedByOthers([alone]), []);
+  assert.deepEqual(doneAlone([alone]), [alone]);
+  assert.equal(
+    doneAloneLine(2),
+    "2 pieces of work done alone, checked by the founder",
+  );
+  assert.equal(doneAloneLine(0), null);
+  // Once someone else confirms the same piece, it is theirs that counts, whichever record arrives first.
+  const byMate = step(MATE, task, "confirm", { evidenceId: work.id });
+  for (const order of [
+    [task, work, self, byMate],
+    [byMate, self, work, task],
+  ]) {
+    const both = one(order);
+    assert.equal(both.state, "confirmed");
+    assert.equal(both.selfChecked, false);
+    assert.equal(both.accepted.by, MATE);
+    assert.equal(taskStateLabel(both), "Work accepted");
+    assert.deepEqual(acceptedByOthers([both]), [both]);
+    assert.deepEqual(doneAlone([both]), []);
+  }
+  // A piece someone else accepted stands for the task before one only the founder checked.
+  const second = signed(
+    FOUNDER,
+    taskStepEvent({
+      part: "evidence",
+      taskId: task.id,
+      tell: [],
+      note: "Did more.",
+    }),
+  );
+  const mixed = one([
+    task,
+    work,
+    second,
+    self,
+    step(MATE, task, "confirm", { evidenceId: second.id }),
+  ]);
+  assert.equal(mixed.selfChecked, false);
+  assert.equal(mixed.accepted.id, second.id);
+  // A send-back by someone else outweighs the founder's own check: the work is not done.
+  const back = step(MATE, task, "send-back", {
+    evidenceId: work.id,
+    note: "Not live yet.",
+  });
+  const sentBack = one([task, work, self, back]);
+  assert.equal(sentBack.state, "sent-back");
+  assert.equal(sentBack.selfChecked, false);
+  // An agent's signature is never the founder's own check.
+  const asAgent = step(FOUNDER, task, "confirm", { evidenceId: work.id }, NOW, [
+    ["agent", FOUNDER],
+  ]);
+  const refused = one([task, work, asAgent]);
+  assert.equal(refused.state, "submitted");
+  assert.equal(refused.ignoredConfirmation, true);
 
   const view = one([task, work]);
   assert.deepEqual(confirmRule(view, TEAM, FOUNDER), {
@@ -421,15 +489,31 @@ test("when the founder is the helper, another team member must confirm", () => {
     why: "helper",
     someoneCan: true,
   });
-  assert.deepEqual(confirmRule(view, TEAM, MATE), { may: true });
-  // A team of one: nobody can confirm, and the rule says so.
+  assert.deepEqual(confirmRule(view, TEAM, MATE), { may: true, alone: false });
+  // A team of one: the founder checks their own work, and the rule says it is theirs alone.
   const solo = new Set([FOUNDER]);
   assert.deepEqual(confirmRule(view, solo, FOUNDER), {
-    may: false,
-    why: "helper",
-    someoneCan: false,
+    may: true,
+    alone: true,
   });
-  assert.equal(one([task, work, self], { team: solo }).state, "submitted");
+  assert.equal(founderWorksAlone(view, solo), true);
+  assert.equal(founderWorksAlone(view, TEAM), false);
+  // A team whose only other member is an agent account is still one person: an agent never confirms.
+  assert.deepEqual(confirmRule(view, TEAM, FOUNDER, new Set([MATE])), {
+    may: true,
+    alone: true,
+  });
+  // An agent and a person: not alone.
+  assert.deepEqual(
+    confirmRule(
+      view,
+      new Set([FOUNDER, MATE, STRANGER]),
+      FOUNDER,
+      new Set([MATE]),
+    ),
+    { may: false, why: "helper", someoneCan: true },
+  );
+  assert.equal(one([task, work, self], { team: solo }).selfChecked, true);
   assert.deepEqual(confirmRule(view, TEAM, STRANGER), {
     may: false,
     why: "not-team",
@@ -440,6 +524,119 @@ test("when the founder is the helper, another team member must confirm", () => {
     why: "signed-out",
     someoneCan: true,
   });
+});
+
+test("only the founder checks their own work: a team member who is not the founder never does, alone or not", () => {
+  const task = make(FOUNDER, { helper: MATE });
+  const work = signed(
+    MATE,
+    taskStepEvent({
+      part: "evidence",
+      taskId: task.id,
+      tell: [],
+      note: "Did it.",
+    }),
+  );
+  const self = step(MATE, task, "confirm", { evidenceId: work.id });
+  const held = one([task, work, self]);
+  assert.equal(held.state, "submitted");
+  assert.equal(held.selfChecked, false);
+  assert.equal(held.ignoredConfirmation, true);
+  assert.deepEqual(confirmRule(held, TEAM, MATE), {
+    may: false,
+    why: "helper",
+    someoneCan: true,
+  });
+  assert.equal(founderWorksAlone(held, TEAM), false);
+  // The founder checking someone else's work is an ordinary check, not their own.
+  const byFounder = one([
+    task,
+    work,
+    step(FOUNDER, task, "confirm", { evidenceId: work.id }),
+  ]);
+  assert.equal(byFounder.state, "confirmed");
+  assert.equal(byFounder.selfChecked, false);
+  assert.deepEqual(confirmRule(held, TEAM, FOUNDER), {
+    may: true,
+    alone: false,
+  });
+});
+
+test("a founder alone checks the work of an agent they run, and it is marked as their own check", () => {
+  const ownerKey = "7".repeat(64);
+  const owner = bytesToHex(schnorr.getPublicKey(hexToBytes(ownerKey)));
+  const conditions = "kind=47003";
+  const digest = sha256(
+    new TextEncoder().encode(`nostr:agent-auth:${HELPER}:${conditions}`),
+  );
+  const proof = [
+    "auth",
+    owner,
+    conditions,
+    bytesToHex(schnorr.sign(digest, hexToBytes(ownerKey))),
+  ];
+  // The project is the owner's own: its coordinate carries their key.
+  const coordinate = `37001:${owner}:mine`;
+  const task = signed(owner, taskEvent(TASK), NOW - DAY, [], coordinate);
+  const work = signed(
+    HELPER,
+    taskStepEvent({
+      part: "evidence",
+      taskId: task.id,
+      tell: [],
+      note: "Done.",
+    }),
+    NOW,
+    [["agent", HELPER], proof],
+    coordinate,
+  );
+  const check = signed(
+    owner,
+    taskStepEvent({
+      part: "confirm",
+      taskId: task.id,
+      tell: [],
+      evidenceId: work.id,
+    }),
+    NOW,
+    [],
+    coordinate,
+  );
+  const read = (events, team) =>
+    projectTasks({
+      records: events.flatMap((e) => parseTaskRecord(e) ?? []),
+      coordinate,
+      team,
+      now: NOW,
+    })[0];
+  const solo = new Set([owner]);
+  const waiting = read([task, work], solo);
+  assert.deepEqual(confirmRule(waiting, solo, owner), {
+    may: true,
+    alone: true,
+  });
+  // The agent on the team changes nothing: it is the helper, and an agent besides.
+  assert.deepEqual(confirmRule(waiting, new Set([owner, HELPER]), owner), {
+    may: true,
+    alone: true,
+  });
+  // The agent itself is never offered the check; the page says the founder can.
+  assert.deepEqual(confirmRule(waiting, new Set([owner, HELPER]), HELPER), {
+    may: false,
+    why: "helper",
+    someoneCan: false,
+  });
+  // Another person on the team: the founder is told someone else has to.
+  assert.deepEqual(confirmRule(waiting, new Set([owner, MATE]), owner), {
+    may: false,
+    why: "runs-helper",
+    someoneCan: true,
+  });
+  const done = read([task, work, check], solo);
+  assert.equal(done.state, "confirmed");
+  assert.equal(done.selfChecked, true);
+  assert.equal(done.ignoredConfirmation, false);
+  assert.equal(taskStateLabel(done), SELF_CHECKED_LABEL);
 });
 
 test("a team member's own send-back, grant or cancel on their own task does not count", () => {

@@ -4,7 +4,10 @@
  *
  * Some servers let anyone read these records while everything else stays for members. The server decides: it answers
  * only the two reads below, only for a project it would also show in a link preview (listed, not removed, its founder
- * in good standing), and at most `PUBLIC_READ_LIMIT` records each. This file names the project an address is about,
+ * in good standing), and at most `PUBLIC_READ_LIMIT` records each. Of the records about a project it gives only the
+ * founder's goals and promises, the team's updates, and the three steps of work that was accepted (the task, the work
+ * handed in, the confirmation). Work still waiting or sent back, offers of help and everything else stay for members,
+ * so nothing here can be worked out from them. This file names the project an address is about,
  * builds those reads, and works out what the page may state from what came back. A number whose read hit the limit is
  * null and the page leaves it out; nothing here guesses.
  *
@@ -32,6 +35,7 @@ import {
   type PromiseTotals,
 } from "./promises.ts";
 import { parseScorecardSlug } from "./share.ts";
+import { acceptedByOthers, doneAlone } from "./task-checks.ts";
 import {
   isTaskRecordTags,
   parseTaskRecord,
@@ -64,6 +68,8 @@ interface PublicEvent {
 export interface PublicFilter {
   kinds: number[];
   authors?: string[];
+  /** The start of the founder's account id, as a scorecard address carries it: the server looks for that founder alone. */
+  founder_start?: string;
   limit?: number;
   [tag: `#${string}`]: string[] | undefined;
 }
@@ -113,13 +119,21 @@ export function projectAtAddress(
   return null;
 }
 
-/** The read for the project's own record. */
+/**
+ * The read for the project's own record. It names the founder whenever the address does (the whole account id, or
+ * its start): anyone on the server's list can start a project under an id that is taken, and a read by id alone
+ * could be answered with their projects and not the one the address means.
+ */
 export function recordFilters(address: PublicAddress): PublicFilter[] {
   return [
     {
       kinds: [KIND_LAUNCH_RECORD],
       "#d": [address.id],
-      ...(address.author ? { authors: [address.author] } : {}),
+      ...(address.author
+        ? { authors: [address.author] }
+        : address.founderStart
+          ? { founder_start: address.founderStart }
+          : {}),
     },
   ];
 }
@@ -215,10 +229,17 @@ export interface PublicRecordView {
   promises: PromiseTotals | null;
   /** The newest answered promises, newest answer first. */
   answered: PromiseEntry[];
-  /** How many pieces of work were accepted; null when that cannot be said. */
+  /** How many pieces of work someone other than the person who did them accepted; null when that cannot be said. */
   accepted: number | null;
-  /** The newest accepted pieces: what was asked for and when it was accepted. */
-  work: Array<{ id: string; what: string; acceptedAt: number }>;
+  /** How many pieces the founder did alone and checked themself: counted apart; null when that cannot be said. */
+  doneAlone: number | null;
+  /** The newest finished pieces: what was asked for, when, and whether only the founder checked their own work. */
+  work: Array<{
+    id: string;
+    what: string;
+    acceptedAt: number;
+    selfChecked: boolean;
+  }>;
   /** The team's newest update, or null when there is none. */
   latest: { title: string; body: string; at: number } | null;
   /** Every number above rests on a read that reached its end. */
@@ -329,13 +350,13 @@ export function publicRecordView(input: {
           (a.id < b.id ? -1 : 1),
       )
       .slice(0, PROMISES_SHOWN),
-    accepted: state.tasksKnown
-      ? state.tasks.filter((task) => task.state === "confirmed").length
-      : null,
+    accepted: state.tasksKnown ? acceptedByOthers(state.tasks).length : null,
+    doneAlone: state.tasksKnown ? doneAlone(state.tasks).length : null,
     work: accepted.slice(0, WORK_SHOWN).map((task) => ({
       id: task.id,
       what: task.what,
       acceptedAt: task.accepted?.confirmedAt ?? 0,
+      selfChecked: task.selfChecked,
     })),
     latest: latest
       ? {

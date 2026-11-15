@@ -5,6 +5,7 @@ import { parseLaunchUpdate } from "../models.ts";
 import { parseTaskRecord, taskEvent, taskStepEvent } from "./tasks.ts";
 import {
   acceptedLine,
+  doneAloneLine,
   confirmedByLine,
   tieLine,
   founderRecord,
@@ -438,4 +439,84 @@ test("the headline lets a reader judge: projects, confirmers, ties to the projec
   });
   assert.deepEqual(mixed.soleConfirmer, []);
   assert.equal(mixed.confirmers, 2);
+});
+
+test("work a founder did alone and checked themself is listed apart, and never counted as accepted", () => {
+  const SOLO = `37001:${HELPER}:own`;
+  const teams = new Map([...TEAMS, [SOLO, new Set([HELPER])]]);
+  const own = (what) => {
+    const t = task(HELPER, SOLO, { what });
+    const work = step(
+      HELPER,
+      t,
+      "evidence",
+      { note: "Did it." },
+      NOW - DAY,
+      SOLO,
+    );
+    const check = step(
+      HELPER,
+      t,
+      "confirm",
+      { evidenceId: work.id },
+      NOW - DAY,
+      SOLO,
+    );
+    return [t, work, check];
+  };
+  const alone = record([...own("Write the plan."), ...own("Ship it.")], {
+    teams,
+  });
+  // Two finished pieces, neither accepted by anyone: no accepted work, no project, no confirmer, no "one person
+  // confirmed all" line, since nobody else confirmed anything.
+  assert.equal(alone.accepted.length, 0);
+  assert.equal(alone.projects, 0);
+  assert.equal(alone.confirmers, 0);
+  assert.deepEqual(alone.soleConfirmer, []);
+  assert.deepEqual(alone.doneAlone.map((w) => w.what).sort(), [
+    "Ship it.",
+    "Write the plan.",
+  ]);
+  assert.equal(alone.open, 0);
+  assert.equal(acceptedLine(alone), "0 pieces of work accepted");
+  assert.equal(
+    doneAloneLine(alone),
+    "2 pieces of work done alone on their own project, checked by themself",
+  );
+  assert.equal(doneAloneLine(record([])), null);
+
+  // Beside work someone else accepted, each is counted on its own side.
+  const t = task();
+  const work = step(HELPER, t, "evidence", {
+    links: ["https://example.org/a"],
+  });
+  const mixed = record(
+    [
+      ...own("Write the plan."),
+      t,
+      work,
+      step(MATE, t, "confirm", { evidenceId: work.id }),
+    ],
+    { teams },
+  );
+  assert.equal(
+    acceptedLine(mixed),
+    "1 piece of work accepted, on 1 project, confirmed by 1 person",
+  );
+  assert.equal(mixed.accepted[0].confirmedBy, MATE);
+  assert.equal(
+    doneAloneLine(mixed),
+    "1 piece of work done alone on their own project, checked by themself",
+  );
+
+  // A helper who is not the project's founder gains nothing by confirming their own work.
+  const notFounder = task();
+  const theirs = step(HELPER, notFounder, "evidence", { note: "Did it." });
+  const forged = record([
+    notFounder,
+    theirs,
+    step(HELPER, notFounder, "confirm", { evidenceId: theirs.id }),
+  ]);
+  assert.equal(forged.accepted.length, 0);
+  assert.equal(forged.doneAlone.length, 0);
 });

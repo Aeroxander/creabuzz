@@ -61,3 +61,71 @@ test("Shares are offered from the first piece of accepted work, never on a proje
   assert.equal(sharesSetupOffered({ kitNamed: true, acceptedWork: 4 }), true);
   assert.equal(sharesSetupOffered({ kitNamed: false, acceptedWork: 4 }), false);
 });
+
+test("work a founder did alone and checked themself never unlocks Shares; work someone else accepted does", async () => {
+  const { parseTaskRecord, projectTasks, taskEvent, taskStepEvent } =
+    await import("./tasks.ts");
+  const { sharesAcceptedWork } = await import("./money-offered.ts");
+  const FOUNDER = "f".repeat(64);
+  const MATE = "c".repeat(64);
+  const COORD = `37001:${FOUNDER}:demo`;
+  let n = 0;
+  const signed = (pubkey, built) => {
+    n += 1;
+    return {
+      id: n.toString(16).padStart(64, "0"),
+      pubkey,
+      created_at: 1_794_000_000,
+      kind: 47003,
+      tags: [["a", COORD], ...built.tags],
+      content: JSON.stringify(built.content),
+      sig: "sig",
+    };
+  };
+  const step = (who, task, part, over = {}) =>
+    signed(who, taskStepEvent({ part, taskId: task.id, tell: [], ...over }));
+  const task = signed(
+    FOUNDER,
+    taskEvent({
+      helper: FOUNDER,
+      what: "Write the changelog.",
+      done: "A changelog page is live.",
+      size: "small",
+    }),
+  );
+  const work = step(FOUNDER, task, "evidence", { note: "It is live." });
+  const own = step(FOUNDER, task, "confirm", { evidenceId: work.id });
+  const read = (events, team) =>
+    projectTasks({
+      records: events.flatMap((e) => parseTaskRecord(e) ?? []),
+      coordinate: COORD,
+      team: new Set(team),
+      now: 1_794_312_000,
+    });
+  // Done, by the founder's own check: a finished task, and still not one that counts toward Shares.
+  const alone = read([task, work, own], [FOUNDER]);
+  assert.equal(alone[0].state, "confirmed");
+  assert.equal(sharesAcceptedWork(alone), 0);
+  assert.equal(
+    sharesSetupOffered({
+      kitNamed: true,
+      acceptedWork: sharesAcceptedWork(alone),
+    }),
+    false,
+  );
+  // However many of them there are.
+  assert.equal(sharesAcceptedWork([...alone, ...alone, ...alone]), 0);
+  // The same work, accepted by someone else on the team: now it counts.
+  const accepted = read(
+    [task, work, own, step(MATE, task, "confirm", { evidenceId: work.id })],
+    [FOUNDER, MATE],
+  );
+  assert.equal(sharesAcceptedWork(accepted), 1);
+  assert.equal(
+    sharesSetupOffered({
+      kitNamed: true,
+      acceptedWork: sharesAcceptedWork(accepted),
+    }),
+    true,
+  );
+});
