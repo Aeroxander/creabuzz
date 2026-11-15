@@ -499,7 +499,7 @@ test("when an agent is on the team, a line says who answers for it; with no agen
   await expect(second.getByTestId("agent-work-note")).toHaveCount(0);
 });
 
-test("an AI project's founder gets the commands for an agent to post updates; nobody else does", async ({
+test("an AI project's founder gets the commands for an agent to post updates, closed until opened; nobody else does", async ({
   page,
   context,
 }) => {
@@ -516,7 +516,20 @@ test("an AI project's founder gets the commands for an agent to post updates; no
   await expect(card).toContainText(
     "Evidence can be a link, a file or a run result.",
   );
+  // The command text is not on the page until someone asks for it: a closed disclosure, named in plain words.
   const commands = card.getByTestId("agent-post-commands");
+  const toggle = card.getByRole("button", { name: "For agents: the commands" });
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(commands).toBeHidden();
+  await expect(card.getByTestId("agent-post-copy")).toBeHidden();
+  // From the keyboard: Enter opens it, and the button says so to a screen reader and names what it opened.
+  await toggle.focus();
+  await page.keyboard.press("Enter");
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  expect(await toggle.getAttribute("aria-controls")).toBe(
+    await card.getByTestId("agent-post-details").getAttribute("id"),
+  );
+  await expect(commands).toBeVisible();
   await expect(commands).toContainText(
     `buzz launchpad updates facts nebula --author ${FOUNDER}`,
   );
