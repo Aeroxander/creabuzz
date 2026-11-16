@@ -199,7 +199,7 @@ contract Launcher {
     /// @param poolHook The hook of the sale's pool, which must be a guard that names `strategy` as its only creator.
     function openSale(bytes32 projectId, address strategy, address poolHook) external view {
         if (_projects[keyOf(msg.sender, projectId)].shares == address(0)) revert UnknownProject();
-        if (strategy == address(0) || poolHook == address(0) || poolHook.code.length == 0) revert NoPoolGuard();
+        if (strategy == address(0) || poolHook.code.length == 0) revert NoPoolGuard(); // no hook, or no contract there
         try IPoolGuard(poolHook).authorized() returns (address creator) {
             if (creator != strategy) revert NoPoolGuard();
         } catch {

@@ -16,10 +16,28 @@ scripts/check-fork-degrades.sh   # checks the fork suites skip or move, not fail
 forge fmt --check src test
 ```
 
-Layout: `src/` is the new code (`FixedFeeController`, `MinBid`, `PoolGuard`, `HookSalt`); `test/helpers/` builds the
-Uniswap stack (local twin or Sepolia fork) and a sale; `test/*.t.sol` are the milestone's tests; `test/mocks/` holds
-a stand-in treasury and a plain token. Test compiles are slow (via-IR): `Deployer.sol` exists so each test file does
+Layout: `src/` is the new code: milestone 1 (`FixedFeeController`, `MinBid`, `PoolGuard`, `HookSalt`) and milestone 2
+(`ShareToken`, `Vester`, `Treasury`, `Launcher`, `RollingCap`, `Interfaces`); `test/helpers/` builds the Uniswap stack
+(local twin or Sepolia fork) and a sale, and holds the milestone 2 base contract and invariant handler; `test/*.t.sol`
+are the tests; `test/mocks/` holds a stand-in treasury, plain tokens, a dollar token that can misbehave and a call-back
+attacker. Test compiles are slow (via-IR): `Deployer.sol` exists so each test file does
 not recompile the whole Uniswap stack.
+
+## Milestone 2: Shares, Treasury, Vester, Launcher
+
+Milestone 2 files are first-party and need no Uniswap code, so they build with the repo's production compiler (solc
+0.8.37, optimizer 200 runs, see the last restriction in `foundry.toml`) while the milestone 1 files and everything vendored
+stay on 0.8.26. The two never share a compile unit; the Launcher reaches the pool guard through a one-function interface.
+Report: `docs/next-version/M2-REPORT.md`.
+
+```bash
+forge test --no-match-path 'test/{Attacks,ForkFacts,ForkPick,Measure,Pieces,Route,UniversalRouter}.t.sol'   # milestone 2 only
+forge test --match-contract TreasuryInvariantsTest      # the three written rules, 256 runs of depth 200
+forge test --match-path test/Gas.t.sol -vv              # gas, printed
+```
+
+`block.timestamp` cannot be read after `vm.warp` in the same test (the optimizer reuses the first value); the tests use
+`vm.getBlockTimestamp()` through `_now()`.
 
 ## Running the Sepolia fork suites elsewhere
 
