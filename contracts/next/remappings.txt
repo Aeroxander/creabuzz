@@ -10,3 +10,4 @@ v4-periphery/=lib/continuous-clearing-auction/lib/liquidity-launcher/lib/v4-peri
 @uniswap/v4-periphery/=lib/continuous-clearing-auction/lib/liquidity-launcher/lib/v4-periphery/
 solmate/=lib/continuous-clearing-auction/lib/liquidity-launcher/lib/v4-core/lib/solmate/
 permit2/=lib/continuous-clearing-auction/lib/permit2/
+oz5/=lib/openzeppelin-contracts/contracts/

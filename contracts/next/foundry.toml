@@ -1,6 +1,8 @@
-# Milestone 1 of docs/NEXT-VERSION-PLAN.md: a separate Foundry project, so the existing contracts build in
-# ../foundry.toml (and the bytecode pinned in the desktop app) is untouched. Everything here compiles with the
-# solc the vendored Uniswap code is pinned to (=0.8.26); the production contracts will use the repo's own pin later.
+# Milestones 1 and 2 of docs/NEXT-VERSION-PLAN.md: a separate Foundry project, so the existing contracts build in
+# ../foundry.toml (and the bytecode pinned in the desktop app) is untouched. Milestone 1 files (and everything vendored)
+# compile with the solc the vendored Uniswap code is pinned to (=0.8.26). Milestone 2 files (ShareToken, Vester,
+# Treasury, Launcher, RollingCap) are first-party and use the repo's production pin (=0.8.37) with the optimizer at 200
+# runs, like ../foundry.toml; see the restriction at the bottom of the list below.
 [profile.default]
 src = "src"
 test = "test"
@@ -31,8 +33,18 @@ compilation_restrictions = [
   { paths = "lib/continuous-clearing-auction/lib/solady/**", version = "=0.8.26" },
   { paths = "lib/continuous-clearing-auction/lib/openzeppelin-contracts/**", version = "=0.8.26" },
   { paths = "lib/continuous-clearing-auction/lib/blocknumberish/**", version = "=0.8.26" },
-  { paths = "lib/forge-std/**", version = "=0.8.26" },
+  # First-party milestone 2 code: the repo's production compiler and optimizer setting. The OpenZeppelin copy used
+  # here is the repo's own (lib/openzeppelin-contracts, not the older one nested under the auction).
+  { paths = "src/{ShareToken,Vester,Treasury,Launcher,RollingCap}.sol", version = "=0.8.37", optimizer_runs = 200 },
+  { paths = "lib/openzeppelin-contracts/**", version = "=0.8.37", optimizer_runs = 200 },
 ]
+additional_compiler_profiles = [{ name = "own", optimizer_runs = 200 }]
+
+[invariant]
+runs = 256
+depth = 100
+fail_on_revert = false
+show_metrics = false
 
 [fmt]
 line_length = 120
