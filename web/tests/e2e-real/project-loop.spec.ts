@@ -8,7 +8,8 @@ import { decrypt as nip49Decrypt } from "nostr-tools/nip49";
 
 import {
   ACCEPT_PATH_BUDGET,
-  JOIN_PATH_BUDGET,
+  JOIN_PATH_HOSTED_BUDGET,
+  JOIN_PATH_SIGNED_OUT_BUDGET,
   PressCounter,
 } from "../helpers/press-counter";
 import {
@@ -2180,7 +2181,7 @@ test("11. a founder with nobody else: signs up, starts a project, does a task al
   );
 });
 
-test("12. a stranger opens the project's link and asks to join in two presses and no typing; the server lets them do nothing else; the founder accepts in one press", async ({
+test("12. a stranger opens the project's link and asks to join in two presses and the name typed, the sign-up counted; the server lets them do nothing else; the founder accepts in one press", async ({
   browser,
 }) => {
   test.skip(
@@ -2201,12 +2202,18 @@ test("12. a stranger opens the project's link and asks to join in two presses an
   await expect(card.getByTestId("join-ask")).toHaveText("Ask to join");
   await expect(card.getByTestId("join-ask")).toHaveClass(/bg-primary/);
 
-  // Press 1 opens the sign-up dialog (nothing is sent). The person signs up as anyone does (not part of the count),
-  // lands back on the same link, and presses 2.
+  // Press 1 opens the sign-up dialog (nothing is sent). The person signs up as anyone does, and every press and field
+  // of that is counted too; the ask is sent by itself once the account exists, with no second press of Ask to join.
   await asked.press(card.getByTestId("join-ask"), "Ask to join (signed out)");
   await expect(page.getByTestId("onboarding-dialog")).toBeVisible();
-  await page.getByTestId("onboarding-name").fill(JOINER_NAME);
-  await page.getByTestId("onboarding-create").click();
+  await asked.type(page.getByTestId("onboarding-name"), JOINER_NAME, "Name");
+  // This server asks for no terms or age box unless it was started with them (the pilot world does: `join-path.spec.ts`).
+  const hosted = await page.getByTestId("onboarding-policy").isVisible();
+  if (hosted) {
+    await asked.tick(page.getByTestId("onboarding-policy-age"), "age");
+    await asked.tick(page.getByTestId("onboarding-policy-agree"), "terms");
+  }
+  await asked.press(page.getByTestId("onboarding-create"), "Create");
   await expect(page.getByTestId("user-chip")).toBeVisible();
   expect(new URL(page.url()).pathname, "back on the project's link").toBe(
     cardPath,
@@ -2225,20 +2232,13 @@ test("12. a stranger opens the project's link and asks to join in two presses an
         limit: 50,
       })
     ).filter((e) => e.tags.some((t) => t[0] === "join-ask"));
-  expect(
-    await asksBy(joiner),
-    "nothing was sent before they signed up",
-  ).toEqual([]);
-  await asked.press(
-    page.getByTestId("scorecard").getByTestId("join-ask"),
-    "Ask to join",
-  );
   await expect(page.getByTestId("join-asked")).toHaveText(
-    "Asked to join. The founder has been told.",
+    "Asked to join. It shows on the founder's Team card and in their Notifications.",
   );
   console.log(asked.summary("a stranger asks to join from the link"));
-  expect(asked.presses).toBeLessThanOrEqual(JOIN_PATH_BUDGET.presses);
-  expect(asked.fields).toBe(JOIN_PATH_BUDGET.fields);
+  const budget = hosted ? JOIN_PATH_HOSTED_BUDGET : JOIN_PATH_SIGNED_OUT_BUDGET;
+  expect(asked.presses).toBe(budget.presses);
+  expect(asked.fields).toBe(budget.fields);
 
   // The server holds one signed ask that names the project and the founder, with the person's own yes in it.
   await expect.poll(async () => (await asksBy(joiner)).length).toBe(1);
@@ -2286,6 +2286,7 @@ test("12. a stranger opens the project's link and asks to join in two presses an
         ["l", "creaton-team"],
         ["team-answer", "yes"],
         ["team-invite", `again${note}`],
+        ["p", founder.pubkey],
         ["note", note],
       ],
     });
@@ -2294,6 +2295,32 @@ test("12. a stranger opens the project's link and asks to join in two presses an
   const fourth = await again("3");
   expect(fourth.accepted).toBe(false);
   expect(fourth.reason).toContain("already asked to join this project");
+
+  // An ask is small, and names the project's founder and nobody else: the server refuses a 250 KB ask of valid JSON,
+  // and one aimed at someone else's inbox, in its own words.
+  const askTags = (invite: string, named: string) => [
+    ["a", coord],
+    ["l", "creaton-join"],
+    ["join-ask", invite],
+    ["p", named],
+  ];
+  const big = await publishAs(joiner, {
+    kind: 47003,
+    content: JSON.stringify({
+      title: "Asked to join",
+      body: "x".repeat(250_000),
+    }),
+    tags: askTags("big", founder.pubkey),
+  });
+  expect(big.accepted).toBe(false);
+  expect(big.reason).toContain("bytes of content");
+  const aimed = await publishAs(joiner, {
+    kind: 47003,
+    content: JSON.stringify({ title: "Asked to join", body: "" }),
+    tags: askTags("aim", stranger.pubkey),
+  });
+  expect(aimed.accepted).toBe(false);
+  expect(aimed.reason).toContain("name the project's founder");
 
   // The founder sees one request (the newest ask of each person) and accepts it with one press.
   await founderPage.goto(projectPath);

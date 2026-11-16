@@ -180,7 +180,10 @@ export function projectRecordRefusal(
 ): string | null {
   if (event.kind !== 47003) return null;
   const has = (name: string) => event.tags.some((tag) => tag[0] === name);
-  const founderOnly = ["goal", "promise", "promise-mark"].some(has);
+  // A founder turning an ask to join away is the founder's, as the goal and the promises are.
+  const founderOnly = ["goal", "promise", "promise-mark", "join-decline"].some(
+    has,
+  );
   const teamOnly = [
     "update-part",
     "update-kind",
@@ -239,6 +242,19 @@ export function projectRecordRefusal(
     // project and twenty projects a day).
     if (founderOnly || teamOnly || has("help-offer") || part)
       return "invalid: an ask to join cannot also be anything else";
+    // Small: a stranger signs these for nothing (the server's own limits, in bytes).
+    const tagBytes = event.tags.reduce(
+      (sum, tag) => sum + tag.reduce((n, field) => n + field.length, 0),
+      0,
+    );
+    if (event.content.length > 1024)
+      return "invalid: an ask to join carries at most 1024 bytes of content";
+    if (event.tags.length > 12 || tagBytes > 1536)
+      return "invalid: an ask to join carries at most 12 tags and 1536 bytes of them";
+    // It names the project's founder, and only the founder.
+    const named = event.tags.filter((tag) => tag[0] === "p").map((t) => t[1]);
+    if (named.length !== 1 || named[0] !== founder)
+      return "invalid: an ask to join must name the project's founder, and only the founder, in its `p` tag";
     if (team.has(event.pubkey))
       return "invalid: you are already on this project's team";
     const before = events.filter(
@@ -249,7 +265,7 @@ export function projectRecordRefusal(
         e.tags.some((tag) => tag[0] === "l" && tag[1] === "creaton-join"),
     ).length;
     if (before >= 3)
-      return "restricted: you have already asked to join this project; the founder has been told";
+      return "restricted: you have already asked to join this project; it shows on the founder's Team card";
     return null;
   }
   if (founderOnly && event.pubkey !== founder)

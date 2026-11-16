@@ -33,6 +33,8 @@ type Tags = readonly (readonly string[])[];
 export const TEAM_LABEL = "creaton-team";
 const TAG_ANSWER = "team-answer";
 const TAG_INVITE = "team-invite";
+/** The tag of a founder's record that turns someone's ask to join away (`lib/join.ts`); never an update. */
+export const TAG_JOIN_DECLINE = "join-decline";
 /** The one role the Team section gives. */
 const TEAM_ROLE = "member";
 /** What that role may do, in plain words. */
@@ -204,9 +206,14 @@ export interface TeamAnswer {
   createdAt: number;
 }
 
-/** Whether a record's tags mark it as a team answer (so it is never listed as an update). */
+/**
+ * Whether a record's tags mark it as an answer about who is on the team: a person's yes or no to an invitation, or a
+ * founder turning an ask to join away. Such a record is never listed as an update.
+ */
 export function isTeamAnswerTags(tags: Tags): boolean {
-  return tags.some((tag) => tag[0] === TAG_ANSWER);
+  return tags.some(
+    (tag) => tag[0] === TAG_ANSWER || tag[0] === TAG_JOIN_DECLINE,
+  );
 }
 
 /** The content and extra tags of an answer to an invitation. */

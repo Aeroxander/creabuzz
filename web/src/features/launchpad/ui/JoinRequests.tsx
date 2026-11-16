@@ -3,7 +3,8 @@
  *
  * The same list is in the project's Team card (one project) and in Notifications (every project that has asks, each with
  * its name). Accepting adds the person to the project record; what the founder just did shows at once and gives way
- * to what is read back. A failed accept says so beside the person, and its button is the retry.
+ * to what is read back. A failed accept says so beside the person, and its button is the retry. Decline turns the ask
+ * away without adding anyone, so a pile of asks nobody wants can be cleared one by one.
  *
  * Also here: "Copy link to invite people", the Team card's way to hand out the project's public link, where a person
  * presses Ask to join.
@@ -20,7 +21,7 @@ import { FailureNote } from "@/shared/ui/failure-note";
 import type { JoinAsk } from "../lib/join";
 import { projectSharePath } from "../lib/share";
 import type { LaunchRecord } from "../models";
-import { useProjectAsks } from "../use-join";
+import { useDeclineJoin, useProjectAsks } from "../use-join";
 import { useAcceptJoin } from "../use-team";
 
 /**
@@ -59,6 +60,7 @@ export function JoinRequestsList({
   const asks = seen.length > 0 ? seen : waiting;
   const current = new Set(waiting.map((a) => a.id));
   const accept = useAcceptJoin(record.id);
+  const decline = useDeclineJoin(record);
   const [added, setAdded] = useState<readonly string[]>([]);
   const [failure, setFailure] = useState<{
     pubkey: string;
@@ -70,6 +72,25 @@ export function JoinRequestsList({
     ...added,
     record.author,
   ]);
+
+  const turnAway = async (ask: JoinAsk) => {
+    if (busy !== null) return;
+    setBusy(ask.author);
+    setFailure(null);
+    try {
+      await decline.mutateAsync(ask.author);
+    } catch (cause) {
+      setFailure({
+        pubkey: ask.author,
+        words: failureWords(
+          cause,
+          `${names(ask.author)} was not turned away: the change was not saved. Press Decline to try again.`,
+        ),
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const press = async (ask: JoinAsk) => {
     if (busy !== null) return;
@@ -135,16 +156,29 @@ export function JoinRequestsList({
               ) : null}
               .
             </span>
-            <Button
-              aria-label={`Accept ${names(ask.author)}${withProject ? ` to ${record.name}` : ""}`}
-              data-testid="join-accept"
-              disabled={busy !== null}
-              onClick={() => void press(ask)}
-              size="sm"
-              type="button"
-            >
-              Accept
-            </Button>
+            <span className="flex gap-2">
+              <Button
+                aria-label={`Decline ${names(ask.author)}${withProject ? ` for ${record.name}` : ""}`}
+                data-testid="join-decline"
+                disabled={busy !== null}
+                onClick={() => void turnAway(ask)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                Decline
+              </Button>
+              <Button
+                aria-label={`Accept ${names(ask.author)}${withProject ? ` to ${record.name}` : ""}`}
+                data-testid="join-accept"
+                disabled={busy !== null}
+                onClick={() => void press(ask)}
+                size="sm"
+                type="button"
+              >
+                Accept
+              </Button>
+            </span>
             {failure?.pubkey === ask.author ? (
               <FailureNote
                 className="basis-full"
@@ -174,8 +208,23 @@ export function ProjectJoinRequests({ record }: { record: LaunchRecord }) {
   return (
     <div className="mt-3 empty:hidden" data-testid="join-section">
       <JoinRequestsList heading record={record} waiting={asks.pending} />
+      {asks.hidden > 0 ? (
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          data-testid="join-hidden"
+          role="note"
+        >
+          {asks.hidden} more {asks.hidden === 1 ? "ask is" : "asks are"}{" "}
+          waiting. Accept or decline the ones above to see{" "}
+          {asks.hidden === 1 ? "it" : "them"}.
+        </p>
+      ) : null}
       {asks.cut ? (
-        <p className="mt-1 text-xs text-muted-foreground" role="note">
+        <p
+          className="mt-1 text-xs text-muted-foreground"
+          data-testid="join-cut"
+          role="note"
+        >
           More people asked than could be read, so someone may be missing here.
         </p>
       ) : null}

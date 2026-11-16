@@ -7,19 +7,27 @@ import type { Locator, Page } from "@playwright/test";
  *
  * `solo-path-guard.spec.ts` (mocked) and `e2e-real/solo-path.spec.ts` (a real server) both use it to hold the solo
  * founder's path from Home to the first piece of work done to the budget in `SOLO_PATH_BUDGET`; `project-join.spec.ts`
- * (mocked) and `e2e-real/project-loop.spec.ts` (a real server) hold the join path to `JOIN_PATH_BUDGET` and
- * `ACCEPT_PATH_BUDGET`.
+ * (mocked), `e2e-real/project-loop.spec.ts` (a real server) and `e2e-real/join-path.spec.ts` (a real server with the
+ * hosted settings) hold the join path to the `JOIN_PATH_*` budgets and `ACCEPT_PATH_BUDGET`.
  */
 
 /** The most a person alone may do between Home and "First piece of work done" (the build plan, section 2). */
 export const SOLO_PATH_BUDGET = { presses: 8, fields: 4 } as const;
 
 /**
- * The most a stranger does on a project's link to be "Asked to join" (the next-version plan, section 8, milestone 0),
- * counted after the account exists: signed out the first press opens the sign-up dialog and the second sends the ask;
- * signed in the first one sends it. No field is typed.
+ * The most a stranger does on a project's link to be "Asked to join", by where they start (the next-version plan,
+ * section 8, milestone 0). Every press and every typed box counts, the sign-up included; the plan's "2 presses" counted
+ * only the two Ask presses and left the sign-up out.
+ *
+ * - Already signed in: one press, nothing typed.
+ * - Signed out on an open server with no terms: Ask, Create, and the name typed. The press of Ask is remembered across
+ *   sign-up (`markAskAfterSignUp`), so there is no second Ask.
+ * - Signed out on the hosted settings (terms of use, privacy note and the age box, `BUZZ_AGE_ATTESTATION_REQUIRED`):
+ *   Ask, the age tick, the terms tick, Create, and the name typed.
  */
-export const JOIN_PATH_BUDGET = { presses: 2, fields: 0 } as const;
+export const JOIN_PATH_BUDGET = { presses: 1, fields: 0 } as const;
+export const JOIN_PATH_SIGNED_OUT_BUDGET = { presses: 2, fields: 1 } as const;
+export const JOIN_PATH_HOSTED_BUDGET = { presses: 4, fields: 1 } as const;
 
 /** What the founder does to accept an ask: one press on Accept, nothing typed. */
 export const ACCEPT_PATH_BUDGET = { presses: 1, fields: 0 } as const;

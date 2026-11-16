@@ -15,7 +15,7 @@
  * Pure and alias-free: `join.test.mjs` drives it under `node --test`.
  */
 
-import { newInvite, TEAM_LABEL } from "./team.ts";
+import { newInvite, TAG_JOIN_DECLINE, TEAM_LABEL } from "./team.ts";
 
 type Tags = readonly (readonly string[])[];
 
@@ -27,8 +27,12 @@ const PUBKEY = /^[0-9a-f]{64}$/;
 /** The most pending asks a founder is shown for one project. */
 export const MAX_PENDING_ASKS = 50;
 
-/** Said beside the button once the ask is sent (and every time the page is opened after). */
-export const ASKED_WORDS = "Asked to join. The founder has been told.";
+/**
+ * Said beside the button once the ask is sent (and every time the page is opened after). It says only what is true:
+ * nobody is pushed a message, the ask waits where the founder looks at the project's team and at Notifications.
+ */
+export const ASKED_WORDS =
+  "Asked to join. It shows on the founder's Team card and in their Notifications.";
 
 export interface JoinAsk {
   id: string;
@@ -38,6 +42,126 @@ export interface JoinAsk {
   /** The name the founder's record will list the person under, and the person's yes names. */
   invite: string;
   createdAt: number;
+}
+
+/** A founder turning one person's ask away. The person is not told, and may ask again (a few times). */
+export interface JoinDecline {
+  id: string;
+  /** Who signed it: counts only when it is the project's founder. */
+  author: string;
+  coordinate: string;
+  /** The person turned away. */
+  asker: string;
+  createdAt: number;
+}
+
+/** Where an ask waiting for an account is kept: session storage (sign-up may reload the page). */
+type SignUpStore = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+const AFTER_SIGN_UP_KEY = "creaton.join.after-sign-up";
+/** How long an Ask pressed while signed out stays good once the account exists: after that the person presses again. */
+const AFTER_SIGN_UP_MS = 10 * 60_000;
+
+/**
+ * Remember that Ask to join was pressed on this project while signed out, so the ask is sent as soon as the account
+ * exists, with no second press. It names the project: it never sends an ask for another one, and it is used up once.
+ */
+export function markAskAfterSignUp(
+  store: SignUpStore | null | undefined,
+  coordinate: string,
+  now: number = Date.now(),
+): void {
+  try {
+    store?.setItem(AFTER_SIGN_UP_KEY, `${now}|${coordinate}`);
+  } catch {
+    // Storage refused: the person presses Ask to join again once signed up.
+  }
+}
+
+/** Whether an Ask pressed for this project is waiting for an account, without using it up. */
+export function askAfterSignUpWaiting(
+  store: SignUpStore | null | undefined,
+  coordinate: string,
+  now: number = Date.now(),
+): boolean {
+  try {
+    const [at, waitingFor] = (store?.getItem(AFTER_SIGN_UP_KEY) ?? "").split(
+      "|",
+    );
+    const when = Number(at);
+    return (
+      waitingFor === coordinate &&
+      Number.isFinite(when) &&
+      when > 0 &&
+      now - when <= AFTER_SIGN_UP_MS
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** Whether an Ask was waiting for this project, and forget it: true once per press, however often the page redraws. */
+export function takeAskAfterSignUp(
+  store: SignUpStore | null | undefined,
+  coordinate: string,
+  now: number = Date.now(),
+): boolean {
+  const waiting = askAfterSignUpWaiting(store, coordinate, now);
+  clearAskAfterSignUp(store);
+  return waiting;
+}
+
+/** Forget a waiting Ask (the person pressed it themselves, or asked another way). */
+export function clearAskAfterSignUp(
+  store: SignUpStore | null | undefined,
+): void {
+  try {
+    store?.removeItem(AFTER_SIGN_UP_KEY);
+  } catch {
+    // Storage refused: nothing to forget.
+  }
+}
+
+/** The content and extra tags of a founder turning `asker`'s ask away. */
+export function joinDeclineEvent(input: { asker: string }): {
+  content: { title: string; body: string };
+  tags: string[][];
+} {
+  return {
+    content: { title: "Turned an ask away", body: "" },
+    tags: [
+      ["l", JOIN_LABEL],
+      [TAG_JOIN_DECLINE, input.asker],
+    ],
+  };
+}
+
+/** A decline read from a record, or null when it is not one. */
+export function parseJoinDecline(event: {
+  id: string;
+  pubkey: string;
+  kind: number;
+  created_at: number;
+  tags: Tags;
+}): JoinDecline | null {
+  if (event.kind !== 47003) return null;
+  const first = (name: string) =>
+    event.tags.find((tag) => tag[0] === name)?.[1];
+  const asker = first(TAG_JOIN_DECLINE);
+  const coordinate = first("a");
+  if (
+    !asker ||
+    !PUBKEY.test(asker) ||
+    !coordinate ||
+    !PUBKEY.test(event.pubkey)
+  )
+    return null;
+  return {
+    id: event.id,
+    author: event.pubkey,
+    coordinate,
+    asker,
+    createdAt: event.created_at,
+  };
 }
 
 /** The content and extra tags of an ask to join the project whose founder is `founder`. */
@@ -97,18 +221,30 @@ interface JoinProject {
 }
 
 /**
- * The asks the founder can still accept: for this project, each person's newest, leaving out the founder, anyone
- * already on the record, and any ask whose name the record already lists under who left (a name is used once). Oldest
- * first, so the person who asked first is at the top; at most {@link MAX_PENDING_ASKS}.
+ * Every ask the founder can still accept: for this project, each person's newest, leaving out the founder, anyone
+ * already on the record, any ask whose name the record already lists under who left (a name is used once), and any
+ * ask the founder turned away (a decline signed by the founder, as new as the ask or newer). Oldest first, so the
+ * person who asked first is at the top. Not cut: {@link pendingAsks} shows the first {@link MAX_PENDING_ASKS}.
  */
-export function pendingAsks(
+export function waitingAsks(
   asks: readonly JoinAsk[],
   project: JoinProject,
+  declines: readonly JoinDecline[] = [],
 ): JoinAsk[] {
   const onTeam = new Set([
     project.author,
     ...project.team.map((m) => m.pubkey),
   ]);
+  // Only the founder's own word turns anyone away, and only for this project.
+  const turnedAway = new Map<string, number>();
+  for (const decline of declines) {
+    if (decline.author !== project.author) continue;
+    if (decline.coordinate !== project.coordinate) continue;
+    turnedAway.set(
+      decline.asker,
+      Math.max(turnedAway.get(decline.asker) ?? 0, decline.createdAt),
+    );
+  }
   const newest = new Map<string, JoinAsk>();
   for (const ask of asks) {
     if (ask.coordinate !== project.coordinate || onTeam.has(ask.author))
@@ -128,8 +264,17 @@ export function pendingAsks(
       newest.set(ask.author, ask);
   }
   return [...newest.values()]
-    .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
-    .slice(0, MAX_PENDING_ASKS);
+    .filter((ask) => (turnedAway.get(ask.author) ?? -1) < ask.createdAt)
+    .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1));
+}
+
+/** The first {@link MAX_PENDING_ASKS} of {@link waitingAsks}: what one list shows. */
+export function pendingAsks(
+  asks: readonly JoinAsk[],
+  project: JoinProject,
+  declines: readonly JoinDecline[] = [],
+): JoinAsk[] {
+  return waitingAsks(asks, project, declines).slice(0, MAX_PENDING_ASKS);
 }
 
 /** Whether `me` has an ask on this project that is still waiting: they asked and are not on the record. */

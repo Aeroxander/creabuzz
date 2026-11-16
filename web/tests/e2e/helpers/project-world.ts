@@ -67,17 +67,26 @@ export const projectPath = (founder: string, id: string) =>
   `/launchpad/${id}?author=${founder}`;
 
 /** Wire the page to the mock server, signed in with `key` (or nobody) until `openAs` changes who it is. */
-export async function install(page: Page, relay: Relay, key: string | null) {
+export async function install(
+  page: Page,
+  relay: Relay,
+  key: string | null,
+  /** `keepSignUp`: signed out only until the person signs up, so the account they make survives the reload. */
+  options: { keepSignUp?: boolean } = {},
+) {
   await relay.install(page);
-  await page.addInitScript((first) => {
-    const chosen = localStorage.getItem("e2e.key") ?? first;
-    if (chosen === null || chosen === "none") {
-      localStorage.removeItem("buzz.identity.nsec");
-      return;
-    }
-    localStorage.setItem("buzz.identity.nsec", chosen);
-    localStorage.setItem("buzz.identity.backedUp", "1");
-  }, key);
+  await page.addInitScript(
+    ([first, keepSignUp]) => {
+      const chosen = localStorage.getItem("e2e.key") ?? first;
+      if (chosen === null || chosen === "none") {
+        if (!keepSignUp) localStorage.removeItem("buzz.identity.nsec");
+        return;
+      }
+      localStorage.setItem("buzz.identity.nsec", chosen);
+      localStorage.setItem("buzz.identity.backedUp", "1");
+    },
+    [key, options.keepSignUp === true] as const,
+  );
   await page.route("**/communities", (route) =>
     route.fulfill({
       status: 200,

@@ -119,7 +119,7 @@ pub(crate) const AGENT_ACCEPT: &str =
 pub(crate) const ON_TEAM: &str = "invalid: you are already on this project's team";
 /// Said when an account has asked to join one project too often.
 pub(crate) const ASKED_ENOUGH: &str =
-    "restricted: you have already asked to join this project; the founder has been told";
+    "restricted: you have already asked to join this project; it shows on the founder's Team card";
 /// Said when an account asks to join too many projects in a day.
 pub(crate) const ASKING_TOO_MUCH: &str =
     "rate-limited: you can ask to join a few projects a day; try again tomorrow";

@@ -73,9 +73,22 @@ export function JoinRequestsSection() {
           />
         ))}
       </div>
+      {read.data && read.data.hidden > 0 ? (
+        <p
+          className="px-4 pb-3 text-xs text-black/60 dark:text-white/60"
+          data-testid="social-join-hidden"
+          role="note"
+        >
+          {read.data.hidden} more{" "}
+          {read.data.hidden === 1 ? "ask is" : "asks are"} waiting. Accept or
+          decline the ones above to see {read.data.hidden === 1 ? "it" : "them"}
+          .
+        </p>
+      ) : null}
       {read.data?.cut ? (
         <p
           className="px-4 pb-3 text-xs text-black/60 dark:text-white/60"
+          data-testid="social-join-cut"
           role="note"
         >
           More people asked than could be read, so someone may be missing here.
