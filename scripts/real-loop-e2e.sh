@@ -29,12 +29,20 @@
 # here) they must be shown the invite sentence and the plain page. So the invite-only journey is run both ways:
 # `BUZZ_REQUIRE_RELAY_MEMBERSHIP=true BUZZ_PUBLIC_PROJECT_READS=true scripts/real-loop-e2e.sh` and the line above.
 #
+# A second world, the pilot's (E2E_WORLD=pilot): the web app built as the hosted image builds it (VITE_CONTRIBUTOR_ONLY=1)
+# and the server with the pilot's terms of use, privacy note and age box on, as docs/policies and
+# deploy/compose/.env.creaton.example set them. It runs web/tests/e2e-real/solo-path.spec.ts: a person alone, from Home to
+# the first piece of work done, and what the record, the picture and Home say after it. Run it in the three modes above too:
+# `E2E_WORLD=pilot scripts/real-loop-e2e.sh`, and with BUZZ_REQUIRE_RELAY_MEMBERSHIP / BUZZ_PUBLIC_PROJECT_READS as above.
+#
 # ⚠️  DEV ONLY. Uses its own database, dropped on exit.
 #
 # Usage:  scripts/real-loop-e2e.sh [playwright args]         e.g. scripts/real-loop-e2e.sh -g "Quick Start"
 # Env:    BUZZ_REQUIRE_RELAY_MEMBERSHIP=true|false (default false: see above), BUZZ_PUBLIC_PROJECT_READS=true|false
 #         (default false: see above), KEEP_DB=1 (keep the scratch database, with the
 #         journey's records in it, and print its address; drop it yourself), SKIP_BUILD=1 (reuse the web build, target/debug/buzz-relay and target/debug/buzz),
+#         E2E_WORLD=default|pilot (default: default; see above), E2E_SPEC (the spec file to run, under web/tests/e2e-real; default
+#         project-loop.spec.ts, or solo-path.spec.ts in the pilot world),
 #         WEB_DIST (where the web build goes; default target/web-real-loop), POSTGRES_ADMIN_URL, REDIS_URL,
 #         PW_CHROMIUM_PATH / PW_CHROMIUM_EXTRA_ARGS (a Chromium other than the pinned one; see the Playwright config),
 #         E2E_SHOTS=<dir> (save a few screenshots), RUN_TIMEOUT (seconds for the browser run; default 900),
@@ -51,7 +59,16 @@ fail() { printf '\033[31m[real-loop] %s\033[0m\n' "$*" >&2; exit 2; }
 
 ADMIN_URL="${POSTGRES_ADMIN_URL:-postgres://buzz:buzz_dev@127.0.0.1:5432/postgres}"
 REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}"
-WEB_DIST="${WEB_DIST:-$REPO_ROOT/target/web-real-loop}"
+WORLD="${E2E_WORLD:-default}"
+[[ "$WORLD" == "default" || "$WORLD" == "pilot" ]] \
+  || { printf '\033[31m[real-loop] E2E_WORLD is default or pilot, not "%s"\033[0m\n' "$WORLD" >&2; exit 2; }
+if [[ "$WORLD" == "pilot" ]]; then
+  WEB_DIST="${WEB_DIST:-$REPO_ROOT/target/web-real-loop-pilot}"
+  SPEC="${E2E_SPEC:-solo-path.spec.ts}"
+else
+  WEB_DIST="${WEB_DIST:-$REPO_ROOT/target/web-real-loop}"
+  SPEC="${E2E_SPEC:-project-loop.spec.ts}"
+fi
 RUN_TIMEOUT="${RUN_TIMEOUT:-900}"
 DB="buzz_real_loop_$$"
 DB_URL="${ADMIN_URL%/*}/$DB"
@@ -130,9 +147,12 @@ if ! redis_ready; then
   wait_for 20 redis_ready || { tail -20 "$STATE/redis.log" >&2; fail "Redis was started but does not answer at $REDIS_URL"; }
 fi
 
+PILOT_BUILD_ENV=()
+[[ "$WORLD" == "pilot" ]] && PILOT_BUILD_ENV=(VITE_CONTRIBUTOR_ONLY=1)
 if [[ "${SKIP_BUILD:-}" != "1" ]]; then
   step "building the web app into $WEB_DIST, the relay and the command line"
-  pnpm -C web exec vite build --outDir "$WEB_DIST" --emptyOutDir >"$STATE/web-build.log" 2>&1 \
+  # The pilot world is built as the hosted image builds it: contributor-only.
+  env ${PILOT_BUILD_ENV[@]+"${PILOT_BUILD_ENV[@]}"} pnpm -C web exec vite build --outDir "$WEB_DIST" --emptyOutDir >"$STATE/web-build.log" 2>&1 \
     || { tail -30 "$STATE/web-build.log" >&2; fail "web build failed"; }
   cargo build -q -p buzz-relay -p buzz-cli || fail "relay or command-line build failed"
 fi
@@ -165,6 +185,15 @@ if [[ "$MEMBERSHIP" == "true" ]]; then
   [[ "$OWNER_PUBKEY" =~ ^[0-9a-f]{64}$ ]] || fail "the owner's public key is not 64 hex characters"
   OWNER_ENV=(RELAY_OWNER_PUBKEY="$OWNER_PUBKEY")
 fi
+# The pilot's sign-up: terms of use, a privacy note and an age box (the same drafts the hosted server is given).
+TERMS_ENV=()
+if [[ "$WORLD" == "pilot" ]]; then
+  TERMS_ENV=(
+    BUZZ_TERMS_OF_SERVICE_MARKDOWN="$(cat docs/policies/TERMS-DRAFT.md)"
+    BUZZ_PRIVACY_POLICY_MARKDOWN="$(cat docs/policies/PRIVACY-DRAFT.md)"
+    BUZZ_AGE_ATTESTATION_REQUIRED=true
+  )
+fi
 env DATABASE_URL="$DB_URL" REDIS_URL="$REDIS_URL" BUZZ_AUTO_MIGRATE=true \
   BUZZ_RELAY_PRIVATE_KEY="$(openssl rand -hex 32)" \
   BUZZ_BIND_ADDR="127.0.0.1:$PORT" BUZZ_RELAY_URL="ws://localhost:$PORT" RELAY_URL="ws://localhost:$PORT" \
@@ -172,6 +201,7 @@ env DATABASE_URL="$DB_URL" REDIS_URL="$REDIS_URL" BUZZ_AUTO_MIGRATE=true \
   BUZZ_WEB_DIR="$WEB_DIST" BUZZ_WEB_SPA=full BUZZ_MEDIA_BASE_URL="http://localhost:$PORT/media" \
   BUZZ_REQUIRE_RELAY_MEMBERSHIP="$MEMBERSHIP" BUZZ_PUBLIC_PROJECT_READS="$PUBLIC_READS" BUZZ_GIT_CONFORMANCE_PROBE=false \
   ${OWNER_ENV[@]+"${OWNER_ENV[@]}"} \
+  ${TERMS_ENV[@]+"${TERMS_ENV[@]}"} \
   BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN=600 BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC=2000 \
   BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR=0 \
   "$STATE/buzz-relay" >"$STATE/relay.log" 2>&1 &
@@ -188,7 +218,7 @@ relay_up >/dev/null 2>&1 || { tail -30 "$STATE/relay.log" >&2; fail "the relay d
 psql "$DB_URL" -qc "insert into communities (host) values ('localhost:$PORT') on conflict ((lower(host))) do nothing" \
   || fail "could not add this run's address to the server's communities"
 
-SPEC_ENV=()
+SPEC_ENV=(BUZZ_REAL_DATABASE_URL="$DB_URL")
 if [[ "$MEMBERSHIP" == "true" ]]; then
   # The owner is the first member, as on a server that has just been set up: they make everyone else's invite. The
   # server may already have made them one when the community was added; either way there must be exactly one row.
@@ -199,7 +229,7 @@ if [[ "$MEMBERSHIP" == "true" ]]; then
   [[ "$(psql "$DB_URL" -Atc "select count(*) from relay_members m join communities c on c.id = m.community_id
     where lower(c.host) = 'localhost:$PORT' and m.pubkey = '$OWNER_PUBKEY' and m.role = 'owner'")" == "1" ]] \
     || fail "the owner is not this run's community's owner"
-  SPEC_ENV=(E2E_INVITE_ONLY=1 BUZZ_REAL_OWNER_KEY="$OWNER_KEY" BUZZ_REAL_DATABASE_URL="$DB_URL")
+  SPEC_ENV+=(E2E_INVITE_ONLY=1 BUZZ_REAL_OWNER_KEY="$OWNER_KEY")
 fi
 [[ "$PUBLIC_READS" == "true" ]] && SPEC_ENV+=(E2E_PUBLIC_READS=1)
 
@@ -207,7 +237,7 @@ step "running the browser spec and the command-line steps (up to ${RUN_TIMEOUT}s
 cd web
 env BUZZ_REAL_RELAY_URL="http://localhost:$PORT" BUZZ_BIN="$STATE/buzz" ${SPEC_ENV[@]+"${SPEC_ENV[@]}"} \
   "$BOUNDED" "$RUN_TIMEOUT" node_modules/.bin/playwright test --config=playwright.real-relay.config.ts \
-  tests/e2e-real/project-loop.spec.ts --reporter=list --trace off "$@"
+  "tests/e2e-real/$SPEC" --reporter=list --trace off "$@"
 code=$?
 cd "$REPO_ROOT"
 if [[ $code -eq 0 ]]; then
