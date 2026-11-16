@@ -197,7 +197,9 @@ future guard change) would have silently tested an old build.
 * Nothing on a real network or with a real key. Nothing was deployed.
 * The old suite in `contracts/` was not run; only the diff proves it was not touched.
 * Sepolia pins: the fork tests ran against block 12,146,937 (Sepolia, 16 November 2026); the public node prunes, so they repeat from Foundry's cache
-  on this machine and need a fresh pin (`SEPOLIA_FORK_BLOCK`) elsewhere.
+  on this machine and need a fresh pin (`SEPOLIA_FORK_BLOCK`) elsewhere. A second run of the whole fork suite took about
+  1 second against 17 for the first, so the reads came from the cache; I did not wait for the pin to age out of the node's
+  window to prove it offline. The local copy needs no network at all.
 * The 200-run optimizer saving is an estimate from sizes, not a measurement.
 * Sponsor limits, block-limit figures and the 16.7 million transaction cap are from memory (outside knowledge).
 * Fuzz and invariant tests were not written (the plan puts them in milestone 2).
