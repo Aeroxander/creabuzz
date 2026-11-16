@@ -20,7 +20,7 @@ import { HOW_EXAMPLES } from "../lib/quick-start";
 export const AI_CATEGORY = "AI agent or tool";
 
 const CHIP_CLASS =
-  "rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-foreground/80 hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+  "rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-foreground/80 hover:bg-foreground/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary max-sm:inline-flex max-sm:min-h-11 max-sm:items-center";
 const CHIP_ON_CLASS = "border-primary bg-primary/10 text-primary-ink";
 
 /** A row of chips under a visible name: a fieldset, so the name is the group's accessible name. */

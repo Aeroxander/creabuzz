@@ -222,7 +222,7 @@ export function OnboardingDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoComplete="nickname"
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-normal outline-none focus:ring-1 focus:ring-ring"
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-normal outline-none focus:ring-1 focus:ring-ring max-sm:py-3"
               data-testid="onboarding-name"
             />
           </label>
@@ -346,7 +346,7 @@ export function OnboardingDialog({
           <button
             type="button"
             onClick={() => setSigningIn(true)}
-            className="font-medium text-foreground underline underline-offset-2"
+            className="font-medium text-foreground underline underline-offset-2 max-sm:min-h-11"
             data-testid="onboarding-signin"
           >
             I already have an account
@@ -354,7 +354,7 @@ export function OnboardingDialog({
           <button
             type="button"
             onClick={onCancel ?? onDone}
-            className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground"
+            className="rounded-md px-2 py-1 text-muted-foreground hover:text-foreground max-sm:min-h-11"
           >
             Not now
           </button>
@@ -451,7 +451,7 @@ function SignInView({
             autoComplete="off"
             spellCheck={false}
             type="password"
-            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm font-normal outline-none focus:ring-1 focus:ring-ring"
+            className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm font-normal outline-none focus:ring-1 focus:ring-ring max-sm:py-3"
             data-testid="onboarding-signin-key"
           />
         </label>
@@ -488,7 +488,7 @@ function SignInView({
           <button
             type="button"
             onClick={onBack}
-            className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground"
+            className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground max-sm:min-h-11"
           >
             {backLabel}
           </button>
@@ -496,7 +496,7 @@ function SignInView({
             <button
               type="button"
               onClick={onCancel}
-              className="ml-auto rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground"
+              className="ml-auto rounded-md px-2 py-1 text-sm text-muted-foreground hover:text-foreground max-sm:min-h-11"
             >
               Not now
             </button>
@@ -504,7 +504,7 @@ function SignInView({
           <button
             type="submit"
             disabled={key.trim().length === 0 || !allowed}
-            className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
+            className="rounded-full bg-black px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40 max-sm:min-h-11 dark:bg-white dark:text-black"
             data-testid="onboarding-signin-submit"
           >
             Sign in

@@ -185,3 +185,29 @@ test("Start is three short answers: under 100 words on the screen, the button in
     (reach?.screen ?? 0) * 2,
   );
 });
+
+test("at 390 every control on Home's goal box and on Start is 44 px tall", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await visit(page, "/", false);
+  const small = (scope: ReturnType<Page["locator"]>) =>
+    scope.locator("button, input, textarea, summary, a").evaluateAll((els) =>
+      els
+        .map((el) => ({
+          what: `${el.tagName.toLowerCase()} ${el.getAttribute("data-testid") ?? (el.textContent ?? "").trim().slice(0, 30)}`,
+          box: el.getBoundingClientRect(),
+        }))
+        .filter(
+          ({ box }) => box.width > 0 && box.height > 0 && box.height < 43.5,
+        )
+        .map(({ what, box }) => `${what} (${Math.round(box.height)} px)`),
+    );
+  await expect(page.getByTestId("home-welcome")).toBeVisible();
+  expect(await small(page.getByTestId("home-welcome"))).toEqual([]);
+
+  await page.getByTestId("home-welcome-start").click();
+  await expect(page.getByTestId("quick-start")).toBeVisible();
+  // The chips, the boxes, "More options" and the button. (The start steps under "More ways to start" are closed.)
+  expect(await small(page.getByTestId("quick-start"))).toEqual([]);
+});

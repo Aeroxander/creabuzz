@@ -298,7 +298,7 @@ export function QuickStartForm() {
           Project name
         </label>
         <Input
-          className="mt-1 bg-background"
+          className="mt-1 bg-background max-sm:h-11"
           data-testid="quick-name"
           aria-describedby={issue?.field === "name" ? "quick-issue" : undefined}
           aria-invalid={issue?.field === "name" || undefined}
@@ -397,7 +397,7 @@ export function QuickStartForm() {
         onToggle={(event) => setPitchOpen(event.currentTarget.open)}
         open={pitchOpen}
       >
-        <summary className="cursor-pointer text-sm font-semibold text-muted-foreground max-sm:flex max-sm:min-h-11 max-sm:items-center">
+        <summary className="cursor-pointer text-sm font-semibold text-muted-foreground max-sm:py-3">
           More options
         </summary>
         {pitchOpen ? (
@@ -417,7 +417,7 @@ export function QuickStartForm() {
               What is it, in one sentence?
             </label>
             <Input
-              className="mt-1 bg-background"
+              className="mt-1 bg-background max-sm:h-11"
               data-testid="quick-pitch"
               aria-describedby={
                 issue?.field === "pitch" ? "quick-issue" : undefined
@@ -510,6 +510,7 @@ export function QuickStartForm() {
       />
       <div className="flex flex-wrap items-center gap-3">
         <Button
+          className="max-sm:h-11"
           data-testid="quick-start-go"
           disabled={busy || listsFailed || (me !== null && !listsRead)}
           type="submit"

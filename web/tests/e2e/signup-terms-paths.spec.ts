@@ -219,6 +219,27 @@ test("Try again keeps keyboard focus inside the sign-up dialog, on both screens"
   expect(await insideDialog()).toBe(true);
 });
 
+/** Every visible button, text box and summary in `scope` is at least 44 px tall (checkboxes are reached by their rows). */
+async function expectTapTargets(
+  scope: ReturnType<Page["locator"]>,
+  where: string,
+) {
+  const small = await scope
+    .locator("button, input:not([type=checkbox]), textarea, summary")
+    .evaluateAll((els) =>
+      els
+        .map((el) => ({
+          what: `${el.tagName.toLowerCase()} ${el.getAttribute("data-testid") ?? (el.textContent ?? "").trim().slice(0, 30)}`,
+          box: el.getBoundingClientRect(),
+        }))
+        .filter(
+          ({ box }) => box.width > 0 && box.height > 0 && box.height < 43.5,
+        )
+        .map(({ what, box }) => `${what} (${Math.round(box.height)} px)`),
+    );
+  expect(small, `small targets in the ${where}`).toEqual([]);
+}
+
 /** The sign-up dialog's buttons: the green one is the way this device supports, and both wait for both boxes. */
 const FILLED = /(^|\s)bg-primary(\s|$)/;
 const AGE_TERMS = {
@@ -333,6 +354,13 @@ test("both buttons wait for both boxes, say so, and keep a 44 px reach on a phon
   await expect(passkey).toBeInViewport({ ratio: 1 });
   await expect(plain).toBeInViewport({ ratio: 1 });
   expect((await plain.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+  // Every other control in the create view is 44 px tall on a phone as well (checkboxes are reached by their rows).
+  await expectTapTargets(page.getByTestId("onboarding-dialog"), "create view");
+  // And so is the sign-in view that the same dialog switches to.
+  await page.getByTestId("onboarding-signin").click();
+  await page.getByTestId("onboarding-signin-key").waitFor();
+  await expectTapTargets(page.getByTestId("onboarding-dialog"), "sign-in view");
 });
 
 test("when the passkey does not work, the line says what to do and the other way becomes the green one", async ({
