@@ -376,24 +376,55 @@ test("a tablet keeps the rail under the feed, not beside it", async ({
   expect(layout.overflow).toBeLessThanOrEqual(0);
 });
 
-test("a server with no projects says so and points to Start, not a blank box", async ({
+const blocks = (page: Page) =>
+  rail(page).locator('[data-testid^="social-rail-block-"]');
+
+test("a server with nothing on it draws no rail boxes, not a row of 'No ... yet' notes", async ({
   page,
 }) => {
-  await setUp(page, createMockRelay());
+  const relay = createMockRelay();
+  await setUp(page, relay);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
-  const empty = rail(page).getByTestId("social-rail-projects-empty");
-  await expect(empty).toContainText("No projects on this server yet", {
-    timeout: 20_000,
-  });
-  await expect(empty.getByRole("link", { name: "Start one" })).toHaveAttribute(
-    "href",
-    "/start",
-  );
-  await expect(rail(page).getByTestId("social-rail-posts-empty")).toBeVisible();
+  // The rail has asked for its projects and for what trends, and given the answers time to draw.
+  await expect
+    .poll(() =>
+      relay
+        .reqsReceived()
+        .flat()
+        .some((f) => f.kinds?.includes(37001)),
+    )
+    .toBe(true);
+  await page.waitForTimeout(1500);
+  await expect(blocks(page)).toHaveCount(0);
+  await expect(rail(page)).not.toContainText(/No .* yet|Loading/);
+});
+
+test("with three projects and no posts, the rail shows Projects alone", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  relay.seed(launch("alpha", "Alpha project", NOW - 40 * HOUR));
+  relay.seed(launch("beta", "Beta project", NOW - 30 * HOUR));
+  relay.seed(launch("gamma", "Gamma project", NOW - 20 * HOUR));
+  await setUp(page, relay);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
   await expect(
-    rail(page).getByTestId("social-rail-hashtags-empty"),
-  ).toBeVisible();
+    rail(page).getByRole("heading", {
+      level: 2,
+      name: "Projects",
+      exact: true,
+    }),
+  ).toBeVisible({ timeout: 20_000 });
+  await expect(
+    rail(page).getByTestId("social-rail-projects").getByRole("link"),
+  ).toHaveCount(3);
+  await expect(blocks(page)).toHaveCount(1);
+  for (const name of ["Most discussed posts", "Hashtags", "People to follow"])
+    await expect(
+      rail(page).getByRole("heading", { name, exact: true }),
+    ).toHaveCount(0);
 });
 
 test("projects the server would not answer for are a failure with a retry, not an empty list", async ({
@@ -406,9 +437,8 @@ test("projects the server would not answer for are a failure with a retry, not a
   await page.goto("/");
   const error = rail(page).getByTestId("social-rail-projects-error");
   await expect(error).toBeVisible({ timeout: 30_000 });
-  await expect(
-    rail(page).getByTestId("social-rail-projects-empty"),
-  ).toHaveCount(0);
+  // A failed read is drawn, with its line and its retry, even though the block has no rows.
+  await expect(blocks(page).first()).toContainText("Couldn't load projects.");
   // A failed read is said as an alert; a block still reading is plain text, so four loading blocks do not announce.
   await expect(error).toHaveAttribute("role", "alert");
   await expect(rail(page).getByRole("status")).toHaveCount(0);

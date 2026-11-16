@@ -66,19 +66,15 @@ function RailBlock({
   id,
   title,
   seeAll,
-  busy = false,
   children,
 }: {
   id: string;
   title: string;
   seeAll: ReactNode;
-  /** True while the block's reads have not answered. */
-  busy?: boolean;
   children: ReactNode;
 }) {
   return (
     <section
-      aria-busy={busy || undefined}
       aria-labelledby={id}
       className="glass overflow-hidden rounded-2xl border"
       data-testid={`social-rail-block-${id}`}
@@ -95,35 +91,30 @@ function RailBlock({
   );
 }
 
-/**
- * A line in a block that has no list to show: still reading, nothing yet, or the read failed (with a retry). A failed
- * read is an alert, so a screen reader says it at once. "Still reading" and "nothing yet" are plain text: four blocks
- * loading together must not announce four times (the block says it is busy instead, see `RailBlock`).
- */
+/** A line in a block whose read failed, with its retry. A failed read is an alert, so a screen reader says it at once. */
 function RailNote({
   children,
   onRetry,
   testId,
 }: {
   children: ReactNode;
-  onRetry?: () => void;
+  onRetry: () => void;
   testId: string;
 }) {
   return (
     <p
       className="px-4 pb-3 text-sm text-black/60 dark:text-white/60"
       data-testid={testId}
-      role={onRetry ? "alert" : undefined}
+      role="alert"
     >
-      {children}
-      {onRetry ? (
-        <>
-          {" "}
-          <button className={LINK_CLASS} onClick={onRetry} type="button">
-            Try again
-          </button>
-        </>
-      ) : null}
+      {children}{" "}
+      <button
+        className={`${LINK_CLASS} max-sm:min-h-11`}
+        onClick={onRetry}
+        type="button"
+      >
+        Try again
+      </button>
     </p>
   );
 }
@@ -176,6 +167,9 @@ function ProjectsBlock() {
     error: launches.error,
     loading: launches.isLoading,
   });
+  // A block with nothing to list is not drawn (and neither is one still reading): a new server shows no row of
+  // "No ... yet" boxes. A failed read is the exception: it is drawn, with its retry.
+  if (view === "loading" || view === "empty") return null;
   return (
     <RailBlock
       id="rail-projects"
@@ -186,40 +180,27 @@ function ProjectsBlock() {
           to="/discover"
         />
       }
-      busy={view === "loading"}
       title="Projects"
     >
-      {view === "loading" ? (
-        <RailNote testId="social-rail-projects-loading">
-          Loading projects…
-        </RailNote>
-      ) : view === "error" ? (
+      {view === "error" ? (
         <RailNote
           onRetry={() => void launches.refetch()}
           testId="social-rail-projects-error"
         >
           Couldn't load projects.
         </RailNote>
-      ) : view === "empty" ? (
-        <RailNote testId="social-rail-projects-empty">
-          No projects on this server yet.{" "}
-          <Link className={LINK_CLASS} to="/start">
-            Start one
-          </Link>
-          .
-        </RailNote>
       ) : (
         <ul data-testid="social-rail-projects">
           {shown.map(({ record }) => (
             <li key={`${record.author}:${record.id}`}>
               <Link
-                className="block px-4 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                className="block px-4 py-2 transition-colors hover:bg-black/5 max-sm:min-h-11 dark:hover:bg-white/10"
                 params={{ launchId: record.id }}
                 // The author too, as every other project link sends it: two authors can share an id.
                 search={{ author: record.author }}
                 to="/launchpad/$launchId"
               >
-                <span className="block truncate text-sm font-bold text-black dark:text-white">
+                <span className="block break-words text-sm font-bold text-black dark:text-white">
                   {record.name}
                 </span>
                 {record.pitch ? (
@@ -246,13 +227,13 @@ function ProjectsBlock() {
             {asking.requests.map(({ project, updateId, ask }) => (
               <li key={updateId}>
                 <Link
-                  className="block px-4 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                  className="block px-4 py-2 transition-colors hover:bg-black/5 max-sm:min-h-11 dark:hover:bg-white/10"
                   hash={`update-${updateId}`}
                   params={{ launchId: project.id }}
                   search={{ author: project.author, tab: "updates" }}
                   to="/launchpad/$launchId"
                 >
-                  <span className="block truncate text-sm font-bold text-black dark:text-white">
+                  <span className="block break-words text-sm font-bold text-black dark:text-white">
                     {project.name}
                   </span>
                   <span className="line-clamp-2 text-xs text-black/60 dark:text-white/60">
@@ -300,6 +281,9 @@ function TrendingPostsBlock() {
     void trending.refetch();
     if (notes.error) void notes.refetch();
   };
+  // A block with nothing to list is not drawn (and neither is one still reading): a new server shows no row of
+  // "No ... yet" boxes. A failed read is the exception: it is drawn, with its retry.
+  if (view === "loading" || view === "empty") return null;
   return (
     <RailBlock
       id="rail-posts"
@@ -311,25 +295,18 @@ function TrendingPostsBlock() {
           to="/social/explore"
         />
       }
-      busy={view === "loading"}
       title="Most discussed posts"
     >
-      {view === "loading" ? (
-        <RailNote testId="social-rail-posts-loading">Loading…</RailNote>
-      ) : view === "error" ? (
+      {view === "error" ? (
         <RailNote onRetry={retry} testId="social-rail-posts-error">
           Couldn't load the most discussed posts.
-        </RailNote>
-      ) : view === "empty" ? (
-        <RailNote testId="social-rail-posts-empty">
-          No post is being discussed much yet.
         </RailNote>
       ) : (
         <ul data-testid="social-rail-posts">
           {rows.map(({ event }) => (
             <li key={event.id}>
               <Link
-                className="block px-4 py-2 transition-colors hover:bg-black/5 dark:hover:bg-white/10"
+                className="block px-4 py-2 transition-colors hover:bg-black/5 max-sm:min-h-11 dark:hover:bg-white/10"
                 params={{ id: event.id }}
                 to="/social/post/$id"
               >
@@ -356,6 +333,9 @@ function HashtagsBlock() {
     error: trending.error,
     loading: trending.isLoading,
   });
+  // A block with nothing to list is not drawn (and neither is one still reading): a new server shows no row of
+  // "No ... yet" boxes. A failed read is the exception: it is drawn, with its retry.
+  if (view === "loading" || view === "empty") return null;
   return (
     <RailBlock
       id="rail-hashtags"
@@ -367,21 +347,14 @@ function HashtagsBlock() {
           to="/social/explore"
         />
       }
-      busy={view === "loading"}
       title="Hashtags"
     >
-      {view === "loading" ? (
-        <RailNote testId="social-rail-hashtags-loading">Loading…</RailNote>
-      ) : view === "error" ? (
+      {view === "error" ? (
         <RailNote
           onRetry={() => void trending.refetch()}
           testId="social-rail-hashtags-error"
         >
           Couldn't load hashtags.
-        </RailNote>
-      ) : view === "empty" ? (
-        <RailNote testId="social-rail-hashtags-empty">
-          No hashtags yet.
         </RailNote>
       ) : (
         <ul data-testid="social-rail-trending">
@@ -422,6 +395,9 @@ function PeopleBlock() {
     if (mutesUnknown) void mutedRead.refetch();
     else void suggested.refetch();
   };
+  // A block with nothing to list is not drawn (and neither is one still reading): a new server shows no row of
+  // "No ... yet" boxes. A failed read is the exception: it is drawn, with its retry.
+  if (view === "loading" || view === "empty") return null;
   return (
     <RailBlock
       id="rail-people"
@@ -433,18 +409,11 @@ function PeopleBlock() {
           to="/social/explore"
         />
       }
-      busy={view === "loading"}
       title="People to follow"
     >
-      {view === "loading" ? (
-        <RailNote testId="social-rail-people-loading">Loading…</RailNote>
-      ) : view === "error" ? (
+      {view === "error" ? (
         <RailNote onRetry={retry} testId="social-rail-people-error">
           Couldn't load suggestions.
-        </RailNote>
-      ) : view === "empty" ? (
-        <RailNote testId="social-rail-people-empty">
-          No suggestions yet. Follow a few people and check back.
         </RailNote>
       ) : (
         <div data-testid="social-rail-people">
@@ -463,7 +432,8 @@ function PeopleBlock() {
 
 /**
  * The rail beside the timeline (below it on narrower screens): the newest projects, what is trending, hashtags and
- * people worth following. Each is a short list that ends in a "See all" to its full page.
+ * people worth following. Each is a short list that ends in a "See all" to its full page. A block with no rows is not
+ * drawn, so a new server's rail is as short as what it has.
  */
 export function RightRail() {
   return (

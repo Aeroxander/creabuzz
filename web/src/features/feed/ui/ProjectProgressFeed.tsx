@@ -323,7 +323,7 @@ function ProgressList({
                 to="/launchpad/$launchId"
                 params={{ launchId: i.project.id }}
                 search={{ author: i.project.author }}
-                className="font-semibold text-foreground underline"
+                className="inline-flex items-center break-words font-semibold text-foreground underline max-sm:min-h-11"
               >
                 {i.project.name}
               </Link>
@@ -353,7 +353,7 @@ function ProgressList({
               {progressArtifacts(i.text).map((url, index) => (
                 <a
                   key={url}
-                  className="max-w-full truncate text-sm underline"
+                  className="inline-flex max-w-full items-center break-all text-sm underline max-sm:min-h-11"
                   href={url}
                   target="_blank"
                   rel="noreferrer"
@@ -378,7 +378,7 @@ function ProgressList({
                 testId={`progress-vote-${i.id}`}
               />
               <Link
-                className="text-sm underline"
+                className="inline-flex items-center text-sm underline max-sm:min-h-11"
                 to="/launchpad/$launchId"
                 params={{ launchId: i.project.id }}
                 search={{ author: i.project.author, tab: "discussion" }}
@@ -389,6 +389,7 @@ function ProgressList({
                   phone, detached from the update it copies. */}
               <Button
                 aria-label="Copy update link"
+                className="max-sm:h-11 max-sm:w-11"
                 size="icon"
                 title="Copy update link"
                 variant="ghost"

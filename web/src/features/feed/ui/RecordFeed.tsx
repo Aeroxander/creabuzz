@@ -210,13 +210,15 @@ export function RecordFeed() {
                   : "You follow no projects yet, so this shows every listed project. Follow one and this becomes your own feed."}
           </p>
           {me === null && scope.mode !== "yours" ? (
-            // A phone's bar has Sign in only, so the sentence above would name an action with nothing to press.
+            // A phone's bar has Sign in only, so the sentence above would name an action with nothing to press. Outline:
+            // the hero's "Start a project" is the one green button.
             <Button
               className="self-start sm:hidden max-sm:h-11"
               data-testid="record-feed-create-account"
               onClick={() => window.dispatchEvent(new Event(SIGN_UP_EVENT))}
               size="sm"
               type="button"
+              variant="outline"
             >
               {CREATE_ACCOUNT}
             </Button>
@@ -600,7 +602,7 @@ function RecordCard({
           <div className="mt-2 flex flex-wrap items-center gap-3">
             {progressArtifacts(item.update.body).map((url, index) => (
               <a
-                className="inline-flex max-w-full items-center truncate underline max-sm:min-h-11"
+                className="inline-flex max-w-full items-center break-all underline max-sm:min-h-11"
                 href={url}
                 key={url}
                 rel="noreferrer"

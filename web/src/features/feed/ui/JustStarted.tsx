@@ -14,9 +14,9 @@ import {
   needAccountTo,
   SIGN_UP_EVENT,
 } from "@/features/identity/lib/account-copy";
+import { whenWords } from "@/features/launchpad/lib/record-date";
 import { launchCoordinate } from "@/features/launchpad/models";
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { relativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
 
 import { justStarted } from "../lib/just-started";
@@ -68,15 +68,16 @@ export function JustStarted({
             <ProjectMark image={record.image} name={record.name} />
             <span className="min-w-0 flex-1">
               <Link
-                className="block truncate text-sm font-bold hover:underline max-sm:min-h-11 max-sm:leading-[2.75rem]"
+                className="block break-words text-sm font-bold hover:underline max-sm:py-3"
                 params={{ launchId: record.id }}
                 search={{ author: record.author }}
                 to="/launchpad/$launchId"
               >
                 {record.name}
               </Link>
-              <span className="block truncate text-xs text-muted-foreground">
-                Started {relativeTime(record.startedAt)}
+              <span className="block break-words text-xs text-muted-foreground">
+                Started{" "}
+                {whenWords(record.startedAt, Math.floor(Date.now() / 1000))}
                 {record.pitch ? ` · ${record.pitch}` : ""}
               </span>
             </span>

@@ -187,6 +187,7 @@ export function SocialShell({
     ...entries.filter((entry) => entry.key !== "feed"),
   ];
   const compose = useCompose();
+  const me = existingUserPubkey();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   return (
@@ -215,16 +216,19 @@ export function SocialShell({
                 pathname={pathname}
               />
             ))}
-          <button
-            aria-label="Write a post"
-            className="mt-3 flex h-11 w-11 items-center justify-center gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90 xl:w-full"
-            data-testid="social-compose"
-            onClick={compose}
-            type="button"
-          >
-            <PenLine aria-hidden className="h-5 w-5 xl:hidden" />
-            <span className="hidden xl:inline">Post</span>
-          </button>
+          {/* Signed out, the page's one green button is the hero's "Start a project": no green "Post" beside it. */}
+          {me ? (
+            <button
+              aria-label="Write a post"
+              className="mt-3 flex h-11 w-11 items-center justify-center gap-2 rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90 xl:w-full"
+              data-testid="social-compose"
+              onClick={compose}
+              type="button"
+            >
+              <PenLine aria-hidden className="h-5 w-5 xl:hidden" />
+              <span className="hidden xl:inline">Post</span>
+            </button>
+          ) : null}
         </nav>
 
         <div className="glass min-w-0 border-x xl:min-h-full">
