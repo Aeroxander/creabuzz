@@ -871,50 +871,46 @@ async fn a_record_stored_for_a_room_is_never_served() {
     );
 }
 
-/// A project whose record states the terms of a sale (a price floor, an amount
-/// to raise) is for the people the server let in: someone who is not a member
-/// is given neither its record, which would carry the price, nor anything
-/// about it.
+/// A project whose record states the terms of a sale (a price floor, an amount to raise) is public like any other: a
+/// visitor who is not a member is given the same records as for a project that states none, the record whole as its
+/// founder signed it.
 #[tokio::test]
 #[ignore = "requires Postgres and Redis"]
-async fn a_project_that_states_the_terms_of_a_sale_is_not_given_to_someone_who_is_not_a_member() {
+async fn a_project_that_states_the_terms_of_a_sale_is_given_like_any_other() {
     let w = world(true).await;
     let terms = r#"{"pitch":"A weekly map.","currency":"0xabc","floorPrice":"792281625140000","requiredRaised":"299999999998"}"#;
     project(&w, "nebula", terms).await;
-    // A member reads it whole, as before: the record, its goal, its update and the offer.
+    project(&w, "plain", r#"{"pitch":"A weekly map."}"#).await;
+    // A member reads it whole: the record, its goal, its update and the offer.
     let (status, body) = post(&w, &w.helper, "/query", &record_read(&w, "nebula")).await;
     assert_eq!((status, ids(&body).len()), (StatusCode::OK, 4));
-    assert!(body.to_string().contains("792281625140000"));
 
+    // A visitor is given what a visitor is given for any project: the record, its goal and its update, not the offer.
     let founder = w.founder.public_key().to_hex();
+    let (status, visitor) = post(&w, &w.visitor, "/query", &record_read(&w, "nebula")).await;
+    assert_eq!(
+        (status, ids(&visitor).len()),
+        (StatusCode::OK, 3),
+        "{visitor}"
+    );
+    assert!(visitor.to_string().contains("792281625140000"));
+    let (_, plain) = post(&w, &w.visitor, "/query", &record_read(&w, "plain")).await;
+    assert_eq!(ids(&plain).len(), 3, "{plain}");
     for read in [
-        record_read(&w, "nebula"),
         json!([{"kinds": [37001], "#d": ["nebula"], "authors": [founder]}]),
         json!([{"kinds": [37001], "#d": ["nebula"], "founder_start": &founder[..16]}]),
-        json!([{"kinds": [47003], "#a": [coordinate(&w, "nebula")], "limit": 200}]),
     ] {
-        assert_eq!(
-            post(&w, &w.visitor, "/query", &read).await,
-            (StatusCode::OK, json!([])),
-            "{read}"
-        );
+        let (status, body) = post(&w, &w.visitor, "/query", &read).await;
+        assert_eq!((status, ids(&body).len()), (StatusCode::OK, 1), "{read}");
     }
-
-    // The founder takes the terms off the record: it is a project like any other again.
-    publish(
+    let (_, about) = post(
         &w,
-        signed(
-            &w.founder,
-            KIND_LAUNCH_RECORD,
-            &[&["d", "nebula"], &["name", "Nebula"]],
-            r#"{"pitch":"A weekly map.","floorPrice":""}"#,
-            5,
-        ),
+        &w.visitor,
+        "/query",
+        &json!([{"kinds": [47003], "#a": [coordinate(&w, "nebula")], "limit": 200}]),
     )
     .await;
-    let (status, body) = post(&w, &w.visitor, "/query", &record_read(&w, "nebula")).await;
-    assert_eq!((status, ids(&body).len()), (StatusCode::OK, 3), "{body}");
-    assert!(!body.to_string().contains("792281625140000"));
+    assert_eq!(ids(&about).len(), 2, "{about}");
 }
 
 #[tokio::test]

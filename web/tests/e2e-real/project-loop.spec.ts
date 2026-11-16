@@ -1636,10 +1636,9 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
     await visitorBrowser.unroute("**/query");
     await busy.getByRole("button", { name: "Try again" }).click();
     await expect(visitorBrowser.getByTestId("public-record")).toBeVisible();
-    // A project whose record states the terms of a sale (a price floor, an amount to raise) is for members: the
-    // record is sent whole, so the server gives a visitor none of it. A member starts one straight on the server; the
-    // visitor at its link is told to ask for an invite, and neither the answer to their read nor the link's preview
-    // says anything about it.
+    // A project whose record states the terms of a sale (a price floor, an amount to raise) is public like any other:
+    // the record is sent whole, as its founder signed it, and the link's preview carries the project's own words (never
+    // a price). A member starts one straight on the server; the visitor at its link reads it.
     const saleSlug = `sale-${RUN}`;
     const saleName = `Sale ${RUN}`;
     const floor = "792281625140000";
@@ -1666,27 +1665,17 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
     });
     expect(stored?.content, "a member reads it whole").toContain(floor);
     const salePath = `/p/${saleSlug}-${stranger.pubkey.slice(0, 16)}`;
-    const answersBefore = answers;
-    expect(await visitorSees(visitorBrowser, salePath)).toBe(
-      "invite-only words",
+    expect(await visitorSees(visitorBrowser, salePath)).toBe("public record");
+    await expect(visitorBrowser.getByTestId("public-record")).toContainText(
+      saleName,
     );
-    await expect(visitorBrowser.getByTestId("public-record")).toHaveCount(0);
-    // The server did answer their read of it (it shows public records), and the answer held nothing of the project.
-    await expect
-      .poll(() => answers, "the visitor's read of the project is answered")
-      .toBeGreaterThan(answersBefore);
-    expect(
-      sent.some((event) =>
-        event.tags.some((tag) => tag[0] === "d" && tag[1] === saleSlug),
-      ),
-    ).toBe(false);
-    expect(JSON.stringify(sent)).not.toContain(floor);
     const saleHtml = await (
       await visitorBrowser.request.get(`${HTTP_URL}${salePath}`, {
         headers: { Accept: "text/html" },
       })
     ).text();
-    expect(saleHtml).not.toContain(saleName);
+    expect(saleHtml).toContain(`<title>${saleName} on Creaton</title>`);
+    expect(saleHtml, "a preview carries no price").not.toContain(floor);
     // The rest of the server stays closed to them: another member's profile gives the invite words, not a page.
     await visitorBrowser.goto(`/u/${founder.pubkey}`);
     await expect(visitorBrowser.getByTestId("public-record")).toHaveCount(0);

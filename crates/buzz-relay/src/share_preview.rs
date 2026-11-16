@@ -270,9 +270,9 @@ pub(crate) async fn public_standing(
 /// server does not let anyone read public records, when the address fits no
 /// project or more than one, when the project does not pass
 /// [`public_standing`], or when a lookup fails. On an invite-only community
-/// the visitor's only way in is the public record read, so a project that
-/// read does not give (one whose record states the terms of a sale) is not
-/// shown here either: a preview never says what the visitor could not open.
+/// the visitor's only way in is the public record read, and a project passes
+/// the same standing rule there: a preview never says what the visitor could
+/// not open.
 async fn shown_project(
     state: &AppState,
     community: CommunityId,
@@ -312,10 +312,6 @@ async fn shown_project(
     if matching.next().is_some() {
         return None;
     }
-    if by_public_read && crate::api::public_read::states_sale_terms(&record) {
-        return None;
-    }
-
     public_standing(state, community, record)
         .await
         .map_err(|error| tracing::warn!(%error, "share preview: standing read failed"))
@@ -1319,8 +1315,8 @@ mod tests {
             )
             .await;
             assert_eq!(page(&w, &slug(&w, "quiet")).await, PLAIN);
-            // A project whose record states the terms of a sale is not given to a visitor here, so its link
-            // says nothing about it either.
+            // A project whose record states the terms of a sale is public like any other: its link is previewed
+            // here as it is on an open server, with its own words and no price.
             project(
                 &w,
                 "sale",
@@ -1328,8 +1324,13 @@ mod tests {
                 r#"{"pitch":"Buy in.","floorPrice":"792281625140000"}"#,
             )
             .await;
-            assert_eq!(page(&w, &slug(&w, "sale")).await, PLAIN);
-            // On an open server a visitor reads everything, and such a project's link is previewed as before.
+            let sale_page = page(&w, &slug(&w, "sale")).await;
+            assert!(
+                sale_page.contains("<title>Sale on Creaton</title>"),
+                "{sale_page}"
+            );
+            assert!(!sale_page.contains("792281625140000"), "{sale_page}");
+            // On an open server a visitor reads everything, and such a project's link is previewed the same way.
             let open = world(false).await;
             project(
                 &open,
@@ -1397,7 +1398,7 @@ mod tests {
             let shown = world_for(true, true, founder.clone(), Some(named.clone())).await;
             project(&shown, "nebula", "Nebula", "{}").await;
             assert_eq!(example_named(&shown).await, serde_json::json!(named));
-            // With the terms of a sale on its record the visitor could no longer open it: not offered.
+            // With the terms of a sale on its record the visitor can still open it: still offered.
             publish(
                 &shown,
                 signed(
@@ -1409,7 +1410,7 @@ mod tests {
                 ),
             )
             .await;
-            assert_eq!(example_named(&shown).await, null);
+            assert_eq!(example_named(&shown).await, serde_json::json!(named));
             publish(
                 &shown,
                 signed(

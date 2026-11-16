@@ -25,7 +25,9 @@ run writes down is there to explain that number.
    ("Creaton", "First start"), with the Sepolia lines of `.env.creaton.example` left commented out (`BUZZ_EVM_*`) and none
    of the `VITE_` chain, kit or ZeroDev settings set. Starting a project, weekly updates, promises, help requests and tasks
    are records on this server: the real-server journey (`scripts/real-loop-e2e.sh`) runs them with no chain at all.
-   Invite-only is the default of the stack (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`), and Pilot A runs on it.
+   Invite-only is the default of the stack (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=true`), and Pilot A runs on it. Since
+   next-version milestone 0, `deploy/compose/.env.creaton.example` opens sign-up (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=false`)
+   for Creaton's own server; for an invited pilot, set it back to `true` in `.env`, and everything below about invites holds.
    **"Draft from the record" needs the server's AI service** (the operator's key; limits of 500 calls a day per person and
    2,000 a day for the whole server, `BUZZ_LLM_MAX_CALLS_PER_DAY` and `..._TOTAL`). Press it once on Creaton's own project
    before day 1. If the service is off or the limit is reached the founder sees the server's own sentence and can still
@@ -99,7 +101,8 @@ error message and whether the person knew what to do next; and every message you
 is one in which founders post again without being asked, mark a miss in public without being told to, and nobody needs help
 after day 1.
 
-**What a visitor gets.** This server is invite-only, so a project's page and its shared address (`/p/<name>-<founder>`)
+**What a visitor gets.** (On a server run invite-only, as this pilot is; with sign-up open, a visitor simply reads the page and
+may sign up.) This server is invite-only, so a project's page and its shared address (`/p/<name>-<founder>`)
 open for members only. Someone without an account now sees "You need an invite to open this project", "No invite yet? Ask the
 person who sent you this link for one", and a Sign in button; a pasted link in a chat shows the plain Creaton page and nothing
 about the project (a private project's name is never shown). **Tell founders this on day 1:** a link they share reaches

@@ -186,8 +186,8 @@ the Creaton card as the image, when it is pasted into a chat app. The server wri
 needs setting: the image is part of the web build (`web/public/assets/share-card.png`) and the proxy only has to pass the
 `Host` and `X-Forwarded-Proto` headers, which Caddy does. A preview shows only what a signed-out visitor could already read:
 on a server where people must be members to read (invite-only) the link shows the plain Creaton page, unless public
-records are on (next section, which also leaves out a project whose record states the terms of a sale); and so does a
-project that is removed, not listed, or whose founder is muted or banned.
+records are on (next section); and so does a project that is removed, not listed, or whose founder is muted or banned.
+A preview carries a project's own words and never a price.
 
 ### Public project records on an invite-only server
 
@@ -196,7 +196,7 @@ record while everything else stays for members. Someone with no invite who opens
 or `/launchpad/<project>`) sees that project's goal, its weekly updates, which promises were kept and missed, and the work
 that was accepted, read only, with one line saying that taking part needs an invite and a Sign in button. The same link
 shows a real preview in a chat app. It covers only projects the preview rule above allows (listed, not removed, founder not
-muted or banned), and never a project whose record states the terms of a sale (below). Such a visitor cannot browse: they
+muted or banned); a project that states the terms of a sale is public like any other. Such a visitor cannot browse: they
 need the link. While a project is not covered (for example for as long as its founder is muted), a visitor to its link
 is told "You need an invite to open this project", the same as for a project that is not there; the server does not say
 why, and members see the project as before.
@@ -205,21 +205,17 @@ What the server gives someone with no invite is a fixed list, checked record by 
 page happens to show:
 
 - The project's own record, whole. Besides the name, pitch and picture it holds the account ids of the team and, for a
-  project that has them, its chain addresses. Anyone who asks the server directly gets the record as the founder signed
-  it, so nothing can be left out of it. For that reason a project whose record states the terms of a sale is not given to
-  someone with no invite at all, neither its record nor anything about it: a price floor or price step, an amount to
-  raise, a monthly budget, Shares that unlock at a multiple of the price, or a sale's address. They see "You need an
-  invite to open this project" and the link shows no preview; members see the project as before. A project started
-  with the short form and a contributor project state none of these. Still sent: the team's account ids, chain
-  addresses, the funding stance, a revenue pledge, and how the supply is split and what unlocks when (the app writes
-  its usual split onto every project it saves, so it says nothing about a sale). Whether those, and sale terms, should
-  be public is the owner's decision.
+  project that has them, its chain addresses and, when it states them, the terms of a sale (a price floor or price step,
+  an amount to raise, a monthly budget, Shares that unlock at a multiple of the price, or a sale's address). Anyone who
+  asks the server directly gets the record as the founder signed it, so nothing can be left out of it. The page shows only
+  the name, picture and goal, and a link's preview never carries a price. (Until this change a project that stated the
+  terms of a sale was not given to someone with no invite at all; a launchpad that hides its launches is not one.)
 - The founder's goals and promises with their answers, and the updates the founder or the team posted.
 - For work the team accepted and nobody on the team sent back: the task, the work handed in (its words, links and files)
   and the confirmation.
 
 Everything else stays for members: work handed in that is still waiting or was sent back, and the reasons given; asks for
-more time; offers of help and the replies to them; check notes; every record about on-chain work (submitted evidence,
+more time; offers of help and the replies to them, asks to join; check notes; every record about on-chain work (submitted evidence,
 reviewers' reasons, agreements, work areas, challenges); rooms, boards, direct messages, profiles, Home and every list;
 and posting anything. Records signed by someone muted or banned are left out.
 
