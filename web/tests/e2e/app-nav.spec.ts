@@ -180,3 +180,81 @@ test("one bell counts what is new in rooms too, and reading it is remembered for
     timeout: 20_000,
   });
 });
+
+/** A button is the filled green one when it carries the primary background; outline and ghost buttons never do. */
+const FILLED = /(^|\s)bg-primary(\s|$)/;
+
+test("signed out, the top bar has one green button: Start a project, then an outline Sign up and a quiet Sign in", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  await install(page, relay, null);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const nav = page.getByTestId("app-nav");
+  const start = nav.getByTestId("app-nav-start");
+  const signUp = nav.getByTestId("create-identity-cta");
+  const signIn = nav.getByTestId("sign-in-cta");
+
+  await expect(start).toHaveText("Start a project");
+  await expect(start).toHaveClass(FILLED);
+  await expect(signUp).toHaveText("Sign up");
+  await expect(signUp).not.toHaveClass(FILLED);
+  await expect(signUp).toHaveClass(/border-input/);
+  await expect(signIn).toHaveText("Sign in");
+  await expect(signIn).not.toHaveClass(FILLED);
+  await expect(signIn).not.toHaveClass(/border-input/);
+  // One filled green button in the whole bar.
+  await expect(nav.locator("button.bg-primary, a.bg-primary")).toHaveCount(1);
+
+  // The keyboard order is the order on screen: Start a project, Sign up, Sign in.
+  const order = await nav
+    .locator(
+      "[data-testid='app-nav-start'], [data-testid='create-identity-cta'], [data-testid='sign-in-cta']",
+    )
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-testid")));
+  expect(order).toEqual([
+    "app-nav-start",
+    "create-identity-cta",
+    "sign-in-cta",
+  ]);
+
+  // Every way in opens what it says, by the keyboard as well as the pointer.
+  await signUp.focus();
+  await page.keyboard.press("Enter");
+  await expect(
+    page.getByRole("dialog", { name: "Create your account" }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("onboarding-dialog")).toHaveCount(0);
+  await signIn.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Sign in" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await start.click();
+  await expect(page).toHaveURL(/\/start$/);
+});
+
+test("signed in with no project the Start button is green; with a project it is an outline button", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+
+  const none = createMockRelay();
+  await install(page, none, ME_KEY);
+  await page.goto("/");
+  const start = page.getByTestId("app-nav").getByTestId("app-nav-start");
+  await expect(start).toHaveText("Start");
+  await expect(start).toHaveClass(FILLED);
+
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  const some = createMockRelay();
+  some.seed(projectRecord(ME, "mine", "Mine", now() - DAY));
+  await install(page, some, ME_KEY);
+  await page.goto("/start");
+  // The form's own read of the person's earlier projects is the one the bar shares: once it is done, the bar knows.
+  await expect(page.getByTestId("quick-start-go")).toBeEnabled();
+  await expect(start).toHaveText("Start");
+  await expect(start).not.toHaveClass(FILLED);
+  await expect(start).toHaveClass(/border-input/);
+});

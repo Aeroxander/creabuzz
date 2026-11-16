@@ -2,12 +2,13 @@
  * First-run onboarding: name the durable identity and publish its profile.
  */
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { saveNewProfile } from "../lib/profile";
 import { getOrCreateIdentity, importIdentity } from "@/shared/lib/identity";
 import { createPasskeyIdentity } from "../lib/passkey-identity";
 import { passkeyCreateProblem } from "../lib/passkey-problem";
+import { platformPasskeyAvailable } from "../lib/platform-passkey";
 import { parseRecoveryKey } from "../lib/recovery-key";
 import { signInWithWallet, walletAvailable } from "../lib/siwe";
 import { Fingerprint, Wallet } from "lucide-react";
@@ -17,6 +18,7 @@ import {
   errorMessage,
   failureWords,
 } from "@/shared/lib/readable-error";
+import { Button } from "@/shared/ui/button";
 import { FailureNote } from "@/shared/ui/failure-note";
 import { communityHostName } from "@/shared/lib/relay-url";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
@@ -74,6 +76,21 @@ export function OnboardingDialog({
   const [agreed, setAgreed] = useState(false);
   const [ageOk, setAgeOk] = useState(false);
   const allowed = mayCreateAccount(policy, { agreement: agreed, age: ageOk });
+  // Whether this device can make a passkey (null until the browser answers) decides which button is the green one. A
+  // way that just failed gives the green to the other, so the next press is the one more likely to work.
+  const [platform, setPlatform] = useState<boolean | null>(null);
+  const [failedWay, setFailedWay] = useState<"passkey" | "plain" | null>(null);
+  useEffect(() => {
+    let live = true;
+    void platformPasskeyAvailable().then((yes) => {
+      if (live) setPlatform(yes);
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  const passkeyLeads =
+    failedWay !== null ? failedWay === "plain" : platform !== false;
   /** Called once an account is made: keep which terms were agreed to, or that none were (they could not be loaded). */
   const accepted = () => recordSignUpTerms(policy, communityHostName());
 
@@ -81,14 +98,16 @@ export function OnboardingDialog({
     if (name.trim().length === 0 || !allowed) return;
     setSaving(true);
     setError(null);
+    setFailedWay(null);
     try {
       getOrCreateIdentity(); // materialize the key now, visibly
       accepted();
       await saveTypedName(name, about);
       onDone();
     } catch {
+      setFailedWay("plain");
       setError({
-        text: "This browser could not save your account. Check that it allows site data, then try again.",
+        text: `This browser could not save your account. Check that it allows site data, then try again.${platform === false ? "" : " Or create it with a passkey."}`,
         detail: null,
       });
     } finally {
@@ -105,6 +124,7 @@ export function OnboardingDialog({
     void (async () => {
       setSaving(true);
       setError(null);
+      setFailedWay(null);
       try {
         const { pubkey } = await createPasskeyIdentity(
           name.trim() || "Creaton user",
@@ -118,6 +138,7 @@ export function OnboardingDialog({
         await saveTypedName(name, about);
       } catch (e) {
         // The browser's own words go under Technical details for whoever helps.
+        setFailedWay("passkey");
         setError({ text: passkeyCreateProblem(e), detail: errorMessage(e) });
         setSaving(false);
       }
@@ -164,9 +185,9 @@ export function OnboardingDialog({
   // Why the buttons below are still off once a name is typed: a box above is not ticked yet.
   const untickedBoxes =
     name.trim().length > 0 && policy.status === "ready" && !allowed;
-  // A contributor-only build pays for work at a passkey account, so the passkey is the way in; without one is a
-  // quiet second choice, and says what it costs.
-  const passkeyFirst = !raisesOffered();
+  // A contributor-only build pays for work at a passkey account, so it says what going without one costs.
+  const paidNote = !raisesOffered();
+  const tickHint = untickedBoxes ? "onboarding-tick-hint" : undefined;
   return (
     <IdentityDialog
       cardClassName="max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-background p-6 shadow-2xl"
@@ -233,65 +254,81 @@ export function OnboardingDialog({
             state={policy}
           />
         </div>
-        {untickedBoxes ? (
-          <p
-            className="mb-2 text-xs text-muted-foreground"
-            data-testid="onboarding-tick-hint"
-            id="onboarding-tick-hint"
-          >
-            {policyRequirements(policy).age
-              ? "Tick the boxes above to continue."
-              : "Tick the box to agree to the Terms of use."}
-          </p>
-        ) : null}
-        <button
-          type="button"
-          aria-describedby={untickedBoxes ? "onboarding-tick-hint" : undefined}
-          onClick={createWithPasskey}
-          disabled={!ready}
-          className="flex w-full items-center justify-center gap-2 rounded-full bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-white dark:text-black"
-          data-testid="onboarding-passkey"
+        {/* The way in stays on screen while the form scrolls: the one green button is never below the fold. */}
+        <div
+          className="sticky bottom-0 -mx-6 bg-background px-6 pb-1 pt-2"
+          data-testid="onboarding-actions"
         >
-          <Fingerprint className="h-4 w-4" />
-          Create with a passkey
-        </button>
-        <p
-          className="mt-1.5 text-center text-xs text-muted-foreground"
-          data-testid="onboarding-passkey-note"
-        >
-          Sign in here with your fingerprint, face or device PIN. On another
-          device you need your recovery key, which you can save next.
-        </p>
-        {passkeyFirst ? (
-          <p className="mt-3 text-center text-xs text-muted-foreground">
-            <button
-              type="button"
-              aria-describedby="onboarding-create-note"
-              disabled={!ready}
-              onClick={() => void submit()}
-              className="font-medium text-foreground underline underline-offset-2 disabled:no-underline disabled:opacity-40"
-              data-testid="onboarding-create"
+          {untickedBoxes ? (
+            <p
+              className="mb-2 text-xs text-muted-foreground"
+              data-testid="onboarding-tick-hint"
+              id="onboarding-tick-hint"
             >
-              Create without a passkey
-            </button>{" "}
-            <span id="onboarding-create-note">
-              You'll need a passkey to be paid for work.
-            </span>
-          </p>
-        ) : (
-          <button
-            type="button"
-            aria-describedby={
-              untickedBoxes ? "onboarding-tick-hint" : undefined
-            }
-            disabled={!ready}
-            onClick={() => void submit()}
-            className="mt-3 w-full rounded-full border border-black/15 px-4 py-2 text-sm font-medium text-black hover:bg-black/5 disabled:opacity-40 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
-            data-testid="onboarding-create"
-          >
-            Create without a passkey
-          </button>
-        )}
+              {policyRequirements(policy).age
+                ? "Tick both boxes to continue."
+                : "Tick the box to agree to the Terms of use."}
+            </p>
+          ) : null}
+          {error ? (
+            <FailureNote
+              className="mb-2 text-xs text-red-600 dark:text-red-400"
+              failure={error}
+              testId="onboarding-error"
+            />
+          ) : null}
+          <div className="flex flex-col gap-3">
+            <div>
+              <Button
+                aria-describedby={tickHint}
+                className="w-full max-sm:h-11"
+                data-testid="onboarding-passkey"
+                disabled={!ready}
+                onClick={createWithPasskey}
+                size="lg"
+                type="button"
+                variant={passkeyLeads ? "default" : "outline"}
+              >
+                <Fingerprint className="h-4 w-4" />
+                Create with a passkey
+              </Button>
+              <p
+                className="mt-1.5 text-center text-xs text-muted-foreground"
+                data-testid="onboarding-passkey-note"
+              >
+                Sign in here with your fingerprint, face or device PIN. On
+                another device you need your recovery key, which you can save
+                next.
+              </p>
+            </div>
+            <div>
+              <Button
+                aria-describedby={
+                  [tickHint, paidNote ? "onboarding-create-note" : undefined]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
+                className="w-full max-sm:h-11"
+                data-testid="onboarding-create"
+                disabled={!ready}
+                onClick={() => void submit()}
+                size="lg"
+                type="button"
+                variant={passkeyLeads ? "outline" : "default"}
+              >
+                Create without a passkey
+              </Button>
+              {paidNote ? (
+                <p
+                  className="mt-1.5 text-center text-xs text-muted-foreground"
+                  id="onboarding-create-note"
+                >
+                  You'll need a passkey to be paid for work.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </div>
         {/* A wallet sign-up belongs with raises: the contributor-only pilot asks for no wallet. */}
         {raisesOffered() && walletAvailable() ? (
           <button
@@ -304,13 +341,6 @@ export function OnboardingDialog({
             <Wallet className="h-4 w-4" />
             Use a wallet app instead
           </button>
-        ) : null}
-        {error ? (
-          <FailureNote
-            className="mt-3 text-xs text-red-600 dark:text-red-400"
-            failure={error}
-            testId="onboarding-error"
-          />
         ) : null}
         <div className="mt-4 flex items-center justify-between gap-2 border-t border-black/10 pt-3 text-sm dark:border-white/10">
           <button

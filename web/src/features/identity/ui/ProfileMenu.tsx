@@ -45,9 +45,9 @@ import {
 } from "@/shared/theme/TypographyProvider";
 import { readWalletBinding, revokeWalletBinding } from "../lib/siwe";
 import { ConfirmDialog } from "@/shared/ui/confirm-dialog";
-import { OnboardingDialog } from "./OnboardingDialog";
 import { PolicyLinks } from "./PolicyLinks";
 import {
+  ACCOUNT_READY_EVENT,
   CREATE_ACCOUNT,
   SIGN_IN_EVENT,
   SIGN_UP_EVENT,
@@ -130,9 +130,6 @@ export function ProfileMenu({
   const [created, setCreated] = useState(
     () => hasStoredIdentity() || hasPasskeyIdentity(),
   );
-  const [showOnboarding, setShowOnboarding] = useState<
-    "create" | "signin" | null
-  >(null);
   const [editName, setEditName] = useState<string | null>(null);
   const [editAbout, setEditAbout] = useState("");
   const [editPicture, setEditPicture] = useState("");
@@ -165,17 +162,15 @@ export function ProfileMenu({
   // An account with no name yet is "Your account" to its owner, never a short key.
   const displayName = hasUserName(profile) ? resolvedName : "Your account";
 
-  // Other surfaces (the Home welcome) ask for the sign-up dialog rather than
-  // owning a second copy of it.
+  // The sign-up and sign-in dialogs live in `AuthDialogsHost`, mounted once beside the nav. When it makes a passkey
+  // account without a reload, this menu is told, and becomes the signed-in chip.
   useEffect(() => {
-    const open = () => setShowOnboarding("create");
-    const openSignIn = () => setShowOnboarding("signin");
-    window.addEventListener(SIGN_UP_EVENT, open);
-    window.addEventListener(SIGN_IN_EVENT, openSignIn);
-    return () => {
-      window.removeEventListener(SIGN_UP_EVENT, open);
-      window.removeEventListener(SIGN_IN_EVENT, openSignIn);
+    const ready = () => {
+      setCreated(true);
+      setOpen(false);
     };
+    window.addEventListener(ACCOUNT_READY_EVENT, ready);
+    return () => window.removeEventListener(ACCOUNT_READY_EVENT, ready);
   }, []);
 
   // A passkey account reads its profile while the passkey is still locked (the sign-in prompt below waits for a touch),
@@ -306,69 +301,63 @@ export function ProfileMenu({
   }
 
   if (!created) {
-    const signIn = (
-      <button
-        type="button"
-        onClick={() => setShowOnboarding("signin")}
-        className={
-          placement === "tabbar"
-            ? "flex min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-2xs font-semibold text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
-            : "inline-flex h-10 items-center rounded-lg px-3 text-sm font-semibold text-foreground/80 transition hover:bg-foreground/[0.06] hover:text-foreground"
-        }
-        data-testid="sign-in-cta"
-      >
-        {placement === "tabbar" ? (
-          <LogIn aria-hidden className="h-5 w-5 shrink-0" />
-        ) : null}
-        Sign in
-      </button>
-    );
+    // The dialogs belong to `AuthDialogsHost`; these only ask for them.
+    const askFor = (event: string) => () =>
+      window.dispatchEvent(new Event(event));
+    if (placement === "tabbar") {
+      return (
+        <div>
+          <button
+            type="button"
+            onClick={askFor(SIGN_IN_EVENT)}
+            className="flex min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-1.5 text-2xs font-semibold text-foreground/75 hover:bg-foreground/[0.06] hover:text-foreground"
+            data-testid="sign-in-cta"
+          >
+            <LogIn aria-hidden className="h-5 w-5 shrink-0" />
+            Sign in
+          </button>
+        </div>
+      );
+    }
+    if (placement === "header") {
+      // Next to the green "Start a project": Sign up is the outline button and Sign in the quiet one.
+      return (
+        <div className="flex items-center gap-1">
+          <Button
+            data-testid="create-identity-cta"
+            onClick={askFor(SIGN_UP_EVENT)}
+            type="button"
+            variant="outline"
+          >
+            Sign up
+          </Button>
+          <Button
+            data-testid="sign-in-cta"
+            onClick={askFor(SIGN_IN_EVENT)}
+            type="button"
+            variant="ghost"
+          >
+            Sign in
+          </Button>
+        </div>
+      );
+    }
     return (
       <div
         className={
-          placement === "header"
-            ? "flex items-center gap-1"
-            : compact
-              ? ""
-              : "border-t border-black/10 px-3 py-2.5 dark:border-white/10"
+          compact
+            ? ""
+            : "border-t border-black/10 px-3 py-2.5 dark:border-white/10"
         }
       >
-        {placement === "tabbar" ? (
-          signIn
-        ) : (
-          <>
-            {placement === "header" ? signIn : null}
-            <button
-              type="button"
-              onClick={() => setShowOnboarding("create")}
-              className={
-                placement === "header"
-                  ? "inline-flex h-10 items-center gap-2 rounded-lg bg-primary px-5 text-sm font-bold text-primary-foreground shadow-[0_6px_16px_-6px_hsl(var(--primary)/0.6)] transition hover:brightness-110"
-                  : "flex w-full items-center gap-2 rounded-md border border-dashed border-black/20 px-2 py-2 text-left text-sm text-black/60 hover:bg-black/5 dark:border-white/20 dark:text-white/60 dark:hover:bg-white/10"
-              }
-              data-testid="create-identity-cta"
-            >
-              {placement === "header" ? "Sign up" : CREATE_ACCOUNT}
-            </button>
-          </>
-        )}
-        {showOnboarding ? (
-          <OnboardingDialog
-            onCancel={() => setShowOnboarding(null)}
-            onDone={() => {
-              // Reload so the fresh profile (kind 0) renders in the chip.
-              window.location.reload();
-            }}
-            onPasskeyDone={() => {
-              // Passkey setup re-renders in place — no reload, no extra
-              // ceremony; the session is already active with the derived key.
-              setCreated(true);
-              setShowOnboarding(null);
-              setOpen(false);
-            }}
-            startOn={showOnboarding}
-          />
-        ) : null}
+        <button
+          type="button"
+          onClick={askFor(SIGN_UP_EVENT)}
+          className="flex w-full items-center gap-2 rounded-md border border-dashed border-black/20 px-2 py-2 text-left text-sm text-black/60 hover:bg-black/5 dark:border-white/20 dark:text-white/60 dark:hover:bg-white/10"
+          data-testid="create-identity-cta"
+        >
+          {CREATE_ACCOUNT}
+        </button>
       </div>
     );
   }

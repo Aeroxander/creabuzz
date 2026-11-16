@@ -218,3 +218,150 @@ test("Try again keeps keyboard focus inside the sign-up dialog, on both screens"
   await expect(page.getByTestId("onboarding-policy-agree")).toBeVisible();
   expect(await insideDialog()).toBe(true);
 });
+
+/** The sign-up dialog's buttons: the green one is the way this device supports, and both wait for both boxes. */
+const FILLED = /(^|\s)bg-primary(\s|$)/;
+const AGE_TERMS = {
+  policy: { ...TERMS.policy, age_attestation_required: true },
+};
+
+async function withPlatformPasskey(page: Page) {
+  const client = await page.context().newCDPSession(page);
+  await client.send("WebAuthn.enable");
+  await client.send("WebAuthn.addVirtualAuthenticator", {
+    options: {
+      protocol: "ctap2",
+      transport: "internal",
+      hasResidentKey: true,
+      hasUserVerification: true,
+      isUserVerified: true,
+      automaticPresenceSimulation: true,
+    },
+  });
+}
+
+test("the sign-up dialog's legal text is exactly as it was", async ({
+  page,
+}) => {
+  await start(page, () => ({ status: 200, json: AGE_TERMS }));
+  await page.goto("/");
+  await page.getByTestId("create-identity-cta").click();
+  const boxes = page.getByTestId("onboarding-policy");
+  await expect(boxes).toBeVisible();
+  const [age, terms] = await boxes.locator("label").all();
+  await expect(age).toHaveText("I am 18 years of age or older.");
+  await expect(terms).toHaveText(
+    "I agree to the Terms of use and have read the Privacy note. Posts and votes are public.",
+  );
+  await expect(terms.getByRole("link", { name: "Terms of use" })).toBeVisible();
+  await expect(terms.getByRole("link", { name: "Privacy note" })).toBeVisible();
+});
+
+test("on a device that can make a passkey, the passkey button is the green one", async ({
+  page,
+}) => {
+  await start(page, () => ({ status: 200, json: AGE_TERMS }));
+  await withPlatformPasskey(page);
+  await page.goto("/");
+  await page.getByTestId("create-identity-cta").click();
+  const passkey = page.getByTestId("onboarding-passkey");
+  const plain = page.getByTestId("onboarding-create");
+  await expect(passkey).toHaveClass(FILLED);
+  await expect(plain).not.toHaveClass(FILLED);
+  await expect(
+    page.getByTestId("onboarding-dialog").locator("button.bg-primary"),
+  ).toHaveCount(1);
+  // Both ways keep their own note.
+  await expect(page.getByTestId("onboarding-passkey-note")).toContainText(
+    "On another device you need your recovery key",
+  );
+});
+
+test("on a device with no passkey, 'Create without a passkey' is the green one", async ({
+  page,
+}) => {
+  await start(page, () => ({ status: 200, json: AGE_TERMS }));
+  // A browser that says it cannot make one (as headless Chromium does with no authenticator).
+  await page.addInitScript(() => {
+    if (window.PublicKeyCredential)
+      window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable =
+        () => Promise.resolve(false);
+  });
+  await page.goto("/");
+  await page.getByTestId("create-identity-cta").click();
+  await expect(page.getByTestId("onboarding-create")).toHaveClass(FILLED);
+  await expect(page.getByTestId("onboarding-passkey")).not.toHaveClass(FILLED);
+  await expect(
+    page.getByTestId("onboarding-dialog").locator("button.bg-primary"),
+  ).toHaveCount(1);
+});
+
+test("both buttons wait for both boxes, say so, and keep a 44 px reach on a phone", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page, () => ({ status: 200, json: AGE_TERMS }));
+  await page.goto("/");
+  // On a phone the way in is the tab bar's Sign in, whose dialog switches to making an account.
+  await page.getByTestId("sign-in-cta").click();
+  await page.getByTestId("onboarding-signin-key").waitFor();
+  await page.getByRole("button", { name: "Create an account" }).click();
+
+  await page.getByTestId("onboarding-name").fill("Nia Patel");
+  const passkey = page.getByTestId("onboarding-passkey");
+  const plain = page.getByTestId("onboarding-create");
+  await expect(passkey).toBeDisabled();
+  await expect(plain).toBeDisabled();
+  await expect(page.getByTestId("onboarding-tick-hint")).toHaveText(
+    "Tick both boxes to continue.",
+  );
+  // One box is not enough.
+  await page.getByTestId("onboarding-policy-age").check();
+  await expect(plain).toBeDisabled();
+  await page.getByTestId("onboarding-policy-agree").check();
+  await expect(passkey).toBeEnabled();
+  await expect(plain).toBeEnabled();
+  await expect(page.getByTestId("onboarding-tick-hint")).toHaveCount(0);
+
+  // The age and terms rows are 44 px tall, and the buttons are on screen without scrolling.
+  for (const row of await page
+    .getByTestId("onboarding-policy")
+    .locator("label")
+    .all()) {
+    expect((await row.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  }
+  await expect(passkey).toBeInViewport({ ratio: 1 });
+  await expect(plain).toBeInViewport({ ratio: 1 });
+  expect((await plain.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+});
+
+test("when the passkey does not work, the line says what to do and the other way becomes the green one", async ({
+  page,
+}) => {
+  await start(page, () => ({ status: 200, json: AGE_TERMS }));
+  await withPlatformPasskey(page);
+  await page.addInitScript(() => {
+    navigator.credentials.create = () =>
+      Promise.reject(new DOMException("cancelled", "NotAllowedError"));
+  });
+  await page.goto("/");
+  await page.getByTestId("create-identity-cta").click();
+  await page.getByTestId("onboarding-name").fill("Nia Patel");
+  await page.getByTestId("onboarding-policy-age").check();
+  await page.getByTestId("onboarding-policy-agree").check();
+  const passkey = page.getByTestId("onboarding-passkey");
+  const plain = page.getByTestId("onboarding-create");
+  await expect(passkey).toHaveClass(FILLED);
+  await passkey.click();
+
+  const error = page.getByTestId("onboarding-error");
+  await expect(error).toContainText("The passkey was cancelled.");
+  await expect(error).toContainText("create without a passkey");
+  await expect(plain).toHaveClass(FILLED);
+  await expect(passkey).not.toHaveClass(FILLED);
+  // The other way works from there.
+  await Promise.all([page.waitForNavigation(), plain.click()]);
+  expect(
+    await page.evaluate(() => localStorage.getItem("buzz.identity.nsec")),
+  ).not.toBeNull();
+});

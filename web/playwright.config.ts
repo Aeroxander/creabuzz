@@ -168,6 +168,9 @@ export default defineConfig({
         "**/newcomer-welcome.spec.ts",
         // Browser notifications: asked for only from a button, shown by count while the page is hidden.
         "**/browser-notifications.spec.ts",
+        // Home's goal box into Start, Start's short words, and the sign-up dialog's buttons and width change.
+        "**/solo-start-home-goal.spec.ts",
+        "**/signup-resize.spec.ts",
       ],
       use: {
         ...devices["Desktop Chrome"],

@@ -17,11 +17,14 @@ export function needAccountTo(action: string): string {
   return `Create your account to ${action}.`;
 }
 
-/** Asks the account menu to open its sign-up dialog (it owns that flow). */
+/** Asks the app to open its sign-up dialog (`AuthDialogsHost` owns that flow). */
 export const SIGN_UP_EVENT = "creaton:sign-up";
 
-/** Asks the account menu to open its sign-in dialog (recovery key), as `SIGN_UP_EVENT` does for sign-up. */
+/** Asks the app to open its sign-in dialog (recovery key), as `SIGN_UP_EVENT` does for sign-up. */
 export const SIGN_IN_EVENT = "creaton:sign-in";
+
+/** Said once a passkey account was made without a reload, so the account menu and the top bar show a signed-in person. */
+export const ACCOUNT_READY_EVENT = "creaton:account-ready";
 
 /** The age the terms, the privacy note and the sign-up box all use. Change it here and nowhere else. */
 export const MINIMUM_AGE = 18;

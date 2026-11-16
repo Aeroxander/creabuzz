@@ -70,10 +70,10 @@ export function PolicyBoxes({
       data-testid="onboarding-policy"
     >
       {needs.age ? (
-        <label className="flex items-start gap-2">
+        <label className="flex items-start gap-2 max-sm:min-h-11 max-sm:items-center">
           <input
             checked={ageOk}
-            className="mt-0.5"
+            className="mt-0.5 shrink-0 max-sm:mt-0 max-sm:h-5 max-sm:w-5"
             data-testid="onboarding-policy-age"
             onChange={(e) => onAgeOk(e.target.checked)}
             type="checkbox"
@@ -82,10 +82,10 @@ export function PolicyBoxes({
         </label>
       ) : null}
       {needs.agreement ? (
-        <label className="flex items-start gap-2">
+        <label className="flex items-start gap-2 max-sm:min-h-11 max-sm:items-center">
           <input
             checked={agreed}
-            className="mt-0.5"
+            className="mt-0.5 shrink-0 max-sm:mt-0 max-sm:h-5 max-sm:w-5"
             data-testid="onboarding-policy-agree"
             onChange={(e) => onAgreed(e.target.checked)}
             type="checkbox"

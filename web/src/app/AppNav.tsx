@@ -9,11 +9,14 @@ import {
   UserRound,
 } from "lucide-react";
 
-import { Suspense, lazy, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 
+import { ACCOUNT_READY_EVENT } from "@/features/identity/lib/account-copy";
+import { AuthDialogsHost } from "@/features/identity/ui/AuthDialogsHost";
 import { ProfileMenu } from "@/features/identity/ui/ProfileMenu";
 import { useNotifications } from "@/features/notifications/use-notifications";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import { useOwnLaunchIds } from "@/features/launchpad/use-launches";
 import {
   portfolioInNav,
   portfolioLabel,
@@ -147,54 +150,46 @@ export function AppNav() {
   const wide = useMediaQuery("(min-width: 768px)");
   const items = navItems();
   const rooms = useRoomsBadge();
-  const signedIn = existingUserPubkey() !== null;
+  const signedIn = useSignedIn();
 
-  if (wide) {
-    return (
-      <nav
-        aria-label="Main"
-        className="flex h-16 w-full shrink-0 items-center gap-3 border-b border-border/60 bg-background/70 px-4 backdrop-blur-md lg:gap-6 lg:px-8"
-        data-testid="app-nav"
-        data-layout="wide"
+  const bar = wide ? (
+    <nav
+      aria-label="Main"
+      className="flex h-16 w-full shrink-0 items-center gap-3 border-b border-border/60 bg-background/70 px-4 backdrop-blur-md lg:gap-6 lg:px-8"
+      data-testid="app-nav"
+      data-layout="wide"
+    >
+      <Link
+        aria-label={`${APP_NAME} home`}
+        className="flex shrink-0 items-center gap-2 rounded-lg"
+        to="/"
       >
-        <Link
-          aria-label={`${APP_NAME} home`}
-          className="flex shrink-0 items-center gap-2 rounded-lg"
-          to="/"
-        >
-          <CreatonMark className="h-9 w-9" />
-          <span className="hidden text-lg font-extrabold tracking-tight lg:inline">
-            {APP_NAME.toLowerCase()}
-          </span>
-        </Link>
-        <TestnetChip />
-        <HeaderSearch />
-        <div className="ml-auto flex items-center gap-0.5">
-          {items.map((item) => (
-            <NavLink
-              active={item.matches(pathname)}
-              item={item}
-              key={item.to}
-              variant="top"
-            />
-          ))}
-        </div>
-        {signedIn ? (
-          <Suspense fallback={null}>
-            <InboxLinks rooms={rooms} />
-          </Suspense>
-        ) : null}
-        <Button asChild size="sm">
-          <Link data-testid="app-nav-start" to="/start">
-            Start
-          </Link>
-        </Button>
-        <ProfileMenu placement="header" />
-      </nav>
-    );
-  }
-
-  return (
+        <CreatonMark className="h-9 w-9" />
+        <span className="hidden text-lg font-extrabold tracking-tight lg:inline">
+          {APP_NAME.toLowerCase()}
+        </span>
+      </Link>
+      <TestnetChip />
+      <HeaderSearch />
+      <div className="ml-auto flex items-center gap-0.5">
+        {items.map((item) => (
+          <NavLink
+            active={item.matches(pathname)}
+            item={item}
+            key={item.to}
+            variant="top"
+          />
+        ))}
+      </div>
+      {signedIn ? (
+        <Suspense fallback={null}>
+          <InboxLinks rooms={rooms} />
+        </Suspense>
+      ) : null}
+      <StartButton signedIn={signedIn} />
+      <ProfileMenu placement="header" />
+    </nav>
+  ) : (
     <div className="flex w-full flex-col">
       <TestnetStrip />
       <nav
@@ -219,6 +214,44 @@ export function AppNav() {
         </div>
       </nav>
     </div>
+  );
+
+  // The sign-up and sign-in dialogs sit beside the bar, not inside it: turning a phone sideways swaps the two bars, and
+  // a dialog someone is part way through must survive that.
+  return (
+    <>
+      {bar}
+      <AuthDialogsHost />
+    </>
+  );
+}
+
+/** Whether someone is signed in, read again when a passkey account is made without a page reload. */
+function useSignedIn(): boolean {
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const again = () => tick((n) => n + 1);
+    window.addEventListener(ACCOUNT_READY_EVENT, again);
+    return () => window.removeEventListener(ACCOUNT_READY_EVENT, again);
+  }, []);
+  return existingUserPubkey() !== null;
+}
+
+/**
+ * The top bar's Start button. It is the one green button until it has done its job: for a visitor, "Start a project";
+ * for someone signed in who has no project yet, "Start". Once they have a project it is an outline button. While that is
+ * still being read, or when it could not be, it stays an outline button rather than guess.
+ */
+function StartButton({ signedIn }: { signedIn: boolean }) {
+  const own = useOwnLaunchIds(existingUserPubkey());
+  const noProjectYet = own.isSuccess && own.data.length === 0;
+  const lead = !signedIn || noProjectYet;
+  return (
+    <Button asChild variant={lead ? "default" : "outline"}>
+      <Link data-testid="app-nav-start" to="/start">
+        {signedIn ? "Start" : "Start a project"}
+      </Link>
+    </Button>
   );
 }
 
