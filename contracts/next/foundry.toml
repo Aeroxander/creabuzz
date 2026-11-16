@@ -1,0 +1,43 @@
+# Milestone 1 of docs/NEXT-VERSION-PLAN.md: a separate Foundry project, so the existing contracts build in
+# ../foundry.toml (and the bytecode pinned in the desktop app) is untouched. Everything here compiles with the
+# solc the vendored Uniswap code is pinned to (=0.8.26); the production contracts will use the repo's own pin later.
+[profile.default]
+src = "src"
+test = "test"
+out = "out"
+cache_path = "cache"
+libs = ["lib"]
+auto_detect_remappings = false
+auto_detect_solc = true
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 11111
+via_ir = true
+bytecode_hash = "none"
+ignored_error_codes = [2424]
+fs_permissions = [{ access = "read", path = "./fork-cache" }]
+
+# Everything compiles with 0.8.26 (the upstream pin) except Permit2, which is pinned to exactly 0.8.17 upstream. The bids
+# of the auction go through Permit2 at its fixed address, so the local test twin needs the real code.
+compilation_restrictions = [
+  { paths = "src/**", version = "=0.8.26" },
+  { paths = "test/**", version = "=0.8.26" },
+  { paths = "lib/continuous-clearing-auction/src/**", version = "=0.8.26" },
+  { paths = "lib/continuous-clearing-auction/lib/liquidity-launcher/src/**", version = "=0.8.26" },
+  { paths = "lib/continuous-clearing-auction/lib/liquidity-launcher/lib/v4-core/src/**", version = "=0.8.26" },
+  { paths = "lib/continuous-clearing-auction/lib/liquidity-launcher/lib/v4-periphery/src/**", version = "=0.8.26" },
+  { paths = "lib/continuous-clearing-auction/lib/permit2/src/{Permit2,AllowanceTransfer,SignatureTransfer,EIP712}.sol", version = "=0.8.17" },
+  { paths = "lib/continuous-clearing-auction/lib/solady/**", version = "=0.8.26" },
+  { paths = "lib/continuous-clearing-auction/lib/openzeppelin-contracts/**", version = "=0.8.26" },
+  { paths = "lib/continuous-clearing-auction/lib/blocknumberish/**", version = "=0.8.26" },
+  { paths = "lib/forge-std/**", version = "=0.8.26" },
+]
+
+[fmt]
+line_length = 120
+tab_width = 4
+quote_style = "double"
+number_underscore = "thousands"
+
+[rpc_endpoints]
+sepolia = "${SEPOLIA_RPC_URL}"
