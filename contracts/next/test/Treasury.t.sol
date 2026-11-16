@@ -56,7 +56,7 @@ contract TreasuryTest is Base {
     function test_birth_badSetupsAreRefused() public {
         Treasury fresh;
         Treasury.Setup memory s;
-        for (uint256 i; i < 11; ++i) {
+        for (uint256 i; i < 13; ++i) {
             fresh = Treasury(Clones.clone(launcher.treasuryImpl()));
             s = _setup();
             s.workPot = 0;
@@ -71,9 +71,18 @@ contract TreasuryTest is Base {
             if (i == 8) s.floorParts = 0;
             if (i == 9) s.workPot = 1; // the clone holds no Shares to back a work pot
             if (i == 10) s.vester = IVester(address(0));
+            if (i == 11) s.spendableParts = 10_001; // a part this large could overflow the sum `settle` takes
+            if (i == 12) s.floorParts = 10_001;
             vm.expectRevert(Treasury.BadSetup.selector);
             fresh.initialize(s);
         }
+        // the ceiling itself is allowed (and 10,000 + 10,000 fits a uint16 with room to spare)
+        fresh = Treasury(Clones.clone(launcher.treasuryImpl()));
+        s = _setup();
+        s.workPot = 0;
+        s.spendableParts = 10_000;
+        s.floorParts = 10_000;
+        fresh.initialize(s);
     }
 
     function _setup() internal view returns (Treasury.Setup memory) {
@@ -109,6 +118,24 @@ contract TreasuryTest is Base {
         vm.prank(opener);
         vm.expectRevert(Treasury.PoolAlreadyOpen.selector);
         t.markPoolOpen();
+    }
+
+    function test_saleClosed_onlyTheOpenerMarksIt_onlyAfterThePoolIsProven_andOnlyOnce() public {
+        vm.prank(opener);
+        vm.expectRevert(Treasury.NoPool.selector);
+        t.markSaleClosed(); // the pool is not proven yet
+        _openPool();
+        vm.expectRevert(Treasury.NotAllowed.selector);
+        t.markSaleClosed(); // a stranger
+        vm.prank(founder);
+        vm.expectRevert(Treasury.NotAllowed.selector);
+        t.markSaleClosed(); // not even the founder
+        assertFalse(t.saleClosed());
+        _closeSale();
+        assertTrue(t.saleClosed());
+        vm.prank(opener);
+        vm.expectRevert(Treasury.SaleAlreadyClosed.selector);
+        t.markSaleClosed();
     }
 
     // ------------------------------------------------------------------------------------------------- settle

@@ -36,7 +36,11 @@ contract TreasuryHandler is Test {
     uint256 public reserveReleased;
     bool public exitOverpaid; // an exit paid more than floor * burned / counting
     bool public perShareFell; // an exit lowered the floor per Share of those who remain
-    bool public denominatorWrong; // the Treasury's counting supply is not total - held by Treasury - held by Vester
+    bool public denominatorWrong; // the Treasury's counting supply is not total - held by Treasury - unreleased in Vester
+    bool public claimMovedCounting; // a Vester claim (by anyone, for anyone) changed the exit denominator
+    bool public exitedBeforeClose; // an exit paid before the sale's finish was marked complete
+    uint256 public grantedGhost = 200_000_000 * SHARE; // Shares ever granted in the Vester: the founder's, and pre-pool gifts
+    uint256 public poolOpenedAt; // when the pool was proven open (0 before)
     bool public spendableTouched; // anything but `spend` lowered `spendable`
     bool public spentTooMuch; // `spend` sent more than spendable plus what the release owed
     bool public exitTookSpendable; // an exit changed `spendable` beyond the release it triggered
@@ -110,7 +114,26 @@ contract TreasuryHandler is Test {
 
     function openPool() external {
         vm.prank(opener);
-        try t.markPoolOpen() {} catch {}
+        try t.markPoolOpen() {
+            poolOpenedAt = _now();
+        } catch {}
+    }
+
+    /// @dev The sale's finish is complete (the unsold Shares are swept in milestone 3); exits may open.
+    function closeSale() external {
+        vm.prank(opener);
+        try t.markSaleClosed() {} catch {}
+    }
+
+    /// @dev What the exit denominator must be, from the handler's own books: all Shares, less the Treasury's, less the
+    /// part of everything ever granted in the Vester that the 365-day schedule has not released, whoever claimed.
+    function independentCounting() public view returns (uint256) {
+        uint256 unreleased = grantedGhost;
+        if (poolOpenedAt != 0) {
+            uint256 elapsed = _now() - poolOpenedAt;
+            unreleased = elapsed >= 365 days ? 0 : grantedGhost - grantedGhost * elapsed / 365 days;
+        }
+        return shares.totalSupply() - shares.balanceOf(address(t)) - unreleased;
     }
 
     /// @dev Sale money (or a donation) arrives at the Treasury without being split.
@@ -191,6 +214,7 @@ contract TreasuryHandler is Test {
         vm.prank(giver);
         try t.giveShares(_holder(to), amount) {
             giftsMade++;
+            if (!open) grantedGhost += amount;
             if (open) _gifts.push(Use(_now(), amount, cap));
             if (giver != founder) {
                 (,, uint128 shareCap) = t.agents(giver);
@@ -201,9 +225,11 @@ contract TreasuryHandler is Test {
 
     function claimVest(uint256 who) external {
         address a = who % 5 == 4 ? founder : _holder(who);
+        uint256 countingBefore = t.countingSupply();
         try v.claim(a) returns (uint256 got) {
             if (got > 0) claims++;
         } catch {}
+        if (t.countingSupply() != countingBefore) claimMovedCounting = true;
     }
 
     function releaseReserve(uint256 to, uint256 amount) external {
@@ -255,12 +281,13 @@ contract TreasuryHandler is Test {
         t.release();
         uint256 floorBefore = t.melting() + t.permanentFloor();
         uint256 countingBefore = t.countingSupply();
-        uint256 independent = shares.totalSupply() - shares.balanceOf(address(t)) - shares.balanceOf(address(v));
-        if (countingBefore != independent) denominatorWrong = true;
+        if (countingBefore != independentCounting()) denominatorWrong = true;
+        bool closed = t.saleClosed();
         uint256 spendableBefore = t.spendable();
         vm.prank(a);
         try t.handBack(amount) returns (uint256 paid) {
             exits++;
+            if (!closed) exitedBeforeClose = true;
             burned += amount;
             if (paid * countingBefore > floorBefore * amount) exitOverpaid = true;
             // the floor per Share of those who remain never falls: floorAfter / countingAfter >= floorBefore / countingBefore

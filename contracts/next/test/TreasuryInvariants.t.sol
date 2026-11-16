@@ -9,7 +9,7 @@ import {TreasuryHandler} from "./helpers/TreasuryHandler.sol";
 ///
 ///  Rule 1: the buckets equal the balance (never more than it; equal when nobody sent a stray transfer).
 ///  Rule 2: an exit never pays more than its slice.
-///  Rule 3: project-held and unreleased Shares never count.
+///  Rule 3: project-held and unreleased Shares never count (and released Shares always count, claimed or not).
 contract TreasuryInvariantsTest is Base {
     TreasuryHandler internal h;
 
@@ -50,9 +50,19 @@ contract TreasuryInvariantsTest is Base {
 
     // ------------------------------------------------------------------------------------------------------ rule 3
 
-    function invariant_rule3_theCountingSupplyLeavesOutTheTreasuryAndTheVester() public view {
+    function invariant_rule3_theCountingSupplyLeavesOutTheTreasuryAndTheUnreleasedShares() public view {
         assertFalse(h.denominatorWrong());
-        assertEq(t.countingSupply(), shares.totalSupply() - shares.balanceOf(address(t)) - shares.balanceOf(address(v)));
+        assertEq(t.countingSupply(), h.independentCounting());
+    }
+
+    /// A claim moves Shares from the Vester to a person; both sides count, so no stranger's claim can move a price.
+    function invariant_rule3_aClaimNeverChangesTheCountingSupply() public view {
+        assertFalse(h.claimMovedCounting());
+    }
+
+    /// No exit ever paid before the sale's finish was marked complete.
+    function invariant_noExitPaysBeforeTheSaleIsClosed() public view {
+        assertFalse(h.exitedBeforeClose());
     }
 
     function invariant_rule3_theVesterAlwaysHoldsEveryUnreleasedShare() public view {
@@ -164,6 +174,9 @@ contract TreasuryInvariantsTest is Base {
         h.distribute(0, 100_000_000 * SHARE);
         h.distribute(1, 400_000_000 * SHARE);
         h.handBack(0, 10_000_000 * SHARE);
+        assertEq(h.exits(), 0, "no exit before the sale's finish is complete");
+        h.closeSale();
+        h.handBack(0, 10_000_000 * SHARE);
         assertEq(h.exits(), 1);
         h.giveShares(0, 2, 5_000_000 * SHARE);
         h.giveShares(1, 3, 100_000 * SHARE);
@@ -176,5 +189,7 @@ contract TreasuryInvariantsTest is Base {
         h.claimVest(4);
         assertGt(h.claims(), 0);
         assertFalse(h.exitOverpaid());
+        assertFalse(h.exitedBeforeClose());
+        assertFalse(h.claimMovedCounting());
     }
 }

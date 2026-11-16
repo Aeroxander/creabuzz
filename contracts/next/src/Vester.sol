@@ -6,8 +6,8 @@ import {IShares} from "./Interfaces.sol";
 /// @title Vester
 /// @notice Holds the founder's Shares and every Share given before the pool opened, and releases them evenly over 365
 /// days from the day the pool opens. Until then nothing is released. A beneficiary claims what has been released;
-/// claimed Shares are free (they can be sold or handed back). Shares still in here are not in anyone's hands: the
-/// treasury leaves them out when it counts holders for the exit right.
+/// claimed Shares are free (they can be sold or handed back). Shares the schedule has not released yet are not in
+/// anyone's hands: the treasury leaves exactly those out (`unreleased`) when it counts holders for the exit right.
 /// @dev One copy per project, a minimal clone created by the Launcher. Nothing here can move Shares anywhere but to the
 /// beneficiary they were granted to, and only as fast as the schedule allows. There is no owner.
 contract Vester {
@@ -24,6 +24,8 @@ contract Vester {
     uint256 public start;
     /// @notice Shares granted and not yet claimed, over all beneficiaries.
     uint256 public committed;
+    /// @notice Shares ever granted, over all beneficiaries (claimed or not).
+    uint256 public granted;
 
     struct Grant {
         uint256 total;
@@ -94,6 +96,17 @@ contract Vester {
         return elapsed >= DURATION ? total : total * elapsed / DURATION;
     }
 
+    /// @notice Shares the schedule has not released yet, over all beneficiaries: everything granted before the clock
+    /// starts, falling evenly to zero over 365 days. It depends only on the clock, never on who has claimed, so the
+    /// treasury can leave exactly these Shares out of the exit count without a stranger's `claim` changing any price.
+    /// Released Shares that nobody has claimed yet are not in this number: they belong to their beneficiary already.
+    function unreleased() external view returns (uint256) {
+        uint256 s = start;
+        if (s == 0) return granted;
+        uint256 elapsed = block.timestamp - s;
+        return elapsed >= DURATION ? 0 : granted - granted * elapsed / DURATION;
+    }
+
     /// @notice What the beneficiary can claim right now.
     function claimable(address beneficiary) public view returns (uint256) {
         return released(beneficiary) - grants[beneficiary].claimed;
@@ -115,6 +128,7 @@ contract Vester {
         if (shares.balanceOf(address(this)) < committed + amount) revert NotFunded();
         grants[beneficiary].total += amount;
         committed += amount;
+        granted += amount;
         emit Granted(beneficiary, amount);
     }
 }

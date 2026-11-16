@@ -21,30 +21,45 @@ contract AttackM2Test is Base {
 
     /// @dev One holder exits 400M Shares in 400 pieces instead of one. The plan says 4 of the 5 percent fee stays "for
     /// those who remain", but it also lifts the floor per Share of the leaver's own remaining Shares, so the leaver gets
-    /// back part of their own fee. Rule 3 of the plan ("each exit takes only its own slice") should make the pieces add up
-    /// to no more than the one big exit.
-    function test_defect_exitingInPiecesPaysMoreThanOneExit() public {
+    /// back part of their own fee. Returns what bob and the platform get from one exit and from 400, and what alice, the
+    /// one holder left, gets afterwards.
+    function _exitInPieces()
+        internal
+        returns (uint256 single, uint256 pieces, uint256 aliceSingle, uint256 alicePieces)
+    {
         _world();
         uint256 snap = vm.snapshotState();
-
-        uint256 single = _handBack(bob, 400_000_000 * SHARE);
-        uint256 platformSingle = t.feesOwed();
-        uint256 aliceSingle = _handBack(alice, 100_000_000 * SHARE);
-
+        single = _handBack(bob, 400_000_000 * SHARE);
+        aliceSingle = _handBack(alice, 100_000_000 * SHARE);
         vm.revertToState(snap);
-        uint256 pieces;
         for (uint256 i; i < 400; ++i) {
             pieces += _handBack(bob, 1_000_000 * SHARE);
         }
-        uint256 platformPieces = t.feesOwed();
-        uint256 alicePieces = _handBack(alice, 100_000_000 * SHARE);
-
+        alicePieces = _handBack(alice, 100_000_000 * SHARE);
         emit log_named_uint("bob, one exit        ", single);
         emit log_named_uint("bob, 400 exits       ", pieces);
-        emit log_named_uint("platform, one exit   ", platformSingle);
-        emit log_named_uint("platform, 400 exits  ", platformPieces);
         emit log_named_uint("alice after one exit ", aliceSingle);
         emit log_named_uint("alice after 400 exits", alicePieces);
+    }
+
+    /// @dev OWNER DECISION PENDING (the review's "the 4% that stays also lifts the leaver's own floor"). Every fix changes a
+    /// money rule of the plan (the whole slice leaves and the fee is paid out, so nothing "stays for those who remain"; or
+    /// the fee is burned or goes to the platform), so it is not made here. This test pins what the plan's rule does today
+    /// so any change, a fix or a worse leak, shows: a holder of 80% exiting in 400 pieces is paid 4,670.84 instead of
+    /// 4,560.00 (+2.43%, and never past the 0.95/0.96 limit of the floor) and the one holder left is paid 1,215.99 instead of 1,322.40 (-8.0%).
+    function test_openDecision_exitingInPiecesPaysALargeHolderMoreThanOneExit() public {
+        (uint256 single, uint256 pieces, uint256 aliceSingle, uint256 alicePieces) = _exitInPieces();
+        assertGt(pieces, single, "the leak is there (if this fails, the exit rule changed: update the report)");
+        assertLt(pieces * 1000, single * 1030, "the leak is more than the measured 2.43 percent");
+        assertLt(alicePieces, aliceSingle, "the holder left behind is paid less");
+        assertGt(alicePieces * 100, aliceSingle * 90, "the holder left behind loses more than the measured 8 percent");
+    }
+
+    /// @dev The property the review wants: pieces add up to no more than one exit and those who remain keep the 4%. Skipped
+    /// until the owner decides how the fee should work; the pin above must then be turned round.
+    function test_defect_exitingInPiecesPaysMoreThanOneExit() public {
+        vm.skip(true, "owner decision pending: see test_openDecision_exitingInPiecesPaysALargeHolderMoreThanOneExit");
+        (uint256 single, uint256 pieces, uint256 aliceSingle, uint256 alicePieces) = _exitInPieces();
         assertLe(pieces, single + 400, "the pieces pay the leaver more than the single exit");
         assertGe(alicePieces + 400, aliceSingle, "those who remain lose part of the 4% that was meant to stay for them");
     }
@@ -140,19 +155,18 @@ contract AttackM2Test is Base {
 
     /// @dev A founder who wants the "never melts" Share revenue money out: every 33 days he gives 1% of all Shares (the
     /// cap) to a fresh wallet, which hands them straight back. Nothing is vested, nobody votes, and the only cost is the
-    /// 5% fee. The test prints what it takes from holders over a year and asserts the floor per Share of the real holders
-    /// stays within 10% of what it would be with no gifts (fails today).
-    function test_defect_giftsLetTheFounderDrainTheFloorThroughFreshWallets() public {
+    /// 5% fee. Returns the permanent floor at the start and now, and what the fresh wallets took.
+    function _drainThroughFreshWallets()
+        internal
+        returns (uint256 permanentStart, uint256 permanentNow, uint256 taken)
+    {
         _world();
         usd.mint(carol, 100_000 * DOLLAR);
         vm.startPrank(carol);
         usd.approve(address(t), type(uint256).max);
         t.shareRevenue(100_000 * DOLLAR); // the project pays Share revenue into the floor that never melts
         vm.stopPrank();
-
-        uint256 permanentStart = t.permanentFloor();
-        uint256 perShareBefore = (t.melting() + t.permanentFloor()) * 1e18 / t.countingSupply();
-        uint256 taken;
+        permanentStart = t.permanentFloor();
         for (uint256 i; i < 11; ++i) {
             vm.warp(_now() + 33 days);
             vm.prank(founder);
@@ -166,17 +180,30 @@ contract AttackM2Test is Base {
             taken += t.handBack(shares.balanceOf(sybil));
             vm.stopPrank();
         }
+        permanentNow = t.permanentFloor();
         emit log_named_uint("dollars the fresh wallets took in 11 gifts", taken);
         emit log_named_uint("permanent floor at the start          ", permanentStart);
-        emit log_named_uint("permanent floor now                   ", t.permanentFloor());
-        // the real holders' floor per Share with the gifts, against the same moment with the melting release alone
-        uint256 perShareAfter = (t.melting() + t.permanentFloor()) * 1e18 / t.countingSupply();
-        emit log_named_uint("floor per Share before (1e18 = 1 dollar)", perShareBefore);
-        emit log_named_uint("floor per Share after                   ", perShareAfter);
-        // what the permanent floor would be if nobody were gifted anything: unchanged (it never melts)
-        assertGe(
-            t.permanentFloor() * 100, permanentStart * 90, "gifts took more than a tenth of the money that never melts"
-        );
+        emit log_named_uint("permanent floor now                   ", permanentNow);
+    }
+
+    /// @dev OWNER DECISION PENDING (the review's "gifts let the founder drain the floor through fresh wallets"). Every fix
+    /// changes a rule of the plan's section 3 ("Shares given after the pool opens are free at once"): post-pool gifts also
+    /// vest, or the cap is measured on the Shares people hold, or gifted Shares cannot be handed back for a while. None is
+    /// made here. This test pins what the plan's rule does today: in a year of such gifts the wallets take between a tenth
+    /// and a quarter of the 100,000 dollars of Share revenue (measured here: 15.3 percent, 15,830 dollars; the review measured about 18 percent on the code before this round's fixes).
+    function test_openDecision_postPoolGiftsToFreshWalletsTakeAShareOfTheFloor() public {
+        (uint256 start, uint256 now_, uint256 taken) = _drainThroughFreshWallets();
+        assertLt(now_ * 100, start * 90, "the drain is there (if this fails, the gift rule changed: update the report)");
+        assertGt(now_ * 100, start * 75, "the drain is more than the measured 15 percent");
+        assertGt(taken, 0);
+    }
+
+    /// @dev The property the review wants: gifts that are handed straight back take at most a tenth of the money that never
+    /// melts. Skipped until the owner decides; the pin above must then be turned round.
+    function test_defect_giftsLetTheFounderDrainTheFloorThroughFreshWallets() public {
+        vm.skip(true, "owner decision pending: see test_openDecision_postPoolGiftsToFreshWalletsTakeAShareOfTheFloor");
+        (uint256 start, uint256 now_,) = _drainThroughFreshWallets();
+        assertGe(now_ * 100, start * 90, "gifts took more than a tenth of the money that never melts");
     }
 
     // =========================================================================================================
@@ -250,7 +277,10 @@ contract AttackM2Test is Base {
         uint256 bobGot = _handBack(bob, 400_000_000 * SHARE);
         // the sender is never better off, and the others are never worse off, whatever the Shares did
         assertLe(aliceGot, aliceBase, "the sender gained by moving or burning Shares");
-        if (w != 3) assertGe(bobGot + 1, bobBase, "the others lost");
+        // Shares burned or sent to the Treasury leave the count, so the others never lose. Shares sent to the Vester
+        // by hand or to the Launcher still count and can never exit, so what the sender would have paid in fee on
+        // them is missing from the floor: the others' price per Share is unchanged, they only miss that fee.
+        if (w == 0 || w == 2) assertGe(bobGot + 1, bobBase, "the others lost");
     }
 
     // =========================================================================================================
@@ -537,6 +567,7 @@ contract AttackM2Test is Base {
         vm.prank(makeAddr("stranger"));
         t.settle(1);
         assertTrue(t.settled());
+        _closeSale();
         vm.prank(alice);
         vm.expectRevert(Treasury.NothingToPay.selector);
         t.handBack(1_000_000 * SHARE); // there is nothing in the floor to pay
@@ -546,21 +577,18 @@ contract AttackM2Test is Base {
 
 /// @notice Launcher, Vester and set-up attacks (split from the money tests to keep each contract under the size limit).
 contract AttackM2LaunchTest is Base {
-    /// @dev `Launcher._set` and `Treasury.initialize` accept any nonzero 15/60 parts, but `settle` adds the two as uint16.
-    /// With parts 65535 and 1 the sum overflows, so `settle` reverts for ever, `handBack` (which needs a settle) is
-    /// closed, and the sale money sits unaccounted with no way out.
-    function test_defect_aSettingTheLauncherAcceptsMakesSettleRevertForEver() public {
+    /// @dev The review found that `Launcher._set` and `Treasury.initialize` accepted any nonzero 15/60 parts while `settle`
+    /// added the two as uint16: parts 40000 and 40000 passed every check and then made `settle` revert for ever, with the
+    /// sale money stuck. Both now refuse a part above 10,000, so the sum can never overflow (20,000 at most).
+    function test_attack_aSplitWhoseSumOverflowsIsRefusedAtTheLauncherAndAtTheTreasury() public {
         Launcher.Settings memory s = _settings();
-        s.spendableParts = 65_535;
-        s.floorParts = 1;
-        Launcher l2 = _deployLauncher(admin, s); // accepted
-        vm.prank(founder);
-        (, address tr,) = l2.launch(PROJECT, "Bad", "BAD");
-        Treasury t2 = Treasury(tr);
-        usd.mint(address(t2), 7500 * DOLLAR);
-        vm.prank(opener);
-        t2.markPoolOpen();
-        t2.settle(7500 * DOLLAR); // reverts with a checked-arithmetic panic
+        s.spendableParts = 40_000;
+        s.floorParts = 40_000;
+        vm.expectRevert(Launcher.BadSettings.selector);
+        _deployLauncher(admin, s);
+        vm.prank(admin);
+        vm.expectRevert(Launcher.BadSettings.selector);
+        launcher.setSettings(s);
     }
 
     function test_attack_vesterClaimsEarlyTwiceAndForOthers() public {
@@ -595,18 +623,19 @@ contract AttackM2LaunchTest is Base {
 
     function test_attack_launcherIdsAreTheFoundersOwn() public {
         address attacker = makeAddr("attacker");
+        bytes32 h = launcher.settingsHash();
         // the attacker takes the id first; the founder's id is unaffected
         vm.prank(attacker);
-        launcher.launch(keccak256("p2"), "A", "A");
+        launcher.launch(keccak256("p2"), "A", "A", h);
         vm.prank(founder);
-        launcher.launch(keccak256("p2"), "B", "B");
+        launcher.launch(keccak256("p2"), "B", "B", h);
         assertTrue(
             launcher.project(founder, keccak256("p2")).treasury != launcher.project(attacker, keccak256("p2")).treasury
         );
         // the same founder cannot start two projects with one id
         vm.prank(founder);
         vm.expectRevert(Launcher.ProjectExists.selector);
-        launcher.launch(keccak256("p2"), "C", "C");
+        launcher.launch(keccak256("p2"), "C", "C", h);
         // nobody can launch "as" the founder: the key is the caller
         assertEq(launcher.project(attacker, PROJECT).treasury, address(0));
     }
@@ -666,29 +695,40 @@ contract AttackM2LaunchTest is Base {
         sImpl.initialize("x", "x", to, am);
     }
 
-    /// @dev The owner's rule for milestone 2 is "the Launcher must refuse to open a sale with no pool guard". The stub
-    /// takes both the strategy and the hook from the caller (the founder) and only asks the hook who `authorized()` is. A
-    /// contract the founder wrote, which answers with the strategy the founder named, passes. The check proves nothing
-    /// unless the strategy and the hook's code come from the platform.
-    function test_defect_aFakeGuardNamedByTheFounderPassesTheLaunchersGuardCheck() public {
+    /// @dev The owner's rule for milestone 2 is "the Launcher must refuse to open a sale with no pool guard". The review
+    /// found the stub took both the strategy and the hook from the caller, so a contract the founder wrote, answering with
+    /// the strategy the founder named, passed. Now the strategy and the guard are the platform's, fixed at construction,
+    /// and `openSale` takes only the project id: the old three-argument entry point does not exist, and a Launcher whose
+    /// platform guard is not the guard for its strategy refuses (see `LauncherTest`).
+    function test_attack_aFakeGuardNamedByTheFounderCannotPassTheLaunchersGuardCheck() public {
         address strategy = makeAddr("founders own strategy");
         FakeGuard fake = new FakeGuard(strategy);
         vm.prank(founder);
-        vm.expectRevert(Launcher.NoPoolGuard.selector);
-        launcher.openSale(PROJECT, strategy, address(fake));
+        (bool ok, bytes memory ret) = address(launcher)
+            .call(abi.encodeWithSignature("openSale(bytes32,address,address)", PROJECT, strategy, address(fake)));
+        assertFalse(ok, "no entry point takes a founder's guard");
+        assertEq(ret.length, 0, "no function matches");
+        assertTrue(launcher.strategy() != strategy);
+        assertTrue(launcher.poolGuard() != address(fake));
     }
 
-    /// @dev Settings are read at launch time, and `launch` takes no promise from the founder about what they are. An admin
-    /// who changes them in the block before a launch (or a compromised admin) gives the founder a project born with a new
-    /// opener and fee. The founder can read the event afterwards but cannot refuse beforehand.
+    /// @dev The admin can change the settings (the opener, the sale path, the quote token, the fees) in the block before a
+    /// launch. The review's point: a founder's launch signed against the old settings must not land on the new ones.
+    /// `launch` now takes the settings hash the founder saw. What stays true, and is documented until milestone 3 makes
+    /// `opener` and `salePath` contracts the Launcher derives: a founder who reads the NEW settings and commits to them
+    /// gets exactly those.
     function test_attack_theAdminCanChangeTheSettingsInTheBlockBeforeALaunch() public {
+        bytes32 seen = launcher.settingsHash();
         Launcher.Settings memory s = _settings();
         s.opener = makeAddr("evil opener");
         s.exitFeeBps = 1000;
         vm.prank(admin);
         launcher.setSettings(s);
-        (, address tr,) = _launch(founder, keccak256("late"));
-        assertEq(Treasury(tr).opener(), s.opener, "the project was born with the changed opener");
+        vm.prank(founder);
+        vm.expectRevert(Launcher.SettingsMoved.selector);
+        launcher.launch(keccak256("late"), "Late", "LT", seen);
+        (, address tr,) = _launch(founder, keccak256("late")); // the founder reads the new settings and commits to them
+        assertEq(Treasury(tr).opener(), s.opener, "a founder who commits to the new settings gets them");
         assertEq(Treasury(tr).exitFeeBps(), 1000);
     }
 

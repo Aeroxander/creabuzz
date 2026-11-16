@@ -96,6 +96,52 @@ contract VesterTest is Test {
         assertEq(v.committed(), 0);
     }
 
+    function test_unreleased_isEverythingBeforeTheClockAndFallsEvenlyToZero() public {
+        vm.prank(granter);
+        v.grant(alice, 40e18);
+        uint256 all = FOUNDER_SHARES + 40e18;
+        assertEq(v.granted(), all);
+        assertEq(v.unreleased(), all, "before the pool opens nothing is released");
+        vm.warp(_now() + 100 days);
+        assertEq(v.unreleased(), all, "time before the pool opens does not count");
+        _start();
+        assertEq(v.unreleased(), all);
+        vm.warp(_now() + YEAR / 4);
+        assertEq(v.unreleased(), all - all / 4);
+        vm.warp(_now() + YEAR / 4);
+        assertEq(v.unreleased(), all / 2);
+        vm.warp(_now() + YEAR / 2 - 1);
+        assertGt(v.unreleased(), 0, "one second short of the year");
+        vm.warp(_now() + 1);
+        assertEq(v.unreleased(), 0);
+        vm.warp(_now() + 10 * YEAR);
+        assertEq(v.unreleased(), 0);
+    }
+
+    /// @dev The treasury leaves out exactly `unreleased` when it counts holders, so this number must not move when
+    /// someone presses claim (anyone may, for anyone), or the price of an exit would depend on who pressed the button.
+    function test_unreleased_doesNotDependOnWhoHasClaimed() public {
+        vm.prank(granter);
+        v.grant(alice, 40e18);
+        _start();
+        vm.warp(_now() + YEAR / 2);
+        uint256 before = v.unreleased();
+        assertGt(v.claimable(founder), 0);
+        v.claim(founder);
+        v.claim(alice);
+        assertEq(v.unreleased(), before, "a claim moves Shares to their owner; none of them become unreleased");
+        assertEq(token.balanceOf(founder), FOUNDER_SHARES / 2);
+        vm.warp(_now() + YEAR);
+        assertEq(v.unreleased(), 0);
+    }
+
+    function test_strayShares_neverCountAsUnreleased() public {
+        vm.prank(alice);
+        token.transfer(address(v), 7e18);
+        assertEq(v.unreleased(), FOUNDER_SHARES, "Shares sent here by hand are nobody's grant");
+        assertEq(v.granted(), FOUNDER_SHARES);
+    }
+
     function test_claim_anyoneMayCallButTheSharesGoToTheBeneficiary() public {
         _start();
         vm.warp(_now() + YEAR);

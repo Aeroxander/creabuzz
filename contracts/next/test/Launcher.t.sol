@@ -84,9 +84,10 @@ contract LauncherTest is Base {
     }
 
     function test_launch_theSameFounderCannotReuseAnId_butAnotherFounderCan() public {
+        bytes32 h = launcher.settingsHash();
         vm.prank(founder);
         vm.expectRevert(Launcher.ProjectExists.selector);
-        launcher.launch(PROJECT, "Again", "AGN");
+        launcher.launch(PROJECT, "Again", "AGN", h);
         (address s2,,) = _launch(alice, PROJECT);
         assertTrue(s2 != address(shares), "ids are kept per founder, so nobody can squat on another founder's id");
         (address s3,,) = _launch(founder, keccak256("other id"));
@@ -94,16 +95,17 @@ contract LauncherTest is Base {
     }
 
     function test_launch_namesAreChecked() public {
+        bytes32 h = launcher.settingsHash();
         vm.startPrank(alice);
         vm.expectRevert(Launcher.BadName.selector);
-        launcher.launch(keccak256("a"), "", "X");
+        launcher.launch(keccak256("a"), "", "X", h);
         vm.expectRevert(Launcher.BadName.selector);
-        launcher.launch(keccak256("a"), "X", "");
+        launcher.launch(keccak256("a"), "X", "", h);
         vm.expectRevert(Launcher.BadName.selector);
-        launcher.launch(keccak256("a"), new string(65), "X");
+        launcher.launch(keccak256("a"), new string(65), "X", h);
         vm.expectRevert(Launcher.BadName.selector);
-        launcher.launch(keccak256("a"), "X", new string(65));
-        launcher.launch(keccak256("a"), new string(64), new string(64)); // 64 bytes is allowed
+        launcher.launch(keccak256("a"), "X", new string(65), h);
+        launcher.launch(keccak256("a"), new string(64), new string(64), h); // 64 bytes is allowed
         vm.stopPrank();
     }
 
@@ -180,7 +182,7 @@ contract LauncherTest is Base {
     function test_constructor_refusesBadSettings() public {
         Launcher.Settings memory s = _settings();
         s.platform = address(0);
-        bytes memory args = abi.encode(admin, s);
+        bytes memory args = abi.encode(admin, s, STRATEGY, GUARD);
         vm.expectRevert(Launcher.BadSettings.selector);
         deployCode("Launcher.sol:Launcher", args);
     }
@@ -205,35 +207,122 @@ contract LauncherTest is Base {
     // ------------------------------------------------------------------------------------------- open sale
 
     function test_openSale_refusesAnUnknownProject() public {
-        MockGuard g = new MockGuard(address(0xBEEF));
         vm.prank(alice);
         vm.expectRevert(Launcher.UnknownProject.selector);
-        launcher.openSale(PROJECT, address(0xBEEF), address(g));
+        launcher.openSale(PROJECT);
     }
 
+    /// @dev The strategy and the guard are the platform's, fixed when the Launcher is made. Each way the platform's own
+    /// guard can be wrong (no contract there, an address without exactly the `beforeInitialize` bit, a contract that is
+    /// not a guard, a guard naming someone else) makes `openSale` refuse.
     function test_openSale_refusesASaleWithNoPoolGuard() public {
-        address account = makeAddr("an account, not a contract");
-        address notAGuard = address(new NotAGuard());
-        address otherGuard = address(new MockGuard(address(0xCAFE)));
-        address zeroGuard = address(new MockGuard(address(0)));
-        vm.startPrank(founder);
-        vm.expectRevert(Launcher.NoPoolGuard.selector);
-        launcher.openSale(PROJECT, address(0xBEEF), address(0)); // no hook at all
-        vm.expectRevert(Launcher.NoPoolGuard.selector);
-        launcher.openSale(PROJECT, address(0xBEEF), account);
-        vm.expectRevert(Launcher.NoPoolGuard.selector);
-        launcher.openSale(PROJECT, address(0xBEEF), notAGuard); // a contract that is not a guard
-        vm.expectRevert(Launcher.NoPoolGuard.selector);
-        launcher.openSale(PROJECT, address(0xBEEF), otherGuard); // names someone else as the pool's creator
-        vm.expectRevert(Launcher.NoPoolGuard.selector);
-        launcher.openSale(PROJECT, address(0), zeroGuard); // no strategy
+        address noContract = address(uint160(0xB0B << 20) | uint160(1 << 13));
+        address wrongBits = address(uint160(0xC0C << 20) | uint160(1 << 12)); // right code, but not `beforeInitialize`
+        address extraBit = address(uint160(0xD0D << 20) | uint160(1 << 13) | 1); // `beforeInitialize` and one more
+        address notAGuard = address(uint160(0xE0E << 20) | uint160(1 << 13));
+        address otherGuard = address(uint160(0xF0F << 20) | uint160(1 << 13));
+        deployCodeTo("MockGuard.sol:MockGuard", abi.encode(STRATEGY), wrongBits);
+        deployCodeTo("MockGuard.sol:MockGuard", abi.encode(STRATEGY), extraBit);
+        deployCodeTo("MockGuard.sol:NotAGuard", "", notAGuard);
+        deployCodeTo("MockGuard.sol:MockGuard", abi.encode(address(0xCAFE)), otherGuard); // names someone else
+        address[5] memory bad = [noContract, wrongBits, extraBit, notAGuard, otherGuard];
+        for (uint256 i; i < bad.length; ++i) {
+            Launcher l = _deployLauncherWith(admin, _settings(), STRATEGY, bad[i]);
+            bytes32 h = l.settingsHash();
+            vm.prank(founder);
+            l.launch(PROJECT, "P", "P", h);
+            vm.prank(founder);
+            vm.expectRevert(Launcher.NoPoolGuard.selector);
+            l.openSale(PROJECT);
+        }
+    }
+
+    function test_openSale_withTheRightGuardStopsOnlyBecauseTheSaleIsNotBuiltYet() public {
+        vm.prank(founder);
+        vm.expectRevert(Launcher.SaleNotBuilt.selector);
+        launcher.openSale(PROJECT);
+    }
+
+    // ------------------------------------------------------------------------ a stub that must not leave the lab
+
+    function test_constructor_refusesToRunOnAnyRealChain() public {
+        bytes memory args = abi.encode(admin, _settings(), STRATEGY, GUARD);
+        vm.chainId(11_155_111); // Sepolia
+        vm.expectRevert(Launcher.TestChainOnly.selector);
+        deployCode("Launcher.sol:Launcher", args);
+        vm.chainId(1);
+        vm.expectRevert(Launcher.TestChainOnly.selector);
+        deployCode("Launcher.sol:Launcher", args);
+        vm.chainId(31_337); // the local test chain is fine
+        deployCode("Launcher.sol:Launcher", args);
+    }
+
+    function test_theHeldSharesHaveNoWayOut_soThisLauncherIsForLocalTestsOnly() public {
+        uint256 held = shares.balanceOf(address(launcher));
+        assertEq(held, 500_000_000 * SHARE);
+        vm.prank(founder);
+        vm.expectRevert(Launcher.SaleNotBuilt.selector);
+        launcher.openSale(PROJECT);
+        assertEq(shares.balanceOf(address(launcher)), held, "still all there, and nothing can move it");
+    }
+
+    // ------------------------------------------------------------------------------- settings a founder commits to
+
+    function test_launch_refusesSettingsTheFounderDidNotSee() public {
+        bytes32 seen = launcher.settingsHash();
+        Launcher.Settings memory s = _settings();
+        s.salePath = makeAddr("a new sale path"); // the admin retargets a trust anchor after the founder looked
+        vm.prank(admin);
+        launcher.setSettings(s);
+        assertTrue(launcher.settingsHash() != seen);
+        vm.prank(alice);
+        vm.expectRevert(Launcher.SettingsMoved.selector);
+        launcher.launch(keccak256("late"), "Late", "LT", seen); // the founder's transaction lands after the change
+        bytes32 now_ = launcher.settingsHash();
+        vm.prank(alice);
+        launcher.launch(keccak256("late"), "Late", "LT", now_); // the founder who saw the new settings is fine
+    }
+
+    function test_settings_theDollarTokenAndPlatformAddressAreBounded() public {
+        vm.startPrank(admin);
+        Launcher.Settings memory s = _settings();
+        s.quote = IERC20(makeAddr("an account, not a token"));
+        vm.expectRevert(Launcher.BadSettings.selector);
+        launcher.setSettings(s);
+        s.quote = IERC20(address(new NotAGuard())); // a contract with no decimals()
+        vm.expectRevert(Launcher.BadSettings.selector);
+        launcher.setSettings(s);
+        s.quote = IERC20(address(new EighteenDecimals())); // the wrong scale for every raw amount here
+        vm.expectRevert(Launcher.BadSettings.selector);
+        launcher.setSettings(s);
+        s = _settings();
+        s.platform = address(launcher); // fees sent here could never be collected
+        vm.expectRevert(Launcher.BadSettings.selector);
+        launcher.setSettings(s);
+        s.platform = address(usd); // fees sent to the token itself are lost
+        vm.expectRevert(Launcher.BadSettings.selector);
+        launcher.setSettings(s);
         vm.stopPrank();
     }
 
-    function test_openSale_withAProperGuardStopsOnlyBecauseTheSaleIsNotBuiltYet() public {
-        MockGuard g = new MockGuard(address(0xBEEF));
-        vm.prank(founder);
-        vm.expectRevert(Launcher.SaleNotBuilt.selector);
-        launcher.openSale(PROJECT, address(0xBEEF), address(g));
+    function test_settings_bothPartsOfTheSplitHaveACeiling() public {
+        vm.startPrank(admin);
+        Launcher.Settings memory s = _settings();
+        s.spendableParts = 10_001;
+        vm.expectRevert(Launcher.BadSettings.selector);
+        launcher.setSettings(s);
+        s = _settings();
+        s.floorParts = 10_001;
+        vm.expectRevert(Launcher.BadSettings.selector);
+        launcher.setSettings(s);
+        s.spendableParts = 10_000;
+        s.floorParts = 10_000; // the ceiling itself is allowed
+        launcher.setSettings(s);
+        vm.stopPrank();
     }
+}
+
+/// @dev A token with the wrong scale.
+contract EighteenDecimals {
+    uint8 public constant decimals = 18;
 }

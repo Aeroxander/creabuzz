@@ -43,8 +43,11 @@ contract TreasuryEdgesTest is Base {
         uint256 floorWhilePaused = t.melting();
         vm.warp(_now() + 200 days);
         assertEq(t.melting(), floorWhilePaused);
+        // 300 days after the pool opened, 300/365 of the founder's 200M are released (claimed or not) and count
+        uint256 counting = 500_000_000 * SHARE + 200_000_000 * SHARE * 300 days / 365 days;
+        uint256 slice = floorWhilePaused * (100_000_000 * SHARE) / counting;
         uint256 paid = _handBack(alice, 100_000_000 * SHARE);
-        assertEq(paid, floorWhilePaused / 5 - (floorWhilePaused / 5 * 500 + 9999) / 10_000);
+        assertEq(paid, slice - (slice * 500 + 9999) / 10_000);
     }
 
     // ------------------------------------------------------------------------------------- the boundary second
@@ -279,8 +282,10 @@ contract TreasuryEdgesTest is Base {
         _runFor(366 days);
         t.release();
         assertEq(t.melting(), 0);
+        // a year on, all of the founder's 200M are released and count whether or not the founder has claimed: 700M count
+        uint256 slice = 500 * DOLLAR * 100 / 700;
         uint256 paid = _handBack(alice, 100_000_000 * SHARE);
-        assertEq(paid, 100 * DOLLAR - 5 * DOLLAR, "a fifth of the 500 permanent floor, less 5%");
+        assertEq(paid, slice - (slice * 500 + 9999) / 10_000, "a seventh of the 500 permanent floor, less 5%");
     }
 
     function test_edge_vestedSharesAreFreeExactlyAtTheEndOfTheYear() public {

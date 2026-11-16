@@ -8,6 +8,7 @@ import {Treasury} from "../../src/Treasury.sol";
 import {Vester} from "../../src/Vester.sol";
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {QuoteToken} from "../mocks/QuoteToken.sol";
+import {MockGuard, NotAGuard} from "../mocks/MockGuard.sol"; // built here so `deployCodeTo` finds them
 
 /// @notice A launched project with the people around it, for the milestone 2 tests. "The sale" is simulated the way
 /// milestone 3 will do it: sale money is sent to the Treasury, Shares held by the Launcher are handed to buyers, and the
@@ -35,10 +36,15 @@ abstract contract Base is Test {
     uint256 internal constant M = 6000 * DOLLAR; // melting floor after the worked sale below
     uint256 internal constant S = 1500 * DOLLAR; // spendable after the worked sale below
     bytes32 internal constant PROJECT = keccak256("project one");
+    /// @dev The platform's strategy (a plain address here) and its pool guard: an address whose low 14 bits are exactly
+    /// the `beforeInitialize` hook bit (1 << 13), holding a guard that names the strategy.
+    address internal constant STRATEGY = address(0x57A7E6);
+    address internal constant GUARD = address(uint160(0xA11CE << 20) | uint160(1 << 13));
 
     function setUp() public virtual {
         vm.warp(1_800_000_000);
         usd = new QuoteToken();
+        deployCodeTo("MockGuard.sol:MockGuard", abi.encode(STRATEGY), GUARD);
         launcher = _deployLauncher(admin, _settings());
         (address s, address tr, address ve) = _launch(founder, PROJECT);
         (shares, t, v) = (ShareToken(s), Treasury(tr), Vester(ve));
@@ -62,7 +68,14 @@ abstract contract Base is Test {
     /// @dev The Launcher holds the code of all three implementations, so a test contract that did `new Launcher` would
     /// itself be over the 49,152-byte limit for creation code. Loading it from the build output avoids that.
     function _deployLauncher(address admin_, Launcher.Settings memory s) internal returns (Launcher) {
-        return Launcher(deployCode("Launcher.sol:Launcher", abi.encode(admin_, s)));
+        return _deployLauncherWith(admin_, s, STRATEGY, GUARD);
+    }
+
+    function _deployLauncherWith(address admin_, Launcher.Settings memory s, address strategy_, address guard_)
+        internal
+        returns (Launcher)
+    {
+        return Launcher(deployCode("Launcher.sol:Launcher", abi.encode(admin_, s, strategy_, guard_)));
     }
 
     /// @dev `block.timestamp` cannot be read after a `vm.warp` in the same test: the optimizer treats it as a constant
@@ -83,8 +96,9 @@ abstract contract Base is Test {
     }
 
     function _launch(address who, bytes32 id) internal returns (address s, address tr, address ve) {
+        bytes32 h = launcher.settingsHash(); // read first: a prank applies to the next call, which would be this read
         vm.prank(who);
-        return launcher.launch(id, "Project One", "ONE");
+        return launcher.launch(id, "Project One", "ONE", h);
     }
 
     /// @dev Sale money arrives at the Treasury (the strategy's one transfer) without being split.
@@ -97,12 +111,19 @@ abstract contract Base is Test {
         t.markPoolOpen();
     }
 
+    /// @dev The finish's last step (sweep of unsold Shares) is done; exits may open once money is split.
+    function _closeSale() internal {
+        vm.prank(opener);
+        t.markSaleClosed();
+    }
+
     /// @dev Sale money arrives, the pool is proven, and the money is split. `amount` is what reaches the Treasury (75 of
     /// every 100 raised): 15 : 60 of it is spendable : melting.
     function _sale(uint256 amount) internal {
         _arrive(amount);
         _openPool();
         t.settle(amount);
+        _closeSale();
     }
 
     /// @dev The worked example: sale money of 7,500 dollars reaches the Treasury (75 of each 100 of a 10,000 raise) and is

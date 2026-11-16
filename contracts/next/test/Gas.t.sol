@@ -23,7 +23,8 @@ contract GasTest is Base {
     }
 
     function test_gas_launchTheProject() public {
-        bytes memory call = abi.encodeCall(Launcher.launch, (keccak256("gas"), "Project Gas", "GAS"));
+        bytes memory call =
+            abi.encodeCall(Launcher.launch, (keccak256("gas"), "Project Gas", "GAS", launcher.settingsHash()));
         vm.prank(alice);
         _cold();
         uint256 g = gasleft();
@@ -42,7 +43,7 @@ contract GasTest is Base {
     }
 
     function test_gas_deployTheLauncher() public {
-        bytes memory args = abi.encode(admin, _settings());
+        bytes memory args = abi.encode(admin, _settings(), STRATEGY, GUARD);
         _cold();
         uint256 g = gasleft();
         deployCode("Launcher.sol:Launcher", args);

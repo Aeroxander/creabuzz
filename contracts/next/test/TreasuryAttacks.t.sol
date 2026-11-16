@@ -33,8 +33,13 @@ contract TreasuryAttacksTest is Base {
         vm.prank(alice);
         vm.expectRevert(Treasury.NotSettled.selector);
         t.handBack(1_000_000 * SHARE);
-        // 3. the moment the sale money is split, the exit opens
+        // 3. split, but the sale's finish is not complete (unsold Shares may still sit outside the Treasury): still shut
         t.settle(7500 * DOLLAR);
+        vm.prank(alice);
+        vm.expectRevert(Treasury.SaleNotClosed.selector);
+        t.handBack(1_000_000 * SHARE);
+        // 4. the moment the finish is complete, the exit opens
+        _closeSale();
         uint256 paid = _handBack(alice, 1_000_000 * SHARE);
         assertGt(paid, 0);
     }
@@ -296,10 +301,11 @@ contract TreasuryAttacksTest is Base {
         uint256 rest = 100_000_000 * SHARE - donated;
         uint256 afterDonation = _quote(rest);
         assertLe(afterDonation, honest, "donating then exiting the rest pays no more than just exiting everything");
-        // the same through the Vester
+        // the same through the Vester: Shares sent there by hand are not a grant, so they are never "unreleased": they
+        // still count (and can never be claimed), so the sender gains nothing and the count does not move
         vm.prank(bob);
         shares.transfer(address(v), donated);
-        assertEq(t.countingSupply(), 500_000_000 * SHARE - 2 * donated);
+        assertEq(t.countingSupply(), 500_000_000 * SHARE - donated);
     }
 
     function test_attack_vesterAndTreasurySharesNeverEnterTheExitDenominator() public {

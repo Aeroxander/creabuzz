@@ -328,9 +328,55 @@ contract TreasuryActionsTest is Base {
         vm.warp(_now() + 14 days);
         uint256 gone = M * 14 days / 365 days; // moved to spendable by this very call
         uint256 floorLeft = M - gone;
+        // the founder's 200M are released by the day, claimed or not, and released Shares count as held by people
+        uint256 counting = 500_000_000 * SHARE + 200_000_000 * SHARE * 14 days / 365 days;
+        uint256 slice = floorLeft * (100_000_000 * SHARE) / counting;
         uint256 paid = _handBack(alice, 100_000_000 * SHARE);
-        assertEq(paid, (floorLeft / 5) - ((floorLeft / 5) * 500 + 9999) / 10_000);
+        assertEq(paid, slice - (slice * 500 + 9999) / 10_000);
         assertEq(t.spendable(), S + gone);
+    }
+
+    /// @dev The review's blocker: the exit count used to subtract the Vester's whole balance, so a claim (anyone may press
+    /// it, for anyone) changed the price of every exit. Released Shares count whether or not they were claimed.
+    function test_countingSupply_countsReleasedSharesWhetherOrNotClaimed() public {
+        _world();
+        vm.warp(_now() + 180 days);
+        uint256 released = 200_000_000 * SHARE * 180 days / 365 days;
+        uint256 expected = 500_000_000 * SHARE + released; // buyers, plus the founder's released Shares
+        assertEq(t.countingSupply(), expected, "released but unclaimed");
+        assertGt(v.claimable(founder), 0);
+        v.claim(founder); // a stranger presses claim
+        assertEq(t.countingSupply(), expected, "released and claimed: the same number");
+        assertEq(shares.balanceOf(founder), released);
+    }
+
+    /// @dev The review's second finding on the exit count: the Launcher's unsold Shares (and, in milestone 3, the auction's
+    /// and the strategy's) are outside the Treasury but in nobody's hands. The exit therefore waits for the finish's last
+    /// step, the sweep of unsold Shares to the Treasury. Here alice bought 100M and 400M are unsold.
+    function test_handBack_waitsForTheSaleToCloseSoUnsoldSharesNeverCountAsHeld() public {
+        _arrive(7500 * DOLLAR);
+        _openPool();
+        t.settle(7500 * DOLLAR); // step 2 of the finish is done: the money is split
+        _buy(alice, 100_000_000 * SHARE);
+        _approveAll(alice);
+        assertEq(
+            t.countingSupply(),
+            500_000_000 * SHARE,
+            "while 400M sit unsold they would count, and alice's slice is a fifth"
+        );
+        vm.prank(alice);
+        vm.expectRevert(Treasury.SaleNotClosed.selector);
+        t.handBack(100_000_000 * SHARE);
+        // step 3: the unsold Shares are swept to the Treasury, and the finish is marked complete
+        vm.prank(address(launcher));
+        shares.transfer(address(t), 400_000_000 * SHARE);
+        _closeSale();
+        assertEq(t.countingSupply(), 100_000_000 * SHARE);
+        assertEq(t.reserve(), 500_000_000 * SHARE, "the unsold Shares are plain reserve");
+        uint256 paid = _handBack(alice, 100_000_000 * SHARE);
+        assertEq(
+            paid, M - M * 500 / 10_000, "the whole floor, less the 5 percent fee: nothing was lost to unsold Shares"
+        );
     }
 
     function test_handBack_aSliceTooSmallToPayIsRefusedRatherThanBurnedForNothing() public {

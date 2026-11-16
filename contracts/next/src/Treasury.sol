@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {SafeERC20} from "oz5/token/ERC20/utils/SafeERC20.sol";
-import {IShares, IVester} from "./Interfaces.sol";
+import {IShares, IVester, MAX_SPLIT_PART} from "./Interfaces.sol";
 import {RollingCap} from "./RollingCap.sol";
 
 /// @title Treasury
@@ -96,6 +96,7 @@ contract Treasury {
     // ---- state of the project
     bool public poolOpen; // a pool is proven (a stub flag until milestone 3)
     bool public settled; // sale money has been split at least once
+    bool public saleClosed; // the sale's last finish step is done: unsold Shares are back here (a stub flag until milestone 3)
     uint256 public workPot; // Shares still available for Give Shares
 
     mapping(address => Agent) public agents;
@@ -126,6 +127,8 @@ contract Treasury {
     event AgentSet(address indexed agent, bool active, uint256 usdCap, uint256 shareCap);
     /// @notice The pool was proven open and the Vester's clock started.
     event PoolOpened(uint256 time);
+    /// @notice The sale's finish is complete; exits are open from now (once sale money has been split).
+    event SaleClosed(uint256 time);
     /// @notice Reserve Shares left through the sale path.
     event ReserveReleased(address indexed to, uint256 amount);
 
@@ -141,6 +144,11 @@ contract Treasury {
     error NoPool();
     /// @notice The pool is already proven.
     error PoolAlreadyOpen();
+    /// @notice The sale's finish is not complete (unsold Shares may still be outside the treasury), so nothing can be
+    /// handed back yet.
+    error SaleNotClosed();
+    /// @notice The sale's finish was already marked complete.
+    error SaleAlreadyClosed();
     /// @notice `amount` is more than the dollars that arrived and are not yet in a bucket.
     error NotArrived(uint256 amount, uint256 arrived);
     /// @notice No sale money has been split yet, so nothing can be handed back.
@@ -173,6 +181,7 @@ contract Treasury {
             s.founder == address(0) || s.platform == address(0) || s.opener == address(0) || s.salePath == address(0)
                 || address(s.quote) == address(0) || address(s.vester) == address(0) || address(s.shares) == address(0)
                 || s.exitFeeBps >= BPS || s.platformFeeBps > s.exitFeeBps || s.spendableParts == 0 || s.floorParts == 0
+                || s.spendableParts > MAX_SPLIT_PART || s.floorParts > MAX_SPLIT_PART
                 || s.shares.balanceOf(address(this)) < s.workPot
         ) revert BadSetup();
         (quote, shares, vester, founder, platform) = (s.quote, s.shares, s.vester, s.founder, s.platform);
@@ -192,6 +201,18 @@ contract Treasury {
         poolOpen = true;
         vester.startNow();
         emit PoolOpened(block.timestamp);
+    }
+
+    /// @notice Say that the sale's finish is complete, once: the unsold Shares have been swept back to this treasury, so
+    /// every Share outside the treasury and the Vester is in a person's hands. Exits open only after this. Stub until
+    /// milestone 3: only the `opener` the Launcher named may call it, and only after the pool is proven. Milestone 3's
+    /// version must be something any stranger can trigger by finishing the sweep, so exits can never wait on one person.
+    function markSaleClosed() external nonReentrant {
+        if (msg.sender != opener) revert NotAllowed();
+        if (!poolOpen) revert NoPool();
+        if (saleClosed) revert SaleAlreadyClosed();
+        saleClosed = true;
+        emit SaleClosed(block.timestamp);
     }
 
     /// @notice Split sale money that has arrived: `spendableParts : floorParts` (15 : 60 of each 75 that reach the
@@ -392,21 +413,24 @@ contract Treasury {
 
     // ================================================== the exit =====================================================
 
-    /// @notice Shares in people's hands for the exit right: all Shares minus those held here and those still in the
-    /// Vester. Read from the token each time; no caller supplies it.
+    /// @notice Shares in people's hands for the exit right: all Shares minus those held here and those the Vester has not
+    /// released yet. Released Shares count whether or not their owner has pressed claim, so no stranger's claim can
+    /// move anyone's price. Read each time; no caller supplies it.
     function countingSupply() public view returns (uint256) {
-        return shares.totalSupply() - shares.balanceOf(address(this)) - shares.balanceOf(address(vester));
+        return shares.totalSupply() - shares.balanceOf(address(this)) - vester.unreleased();
     }
 
     /// @notice Hand Shares back: burn your own (approve this contract first) and receive your slice of the floor, less
     /// the exit fee. Slice = (melting + permanent floor) * burned / countingSupply, worked out after today's release. Only
-    /// the floor is reachable, never `spendable`. Refused until sale money has been split. The fee is 5% of the slice:
+    /// the floor is reachable, never `spendable`. Refused until sale money has been split and the sale's finish is
+    /// complete (so unsold Shares are not counted as held by people). The fee is 5% of the slice:
     /// 4% stays in the floor for those who remain and 1% is owed to the platform. The last holder pays it too: the 4%
     /// then stays in the floor for whoever holds Shares next.
     /// @param amount Shares to burn.
     /// @return paid Dollars sent to the caller.
     function handBack(uint256 amount) external nonReentrant returns (uint256 paid) {
         if (!settled) revert NotSettled();
+        if (!saleClosed) revert SaleNotClosed();
         if (amount == 0) revert BadInput();
         _accrue();
         uint256 counting = countingSupply();
