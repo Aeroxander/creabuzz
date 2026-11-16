@@ -2644,7 +2644,17 @@ async fn is_limited_new_account(
     tenant: &TenantContext,
     event: &Event,
 ) -> Result<bool, IngestError> {
-    let pubkey = event.pubkey.to_bytes();
+    is_first_day_account(state, tenant, &event.pubkey).await
+}
+
+/// [`is_limited_new_account`] for a signer who has no event yet: the media upload route asks it of a Blossom proof's
+/// signer.
+pub(crate) async fn is_first_day_account(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    signer: &nostr::PublicKey,
+) -> Result<bool, IngestError> {
+    let pubkey = signer.to_bytes();
     let key = (*tenant.community().as_uuid(), pubkey);
     if ESTABLISHED_ACCOUNTS.contains(&key) {
         return Ok(false);
@@ -2660,7 +2670,7 @@ async fn is_limited_new_account(
         ESTABLISHED_ACCOUNTS.insert(key);
         return Ok(false);
     }
-    Ok(!is_community_admin_or_owner(state, tenant, &event.pubkey.to_hex()).await?)
+    Ok(!is_community_admin_or_owner(state, tenant, &signer.to_hex()).await?)
 }
 
 /// An account this server first heard from less than `new_account_hours` ago may send at most

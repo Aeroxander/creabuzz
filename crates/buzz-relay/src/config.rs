@@ -480,6 +480,14 @@ pub struct Config {
     /// keeps a script of fresh accounts from filling projects with records.
     pub new_account_project_records_per_day: u32,
 
+    /// Whether an account this server first heard from less than `new_account_hours` ago may upload files
+    /// (`BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS`, default true: they may). `false` closes uploads to such accounts for their
+    /// first day; community owners and admins are never held to it. The server keeps no durable count of the bytes
+    /// each account stored, only a per-minute rate and a cap on uploads in flight, so on a server whose door is open
+    /// (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=false`) a script of fresh keys could fill the media store: close uploads to
+    /// first-day accounts there until a byte quota exists. Reading files is not affected.
+    pub new_account_media_uploads: bool,
+
     /// Whether the web app shows the investing and trading screens (`BUZZ_INVESTING`: `true` or `false`). Advertised in
     /// the server's information document as `investing` so the setting changes without a rebuild; `None` (the variable
     /// unset) says nothing, and the web build's own switches decide, which are off unless a build turned them on.
@@ -1256,6 +1264,7 @@ impl Config {
         };
         let new_account_project_records_per_day =
             whole_number("BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY", 60)?;
+        let new_account_media_uploads = parse_bool("BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS", true)?;
 
         let relay_operator_pubkeys = match std::env::var("RELAY_OPERATOR_PUBKEYS") {
             Ok(raw) => {
@@ -1868,6 +1877,7 @@ impl Config {
             boards_per_person_per_day,
             new_account_posts_per_hour,
             new_account_project_records_per_day,
+            new_account_media_uploads,
             investing,
             new_account_hours,
             relay_operator_pubkeys,
@@ -3350,6 +3360,26 @@ mod tests {
                 if msg.contains("BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY")
         ));
         assert_eq!(off.new_account_project_records_per_day, 0);
+    }
+
+    #[test]
+    fn new_account_media_uploads_are_open_unless_closed_and_must_be_true_or_false() {
+        let _guards = env_guards();
+        std::env::remove_var("BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS");
+        let default = Config::from_env().expect("config");
+        std::env::set_var("BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS", "false");
+        let closed = Config::from_env().expect("config");
+        std::env::set_var("BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS", "sometimes");
+        let bad = Config::from_env();
+        std::env::remove_var("BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS");
+
+        assert!(default.new_account_media_uploads);
+        assert!(!closed.new_account_media_uploads);
+        assert!(matches!(
+            bad,
+            Err(ConfigError::InvalidValue(ref msg))
+                if msg.contains("BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS")
+        ));
     }
 
     #[test]

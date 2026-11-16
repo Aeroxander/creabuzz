@@ -80,6 +80,9 @@ pub enum MediaError {
     InsufficientScope,
     #[error("relay membership required")]
     RelayMembershipRequired,
+    /// The server closes uploads to accounts in their first day (`BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS=false`).
+    #[error("new accounts can upload files after their first day")]
+    NewAccountUploadsClosed,
     #[error("community writes are fenced")]
     CommunityWriteFenced,
     #[error("media service temporarily unavailable")]
@@ -171,9 +174,9 @@ impl MediaError {
             | Self::MissingTag(_) => Some(BlossomDenialKind::EvidenceRejected),
             // Local-policy denials: identity proved, but access refused by relay policy.
             // Maps to AuthorizationDenied per NIP-FI.md:764-775.
-            Self::RelayMembershipRequired | Self::CommunityWriteFenced => {
-                Some(BlossomDenialKind::AuthorizationDenied)
-            }
+            Self::RelayMembershipRequired
+            | Self::NewAccountUploadsClosed
+            | Self::CommunityWriteFenced => Some(BlossomDenialKind::AuthorizationDenied),
             Self::AuthorizationUnavailable => Some(BlossomDenialKind::AuthorizationUnavailable),
             _ => None,
         }
@@ -222,9 +225,9 @@ impl IntoResponse for MediaError {
                 )
             }
             Self::InsufficientScope => (StatusCode::FORBIDDEN, self.to_string()),
-            Self::RelayMembershipRequired | Self::CommunityWriteFenced => {
-                (StatusCode::FORBIDDEN, self.to_string())
-            }
+            Self::RelayMembershipRequired
+            | Self::NewAccountUploadsClosed
+            | Self::CommunityWriteFenced => (StatusCode::FORBIDDEN, self.to_string()),
             Self::ServiceUnavailable | Self::AuthorizationUnavailable => {
                 (StatusCode::SERVICE_UNAVAILABLE, self.to_string())
             }
@@ -311,6 +314,7 @@ mod tests {
     fn local_policy_denials_are_authorization_denied() {
         for error in [
             MediaError::RelayMembershipRequired,
+            MediaError::NewAccountUploadsClosed,
             MediaError::CommunityWriteFenced,
         ] {
             assert_eq!(

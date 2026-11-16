@@ -312,7 +312,8 @@ fn serving_lease_lost(error: anyhow::Error) -> MediaError {
 ///
 /// Returns a [`BlobDescriptor`] JSON on success.
 // TODO(v2): Add persistent per-pubkey storage quotas. Admission limits below
-// bound active parser/storage work, but they do not cap durable bytes stored.
+// bound active parser/storage work, but they do not cap durable bytes stored. Until then a server whose door is open
+// (`BUZZ_REQUIRE_RELAY_MEMBERSHIP=false`) closes uploads to first-day accounts (`BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS=false`).
 #[allow(clippy::result_large_err)] // Response is the natural error type for axum closures
 pub(crate) async fn upload_blob(
     State(state): State<Arc<AppState>>,
@@ -391,6 +392,30 @@ pub(crate) async fn upload_blob(
     .map_err(|e| membership_denial(e, strictness))
     {
         return e.into_response();
+    }
+
+    // Post-admission: a server that closed uploads to first-day accounts (`BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS=false`). The
+    // membership gate above is what kept strangers from filling the media store on an invite-only server; with the door
+    // open, this is what stands in its place until a durable per-account byte quota exists.
+    if !state.config.new_account_media_uploads {
+        match crate::handlers::ingest::is_first_day_account(&state, &ctx.tenant, &auth_event.pubkey)
+            .await
+        {
+            Ok(false) => {}
+            Ok(true) => {
+                metrics::counter!(
+                    "buzz_media_upload_rejections_total",
+                    "reason" => "new_account"
+                )
+                .increment(1);
+                return media_denial(MediaError::NewAccountUploadsClosed, strictness)
+                    .into_response();
+            }
+            Err(_) => {
+                return media_denial(MediaError::AuthorizationUnavailable, strictness)
+                    .into_response()
+            }
+        }
     }
 
     // Post-admission: rate limit and concurrency permit.
@@ -4233,6 +4258,39 @@ mod tests {
                 None,
                 b"",
                 "Enforce HEAD non-member",
+            );
+        }
+
+        /// An open server that closed uploads to first-day accounts refuses a brand-new key, in plain words, and the
+        /// same upload from the same key goes through the gate when the setting is left alone.
+        #[test]
+        #[ignore = "requires Postgres"]
+        fn a_first_day_account_cannot_upload_when_the_server_closed_uploads_to_them() {
+            let (rt, mut state, host) = media_fixture(media_off_test_state());
+            mutate_state(&mut state, |c| {
+                c.require_relay_membership = false;
+                c.new_account_media_uploads = true;
+            });
+            let keys = Keys::generate();
+            let proof = blossom_upload_auth_value(&keys, &host, &sha256_hex(AUDIO_BODY));
+            let open = upload_request(&rt, &state, "/upload", &host, &[&proof], None);
+            assert!(
+                !String::from_utf8_lossy(open.2.as_ref()).contains("first day"),
+                "an open server lets a new key reach the upload: {:?}",
+                open.2
+            );
+
+            mutate_state(&mut state, |c| c.new_account_media_uploads = false);
+            let keys = Keys::generate();
+            let proof = blossom_upload_auth_value(&keys, &host, &sha256_hex(AUDIO_BODY));
+            let closed = upload_request(&rt, &state, "/upload", &host, &[&proof], None);
+            assert_exact_response(
+                &closed,
+                StatusCode::FORBIDDEN,
+                "application/json",
+                None,
+                br#"{"error":"new accounts can upload files after their first day"}"#,
+                "a first-day account on a server that closed uploads to them",
             );
         }
 
