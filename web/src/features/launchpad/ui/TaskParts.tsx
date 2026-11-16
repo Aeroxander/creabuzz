@@ -10,7 +10,7 @@ import { type ReactNode, useId, useState } from "react";
 
 import { uploadBlob } from "@/shared/lib/upload-blob";
 import { Button } from "@/shared/ui/button";
-import { recordDate, recordDay } from "../lib/record-date";
+import { recordDate, recordDay, whenWords } from "../lib/record-date";
 
 import {
   checkFile,
@@ -94,7 +94,7 @@ function FileRow({ file }: { file: TaskFile }) {
       </span>{" "}
       {file.url ? (
         <a
-          className="text-foreground underline"
+          className="text-foreground underline max-sm:inline-block max-sm:py-3"
           href={file.url}
           rel="noopener noreferrer nofollow"
           target="_blank"
@@ -159,7 +159,7 @@ export function EvidenceLinks({
       {links.map((link) => (
         <li className="break-all" key={link}>
           <a
-            className="text-foreground underline"
+            className="text-foreground underline max-sm:inline-block max-sm:py-3"
             href={link}
             rel="noopener noreferrer nofollow"
             target="_blank"
@@ -187,10 +187,15 @@ export function EvidencePiece({
   piece,
   names,
   heading,
+  helper,
+  viewer,
 }: {
   piece: TaskEvidence;
   names: (pubkey: string) => string;
   heading: string;
+  /** Who handed it in, to say "Reported by Sol", or "by you" when the viewer did. */
+  helper?: string;
+  viewer?: string | null;
 }) {
   return (
     <div
@@ -199,7 +204,13 @@ export function EvidencePiece({
       data-testid="task-evidence"
     >
       <p className="text-xs text-muted-foreground">
-        {heading} · dated {day(piece.at)} by the helper
+        {heading} · {whenWords(piece.at, Math.floor(Date.now() / 1000))} ·
+        Reported by{" "}
+        {helper === undefined
+          ? "the helper"
+          : helper === viewer
+            ? "you"
+            : names(helper)}
       </p>
       {piece.note ? (
         <p className="mt-1 whitespace-pre-wrap break-words text-sm">

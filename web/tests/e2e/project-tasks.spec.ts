@@ -462,9 +462,7 @@ test("an offer becomes a task with a finish line; the helper hands in, it is sen
   const accepted = record.getByTestId("record-work-accepted");
   await expect(accepted).toContainText("Work accepted");
   await expect(accepted).toContainText(ASK);
-  await expect(accepted).toContainText(
-    "Done by Robin Helper. Checked by Fay Founder",
-  );
+  await expect(accepted).toContainText("Done by Robin Helper · Checked by you");
   await expect(
     accepted.getByRole("link", { name: "https://example.org/recording" }),
   ).toBeVisible();
@@ -486,8 +484,10 @@ test("an offer becomes a task with a finish line; the helper hands in, it is sen
   await expect(track.getByTestId("track-record-accepted")).toHaveText(
     "1 piece of work accepted, on 1 project, confirmed by 1 person",
   );
-  await expect(track.getByTestId("track-record-how")).toContainText(
-    "Anyone can start a project and confirm work on it, so read who confirmed each piece.",
+  // How it is counted is a note, closed until asked.
+  await track.getByTestId("track-record-how").click();
+  await expect(track).toContainText(
+    "Anyone can start a project and check work on it, so read who checked each piece.",
   );
   await expect(track.getByTestId("track-record-misses")).toHaveText(
     "1 task sent back at least once, 0 given up",
@@ -587,16 +587,14 @@ test("a founder with nobody else on the team marks their own work as done, and e
   await page.reload();
   const record = page.getByTestId("project-record");
   const alone = record.getByTestId("record-work-alone");
-  await expect(alone).toContainText(
-    "Done — checked by the founder, working alone",
-  );
-  await expect(alone).toContainText(
-    "Checked by Fay Founder, the founder, and by nobody else",
+  await expect(alone).toContainText("Done, checked by you");
+  await expect(alone.getByTestId("checked-by")).toHaveText(
+    "Done by you · Checked by you",
   );
   await expect(record.getByTestId("record-work-accepted")).toHaveCount(0);
   await expect(record.getByTestId("record-work-totals")).toHaveCount(0);
   await expect(record.getByTestId("record-work-alone-totals")).toHaveText(
-    "1 piece of work done alone, checked by the founder",
+    "1 piece of work done, checked by you",
   );
   // On the founder's own profile it is listed apart, and nothing is counted as accepted.
   await page.goto(`/u/${FOUNDER}`);
@@ -605,12 +603,12 @@ test("a founder with nobody else on the team marks their own work as done, and e
   await expect(track.getByTestId("track-record-accepted")).toHaveText(
     "0 pieces of work accepted",
   );
-  await expect(track.getByTestId("track-record-alone")).toContainText(
-    "1 piece of work done alone on their own project, checked by themself",
+  await expect(track.getByTestId("track-record-alone")).toHaveText(
+    "1 piece of work done, checked by you",
   );
   await expect(track.getByTestId("track-work-item")).toHaveCount(0);
   await expect(track.getByTestId("track-work-alone-item")).toContainText(
-    "checked by the founder, working alone",
+    "Done, checked by you",
   );
 });
 
@@ -631,7 +629,7 @@ test("a founder's own check that reaches a project with a team is still shown as
   await page.goto(PROJECT);
   const record = page.getByTestId("project-record");
   await expect(record.getByTestId("record-work-alone")).toContainText(
-    "Done — checked by the founder, working alone",
+    "Done, checked by the founder",
   );
   await expect(record.getByTestId("record-work-accepted")).toHaveCount(0);
   seedStep(relay, MATE, task, "confirm", [["task-evidence", work.id]]);
@@ -672,9 +670,7 @@ test("with a second team member, the founder's own work waits for them, and they
   await row.getByRole("button", { name: "Yes, confirm" }).click();
   await expect(
     page.getByTestId("project-record").getByTestId("record-work-accepted"),
-  ).toContainText(
-    "Done by Fay Founder, who is on this project's team. Checked by Max Mate",
-  );
+  ).toContainText("Done by Fay Founder · Checked by you");
   // On the profile it is visibly not outside work.
   await page.goto(`/u/${FOUNDER}`);
   await page.getByRole("tab", { name: "Record" }).click();

@@ -21,7 +21,7 @@ export function MoreInfo({
       <button
         aria-controls={id}
         aria-expanded={open}
-        className="inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:underline"
+        className="inline-flex items-center gap-1 text-muted-foreground underline-offset-2 hover:underline max-sm:min-h-11"
         data-testid={testId}
         onClick={() => setOpen((was) => !was)}
         type="button"

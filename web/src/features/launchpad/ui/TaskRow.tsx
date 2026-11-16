@@ -317,10 +317,13 @@ export function TaskRow({
       <p className="mt-2 whitespace-pre-wrap break-words text-sm font-medium">
         {task.what}
       </p>
-      <p className="mt-1 break-words text-sm" data-testid="task-done-means">
-        <span className="font-semibold">Done means:</span>{" "}
-        <span className="whitespace-pre-wrap">{task.done}</span>
-      </p>
+      {/* The solo box writes the same line as the task and as "Done means": said once. */}
+      {task.done.trim() === task.what.trim() ? null : (
+        <p className="mt-1 break-words text-sm" data-testid="task-done-means">
+          <span className="font-semibold">Done means:</span>{" "}
+          <span className="whitespace-pre-wrap">{task.done}</span>
+        </p>
+      )}
       {task.limits ? (
         <p className="mt-1 break-words text-sm" data-testid="task-limits">
           <span className="font-semibold">Limits:</span>{" "}
@@ -365,26 +368,31 @@ export function TaskRow({
 
       {task.evidence.length > 0 ? (
         <div className="mt-2 space-y-2">
-          {task.evidence.map((piece, i) => (
-            <div key={piece.id}>
-              <EvidencePiece
-                heading={
-                  task.evidence.length > 1
-                    ? `Work handed in (piece ${i + 1} of ${task.evidence.length})`
-                    : "Work handed in"
-                }
-                names={names}
-                piece={piece}
-              />
-              <HandedInExtras
-                done={task.done}
-                helperName={names(task.helper)}
-                piece={piece}
-                readNotes={i === 0}
-                runs={runs}
-              />
-            </div>
-          ))}
+          {task.evidence.map((piece, i) =>
+            // The piece being confirmed is shown once, inside the confirm box.
+            check?.check === "confirm" && check.piece === piece.id ? null : (
+              <div key={piece.id}>
+                <EvidencePiece
+                  heading={
+                    task.evidence.length > 1
+                      ? `Work handed in (piece ${i + 1} of ${task.evidence.length})`
+                      : "Work handed in"
+                  }
+                  helper={task.helper}
+                  names={names}
+                  piece={piece}
+                  viewer={viewer}
+                />
+                <HandedInExtras
+                  done={task.done}
+                  helperName={names(task.helper)}
+                  piece={piece}
+                  readNotes={i === 0}
+                  runs={runs}
+                />
+              </div>
+            ),
+          )}
         </div>
       ) : null}
       {task.orphanSendBacks.map((back) => (
@@ -762,8 +770,10 @@ export function TaskRow({
                   <div className="mt-2" data-testid="task-confirm-piece">
                     <EvidencePiece
                       heading="The work you are confirming"
+                      helper={task.helper}
                       names={names}
                       piece={piece}
+                      viewer={viewer}
                     />
                     <HandedInExtras
                       done={task.done}

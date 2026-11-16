@@ -14,9 +14,12 @@
 import { useMemo, useState } from "react";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
+import { existingUserPubkey } from "@/shared/lib/identity";
 
 import { Button } from "@/shared/ui/button";
 import { Chip, type ChipTone } from "@/shared/ui/chip";
+import { EmptyState } from "@/shared/ui/empty-state";
+import { MoreInfo } from "@/shared/ui/more-info";
 
 import {
   allGoals,
@@ -32,23 +35,30 @@ import {
   promiseTotals,
   promiseTotalsLine,
 } from "../lib/promises";
-import { teamOf } from "../lib/help-request";
 import { memberRemovedLine, removedLine } from "../lib/removed-records";
 import { acceptedByOthers, doneAlone, doneAloneLine } from "../lib/task-checks";
 import {
   acceptedTasks,
+  HOW_WORK_COUNTS,
   orderTime,
-  SELF_CHECKED_LABEL,
   type TaskFile,
   type TaskView,
+  taskStateLabel,
 } from "../lib/tasks";
 import { projectAcceptedLine } from "../lib/track-record";
 import type { Launch } from "../models";
 import { useProjectRecord } from "../use-project-record";
 import { useProjectTasks, useTeamRemovals } from "../use-tasks";
-import { recordDay as day } from "../lib/record-date";
+import { recordDay, whenWords } from "../lib/record-date";
+import { openSoloWin } from "../lib/solo-win-events";
+import { CheckedBy } from "./CheckedBy";
 import { JustAcceptedShare } from "./JustAcceptedShare";
+import { useSoloAccess } from "./SoloWinHost";
 import { EvidenceLinks } from "./TaskParts";
+
+/** A moment in the record's one date style: "today", "3 days ago", "Nov 9". */
+const when = (seconds: number) =>
+  whenWords(seconds, Math.floor(Date.now() / 1000));
 
 /** How many lines of the record show at first, and how many more each press adds. */
 const PAGE = 10;
@@ -56,7 +66,8 @@ const PAGE = 10;
 const TONE: Record<PromiseState | "reached", ChipTone> = {
   kept: "success",
   reached: "success",
-  missed: "danger",
+  // A miss is a fact, not an alarm: it is said in words and is never red.
+  missed: "warning",
   changed: "warning",
   waiting: "neutral",
   unanswered: "warning",
@@ -76,6 +87,10 @@ interface Line {
   text: string;
   /** A second line: when it was promised, what it was before, why. */
   detail: string;
+  /** Finished work: who did it and who checked it, as one line (`CheckedBy`). */
+  task?: TaskView;
+  /** A promise still waiting for the next update: its words, for "Do it now". */
+  doIt?: string;
   /** Accepted work: the links and files that were handed in. */
   links?: readonly string[];
   files?: readonly TaskFile[];
@@ -91,9 +106,9 @@ interface Line {
 function taskLines(
   tasks: readonly TaskView[],
   names: (pubkey: string) => string,
-  team: ReadonlySet<string>,
   now: number,
   complete: boolean,
+  asFounder: boolean,
 ): Line[] {
   const lines: Line[] = acceptedTasks(tasks, now).flatMap((task) =>
     task.accepted
@@ -101,22 +116,22 @@ function taskLines(
           {
             key: `task-${task.id}`,
             at: orderTime(task.accepted.confirmedAt, now),
-            tone: "success" as const,
+            tone: task.selfChecked
+              ? ("neutral" as const)
+              : ("success" as const),
             // A cut read may have missed a send-back of the same piece: it is not called accepted outright.
             // Work only the founder checked for themself is never called accepted at all.
             label: task.selfChecked
-              ? SELF_CHECKED_LABEL
+              ? taskStateLabel(task, asFounder)
               : complete
                 ? "Work accepted"
                 : "Work accepted, as far as was read",
             text: task.what,
-            detail: [
-              `Done by ${names(task.helper)}${team.has(task.helper) ? ", who is on this project's team" : ""}`,
-              task.selfChecked
-                ? `Checked by ${names(task.accepted.by)}, the founder, and by nobody else`
-                : `Checked by ${task.accepted.confirmed.map((c) => names(c.by)).join(", ")}`,
-              `Done meant: ${task.done}`,
-            ].join(". "),
+            task,
+            // "Done means" is said when it adds something: the solo box writes the same line twice.
+            detail: sameWords(task.done, task.what)
+              ? ""
+              : `Done means: ${task.done}`,
             links: task.accepted.links,
             files: task.accepted.files,
             testId: task.selfChecked
@@ -152,6 +167,13 @@ function taskLines(
   return lines;
 }
 
+/** Two lines of words that say the same thing, ignoring case, spacing and a closing full stop. */
+function sameWords(a: string, b: string): boolean {
+  const flat = (text: string) =>
+    text.replace(/\s+/g, " ").trim().replace(/\.$/, "").toLowerCase();
+  return flat(a) === flat(b);
+}
+
 export function ProjectRecordCard({
   launch,
   isFounder,
@@ -161,6 +183,7 @@ export function ProjectRecordCard({
 }) {
   const { record, failed, stale, retry } = useProjectRecord(launch.record);
   const [shown, setShown] = useState(PAGE);
+  const solo = useSoloAccess();
   // The project's tasks are their own read: when it fails or is cut, the promises and goals still show.
   const work = useProjectTasks(launch.record);
   const closed = useMemo(
@@ -195,19 +218,20 @@ export function ProjectRecordCard({
         tone: TONE[entry.state],
         label: PROMISE_STATE_LABEL[entry.state],
         text: entry.text,
+        doIt: entry.state === "waiting" ? entry.text : undefined,
         detail: [
           entry.answeredAt === null
             ? entry.state === "waiting"
               ? "For the next update"
               : "A later update did not say"
-            : `Promised ${day(entry.promisedAt)}`,
+            : `Promised ${when(entry.promisedAt)}`,
           // Answers that disagree are all shown; the worse one is the one counted.
           ...(entry.conflict
             ? [
                 `Answered more than once: ${entry.answers
                   .map(
                     (answer) =>
-                      `${MARK_LABEL[answer.state]} on ${day(answer.at)}${answer.note ? ` (${answer.note})` : ""}`,
+                      `${MARK_LABEL[answer.state]} ${when(answer.at)}${answer.note ? ` (${answer.note})` : ""}`,
                   )
                   .join(", ")}. The worse answer is counted`,
               ]
@@ -242,9 +266,9 @@ export function ProjectRecordCard({
       ...taskLines(
         closed,
         names,
-        teamOf(launch.record),
         Math.floor(Date.now() / 1000),
         work.complete,
+        isFounder,
       ),
     ].sort((a, b) => b.at - a.at || (a.key < b.key ? -1 : 1));
     return {
@@ -253,12 +277,18 @@ export function ProjectRecordCard({
       work: work.tasks
         ? projectAcceptedLine(acceptedByOthers(closed).length)
         : null,
-      alone: work.tasks ? doneAloneLine(doneAlone(closed).length) : null,
-      removed: removedLine(record.removed, day),
+      // To the founder it is "checked by you".
+      alone: work.tasks
+        ? (doneAloneLine(doneAlone(closed).length)?.replace(
+            "checked by the founder",
+            isFounder ? "checked by you" : "checked by the founder",
+          ) ?? null)
+        : null,
+      removed: removedLine(record.removed, recordDay),
       promises: promiseTotalsLine(promiseTotals(record.promises)),
       goals: goalTotalsLine(goalTotals(goals)),
     };
-  }, [record, closed, names, work.tasks, work.complete, launch.record]);
+  }, [record, closed, names, work.tasks, work.complete, isFounder]);
 
   if (!record || !view) {
     // Not read yet: the card holds its place and says so. Not readable: said, with a way to read again.
@@ -302,12 +332,13 @@ export function ProjectRecordCard({
       <h2 className="text-sm font-bold" id="project-record-heading">
         Promises and goals
       </h2>
-      <p className="text-xs text-muted-foreground">
-        What this project said it would do, what came of it, and the work it
-        accepted. Work counts as accepted when someone on the team now, other
-        than the person who did it, confirmed it; a project's team can change.
-        Work a founder did alone and checked themself is shown apart.
-      </p>
+      <MoreInfo label="How work counts" testId="record-how-work-counts">
+        <p data-testid="record-how-work-counts-text">{HOW_WORK_COUNTS}</p>
+        <p className="mt-1">
+          A project's team can change, and work counts as accepted by the team
+          as it is now.
+        </p>
+      </MoreInfo>
       <JustAcceptedShare launch={launch} />
       {work.failed ? (
         <p
@@ -391,8 +422,11 @@ export function ProjectRecordCard({
           {teamRemovals.members
             .flatMap(
               (member) =>
-                memberRemovedLine(names(member.pubkey), member.removed, day) ??
-                [],
+                memberRemovedLine(
+                  names(member.pubkey),
+                  member.removed,
+                  recordDay,
+                ) ?? [],
             )
             .join(" ")}
           {teamRemovals.unchecked > 0
@@ -413,14 +447,33 @@ export function ProjectRecordCard({
       ) : null}
       {view.lines.length === 0 ? (
         record.facts.totals ? (
-          <p
-            className="mt-2 text-sm text-muted-foreground"
-            data-testid="record-empty"
-          >
-            {isFounder
-              ? "No promises yet. Each line you write under What's next in an update becomes a promise, and your next update says what came of it."
-              : "No promises yet. They show here as the project posts updates."}
-          </p>
+          <EmptyState
+            action={
+              isFounder && solo.available ? (
+                <Button
+                  data-testid="record-add-what-you-did"
+                  onClick={() => openSoloWin()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Add what you did
+                </Button>
+              ) : undefined
+            }
+            className="mt-2"
+            line={
+              isFounder
+                ? "Finish one thing and it shows here."
+                : "It shows here as the project posts updates and finishes work."
+            }
+            testId="record-empty"
+            title={
+              isFounder
+                ? "Nothing on your record yet."
+                : "Nothing on the record yet."
+            }
+          />
         ) : null
       ) : (
         <ol className="mt-3 flex flex-col gap-2" data-testid="record-lines">
@@ -433,8 +486,28 @@ export function ProjectRecordCard({
               <Chip tone={line.tone}>{line.label}</Chip>
               <span className="min-w-0 break-words text-sm">{line.text}</span>
               <span className="text-xs text-muted-foreground">
-                {day(line.at)}
+                {when(line.at)}
               </span>
+              {line.task ? (
+                <CheckedBy
+                  className="w-full text-sm"
+                  task={line.task}
+                  viewer={existingUserPubkey()}
+                />
+              ) : null}
+              {line.doIt && solo.available ? (
+                <Button
+                  aria-label={`Do it now: ${line.doIt}`}
+                  className="h-auto p-0"
+                  data-testid="record-do-it-now"
+                  onClick={() => openSoloWin({ text: line.doIt })}
+                  size="sm"
+                  type="button"
+                  variant="link"
+                >
+                  Do it now
+                </Button>
+              ) : null}
               {line.detail ? (
                 <span className="w-full break-words text-xs text-muted-foreground">
                   {line.detail}
