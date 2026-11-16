@@ -14,14 +14,16 @@ optimizer = true
 optimizer_runs = 11111
 via_ir = true
 bytecode_hash = "none"
+# Without this, `forge test` compiles only what the tests import, and the artifacts the tests load by path (Deployer,
+# Permit2) would be missing.
+sparse_mode = false
 ignored_error_codes = [2424]
-fs_permissions = [{ access = "read", path = "./fork-cache" }]
+fs_permissions = [{ access = "read", path = "./out" }]
 
-# Everything compiles with 0.8.26 (the upstream pin) except Permit2, which is pinned to exactly 0.8.17 upstream. The bids
+# Our own files say `pragma solidity 0.8.26` exactly. The vendored code is held to 0.8.26 here (the upstream pin) except
+# Permit2, which is pinned to exactly 0.8.17 upstream (its helper file is test/helpers/Permit2Build.sol). The bids
 # of the auction go through Permit2 at its fixed address, so the local test twin needs the real code.
 compilation_restrictions = [
-  { paths = "src/**", version = "=0.8.26" },
-  { paths = "test/**", version = "=0.8.26" },
   { paths = "lib/continuous-clearing-auction/src/**", version = "=0.8.26" },
   { paths = "lib/continuous-clearing-auction/lib/liquidity-launcher/src/**", version = "=0.8.26" },
   { paths = "lib/continuous-clearing-auction/lib/liquidity-launcher/lib/v4-core/src/**", version = "=0.8.26" },
