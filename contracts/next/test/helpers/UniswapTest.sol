@@ -96,6 +96,7 @@ interface IDeployer {
     function auctionFactory(address feeController) external returns (address);
     function strategy(address positionManager, address poolManager, address factory) external returns (address);
     function guard(address poolManager, address strategy) external returns (address);
+    function liquidityRouter(address poolManager) external returns (address);
 }
 
 /// @notice The Uniswap universal router.

@@ -4,6 +4,7 @@ pragma solidity 0.8.26;
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolManager} from "@uniswap/v4-core/src/PoolManager.sol";
 import {PoolSwapTest} from "@uniswap/v4-core/src/test/PoolSwapTest.sol";
+import {PoolModifyLiquidityTest} from "@uniswap/v4-core/src/test/PoolModifyLiquidityTest.sol";
 import {IPositionManager} from "@uniswap/v4-periphery/src/interfaces/IPositionManager.sol";
 import {PositionManager} from "@uniswap/v4-periphery/src/PositionManager.sol";
 import {IPositionDescriptor} from "@uniswap/v4-periphery/src/interfaces/IPositionDescriptor.sol";
@@ -39,6 +40,11 @@ contract Deployer {
             )
         );
         swapTest = new PoolSwapTest(poolManager);
+    }
+
+    /// @notice v4's own liquidity router for tests: adds or removes liquidity of any pool, paying from the caller.
+    function liquidityRouter(IPoolManager poolManager) external returns (address) {
+        return address(new PoolModifyLiquidityTest(poolManager));
     }
 
     /// @notice Our deployment of the auction factory, bound to one fee controller.
