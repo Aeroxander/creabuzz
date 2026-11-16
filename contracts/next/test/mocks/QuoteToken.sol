@@ -29,6 +29,8 @@ contract QuoteToken {
     bool public alwaysFalse;
     /// @notice Addresses that are called back around a transfer.
     mapping(address => bool) public hooked;
+    /// @notice Addresses the token refuses to send to or from (a frozen address, as a real stablecoin can have).
+    mapping(address => bool) public blocked;
 
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
@@ -49,6 +51,10 @@ contract QuoteToken {
 
     function setHooked(address who, bool on) external {
         hooked[who] = on;
+    }
+
+    function setBlocked(address who, bool on) external {
+        blocked[who] = on;
     }
 
     function approve(address spender, uint256 value) external returns (bool) {
@@ -76,6 +82,7 @@ contract QuoteToken {
 
     function _transfer(address from, address to, uint256 value) private returns (bool) {
         if (alwaysFalse) return false;
+        if (blocked[from] || blocked[to]) revert("blocked");
         uint256 extra = value * senderFeeBps / 10_000;
         if (balanceOf[from] < value + extra) {
             if (falseOnFail) return false;

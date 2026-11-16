@@ -97,8 +97,6 @@ interface IPinnedAuction {
     function lbpInitializationParams() external view returns (LBPInitializationParams memory);
     /// @notice The last block of the sale.
     function endBlock() external view returns (uint64);
-    /// @notice The block the unsold-Shares sweep happened in; zero before.
-    function sweepUnsoldTokensBlock() external view returns (uint256);
     /// @notice Send the unsold Shares to the tokens recipient. Only that recipient may call it.
     function sweepUnsoldTokens() external;
 }

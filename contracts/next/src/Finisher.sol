@@ -96,8 +96,6 @@ contract Finisher {
     error Reentrancy();
     /// @notice A sale cannot open now: one is open, or this project already sold, or it is too soon after a failed sale.
     error CannotOpen();
-    /// @notice The strategy did not register the sale.
-    error SaleNotRegistered();
     /// @notice This step does not apply at the sale's current stage.
     error WrongStage();
     /// @notice The pool step has not run, so the money has not come back from the strategy yet.
@@ -162,7 +160,6 @@ contract Finisher {
         uint32 attempt = attempts++;
         strategy.initializeDistribution(address(shares), total, configData, bytes32(uint256(attempt)));
         auction_ = strategy.registeredPoolIds(_poolId());
-        if (auction_ == address(0)) revert SaleNotRegistered();
         endBlock_ = IPinnedAuction(auction_).endBlock();
         (auction, endBlock, stage, settled) = (auction_, endBlock_, Stage.Open, false);
         emit SaleOpenedBy(auction_, endBlock_, attempt);
@@ -220,7 +217,7 @@ contract Finisher {
         if (s != Stage.Open) return false;
         if (_stepPending()) revert PoolStepNotRun();
         IPinnedAuction a = IPinnedAuction(auction);
-        if (a.sweepUnsoldTokensBlock() == 0) a.sweepUnsoldTokens();
+        a.sweepUnsoldTokens();
         if (!a.isGraduated()) {
             uint64 retry = endBlock + SaleParams.SALE_BLOCKS;
             (stage, retryBlock) = (Stage.Failed, retry);
@@ -259,7 +256,7 @@ contract Finisher {
         uint256 toFloorOnly = arrived * SaleParams.POOL_RATE / SaleParams.RATE_SCALE;
         treasury.settleToFloor(toFloorOnly);
         treasury.settle(arrived - toFloorOnly);
-        if (a.sweepUnsoldTokensBlock() == 0) a.sweepUnsoldTokens();
+        a.sweepUnsoldTokens();
         uint256 sharesBack = _sharesToTreasury();
         treasury.markSaleClosed();
         emit Abandoned(address(a), toFloorOnly, arrived - toFloorOnly);

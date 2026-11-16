@@ -4,7 +4,7 @@ pragma solidity ^0.8.30;
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {SafeERC20} from "oz5/token/ERC20/utils/SafeERC20.sol";
 import {IShares, ITreasuryFinish, ILauncherView} from "./Interfaces.sol";
-import {IPinnedPositionManager, PoolKey, SaleParams} from "./Pinned.sol";
+import {IPinnedPositionManager, PoolKey} from "./Pinned.sol";
 
 /// @title LiquidityHolder
 /// @notice Owns the Uniswap position of every project's pool, for good. The strategy mints each position straight to this
@@ -24,8 +24,9 @@ import {IPinnedPositionManager, PoolKey, SaleParams} from "./Pinned.sol";
 ///    contract cannot protect against; and a dollar token that freezes the platform's address makes the platform's half wait
 ///    in `owed` (the project's half and the burn go through).
 /// @dev One per Launcher, made in its constructor, so `launcher` is the contract that made this one. A position counts only if
-/// its pool is the platform's pool for a real project (the guard as hook, the sale's fee and tick spacing, the project's own
-/// dollar token and Shares), so an NFT of any other pool that is sent here is a gift that nobody can use or claim.
+/// its pool has the platform's guard as its hook and one of its currencies is a real project's Shares. Only the strategy can
+/// create a pool with that hook, and only for a sale this platform's Launcher opened, so the fee, the tick spacing and the dollar
+/// token are the project's own by construction; an NFT of any other pool that is sent here is a gift that nobody can use.
 contract LiquidityHolder {
     using SafeERC20 for IERC20;
 
@@ -119,8 +120,9 @@ contract LiquidityHolder {
         emit OwedSent(token, to, amount);
     }
 
-    /// @dev The project a position belongs to: exactly one of its two currencies is a project's Shares, the other is that
-    /// project's own dollar token, and the pool is the platform's (the guard as hook, the sale's fee and tick spacing).
+    /// @dev The project a position belongs to: the pool's hook is the platform's guard (so the strategy made the pool, for a
+    /// sale this platform's Launcher opened, with the Launcher's fee and tick spacing and the project's own dollar token) and
+    /// exactly one of its two currencies is a project's Shares; the other is that project's dollar token.
     function _project(PoolKey memory key) private view returns (address treasury, address sharesToken, address quote) {
         address t0 = ILauncherView(launcher).treasuryOfShares(key.currency0);
         address t1 = ILauncherView(launcher).treasuryOfShares(key.currency1);
@@ -128,10 +130,7 @@ contract LiquidityHolder {
         (treasury, sharesToken, quote) = t0 != address(0)
             ? (t0, key.currency0, key.currency1)
             : (t1, key.currency1, key.currency0);
-        if (
-            ITreasuryFinish(treasury).quote() != quote || key.hooks != guard || key.fee != SaleParams.POOL_FEE
-                || key.tickSpacing != SaleParams.POOL_TICK_SPACING
-        ) revert UnknownProject();
+        if (key.hooks != guard) revert UnknownProject();
     }
 
     /// @dev A token that refuses a transfer (a frozen address) must not stop the project's half or the burn.

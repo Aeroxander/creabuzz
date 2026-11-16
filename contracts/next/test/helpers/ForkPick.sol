@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.26;
+pragma solidity >=0.8.26;
 
 /// @notice Decides what the Sepolia fork suites do with the node they are given, so that a node that cannot serve the
 /// pinned block makes them skip or move to a recent block with a plain message, never fail inside `setUp` with a
