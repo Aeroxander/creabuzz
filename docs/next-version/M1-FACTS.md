@@ -206,3 +206,17 @@ Each line is a test in `contracts/next/test`; the report (`M1-REPORT.md`) has th
 * **Permit2 is required at its fixed address** for bids (solady's `permit2TransferFrom`). The local copy builds Permit2
   from source with solc 0.8.17; its bytes differ from Uniswap's deployed Permit2 (different compiler settings), the
   behaviour used (allowance approve and transferFrom) is the same.
+
+## 10. Licences (code, SPDX lines and LICENSE files; not legal advice)
+
+* The auction (`continuous-clearing-auction`, 32 source files checked) and the launcher and strategy
+  (`liquidity-launcher`) are **MIT**, as are `PositionManager` and `Permit2`. We deploy the auction factory (which
+  builds the auction) and the strategy as they are, so the plan's "licence must be checked first" is answered: MIT, which
+  allows it.
+* The v4 `PoolManager` is **BUSL-1.1** (`v4-core/licenses/BUSL_LICENSE`). We never copy or redeploy it for real: the
+  production route calls Uniswap's own deployment. Our tests compile and deploy a copy of it **in memory** for the local
+  twin only; that is a test use and a counsel question if anyone ever wants to ship that copy.
+* Our new files (`contracts/next/src`) are written as MIT, matching the code they extend.
+* The plan's section 9 list "off until an outside review" should name these vendored contracts and their audits
+  (`CHANGELOG`/`docs/audits` of each library list Spearbit, OpenZeppelin and ABDK for the auction; OpenZeppelin for the
+  launcher at v2.0.0) rather than treat them as ours.
