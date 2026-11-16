@@ -1,16 +1,17 @@
 /**
- * A project's public scorecard: what it is for, how many weeks in a row it has posted, which promises it kept,
- * missed or changed, its latest update, what help it wants and who is on it. Made to be read signed out and shared;
- * Follow and "I can help" are the two things to do.
+ * A project's public scorecard: what it is for, how fresh and how steady its weekly record is, the promises it kept and
+ * missed, the work it did, its latest update and who is on it. Made to be read signed out and shared. A visitor's
+ * green button is Follow; the founder's is "Post this week's update", and neither Follow nor "I can help" is shown to
+ * the people who are on the project.
  *
- * Every number is from records the project's own people signed, and each says so when its read was not complete.
- * There is no price here. The "Backing" block (what is held for the project, what each milestone releases, the next
- * milestone and the date backers may leave by) sits between the record and the latest update when the build offers
- * backing, and is read only: its actions are on the project's page.
+ * Every number is from records the project's own people signed, and the record line says so once when a read was not
+ * complete. There is no price here. The "Backing" block (what is held for the project, what each milestone releases,
+ * the next milestone and the date backers may leave by) sits between the work and the latest update when the build
+ * offers backing, and is read only: its actions are on the project's page.
  */
 
 import { Link, useParams } from "@tanstack/react-router";
-import { type ReactNode, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { ProjectMark } from "@/features/feed/ui/MovingNow";
 import { useLaunchFollows } from "@/features/feed/use-launch-follows";
@@ -21,10 +22,7 @@ import {
   notListedYet,
 } from "@/features/launchpad/lib/listing";
 import {
-  PROMISE_STATE_LABEL,
-  type PromiseState,
-} from "@/features/launchpad/lib/promises";
-import {
+  firstUpdateDue,
   parseScorecardSlug,
   projectSharePath,
   shareWords,
@@ -33,16 +31,16 @@ import {
   cardVariantsFor,
   type ShareCardVariant,
 } from "@/features/launchpad/lib/share-card";
-import { acceptedByOthers } from "@/features/launchpad/lib/task-checks";
 import {
-  freshnessLine,
-  updateDueWords,
-} from "@/features/launchpad/lib/weekly-update";
+  acceptedByOthers,
+  doneAlone,
+} from "@/features/launchpad/lib/task-checks";
 import { type Launch, launchCoordinate } from "@/features/launchpad/models";
 import { BackingBlock } from "@/features/launchpad/ui/BackingBlock";
 import { ProjectLoadError } from "@/features/launchpad/ui/ProjectLoadError";
+import { ProjectRecordLine } from "@/features/launchpad/ui/ProjectRecordLine";
 import { ShareCardPanel } from "@/features/launchpad/ui/ShareCardPanel";
-import { ShareRecordButton } from "@/features/launchpad/ui/ShareRecordButton";
+import { useViewerIsAgent } from "@/features/launchpad/use-account-agent";
 import { useProjectUpdates } from "@/features/launchpad/use-help-requests";
 import { useLaunch } from "@/features/launchpad/use-launches";
 import { useProjectState } from "@/features/launchpad/use-my-projects";
@@ -52,36 +50,24 @@ import { APP_NAME } from "@/shared/constants/brand";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { usePageMeta } from "@/shared/lib/page-meta";
 import { Button } from "@/shared/ui/button";
-import { Chip, type ChipTone } from "@/shared/ui/chip";
 
-const ANSWERED: readonly PromiseState[] = ["kept", "missed", "changed"];
-const TONE: Partial<Record<PromiseState, ChipTone>> = {
-  kept: "success",
-  missed: "danger",
-  changed: "warning",
-};
-/** How many answered promises and team members the card shows. */
-const PROMISES_SHOWN = 5;
+import {
+  LatestUpdate,
+  PromisesAnswered,
+  ScorecardActions,
+  WorkDone,
+} from "./ScorecardWork";
+
+/** How many team members the card shows. */
 const TEAM_SHOWN = 8;
 
-function Fact({
-  label,
-  value,
-  testId,
-}: {
-  label: string;
-  value: ReactNode;
-  testId: string;
-}) {
-  return (
-    <div className="glass flex min-w-0 flex-col rounded-2xl border p-3">
-      <dt className="text-xs text-muted-foreground">{label}</dt>
-      <dd className="break-words text-base font-bold" data-testid={testId}>
-        {value}
-      </dd>
-    </div>
-  );
-}
+/** The button for each picture a record can back. */
+const KIND_LABEL: Record<ShareCardVariant, string> = {
+  started: "Just started",
+  kept: "Promises kept",
+  accepted: "Work accepted",
+  done: "Work done",
+};
 
 function Scorecard({ launch }: { launch: Launch }) {
   const project = launch.record;
@@ -90,24 +76,16 @@ function Scorecard({ launch }: { launch: Launch }) {
   const { record, failed: recordFailed, retry } = useProjectRecord(project);
   const updates = useProjectUpdates(project);
   const follows = useLaunchFollows();
+  const viewerIsAgent = useViewerIsAgent();
   const team = useMemo(() => [...teamOf(project)], [project]);
   const nameOf = useUserNames(team);
   const now = Math.floor(Date.now() / 1000);
+  const viewer = existingUserPubkey();
+  const isFounder = viewer === project.author;
+  const onTeam = viewer !== null && team.includes(viewer);
   const s = state.data;
   const totals = s?.promises ?? null;
   const answered = totals ? totals.kept + totals.missed + totals.changed : null;
-  const lastFive = useMemo(
-    () =>
-      (record?.promises ?? [])
-        .filter((promise) => ANSWERED.includes(promise.state))
-        .sort(
-          (a, b) =>
-            Math.min(b.answeredAt ?? 0, now) -
-              Math.min(a.answeredAt ?? 0, now) || (a.id < b.id ? -1 : 1),
-        )
-        .slice(0, PROMISES_SHOWN),
-    [record, now],
-  );
   const latest = useMemo(() => {
     const own = new Set(team);
     return (
@@ -117,15 +95,21 @@ function Scorecard({ launch }: { launch: Launch }) {
     );
   }, [updates.data, team, now]);
   const streak = s?.streak ?? null;
-  const due = s?.updatesKnown ? updateDueWords(s.lastUpdateAt, now) : null;
   const followed = follows.followed.has(coordinate);
   const goal = record?.goals.primary?.text || project.pitch || "";
-  // The picture and its sentence state only what the record shows: which of the three it can back is worked out here.
-  // Work someone else accepted. What a founder checked for themself, working alone, is never shared as "accepted".
+  // The picture and its sentence state only what the record shows: which of them it can back is worked out here.
+  // Work someone else accepted and work the founder checked alone are two numbers and never added together.
   const accepted = s?.tasksKnown ? acceptedByOthers(s.tasks).length : null;
+  const doneByFounder = s?.tasksKnown ? doneAlone(s.tasks).length : null;
   // Nothing posted, answered or accepted yet: a brand-new project says it just started, and no more.
   const fresh = Boolean(s?.updatesKnown && s.lastUpdateAt === null);
-  const kinds = cardVariantsFor({ answered, accepted, fresh });
+  const firstDue = fresh ? firstUpdateDue(project.startedAt, now) : null;
+  const kinds = cardVariantsFor({
+    answered,
+    accepted,
+    doneAlone: doneByFounder,
+    fresh,
+  });
   const [chosenKind, setChosenKind] = useState<ShareCardVariant | null>(null);
   const kind = chosenKind && kinds.includes(chosenKind) ? chosenKind : kinds[0];
   const kept = totals?.kept ?? null;
@@ -139,8 +123,20 @@ function Scorecard({ launch }: { launch: Launch }) {
       kept,
       answered,
       accepted,
+      doneAlone: doneByFounder,
+      firstDue,
     }),
-    [kind, project.name, goal, streak, kept, answered, accepted],
+    [
+      kind,
+      project.name,
+      goal,
+      streak,
+      kept,
+      answered,
+      accepted,
+      doneByFounder,
+      firstDue,
+    ],
   );
   const words = shareWords({
     name: project.name,
@@ -151,6 +147,8 @@ function Scorecard({ launch }: { launch: Launch }) {
     url: `${window.location.origin}${projectSharePath(project)}`,
     variant: kind,
     accepted,
+    doneAlone: doneByFounder,
+    firstDue,
   });
 
   usePageMeta({
@@ -182,52 +180,37 @@ function Scorecard({ launch }: { launch: Launch }) {
         {notListedYet(project) ? (
           <p className="text-xs text-muted-foreground">{NOT_LISTED_LINE}</p>
         ) : null}
-        <div className="flex flex-wrap items-start gap-2">
-          <Button
-            aria-pressed={followed}
-            className="max-sm:h-11"
-            data-testid="scorecard-follow"
-            disabled={
-              existingUserPubkey() !== null &&
-              (!follows.ready || follows.pending)
+        <ScorecardActions
+          followDisabled={
+            existingUserPubkey() !== null && (!follows.ready || follows.pending)
+          }
+          followed={followed}
+          isFounder={isFounder}
+          launch={launch}
+          onFollow={() => {
+            if (existingUserPubkey() === null) {
+              window.dispatchEvent(new Event(SIGN_UP_EVENT));
+              return;
             }
-            onClick={() => {
-              if (existingUserPubkey() === null) {
-                window.dispatchEvent(new Event(SIGN_UP_EVENT));
-                return;
-              }
-              follows.toggle(coordinate);
-            }}
-            type="button"
-            variant={followed ? "outline" : "default"}
-          >
-            {followed ? "Following" : "Follow"}
-          </Button>
-          <Button asChild className="max-sm:h-11">
-            <Link
-              data-testid="scorecard-help"
-              params={{ launchId: project.id }}
-              search={{ author: project.author, tab: "updates" }}
-              to="/launchpad/$launchId"
-            >
-              I can help
-            </Link>
-          </Button>
-          <ShareRecordButton
-            answered={answered}
-            kept={totals?.kept ?? null}
-            card={kind}
-            label="Share"
-            project={project}
-            streak={streak}
-            variant="outline"
-          />
-        </div>
+            follows.toggle(coordinate);
+          }}
+          onTeam={onTeam}
+          share={{
+            answered,
+            kept,
+            streak,
+            card: kind,
+            accepted,
+            doneAlone: doneByFounder,
+            firstDue,
+          }}
+          viewerIsAgent={viewerIsAgent}
+        />
       </header>
 
       {state.isError && !s ? (
         <p className="text-sm" data-testid="scorecard-failed" role="alert">
-          Couldn't read this project's record.{" "}
+          Couldn't load this record.{" "}
           <Button
             onClick={() => void state.refetch()}
             size="sm"
@@ -239,180 +222,41 @@ function Scorecard({ launch }: { launch: Launch }) {
         </p>
       ) : !s ? (
         <p className="text-sm text-muted-foreground" role="status">
-          Reading its record…
+          Loading the record...
         </p>
       ) : (
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Fact
-            label="Weekly updates"
-            testId="scorecard-streak"
-            value={
-              streak === null
-                ? "Not known"
-                : streak >= 2
-                  ? `${streak} weeks in a row`
-                  : streak === 1
-                    ? "1 week so far"
-                    : "No run yet"
-            }
-          />
-          <Fact
-            label="Promises kept"
-            testId="scorecard-kept"
-            value={
-              totals === null
-                ? "Not known"
-                : answered
-                  ? `${totals.kept} of ${answered}`
-                  : "None answered yet"
-            }
-          />
-          <Fact
-            label="Not kept"
-            testId="scorecard-missed"
-            value={
-              totals === null ? (
-                "Not known"
-              ) : (
-                <>
-                  <span className="block">{totals.missed} missed</span>
-                  <span className="hidden"> · </span>
-                  <span className="block">{totals.changed} changed</span>
-                </>
-              )
-            }
-          />
-          <Fact
-            label="Help wanted"
-            testId="scorecard-open-help"
-            value={
-              s.openHelp === null
-                ? "Not known"
-                : s.openHelp === 0
-                  ? "Nothing open"
-                  : s.openHelp === 1
-                    ? "1 open request"
-                    : `${s.openHelp} open requests`
-            }
-          />
-        </dl>
+        <ProjectRecordLine
+          launch={launch}
+          viewerIsFounder={isFounder}
+          withLink={false}
+        />
       )}
-      {s && (!s.updatesKnown || s.promises === null) ? (
-        <p className="text-xs" data-testid="scorecard-partial" role="status">
-          Not all of this project's records could be read here, so a number that
-          could not be worked out says "Not known".
-        </p>
-      ) : null}
 
-      <section
-        aria-labelledby="scorecard-promises-heading"
-        className="flex flex-col gap-2"
-      >
-        <h2 className="text-base font-semibold" id="scorecard-promises-heading">
-          Last promises answered
-        </h2>
-        {recordFailed ? (
-          <p className="text-sm" role="alert">
-            Couldn't read the promises.{" "}
-            <Button onClick={retry} size="sm" type="button" variant="outline">
-              Try again
-            </Button>
-          </p>
-        ) : !record ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            Reading the promises…
-          </p>
-        ) : lastFive.length === 0 ? (
-          <p
-            className="text-sm text-muted-foreground"
-            data-testid="scorecard-no-promises"
-          >
-            No promise has been answered yet. Each weekly update says what is
-            next, and the one after says what came of it.
-          </p>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {lastFive.map((promise) => (
-              <li
-                className="glass flex flex-wrap items-baseline gap-2 rounded-2xl border p-3 text-sm"
-                data-state={promise.state}
-                data-testid="scorecard-promise"
-                key={promise.id}
-              >
-                <Chip tone={TONE[promise.state] ?? "neutral"}>
-                  {PROMISE_STATE_LABEL[promise.state]}
-                </Chip>
-                <span className="min-w-0 flex-1 break-words">
-                  {promise.text}
-                  {promise.note ? (
-                    <span className="block text-xs text-muted-foreground">
-                      {promise.note}
-                    </span>
-                  ) : null}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <PromisesAnswered
+        failed={recordFailed}
+        now={now}
+        onRetry={retry}
+        promises={record?.promises ?? null}
+      />
 
-      {/* Backing, when the build offers it: between the record and the latest update. Read only here. */}
+      <WorkDone
+        now={now}
+        tasks={s?.tasksKnown ? s.tasks : null}
+        viewerIsFounder={isFounder}
+      />
+
+      {/* Backing, when the build offers it: between the work and the latest update. Read only here. */}
       <BackingBlock isFounder={false} launch={launch} variant="scorecard" />
 
-      <section
-        aria-labelledby="scorecard-update-heading"
-        className="flex flex-col gap-2"
-      >
-        <h2 className="text-base font-semibold" id="scorecard-update-heading">
-          Latest update
-        </h2>
-        {updates.isError && !updates.data ? (
-          <p className="text-sm" role="alert">
-            Couldn't read the updates.{" "}
-            <Button
-              onClick={() => void updates.refetch()}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              Try again
-            </Button>
-          </p>
-        ) : !updates.data ? (
-          <p className="text-sm text-muted-foreground" role="status">
-            Reading the updates…
-          </p>
-        ) : latest ? (
-          <div
-            className="glass rounded-2xl border p-3"
-            data-testid="scorecard-update"
-          >
-            <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              {freshnessLine(latest.createdAt, now)}
-              {due ? (
-                <Chip tone={due.late ? "warning" : "neutral"}>{due.text}</Chip>
-              ) : null}
-            </p>
-            <h3 className="mt-1 break-words text-sm font-bold">
-              {latest.title}
-            </h3>
-            {latest.body ? (
-              <p className="mt-1 whitespace-pre-wrap break-words text-sm">
-                {latest.body.length > 400
-                  ? `${latest.body.slice(0, 400)}…`
-                  : latest.body}
-              </p>
-            ) : null}
-          </div>
-        ) : (
-          <p
-            className="text-sm text-muted-foreground"
-            data-testid="scorecard-no-update"
-          >
-            No update yet.
-          </p>
-        )}
-      </section>
+      <LatestUpdate
+        complete={updates.data?.complete ?? false}
+        failed={updates.isError && !updates.data}
+        latest={latest}
+        launch={launch}
+        now={now}
+        onRetry={() => void updates.refetch()}
+        updates={updates.data?.updates ?? null}
+      />
 
       <section
         aria-labelledby="scorecard-team-heading"
@@ -467,9 +311,9 @@ function Scorecard({ launch }: { launch: Launch }) {
                   onClick={() => setChosenKind(option)}
                   size="sm"
                   type="button"
-                  variant={kind === option ? "default" : "outline"}
+                  variant={kind === option ? "secondary" : "outline"}
                 >
-                  {option === "kept" ? "Promises kept" : "Work accepted"}
+                  {KIND_LABEL[option]}
                 </Button>
               ))}
             </fieldset>
@@ -486,7 +330,7 @@ function Scorecard({ launch }: { launch: Launch }) {
 
       <p>
         <Link
-          className="text-sm font-semibold underline"
+          className="inline-flex min-h-8 items-center text-sm font-semibold underline max-sm:min-h-11"
           data-testid="scorecard-full"
           params={{ launchId: project.id }}
           search={{ author: project.author }}

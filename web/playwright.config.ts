@@ -164,6 +164,8 @@ export default defineConfig({
         "**/weekly-update.spec.ts",
         // A project's public scorecard at its own short address.
         "**/scorecard.spec.ts",
+        // The record's words: done, checked by the founder, apart from accepted; Not answered; share pictures; profile tab.
+        "**/record-honesty.spec.ts",
         // The share picture for a project, a kept promise and accepted work: download, share sheet, post to Home.
         "**/share-card.spec.ts",
         // The newcomer's welcome on Home: three ways in, once.

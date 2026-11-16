@@ -28,9 +28,6 @@ const VISITOR_KEY = "d4".repeat(32);
 const COORD = coordOf(ME, "rhythm");
 const CARD = `/p/rhythm-${ME.slice(0, 16)}`;
 
-const record = (by: string, title: string, tags: string[][], at: number) =>
-  event(47003, by, { title, body: "" }, [["a", COORD], ...tags], at);
-
 function seed(relay: Relay) {
   for (const [key, name] of [
     [ME, "Mia Maker"],
@@ -63,9 +60,12 @@ function seed(relay: Relay) {
       now() - 50 * DAY,
     ),
   );
-  const first = record(
-    ME,
+  // Updates as the app writes them: the body reads on its own, and the tags carry the same parts.
+  const written = (title: string, body: string, tags: string[][], at: number) =>
+    event(47003, ME, { title, body }, [["a", COORD], ...tags], at);
+  const first = written(
     "Two weeks ago",
+    "What's next\nShip sign-up\nWrite the guide\nFind a designer",
     [
       ["update-part", "next", "Ship sign-up\nWrite the guide\nFind a designer"],
       ["promise", "0", "Ship sign-up"],
@@ -76,9 +76,13 @@ function seed(relay: Relay) {
   );
   relay.seed(first);
   relay.seed(
-    record(
-      ME,
+    written(
       "Sign-up is live",
+      [
+        "What we said last time\nDone: Ship sign-up\nNot done: Write the guide (Ran out of week.)\nChanged: Find a designer",
+        "What happened this week\nSign-up shipped on Tuesday.",
+        "Help needed (Small)\nSomeone to test on an older phone.",
+      ].join("\n\n"),
       [
         ["update-part", "done", "Sign-up shipped on Tuesday."],
         ["promise-mark", `${first.id}:0`, "done", ""],
@@ -119,16 +123,19 @@ test("signed out, a project's scorecard shows its record and no price; Follow as
   await expect(card.getByTestId("scorecard-goal")).toHaveText(
     "A metronome anyone can fork.",
   );
-  await expect(card.getByTestId("scorecard-streak")).toHaveText(
+  // The record is one line of chips: how fresh, how steady, and how many promises were kept, missed and changed.
+  await expect(card.getByTestId("record-line-streak")).toHaveText(
     "2 weeks in a row",
     { timeout: 30_000 },
   );
-  await expect(card.getByTestId("scorecard-kept")).toHaveText("1 of 3");
-  await expect(card.getByTestId("scorecard-missed")).toHaveText(
-    "1 missed · 1 changed",
+  await expect(card.getByTestId("record-line-kept")).toHaveText(
+    "Kept 1 of 3 promises, 1 missed, 1 changed",
   );
-  await expect(card.getByTestId("scorecard-open-help")).toHaveText(
-    "1 open request",
+  await expect(card.getByTestId("record-line-freshness")).toHaveText(
+    "Next update today",
+  );
+  await expect(card.getByTestId("scorecard-update-help")).toContainText(
+    "Someone to test on an older phone.",
   );
   await expect
     .poll(() =>
@@ -147,8 +154,31 @@ test("signed out, a project's scorecard shows its record and no price; Follow as
   await expect(card.getByTestId("scorecard-update")).toContainText(
     "Sign-up is live",
   );
-  await expect(card.getByTestId("scorecard-update")).toContainText(
-    "Update due today",
+  // The update is laid out under last week's promises, each answered by what the update signed.
+  await expect
+    .poll(() =>
+      card
+        .getByTestId("update-promise-row")
+        .evaluateAll((rows) =>
+          rows.map((row) => row.getAttribute("data-state")),
+        ),
+    )
+    .toEqual(["kept", "missed", "changed"]);
+  await expect(
+    card.getByTestId("update-promise-row").filter({ hasText: "Ship sign-up" }),
+  ).toContainText("Kept");
+  await expect(card.getByTestId("update-this-week")).toContainText(
+    "Sign-up shipped on Tuesday.",
+  );
+  // A visitor: Follow is the one green button, "I can help" and Share are outline, and the way to start one's own
+  // project is a quiet link.
+  await expect(card.getByTestId("scorecard-follow")).toHaveClass(/bg-primary/);
+  await expect(card.getByTestId("scorecard-help")).not.toHaveClass(
+    /bg-primary/,
+  );
+  await expect(card.getByTestId("share-record")).not.toHaveClass(/bg-primary/);
+  await expect(card.getByTestId("start-yours")).toHaveText(
+    "Start your own project",
   );
   await expect(card.getByTestId("scorecard-team")).toContainText(
     "Mia Maker · founder",
@@ -259,15 +289,16 @@ test("when the record cannot be read the scorecard says so, with a retry", async
   await expect(card.getByTestId("scorecard-failed")).toBeVisible({
     timeout: 60_000,
   });
-  await expect(card.getByTestId("scorecard-kept")).toHaveCount(0);
+  await expect(card.getByTestId("record-line-kept")).toHaveCount(0);
   relay.setClosingSockets(false);
   await card
     .getByTestId("scorecard-failed")
     .getByRole("button", { name: "Try again" })
     .click();
-  await expect(card.getByTestId("scorecard-kept")).toHaveText("1 of 3", {
-    timeout: 30_000,
-  });
+  await expect(card.getByTestId("record-line-kept")).toContainText(
+    "Kept 1 of 3 promises",
+    { timeout: 30_000 },
+  );
 });
 
 test("at 390px the scorecard fits with no sideways scroll", async ({
@@ -278,9 +309,10 @@ test("at 390px the scorecard fits with no sideways scroll", async ({
   seed(relay);
   await install(page, relay, null);
   await page.goto(CARD);
-  await expect(page.getByTestId("scorecard-kept")).toHaveText("1 of 3", {
-    timeout: 30_000,
-  });
+  await expect(page.getByTestId("record-line-kept")).toContainText(
+    "Kept 1 of 3 promises",
+    { timeout: 30_000 },
+  );
   expect(
     await page.evaluate(
       () => document.documentElement.scrollWidth <= innerWidth,

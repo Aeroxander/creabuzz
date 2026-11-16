@@ -20,6 +20,7 @@ import { LaunchTabRow } from "./LaunchTabRow";
 import { ShareMenu } from "./ShareMenu";
 import { ProjectRecordLine } from "./ProjectRecordLine";
 import { SoloWinProvider } from "./SoloWinHost";
+import { StartYours } from "./StartYours";
 import { PostUpdateDialog } from "./PostUpdateDialog";
 import { UpdatePosted } from "./UpdatePosted";
 import { TeamPostUpdate } from "./ProjectTeamCard";
@@ -516,11 +517,14 @@ export function LaunchDetailPage({
           }
           belowName={
             sandbox ? null : (
-              <ProjectRecordLine
-                launch={launch}
-                viewerIsFounder={isFounder}
-                withLink={!founderPerson}
-              />
+              <div className="flex flex-col items-start gap-1">
+                <ProjectRecordLine
+                  launch={launch}
+                  viewerIsFounder={isFounder}
+                  withLink={!founderPerson}
+                />
+                <StartYours />
+              </div>
             )
           }
           followDisabled={!follows.ready || follows.pending}
