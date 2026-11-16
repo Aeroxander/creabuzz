@@ -36,6 +36,11 @@ test("the card says its heading and one line, to one person", () => {
     youSaidWords("Wrote the first page"),
     "You said you would: Wrote the first page.",
   );
+  // A task that already ends in a full stop does not get a second one.
+  assert.equal(
+    youSaidWords("Write the changelog."),
+    "You said you would: Write the changelog.",
+  );
 });
 
 test("the goal is ticked from the start, and a step not read is never ticked", () => {

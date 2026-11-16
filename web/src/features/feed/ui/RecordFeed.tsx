@@ -567,7 +567,7 @@ function RecordCard({
           <p className="break-words">{clip(item.what, 280)}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             {item.selfChecked
-              ? `Done by ${names(item.helper)}. Checked by the founder, working alone.`
+              ? `Done by ${names(item.helper)}. Checked by the founder.`
               : `Done by ${names(item.helper)}. Checked by ${names(item.author)}.`}
           </p>
         </div>

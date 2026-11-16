@@ -69,7 +69,8 @@ export const FIRST_WEEK_WORDS = {
 } as const;
 
 /** "You said you would: <task>." */
-export const youSaidWords = (what: string) => `You said you would: ${what}.`;
+export const youSaidWords = (what: string) =>
+  `You said you would: ${what.trim().replace(/[.!?]+$/, "")}.`;
 
 /**
  * What the card is: the three steps (no update yet), the one line after the first update (until the next one is due),
