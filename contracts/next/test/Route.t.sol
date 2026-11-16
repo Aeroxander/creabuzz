@@ -136,7 +136,7 @@ abstract contract RouteBase is SaleBase {
         assertGt(_poolSqrtPrice(s.key), 0, "the pool exists");
 
         // ---- treasury steps 2 and 3 -------------------------------------------------------------------------------
-        uint256 fresh = treasury.settle(quote);
+        uint256 fresh = treasury.settle(quote, strategy, ILBPInitializer(address(s.auction)));
         assertEq(fresh, toTreasury, "settle sees exactly what arrived");
         assertEq(treasury.spendable(), toTreasury * 15 / 75, "15 of 75 is spendable");
         assertEq(treasury.spendable() + treasury.floorMoney(), toTreasury, "buckets equal the balance");

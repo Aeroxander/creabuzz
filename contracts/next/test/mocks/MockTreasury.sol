@@ -17,6 +17,11 @@ interface IAuctionSweeps {
 
 interface IStrategyPools {
     function registeredPoolIds(PoolId id) external view returns (address);
+    function poolManager() external view returns (address);
+}
+
+interface IPoolManagerSlot {
+    function extsload(bytes32 slot) external view returns (bytes32);
 }
 
 /// @notice A stand-in for the project treasury of milestone 2/3, only as much as milestone 1 needs: it is the
@@ -39,26 +44,47 @@ contract MockTreasury {
 
     event Settled(uint256 fresh, uint256 toSpendable, uint256 toFloor);
 
-    /// @notice Step 1. Safe to repeat: does nothing when the pool step already ran, and never reverts on a failed
-    /// pool step (the strategy swallows that itself; the caller reads the strategy's events to see which it was).
+    /// @notice The new money cannot be split 15 : 60 because the sale has no pool: the 22 meant for the pool is in it.
+    error NoPool();
+
+    /// @notice Step 1. Safe to repeat: does nothing when the pool step already ran. The strategy reports a failed pool
+    /// step as a successful transaction, so this does not revert on it either; whether a pool exists afterwards is
+    /// answered by `poolIsOpen`, which reads the pool manager.
     /// @return ran True when this call performed the pool step.
     function openPool(ILBPStrategy strategy, ILBPInitializer auction) external returns (bool ran) {
+        if (strategy.initializers(auction).migrationBlock == 0) return false; // not registered with this strategy
+        PoolKey memory key = _key(strategy, auction);
+        if (IStrategyPools(address(strategy)).registeredPoolIds(key.toId()) != address(auction)) return false;
+        strategy.migrate(auction);
+        return true;
+    }
+
+    function _key(ILBPStrategy strategy, ILBPInitializer auction) internal view returns (PoolKey memory key) {
         MigratorParameters memory p = strategy.initializers(auction);
-        if (p.migrationBlock == 0) return false; // not registered with this strategy
-        PoolKey memory key = PoolKey({
+        key = PoolKey({
             currency0: Currency.wrap(p.currency < p.token ? p.currency : p.token),
             currency1: Currency.wrap(p.currency < p.token ? p.token : p.currency),
             fee: p.poolParameters.fee,
             tickSpacing: p.poolParameters.tickSpacing,
             hooks: IHooks(p.poolParameters.hook)
         });
-        if (IStrategyPools(address(strategy)).registeredPoolIds(key.toId()) != address(auction)) return false;
-        strategy.migrate(auction);
-        return true;
+    }
+
+    /// @notice True when the project's pool exists. Read from the pool manager's own storage, never from an event:
+    /// the strategy reports a failed pool step as a successful transaction.
+    function poolIsOpen(ILBPStrategy strategy, ILBPInitializer auction) public view returns (bool) {
+        bytes32 id = PoolId.unwrap(_key(strategy, auction).toId());
+        // Pool.State.slot0 is the first word of the pool's storage; the price is its low 160 bits.
+        bytes32 slot0 = IPoolManagerSlot(IStrategyPools(address(strategy)).poolManager())
+            .extsload(keccak256(abi.encode(id, uint256(6))));
+        return uint160(uint256(slot0)) != 0;
     }
 
     /// @notice Step 2. New money is whatever this contract holds above its two buckets, split 15 : 60 (20 : 80).
-    function settle(IERC20 currency) external returns (uint256 fresh) {
+    /// Refuses when the sale has no pool, because then the 22 of every 100 meant for the pool arrived here too and
+    /// a 15 : 60 split would put 77 of 100 in the floor.
+    function settle(IERC20 currency, ILBPStrategy strategy, ILBPInitializer auction) external returns (uint256 fresh) {
+        if (!poolIsOpen(strategy, auction)) revert NoPool();
         fresh = currency.balanceOf(address(this)) - spendable - floorMoney;
         uint256 toSpendable = fresh * 15 / 75;
         spendable += toSpendable;
