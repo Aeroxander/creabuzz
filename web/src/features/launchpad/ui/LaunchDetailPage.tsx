@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { BackIdeaButton } from "./BackIdeaButton";
 import { IdeaOverview } from "./IdeaOverview";
@@ -16,6 +15,11 @@ import { raisesOffered } from "../lib/raises-offered";
 import { LaunchChatCard } from "./LaunchChatCard";
 import { AGENT_NEEDS_PERSON, useViewerIsAgent } from "../use-account-agent";
 import { ListingNote } from "./ListingNote";
+import { MoreToSetUp } from "./MoreToSetUp";
+import { LaunchTabRow } from "./LaunchTabRow";
+import { ShareMenu } from "./ShareMenu";
+import { ProjectRecordLine } from "./ProjectRecordLine";
+import { SoloWinProvider } from "./SoloWinHost";
 import { PostUpdateDialog } from "./PostUpdateDialog";
 import { UpdatePosted } from "./UpdatePosted";
 import { TeamPostUpdate } from "./ProjectTeamCard";
@@ -26,7 +30,6 @@ import { ProjectLoadError } from "./ProjectLoadError";
 import { isInviteOnlyRefusal } from "../lib/refusal-copy";
 import { restrictionOf } from "@/shared/lib/refusal-text";
 import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/lib/cn";
 import { KIND_LAUNCH_BID, KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import {
   useDeleteLaunch,
@@ -45,11 +48,14 @@ import {
   ideaShowsTeamSurfaces,
   type LaunchTab,
   type PageKind,
+  pageTabs,
   tabAlias,
   tabShown,
   type TabUse,
   updatesLabel,
 } from "../lib/launch-tabs";
+import { teamOf } from "../lib/help-request";
+import { NOT_LISTED_LINE, notListedYet } from "../lib/listing";
 import { useChainBlockHeight } from "@/features/feed/use-feed";
 import { markSupportersSeen } from "../use-founder-activity";
 import { useSupporters } from "../use-supporters";
@@ -68,8 +74,7 @@ import { ProjectGoalCard } from "./ProjectGoalCard";
 import { ProjectOpenHelp } from "./ProjectOpenHelp";
 import { AgentPostCard } from "./AgentPostCard";
 import { AgentWorkNote } from "./AgentWorkNote";
-import { ProjectNews } from "./FirstWeekCard";
-import { RecoveryKeyPrompt } from "./RecoveryKeyPrompt";
+import { FounderPostButton, ProjectNews } from "./FirstWeekCard";
 import { SetUpCards } from "./ProjectSetUp";
 import { StartedCard } from "./StartedCard";
 import { isAiCategory } from "../lib/agent-post";
@@ -191,11 +196,8 @@ export function LaunchDetailPage({
     setUpdateStart("help");
     setUpdateOpenRaw(true);
   }, []);
-  // A project just made from Start: its welcome card, which can be put away, and its first-page recovery key prompt.
+  // A project just made from Start: its one live line, which can be put away.
   const [welcome, setWelcome] = useState(started === 1);
-  const [firstPage] = useState(started === 1);
-  // The Tasks, Team and Record cards a new project does not show until the founder asks for them.
-  const [setUpOpened, setSetUpOpened] = useState(false);
   const [mybidsAutoAction, setMybidsAutoAction] = useState<
     "exit" | "claim" | null
   >(null);
@@ -240,38 +242,6 @@ export function LaunchDetailPage({
   }, [initialTab, initialDecision, isFounder]);
   // Read before any early return: hooks keep their order. It resolves which DAO, if any, this launch belongs to.
   const orgMoney = useOrgMoney();
-  // On a narrow screen the tab row scrolls: the chosen tab is kept in view, and a fade says more tabs are off to a side.
-  const tabRow = useRef<HTMLDivElement | null>(null);
-  const [tabOverflow, setTabOverflow] = useState({ left: false, right: false });
-  const measureTabs = useCallback(() => {
-    const row = tabRow.current;
-    if (!row) return;
-    const left = row.scrollLeft > 2;
-    const right = row.scrollLeft + row.clientWidth < row.scrollWidth - 2;
-    setTabOverflow((was) =>
-      was.left === left && was.right === right ? was : { left, right },
-    );
-  }, []);
-  const loaded = Boolean(launch);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run when the tab changes or the row first appears
-  useEffect(() => {
-    const row = tabRow.current;
-    const chosen = row?.querySelector<HTMLElement>('[aria-selected="true"]');
-    // Sideways only: scrolling the page to the tab row would move someone who is reading further down.
-    if (row && chosen) {
-      const start = chosen.offsetLeft;
-      const end = start + chosen.offsetWidth;
-      if (start < row.scrollLeft) row.scrollLeft = Math.max(0, start - 16);
-      else if (end > row.scrollLeft + row.clientWidth)
-        row.scrollLeft = end - row.clientWidth + 16;
-    }
-    measureTabs();
-  }, [tab, loaded, measureTabs]);
-  useEffect(() => {
-    window.addEventListener("resize", measureTabs);
-    return () => window.removeEventListener("resize", measureTabs);
-  }, [measureTabs]);
-
   // Consume the deep link once: `bid` opens the bid dialog (sender picker);
   // `exit`/`claim` land on the My-bids section and expand the matching bid's
   // action there.
@@ -429,41 +399,18 @@ export function LaunchDetailPage({
       : (daoBinding?.dao ?? null);
   // What people come back for goes first. A DAO is run from Decisions and Work, so those lead; a raise that has not
   // become a DAO leads with its money and its bids.
-  const contributionsTab = {
-    id: "contributions" as const,
-    label: "Contributions",
-  };
-  const tabs: Array<{ id: Tab; label: string; founderOnly?: boolean }> = [
-    { id: "overview", label: "Overview" },
-    ...(workDao && contributor ? [contributionsTab] : []),
-    // The agreement a backer follows: shown for any project whose team tokens unlock against milestones, funded or not.
-    ...(launch.record.unlocks?.mode === "milestones"
-      ? [{ id: "milestones" as const, label: "Milestones" }]
-      : []),
-    ...(workDao ? [{ id: "decisions" as const, label: "Decisions" }] : []),
-    ...(workDao ? [{ id: "work" as const, label: "Work" }] : []),
-    ...(workDao && !contributor ? [contributionsTab] : []),
-    { id: "agents", label: "People & agents" },
-    ...(workDao ? [{ id: "record" as const, label: "Track record" }] : []),
-    { id: "treasury", label: contributor ? "Funds" : "Treasury" },
-    // Onchain bids only exist when the launch has an auction linked.
-    ...(launch.record.auction
-      ? [{ id: "mybids" as const, label: "My bids" }]
-      : []),
-    // A simulated launch has no public discussion to join.
-    ...(sandbox ? [] : [{ id: "discussion" as const, label: "Discussion" }]),
-    // A simulated project has no boards on the server to list.
-    ...(sandbox ? [] : [{ id: "boards" as const, label: "Boards" }]),
-    {
-      id: "updates",
-      // Counted as the tab lists them, from this project's own records; no number while those are not read.
-      // A read that was cut short found "at least" that many, so no number is stated.
-      label: sandbox
-        ? updatesLabel(projectProgress([launch], []).length, true)
-        : updatesLabel(tabState.updates, tabState.updatesComplete),
-    },
-    { id: "manage", label: "Manage", founderOnly: true },
-  ];
+  const tabs = pageTabs({
+    workDao: Boolean(workDao),
+    contributor,
+    milestones: launch.record.unlocks?.mode === "milestones",
+    auction: Boolean(launch.record.auction),
+    sandbox: Boolean(sandbox),
+    // Counted as the tab lists them, from this project's own records; no number while those are not read.
+    // A read that was cut short found "at least" that many, so no number is stated.
+    updatesLabel: sandbox
+      ? updatesLabel(projectProgress([launch], []).length, true)
+      : updatesLabel(tabState.updates, tabState.updatesComplete),
+  });
   const raises = raisesOffered();
   const kind: PageKind = idea ? "idea" : contributor ? "contributor" : "raise";
   const allowed = allowedTabs(kind, raises);
@@ -502,75 +449,129 @@ export function LaunchDetailPage({
     </>
   );
 
-  return (
+  // Someone on the project's team (the founder, or a person the founder added) has no one to follow it for.
+  const me = existingUserPubkey();
+  const onTeam = me !== null && teamOf(launch.record).has(me);
+  const goalCard = sandbox ? null : (
+    <ProjectGoalCard isFounder={isFounder && !viewerIsAgent} launch={launch} />
+  );
+  const news = sandbox ? null : (
+    <ProjectNews
+      firstWeek={founderPerson}
+      isFounder={isFounder}
+      launch={launch}
+      onAskForHelp={askForHelp}
+      onOpenUpdates={() => setTab("updates")}
+      onPostUpdate={() => setUpdateOpen(true)}
+      showCard={shown !== "updates"}
+      workTab={hasWorkTab}
+    />
+  );
+  const chatCard =
+    sandbox || stage === "graduated" ? null : (
+      <LaunchChatCard isFounder={isFounder} launch={launch} />
+    );
+
+  const page = (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8">
-      <LaunchHero
-        actions={
-          <>
-            {idea ? (
-              <BackIdeaButton
-                disabled={!follows.ready || follows.pending}
-                followed={followed}
-                onToggle={toggleFollow}
-                supportersRoom={launch.record.chat.supporters}
-              />
-            ) : mainAction === null || !raisesOffered() ? null : (
-              <SaleActionButton
-                action={mainAction}
-                onBid={() => setBidOpen(true)}
-                onOpenBids={(what) => {
-                  setMybidsAutoAction(what);
-                  setTab("mybids");
-                }}
-              />
-            )}
-            {isFounder ? (
-              <Button onClick={() => setUpdateOpen(true)} variant="outline">
-                Post update
-              </Button>
-            ) : sandbox ? null : (
-              <TeamPostUpdate
+      <div className="flex flex-col gap-3">
+        <LaunchHero
+          actions={
+            <>
+              {idea ? (
+                onTeam ? null : (
+                  <BackIdeaButton
+                    disabled={!follows.ready || follows.pending}
+                    followed={followed}
+                    onToggle={toggleFollow}
+                    supportersRoom={launch.record.chat.supporters}
+                  />
+                )
+              ) : mainAction === null || !raisesOffered() ? null : (
+                <SaleActionButton
+                  action={mainAction}
+                  onBid={() => setBidOpen(true)}
+                  onOpenBids={(what) => {
+                    setMybidsAutoAction(what);
+                    setTab("mybids");
+                  }}
+                />
+              )}
+              {isFounder ? (
+                <FounderPostButton
+                  firstWeek={founderPerson}
+                  launch={launch}
+                  onPost={() => setUpdateOpen(true)}
+                />
+              ) : sandbox ? null : (
+                <TeamPostUpdate
+                  launch={launch}
+                  onOpen={() => setUpdateOpen(true)}
+                />
+              )}
+              {sandbox ? null : (
+                <ShareMenu isFounder={isFounder} launch={launch} />
+              )}
+            </>
+          }
+          belowName={
+            sandbox ? null : (
+              <ProjectRecordLine
                 launch={launch}
-                onOpen={() => setUpdateOpen(true)}
+                viewerIsFounder={isFounder}
+                withLink={!founderPerson}
               />
-            )}
-          </>
-        }
-        followDisabled={!follows.ready || follows.pending}
-        followed={followed}
-        funding={effectiveFundingAt(launch, stage, blockHeight)}
-        idea={idea}
-        supporters={
-          supporterCoord
-            ? (supporterCounts.data?.get(supporterCoord) ?? null)
-            : null
-        }
-        chips={
-          contributor ? (
-            <ContributorStatusNote
-              chainId={launch.record.chainId ?? null}
-              dao={workDao}
-              shares={
-                isEvmAddress(launch.record.token ?? "")
-                  ? (launch.record.token as string)
-                  : null
-              }
-            />
-          ) : null
-        }
-        note={
-          contributor ? null : (
-            /* §7 "Launch page copy": what a buyer acquires, said before the
+            )
+          }
+          followDisabled={!follows.ready || follows.pending}
+          followed={followed}
+          funding={effectiveFundingAt(launch, stage, blockHeight)}
+          idea={idea}
+          supporters={
+            supporterCoord
+              ? (supporterCounts.data?.get(supporterCoord) ?? null)
+              : null
+          }
+          chips={
+            contributor ? (
+              <ContributorStatusNote
+                chainId={launch.record.chainId ?? null}
+                dao={workDao}
+                shares={
+                  isEvmAddress(launch.record.token ?? "")
+                    ? (launch.record.token as string)
+                    : null
+                }
+              />
+            ) : null
+          }
+          note={
+            contributor ? null : (
+              /* §7 "Launch page copy": what a buyer acquires, said before the
                bid button — ownership only, never a yield. */
-            <OwnershipOnlyNote className="max-w-60 text-right" />
-          )
-        }
-        onToggleFollow={() => toggleFollow()}
-        record={launch.record}
-        followNote={!sandbox && !isFounder}
-        showFollow={!sandbox && !idea}
-        stage={stage}
-      />
+              <OwnershipOnlyNote className="max-w-60 text-right max-sm:max-w-none max-sm:text-left" />
+            )
+          }
+          onToggleFollow={() => toggleFollow()}
+          record={launch.record}
+          followNote={!sandbox && !onTeam}
+          showFollow={!sandbox && !idea && !onTeam}
+          stage={stage}
+        />
+        {founderPerson && welcome ? (
+          <StartedCard onDismiss={dismissWelcome} project={launch.record} />
+        ) : null}
+        {/* The listing choice itself is under "More to set up"; that the project is not listed is said here, always. */}
+        {founderPerson && notListedYet(launch.record) ? (
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="project-unlisted-note"
+            role="status"
+          >
+            {NOT_LISTED_LINE}
+          </p>
+        ) : null}
+      </div>
 
       {sandbox ? null : (
         <>
@@ -589,12 +590,9 @@ export function LaunchDetailPage({
               </Button>
             </p>
           ) : null}
-          {founderPerson && welcome ? (
-            <StartedCard onDismiss={dismissWelcome} project={launch.record} />
-          ) : null}
-          {founderPerson && firstPage ? <RecoveryKeyPrompt /> : null}
-          <ListingNote isFounder={isFounder} launch={launch} stage={stage} />
-          {/* What the project is for comes first: its goal, and how everyone will know. */}
+          {founderPerson ? null : (
+            <ListingNote isFounder={isFounder} launch={launch} stage={stage} />
+          )}
           {isFounder && viewerIsAgent ? (
             <p
               className="text-sm"
@@ -604,10 +602,6 @@ export function LaunchDetailPage({
               {AGENT_NEEDS_PERSON}
             </p>
           ) : null}
-          <ProjectGoalCard
-            isFounder={isFounder && !viewerIsAgent}
-            launch={launch}
-          />
         </>
       )}
 
@@ -617,20 +611,19 @@ export function LaunchDetailPage({
           project={launch.record}
         />
       ) : null}
-      {/* The project's news, above the tabs; the Updates tab is the full list, so it is not repeated there. A founder who
-          has posted nothing gets the first-week card in its place. */}
-      {sandbox ? null : (
-        <ProjectNews
-          firstWeek={founderPerson}
-          isFounder={isFounder}
-          launch={launch}
-          onAskForHelp={askForHelp}
-          onOpenUpdates={() => setTab("updates")}
-          onPostUpdate={() => setUpdateOpen(true)}
-          showCard={shown !== "updates"}
-          welcomeShown={Boolean(founderPerson && welcome)}
-          workTab={hasWorkTab}
-        />
+      {/* A founder's first week is the next step, so it comes first. Everyone else reads what the project is for
+          (its goal, and how everyone will know) before its news. The news is above the tabs; the Updates tab is the
+          full list, so it is not repeated there. */}
+      {founderPerson ? (
+        <>
+          {news}
+          {goalCard}
+        </>
+      ) : (
+        <>
+          {goalCard}
+          {news}
+        </>
       )}
 
       {sandbox ? null : (
@@ -640,20 +633,14 @@ export function LaunchDetailPage({
             <AgentPostCard project={launch.record} />
           ) : null}
           <ProjectOpenHelp launch={launch} workTab={hasWorkTab} />
-          {/* Tasks, Team and Record show once they have something; "Set up more" brings them in for a new project. */}
-          <SetUpCards
-            isFounder={isFounder}
-            launch={launch}
-            onOpen={() => setSetUpOpened(true)}
-            opened={setUpOpened}
-          />
+          <SetUpCards isFounder={isFounder} launch={launch} />
           {/* Backing comes after the record, so the record is read first and the money second. It renders nothing unless
               the build turns investing on, and nothing for a project that cannot be backed. */}
           <BackingBlock isFounder={isFounder} launch={launch} variant="page" />
         </>
       )}
 
-      {!sandbox && isFounder && idea ? (
+      {!sandbox && isFounder && idea && !founderPerson ? (
         <IdeaProgressCard launch={launch} />
       ) : null}
 
@@ -665,57 +652,14 @@ export function LaunchDetailPage({
         />
       ) : null}
 
-      {sandbox || stage === "graduated" ? null : (
-        <LaunchChatCard isFounder={isFounder} launch={launch} />
-      )}
+      {founderPerson ? null : chatCard}
 
-      {/* One tab is no choice: the row shows once there is a second one. */}
-      <div className={cn("relative", rowTabs.length < 2 && "hidden")}>
-        <div
-          className="flex gap-x-5 overflow-x-auto border-b border-border [scrollbar-width:none]"
-          onScroll={measureTabs}
-          ref={tabRow}
-          role="tablist"
-          aria-label={contributor ? "Project sections" : "Launch sections"}
-        >
-          {rowTabs.map((t) => (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={shown === t.id}
-              onClick={() => setTab(t.id)}
-              className={cn(
-                "-mb-px shrink-0 whitespace-nowrap border-b-[3px] px-1 pb-2 text-sm font-semibold transition-colors",
-                shown === t.id
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
-              )}
-              type="button"
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        {/* Decorative: the tabs themselves stay reachable by keyboard and screen reader whatever is scrolled. */}
-        {tabOverflow.left ? (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 left-0 flex w-8 items-center bg-gradient-to-r from-background to-transparent"
-            data-testid="tabs-more-left"
-          >
-            <ChevronLeft className="h-4 w-4 text-muted-foreground" />
-          </span>
-        ) : null}
-        {tabOverflow.right ? (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 flex w-8 items-center justify-end bg-gradient-to-l from-background to-transparent"
-            data-testid="tabs-more-right"
-          >
-            <ChevronRight className="h-4 w-4 text-muted-foreground" />
-          </span>
-        ) : null}
-      </div>
+      <LaunchTabRow
+        label={contributor ? "Project sections" : "Launch sections"}
+        onPick={setTab}
+        shown={shown}
+        tabs={rowTabs}
+      />
 
       {shown === "overview" && idea ? (
         <>
@@ -890,6 +834,15 @@ export function LaunchDetailPage({
         />
       ) : null}
 
+      {/* The chat rooms, the announcement step and the listing choice: put away for a founder, nothing lost. */}
+      {founderPerson ? (
+        <MoreToSetUp>
+          {chatCard}
+          {idea ? <IdeaProgressCard launch={launch} /> : null}
+          <ListingNote isFounder={isFounder} launch={launch} stage={stage} />
+        </MoreToSetUp>
+      ) : null}
+
       {bidOpen && raisesOffered() ? (
         <RecordBidDialog
           isPublishing={mirror.isPending}
@@ -924,5 +877,11 @@ export function LaunchDetailPage({
         />
       ) : null}
     </div>
+  );
+
+  return founderPerson ? (
+    <SoloWinProvider launch={launch}>{page}</SoloWinProvider>
+  ) : (
+    page
   );
 }

@@ -38,7 +38,10 @@ export function LaunchHero({
   idea = false,
   supporters = null,
   followNote = false,
+  belowName,
 }: {
+  /** The record line (chips) under the name and the "by" line. */
+  belowName?: ReactNode;
   /** Says what following gives, under the buttons. Off where there is nothing to follow (a pretend project). */
   followNote?: boolean;
   record: LaunchRecord;
@@ -96,7 +99,7 @@ export function LaunchHero({
   }
 
   return (
-    <header className="flex flex-col gap-4" data-testid="launch-hero">
+    <header className="flex flex-col gap-3" data-testid="launch-hero">
       {/* The way back is the list of projects, named as the top bar names it; "Launchpad" only where sales are offered. */}
       <Link
         className="flex items-center gap-1 text-sm text-muted-foreground hover:underline"
@@ -109,7 +112,7 @@ export function LaunchHero({
           className={
             stage === "graduated"
               ? "h-16 overflow-hidden rounded-2xl sm:h-20"
-              : "h-40 overflow-hidden rounded-2xl sm:h-52"
+              : "h-24 overflow-hidden rounded-2xl sm:h-32"
           }
           style={
             record.image
@@ -137,16 +140,7 @@ export function LaunchHero({
         <div className="min-w-0 flex-1 basis-80">
           <h1 className="flex flex-wrap items-center gap-2 text-3xl font-black tracking-tight">
             {record.name}{" "}
-            {idea ? (
-              <span
-                className="rounded-full bg-primary/15 px-2.5 py-0.5 text-xs font-bold text-primary-ink"
-                data-testid="launch-idea-badge"
-              >
-                Project
-              </span>
-            ) : (
-              <StageBadge record={record} stage={stage} />
-            )}
+            {idea ? null : <StageBadge record={record} stage={stage} />}
             {record.category ? (
               <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs font-bold">
                 {record.category}
@@ -174,6 +168,7 @@ export function LaunchHero({
               </>
             ) : null}
           </p>
+          {belowName ? <div className="mt-3">{belowName}</div> : null}
           <p className="mt-3 max-w-2xl text-base">
             {record.pitch || "No pitch yet."}
           </p>
