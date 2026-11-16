@@ -7,8 +7,8 @@
  * "Confirm": when they are also on the team the row says someone else has to.
  *
  * A founder working alone is the one exception, and the server holds the same rule: while nobody else on the
- * project could check it, the founder marks their own work (or the work of an agent they run) as done with one
- * press. The row says before the press that it will show as checked by them alone, and afterwards it does.
+ * project could check it, the founder checks their own work (or the work of an agent they run) with one press, "I did
+ * it" (`TaskSoloActions.tsx`). It shows as done, checked by the founder, and is counted apart from accepted work.
  *
  * A check is of one piece of work: the box shows that piece, and if more work arrives while it is open it closes
  * and says so, so nobody confirms what they did not read.
@@ -51,6 +51,9 @@ import {
 import { markJustAccepted } from "../use-just-accepted";
 import { useTaskRunRecords } from "../use-task-run-records";
 import { HandedInExtras } from "./TaskEvidenceExtras";
+import { doneLine } from "./SoloWinDialog";
+import { useSoloAccess } from "./SoloWinHost";
+import { DID_IT, SoloCheckAlone } from "./TaskSoloActions";
 import { TaskHandInBox } from "./TaskHandInBox";
 import {
   dateWords,
@@ -282,28 +285,12 @@ export function TaskRow({
         ),
       },
     );
-  /**
-   * The founder, alone, marks their own work as done: one press, one record. It is not offered as a picture of
-   * "work accepted", because nobody else accepted it.
-   */
-  const aloneId = useId();
-  const [marking, setMarking] = useState<string | null>(null);
-  const markDone = (piece: TaskEvidence) =>
-    actions.confirm.mutate(
-      {
-        task: reference,
-        evidenceId: piece.id,
-        seen: task.evidence.map((p) => p.id),
-      },
-      {
-        onSuccess: done(
-          "Marked as done. It shows as checked by you alone, with nobody else on the project.",
-        ),
-        onError: notAsRead(
-          "That work was removed before you marked it as done, so nothing was saved.",
-        ),
-      },
-    );
+  /** The founder with nobody else on the project: "I did it" is the one button for their own task. */
+  const soloAccess = useSoloAccess();
+  const solo = soloAccess.available && isHelper;
+  /** To the founder alone on their project, their own name is "you". Everyone else reads names. */
+  const who = (pubkey: string) =>
+    soloAccess.available && pubkey === viewer ? "you" : names(pubkey);
 
   return (
     <li
@@ -345,7 +332,7 @@ export function TaskRow({
         data-testid="task-who"
       >
         {task.agreed === null ? "Given to" : "With"}{" "}
-        <PersonLink name={names(task.helper)} pubkey={task.helper} />
+        <PersonLink name={who(task.helper)} pubkey={task.helper} />
         {task.agreed === null ? ", who has not said yes" : ""}
         {task.helperAgent ? (
           <>
@@ -357,7 +344,7 @@ export function TaskRow({
             </Chip>
           </>
         ) : null}
-        {" · "}made by {names(task.madeBy)}
+        {" · "}made by {who(task.madeBy)}
         {due ? (
           <>
             {" · "}
@@ -619,7 +606,7 @@ export function TaskRow({
                 {
                   onSuccess: done(
                     alone
-                      ? "Your work is handed in. You can mark it as done below."
+                      ? "Your work is handed in. Press “I did it” below."
                       : "Your work is handed in. The team is told.",
                   ),
                 },
@@ -675,14 +662,31 @@ export function TaskRow({
           />
         ) : box === null ? (
           <div className="mt-2 flex flex-wrap gap-2">
-            <Button
-              data-task-focus="hand-in"
-              onClick={() => open("hand-in", "hand-in")}
-              size="sm"
-              type="button"
-            >
-              {task.evidence.length > 0 ? "Hand in again" : "Hand in work"}
-            </Button>
+            {solo ? (
+              // One green button for the founder's own task. Work already handed in is checked below, in one press.
+              task.state === "submitted" ? null : (
+                <Button
+                  data-task-focus="hand-in"
+                  data-testid="task-did-it"
+                  onClick={() =>
+                    soloAccess.open({ mode: "finish", taskId: task.id })
+                  }
+                  size="sm"
+                  type="button"
+                >
+                  {DID_IT}
+                </Button>
+              )
+            ) : (
+              <Button
+                data-task-focus="hand-in"
+                onClick={() => open("hand-in", "hand-in")}
+                size="sm"
+                type="button"
+              >
+                {task.evidence.length > 0 ? "Hand in again" : "Hand in work"}
+              </Button>
+            )}
             {canWork && !pendingAsk ? (
               <Button
                 data-task-focus="more-time"
@@ -711,58 +715,17 @@ export function TaskRow({
       {task.state === "submitted" && task.waiting.length > 0 && onTeam ? (
         alone ? (
           box === null ? (
-            <div className="mt-2" data-testid="task-check-alone">
-              <p className="text-sm" id={`${aloneId}-says`}>
-                Nobody else is on this project yet, so you check this work
-                yourself. It will be shown as checked by you alone. Work checked
-                by someone else counts for more once you have a team.
-              </p>
-              {agentViewer ? (
-                <p
-                  className="mt-1 text-xs text-muted-foreground"
-                  data-testid="task-agent-no-confirm"
-                >
-                  {AGENT_NEEDS_PERSON}
-                </p>
-              ) : (
-                <ul className="mt-2 flex flex-col gap-2">
-                  {task.waiting.map((piece) => (
-                    <li key={piece.id}>
-                      <Button
-                        aria-describedby={`${aloneId}-says`}
-                        data-task-focus={`done-alone-${piece.id}`}
-                        data-testid="task-mark-done"
-                        disabled={actions.confirm.isPending}
-                        onClick={() => {
-                          setMarking(piece.id);
-                          markDone(piece);
-                        }}
-                        size="sm"
-                        type="button"
-                      >
-                        {actions.confirm.isPending && marking === piece.id
-                          ? "Saving…"
-                          : `Mark as done${pieceName(piece)}`}
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {actions.confirm.isError && !expected(actions.confirm.error) ? (
-                <SendFailed
-                  onRetry={() => {
-                    const piece = task.waiting.find((p) => p.id === marking);
-                    if (piece) markDone(piece);
-                  }}
-                  testId="task-mark-done-failed"
-                >
-                  {withReason(
-                    "The work was not marked as done.",
-                    actions.confirm.error,
-                  )}
-                </SendFailed>
-              ) : null}
-            </div>
+            <SoloCheckAlone
+              agentViewer={agentViewer}
+              own={isHelper}
+              confirm={actions.confirm}
+              expected={expected}
+              notAsRead={notAsRead}
+              onChecked={done(doneLine())}
+              pieceName={pieceName}
+              task={task}
+              waiting={task.waiting}
+            />
           ) : null
         ) : rule.may ? (
           check ? (

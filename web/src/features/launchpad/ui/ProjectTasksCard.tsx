@@ -14,14 +14,17 @@ import { useUserNames } from "@/features/profiles/use-profiles";
 import { PersonSearch } from "@/features/social/ui/PersonSearch";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
+import { EmptyState } from "@/shared/ui/empty-state";
+import { MoreInfo } from "@/shared/ui/more-info";
 
 import { aiStarterKinds } from "../lib/ai-starters";
 import { teamOf } from "../lib/help-request";
 import { founderWorksAlone } from "../lib/task-checks";
-import { mayViewTask, openTasks } from "../lib/tasks";
+import { HOW_WORK_COUNTS, mayViewTask, openTasks } from "../lib/tasks";
 import { withReason } from "../lib/removals";
 import { type Launch, launchCoordinate } from "../models";
 import { useProjectTasks, useTaskActions } from "../use-tasks";
+import { useSoloAccess } from "./SoloWinHost";
 import { TaskForm } from "./TaskForm";
 import { TaskRow } from "./TaskRow";
 
@@ -72,7 +75,7 @@ function DirectTask({
                   ? "An earlier try had already gone through, so nothing new was sent. The task is below."
                   : helper === me
                     ? alone
-                      ? "Task made. Hand it in when it is done, then mark it as done yourself: nobody else is on this project yet."
+                      ? "Task made. Press “I did it” when it is done: nobody else is on this project yet, so you check it yourself."
                       : "Task made. Someone else on the team checks it when you hand it in."
                     : `Task made. It is ${names(helper)}'s once they say yes.`,
               ),
@@ -195,6 +198,10 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
     ]),
   );
   const onTeam = me !== null && team.has(me);
+  const soloAccess = useSoloAccess();
+  const alone = foundsAlone(launch, me);
+  // "You are the only person" is true while nobody else has a task: someone else's task means someone else is here.
+  const aloneOnly = alone && open.every((task) => task.helper === me);
   // Said in the card and focused there: the row a step was taken on may have left the list.
   const say = (text: string) => {
     setSaid(text);
@@ -237,20 +244,23 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
       <h2 className="text-sm font-bold" id="project-tasks-heading">
         Tasks
       </h2>
-      {foundsAlone(launch, me) ? (
-        <p className="text-xs text-muted-foreground" data-testid="tasks-alone">
-          Work with a finish line: “Done means” is written before anyone starts.
-          You are the only person on this project, so you check your own work
-          and it is shown as checked by you alone. Once someone else is on the
-          team, they check it.
+      {alone ? (
+        <p className="text-sm text-muted-foreground" data-testid="tasks-alone">
+          {aloneOnly
+            ? "You are the only person on this project."
+            : "Each task says what done means before anyone starts."}
         </p>
       ) : (
-        <p className="text-xs text-muted-foreground">
-          Work with a finish line: “Done means” is written before anyone starts,
-          and someone other than the person who did the work checks it. A
-          project's team can change: steps count by who is on the team now.
+        <p className="text-sm text-muted-foreground">
+          Each task says what done means before anyone starts.
         </p>
       )}
+      <div className="mt-1">
+        <MoreInfo label="How work counts" testId="tasks-how-counts">
+          {HOW_WORK_COUNTS} A project's team can change: steps count by who is
+          on the team now.
+        </MoreInfo>
+      </div>
       {said ? (
         <p className="mt-2 text-sm" data-testid="tasks-said" role="status">
           {said}
@@ -294,13 +304,33 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
       ) : null}
       {open.length === 0 ? (
         read.complete ? (
-          <p
-            className="mt-2 text-sm text-muted-foreground"
-            data-testid="tasks-empty"
-          >
-            No open tasks. Accept an offer on a help request to make one, or
-            give someone a task.
-          </p>
+          soloAccess.available ? (
+            <EmptyState
+              action={
+                <Button
+                  data-testid="add-task-solo"
+                  onClick={() => soloAccess.open({ mode: "plan" })}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Add something to do
+                </Button>
+              }
+              className="mt-3"
+              line="What is one thing you can finish today?"
+              testId="tasks-empty"
+              title="Nothing to do yet."
+            />
+          ) : (
+            <p
+              className="mt-2 text-sm text-muted-foreground"
+              data-testid="tasks-empty"
+            >
+              No open tasks. Accept an offer on a help request to make one, or
+              give someone a task.
+            </p>
+          )
         ) : null
       ) : (
         <ul className="mt-3 flex flex-col gap-3" data-testid="open-tasks">
@@ -326,6 +356,18 @@ export function ProjectTasksCard({ launch }: { launch: Launch }) {
           variant="outline"
         >
           Show more tasks
+        </Button>
+      ) : null}
+      {soloAccess.available && open.length > 0 ? (
+        <Button
+          className="mt-3"
+          data-testid="add-task-solo"
+          onClick={() => soloAccess.open({ mode: "plan" })}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          Add something to do
         </Button>
       ) : null}
       {onTeam && me ? (

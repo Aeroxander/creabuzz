@@ -22,6 +22,7 @@ import { PersonSearch } from "@/features/social/ui/PersonSearch";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
 import { Button } from "@/shared/ui/button";
+import { EmptyState } from "@/shared/ui/empty-state";
 import { FailureNote } from "@/shared/ui/failure-note";
 
 import {
@@ -202,6 +203,9 @@ export function ProjectTeamCard({
   const waiting = rows.filter((r) => stateOf(r) !== "accepted");
   const busy = changes.add.isPending || changes.remove.isPending;
   const full = record.team.length >= MAX_TEAM_MEMBERS;
+  /** The founder, with nobody added and nobody who left: the card is one line and one button. */
+  const onlyYou =
+    isFounder && team.ready && rows.length === 0 && former.length === 0;
 
   /** They said yes at some point (and may have left since): only then does removing them leave a line on the page. */
   const wasOnTeam = (pubkey: string) => {
@@ -260,7 +264,7 @@ export function ProjectTeamCard({
         <h2 className="text-sm font-bold" id={headingId}>
           Team
         </h2>
-        {isFounder ? (
+        {isFounder && !onlyYou ? (
           <Button
             data-testid="team-add"
             disabled={busy || full}
@@ -385,14 +389,25 @@ export function ProjectTeamCard({
           : null}
       </ul>
 
-      {isFounder && team.ready && rows.length === 0 && former.length === 0 ? (
-        <p
-          className="mt-2 text-xs text-muted-foreground"
-          data-testid="team-alone"
-        >
-          It is just you for now. Add a person who can post updates or check
-          work.
-        </p>
+      {onlyYou ? (
+        <EmptyState
+          action={
+            <Button
+              data-testid="team-add"
+              disabled={busy || full}
+              onClick={() => setAdding(true)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              Add a person
+            </Button>
+          }
+          className="mt-3"
+          line="You can run the project on your own. Add a person when you want a second pair of eyes."
+          testId="team-alone"
+          title="It is just you for now, and that is fine."
+        />
       ) : null}
 
       {team.failed ? (
@@ -492,6 +507,7 @@ export function ProjectTeamCard({
 
       {adding && me ? (
         <AddPersonDialog
+          alone={onlyYou}
           me={me}
           onAdd={(pubkey) => void add(pubkey)}
           onClose={() => setAdding(false)}
@@ -524,10 +540,13 @@ export function TeamPostUpdate({
 function AddPersonDialog({
   me,
   taken,
+  alone,
   onAdd,
   onClose,
 }: {
   me: string;
+  /** The founder has nobody else on the project: their own work is checked by them until someone joins. */
+  alone: boolean;
   taken: readonly string[];
   onAdd: (pubkey: string) => void;
   onClose: () => void;
@@ -549,15 +568,14 @@ function AddPersonDialog({
       </h2>
       <div className="mt-2 flex flex-col gap-2 text-sm" id={aboutId}>
         <p data-testid="team-add-warning">
-          <strong>{ACTS_AT_ONCE}</strong> A team member{" "}
-          {TEAM_ROLE_WORDS.toLowerCase()}: they can post weekly updates, make
-          and check tasks, and reply to offers of help.
+          <strong>{ACTS_AT_ONCE}</strong> They can post updates and check work.
+          Goals and promises stay yours.
         </p>
-        <p>
-          They are asked to say yes, and are shown as team once they do. Until
-          then the page says they have not said yes yet. Goals and promises stay
-          yours alone.
-        </p>
+        {alone ? (
+          <p data-testid="team-add-alone">
+            Once someone else is on the project, they check work instead of you.
+          </p>
+        ) : null}
       </div>
       <div className="mt-3">
         {picked === null ? (
