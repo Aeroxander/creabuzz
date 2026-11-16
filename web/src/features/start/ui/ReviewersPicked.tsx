@@ -4,12 +4,13 @@
  * vote, so the founder sees who each address is before the project is made, not after.
  */
 
-import { useMemo } from "react";
+import { type ReactNode, useMemo } from "react";
 
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { usePeopleWithWallets } from "@/features/launchpad/use-people";
 import { Button } from "@/shared/ui/button";
 
+import { NO_LINKED_PEOPLE } from "../lib/contributor-start-copy";
 import {
   everyReviewerMustAgree,
   reviewerList,
@@ -26,6 +27,7 @@ export function ReviewersPicked({
   quorum,
   me,
   onMajorityDecides,
+  leave,
 }: {
   /** The reviewers box, as typed or picked. */
   reviewers: string;
@@ -35,6 +37,8 @@ export function ReviewersPicked({
   me: string | null;
   /** Empty "how many must agree", so more than half of them decide. */
   onMajorityDecides: () => void;
+  /** The way out of this setup, offered beside "nobody to pick": Shares are not needed to begin. */
+  leave?: ReactNode;
 }) {
   const people = usePeopleWithWallets();
   const named = useMemo(
@@ -91,11 +95,7 @@ export function ReviewersPicked({
           className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
           data-testid="contributor-people-none"
         >
-          <span>
-            Nobody here has linked an account to their name yet. Ask each
-            reviewer to press &ldquo;Show your name with this account&rdquo;,
-            then try again.
-          </span>
+          <span>{NO_LINKED_PEOPLE}</span>
           <Button
             data-testid="contributor-people-retry"
             onClick={() => void people.refetch()}
@@ -105,6 +105,7 @@ export function ReviewersPicked({
           >
             Try again
           </Button>
+          {leave}
         </div>
       ) : null}
       {named.length > 0 ? (

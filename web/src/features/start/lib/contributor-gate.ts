@@ -10,6 +10,7 @@
  */
 
 import { ideaId } from "../../launchpad/lib/idea.ts";
+import { NO_NETWORK_LINE } from "./contributor-start-copy.ts";
 
 type ContributorGateReason =
   | "reading"
@@ -74,8 +75,7 @@ export function contributorGate(input: ContributorGateInput): ContributorGate {
     return {
       ok: false,
       reason: "no-network",
-      message:
-        "The network could not be reached. Check the network setting and try again.",
+      message: NO_NETWORK_LINE,
     };
   const { chainId, kit, currency, decimals, kitProblem } = network.data;
   if (input.mainnetRefused)

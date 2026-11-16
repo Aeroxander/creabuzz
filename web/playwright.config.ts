@@ -63,6 +63,8 @@ export default defineConfig({
         "**/launchpad-journey.spec.ts",
         "**/launchpad-paid-work.spec.ts",
         "**/contributor-project.spec.ts",
+        // One reviewer is enough, and a server with no network says so (D218).
+        "**/contributor-reviewers.spec.ts",
         "**/contributor-journey.spec.ts",
         "**/post-bounty-journey.spec.ts",
         "**/secondary-trading.spec.ts",

@@ -32,13 +32,26 @@ export const WHAT_IT_IS_POINTS: readonly string[] = [
 export const PITCH_HINT =
   "One sentence about the project, including who it is for.";
 
-/** Under "How many reviewers must agree": the empty-box rule and the smallest number the project accepts. */
-export const QUORUM_HINT =
-  "Leave empty for more than half of them. At least two must agree.";
+/** Under "How many reviewers must agree": the empty-box rule. One reviewer is enough, so no minimum is said beyond it. */
+export const QUORUM_HINT = "Leave empty for more than half of them.";
 
-/** Under "Reviewers": who to pick. What a reviewer does is the card's to say. */
-export const REVIEWERS_HINT =
-  "Name at least three people other than the ones who will do the work. Reviewing does not itself give them Shares.";
+/** What one reviewer means, said once, under "Reviewers" (D218): the form asks for one, and says who then decides. */
+const ONE_REVIEWER_NOTE =
+  "One reviewer means one person decides. Add more people later for more trust.";
+
+/** Under "Reviewers": who to pick, and what one reviewer means. What a reviewer does is the card's to say. */
+export const REVIEWERS_HINT = `Name at least one person other than the ones who will do the work. ${ONE_REVIEWER_NOTE} Reviewing does not itself give them Shares.`;
+
+/**
+ * Under "Reviewers" when nobody on this server has linked an account, so there is no one to pick by name: what to do,
+ * and that Shares are not needed to begin. The page adds a button back out of this setup after it.
+ */
+export const NO_LINKED_PEOPLE =
+  "Nobody on this server has linked an account to their name yet, so there is no one to pick. Invite someone, and ask them to press “Show your name with this account”. Or go on without Shares: you do not need them to begin.";
+
+/** When this server cannot reach its network, said in place of the wallet line: what happened, and that Shares can wait. */
+export const NO_NETWORK_LINE =
+  "Shares can't be set up right now: this server could not reach its network. You don't need Shares to start a project.";
 
 /** The first work area's line: the founder's own step in the flow the card describes. */
 export const WORK_AREAS_HINT =

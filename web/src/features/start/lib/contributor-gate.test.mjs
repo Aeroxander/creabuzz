@@ -80,6 +80,21 @@ test("Start waits until the founder's projects, and the ones they removed, have 
   assert.match(failed.message, /Try again/);
 });
 
+test("a network that cannot be reached says what happened, and that Shares can wait (2.6)", () => {
+  for (const network of [
+    { ...ready.network, failed: true },
+    { ...ready.network, data: null },
+  ]) {
+    const gate = contributorGate({ ...ready, network });
+    assert.equal(gate.reason, "no-network");
+    assert.equal(
+      gate.message,
+      "Shares can't be set up right now: this server could not reach its network. You don't need Shares to start a project.",
+    );
+    assert.doesNotMatch(gate.message, /setting|wallet/i);
+  }
+});
+
 test("the other reasons keep their order and words", () => {
   assert.equal(
     contributorGate({ ...ready, network: { ...ready.network, pending: true } })

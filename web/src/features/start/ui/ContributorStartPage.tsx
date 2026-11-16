@@ -73,6 +73,7 @@ import { useContributorStart } from "../use-contributor-start";
 import { useStartFromPitch } from "../use-start-from-pitch";
 import { FirstProjectsField } from "./FirstProjectsField";
 import { RemixFields } from "./RemixFields";
+import { LeaveSharesSetup } from "./LeaveSharesSetup";
 import { ReviewersPicked } from "./ReviewersPicked";
 import { WeeklySaleFields } from "./WeeklySaleFields";
 import { poolKitIssue, weeklySaleIssue } from "../lib/weekly-sale";
@@ -674,6 +675,12 @@ export function ContributorStartPage() {
             {pickNote}
           </p>
           <ReviewersPicked
+            leave={
+              <LeaveSharesSetup
+                project={fromIdea}
+                testId="contributor-people-leave"
+              />
+            }
             me={start.me}
             onMajorityDecides={() =>
               setDraft((current) => ({ ...current, quorum: "" }))
@@ -767,7 +774,10 @@ export function ContributorStartPage() {
               {issue.message}
             </p>
           ) : null}
-          <WalletStrip testIdPrefix="contributor-account" wallet={wallet} />
+          {/* With no network the wallet line would blame the account: the gate below says what really stopped it. */}
+          {gate.ok || gate.reason !== "no-network" ? (
+            <WalletStrip testIdPrefix="contributor-account" wallet={wallet} />
+          ) : null}
           {/* A locked passkey is said, with its unlock, whatever else stands in the way: the project is published under
               the founder's name, so this is checked before anything is sent, never found after the DAO is made. */}
           {start.locked ? (
@@ -789,6 +799,12 @@ export function ContributorStartPage() {
               data-testid="contributor-gate"
             >
               <span>{gate.message}</span>
+              {gate.reason === "no-network" ? (
+                <LeaveSharesSetup
+                  project={fromIdea}
+                  testId="contributor-gate-leave"
+                />
+              ) : null}
               {gate.reason === "projects-unreadable" ? (
                 <Button
                   data-testid="contributor-projects-retry"

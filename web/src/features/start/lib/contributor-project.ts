@@ -50,11 +50,13 @@ const SHARE_UNIT = 10n ** 18n;
 const MAX_WHOLE_SHARES = 1_000_000_000n;
 const MAX_REVIEWERS = 32;
 /**
- * The fewest reviewers, and the fewest who must agree, a new project may start with (funding review D1, D5): with one
- * reviewer deciding alone, the founder's choice of that one person decides every award.
+ * The fewest reviewers, and the fewest who must agree, a new project may start with. One and one is what the contract
+ * itself allows, and what a project started alone can reach (D218): with one reviewer, that one person decides every
+ * award, which the form says plainly. This was three and two (funding review D1, D5, D153); to ask for more again, raise
+ * these two numbers, then the hints in `contributor-start-copy.ts` and the tests that read them.
  */
-const MIN_REVIEWERS = 3;
-const MIN_REVIEW_QUORUM = 2;
+const MIN_REVIEWERS = 1;
+const MIN_REVIEW_QUORUM = 1;
 /** The founder's words on how they know each reviewer, published with the project. */
 const TIES_MIN = 10;
 const TIES_MAX = 2_000;
@@ -437,10 +439,7 @@ export function contributorTerms(
       "Name at least one reviewer: the people who check work before Shares are awarded.",
     );
   if (!resumed && reviewers.length < MIN_REVIEWERS)
-    fail(
-      "reviewers",
-      `Name at least ${MIN_REVIEWERS} reviewers, so no one person decides on everyone's work.`,
-    );
+    fail("reviewers", `Name at least ${MIN_REVIEWERS} reviewers.`);
   if (reviewers.length > MAX_REVIEWERS)
     fail("reviewers", `Name at most ${MAX_REVIEWERS} reviewers.`);
   for (const reviewer of reviewers) {
@@ -463,10 +462,7 @@ export function contributorTerms(
       `How many reviewers must agree: a whole number from 1 to ${reviewers.length}.`,
     );
   if (!resumed && quorum < MIN_REVIEW_QUORUM)
-    fail(
-      "quorum",
-      `At least ${MIN_REVIEW_QUORUM} reviewers must agree, so no one reviewer decides alone.`,
-    );
+    fail("quorum", `At least ${MIN_REVIEW_QUORUM} reviewers must agree.`);
   // D79: the founder does not judge the first budget's work; the contributor kit refuses a panel with them on it.
   const founderAddresses = (
     typeof founderWallet === "string" ? [founderWallet] : (founderWallet ?? [])

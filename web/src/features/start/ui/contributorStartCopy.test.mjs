@@ -111,7 +111,15 @@ test("the card still states the rules a founder must know before signing", () =>
 });
 
 test("each hint reads alone and keeps the rule it carries", () => {
-  assert.match(copy.QUORUM_HINT, /At least two must agree\./);
+  // One reviewer is enough (D218): no hint asks for two to agree or for three people.
+  assert.match(copy.QUORUM_HINT, /Leave empty for more than half of them\./);
+  assert.doesNotMatch(copy.QUORUM_HINT, /two|three|least/i);
+  assert.match(copy.REVIEWERS_HINT, /Name at least one person/);
+  assert.doesNotMatch(copy.REVIEWERS_HINT, /three|two/i);
+  assert.match(
+    copy.REVIEWERS_HINT,
+    /One reviewer means one person decides\. Add more people later for more trust\./,
+  );
   assert.match(copy.PITCH_HINT, /about the project/);
   // What a reviewer does is the card's to say; the hint only says who to pick.
   assert.doesNotMatch(copy.REVIEWERS_HINT, /check/);
@@ -153,4 +161,27 @@ test("the page renders from the copy module, not from lines of its own", () => {
   assert.match(sale, /\{SALE_INTRO\}/);
   assert.match(sale, /hint=\{SALE_CLIFF_HINT\}/);
   assert.match(sale, /hint=\{SALE_DAYS_HINT\}/);
+});
+
+test("nobody to pick and no network each say what to do, and that Shares are not needed to begin (D218, 2.6)", () => {
+  assert.match(copy.NO_LINKED_PEOPLE, /Invite someone/);
+  assert.match(copy.NO_LINKED_PEOPLE, /go on without Shares/);
+  assert.match(copy.NO_LINKED_PEOPLE, /do not need them to begin/);
+  assert.match(copy.NO_NETWORK_LINE, /this server could not reach its network/);
+  assert.match(copy.NO_NETWORK_LINE, /don't need Shares to start a project/);
+  for (const line of [copy.NO_LINKED_PEOPLE, copy.NO_NETWORK_LINE]) {
+    assert.doesNotMatch(line, /wallet|nsec|relay|network setting/i);
+    for (const sentence of line.split(/(?<=[.:?])\s+/))
+      assert.ok(sentence.split(/\s+/).length <= 30, sentence);
+  }
+  // The page renders them, and the way out names where it goes.
+  const picked = readFileSync(dir("./ReviewersPicked.tsx"), "utf8");
+  assert.match(picked, /\{NO_LINKED_PEOPLE\}/);
+  assert.match(picked, /\{leave\}/);
+  const page = readFileSync(dir("./ContributorStartPage.tsx"), "utf8");
+  assert.match(page, /project=\{fromIdea\}/);
+  assert.match(page, /gate\.reason === "no-network"/);
+  const leave = readFileSync(dir("./LeaveSharesSetup.tsx"), "utf8");
+  assert.match(leave, /Back to my project/);
+  assert.match(leave, /Back to Start/);
 });

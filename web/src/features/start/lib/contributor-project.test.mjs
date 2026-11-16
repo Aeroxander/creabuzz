@@ -132,9 +132,11 @@ test("every refusal names its field", () => {
     ],
     [{ quorum: "4" }, "quorum"],
     [{ quorum: "0" }, "quorum"],
-    // Funding review D1, D5: three reviewers at least, two of whom must agree, and how the founder knows them.
-    [{ reviewers: `${R1}\n${R2}` }, "reviewers"],
-    [{ quorum: "1" }, "quorum"],
+    // D218: one reviewer is enough, so what is still refused is none, and a quorum no panel can reach.
+    [{ quorum: "9" }, "quorum"],
+    [{ reviewers: R1, quorum: "2" }, "quorum"],
+    // How the founder knows each reviewer is still asked for, one reviewer or many.
+    [{ reviewers: R1, reviewerTies: "" }, "reviewerTies"],
     [{ reviewerTies: "" }, "reviewerTies"],
     [{ reviewerTies: undefined }, "reviewerTies"],
     [{ reviewerTies: "x".repeat(2_001) }, "reviewerTies"],
@@ -167,6 +169,66 @@ test("every refusal names its field", () => {
     );
   }
   assert.equal(contributorIssue(draft()), null);
+});
+
+test("one reviewer with one to agree starts a project, and says so in the terms (D218)", () => {
+  for (const quorum of ["", "1"]) {
+    const alone = draft({ reviewers: R1, quorum });
+    assert.equal(contributorIssue(alone), null, `quorum "${quorum}"`);
+    const terms = contributorTerms(alone, FOUNDER);
+    assert.deepEqual(terms.reviewers, [R1]);
+    assert.equal(terms.quorum, 1);
+  }
+  // Two reviewers and one to agree, and three and one, were refused before and are the founder's choice now.
+  assert.equal(contributorIssue(draft({ reviewers: `${R1}\n${R2}` })), null);
+  assert.equal(contributorIssue(draft({ quorum: "1" })), null);
+  // The way up is still open: all three reviewers must agree.
+  assert.equal(contributorIssue(draft({ quorum: "3" })), null);
+});
+
+test("what the contract still refuses is still refused with one reviewer (D218)", () => {
+  // None at all: the kit needs at least one.
+  const none = contributorIssue(draft({ reviewers: "" }));
+  assert.equal(none?.field, "reviewers");
+  assert.match(none.message, /at least one reviewer/);
+  // The founder who launches cannot be the one reviewer, whichever address of theirs it is.
+  assert.equal(
+    contributorIssue(draft({ reviewers: FOUNDER }), FOUNDER)?.field,
+    "reviewers",
+  );
+  assert.equal(
+    contributorIssue(
+      draft({ reviewers: FOUNDER.toUpperCase().replace("0X", "0x") }),
+      ["0x1111111111111111111111111111111111111111", FOUNDER],
+    )?.field,
+    "reviewers",
+  );
+  // A valid address, and not the empty one.
+  assert.equal(
+    contributorIssue(draft({ reviewers: "alice" }))?.field,
+    "reviewers",
+  );
+  assert.equal(
+    contributorIssue(draft({ reviewers: `0x${"0".repeat(40)}` }))?.field,
+    "reviewers",
+  );
+  // The most the form takes.
+  const many = Array.from(
+    { length: 33 },
+    (_, i) => `0x${(i + 1).toString(16).padStart(40, "0")}`,
+  ).join("\n");
+  assert.equal(
+    contributorIssue(draft({ reviewers: many }))?.field,
+    "reviewers",
+  );
+  // No message still talks of three reviewers or two agreeing.
+  for (const message of [
+    none.message,
+    contributorIssue(draft({ quorum: "9" })).message,
+  ]) {
+    assert.doesNotMatch(message, /\b(three|two|2|3)\b.*(reviewers|agree)/i);
+    assert.doesNotMatch(message, /no one (person|reviewer) decides/);
+  }
 });
 
 test("the founder does not review the first budget's work (D79)", () => {
@@ -225,9 +287,9 @@ test("the record says contributors only, names the DAO and sells nothing", () =>
   assert.equal(input.reviewerTies, TIES);
 });
 
-test("a job started before the panel rules can still be finished, and a new one cannot skip them", () => {
+test("a job started before the ties were asked for can still be finished, and a new one cannot skip them", () => {
   const old = draft({ reviewers: `${R1}\n${R2}`, reviewerTies: undefined });
-  assert.equal(contributorIssue(old)?.field, "reviewers");
+  assert.equal(contributorIssue(old)?.field, "reviewerTies");
   const terms = contributorTerms(old, null, { resumed: true });
   assert.equal(terms.reviewers.length, 2);
   assert.equal(terms.reviewerTies, "");
@@ -241,8 +303,7 @@ test("a job started before the panel rules can still be finished, and a new one 
     currency: "0xusdc",
   });
   assert.equal("reviewerTies" in input, false);
-  // One reviewer deciding alone is refused for a new project, kept for a resumed one.
-  assert.equal(contributorIssue(draft({ quorum: "1" }))?.field, "quorum");
+  // One to agree is the founder's choice for a new project (D218) and kept for a resumed one.
   assert.equal(
     contributorTerms(draft({ quorum: "1" }), null, { resumed: true }).quorum,
     1,
