@@ -96,7 +96,7 @@ export function TestnetStrip() {
       <button
         aria-controls={open ? panelId : undefined}
         aria-expanded={open}
-        className="flex w-full items-center gap-2 py-0.5 text-left"
+        className="flex min-h-11 w-full items-center gap-2 py-0.5 text-left"
         onClick={() => setOpen((was) => !was)}
         type="button"
       >
