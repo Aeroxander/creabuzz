@@ -10,6 +10,9 @@ import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 import {IDistributorFactory} from "liquidity-launcher/src/interfaces/IDistributorFactory.sol";
 import {LBPStrategy} from "liquidity-launcher/src/strategies/lbp/LBPStrategy.sol";
 import {PoolGuard} from "../../src/PoolGuard.sol";
+// Not used as a type: tests load the Deployer from its build artifact. Importing it makes `forge test` rebuild that
+// artifact whenever anything it deploys (the strategy, our pool guard) changes; without this, an old build would run.
+import {Deployer} from "./Deployer.sol";
 
 /// @dev The view of `Deployer` the tests use (the contract itself is deployed from its artifact, see its header).
 interface IDeployer {
@@ -35,7 +38,7 @@ abstract contract Stack is Test {
 
     /// @notice The fork block. The public node keeps only about the last 10,000 blocks; override with
     /// `SEPOLIA_FORK_BLOCK` (a recent block) when this one is out of range and not in the local Foundry cache.
-    uint256 internal constant SEPOLIA_PIN = 12_146_650;
+    uint256 internal constant SEPOLIA_PIN = 12_146_937;
 
     IPoolManager internal poolManager;
     IPositionManager internal positionManager;

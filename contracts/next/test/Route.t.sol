@@ -150,6 +150,18 @@ abstract contract RouteBase is SaleBase {
         assertApproxEqAbs(poolQuote, raised * 22 / 100, raised / 10_000, "about 22 of every 100 is in the pool");
         assertApproxEqAbs(fee, raised * 3 / 100, 1, "3 of every 100 is the fee");
 
+        emit log_named_decimal_uint("route: dollars bid", b.total, 6);
+        emit log_named_decimal_uint("route: dollars raised", raised, 6);
+        emit log_named_decimal_uint("route: fee to the platform", fee, 6);
+        emit log_named_decimal_uint("route: dollars into the pool", poolQuote, 6);
+        emit log_named_decimal_uint("route: Shares into the pool", poolShares, 18);
+        emit log_named_decimal_uint("route: dollars spendable by the project (15)", treasury.spendable(), 6);
+        emit log_named_decimal_uint("route: dollars in the floor (60)", treasury.floorMoney(), 6);
+        emit log_named_decimal_uint(
+            "route: Shares back with the treasury from the reserve", POOL_RESERVE - poolShares, 18
+        );
+        emit log_named_decimal_uint("route: final price, dollars per Share", finalPrice * 1e12 * 1e18 >> 96, 18);
+        emit log_named_decimal_uint("route: floor price, dollars per Share", s.floorQ96 * 1e12 * 1e18 >> 96, 18);
         uint256 unsold = s.auction.remainingSupply();
         uint256 treasurySharesBefore = share.balanceOf(address(treasury));
         assertTrue(treasury.sweepUnsold(IAuctionSweeps(address(s.auction))), "the treasury collected unsold Shares");

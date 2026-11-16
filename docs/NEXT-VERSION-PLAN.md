@@ -310,3 +310,34 @@ Read in code, nothing run:
 6. A passkey account already sends several chain steps as one approved action
    (`web/src/features/identity/lib/sponsoredSender.ts:22-51`).
 7. The server rules cited in section 7 and the legal line's location.
+
+## Milestone 1 findings (16 November 2026)
+
+Built in `contracts/next` (a separate Foundry project; the existing contracts are untouched). Report:
+`docs/next-version/M1-REPORT.md`; facts read from the vendored code and checked on Sepolia:
+`docs/next-version/M1-FACTS.md`. Everything below was run (88 tests, on a local copy of the Uniswap code and on a Sepolia
+fork against Uniswap's real pool manager, position manager and trade router) unless it says "outside knowledge".
+
+- **Section 8, row 1 is proven.** Sale, then pool, then a trade works, with exact balances at each step, with the dollar
+  sorted before and after the Share. Uniswap's UniversalRouter is on Sepolia (`0x3A9D48AB...F98b`) and trades in the pool.
+  The v3.0.0 strategy has **no Sepolia deployment and no factory**; we deploy one per network at a mined address.
+- **Sections 3 and 4, the 10 percent in the pool, is wrong.** The pool takes 22 of every 100 dollars raised and the
+  Shares that match them at the **final** price: 59.7 million Shares (6.0%) in the test sale, at most 8.8% if all sale
+  Shares sell at the final price. The unused part of the 100 million reserve returns to the treasury as plain Shares.
+- **Section 4, fees, needs 40 lines of new code, not none.** The auction asks its fee controller again at every sweep and
+  the vendored controller's owner can set 100%, so redeploying it fixes nothing. `FixedFeeController` has no owner and no
+  setters. The 3 percent is paid by the auction itself to the controller's recipient; the 22 percent goes into the pool
+  through the strategy's own schedule (one bracket, rate 2,268,041 of 10,000,000); the leftover 75 percent plus unused
+  reserve Shares arrive at one address in one transfer, which splits 15 : 60.
+- **Section 5, the swallowed failure, is reproduced**, and a second hazard follows from it: after a failed pool step the
+  treasury already holds 97 of every 100 dollars, so step 2 of the finish must read the pool (not events) and refuse to
+  split 15 : 60 when there is none. Gas-chosen attacks on the pool step did not produce the failure in 85 tries.
+- **Section 9, "not measured: gas to open a sale", is now measured: 4,272,797 gas** (auction plus strategy; about 3.6 million of it is storing
+  the auction's code); pool step 675,243; a bid 108,614 to 353,207; a trade about 130,000. A passkey-account batch to
+  start a project and open a sale is about 5 million gas by my sum. Sponsor limits remain unchecked (outside knowledge
+  only).
+- **Price limits**: smallest floor price $0.0000000542 per Share (all 1,000,000,000 Shares: $54.21; smallest 400M-Share
+  sale $21.68); largest top price about $4.1e22 per Share. The route worked at sale goals from $22 to $1 quadrillion.
+  The auction has no maximum-bid rule except that; the 4-times cap is not on chain unless a bid hook adds it (`MinBid` does).
+- **Public Sepolia nodes cannot replay an old pinned block** (about 10,000 blocks of history, a few dozen of state), so fork
+  tests repeat only from Foundry's local cache or an archive node.

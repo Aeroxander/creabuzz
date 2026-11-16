@@ -9,12 +9,18 @@ so the existing contracts in `../` (and the bytecode pinned in the desktop app) 
 cloned). All code compiles with solc 0.8.26, the version the vendored Uniswap code is pinned to.
 
 ```bash
-forge build
-forge test                      # local suite; the fork suite skips with a message when SEPOLIA_RPC_URL is unset
-SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com forge test   # adds the Sepolia fork suite
-forge fmt --check
+forge build                     # first: the tests load the Deployer and Permit2 from their build output
+forge test                      # local suites; the Sepolia fork suites skip with a message when SEPOLIA_RPC_URL is unset
+SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com forge test   # adds the Sepolia fork suites
+forge fmt --check src test
 ```
 
-The public Sepolia node keeps only about the last 10,000 blocks (about 33 hours), so the pinned fork block ages
-out. Foundry caches what a run reads under `~/.foundry/cache/rpc`, so a pinned run repeats offline on the same
-machine; elsewhere, set `SEPOLIA_FORK_BLOCK` to a recent block (or use an archive node).
+Layout: `src/` is the new code (`FixedFeeController`, `MinBid`, `PoolGuard`, `HookSalt`); `test/helpers/` builds the
+Uniswap stack (local twin or Sepolia fork) and a sale; `test/*.t.sol` are the milestone's tests; `test/mocks/` holds
+a stand-in treasury and a plain token. Test compiles are slow (via-IR): `Deployer.sol` exists so each test file does
+not recompile the whole Uniswap stack.
+
+The public Sepolia node keeps only about the last 10,000 blocks of history and a few dozen blocks of state, so a pinned
+fork block (`SEPOLIA_PIN` in `test/helpers/Stack.sol`) is repeatable only from Foundry's cache under
+`~/.foundry/cache/rpc` on the machine that first ran it. Elsewhere set `SEPOLIA_FORK_BLOCK` to a recent block (or use
+an archive node). Nothing in the tests depends on which block it is.

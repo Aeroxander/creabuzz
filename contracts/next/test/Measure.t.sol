@@ -11,6 +11,7 @@ import {MaxBidPriceLib} from "continuous-clearing-auction/src/libraries/MaxBidPr
 import {ConstantsLib} from "continuous-clearing-auction/src/libraries/ConstantsLib.sol";
 import {SaleBase} from "./helpers/SaleBase.sol";
 import {IAuctionSweeps} from "./mocks/MockTreasury.sol";
+import {MockERC20} from "./mocks/MockERC20.sol";
 
 /// @notice Step 6 of milestone 1: gas of each step of the route, and the limits of the price grid for a 6-decimal dollar
 /// against an 18-decimal Share with 1,000,000,000 supply. Numbers are printed with `-vv`; the assertions pin the ones
@@ -84,6 +85,18 @@ abstract contract MeasureBase is SaleBase {
         g = gasleft();
         _swap(s.key, trader, false, shares);
         emit log_named_uint("gas trade: sell back (includes approve)", g - gasleft());
+    }
+
+    /// @notice A plain 18-decimal token with a mint, as a stand-in for the Share token of milestone 2 (which will cost
+    /// about the same: no hooks, no locks). Added to the sale's gas to get the cost of "start a project and open a sale".
+    function test_gas_aPlainTokenDeploy() public {
+        uint256 g = gasleft();
+        MockERC20 t = new MockERC20("Test Share", "SHARE", 18);
+        emit log_named_uint(
+            "gas deploy a plain token (stand-in for the Share token, includes a blocklist the real one lacks)",
+            g - gasleft()
+        );
+        t.mint(address(this), 1);
     }
 
     /// @notice The extra cost of a far-away tick: a bid at 4x the floor with the floor as the hint walks every tick in

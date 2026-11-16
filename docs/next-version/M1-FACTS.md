@@ -172,7 +172,37 @@ runs 11,111, no metadata hash) is byte-for-byte the same length as the factory U
 (24,214), a hint, not a proof, that the build settings match theirs. The tests deploy our own factory, strategy and
 guard on top of the real PoolManager and PositionManager on the fork.
 
-**The public Sepolia node keeps only the last ~10,000 blocks** (**chain**: error `pruned history unavailable ...
-earliest available 12136589`, queried at head 12,146,670). A "pinned block" therefore works for about 33 hours on
-that node; it can be re-run later only from Foundry's local cache (`~/.foundry/cache/rpc`) or from an archive node. See
-`contracts/next/README.md`.
+**The public Sepolia node keeps only the last ~10,000 blocks of history, and state only for the last few dozen blocks**
+(**chain**: reading old history gave `pruned history unavailable ... earliest available 12136589` at head 12,146,670;
+reading a storage slot of a block about 40 minutes old gave `Archive requests require a personal token`). So a "pinned
+block" works from Foundry's local cache (`~/.foundry/cache/rpc`, filled by the first run at that block) or from an archive
+node, and from the public node only while the block is fresh. The suite pins `SEPOLIA_PIN = 12,146,937` in
+`contracts/next/test/helpers/Stack.sol` and takes `SEPOLIA_FORK_BLOCK` to override it. See `contracts/next/README.md`.
+
+## 9. What the tests showed about the vendored code (ran)
+
+Each line is a test in `contracts/next/test`; the report (`M1-REPORT.md`) has the numbers.
+
+* **The real trade router works.** UniversalRouter at `0x3A9D...F98b` on Sepolia swapped in a pool the strategy created
+  on the real pool manager (`UniversalRouter.t.sol`). Commands used: `V4_SWAP` (0x10) with the actions
+  `SWAP_EXACT_IN_SINGLE`, `SETTLE_ALL`, `TAKE_ALL`; payment through Permit2.
+* **The real pool manager and position manager accept our strategy and our guard** at mined addresses (`Route.t.sol`,
+  `Pieces.t.sol` on the Sepolia copy).
+* **A plain pool created first**: before the sale opens, it makes opening revert `InvalidHook(0x0)`; after the sale
+  opens, the pool step succeeds and the project's pool is at the strategy's own hook key, next to the stranger's
+  (`Attacks.t.sol`). With the guard neither happens.
+* **The pool step**: the caller changes nothing (recipients are fixed at open); a second call reverts
+  `InitializerNotRegistered`; the inner step is self-call only; 85 gas limits between 0.4 and 12 million either
+  revert the whole call or open the pool.
+* **A failed pool step** (a dollar token that refuses the position manager as a receiver) is a successful transaction
+  with `MigrationFailed` and `FundsRecovered` and without `Migrated`; the same `CurrencySwept` and `TokensSwept` events
+  as a success are present; the 97 of every 100 dollars and the whole Share reserve end up with the recipient.
+* **A failed sale (below its minimum)** also goes through the pool step as `MigrationFailed` (the reason is
+  `NotGraduated`), returns the 100 million reserve, charges no fee, and the auction refunds every bid in full.
+* **The fee** is exactly `raised * 30,000 / 1,000,000`, rounded down, paid to the controller's recipient by the auction's
+  own sweep.
+* **Token order.** In the pool key currency0 is the smaller address; the pool price conversion has a branch for each
+  order, and the route passes with the dollar on either side.
+* **Permit2 is required at its fixed address** for bids (solady's `permit2TransferFrom`). The local copy builds Permit2
+  from source with solc 0.8.17; its bytes differ from Uniswap's deployed Permit2 (different compiler settings), the
+  behaviour used (allowance approve and transferFrom) is the same.
