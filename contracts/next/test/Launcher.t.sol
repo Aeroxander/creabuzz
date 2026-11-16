@@ -185,6 +185,11 @@ contract LauncherTest is Base {
         bytes memory args = abi.encode(admin, s, STRATEGY, GUARD);
         vm.expectRevert(Launcher.BadSettings.selector);
         deployCode("Launcher.sol:Launcher", args);
+        // the platform's own strategy and guard must be named
+        vm.expectRevert(Launcher.BadSettings.selector);
+        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), address(0), GUARD));
+        vm.expectRevert(Launcher.BadSettings.selector);
+        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, address(0)));
     }
 
     function test_admin_canHandOnOrRenounce_andRenouncingFreezesSettings() public {

@@ -20,15 +20,15 @@ T='src/Treasury.sol'; V='src/Vester.sol'; S='src/ShareToken.sol'; R='src/Rolling
 MUT=[
 ('T01','Treasury: initialize may be called again',T,'if (founder != address(0)) revert BadSetup();','',False),
 ('T02','Treasury: no re-entrancy lock',T,'if (_locked) revert Reentrancy();','',False),
-('T03','Treasury: anybody may declare the pool open',T,'if (msg.sender != opener) revert NotAllowed();','',False),
+('T03','Treasury: anybody may declare the pool open',T,'if (msg.sender != opener) revert NotAllowed();\n        if (poolOpen) revert PoolAlreadyOpen();','        if (poolOpen) revert PoolAlreadyOpen();',False),
 ('T04','Treasury: the pool may be declared open twice',T,'if (poolOpen) revert PoolAlreadyOpen();','',False),
-('T05','Treasury: settle works with no proven pool',T,'if (!poolOpen) revert NoPool();','',False),
+('T05','Treasury: settle works with no proven pool',T,'if (!poolOpen) revert NoPool();\n        if (amount == 0)','if (amount == 0)',False),
 ('T06','Treasury: settle may split more than arrived',T,'if (amount > arrived) revert NotArrived(amount, arrived);','',False),
 ('T07','Treasury: settle ratio is not 15:60',T,'amount * spendableParts / (spendableParts + floorParts)','amount * spendableParts / (spendableParts + floorParts) * 2',True),
 ('T08','Treasury: any settle renews the check-in window',T,'if (!settled) {\n            (settled, accruedUpTo, lastCheckIn) = (true, block.timestamp, block.timestamp);\n        }','settled = true; accruedUpTo = block.timestamp; lastCheckIn = block.timestamp;',False),
 ('T09','Treasury: hand back before the sale money is split',T,'if (!settled) revert NotSettled();','',False),
-('T10','Treasury: the Vester counts in the exit denominator',T,' - shares.balanceOf(address(vester));',';',True),
-('T11','Treasury: the Treasury counts in the exit denominator',T,'shares.totalSupply() - shares.balanceOf(address(this)) - shares.balanceOf(address(vester))','shares.totalSupply() - shares.balanceOf(address(vester))',True),
+('T10','Treasury: the Vester counts in the exit denominator (its whole balance leaves the count, claimed or not)',T,' - vester.unreleased();',' - shares.balanceOf(address(vester));',True),
+('T11','Treasury: the Treasury counts in the exit denominator',T,'shares.totalSupply() - shares.balanceOf(address(this)) - vester.unreleased()','shares.totalSupply() - vester.unreleased()',True),
 ('T12','Treasury: the exit slice reaches spendable',T,'uint256 slice = floorTotal * amount / counting;','uint256 slice = (floorTotal + spendable) * amount / counting;',True),
 ('T13','Treasury: no exit fee',T,'paid = slice - (slice * exitFeeBps + BPS - 1) / BPS;','paid = slice;',True),
 ('T14','Treasury: exit fee rounds down',T,'(slice * exitFeeBps + BPS - 1) / BPS','(slice * exitFeeBps) / BPS',False),
@@ -80,11 +80,11 @@ MUT=[
 ('L04','Launcher: a sale may open with a hook that is not a guard',L,'        } catch {\n            revert NoPoolGuard();\n        }','        } catch {}',False),
 ('L05','Launcher: anyone may change settings',L,'        if (msg.sender != admin) revert NotAdmin();\n        _set(next);','        _set(next);',False),
 ('L06','Launcher: the exit fee ceiling is not checked',L,'s.exitFeeBps > MAX_EXIT_FEE_BPS ||','',False),
-('L08','Launcher: the sale opens without a known project',L,'if (_projects[keyOf(msg.sender, projectId)].shares == address(0)) revert UnknownProject();','',False),
+('L08','Launcher: the sale opens without a known project',L,'if (_projects[keyOf(msg.sender, projectId)].shares == address(0)) revert UnknownProject();\n        address guard','        address guard',False),
 ('L09','Launcher: the founder allocation is 190M not 200M',L,'uint256 public constant FOUNDER = 200_000_000e18;','uint256 public constant FOUNDER = 190_000_000e18;',False),
 
 
-('L02','Launcher: a sale may open with no hook or no contract there',L,'poolHook.code.length == 0','false',False),
+('L02','Launcher: a sale may open with no contract at the guard address',L,'guard.code.length == 0 || uint160(guard) & HOOK_BITS != BEFORE_INITIALIZE','uint160(guard) & HOOK_BITS != BEFORE_INITIALIZE',False),
 ('L07','Launcher: the platform part may exceed the whole fee',L,'|| s.platformFeeBps > s.exitFeeBps','',False),
 ('L10','Launcher: the founder is the Launcher, not the caller',L,'                    founder: msg.sender,','                    founder: address(this),',False),
 ('T41','Treasury: the reserve ignores Shares returned or donated to it',T,'return shares.balanceOf(address(this)) - workPot;','return 100_000_000e18;',False),
@@ -97,6 +97,28 @@ MUT=[
 ('T46','Treasury: an exit pays twice its slice',T,'uint256 slice = floorTotal * amount / counting;','uint256 slice = floorTotal * amount / counting * 2;',False),
 ('T47','Treasury: the platform part is recorded twice',T,'feesOwed += toPlatform;','feesOwed += toPlatform * 2;',False),
 ('T48','Treasury: spend lets spendable fall below zero silently',T,'if (amount > spendable) revert TooMuch(amount, spendable);\n        spendable -= amount;','spendable = spendable > amount ? spendable - amount : 0;',False),
+# ---- milestone 2 review round (fix round)
+('T49','Treasury: hand back before the sale is closed (unsold Shares count as held)',T,'if (!saleClosed) revert SaleNotClosed();','',False),
+('T50','Treasury: anybody may mark the sale closed',T,'        if (msg.sender != opener) revert NotAllowed();\n        if (!poolOpen) revert NoPool();\n        if (saleClosed)','        if (!poolOpen) revert NoPool();\n        if (saleClosed)',False),
+('T51','Treasury: the sale may be marked closed before the pool is proven',T,'        if (!poolOpen) revert NoPool();\n        if (saleClosed)','        if (saleClosed)',False),
+('T52','Treasury: the sale may be marked closed twice',T,'if (saleClosed) revert SaleAlreadyClosed();','',False),
+('T53','Treasury birth check: no ceiling on the spendable part of the split',T,'|| s.spendableParts > MAX_SPLIT_PART','',False),
+('T54','Treasury birth check: no ceiling on the floor part of the split',T,'|| s.floorParts > MAX_SPLIT_PART','',False),
+('V10','Vester: unreleased is nothing before the clock starts',V,'if (s == 0) return granted;','if (s == 0) return 0;',False),
+('V11','Vester: unreleased does not fall with time',V,'return elapsed >= DURATION ? 0 : granted - granted * elapsed / DURATION;','return elapsed >= DURATION ? 0 : granted;',False),
+('V12','Vester: unreleased forgets what was granted',V,'        granted += amount;\n','',False),
+('V13','Vester: unreleased falls with claims (the old denominator)',V,'return elapsed >= DURATION ? 0 : granted - granted * elapsed / DURATION;','return elapsed >= DURATION ? 0 : committed - (committed * elapsed / DURATION);',False),
+('L11','Launcher: a sale may open with a guard at an address without the beforeInitialize bit',L,'guard.code.length == 0 || uint160(guard) & HOOK_BITS != BEFORE_INITIALIZE','guard.code.length == 0',False),
+('L12','Launcher: a sale may open with a guard whose address has extra hook bits',L,'uint160(guard) & HOOK_BITS != BEFORE_INITIALIZE','uint160(guard) & BEFORE_INITIALIZE == 0',False),
+('L13','Launcher: launch ignores the settings hash the founder saw',L,'if (settingsHash() != expectedSettingsHash) revert SettingsMoved();','',False),
+('L14','Launcher: may be created on any chain',L,'if (block.chainid != TEST_CHAIN_ID) revert TestChainOnly();','',False),
+('L15','Launcher: the dollar token may be an account, not a contract',L,' || address(s.quote).code.length == 0','',False),
+('L16','Launcher: the dollar token may have any decimals',L,'if (d != QUOTE_DECIMALS) revert BadSettings();','',False),
+('L17','Launcher: platform address may be the Launcher',L,'s.platform == address(this) ||','',False),
+('L18','Launcher: platform address may be the dollar token',L,'|| s.platform == address(s.quote)','',False),
+('L19','Launcher: no ceiling on the spendable part of the split',L,'|| s.spendableParts > MAX_SPLIT_PART','',False),
+('L20','Launcher: no ceiling on the floor part of the split',L,'|| s.floorParts > MAX_SPLIT_PART','',False),
+('L21','Launcher: strategy or guard may be zero at construction',L,'if (strategy_ == address(0) || poolGuard_ == address(0)) revert BadSettings();','',False),
 ]
 
 status = subprocess.run(['git', 'status', '--porcelain', 'src'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
@@ -134,4 +156,4 @@ for (i,desc,f,old,new,inv) in MUT:
         fails,comp,out,total=run(extra)
     finally:
         subprocess.run(['git','checkout','--',f],cwd=ROOT,check=True)
-    print(json.dumps({'inv_only':bool(os.environ.get('INV_ONLY')),'id':i,'what':desc,'compile_failed':comp,'failed':fails[:8],'n':len(fails),'total_failing_reported':total}),flush=True)
+    print(json.dumps({'inv_only':bool(os.environ.get('INV_ONLY')),'id':i,'what':desc,'compile_failed':comp,'failed':fails if os.environ.get('SHOW') else fails[:8],'n':len(fails),'total_failing_reported':total}),flush=True)
