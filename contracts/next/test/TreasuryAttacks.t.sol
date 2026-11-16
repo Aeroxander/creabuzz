@@ -23,10 +23,10 @@ contract TreasuryAttacksTest is Base {
         vm.expectRevert(Treasury.NotSettled.selector);
         t.handBack(1_000_000 * SHARE);
         // 2. someone adds "Share revenue" so the floor is not empty, and the sale money has arrived but is not split
-        usd.mint(carol, 1_000 * DOLLAR);
+        usd.mint(carol, 1000 * DOLLAR);
         vm.startPrank(carol);
-        usd.approve(address(t), 1_000 * DOLLAR);
-        t.shareRevenue(1_000 * DOLLAR);
+        usd.approve(address(t), 1000 * DOLLAR);
+        t.shareRevenue(1000 * DOLLAR);
         vm.stopPrank();
         _arrive(7500 * DOLLAR);
         _openPool();
@@ -392,14 +392,14 @@ contract TreasuryAttacksTest is Base {
         _world();
         HookAttacker a = new HookAttacker();
         usd.setHooked(address(a), true);
-        usd.mint(address(a), 2_000 * DOLLAR);
+        usd.mint(address(a), 2000 * DOLLAR);
         a.act(address(usd), abi.encodeCall(usd.approve, (address(t), type(uint256).max)));
         // while the Treasury pulls 1,000 for the permanent floor, the call-back deposits another 500 as "top up"
         a.arm(address(t), abi.encodeCall(t.topUp, (500 * DOLLAR)), false);
-        a.act(address(t), abi.encodeCall(t.shareRevenue, (1_000 * DOLLAR)));
+        a.act(address(t), abi.encodeCall(t.shareRevenue, (1000 * DOLLAR)));
         assertTrue(a.fired());
         assertFalse(a.firedOk(), "the nested call was refused");
-        assertEq(t.permanentFloor(), 1_000 * DOLLAR, "credited what was pulled, not what the balance rose by");
+        assertEq(t.permanentFloor(), 1000 * DOLLAR, "credited what was pulled, not what the balance rose by");
         assertEq(t.spendable(), S);
         assertEq(_buckets(), usd.balanceOf(address(t)), "the buckets still equal the balance");
     }
