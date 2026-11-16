@@ -11,8 +11,7 @@ import type { LaunchTab, TabUse } from "../lib/launch-tabs";
 import { duePromises } from "../lib/promises";
 import { teamOf } from "../lib/help-request";
 import { starterPromiseKinds } from "../lib/ai-starters";
-import { acceptedByOthers } from "../lib/task-checks";
-import { acceptedSince, type UpdateDraft } from "../lib/weekly-update";
+import { type UpdateDraft, workSince } from "../lib/weekly-update";
 import { useProjectTasks } from "../use-tasks";
 import type { Launch } from "../models";
 import { useProjectUpdates } from "../use-help-requests";
@@ -86,7 +85,7 @@ export function UpdateDialogWithPromises({
     () => (record ? duePromises(record.promises) : readFailed ? null : []),
     [record, readFailed],
   );
-  // Work accepted since the team's last weekly update: offered as lines, once both reads have answered in full.
+  // Work finished since the team's last weekly update: offered as lines, once both reads have answered in full.
   const updates = useProjectUpdates(project);
   const work = useProjectTasks(project);
   const accepted = useMemo(() => {
@@ -96,13 +95,13 @@ export function UpdateDialogWithPromises({
     const times = updates.data.updates
       .filter((u) => team.has(u.author) && u.weekly && u.createdAt <= now)
       .map((u) => u.createdAt);
-    // Only work someone else accepted is offered as a "Work accepted" line: what the founder did alone is theirs
-    // to write in their own words.
-    return acceptedSince(
-      acceptedByOthers(work.tasks),
+    // Work someone else accepted is a "Work accepted" line; work only the founder checked is its own line, "Done,
+    // checked by the founder", never worded as accepted.
+    return workSince(
+      work.tasks,
       times.length > 0 ? Math.max(...times) : null,
       now,
-    ).map((task) => ({ id: task.id, what: task.what }));
+    ).map((task) => ({ id: task.id, what: task.what, kind: task.kind }));
   }, [updates.data, work.tasks, work.complete, project]);
   // An AI project's first weekly update: the kinds' first promises are offered for "What's next".
   const starters = useMemo(() => {

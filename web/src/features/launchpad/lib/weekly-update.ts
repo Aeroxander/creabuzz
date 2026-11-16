@@ -384,17 +384,40 @@ export function streakLine(weeks: number): string | null {
 }
 
 /**
- * The lines the update dialog starts "What we did" with: the work accepted since the last update, one per line,
- * without the ones the founder took off. The founder's own words follow.
+ * One piece of finished work the dialog offers as a line of "What happened this week". `kind` says who checked it:
+ * `accepted` (someone else did, the default) or `founder` (only the founder, on their own work). The two are never
+ * worded alike, so a reader of the update can tell them apart.
+ */
+export interface WorkLine {
+  id: string;
+  what: string;
+  kind?: "accepted" | "founder";
+}
+
+/** How a line for founder-checked work begins. The same words as `SELF_CHECKED_LABEL` in `tasks.ts`; a test pins that. */
+export const FOUNDER_CHECKED_LINE = "Done, checked by the founder";
+
+/** How a line for work someone else accepted begins. */
+const ACCEPTED_LINE = "Work accepted";
+
+/** The words a piece of work is published in: "Work accepted: X" or "Done, checked by the founder: X". */
+export function workLine(work: WorkLine): string {
+  const lead = work.kind === "founder" ? FOUNDER_CHECKED_LINE : ACCEPTED_LINE;
+  return `${lead}: ${work.what.replace(/\s+/g, " ").trim()}`;
+}
+
+/**
+ * The lines the update dialog starts "What happened this week" with: the work finished since the last update, one per
+ * line, without the ones the founder took off. The founder's own words follow.
  */
 export function doneWithAccepted(
   done: string,
-  accepted: readonly { id: string; what: string }[],
+  accepted: readonly WorkLine[],
   removed: ReadonlySet<string>,
 ): string {
   const lines = accepted
     .filter((task) => !removed.has(task.id))
-    .map((task) => `Work accepted: ${task.what.replace(/\s+/g, " ").trim()}`);
+    .map((task) => workLine(task));
   return [...lines, ...(done.trim() ? [done.trim()] : [])]
     .join("\n")
     .slice(0, UPDATE_LIMITS.part);
@@ -420,6 +443,65 @@ export function acceptedSince<
     .sort((a, b) => at(b) - at(a) || (a.id < b.id ? -1 : 1))
     .slice(0, ACCEPTED_OFFERED);
 }
+
+/**
+ * The work finished since the last update (or ever, with none), newest first, for the dialog to offer as lines: work
+ * someone else accepted and work only the founder checked, each marked as what it is (`kind`). A confirmation dated
+ * ahead of now counts as now. Only {@link ACCEPTED_OFFERED} lines are offered.
+ */
+export function workSince<
+  T extends {
+    id: string;
+    what: string;
+    state: string;
+    selfChecked: boolean;
+    accepted: { confirmedAt: number } | null;
+  },
+>(tasks: readonly T[], lastAt: number | null, now: number): (T & WorkLine)[] {
+  const at = (task: T) => Math.min(task.accepted?.confirmedAt ?? 0, now);
+  return tasks
+    .filter(
+      (task) =>
+        task.state === "confirmed" &&
+        task.accepted &&
+        (lastAt === null || at(task) > lastAt),
+    )
+    .sort((a, b) => at(b) - at(a) || (a.id < b.id ? -1 : 1))
+    .slice(0, ACCEPTED_OFFERED)
+    .map((task) => ({
+      ...task,
+      kind: task.selfChecked ? ("founder" as const) : ("accepted" as const),
+    }));
+}
+
+/** The title an update gets when the founder writes none: "Week of Nov 16", the Monday of the week it is posted in. */
+export function defaultUpdateTitle(now: Date, locale?: string): string {
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return `Week of ${monday.toLocaleDateString(locale, { month: "short", day: "numeric" })}`;
+}
+
+/**
+ * Whether promises that arrive after the update dialog opened take the cursor. They do in week two, where the promises
+ * come first, but only while the cursor is still where the dialog put it and nothing was typed: a person already
+ * writing is never pulled away, and a dialog opened at "Ask for help" stays there.
+ */
+export function promisesTakeCursor(input: {
+  answers: number;
+  startedAtHelp: boolean;
+  typed: boolean;
+  cursorAtStart: boolean;
+}): boolean {
+  return (
+    input.answers > 0 &&
+    !input.startedAtHelp &&
+    !input.typed &&
+    input.cursorAtStart
+  );
+}
+
+/** What the quiet-week link puts in "What happened this week". */
+export const QUIET_WEEK = "Quiet week. Still working on it.";
 
 /** How many new promises the dialog takes from "What's next": a week holds about three. */
 const NEW_PROMISES = 3;

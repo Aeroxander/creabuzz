@@ -375,6 +375,108 @@ test("accepted work is offered as the first lines of what happened, without the 
   assert.equal(doneWithAccepted("", offered, new Set(["a", "b"])), "");
 });
 
+test("work only the founder checked is its own line, never worded or mixed as accepted work", async () => {
+  const { workSince, doneWithAccepted, workLine, FOUNDER_CHECKED_LINE } =
+    await import("./weekly-update.ts");
+  const { SELF_CHECKED_LABEL } = await import("./tasks.ts");
+  // One constant of words: the line in an update reads exactly as the label on the record.
+  assert.equal(FOUNDER_CHECKED_LINE, SELF_CHECKED_LABEL);
+  const T = 1_800_000_000;
+  const task = (id, at, selfChecked, state = "confirmed") => ({
+    id,
+    what: `Task  ${id}`,
+    state,
+    selfChecked,
+    accepted: at === null ? null : { confirmedAt: at },
+  });
+  const tasks = [
+    task("a", T - 100, false),
+    task("b", T - 200, true),
+    task("c", T - 300, true),
+    task("old", T - 5000, true),
+    // Never confirmed: offered as nothing.
+    task("open", null, false, "open"),
+  ];
+  const offered = workSince(tasks, T - 1000, T);
+  assert.deepEqual(
+    offered.map((w) => [w.id, w.kind]),
+    [
+      ["a", "accepted"],
+      ["b", "founder"],
+      ["c", "founder"],
+    ],
+  );
+  // Both kinds in one update: each under its own words, in the order offered, the founder's own text after.
+  assert.equal(
+    doneWithAccepted("We shipped.", offered, new Set(["c"])),
+    "Work accepted: Task a\nDone, checked by the founder: Task b\nWe shipped.",
+  );
+  // A founder-checked piece of work is never called accepted, and accepted work is never called checked by the founder.
+  for (const w of offered) {
+    const text = workLine(w);
+    if (w.kind === "founder") assert.doesNotMatch(text, /accepted/i);
+    else assert.doesNotMatch(text, /checked by the founder/i);
+  }
+  // Leaving one kind out leaves the other alone.
+  assert.equal(
+    doneWithAccepted("", offered, new Set(["a"])),
+    "Done, checked by the founder: Task b\nDone, checked by the founder: Task c",
+  );
+  // Without a kind (older callers) a line reads as accepted work: the safe, unchanged wording.
+  assert.equal(
+    workLine({ id: "x", what: " Fix  it " }),
+    "Work accepted: Fix it",
+  );
+  // At most five lines are offered, newest first.
+  const many = Array.from({ length: 8 }, (_, i) =>
+    task(`t${i}`, T - i - 1, i % 2 === 0),
+  );
+  assert.equal(workSince(many, null, T).length, 5);
+});
+
+test("promises that arrive late take the cursor only from a dialog nobody has started on", async () => {
+  const { promisesTakeCursor } = await import("./weekly-update.ts");
+  const fresh = {
+    answers: 2,
+    startedAtHelp: false,
+    typed: false,
+    cursorAtStart: true,
+  };
+  assert.equal(promisesTakeCursor(fresh), true);
+  // Nothing to answer: nothing moves.
+  assert.equal(promisesTakeCursor({ ...fresh, answers: 0 }), false);
+  // A person already typing, or already somewhere else in the form, is never pulled away.
+  assert.equal(promisesTakeCursor({ ...fresh, typed: true }), false);
+  assert.equal(promisesTakeCursor({ ...fresh, cursorAtStart: false }), false);
+  // A dialog opened at "Ask for help" stays there.
+  assert.equal(promisesTakeCursor({ ...fresh, startedAtHelp: true }), false);
+});
+
+test("an update with no title is called 'Week of' the Monday of its week", async () => {
+  const { defaultUpdateTitle } = await import("./weekly-update.ts");
+  const at = (y, m, d, h = 12) => new Date(y, m - 1, d, h);
+  // Monday itself, midweek and Sunday are all the same week.
+  assert.equal(defaultUpdateTitle(at(2026, 11, 16), "en-US"), "Week of Nov 16");
+  assert.equal(defaultUpdateTitle(at(2026, 11, 18), "en-US"), "Week of Nov 16");
+  assert.equal(
+    defaultUpdateTitle(at(2026, 11, 22, 23), "en-US"),
+    "Week of Nov 16",
+  );
+  // The next Monday starts the next week.
+  assert.equal(
+    defaultUpdateTitle(at(2026, 11, 23, 0), "en-US"),
+    "Week of Nov 23",
+  );
+  // A week that began in the month before.
+  assert.equal(defaultUpdateTitle(at(2026, 12, 2), "en-US"), "Week of Nov 30");
+  assert.equal(defaultUpdateTitle(at(2027, 1, 1), "en-US"), "Week of Dec 28");
+  // A date, not a count: no number of weeks in it.
+  assert.doesNotMatch(
+    defaultUpdateTitle(at(2026, 11, 18), "en-US"),
+    /#|week \d/i,
+  );
+});
+
 test("only the first three lines of what's next become promises", async () => {
   const { firstPromises } = await import("./weekly-update.ts");
   assert.deepEqual(firstPromises("one\n\n two \nthree\nfour\nfive"), {
