@@ -377,3 +377,23 @@ money if the pool step fails (the treasury holds 97 of 100 dollars with no pool,
 whether to build with 11,111 optimizer runs (Uniswap's setting) or 200 (about 470,000 gas cheaper to open a sale); and
 whether the vendored strategy and auction versions are inside the audits Uniswap lists (they list audits only up to the
 earlier versions).
+
+## Milestone 2 findings (16 November 2026)
+
+Built in `contracts/next` (`ShareToken`, `Vester`, `Treasury`, `Launcher`, `RollingCap`); 159 new tests, 206 in all, 0 failed. Report:
+`docs/next-version/M2-REPORT.md`. Where this plan was wrong or loose:
+
+- **Section 4, anti-drain rule 2, is exact only for small holders.** The 4% of an exit that stays "for those who remain" also reaches the
+  leaver's own remaining Shares, so exiting in many pieces recovers part of the fee: 20% holder +0.43% in 100 exits, 80% holder +2.4% in 400
+  exits (measured); a sole holder in the limit pays about 1% instead of 5%. Buy-and-hand-back needs a smaller discount than 5% for a whale.
+- **Section 4, the 15 : 60 split**, is fixed in each Treasury at birth (copied from the Launcher), not given per call: `settle` is open to
+  any stranger, so a per-call ratio would let a stranger set how much the founder may spend.
+- **Section 4, the floor per Share example (48% on day one)** counts only the 500,000,000 Shares held by buyers. Shares inside the pool (about
+  6% in milestone 1's test sale) are held by neither the project nor the Vester, so by the rule as specified they count and lower it. Milestone 3
+  needs your call on that.
+- **Section 4, "refused until the sale money has arrived"**, is checked as "the Treasury has split money at least once". A stranger can split a
+  small part first, so milestone 3 must prove the pool and split the whole amount in one transaction.
+- **Section 5, sizes**: the four contracts are 615 lines of code against 1,140 estimated; `ShareToken` is 78 against 40. Project start costs about
+  0.73 million gas (three clones and the allocation), a gift about 0.09 million.
+- **Section 3, "1% of all Shares per 30 days"** and the agents' daily caps are exact but a used amount counts up to one part longer: 24 to 28
+  hours for daily caps, 30 to 33 days for the monthly gift cap.
