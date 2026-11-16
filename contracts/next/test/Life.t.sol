@@ -197,8 +197,27 @@ abstract contract LifeBase is Platform {
             10,
             "buyers' Shares plus the pool's (the auction keeps a few units of dust)"
         );
-        emit log_named_decimal_uint("life: floor dollars", p.treasury.melting(), 6);
+        emit log_named_decimal_uint("life: dollars raised", m.raised, 6);
+        emit log_named_decimal_uint("life: fee to the platform (3)", m.fee, 6);
+        emit log_named_decimal_uint("life: dollars in the pool (22)", m.poolDollars, 6);
+        emit log_named_decimal_uint("life: spendable by the project (15)", p.treasury.spendable(), 6);
+        emit log_named_decimal_uint("life: melting floor (60)", p.treasury.melting(), 6);
+        emit log_named_decimal_uint("life: Shares in the pool", m.poolShares, 18);
+        emit log_named_decimal_uint(
+            "life: Shares back with the Treasury from the pool reserve", SaleParams.POOL_SHARES - m.poolShares, 18
+        );
+        emit log_named_decimal_uint("life: unsold Shares to the Treasury", unsold, 18);
+        emit log_named_decimal_uint("life: Shares bidders hold", filled, 18);
         emit log_named_decimal_uint("life: Shares counted for exits", counting, 18);
+        emit log_named_decimal_uint(
+            "life: floor per Share, dollars, counting the pool's Shares", p.treasury.melting() * 1e30 / counting, 18
+        );
+        emit log_named_decimal_uint(
+            "life: floor per Share, dollars, leaving the pool's Shares out",
+            p.treasury.melting() * 1e30 / (counting - m.poolShares),
+            18
+        );
+        emit log_named_decimal_uint("life: price the pool opened at, dollars", _spot(_key(p)), 18);
 
         // ---- a trade through the pool, then collect the pool fees ------------------------------------------------------------
         usd.mint(trader, 100 * DOLLAR);

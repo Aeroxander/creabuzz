@@ -215,7 +215,13 @@ contract PinnedDriftTest is SaleBase {
         assertEq(Actions.MINT_POSITION, 0x02);
         assertEq(Actions.SETTLE_PAIR, 0x0d);
         assertEq(Actions.BURN_POSITION, 0x03);
-        assertEq(SaleParams.SALE_BLOCKS, 7200);
+        assertEq(SaleParams.SALE_BLOCKS, 7200, "24 hours at 12 seconds");
+        assertEq(SaleParams.ABANDON_DELAY_BLOCKS, 50_400, "7 days at 12 seconds");
+        assertEq(SaleParams.POOL_RATE, 2_268_041, "22 of every 100 raised");
+        assertEq(SaleParams.POOL_FEE, 10_000, "1 percent");
+        assertEq(int256(SaleParams.POOL_TICK_SPACING), 200);
+        assertEq(SaleParams.SALE_SHARES, 400_000_000e18);
+        assertEq(uint256(SaleParams.POOL_SHARES), 100_000_000e18);
     }
 
     /// @dev The pool manager's storage layout, read by `PoolRead`, against its own `StateLibrary`, on a pool the strategy made:

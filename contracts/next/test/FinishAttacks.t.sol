@@ -209,7 +209,7 @@ abstract contract FinishAttacksBase is Platform {
         _failThePoolStep(true);
         p.finisher.openPool();
         _failThePoolStep(false);
-        uint256 from = uint256(s.endBlock) + SaleParams.ABANDON_DELAY_BLOCKS;
+        uint256 from = uint256(s.endBlock) + 50_400; // seven days at twelve seconds a block, written out
         assertEq(p.finisher.abandonBlock(), from);
         vm.roll(from - 1);
         vm.prank(stranger);

@@ -120,16 +120,16 @@ contract LiquidityHolder {
         emit OwedSent(token, to, amount);
     }
 
-    /// @dev The project a position belongs to: the pool's hook is the platform's guard (so the strategy made the pool, for a
-    /// sale this platform's Launcher opened, with the Launcher's fee and tick spacing and the project's own dollar token) and
-    /// exactly one of its two currencies is a project's Shares; the other is that project's dollar token.
+    /// @dev The project a position belongs to. The pool's hook must be the platform's guard: only the strategy can create such a
+    /// pool, and only for a sale this platform's Launcher opened, so one of its two currencies is that project's Shares and the other
+    /// its dollar token, and the fee and tick spacing are the Launcher's. (A removal run showed a separate "exactly one side is a
+    /// project's Shares" check could never be reached without a guarded pool, so there is none.)
     function _project(PoolKey memory key) private view returns (address treasury, address sharesToken, address quote) {
-        address t0 = ILauncherView(launcher).treasuryOfShares(key.currency0);
-        address t1 = ILauncherView(launcher).treasuryOfShares(key.currency1);
-        if ((t0 == address(0)) == (t1 == address(0))) revert UnknownProject();
-        (treasury, sharesToken, quote) =
-            t0 != address(0) ? (t0, key.currency0, key.currency1) : (t1, key.currency1, key.currency0);
         if (key.hooks != guard) revert UnknownProject();
+        address t0 = ILauncherView(launcher).treasuryOfShares(key.currency0);
+        (treasury, sharesToken, quote) = t0 != address(0)
+            ? (t0, key.currency0, key.currency1)
+            : (ILauncherView(launcher).treasuryOfShares(key.currency1), key.currency1, key.currency0);
     }
 
     /// @dev A token that refuses a transfer (a frozen address) must not stop the project's half or the burn.

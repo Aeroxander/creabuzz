@@ -199,7 +199,6 @@ M3=[
 ('P05','Pinned: the pool state is read from the wrong storage slot',PI,'bytes32 internal constant POOLS_SLOT = bytes32(uint256(6));','bytes32 internal constant POOLS_SLOT = bytes32(uint256(5));',False,DRI),
 ('P06','Pinned: abandon opens after one day',PI,'uint64 internal constant ABANDON_DELAY_BLOCKS = 50_400;','uint64 internal constant ABANDON_DELAY_BLOCKS = 7200;',False,FIN),
 ('H01','LiquidityHolder: anyone\'s position may be collected, held or not',HO,'        if (positionManager.ownerOf(tokenId) != address(this)) revert NotHeld();\n','',False,HOL),
-('H02','LiquidityHolder: a position of a pool with no project in it may be collected',HO,'        if ((t0 == address(0)) == (t1 == address(0))) revert UnknownProject();\n','',False,HOL),
 ('H03','LiquidityHolder: a position of a stranger\'s plain pool of a project\'s Shares may be collected',HO,'        if (key.hooks != guard) revert UnknownProject();\n','',False,HOL),
 ('H04','LiquidityHolder: the platform gets all the dollar fees',HO,'        uint256 toPlatform = dollars / 2;','        uint256 toPlatform = dollars;',False,HOL),
 ('H05','LiquidityHolder: the project gets nothing of the dollar fees',HO,'            ITreasuryFinish(treasury).topUp(toProject);\n','',False,HOL),
