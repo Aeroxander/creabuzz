@@ -55,7 +55,8 @@ hold keys or send a real transaction.
 | 5 | "PoolGuard ~30 lines" | 15 lines, because the vendored hook already does the whole job | `src/PoolGuard.sol` |
 | 6 | "The auction's only minimum bid is not zero ... the app sets 4 times" | There is no on-chain cap on a top price except a number around 4 x 10^22 dollars per Share (so none in practice). Nothing but the app stops a silly top price. The smallest hook that can do it is the same contract as `MinBid`: it reads the auction's current price. Built and tested (`maxPriceMultiple = 4`) | `Measure.t.sol` limits; `Pieces.t.sol` `test_minBid_*` |
 | 7 | "A reviewer guessed 4 to 5 million gas" to open a sale | Measured **4,272,797 gas** for the call that opens the sale (auction plus strategy). About 3.6 million of it is the one-off cost of storing the auction contract (18,061 bytes at 200 gas a byte) | `Measure.t.sol`; sizes from `forge build --sizes` |
-| 8 | "Pinned block, cached" fork tests | The public Sepolia node keeps about 10,000 blocks of history and only the last few dozen blocks of state. A pin more than half an hour old can be re-run only from Foundry's local cache (`~/.foundry/cache/rpc`) or an archive node. Nothing in the tests depends on that particular block | M1-FACTS 8, `contracts/next/README.md` |
+| 8 | "Pinned block, cached" fork tests | The public Sepolia node keeps about 10,000 blocks of history and only the last few dozen blocks of state, and for blocks a few thousand old its back ends disagree. The pin can be forked only from Foundry's local cache on the one machine that filled it, or from an archive node, and even then the node must be **reachable**. The first version of the suite failed hard everywhere else. Fixed in the fix round below: the suites now skip or move to a recent block with a message | M1-FACTS 8, `contracts/next/README.md`, `test/ForkPick.t.sol`, `scripts/check-fork-degrades.sh` |
+| 9 | "The finish reads the pool and refuses to split without one (`NoPool`)" (item 3 below, as first written) | True only when the sale uses the pool guard. With no guard the key is the plain pool, a stranger can create it at any price after the sale opens, and the stand-in treasury took that pool for the project's: it split 97 of every 100 as 15 : 60 with nothing in a pool (77.6 of every 100 raised in the floor). The strategy itself accepts a sale with no guard. Fixed in the stand-in; the guard is now **mandatory** (see item 3 below) | `Attacks.t.sol` `test_swallowedFailure_withoutAGuardAStrangersPlainPoolDoesNotFoolTheFinish` |
 
 Two things that I checked and the plan had **right**: the strategy's pool step is open to anyone, works once and
 swallows a failure; the vendored controller allows 100%. Line numbers in the plan were off by one or two only.
@@ -116,12 +117,21 @@ more levels. 1% looks right for a 10,000-dollar sale. A bid has to be placed abo
 2. **The treasury must be the `recipient` and the auction's `tokensRecipient`**, and must have public functions that
    (a) run the pool step if not done, (b) split new money, (c) sweep unsold Shares, each safe to repeat. A working
    shape is `test/mocks/MockTreasury.sol` (about 80 lines).
-3. **Step 2 of the finish must read the pool, never the events.** The strategy reports a failed pool step as a
-   successful transaction, emits the same "currency swept" and "tokens swept" events as a success, and has already
-   sent 97 of every 100 dollars and the whole 100 million reserve to the treasury. A 15 : 60 split of that would put 77
-   of every 100 dollars in the floor. The stand-in treasury reads the pool manager and refuses to split with no pool
-   (`NoPool`). What to do with the money then is a question for you (open question 3). The only way I found to make the
-   step fail is a quote token that can freeze the pool manager's address; a real stablecoin can do that.
+3. **Step 2 of the finish must read the pool, never the events, and the pool guard is mandatory.** The strategy reports
+   a failed pool step as a successful transaction, emits the same "currency swept" and "tokens swept" events as a
+   success, and has already sent 97 of every 100 dollars and the whole 100 million reserve to the treasury. A 15 : 60
+   split of that would put 77 of every 100 dollars in the floor. The stand-in treasury refuses to split with no pool
+   (`NoPool`) **only because it counts just the guarded pool**: the strategy accepts a sale whose pool settings name no
+   hook (`MigratorParams.validateHook` does not check a zero hook), and then the project's key is the plain pool that
+   any stranger may create, at any price, after the sale opens. So, for milestones 2 and 3:
+   * the **Launcher refuses to open a sale whose pool hook is the zero address**, and refuses a hook that is not a
+     guard naming the strategy as its only creator (`authorized() == strategy`);
+   * the **Treasury reads the pool through `StateLibrary.getSlot0` on the pool manager**, not a copied storage index (the
+     stand-in used `extsload` with the constant 6 before this fix), **and checks that the key it reads carries that
+     guard**, so it cannot be pointed at a pool someone else made;
+   * what to do with the money when the pool step failed is still open question 3.
+   The only way I found to make the step fail is a quote token that can freeze the pool manager's address; a real
+   stablecoin can do that.
 4. **`positionRecipient` is the `LiquidityHolder`, from the start**, and it must exist before the sale opens (its
    address is in the sale's settings).
 5. **The server helper needs the auction's hints.** A bid that was outbid cannot be exited with one number: the call needs
@@ -142,7 +152,9 @@ more levels. 1% looks right for a 10,000-dollar sale. A bid has to be placed abo
 10. **The strategy's own code is 473 lines I did not write and have not audited.** The vendored docs list audits for the
     launcher only up to v2.0.0; the strategy comes from v3.0.0 and I found no audit listed for it (M1-FACTS 10). The
     plan's "off until an outside review" list should name it and the auction (audited at v2.0.0, vendored at v2.1.0 plus
-    two commits) explicitly.
+    two commits) explicitly. **Licence:** the strategy's source graph includes two BUSL-1.1 Uniswap files and one of their
+    functions very likely lands in the strategy's bytecode, so "MIT, which allows it" was wrong; it is a counsel
+    question with a change date of 2027-06-15 (M1-FACTS section 10).
 
 ## Open questions for you
 
@@ -160,12 +172,78 @@ more levels. 1% looks right for a 10,000-dollar sale. A bid has to be placed abo
 6. Optimizer setting: 11,111 runs (matches Uniswap's build and bids are cheaper) or 200 runs (about 470,000 gas
    cheaper to open a sale)?
 
+## Fix round (16 November 2026, after review)
+
+A reviewer found three problems in the first version of this milestone. I checked each one first; all three were real.
+
+**I-1. The fork suites failed hard on any node that could not serve the pinned block.** Reproduced before changing
+anything: with `SEPOLIA_FORK_BLOCK=12140000` against the public node every fork suite died in `setUp` with "Archive
+requests require a personal token"; with `SEPOLIA_RPC_URL=http://127.0.0.1:1` (dead node, pin cached on this machine)
+every fork suite died with "could not instantiate forked environment". So "cache-only repeat" also needs a reachable
+node, which the first report did not say. What I changed:
+* `test/helpers/ForkPick.sol` decides, and the suites ask the node before forking: a dead node skips with a message; a
+  named block the node cannot serve skips with a message; an unserved pin with no block named runs at a recent block
+  (head minus 3) and says so; `SEPOLIA_FORK_TRUST_CACHE=true` forks at the pin without asking, for the machine whose cache
+  holds it. Table in `contracts/next/README.md`.
+* The public node answers a block a few thousand blocks old inconsistently (one read passes, the next fails, a different
+  account fails each run, measured at block 12,140,000), so a single probe read was not enough: my first version of the
+  probe let 2 to 5 of 7 suites through and they then failed in the middle. The probe now needs 16 unrelated accounts to
+  answer (64 for a block more than 256 behind the head) and one answer is shared by all suites of a run.
+* The README now says the pin is keyed to the machine and the Foundry build, and records this machine's build:
+  `forge 1.4.3-v1.4.3`, commit `fa9f934`, built 2025-10-22. I no longer claim the pin repeats anywhere else.
+* **What this does not give:** a guarantee. The probe is a test of a flaky node, not a proof; a node that passes it and
+  then fails a later read would still fail a test. With the final probe I ran blocks 12,146,000, 12,140,000 and
+  12,130,000 against the public node, twice each (6 runs of the fork suites; every suite skipped, none failed). With an
+  earlier 16-account-only probe, 12,140,000 skipped in 4 of 4 runs and 12,100,000 in 1 of 1, but 12,146,000 failed one
+  suite once, which is why old blocks now need 64.
+* **A consequence I hit:** my own new fork test (I-2) reads state at the pin that was never cached, so a cache-only run
+  at the pin fails that one test (48 of 49; the failure is "Archive requests require a personal token" on a Permit2
+  storage slot). The finding predicted exactly this. The check script excludes that one test in its cache-only case and
+  says why; every earlier test still repeats from the cache.
+
+**I-2. The finish's "NoPool" protection depended on the pool guard.** Reproduced with a new test before fixing: with no
+guard, a stranger creates the plain pool at price 1.0 after the sale opens, the pool step fails (a dollar token that
+refuses the position manager), and the stand-in treasury's `poolIsOpen` said "yes" because it only tested that the plain
+key had a price. Settling then splits the 97 of every 100 as 15 : 60, which puts 9,312 of 12,000 raised (77.6%) in the
+floor with nothing in a pool. The strategy itself accepts a sale with no guard. What I changed: the stand-in now counts
+only a pool at a key whose hook is a guard that names this strategy as its only creator, and it reads the price with
+`StateLibrary.getSlot0` instead of a copied slot index. The Launcher and Treasury of milestones 2 and 3 do not exist yet,
+so the rule for them is written into "What milestone 2 and 3 must do differently" item 3 above: the Launcher refuses a
+zero hook, the Treasury reads the guarded key through the state library. **The plan text was not edited by me** (it is
+outside the paths I own); lines to add to `docs/NEXT-VERSION-PLAN.md` section 5, "Finishing a sale", and section 9:
+"The pool guard is mandatory: the Launcher refuses a sale whose pool hook is the zero address, and the finish counts
+only the guarded pool." The test is `Attacks.t.sol`
+`test_swallowedFailure_withoutAGuardAStrangersPlainPoolDoesNotFoolTheFinish`, local and on the Sepolia copy.
+
+**I-3. "MIT, which allows it" was not an answer.** The strategy's source graph is 76 files, 74 MIT and 2 BUSL-1.1
+(`v4-core` `Pool.sol` and `Position.sol`). I went further than the reviewer: `PositionPlanner.resolve` calls the
+BUSL function `Pool.tickSpacingToMaxLiquidityPerTick` (an internal function, so it is compiled into the caller), and the
+strategy calls that path. So a BUSL function very likely reaches the strategy's bytecode. I did **not** confirm it in the
+compiled bytes. The auction factory (which carries the auction), `PoolGuard`, `MinBid` and `FixedFeeController` have only
+MIT files. Change Date of the BUSL grant: 2027-06-15 or an earlier date set on chain; the Additional Use Grant is an
+on-chain reference I could not read. M1-FACTS section 10 is rewritten; this is now a counsel question, not a cleared item.
+
+**Guards I removed once in this round to see the tests fail** (all four were applied in one build, then restored with
+`git checkout`; each row names the test or script case that is attributable to that one change):
+
+| What I broke | What failed |
+|---|---|
+| `poolIsOpen` stops checking for a guard (I-2) | `test_swallowedFailure_withoutAGuardAStrangersPlainPoolDoesNotFoolTheFinish` (local) |
+| `ForkPick`: a dead node no longer skips (I-1) | `ForkPickTest.test_aDeadNodeSkipsEvenWhenTheCacheIsTrusted`; script cases "dead node" and "dead node, cache trusted" (7 failures each instead of 7 skips) |
+| `ForkPick`: an unserved pin is forked anyway, no recent-block fallback (I-1) | `ForkPickTest.test_anUnservedPinMovesToARecentBlockWithAMessage` |
+| `Stack`: the probe's answer ignored, node always "serves" (I-1) | script case "named block too old": 21 failures instead of 7 skips (the unit tests cannot see this one, the probe is wired in `Stack`) |
+
+I did not mutate the `FORK_TRUST_CACHE` branch or the 16/64-account probe size separately: the first is covered by
+`ForkPickTest.test_trustingTheCacheForksTheUnservedPin` and the script's cache case, the second only by the repeated runs
+above (evidence, not a test).
+
 ## How sure am I
 
 **What I ran** (all in `contracts/next`; commands at the end):
 * `forge build`: passes.
-* `forge test`: 88 tests in 12 suites (see the final run below), on a local copy of the Uniswap code and on the Sepolia copy. The Sepolia suites
-  skip with a message when no RPC is set.
+* `forge test`: after the fix round, **96 tests in 13 suites, 0 failed**, on a local copy of the Uniswap code and on the
+  Sepolia copy (public node, no block named, so the pin was not served and the run used a recent block). Without
+  `SEPOLIA_RPC_URL`: 47 passed, 0 failed, 7 skipped (the fork setUps skip with a message).
 * `forge fmt --check src test`: clean.
 * `git diff --stat` against the commit before my first one: nothing changed under `contracts/` outside `contracts/next/`.
 
@@ -196,10 +274,11 @@ future guard change) would have silently tested an old build.
 **What I did not run or did not check:**
 * Nothing on a real network or with a real key. Nothing was deployed.
 * The old suite in `contracts/` was not run; only the diff proves it was not touched.
-* Sepolia pins: the fork tests ran against block 12,146,937 (Sepolia, 16 November 2026); the public node prunes, so they repeat from Foundry's cache
-  on this machine and need a fresh pin (`SEPOLIA_FORK_BLOCK`) elsewhere. A second run of the whole fork suite took about
-  1 second against 17 for the first, so the reads came from the cache; I did not wait for the pin to age out of the node's
-  window to prove it offline. The local copy needs no network at all.
+* Sepolia pins: the first version's fork tests ran against block 12,146,937 (16 November 2026). That block can be forked
+  again only from Foundry's cache on this machine (`forge 1.4.3`) with a reachable node, or from an archive node; after
+  the fix round a plain `forge test` with the public node runs at a recent block instead. I ran the cache-only repeat of
+  the pin once (48 of 49 passed; the one failure is the new test whose reads were never cached, see the fix round).
+  I did not run an archive node. The local copy needs no network at all.
 * The 200-run optimizer saving is an estimate from sizes, not a measurement.
 * Sponsor limits, block-limit figures and the 16.7 million transaction cap are from memory (outside knowledge).
 * Fuzz and invariant tests were not written (the plan puts them in milestone 2).
@@ -214,4 +293,6 @@ forge build
 forge test                                            # local; fork suites skip without an RPC
 SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com forge test
 forge fmt --check src test
+scripts/check-fork-degrades.sh                        # fork suites skip or move, never fail, on nodes that cannot serve the pin
+CHECK_CACHED_PIN=1 scripts/check-fork-degrades.sh     # plus the cache-only repeat of the pin (this machine only)
 ```
