@@ -423,15 +423,18 @@ test("when the founder is the helper, their own check is kept as their own, and 
     [[FOUNDER, true]],
   );
   assert.equal(taskStateLabel(alone), SELF_CHECKED_LABEL);
-  assert.equal(
-    SELF_CHECKED_LABEL,
-    "Done — checked by the founder, working alone",
-  );
+  assert.equal(SELF_CHECKED_LABEL, "Done, checked by the founder");
+  // To the founder looking at their own page it is "by you"; to anyone else it stays "by the founder".
+  assert.equal(taskStateLabel(alone, true), "Done, checked by you");
+  assert.equal(taskStateLabel(alone, false), SELF_CHECKED_LABEL);
+  // Work the founder checked alone is never called "accepted", in either wording or on the page's own words.
+  assert.doesNotMatch(taskStateLabel(alone), /accept|working alone/i);
+  assert.doesNotMatch(taskStateLabel(alone, true), /accept|working alone/i);
   assert.deepEqual(acceptedByOthers([alone]), []);
   assert.deepEqual(doneAlone([alone]), [alone]);
   assert.equal(
     doneAloneLine(2),
-    "2 pieces of work done alone, checked by the founder",
+    "2 pieces of work done, checked by the founder",
   );
   assert.equal(doneAloneLine(0), null);
   // Once someone else confirms the same piece, it is theirs that counts, whichever record arrives first.

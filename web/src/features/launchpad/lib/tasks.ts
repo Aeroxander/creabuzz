@@ -30,8 +30,9 @@
  *   The one exception is a founder working alone: the server lets a project's founder check their own work (or
  *   the work of an agent they run) while nobody else on the project could. Such a check is a real end to the task,
  *   and it is never passed off as someone else's: the task says `selfChecked`, and every page words and counts it
- *   apart from work accepted by someone else. Whether the founder really was alone is the server's to hold when
- *   the check is written; a reader takes any such check by the founder and labels it;
+ *   apart from work accepted by someone else. The server holds whether the founder really was alone when the check
+ *   is written; a reader keeps and labels any such check by the founder, and treats the founder's check of an
+ *   agent's work as their own when the team holds no other person (`task-own-check.ts`);
  * - answers that disagree (one team member confirmed what another sent back) are both shown, and the work is not
  *   counted as accepted;
  * - nobody is on a task they did not agree to: a task counts as agreed only when the helper signed a step for that
@@ -51,6 +52,7 @@ import {
   agentClaim,
   verifiedAgent,
 } from "./agent-label.ts";
+import { type KnownAgents, judgeConfirmation } from "./task-own-check.ts";
 import {
   type HandInExtras,
   type ReportedResult,
@@ -461,14 +463,28 @@ const TASK_STATE_LABEL: Record<TaskState, string> = {
 };
 
 /** How a task that only its own founder checked is worded, wherever its state is shown. */
-export const SELF_CHECKED_LABEL =
-  "Done — checked by the founder, working alone";
+export const SELF_CHECKED_LABEL = "Done, checked by the founder";
 
-/** A task's state in words. Work only the founder checked for themself is never called "accepted". */
+/** The same, said to the founder looking at their own project. */
+export const SELF_CHECKED_VIEWER_LABEL = "Done, checked by you";
+
+/**
+ * How work counts, said once on a screen inside a "How work counts" note. "Accepted" is only for work checked by
+ * someone else.
+ */
+export const HOW_WORK_COUNTS =
+  "Work is accepted when someone on the team, other than the person who did it, checks it. A founder with nobody else on the team can check their own work: it shows as done, checked by the founder, and is counted apart.";
+
+/**
+ * A task's state in words. Work only the founder checked for themself is never called "accepted"; `asFounder` words
+ * it to the founder looking at their own project ("checked by you").
+ */
 export function taskStateLabel(
   task: Pick<TaskView, "state" | "selfChecked">,
+  asFounder = false,
 ): string {
-  return task.selfChecked ? SELF_CHECKED_LABEL : TASK_STATE_LABEL[task.state];
+  if (!task.selfChecked) return TASK_STATE_LABEL[task.state];
+  return asFounder ? SELF_CHECKED_VIEWER_LABEL : SELF_CHECKED_LABEL;
 }
 
 /** The founder a project coordinate names (`37001:<founder>:<id>`). */
@@ -618,8 +634,13 @@ export function projectTasks(input: {
   /** Now, in seconds. */
   now: number;
   outsideTasks?: boolean;
+  /**
+   * Team members and helpers known to be agent accounts, from their own profiles. An agent never confirms, and a
+   * team of the founder and agents is still one person (`task-own-check.ts`). Without it, nobody is taken for one.
+   */
+  agents?: KnownAgents;
 }): TaskView[] {
-  const { coordinate, team, now } = input;
+  const { coordinate, team, now, agents } = input;
   const seen = new Set<string>();
   const records = input.records.filter((record) => {
     if (record.coordinate !== coordinate || seen.has(record.id)) return false;
@@ -704,15 +725,24 @@ export function projectTasks(input: {
         else orphanSendBacks.push(answer(step));
         continue;
       }
-      // Nobody grades their own work: not the helper, not whoever runs the helper, and not an agent.
-      const own = step.author === helper || owners.has(step.author);
-      // Except the founder with nobody else to ask, which the server holds when the check is written. It is
-      // kept, and marked as their own check.
-      const self = own && step.author === founder && onTeam;
-      if (step.agent !== null || (own && !self)) {
+      // Nobody grades their own work, and an agent never confirms. The founder's own check is the exception the
+      // server holds when it is written (alone, or with nobody else to ask): kept, and marked as their own.
+      const verdict = judgeConfirmation({
+        author: step.author,
+        founder,
+        helper,
+        onTeam,
+        team,
+        owners,
+        helperIsAgent: helperAgent !== null || Boolean(agents?.has(helper)),
+        agents,
+        signedAsAgent: step.agent !== null,
+      });
+      if (verdict === "ignored") {
         ignoredConfirmation = true;
         continue;
       }
+      const self = verdict === "own";
       if (piece)
         piece.confirmed.push(
           self ? { ...answer(step), self: true } : answer(step),

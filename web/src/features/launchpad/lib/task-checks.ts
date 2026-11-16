@@ -9,6 +9,12 @@
  * Pure and alias-free: `tasks.test.mjs` drives it under `node --test`.
  */
 
+import {
+  founderIsAlone,
+  isFoundersOwnWork,
+  type KnownAgents,
+  NO_KNOWN_AGENTS,
+} from "./task-own-check.ts";
 import { founderOfCoordinate, type TaskView } from "./tasks.ts";
 
 export type ConfirmRule =
@@ -27,24 +33,26 @@ export type ConfirmRule =
 
 /**
  * Whether the founder of `task`'s project has nobody to check their own work: the work is the founder's, or an
- * agent's the founder runs, and the team holds no other person. `agents` are the team members known to be agent
- * accounts: an agent can never confirm, so a team of the founder and agents is still one person.
+ * agent's (one the founder runs, or one no record ties to anyone else), and the team holds no other person.
+ * `agents` are the team members known to be agent accounts: an agent can never confirm, so a team of the founder
+ * and agents is still one person. The same rule the server holds (`founder_alone`), as far as a reader can see.
  */
 export function founderWorksAlone(
   task: Pick<TaskView, "helper" | "helperAgent" | "coordinate">,
   team: ReadonlySet<string>,
-  agents: ReadonlySet<string> = NO_AGENTS,
+  agents: KnownAgents = NO_KNOWN_AGENTS,
 ): boolean {
   const founder = founderOfCoordinate(task.coordinate);
   const owner = task.helperAgent?.owner ?? null;
-  if (task.helper !== founder && owner !== founder) return false;
-  return ![...team].some(
-    (member) =>
-      member !== founder && member !== task.helper && !agents.has(member),
+  return (
+    isFoundersOwnWork({
+      founder,
+      helper: task.helper,
+      helperIsAgent: task.helperAgent !== null || agents.has(task.helper),
+      owners: new Set(owner ? [owner] : []),
+    }) && founderIsAlone({ founder, helper: task.helper, team, agents })
   );
 }
-
-const NO_AGENTS: ReadonlySet<string> = new Set();
 
 /**
  * Whether `viewer` may confirm work on `task`, and if not, whether anyone can. The same rule the server holds: the
@@ -55,7 +63,7 @@ export function confirmRule(
   task: Pick<TaskView, "helper" | "helperAgent" | "coordinate">,
   team: ReadonlySet<string>,
   viewer: string | null,
-  agents: ReadonlySet<string> = NO_AGENTS,
+  agents: KnownAgents = NO_KNOWN_AGENTS,
 ): ConfirmRule {
   const owner = task.helperAgent?.owner ?? null;
   const someoneCan = [...team].some(
@@ -63,9 +71,7 @@ export function confirmRule(
       member !== task.helper && member !== owner && !agents.has(member),
   );
   if (!viewer) return { may: false, why: "signed-out", someoneCan };
-  const own = viewer === task.helper || viewer === owner;
   if (
-    own &&
     viewer === founderOfCoordinate(task.coordinate) &&
     team.has(viewer) &&
     founderWorksAlone(task, team, agents)
@@ -93,8 +99,46 @@ export function doneAlone<T extends Pick<TaskView, "state" | "selfChecked">>(
   return tasks.filter((task) => task.state === "confirmed" && task.selfChecked);
 }
 
-/** "2 pieces of work done alone, checked by the founder", or null for none. */
+/** "2 pieces of work done, checked by the founder", or null for none. Never called "accepted". */
 export function doneAloneLine(n: number): string | null {
   if (n <= 0) return null;
-  return `${n} ${n === 1 ? "piece" : "pieces"} of work done alone, checked by the founder`;
+  return `${n} ${n === 1 ? "piece" : "pieces"} of work done, checked by the founder`;
+}
+
+/** Who did a piece of work and who checked it, for the one line "Done by Robin · Checked by Sol". */
+export interface CheckedByWho {
+  pubkey: string;
+  /** The viewer: the line says "you". */
+  you: boolean;
+}
+
+export interface CheckedBy {
+  done: CheckedByWho;
+  /** Null until someone checks it, and when the only "check" came from an agent: an agent never checks. */
+  checked: CheckedByWho | null;
+}
+
+/** Who did `task`'s work and who checked it, as `viewer` reads it. `agents` are accounts known to be agents. */
+export function checkedBy(
+  task: Pick<TaskView, "helper" | "accepted">,
+  viewer: string | null,
+  agents: KnownAgents = NO_KNOWN_AGENTS,
+): CheckedBy {
+  const who = (pubkey: string): CheckedByWho => ({
+    pubkey,
+    you: viewer !== null && viewer === pubkey,
+  });
+  const by = task.accepted?.by ?? null;
+  return {
+    done: who(task.helper),
+    checked: by && !agents.has(by) ? who(by) : null,
+  };
+}
+
+/** How a person is named in that line: "you", or their own name. */
+export function whoWords(
+  who: CheckedByWho,
+  nameOf: (pubkey: string) => string,
+) {
+  return who.you ? "you" : nameOf(who.pubkey);
 }
