@@ -62,7 +62,9 @@ test('shares with no vote read "non-voting shares", not "Loot" or "new units"', 
 
 const { HOW_WORK_COUNTS, SELF_CHECKED_LABEL, SELF_CHECKED_VIEWER_LABEL } =
   await import("./lib/tasks.ts");
-const { doneAloneLine } = await import("./lib/task-checks.ts");
+const { doneAloneLine, offerTaskCheckedLine } = await import(
+  "./lib/task-checks.ts"
+);
 
 test('work the founder checked is "done, checked by the founder" ("by you" to the founder), never "accepted"', () => {
   assert.equal(SELF_CHECKED_LABEL, "Done, checked by the founder");
@@ -77,6 +79,25 @@ test('work the founder checked is "done, checked by the founder" ("by you" to th
     doneAloneLine(2),
   ])
     assert.doesNotMatch(words, /accept|working alone/i, words);
+});
+
+test('under an offer, work only the founder checked is "checked by the founder", never "accepted"', () => {
+  for (const side of ["team", "helper"]) {
+    const own = offerTaskCheckedLine({ selfChecked: true }, side);
+    assert.match(own, /checked the work|checked by the founder/);
+    assert.doesNotMatch(own, /accept/i, own);
+    assert.match(
+      offerTaskCheckedLine({ selfChecked: false }, side),
+      /was accepted\.$/,
+    );
+  }
+  // The screen takes both sentences from that function and keeps no "accepted" sentence of its own.
+  const screen = withoutComments(
+    readFileSync(join(here, "ui/OfferTask.tsx"), "utf8"),
+  );
+  assert.doesNotMatch(screen, /accepted/i);
+  assert.match(screen, /offerTaskCheckedLine\(task, "team"\)/);
+  assert.match(screen, /offerTaskCheckedLine\(task, "helper"\)/);
 });
 
 test("how work counts is said once, in these words", () => {

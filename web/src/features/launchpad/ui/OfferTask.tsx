@@ -15,6 +15,7 @@ import { useState } from "react";
 import { Button } from "@/shared/ui/button";
 
 import type { Offer } from "../lib/help-request";
+import { offerTaskCheckedLine } from "../lib/task-checks";
 import { isOpenTask } from "../lib/tasks";
 import type { HelpAsk } from "../lib/weekly-update";
 import { withReason } from "../lib/removals";
@@ -81,7 +82,7 @@ export function OfferTask({
             ? `A task was made from this offer. ${helperName} has not said yes yet.`
             : "This offer is now a task.")}{" "}
         {!task ? null : task.state === "confirmed" ? (
-          "The work was accepted."
+          offerTaskCheckedLine(task, "team")
         ) : (
           <TaskLink id={task.id} launch={launch} />
         )}
@@ -170,7 +171,7 @@ export function MyOfferTask({
         ? "The team made a task from your offer. It is yours only if you say yes."
         : "The team made a task from your offer, and you said yes."}{" "}
       {task.state === "confirmed" ? (
-        "Your work was accepted."
+        offerTaskCheckedLine(task, "helper")
       ) : (
         <TaskLink id={task.id} launch={launch} />
       )}

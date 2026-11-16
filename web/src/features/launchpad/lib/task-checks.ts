@@ -105,6 +105,22 @@ export function doneAloneLine(n: number): string | null {
   return `${n} ${n === 1 ? "piece" : "pieces"} of work done, checked by the founder`;
 }
 
+/**
+ * The line under an offer once its task is finished. Work only the founder checked is never called "accepted"; it is
+ * said as "checked by the founder", the same as everywhere else. `side` is who reads it: the team, or the person who
+ * made the offer.
+ */
+export function offerTaskCheckedLine(
+  task: Pick<TaskView, "selfChecked">,
+  side: "team" | "helper",
+): string {
+  if (task.selfChecked)
+    return side === "team"
+      ? "The founder checked the work."
+      : "Your work was checked by the founder.";
+  return side === "team" ? "The work was accepted." : "Your work was accepted.";
+}
+
 /** Who did a piece of work and who checked it, for the one line "Done by Robin · Checked by Sol". */
 export interface CheckedByWho {
   pubkey: string;
