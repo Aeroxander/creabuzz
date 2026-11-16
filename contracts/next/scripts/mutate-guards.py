@@ -83,7 +83,7 @@ MUT=[
 ('R03','RollingCap: a used amount stops counting one part early',R,'if ((e >> 192) + buckets >= cur) sum += e & MASK;','if ((e >> 192) + buckets > cur) sum += e & MASK;',False),
 ('L01','Launcher: a founder may reuse an id (error kind)',L,'if (_projects[key].shares != address(0)) revert ProjectExists();','',False),
 ('L05','Launcher: anyone may change settings',L,'        if (msg.sender != admin) revert NotAdmin();\n        _set(next);','        _set(next);',False),
-('L06','Launcher: the exit fee ceiling is not checked',L,'s.exitFeeBps > MAX_EXIT_FEE_BPS ||','',False),
+('L06','Launcher: the exit fee ceiling is not checked',L,' || s.exitFeeBps > MAX_EXIT_FEE_BPS','',False),
 ('L09','Launcher: the founder allocation is 190M not 200M',L,'uint256 public constant FOUNDER = 200_000_000e18;','uint256 public constant FOUNDER = 190_000_000e18;',False),
 
 

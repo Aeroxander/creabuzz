@@ -397,3 +397,37 @@ Built in `contracts/next` (`ShareToken`, `Vester`, `Treasury`, `Launcher`, `Roll
   0.73 million gas (three clones and the allocation), a gift about 0.09 million.
 - **Section 3, "1% of all Shares per 30 days"** and the agents' daily caps are exact but a used amount counts up to one part longer: 24 to 28
   hours for daily caps, 30 to 33 days for the monthly gift cap.
+
+## Milestone 3 findings (16 November 2026)
+
+Built in `contracts/next` (`Launcher` replaced, `Finisher`, `LiquidityHolder`, `Pinned`, two additions to `Treasury`). Report: `docs/next-version/M3-REPORT.md`.
+Everything below was run on a local copy of Uniswap and on the real Uniswap contracts on a Sepolia fork unless it says otherwise. Where this
+plan was wrong or loose:
+
+- **Section 8, row 3, is proven.** A sale of 20,358.356920 dollars split exactly 3.000 / 22.000 / 15.000 / 60.000 of each 100 (610.75 to the platform,
+  4,478.84 into the pool with 59.7 million Shares, 3,053.75 spendable, 12,215.01 floor); every Share and dollar was accounted for at every
+  step; the dollar token on either side of the Share in the pool.
+- **Section 5, "settle the treasury from the auction's own reported total", cannot be exact.** The pool may take less than its budget (the Shares
+  side can limit it), so the Treasury receives what the Finisher holds; the auction's figure is the least that must be there. The "a stranger
+  splits a small part first" window of milestone 2 is closed because only the project's Finisher can mark the pool open and the money reaches
+  the Treasury only in that same transaction.
+- **Section 5, "the app reads the outcome from the strategy's event", is wrong**, as milestone 1 showed: the outcome is `Finisher.poolIsOpen()`, read
+  from the pool manager.
+- **Section 4, "buy and hand back pays when the price is more than about 5% under the floor"**: measured, it stops paying a little above 6% under
+  for a 20-dollar trade (7.6% in the steps I tried), and does not pay at all for 200 dollars or more in a 2,200-dollar pool, because the pool's 1% fee
+  and the price the trade moves come on top of the 5% exit fee.
+- **Section 4, the floor per Share example (48%)**, counting the pool's Shares as the rule says: 49.2% of the opening price for a sale at its goal,
+  35.4% when demand lifted the price 3x. Leaving the pool's Shares out would give 60.0% and 40.7%.
+- **Sections 3 and 9, thin pools:** a 100-dollar buy moves a Small pool (880 dollars) up 23.7% and a 2,500-dollar buy multiplies its price by 14.5;
+  at the Standard size 9.2% and 4.5x. A founder's second account can pull the price from 1x to the 4-times cap and leave the other bidders 9% of the Shares
+  their money would have bought, at a cost of 25% of the extra spend.
+- **Section 5, "Launcher: opens the sale", needs a Finisher per project** (one clone each): the strategy returns the money left after the pool to one
+  address, and any stranger may run the pool step directly, so only a per-project address can tell whose money it is.
+- **A way out of a pool that never opens was missing.** Seven days (50,400 blocks) after the sale, anyone may abandon: of each 100 raised 3 to the platform,
+  15 spendable, 82 into the floor; all Shares back to the Treasury; the founder's Shares start releasing.
+- **Not in the plan, and easy to forget:** the Treasury's only sale path is the Launcher and this Launcher has no function that takes reserve Shares, so the
+  reserve (10% plus the unsold and unused pool Shares) cannot leave. Later sales (milestone 8) need a function in a Launcher deployed before any real
+  project, or a new Launcher and new projects.
+- **Gas, measured:** open a sale 4,380,084; start a project and open its sale as one batched call 5,262,795; the three finish steps 766,203, 271,524 and 67,081;
+  collect pool fees 262,173; abandon 306,784 (724,725 when it runs the failing pool step itself); deploy the Launcher 7,503,861. The strategy and pool guard are
+  found in about 14,000 to 24,000 tries on average (15 and 5 milliseconds with `cast create2`).

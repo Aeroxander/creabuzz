@@ -129,7 +129,7 @@ abstract contract MarketAttacksBase is Platform {
                         vm.toString(sizes[k] / DOLLAR),
                         " dollars: Shares bought ",
                         _str(t.got / 1e12, 6),
-                        " (millions), paid back ",
+                        ", paid back ",
                         _str(t.payout, 6),
                         ", ",
                         profit < 0 ? "loss " : "profit ",
