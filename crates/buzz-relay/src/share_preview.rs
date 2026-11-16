@@ -282,15 +282,15 @@ async fn shown_project(
     // preview must not tell a crawler what the visitor could not read. When the
     // server lets anyone read a public project's record, the visitor can read
     // these words, and the preview may say them.
-    let by_public_read = match state.membership_required(community, false).await {
-        Ok(false) => false,
-        Ok(true) if state.public_project_reads() => true,
+    match state.membership_required(community, false).await {
+        Ok(false) => {}
+        Ok(true) if state.public_project_reads() => {}
         Ok(true) => return None,
         Err(error) => {
             tracing::warn!(%error, "share preview: could not read the access setting");
             return None;
         }
-    };
+    }
 
     let (id, founder) = match route {
         ProjectRoute::Scorecard { id, founder_start } => {
