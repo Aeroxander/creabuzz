@@ -32,6 +32,8 @@ abstract contract Base is Test {
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
     address internal carol = makeAddr("carol");
+    uint256 internal constant M = 6000 * DOLLAR; // melting floor after the worked sale below
+    uint256 internal constant S = 1500 * DOLLAR; // spendable after the worked sale below
     bytes32 internal constant PROJECT = keccak256("project one");
 
     function setUp() public virtual {
@@ -95,6 +97,16 @@ abstract contract Base is Test {
         _arrive(amount);
         _openPool();
         t.settle(amount);
+    }
+
+    /// @dev The worked example: sale money of 7,500 dollars reaches the Treasury (75 of each 100 of a 10,000 raise) and is
+    /// split 1,500 spendable : 6,000 melting floor; alice then holds 100M Shares and bob 400M, so 500M Shares count.
+    function _world() internal {
+        _sale(7500 * DOLLAR);
+        _buy(alice, 100_000_000 * SHARE);
+        _buy(bob, 400_000_000 * SHARE);
+        _approveAll(alice);
+        _approveAll(bob);
     }
 
     /// @dev The sale delivers Shares: the Launcher's holding goes to a buyer.

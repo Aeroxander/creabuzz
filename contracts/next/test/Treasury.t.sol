@@ -14,17 +14,6 @@ import {RollingCap} from "../src/RollingCap.sol";
 /// 7,500 dollars reaches the Treasury (75 of each 100 of a 10,000 raise), is split 1,500 spendable : 6,000 melting floor,
 /// and the holders are alice (100M Shares) and bob (400M Shares), so 500M Shares count.
 contract TreasuryTest is Base {
-    uint256 internal constant M = 6000 * DOLLAR; // melting floor after the worked sale
-    uint256 internal constant S = 1500 * DOLLAR; // spendable after the worked sale
-
-    function _world() internal {
-        _sale(7500 * DOLLAR);
-        _buy(alice, 100_000_000 * SHARE);
-        _buy(bob, 400_000_000 * SHARE);
-        _approveAll(alice);
-        _approveAll(bob);
-    }
-
     // ------------------------------------------------------------------------------------------------- birth
 
     function test_birth_valuesComeFromTheLauncher() public view {
