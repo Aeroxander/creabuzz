@@ -274,11 +274,12 @@ test("an AI project says who answers for agent work and offers starter wording t
   await expectAccessible(page, "Start with the AI starter wording open");
   // At phone width the chips wrap and nothing scrolls sideways.
   await page.setViewportSize({ width: 390, height: 800 });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  // Read once the width has taken effect: the layout settles a moment after the viewport changes.
+  await expect
+    .poll(() =>
+      page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+    )
+    .toBe(true);
   await page.setViewportSize({ width: 1280, height: 720 });
   // First promises and tasks wait under a closed disclosure for after the start.
   await expect(form.getByTestId("quick-ai-later")).toHaveJSProperty(
