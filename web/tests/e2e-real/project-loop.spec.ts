@@ -590,7 +590,11 @@ test("3. weekly updates: three promises, the next update answers each, the recor
   const page = founderPage;
   await page.goto(projectPath);
 
-  await page.getByTestId("launch-post-update").click();
+  await page
+    .getByTestId("first-week-post")
+    .or(page.getByTestId("launch-post-update"))
+    .first()
+    .click();
   let dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await titleAndHelp(dialog, { help: false });
   await dialog.getByLabel("Title").fill("Week one");
@@ -613,7 +617,11 @@ test("3. weekly updates: three promises, the next update answers each, the recor
   ]);
 
   // The second update answers each, and asks for help.
-  await page.getByTestId("launch-post-update").click();
+  await page
+    .getByTestId("first-week-post")
+    .or(page.getByTestId("launch-post-update"))
+    .first()
+    .click();
   dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog.getByTestId("update-due-promise")).toHaveCount(3);
   const answer = (text: string) => dialog.getByRole("group", { name: text });
@@ -1794,7 +1802,11 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
 
   // The founder posts once more: the server takes it, and the page ends on the note with the record to share.
   await founderPage.goto(projectPath);
-  await founderPage.getByTestId("launch-post-update").click();
+  await founderPage
+    .getByTestId("first-week-post")
+    .or(founderPage.getByTestId("launch-post-update"))
+    .first()
+    .click();
   const dialog = founderPage.getByRole("dialog", {
     name: "Post this week's update",
   });
@@ -1843,7 +1855,11 @@ test("10. the next update starts from last time's promises, Home shows it live, 
 
   // The founder opens the update dialog: it starts from what the last updates promised, each asking for an answer.
   await founderPage.goto(projectPath);
-  await founderPage.getByTestId("launch-post-update").click();
+  await founderPage
+    .getByTestId("first-week-post")
+    .or(founderPage.getByTestId("launch-post-update"))
+    .first()
+    .click();
   const dialog = founderPage.getByRole("dialog", {
     name: "Post this week's update",
   });
