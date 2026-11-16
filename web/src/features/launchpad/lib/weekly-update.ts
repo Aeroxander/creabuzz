@@ -11,6 +11,7 @@
  * Pure and alias-free: `weekly-update.test.mjs` drives it under `node --test`.
  */
 
+import { dayKey, dueWords } from "./record-date.ts";
 import {
   type MarkDraft,
   markTags,
@@ -355,22 +356,25 @@ export function founderNudge(
 }
 
 /**
- * When the next weekly update is due, for everyone to read: "Update due in 2 days", "Update due today",
- * "Update late by 3 days". Null when the project never posted (there is no week to be late in yet).
+ * When the next weekly update is due, for everyone to read: "Next update Mon, Nov 23", "Next update today",
+ * "Late by 3 days". Null when the project never posted (there is no week to be late in yet). `locale` is the
+ * reader's own unless a test names one.
  */
 export function updateDueWords(
   lastAt: number | null,
   now: number,
+  locale?: string,
 ): { late: boolean; text: string } | null {
   if (lastAt === null) return null;
   const n = daysSince(lastAt, now);
   if (n < UPDATE_EVERY_DAYS)
     return {
       late: false,
-      text: `Update due in ${days(UPDATE_EVERY_DAYS - n)}`,
+      text: `Next update ${dueWords(dayKey(lastAt + UPDATE_EVERY_DAYS * DAY), now, locale)}`,
     };
-  if (n === UPDATE_EVERY_DAYS) return { late: false, text: "Update due today" };
-  return { late: true, text: `Update late by ${days(n - UPDATE_EVERY_DAYS)}` };
+  if (n === UPDATE_EVERY_DAYS)
+    return { late: false, text: "Next update today" };
+  return { late: true, text: `Late by ${days(n - UPDATE_EVERY_DAYS)}` };
 }
 
 /** "Posted this week" for one, "4 weeks in a row" from two, null with none. */

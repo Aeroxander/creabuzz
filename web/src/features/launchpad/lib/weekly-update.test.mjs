@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+process.env.TZ = "UTC";
+
 import { UPDATE_DRAFT_LIMITS } from "@creaton/core/launchpad/updateAi.ts";
 
 import {
@@ -302,29 +304,34 @@ test("what a cut read cannot settle is not said", () => {
   });
 });
 
-test("when the next update is due is said in days, and how late once a week has passed", async () => {
+test("when the next update is due is a date, and how late once a week has passed", async () => {
   const { updateDueWords } = await import("./weekly-update.ts");
   const D = 86_400;
-  const T = 1_800_000_000;
-  assert.equal(updateDueWords(null, T), null);
-  assert.deepEqual(updateDueWords(T - 5 * D, T), {
+  // Monday 2026-11-16, midday.
+  const T = Date.parse("2026-11-16T12:00:00Z") / 1000;
+  const words = (lastAt) => updateDueWords(lastAt, T, "en-US");
+  assert.equal(words(null), null);
+  // Posted on the 11th: the next is due on the 18th.
+  assert.deepEqual(words(T - 5 * D), {
     late: false,
-    text: "Update due in 2 days",
+    text: "Next update Wed, Nov 18",
   });
-  assert.deepEqual(updateDueWords(T - 6 * D, T), {
+  assert.deepEqual(words(T - 6 * D), {
     late: false,
-    text: "Update due in 1 day",
+    text: "Next update tomorrow",
   });
-  assert.deepEqual(updateDueWords(T - 7 * D, T), {
+  assert.deepEqual(words(T - 7 * D), {
     late: false,
-    text: "Update due today",
+    text: "Next update today",
   });
-  assert.deepEqual(updateDueWords(T - 10 * D, T), {
-    late: true,
-    text: "Update late by 3 days",
-  });
-  // A last update dated ahead of now is "today", never a negative count.
-  assert.equal(updateDueWords(T + 9 * D, T)?.text, "Update due in 7 days");
+  assert.deepEqual(words(T - 10 * D), { late: true, text: "Late by 3 days" });
+  assert.equal(words(T - 8 * D)?.text, "Late by 1 day");
+  // A last update dated ahead of now is a week after that date, never a negative count.
+  assert.equal(words(T + 9 * D)?.text, "Next update Wed, Dec 2");
+  assert.equal(words(T)?.text, "Next update Mon, Nov 23");
+  // The old words are gone.
+  for (const lastAt of [T - 5 * D, T - 7 * D, T - 10 * D])
+    assert.doesNotMatch(words(lastAt).text, /Update (due|late)/);
 });
 
 test("accepted work is offered as the first lines of what happened, without the ones taken off", async () => {
