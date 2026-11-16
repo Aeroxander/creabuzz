@@ -506,7 +506,7 @@ test("an update the server refuses stays in the dialog with what was written, an
   // Never posted: the first-week card holds the steps instead of counting days.
   await expect(page.getByTestId("first-week")).toContainText("Your first week");
   await expect(page.getByTestId("update-nudge")).toHaveCount(0);
-  await page.getByTestId("launch-post-update").click();
+  await page.getByTestId("first-week-post").click();
   const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   // Free-form is still there: one open box instead of the two prompts.
   await dialog.getByRole("button", { name: "Write one note instead" }).click();
