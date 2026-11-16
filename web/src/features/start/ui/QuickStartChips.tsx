@@ -45,7 +45,7 @@ function ChipGroup({
   );
 }
 
-/** Example sentences for "How we'll know": a number by a date, a link people can open, a named person confirms. */
+/** Example sentences for "How will people know it worked?": a number by a date, a link people can open, a named person confirms. */
 export function HowExampleChips({
   onPick,
 }: {
@@ -54,7 +54,7 @@ export function HowExampleChips({
   return (
     <ChipGroup
       id="quick-how-examples"
-      label="Not sure? Tap an example, then edit it."
+      label="Tap one to start"
       testId="quick-how-examples"
     >
       {HOW_EXAMPLES.map((example) => (
@@ -83,7 +83,7 @@ export function CategoryChips({
   return (
     <ChipGroup
       id="quick-category-label"
-      label="What kind of project? (optional)"
+      label="What kind of project?"
       testId="quick-category"
     >
       {START_CATEGORIES.map((name) => (
@@ -185,7 +185,7 @@ export function AiProjectPanel({
           </ChipGroup>
           <ChipGroup
             id="quick-ai-how-label"
-            label="Ways to say how we'll know, with a number"
+            label="Ways to say how people will know it worked, with a number"
             testId="quick-ai-hows"
           >
             {chosen.howExamples.map((text, index) => (

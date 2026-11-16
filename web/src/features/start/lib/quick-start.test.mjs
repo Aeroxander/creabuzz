@@ -19,6 +19,7 @@ import {
   quickStartPitch,
   quickStartProblem,
   readableSoon,
+  saveGoalToDraft,
   saveMadeProject,
   saveQuickStart,
   startAfterSignUpWaiting,
@@ -50,7 +51,7 @@ test("three answers are enough, and each missing one is named in the form's orde
   assert.equal(quickStartIssue(draft({ goal: "" })), "Say what the goal is.");
   assert.equal(
     quickStartIssue(draft({ how: " " })),
-    "Say how we'll know it was reached.",
+    "Say how people will know it worked.",
   );
 });
 
@@ -94,6 +95,35 @@ test("what was typed survives the visit, and is forgotten once the project is ma
   map.set("creaton.start.quick", "{not json");
   assert.deepEqual(loadQuickStart(store), EMPTY_QUICK_START);
   assert.deepEqual(loadQuickStart(null), EMPTY_QUICK_START);
+});
+
+test("the goal typed on Home lands in Start's draft and nothing else in it changes", () => {
+  const map = new Map();
+  const store = {
+    getItem: (k) => map.get(k) ?? null,
+    setItem: (k, v) => void map.set(k, v),
+    removeItem: (k) => void map.delete(k),
+  };
+  saveGoalToDraft(store, "  A first version that ten people use.  ");
+  assert.deepEqual(loadQuickStart(store), {
+    ...EMPTY_QUICK_START,
+    goal: "A first version that ten people use.",
+  });
+  // Answers already typed on Start stay; only the goal is replaced.
+  saveQuickStart(store, draft({ name: "Lantern", category: "Software" }));
+  saveGoalToDraft(store, "A page three people open");
+  assert.deepEqual(
+    loadQuickStart(store),
+    draft({
+      name: "Lantern",
+      category: "Software",
+      goal: "A page three people open",
+    }),
+  );
+  // Cut at the goal's own limit, and storage that refuses is not a crash.
+  saveGoalToDraft(store, "x".repeat(500));
+  assert.equal(loadQuickStart(store).goal.length, 200);
+  saveGoalToDraft(null, "kept nowhere");
 });
 
 test("a project made whose goal is still to be saved is remembered for its founder only", () => {

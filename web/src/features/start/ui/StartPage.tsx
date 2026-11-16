@@ -168,7 +168,7 @@ export function StartPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-8">
       <PageHeader
-        description="Say what you are aiming for. You can start alone, in about a minute."
+        description="Three short answers make your project page. You can start on your own, and change any of it later."
         title="Start a project"
       />
       <QuickStartForm />

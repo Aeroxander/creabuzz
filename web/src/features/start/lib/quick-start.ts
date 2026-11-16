@@ -18,6 +18,7 @@ import { IDEA_PITCH_MAX, ideaIssue } from "../../launchpad/lib/idea.ts";
 import { startCategory } from "../../launchpad/lib/categories.ts";
 import {
   type GoalInput,
+  GOAL_LIMITS,
   goalProblem,
   newGoalId,
 } from "../../launchpad/lib/goals.ts";
@@ -105,9 +106,17 @@ export function quickStartProblem(
     return { field: "pitch", message: project };
   }
   const goal = goalProblem(quickStartGoal(draft, "g"));
-  return goal
-    ? { field: goal.field === "how" ? "how" : "goal", message: goal.message }
-    : null;
+  if (!goal) return null;
+  // The form's third box is "How will people know it worked?", so its problems are worded with that name.
+  if (goal.field === "how")
+    return {
+      field: "how",
+      message:
+        draft.how.trim().length > GOAL_LIMITS.how
+          ? `Keep the answer to "How will people know it worked?" under ${GOAL_LIMITS.how} characters.`
+          : "Say how people will know it worked.",
+    };
+  return { field: "goal", message: goal.message };
 }
 
 /** {@link quickStartProblem}'s words alone. */
@@ -186,6 +195,18 @@ export function saveQuickStart(
   } catch {
     // Storage refused: nothing kept.
   }
+}
+
+/**
+ * Put the goal typed on Home into Start's draft, so Start opens with it filled in. Every other answer already in the
+ * draft stays as it is. Nothing is sent: the project is made only when Start's own button is pressed.
+ */
+export function saveGoalToDraft(
+  store: DraftStore | null | undefined,
+  goal: string,
+): void {
+  const text = goal.trim().slice(0, GOAL_LIMITS.text);
+  saveQuickStart(store, { ...loadQuickStart(store), goal: text });
 }
 
 const MADE_KEY = "creaton.start.quick.made";
@@ -313,7 +334,7 @@ export async function projectToStart(input: {
   return { id, adopt: false };
 }
 
-/** A tap-to-fill example for "How we'll know": what it is called on the chip, and the sentence it fills in. */
+/** A tap-to-fill example for "How will people know it worked?": what it is called on the chip, and the sentence it fills in. */
 interface HowExample {
   id: string;
   label: string;

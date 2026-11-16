@@ -163,11 +163,9 @@ test("someone who is not signed in is told what this is in one sentence, with tw
   await expect(welcome).not.toContainText("tokens");
   await expect(welcome).not.toContainText("AI helpers");
   await expect(welcome).not.toContainText(/earn/i);
-  // Two ways in, and no account asked for before there is a reason to have one.
-  await expect(welcome.getByRole("link")).toHaveText([
-    "Start a project",
-    "Find work",
-  ]);
+  // Two ways in (a goal box with its one button, and a quiet link), and no account asked for before there is a reason.
+  await expect(welcome.getByRole("button")).toHaveText(["Start a project"]);
+  await expect(welcome.getByRole("link")).toHaveText(["Find work"]);
   await expect(
     page.getByRole("button", { name: "Create your account" }),
   ).toHaveCount(0);

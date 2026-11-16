@@ -1,18 +1,26 @@
 /**
- * The top of Home for someone who just arrived: one sentence on what this is, and two ways in. Start a project (three
- * answers; the account is asked for when it is needed) or find work on someone else's. When the server has a project
+ * The top of Home for someone who just arrived: one sentence on what this is, and a box to start in. The visitor types
+ * what they are making and presses "Start a project"; Start opens with that goal filled in and the cursor in "Project
+ * name". Nothing is sent until Start's own button. "Find work" is a quiet link beside it. When the server has a project
  * of its own, "See a record" opens its public page: the owner's listed project when this visitor can read the lists
  * (an open server), else the one the server names for itself (an invite-only server that lets anyone read a public
  * project's record). What is happening right now is the feed under it.
  *
- * Signed in, there is nothing here.
+ * Shown to every signed-out visitor, on every server. Signed in, there is nothing here.
  */
 
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
 
+import { GOAL_LIMITS } from "@/features/launchpad/lib/goals";
 import { projectSharePath } from "@/features/launchpad/lib/share";
 import { existingUserPubkey } from "@/shared/lib/identity";
+import {
+  loadQuickStart,
+  saveGoalToDraft,
+} from "@/features/start/lib/quick-start";
 import { Button } from "@/shared/ui/button";
+import { Input } from "@/shared/ui/input";
 
 import { useExampleProject } from "../use-example-project";
 import { useServerExample } from "../use-server-example";
@@ -29,6 +37,9 @@ function Welcome() {
   const slug = example
     ? projectSharePath(example.record).slice("/p/".length)
     : named;
+  const navigate = useNavigate();
+  // What was already typed for Start (the visitor may have started there and come back) is the box's first value.
+  const [goal, setGoal] = useState(() => loadQuickStart(sessionStorage).goal);
   return (
     <section
       aria-labelledby="welcome-title"
@@ -47,22 +58,50 @@ function Welcome() {
         <span className="text-[var(--brand-violet)]">built in the open.</span>
       </h2>
       <p className="mt-3 max-w-lg text-base text-muted-foreground">
-        Every project here says what it will do, posts what it did each week,
-        and shows whether it kept its word. Start yours, or lend a hand.
+        Every project says what it will do, posts what it did each week, and
+        shows whether it kept its word.
       </p>
-      <div className="mt-5 flex flex-wrap gap-3">
-        <Button asChild className="max-sm:h-11" size="lg">
-          <Link data-testid="home-welcome-start" to="/start">
+      <form
+        className="mt-5 flex max-w-xl flex-col gap-2"
+        data-testid="home-welcome-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          // The goal goes into Start's own draft; nothing is sent from here.
+          saveGoalToDraft(sessionStorage, goal);
+          void navigate({ to: "/start" });
+        }}
+      >
+        <label className="text-sm font-medium" htmlFor="home-welcome-goal">
+          What are you making?
+        </label>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Input
+            className="h-10 bg-background max-sm:h-11 sm:flex-1"
+            data-testid="home-welcome-goal"
+            id="home-welcome-goal"
+            maxLength={GOAL_LIMITS.text}
+            onChange={(event) => setGoal(event.target.value)}
+            placeholder="A first version that ten people use."
+            value={goal}
+          />
+          <Button
+            className="max-sm:h-11"
+            data-testid="home-welcome-start"
+            size="lg"
+            type="submit"
+          >
             Start a project
-          </Link>
-        </Button>
-        <Button asChild className="max-sm:h-11" size="lg" variant="outline">
+          </Button>
+        </div>
+      </form>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+        <Button asChild className="px-0 max-sm:h-11" variant="link">
           <Link data-testid="home-welcome-work" to="/work">
             Find work
           </Link>
         </Button>
         {slug ? (
-          <Button asChild className="max-sm:h-11" size="lg" variant="ghost">
+          <Button asChild className="px-0 max-sm:h-11" variant="link">
             <Link
               data-testid="home-welcome-record"
               params={{ slug }}

@@ -212,15 +212,19 @@ test("one person starts a project alone with three answers and lands on its page
     "Give your project a name.",
   );
   await form.getByLabel("Project name").fill("Nebula");
-  await form.getByLabel("The goal").fill("A first version ten people use");
+  await form
+    .getByLabel("What is the goal?")
+    .fill("A first version ten people use");
   await form.getByRole("button", { name: "Start the project" }).click();
   await expect(form.getByTestId("quick-issue")).toHaveText(
-    "Say how we'll know it was reached.",
+    "Say how people will know it worked.",
   );
   expect(records(relay, 37001)).toHaveLength(0);
 
   // The last answer, then Enter in a one-line box starts it: the keyboard path, not the button.
-  await form.getByLabel("How we'll know").fill("Ten people sign in in a week");
+  await form
+    .getByLabel("How will people know it worked?")
+    .fill("Ten people sign in in a week");
   await form.getByLabel("Project name").press("Enter");
 
   await expect(page).toHaveURL(/\/launchpad\/nebula\?/);
@@ -288,19 +292,23 @@ test("when the goal is not saved the project is not made twice: Try again sends 
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill("Nebula");
-  await form.getByText("Edit the one-liner").click();
+  await form.getByText("More options").click();
   await form
     .getByLabel("What is it, in one sentence?")
     .fill("A map of the night sky for everyone.");
-  await form.getByLabel("The goal").fill("A first version ten people use");
-  await form.getByLabel("How we'll know").fill("Ten people sign in in a week");
+  await form
+    .getByLabel("What is the goal?")
+    .fill("A first version ten people use");
+  await form
+    .getByLabel("How will people know it worked?")
+    .fill("Ten people sign in in a week");
   await form.getByRole("button", { name: "Start the project" }).click();
 
   await expect(form.getByTestId("quick-failed")).toContainText(
     "Your project was made, but its goal was not saved.",
   );
   // What was written is still there, and the project can be opened as it is.
-  await expect(form.getByLabel("The goal")).toHaveValue(
+  await expect(form.getByLabel("What is the goal?")).toHaveValue(
     "A first version ten people use",
   );
   await expect(form.getByTestId("quick-made")).toContainText(
@@ -750,17 +758,21 @@ test("a visitor with no account reads the page, and Follow or Start asks them to
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill("Comet");
-  await form.getByText("Edit the one-liner").click();
+  await form.getByText("More options").click();
   await form
     .getByLabel("What is it, in one sentence?")
     .fill("A tiny telescope anyone can build.");
-  await form.getByLabel("The goal").fill("Ten built telescopes");
-  await form.getByLabel("How we'll know").fill("Ten people post a photo");
+  await form.getByLabel("What is the goal?").fill("Ten built telescopes");
+  await form
+    .getByLabel("How will people know it worked?")
+    .fill("Ten people post a photo");
   await form.getByRole("button", { name: "Start the project" }).click();
   await expect(page.getByTestId("onboarding-dialog")).toBeVisible();
   expect(relay.events.filter((e) => e.kind === 37001)).toHaveLength(1);
   await page.reload();
-  await expect(form.getByLabel("The goal")).toHaveValue("Ten built telescopes");
+  await expect(form.getByLabel("What is the goal?")).toHaveValue(
+    "Ten built telescopes",
+  );
 });
 
 test("an offer to help from an agent is labelled as an agent, with who runs it when the record proves that", async ({
@@ -1042,12 +1054,14 @@ test("a new project never takes the id of an older one of the founder's that the
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill("Nebula");
-  await form.getByText("Edit the one-liner").click();
+  await form.getByText("More options").click();
   await form
     .getByLabel("What is it, in one sentence?")
     .fill("A second project with the same name.");
-  await form.getByLabel("The goal").fill("Something else entirely");
-  await form.getByLabel("How we'll know").fill("It is plain to see");
+  await form.getByLabel("What is the goal?").fill("Something else entirely");
+  await form
+    .getByLabel("How will people know it worked?")
+    .fill("It is plain to see");
   await form.getByRole("button", { name: "Start the project" }).click();
   // A new id of its own: the older project's record is still there, unchanged.
   await expect(page).toHaveURL(/\/launchpad\/nebula-[0-9a-z]{4}\?/);
@@ -1538,12 +1552,12 @@ test("a problem with an answer is said beside it, and the keyboard goes to that 
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill("Comet");
-  await form.getByText("Edit the one-liner").click();
+  await form.getByText("More options").click();
   await form
     .getByLabel("What is it, in one sentence?")
     .fill("A tiny telescope anyone can build.");
   await form.getByRole("button", { name: "Start the project" }).click();
-  const goalField = form.getByLabel("The goal");
+  const goalField = form.getByLabel("What is the goal?");
   await expect(goalField).toBeFocused();
   await expect(goalField).toHaveAttribute("aria-invalid", "true");
   await expect(goalField).toHaveAccessibleDescription("Say what the goal is.");

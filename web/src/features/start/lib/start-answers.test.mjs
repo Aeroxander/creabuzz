@@ -50,8 +50,8 @@ test("the screens that count Start's answers say the number the form asks", () =
     assert.match(readFileSync(join(web, file), "utf8"), pattern, file);
   const cap = word[0].toUpperCase() + word.slice(1);
   says(
-    "src/features/start/ui/QuickStartForm.tsx",
-    new RegExp(`${cap} answers make a public project page`),
+    "src/features/start/ui/StartPage.tsx",
+    new RegExp(`${cap} short answers make your project page`),
   );
   says(
     "src/features/feed/ui/NewcomerWelcome.tsx",

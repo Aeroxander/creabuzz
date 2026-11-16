@@ -93,19 +93,19 @@ test("a stranger presses Start once, signs up, and lands on the live project, ma
   await open(page, relay);
 
   const form = page.getByTestId("quick-start");
-  // It is free, and the form says what happens after the press.
-  await expect(form.getByTestId("quick-free")).toHaveText(
-    "Free to start. No token needed.",
+  // The form says what happens after the press, and says nothing about money or tokens.
+  await expect(form.getByTestId("quick-next")).toHaveText(
+    "Next you make a name for yourself. What you typed stays here.",
   );
-  await expect(form.getByTestId("quick-next")).toContainText(
-    "Next: create your account, then your project is made",
-  );
+  await expect(form).not.toContainText("Free to start");
 
   await form.getByLabel("Project name").fill("Nebula");
-  await form.getByLabel("The goal").fill("A first version ten people use");
+  await form
+    .getByLabel("What is the goal?")
+    .fill("A first version ten people use");
   // The example chip fills how we will know, and it can be edited.
   await form.getByTestId("quick-how-number").click();
-  await expect(form.getByLabel("How we'll know")).toHaveValue(
+  await expect(form.getByLabel("How will people know it worked?")).toHaveValue(
     "At least 10 people use it by the end of next month.",
   );
   await form.getByTestId("quick-category-software").click();
@@ -159,15 +159,21 @@ test("a press abandoned at the account dialog and then changed does not start a 
 
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill("Comet");
-  await form.getByLabel("The goal").fill("Ten built telescopes in a year");
-  await form.getByLabel("How we'll know").fill("Ten people post a photo");
+  await form
+    .getByLabel("What is the goal?")
+    .fill("Ten built telescopes in a year");
+  await form
+    .getByLabel("How will people know it worked?")
+    .fill("Ten people post a photo");
   await form.getByTestId("quick-start-go").click();
   await expect(page.getByTestId("onboarding-dialog")).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("onboarding-dialog")).toBeHidden();
 
   // They change their mind about the goal, then sign up from the header instead.
-  await form.getByLabel("The goal").fill("Twenty built telescopes in a year");
+  await form
+    .getByLabel("What is the goal?")
+    .fill("Twenty built telescopes in a year");
   await page.getByTestId("create-identity-cta").click();
   await page.getByTestId("onboarding-name").fill("Mira Okafor");
   await page.getByTestId("onboarding-policy-agree").check();
@@ -176,7 +182,7 @@ test("a press abandoned at the account dialog and then changed does not start a 
   // Signed in, the form is as they left it, and nothing was made behind their back.
   await expect(page.getByTestId("user-chip")).toBeVisible({ timeout: 20_000 });
   await expect(
-    page.getByTestId("quick-start").getByLabel("The goal"),
+    page.getByTestId("quick-start").getByLabel("What is the goal?"),
   ).toHaveValue("Twenty built telescopes in a year");
   await page.waitForTimeout(1_500);
   expect(projects(relay)).toHaveLength(0);
@@ -235,7 +241,7 @@ test("while the earlier projects are read, the button waits and says why, then s
   const form = page.getByTestId("quick-start");
   await expect(form.getByTestId("quick-start-go")).toBeDisabled();
   await expect(form.getByTestId("quick-lists-loading")).toContainText(
-    "checking your earlier projects",
+    "Checking your earlier projects",
   );
   relay.releaseReads();
   await expect(form.getByTestId("quick-start-go")).toBeEnabled();
@@ -259,10 +265,10 @@ test("an AI project says who answers for agent work and offers starter wording t
   await form.getByTestId("quick-ai-kind-dataset-benchmark").click();
   await form.getByTestId("quick-ai-goal-0").click();
   await form.getByTestId("quick-ai-how-0").click();
-  await expect(form.getByLabel("The goal")).toHaveValue(
+  await expect(form.getByLabel("What is the goal?")).toHaveValue(
     "A public collection of 1,000 checked examples that anyone can download.",
   );
-  await expect(form.getByLabel("How we'll know")).toHaveValue(
+  await expect(form.getByLabel("How will people know it worked?")).toHaveValue(
     /1,000 examples published/,
   );
   await expectAccessible(page, "Start with the AI starter wording open");

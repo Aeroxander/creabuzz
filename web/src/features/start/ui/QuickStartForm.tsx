@@ -1,9 +1,9 @@
 /**
- * Start a project with three answers: its name, the goal, and how everyone will know.
+ * Start a project with three answers: its name, the goal, and how people will know it worked.
  *
  * It makes a public project page with no Shares, no money and no reviewers, so one person can finish it alone in under
  * a minute. Everything else (rooms, boards, Shares for people who help) is set up later from the project page. The
- * one-liner under the name is the goal's first 140 characters unless "Edit the one-liner" is opened, and a kind of
+ * one-liner under the name is the goal's first 140 characters unless "More options" is opened, and a kind of
  * project (and, for an AI project, starter wording) is an optional row of chips.
  *
  * The project is published first, then its goal (`lib/quick-start.ts`). When the goal does not go through, the form
@@ -135,6 +135,13 @@ export function QuickStartForm() {
   useEffect(() => {
     saveQuickStart(sessionStorage, draft);
   }, [draft]);
+
+  // Coming from Home with the goal already typed: the cursor goes to the one answer that is still empty. Once, on arrival.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: arrival only; later typing must never move the cursor
+  useEffect(() => {
+    if (made === null && draft.name === "" && draft.goal !== "")
+      fields.current.name?.focus();
+  }, []);
 
   // Any change to the form takes back a press that was waiting for an account: the project made is what is on screen.
   const change = (update: (was: QuickStartDraft) => QuickStartDraft) => {
@@ -276,7 +283,7 @@ export function QuickStartForm() {
 
   return (
     <form
-      aria-labelledby="quick-start-heading"
+      aria-label="Start a project"
       className="flex flex-col gap-4 rounded-2xl border border-primary/60 bg-primary/5 p-5"
       data-testid="quick-start"
       noValidate
@@ -286,18 +293,6 @@ export function QuickStartForm() {
       }}
     >
       {me === null ? <InviteOnlySignUpNotice where="start" /> : null}
-      <div>
-        <h2 className="text-base font-bold" id="quick-start-heading">
-          What is your goal, and how will we know?
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Three answers make a public project page. No money, no Shares, and
-          nobody else needed. You can change any of it later.
-        </p>
-        <p className="mt-1 text-sm font-medium" data-testid="quick-free">
-          Free to start. No token needed.
-        </p>
-      </div>
       <div>
         <label className="text-sm font-medium" htmlFor="quick-name">
           Project name
@@ -320,7 +315,7 @@ export function QuickStartForm() {
       </div>
       <div>
         <label className="text-sm font-medium" htmlFor="quick-goal">
-          The goal
+          What is the goal?
         </label>
         <textarea
           className={`${AREA_CLASS} bg-background`}
@@ -340,7 +335,7 @@ export function QuickStartForm() {
       </div>
       <div>
         <label className="text-sm font-medium" htmlFor="quick-how">
-          How we'll know
+          How will people know it worked?
         </label>
         <textarea
           className={`${AREA_CLASS} bg-background`}
@@ -397,52 +392,53 @@ export function QuickStartForm() {
           onKind={set("kind")}
         />
       ) : null}
-      <div>
-        <p
-          className="text-xs text-muted-foreground"
-          data-testid="quick-pitch-preview"
-        >
-          {quickStartPitch(draft) === ""
-            ? "The line under your project's name comes from your goal."
-            : `The line under your project's name: ${quickStartPitch(draft)}`}
-        </p>
-        <details
-          data-testid="quick-pitch-edit"
-          onToggle={(event) => setPitchOpen(event.currentTarget.open)}
-          open={pitchOpen}
-        >
-          <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">
-            Edit the one-liner
-          </summary>
-          {pitchOpen ? (
-            <div className="mt-2">
-              <label className="text-sm font-medium" htmlFor="quick-pitch">
-                What is it, in one sentence?
-              </label>
-              <Input
-                className="mt-1 bg-background"
-                data-testid="quick-pitch"
-                aria-describedby={
-                  issue?.field === "pitch" ? "quick-issue" : undefined
-                }
-                aria-invalid={issue?.field === "pitch" || undefined}
-                ref={(el) => {
-                  if (el) fields.current.pitch = el;
-                }}
-                disabled={made !== null}
-                id="quick-pitch"
-                maxLength={IDEA_PITCH_MAX}
-                onChange={(event) => set("pitch")(event.target.value)}
-                placeholder="A free map of the night sky that anyone can add to."
-                value={draft.pitch}
-              />
-              <p className="mt-1 text-xs text-muted-foreground">
-                Leave it empty to use the start of your goal.
-              </p>
-            </div>
-          ) : null}
-        </details>
-      </div>
+      <details
+        data-testid="quick-pitch-edit"
+        onToggle={(event) => setPitchOpen(event.currentTarget.open)}
+        open={pitchOpen}
+      >
+        <summary className="cursor-pointer text-sm font-semibold text-muted-foreground max-sm:flex max-sm:min-h-11 max-sm:items-center">
+          More options
+        </summary>
+        {pitchOpen ? (
+          <div className="mt-2">
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="quick-pitch-preview"
+            >
+              {quickStartPitch(draft) === ""
+                ? "The line under your project's name comes from your goal."
+                : `The line under your project's name: ${quickStartPitch(draft)}`}
+            </p>
+            <label
+              className="mt-2 block text-sm font-medium"
+              htmlFor="quick-pitch"
+            >
+              What is it, in one sentence?
+            </label>
+            <Input
+              className="mt-1 bg-background"
+              data-testid="quick-pitch"
+              aria-describedby={
+                issue?.field === "pitch" ? "quick-issue" : undefined
+              }
+              aria-invalid={issue?.field === "pitch" || undefined}
+              ref={(el) => {
+                if (el) fields.current.pitch = el;
+              }}
+              disabled={made !== null}
+              id="quick-pitch"
+              maxLength={IDEA_PITCH_MAX}
+              onChange={(event) => set("pitch")(event.target.value)}
+              placeholder="A free map of the night sky that anyone can add to."
+              value={draft.pitch}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Leave it empty to use the start of your goal.
+            </p>
+          </div>
+        ) : null}
+      </details>
       {issue ? (
         <p
           className="text-sm text-red-700 dark:text-red-300"
@@ -529,8 +525,7 @@ export function QuickStartForm() {
             className="text-xs text-muted-foreground"
             data-testid="quick-next"
           >
-            Next: create your account, then your project is made. What you typed
-            stays here.
+            Next you make a name for yourself. What you typed stays here.
           </span>
         ) : null}
         {me !== null && !listsRead && !listsFailed ? (
@@ -539,8 +534,7 @@ export function QuickStartForm() {
             data-testid="quick-lists-loading"
             role="status"
           >
-            One moment: checking your earlier projects, so this one gets an
-            address of its own.
+            One moment. Checking your earlier projects.
           </span>
         ) : null}
       </div>

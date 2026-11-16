@@ -586,9 +586,9 @@ test("a visitor lands on what is happening: one sentence, two ways in, who is mo
   await expect(welcome.getByRole("heading")).toHaveText(
     "Real projects, built in the open.",
   );
-  await expect(welcome.getByTestId("home-welcome-start")).toHaveAttribute(
-    "href",
-    "/start",
+  // The goal box's one button: it opens Start (the box is a form, so it is a button and not a link).
+  await expect(welcome.getByTestId("home-welcome-start")).toHaveText(
+    "Start a project",
   );
   await expect(welcome.getByTestId("home-welcome-work")).toHaveAttribute(
     "href",
