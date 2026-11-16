@@ -473,6 +473,13 @@ pub struct Config {
     /// this is what keeps a script of fresh accounts from flooding an open community.
     pub new_account_posts_per_hour: u32,
 
+    /// How many project records (a project's own record, kind 37001, and every update, task step, ask to join and answer
+    /// that names a project, kind 47003) an account this server first heard from less than `new_account_hours` ago may
+    /// send in all of its first day (`BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY`, default 60; 0 turns the limit off).
+    /// Community owners and admins are not limited. With the door open, keys cost nothing to make, so this is what
+    /// keeps a script of fresh accounts from filling projects with records.
+    pub new_account_project_records_per_day: u32,
+
     /// How long an account counts as new (`BUZZ_NEW_ACCOUNT_HOURS`, default 24), measured from the first record this
     /// server received from it.
     pub new_account_hours: u32,
@@ -1238,6 +1245,8 @@ impl Config {
         };
         let new_account_posts_per_hour = whole_number("BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR", 20)?;
         let new_account_hours = whole_number("BUZZ_NEW_ACCOUNT_HOURS", 24)?;
+        let new_account_project_records_per_day =
+            whole_number("BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY", 60)?;
 
         let relay_operator_pubkeys = match std::env::var("RELAY_OPERATOR_PUBKEYS") {
             Ok(raw) => {
@@ -1849,6 +1858,7 @@ impl Config {
             self_serve_max_per_hour,
             boards_per_person_per_day,
             new_account_posts_per_hour,
+            new_account_project_records_per_day,
             new_account_hours,
             relay_operator_pubkeys,
             operator_listener_delivery_urls,
@@ -3285,6 +3295,26 @@ mod tests {
         ));
         assert_eq!(set.new_account_posts_per_hour, 0);
         assert_eq!(set.new_account_hours, 48);
+    }
+
+    #[test]
+    fn new_account_project_record_limit_defaults_to_sixty_a_day_and_must_be_a_whole_number() {
+        let _guards = env_guards();
+        std::env::remove_var("BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY");
+        let default = Config::from_env().expect("config");
+        std::env::set_var("BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY", "many");
+        let bad = Config::from_env();
+        std::env::set_var("BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY", "0");
+        let off = Config::from_env().expect("config");
+        std::env::remove_var("BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY");
+
+        assert_eq!(default.new_account_project_records_per_day, 60);
+        assert!(matches!(
+            bad,
+            Err(ConfigError::InvalidValue(ref msg))
+                if msg.contains("BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY")
+        ));
+        assert_eq!(off.new_account_project_records_per_day, 0);
     }
 
     #[test]

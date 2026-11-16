@@ -2637,22 +2637,17 @@ const NEW_ACCOUNT_LIMITED_KINDS: [u32; 3] = [
 static ESTABLISHED_ACCOUNTS: std::sync::LazyLock<dashmap::DashSet<(Uuid, [u8; 32])>> =
     std::sync::LazyLock::new(dashmap::DashSet::new);
 
-/// An account this server first heard from less than `new_account_hours` ago may send at most
-/// `new_account_posts_per_hour` posts, board posts and board replies an hour; community owners and admins are not
-/// limited. Measured by the server's receive time, which a client cannot backdate.
-async fn check_new_account_limit(
+/// Whether the server first heard from the signer of `event` less than `new_account_hours` ago, and they are not an
+/// owner or admin of the community. Measured by the server's receive time, which a client cannot backdate.
+async fn is_limited_new_account(
     state: &Arc<AppState>,
     tenant: &TenantContext,
     event: &Event,
-) -> Result<(), IngestError> {
-    let limit = state.config.new_account_posts_per_hour;
-    if limit == 0 {
-        return Ok(());
-    }
+) -> Result<bool, IngestError> {
     let pubkey = event.pubkey.to_bytes();
     let key = (*tenant.community().as_uuid(), pubkey);
     if ESTABLISHED_ACCOUNTS.contains(&key) {
-        return Ok(());
+        return Ok(false);
     }
     let now = chrono::Utc::now();
     let cutoff = now - chrono::Duration::hours(i64::from(state.config.new_account_hours));
@@ -2663,9 +2658,21 @@ async fn check_new_account_limit(
         .map_err(|e| IngestError::Internal(format!("error: db error checking account age: {e}")))?;
     if established {
         ESTABLISHED_ACCOUNTS.insert(key);
-        return Ok(());
+        return Ok(false);
     }
-    if is_community_admin_or_owner(state, tenant, &event.pubkey.to_hex()).await? {
+    Ok(!is_community_admin_or_owner(state, tenant, &event.pubkey.to_hex()).await?)
+}
+
+/// An account this server first heard from less than `new_account_hours` ago may send at most
+/// `new_account_posts_per_hour` posts, board posts and board replies an hour; community owners and admins are not
+/// limited. Measured by the server's receive time, which a client cannot backdate.
+async fn check_new_account_limit(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let limit = state.config.new_account_posts_per_hour;
+    if limit == 0 || !is_limited_new_account(state, tenant, event).await? {
         return Ok(());
     }
     let kinds: Vec<i32> = NEW_ACCOUNT_LIMITED_KINDS
@@ -2676,15 +2683,56 @@ async fn check_new_account_limit(
         .db
         .count_events_received_since(
             tenant.community(),
-            &pubkey,
+            &event.pubkey.to_bytes(),
             &kinds,
-            now - chrono::Duration::hours(1),
+            chrono::Utc::now() - chrono::Duration::hours(1),
         )
         .await
         .map_err(|e| IngestError::Internal(format!("error: db error counting posts: {e}")))?;
     if sent >= i64::from(limit) {
         return Err(IngestError::Rejected(format!(
             "rate-limited: new accounts can post {limit} times an hour for their first day; try again later"
+        )));
+    }
+    Ok(())
+}
+
+/// The records that make up a project: its own record (37001) and everything that names one (47003: updates, tasks,
+/// asks to join, answers).
+const NEW_ACCOUNT_PROJECT_KINDS: [u32; 2] = [KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE];
+
+/// An account this server first heard from less than `new_account_hours` ago may send at most
+/// `new_account_project_records_per_day` project records in all of that time; community owners and admins are not
+/// limited. A record saved again counts each time it is sent. With the door open, keys cost nothing to make, so this
+/// is what keeps a script of fresh accounts from filling projects with records.
+async fn check_new_account_project_limit(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let limit = state.config.new_account_project_records_per_day;
+    if limit == 0 || !is_limited_new_account(state, tenant, event).await? {
+        return Ok(());
+    }
+    let kinds: Vec<i32> = NEW_ACCOUNT_PROJECT_KINDS
+        .iter()
+        .map(|k| *k as i32)
+        .collect();
+    let sent = state
+        .db
+        .count_events_received_since(
+            tenant.community(),
+            &event.pubkey.to_bytes(),
+            &kinds,
+            chrono::Utc::now() - chrono::Duration::hours(i64::from(state.config.new_account_hours)),
+        )
+        .await
+        .map_err(|e| {
+            IngestError::Internal(format!("error: db error counting project records: {e}"))
+        })?;
+    if sent >= i64::from(limit) {
+        return Err(IngestError::Rejected(format!(
+            "rate-limited: a new account can save {limit} project records in its first day; try again tomorrow"
         )));
     }
     Ok(())
@@ -5249,6 +5297,9 @@ async fn ingest_event_inner(
 
     if NEW_ACCOUNT_LIMITED_KINDS.contains(&kind_u32) {
         check_new_account_limit(state, tenant, &event).await?;
+    }
+    if NEW_ACCOUNT_PROJECT_KINDS.contains(&kind_u32) {
+        check_new_account_project_limit(state, tenant, &event).await?;
     }
 
     // Board mutes and locked threads (D93): a muted person cannot post, reply,
