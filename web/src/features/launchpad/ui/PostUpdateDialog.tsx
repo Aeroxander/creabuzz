@@ -1,53 +1,56 @@
-import { useId, useRef, useState } from "react";
+import { ChevronDown } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import type { DraftField, DraftFields } from "../lib/update-draft-facts";
 import {
+  defaultUpdateTitle,
   doneWithAccepted,
   firstPromises,
-  HELP_SIZE_LABEL,
-  HELP_SIZES,
   type HelpSize,
   PART_HEADINGS,
+  promisesTakeCursor,
+  QUIET_WEEK,
   UPDATE_LIMITS,
   type UpdateDraft,
+  type WorkLine,
 } from "../lib/weekly-update";
-import {
-  MARK_LABEL,
-  MARK_STATES,
-  type MarkState,
-  PROMISE_LIMITS,
-  type PromiseEntry,
-} from "../lib/promises";
 import type { AiStarterKind } from "../lib/ai-starters";
+import type { PromiseEntry } from "../lib/promises";
 import type { Launch } from "../models";
 import { DraftFromRecord } from "./DraftFromRecord";
-import { Modal } from "./Modal";
+import { MODAL_FOOTER_CLASS, Modal } from "./Modal";
 import { StarterPromises } from "./StarterWording";
-
-const AREA_CLASS =
-  "mt-1 w-full rounded-lg border border-black/15 bg-transparent px-2 py-1.5 text-sm text-black dark:border-white/15 dark:text-white";
+import {
+  AREA_CLASS,
+  HelpBlock,
+  type Marks,
+  PromiseAnswers,
+  WorkLines,
+} from "./UpdateDialogParts";
 
 /**
- * Founder flow: one signed update into the project's feed. Three light prompts shape it (what happened, what's next,
- * help needed); they are only prompts, and "Write freely" swaps the first two for one open box. Asking for help adds a
- * card people can answer with "I can help".
+ * Founder flow: one signed update into the project's feed. The cursor starts where the writing starts, in "What
+ * happened this week". Three light prompts shape it (what happened, what's next, help needed); they are only prompts,
+ * and "Write one note instead" swaps the first two for one open box. Asking for help adds a card people can answer with
+ * "I can help"; it sits behind "Ask for help" until it is wanted.
  *
  * Each line of "What's next" is a promise for the next update. So the dialog first lists the promises earlier updates
- * made that have no answer yet, and asks for each: done, not done or changed, with an optional short note. Answering
- * is not forced ("Not answering yet" is the choice each starts on, and the way to take a tapped answer back before
- * publishing): a promise left without an answer shows as not answered, and is asked about again. Once published an
- * answer stays, and the dialog says so.
+ * made that have no answer yet (week two on), focuses the first answer, and asks for each: done, not done or changed,
+ * with an optional short note. Answering is not forced ("Not answering yet" is the choice each starts on, and the way
+ * to take a tapped answer back before publishing): a promise left without an answer shows as not answered, and is asked
+ * about again. Once published an answer stays, and the dialog says so.
  *
- * "In one line" is an optional sentence for feeds and cards. "Draft from the record" asks the server's AI service for a
- * first version of what happened, the help needed and that line, from the project's own record only; it goes only into
- * boxes the founder has not written in, and "What's next" is never drafted.
+ * "Title" and "In one line" are under "More options", with "Draft from the record", which asks the server's AI service
+ * for a first version of what happened, the help needed and that line, from the project's own record only; it goes only
+ * into boxes the founder has not written in, and "What's next" is never drafted. A title left empty is "Week of Nov 16",
+ * so Publish never waits on a name.
  *
  * On an AI project's first weekly update the founder may fill "What's next" with a kind's three first promises
  * (`starters`), to edit or clear: they become promises only as part of the update the founder publishes.
  */
-const NONE_ACCEPTED: readonly { id: string; what: string }[] = [];
+const NONE_ACCEPTED: readonly WorkLine[] = [];
 const NO_STARTERS: readonly AiStarterKind[] = [];
 
 export function PostUpdateDialog({
@@ -74,8 +77,8 @@ export function PostUpdateDialog({
    * team member's update makes no promises and the draft has no founder's record to go on.
    */
   project?: Launch["record"];
-  /** Work accepted since the last update: offered as lines of "What happened", each one removable. */
-  accepted?: readonly { id: string; what: string }[];
+  /** Work finished since the last update: offered as lines of "What happened", each one removable. */
+  accepted?: readonly WorkLine[];
   /** The account posting is an agent: promises need a person, whoever's project it is. */
   agent?: boolean;
   /**
@@ -103,11 +106,10 @@ export function PostUpdateDialog({
   const [next, setNext] = useState("");
   const [body, setBody] = useState("");
   const [help, setHelp] = useState("");
+  const [helpOpen, setHelpOpen] = useState(startAt === "help");
   const [helpSize, setHelpSize] = useState<HelpSize>("small");
   const [helpTime, setHelpTime] = useState("");
-  const [marks, setMarks] = useState<
-    Record<string, { state: MarkState; note: string }>
-  >({});
+  const [marks, setMarks] = useState<Marks>({});
   const [removed, setRemoved] = useState<ReadonlySet<string>>(new Set());
   const [line, setLine] = useState("");
   // A draft already says the accepted work, so the lines that would add it again are not added.
@@ -116,8 +118,34 @@ export function PostUpdateDialog({
   // A founder's lines become promises: a week holds about three, and only those are sent.
   const promised = asFounder ? firstPromises(next) : { text: next, dropped: 0 };
   const headingId = useId();
-  const asksHelp = help.trim() !== "";
   const helpBox = useRef<HTMLTextAreaElement | null>(null);
+  const doneBox = useRef<HTMLTextAreaElement | null>(null);
+  const firstAnswer = useRef<HTMLInputElement | null>(null);
+  const askedForHelp = useRef(false);
+  // Set once the founder has typed in the first two boxes: after that, nothing moves the cursor for them.
+  const typed = useRef(false);
+  const answers = asFounder && due ? due : [];
+
+  // The promises can arrive after the dialog opened (they are read from the record). If the cursor is still where it
+  // started and nothing was typed, it moves to the first answer: in week two the promises come first.
+  const answerCount = answers.length;
+  useEffect(() => {
+    const active = document.activeElement;
+    if (
+      promisesTakeCursor({
+        answers: answerCount,
+        startedAtHelp: startAt === "help",
+        typed: typed.current,
+        cursorAtStart: active === doneBox.current || active === document.body,
+      })
+    )
+      firstAnswer.current?.focus();
+  }, [answerCount, startAt]);
+
+  // "Ask for help" puts the cursor in the box it opens.
+  useEffect(() => {
+    if (helpOpen && askedForHelp.current) helpBox.current?.focus();
+  }, [helpOpen]);
 
   // The boxes as they are now, for a draft that arrives later to check against.
   const boxes = useRef({ done, help, line });
@@ -126,27 +154,30 @@ export function PostUpdateDialog({
     setDone(next.done);
     setHelp(next.help);
     setLine(next.line);
+    if (next.help.trim() !== "") setHelpOpen(true);
     if (filled.includes("done")) setCovered(true);
   };
 
+  // Work someone else accepted is what a draft says; work only the founder checked is the founder's to word.
+  const coveredIds = new Set([
+    ...removed,
+    ...(covered
+      ? accepted.filter((task) => task.kind !== "founder").map((t) => t.id)
+      : []),
+  ]);
+
   const publish = () =>
     void onPublish({
-      title: title.trim(),
+      title: title.trim() || defaultUpdateTitle(new Date()),
       // Only the boxes on screen are sent: words left in the hidden ones are not published behind the founder's back.
-      done: freely
-        ? ""
-        : doneWithAccepted(
-            done,
-            accepted,
-            covered ? new Set(accepted.map((task) => task.id)) : removed,
-          ),
+      done: freely ? "" : doneWithAccepted(done, accepted, coveredIds),
       line,
       next: freely ? "" : promised.text,
       body: freely ? body : "",
       help,
       helpSize,
-      helpTime: asksHelp ? helpTime : "",
-      marks: (due ?? []).flatMap((promise) => {
+      helpTime: help.trim() !== "" ? helpTime : "",
+      marks: answers.flatMap((promise) => {
         const mark = marks[promise.id];
         return mark
           ? [{ promiseId: promise.id, text: promise.text, ...mark }]
@@ -156,7 +187,13 @@ export function PostUpdateDialog({
 
   return (
     <Modal
-      initialFocus={startAt === "help" ? helpBox : undefined}
+      initialFocus={
+        startAt === "help"
+          ? helpBox
+          : answers.length > 0
+            ? firstAnswer
+            : doneBox
+      }
       label="Post update"
       labelledBy={headingId}
       onClose={onClose}
@@ -170,21 +207,8 @@ export function PostUpdateDialog({
       <p className="mt-2 text-sm text-muted-foreground">
         Everyone can read this. A few lines each week is enough.
       </p>
-      {/* Not a form: Enter in the title must not publish a half-written update. */}
+      {/* Not a form: Enter in a box must not publish a half-written update. */}
       <div className="mt-3 flex flex-col gap-3">
-        <div>
-          <label className="text-sm font-medium" htmlFor="update-title">
-            Title
-          </label>
-          <Input
-            id="update-title"
-            className="mt-1"
-            maxLength={UPDATE_LIMITS.title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="This week in one line"
-            value={title}
-          />
-        </div>
         {!asFounder ? (
           <p className="text-sm" data-testid="update-as-team" role="status">
             {agent
@@ -205,92 +229,12 @@ export function PostUpdateDialog({
             </Button>
           </p>
         ) : due.length > 0 ? (
-          <section
-            aria-labelledby="update-due-heading"
-            className="rounded-xl border border-border p-3"
-            data-testid="update-due"
-          >
-            <h3 className="text-sm font-medium" id="update-due-heading">
-              What you said last time
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              Say what came of each. Everyone can read your answers, and an
-              answer can't be changed after you publish. If you are not sure
-              yet, leave it for a later update.
-            </p>
-            <div className="mt-2 flex flex-col gap-3">
-              {due.map((promise) => {
-                const mark = marks[promise.id];
-                return (
-                  <fieldset
-                    className="m-0 min-w-0 p-0"
-                    data-testid="update-due-promise"
-                    key={promise.id}
-                  >
-                    <legend className="break-words text-sm">
-                      {promise.text}
-                    </legend>
-                    <div className="mt-1 grid grid-cols-2 gap-x-3 sm:flex sm:flex-wrap">
-                      {/* The way back: a tapped answer can be taken off again before publishing. */}
-                      <label className="flex items-center gap-1.5 text-sm max-sm:min-h-11">
-                        <input
-                          checked={!mark}
-                          name={`promise-${promise.id}`}
-                          onChange={() =>
-                            setMarks((was) => {
-                              const { [promise.id]: _, ...rest } = was;
-                              return rest;
-                            })
-                          }
-                          type="radio"
-                          value=""
-                        />
-                        Not answering yet
-                      </label>
-                      {MARK_STATES.map((state) => (
-                        <label
-                          className="flex items-center gap-1.5 text-sm max-sm:min-h-11"
-                          key={state}
-                        >
-                          <input
-                            checked={mark?.state === state}
-                            name={`promise-${promise.id}`}
-                            onChange={() =>
-                              setMarks((was) => ({
-                                ...was,
-                                [promise.id]: {
-                                  state,
-                                  note: was[promise.id]?.note ?? "",
-                                },
-                              }))
-                            }
-                            type="radio"
-                            value={state}
-                          />
-                          {MARK_LABEL[state]}
-                        </label>
-                      ))}
-                    </div>
-                    {mark ? (
-                      <Input
-                        aria-label={`Short note for: ${promise.text}`}
-                        className="mt-1"
-                        maxLength={PROMISE_LIMITS.note}
-                        onChange={(e) =>
-                          setMarks((was) => ({
-                            ...was,
-                            [promise.id]: { ...mark, note: e.target.value },
-                          }))
-                        }
-                        placeholder="Short note (optional)"
-                        value={mark.note}
-                      />
-                    ) : null}
-                  </fieldset>
-                );
-              })}
-            </div>
-          </section>
+          <PromiseAnswers
+            due={due}
+            firstAnswer={firstAnswer}
+            marks={marks}
+            setMarks={setMarks}
+          />
         ) : null}
         {freely ? (
           <div>
@@ -309,78 +253,6 @@ export function PostUpdateDialog({
           </div>
         ) : (
           <>
-            {project && asFounder ? (
-              <DraftFromRecord
-                accepted={offered}
-                current={() => boxes.current}
-                due={due}
-                marks={marks}
-                onFill={fillFromDraft}
-                project={project}
-              />
-            ) : null}
-            {offered.length > 0 ? (
-              <section
-                aria-labelledby="update-accepted-heading"
-                className="rounded-xl border border-border p-3"
-                data-testid="update-accepted"
-              >
-                <h3
-                  className="text-sm font-medium"
-                  id="update-accepted-heading"
-                >
-                  Work accepted since your last update
-                </h3>
-                {covered ? (
-                  <p
-                    className="text-xs text-muted-foreground"
-                    data-testid="update-accepted-covered"
-                  >
-                    The draft already says this, so these lines are not added
-                    again.{" "}
-                    <Button
-                      className="h-auto p-0 text-xs"
-                      onClick={() => setCovered(false)}
-                      size="sm"
-                      type="button"
-                      variant="link"
-                    >
-                      Add these lines too
-                    </Button>
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    These go in as the first lines of what happened. Take off
-                    any you'd rather not mention.
-                  </p>
-                )}
-                <ul className="mt-2 flex flex-col gap-1">
-                  {offered.map((task) => (
-                    <li
-                      className="flex items-start gap-2 text-sm"
-                      data-testid="update-accepted-item"
-                      key={task.id}
-                    >
-                      <span className="min-w-0 flex-1 break-words">
-                        {task.what}
-                      </span>
-                      <Button
-                        aria-label={`Leave out: ${task.what}`}
-                        onClick={() =>
-                          setRemoved((was) => new Set([...was, task.id]))
-                        }
-                        className="max-sm:h-11"
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                      >
-                        Leave out
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ) : null}
             <div>
               <label className="text-sm font-medium" htmlFor="update-done">
                 {PART_HEADINGS.done}
@@ -389,12 +261,39 @@ export function PostUpdateDialog({
                 id="update-done"
                 className={AREA_CLASS}
                 maxLength={UPDATE_LIMITS.part}
-                onChange={(e) => setDone(e.target.value)}
+                onChange={(e) => {
+                  typed.current = true;
+                  setDone(e.target.value);
+                }}
                 placeholder="What you finished, and who helped."
+                ref={doneBox}
                 rows={3}
                 value={done}
               />
+              {done.trim() === "" ? (
+                <Button
+                  className="h-auto p-0 max-sm:min-h-11"
+                  data-testid="update-quiet-week"
+                  onClick={() => {
+                    typed.current = true;
+                    setDone(QUIET_WEEK);
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="link"
+                >
+                  Nothing new this week
+                </Button>
+              ) : null}
             </div>
+            {offered.length > 0 ? (
+              <WorkLines
+                covered={covered}
+                offered={offered}
+                onLeaveOut={(id) => setRemoved((was) => new Set([...was, id]))}
+                onUncover={() => setCovered(false)}
+              />
+            ) : null}
             <div>
               {asFounder ? (
                 <StarterPromises kinds={starters} next={next} onUse={setNext} />
@@ -407,7 +306,7 @@ export function PostUpdateDialog({
                 id="update-next-hint"
               >
                 {asFounder
-                  ? "Up to three, one per line. Each line is a promise your next update answers."
+                  ? "Up to three, one per line. Next week you answer each one."
                   : "One per line. These are plans, not promises on the record: only the founder's updates make promises."}
               </p>
               <textarea
@@ -415,7 +314,10 @@ export function PostUpdateDialog({
                 id="update-next"
                 className={AREA_CLASS}
                 maxLength={UPDATE_LIMITS.part}
-                onChange={(e) => setNext(e.target.value)}
+                onChange={(e) => {
+                  typed.current = true;
+                  setNext(e.target.value);
+                }}
                 placeholder="Invite the first ten people"
                 rows={3}
                 value={next}
@@ -433,7 +335,7 @@ export function PostUpdateDialog({
             </div>
           </>
         )}
-        <div>
+        <div className="flex flex-wrap items-center gap-x-4">
           {/* The label says what a press does next; it is not also a pressed state, which would say it twice. */}
           <Button
             className="h-auto p-0 max-sm:min-h-11"
@@ -443,126 +345,127 @@ export function PostUpdateDialog({
             type="button"
             variant="link"
           >
-            {freely ? "Use the weekly prompts" : "Write freely instead"}
+            {freely ? "Use the prompts" : "Write one note instead"}
           </Button>
-        </div>
-        <div>
-          <label className="text-sm font-medium" htmlFor="update-line">
-            {PART_HEADINGS.line} (optional)
-          </label>
-          <p className="text-xs text-muted-foreground" id="update-line-hint">
-            A short line for feeds and cards. Left empty, the first sentence of
-            what happened is used.
-          </p>
-          <Input
-            aria-describedby="update-line-hint"
-            id="update-line"
-            className="mt-1"
-            maxLength={UPDATE_LIMITS.line}
-            onChange={(e) => setLine(e.target.value)}
-            placeholder="Sign-up works on older phones."
-            value={line}
-          />
-        </div>
-        <div className="rounded-xl border border-border p-3">
-          <label className="text-sm font-medium" htmlFor="update-help">
-            {PART_HEADINGS.help} (optional)
-          </label>
-          <p className="text-xs text-muted-foreground" id="update-help-hint">
-            Say what you need. People can answer with "I can help", and you see
-            who offered.
-          </p>
-          <textarea
-            aria-describedby="update-help-hint"
-            id="update-help"
-            className={AREA_CLASS}
-            maxLength={UPDATE_LIMITS.help}
-            onChange={(e) => setHelp(e.target.value)}
-            ref={helpBox}
-            placeholder="For example: someone to test sign-up on an older phone."
-            rows={2}
-            value={help}
-          />
-          {asksHelp ? (
-            <div className="mt-2 flex flex-wrap items-end gap-3">
-              <fieldset className="m-0 min-w-0 p-0">
-                <legend className="text-sm font-medium">How big is it?</legend>
-                <div className="mt-1 flex flex-wrap gap-3">
-                  {HELP_SIZES.map((size) => (
-                    <label
-                      className="flex items-center gap-1.5 text-sm"
-                      key={size}
-                    >
-                      <input
-                        checked={helpSize === size}
-                        name="update-help-size"
-                        onChange={() => setHelpSize(size)}
-                        type="radio"
-                        value={size}
-                      />
-                      {HELP_SIZE_LABEL[size]}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-              <div className="min-w-0 flex-1">
-                <label
-                  className="text-sm font-medium"
-                  htmlFor="update-help-time"
-                >
-                  Rough time (optional)
-                </label>
-                <Input
-                  id="update-help-time"
-                  className="mt-1"
-                  maxLength={UPDATE_LIMITS.helpTime}
-                  onChange={(e) => setHelpTime(e.target.value)}
-                  placeholder="about 3 days"
-                  value={helpTime}
-                />
-              </div>
-            </div>
-          ) : null}
-        </div>
-        {failed && !isPublishing ? (
-          <p
-            className="text-sm text-red-700 dark:text-red-300"
-            data-testid="update-publish-failed"
-            role="alert"
-          >
-            Your update was not published. What you wrote is still here.
-            {failedWhy ? ` ${failedWhy}` : null}
-          </p>
-        ) : null}
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {title.trim() === "" ? (
-            <p
-              className="mr-auto text-xs text-muted-foreground"
-              data-testid="update-needs-title"
+          {helpOpen ? null : (
+            <Button
+              className="h-auto p-0 max-sm:min-h-11"
+              data-testid="update-ask-help"
+              onClick={() => {
+                askedForHelp.current = true;
+                setHelpOpen(true);
+              }}
+              size="sm"
+              type="button"
+              variant="link"
             >
-              Add a title to publish.
+              Ask for help
+            </Button>
+          )}
+        </div>
+        {helpOpen ? (
+          <HelpBlock
+            box={helpBox}
+            help={help}
+            setHelp={setHelp}
+            setSize={setHelpSize}
+            setTime={setHelpTime}
+            size={helpSize}
+            time={helpTime}
+          />
+        ) : null}
+        <details className="group" data-testid="update-more-options">
+          <summary className="flex cursor-pointer items-center gap-1 text-sm font-medium max-sm:min-h-11">
+            More options
+            <ChevronDown
+              aria-hidden
+              className="h-4 w-4 transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <div className="mt-2 flex flex-col gap-3">
+            <div>
+              <label className="text-sm font-medium" htmlFor="update-title">
+                Title (optional)
+              </label>
+              <Input
+                id="update-title"
+                className="mt-1"
+                maxLength={UPDATE_LIMITS.title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={defaultUpdateTitle(new Date())}
+                value={title}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium" htmlFor="update-line">
+                {PART_HEADINGS.line} (optional)
+              </label>
+              <p
+                className="text-xs text-muted-foreground"
+                id="update-line-hint"
+              >
+                A short line for feeds and cards. Left empty, the first sentence
+                of what happened is used.
+              </p>
+              <Input
+                aria-describedby="update-line-hint"
+                id="update-line"
+                className="mt-1"
+                maxLength={UPDATE_LIMITS.line}
+                onChange={(e) => setLine(e.target.value)}
+                placeholder="Sign-up works on older phones."
+                value={line}
+              />
+            </div>
+            {project && asFounder && !agent && !freely ? (
+              <DraftFromRecord
+                accepted={offered.filter((task) => task.kind !== "founder")}
+                current={() => boxes.current}
+                due={due}
+                marks={marks}
+                onFill={fillFromDraft}
+                project={project}
+              />
+            ) : null}
+          </div>
+        </details>
+        {/* The footer is carried over the card's own bottom padding (bottom -1.25rem, pb-8), so no text shows beneath its buttons. */}
+        <div
+          className={`${MODAL_FOOTER_CLASS} flex flex-col gap-2 pb-8`}
+          style={{ bottom: "-1.25rem" }}
+        >
+          {failed && !isPublishing ? (
+            <p
+              className="text-sm text-red-700 dark:text-red-300"
+              data-testid="update-publish-failed"
+              role="alert"
+            >
+              Your update was not published. What you wrote is still here.
+              {failedWhy ? ` ${failedWhy}` : null}
             </p>
           ) : null}
-          <Button
-            className="max-sm:h-11"
-            onClick={onClose}
-            type="button"
-            variant="outline"
-          >
-            Cancel
-          </Button>
-          <Button
-            className="max-sm:h-11"
-            disabled={title.trim() === "" || isPublishing}
-            onClick={publish}
-            type="button"
-          >
-            {isPublishing
-              ? "Publishing…"
-              : failed
-                ? "Try again"
-                : "Publish update"}
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              className="max-sm:h-11"
+              onClick={onClose}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <Button
+              className="max-sm:h-11"
+              disabled={isPublishing}
+              onClick={publish}
+              type="button"
+            >
+              {isPublishing
+                ? "Publishing…"
+                : failed
+                  ? "Try again"
+                  : "Publish update"}
+            </Button>
+          </div>
         </div>
       </div>
     </Modal>

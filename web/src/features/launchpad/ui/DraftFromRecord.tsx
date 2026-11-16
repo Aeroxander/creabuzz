@@ -17,6 +17,7 @@ import {
   updateDraftPrompt,
 } from "@creaton/core/launchpad/updateAi.ts";
 
+import { useLlmGateway } from "@/features/fleet/use-llm-gateway";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { Button } from "@/shared/ui/button";
 
@@ -65,6 +66,7 @@ export function DraftFromRecord({
   /** Puts the draft in the boxes, and tells whether it filled "What happened" (so the dialog does not say it twice). */
   onFill: (next: DraftFields, filled: readonly DraftField[]) => void;
 }) {
+  const gateway = useLlmGateway();
   const read = useProjectUpdates(project);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: "none" });
@@ -154,11 +156,10 @@ export function DraftFromRecord({
     }
   };
 
+  // A server with no AI service has nothing to offer here: the button and its line are not shown.
+  if (gateway !== "available") return null;
   return (
-    <div
-      className="rounded-xl border border-border p-3"
-      data-testid="update-draft"
-    >
+    <div className="flex flex-col gap-2" data-testid="update-draft">
       <div className="flex flex-wrap items-center gap-2">
         <Button
           className="max-sm:h-11"
@@ -172,30 +173,22 @@ export function DraftFromRecord({
           <Sparkles aria-hidden className="mr-1.5 h-4 w-4" />
           {busy ? "Drafting…" : "Draft from the record"}
         </Button>
-        <p className="min-w-48 flex-1 text-xs text-muted-foreground">
-          Writes a first version of what happened, the help needed and one line
-          from your accepted work, last week's promises, goals and open help
-          requests. It is sent to this server's AI service. You read it and
-          change it before anything is published. {PART_HEADINGS.next} stays
-          yours.
+        <p
+          className="min-w-48 flex-1 text-xs text-muted-foreground"
+          data-testid="update-draft-line"
+        >
+          Drafts from your record and sends it to this server's AI service. You
+          edit it before anything is posted.
         </p>
       </div>
       {status.kind === "empty" ? (
-        <p
-          className="mt-2 text-sm"
-          data-testid="update-draft-empty"
-          role="status"
-        >
+        <p className="text-sm" data-testid="update-draft-empty" role="status">
           There is nothing on the record to draft from yet: no accepted work,
           promises or help requests. Write this one yourself.
         </p>
       ) : null}
       {status.kind === "drafted" ? (
-        <p
-          className="mt-2 text-sm"
-          data-testid="update-draft-done"
-          role="status"
-        >
+        <p className="text-sm" data-testid="update-draft-done" role="status">
           Drafted from your record. Read it, change what is wrong, and publish
           it when it is yours.
           {status.dropped > 0
@@ -208,7 +201,7 @@ export function DraftFromRecord({
       ) : null}
       {status.kind === "failed" ? (
         <p
-          className="mt-2 text-sm text-red-700 dark:text-red-300"
+          className="text-sm text-red-700 dark:text-red-300"
           data-testid="update-draft-error"
           role="alert"
         >
