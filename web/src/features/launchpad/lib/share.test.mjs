@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   acceptedWords,
+  doneAloneWords,
+  firstUpdateDue,
   parseScorecardSlug,
   projectSharePath,
   shareWords,
@@ -103,4 +105,58 @@ test("given a variant, weeks in a row need two answered promises; without one th
     shareWords({ ...base, streak: 3, kept: null, answered: null }),
     "Nebula on Creaton: 3 weeks in a row. https://x.test/p",
   );
+});
+
+test("a brand-new project's sentence says when its first update is due", () => {
+  assert.equal(
+    shareWords({
+      ...base,
+      streak: null,
+      kept: null,
+      answered: null,
+      variant: "started",
+      firstDue: "Mon, Nov 23",
+    }),
+    "Nebula on Creaton: just started. First update due Mon, Nov 23. https://x.test/p",
+  );
+});
+
+test("work only the founder checked is stated apart from work others accepted, and never as accepted", () => {
+  const words = shareWords({
+    ...base,
+    streak: null,
+    kept: null,
+    answered: null,
+    variant: "done",
+    accepted: 3,
+    doneAlone: 1,
+  });
+  assert.equal(
+    words,
+    "Nebula on Creaton: 1 piece of work done, checked by the founder. https://x.test/p",
+  );
+  assert.doesNotMatch(words, /accepted/);
+  // The accepted sentence never counts the founder's own check.
+  assert.equal(
+    shareWords({
+      ...base,
+      streak: null,
+      kept: null,
+      answered: null,
+      variant: "accepted",
+      accepted: 2,
+      doneAlone: 4,
+    }),
+    "Nebula on Creaton: 2 pieces of work accepted. https://x.test/p",
+  );
+  assert.equal(doneAloneWords({ doneAlone: 0 }), null);
+  assert.equal(doneAloneWords({}), null);
+});
+
+test("the first update's due date is a week after the start and is left out once it has passed", () => {
+  const start = Math.floor(new Date(2026, 10, 16, 12).getTime() / 1000);
+  const day = 86_400;
+  assert.equal(firstUpdateDue(start, start + 2 * day, "en-US"), "Mon, Nov 23");
+  assert.equal(firstUpdateDue(start, start + 9 * day, "en-US"), null);
+  assert.equal(firstUpdateDue(null, start, "en-US"), null);
 });

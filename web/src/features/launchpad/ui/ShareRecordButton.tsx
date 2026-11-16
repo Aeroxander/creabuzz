@@ -25,6 +25,8 @@ export function ShareRecordButton({
   card,
   goal = "",
   accepted,
+  doneAlone,
+  firstDue,
   workTitle,
   withImage = false,
 }: {
@@ -34,12 +36,16 @@ export function ShareRecordButton({
   answered: number | null;
   label?: string;
   variant?: "default" | "outline";
-  /** Which sentence and picture: "started" for a brand-new project, "kept", or "accepted". */
+  /** Which sentence and picture: "started" for a brand-new project, "kept", "accepted" or "done". */
   card?: ShareCardVariant;
   /** The goal in the founder's words, for the picture. */
   goal?: string;
   /** For "accepted": how many pieces of work were accepted, and the one just accepted. */
   accepted?: number | null;
+  /** For "done": how many pieces of work only the founder checked. Never added to `accepted`. */
+  doneAlone?: number | null;
+  /** For "started": when the first update is due, as "Mon, Nov 23". */
+  firstDue?: string | null;
   workTitle?: string | null;
   /** Also offer the picture: Download image and the share sheet. */
   withImage?: boolean;
@@ -54,6 +60,8 @@ export function ShareRecordButton({
     url: `${window.location.origin}${projectSharePath(project)}`,
     variant: card ?? (withImage ? "kept" : undefined),
     accepted,
+    doneAlone,
+    firstDue,
     workTitle,
   });
   const picture = useMemo(
@@ -66,9 +74,22 @@ export function ShareRecordButton({
       kept,
       answered,
       accepted,
+      doneAlone,
+      firstDue,
       workTitle,
     }),
-    [card, project.name, goal, streak, kept, answered, accepted, workTitle],
+    [
+      card,
+      project.name,
+      goal,
+      streak,
+      kept,
+      answered,
+      accepted,
+      doneAlone,
+      firstDue,
+      workTitle,
+    ],
   );
   const copy = async () => {
     try {

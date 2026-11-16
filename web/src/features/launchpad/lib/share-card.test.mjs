@@ -178,7 +178,7 @@ test("the card is drawn at 1200 by 630 with the name, the goal and one fact line
 });
 
 test("each variant draws its own fact and never a price word, whatever the record holds", () => {
-  for (const variant of ["started", "kept", "accepted"]) {
+  for (const variant of ["started", "kept", "accepted", "done"]) {
     const { ctx, texts } = recorder();
     drawShareCard(
       ctx,
@@ -189,6 +189,8 @@ test("each variant draws its own fact and never a price word, whatever the recor
         kept: 9,
         answered: 9,
         accepted: 4,
+        doneAlone: 2,
+        firstDue: "Mon, Nov 23",
         workTitle: "Ship it",
       },
       null,
@@ -230,4 +232,65 @@ test("only the pictures the record can back are offered", () => {
   assert.deepEqual(cardVariantsFor({ ...none, answered: 1, fresh: true }), [
     "kept",
   ]);
+});
+
+test("a brand-new project's card says when its first update is due, and falls back when that is not known", () => {
+  assert.equal(
+    cardFact({ ...base, variant: "started", firstDue: "Mon, Nov 23" }),
+    "Just started. First update due Mon, Nov 23.",
+  );
+  assert.equal(
+    cardFact({ ...base, variant: "started", firstDue: null }),
+    STARTED_FACT,
+  );
+});
+
+test("work only the founder checked has its own picture, and it never says accepted", () => {
+  const solo = { ...base, variant: "done", doneAlone: 1 };
+  assert.equal(cardFact(solo), "1 piece of work done, checked by the founder");
+  assert.equal(
+    cardFact({ ...solo, doneAlone: 3 }),
+    "3 pieces of work done, checked by the founder",
+  );
+  assert.doesNotMatch(cardFact(solo), /accepted/i);
+  assert.doesNotMatch(cardAlt(solo), /accepted/i);
+  // Nothing done alone: the card claims nothing.
+  assert.equal(cardFact({ ...solo, doneAlone: 0 }), FOLLOW_FACT);
+  // The founder's own check is never counted into the accepted picture, and the other way round.
+  assert.equal(
+    cardFact({ ...base, variant: "accepted", accepted: 2, doneAlone: 5 }),
+    "2 pieces of work accepted",
+  );
+  assert.equal(
+    cardFact({ ...base, variant: "done", accepted: 2, doneAlone: 1 }),
+    "1 piece of work done, checked by the founder",
+  );
+});
+
+test("the picture a record can back: fresh, solo only, others only and mixed each get their own fact", () => {
+  const none = {
+    answered: null,
+    accepted: null,
+    doneAlone: null,
+    fresh: false,
+  };
+  const fresh = cardVariantsFor({ ...none, fresh: true });
+  const soloOnly = cardVariantsFor({ ...none, doneAlone: 1 });
+  const othersOnly = cardVariantsFor({ ...none, accepted: 2 });
+  const mixed = cardVariantsFor({ ...none, accepted: 2, doneAlone: 1 });
+  assert.deepEqual(fresh, ["started"]);
+  assert.deepEqual(soloOnly, ["done"]);
+  assert.deepEqual(othersOnly, ["accepted"]);
+  assert.deepEqual(mixed, ["accepted", "done"]);
+  const fact = (variant) =>
+    cardFact({
+      ...base,
+      variant,
+      accepted: 2,
+      doneAlone: 1,
+      firstDue: "Mon, Nov 23",
+    });
+  // Every picture states a different line, so no two downloads are the same image.
+  const facts = new Set(["started", "kept", "accepted", "done"].map(fact));
+  assert.equal(facts.size, 4);
 });

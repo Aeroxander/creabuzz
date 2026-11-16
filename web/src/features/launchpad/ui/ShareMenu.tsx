@@ -18,9 +18,9 @@ import {
   weeklyReminderFileName,
   weeklyReminderIcs,
 } from "../lib/calendar-reminder";
-import { projectSharePath, shareWords } from "../lib/share";
+import { firstUpdateDue, projectSharePath, shareWords } from "../lib/share";
 import { cardVariantsFor } from "../lib/share-card";
-import { acceptedByOthers } from "../lib/task-checks";
+import { acceptedByOthers, doneAlone } from "../lib/task-checks";
 import type { Launch } from "../models";
 import { useProjectState } from "../use-my-projects";
 import { useProjectRecord } from "../use-project-record";
@@ -47,8 +47,18 @@ export function ShareMenu({
     ? s.promises.kept + s.promises.missed + s.promises.changed
     : null;
   const accepted = s?.tasksKnown ? acceptedByOthers(s.tasks).length : null;
+  // Work only the founder checked is a number of its own, never added to the accepted work.
+  const done = s?.tasksKnown ? doneAlone(s.tasks).length : null;
   const fresh = Boolean(s?.updatesKnown && s.lastUpdateAt === null);
-  const variant = cardVariantsFor({ answered, accepted, fresh })[0];
+  const firstDue = fresh
+    ? firstUpdateDue(project.startedAt, Math.floor(Date.now() / 1000))
+    : null;
+  const variant = cardVariantsFor({
+    answered,
+    accepted,
+    doneAlone: done,
+    fresh,
+  })[0];
   const link = `${window.location.origin}${projectSharePath(project)}`;
   const words = shareWords({
     name: project.name,
@@ -59,6 +69,8 @@ export function ShareMenu({
     url: link,
     variant,
     accepted,
+    doneAlone: done,
+    firstDue,
   });
   const picture = useMemo(
     () => ({
@@ -70,6 +82,8 @@ export function ShareMenu({
       kept: s?.promises?.kept ?? null,
       answered,
       accepted,
+      doneAlone: done,
+      firstDue,
     }),
     [
       variant,
@@ -79,6 +93,8 @@ export function ShareMenu({
       s?.promises?.kept,
       answered,
       accepted,
+      done,
+      firstDue,
     ],
   );
   const root = useRef<HTMLDivElement | null>(null);

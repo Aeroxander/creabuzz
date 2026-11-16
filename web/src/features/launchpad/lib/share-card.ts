@@ -3,19 +3,21 @@
  * line of fact from its signed record. It never shows a price, returns, a market value or Shares as value: only what the
  * record says (promises kept, weeks in a row, work accepted).
  *
- * Three variants: the project just started, a promise was kept, a piece of work was accepted.
+ * Four variants: the project just started, a promise was kept, a piece of work was accepted by someone else, a piece of
+ * work was done and checked by the founder alone. The last two are never worded alike: only work someone else checked
+ * is "accepted".
  *
  * The words and the layout are pure and run under `node --test` (`cardFact`, `wrapLines`, `cardAlt`, `cardFileName`). The
  * drawing (`drawShareCard`) takes any object shaped like a 2D canvas context, so a test can record what it draws.
  * Only `renderShareCard` touches the page; it needs a browser.
  */
 
-import { acceptedWords } from "./share.ts";
+import { acceptedWords, doneAloneWords } from "./share.ts";
 
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
 
-export type ShareCardVariant = "started" | "kept" | "accepted";
+export type ShareCardVariant = "started" | "kept" | "accepted" | "done";
 
 export interface ShareCardInput {
   variant: ShareCardVariant;
@@ -30,6 +32,10 @@ export interface ShareCardInput {
   answered: number | null;
   /** For "accepted": how many pieces of work were accepted, and the title of the one just accepted, when known. */
   accepted?: number | null;
+  /** For "done": how many pieces of work only the founder checked. Kept apart from `accepted`. */
+  doneAlone?: number | null;
+  /** For "started": when the first update is due, as "Mon, Nov 23". */
+  firstDue?: string | null;
   workTitle?: string | null;
 }
 
@@ -62,8 +68,15 @@ function keptFact(input: ShareCardInput): string | null {
   return parts.join(", ");
 }
 
-/** What a brand-new project says. */
+/** What a brand-new project says when its first update's date is not known. */
 export const STARTED_FACT = "Just started. Follow along as it gets built.";
+
+/** What a brand-new project says: it just started, and when its first update is due. */
+function startedFact(firstDue: string | null | undefined): string {
+  return firstDue
+    ? `Just started. First update due ${firstDue}.`
+    : STARTED_FACT;
+}
 /** What a project says when its record holds nothing for the card asked for: it claims nothing, not even that it is new. */
 export const FOLLOW_FACT = "Follow along as it gets built.";
 
@@ -75,23 +88,28 @@ export function cardFact(input: ShareCardInput): string {
   if (input.variant === "accepted") {
     return acceptedWords(input) ?? keptFact(input) ?? FOLLOW_FACT;
   }
+  if (input.variant === "done")
+    return doneAloneWords(input) ?? keptFact(input) ?? FOLLOW_FACT;
   if (input.variant === "kept") return keptFact(input) ?? FOLLOW_FACT;
-  return STARTED_FACT;
+  return startedFact(input.firstDue);
 }
 
 /**
  * Which pictures a project's record can honestly offer, best first: "kept" once a promise is answered, "accepted" once
- * work was accepted. With neither, "started" only for a project that is brand new (`fresh`: nothing posted yet); an
+ * someone else accepted work, "done" once the founder checked work alone. With none of them, "started" only for a project that is brand new (`fresh`: nothing posted yet); an
  * older one gets the "kept" picture, which then says only to follow along.
  */
 export function cardVariantsFor(record: {
   answered: number | null;
   accepted: number | null;
+  /** Pieces of work only the founder checked (never added to `accepted`). Optional: older callers leave it out. */
+  doneAlone?: number | null;
   fresh: boolean;
 }): ShareCardVariant[] {
   const out: ShareCardVariant[] = [];
   if (record.answered) out.push("kept");
   if (record.accepted) out.push("accepted");
+  if (record.doneAlone) out.push("done");
   if (out.length > 0) return out;
   return [record.fresh ? "started" : "kept"];
 }

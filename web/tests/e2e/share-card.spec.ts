@@ -300,7 +300,7 @@ test("the scorecard offers a 1200 by 630 picture of the record, three ways, each
   const solo = page.getByTestId("scorecard-share");
   await expect(solo.getByTestId("share-card-image")).toHaveAttribute(
     "alt",
-    "Solo on Creaton. Goal: A solo project.. Just started. Follow along as it gets built.",
+    /^Solo on Creaton\. Goal: A solo project\.\. Just started\. First update due \w{3}, \w{3} \d{1,2}\.$/,
     { timeout: 30_000 },
   );
   // Only the one picture the record can back: no choice is offered.
@@ -350,7 +350,7 @@ test("a streak is stated only once two promises are answered", async ({
   await page.goto(QUIET_CARD);
   const panel = page.getByTestId("scorecard-share");
   // The page itself shows the run of weeks; the picture and its words do not, with one answered promise.
-  await expect(page.getByTestId("scorecard-streak")).toHaveText(
+  await expect(page.getByTestId("record-line-streak")).toHaveText(
     "3 weeks in a row",
     { timeout: 30_000 },
   );
@@ -380,7 +380,7 @@ test("a brand-new project's Share words say it just started", async ({
   await page.getByTestId("share-record").click();
   await expect(page.getByTestId("share-record-words")).toHaveValue(
     new RegExp(
-      `^Solo on Creaton: just started\\. Follow along as it gets built\\. http\\S+${ONE_CARD}$`,
+      `^Solo on Creaton: just started\\. First update due \\w{3}, \\w{3} \\d{1,2}\\. http\\S+${ONE_CARD}$`,
     ),
   );
 });

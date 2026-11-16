@@ -5,6 +5,9 @@
  * Pure and alias-free: `share.test.mjs` drives it under `node --test`.
  */
 
+import { doneAloneLine } from "./task-checks.ts";
+import { updateDueWords } from "./weekly-update.ts";
+
 /** How much of the founder's account id a scorecard address carries: enough that no two projects share one. */
 const FOUNDER_PART = 16;
 const SLUG_RE = /^(.+)-([0-9a-f]{16})$/;
@@ -48,10 +51,37 @@ export function acceptedWords(input: {
 }
 
 /**
+ * When a brand-new project's first update is due, as "Mon, Nov 23", or null when that is not known or has passed (a
+ * project whose first update is late is not "just started"). `startedAt` and `now` are Unix seconds.
+ */
+export function firstUpdateDue(
+  startedAt: number | null,
+  now: number,
+  locale?: string,
+): string | null {
+  if (startedAt === null) return null;
+  const due = updateDueWords(startedAt, now, locale);
+  if (!due || due.late) return null;
+  return due.text.replace(/^Next update /, "");
+}
+
+/**
+ * The record's own words on work only the founder checked, for a share: "1 piece of work done, checked by the
+ * founder". Never "accepted": that word is for work someone else checked. Null for none.
+ */
+export function doneAloneWords(input: {
+  doneAlone?: number | null;
+}): string | null {
+  return doneAloneLine(input.doneAlone ?? 0);
+}
+
+/**
  * "Nebula on Creaton: 4 weeks in a row, 3 of 4 promises kept." and then the link.
  *
- * `variant` "started" is for a brand-new project: "Nebula on Creaton: just started. Follow along as it gets built."
- * "accepted" leads with the accepted work. Without one, or when the record holds nothing for the variant, the
+ * `variant` "started" is for a brand-new project: "Nebula on Creaton: just started. First update due Mon, Nov 23."
+ * (or "...Follow along as it gets built." when the due date is not known). "accepted" leads with the work someone
+ * else accepted, and "done" with the work the founder checked alone, in its own words. Without one, or when the record
+ * holds nothing for the variant, the
  * sentence is the record's own facts, and with none of those it only says to follow along. Given a variant, weeks in a
  * row are stated only once at least two promises are answered, as on the picture; without one, from two weeks.
  */
@@ -62,16 +92,24 @@ export function shareWords(input: {
   kept: number | null;
   answered: number | null;
   url: string;
-  variant?: "started" | "kept" | "accepted";
+  variant?: "started" | "kept" | "accepted" | "done";
   accepted?: number | null;
+  /** Pieces of work only the founder checked: stated for the "done" variant, apart from `accepted`. */
+  doneAlone?: number | null;
+  /** When the first update is due ("Mon, Nov 23"), for the "started" variant. */
+  firstDue?: string | null;
   workTitle?: string | null;
 }): string {
   const head = `${input.name} on ${input.app}`;
   if (input.variant === "started")
-    return `${head}: just started. Follow along as it gets built. ${input.url}`;
+    return input.firstDue
+      ? `${head}: just started. First update due ${input.firstDue}. ${input.url}`
+      : `${head}: just started. Follow along as it gets built. ${input.url}`;
   const facts: string[] = [];
   const work = input.variant === "accepted" ? acceptedWords(input) : null;
   if (work) facts.push(work);
+  const alone = input.variant === "done" ? doneAloneWords(input) : null;
+  if (alone) facts.push(alone);
   const streakStated =
     input.variant === undefined || (input.answered ?? 0) >= 2;
   if (streakStated && input.streak && input.streak >= 2)
