@@ -1,13 +1,14 @@
 /**
  * After an update is published: a small, still note on the project page that it is out, how many weeks in a row
  * that makes (stated only once two promises are answered, the rule the share picture follows, so the sentence and the
- * picture agree), one button to share the record, with its picture, and one to add a weekly reminder to the founder's own calendar (a
- * calendar file; nothing is sent from here). It sits in the page and covers nothing; nothing moves, so there is
- * nothing for "reduce motion" to stop.
+ * picture agree), when the next update is due, and one outline button to share the record, with its picture. On the
+ * first update it also offers "Add a weekly reminder" for the founder's own calendar (a calendar file; nothing is sent
+ * from here), as the one filled button: that is the next step. It sits in the page and covers nothing; nothing moves,
+ * so there is nothing for "reduce motion" to stop.
  */
 
-import { PartyPopper } from "lucide-react";
-import { useId, useMemo } from "react";
+import { CheckCircle2 } from "lucide-react";
+import { useId, useMemo, useState } from "react";
 
 import {
   projectPageUrl,
@@ -19,7 +20,7 @@ import { projectGoals } from "../lib/goals";
 import { teamOf } from "../lib/help-request";
 import { promiseRecord, promiseTotals } from "../lib/promises";
 import { WEEKDAY_NAMES } from "../lib/update-day";
-import { weeksInARow } from "../lib/weekly-update";
+import { updateDueWords, weeksInARow } from "../lib/weekly-update";
 import type { Launch } from "../models";
 import { useProjectUpdates } from "../use-help-requests";
 import { Button } from "@/shared/ui/button";
@@ -37,6 +38,7 @@ export function UpdatePosted({
 }) {
   const headingId = useId();
   const day = useUpdateDay(project);
+  const [now] = useState(() => Math.floor(Date.now() / 1000));
   const read = useProjectUpdates(project);
   const facts = useMemo(() => {
     const data = read.data;
@@ -47,6 +49,9 @@ export function UpdatePosted({
       promiseRecord(data.founder.updates, project.author),
     );
     return {
+      // How many weekly updates the read holds. The one just posted may or may not be in it yet, so "the first" is
+      // one or none.
+      weekly: data.updates.filter((u) => team.has(u.author) && u.weekly).length,
       // The update just posted counts for this week even before it is read back.
       streak: weeksInARow(
         [
@@ -64,6 +69,12 @@ export function UpdatePosted({
         projectGoals(data.founder.goals, project.author).primary?.text ?? "",
     };
   }, [read.data, project]);
+  // The first update: a read that did not reach the end cannot say it is not, so the reminder is offered then too.
+  const first = facts === null || facts.weekly <= 1;
+  const next = updateDueWords(now, now)?.text.replace(
+    /^Next update /,
+    "Next update: ",
+  );
   return (
     <section
       aria-labelledby={headingId}
@@ -75,56 +86,79 @@ export function UpdatePosted({
           className="flex items-center gap-2 text-lg font-semibold text-black dark:text-white"
           id={headingId}
         >
-          <PartyPopper aria-hidden className="h-5 w-5 text-primary" />
+          <CheckCircle2 aria-hidden className="h-5 w-5 text-primary" />
           Update posted
         </h2>
         <p className="text-sm" data-testid="update-posted-streak" role="status">
           {postedLine(facts)}
         </p>
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <ShareRecordButton
-            answered={facts?.answered ?? null}
-            card="kept"
-            goal={facts?.goal ?? ""}
-            kept={facts?.kept ?? null}
-            project={project}
-            streak={facts?.streak ?? null}
-            withImage
-          />
-          <Button onClick={onClose} type="button" variant="outline">
-            Done
-          </Button>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            data-testid="update-posted-reminder"
-            onClick={() =>
-              downloadCalendarFile(
-                weeklyReminderFileName(project),
-                weeklyReminderIcs(
-                  {
-                    id: project.id,
-                    name: project.name,
-                    url: projectPageUrl(window.location.origin, project),
-                  },
-                  { weekday: day.weekday },
-                ),
-              )
-            }
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            Add a weekly reminder
-          </Button>
-          <p
-            className="min-w-0 flex-1 text-xs text-muted-foreground"
-            data-testid="update-posted-reminder-note"
-          >
-            A repeating event for your calendar app, every{" "}
-            {WEEKDAY_NAMES[day.weekday]}. Nothing is sent from here.
+        {next ? (
+          <p className="text-sm" data-testid="update-posted-next">
+            {next}
           </p>
-        </div>
+        ) : null}
+        {first ? (
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                className="max-sm:h-11"
+                data-testid="update-posted-reminder"
+                onClick={() =>
+                  downloadCalendarFile(
+                    weeklyReminderFileName(project),
+                    weeklyReminderIcs(
+                      {
+                        id: project.id,
+                        name: project.name,
+                        url: projectPageUrl(window.location.origin, project),
+                      },
+                      { weekday: day.weekday },
+                    ),
+                  )
+                }
+                type="button"
+              >
+                Add a weekly reminder
+              </Button>
+              <Button
+                className="max-sm:h-11"
+                onClick={onClose}
+                type="button"
+                variant="ghost"
+              >
+                Done
+              </Button>
+            </div>
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="update-posted-reminder-note"
+            >
+              A repeating event for your calendar app, every{" "}
+              {WEEKDAY_NAMES[day.weekday]}. Nothing is sent from here.
+            </p>
+          </div>
+        ) : (
+          <div>
+            <Button
+              className="max-sm:h-11"
+              onClick={onClose}
+              type="button"
+              variant="ghost"
+            >
+              Done
+            </Button>
+          </div>
+        )}
+        <ShareRecordButton
+          answered={facts?.answered ?? null}
+          card="kept"
+          goal={facts?.goal ?? ""}
+          kept={facts?.kept ?? null}
+          project={project}
+          streak={facts?.streak ?? null}
+          variant="outline"
+          withImage
+        />
       </div>
     </section>
   );
