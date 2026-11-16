@@ -78,3 +78,21 @@ test("the contributor-only hosted build offers trading once the trial switch and
     false,
   );
 });
+
+// What the server says about investing (one setting for the investing and trading screens) wins over the trial switch.
+const MARKET_ONLY = { VITE_SECONDARY_MARKET_FACTORY: named };
+
+test("the server saying yes turns trading on in a build that names a market and has no trial switch", () => {
+  assert.equal(tradingTrialOn(MARKET_ONLY, true), true);
+  assert.equal(tradingOffered(MARKET_ONLY, true), true);
+});
+
+test("the server saying no turns trading off in a build whose trial switch is on", () => {
+  assert.equal(tradingOffered(ON, false), false);
+});
+
+test("a server that says nothing leaves the trial switch in charge, and its yes still needs a market to read", () => {
+  assert.equal(tradingOffered(ON, null), true);
+  assert.equal(tradingOffered(MARKET_ONLY, null), false);
+  assert.equal(tradingOffered({}, true), false);
+});

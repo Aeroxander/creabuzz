@@ -96,6 +96,8 @@ async function open(
     path?: string;
     noFounder?: boolean;
     down?: boolean;
+    /** What the server's information document says (the app reads it before it draws); the mock's default says nothing. */
+    info?: Record<string, unknown>;
   },
 ) {
   const relay = createMockRelay();
@@ -116,6 +118,16 @@ async function open(
     noFounder: options.noFounder,
     down: options.down,
   });
+  if (options.info) {
+    const info = options.info;
+    await page.route("**/info", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/nostr+json",
+        body: JSON.stringify({ name: "Mock server", ...info }),
+      }),
+    );
+  }
   await page.goto(options.path ?? PROJECT);
   return { relay, chain };
 }
@@ -1010,6 +1022,69 @@ test.describe("what a backer holds", () => {
     await expect(line.getByTestId("home-next-step-action")).toHaveText(
       "Exchange them",
     );
+  });
+});
+
+test.describe("the server says investing is off", () => {
+  test.skip(
+    BUILD !== "on",
+    "needs the investing build: run scripts/web-investing-mock-e2e.sh",
+  );
+
+  test("a build with the switch on shows no Backing block and asks the chain nothing when the server says investing is off", async ({
+    page,
+  }) => {
+    const { chain } = await open(page, {
+      pool: { ...POOL_DEFAULTS },
+      as: "visitor",
+      info: { investing: false },
+    });
+    await expect(page.getByRole("heading", { level: 1 })).toContainText(
+      "Docs Commons",
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId("project-goal")).toBeVisible();
+    await expect(page.getByTestId("backing")).toHaveCount(0);
+    expect(
+      chain.asked,
+      "the factory was asked about a pool with the server saying no",
+    ).toEqual([]);
+  });
+
+  test("a server that says something other than yes or no leaves the build's switch in charge", async ({
+    page,
+  }) => {
+    await open(page, {
+      pool: null,
+      as: "visitor",
+      info: { investing: "yes please" },
+    });
+    await expect(block(page).getByTestId("backing-state")).toHaveText(
+      "Backing is not open for this project.",
+      { timeout: 30_000 },
+    );
+  });
+});
+
+test.describe("the server says investing is on", () => {
+  test.skip(
+    BUILD !== "off",
+    "needs the build that names the addresses and leaves the switch unset",
+  );
+
+  test("a build that names the addresses and has no switch shows the Backing block when the server says investing is on", async ({
+    page,
+  }) => {
+    await open(page, {
+      pool: null,
+      as: "visitor",
+      info: { investing: true },
+    });
+    await expect(block(page).getByTestId("backing-state")).toHaveText(
+      "Backing is not open for this project.",
+      { timeout: 30_000 },
+    );
+    await expect(block(page).getByRole("button")).toHaveCount(0);
   });
 });
 

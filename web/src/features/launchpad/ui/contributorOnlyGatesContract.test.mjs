@@ -122,13 +122,13 @@ test("the contributor project's DAO card on Discover shows no address", () => {
   assert.match(body, /Open project/);
 });
 
-test("the Trading card renders nothing unless the build names a market factory and sets the trial switch", () => {
+test("the Trading card renders nothing unless the build names a market factory and the trial switch is on (the server's word, else the build's)", () => {
   const card = source("./TradingCard.tsx");
   assert.match(card, /if \(!tradingOffered\(\)\) return null;/);
   const offered = source("../lib/trading-offered.ts");
   assert.match(
     offered,
-    /return tradingTrialOn\(env\) && secondaryMarketNamed\(env\);/,
+    /return tradingTrialOn\(env, server\) && secondaryMarketNamed\(env\);/,
   );
   // Trading no longer depends on raises (the contributor-only image has none), only on the two explicit settings.
   assert.doesNotMatch(offered, /raisesOffered\(/);

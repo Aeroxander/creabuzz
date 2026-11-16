@@ -13,18 +13,29 @@
  * Alias-free on purpose: `trading-offered.test.mjs` drives it under `node --test`.
  */
 
+import { serverInvesting } from "../../../shared/lib/server-settings.ts";
 import {
   type ChainEnv,
   secondaryMarketNamed,
   viteEnv,
 } from "../chain-config.ts";
 
-/** True only for the exact value `1`: anything else, an empty value included, leaves the switch off. */
-export function tradingTrialOn(env: ChainEnv | undefined = viteEnv()): boolean {
-  return env?.VITE_TRADING_TRIAL?.trim() === "1";
+/**
+ * Whether the trial switch is on: what the server says about investing when it says something (one setting for the
+ * investing and trading screens, `shared/lib/server-settings.ts`), else the build's `VITE_TRADING_TRIAL`, true only for
+ * the exact value `1` (anything else, an empty value included, leaves it off).
+ */
+export function tradingTrialOn(
+  env: ChainEnv | undefined = viteEnv(),
+  server: boolean | null = serverInvesting(),
+): boolean {
+  return server ?? env?.VITE_TRADING_TRIAL?.trim() === "1";
 }
 
-/** True when the Trading card should render. */
-export function tradingOffered(env: ChainEnv | undefined = viteEnv()): boolean {
-  return tradingTrialOn(env) && secondaryMarketNamed(env);
+/** True when the Trading card should render: the switch is on and the build names a market to read. */
+export function tradingOffered(
+  env: ChainEnv | undefined = viteEnv(),
+  server: boolean | null = serverInvesting(),
+): boolean {
+  return tradingTrialOn(env, server) && secondaryMarketNamed(env);
 }

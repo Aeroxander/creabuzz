@@ -56,3 +56,33 @@ test("the factory for a project's own network is never guessed", () => {
     null,
   );
 });
+
+// What the server says (BUZZ_INVESTING in its information document) wins over the build's switch, both ways.
+const BUILT_OFF = { VITE_BACKING_POOL_FACTORY: named };
+
+test("the server saying yes turns investing on in a build that names a pool factory and has no switch", () => {
+  assert.equal(investingSwitchOn(BUILT_OFF, true), true);
+  assert.equal(investingOffered(BUILT_OFF, true), true);
+  assert.equal(investingFactoryFor(11155111, BUILT_OFF, true), FACTORY);
+});
+
+test("the server saying no turns investing off in a build whose switch is on", () => {
+  assert.equal(investingSwitchOn(ON, false), false);
+  assert.equal(investingOffered(ON, false), false);
+  assert.equal(investingFactoryFor(11155111, ON, false), null);
+});
+
+test("a server that says nothing leaves the build's switch in charge", () => {
+  assert.equal(investingOffered(ON, null), true);
+  assert.equal(investingOffered(BUILT_OFF, null), false);
+  assert.equal(investingOffered({}, null), false);
+});
+
+test("the server's yes alone offers nothing: the build still has to name a pool factory", () => {
+  assert.equal(investingOffered({}, true), false);
+  assert.equal(investingOffered({ VITE_CONTRIBUTOR_ONLY: "1" }, true), false);
+  assert.equal(
+    investingOffered({ VITE_BACKING_POOL_FACTORY: "{" }, true),
+    false,
+  );
+});

@@ -42,13 +42,15 @@ test("both pages put the block where the record is read first, and nowhere else"
   );
 });
 
-test("the one switch is the build's own: nothing reads investing from anywhere else", () => {
+test("the one switch is the server's word when it has one, else the build's own: nothing reads investing from anywhere else", () => {
   const offered = source("../lib/investing-offered.ts");
-  assert.match(offered, /env\?\.VITE_INVESTING\?\.trim\(\) === "1"/);
+  assert.match(offered, /server \?\? env\?\.VITE_INVESTING\?\.trim\(\) === "1"/);
   assert.match(
     offered,
-    /return\s*\(?\s*investingSwitchOn\(env\)\s*&&\s*namesAnyAddress\(\s*env\?\.VITE_BACKING_POOL_FACTORY/,
+    /investingSwitchOn\(env, server\)\s*&&\s*namesAnyAddress\(\s*env\?\.VITE_BACKING_POOL_FACTORY/,
   );
+  // The server's word is read from the one place that holds it, never from a fetch of a screen's own.
+  assert.match(offered, /serverInvesting\(\)/);
   // The pool target is off whenever investing is off, so a pool is never read for a project the switch left out.
   const target = source("../lib/backing-target.ts");
   assert.match(

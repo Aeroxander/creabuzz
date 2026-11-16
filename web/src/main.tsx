@@ -10,6 +10,9 @@ import {
   installErrorReporting,
   reportEndpoint,
 } from "@/shared/lib/error-report";
+import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { loadServerSettings } from "@/shared/lib/server-settings";
+import { timedFetchStreamed } from "@/shared/lib/timed-fetch";
 import { Toaster } from "@/shared/ui/sonner";
 import { TooltipProvider } from "@/shared/ui/tooltip";
 
@@ -38,17 +41,33 @@ const queryClient = new QueryClient({
   },
 });
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <TypographyProvider>
-          <TooltipProvider delayDuration={300}>
-            <App />
-            <Toaster />
-          </TooltipProvider>
-        </TypographyProvider>
-      </ThemeProvider>
-    </QueryClientProvider>
-  </React.StrictMode>,
-);
+/** How long the page waits for the server's settings before it opens with the build's own: they must not hold the page. */
+const SETTINGS_WAIT_MS = 3_000;
+
+async function start() {
+  // What the server says about itself (the investing switch) is known before anything draws, so no screen flips after it
+  // was shown. A server that does not answer leaves the build's own switches in charge.
+  await loadServerSettings(async () => {
+    const response = await timedFetchStreamed(`${relayHttpBaseUrl()}/info`, {
+      headers: { Accept: "application/nostr+json" },
+      signal: AbortSignal.timeout(SETTINGS_WAIT_MS),
+    });
+    return response.ok ? response.json() : null;
+  });
+  ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
+    <React.StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <TypographyProvider>
+            <TooltipProvider delayDuration={300}>
+              <App />
+              <Toaster />
+            </TooltipProvider>
+          </TypographyProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    </React.StrictMode>,
+  );
+}
+
+void start();
