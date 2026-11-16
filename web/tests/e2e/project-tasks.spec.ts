@@ -532,8 +532,7 @@ test("a founder with nobody else on the team marks their own work as done, and e
   seedProject(relay, { mate: false, offer: false });
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
-  // A new project has no tasks card until the founder asks for it.
-  await page.getByTestId("set-up-more").click();
+  // The tasks card is on a new project's page from the start.
   const tasks = page.getByTestId("project-tasks");
   await tasks.getByRole("button", { name: "Give someone a task" }).click();
   const form = tasks.getByRole("form", { name: "Give someone a task" });
@@ -548,38 +547,34 @@ test("a founder with nobody else on the team marks their own work as done, and e
   await form.getByRole("radio", { name: "Medium" }).check();
   await form.getByRole("button", { name: "Make the task" }).click();
   // Nothing on the card promises a checker who is not there.
-  await expect(tasks.getByTestId("tasks-alone")).toContainText(
-    "You are the only person on this project, so you check your own work",
+  await expect(tasks.getByTestId("tasks-alone")).toHaveText(
+    "You are the only person on this project.",
   );
   await expect(tasks.getByTestId("tasks-said")).toHaveText(
-    "Task made. Hand it in when it is done, then mark it as done yourself: nobody else is on this project yet.",
+    "Task made. Press “I did it” when it is done: nobody else is on this project yet, so you check it yourself.",
   );
   const row = tasks.getByTestId("task");
   await expect(row).toHaveAttribute("data-state", "in-progress");
   expect(tag(parts(relay, "task")[0], "task-size")).toBe("medium");
 
-  await row.getByRole("button", { name: "Hand in work" }).click();
-  const handIn = row.getByRole("form", { name: "Hand in work" });
-  await handIn.getByLabel("What you did").fill("It is live.");
-  await handIn.getByRole("button", { name: "Hand in" }).click();
-  await expect(row).toHaveAttribute("data-state", "submitted");
-  // No dead end: the row says what a check by yourself is worth, and offers it.
-  await expect(row.getByTestId("task-cannot-confirm")).toHaveCount(0);
-  await expect(row.getByTestId("task-check-alone")).toContainText(
-    "It will be shown as checked by you alone. Work checked by someone else counts for more once you have a team.",
+  // One green button for the founder's own task, replacing "Hand in work": no hand-in form, no "Mark as done".
+  await expect(row.getByRole("button", { name: "Hand in work" })).toHaveCount(
+    0,
   );
-  await expect(
-    row.getByRole("button", { name: /Confirm it's done|Send back/ }),
-  ).toHaveCount(0);
-  expect(parts(relay, "confirm")).toHaveLength(0);
-  // One labelled button, reached and pressed from the keyboard.
-  const mark = row.getByRole("button", { name: "Mark as done" });
-  await expect(mark).toHaveCount(1);
-  await mark.focus();
+  const didIt = row.getByRole("button", { name: "I did it" });
+  await expect(didIt).toHaveCount(1);
+  await didIt.focus();
   await page.keyboard.press("Enter");
-  await expect(tasks.getByTestId("tasks-said")).toContainText(
-    "Marked as done. It shows as checked by you alone",
+  const box = page.getByRole("dialog", { name: "What did you get done?" });
+  await expect(box.getByLabel("What did you finish?")).toHaveValue(
+    "Write the changelog.",
   );
+  await box.getByLabel("What did you finish?").fill("It is live.");
+  await box.getByRole("button", { name: "Done" }).click();
+  await expect(box).toHaveCount(0);
+  await expect(page.getByText(/Done on .*\. Checked by you\./)).toBeVisible();
+  await expect.poll(() => parts(relay, "confirm").length).toBe(1);
+  expect(parts(relay, "evidence")).toHaveLength(1);
   // One confirmation, signed by the founder, naming the work that was handed in.
   const confirms = parts(relay, "confirm");
   expect(confirms).toHaveLength(1);
@@ -697,8 +692,7 @@ test("a task given directly names the person only once they say yes", async ({
   seedProject(relay, { offer: false });
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
-  // A new project has no tasks card until the founder asks for it.
-  await page.getByTestId("set-up-more").click();
+  // The tasks card is on a new project's page from the start.
   const tasks = page.getByTestId("project-tasks");
   await tasks.getByRole("button", { name: "Give someone a task" }).click();
   const form = tasks.getByRole("form", { name: "Give someone a task" });
@@ -787,8 +781,7 @@ test("a task whose answer was lost is carried on by Try again, with the draft ke
   seedProject(relay, { offer: false });
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
-  // A new project has no tasks card until the founder asks for it.
-  await page.getByTestId("set-up-more").click();
+  // The tasks card is on a new project's page from the start.
   const tasks = page.getByTestId("project-tasks");
   await tasks.getByRole("button", { name: "Give someone a task" }).click();
   const form = tasks.getByRole("form", { name: "Give someone a task" });

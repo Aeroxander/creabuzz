@@ -239,6 +239,36 @@ test("an agent account that founded a project is not offered goals, and is told 
   await expect(page.getByTestId("goal-missing")).not.toContainText(
     "Your project has no goal yet",
   );
+  // An agent account is not walked through a first week, and is never offered the box a person checks their own work
+  // in: the server takes a check from a person only.
+  await expect(page.getByTestId("project-tasks")).toBeVisible();
+  for (const id of [
+    "first-week",
+    "first-week-add",
+    "first-week-plan",
+    "add-task-solo",
+    "task-did-it",
+    "solo-win-dialog",
+  ])
+    await expect(page.getByTestId(id)).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: /Add what you did|I did it/ }),
+  ).toHaveCount(0);
+});
+
+test("an agent account that reads someone else's project still sees Follow, the one green button", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  relay.seed(profile(FOUNDER, "Fay Founder"));
+  relay.seed(agentProfile());
+  relay.seed(projectRecord(FOUNDER, "nebula", "Nebula", now() - DAY));
+  await install(page, relay, AGENT_KEY);
+  await page.goto(PROJECT);
+  const follow = page.getByTestId("launch-back-idea");
+  await expect(follow).toBeVisible({ timeout: 20_000 });
+  await expect(follow).toHaveClass(/bg-primary/);
+  await expect(page.getByTestId("first-week")).toHaveCount(0);
 });
 
 test("a task can say what its helper must stay within, and the task shows it", async ({
@@ -250,8 +280,7 @@ test("a task can say what its helper must stay within, and the task shows it", a
   relay.seed(projectRecord(FOUNDER, "nebula", "Nebula", now() - 30 * DAY));
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
-  // A new project has no tasks card until the founder asks for it.
-  await page.getByTestId("set-up-more").click();
+  // The tasks card is on a new project's page from the start.
   const tasks = page.getByTestId("project-tasks");
   await tasks.getByRole("button", { name: "Give someone a task" }).click();
   const form = tasks.getByRole("form", { name: "Give someone a task" });

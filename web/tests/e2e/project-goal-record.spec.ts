@@ -263,16 +263,18 @@ test("one person starts a project alone with three answers and lands on its page
   await expect(page.getByTestId("started-card")).toContainText(
     "Your project is live",
   );
-  await expect(page.getByTestId("started-first-update")).toHaveText(
-    "Your first update is due in 7 days.",
+  // When the first update is due is on the record line under the name, said once.
+  await expect(page.getByTestId("record-line-first-update")).toContainText(
+    "First update due",
   );
   await expect(page.getByTestId("first-week-due")).toHaveText(
-    "A few lines are enough.",
+    "Three steps. You can do all of them on your own.",
   );
   await expect(page.getByTestId("update-nudge")).toHaveCount(0);
-  // Tasks, Team and Record are not on a page that has nothing for them yet.
-  for (const id of ["project-tasks", "project-team", "project-record"])
-    await expect(page.getByTestId(id)).toHaveCount(0);
+  // Tasks and Team are on a founder's page from the start; Record waits for something to hold.
+  for (const id of ["project-tasks", "project-team"])
+    await expect(page.getByTestId(id)).toBeVisible();
+  await expect(page.getByTestId("project-record")).toHaveCount(0);
 
   // The other ways to start are one press away.
   await page.goto("/start");
@@ -336,17 +338,14 @@ test("an update's next steps are promises; the next update answers each, and eve
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
 
-  // Nothing promised yet: the record is not on the page until the founder asks for it, and then says how it fills.
+  // Nothing promised yet: the record is not on the page until it has something to hold.
   const record = page.getByTestId("project-record");
   await expect(page.getByTestId("first-week")).toBeVisible();
   await expect(record).toHaveCount(0);
-  await page.getByTestId("set-up-more").click();
-  await expect(record.getByTestId("record-empty")).toContainText(
-    "No promises yet.",
-  );
+  await expect(page.getByTestId("set-up-more")).toHaveCount(0);
 
   // First update: three next steps, one per line.
-  await page.getByRole("button", { name: "Post update" }).click();
+  await page.getByTestId("launch-post-update").click();
   let dialog = page.getByRole("dialog", { name: "Post update" });
   await expect(dialog.getByTestId("update-due")).toHaveCount(0);
   await dialog.getByLabel("Title").fill("Week one");
@@ -372,7 +371,7 @@ test("an update's next steps are promises; the next update answers each, and eve
   await expect(record.getByTestId("record-totals")).toHaveCount(0);
 
   // Second update: the dialog lists last time's promises and asks about each.
-  await page.getByRole("button", { name: "Post update" }).click();
+  await page.getByTestId("launch-post-update").click();
   dialog = page.getByRole("dialog", { name: "Post update" });
   const due = dialog.getByTestId("update-due-promise");
   await expect(due).toHaveCount(3);
@@ -436,7 +435,7 @@ test("an update's next steps are promises; the next update answers each, and eve
   await expectAccessible(page, "project page with a goal and a record");
 
   // A third update only asks about what is still open.
-  await page.getByRole("button", { name: "Post update" }).click();
+  await page.getByTestId("launch-post-update").click();
   dialog = page.getByRole("dialog", { name: "Post update" });
   await expect(dialog.getByTestId("update-due-promise")).toHaveCount(1);
   await expect(dialog.getByTestId("update-due")).toContainText(
@@ -469,7 +468,7 @@ test("a promise the next update did not answer shows as not answered and is aske
     "0 kept, 0 missed, 0 changed, 1 not answered",
   );
   await expect(record.getByTestId("record-line")).toContainText("Not answered");
-  await page.getByRole("button", { name: "Post update" }).click();
+  await page.getByTestId("launch-post-update").click();
   await expect(
     page
       .getByRole("dialog", { name: "Post update" })
@@ -690,6 +689,8 @@ test("tabs show once the project uses them; the founder always has the way to se
   await expect(page.getByTestId("goal-text")).toBeVisible();
   for (const name of [/^Updates/, "Boards", "Manage"])
     await expect(tabs.getByRole("tab", { name })).toBeVisible();
+  // The announcement step is under "More to set up", closed until it is opened.
+  await page.getByTestId("more-to-set-up-toggle").click();
   const next = page.getByTestId("idea-progress");
   await expect(next).toContainText("Announce it");
   // Day one, no work accepted yet (and this build names no contributor kit): Shares are not offered.
@@ -1474,7 +1475,7 @@ test("an answer can be taken back before publishing, and the dialog says it cann
   ]);
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
-  await page.getByRole("button", { name: "Post update" }).first().click();
+  await page.getByTestId("launch-post-update").click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
   await expect(dialog.getByTestId("update-due")).toContainText(
     "an answer can't be changed after you publish",
@@ -1632,7 +1633,7 @@ test("at 390px Start, the project page and its dialogs fit with no sideways scro
   expect(await noSidewaysScroll(page)).toBe(true);
   await page.keyboard.press("Escape");
 
-  await page.getByRole("button", { name: "Post update" }).first().click();
+  await page.getByTestId("launch-post-update").click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
   await expect(dialog.getByTestId("update-due-promise")).toHaveCount(1);
   expect(await noSidewaysScroll(page)).toBe(true);

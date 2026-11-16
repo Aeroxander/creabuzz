@@ -124,6 +124,8 @@ export default defineConfig({
         "**/project-goal-record.spec.ts",
         // A new project's first week: the welcome, the first-week list, no empty cards, the recovery key and the agent line.
         "**/project-first-week.spec.ts",
+        // A person alone: the first screen, "Add what you did" in two presses, a try that stops and is carried on.
+        "**/solo-first-week.spec.ts",
         // Start in one press: sign up from the form and land on the live project, made once.
         "**/start-one-press.spec.ts",
         // Tasks with a finish line: made from an offer, handed in, sent back, confirmed by someone else; the profile.

@@ -101,11 +101,9 @@ const answers = (relay: Relay, pubkey: string) =>
   );
 
 async function addMember(page: import("@playwright/test").Page) {
-  // A project with nobody on its team shows the Team card once the founder asks for it ("Set up more").
-  const more = page.getByTestId("set-up-more");
+  // The Team card is on a new project's page from the start, with one "Add a person" button.
   const add = page.getByTestId("team-add");
-  await expect(more.or(add).first()).toBeVisible({ timeout: 20_000 });
-  if (await more.isVisible()) await more.click();
+  await expect(add).toBeVisible({ timeout: 20_000 });
   await add.click();
   await page.getByTestId("team-add-search").fill(MEMBER);
   await page.getByTestId("person-search-result").first().click();
@@ -147,15 +145,14 @@ test("the founder adds a person, they say yes, post an update and confirm work; 
   );
 
   // The dialog says exactly what the server does before anyone is added.
-  // Alone, the team card is not on the page: the founder asks for it.
-  await page.getByTestId("set-up-more").click();
+  // Alone, the team card is on the page with its one "Add a person" button.
   const team = page.getByTestId("project-team");
   await team.getByTestId("team-add").click();
   await expect(page.getByTestId("team-add-warning")).toContainText(
     "They can act for this project as soon as you add them.",
   );
   await expect(page.getByRole("dialog")).toContainText(
-    "Goals and promises stay yours alone.",
+    "Goals and promises stay yours.",
   );
   await expectAccessible(page, "add a person to the team");
   await page.getByTestId("team-add-search").fill(MEMBER);
@@ -374,6 +371,8 @@ test("another save of the project record keeps the team", async ({ page }) => {
   ]);
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
+  // The listing choice is under "More to set up", which is closed until it is opened.
+  await page.getByTestId("more-to-set-up-toggle").click();
   await page.getByTestId("project-listing-toggle").click();
   await expect
     .poll(() => newest(relay, 37001, FOUNDER)?.body.listing)
@@ -426,8 +425,9 @@ test("two changes to the record pressed close together both land, whichever part
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
   const team = page.getByTestId("project-team");
-  await page.getByTestId("set-up-more").click();
   await expect(team.getByTestId("team-add")).toBeVisible();
+  // The listing choice is under "More to set up", which is closed until it is opened.
+  await page.getByTestId("more-to-set-up-toggle").click();
   await expect(page.getByTestId("project-listing-toggle")).toBeVisible();
   // The server is slow to answer the read of the founder's own record: both changes are started before either has
   // read it. Left to themselves both would read the same record and the later save would undo the earlier.
@@ -471,6 +471,11 @@ test("two changes to the record pressed close together both land, whichever part
   await expect(page.getByTestId("project-listing-failed")).toHaveCount(0);
   await expect(team.getByTestId("team-failed")).toHaveCount(0);
   await page.reload();
+  // Said on the page itself, with the choice closed under "More to set up".
+  await expect(page.getByTestId("project-unlisted-note")).toContainText(
+    "Not listed yet.",
+  );
+  await page.getByTestId("more-to-set-up-toggle").click();
   await expect(page.getByTestId("project-listing-state")).toContainText(
     "Not listed yet.",
   );

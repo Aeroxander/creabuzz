@@ -97,7 +97,7 @@ async function notBackedUp(page: Page, firstLoadOnly = false) {
 const noSidewaysScroll = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 
-test("a founder lands on the live project with one welcome card and one first-week list, and no empty cards", async ({
+test("a founder lands on the live project with one live line and one first-week card, and no empty cards", async ({
   page,
   context,
 }) => {
@@ -107,66 +107,95 @@ test("a founder lands on the live project with one welcome card and one first-we
   await install(page, relay, FOUNDER_KEY);
   await page.goto(STARTED);
 
-  const welcome = page.getByTestId("started-card");
-  await expect(welcome).toBeVisible({ timeout: 20_000 });
-  await expect(welcome.getByRole("heading")).toHaveText("Your project is live");
-  await expect(welcome.getByTestId("started-first-update")).toHaveText(
-    "Your first update is due in 7 days.",
+  // One line: the project is live, its short link, and Copy.
+  const live = page.getByTestId("started-card");
+  await expect(live).toBeVisible({ timeout: 20_000 });
+  await expect(live).toContainText("Your project is live:");
+  await expect(live.getByTestId("started-link-short")).toContainText(
+    `/p/nebula-${FOUNDER.slice(0, 16)}`,
   );
-  await expect(welcome.getByTestId("started-follow")).toContainText(
-    "Ask three people to follow",
-  );
-
-  // The public link, and the two ways to hand it on.
-  const link = await welcome.getByTestId("started-link").inputValue();
-  expect(link).toMatch(new RegExp(`/p/nebula-${FOUNDER.slice(0, 16)}$`));
-  await welcome.getByTestId("started-copy").click();
-  await expect(welcome.getByTestId("started-copy-status")).toHaveText(
+  const link = `http://127.0.0.1:${new URL(page.url()).port}/p/nebula-${FOUNDER.slice(0, 16)}`;
+  await live.getByTestId("started-copy").click();
+  await expect(live.getByTestId("started-copy-status")).toHaveText(
     "Copied. Paste it anywhere.",
   );
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(link);
-  await welcome.getByTestId("share-record").click();
-  await expect(welcome.getByTestId("share-record-status")).toHaveText(
+
+  // The first-week card: its heading, one line, "1 of 3", the goal ticked and nothing else asking for the first update.
+  const week = page.getByTestId("first-week");
+  await expect(week.getByRole("heading")).toHaveText("Your first week");
+  await expect(week.getByTestId("first-week-due")).toHaveText(
+    "Three steps. You can do all of them on your own.",
+  );
+  await expect(week.getByTestId("first-week-count")).toHaveText("1 of 3");
+  await expect(week.locator("li[data-done=true]")).toHaveCount(1);
+  await expect(
+    week.locator("li", { hasText: "Say your goal" }),
+  ).toHaveAttribute("data-done", "true");
+  await expect(week.getByTestId("first-week-goal")).toHaveText(
+    "A first version ten people use",
+  );
+  await expect(page.getByTestId("project-update-card")).toHaveCount(0);
+  await expect(page.getByTestId("update-nudge")).toHaveCount(0);
+
+  // Tasks and Team are on the page from the start; Record waits for something to hold. Nothing asks to "set up more".
+  await expect(page.getByTestId("project-tasks")).toBeVisible();
+  await expect(page.getByTestId("project-team")).toBeVisible();
+  await expect(page.getByTestId("project-record")).toHaveCount(0);
+  await expect(page.getByTestId("set-up-more")).toHaveCount(0);
+  expect(await noSidewaysScroll(page)).toBe(true);
+  await expectAccessible(page, "the project page in its first week");
+});
+
+test("Share is one control: copy the link, download the picture, add a weekly reminder", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const relay = createMockRelay();
+  seedNew(relay);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  await expect(page.getByTestId("first-week")).toBeVisible({
+    timeout: 20_000,
+  });
+  // The four separate buttons it replaces are gone from the page.
+  for (const gone of ["Share it", "Download image", "Copy an invite"])
+    await expect(page.getByRole("button", { name: gone })).toHaveCount(0);
+  const toggle = page.getByTestId("share-menu-toggle");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "true");
+  const menu = page.getByTestId("share-menu");
+  await menu.getByTestId("share-menu-copy").click();
+  await expect(menu.getByTestId("share-menu-status")).toHaveText(
     "Copied. Paste it anywhere.",
   );
-  const shared = await page.evaluate(() => navigator.clipboard.readText());
-  expect(shared).toContain("Nebula on Creaton: just started.");
-  expect(shared).toContain(link);
-  expect(shared).not.toMatch(/earn|price|\$|return/i);
-  await expect(welcome.getByTestId("share-card-download")).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(
+    new RegExp(`/p/nebula-${FOUNDER.slice(0, 16)}$`),
+  );
+  await expect(menu.getByTestId("share-card-download")).toBeVisible();
 
   // The weekly calendar file links to the project and opens the update form.
   const download = page.waitForEvent("download");
-  await welcome.getByRole("button", { name: "Add a weekly reminder" }).click();
+  await menu.getByRole("button", { name: "Add a weekly reminder" }).click();
   const file = await download;
   expect(file.suggestedFilename()).toBe("weekly-update-nebula.ics");
   const ics = (await readFile(await file.path(), "utf8")).replace(/\r\n /g, "");
   expect(ics).toContain(
     `URL:http://127.0.0.1:${new URL(page.url()).port}/launchpad/nebula?author=${FOUNDER}&action=update\r\n`,
   );
+  // Escape puts the list away and the keyboard back on the button that opened it.
+  await page.keyboard.press("Escape");
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(toggle).toBeFocused();
 
-  // One list of next steps: the goal is ticked, and nothing else asks for the first update.
-  const week = page.getByTestId("first-week");
-  await expect(week.getByRole("heading")).toHaveText("First week");
-  // The welcome card above already says when the first update is due, so this card does not say it a second time.
-  await expect(week.getByTestId("first-week-due")).toHaveText(
-    "A few lines are enough.",
-  );
-  await expect(
-    week.locator("li", { hasText: "Set your goal" }),
-  ).toHaveAttribute("data-done", "true");
-  await expect(week.locator("li[data-done=false]")).toHaveCount(3);
-  await expect(page.getByTestId("project-update-card")).toHaveCount(0);
-  await expect(page.getByTestId("update-nudge")).toHaveCount(0);
-
-  // No wall of empty cards: tasks, team and record are not on the page, and one button brings them in.
-  for (const id of ["project-tasks", "project-team", "project-record"])
-    await expect(page.getByTestId(id)).toHaveCount(0);
-  await expect(page.getByTestId("set-up-more")).toBeVisible();
-  expect(await noSidewaysScroll(page)).toBe(true);
-  await expectAccessible(page, "the project page in its first week");
+  // A visitor gets the same control without the reminder, which is the founder's own.
+  await openAs(page, VISITOR_KEY, PROJECT);
+  await page.getByTestId("share-menu-toggle").click();
+  await expect(page.getByTestId("share-menu-copy")).toBeVisible();
+  await expect(page.getByTestId("share-menu-reminder")).toHaveCount(0);
 });
-
 test("the welcome card can be put away, and a reload or a shared copy of the address does not bring it back", async ({
   page,
 }) => {
@@ -218,32 +247,46 @@ test("only the number 1 welcomes: the plain address, ?started=2 and a visitor wi
     await expect(page.getByTestId(id)).toHaveCount(0);
 });
 
-test("Set up more brings in Tasks, Team and Record, and the founder can add a team member from it", async ({
+test("Tasks and Team are on the page from the start, the founder adds a person from Team, and there is no Set up more", async ({
   page,
 }) => {
   const relay = createMockRelay();
   seedNew(relay);
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
-  await expect(page.getByTestId("set-up-more")).toBeVisible({
+  await expect(page.getByTestId("project-team")).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByTestId("team-add")).toHaveCount(0);
-  await page.getByTestId("set-up-more").click();
-
-  await expect(page.getByTestId("project-team")).toBeVisible();
-  await expect(page.getByTestId("team-alone")).toContainText(
-    "It is just you for now.",
-  );
-  await expect(page.getByTestId("project-tasks")).toBeVisible();
-  await expect(page.getByTestId("project-record")).toBeVisible();
-  // Everything is on the page: nothing is left to set up.
   await expect(page.getByTestId("set-up-more")).toHaveCount(0);
+  await expect(page.getByTestId("project-tasks")).toBeVisible();
+  await expect(page.getByTestId("tasks-empty")).toContainText(
+    "Nothing to do yet.",
+  );
+  await expect(page.getByTestId("tasks-empty")).toContainText(
+    "What is one thing you can finish today?",
+  );
+  await expect(page.getByTestId("project-record")).toHaveCount(0);
+  const alone = page.getByTestId("team-alone");
+  await expect(alone).toContainText(
+    "It is just you for now, and that is fine.",
+  );
+  await expect(alone).toContainText(
+    "You can run the project on your own. Add a person when you want a second pair of eyes.",
+  );
+  // One "Add a person" button, in the empty state.
+  await expect(page.getByTestId("team-add")).toHaveCount(1);
   await page.getByTestId("team-add").click();
-  await expect(page.getByTestId("team-add-warning")).toBeVisible();
+  await expect(page.getByTestId("team-add-warning")).toContainText(
+    "They can act for this project as soon as you add them.",
+  );
+  await expect(page.getByRole("dialog")).toContainText(
+    "They can post updates and check work. Goals and promises stay yours.",
+  );
+  await expect(page.getByTestId("team-add-alone")).toHaveText(
+    "Once someone else is on the project, they check work instead of you.",
+  );
 });
-
-test("a card appears on its own once it has something: a team member brings in the Team card", async ({
+test("a team member on the record brings in the Team card as it is, and the tasks card is there too", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -258,37 +301,32 @@ test("a card appears on its own once it has something: a team member brings in t
     timeout: 20_000,
   });
   await expect(page.getByTestId("team-add")).toBeVisible();
-  await expect(page.getByTestId("project-tasks")).toHaveCount(0);
+  await expect(page.getByTestId("project-tasks")).toBeVisible();
+  // Someone else is on the project: no "It is just you" line, and no solo button to add what you did.
+  await expect(page.getByTestId("team-alone")).toHaveCount(0);
+  await expect(page.getByTestId("first-week-add")).toHaveCount(0);
   await expect(page.getByTestId("project-record")).toHaveCount(0);
-  // The founder can still bring in the other two.
-  await expect(page.getByTestId("set-up-more")).toBeVisible();
+  await expect(page.getByTestId("set-up-more")).toHaveCount(0);
 });
-
-test("Ask for help opens the update form at Help needed, with Draft from the record; the first update ends the first week", async ({
+test("the first update ends the first week: 3 of 3, one line with the next date, then Ask for help", async ({
   page,
 }) => {
   const relay = createMockRelay();
   seedNew(relay);
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
-  await page.getByTestId("first-week-help").click();
+  await page.getByTestId("first-week-post").click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel(/Help needed/)).toBeFocused();
   await expect(dialog.getByTestId("update-draft-button")).toBeVisible();
-  await dialog.getByLabel("Title").fill("Week one");
+  const title = dialog.getByLabel("Title");
+  if (await title.isVisible()) await title.fill("Week one");
   await dialog
     .getByLabel("What happened this week")
     .fill("Set up the project.");
-  await dialog
-    .getByLabel(/Help needed/)
-    .fill("Someone to test sign-up on an older phone.");
   await dialog.getByRole("button", { name: "Publish update" }).click();
   await expect(dialog).toHaveCount(0);
   await expect.poll(() => founderUpdates(relay).length).toBe(1);
-  expect(
-    founderUpdates(relay)[0].tags.some((t) => t[0] === "help-needed"),
-  ).toBe(true);
 
   // The note after posting: week one, and the share picture beside the words.
   const note = page.getByTestId("update-posted");
@@ -299,11 +337,31 @@ test("Ask for help opens the update form at Help needed, with Draft from the rec
   await expect(note.getByTestId("share-card-download")).toBeVisible();
   await note.getByRole("button", { name: "Done" }).click();
 
-  // The first week is over: its card gives way to the update card.
-  await expect(page.getByTestId("first-week")).toHaveCount(0);
+  // The card becomes one line: all three steps ticked, and when the next update is due.
+  const week = page.getByTestId("first-week");
+  await expect(week.getByTestId("first-week-count")).toHaveText("3 of 3");
+  await expect(week.getByTestId("first-week-done-line")).toHaveText(
+    /^First week done\. Next update: \w{3}, \w{3} \d{1,2}\.$/,
+  );
+  // The update itself, and the help it asks for, stay on the page under the one line.
   await expect(page.getByTestId("project-update-card")).toBeVisible();
-});
+  // The header's button is the page's green one now, with the words of the weekly update.
+  await expect(page.getByTestId("launch-post-update")).toHaveText(
+    "Post this week's update",
+  );
+  await expect(page.getByTestId("launch-post-update")).toHaveClass(
+    /bg-primary/,
+  );
 
+  // "Bring someone along": copy the link, or ask for help (which opens the update form).
+  await expect(week).toContainText("Bring someone along");
+  await week.getByTestId("first-week-copy-link").click();
+  await expect(week.getByTestId("first-week-copy-status")).toHaveText(
+    "Copied. Paste it anywhere.",
+  );
+  await week.getByTestId("first-week-help").click();
+  await expect(page.getByRole("dialog", { name: "Post update" })).toBeVisible();
+});
 test("the post button on the first-week card also has Draft from the record, as the page's own Post update does", async ({
   page,
 }) => {
@@ -389,10 +447,11 @@ test("a run of weeks without two answered promises is not stated in the note or 
   expect(words).not.toContain("weeks in a row");
 });
 
-test("the first page asks for the recovery key until it is saved, and not on any other page", async ({
+test("the first-week card asks for the recovery key in one quiet line until it is saved, and Tab reaches it", async ({
   page,
   context,
 }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const relay = createMockRelay();
   seedNew(relay);
@@ -401,23 +460,39 @@ test("the first page asks for the recovery key until it is saved, and not on any
   await page.goto(STARTED);
   const prompt = page.getByTestId("recovery-key-prompt");
   await expect(prompt).toBeVisible({ timeout: 20_000 });
-  await expect(prompt.getByRole("heading")).toHaveText(
+  await expect(prompt).toContainText(
+    "Save your recovery key so you can get back in.",
+  );
+  // On the first screen, inside the card, and an outline button while no update is posted: the card's green is the work.
+  const box = await prompt.boundingBox();
+  expect((box?.y ?? 9999) + (box?.height ?? 0)).toBeLessThanOrEqual(800);
+  await expect(page.getByTestId("first-week")).toContainText(
     "Save your recovery key",
   );
-  await prompt.getByTestId("recovery-key-save").click();
+  await expect(prompt.getByTestId("recovery-key-save")).not.toHaveClass(
+    /bg-primary/,
+  );
+  await expect(page.getByTestId("recovery-key-later")).toHaveCount(0);
+  // From the keyboard: Tab reaches "Save it", and Enter opens the key's dialog.
+  const save = prompt.getByTestId("recovery-key-save");
+  for (let i = 0; i < 60; i++) {
+    if (await save.evaluate((el) => el === document.activeElement)) break;
+    await page.keyboard.press("Tab");
+  }
+  await expect(save).toBeFocused();
+  await page.keyboard.press("Enter");
   const dialog = page.getByTestId("backup-dialog");
   await expect(dialog).toBeVisible();
   await dialog.getByTestId("backup-copy").click();
   await expect(dialog.getByTestId("backup-copy")).toContainText("Copied");
   await dialog.getByTestId("backup-close").click();
-  // Saved: the prompt is gone and stays gone.
+  // Saved: the line is gone and stays gone.
   await expect(prompt).toHaveCount(0);
   await page.reload();
   await expect(page.getByTestId("first-week")).toBeVisible();
   await expect(page.getByTestId("recovery-key-prompt")).toHaveCount(0);
 });
-
-test("the recovery prompt can wait for this visit, and a project page that was not just started does not ask", async ({
+test("the recovery line is on the first-week card of any visit, not only the one right after Start", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -428,12 +503,9 @@ test("the recovery prompt can wait for this visit, and a project page that was n
   await expect(page.getByTestId("first-week")).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByTestId("recovery-key-prompt")).toHaveCount(0);
-  await page.goto(STARTED);
-  await page.getByTestId("recovery-key-later").click();
-  await expect(page.getByTestId("recovery-key-prompt")).toHaveCount(0);
+  await expect(page.getByTestId("recovery-key-prompt")).toBeVisible();
+  await expect(page.getByTestId("recovery-key-later")).toHaveCount(0);
 });
-
 test("when an agent is on the team, a line says who answers for it; with no agent there is no line", async ({
   page,
 }) => {
@@ -652,7 +724,6 @@ test("a project that is not about AI gets no starter promises and no starter tas
   await expect(dialog.getByLabel("What's next")).toBeVisible();
   await expect(dialog.getByTestId("update-starters")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Cancel" }).click();
-  await page.getByTestId("set-up-more").click();
   await page.getByTestId("give-task").click();
   await expect(page.getByTestId("direct-task-form")).toBeVisible();
   await expect(page.getByTestId("task-starters")).toHaveCount(0);
@@ -665,7 +736,6 @@ test("an AI project's task form offers starter tasks: a kind, then one press fil
   seedNew(relay, [["t", "AI agent or tool"]]);
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
-  await page.getByTestId("set-up-more").click();
   await page.getByTestId("give-task").click();
   const form = page.getByTestId("direct-task-form");
   const starters = form.getByTestId("task-starters");
@@ -696,7 +766,7 @@ test("an AI project's task form offers starter tasks: a kind, then one press fil
   await expect(starters).toHaveCount(0);
 });
 
-test("at 390px the welcome, the first-week list and the set-up row fit with no sideways scroll", async ({
+test("at 390px the live line, the first-week card and the tasks fit with no sideways scroll, and every tap is 44px high", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -711,13 +781,19 @@ test("at 390px the welcome, the first-week list and the set-up row fit with no s
   await expect(page.getByTestId("first-week")).toBeVisible();
   await expect(page.getByTestId("recovery-key-prompt")).toBeVisible();
   await expect(page.getByTestId("agent-post-card")).toBeVisible();
-  expect(await noSidewaysScroll(page)).toBe(true);
-  // The link is the point of the welcome card: wide enough to read, not squeezed beside three buttons.
-  const link = await page.getByTestId("started-link").boundingBox();
-  expect(link?.width ?? 0).toBeGreaterThanOrEqual(190);
-  await page.getByTestId("set-up-more").click();
   await expect(page.getByTestId("project-team")).toBeVisible();
   expect(await noSidewaysScroll(page)).toBe(true);
+  for (const id of [
+    "started-copy",
+    "first-week-add",
+    "first-week-plan",
+    "first-week-post",
+    "recovery-key-save",
+    "share-menu-toggle",
+  ]) {
+    const box = await page.getByTestId(id).boundingBox();
+    expect(box?.height ?? 0, id).toBeGreaterThanOrEqual(43.5);
+  }
   // The update form's "Draft from the record" explains itself in a line you can read, below its button on a phone.
   await page.getByRole("button", { name: "Post update" }).first().click();
   const draft = page.getByTestId("update-draft");

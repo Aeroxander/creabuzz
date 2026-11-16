@@ -23,6 +23,11 @@ const FOUNDER_KEY = "a1".repeat(32);
 const FOUNDER = pubkeyOf(FOUNDER_KEY);
 const OTHER = pubkeyOf("a2".repeat(32));
 
+/** The founder's listing choice is under "More to set up", closed until it is opened. */
+async function openMore(page: import("@playwright/test").Page) {
+  await page.getByTestId("more-to-set-up-toggle").click();
+}
+
 test("a project started with the short form is listed in Discover and on Home, signed out", async ({
   page,
 }) => {
@@ -95,6 +100,7 @@ test("a founder takes their project off the lists and puts it back, keeping the 
   );
   await install(page, relay, FOUNDER_KEY);
   await page.goto(projectPath(FOUNDER, "nebula"));
+  await openMore(page);
   await expect(page.getByTestId("project-listing-state")).toContainText(
     "Listed.",
   );
@@ -122,6 +128,7 @@ test("a founder takes their project off the lists and puts it back, keeping the 
 
   // The founder lists it again.
   await openAs(page, FOUNDER_KEY, projectPath(FOUNDER, "nebula"));
+  await openMore(page);
   await expect(page.getByTestId("project-listing-toggle")).toHaveText(
     "List this project",
   );
@@ -152,6 +159,7 @@ test("a listing change the server refuses is said, and the page goes back to wha
   relay.seed(projectRecord(FOUNDER, "nebula", "Nebula", now() - DAY));
   await install(page, relay, FOUNDER_KEY);
   await page.goto(projectPath(FOUNDER, "nebula"));
+  await openMore(page);
   await page.getByTestId("project-listing-toggle").click();
   await expect(page.getByTestId("project-listing-failed")).toContainText(
     "The project is still listed",
