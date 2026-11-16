@@ -6,8 +6,8 @@ import {
   cardUse,
   founderSettings,
   ideaShowsTeamSurfaces,
+  pageTabs,
   setUpCardShown,
-  setUpMore,
   tabAlias,
   tabShown,
   updatesLabel,
@@ -141,12 +141,16 @@ test("the Updates tab states a number only when the updates were read to the end
   assert.equal(updatesLabel(null, true), "Updates");
 });
 
-test("a card shows once the project has something for it, or when the founder opened Set up more", () => {
-  assert.equal(setUpCardShown("yes", false), true);
-  assert.equal(setUpCardShown("no", false), false);
-  assert.equal(setUpCardShown("no", true), true);
+test("Tasks and Team are on the page from the start for the team; Record waits for something to hold", () => {
+  assert.equal(setUpCardShown("tasks", "no", true), true);
+  assert.equal(setUpCardShown("team", "no", true), true);
+  assert.equal(setUpCardShown("record", "no", true), false);
+  // Someone not on the team sees a card only once it has something.
+  assert.equal(setUpCardShown("tasks", "no", false), false);
+  assert.equal(setUpCardShown("tasks", "yes", false), true);
   // A read that failed or was cut short keeps the card: its "Try again" is the way back.
-  assert.equal(setUpCardShown("unknown", false), true);
+  assert.equal(setUpCardShown("record", "unknown", false), true);
+  assert.equal(setUpCardShown("record", "unknown", true), true);
 });
 
 test("a count of none is 'no' only when the read reached its end; none found in a failed or cut read is unknown", () => {
@@ -163,20 +167,52 @@ test("a count of none is 'no' only when the read reached its end; none found in 
   assert.equal(cardUse({ count: 2, failed: false, complete: false }), "yes");
 });
 
-test("Set up more offers exactly the cards the page does not show, and nothing once opened", () => {
-  const uses = { tasks: "no", team: "no", record: "yes" };
-  assert.deepEqual(setUpMore(uses, false), ["tasks", "team"]);
-  assert.deepEqual(setUpMore(uses, true), []);
+test("the page's tabs: a project with no DAO lists no decisions, work or record, and a sandbox no discussion or boards", () => {
+  const base = {
+    workDao: false,
+    contributor: false,
+    milestones: false,
+    auction: false,
+    sandbox: false,
+    updatesLabel: "Updates",
+  };
+  const ids = (input) => pageTabs(input).map((tab) => tab.id);
+  assert.deepEqual(ids(base), [
+    "overview",
+    "agents",
+    "treasury",
+    "discussion",
+    "boards",
+    "updates",
+    "manage",
+  ]);
+  assert.deepEqual(ids({ ...base, sandbox: true }), [
+    "overview",
+    "agents",
+    "treasury",
+    "updates",
+    "manage",
+  ]);
+  assert.ok(ids({ ...base, auction: true }).includes("mybids"));
+  // A contributor project leads with who earned what, a raise puts it after the work.
   assert.deepEqual(
-    setUpMore({ tasks: "yes", team: "unknown", record: "yes" }, false),
-    [],
+    ids({ ...base, workDao: true, contributor: true }).slice(0, 4),
+    ["overview", "contributions", "decisions", "work"],
   );
-});
-
-test("the team card is among the ones Set up more adds, so a founder with no team can always add a person", () => {
   assert.ok(
-    setUpMore({ tasks: "yes", team: "no", record: "yes" }, false).includes(
-      "team",
-    ),
+    ids({ ...base, workDao: true }).indexOf("contributions") >
+      ids({ ...base, workDao: true }).indexOf("work"),
+  );
+  assert.equal(
+    pageTabs({ ...base, updatesLabel: "Updates (3)" }).find(
+      (t) => t.id === "updates",
+    ).label,
+    "Updates (3)",
+  );
+  assert.equal(pageTabs(base).find((t) => t.id === "manage").founderOnly, true);
+  assert.equal(
+    pageTabs({ ...base, contributor: true }).find((t) => t.id === "treasury")
+      .label,
+    "Funds",
   );
 });

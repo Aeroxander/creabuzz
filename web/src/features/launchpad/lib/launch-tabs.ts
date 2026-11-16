@@ -170,20 +170,54 @@ export function cardUse(input: {
 }
 
 /**
- * Whether one of those cards is on the page. It is once the project has something for it, or when the founder opened
- * "Set up more". A card whose use could not be read stays, so a failed read never takes it away (and its "Try again").
+ * Whether one of those cards is on the page. Tasks and Team are on it from the start for everyone on the project's
+ * team: they hold "Add something to do" and "Add a person", which a founder with nobody else needs to find without
+ * asking for them. Record is on it once it has something. A card whose use could not be read stays, so a failed read
+ * never takes it away (and its "Try again").
  */
-export function setUpCardShown(use: TabUse, opened: boolean): boolean {
-  return opened || use !== "no";
+export function setUpCardShown(
+  card: SetUpCard,
+  use: TabUse,
+  onTeam: boolean,
+): boolean {
+  if (onTeam && card !== "record") return true;
+  return use !== "no";
 }
 
-/** The cards "Set up more" would add right now: the ones the page is not showing. Empty when there is nothing left to open. */
-export function setUpMore(
-  uses: Readonly<Record<SetUpCard, TabUse>>,
-  opened: boolean,
-): SetUpCard[] {
-  if (opened) return [];
-  return (["tasks", "team", "record"] as const).filter(
-    (card) => !setUpCardShown(uses[card], false),
-  );
+/** The tabs a project page may list, before its kind and who is looking narrow them. */
+export function pageTabs(input: {
+  /** The project has a DAO to read (decisions, work, contributions, record). */
+  workDao: boolean;
+  contributor: boolean;
+  milestones: boolean;
+  auction: boolean;
+  /** A simulated project has no discussion or boards on the server. */
+  sandbox: boolean;
+  updatesLabel: string;
+}): Array<{ id: LaunchTab; label: string; founderOnly?: boolean }> {
+  const { workDao, contributor, sandbox } = input;
+  const contributions = {
+    id: "contributions" as const,
+    label: "Contributions",
+  };
+  return [
+    { id: "overview", label: "Overview" },
+    ...(workDao && contributor ? [contributions] : []),
+    // The agreement a backer follows: shown for any project whose team tokens unlock against milestones, funded or not.
+    ...(input.milestones
+      ? [{ id: "milestones" as const, label: "Milestones" }]
+      : []),
+    ...(workDao ? [{ id: "decisions" as const, label: "Decisions" }] : []),
+    ...(workDao ? [{ id: "work" as const, label: "Work" }] : []),
+    ...(workDao && !contributor ? [contributions] : []),
+    { id: "agents", label: "People & agents" },
+    ...(workDao ? [{ id: "record" as const, label: "Track record" }] : []),
+    { id: "treasury", label: contributor ? "Funds" : "Treasury" },
+    // Onchain bids only exist when the launch has an auction linked.
+    ...(input.auction ? [{ id: "mybids" as const, label: "My bids" }] : []),
+    ...(sandbox ? [] : [{ id: "discussion" as const, label: "Discussion" }]),
+    ...(sandbox ? [] : [{ id: "boards" as const, label: "Boards" }]),
+    { id: "updates", label: input.updatesLabel },
+    { id: "manage", label: "Manage", founderOnly: true },
+  ];
 }

@@ -1,39 +1,104 @@
 /**
- * What a founder is told in a project's first week, in the words the page shows: when the first update is due, and
- * what a post's line says about a run of weeks. Plain counts of days from the project's own start; no clock beyond the
- * `now` the caller gives.
+ * What a founder is told in a project's first week, in the words the page shows: the three steps and which are done,
+ * the line after the first update, and what a post's line says about a run of weeks. No clock beyond the `now` the
+ * caller gives.
  *
  * Pure and alias-free: `first-week.test.mjs` drives it under `node --test`.
  */
 
-const DAY = 86_400;
-/** A project's first update is due a week after it started. */
-const FIRST_UPDATE_DAYS = 7;
+import { updateDueWords } from "./weekly-update.ts";
 
-/**
- * "Your first update is due in 7 days." for a project started today, counting down to "due in 1 day", and "Your first
- * update is due now." from the seventh day on. `startedAt` and `now` are in seconds.
- */
-export function firstUpdateWords(startedAt: number, now: number): string {
-  const gone = Math.max(0, Math.floor((now - startedAt) / DAY));
-  const left = FIRST_UPDATE_DAYS - gone;
-  if (left <= 0) return "Your first update is due now.";
-  return `Your first update is due in ${left} ${left === 1 ? "day" : "days"}.`;
+/** The card's heading and the one line under it: said once, to one person. */
+export const FIRST_WEEK_HEADING = "Your first week";
+export const FIRST_WEEK_LINE =
+  "Three steps. You can do all of them on your own.";
+
+/** The three steps, in order. None of them needs a second person, a key, an address or a hash. */
+export type FirstWeekStepId = "goal" | "work" | "post";
+
+export const FIRST_WEEK_STEPS: readonly {
+  id: FirstWeekStepId;
+  title: string;
+  /** Who has to be there: nobody but the founder, for every step. A test holds it to the real rules. */
+  needs: "founder";
+}[] = [
+  { id: "goal", title: "Say your goal", needs: "founder" },
+  { id: "work", title: "Get one thing done", needs: "founder" },
+  { id: "post", title: "Post week one", needs: "founder" },
+];
+
+/** What the card knows. `null` is "not read": it never counts as done, and never as none. */
+export interface FirstWeekInput {
+  /** Pieces of work finished on the project (checked by anyone), or null when the tasks were not read. */
+  worksDone: number | null;
+  /** Updates posted, or null when they were not read to their end. */
+  updates: number | null;
 }
 
+export interface FirstWeekProgress {
+  done: Record<FirstWeekStepId, boolean>;
+  /** How many of the three are ticked. The goal is ticked from the start: a project is made with one. */
+  count: number;
+}
+
+/** Which steps are ticked. */
+export function firstWeekProgress(input: FirstWeekInput): FirstWeekProgress {
+  const done = {
+    goal: true,
+    work: input.worksDone !== null && input.worksDone > 0,
+    post: input.updates !== null && input.updates > 0,
+  };
+  return { done, count: Object.values(done).filter(Boolean).length };
+}
+
+/** "1 of 3". */
+export const progressWords = (count: number) => `${count} of 3`;
+
+/** The first-update words on the card's buttons. The post button is green only once the first thing is done. */
+export const FIRST_WEEK_WORDS = {
+  addWork: "Add what you did",
+  addNext: "Or add something to do next",
+  didIt: "I did it",
+  post: "Post this week's update",
+  workDone: "First piece of work done.",
+  partSaved: "Saved part of this. Try again.",
+  tryAgain: "Try again",
+  bringSomeone: "Bring someone along",
+  copyLink: "Copy the link",
+  askForHelp: "Ask for help",
+} as const;
+
+/** "You said you would: <task>." */
+export const youSaidWords = (what: string) => `You said you would: ${what}.`;
+
 /**
- * The line under "First week": when the first update is due, unless the welcome card above it, which says so, is on the
- * page (the same sentence twice on one screen), and that a few lines are enough.
+ * What the card is: the three steps (no update yet), the one line after the first update (until the next one is due),
+ * or gone (the project's update card takes over). A read that was not finished never shows the steps: the card does
+ * not tell a founder with updates that they have none.
  */
-export function firstWeekDueLine(
-  startedAt: number,
+export function firstWeekForm(input: {
+  updates: number | null;
+  lastUpdateAt: number | null;
+  now: number;
+}): "steps" | "done" | "gone" {
+  if (input.updates === null) return "gone";
+  if (input.updates === 0) return "steps";
+  if (input.updates === 1 && input.lastUpdateAt !== null) {
+    const due = updateDueWords(input.lastUpdateAt, input.now);
+    if (due && !due.late) return "done";
+  }
+  return "gone";
+}
+
+/** "First week done. Next update: Mon, Nov 23." Null when the next update is not coming up (late, or never posted). */
+export function firstWeekDoneLine(
+  lastUpdateAt: number,
   now: number,
-  welcomeShown: boolean,
-): string {
-  const enough = "A few lines are enough.";
-  return welcomeShown
-    ? enough
-    : `${firstUpdateWords(startedAt, now)} ${enough}`;
+  locale?: string,
+): string | null {
+  const due = updateDueWords(lastUpdateAt, now, locale);
+  if (!due || due.late) return null;
+  return `First week done. ${due.text.replace(/^Next update /, "Next update: ")}.`;
 }
 
 /**

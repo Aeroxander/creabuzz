@@ -1,8 +1,6 @@
 /**
- * What a project page shows below its news. A new project has nothing to put in its Tasks, Team and Record cards, so
- * they stay off the page until there is something in them, and the founder (and anyone on the team) gets one quiet
- * button, "Set up more", that brings them all in (`setUpMore` in `lib/launch-tabs.ts`). The button is the way back to
- * adding a team member: it stays for as long as one of the three cards is not on the page.
+ * What a project page shows below its news: the Tasks, Team and Record cards (`setUpCardShown` in
+ * `lib/launch-tabs.ts`). Record stays off the page until there is something in it.
  *
  * `useSetUpUses` reads what each card would hold: tasks the viewer may see, the people on the team, and promises, goal
  * steps or finished tasks for the record. A read that failed or was cut short answers "unknown", which keeps the card.
@@ -11,7 +9,6 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { Button } from "@/shared/ui/button";
 
 import { allGoals, goalRecordEntries } from "../lib/goals";
 import { teamOf } from "../lib/help-request";
@@ -19,7 +16,6 @@ import {
   cardUse,
   type SetUpCard,
   setUpCardShown,
-  setUpMore,
   type TabUse,
 } from "../lib/launch-tabs";
 import { mayViewTask, openTasks } from "../lib/tasks";
@@ -88,20 +84,15 @@ function useSetUpUses(launch: Launch): {
 }
 
 /**
- * The Tasks, Team and Record cards, each only once it has something or "Set up more" was pressed, then the button for
- * whoever can set the rest up: the founder, and anyone on the team (a member's "Give someone a task" lives in the Tasks
- * card, so it must stay reachable for them too).
+ * The Tasks, Team and Record cards. Tasks and Team are on the page from the start for the founder and the team (they
+ * hold "Add something to do" and "Add a person"); Record shows once it has something to hold.
  */
 export function SetUpCards({
   launch,
   isFounder,
-  opened,
-  onOpen,
 }: {
   launch: Launch;
   isFounder: boolean;
-  opened: boolean;
-  onOpen: () => void;
 }) {
   const { uses, tasksRead } = useSetUpUses(launch);
   const me = existingUserPubkey();
@@ -110,15 +101,13 @@ export function SetUpCards({
   // otherwise begin that read again as it mounts, drop out while it runs, and fail again: showing and hiding for ever.
   const [kept, setKept] = useState<ReadonlySet<SetUpCard>>(new Set());
   const wanted = SET_UP_CARDS.filter((card) =>
-    setUpCardShown(uses[card], opened),
+    setUpCardShown(card, uses[card], onTeam),
   );
   useEffect(() => {
     if (wanted.some((card) => !kept.has(card)))
       setKept(new Set([...kept, ...wanted]));
   }, [wanted, kept]);
   const shown = (card: SetUpCard) => wanted.includes(card) || kept.has(card);
-  // What the button would still bring in: the cards the page is not showing, and has not shown.
-  const left = setUpMore(uses, opened).filter((card) => !kept.has(card));
   return (
     <>
       {/* Says when the tasks were read, so a page with nothing to show for them can be told from one still reading. */}
@@ -134,40 +123,6 @@ export function SetUpCards({
       {shown("record") ? (
         <ProjectRecordCard isFounder={isFounder} launch={launch} />
       ) : null}
-      {onTeam ? (
-        <SetUpMoreButton onOpen={onOpen} show={left.length > 0} />
-      ) : null}
     </>
-  );
-}
-
-/** The one button for the cards a new project does not have yet. Nothing when every card is on the page. */
-function SetUpMoreButton({
-  show,
-  onOpen,
-}: {
-  show: boolean;
-  onOpen: () => void;
-}) {
-  if (!show) return null;
-  return (
-    <section
-      aria-label="Set up more"
-      className="flex flex-wrap items-center gap-x-3 gap-y-1"
-      data-testid="set-up-more-row"
-    >
-      <Button
-        data-testid="set-up-more"
-        onClick={onOpen}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        Set up more
-      </Button>
-      <p className="min-w-0 flex-1 text-xs text-muted-foreground">
-        Add a team member, make a task, or see your record of promises.
-      </p>
-    </section>
   );
 }
