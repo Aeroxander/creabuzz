@@ -174,7 +174,8 @@ PORT=$(free_port); HEALTH=$(free_port); METRICS=$(free_port)
 step "starting the relay on :$PORT ($([[ "$MEMBERSHIP" == "true" ]] && echo "invite-only: members only" || echo "open: anyone who signs up may post")$([[ "$PUBLIC_READS" == "true" ]] && echo "; anyone may read a public project's record"))"
 # The limits are raised because three browsers, a command line and a seed share one minute, not because any step
 # needs it: each person's own writes stay far under the defaults except the seed, which the spec spreads over four
-# writers. Membership is open unless BUZZ_REQUIRE_RELAY_MEMBERSHIP=true (above): then the server has an owner, whose key
+# writers (and the first-day cap on project records is off for the same reason: flow 7 seeds 620 records from four brand-new
+# accounts; the cap itself is held by the server's own tests). Membership is open unless BUZZ_REQUIRE_RELAY_MEMBERSHIP=true (above): then the server has an owner, whose key
 # this run makes and gives the spec, and only members read or post.
 OWNER_ENV=()
 if [[ "$MEMBERSHIP" == "true" ]]; then
@@ -203,7 +204,7 @@ env DATABASE_URL="$DB_URL" REDIS_URL="$REDIS_URL" BUZZ_AUTO_MIGRATE=true \
   ${OWNER_ENV[@]+"${OWNER_ENV[@]}"} \
   ${TERMS_ENV[@]+"${TERMS_ENV[@]}"} \
   BUZZ_RATE_LIMIT_HUMAN_MESSAGES_PER_MIN=600 BUZZ_RATE_LIMIT_HUMAN_WS_EVENTS_PER_SEC=2000 \
-  BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR=0 \
+  BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR=0 BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY=0 \
   "$STATE/buzz-relay" >"$STATE/relay.log" 2>&1 &
 RELAY_PID=$!
 relay_up() { curl -fsS -m 2 -H 'Accept: application/nostr+json' "http://localhost:$PORT/"; }

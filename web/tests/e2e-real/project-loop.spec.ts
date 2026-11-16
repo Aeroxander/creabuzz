@@ -7,6 +7,11 @@ import {
 import { decrypt as nip49Decrypt } from "nostr-tools/nip49";
 
 import {
+  ACCEPT_PATH_BUDGET,
+  JOIN_PATH_BUDGET,
+  PressCounter,
+} from "../helpers/press-counter";
+import {
   type Account,
   INVITE_ONLY,
   OWNER_KEY,
@@ -2173,4 +2178,169 @@ test("11. a founder with nobody else: signs up, starts a project, does a task al
   expect(refused.reason).toBe(
     "restricted: a task's work must be confirmed by someone other than its helper",
   );
+});
+
+test("12. a stranger opens the project's link and asks to join in two presses and no typing; the server lets them do nothing else; the founder accepts in one press", async ({
+  browser,
+}) => {
+  test.skip(
+    INVITE_ONLY,
+    "a stranger cannot sign up on an invite-only server: an invite link makes the account",
+  );
+  test.setTimeout(240_000);
+  const JOINER_NAME = `Jo ${RUN}`;
+  const cardPath = `/p/${SLUG}-${founder.pubkey.slice(0, 16)}`;
+  const asked = new PressCounter();
+  const accepted = new PressCounter();
+
+  // Signed out, on the project's public link: one green button.
+  const page = await ownBrowserPage(browser);
+  await page.goto(cardPath);
+  const card = page.getByTestId("scorecard");
+  await expect(card).toBeVisible();
+  await expect(card.getByTestId("join-ask")).toHaveText("Ask to join");
+  await expect(card.getByTestId("join-ask")).toHaveClass(/bg-primary/);
+
+  // Press 1 opens the sign-up dialog (nothing is sent). The person signs up as anyone does (not part of the count),
+  // lands back on the same link, and presses 2.
+  await asked.press(card.getByTestId("join-ask"), "Ask to join (signed out)");
+  await expect(page.getByTestId("onboarding-dialog")).toBeVisible();
+  await page.getByTestId("onboarding-name").fill(JOINER_NAME);
+  await page.getByTestId("onboarding-create").click();
+  await expect(page.getByTestId("user-chip")).toBeVisible();
+  expect(new URL(page.url()).pathname, "back on the project's link").toBe(
+    cardPath,
+  );
+  const [sealed, wrap] = await page.evaluate(() => [
+    window.localStorage.getItem("buzz.identity.nsec") ?? "",
+    window.localStorage.getItem("buzz.identity.wrap") ?? "",
+  ]);
+  const joiner = accountFromKey(nip49Decrypt(sealed, wrap), JOINER_NAME);
+  const asksBy = async (who: Account) =>
+    (
+      await readAs(stranger, {
+        kinds: [47003],
+        authors: [who.pubkey],
+        "#a": [coord],
+        limit: 50,
+      })
+    ).filter((e) => e.tags.some((t) => t[0] === "join-ask"));
+  expect(
+    await asksBy(joiner),
+    "nothing was sent before they signed up",
+  ).toEqual([]);
+  await asked.press(
+    page.getByTestId("scorecard").getByTestId("join-ask"),
+    "Ask to join",
+  );
+  await expect(page.getByTestId("join-asked")).toHaveText(
+    "Asked to join. The founder has been told.",
+  );
+  console.log(asked.summary("a stranger asks to join from the link"));
+  expect(asked.presses).toBeLessThanOrEqual(JOIN_PATH_BUDGET.presses);
+  expect(asked.fields).toBe(JOIN_PATH_BUDGET.fields);
+
+  // The server holds one signed ask that names the project and the founder, with the person's own yes in it.
+  await expect.poll(async () => (await asksBy(joiner)).length).toBe(1);
+  const [ask] = await asksBy(joiner);
+  const invite = tagOf(ask, "join-ask") ?? "";
+  expect(invite).toMatch(/^[a-z0-9]{12}$/);
+  expect(ask.tags).toContainEqual(["l", "creaton-join"]);
+  expect(ask.tags).toContainEqual(["team-answer", "yes"]);
+  expect(ask.tags).toContainEqual(["team-invite", invite]);
+  expect(ask.tags).toContainEqual(["p", founder.pubkey]);
+  // After a reload the page still says so.
+  await page.reload();
+  await expect(page.getByTestId("join-asked")).toBeVisible();
+
+  // The ask lends nothing: the server still refuses what a stranger may not do, in its own plain words.
+  const noUpdate = await publishAs(joiner, {
+    kind: 47003,
+    content: JSON.stringify({ title: "Hello", body: "" }),
+    tags: [
+      ["a", coord],
+      ["update-part", "done", "I am not on the team"],
+    ],
+  });
+  expect(noUpdate.accepted).toBe(false);
+  expect(noUpdate.reason).toContain("only this project's team");
+  const noGoal = await publishAs(joiner, {
+    kind: 47003,
+    content: JSON.stringify({ title: "Goal", body: "" }),
+    tags: [
+      ["a", coord],
+      ["goal", "g1"],
+    ],
+  });
+  expect(noGoal.accepted).toBe(false);
+  expect(noGoal.reason).toContain("only this project's founder");
+  // And a few asks only: two more are taken, the next is refused and stored nowhere.
+  const again = (note: string) =>
+    publishAs(joiner, {
+      kind: 47003,
+      content: JSON.stringify({ title: "Asked to join", body: "" }),
+      tags: [
+        ["a", coord],
+        ["l", "creaton-join"],
+        ["join-ask", `again${note}`],
+        ["l", "creaton-team"],
+        ["team-answer", "yes"],
+        ["team-invite", `again${note}`],
+        ["note", note],
+      ],
+    });
+  expect((await again("1")).accepted).toBe(true);
+  expect((await again("2")).accepted).toBe(true);
+  const fourth = await again("3");
+  expect(fourth.accepted).toBe(false);
+  expect(fourth.reason).toContain("already asked to join this project");
+
+  // The founder sees one request (the newest ask of each person) and accepts it with one press.
+  await founderPage.goto(projectPath);
+  const team = founderPage.getByTestId("project-team");
+  const request = team
+    .getByTestId("join-request")
+    .filter({ hasText: JOINER_NAME });
+  await expect(request).toHaveCount(1);
+  await expect(request).toContainText(`${JOINER_NAME} asked to join`);
+  await accepted.press(request.getByTestId("join-accept"), "Accept");
+  console.log(accepted.summary("the founder accepts"));
+  expect(accepted.presses).toBe(ACCEPT_PATH_BUDGET.presses);
+  expect(accepted.fields).toBe(ACCEPT_PATH_BUDGET.fields);
+  await expect(team.getByTestId("join-added")).toContainText(
+    `${JOINER_NAME} is on the team.`,
+  );
+  await expect
+    .poll(async () => {
+      const [record] = await readAs(stranger, {
+        kinds: [37001],
+        authors: [founder.pubkey],
+        "#d": [SLUG],
+      });
+      return record?.tags.some(
+        (t) => t[0] === "team" && t[1] === joiner.pubkey,
+      );
+    })
+    .toBe(true);
+
+  // The person is on the team with their yes already in: nothing to answer, no button to ask, and they may post.
+  await page.goto(projectPath);
+  await expect(
+    page
+      .getByTestId("project-team")
+      .getByTestId("team-member")
+      .filter({ hasText: JOINER_NAME }),
+  ).toBeVisible();
+  await expect(page.getByTestId("team-invitation")).toHaveCount(0);
+  await expect(page.getByTestId("join-ask")).toHaveCount(0);
+  await expect(page.getByTestId("join-asked")).toHaveCount(0);
+  const nowAllowed = await publishAs(joiner, {
+    kind: 47003,
+    content: JSON.stringify({ title: "Hello team", body: "" }),
+    tags: [
+      ["a", coord],
+      ["update-part", "done", `Joined from the link ${RUN}`],
+    ],
+  });
+  expect(nowAllowed.reason).toBe("");
 });
