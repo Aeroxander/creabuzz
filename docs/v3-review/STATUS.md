@@ -12,6 +12,24 @@ The branch `v4-governance-rework` is pushed to the fork (https://github.com/Aero
 
 A plain-words copy pass rewrote the web app's user-facing text for readers new to crypto and DAOs (no number, economic setting or trading switch changed); what changed, and the legal lines left for you and counsel, is in [COPY-PASS-1.md](COPY-PASS-1.md).
 
+## Next-version milestone 0 (2026-11-16): the door, the join link, public pages, settings from the server
+
+First slice of [../NEXT-VERSION-PLAN.md](../NEXT-VERSION-PLAN.md) (D219 to D223), no contract change; nothing pushed or
+deployed. **Open sign-up:** the Creaton compose example now sets `BUZZ_REQUIRE_RELAY_MEMBERSHIP=false` (the relay's own default is
+unchanged; invite-only is one line away); an account the server first heard from less than a day ago may save at most 60 project
+records in that day (`BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY`). **Join link:** anyone signed in may ask to join a project from
+its link with one press ("Ask to join", kind 47003 with a `join-ask` tag; no new kind), and may do nothing else there; an account
+may ask one project 3 times and 20 projects a day; the founder accepts from the Team card or Notifications in one press (the
+project record is saved again with the person on it; their own yes is inside the ask); an agent account may ask and cannot accept;
+teams may have 200 people (it was 19 in the web app and 64 on the server); the Team card has "Copy link to invite people". **Public
+by default:** a project that states the terms of a sale is no longer hidden from someone who is not a member (public reads and link
+previews); no price is added anywhere. **Settings from the server:** `BUZZ_INVESTING=true|false` is advertised as `investing` in the
+server's information document and decides the investing and trading switches, in both directions, with no rebuild; unset says
+nothing and the build's switches decide (off unless built on). The addresses those screens read still come from the build, and
+`run.sh build` still refuses a build that names them without `VITE_INVESTING=1`: relaxing that is a call for later. Budgets held by
+tests: the solo path (8 presses, 4 fields) is unchanged; a stranger on a project link is "Asked to join" in at most 2 presses and 0
+fields after sign-up (1 once signed in); the founder accepts in 1. Not done here: a human's phone test.
+
 ## 2026-11-15, later: the decisions push
 
 You asked the assistant to make the owner decisions in [MVP-READY.md](MVP-READY.md) itself and work on them. It did, the same
@@ -268,8 +286,8 @@ yours" list.**
    invite-only server, when the server's setting is on.** `BUZZ_PUBLIC_PROJECT_READS=true` is set for Creaton's own server in
    `deploy/compose/.env.creaton.example`; with it off the page says "You need an invite to open this project", who to ask,
    and offers Sign in, as before. The visitor is sent the project's own record, the founder's goals and promises, the team's
-   updates and accepted work, and nothing else; a project that states the terms of a sale stays closed to them, and a private
-   project's name is never shown. Link previews and the server's example project follow the same setting. **Still yours:**
+   updates and accepted work, and nothing else (a project that states the terms of a sale was closed to them until next-version
+   milestone 0 made it public like any other); a private project's name is never shown. Link previews and the server's example project follow the same setting. **Still yours:**
    counsel's read before the pilot server starts with it on (invite-only was chosen for abuse and moderation reasons, D107),
    and the calls listed in [MVP-READY.md](MVP-READY.md), "Still yours" 4 and 5. [HOLDER-ACCESS-MODEL.md](HOLDER-ACCESS-MODEL.md)
    and the runbook's "What a visitor gets" still describe reads for members only and are not yet brought in line.
