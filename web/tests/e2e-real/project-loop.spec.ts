@@ -1,4 +1,9 @@
-import { expect as baseExpect, test, type Page } from "@playwright/test";
+import {
+  expect as baseExpect,
+  type Locator,
+  type Page,
+  test,
+} from "@playwright/test";
 import { decrypt as nip49Decrypt } from "nostr-tools/nip49";
 
 import {
@@ -168,6 +173,13 @@ async function visitorSees(
 }
 
 const record = (page: Page) => page.getByTestId("project-record");
+
+/** The update dialog's Title is under "More options" and Help needed behind "Ask for help": both closed until asked for. */
+async function titleAndHelp(dialog: Locator, opts: { help: boolean }) {
+  await dialog.getByText("More options", { exact: true }).click();
+  if (opts.help)
+    await dialog.getByRole("button", { name: "Ask for help" }).click();
+}
 const taskRow = (page: Page, what: string) =>
   page
     .getByTestId("project-tasks")
@@ -214,7 +226,7 @@ async function setTeam(team: Account[]) {
 async function addMateThroughTheTeamSection() {
   await founderPage.goto(projectPath);
   const team = founderPage.getByTestId("project-team");
-  // A project with nobody on its team shows the Team card once the founder asks for it ("Set up more").
+  // A project with nobody on its team shows the Team card from the start, with its one "Add a person" button.
   const more = founderPage.getByTestId("set-up-more");
   await expect(more.or(team.getByTestId("team-add"))).toBeVisible();
   if (await more.isVisible()) await more.click();
@@ -315,6 +327,9 @@ async function teamMemberPostsAnUpdate() {
   await matePage.goto(projectPath);
   await matePage.getByTestId("team-post-update").click();
   await expect(matePage.getByTestId("update-as-team")).toBeVisible();
+  await titleAndHelp(matePage.getByRole("dialog", { name: "Post update" }), {
+    help: false,
+  });
   await matePage.getByLabel("Title").fill(`From the team ${RUN}`);
   await matePage
     .getByLabel("What happened this week")
@@ -493,12 +508,12 @@ test("2. Quick Start: four answers make the project and its goal, and a reload k
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill(PROJECT_NAME);
-  await form.getByText("Edit the one-liner").click();
+  await form.getByText("More options", { exact: true }).click();
   await form
     .getByLabel("What is it, in one sentence?")
     .fill("A star map anyone can add to");
-  await form.getByLabel("The goal").fill(GOAL);
-  await form.getByLabel("How we'll know").fill(HOW);
+  await form.getByLabel("What is the goal?").fill(GOAL);
+  await form.getByLabel("How will people know it worked?").fill(HOW);
   await form.getByRole("button", { name: "Start the project" }).click();
 
   const goal = page.getByTestId("project-goal");
@@ -559,6 +574,8 @@ test("2. Quick Start: four answers make the project and its goal, and a reload k
       .getByTestId("social-rail-projects")
       .getByText(PROJECT_NAME, { exact: true }),
   ).toBeVisible();
+  // The listing choice is put away under "More to set up" on a new project's page: it is there, one press away.
+  await page.getByTestId("more-to-set-up-toggle").click();
   await expect(page.getByTestId("project-listing-state")).toContainText(
     "Listed.",
   );
@@ -570,8 +587,9 @@ test("3. weekly updates: three promises, the next update answers each, the recor
   const page = founderPage;
   await page.goto(projectPath);
 
-  await page.getByRole("button", { name: "Post update" }).click();
+  await page.getByTestId("launch-post-update").click();
   let dialog = page.getByRole("dialog", { name: "Post update" });
+  await titleAndHelp(dialog, { help: false });
   await dialog.getByLabel("Title").fill("Week one");
   await dialog.getByLabel("What happened this week").fill("Set up the repo.");
   await dialog
@@ -592,7 +610,7 @@ test("3. weekly updates: three promises, the next update answers each, the recor
   ]);
 
   // The second update answers each, and asks for help.
-  await page.getByRole("button", { name: "Post update" }).click();
+  await page.getByTestId("launch-post-update").click();
   dialog = page.getByRole("dialog", { name: "Post update" });
   await expect(dialog.getByTestId("update-due-promise")).toHaveCount(3);
   const answer = (text: string) => dialog.getByRole("group", { name: text });
@@ -611,6 +629,7 @@ test("3. weekly updates: three promises, the next update answers each, the recor
   await dialog
     .getByLabel("Short note for: Find a designer")
     .fill("doing it ourselves");
+  await titleAndHelp(dialog, { help: true });
   await dialog.getByLabel("Title").fill("Week two");
   await dialog.getByLabel("What happened this week").fill("Sign-up shipped.");
   await dialog.getByLabel("What's next").fill("Invite ten people");
@@ -963,8 +982,9 @@ test("5. tasks: an offer becomes a task with Done means; handed in, sent back, h
   // It is on the project's record as work accepted, and on the helper's profile for anyone.
   const accepted = record(founderPage).getByTestId("record-work-accepted");
   await expect(accepted).toContainText(ASK);
+  // The founder reads their own check as "you".
   await expect(accepted).toContainText(
-    `Done by ${helper.name}. Checked by ${FOUNDER_NAME}`,
+    `Done by ${helper.name} · Checked by you`,
   );
   await expect(
     record(founderPage).getByTestId("record-work-totals"),
@@ -1466,9 +1486,10 @@ test("8. boards made inside the project, Home's Boards tab, a private bookmark, 
   await expect(helperPage.getByTestId("social-rail-posts")).toContainText(
     "Where should we meet?",
   );
+  // A card with nothing to show is not drawn (no hashtags and no one to follow yet here): the two with rows are.
   expect(
     await helperPage.locator('[data-testid^="social-rail-block-"]').count(),
-  ).toBeGreaterThanOrEqual(3);
+  ).toBeGreaterThanOrEqual(2);
   await shot(helperPage, "08-home");
 
   // Last, so the founder's own update stays the project's newest for the steps above.
@@ -1690,10 +1711,10 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
     PROJECT_NAME,
   );
   // Test 3 made three promises and answered each: the totals are stated, from the founder's own records.
-  await expect(scorecard.getByTestId("scorecard-kept")).toHaveText(
-    /^\d+ of \d+$/,
+  await expect(scorecard.getByTestId("record-line-kept")).toHaveText(
+    /^Kept \d+ of \d+ promises/,
   );
-  await expect(scorecard.getByTestId("scorecard-streak")).not.toHaveText(
+  await expect(scorecard.getByTestId("record-line")).not.toContainText(
     "Not known",
   );
   await expect(
@@ -1770,8 +1791,9 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
 
   // The founder posts once more: the server takes it, and the page ends on the note with the record to share.
   await founderPage.goto(projectPath);
-  await founderPage.getByRole("button", { name: "Post update" }).click();
+  await founderPage.getByTestId("launch-post-update").click();
   const dialog = founderPage.getByRole("dialog", { name: "Post update" });
+  await titleAndHelp(dialog, { help: false });
   await dialog.getByLabel("Title").fill(`Closing the week ${RUN}`);
   await dialog
     .getByLabel("What's next")
@@ -1816,7 +1838,7 @@ test("10. the next update starts from last time's promises, Home shows it live, 
 
   // The founder opens the update dialog: it starts from what the last updates promised, each asking for an answer.
   await founderPage.goto(projectPath);
-  await founderPage.getByRole("button", { name: "Post update" }).click();
+  await founderPage.getByTestId("launch-post-update").click();
   const dialog = founderPage.getByRole("dialog", { name: "Post update" });
   const promise = (text: string) => dialog.getByRole("group", { name: text });
   for (const said of ["One more thing", "And another", "A third"])
@@ -1827,6 +1849,7 @@ test("10. the next update starts from last time's promises, Home shows it live, 
     .check();
   await promise("And another").getByRole("radio", { name: "Not done" }).check();
   await dialog.getByLabel("Short note for: And another").fill("Next week");
+  await titleAndHelp(dialog, { help: true });
   await dialog.getByLabel("Title").fill(TITLE);
   await dialog
     .getByLabel("What happened this week")
@@ -1903,11 +1926,12 @@ test("10. the next update starts from last time's promises, Home shows it live, 
   const visitor = INVITE_ONLY ? helperPage : await ownBrowserPage(browser);
   await visitor.goto(`/p/${SLUG}-${founder.pubkey.slice(0, 16)}`);
   const scorecard = visitor.getByTestId("scorecard");
-  await expect(scorecard.getByTestId("scorecard-open-help")).toContainText(
-    "open request",
+  // The latest update's request for help is on the scorecard under "Help needed", beside the promises kept.
+  await expect(scorecard.getByTestId("scorecard-update-help")).toContainText(
+    PROOF,
   );
-  await expect(scorecard.getByTestId("scorecard-kept")).toHaveText(
-    /^\d+ of \d+$/,
+  await expect(scorecard.getByTestId("record-line-kept")).toHaveText(
+    /^Kept \d+ of \d+ promises/,
   );
   await expect(scorecard.getByTestId("scorecard-follow")).toBeVisible();
   await expect(scorecard).not.toContainText(/\$|earn/i);
@@ -1988,8 +2012,12 @@ test("11. a founder with nobody else: signs up, starts a project, does a task al
   await page.goto("/start");
   const form = page.getByTestId("quick-start");
   await form.getByLabel("Project name").fill(SOLO_PROJECT);
-  await form.getByLabel("The goal").fill("A first page three people read");
-  await form.getByLabel("How we'll know").fill("Three people open the link");
+  await form
+    .getByLabel("What is the goal?")
+    .fill("A first page three people read");
+  await form
+    .getByLabel("How will people know it worked?")
+    .fill("Three people open the link");
   await form.getByRole("button", { name: "Start the project" }).click();
   await expect(page.getByRole("heading", { level: 1 })).toContainText(
     SOLO_PROJECT,
@@ -2010,44 +2038,30 @@ test("11. a founder with nobody else: signs up, starts a project, does a task al
     "nobody else is on the new project's team",
   ).toEqual([]);
 
-  // They make a task for themself. Nothing on the card promises a checker who is not there.
-  const more = page.getByTestId("set-up-more");
+  // They add something to do for themself, and say what finished looks like. Nothing on the page promises a checker
+  // who is not there.
   const tasks = page.getByTestId("project-tasks");
-  await expect(more.or(tasks)).toBeVisible();
-  if (await more.isVisible()) await more.click();
-  await expect(tasks.getByTestId("tasks-alone")).toContainText(
-    "You are the only person on this project",
-  );
-  await tasks.getByRole("button", { name: "Give someone a task" }).click();
-  const make = tasks.getByRole("form", { name: "Give someone a task" });
-  await make.getByRole("button", { name: "I'll do it myself" }).click();
-  await make.getByLabel("What is the task").fill(WHAT);
-  await make.getByLabel("Done means").fill("A page at a link anyone can open.");
-  await make.getByRole("button", { name: "Make the task" }).click();
-  await expect(tasks.getByTestId("tasks-said")).toContainText(
-    "mark it as done yourself",
-  );
+  await page.getByTestId("first-week-plan").click();
+  const plan = page.getByRole("dialog", { name: "Add something to do" });
+  await plan.getByLabel("What do you want to do?").fill(WHAT);
+  await plan.getByTestId("solo-win-finish-toggle").click();
+  await plan
+    .getByTestId("solo-win-done-means")
+    .fill("A page at a link anyone can open.");
+  await plan.getByRole("button", { name: "Add it" }).click();
   const row = tasks.getByTestId("task").filter({ hasText: WHAT });
   await expect(row).toHaveAttribute("data-state", "in-progress");
+  await expect(row.getByTestId("task-who")).toContainText("With you");
 
-  // They hand it in, and are offered their own check with what it is worth said first.
-  await row.getByRole("button", { name: "Hand in work" }).click();
-  const handIn = row.getByRole("form", { name: "Hand in work" });
-  await handIn.getByLabel("What you did").fill("The page is up.");
-  await handIn
-    .getByLabel("Links (optional, one per line)")
-    .fill("https://example.org/first-page");
-  await handIn.getByRole("button", { name: "Hand in" }).click();
-  await expect(row).toHaveAttribute("data-state", "submitted");
-  await expect(row.getByTestId("task-cannot-confirm")).toHaveCount(0);
-  await expect(row.getByTestId("task-check-alone")).toContainText(
-    "It will be shown as checked by you alone.",
-  );
+  // One button on the row: "I did it". It hands the work in and checks it, once each, and says it is their own check.
+  await expect(row.getByRole("button", { name: /Hand in/ })).toHaveCount(0);
   await expect.poll(async () => (await soloSteps("confirm")).length).toBe(0);
-  await row.getByRole("button", { name: "Mark as done" }).click();
-  await expect(tasks.getByTestId("tasks-said")).toContainText(
-    "Marked as done. It shows as checked by you alone",
-  );
+  await row.getByTestId("task-did-it").click();
+  const finish = page.getByRole("dialog", { name: "What did you get done?" });
+  await finish
+    .getByTestId("solo-win-link")
+    .fill("https://example.org/first-page");
+  await finish.getByRole("button", { name: "Done" }).click();
 
   // The real server took the founder's own check: one confirmation, theirs, of the work they handed in.
   await expect.poll(async () => (await soloSteps("confirm")).length).toBe(1);
@@ -2061,14 +2075,12 @@ test("11. a founder with nobody else: signs up, starts a project, does a task al
   await page.reload();
   const soloCard = record(page);
   const alone = soloCard.getByTestId("record-work-alone");
-  await expect(alone).toContainText(
-    "Done — checked by the founder, working alone",
-  );
+  await expect(alone).toContainText("Done, checked by you");
   await expect(alone).toContainText(WHAT);
   await expect(soloCard.getByTestId("record-work-accepted")).toHaveCount(0);
   await expect(soloCard.getByTestId("record-work-totals")).toHaveCount(0);
   await expect(soloCard.getByTestId("record-work-alone-totals")).toHaveText(
-    "1 piece of work done alone, checked by the founder",
+    "1 piece of work done, checked by you",
   );
   await expect(
     page.getByTestId("project-tasks").getByTestId("task"),
@@ -2078,7 +2090,7 @@ test("11. a founder with nobody else: signs up, starts a project, does a task al
   await helperPage.goto(soloPath);
   await expect(
     record(helperPage).getByTestId("record-work-alone"),
-  ).toContainText("Done — checked by the founder, working alone");
+  ).toContainText("Done, checked by the founder");
   const listed = await buzz(cliHelper, [
     "launchpad",
     "tasks",
