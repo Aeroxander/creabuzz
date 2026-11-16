@@ -667,7 +667,7 @@ export function LaunchDetailPage({
 
       {shown === "overview" && idea ? (
         <>
-          <IdeaOverview record={launch.record} />
+          <IdeaOverview onTeam={onTeam} record={launch.record} />
           {ideaShowsTeamSurfaces(raises) ? (
             <ProjectDeliveryOverview
               launch={launch}

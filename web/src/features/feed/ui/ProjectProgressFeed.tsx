@@ -7,6 +7,7 @@ import {
   type Launch,
   type LaunchUpdate,
 } from "@/features/launchpad/models";
+import { teamOf } from "@/features/launchpad/lib/help-request";
 import { listedProject } from "@/features/launchpad/lib/listing";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { daoOfLaunch } from "@/features/launchpad/lib/dao-of-launch";
@@ -89,6 +90,8 @@ function ProgressList({
   const { tallies } = useVoteTallies();
   const { seen, mark, markBatch } = useProgressSeen();
   const me = existingUserPubkey();
+  // Someone on the project's team has no one to follow it for.
+  const onTeam = Boolean(project && me && teamOf(project.record).has(me));
   const relay = relayWsUrl();
   const [filter, setFilter] = useState<"following" | "all">("following");
   const [limit, setLimit] = useState(project ? (compact ? 2 : 6) : 5);
@@ -295,9 +298,15 @@ function ProgressList({
         <p className="mt-3 text-sm">Loading updates…</p>
       ) : null}
       {ready && !visible.length ? (
-        <p className="mt-3 text-sm text-muted-foreground">
-          No updates here yet. Follow a project, or share what you finished, the
-          work you made and what comes next.
+        <p
+          className="mt-3 text-sm text-muted-foreground"
+          data-testid="progress-empty"
+        >
+          {project
+            ? onTeam
+              ? "Your updates show here once you post one."
+              : "No updates here yet. Follow the project to get them."
+            : "No updates here yet. Follow a project, or share what you finished, the work you made and what comes next."}
         </p>
       ) : null}
       {project &&

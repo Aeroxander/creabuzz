@@ -504,3 +504,28 @@ test("when the server says someone else must check, the box says so once, with n
   expect(steps(relay, "evidence")).toHaveLength(1);
   expect(steps(relay, "confirm")).toHaveLength(0);
 });
+
+test("the founder's own project does not tell them to follow it; a visitor still reads that line", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedNew(relay);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  const empty = page.getByTestId("progress-empty");
+  await expect(empty).toHaveText("Your updates show here once you post one.", {
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("idea-overview")).not.toContainText("Follow");
+  await expect(page.getByText("A project in the open")).toHaveCount(0);
+
+  // Someone who is not on the team is the one the line is for.
+  await openAs(page, VISITOR_KEY, PROJECT);
+  await expect(page.getByTestId("progress-empty")).toHaveText(
+    "No updates here yet. Follow the project to get them.",
+    { timeout: 20_000 },
+  );
+  await expect(page.getByTestId("idea-overview")).toContainText(
+    "Follow it to get its updates",
+  );
+});
