@@ -6,6 +6,9 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
+import {IInitializerHook} from "liquidity-launcher/src/interfaces/IInitializerHook.sol";
 import {ILBPInitializer} from "liquidity-launcher/src/interfaces/ILBPInitializer.sol";
 import {ILBPStrategy} from "liquidity-launcher/src/interfaces/ILBPStrategy.sol";
 import {MigratorParameters} from "liquidity-launcher/src/libraries/MigratorParams.sol";
@@ -20,10 +23,6 @@ interface IStrategyPools {
     function poolManager() external view returns (address);
 }
 
-interface IPoolManagerSlot {
-    function extsload(bytes32 slot) external view returns (bytes32);
-}
-
 /// @notice A stand-in for the project treasury of milestone 2/3, only as much as milestone 1 needs: it is the
 /// strategy's `recipient` (leftover currency and unused pool Shares) and the auction's `tokensRecipient` (unsold Shares,
 /// which the auction hands over only when this address itself calls the sweep). It also holds the plan's
@@ -36,6 +35,7 @@ interface IPoolManagerSlot {
 /// None of the three reverts because another caller already did the work, and none trusts a caller-supplied number.
 contract MockTreasury {
     using PoolIdLibrary for PoolKey;
+    using StateLibrary for IPoolManager;
 
     /// @notice Currency the project may spend (the 15 of every 100 raised).
     uint256 public spendable;
@@ -70,14 +70,18 @@ contract MockTreasury {
         });
     }
 
-    /// @notice True when the project's pool exists. Read from the pool manager's own storage, never from an event:
-    /// the strategy reports a failed pool step as a successful transaction.
+    /// @notice True when the project's own pool exists. Read from the pool manager through the same library the strategy
+    /// uses, never from an event: the strategy reports a failed pool step as a successful transaction.
+    /// @dev "The project's own pool" means the pool at a key whose hook is a pool guard that names this sale's strategy
+    /// as the only address allowed to create it. Without that guard the key is the plain one, which a stranger can
+    /// initialise at a price of their choosing after the sale opens, so "a pool exists there" would prove nothing about
+    /// the project's pool. The strategy accepts a sale with no guard, so this refuses it here: no guard, no pool.
     function poolIsOpen(ILBPStrategy strategy, ILBPInitializer auction) public view returns (bool) {
-        bytes32 id = PoolId.unwrap(_key(strategy, auction).toId());
-        // Pool.State.slot0 is the first word of the pool's storage; the price is its low 160 bits.
-        bytes32 slot0 = IPoolManagerSlot(IStrategyPools(address(strategy)).poolManager())
-            .extsload(keccak256(abi.encode(id, uint256(6))));
-        return uint160(uint256(slot0)) != 0;
+        PoolKey memory key = _key(strategy, auction);
+        address hook = address(key.hooks);
+        if (hook == address(0) || IInitializerHook(hook).authorized() != address(strategy)) return false;
+        (uint160 sqrtPriceX96,,,) = IPoolManager(IStrategyPools(address(strategy)).poolManager()).getSlot0(key.toId());
+        return sqrtPriceX96 != 0;
     }
 
     /// @notice Step 2. New money is whatever this contract holds above its two buckets, split 15 : 60 (20 : 80).

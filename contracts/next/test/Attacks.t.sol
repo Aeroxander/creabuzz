@@ -419,6 +419,39 @@ abstract contract AttackBase is SaleBase {
         assertTrue(treasury.sweepUnsold(IAuctionSweeps(address(s.auction))), "step 3 ran");
     }
 
+    /// @notice The finish's protection against the swallowed failure depends on the pool guard. With no guard the key is
+    /// the plain one, which a stranger can initialise at any price after the sale opens; "a pool exists at that key" is
+    /// then true while the project's own pool never opened. The finish must still refuse to split, and it must not take
+    /// the stranger's pool for the project's.
+    function test_swallowedFailure_withoutAGuardAStrangersPlainPoolDoesNotFoolTheFinish() public {
+        _noGuard();
+        Sale memory s = _openSale(_standard());
+        vm.roll(s.startBlock);
+        _bid(s, alice, 7000 * DOLLAR, 100);
+        _bid(s, bob, 5000 * DOLLAR, 100);
+        PoolKey memory plain = _poolKey(address(0));
+        vm.prank(stranger);
+        poolManager.initialize(plain, PRICE_ONE); // the stranger's pool, at a price they chose
+        _toEnd(s);
+        vm.roll(s.endBlock + 1);
+        uint256 raised = s.auction.currencyRaised();
+        quote.setBlocked(address(positionManager), true); // the pool step cannot deliver the dollars
+        vm.recordLogs();
+        vm.prank(stranger);
+        strategy.migrate(ILBPInitializer(address(s.auction)));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        assertEq(_logs(logs, ILBPStrategy.MigrationFailed.selector), 1, "the pool step failed and said nothing");
+        assertEq(_poolSqrtPrice(plain), PRICE_ONE, "the only pool that exists is the stranger's");
+        assertFalse(treasury.poolIsOpen(strategy, ILBPInitializer(address(s.auction))), "it is not the project's");
+        uint256 held = quote.balanceOf(address(treasury));
+        assertEq(held, raised - raised * FEE_PIPS / 1_000_000, "97 of every 100 are in the treasury, none in a pool");
+
+        vm.expectRevert(MockTreasury.NoPool.selector);
+        treasury.settle(quote, strategy, ILBPInitializer(address(s.auction)));
+        assertEq(treasury.spendable() + treasury.floorMoney(), 0, "no bucket was touched");
+    }
+
     // ===================================================================================================================
     // Stranger gifts before the pool step change nothing for the recipients' accounting
     // ===================================================================================================================
