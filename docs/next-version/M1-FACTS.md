@@ -174,10 +174,15 @@ guard on top of the real PoolManager and PositionManager on the fork.
 
 **The public Sepolia node keeps only the last ~10,000 blocks of history, and state only for the last few dozen blocks**
 (**chain**: reading old history gave `pruned history unavailable ... earliest available 12136589` at head 12,146,670;
-reading a storage slot of a block about 40 minutes old gave `Archive requests require a personal token`). So a "pinned
-block" works from Foundry's local cache (`~/.foundry/cache/rpc`, filled by the first run at that block) or from an archive
-node, and from the public node only while the block is fresh. The suite pins `SEPOLIA_PIN = 12,146,937` in
-`contracts/next/test/helpers/Stack.sol` and takes `SEPOLIA_FORK_BLOCK` to override it. See `contracts/next/README.md`.
+reading a storage slot of a block about 40 minutes old gave `Archive requests require a personal token`). For blocks a
+few thousand blocks old the node's back ends disagree: the same block answered some reads and refused others, and a
+different account failed on each run (**ran**, block 12,140,000). So a "pinned block" works only from Foundry's local
+cache (`~/.foundry/cache/rpc`, filled by the first run at that block) or from an archive node. Even the cache needs a
+**live node**: `createSelectFork` contacts it first (**ran**: a dead URL with the cache present fails). The suite's pin is
+`SEPOLIA_PIN = 12,146,937` in `contracts/next/test/helpers/Stack.sol`, but whether a run can use it is now decided at run
+time (`ForkPick`): a node that cannot serve it makes the suite fork at a recent block (nothing in the tests depends on the
+block), a named block the node cannot serve skips with a message, and a dead node skips with a message. Details and the
+commands that check this are in `contracts/next/README.md`.
 
 ## 9. What the tests showed about the vendored code (ran)
 
@@ -207,16 +212,42 @@ Each line is a test in `contracts/next/test`; the report (`M1-REPORT.md`) has th
   from source with solc 0.8.17; its bytes differ from Uniswap's deployed Permit2 (different compiler settings), the
   behaviour used (allowance approve and transferFrom) is the same.
 
-## 10. Licences (code, SPDX lines and LICENSE files; not legal advice)
+## 10. Licences (code, SPDX lines and LICENSE files; not legal advice; **not cleared**)
 
-* The auction (`continuous-clearing-auction`, 32 source files checked) and the launcher and strategy
-  (`liquidity-launcher`) are **MIT**, as are `PositionManager` and `Permit2`. We deploy the auction factory (which
-  builds the auction) and the strategy as they are, so the plan's "licence must be checked first" is answered: MIT, which
-  allows it.
-* The v4 `PoolManager` is **BUSL-1.1** (`v4-core/licenses/BUSL_LICENSE`). We never copy or redeploy it for real: the
-  production route calls Uniswap's own deployment. Our tests compile and deploy a copy of it **in memory** for the local
-  twin only; that is a test use and a counsel question if anyone ever wants to ship that copy.
-* Our new files (`contracts/next/src`) are written as MIT, matching the code they extend.
+**The question the plan asked** ("the licence of the vendored code must be checked first") is **not answered yes**. It
+is answered "mostly MIT, with two BUSL-1.1 files in the strategy's source graph and one BUSL-licensed function that very
+likely ends up inside the strategy's bytecode: for counsel".
+
+* **MIT:** the auction (`continuous-clearing-auction`, 32 source files checked), the launcher and its strategy
+  (`liquidity-launcher/src`), `PositionManager` and `Permit2`, and our own new files in `contracts/next/src`. The
+  compiled auction factory (which contains the auction's creation code), `PoolGuard`, `MinBid` and `FixedFeeController`
+  each have only MIT files in their source graph (**ran**: the licence of every file listed in each build artifact's
+  metadata).
+* **BUSL-1.1 in what we would compile and deploy.** The `LBPStrategy` source graph is 76 files: 74 MIT and **2 BUSL-1.1**,
+  both Uniswap v4-core libraries: `v4-core/src/libraries/Pool.sol` and `v4-core/src/libraries/Position.sol` (SPDX lines, and the licence field of the strategy's build metadata).
+  * **Established:** `PositionPlanner.resolve` (launcher, MIT) calls `Pool.tickSpacingToMaxLiquidityPerTick` at
+    `src/libraries/PositionPlanner.sol:139`, and the strategy calls `PositionPlanner.resolve` on its pool path
+    (`LBPStrategy.sol:298`). That function is `internal` (`Pool.sol:565`), and Solidity compiles an internal library
+    function into the contract that calls it. So **a BUSL-licensed function of about 20 lines is, by the language's rules,
+    part of the strategy's bytecode** if we compile the strategy ourselves. I did **not** confirm it in the compiled
+    bytes (via-IR may fold it); treat it as likely, not shown.
+  * **Not established:** whether anything from `Position.sol` reaches the bytecode (it is imported by `StateLibrary.sol`,
+    which the strategy uses only for `getSlot0`, so probably not).
+  * **The grant:** `v4-core/licenses/BUSL_LICENSE` gives the right to copy, modify and make **non-production** use. Its
+    Additional Use Grant is "any uses listed and defined at `v4-core-license-grants.uniswap.eth`" (an on-chain reference
+    I did not read, and cannot from here). **Change Date: the earlier of 2027-06-15 or a date set at
+    `v4-core-license-date.uniswap.eth`**, after which the code is MIT. A production deployment before that date would
+    rest on the on-chain grant, which counsel has to read.
+* **Other BUSL-1.1 files in the vendored v4-core** (not in the strategy's source graph, so not compiled into anything we
+  deploy): `PoolManager.sol`, `CurrencyDelta.sol`, `Lock.sol`, `NonzeroDeltaCount.sol`, `CurrencyReserves.sol`, and a test
+  file. We never copy or redeploy the PoolManager for real: the production route calls Uniswap's own deployment. Our
+  tests compile and deploy a copy of it **in memory** for the local twin only: a test use.
+* **A way to settle it without lawyers' guesses** (not done): deploy the strategy from Uniswap's own build (if they publish
+  one) instead of compiling it ourselves, or compare our compiled strategy against a bytecode Uniswap deployed from the
+  same source. Neither exists for v3.0.0 today (no deployment of it is listed anywhere, section 8).
+* **Counsel list:** (1) can we deploy a strategy whose bytecode includes `Pool.tickSpacingToMaxLiquidityPerTick` before
+  2027-06-15, under the grant at `v4-core-license-grants.uniswap.eth`; (2) does the change date make the question vanish
+  for a launch after 2027-06-15; (3) the in-memory PoolManager copy in our tests.
 * **Audits listed in the vendored docs** (read, not verified): the auction lists OpenZeppelin and Spearbit reports for v2.0.0
   (16 June 2026; we vendor v2.1.0 plus two later commits) and older ones (`docs/audits/README.md`); the launcher lists
   reports up to its **v2.0.0** (OpenZeppelin 23 Jan 2026, Spearbit 21 Jan 2026 and older) (`README.md`, `docs/audit/`).
