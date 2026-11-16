@@ -6,6 +6,7 @@ import { queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
 import { type AgentMark, agentMark } from "./lib/agent-label";
+import { runAgentsOf } from "./lib/run-agents";
 
 /** One account's agent mark, read from its newest profile: null when it is not an agent. */
 export async function readAccountAgent(
@@ -21,6 +22,24 @@ export async function readAccountAgent(
     .filter((event) => event.kind === 0 && event.pubkey === pubkey)
     .sort((a, b) => b.created_at - a.created_at)[0];
   return newest ? agentMark(newest, 0) : null;
+}
+
+/**
+ * Which of `pubkeys` are agent accounts, the way the server counts them: their newest profile says so and carries the
+ * signature of the person who runs them. One read for all of them. A profile that only says "agent" is a person here,
+ * as it is on the server.
+ */
+export async function readRunAgents(
+  relay: string,
+  pubkeys: readonly string[],
+): Promise<string[]> {
+  if (pubkeys.length === 0) return [];
+  const events = await queryEvents(relay, {
+    kinds: [0],
+    authors: [...pubkeys],
+    limit: pubkeys.length * 3,
+  });
+  return runAgentsOf(events, pubkeys);
 }
 
 /**
@@ -73,12 +92,7 @@ export function useAgentAccounts(
     enabled: enabled && asked.length > 0,
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
-    queryFn: async () => {
-      const marks = await Promise.all(
-        asked.map((pubkey) => readAccountAgent(relay, pubkey)),
-      );
-      return asked.filter((_, i) => marks[i] !== null);
-    },
+    queryFn: () => readRunAgents(relay, asked),
   });
   return useMemo(() => new Set(read.data ?? []), [read.data]);
 }

@@ -84,7 +84,7 @@ import {
   parseLaunchUpdate,
 } from "./models";
 import {
-  readAccountAgent,
+  readRunAgents,
   useAccountAgent,
   useAgentAccounts,
 } from "./use-account-agent";
@@ -183,12 +183,7 @@ export function useProjectTasks(project: Project): {
     staleTime: 5 * 60_000,
     refetchOnWindowFocus: false,
     retry: false,
-    queryFn: async () => {
-      const marks = await Promise.all(
-        asked.map((pubkey) => readAccountAgent(relay, pubkey)),
-      );
-      return asked.filter((_, i) => marks[i] !== null);
-    },
+    queryFn: () => readRunAgents(relay, asked),
   });
   const waitingForAgents = asked.length > 0 && agentRead.isPending;
   const agents = useMemo(
@@ -537,7 +532,12 @@ function soloStore(me: string): PendingStore {
 
 type SoloRun =
   | { status: "idle" | "running" | "done" }
-  | { status: "failed"; stage: SoloStage; reached: SoloReached };
+  | {
+      status: "failed";
+      stage: SoloStage;
+      reached: SoloReached;
+      error: unknown;
+    };
 
 /**
  * "I did it" for a founder alone on their project (`lib/solo-win.ts`): make the task, hand the line in, and check it
@@ -617,6 +617,7 @@ export function useSoloWin(project: Project) {
             status: "failed",
             stage: result.stage,
             reached: result.reached,
+            error: result.error,
           });
         }
         return result;

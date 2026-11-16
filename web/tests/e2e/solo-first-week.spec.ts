@@ -1,3 +1,6 @@
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { expect, type Page, test } from "@playwright/test";
 
 import { expectAccessible } from "../helpers/a11y";
@@ -418,4 +421,84 @@ test("More to set up holds the chat, the announcement and the listing choice, cl
   await expect(page.getByTestId("project-listing-toggle")).toBeVisible();
   // The chat card is the founder's to set up: it offers the rooms the project does not have yet.
   await expect(page.getByTestId("launch-chat")).toBeVisible();
+});
+
+/** The profile of `agent` as an operator vouches for it: the agent tag, and the operator's signed word. */
+function agentProfile(relay: Relay, agent: string, operatorKey: string | null) {
+  const tags: string[][] = [["agent", agent]];
+  if (operatorKey) {
+    const proof = bytesToHex(
+      schnorr.sign(
+        sha256(new TextEncoder().encode(`nostr:agent-auth:${agent}:kind=0`)),
+        hexToBytes(operatorKey),
+      ),
+    );
+    tags.push(["auth", pubkeyOf(operatorKey), "kind=0", proof]);
+  }
+  relay.seed(event(0, agent, { name: "Scout" }, tags, now() - 30 * DAY));
+}
+
+const WITH_MATE = [
+  ["team", MATE, "member"],
+  ["team-invite", MATE, "inv1"],
+  ["p", MATE],
+];
+
+test("a teammate whose profile only says agent is a person to the server, so the founder is not alone and is not offered the solo box", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedNew(relay, WITH_MATE);
+  agentProfile(relay, MATE, null);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  const card = page.getByTestId("first-week");
+  await expect(card).toBeVisible({ timeout: 20_000 });
+  await expect(card).toContainText("Make a task in the Tasks card below.");
+  for (const id of ["first-week-add", "first-week-plan", "add-task-solo"])
+    await expect(page.getByTestId(id)).toHaveCount(0);
+});
+
+test("a teammate who is an agent with a person's signed word on it is not a person: the founder is alone", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedNew(relay, WITH_MATE);
+  agentProfile(relay, MATE, VISITOR_KEY);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  await expect(page.getByTestId("first-week-add")).toBeVisible({
+    timeout: 20_000,
+  });
+});
+
+test("when the server says someone else must check, the box says so once, with no Try again and no Done", async ({
+  page,
+}) => {
+  const relay = createMockRelay({
+    refuse: (e) =>
+      e.tags.some((t) => t[0] === "task-part" && t[1] === "confirm")
+        ? "restricted: a task's work must be confirmed by someone other than its helper"
+        : null,
+  });
+  seedNew(relay);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto(PROJECT);
+  await page.getByTestId("first-week-add").click();
+  const dialog = page.getByRole("dialog", { name: "What did you get done?" });
+  await dialog.getByLabel("What did you finish?").fill("Wrote the first page");
+  await dialog.getByRole("button", { name: "Done" }).click();
+  await expect(dialog.getByTestId("solo-win-failed")).toHaveText(
+    "Someone else is on this project now, so they need to check this work. Ask them to open the task and check it.",
+  );
+  await expect(dialog.getByRole("button", { name: "Try again" })).toHaveCount(
+    0,
+  );
+  await expect(dialog.getByTestId("solo-win-submit")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toHaveCount(0);
+  // Nothing was sent twice: the task and the hand-in stand, and no check was saved.
+  expect(steps(relay, "task")).toHaveLength(1);
+  expect(steps(relay, "evidence")).toHaveLength(1);
+  expect(steps(relay, "confirm")).toHaveLength(0);
 });

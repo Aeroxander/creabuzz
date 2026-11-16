@@ -41,7 +41,8 @@ export function SendFailed({
   testId,
 }: {
   children: ReactNode;
-  onRetry: () => void;
+  /** Left out when a second try cannot help: no "Try again" is shown. */
+  onRetry?: () => void;
   testId: string;
 }) {
   return (
@@ -51,9 +52,11 @@ export function SendFailed({
       role="alert"
     >
       <span>{children}</span>
-      <Button onClick={onRetry} size="sm" type="button" variant="outline">
-        Try again
-      </Button>
+      {onRetry ? (
+        <Button onClick={onRetry} size="sm" type="button" variant="outline">
+          Try again
+        </Button>
+      ) : null}
     </p>
   );
 }

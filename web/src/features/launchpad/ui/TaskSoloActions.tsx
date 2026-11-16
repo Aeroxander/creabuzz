@@ -14,6 +14,7 @@ import { Button } from "@/shared/ui/button";
 
 import { AGENT_NEEDS_PERSON } from "../use-account-agent";
 import { withReason } from "../lib/removals";
+import { checkRefusalOf, SOMEONE_ELSE_CHECKS } from "../lib/solo-refusal";
 import type { TaskEvidence, TaskView } from "../lib/tasks";
 import type { TaskSent } from "../use-tasks";
 import { SendFailed } from "./TaskParts";
@@ -58,6 +59,8 @@ export function SoloCheckAlone({
   expected: (error: unknown) => boolean;
 }) {
   const sayId = useId();
+  const refused =
+    confirm.isError && checkRefusalOf(confirm.error) === "own-work";
   const [marking, setMarking] = useState<string | null>(null);
   const mark = (piece: TaskEvidence) =>
     confirm.mutate(
@@ -85,7 +88,7 @@ export function SoloCheckAlone({
         >
           {AGENT_NEEDS_PERSON}
         </p>
-      ) : (
+      ) : refused ? null : (
         <ul className="mt-2 flex flex-col gap-2">
           {waiting.map((piece) => (
             <li key={piece.id}>
@@ -110,15 +113,22 @@ export function SoloCheckAlone({
         </ul>
       )}
       {confirm.isError && !expected(confirm.error) ? (
-        <SendFailed
-          onRetry={() => {
-            const piece = waiting.find((p) => p.id === marking);
-            if (piece) mark(piece);
-          }}
-          testId="task-mark-done-failed"
-        >
-          {withReason("The work was not saved as done.", confirm.error)}
-        </SendFailed>
+        // A check the server refused for good (someone else is on the project now) is said once, with no retry.
+        refused ? (
+          <SendFailed testId="task-mark-done-failed">
+            {SOMEONE_ELSE_CHECKS}
+          </SendFailed>
+        ) : (
+          <SendFailed
+            onRetry={() => {
+              const piece = waiting.find((p) => p.id === marking);
+              if (piece) mark(piece);
+            }}
+            testId="task-mark-done-failed"
+          >
+            {withReason("The work was not saved as done.", confirm.error)}
+          </SendFailed>
+        )
       ) : null}
     </div>
   );

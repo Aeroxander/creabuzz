@@ -14,8 +14,10 @@ import { useEffect, useId, useState } from "react";
 import { MoreInfo } from "@/shared/ui/more-info";
 import { Button } from "@/shared/ui/button";
 
+import { checkRefusalOf, SOMEONE_ELSE_CHECKS } from "../lib/solo-refusal";
 import { HOW_WORK_COUNTS, TASK_LIMITS, validLink } from "../lib/tasks";
 import type { Launch } from "../models";
+import { AGENT_NEEDS_PERSON } from "../use-account-agent";
 import { useProjectTasks, type useSoloWin, useTaskActions } from "../use-tasks";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { MODAL_FOOTER_CLASS, Modal } from "./Modal";
@@ -41,6 +43,7 @@ const SOLO_WORDS = {
   howCounts: "How work counts",
   done: "Done",
   cancel: "Cancel",
+  close: "Close",
   saving: "Saving…",
   partSaved: "Saved part of this. Try again.",
   nothingSaved: "This was not saved. Try again.",
@@ -113,6 +116,10 @@ export function SoloWinDialog({
   }, []);
   const failed = solo.run.status === "failed" || (pending !== null && !plan);
   const running = solo.run.status === "running" || actions.make.isPending;
+  // A check the server refused for good (someone else is on the project now, or this account is an agent): a second
+  // try cannot change that, so it is said once and "Try again" is not offered.
+  const refused =
+    solo.run.status === "failed" ? checkRefusalOf(solo.run.error) : null;
   const said = (words: string) => {
     onClose();
     onSaid?.(words);
@@ -288,11 +295,16 @@ export function SoloWinDialog({
             data-testid="solo-win-failed"
             role="alert"
           >
-            {plan
-              ? "The task was not added. Try again."
-              : solo.run.status === "failed" && solo.run.reached === "nothing"
-                ? SOLO_WORDS.nothingSaved
-                : SOLO_WORDS.partSaved}
+            {refused === "own-work"
+              ? SOMEONE_ELSE_CHECKS
+              : refused === "agent"
+                ? AGENT_NEEDS_PERSON
+                : plan
+                  ? "The task was not added. Try again."
+                  : solo.run.status === "failed" &&
+                      solo.run.reached === "nothing"
+                    ? SOLO_WORDS.nothingSaved
+                    : SOLO_WORDS.partSaved}
           </p>
         ) : null}
         <div
@@ -305,21 +317,23 @@ export function SoloWinDialog({
             type="button"
             variant="outline"
           >
-            {SOLO_WORDS.cancel}
+            {refused ? SOLO_WORDS.close : SOLO_WORDS.cancel}
           </Button>
-          <Button
-            data-testid="solo-win-submit"
-            disabled={running}
-            type="submit"
-          >
-            {running
-              ? SOLO_WORDS.saving
-              : failed || (plan && actions.make.isError)
-                ? SOLO_WORDS.tryAgain
-                : plan
-                  ? SOLO_WORDS.add
-                  : SOLO_WORDS.done}
-          </Button>
+          {refused ? null : (
+            <Button
+              data-testid="solo-win-submit"
+              disabled={running}
+              type="submit"
+            >
+              {running
+                ? SOLO_WORDS.saving
+                : failed || (plan && actions.make.isError)
+                  ? SOLO_WORDS.tryAgain
+                  : plan
+                    ? SOLO_WORDS.add
+                    : SOLO_WORDS.done}
+            </Button>
+          )}
         </div>
       </form>
     </Modal>
