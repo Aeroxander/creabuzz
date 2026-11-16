@@ -10,6 +10,7 @@ import { useMemo, useState } from "react";
 import { ProjectMark } from "@/features/feed/ui/MovingNow";
 import { type Launch, launchCoordinate } from "@/features/launchpad/models";
 import { Button } from "@/shared/ui/button";
+import { MoreInfo } from "@/shared/ui/more-info";
 
 import {
   BOARD_TABS,
@@ -87,14 +88,17 @@ export function ProjectBoard({ launches }: { launches: readonly Launch[] }) {
         ))}
       </div>
       {tab === "reliable" ? (
-        <p
-          className="text-xs text-muted-foreground"
-          data-testid="project-board-note"
-        >
-          Ordered by weeks posted in a row and promises kept, then by the newest
-          real update. A run of weeks counts once a project has answered at
-          least two promises and kept at least as many as it missed.
-        </p>
+        <div data-testid="project-board-note">
+          <p className="text-sm text-muted-foreground">
+            Ranked by weeks in a row, then promises kept.
+          </p>
+          <MoreInfo label="How ranking works" testId="project-board-ranking">
+            Ordered by weeks posted in a row and promises kept, then by the
+            newest real update. A run of weeks counts once a project has
+            answered at least two promises and kept at least as many as it
+            missed.
+          </MoreInfo>
+        </div>
       ) : null}
       {board.failed ? (
         <p className="text-sm" data-testid="project-board-failed" role="alert">

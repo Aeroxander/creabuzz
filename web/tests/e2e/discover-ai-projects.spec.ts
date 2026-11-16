@@ -168,9 +168,26 @@ test("the default order pairs weeks in a row with kept promises; a bare weekly p
     "aria-selected",
     "true",
   );
-  await expect(board.getByTestId("project-board-note")).toContainText(
-    "weeks posted in a row and promises kept",
+  const note = board.getByTestId("project-board-note");
+  // One short line says how it is ranked; the whole rule is one press away, and the keyboard opens it too.
+  await expect(note).toContainText(
+    "Ranked by weeks in a row, then promises kept.",
   );
+  const how = note.getByRole("button", { name: "How ranking works" });
+  await expect(how).toHaveAttribute("aria-expanded", "false");
+  await expect(
+    note.getByText("weeks posted in a row and promises kept"),
+  ).toBeHidden();
+  await how.focus();
+  await page.keyboard.press("Enter");
+  await expect(how).toHaveAttribute("aria-expanded", "true");
+  await expect(note).toContainText("weeks posted in a row and promises kept");
+  await expect(
+    note.getByText(
+      "answered at least two promises and kept at least as many as it missed",
+      { exact: false },
+    ),
+  ).toBeVisible();
   // Atlas: a run that is paired with two kept promises. Cedar: one kept. Dune: a real update, nothing answered.
   // Birch has six weeks in a row of "Done." and is not here at all.
   await expect.poll(() => names(page)).toEqual(["Atlas", "Cedar", "Dune"]);

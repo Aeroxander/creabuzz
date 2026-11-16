@@ -235,3 +235,23 @@ test("at 390px the Work page fits with no sideways scroll", async ({
     ),
   ).toBe(true);
 });
+
+test("with no open request the page says so and offers one thing to do alone: start a project", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  await install(page, relay, null);
+  await page.goto("/work");
+  const empty = page.getByTestId("work-open-empty");
+  await expect(empty).toContainText("No open requests.");
+  await expect(empty).toContainText(
+    "Projects post what they need here. Start one and ask for help.",
+  );
+  const start = empty.getByRole("link", { name: "Start a project" });
+  await expect(start).toHaveAttribute("href", "/start");
+  // Not the page's green button: the size filter already is, and an empty state is quiet.
+  await expect(start).not.toHaveClass(/bg-primary/);
+  await start.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/start/);
+});

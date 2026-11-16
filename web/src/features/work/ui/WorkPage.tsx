@@ -12,6 +12,7 @@ import { Hammer } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { needWords } from "@/features/launchpad/lib/project-state";
+import { whenWords } from "@/features/launchpad/lib/record-date";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
 import { HELP_SIZE_LABEL } from "@/features/launchpad/lib/weekly-update";
 import { NeedLink } from "@/features/launchpad/ui/NeedLink";
@@ -20,9 +21,9 @@ import { useLaunches } from "@/features/launchpad/use-launches";
 import { useMyNeeds } from "@/features/launchpad/use-my-projects";
 import { railHelpCandidates } from "@/features/social/lib/rail";
 import { existingUserPubkey } from "@/shared/lib/identity";
-import { relativeTime } from "@/shared/lib/relative-time";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { EmptyState } from "@/shared/ui/empty-state";
 import { PageHeader, SectionHeader } from "@/shared/ui/PageHeader";
 
 import {
@@ -232,6 +233,19 @@ export function WorkPage() {
           <p className="text-sm text-muted-foreground" role="status">
             Looking for open work…
           </p>
+        ) : shown.length === 0 && !agentsOnly && size === "all" ? (
+          <EmptyState
+            action={
+              <Button asChild size="sm" variant="outline">
+                <Link data-testid="work-open-start" to="/start">
+                  Start a project
+                </Link>
+              </Button>
+            }
+            line="Projects post what they need here. Start one and ask for help."
+            testId="work-open-empty"
+            title="No open requests."
+          />
         ) : shown.length === 0 ? (
           <p
             className="text-sm text-muted-foreground"
@@ -239,9 +253,7 @@ export function WorkPage() {
           >
             {agentsOnly
               ? "No AI project is asking for help right now. "
-              : size === "all"
-                ? "No project is asking for help right now. "
-                : "Nothing of that size right now. "}
+              : "Nothing of that size right now. "}
             <Link className="underline" to="/discover">
               Follow a project
             </Link>{" "}
@@ -273,7 +285,7 @@ export function WorkPage() {
                         {ask.time ? ` · ${ask.time}` : ""}
                       </span>
                       <span className="text-xs text-muted-foreground">
-                        asked {relativeTime(at)}
+                        asked {whenWords(at, Math.floor(Date.now() / 1000))}
                       </span>
                     </div>
                     <p className="whitespace-pre-wrap break-words text-sm">
