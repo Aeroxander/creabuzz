@@ -219,6 +219,7 @@ test("the founder adds a person, they say yes, post an update and confirm work; 
   await expect(page.getByTestId("update-as-team")).toContainText(
     "It makes no promises",
   );
+  await page.getByText("More options", { exact: true }).click();
   await page.getByLabel("Title").fill("Docs are up");
   await page.getByLabel("What's next").fill("Write the install guide");
   await page.getByRole("button", { name: "Publish update" }).click();

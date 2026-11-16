@@ -348,6 +348,7 @@ test("an update's next steps are promises; the next update answers each, and eve
   await page.getByTestId("launch-post-update").click();
   let dialog = page.getByRole("dialog", { name: "Post update" });
   await expect(dialog.getByTestId("update-due")).toHaveCount(0);
+  await dialog.getByText("More options", { exact: true }).click();
   await dialog.getByLabel("Title").fill("Week one");
   await dialog.getByLabel("What happened this week").fill("Set up the repo.");
   await dialog
@@ -396,6 +397,7 @@ test("an update's next steps are promises; the next update answers each, and eve
   await dialog
     .getByLabel("Short note for: Find a designer")
     .fill("doing it ourselves");
+  await dialog.getByText("More options", { exact: true }).click();
   await dialog.getByLabel("Title").fill("Week two");
   await dialog.getByLabel("What's next").fill("Invite ten people");
   await dialog.getByRole("button", { name: "Publish update" }).click();
@@ -1451,8 +1453,13 @@ test("answers that disagree are both shown and the worse one is counted; a note 
   const disputed = lines.filter({ hasText: "Ship sign-up" });
   await expect(disputed).toContainText("Missed");
   await expect(disputed).toContainText("Answered more than once");
-  await expect(disputed).toContainText("Not done on");
-  await expect(disputed).toContainText("Done on");
+  // Each answer says when: in the record's one date style, never "on yesterday".
+  await expect(disputed).toContainText(
+    /Not done (today|yesterday|\d+ days ago|\w{3} \d{1,2})/,
+  );
+  await expect(disputed).toContainText(
+    /Done (today|yesterday|\d+ days ago|\w{3} \d{1,2})/,
+  );
   await expect(disputed).toContainText("The worse answer is counted");
   // "Write the guide" was passed over by a later weekly update; "Invite ten people" is still for the next one, and the
   // review note after it did not turn it into "not answered".
@@ -1490,6 +1497,7 @@ test("an answer can be taken back before publishing, and the dialog says it cann
   await expect(dialog.getByLabel("Short note for: Ship sign-up")).toHaveCount(
     0,
   );
+  await dialog.getByText("More options", { exact: true }).click();
   await dialog.getByLabel("Title").fill("Week two");
   await dialog.getByLabel("What happened this week").fill("Still on it.");
   await dialog.getByRole("button", { name: "Publish update" }).click();

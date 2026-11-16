@@ -179,11 +179,18 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
   await card.getByRole("button", { name: "Post one" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Post update" });
+  // The cursor starts in the writing; the title is a choice under "More options".
+  await expect(dialog.getByLabel("What happened this week")).toBeFocused();
+  await dialog.getByText("More options", { exact: true }).click();
   await dialog.getByLabel("Title").fill("Week two: sign-up works");
   await dialog
     .getByLabel("What happened this week")
     .fill("Sign-up shipped on Tuesday.\n\nThe invite email is fixed.");
   await dialog.getByLabel("What's next").fill("Invite the first ten people.");
+  // Help is behind "Ask for help": pressing it puts the cursor in the box.
+  await expect(dialog.getByLabel("Help needed (optional)")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Ask for help" }).click();
+  await expect(dialog.getByLabel("Help needed (optional)")).toBeFocused();
   await dialog
     .getByLabel("Help needed (optional)")
     .fill("Someone to test sign-up on an older phone.");
@@ -228,7 +235,7 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
   );
   await expect(card.getByTestId("update-nudge")).toHaveCount(0);
   await expect(card.getByTestId("update-next-due")).toHaveText(
-    "Next update due in 7 days.",
+    /^Next update \w{3}, \w{3} \d{1,2}$/,
   );
   // An answer of two paragraphs is shown once, under its prompt, not again as loose words.
   await expect(card.getByText("The invite email is fixed.")).toHaveCount(1);
@@ -496,16 +503,15 @@ test("an update the server refuses stays in the dialog with what was written, an
   seedProject(relay);
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
-  // Never posted: the first-week list says when the first update is due instead of counting days.
-  await expect(page.getByTestId("first-week-due")).toContainText(
-    "Your first update is due",
-  );
+  // Never posted: the first-week card holds the steps instead of counting days.
+  await expect(page.getByTestId("first-week")).toContainText("Your first week");
   await expect(page.getByTestId("update-nudge")).toHaveCount(0);
-  await page.getByRole("button", { name: "Post update" }).click();
+  await page.getByTestId("launch-post-update").click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
   // Free-form is still there: one open box instead of the two prompts.
-  await dialog.getByRole("button", { name: "Write freely instead" }).click();
+  await dialog.getByRole("button", { name: "Write one note instead" }).click();
   await expect(dialog.getByLabel("What happened this week")).toHaveCount(0);
+  await dialog.getByText("More options", { exact: true }).click();
   await dialog.getByLabel("Title").fill("We moved studios");
   await dialog.getByLabel("Your update").fill("Boxes everywhere.");
   await dialog.getByRole("button", { name: "Publish update" }).click();
@@ -849,8 +855,9 @@ test("at 390px the update card, the help card and the dialog fit with no sideway
   await offer.getByRole("button", { name: "Reply" }).click();
   await expect(offer.getByTestId("help-reply-box")).toBeVisible();
   expect(await noSidewaysScroll(page)).toBe(true);
-  await page.getByRole("button", { name: "Post update" }).click();
+  await page.getByTestId("launch-post-update").click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
+  await dialog.getByRole("button", { name: "Ask for help" }).click();
   await dialog.getByLabel("Help needed (optional)").fill("A tester.");
   await expect(dialog.getByRole("radio", { name: "Large" })).toBeVisible();
   expect(await noSidewaysScroll(page)).toBe(true);

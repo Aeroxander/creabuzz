@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { expectAccessible } from "../helpers/a11y";
 import { createMockRelay } from "./mock-relay";
@@ -136,8 +136,11 @@ function standIn(page: Page, reply: unknown) {
     asked,
     ready: page.route(LLM, (route) => {
       const body = JSON.parse(route.request().postData() ?? "{}") as {
-        messages: { role: string; content: string }[];
+        messages?: { role: string; content: string }[];
       };
+      // The dialog asks whether the server has an AI service with an empty, unsigned request: refused, but not "missing".
+      if (!body.messages)
+        return route.fulfill({ status: 401, body: "unsigned" });
       asked.push({
         system: body.messages.find((m) => m.role === "system")?.content ?? "",
         user: body.messages.find((m) => m.role === "user")?.content ?? "",
@@ -168,6 +171,10 @@ async function openDialog(page: Page) {
     .click();
   return page.getByRole("dialog", { name: "Post update" });
 }
+
+/** Title, "In one line" and "Draft from the record" are under "More options", closed until asked for. */
+const moreOptions = (dialog: Locator) =>
+  dialog.getByText("More options", { exact: true }).click();
 
 test("'Draft from the record' fills what happened, the help and one line from the record only, never what's next; a made-up fact is left out", async ({
   page,
@@ -200,6 +207,7 @@ test("'Draft from the record' fills what happened, the help and one line from th
   await ai.ready;
   await install(page, relay, ME_KEY);
   const dialog = await openDialog(page);
+  await moreOptions(dialog);
 
   // The founder marks last week's first promise before drafting: the AI is told the mark.
   await dialog
@@ -288,6 +296,7 @@ test("a draft never overwrites the founder's own words", async ({ page }) => {
   await ai.ready;
   await install(page, relay, ME_KEY);
   const dialog = await openDialog(page);
+  await moreOptions(dialog);
   await expect(dialog.getByTestId("update-accepted-item")).toHaveCount(1, {
     timeout: 30_000,
   });
@@ -327,6 +336,7 @@ test("when the AI limit is reached the server's own words are shown as they are,
   );
   await install(page, relay, ME_KEY);
   const dialog = await openDialog(page);
+  await moreOptions(dialog);
   await expect(dialog.getByTestId("update-accepted-item")).toHaveCount(1, {
     timeout: 30_000,
   });
@@ -370,6 +380,7 @@ test("a reply that is not the record's, or a limit with no sentence of its own, 
   );
   await install(page, relay, ME_KEY);
   const dialog = await openDialog(page);
+  await moreOptions(dialog);
   await expect(dialog.getByTestId("update-accepted-item")).toHaveCount(1, {
     timeout: 30_000,
   });
@@ -436,21 +447,61 @@ test("the update day: due words are neutral, the day can be changed, and one cho
   await expect(card.getByTestId("update-nudge")).toHaveCount(0);
 });
 
-test("after posting, 'Add a weekly reminder' gives a weekly calendar file for the update day, and promises no email or push", async ({
+/** A project that never posted a weekly update: its first one is the update the founder is about to write. */
+function seedFresh(relay: Relay) {
+  relay.seed(
+    event(
+      0,
+      ME,
+      { name: "Mia Maker", display_name: "Mia Maker" },
+      [],
+      now() - 90 * DAY,
+    ),
+  );
+  relay.seed(projectRecord(ME, "loop", "Loop", now() - DAY));
+}
+
+/** Opens the update dialog from the project page's own button, whichever card holds it. */
+async function openFresh(page: Page) {
+  await page.goto(PAGE);
+  await page
+    .getByRole("button", { name: /^Post (this week's )?update$/ })
+    .first()
+    .click();
+  return page.getByRole("dialog", { name: "Post update" });
+}
+
+test("after the first update: the next update's date, 'Add a weekly reminder' as the one filled button, and a calendar file that promises no email or push", async ({
   page,
 }) => {
   test.setTimeout(90_000);
   const relay = createMockRelay({ applyDeletions: true });
-  seed(relay, 10);
+  seedFresh(relay);
   await install(page, relay, ME_KEY);
-  const dialog = await openDialog(page);
-  await dialog.getByLabel("Title").fill("Week three");
+  const dialog = await openFresh(page);
   await dialog.getByLabel("What happened this week").fill("Kept going.");
   await dialog.getByRole("button", { name: "Publish update" }).click();
   const note = page.getByTestId("update-posted");
   await expect(note).toBeVisible();
+  // The date is a week from today, in the one date style: "Next update: Mon, Nov 23".
+  const due = await page.evaluate(() =>
+    new Date(Date.now() + 7 * 86_400_000).toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    }),
+  );
+  await expect(note.getByTestId("update-posted-next")).toHaveText(
+    `Next update: ${due}`,
+  );
+  // One filled button in the note: the reminder. Share is outline, Done is quiet.
+  await expect(note.locator("button.bg-primary")).toHaveCount(1);
+  await expect(note.getByTestId("update-posted-reminder")).toHaveClass(
+    /bg-primary/,
+  );
+  await expect(note.getByTestId("share-record")).not.toHaveClass(/bg-primary/);
   const weekday = await page.evaluate(() =>
-    new Date((Date.now() / 1000 - 60 * 86_400) * 1000).getDay(),
+    new Date((Date.now() / 1000 - 86_400) * 1000).getDay(),
   );
   const names = [
     "Sunday",
@@ -465,7 +516,7 @@ test("after posting, 'Add a weekly reminder' gives a weekly calendar file for th
     `A repeating event for your calendar app, every ${names[weekday]}. Nothing is sent from here.`,
   );
   await expect(note).not.toContainText(/e-?mail|push|notification/i);
-  await expectAccessible(page, "the note after posting, with the reminder");
+  await expectAccessible(page, "the note after the first update");
 
   const download = page.waitForEvent("download");
   await note.getByRole("button", { name: "Add a weekly reminder" }).click();
@@ -487,6 +538,26 @@ test("after posting, 'Add a weekly reminder' gives a weekly calendar file for th
   expect(raw).not.toMatch(/(?<!\r)\n/);
 });
 
+test("after a later update the note shows the next date and the outline share, and no reminder button", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seed(relay, 10);
+  await install(page, relay, ME_KEY);
+  const dialog = await openDialog(page);
+  await dialog.getByLabel("What happened this week").fill("Kept going.");
+  await dialog.getByRole("button", { name: "Publish update" }).click();
+  const note = page.getByTestId("update-posted");
+  await expect(note).toBeVisible();
+  await expect(note.getByTestId("update-posted-next")).toContainText(
+    "Next update: ",
+  );
+  await expect(note.getByTestId("share-record")).toBeVisible();
+  await expect(note.getByTestId("update-posted-reminder")).toHaveCount(0);
+  await expect(note.locator("button.bg-primary")).toHaveCount(0);
+});
+
 test("at 390px the update dialog with its draft button and the note with its reminder fit with no sideways scroll", async ({
   page,
 }) => {
@@ -495,14 +566,283 @@ test("at 390px the update dialog with its draft button and the note with its rem
   const relay = createMockRelay({ applyDeletions: true });
   seed(relay, 10);
   acceptedTask(relay, "Record the sign-up flow.", now() - 5 * DAY);
+  const ai = standIn(page, { done: [], help: [], line: "" });
+  await ai.ready;
   await install(page, relay, ME_KEY);
   const dialog = await openDialog(page);
+  await moreOptions(dialog);
   await expect(dialog.getByTestId("update-draft-button")).toBeVisible();
   const fits = () =>
     page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
   expect(await fits()).toBe(true);
-  await dialog.getByLabel("Title").fill("Week three");
   await dialog.getByRole("button", { name: "Publish update" }).click();
-  await expect(page.getByTestId("update-posted-reminder")).toBeVisible();
+  await expect(page.getByTestId("update-posted")).toBeVisible();
   expect(await fits()).toBe(true);
+});
+
+/** A task the founder did and checked alone, confirmed at `confirmedAt`: done, checked by the founder. */
+function soloTask(relay: Relay, what: string, confirmedAt: number) {
+  const made = record(
+    ME,
+    "Task",
+    [
+      ["l", "creaton-task"],
+      ["task-part", "task"],
+      ["p", ME],
+      ["task-helper", ME],
+      ["task-what", what],
+      ["task-done", what],
+      ["task-size", "small"],
+    ],
+    confirmedAt - 2 * DAY,
+  );
+  const step = (part: string, at: number, extra: string[][]) =>
+    record(
+      ME,
+      part,
+      [
+        ["l", "creaton-task"],
+        ["task-part", part],
+        ["e", made.id],
+        ["task", made.id],
+        ...extra,
+      ],
+      at,
+    );
+  const proof = step("evidence", confirmedAt - DAY, [
+    ["task-link", "https://example.org/mine"],
+  ]);
+  relay.seed(made);
+  relay.seed(proof);
+  relay.seed(
+    step("confirm", confirmedAt, [
+      ["e", proof.id],
+      ["task-evidence", proof.id],
+    ]),
+  );
+}
+
+const bodyOf = (event: { content: string }) =>
+  (JSON.parse(event.content) as { body: string }).body;
+
+for (const size of [
+  { name: "1280x800", width: 1280, height: 800 },
+  { name: "390x844", width: 390, height: 844 },
+]) {
+  test(`week one at ${size.name}: the cursor starts in what happened, Publish is on screen with nothing scrolled, and an empty title publishes as 'Week of'`, async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width: size.width, height: size.height });
+    const relay = createMockRelay({ applyDeletions: true });
+    seedFresh(relay);
+    await install(page, relay, ME_KEY);
+    const dialog = await openFresh(page);
+    await expect(dialog.getByLabel("What happened this week")).toBeFocused();
+    // Title, one line and the draft are folded away; so is help, until it is asked for.
+    await expect(dialog.getByLabel("Title (optional)")).toBeHidden();
+    await expect(dialog.getByLabel("Help needed (optional)")).toHaveCount(0);
+    const publish = dialog.getByRole("button", { name: "Publish update" });
+    await expect(publish).toBeInViewport({ ratio: 1 });
+    await expect(publish).toBeEnabled();
+    // Still on screen with every box open and the dialog scrolled to its end.
+    await dialog.getByRole("button", { name: "Ask for help" }).click();
+    await dialog.getByText("More options", { exact: true }).click();
+    await dialog.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+    await expect(publish).toBeInViewport({ ratio: 1 });
+    await dialog.evaluate((el) => el.scrollTo(0, 0));
+    await expect(publish).toBeInViewport({ ratio: 1 });
+    await expectAccessible(page, `the update dialog, ${size.name}`);
+
+    await dialog
+      .getByLabel("What happened this week")
+      .fill("Wrote the first page.");
+    await publish.click();
+    await expect(dialog).toHaveCount(0);
+    await expect.poll(() => weekly(relay).length).toBe(1);
+    const title = (JSON.parse(weekly(relay)[0].content) as { title: string })
+      .title;
+    expect(title).toMatch(/^Week of [A-Z][a-z]{2} \d{1,2}$/);
+  });
+}
+
+test("week two puts last week's promises first and the cursor on the first answer; answering is optional and the order of the boxes follows", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seed(relay, 10);
+  await install(page, relay, ME_KEY);
+  const dialog = await openDialog(page);
+  const promises = dialog.getByTestId("update-due");
+  await expect(promises).toBeVisible({ timeout: 30_000 });
+  // The first answer of the first promise has the cursor, and each promise has Done, Not done and Changed.
+  const first = dialog.getByTestId("update-due-promise").first();
+  await expect(
+    first.getByRole("radio", { name: "Done", exact: true }),
+  ).toBeFocused();
+  for (const name of ["Done", "Not done", "Changed"])
+    await expect(first.getByRole("radio", { name, exact: true })).toBeVisible();
+  // Promises, then what happened, then what's next: top to bottom.
+  const y = async (l: Locator) => (await l.boundingBox())?.y ?? -1;
+  const yPromises = await y(promises);
+  const yDone = await y(dialog.getByLabel("What happened this week"));
+  const yNext = await y(dialog.getByLabel("What's next"));
+  expect(yPromises).toBeGreaterThan(0);
+  expect(yPromises).toBeLessThan(yDone);
+  expect(yDone).toBeLessThan(yNext);
+  await expect(
+    dialog.getByText(
+      "Up to three, one per line. Next week you answer each one.",
+    ),
+  ).toBeVisible();
+
+  // Answered from the keyboard, with a reason, and published with the answer.
+  await page.keyboard.press("Space");
+  await expect(
+    first.getByRole("radio", { name: "Done", exact: true }),
+  ).toBeChecked();
+  await dialog
+    .getByLabel("Short note for: Ship sign-up")
+    .fill("Live since Tuesday.");
+  await dialog.getByLabel("What happened this week").fill("Sign-up is live.");
+  await dialog.getByRole("button", { name: "Publish update" }).click();
+  await expect.poll(() => weekly(relay).length).toBe(1);
+  expect(bodyOf(weekly(relay)[0])).toContain(
+    "Done: Ship sign-up (Live since Tuesday.)",
+  );
+});
+
+test("'Nothing new this week' fills a quiet week, goes away once there are words, and is not offered beside one open note", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seedFresh(relay);
+  await install(page, relay, ME_KEY);
+  const dialog = await openFresh(page);
+  const quiet = dialog.getByRole("button", { name: "Nothing new this week" });
+  await quiet.click();
+  const done = dialog.getByLabel("What happened this week");
+  await expect(done).toHaveValue("Quiet week. Still working on it.");
+  await expect(quiet).toHaveCount(0);
+  await done.fill("");
+  await expect(quiet).toBeVisible();
+  await done.fill("Shipped sign-up.");
+  await expect(quiet).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Write one note instead" }).click();
+  await expect(
+    dialog.getByRole("button", { name: "Use the prompts" }),
+  ).toBeVisible();
+  await expect(quiet).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Use the prompts" }).click();
+  await done.fill("");
+  await quiet.click();
+  await dialog.getByRole("button", { name: "Publish update" }).click();
+  await expect.poll(() => weekly(relay).length).toBe(1);
+  expect(weekly(relay)[0].tags).toEqual(
+    expect.arrayContaining([
+      ["update-part", "done", "Quiet week. Still working on it."],
+    ]),
+  );
+});
+
+test("the draft line is shown with the button when the server has an AI service, and neither when it has none", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seed(relay, 10);
+  const ai = standIn(page, { done: [], help: [], line: "" });
+  await ai.ready;
+  await install(page, relay, ME_KEY);
+  const dialog = await openDialog(page);
+  await moreOptions(dialog);
+  await expect(dialog.getByTestId("update-draft-button")).toHaveText(
+    "Draft from the record",
+  );
+  await expect(dialog.getByTestId("update-draft-line")).toHaveText(
+    "Drafts from your record and sends it to this server's AI service. You edit it before anything is posted.",
+  );
+
+  // A server without the service: the address is not there (404). No button, no line; the rest of More options stays.
+  await page.unroute(LLM);
+  await page.route(LLM, (route) =>
+    route.fulfill({ status: 404, body: "not found" }),
+  );
+  const other = await openDialog(page);
+  await moreOptions(other);
+  await expect(other.getByLabel("Title (optional)")).toBeVisible();
+  await expect(other.getByTestId("update-draft-button")).toHaveCount(0);
+  await expect(other.getByTestId("update-draft-line")).toHaveCount(0);
+});
+
+test("work the founder checked alone is its own line, 'Done, checked by the founder', apart from work someone else accepted", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seed(relay, 10);
+  acceptedTask(relay, "Record the sign-up flow.", now() - 5 * DAY);
+  soloTask(relay, "Write the first page", now() - 4 * DAY);
+  await install(page, relay, ME_KEY);
+  const dialog = await openDialog(page);
+  const items = dialog.getByTestId("update-accepted-item");
+  await expect(items).toHaveCount(2, { timeout: 30_000 });
+  // To the founder it reads "checked by you"; what is published says "the founder".
+  await expect(
+    items.filter({ hasText: "Record the sign-up flow." }),
+  ).toContainText("Work accepted:");
+  await expect(items.filter({ hasText: "Write the first page" })).toContainText(
+    "Done, checked by you:",
+  );
+  await expect(
+    items.filter({ hasText: "Write the first page" }),
+  ).not.toContainText(/accepted/i);
+  await dialog.getByRole("button", { name: "Publish update" }).click();
+  await expect.poll(() => weekly(relay).length).toBe(1);
+  const posted = bodyOf(weekly(relay)[0]);
+  expect(posted).toContain("Work accepted: Record the sign-up flow.");
+  expect(posted).toContain(
+    "Done, checked by the founder: Write the first page",
+  );
+  expect(posted).not.toContain("Work accepted: Write the first page");
+  expect(posted).not.toContain(
+    "Done, checked by the founder: Record the sign-up flow.",
+  );
+});
+
+test("a draft says only the accepted work: the founder's own checked work is still added as its line", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seed(relay, 10);
+  acceptedTask(relay, "Record the sign-up flow.", now() - 5 * DAY);
+  soloTask(relay, "Write the first page", now() - 4 * DAY);
+  const ai = standIn(page, {
+    done: [{ text: "The sign-up flow was recorded.", from: ["w1"] }],
+    help: [],
+    line: "",
+  });
+  await ai.ready;
+  await install(page, relay, ME_KEY);
+  const dialog = await openDialog(page);
+  await expect(dialog.getByTestId("update-accepted-item")).toHaveCount(2, {
+    timeout: 30_000,
+  });
+  await moreOptions(dialog);
+  await dialog.getByTestId("update-draft-button").click();
+  await expect(dialog.getByTestId("update-draft-done")).toBeVisible();
+  // The AI was given the accepted work only: the founder-checked piece is not in its facts.
+  expect(ai.asked[0].user).toContain("Record the sign-up flow.");
+  expect(ai.asked[0].user).not.toContain("Write the first page");
+  await dialog.getByRole("button", { name: "Publish update" }).click();
+  await expect.poll(() => weekly(relay).length).toBe(1);
+  const posted = bodyOf(weekly(relay)[0]);
+  expect(posted).toContain("The sign-up flow was recorded.");
+  expect(posted).not.toContain("Work accepted:");
+  expect(posted).toContain(
+    "Done, checked by the founder: Write the first page",
+  );
 });

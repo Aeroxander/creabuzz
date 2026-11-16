@@ -97,6 +97,12 @@ async function notBackedUp(page: Page, firstLoadOnly = false) {
 const noSidewaysScroll = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 
+/** A server with an AI service: the update dialog's empty, unsigned check is refused, but the address is there. */
+const withAiService = (page: Page) =>
+  page.route("**/llm/chat/completions", (route) =>
+    route.fulfill({ status: 401, body: "unsigned" }),
+  );
+
 test("a founder lands on the live project with one live line and one first-week card, and no empty cards", async ({
   page,
   context,
@@ -314,10 +320,12 @@ test("the first update ends the first week: 3 of 3, one line with the next date,
   const relay = createMockRelay();
   seedNew(relay);
   await install(page, relay, FOUNDER_KEY);
+  await withAiService(page);
   await page.goto(PROJECT);
   await page.getByTestId("first-week-post").click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
   await expect(dialog).toBeVisible();
+  await dialog.getByText("More options", { exact: true }).click();
   await expect(dialog.getByTestId("update-draft-button")).toBeVisible();
   const title = dialog.getByLabel("Title");
   if (await title.isVisible()) await title.fill("Week one");
@@ -368,13 +376,12 @@ test("the post button on the first-week card also has Draft from the record, as 
   const relay = createMockRelay();
   seedNew(relay);
   await install(page, relay, FOUNDER_KEY);
+  await withAiService(page);
   await page.goto(PROJECT);
   await page.getByTestId("first-week-post").click();
-  await expect(
-    page
-      .getByRole("dialog", { name: "Post update" })
-      .getByTestId("update-draft-button"),
-  ).toBeVisible();
+  const dialog = page.getByRole("dialog", { name: "Post update" });
+  await dialog.getByText("More options", { exact: true }).click();
+  await expect(dialog.getByTestId("update-draft-button")).toBeVisible();
 });
 
 test("the reminder's address opens the founder's update form once, and nobody else's", async ({
@@ -431,6 +438,7 @@ test("a run of weeks without two answered promises is not stated in the note or 
     .getByRole("button", { name: "Post one" })
     .click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
+  await dialog.getByText("More options", { exact: true }).click();
   await dialog.getByLabel("Title").fill("Week three");
   await dialog.getByLabel("What happened this week").fill("Kept going.");
   await dialog.getByRole("button", { name: "Publish update" }).click();
@@ -682,6 +690,7 @@ test("an AI project's first update offers a kind's three first promises for What
     "Write down the one job it does.\nRun it on three real jobs and publish the results.",
   );
   await expect(starters).toHaveCount(0);
+  await dialog.getByText("More options", { exact: true }).click();
   await dialog.getByLabel("Title").fill("Week one");
   await dialog.getByRole("button", { name: "Publish update" }).click();
   await expect(dialog).toHaveCount(0);
@@ -715,9 +724,11 @@ test("a project that is not about AI gets no starter promises and no starter tas
   const relay = createMockRelay();
   seedNew(relay, [["t", "Software"]]);
   await install(page, relay, FOUNDER_KEY);
+  await withAiService(page);
   await page.goto(PROJECT);
   await page.getByTestId("first-week-post").click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
+  await dialog.getByText("More options", { exact: true }).click();
   await expect(dialog.getByTestId("update-draft-button")).toBeVisible({
     timeout: 20_000,
   });
@@ -773,6 +784,7 @@ test("at 390px the live line, the first-week card and the tasks fit with no side
   const relay = createMockRelay();
   seedNew(relay, [["t", "AI agent or tool"]]);
   await install(page, relay, FOUNDER_KEY);
+  await withAiService(page);
   await notBackedUp(page);
   await page.goto(STARTED);
   await expect(page.getByTestId("started-card")).toBeVisible({
@@ -796,6 +808,10 @@ test("at 390px the live line, the first-week card and the tasks fit with no side
   }
   // The update form's "Draft from the record" explains itself in a line you can read, below its button on a phone.
   await page.getByRole("button", { name: "Post update" }).first().click();
+  await page
+    .getByRole("dialog", { name: "Post update" })
+    .getByText("More options", { exact: true })
+    .click();
   const draft = page.getByTestId("update-draft");
   await expect(draft).toBeVisible();
   const note = await draft.locator("p").first().boundingBox();

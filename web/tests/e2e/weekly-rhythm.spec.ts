@@ -124,14 +124,14 @@ test("a late update is said to everyone; the dialog starts from last week's prom
   await page.goto(PAGE);
   const card = page.getByTestId("project-update-card");
   await expect(card.getByTestId("update-due-words")).toHaveText(
-    "Update late by 3 days",
+    "Late by 3 days",
   );
 
   // The founder reads it on Your projects too.
   await page.evaluate((key) => localStorage.setItem("e2e.key", key), ME_KEY);
   await page.goto("/portfolio");
   await expect(page.getByTestId("your-project-due").first()).toHaveText(
-    "Update late by 3 days",
+    "Late by 3 days",
     { timeout: 30_000 },
   );
 
@@ -158,7 +158,6 @@ test("a late update is said to everyone; the dialog starts from last week's prom
     .getByRole("button", { name: "Leave out: Translate the guide." })
     .click();
   await expect(accepted).toHaveCount(1);
-  await dialog.getByLabel("Title").fill("Week three");
   await dialog.getByLabel("What happened this week").fill("We shipped.");
   // Four lines typed: only three become promises, and the dialog says so before publishing.
   await dialog.getByLabel("What's next").fill("One\nTwo\nThree\nFour");
@@ -225,7 +224,7 @@ test("a run of weeks shows on Your projects, and in the note and the shared word
     { timeout: 30_000 },
   );
   await expect(page.getByTestId("your-project-due").first()).toHaveText(
-    "Update due today",
+    "Next update today",
   );
 
   await page.goto(PAGE);
@@ -235,7 +234,6 @@ test("a run of weeks shows on Your projects, and in the note and the shared word
     .click();
   const dialog = page.getByRole("dialog", { name: "Post update" });
   await expect(dialog.getByTestId("update-accepted")).toHaveCount(0);
-  await dialog.getByLabel("Title").fill("Week three");
   await dialog.getByLabel("What happened this week").fill("Kept going.");
   await dialog.getByRole("button", { name: "Publish update" }).click();
   const note = page.getByTestId("update-posted");
@@ -270,7 +268,6 @@ test("at 390px the update dialog and the note after posting fit with no sideways
   const fits = () =>
     page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
   expect(await fits()).toBe(true);
-  await dialog.getByLabel("Title").fill("Week three");
   await dialog.getByRole("button", { name: "Publish update" }).click();
   await expect(page.getByTestId("update-posted")).toBeVisible();
   expect(await fits()).toBe(true);
