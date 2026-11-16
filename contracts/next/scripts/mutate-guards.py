@@ -3,7 +3,8 @@
 
     python3 scripts/mutate-guards.py            # every removal, unit/fuzz/attack suites (about 75 seconds each)
     python3 scripts/mutate-guards.py T09 L03    # only these ids
-    python3 scripts/mutate-guards.py --m3       # only the milestone 3 entries (their ids start with F, A, H, K, P or X)
+    python3 scripts/mutate-guards.py --m3       # only the milestone 3 entries (their ids start with F, A, H, P or X)
+    M2_ONLY=1 python3 scripts/mutate-guards.py  # the milestone 2 entries, against the milestone 2 suites only (about 25 seconds each)
     INV_ONLY=1 python3 scripts/mutate-guards.py T10 T15   # only the invariant suite
 
 Each removal edits one file under src/, runs `forge test` on the milestone 2 tests, prints one JSON line (the tests that
@@ -11,9 +12,13 @@ failed) and puts the file back with `git checkout`. It refuses to start if src/ 
 restore would throw them away. Stored fuzz and invariant failures are deleted before every run, because Foundry replays
 them and would blame a later removal for an earlier one's failure. A line with "n": 0 is a guard no test needs.
 """
-import json, os, re, subprocess, sys
+import json, os, re, shutil, subprocess, sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SELF = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# MUT_ROOT: run in another copy of this project (so several runs can go at once); MUT_PRISTINE: where the committed sources are,
+# to restore each file from (the copy is not a git checkout).
+ROOT = os.environ.get('MUT_ROOT') or SELF
+PRISTINE = os.environ.get('MUT_PRISTINE')
 ENV = dict(os.environ)
 M1 = 'test/{Attacks,ForkFacts,ForkPick,Measure,Pieces,Route,UniversalRouter}.t.sol'
 # (id, what is removed or broken, file, old, new, run invariants too)
@@ -117,15 +122,17 @@ MUT=[
 
 # ---- milestone 3: the Finisher, the LiquidityHolder, the real Launcher, the Treasury's abandoned state.
 # A seventh field names the test files to run (the milestone 3 suites are slow and each guard has one or two that must catch it).
-FIN='test/{FinishAttacks,Life,SaleRules,FinisherPool,AttackM2}.t.sol'
+FIN='test/{FinishAttacks,Life,SaleRules,FinisherPool}.t.sol'
+FINA='test/{AttackM2,FinishAttacks}.t.sol'
 LAU='test/{Launcher,SaleRules,Life,AttackM2}.t.sol'
 HOL='test/{LiquidityHolder,Life,MarketAttacks}.t.sol'
 TAB='test/{TreasuryAbandon,FinishAttacks}.t.sol'
 DRI='test/PinnedDrift.t.sol'
+M2SUITES='test/{AttackM2,Treasury,TreasuryActions,TreasuryAttacks,TreasuryEdges,TreasuryFuzz,TreasuryAbandon,Launcher,Vester,ShareToken,RollingCap}.t.sol'
 M3=[
 ('F01','Finisher: anyone may open the sale',FI,'        if (msg.sender != launcher) revert NotLauncher();\n        if (!canOpen()) revert CannotOpen();','        if (!canOpen()) revert CannotOpen();',False,FIN),
-('F02','Finisher: anyone may set a clone up',FI,'        if (msg.sender != launcher) revert NotLauncher();\n        if (address(treasury) != address(0) ||','        if (address(treasury) != address(0) ||',False,FIN),
-('F03','Finisher: a clone may be set up twice',FI,'if (address(treasury) != address(0) || treasury_','if (treasury_',False,FIN),
+('F02','Finisher: anyone may set a clone up',FI,'        if (msg.sender != launcher) revert NotLauncher();\n        if (address(treasury) != address(0) ||','        if (address(treasury) != address(0) ||',False,FINA),
+('F03','Finisher: a clone may be set up twice',FI,'if (address(treasury) != address(0) || treasury_','if (treasury_',False,FINA),
 ('F04','Finisher: a failed sale may open again at once',FI,'(s == Stage.Failed && block.number >= retryBlock)','(s == Stage.Failed)',False,FIN),
 ('F05','Finisher: a project that sold may open another sale',FI,'return s == Stage.Idle ||','return s == Stage.Idle || s == Stage.Done ||',False,FIN),
 ('F06','Finisher: a second sale may open while one is open',FI,'return s == Stage.Idle ||','return s == Stage.Idle || s == Stage.Open ||',False,FIN),
@@ -210,7 +217,7 @@ M3=[
 ]
 MUT+=M3
 
-status = subprocess.run(['git', 'status', '--porcelain', 'src'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+status = '' if PRISTINE else subprocess.run(['git', 'status', '--porcelain', 'src'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
 if status:
     sys.exit('src/ has uncommitted changes; commit or stash them first:\n' + status)
 
@@ -234,11 +241,18 @@ def run(extra,suites=None):
     return sorted(set(fails)),comp,out,total
 sel=[a for a in sys.argv[1:] if not a.startswith('--')]
 only_m3='--m3' in sys.argv
+shard=[a for a in sys.argv[1:] if a.startswith('--shard=')]
+k,n=(int(x) for x in shard[0][8:].split('/')) if shard else (0,1)
+pos=-1
 for entry in MUT:
     (i,desc,f,old,new,inv)=entry[:6]
     suites=entry[6] if len(entry)>6 else None
     if sel and i not in sel: continue
     if only_m3 and i[0] not in 'FAHPX': continue
+    if os.environ.get('M2_ONLY') and i[0] in 'FAHPX': continue
+    if os.environ.get('M2_ONLY') and not suites: suites=M2SUITES
+    pos+=1
+    if pos%n!=k: continue
     path=os.path.join(ROOT,f)
     src=open(path).read()
     if src.count(old)!=1:
@@ -248,5 +262,6 @@ for entry in MUT:
         extra=['--match-contract','Invariants'] if os.environ.get('INV_ONLY') else ['--no-match-contract','Invariants']
         fails,comp,out,total=run(extra,suites)
     finally:
-        subprocess.run(['git','checkout','--',f],cwd=ROOT,check=True)
+        if PRISTINE: shutil.copyfile(os.path.join(PRISTINE,f),path)
+        else: subprocess.run(['git','checkout','--',f],cwd=ROOT,check=True)
     print(json.dumps({'inv_only':bool(os.environ.get('INV_ONLY')),'id':i,'what':desc,'compile_failed':comp,'failed':fails if os.environ.get('SHOW') else fails[:8],'n':len(fails),'total_failing_reported':total}),flush=True)
