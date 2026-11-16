@@ -25,6 +25,13 @@ not recompile the whole Uniswap stack.
 
 ## Milestone 2: Shares, Treasury, Vester, Launcher
 
+**This Launcher is for local tests only. Do not deploy it anywhere else.** It can start projects, but it has no way to move
+the 500,000,000 Shares it holds for each project's sale and pool, so any project launched on it has half its Shares
+locked for ever. Its constructor refuses any chain but 31337 (the local test chain) for that reason. Milestone 3 ships a
+new Launcher; projects born on this one are not carried over. Its `opener` and `salePath` settings are plain addresses
+(stubs with access control), and the admin can change them for new projects at will (a founder's `launch` carries the
+hash of the settings they saw), so nothing real may be built on it while they stay plain addresses.
+
 Milestone 2 files are first-party and need no Uniswap code, so they build with the repo's production compiler (solc
 0.8.37, optimizer 200 runs, see the last restriction in `foundry.toml`) while the milestone 1 files and everything vendored
 stay on 0.8.26. The two never share a compile unit; the Launcher reaches the pool guard through a one-function interface.
