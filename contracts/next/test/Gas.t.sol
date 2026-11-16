@@ -42,9 +42,10 @@ contract GasTest is Base {
     }
 
     function test_gas_deployTheLauncher() public {
+        bytes memory args = abi.encode(admin, _settings());
         _cold();
         uint256 g = gasleft();
-        new Launcher(admin, _settings());
+        deployCode("Launcher.sol:Launcher", args);
         g -= gasleft();
         _measure("deploy Launcher (with the three implementations inside)", g, 6_000_000);
     }

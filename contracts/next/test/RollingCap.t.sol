@@ -81,7 +81,7 @@ contract RollingCapTest is Test {
     function testFuzz_noStretchOfOneWindowEverPassesTheCap(uint256 seed, uint8 count) public {
         uint256 cap = 1000;
         uint256 n = bound(count, 1, 40);
-        uint256[] memory at = new uint256[](n);
+        uint256[] memory when = new uint256[](n);
         uint256[] memory amt = new uint256[](n);
         uint256 accepted;
         for (uint256 i; i < n; ++i) {
@@ -89,7 +89,7 @@ contract RollingCapTest is Test {
             vm.warp(_now() + seed % (9 hours));
             uint256 a = (seed >> 64) % 700 + 1;
             try h.consume(DAY, 6, cap, a) {
-                at[accepted] = _now();
+                when[accepted] = _now();
                 amt[accepted] = a;
                 accepted++;
             } catch {}
@@ -98,7 +98,7 @@ contract RollingCapTest is Test {
         for (uint256 i; i < accepted; ++i) {
             uint256 sum;
             for (uint256 j; j <= i; ++j) {
-                if (at[j] + DAY > at[i]) sum += amt[j];
+                if (when[j] + DAY > when[i]) sum += amt[j];
             }
             assertLe(sum, cap);
         }

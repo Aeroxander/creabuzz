@@ -39,7 +39,7 @@ abstract contract Base is Test {
     function setUp() public virtual {
         vm.warp(1_800_000_000);
         usd = new QuoteToken();
-        launcher = new Launcher(admin, _settings());
+        launcher = _deployLauncher(admin, _settings());
         (address s, address tr, address ve) = _launch(founder, PROJECT);
         (shares, t, v) = (ShareToken(s), Treasury(tr), Vester(ve));
     }
@@ -57,6 +57,12 @@ abstract contract Base is Test {
             agentUsd: uint128(25 * DOLLAR),
             agentShares: uint128(SUPPLY / 1000)
         });
+    }
+
+    /// @dev The Launcher holds the code of all three implementations, so a test contract that did `new Launcher` would
+    /// itself be over the 49,152-byte limit for creation code. Loading it from the build output avoids that.
+    function _deployLauncher(address admin_, Launcher.Settings memory s) internal returns (Launcher) {
+        return Launcher(deployCode("Launcher.sol:Launcher", abi.encode(admin_, s)));
     }
 
     /// @dev `block.timestamp` cannot be read after a `vm.warp` in the same test: the optimizer treats it as a constant

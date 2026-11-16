@@ -152,7 +152,7 @@ contract TreasuryFuzzTest is Base {
     function testFuzz_giftsAfterThePoolNeverPassOnePercentInAnyThirtyDays(uint256 seed, uint8 count) public {
         _openPool();
         uint256 n = bound(count, 1, 30);
-        uint256[] memory at = new uint256[](n);
+        uint256[] memory when = new uint256[](n);
         uint256[] memory amt = new uint256[](n);
         uint256 accepted;
         for (uint256 i; i < n; ++i) {
@@ -161,7 +161,7 @@ contract TreasuryFuzzTest is Base {
             uint256 a = bound(seed >> 32, 1, 6_000_000 * SHARE);
             vm.prank(founder);
             try t.giveShares(address(uint160(0x7000 + i)), a) {
-                at[accepted] = _now();
+                when[accepted] = _now();
                 amt[accepted] = a;
                 accepted++;
             } catch {}
@@ -169,7 +169,7 @@ contract TreasuryFuzzTest is Base {
         for (uint256 i; i < accepted; ++i) {
             uint256 sum;
             for (uint256 j; j <= i; ++j) {
-                if (at[j] + 30 days > at[i]) sum += amt[j];
+                if (when[j] + 30 days > when[i]) sum += amt[j];
             }
             assertLe(sum, 10_000_000 * SHARE);
         }
@@ -181,7 +181,7 @@ contract TreasuryFuzzTest is Base {
         vm.prank(founder);
         t.setAgent(agent, uint128(10 * DOLLAR), 0);
         uint256 n = bound(count, 1, 40);
-        uint256[] memory at = new uint256[](n);
+        uint256[] memory when = new uint256[](n);
         uint256[] memory amt = new uint256[](n);
         uint256 accepted;
         for (uint256 i; i < n; ++i) {
@@ -190,7 +190,7 @@ contract TreasuryFuzzTest is Base {
             uint256 a = bound(seed >> 32, 1, 6 * DOLLAR);
             vm.prank(agent);
             try t.spend(carol, a) {
-                at[accepted] = _now();
+                when[accepted] = _now();
                 amt[accepted] = a;
                 accepted++;
             } catch {}
@@ -199,7 +199,7 @@ contract TreasuryFuzzTest is Base {
         for (uint256 i; i < accepted; ++i) {
             uint256 sum;
             for (uint256 j; j <= i; ++j) {
-                if (at[j] + 1 days > at[i]) sum += amt[j];
+                if (when[j] + 1 days > when[i]) sum += amt[j];
             }
             assertLe(sum, 10 * DOLLAR);
             total += amt[i];

@@ -180,8 +180,9 @@ contract LauncherTest is Base {
     function test_constructor_refusesBadSettings() public {
         Launcher.Settings memory s = _settings();
         s.platform = address(0);
+        bytes memory args = abi.encode(admin, s);
         vm.expectRevert(Launcher.BadSettings.selector);
-        new Launcher(admin, s);
+        deployCode("Launcher.sol:Launcher", args);
     }
 
     function test_admin_canHandOnOrRenounce_andRenouncingFreezesSettings() public {
