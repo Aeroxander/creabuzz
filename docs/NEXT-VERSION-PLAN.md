@@ -341,3 +341,18 @@ fork against Uniswap's real pool manager, position manager and trade router) unl
   The auction has no maximum-bid rule except that; the 4-times cap is not on chain unless a bid hook adds it (`MinBid` does).
 - **Public Sepolia nodes cannot replay an old pinned block** (about 10,000 blocks of history, a few dozen of state), so fork
   tests repeat only from Foundry's local cache or an archive node.
+
+## Milestone 0 fix round (16 November 2026)
+
+A reviewer checked milestone 0 and the code was changed (details in `docs/v3-review/STATUS.md`). Where this plan's numbers
+were wrong:
+
+- **Sections 3, 6 and 8, "Join 2 and 0" and "joins in 2 presses", left out the sign-up.** A person with no account on the
+  hosted settings does Ask to join, types a name, ticks the age box and the terms, and presses Create: **4 presses and 1 typed
+  field**; with no terms on the server 2 and 1; already signed in 1 and 0. The ask is sent by itself after sign-up. The
+  founder's Accept stays 1 and 0. These are held by tests.
+- **Section 7, item 2, "an ask to join record anyone may sign"**, needed three limits the plan did not name: the ask is at most
+  1 KB, its `p` tag must be the founder, and the founder needs a way to turn an ask away (Decline), because a stranger's ask
+  costs nothing to make.
+- **Section 7, item 1, "extend the first-day posting limit to project records"**, is not enough on its own: the limits are per
+  account and accounts are free. Uploads have no byte quota yet, so the hosted example closes uploads to first-day accounts.

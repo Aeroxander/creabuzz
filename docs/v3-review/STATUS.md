@@ -27,8 +27,28 @@ previews); no price is added anywhere. **Settings from the server:** `BUZZ_INVES
 server's information document and decides the investing and trading switches, in both directions, with no rebuild; unset says
 nothing and the build's switches decide (off unless built on). The addresses those screens read still come from the build, and
 `run.sh build` still refuses a build that names them without `VITE_INVESTING=1`: relaxing that is a call for later. Budgets held by
-tests: the solo path (8 presses, 4 fields) is unchanged; a stranger on a project link is "Asked to join" in at most 2 presses and 0
-fields after sign-up (1 once signed in); the founder accepts in 1. Not done here: a human's phone test.
+tests: the solo path (8 presses, 4 fields) is unchanged; the founder accepts in 1. Not done here: a human's phone test.
+
+**Fix round after review (2026-11-16).** What the reviewer found, and what changed:
+
+- **The join count was wrong.** "Joins in 2 presses and 0 fields" left out the sign-up. Counted whole, on the hosted settings
+  (terms of use, privacy note and the age box) a signed-out stranger does: Ask to join, the name typed, the age tick, the terms
+  tick, Create. That is **4 presses and 1 typed field**; on an open server with no terms, 2 presses and 1 field; already signed in,
+  1 press. The ask is now remembered across sign-up and sent by itself once the account exists, so there is no second press of Ask
+  to join (it was 5 presses before). Held by the mocked `project-join.spec.ts` (hosted settings, mocked terms and age box),
+  `e2e-real/project-loop.spec.ts` flow 12 (a real server, no terms) and `e2e-real/join-path.spec.ts` (a real server with the
+  hosted settings), against `JOIN_PATH_*` in `web/tests/helpers/press-counter.ts`.
+- **An ask is small and aimed at the founder.** A valid-JSON ask of 250 KB was accepted before; now an ask keeps to 1 KB of content
+  and 12 small tags, and its only `p` tag must be the project's founder (a stranger could aim one at someone else's inbox and
+  push the real ones out of the newest 200). The founder can **Decline** an ask (a founder-only record, `join-decline`), the
+  lists read page after page (up to 1,000 asks) and say how many more are waiting than shown and when a read was cut.
+- **"The founder has been told" was not true.** Nothing pushes a message to the founder. It now says "It shows on the founder's
+  Team card and in their Notifications." The bell does not count asks yet.
+- **Open door and uploads.** The server keeps no count of the bytes each account has stored, only a per-minute rate, so with the
+  door open a script of fresh keys could fill the media store. New: `BUZZ_NEW_ACCOUNT_MEDIA_UPLOADS=false` closes uploads to
+  accounts in their first day (owners and admins are exempt); the compose example sets it with the open door. The per-account
+  limits on posts and project records are a slow-down per key, not a wall, and the server has no limit per network address; the
+  example's comment now says so. A durable byte quota is still not built.
 
 ## 2026-11-15, later: the decisions push
 
