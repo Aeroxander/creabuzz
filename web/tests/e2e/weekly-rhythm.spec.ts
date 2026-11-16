@@ -106,6 +106,38 @@ const updates = (relay: Relay) =>
       e.tags.some((t) => t[0] === "update-part" && t[1] === "done"),
   );
 
+test("a founder whose update is due sees one green button for it, with one name; the header's button is an outline", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seed(relay, 10);
+  await install(page, relay, ME_KEY);
+  await page.goto(PAGE);
+  const nudge = page.getByTestId("update-nudge");
+  await expect(nudge).toBeVisible({ timeout: 20_000 });
+  // The due box holds the green button; the page's own button is the same action, in outline, under the same name.
+  await expect(
+    nudge.getByRole("button", { name: "Post this week's update" }),
+  ).toHaveClass(/bg-primary/);
+  await expect(page.getByTestId("launch-post-update")).toHaveText(
+    "Post this week's update",
+  );
+  await expect(page.getByTestId("launch-post-update")).not.toHaveClass(
+    /bg-primary/,
+  );
+  await expect(
+    page.locator(
+      '[data-testid="launch-hero"] button.bg-primary:visible, [data-testid="project-update-card"] button.bg-primary:visible',
+    ),
+  ).toHaveCount(1);
+  // The box that opens carries the same name.
+  await page.getByTestId("launch-post-update").click();
+  await expect(
+    page.getByRole("dialog", { name: "Post this week's update" }),
+  ).toBeVisible();
+});
+
 test("a late update is said to everyone; the dialog starts from last week's promises and the work accepted since", async ({
   page,
   context,
@@ -136,8 +168,8 @@ test("a late update is said to everyone; the dialog starts from last week's prom
   );
 
   await page.goto(PAGE);
-  await card.getByRole("button", { name: "Post one" }).click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  await card.getByRole("button", { name: "Post this week's update" }).click();
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   // Last time's promises, one tap each.
   const promises = dialog.getByTestId("update-due-promise");
   await expect(promises).toHaveCount(2);
@@ -230,9 +262,9 @@ test("a run of weeks shows on Your projects, and in the note and the shared word
   await page.goto(PAGE);
   await page
     .getByTestId("project-update-card")
-    .getByRole("button", { name: "Post one" })
+    .getByRole("button", { name: "Post this week's update" })
     .click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog.getByTestId("update-accepted")).toHaveCount(0);
   await dialog.getByLabel("What happened this week").fill("Kept going.");
   await dialog.getByRole("button", { name: "Publish update" }).click();
@@ -259,9 +291,9 @@ test("at 390px the update dialog and the note after posting fit with no sideways
   await page.goto(PAGE);
   await page
     .getByTestId("project-update-card")
-    .getByRole("button", { name: "Post one" })
+    .getByRole("button", { name: "Post this week's update" })
     .click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog.getByTestId("update-accepted-item")).toHaveCount(1, {
     timeout: 30_000,
   });

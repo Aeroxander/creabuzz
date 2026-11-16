@@ -327,9 +327,12 @@ async function teamMemberPostsAnUpdate() {
   await matePage.goto(projectPath);
   await matePage.getByTestId("team-post-update").click();
   await expect(matePage.getByTestId("update-as-team")).toBeVisible();
-  await titleAndHelp(matePage.getByRole("dialog", { name: "Post update" }), {
-    help: false,
-  });
+  await titleAndHelp(
+    matePage.getByRole("dialog", { name: "Post this week's update" }),
+    {
+      help: false,
+    },
+  );
   await matePage.getByLabel("Title").fill(`From the team ${RUN}`);
   await matePage
     .getByLabel("What happened this week")
@@ -588,7 +591,7 @@ test("3. weekly updates: three promises, the next update answers each, the recor
   await page.goto(projectPath);
 
   await page.getByTestId("launch-post-update").click();
-  let dialog = page.getByRole("dialog", { name: "Post update" });
+  let dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await titleAndHelp(dialog, { help: false });
   await dialog.getByLabel("Title").fill("Week one");
   await dialog.getByLabel("What happened this week").fill("Set up the repo.");
@@ -611,7 +614,7 @@ test("3. weekly updates: three promises, the next update answers each, the recor
 
   // The second update answers each, and asks for help.
   await page.getByTestId("launch-post-update").click();
-  dialog = page.getByRole("dialog", { name: "Post update" });
+  dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog.getByTestId("update-due-promise")).toHaveCount(3);
   const answer = (text: string) => dialog.getByRole("group", { name: text });
   await answer("Ship sign-up")
@@ -1792,7 +1795,9 @@ test("9. the scoreboard, Work, the public scorecard, a cheer and the note after 
   // The founder posts once more: the server takes it, and the page ends on the note with the record to share.
   await founderPage.goto(projectPath);
   await founderPage.getByTestId("launch-post-update").click();
-  const dialog = founderPage.getByRole("dialog", { name: "Post update" });
+  const dialog = founderPage.getByRole("dialog", {
+    name: "Post this week's update",
+  });
   await titleAndHelp(dialog, { help: false });
   await dialog.getByLabel("Title").fill(`Closing the week ${RUN}`);
   await dialog
@@ -1839,7 +1844,9 @@ test("10. the next update starts from last time's promises, Home shows it live, 
   // The founder opens the update dialog: it starts from what the last updates promised, each asking for an answer.
   await founderPage.goto(projectPath);
   await founderPage.getByTestId("launch-post-update").click();
-  const dialog = founderPage.getByRole("dialog", { name: "Post update" });
+  const dialog = founderPage.getByRole("dialog", {
+    name: "Post this week's update",
+  });
   const promise = (text: string) => dialog.getByRole("group", { name: text });
   for (const said of ["One more thing", "And another", "A third"])
     await expect(promise(said)).toBeVisible();

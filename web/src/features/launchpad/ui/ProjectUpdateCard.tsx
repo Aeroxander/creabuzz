@@ -25,6 +25,7 @@ import { Button } from "@/shared/ui/button";
 import { Chip } from "@/shared/ui/chip";
 
 import { whenWords } from "../lib/record-date";
+import { POST_UPDATE } from "../lib/first-week";
 import { dueOnDay, dueOnDayWords, WEEKDAY_NAMES } from "../lib/update-day";
 import { previousWeekly, promiseTexts } from "../lib/update-view";
 import {
@@ -281,7 +282,7 @@ export function ProjectUpdateCard({
         >
           <p className="min-w-0 flex-1">{nudgeText}</p>
           <Button onClick={onPostUpdate} size="sm" type="button">
-            Post one
+            {POST_UPDATE}
           </Button>
           <Button
             aria-label="Not now: hide this reminder for a week"

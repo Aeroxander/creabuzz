@@ -360,7 +360,7 @@ export function FirstWeekSteps({
           </div>
         </div>
       )}
-      <RecoveryKeyPrompt firstUpdatePosted={form === "done"} />
+      <RecoveryKeyPrompt />
     </section>
   );
 }

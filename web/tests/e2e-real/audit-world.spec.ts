@@ -466,7 +466,10 @@ test("the screen audit's world", async ({ browser }) => {
   const tabPath = (tab: string) =>
     `${projectPath}${project.search ? "&" : "?"}tab=${tab}`;
 
-  await frida.getByRole("button", { name: "Post update" }).click();
+  await frida
+    .getByRole("button", { name: "Post this week's update" })
+    .first()
+    .click();
   await frida.locator("#update-title").fill("Creaton is open to a first group");
   // The dialog leads with the weekly prompts; this update is one open paragraph, so it is written freely.
   await frida.getByRole("button", { name: "Write freely instead" }).click();
@@ -476,10 +479,9 @@ test("the screen audit's world", async ({ browser }) => {
       "Four pieces of work are open under Open work, and anyone can suggest more. Tell us when something is unclear: that is the most useful thing you can tell us.",
     );
   await frida.getByRole("button", { name: "Publish update" }).click();
-  await expect(frida.getByRole("dialog", { name: "Post update" })).toHaveCount(
-    0,
-    { timeout: 60_000 },
-  );
+  await expect(
+    frida.getByRole("dialog", { name: "Post this week's update" }),
+  ).toHaveCount(0, { timeout: 60_000 });
 
   // ── One piece of work, from submitted to awarded ────────────────────────────────────────────────────
   const cora = pages.cora;
@@ -778,8 +780,11 @@ async function postUpdate(
   },
 ) {
   await page.goto(projectPath);
-  await page.getByRole("button", { name: "Post update" }).click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  await page
+    .getByRole("button", { name: "Post this week's update" })
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   for (const answer of update.answers ?? []) {
     const group = dialog.getByRole("group", { name: answer.promise });
     await group.getByRole("radio", { name: answer.mark, exact: true }).check();

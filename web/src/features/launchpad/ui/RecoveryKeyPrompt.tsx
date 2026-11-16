@@ -2,7 +2,8 @@
  * "Save your recovery key so you can get back in": one quiet line, always on while this account's key has not been
  * saved, inside the first-week card. The key is the only way back into the account if the browser forgets it, and a
  * founder who has just made a project has the most to lose. "Save it" opens the same dialog the account menu uses, and
- * the line goes away when the key was copied or downloaded. It is an outline button until the first update is posted.
+ * the line goes away when the key was copied or downloaded. It is always an outline button: the green one is the next
+ * step on the page, and a standing reminder must not compete with it.
  */
 
 import { useId, useState } from "react";
@@ -16,11 +17,7 @@ import { Button } from "@/shared/ui/button";
 
 const RECOVERY_LINE = "Save your recovery key so you can get back in.";
 
-export function RecoveryKeyPrompt({
-  firstUpdatePosted,
-}: {
-  firstUpdatePosted: boolean;
-}) {
+export function RecoveryKeyPrompt() {
   const account = existingUserPubkey();
   const lineId = useId();
   const [open, setOpen] = useState(false);
@@ -41,7 +38,7 @@ export function RecoveryKeyPrompt({
         onClick={() => setOpen(true)}
         size="sm"
         type="button"
-        variant={firstUpdatePosted ? "default" : "outline"}
+        variant="outline"
       >
         Save it
       </Button>

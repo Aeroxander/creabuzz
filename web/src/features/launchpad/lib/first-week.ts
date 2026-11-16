@@ -54,12 +54,15 @@ export function firstWeekProgress(input: FirstWeekInput): FirstWeekProgress {
 /** "1 of 3". */
 export const progressWords = (count: number) => `${count} of 3`;
 
+/** The one name of the weekly update's action: the page's button, the due box's button, the card's and the box's title. */
+export const POST_UPDATE = "Post this week's update";
+
 /** The first-update words on the card's buttons. The post button is green only once the first thing is done. */
 export const FIRST_WEEK_WORDS = {
   addWork: "Add what you did",
   addNext: "Or add something to do next",
   didIt: "I did it",
-  post: "Post this week's update",
+  post: POST_UPDATE,
   workDone: "First piece of work done.",
   partSaved: "Saved part of this. Try again.",
   tryAgain: "Try again",

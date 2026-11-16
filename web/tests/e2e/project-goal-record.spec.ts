@@ -344,9 +344,10 @@ test("an update's next steps are promises; the next update answers each, and eve
   await expect(record).toHaveCount(0);
   await expect(page.getByTestId("set-up-more")).toHaveCount(0);
 
-  // First update: three next steps, one per line.
-  await page.getByTestId("launch-post-update").click();
-  let dialog = page.getByRole("dialog", { name: "Post update" });
+  // First update: three next steps, one per line. While the first-week card holds that step the header has no second one.
+  await expect(page.getByTestId("launch-post-update")).toHaveCount(0);
+  await page.getByTestId("first-week-post").click();
+  let dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog.getByTestId("update-due")).toHaveCount(0);
   await dialog.getByText("More options", { exact: true }).click();
   await dialog.getByLabel("Title").fill("Week one");
@@ -373,7 +374,7 @@ test("an update's next steps are promises; the next update answers each, and eve
 
   // Second update: the dialog lists last time's promises and asks about each.
   await page.getByTestId("launch-post-update").click();
-  dialog = page.getByRole("dialog", { name: "Post update" });
+  dialog = page.getByRole("dialog", { name: "Post this week's update" });
   const due = dialog.getByTestId("update-due-promise");
   await expect(due).toHaveCount(3);
   const answer = (text: string) => dialog.getByRole("group", { name: text });
@@ -438,7 +439,7 @@ test("an update's next steps are promises; the next update answers each, and eve
 
   // A third update only asks about what is still open.
   await page.getByTestId("launch-post-update").click();
-  dialog = page.getByRole("dialog", { name: "Post update" });
+  dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog.getByTestId("update-due-promise")).toHaveCount(1);
   await expect(dialog.getByTestId("update-due")).toContainText(
     "Invite ten people",
@@ -451,9 +452,9 @@ test("an update's next steps are promises; the next update answers each, and eve
   await expect(record.getByTestId("record-promise-totals")).toHaveText(
     "1 kept, 1 missed, 1 changed",
   );
-  await expect(page.getByRole("button", { name: "Post update" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: "Post this week's update" }),
+  ).toHaveCount(0);
 });
 
 test("a promise the next update did not answer shows as not answered and is asked about again", async ({
@@ -473,7 +474,7 @@ test("a promise the next update did not answer shows as not answered and is aske
   await page.getByTestId("launch-post-update").click();
   await expect(
     page
-      .getByRole("dialog", { name: "Post update" })
+      .getByRole("dialog", { name: "Post this week's update" })
       .getByTestId("update-due-promise"),
   ).toContainText("Ship sign-up");
 });
@@ -747,9 +748,9 @@ test("a visitor with no account reads the page, and Follow or Start asks them to
   );
   // Nothing of the founder's is offered.
   await expect(page.getByTestId("goal-update")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Post update" })).toHaveCount(
-    0,
-  );
+  await expect(
+    page.getByRole("button", { name: "Post this week's update" }),
+  ).toHaveCount(0);
   await expectAccessible(page, "project page, signed out");
 
   await page.getByTestId("launch-back-idea").click();
@@ -1483,7 +1484,7 @@ test("an answer can be taken back before publishing, and the dialog says it cann
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
   await page.getByTestId("launch-post-update").click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog.getByTestId("update-due")).toContainText(
     "an answer can't be changed after you publish",
   );
@@ -1642,7 +1643,7 @@ test("at 390px Start, the project page and its dialogs fit with no sideways scro
   await page.keyboard.press("Escape");
 
   await page.getByTestId("launch-post-update").click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog.getByTestId("update-due-promise")).toHaveCount(1);
   expect(await noSidewaysScroll(page)).toBe(true);
   const box = await dialog.boundingBox();

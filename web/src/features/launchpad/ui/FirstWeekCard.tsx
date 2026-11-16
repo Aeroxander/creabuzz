@@ -13,7 +13,7 @@ import { useMemo } from "react";
 import { projectProgress } from "@/features/feed/lib/project-progress";
 import { Button } from "@/shared/ui/button";
 
-import { firstWeekForm } from "../lib/first-week";
+import { firstWeekForm, POST_UPDATE } from "../lib/first-week";
 import type { Launch } from "../models";
 import { useProjectUpdates } from "../use-help-requests";
 import { FirstWeekSteps } from "./FirstWeekSteps";
@@ -100,8 +100,10 @@ export function ProjectNews({
 }
 
 /**
- * The founder's "Post update" in the page header. While the first-week card shows its three steps, the card holds the
- * green button and this one is outline; once the steps are done, "Post this week's update" is the page's green button.
+ * The founder's "Post this week's update" in the page header: an outline button, and not there at all while the
+ * first-week card lists its three steps (the card has this very button as its third step). The green one is the next
+ * step, and it sits in the card that asks for it: the first-week card, then the box that says the update is due. Right
+ * after a post the page's green button is the reminder, so a second green button for the same action would compete.
  */
 export function FounderPostButton({
   launch,
@@ -113,21 +115,17 @@ export function FounderPostButton({
   onPost: () => void;
 }) {
   const { updates, lastUpdateAt } = useFirstWeekUpdates(launch);
-  // The three steps hold the green button; once they are done the card is one line and the header's button is the green.
-  const cardShowing =
+  const stepsShowing =
     firstWeek &&
     firstWeekForm({
       updates,
       lastUpdateAt,
       now: Math.floor(Date.now() / 1000),
     }) === "steps";
+  if (stepsShowing) return null;
   return (
-    <Button
-      data-testid="launch-post-update"
-      onClick={onPost}
-      variant={cardShowing ? "outline" : "default"}
-    >
-      {cardShowing ? "Post update" : "Post this week's update"}
+    <Button data-testid="launch-post-update" onClick={onPost} variant="outline">
+      {POST_UPDATE}
     </Button>
   );
 }

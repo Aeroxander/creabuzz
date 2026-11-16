@@ -16,6 +16,7 @@ import {
   type UpdateDraft,
   type WorkLine,
 } from "../lib/weekly-update";
+import { POST_UPDATE } from "../lib/first-week";
 import type { AiStarterKind } from "../lib/ai-starters";
 import type { PromiseEntry } from "../lib/promises";
 import type { Launch } from "../models";
@@ -194,7 +195,7 @@ export function PostUpdateDialog({
             ? firstAnswer
             : doneBox
       }
-      label="Post update"
+      label={POST_UPDATE}
       labelledBy={headingId}
       onClose={onClose}
     >
@@ -202,7 +203,7 @@ export function PostUpdateDialog({
         className="text-lg font-semibold text-black dark:text-white"
         id={headingId}
       >
-        Post update
+        {POST_UPDATE}
       </h2>
       <p className="mt-2 text-sm text-muted-foreground">
         Everyone can read this. A few lines each week is enough.

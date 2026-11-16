@@ -176,9 +176,9 @@ test("founder posts a weekly update asking for help; a follower offers; the foun
   await expect(card.getByTestId("update-nudge")).toContainText(
     "Your weekly update is due. The last one was 9 days ago.",
   );
-  await card.getByRole("button", { name: "Post one" }).click();
+  await card.getByRole("button", { name: "Post this week's update" }).click();
 
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   // The cursor starts in the writing; the title is a choice under "More options".
   await expect(dialog.getByLabel("What happened this week")).toBeFocused();
   await dialog.getByText("More options", { exact: true }).click();
@@ -507,7 +507,7 @@ test("an update the server refuses stays in the dialog with what was written, an
   await expect(page.getByTestId("first-week")).toContainText("Your first week");
   await expect(page.getByTestId("update-nudge")).toHaveCount(0);
   await page.getByTestId("launch-post-update").click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   // Free-form is still there: one open box instead of the two prompts.
   await dialog.getByRole("button", { name: "Write one note instead" }).click();
   await expect(dialog.getByLabel("What happened this week")).toHaveCount(0);
@@ -856,7 +856,7 @@ test("at 390px the update card, the help card and the dialog fit with no sideway
   await expect(offer.getByTestId("help-reply-box")).toBeVisible();
   expect(await noSidewaysScroll(page)).toBe(true);
   await page.getByTestId("launch-post-update").click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await dialog.getByRole("button", { name: "Ask for help" }).click();
   await dialog.getByLabel("Help needed (optional)").fill("A tester.");
   await expect(dialog.getByRole("radio", { name: "Large" })).toBeVisible();

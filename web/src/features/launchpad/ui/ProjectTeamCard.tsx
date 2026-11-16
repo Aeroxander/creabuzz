@@ -31,6 +31,7 @@ import {
   type MemberState,
   TEAM_ROLE_WORDS,
 } from "../lib/team";
+import { POST_UPDATE } from "../lib/first-week";
 import type { Launch } from "../models";
 import {
   useAnswerInvitation,
@@ -518,7 +519,7 @@ export function ProjectTeamCard({
   );
 }
 
-/** "Post update" for a team member who said yes: the founder's own button is on the page already. */
+/** "Post this week's update" for a team member who said yes: the founder's own button is on the page already. */
 export function TeamPostUpdate({
   launch,
   onOpen,
@@ -532,7 +533,7 @@ export function TeamPostUpdate({
     return null;
   return (
     <Button data-testid="team-post-update" onClick={onOpen} variant="outline">
-      Post update
+      {POST_UPDATE}
     </Button>
   );
 }

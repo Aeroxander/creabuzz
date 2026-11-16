@@ -324,9 +324,10 @@ test("the first update ends the first week: 3 of 3, one line with the next date,
   seedNew(relay);
   await install(page, relay, FOUNDER_KEY);
   await withAiService(page);
+  await notBackedUp(page, true);
   await page.goto(PROJECT);
   await page.getByTestId("first-week-post").click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog).toBeVisible();
   await dialog.getByText("More options", { exact: true }).click();
   await expect(dialog.getByTestId("update-draft-button")).toBeVisible();
@@ -356,11 +357,16 @@ test("the first update ends the first week: 3 of 3, one line with the next date,
   );
   // The update itself, and the help it asks for, stay on the page under the one line.
   await expect(page.getByTestId("project-update-card")).toBeVisible();
-  // The header's button is the page's green one now, with the words of the weekly update.
+  // The header's button has the words of the weekly update and is never the green one: the card holds that.
   await expect(page.getByTestId("launch-post-update")).toHaveText(
     "Post this week's update",
   );
-  await expect(page.getByTestId("launch-post-update")).toHaveClass(
+  await expect(page.getByTestId("launch-post-update")).not.toHaveClass(
+    /bg-primary/,
+  );
+  // The recovery key's line stays quiet after the first update too: no second green button beside the next step.
+  await expect(week.getByTestId("recovery-key-save")).toBeVisible();
+  await expect(week.getByTestId("recovery-key-save")).not.toHaveClass(
     /bg-primary/,
   );
 
@@ -371,7 +377,9 @@ test("the first update ends the first week: 3 of 3, one line with the next date,
     "Copied. Paste it anywhere.",
   );
   await week.getByTestId("first-week-help").click();
-  await expect(page.getByRole("dialog", { name: "Post update" })).toBeVisible();
+  await expect(
+    page.getByRole("dialog", { name: "Post this week's update" }),
+  ).toBeVisible();
 });
 test("the post button on the first-week card also has Draft from the record, as the page's own Post update does", async ({
   page,
@@ -382,7 +390,7 @@ test("the post button on the first-week card also has Draft from the record, as 
   await withAiService(page);
   await page.goto(PROJECT);
   await page.getByTestId("first-week-post").click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await dialog.getByText("More options", { exact: true }).click();
   await expect(dialog.getByTestId("update-draft-button")).toBeVisible();
 });
@@ -394,7 +402,7 @@ test("the reminder's address opens the founder's update form once, and nobody el
   seedNew(relay);
   await install(page, relay, FOUNDER_KEY);
   await page.goto(`${PROJECT}&action=update`);
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog).toBeVisible({ timeout: 20_000 });
   // The address is the plain project address afterwards: closing the form and reloading does not open it again.
   await expect(page).not.toHaveURL(/action=/);
@@ -438,9 +446,9 @@ test("a run of weeks without two answered promises is not stated in the note or 
   await page.goto(PROJECT);
   await page
     .getByTestId("project-update-card")
-    .getByRole("button", { name: "Post one" })
+    .getByRole("button", { name: "Post this week's update" })
     .click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await dialog.getByText("More options", { exact: true }).click();
   await dialog.getByLabel("Title").fill("Week three");
   await dialog.getByLabel("What happened this week").fill("Kept going.");
@@ -655,7 +663,7 @@ test("an AI project's first update offers a kind's three first promises for What
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
   await page.getByTestId("first-week-post").click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   const starters = dialog.getByTestId("update-starters");
   await expect(starters).toBeVisible({ timeout: 20_000 });
   const next = dialog.getByLabel("What's next");
@@ -714,7 +722,7 @@ test("an AI project's first update offers a kind's three first promises for What
     .getByRole("button", { name: "Done" })
     .click();
   await page.goto(`${PROJECT}&action=update`);
-  const again = page.getByRole("dialog", { name: "Post update" });
+  const again = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(again.getByTestId("update-due")).toBeVisible({
     timeout: 20_000,
   });
@@ -730,7 +738,7 @@ test("a project that is not about AI gets no starter promises and no starter tas
   await withAiService(page);
   await page.goto(PROJECT);
   await page.getByTestId("first-week-post").click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await dialog.getByText("More options", { exact: true }).click();
   await expect(dialog.getByTestId("update-draft-button")).toBeVisible({
     timeout: 20_000,
@@ -810,9 +818,12 @@ test("at 390px the live line, the first-week card and the tasks fit with no side
     expect(box?.height ?? 0, id).toBeGreaterThanOrEqual(43.5);
   }
   // The update form's "Draft from the record" explains itself in a line you can read, below its button on a phone.
-  await page.getByRole("button", { name: "Post update" }).first().click();
   await page
-    .getByRole("dialog", { name: "Post update" })
+    .getByRole("button", { name: "Post this week's update" })
+    .first()
+    .click();
+  await page
+    .getByRole("dialog", { name: "Post this week's update" })
     .getByText("More options", { exact: true })
     .click();
   const draft = page.getByTestId("update-draft");

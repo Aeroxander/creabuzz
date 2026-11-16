@@ -301,14 +301,17 @@ const LOOP_STOPS: Stop[] = L
         name: "j31-update-dialog",
         who: "ines",
         path: loopProject("ines"),
-        open: roleButton("Post update"),
+        open: roleButton("Post this week's update"),
         shows: '[role="dialog"]',
       },
       {
         name: "j32-update-draft-from-record",
         who: "ines",
         path: loopProject("ines"),
-        open: steps(roleButton("Post update"), click("update-draft-button")),
+        open: steps(
+          roleButton("Post this week's update"),
+          click("update-draft-button"),
+        ),
         shows: tid("update-draft"),
         subject: "update-draft",
       },
@@ -395,8 +398,13 @@ const LOOP_STOPS: Stop[] = L
         who: "ravi",
         path: loopProject("ravi"),
         open: async (page) => {
-          await page.getByRole("button", { name: "Post update" }).click();
-          const dialog = page.getByRole("dialog", { name: "Post update" });
+          await page
+            .getByRole("button", { name: "Post this week's update" })
+            .first()
+            .click();
+          const dialog = page.getByRole("dialog", {
+            name: "Post this week's update",
+          });
           await dialog.getByLabel("Title").fill("Week one");
           await dialog
             .getByLabel("What happened this week")
@@ -825,7 +833,7 @@ const STOPS: Stop[] = [
     name: "g17-post-update",
     who: "frida",
     path: project(),
-    open: roleButton("Post update"),
+    open: roleButton("Post this week's update"),
   },
   {
     name: "g18-new-decision",
