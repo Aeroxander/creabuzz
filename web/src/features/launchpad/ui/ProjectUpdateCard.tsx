@@ -24,7 +24,9 @@ import { relayWsUrl } from "@/shared/lib/relay-url";
 import { Button } from "@/shared/ui/button";
 import { Chip } from "@/shared/ui/chip";
 
+import { whenWords } from "../lib/record-date";
 import { dueOnDay, dueOnDayWords, WEEKDAY_NAMES } from "../lib/update-day";
+import { previousWeekly, promiseTexts } from "../lib/update-view";
 import {
   founderNudge,
   updateDueWords,
@@ -141,6 +143,16 @@ export function ProjectUpdateCard({
   const raw = latest
     ? (data.updates.find((u) => u.id === latest.id) ?? null)
     : null;
+  // Which promises the latest update left unanswered is known only when every update was read: with a cut read the
+  // update shows the answers it gave and says nothing about the rest.
+  const context = raw
+    ? {
+        texts: promiseTexts(data.updates),
+        previous: data.complete
+          ? previousWeekly(data.updates, raw, launch.record.author)
+          : null,
+      }
+    : undefined;
   const facts = updateFacts({
     latestAt: latest?.at ?? null,
     recordsComplete: data.complete,
@@ -214,7 +226,7 @@ export function ProjectUpdateCard({
             className="text-xs text-muted-foreground"
             data-testid="update-next-due"
           >
-            {nudge.text}
+            {dueWords?.text ?? nudge.text}
           </p>
         ) : null}
         {read.isError ? (
@@ -289,13 +301,14 @@ export function ProjectUpdateCard({
       {latest ? (
         <article className="mt-3" data-testid="latest-update">
           <p className="text-xs text-muted-foreground">
-            Latest update · {new Date(latest.at * 1000).toLocaleDateString()}
+            Latest update · {whenWords(latest.at, now)}
           </p>
           <h3 className="mt-1 break-words text-sm font-semibold">
             {latest.title}
           </h3>
           {raw ? (
             <UpdateBody
+              context={context}
               launch={launch}
               max={400}
               update={raw}
