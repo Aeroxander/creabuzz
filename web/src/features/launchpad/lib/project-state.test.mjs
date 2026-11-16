@@ -274,3 +274,30 @@ test("a state's needs and a person's task needs are what the page lists", () => 
     ["task-yes"],
   );
 });
+
+test("a due update says one thing by how long ago the last one was, and always the project's name", () => {
+  const words = (days) =>
+    needWords({ kind: "update-due", coordinate: COORD, days }, "Nebula");
+  assert.equal(
+    words(null).text,
+    "Nebula has no update yet. Post the first one.",
+  );
+  assert.equal(words(7).text, "The next update for Nebula is due today.");
+  assert.equal(
+    words(9).text,
+    "Nebula: last update was 9 days ago. Post one to start a new run.",
+  );
+  assert.equal(
+    words(10).text,
+    "Nebula: last update was 10 days ago. Post one line to start again.",
+  );
+  assert.equal(
+    words(40).text,
+    "Nebula: last update was 40 days ago. Post one line to start again.",
+  );
+  for (const days of [null, 7, 9, 10, 40]) {
+    assert.equal(words(days).action, "Post an update");
+    // A date or a count of days, never the word that blames: late, missed, overdue.
+    assert.doesNotMatch(words(days).text, /missed|overdue|you failed/i);
+  }
+});

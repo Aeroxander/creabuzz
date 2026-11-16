@@ -3,9 +3,10 @@
  * update is due, not missed. It reads the app's own rule for when a weekly update is due (`lib/update-day-tally.ts`),
  * so it never disagrees with a project's page.
  *
- * For someone who started a project that is due, it carries "Post your update" straight to that project's update. It
- * shows only when every project and update was read, so the counts are the whole server's; and nothing until a project
- * is due or has posted.
+ * For someone who started a project that is due, it carries "Post your update" straight to that project's update, unless
+ * Home's next step already carries that same project's due update (one reminder per project, never two). It shows only
+ * when every project and update was read, so the counts are the whole server's; and nothing until a project is due or
+ * has posted.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -17,6 +18,7 @@ import {
   updateDayOf,
 } from "@/features/launchpad/lib/update-day";
 import { launchCoordinate } from "@/features/launchpad/models";
+import { useMyNeeds } from "@/features/launchpad/use-my-projects";
 import { existingUserPubkey } from "@/shared/lib/identity";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
@@ -35,6 +37,7 @@ function storage(): Storage | null {
 export function UpdateDayRail() {
   const me = existingUserPubkey();
   const { listed, complete } = useListedLaunches();
+  const mine = useMyNeeds();
   const tally = useMemo(() => {
     if (!listed || !complete) return null;
     const stored = readUpdateDays(storage());
@@ -55,7 +58,20 @@ export function UpdateDayRail() {
   if (!tally) return null;
   const words = updateDayWords(tally.posted.length, tally.due.length);
   if (!words) return null;
-  const mine = tally.due.filter(({ record }) => record.author === me);
+  // Home's next step already asks for a project's due update: the rail does not ask a second time. While that is still
+  // being read the rail waits rather than show a button that then goes away.
+  const covered = new Set(
+    mine.needs.flatMap(({ need }) =>
+      need.kind === "update-due" ? [need.coordinate] : [],
+    ),
+  );
+  const mayPost = mine.ready || mine.failed;
+  const own = tally.due.filter(
+    ({ record }) =>
+      mayPost &&
+      record.author === me &&
+      !covered.has(launchCoordinate(record.author, record.id)),
+  );
   return (
     <section
       aria-label="Update day"
@@ -66,10 +82,10 @@ export function UpdateDayRail() {
       <p className="min-w-0 flex-1 text-sm" data-testid="update-day-words">
         <span className="font-semibold">Update day.</span> {words}
       </p>
-      {mine.map(({ record }) => (
+      {own.map(({ record }) => (
         <Link
           aria-label={
-            mine.length > 1
+            own.length > 1
               ? `Post your update for ${record.name}`
               : "Post your update"
           }
@@ -81,7 +97,7 @@ export function UpdateDayRail() {
           to="/launchpad/$launchId"
         >
           Post your update
-          {mine.length > 1 ? `: ${record.name}` : ""}
+          {own.length > 1 ? `: ${record.name}` : ""}
         </Link>
       ))}
     </section>

@@ -82,7 +82,7 @@ function browserStore(): Storage | null {
  * recency lifted by votes. Following is the people you follow, from General and every board, newest first. Boards
  * lists the boards to browse and join, and Updates is the feed of project records: updates, promises kept and missed,
  * goals, help wanted and work accepted, from the projects the reader follows or helps (every listed project otherwise). One composer on top posts to
- * General or a board. Above it, for someone signed in, what is waiting on them and their organizations; for a visitor,
+ * General or a board. Above it, for someone signed in, what is waiting on them and their projects; for a visitor,
  * what this place is for.
  */
 export function SocialHomePage() {

@@ -58,7 +58,9 @@ test("Your projects lists what you started, help and follow, with the record and
   await expect(nebula).toContainText(
     "An offer to help with Nebula is waiting for your reply.",
   );
-  await expect(nebula).toContainText("Nebula's last update was 10 days ago.");
+  await expect(nebula).toContainText(
+    "Nebula: last update was 10 days ago. Post one line to start again.",
+  );
 
   const orbit = card(page, "your-projects-helping", "Orbit");
   // Their own tasks, the one waiting on them first.

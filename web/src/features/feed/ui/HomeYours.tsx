@@ -2,7 +2,7 @@
  * What is yours, and what is waiting on you, at the top of Home.
  *
  * Home used to open on a feed no matter who you were. Someone who runs a project needs the opposite: their own
- * organizations one click away, and anything that is waiting for their answer in front of them. Both are read from
+ * projects one click away, and anything that is waiting for their answer in front of them. Both are read from
  * what the app already loads (your launches, the approval requests addressed to you), so nothing here is a second
  * source of truth. It shows nothing at all until there is something to show.
  */
@@ -26,7 +26,7 @@ export function HomeYours({ me }: { me: string }) {
       <section aria-label="Needs you" data-testid="home-needs-you">
         {/* Renders nothing when no request is waiting. */}
         <ApprovalsPanel />
-        {/* What is waiting on you in your DAOs; renders nothing when nothing is. */}
+        {/* What is waiting on you in your projects; renders nothing when nothing is. */}
         <WaitingOnYou />
       </section>
       {mine.length > 0 ? (
@@ -36,7 +36,7 @@ export function HomeYours({ me }: { me: string }) {
           data-testid="home-yours"
         >
           <h2 className="text-base font-bold" id="home-yours-title">
-            Your organizations
+            Your projects
           </h2>
           <ul className="mt-2 divide-y divide-border/60">
             {mine.map((launch) => (
@@ -45,7 +45,7 @@ export function HomeYours({ me }: { me: string }) {
                 key={launch.record.id}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className="truncate text-sm font-semibold">
+                  <span className="min-w-0 break-words text-sm font-semibold">
                     {launch.record.name}
                   </span>
                   {isIdea(launch.record) ? null : (
@@ -56,7 +56,7 @@ export function HomeYours({ me }: { me: string }) {
                   )}
                 </span>
                 <Link
-                  className="shrink-0 text-sm font-medium underline underline-offset-2"
+                  className="inline-flex shrink-0 items-center text-sm font-medium underline underline-offset-2 max-sm:min-h-11 max-sm:px-2"
                   params={{ launchId: launch.record.id }}
                   search={{ action: undefined, author: launch.record.author }}
                   to="/launchpad/$launchId"

@@ -2,7 +2,15 @@ import { expect, test } from "@playwright/test";
 
 import { expectAccessible } from "../helpers/a11y";
 import { createMockRelay } from "./mock-relay";
-import { DAY, install, openAs } from "./helpers/project-world";
+import {
+  coordOf,
+  DAY,
+  event,
+  install,
+  now,
+  openAs,
+  projectRecord,
+} from "./helpers/project-world";
 import {
   ME,
   ME_KEY,
@@ -204,4 +212,77 @@ test("at 390px Home's next step fits with no sideways scroll", async ({
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("a week later Home asks once, for one project, with one green button and no second reminder", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  // Started 41 days ago, so its update day was yesterday; the last update was nine days ago.
+  relay.seed(projectRecord(ME, "garden", "Garden", now() - 41 * DAY));
+  relay.seed(
+    event(
+      47003,
+      ME,
+      { title: "Week two", body: "" },
+      [
+        ["a", coordOf(ME, "garden")],
+        ["update-kind", "weekly"],
+      ],
+      now() - 9 * DAY,
+    ),
+  );
+  await install(page, relay, ME_KEY);
+  await page.goto("/?tab=updates");
+  const step = page.getByTestId("home-next-step");
+  await expect(step.getByTestId("home-next-step-text")).toHaveText(
+    "Garden: last update was 9 days ago. Post one to start a new run.",
+  );
+  await expect(step.getByTestId("home-next-step-action")).toHaveText(
+    "Post an update",
+  );
+  // One project, one green button at the top of Home; "Not now" is quiet.
+  await expect(page.getByTestId("home-next-step")).toHaveCount(1);
+  await expect(
+    page.getByTestId("home-top").locator("a.bg-primary, button.bg-primary"),
+  ).toHaveCount(1);
+  // The update-day rail counts the project as due but does not ask a second time.
+  await expect(page.getByTestId("update-day-rail")).toContainText("1 is due");
+  await expect(
+    page.getByTestId("update-day-rail").getByRole("link"),
+  ).toHaveCount(0);
+  // Put away for a day, it stays put away: the rail still does not ask in its place.
+  await step.getByTestId("home-next-step-dismiss").click();
+  await expect(step).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("update-day-rail")).toContainText("1 is due");
+  await expect(step).toHaveCount(0);
+  await expect(
+    page.getByTestId("update-day-rail").getByRole("link"),
+  ).toHaveCount(0);
+});
+
+test("after ten days the next step asks for one line to start again", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  relay.seed(projectRecord(ME, "garden", "Garden", now() - 40 * DAY));
+  relay.seed(
+    event(
+      47003,
+      ME,
+      { title: "Old", body: "" },
+      [
+        ["a", coordOf(ME, "garden")],
+        ["update-kind", "weekly"],
+      ],
+      now() - 12 * DAY,
+    ),
+  );
+  await install(page, relay, ME_KEY);
+  await page.goto("/");
+  await expect(page.getByTestId("home-next-step-text")).toHaveText(
+    "Garden: last update was 12 days ago. Post one line to start again.",
+  );
 });

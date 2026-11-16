@@ -366,11 +366,26 @@ export function needWords(
       };
     case "update-due":
       return {
-        text:
-          need.days === null
-            ? `${project} has no weekly update yet.`
-            : `${project}'s last update was ${need.days} days ago.`,
+        text: updateDueText(project, need.days),
         action: "Post an update",
       };
   }
+}
+
+/** Days after which the first line of a late update turns into "start again". */
+const START_AGAIN_DAYS = 10;
+
+/**
+ * What a due weekly update says, in one place for Home's next step, Your projects and Work. A first update is "the
+ * first one"; the day the week is up it is "due today"; a few days late it says how long ago the last one was and that
+ * one more starts a new run; from ten days it asks for one line, the smallest way back in. `days` is whole days since
+ * the last update, or null when there never was one.
+ */
+function updateDueText(project: string, days: number | null): string {
+  if (days === null) return `${project} has no update yet. Post the first one.`;
+  if (days < 8) return `The next update for ${project} is due today.`;
+  const ago = `${project}: last update was ${days} days ago.`;
+  return days >= START_AGAIN_DAYS
+    ? `${ago} Post one line to start again.`
+    : `${ago} Post one to start a new run.`;
 }

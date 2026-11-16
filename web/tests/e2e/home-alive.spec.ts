@@ -326,10 +326,58 @@ test("the update-day rail counts who has posted and who is due, and takes a foun
     "2 projects have posted, 3 are due.",
   );
   await expect(rail).not.toContainText(/late|missed|overdue/i);
+  // One reminder per project: Home's next step already asks for Mine's update, so the rail does not ask again.
+  const step = page.getByTestId("home-next-step");
+  await expect(step).toContainText(
+    "Mine: last update was 9 days ago. Post one to start a new run.",
+  );
+  await expect(step.getByTestId("home-next-step-action")).toHaveText(
+    "Post an update",
+  );
+  await expect(
+    rail.getByRole("link", { name: /Post your update/ }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Post an update/ })).toHaveCount(
+    1,
+  );
+});
+
+test("the update-day rail still carries Post your update for a project whose day has come but whose week is not up", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  // Started eight days ago: the update day was yesterday. The last update was three days ago, before that day, so the
+  // update is due on its day, but a week has not passed, so Home's next step has nothing to say about it.
+  const old = now() - 8 * DAY;
+  relay.seed(projectRecord(ASTER, "aster", "Aster", old));
+  relay.seed(
+    update(
+      ASTER,
+      coordOf(ASTER, "aster"),
+      "This week",
+      [["update-part", "done", "Did the work."]],
+      now() - 10,
+    ),
+  );
+  relay.seed(projectRecord(READER, "mine", "Mine", old));
+  relay.seed(
+    update(
+      READER,
+      coordOf(READER, "mine"),
+      "Last time",
+      [["update-kind", "weekly"]],
+      now() - 3 * DAY,
+    ),
+  );
+  await install(page, relay, READER_KEY);
+  await page.goto("/?tab=updates");
+  const rail = page.getByTestId("update-day-rail");
+  await expect(rail.getByTestId("update-day-words")).toContainText("1 is due");
   const post = rail.getByRole("link", { name: "Post your update" });
   await expect(post).toHaveCount(1);
   await expect(post).toHaveAttribute("href", /action=update/);
   await expect(post).toHaveAttribute("href", /\/launchpad\/mine/);
+  await expect(page.getByTestId("home-next-step")).toHaveCount(0);
 });
 
 test("this week on Creaton shows from week two, from the signed records, never as a zero week", async ({
@@ -652,4 +700,63 @@ test("at 390px the rail, the strip, the start card and the week fit with no side
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
+});
+
+test("at 390px a long project name and its line wrap on 'Just started', and its link is 44 px tall", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const relay = createMockRelay({ applyDeletions: true });
+  const name = "Basil and the Garden of Many Very Long Words";
+  relay.seed(
+    projectRecord(BASIL, "basil", name, now() - DAY, {
+      content: {
+        pitch:
+          "A first version of a garden notebook that ten neighbours use every week",
+      },
+    }),
+  );
+  await install(page, relay, READER_KEY);
+  await page.goto("/?tab=updates");
+  const item = page.getByTestId("just-started-item");
+  await expect(item).toHaveCount(1);
+  await expect(item).toContainText("Started yesterday");
+  const link = item.getByRole("link", { name });
+  const box = await link.boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+  // Nothing is cut with an ellipsis: both lines show whole, wrapped.
+  const clipped = await item.evaluate((el) =>
+    [...el.querySelectorAll("a, span")].some((node) => {
+      const style = getComputedStyle(node);
+      return (
+        style.textOverflow === "ellipsis" ||
+        (node as HTMLElement).scrollWidth > (node as HTMLElement).clientWidth
+      );
+    }),
+  );
+  expect(clipped).toBe(false);
+  await expect(item).toContainText("garden notebook that ten neighbours");
+});
+
+test("a signed-out visitor sees one green button on Home, and no green Post in the left rail", async ({
+  page,
+}) => {
+  const relay = createMockRelay({ applyDeletions: true });
+  quietServer(relay);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await install(page, relay, null);
+  await page.goto("/");
+  await expect(page.getByTestId("home-welcome")).toBeVisible();
+  await expect(page.getByTestId("social-nav")).toBeVisible();
+  await expect(page.getByTestId("social-compose")).toHaveCount(0);
+  await expect(
+    page
+      .getByTestId("social-nav")
+      .getByRole("button", { name: "Write a post" }),
+  ).toHaveCount(0);
+  // Signed in, the same rail has it.
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+  await install(page, relay, READER_KEY);
+  await page.goto("/");
+  await expect(page.getByTestId("social-compose")).toBeVisible();
 });
