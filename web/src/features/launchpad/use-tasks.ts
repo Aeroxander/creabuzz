@@ -12,7 +12,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { KIND_LAUNCH_UPDATE } from "@/shared/constants/kinds";
 import { existingUserPubkey, signAsUser } from "@/shared/lib/identity";
@@ -35,6 +35,22 @@ import {
   removedRecords,
 } from "./lib/removed-records";
 import { sendOnce, type SendStore } from "./lib/send-once";
+import { whoToAsk } from "./lib/task-own-check";
+import {
+  type PendingStore,
+  pendingSoloWins,
+  runSoloWin,
+  SoloRefusedError,
+  type SoloPending,
+  type SoloReached,
+  type SoloRequest,
+  type SoloResult,
+  type SoloStage,
+  type SoloSteps,
+  type SoloTask,
+  soloWinRefusal,
+  type SoloWho,
+} from "./lib/solo-win";
 import {
   nextFirstSeen,
   type TaskNotice,
@@ -67,6 +83,11 @@ import {
   parseLaunchRecord,
   parseLaunchUpdate,
 } from "./models";
+import {
+  readAccountAgent,
+  useAccountAgent,
+  useAgentAccounts,
+} from "./use-account-agent";
 import { helpQueryKey } from "./use-help-requests";
 import { useLaunches } from "./use-launches";
 
@@ -115,6 +136,8 @@ interface ProjectTasksRead {
   othersCut: boolean;
 }
 
+const NOBODY: string[] = [];
+
 /**
  * One project's tasks, read for that project alone and by who signed them (`lib/task-reads.ts`). `tasks` is null
  * until the read answers; `complete` is false when there is more than could be read, and the page then says a task
@@ -146,15 +169,42 @@ export function useProjectTasks(project: Project): {
     },
   });
   const { data, refetch } = query;
+  // Whether the founder was alone when they checked work depends on who on the team is an agent account: only asked
+  // when a confirmation is there to be worded, and the tasks wait for the answer (or its failure) so a check is never
+  // shown as "accepted" for a moment and then as the founder's own.
+  const asked = useMemo(
+    () =>
+      data ? whoToAsk(data.records, coordinate, project.author, team) : NOBODY,
+    [data, coordinate, project.author, team],
+  );
+  const agentRead = useQuery({
+    queryKey: [...tasksQueryKey, "agents", relay, asked],
+    enabled: asked.length > 0,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: false,
+    queryFn: async () => {
+      const marks = await Promise.all(
+        asked.map((pubkey) => readAccountAgent(relay, pubkey)),
+      );
+      return asked.filter((_, i) => marks[i] !== null);
+    },
+  });
+  const waitingForAgents = asked.length > 0 && agentRead.isPending;
+  const agents = useMemo(
+    () => new Set(agentRead.data ?? NOBODY),
+    [agentRead.data],
+  );
   const tasks = useMemo(() => {
-    if (!data) return null;
+    if (!data || waitingForAgents) return null;
     return projectTasks({
       records: data.records,
       coordinate,
       team: new Set(team),
       now: Math.floor(Date.now() / 1000),
+      agents,
     });
-  }, [data, coordinate, team]);
+  }, [data, coordinate, team, agents, waitingForAgents]);
   return {
     tasks,
     complete: data?.complete ?? false,
@@ -248,6 +298,8 @@ export class EvidenceChangedError extends Error {
 export interface TaskSent {
   /** An earlier try with these same words had already gone through, so nothing new was sent. */
   adopted: boolean;
+  /** The record's id: a task's own id, or the id of the piece of work a hand-in is. */
+  id: string;
 }
 
 async function sendTaskRecord(
@@ -259,7 +311,7 @@ async function sendTaskRecord(
   if (!me) throw new Error("Sign in first.");
   const relay = relayWsUrl();
   const coordinate = launchCoordinate(project.author, project.id);
-  const { adopted } = await sendOnce({
+  const { adopted, event: sent } = await sendOnce({
     key: `${coordinate}:${key}`,
     signer: me,
     template: {
@@ -273,7 +325,7 @@ async function sendTaskRecord(
     exists: async (id) =>
       (await readByIds([id])).some((found) => found.id === id),
   });
-  return { adopted };
+  return { adopted, id: sent.id };
 }
 
 type TaskRef = Pick<TaskView, "id" | "helper" | "madeBy">;
@@ -470,6 +522,136 @@ export function useTaskActions(project: Project) {
     grant,
     giveUp,
     cancel,
+  };
+}
+
+/** The tab's session storage for a solo try that stopped, under a name that holds the server and the account. */
+function soloStore(me: string): PendingStore {
+  const prefix = `creaton.solo-win.v1:${relayWsUrl()}:${me}:`;
+  return {
+    get: (key) => sessionStorage.getItem(prefix + key),
+    set: (key, value) => sessionStorage.setItem(prefix + key, value),
+    remove: (key) => sessionStorage.removeItem(prefix + key),
+  };
+}
+
+type SoloRun =
+  | { status: "idle" | "running" | "done" }
+  | { status: "failed"; stage: SoloStage; reached: SoloReached };
+
+/**
+ * "I did it" for a founder alone on their project (`lib/solo-win.ts`): make the task, hand the line in, and check it
+ * themselves, in that order, with the same three mutations the full flow uses. Every step is a record that is sent
+ * once, so `retry()` after a failure carries on from the step that failed and never makes a second task, hand-in or
+ * check; the step it stopped at survives a reload of the page. `available` is false for an agent account and for a
+ * founder who has someone else on the project, and `start` then sends nothing.
+ *
+ * @public Mounted by the project page's "What did you get done?" box (batch 3 of the UI overhaul); drop this tag then.
+ */
+export function useSoloWin(project: Project) {
+  const actions = useTaskActions(project);
+  const me = existingUserPubkey();
+  const coordinate = launchCoordinate(project.author, project.id);
+  const viewer = useAccountAgent(me);
+  const team = useMemo(() => teamOf(project), [project]);
+  const others = useMemo(
+    () => [...team].filter((member) => member !== project.author),
+    [team, project.author],
+  );
+  const agents = useAgentAccounts(others, me === project.author);
+  const who = useMemo<SoloWho>(
+    () => ({
+      viewer: me,
+      founder: project.author,
+      team,
+      agents,
+      viewerIsAgent: viewer.mark !== null,
+    }),
+    [me, project.author, team, agents, viewer.mark],
+  );
+  const refusal = soloWinRefusal(who);
+  // Until the account's own profile is read, it is not known not to be an agent.
+  const available = refusal === null && viewer.known;
+
+  const [run, setRun] = useState<SoloRun>({ status: "idle" });
+  const [pending, setPending] = useState<SoloPending | null>(() =>
+    me ? (pendingSoloWins(soloStore(me), coordinate)[0] ?? null) : null,
+  );
+  const last = useRef<SoloRequest | null>(null);
+
+  const { mutateAsync: makeTask } = actions.make;
+  const { mutateAsync: handIn } = actions.evidence;
+  const { mutateAsync: checkIt } = actions.confirm;
+  const execute = useCallback(
+    async (
+      request: SoloRequest,
+      from: SoloPending | null,
+    ): Promise<SoloResult | null> => {
+      if (!me) return null;
+      const steps: SoloSteps = {
+        make: ({ helper, what, done }) =>
+          makeTask({ helper, what, done, size: "small", due: null }),
+        handIn: (task: SoloTask, { note, links }) =>
+          handIn({ task, note, links, files: [] }),
+        check: (task: SoloTask, { evidenceId, seen }) =>
+          checkIt({ task, evidenceId, seen }),
+      };
+      last.current = request;
+      setRun({ status: "running" });
+      try {
+        const result = await runSoloWin({
+          who,
+          coordinate,
+          request,
+          from,
+          steps,
+          store: soloStore(me),
+        });
+        if (result.ok) {
+          last.current = null;
+          setPending(null);
+          setRun({ status: "done" });
+        } else {
+          setPending(result.pending);
+          setRun({
+            status: "failed",
+            stage: result.stage,
+            reached: result.reached,
+          });
+        }
+        return result;
+      } catch (error) {
+        if (error instanceof SoloRefusedError) {
+          setRun({ status: "idle" });
+          return null;
+        }
+        throw error;
+      }
+    },
+    [me, who, coordinate, makeTask, handIn, checkIt],
+  );
+
+  return {
+    available,
+    refusal,
+    run,
+    /** A try that stopped part of the way (this tab, even after a reload): where it got to and what it was for. */
+    pending,
+    /** Run the steps for `request` from the start. */
+    start: (request: SoloRequest) => execute(request, null),
+    /** Carry on from the step that failed, with the same words. */
+    retry: () =>
+      last.current || pending
+        ? execute(
+            last.current ?? {
+              start: "finish",
+              text: pending?.text ?? "",
+              link: pending?.link ?? null,
+            },
+            pending,
+          )
+        : Promise.resolve(null),
+    reset: () => setRun({ status: "idle" }),
   };
 }
 
