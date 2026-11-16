@@ -22,6 +22,7 @@ import { existingUserPubkey } from "@/shared/lib/identity";
 import { type NostrEvent, queryEvents } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 
+import { joinQueryKey } from "./use-join";
 import { launchRemovals } from "./lib/launch-removals";
 import {
   memberState,
@@ -48,8 +49,8 @@ import { useChangeOwnRecord } from "./use-own-record";
 
 const teamQueryKey = ["launchpad", "team"] as const;
 
-/** How many answers one read asks for: a team is at most twenty people, each answering an invitation once or twice. */
-const ANSWERS_LIMIT = 200;
+/** How many answers one read asks for: a team is at most two hundred people, each answering an invitation once or twice. */
+const ANSWERS_LIMIT = 500;
 /** How many project records naming a person are read to find their invitations. */
 const NAMING_LIMIT = 100;
 
@@ -174,6 +175,30 @@ export function useTeamChanges(launch: Launch) {
     onError: done,
   });
   return { add, remove };
+}
+
+/**
+ * The founder's one press on an ask to join (`lib/join.ts`): add the person to the project record under the name their
+ * ask gave, which their own yes already names. It reads the record from the server first, merges, and publishes once;
+ * pressing it again after a lost answer finds the person on the record and sends nothing. By project id, so
+ * Notifications can accept without opening the project.
+ */
+export function useAcceptJoin(projectId: string) {
+  const change = useChangeOwnRecord();
+  const queryClient = useQueryClient();
+  const done = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: teamQueryKey }),
+      queryClient.invalidateQueries({ queryKey: launchesQueryKey }),
+      queryClient.invalidateQueries({ queryKey: joinQueryKey }),
+    ]);
+  return useMutation({
+    mutationFn: (ask: { author: string; invite: string }) =>
+      change(projectId, (own) => withMember(own, ask.author, ask.invite)),
+    onSuccess: done,
+    // Sent or not, the record is read again: a send whose answer was lost shows the person as added.
+    onError: done,
+  });
 }
 
 /** Answer an invitation: one record signed by the person invited. */

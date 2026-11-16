@@ -37,8 +37,11 @@ interface Ev {
 
 type Fetch<E> = (filter: NostrFilter) => Promise<readonly E[]>;
 
-/** How many team members' records are read for one project. A larger team makes the read incomplete. */
-const TEAM_READ = 20;
+/**
+ * How many team members' records are read for one project, {@link AUTHORS_PER_READ} accounts to a read. A larger team
+ * makes the read incomplete. A team may have two hundred people besides the founder (`MAX_TEAM_MEMBERS`).
+ */
+const TEAM_READ = 201;
 /** How many helpers' steps are read for one project. */
 const HELPERS_READ = 200;
 /** How many authors one read names. */
@@ -103,12 +106,13 @@ export async function readProjectTasks<E extends Ev>(
   const team = project.team.slice(0, TEAM_READ);
   if (project.team.length > TEAM_READ) got.complete = false;
   const about = { "#a": [coordinate], "#l": [TASK_LABEL] };
-  await got.paged(
-    fetch,
-    () => ({ kinds: [KIND_LAUNCH_UPDATE], authors: team, ...about }),
-    // What comes back is checked again: only what a team member signed.
-    (event) => team.includes(event.pubkey),
-  );
+  for (const authors of chunks(team, AUTHORS_PER_READ))
+    await got.paged(
+      fetch,
+      () => ({ kinds: [KIND_LAUNCH_UPDATE], authors, ...about }),
+      // What comes back is checked again: only what a team member signed.
+      (event) => authors.includes(event.pubkey),
+    );
   const onTeam = new Set(team);
   const helpers = [
     ...new Set(
@@ -227,16 +231,17 @@ export async function readPersonTasks<E extends Ev>(
       .sort();
     allIds.push(...ids);
     for (const chunk of chunks(ids, IDS_PER_READ))
-      await got.paged(
-        fetch,
-        () => ({
-          kinds: [KIND_LAUNCH_UPDATE],
-          authors: team,
-          "#e": chunk,
-          "#l": [TASK_LABEL],
-        }),
-        (event) => team.includes(event.pubkey),
-      );
+      for (const authors of chunks(team, AUTHORS_PER_READ))
+        await got.paged(
+          fetch,
+          () => ({
+            kinds: [KIND_LAUNCH_UPDATE],
+            authors,
+            "#e": chunk,
+            "#l": [TASK_LABEL],
+          }),
+          (event) => authors.includes(event.pubkey),
+        );
   }
   let othersCut = false;
   if (allIds.length > 0) {

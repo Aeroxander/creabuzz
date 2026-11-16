@@ -170,9 +170,13 @@ test("signed out, a project's scorecard shows its record and no price; Follow as
   await expect(card.getByTestId("update-this-week")).toContainText(
     "Sign-up shipped on Tuesday.",
   );
-  // A visitor: Follow is the one green button, "I can help" and Share are outline, and the way to start one's own
-  // project is a quiet link.
-  await expect(card.getByTestId("scorecard-follow")).toHaveClass(/bg-primary/);
+  // A visitor: "Ask to join" is the one green button, Follow, "I can help" and Share are outline, and the way to start
+  // one's own project is a quiet link.
+  await expect(card.getByTestId("join-ask")).toHaveText("Ask to join");
+  await expect(card.getByTestId("join-ask")).toHaveClass(/bg-primary/);
+  await expect(card.getByTestId("scorecard-follow")).not.toHaveClass(
+    /bg-primary/,
+  );
   await expect(card.getByTestId("scorecard-help")).not.toHaveClass(
     /bg-primary/,
   );

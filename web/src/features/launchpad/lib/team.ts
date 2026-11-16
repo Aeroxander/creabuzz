@@ -38,10 +38,11 @@ const TEAM_ROLE = "member";
 /** What that role may do, in plain words. */
 export const TEAM_ROLE_WORDS = "Can post updates and check work";
 /**
- * The most people a founder can add. A project's task records are read for at most twenty team accounts
- * (`task-reads.ts`), the founder included; a larger team would make those reads incomplete.
+ * The most people a founder can add. The server holds a project record with up to 200 team tags, and a project's task
+ * records are read for its whole team (`task-reads.ts`, 50 accounts to a read). The cap was 19 while those reads covered
+ * twenty accounts, the founder included.
  */
-export const MAX_TEAM_MEMBERS = 19;
+export const MAX_TEAM_MEMBERS = 200;
 
 const PUBKEY = /^[0-9a-f]{64}$/;
 

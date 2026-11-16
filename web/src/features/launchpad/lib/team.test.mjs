@@ -78,7 +78,7 @@ test("adding someone already on the team sends nothing, so a retry after a lost 
   assert.equal(withMember(record(first.team), ANN, "inv2"), null);
 });
 
-test("the founder cannot add themselves, a non-account, or a twentieth person", () => {
+test("the founder cannot add themselves, a non-account, or a person past the cap", () => {
   assert.throws(() => withMember(record(), FOUNDER, "i"), /founder/);
   assert.throws(() => withMember(record(), "npub1xyz", "i"), /not an account/);
   const full = Array.from({ length: MAX_TEAM_MEMBERS }, (_, i) => ({
@@ -87,6 +87,19 @@ test("the founder cannot add themselves, a non-account, or a twentieth person", 
     invite: "x",
   }));
   assert.throws(() => withMember(record(full), ANN, "i"), /Remove someone/);
+});
+
+test("a team can have two hundred people besides the founder: the twentieth is added, the two hundred and first is not", () => {
+  const people = (n) =>
+    Array.from({ length: n }, (_, i) => ({
+      pubkey: (i + 1).toString(16).padStart(64, "0"),
+      role: "member",
+      invite: "x",
+    }));
+  assert.equal(MAX_TEAM_MEMBERS, 200);
+  assert.equal(withMember(record(people(19)), ANN, "i").team.length, 20);
+  assert.equal(withMember(record(people(199)), ANN, "i").team.length, 200);
+  assert.throws(() => withMember(record(people(200)), ANN, "i"), /200 people/);
 });
 
 test("removing someone who said yes writes down that they left and when; removing someone not there sends nothing", () => {

@@ -171,7 +171,7 @@ test("a team's own flood, or a team too large to read, makes the read incomplete
     created_at: NOW,
   }));
   assert.equal((await projectRead(server([t, ...own]))).complete, false);
-  const big = Array.from({ length: 25 }, (_, i) =>
+  const big = Array.from({ length: 250 }, (_, i) =>
     i.toString(16).padStart(64, "0"),
   );
   assert.equal(
@@ -184,6 +184,27 @@ test("a team's own flood, or a team too large to read, makes the read incomplete
     false,
   );
   assert.equal((await projectRead(server([t]))).complete, true);
+});
+
+test("a team of a hundred and twenty is read whole: a step signed by someone in a later group of accounts is found", async () => {
+  const t = task();
+  const team = Array.from({ length: 120 }, (_, i) =>
+    (i + 1).toString(16).padStart(64, "0"),
+  );
+  const late = team[110];
+  const theirs = {
+    ...step(late, t, "cancel", { note: "from the 111th" }, NOW),
+    created_at: NOW,
+  };
+  const got = await readProjectTasks(server([t, theirs]).fetch, {
+    coordinate: COORD,
+    team: [FOUNDER, ...team],
+  });
+  assert.equal(got.complete, true);
+  assert.ok(
+    got.events.some((event) => event.id === theirs.id),
+    "the step signed by the 111th member was read",
+  );
 });
 
 test("a person's record starts from what they signed, and finds the team's steps through the task", async () => {

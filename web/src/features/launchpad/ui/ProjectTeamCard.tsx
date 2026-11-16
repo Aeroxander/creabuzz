@@ -44,6 +44,7 @@ import {
   useRecordAgreement,
 } from "../use-record-agreement";
 import { AccountAgentBadge } from "./AccountAgentBadge";
+import { CopyInviteLink, ProjectJoinRequests } from "./JoinRequests";
 import { MODAL_FOOTER_CLASS, Modal } from "./Modal";
 
 const day = (seconds: number) =>
@@ -278,6 +279,12 @@ export function ProjectTeamCard({
           </Button>
         ) : null}
       </div>
+      {isFounder ? (
+        <div className="mt-2">
+          <CopyInviteLink project={record} />
+        </div>
+      ) : null}
+      {isFounder ? <ProjectJoinRequests record={record} /> : null}
       {isFounder && full ? (
         <p className="mt-1 text-xs text-muted-foreground">
           A team can have {MAX_TEAM_MEMBERS} people besides the founder.

@@ -23,6 +23,7 @@ import { SoloWinProvider } from "./SoloWinHost";
 import { StartYours } from "./StartYours";
 import { PostUpdateDialog } from "./PostUpdateDialog";
 import { UpdatePosted } from "./UpdatePosted";
+import { JoinAskButton } from "./JoinAskButton";
 import { TeamPostUpdate } from "./ProjectTeamCard";
 import { LaunchHero } from "./LaunchHero";
 import { LaunchChoice } from "./LaunchChoice";
@@ -508,6 +509,12 @@ export function LaunchDetailPage({
                 <TeamPostUpdate
                   launch={launch}
                   onOpen={() => setUpdateOpen(true)}
+                />
+              )}
+              {isFounder || sandbox || onTeam ? null : (
+                <JoinAskButton
+                  project={launch.record}
+                  quiet={idea || (mainAction !== null && raisesOffered())}
                 />
               )}
               {sandbox ? null : (

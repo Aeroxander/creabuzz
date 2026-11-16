@@ -23,6 +23,7 @@ import {
 } from "@/features/launchpad/lib/update-view";
 import type { Launch, LaunchUpdate } from "@/features/launchpad/models";
 import { CheckedBy } from "@/features/launchpad/ui/CheckedBy";
+import { JoinAskButton } from "@/features/launchpad/ui/JoinAskButton";
 import { ShareRecordButton } from "@/features/launchpad/ui/ShareRecordButton";
 import { StartYours } from "@/features/launchpad/ui/StartYours";
 import { UpdateSections } from "@/features/launchpad/ui/UpdateSections";
@@ -285,7 +286,7 @@ export function LatestUpdate({
 }
 
 /**
- * The buttons for whoever is looking. A visitor: Follow is green, "I can help" and Share are outline. The founder or
+ * The buttons for whoever is looking. A visitor: "Ask to join" is green, Follow, "I can help" and Share are outline. The founder or
  * someone on the team: no Follow and no "I can help"; Share, and for the founder "Post this week's update" in green.
  * Signed out, a quiet link says how to start a project of one's own.
  */
@@ -316,6 +317,7 @@ export function ScorecardActions({
     <div className="flex flex-wrap items-center gap-2">
       {onTeam ? null : (
         <>
+          <JoinAskButton project={project} />
           <Button
             aria-pressed={followed}
             className="max-sm:h-11"
@@ -323,7 +325,7 @@ export function ScorecardActions({
             disabled={followDisabled}
             onClick={onFollow}
             type="button"
-            variant={followed ? "outline" : "default"}
+            variant="outline"
           >
             {followed ? "Following" : "Follow"}
           </Button>

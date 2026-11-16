@@ -6,11 +6,23 @@ import type { Locator, Page } from "@playwright/test";
  * it, so the count is of what the spec really did on the real screens.
  *
  * `solo-path-guard.spec.ts` (mocked) and `e2e-real/solo-path.spec.ts` (a real server) both use it to hold the solo
- * founder's path from Home to the first piece of work done to the budget in `SOLO_PATH_BUDGET`.
+ * founder's path from Home to the first piece of work done to the budget in `SOLO_PATH_BUDGET`; `project-join.spec.ts`
+ * (mocked) and `e2e-real/project-loop.spec.ts` (a real server) hold the join path to `JOIN_PATH_BUDGET` and
+ * `ACCEPT_PATH_BUDGET`.
  */
 
 /** The most a person alone may do between Home and "First piece of work done" (the build plan, section 2). */
 export const SOLO_PATH_BUDGET = { presses: 8, fields: 4 } as const;
+
+/**
+ * The most a stranger does on a project's link to be "Asked to join" (the next-version plan, section 8, milestone 0),
+ * counted after the account exists: signed out the first press opens the sign-up dialog and the second sends the ask;
+ * signed in the first one sends it. No field is typed.
+ */
+export const JOIN_PATH_BUDGET = { presses: 2, fields: 0 } as const;
+
+/** What the founder does to accept an ask: one press on Accept, nothing typed. */
+export const ACCEPT_PATH_BUDGET = { presses: 1, fields: 0 } as const;
 
 /** Reading speed, press time and typing speed behind the estimate (the same ones the first walk of the app used). */
 const WORDS_READ_PER_MINUTE = 230;

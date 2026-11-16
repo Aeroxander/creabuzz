@@ -32,6 +32,8 @@ export default defineConfig({
         "**/launchpad-work.spec.ts",
         "**/launchpad-milestone.spec.ts",
         "**/launchpad-record.spec.ts",
+        // Asking to join from a project's link and the founder's one-press Accept (next-version milestone 0).
+        "**/project-join.spec.ts",
         "**/launchpad-presets.spec.ts",
         "**/community-create.spec.ts",
         "**/community-access.spec.ts",

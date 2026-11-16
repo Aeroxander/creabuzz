@@ -189,12 +189,14 @@ export function projectRecordRefusal(
     "help-found",
   ].some(has);
   const part = tagOf(event, "task-part");
+  const joining = has("join-ask");
   const coordinate = tagOf(event, "a") ?? "";
   const [kind, founder, ...rest] = coordinate.split(":");
   // A record of none of those families is the team's too (a plain update, a team answer, a check note, a tag the
   // server has never heard of), unless its body is one of the records people outside the team write about work that
   // lives on the chain. A record that names no project at all is not looked at.
-  const plain = !founderOnly && !teamOnly && !has("help-offer") && !part;
+  const plain =
+    !founderOnly && !teamOnly && !has("help-offer") && !part && !joining;
   if (plain) {
     if (kind !== "37001") return null;
     let body: unknown = null;
@@ -232,6 +234,24 @@ export function projectRecordRefusal(
       .map((tag) => tag[1]),
   ]);
   const NOT_TEAM = "restricted: only this project's team can post this";
+  if (joining) {
+    // An ask to join: anyone not on the team, and nothing else (the server also holds an account to three asks on one
+    // project and twenty projects a day).
+    if (founderOnly || teamOnly || has("help-offer") || part)
+      return "invalid: an ask to join cannot also be anything else";
+    if (team.has(event.pubkey))
+      return "invalid: you are already on this project's team";
+    const before = events.filter(
+      (e) =>
+        e.kind === 47003 &&
+        e.pubkey === event.pubkey &&
+        tagOf(e, "a") === coordinate &&
+        e.tags.some((tag) => tag[0] === "l" && tag[1] === "creaton-join"),
+    ).length;
+    if (before >= 3)
+      return "restricted: you have already asked to join this project; the founder has been told";
+    return null;
+  }
   if (founderOnly && event.pubkey !== founder)
     return "restricted: only this project's founder can post this";
   if ((teamOnly || plain) && !team.has(event.pubkey)) return NOT_TEAM;
@@ -280,15 +300,15 @@ export function projectRecordRefusal(
 /**
  * The shape the real server requires of a project record's team (`validate_launch_record_envelope` in
  * `buzz-relay/src/handlers/ingest.rs`): each `team` tag is exactly `["team", <64-hex account>, <role>]`, and there are
- * at most 64 of them. A fourth part, or an account that is not 64 hex characters, refuses the whole record.
+ * at most 200 of them. A fourth part, or an account that is not 64 hex characters, refuses the whole record.
  */
 export function launchRecordRefusal(event: StoredEvent): string | null {
   if (event.kind !== 37001) return null;
   const team = event.tags.filter((tag) => tag[0] === "team");
   if (team.some((tag) => tag.length !== 3 || !/^[0-9a-fA-F]{64}$/.test(tag[1])))
     return "invalid: launch record event `team` tag must be [`team`, <64-hex-pubkey>, <role>]";
-  if (team.length > 64)
-    return `invalid: launch record event must have at most 64 \`team\` tags (got ${team.length})`;
+  if (team.length > 200)
+    return `invalid: launch record event must have at most 200 \`team\` tags (got ${team.length})`;
   return null;
 }
 

@@ -44,7 +44,10 @@ test("both pages put the block where the record is read first, and nowhere else"
 
 test("the one switch is the server's word when it has one, else the build's own: nothing reads investing from anywhere else", () => {
   const offered = source("../lib/investing-offered.ts");
-  assert.match(offered, /server \?\? env\?\.VITE_INVESTING\?\.trim\(\) === "1"/);
+  assert.match(
+    offered,
+    /server \?\? env\?\.VITE_INVESTING\?\.trim\(\) === "1"/,
+  );
   assert.match(
     offered,
     /investingSwitchOn\(env, server\)\s*&&\s*namesAnyAddress\(\s*env\?\.VITE_BACKING_POOL_FACTORY/,

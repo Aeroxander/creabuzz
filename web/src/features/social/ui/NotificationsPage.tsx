@@ -51,6 +51,7 @@ import { useHelpNotices } from "../../launchpad/use-help-requests";
 import { useTaskNotices } from "../../launchpad/use-tasks";
 import { useMyTeams } from "../../launchpad/use-team";
 import { TaskNoticesSection } from "../../launchpad/ui/TaskNoticesSection";
+import { JoinRequestsSection } from "../../launchpad/ui/JoinRequestsSection";
 import { TeamInvitationsSection } from "../../launchpad/ui/TeamInvitationsSection";
 import type { HelpNotice } from "../../launchpad/lib/help-request";
 import { useMutedSet } from "../use-social-actions";
@@ -486,6 +487,7 @@ export function NotificationsPage() {
         {me && tab === "all" ? (
           <RoomsNotice visitSeenAt={visitSeenAt.current ?? 0} />
         ) : null}
+        {me && tab === "all" ? <JoinRequestsSection /> : null}
         {me && tab === "all" ? <TeamInvitationsSection /> : null}
         {me && tab === "all" ? (
           <TaskNoticesSection
