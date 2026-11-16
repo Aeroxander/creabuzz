@@ -13,6 +13,7 @@
  * Pure and alias-free: `my-work.test.mjs` drives it under `node --test`.
  */
 
+import type { KnownAgents } from "../../launchpad/lib/task-own-check.ts";
 import {
   isOpenTask,
   openTasks,
@@ -99,6 +100,8 @@ export function myWork(input: {
   records: readonly TaskRecord[];
   teams: ReadonlyMap<string, ReadonlySet<string>>;
   now: number;
+  /** Accounts known to be agents, so a founder's own check is worded as theirs on every page. */
+  agents?: KnownAgents;
 }): MyWorkItem[] {
   const { person, records, teams, now } = input;
   const coordinates = new Set(
@@ -114,6 +117,7 @@ export function myWork(input: {
         coordinate,
         team: teams.get(coordinate) ?? NO_TEAM,
         now,
+        agents: input.agents,
       }).filter((task) => task.helper === person && task.agreed !== null),
     );
   const closedAt = (task: TaskView) =>

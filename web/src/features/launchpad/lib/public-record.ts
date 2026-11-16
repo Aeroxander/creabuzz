@@ -28,6 +28,7 @@ import {
   parseLaunchUpdate,
 } from "../models.ts";
 import { projectState } from "./project-state.ts";
+import { runAgentsSigning } from "./run-agents.ts";
 import {
   type PromiseEntry,
   type PromiseState,
@@ -313,6 +314,8 @@ export function publicRecordView(input: {
       return signal ? [signal] : [];
     }),
     tasks: [...tasksOf(own), ...tasksOf(helperSteps)],
+    // The public door serves no profiles, so an agent is known by the signed word its own records carry.
+    agents: new Set(runAgentsSigning([...own, ...helperSteps], team)),
     // Offers of help and posts on Home are not part of the public record, and nothing shown here rests on them.
     complete: {
       team: teamComplete,

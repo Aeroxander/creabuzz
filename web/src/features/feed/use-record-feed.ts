@@ -24,6 +24,7 @@ import {
 } from "@/features/launchpad/lib/launch-query";
 import { listedProject, notListedYet } from "@/features/launchpad/lib/listing";
 import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import { whoToAskAcross } from "@/features/launchpad/lib/task-own-check";
 import {
   parseTaskRecord,
   TASK_LABEL,
@@ -34,6 +35,7 @@ import {
   launchCoordinate,
   type LaunchRecord,
 } from "@/features/launchpad/models";
+import { readRunAgents } from "@/features/launchpad/use-account-agent";
 import { useLaunches } from "@/features/launchpad/use-launches";
 import { useMyProjects } from "@/features/launchpad/use-my-projects";
 import { readProjectVoices } from "@/features/launchpad/use-team";
@@ -151,6 +153,8 @@ export function useFeedScope(): {
 interface FeedPage {
   events: NostrEvent[];
   taskRecords: TaskRecord[];
+  /** Of the people on these projects, the accounts a person runs (agents): they never check work. */
+  agents: string[];
   /** The tasks or steps behind this page's confirmations could not all be read: accepted work may be missing. */
   workCut: boolean;
 }
@@ -166,6 +170,11 @@ async function fetchFeedPage(
   relay: string,
   coordinates: readonly string[],
   authors: readonly string[],
+  teams: readonly {
+    coordinate: string;
+    founder: string;
+    team: Iterable<string>;
+  }[],
   until: number | null,
 ): Promise<FeedPage> {
   const events = await queryEvents(relay, {
@@ -179,7 +188,7 @@ async function fetchFeedPage(
   const signed = events.filter((event) => authors.includes(event.pubkey));
   const taskIds = confirmedTaskIds(signed);
   if (taskIds.length === 0)
-    return { events: signed, taskRecords: [], workCut: false };
+    return { events: signed, taskRecords: [], agents: [], workCut: false };
   const ids = taskIds.slice(0, TASKS_PER_PAGE);
   const tasks = tasksOf(
     await queryEvents(relay, {
@@ -202,12 +211,15 @@ async function fetchFeedPage(
     "#l": [TASK_LABEL],
     limit: STEPS_LIMIT,
   });
+  const taskRecords = [
+    ...tasks,
+    ...tasksOf(steps).filter((r) => signers.includes(r.author)),
+  ];
   return {
     events: signed,
-    taskRecords: [
-      ...tasks,
-      ...tasksOf(steps).filter((r) => signers.includes(r.author)),
-    ],
+    taskRecords,
+    // Whether a founder checked work alone depends on who on the team is an agent: asked only where work was checked.
+    agents: await readRunAgents(relay, whoToAskAcross(taskRecords, teams)),
     workCut: taskIds.length > TASKS_PER_PAGE || steps.length >= STEPS_LIMIT,
   };
 }
@@ -266,7 +278,17 @@ export function useRecordFeed(scope: FeedScope | null) {
   const query = useInfiniteQuery({
     queryKey: ["launchpad", "help", "feed", relay, coordinates, authors],
     queryFn: ({ pageParam }) =>
-      fetchFeedPage(relay, coordinates, authors, pageParam),
+      fetchFeedPage(
+        relay,
+        coordinates,
+        authors,
+        [...projects.values()].map((p) => ({
+          coordinate: p.coordinate,
+          founder: p.founder,
+          team: p.team,
+        })),
+        pageParam,
+      ),
     initialPageParam: null as number | null,
     getNextPageParam: (_last, pages) =>
       nextProjectPage(pages, FEED_PAGE, FEED_MAX_PAGES),
@@ -293,6 +315,7 @@ export function useRecordFeed(scope: FeedScope | null) {
       events,
       projects,
       taskRecords: pages.flatMap((page) => page.taskRecords),
+      agents: new Set(pages.flatMap((page) => page.agents)),
       now,
       readBack: reachedEnd
         ? null

@@ -39,7 +39,9 @@ import {
   taskNeeds,
 } from "./lib/project-state";
 import { readPersonTasks } from "./lib/task-reads";
+import { whoToAsk, whoToAskAcross } from "./lib/task-own-check";
 import {
+  founderOfCoordinate,
   isTaskRecordTags,
   parseTaskRecord,
   projectTasks,
@@ -54,6 +56,7 @@ import {
   parseLaunchRecord,
   parseLaunchUpdate,
 } from "./models";
+import { readRunAgents } from "./use-account-agent";
 import { helpQueryKey } from "./use-help-requests";
 import { useRemovedLaunchIds } from "./use-launches";
 import { useMyTeams } from "./use-team";
@@ -222,6 +225,17 @@ async function readProjectState(
     const signal = parseHelpSignal(event);
     return signal && signal.kind === "offer" ? [signal] : [];
   });
+  const taskRecords = [
+    ...teamTasks,
+    ...tasksOf(helperSteps).filter((r) => helpers.includes(r.author)),
+  ];
+  // Whether the founder checked work alone depends on who on the team is an agent: asked only where work was checked.
+  const agents = new Set(
+    await readRunAgents(
+      relay,
+      whoToAsk(taskRecords, coordinate, record.author, everyone),
+    ),
+  );
   const progress = projectProgress([{ record, updates }], posts).filter(
     (item) => !item.evidence,
   );
@@ -236,10 +250,8 @@ async function readProjectState(
     updates,
     latestAt,
     signals: [...teamSignals, ...offerSignals],
-    tasks: [
-      ...teamTasks,
-      ...tasksOf(helperSteps).filter((r) => helpers.includes(r.author)),
-    ],
+    tasks: taskRecords,
+    agents,
     complete: {
       team: signed.length < PAGE && everyone.length <= TEAM_READ,
       offers: offers.length < PAGE && asking.length <= REQUESTS_READ,
@@ -338,6 +350,26 @@ function useMyTasks() {
       for (const [coordinate, record] of more.records)
         records.set(coordinate, record);
       const now = Math.floor(Date.now() / 1000);
+      const agents = new Set(
+        await readRunAgents(
+          relay,
+          whoToAskAcross(
+            all,
+            coordinates.flatMap((coordinate) => {
+              const record = records.get(coordinate);
+              return record
+                ? [
+                    {
+                      coordinate,
+                      founder: founderOfCoordinate(coordinate),
+                      team: teamOf(record),
+                    },
+                  ]
+                : [];
+            }),
+          ),
+        ),
+      );
       return {
         projects: coordinates.flatMap((coordinate) => {
           const record = records.get(coordinate) ?? null;
@@ -348,6 +380,7 @@ function useMyTasks() {
             coordinate,
             team: teamOf(record),
             now,
+            agents,
           }).filter((task) => task.helper === person);
           return tasks.length > 0 ? [{ coordinate, record, tasks }] : [];
         }),

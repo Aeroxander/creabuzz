@@ -5,7 +5,7 @@ import { schnorr } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 
-import { runAgentsOf } from "./run-agents.ts";
+import { runAgentsOf, runAgentsSigning } from "./run-agents.ts";
 
 const OPERATOR_KEY = "1".repeat(64);
 const pub = (key) => bytesToHex(schnorr.getPublicKey(hexToBytes(key)));
@@ -69,4 +69,47 @@ test("only the newest profile counts, and only for the accounts asked about", ()
   assert.deepEqual(runAgentsOf([vouched], [PERSON]), []);
   // A record of another kind is not a profile.
   assert.deepEqual(runAgentsOf([{ ...vouched, kind: 1 }], asked), []);
+});
+
+test("an agent is known by the signed word its own records carry, when profiles cannot be read", () => {
+  const record = (pubkey, tags) => ({
+    kind: 47003,
+    pubkey,
+    created_at: 100,
+    tags,
+  });
+  const proof = proofFor(VOUCHED);
+  const kindProof = [
+    "auth",
+    OPERATOR,
+    "kind=47003",
+    bytesToHex(
+      schnorr.sign(
+        sha256(
+          new TextEncoder().encode(`nostr:agent-auth:${VOUCHED}:kind=47003`),
+        ),
+        hexToBytes(OPERATOR_KEY),
+      ),
+    ),
+  ];
+  assert.notEqual(proof, kindProof);
+  assert.deepEqual(
+    runAgentsSigning(
+      [
+        record(SAYS_ONLY, [["agent", SAYS_ONLY]]),
+        record(VOUCHED, [["agent", VOUCHED], kindProof]),
+        record(PERSON, []),
+      ],
+      asked,
+    ),
+    [VOUCHED],
+  );
+  // Only the accounts asked about.
+  assert.deepEqual(
+    runAgentsSigning(
+      [record(VOUCHED, [["agent", VOUCHED], kindProof])],
+      [PERSON],
+    ),
+    [],
+  );
 });

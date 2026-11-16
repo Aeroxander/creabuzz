@@ -42,6 +42,7 @@ export function YourWork({ me }: { me: string }) {
           new Set(team),
         ]),
       ),
+      agents: new Set(read.data.agents),
       now: Math.floor(Date.now() / 1000),
     });
   }, [read.data, me]);

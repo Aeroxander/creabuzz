@@ -130,3 +130,34 @@ export function whoToAsk(
     .slice(0, AGENT_LOOKUPS)
     .sort();
 }
+
+/** How many accounts are asked about at most across several projects at once (a feed, a profile). */
+const AGENT_LOOKUPS_ACROSS = 36;
+
+/**
+ * The accounts to ask about for many projects at once: each project's own list (`whoToAsk`), joined, founders first
+ * and cut at a bound. Past the bound the rest count as people, as in `whoToAsk`. Sorted, so the same people are one
+ * cache entry.
+ */
+export function whoToAskAcross(
+  records: readonly AskedRecord[],
+  projects: Iterable<{
+    coordinate: string;
+    founder: string;
+    team: Iterable<string>;
+  }>,
+): string[] {
+  const asked = new Set<string>();
+  for (const project of projects) {
+    for (const pubkey of whoToAsk(
+      records,
+      project.coordinate,
+      project.founder,
+      [...project.team],
+    )) {
+      if (asked.size >= AGENT_LOOKUPS_ACROSS) break;
+      asked.add(pubkey);
+    }
+  }
+  return [...asked].sort();
+}

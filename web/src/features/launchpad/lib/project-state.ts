@@ -16,6 +16,7 @@ import {
   type RecordUpdate,
 } from "./promises.ts";
 import { confirmRule } from "./task-checks.ts";
+import type { KnownAgents } from "./task-own-check.ts";
 import { projectTasks, type TaskRecord, type TaskView } from "./tasks.ts";
 import {
   daysSince,
@@ -57,6 +58,8 @@ export interface ProjectStateInput {
   viewer: string | null;
   /** Now, in seconds. */
   now: number;
+  /** Accounts known to be agents: they never check work, so a team of the founder and agents is one person. */
+  agents?: KnownAgents;
 }
 
 interface OffersWaiting {
@@ -111,6 +114,7 @@ export function projectState(input: ProjectStateInput): ProjectState {
     coordinate,
     team,
     now,
+    agents: input.agents,
   });
   const tasksKnown = complete.team && complete.helpers;
   const onTeam = viewer !== null && team.has(viewer);

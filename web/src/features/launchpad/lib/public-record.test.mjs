@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { schnorr } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+
 import { goalEvent } from "./goals.ts";
 import {
   helperFilters,
@@ -530,4 +534,86 @@ test("the record reads the same from what the server gives someone who is not a 
     "complete",
   ])
     assert.deepEqual(forAnyone[key], forMembers[key], key);
+});
+
+test("the public record knows an agent by the signed word its own records carry, so the founder's check is theirs alone", () => {
+  const BOT = "5".repeat(64);
+  const BOT2 = "6".repeat(64);
+  const OPERATOR_KEY = "7".repeat(64);
+  const record = recordNamed(projectAtAddress("/launchpad/nebula", ""), [
+    {
+      ...project(),
+      tags: [
+        ["d", "nebula"],
+        ["name", "Nebula"],
+        ["team", BOT, "builder"],
+        ["team", BOT2, "builder"],
+      ],
+    },
+  ]);
+  const task = about(
+    FOUNDER,
+    taskEvent({
+      helper: BOT,
+      what: "Wrote it",
+      done: "Wrote it",
+      size: "small",
+    }),
+    NOW - 5 * DAY,
+  );
+  const agentTag = (agent) => [["agent", agent]];
+  const handed = {
+    ...about(
+      BOT,
+      taskStepEvent({
+        part: "evidence",
+        taskId: task.id,
+        tell: [],
+        note: "Done",
+      }),
+      NOW - 4 * DAY,
+    ),
+  };
+  handed.tags.push(...agentTag(BOT));
+  const checked = about(
+    FOUNDER,
+    taskStepEvent({
+      part: "confirm",
+      taskId: task.id,
+      tell: [],
+      evidenceId: handed.id,
+    }),
+    NOW - 3 * DAY,
+  );
+  // The second agent's own record, with the word of the person who runs it.
+  const proof = bytesToHex(
+    schnorr.sign(
+      sha256(new TextEncoder().encode(`nostr:agent-auth:${BOT2}:kind=47003`)),
+      hexToBytes(OPERATOR_KEY),
+    ),
+  );
+  const vouched = about(
+    BOT2,
+    updateEvent(update({ title: "Week 1", done: "Helped" })),
+    NOW - 4 * DAY,
+  );
+  vouched.tags.push(
+    ["agent", BOT2],
+    [
+      "auth",
+      bytesToHex(schnorr.getPublicKey(hexToBytes(OPERATOR_KEY))),
+      "kind=47003",
+      proof,
+    ],
+  );
+  const read = (teamEvents) =>
+    publicRecordView({ record, teamEvents, helperEvents: null, now: NOW });
+  // The second agent is known to be one: nobody else could have checked, so the check is the founder's own.
+  const known = read([task, handed, checked, vouched]);
+  assert.equal(known.doneAlone, 1);
+  assert.equal(known.accepted, 0);
+  // Nothing vouches for it: it counts as a person, as it does on the server.
+  const unknown = read([task, handed, checked]);
+  assert.equal(unknown.doneAlone, 0);
+  assert.equal(unknown.accepted, 1);
 });

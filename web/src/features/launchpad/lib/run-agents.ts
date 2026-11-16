@@ -36,3 +36,29 @@ export function runAgentsOf(
     .map((profile) => profile.pubkey)
     .sort();
 }
+
+/** How many records of one account are checked for a person's signed word before it is taken to have none. */
+const PROOFS_TRIED = 3;
+
+/**
+ * Accounts that signed one of `records` as an agent a person vouches for. For a reader that cannot read profiles (the
+ * public door serves project records only): the records an agent signs carry the same signed word its profile does.
+ * Sorted.
+ */
+export function runAgentsSigning(
+  records: readonly ProfileLike[],
+  asked: Iterable<string>,
+): string[] {
+  const wanted = new Set(asked);
+  const tried = new Map<string, number>();
+  const found = new Set<string>();
+  for (const record of records) {
+    const by = record.pubkey;
+    if (!wanted.has(by) || found.has(by)) continue;
+    const count = tried.get(by) ?? 0;
+    if (count >= PROOFS_TRIED) continue;
+    tried.set(by, count + 1);
+    if (agentMark(record, record.kind)?.owner) found.add(by);
+  }
+  return [...found].sort();
+}

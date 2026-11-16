@@ -26,6 +26,7 @@ import {
   promiseTotals,
   type RecordUpdate,
 } from "./promises.ts";
+import type { KnownAgents } from "./task-own-check.ts";
 import { projectTasks, type TaskFile, type TaskRecord } from "./tasks.ts";
 
 export interface AcceptedWork {
@@ -106,6 +107,8 @@ export function helperRecord(input: {
    * theirs are the team's own doing and say nothing about the person. Defaults to true.
    */
   mayHaveRemoved?: boolean;
+  /** Accounts known to be agents: they never check work, so a team of the founder and agents is one person. */
+  agents?: KnownAgents;
 }): HelperRecord {
   const { person, records, teams, now } = input;
   const mayHaveRemoved = input.mayHaveRemoved ?? true;
@@ -140,6 +143,7 @@ export function helperRecord(input: {
       team: team ?? NO_TEAM,
       now,
       outsideTasks: true,
+      agents: input.agents,
     }).filter((task) => task.helper === person);
     let counted = false;
     for (const task of tasks) {

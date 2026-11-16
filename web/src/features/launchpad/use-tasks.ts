@@ -35,7 +35,7 @@ import {
   removedRecords,
 } from "./lib/removed-records";
 import { sendOnce, type SendStore } from "./lib/send-once";
-import { whoToAsk } from "./lib/task-own-check";
+import { whoToAsk, whoToAskAcross } from "./lib/task-own-check";
 import {
   type PendingStore,
   pendingSoloWins,
@@ -59,6 +59,7 @@ import {
 import { readPersonTasks, readProjectTasks } from "./lib/task-reads";
 import type { ReportedResult } from "./lib/task-results";
 import {
+  founderOfCoordinate,
   isTaskRecordTags,
   parseTaskRecord,
   projectTasks,
@@ -782,6 +783,8 @@ export interface TrackRecord {
   /** The task records the helper's side was worked out from, and each project's team now ("Your work" lists them). */
   taskRecords: TaskRecord[];
   teams: Record<string, string[]>;
+  /** Of the people on those teams, the accounts a person runs (agents): they never check work. */
+  agents: string[];
 }
 
 /**
@@ -865,11 +868,24 @@ export function useTrackRecord(person: string, enabled = true) {
       const some = (r: RemovedRecords) =>
         r.count + r.unnamed > 0 || !r.complete;
       const taskRecords = taskRecordsOf(tasks.events);
+      // Whether a founder checked work alone depends on who on the team is an agent: asked only where work was checked.
+      const agents = await readRunAgents(
+        relay,
+        whoToAskAcross(
+          taskRecords,
+          [...teams].map(([coordinate, team]) => ({
+            coordinate,
+            founder: founderOfCoordinate(coordinate),
+            team,
+          })),
+        ),
+      );
       return {
         helper: helperRecord({
           person,
           records: taskRecords,
           teams,
+          agents: new Set(agents),
           now: Math.floor(Date.now() / 1000),
           mayHaveRemoved:
             some(removed) || ownersRemoved.some((o) => some(o.removed)),
@@ -886,6 +902,7 @@ export function useTrackRecord(person: string, enabled = true) {
         teams: Object.fromEntries(
           [...teams].map(([coordinate, team]) => [coordinate, [...team]]),
         ),
+        agents,
       };
     },
   });

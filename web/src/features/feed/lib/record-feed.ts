@@ -18,6 +18,7 @@ import {
   parseGoalVersion,
 } from "../../launchpad/lib/goals.ts";
 import { isHelpSignalTags } from "../../launchpad/lib/help-request.ts";
+import type { KnownAgents } from "../../launchpad/lib/task-own-check.ts";
 import {
   isTaskRecordTags,
   projectTasks,
@@ -130,6 +131,8 @@ export function feedItems(input: {
   events: readonly FeedEvent[];
   projects: ReadonlyMap<string, FeedProject>;
   taskRecords: readonly TaskRecord[];
+  /** Accounts known to be agents, so a founder's own check is worded as theirs here too. */
+  agents?: KnownAgents;
   /** Now, in seconds. */
   now: number;
   /**
@@ -241,6 +244,7 @@ export function feedItems(input: {
       coordinate: project.coordinate,
       team: project.team,
       now,
+      agents: input.agents,
     });
     for (const task of tasks) {
       if (task.state !== "confirmed" || !task.accepted) continue;

@@ -130,6 +130,8 @@ export default defineConfig({
         "**/solo-first-week.spec.ts",
         // The solo path from Home to the first piece of work done: at most 8 presses and 4 typed fields.
         "**/solo-path-guard.spec.ts",
+        // The founder's check of an agent's work reads the same on the project page and on Home when agents are on the team.
+        "**/agents-same-everywhere.spec.ts",
         // Start in one press: sign up from the form and land on the live project, made once.
         "**/start-one-press.spec.ts",
         // Tasks with a finish line: made from an offer, handed in, sent back, confirmed by someone else; the profile.
