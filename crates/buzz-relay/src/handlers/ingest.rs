@@ -5054,6 +5054,8 @@ async fn ingest_event_inner(
     if kind_u32 == KIND_LAUNCH_RECORD {
         validate_launch_record_envelope(&event)
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
+        // Accepting someone's ask to join is saving the record with them on the team: a person's act.
+        super::launch_update_authority::enforce_agent_cannot_accept(state, tenant, &event).await?;
     }
 
     // Shared NIP-ORG envelope (37010–37016): exactly one bounded `d`, a

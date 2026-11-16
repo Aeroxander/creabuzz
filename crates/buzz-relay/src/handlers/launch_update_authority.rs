@@ -109,6 +109,9 @@ pub(crate) const NO_TASK: &str = "invalid: this step names a task that is not on
 /// Said when a step names a task that belongs to a different project than its `a` tag.
 pub(crate) const OTHER_PROJECT: &str = "invalid: this step names a task from another project";
 
+/// Said when an agent account puts someone who asked to join onto a project's team.
+pub(crate) const AGENT_ACCEPT: &str =
+    "restricted: an agent account cannot accept someone's ask to join; a person must";
 /// Said when someone already on the team asks to join it.
 pub(crate) const ON_TEAM: &str = "invalid: you are already on this project's team";
 /// Said when an account has asked to join one project too often.
@@ -742,6 +745,79 @@ pub(crate) async fn enforce_launch_update_authority(
     }
     Ok(())
 }
+
+/// Refuse a project record (kind 37001) signed by an agent account that adds to the team someone who asked to join it.
+///
+/// Saving the record again is how the founder accepts an ask, and accepting is for a person, as confirming work is.
+/// An agent account may still ask to join a project and may add people nobody has asked about, as before. A record
+/// that adds nobody, or whose signer is not on record as an agent account, is not looked at any further.
+pub(crate) async fn enforce_agent_cannot_accept(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let community = tenant.community();
+    let signer = event.pubkey.to_bytes();
+    let incoming = ProjectTeam::from_record(event).members;
+    if incoming.is_empty() || !is_agent_account(state, community, &signer).await? {
+        return Ok(());
+    }
+    let d = event
+        .tags
+        .iter()
+        .find_map(|tag| {
+            let fields = tag.as_slice();
+            (fields.first().map(|s| s.as_str()) == Some("d"))
+                .then(|| fields.get(1).cloned())
+                .flatten()
+        })
+        .unwrap_or_default();
+    let stored = state
+        .db
+        .query_events_for_event_write(&buzz_db::EventQuery {
+            kinds: Some(vec![KIND_LAUNCH_RECORD as i32]),
+            pubkey: Some(signer.to_vec()),
+            d_tag: Some(d.clone()),
+            global_only: true,
+            limit: Some(1),
+            ..buzz_db::EventQuery::for_community(community)
+        })
+        .await
+        .map_err(|e| internal("reading the project record", e))?
+        .into_iter()
+        .next()
+        .map(|stored| ProjectTeam::from_record(&stored.event).members)
+        .unwrap_or_default();
+    let coordinate = format!("{KIND_LAUNCH_RECORD}:{}:{d}", event.pubkey.to_hex());
+    let mut added: Vec<&String> = incoming
+        .iter()
+        .filter(|member| !stored.contains(*member))
+        .collect();
+    added.sort();
+    for member in added.into_iter().take(TEAM_LOOKUPS_FOR_ASKS) {
+        let Some(key) = id_bytes(member) else {
+            continue;
+        };
+        let asked = state
+            .db
+            .count_tagged_events_received_since(
+                community,
+                &key,
+                &[KIND_LAUNCH_UPDATE as i32],
+                &[("l", JOIN_LABEL), ("a", &coordinate)],
+                None,
+            )
+            .await
+            .map_err(|e| internal("checking whether the person asked to join", e))?;
+        if asked > 0 {
+            return Err(IngestError::AuthFailed(AGENT_ACCEPT.into()));
+        }
+    }
+    Ok(())
+}
+
+/// The most people added in one save whose asks are looked up: a team is at most 200 (the server's cap on team tags).
+const TEAM_LOOKUPS_FOR_ASKS: usize = 200;
 
 /// Hold an ask to join to its caps: a few for one project, a few projects a day. Counted by the server's receive time,
 /// and a refused ask is not stored, so it uses no room. The web app shows one button and hides it once asked, so a

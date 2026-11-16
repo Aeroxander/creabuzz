@@ -19,7 +19,7 @@ use super::agent_label::{
 };
 use super::board_moderation_postgres_tests::community;
 use super::ingest::{ingest_event, IngestAuth, IngestError};
-use super::launch_update_authority::{AGENT_LIMIT, NOT_FOUNDER, NOT_TEAM, OWN_WORK};
+use super::launch_update_authority::{AGENT_ACCEPT, AGENT_LIMIT, NOT_FOUNDER, NOT_TEAM, OWN_WORK};
 use crate::state::AppState;
 
 fn hex(keys: &Keys) -> String {
@@ -619,6 +619,81 @@ async fn the_operator_cannot_check_work_its_labelled_agent_did() {
             &[&["task-evidence", &work_id]],
         ),
         "someone else checks it",
+    )
+    .await;
+}
+
+/// The project record with these people on the team, signed `ahead` seconds from now so it replaces the one before.
+fn project_with(founder: &Keys, team: &[&Keys], ahead: u64) -> Event {
+    let members: Vec<String> = team.iter().map(|keys| hex(keys)).collect();
+    let mut tags = vec![vec!["d".to_string(), "orbit".to_string()]];
+    tags.push(vec!["name".to_string(), "Orbit".to_string()]);
+    for member in &members {
+        tags.push(vec![
+            "team".to_string(),
+            member.clone(),
+            "member".to_string(),
+        ]);
+    }
+    signed(founder, KIND_LAUNCH_RECORD, tags, "{}", ahead)
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn an_agent_account_may_ask_to_join_but_never_accepts_an_ask() {
+    let (state, tenant, p, coord) = world().await;
+    let ask = |who: &Keys, note: &str| {
+        record(
+            who,
+            &coord,
+            &[
+                &["l", "creaton-join"],
+                &["join-ask", "abc123"],
+                &["note", note],
+            ],
+        )
+    };
+    // The stranger is an agent account run by the operator: it may ask all the same.
+    accept(
+        &state,
+        &tenant,
+        label(&p.stranger, &p.operator, 1),
+        "the stranger's label",
+    )
+    .await;
+    accept(&state, &tenant, ask(&p.stranger, "s"), "an agent asks").await;
+    accept(&state, &tenant, ask(&p.helper, "h"), "another asks").await;
+
+    // A person who runs the project accepts by saving the record with the asker on the team.
+    accept(
+        &state,
+        &tenant,
+        project_with(&p.founder, &[&p.mate, &p.helper], 1),
+        "a person accepts an ask",
+    )
+    .await;
+
+    // The founder is now an agent account: it still saves its record, but cannot accept the other ask.
+    accept(
+        &state,
+        &tenant,
+        label(&p.founder, &p.operator, 2),
+        "the founder's label",
+    )
+    .await;
+    refuse(
+        &state,
+        &tenant,
+        project_with(&p.founder, &[&p.mate, &p.helper, &p.stranger], 3),
+        AGENT_ACCEPT,
+        "an agent accepting an ask",
+    )
+    .await;
+    accept(
+        &state,
+        &tenant,
+        project_with(&p.founder, &[&p.mate, &p.helper, &p.operator], 3),
+        "an agent adding someone who never asked",
     )
     .await;
 }
