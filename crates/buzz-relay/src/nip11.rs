@@ -42,6 +42,10 @@ pub struct RelayInfo {
     /// (`BUZZ_EXAMPLE_PROJECT`) and a visitor who is not signed in could open it on this community. Absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub example_project: Option<String>,
+    /// Whether this server shows the investing and trading screens (`BUZZ_INVESTING`). Absent when the operator set
+    /// nothing: the web build's own switches then decide.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub investing: Option<bool>,
     /// Host-bound atomic read-state snapshot capability; absent on unresolved hosts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_state_snapshot: Option<serde_json::Value>,
@@ -293,6 +297,7 @@ impl RelayInfo {
             icon: icon.filter(|s| !s.is_empty()).map(|s| s.to_string()),
             access: None,
             example_project: None,
+            investing: None,
             read_state_snapshot: None,
             buzz_v1: None,
             artifacts: serde_json::json!({
@@ -404,6 +409,7 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         admin_api.as_deref(),
         state.config.klipy.as_ref().map(|_| "klipy"),
     );
+    info.investing = state.config.investing;
     if let Ok(tenant) = crate::tenant::bind_community(&state.db, raw_host).await {
         info.access = state
             .membership_required(tenant.community(), false)
@@ -787,6 +793,25 @@ mod postgres_tests {
             served(&state, unknown).await.get("access").is_none(),
             "an unknown host gets no claim about who may join"
         );
+    }
+
+    /// The operator's investing setting rides in the information document, so the web app follows it without a
+    /// rebuild; unset says nothing at all, so a build's own switches still decide. Server-wide, so an unknown host
+    /// gets it too.
+    /// Mutation: drop `info.investing = state.config.investing`, or advertise `Some(false)` when unset → RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn investing_is_advertised_only_when_the_operator_set_it() {
+        let served = |investing: Option<bool>| async move {
+            let state =
+                crate::test_support::test_state_with(|config| config.investing = investing).await;
+            let host = format!("nip11-investing-{}.example", uuid::Uuid::new_v4().simple());
+            serde_json::to_value(super::nip11_document(&state, &host).await)
+                .expect("document is JSON")
+        };
+        assert!(served(None).await.get("investing").is_none());
+        assert_eq!(served(Some(true)).await["investing"], true);
+        assert_eq!(served(Some(false)).await["investing"], false);
     }
 
     /// NIP-WP → NIP-11 mirror: a set workspace icon is served in the standard

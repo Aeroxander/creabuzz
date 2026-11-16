@@ -480,6 +480,11 @@ pub struct Config {
     /// keeps a script of fresh accounts from filling projects with records.
     pub new_account_project_records_per_day: u32,
 
+    /// Whether the web app shows the investing and trading screens (`BUZZ_INVESTING`: `true` or `false`). Advertised in
+    /// the server's information document as `investing` so the setting changes without a rebuild; `None` (the variable
+    /// unset) says nothing, and the web build's own switches decide, which are off unless a build turned them on.
+    pub investing: Option<bool>,
+
     /// How long an account counts as new (`BUZZ_NEW_ACCOUNT_HOURS`, default 24), measured from the first record this
     /// server received from it.
     pub new_account_hours: u32,
@@ -1245,6 +1250,10 @@ impl Config {
         };
         let new_account_posts_per_hour = whole_number("BUZZ_NEW_ACCOUNT_POSTS_PER_HOUR", 20)?;
         let new_account_hours = whole_number("BUZZ_NEW_ACCOUNT_HOURS", 24)?;
+        let investing = match std::env::var("BUZZ_INVESTING") {
+            Ok(value) if !value.trim().is_empty() => Some(parse_bool("BUZZ_INVESTING", false)?),
+            _ => None,
+        };
         let new_account_project_records_per_day =
             whole_number("BUZZ_NEW_ACCOUNT_PROJECT_RECORDS_PER_DAY", 60)?;
 
@@ -1859,6 +1868,7 @@ impl Config {
             boards_per_person_per_day,
             new_account_posts_per_hour,
             new_account_project_records_per_day,
+            investing,
             new_account_hours,
             relay_operator_pubkeys,
             operator_listener_delivery_urls,
@@ -3295,6 +3305,31 @@ mod tests {
         ));
         assert_eq!(set.new_account_posts_per_hour, 0);
         assert_eq!(set.new_account_hours, 48);
+    }
+
+    #[test]
+    fn investing_is_unset_until_the_operator_says_true_or_false() {
+        let _guards = env_guards();
+        std::env::remove_var("BUZZ_INVESTING");
+        let unset = Config::from_env().expect("config");
+        std::env::set_var("BUZZ_INVESTING", "");
+        let blank = Config::from_env().expect("config");
+        std::env::set_var("BUZZ_INVESTING", "true");
+        let on = Config::from_env().expect("config");
+        std::env::set_var("BUZZ_INVESTING", "false");
+        let off = Config::from_env().expect("config");
+        std::env::set_var("BUZZ_INVESTING", "maybe");
+        let bad = Config::from_env();
+        std::env::remove_var("BUZZ_INVESTING");
+
+        assert_eq!(unset.investing, None);
+        assert_eq!(blank.investing, None);
+        assert_eq!(on.investing, Some(true));
+        assert_eq!(off.investing, Some(false));
+        assert!(matches!(
+            bad,
+            Err(ConfigError::InvalidValue(ref msg)) if msg.contains("BUZZ_INVESTING")
+        ));
     }
 
     #[test]
