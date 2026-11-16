@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Remove one guard at a time from the milestone 2 sources and check that a test fails (a "mutation run").
+"""Remove one guard at a time from the milestone 2 and 3 sources and check that a test fails (a "mutation run").
 
     python3 scripts/mutate-guards.py            # every removal, unit/fuzz/attack suites (about 75 seconds each)
     python3 scripts/mutate-guards.py T09 L03    # only these ids
+    python3 scripts/mutate-guards.py --m3       # only the milestone 3 entries (their ids start with F, A, H, K, P or X)
     INV_ONLY=1 python3 scripts/mutate-guards.py T10 T15   # only the invariant suite
 
 Each removal edits one file under src/, runs `forge test` on the milestone 2 tests, prints one JSON line (the tests that
@@ -16,12 +17,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV = dict(os.environ)
 M1 = 'test/{Attacks,ForkFacts,ForkPick,Measure,Pieces,Route,UniversalRouter}.t.sol'
 # (id, what is removed or broken, file, old, new, run invariants too)
-T='src/Treasury.sol'; V='src/Vester.sol'; S='src/ShareToken.sol'; R='src/RollingCap.sol'; L='src/Launcher.sol'
+T='src/Treasury.sol'; V='src/Vester.sol'; S='src/ShareToken.sol'; R='src/RollingCap.sol'; L='src/Launcher.sol'; FI='src/Finisher.sol'; HO='src/LiquidityHolder.sol'; PI='src/Pinned.sol'
 MUT=[
 ('T01','Treasury: initialize may be called again',T,'if (founder != address(0)) revert BadSetup();','',False),
 ('T02','Treasury: no re-entrancy lock',T,'if (_locked) revert Reentrancy();','',False),
-('T03','Treasury: anybody may declare the pool open',T,'if (msg.sender != opener) revert NotAllowed();\n        if (poolOpen) revert PoolAlreadyOpen();','        if (poolOpen) revert PoolAlreadyOpen();',False),
-('T04','Treasury: the pool may be declared open twice',T,'if (poolOpen) revert PoolAlreadyOpen();','',False),
+('T03','Treasury: anybody may declare the pool open',T,'function markPoolOpen() external nonReentrant {\n        if (msg.sender != opener) revert NotAllowed();\n        if (poolOpen) revert PoolAlreadyOpen();','function markPoolOpen() external nonReentrant {\n        if (poolOpen) revert PoolAlreadyOpen();',False),
+('T04','Treasury: the pool may be declared open twice',T,'function markPoolOpen() external nonReentrant {\n        if (msg.sender != opener) revert NotAllowed();\n        if (poolOpen) revert PoolAlreadyOpen();','function markPoolOpen() external nonReentrant {\n        if (msg.sender != opener) revert NotAllowed();',False),
 ('T05','Treasury: settle works with no proven pool',T,'if (!poolOpen) revert NoPool();\n        if (amount == 0)','if (amount == 0)',False),
 ('T06','Treasury: settle may split more than arrived',T,'if (amount > arrived) revert NotArrived(amount, arrived);','',False),
 ('T07','Treasury: settle ratio is not 15:60',T,'amount * spendableParts / (spendableParts + floorParts)','amount * spendableParts / (spendableParts + floorParts) * 2',True),
@@ -76,15 +77,11 @@ MUT=[
 ('R02','RollingCap: only the newest part counts',R,'if ((e >> 192) + buckets >= cur) sum += e & MASK;','if ((e >> 192) == cur) sum += e & MASK;',False),
 ('R03','RollingCap: a used amount stops counting one part early',R,'if ((e >> 192) + buckets >= cur) sum += e & MASK;','if ((e >> 192) + buckets > cur) sum += e & MASK;',False),
 ('L01','Launcher: a founder may reuse an id (error kind)',L,'if (_projects[key].shares != address(0)) revert ProjectExists();','',False),
-('L03','Launcher: a sale may open with a guard that names someone else',L,'if (creator != strategy) revert NoPoolGuard();','',False),
-('L04','Launcher: a sale may open with a hook that is not a guard',L,'        } catch {\n            revert NoPoolGuard();\n        }','        } catch {}',False),
 ('L05','Launcher: anyone may change settings',L,'        if (msg.sender != admin) revert NotAdmin();\n        _set(next);','        _set(next);',False),
 ('L06','Launcher: the exit fee ceiling is not checked',L,'s.exitFeeBps > MAX_EXIT_FEE_BPS ||','',False),
-('L08','Launcher: the sale opens without a known project',L,'if (_projects[keyOf(msg.sender, projectId)].shares == address(0)) revert UnknownProject();\n        address guard','        address guard',False),
 ('L09','Launcher: the founder allocation is 190M not 200M',L,'uint256 public constant FOUNDER = 200_000_000e18;','uint256 public constant FOUNDER = 190_000_000e18;',False),
 
 
-('L02','Launcher: a sale may open with no contract at the guard address',L,'guard.code.length == 0 || uint160(guard) & HOOK_BITS != BEFORE_INITIALIZE','uint160(guard) & HOOK_BITS != BEFORE_INITIALIZE',False),
 ('L07','Launcher: the platform part may exceed the whole fee',L,'|| s.platformFeeBps > s.exitFeeBps','',False),
 ('L10','Launcher: the founder is the Launcher, not the caller',L,'                    founder: msg.sender,','                    founder: address(this),',False),
 ('T41','Treasury: the reserve ignores Shares returned or donated to it',T,'return shares.balanceOf(address(this)) - workPot;','return 100_000_000e18;',False),
@@ -108,26 +105,118 @@ MUT=[
 ('V11','Vester: unreleased does not fall with time',V,'return elapsed >= DURATION ? 0 : granted - granted * elapsed / DURATION;','return elapsed >= DURATION ? 0 : granted;',False),
 ('V12','Vester: unreleased forgets what was granted',V,'        granted += amount;\n','',False),
 ('V13','Vester: unreleased falls with claims (the old denominator)',V,'return elapsed >= DURATION ? 0 : granted - granted * elapsed / DURATION;','return elapsed >= DURATION ? 0 : committed - (committed * elapsed / DURATION);',False),
-('L11','Launcher: a sale may open with a guard at an address without the beforeInitialize bit',L,'guard.code.length == 0 || uint160(guard) & HOOK_BITS != BEFORE_INITIALIZE','guard.code.length == 0',False),
-('L12','Launcher: a sale may open with a guard whose address has extra hook bits',L,'uint160(guard) & HOOK_BITS != BEFORE_INITIALIZE','uint160(guard) & BEFORE_INITIALIZE == 0',False),
 ('L13','Launcher: launch ignores the settings hash the founder saw',L,'if (settingsHash() != expectedSettingsHash) revert SettingsMoved();','',False),
-('L14','Launcher: may be created on any chain',L,'if (block.chainid != TEST_CHAIN_ID) revert TestChainOnly();','',False),
 ('L15','Launcher: the dollar token may be an account, not a contract',L,' || address(s.quote).code.length == 0','',False),
 ('L16','Launcher: the dollar token may have any decimals',L,'if (d != QUOTE_DECIMALS) revert BadSettings();','',False),
 ('L17','Launcher: platform address may be the Launcher',L,'s.platform == address(this) ||','',False),
 ('L18','Launcher: platform address may be the dollar token',L,'|| s.platform == address(s.quote)','',False),
 ('L19','Launcher: no ceiling on the spendable part of the split',L,'|| s.spendableParts > MAX_SPLIT_PART','',False),
 ('L20','Launcher: no ceiling on the floor part of the split',L,'|| s.floorParts > MAX_SPLIT_PART','',False),
-('L21','Launcher: strategy or guard may be zero at construction',L,'if (strategy_ == address(0) || poolGuard_ == address(0)) revert BadSettings();','',False),
 ]
+
+
+# ---- milestone 3: the Finisher, the LiquidityHolder, the real Launcher, the Treasury's abandoned state.
+# A seventh field names the test files to run (the milestone 3 suites are slow and each guard has one or two that must catch it).
+FIN='test/{FinishAttacks,Life,SaleRules,FinisherPool,AttackM2}.t.sol'
+LAU='test/{Launcher,SaleRules,Life,AttackM2}.t.sol'
+HOL='test/{LiquidityHolder,Life,MarketAttacks}.t.sol'
+TAB='test/{TreasuryAbandon,FinishAttacks}.t.sol'
+DRI='test/PinnedDrift.t.sol'
+M3=[
+('F01','Finisher: anyone may open the sale',FI,'        if (msg.sender != launcher) revert NotLauncher();\n        if (!canOpen()) revert CannotOpen();','        if (!canOpen()) revert CannotOpen();',False,FIN),
+('F02','Finisher: anyone may set a clone up',FI,'        if (msg.sender != launcher) revert NotLauncher();\n        if (address(treasury) != address(0) ||','        if (address(treasury) != address(0) ||',False,FIN),
+('F03','Finisher: a clone may be set up twice',FI,'if (address(treasury) != address(0) || treasury_','if (treasury_',False,FIN),
+('F04','Finisher: a failed sale may open again at once',FI,'(s == Stage.Failed && block.number >= retryBlock)','(s == Stage.Failed)',False,FIN),
+('F05','Finisher: a project that sold may open another sale',FI,'return s == Stage.Idle ||','return s == Stage.Idle || s == Stage.Done ||',False,FIN),
+('F06','Finisher: a second sale may open while one is open',FI,'return s == Stage.Idle ||','return s == Stage.Idle || s == Stage.Open ||',False,FIN),
+('F07','Finisher: an abandoned project may open another sale',FI,'return s == Stage.Idle ||','return s == Stage.Idle || s == Stage.Abandoned ||',False,FIN),
+('F08','Finisher: step 1 runs the pool step again',FI,'if (s != Stage.Open || !_stepPending()) return false;','if (s != Stage.Open) return false;',False,FIN),
+('F09','Finisher: step 1 works on a project with no sale',FI,'        if (s == Stage.Idle) revert WrongStage();\n        if (s != Stage.Open || !_stepPending()) return false;','        if (s != Stage.Open || !_stepPending()) return false;',False,FIN),
+('F10','Finisher: step 2 does not know it is done',FI,'        if (settled) return false;\n','',False,FIN),
+('F11','Finisher: step 2 works at any stage',FI,'        if (stage != Stage.Open) revert WrongStage();\n        if (_stepPending()) revert PoolStepNotRun();\n        IPinnedAuction a = IPinnedAuction(auction);\n        if (!a.isGraduated()) revert SaleDidNotGraduate();\n        if (!poolIsOpen()) revert NoPool();','        if (_stepPending()) revert PoolStepNotRun();\n        IPinnedAuction a = IPinnedAuction(auction);\n        if (!a.isGraduated()) revert SaleDidNotGraduate();\n        if (!poolIsOpen()) revert NoPool();',False,FIN),
+('F12','Finisher: step 2 does not need step 1',FI,'        if (_stepPending()) revert PoolStepNotRun();\n        IPinnedAuction a = IPinnedAuction(auction);\n        if (!a.isGraduated()) revert SaleDidNotGraduate();\n        if (!poolIsOpen())','        IPinnedAuction a = IPinnedAuction(auction);\n        if (!a.isGraduated()) revert SaleDidNotGraduate();\n        if (!poolIsOpen())',False,FIN),
+('F13','Finisher: step 2 splits a sale that did not reach its minimum',FI,'        if (!a.isGraduated()) revert SaleDidNotGraduate();\n        if (!poolIsOpen()) revert NoPool();\n        uint256 raised','        if (!poolIsOpen()) revert NoPool();\n        uint256 raised',False,FIN),
+('F14','Finisher: step 2 splits the money when no pool exists (the swallowed failure)',FI,'        if (!poolIsOpen()) revert NoPool();\n        uint256 raised','        uint256 raised',False,FIN),
+('F15','Finisher: step 2 does not compare the money with the auction\'s figures',FI,'        if (held < least) revert MoneyMissing(held, least);\n','',False,FIN),
+('F16','Finisher: step 3 does not need step 1',FI,'        if (s != Stage.Open) return false;\n        if (_stepPending()) revert PoolStepNotRun();\n        IPinnedAuction a = IPinnedAuction(auction);\n        a.sweepUnsoldTokens();','        if (s != Stage.Open) return false;\n        IPinnedAuction a = IPinnedAuction(auction);\n        a.sweepUnsoldTokens();',False,FIN),
+('F17','Finisher: step 3 does not need step 2',FI,'        if (!settled) revert SettleFirst();\n','',False,FIN),
+('F18','Finisher: step 3 does not tell a failed sale from a good one',FI,'        a.sweepUnsoldTokens();\n        if (!a.isGraduated()) {','        a.sweepUnsoldTokens();\n        if (false) {',False,FIN),
+('F19','Finisher: a failed sale may retry from the block it failed in',FI,'uint64 retry = endBlock + SaleParams.SALE_BLOCKS;','uint64 retry = uint64(block.number);',False,FIN),
+('F20','Finisher: step 3 does not know it is done',FI,'        if (s == Stage.Idle) revert WrongStage();\n        if (s != Stage.Open) return false;\n        if (_stepPending()) revert PoolStepNotRun();\n        IPinnedAuction a = IPinnedAuction(auction);\n        a.sweepUnsoldTokens();','        if (s == Stage.Idle) revert WrongStage();\n        if (_stepPending()) revert PoolStepNotRun();\n        IPinnedAuction a = IPinnedAuction(auction);\n        a.sweepUnsoldTokens();',False,FIN),
+('F21','Finisher: step 3 works on a project with no sale',FI,'        if (s == Stage.Idle) revert WrongStage();\n        if (s != Stage.Open) return false;\n        if (_stepPending()) revert PoolStepNotRun();','        if (s != Stage.Open) return false;\n        if (_stepPending()) revert PoolStepNotRun();',False,FIN),
+('F22','Finisher: abandon works at any stage',FI,'    function abandon() external nonReentrant {\n        if (stage != Stage.Open) revert WrongStage();','    function abandon() external nonReentrant {',False,FIN),
+('F23','Finisher: abandon works before seven days',FI,'        if (block.number < from) revert TooEarly(from);\n','',False,FIN),
+('F24','Finisher: abandon works on a sale that did not reach its minimum',FI,'        if (_stepPending()) _runPoolStep();\n        if (!a.isGraduated()) revert SaleDidNotGraduate();','        if (_stepPending()) _runPoolStep();',False,FIN),
+('F25','Finisher: abandon works when a pool exists',FI,'        if (poolIsOpen()) revert PoolExists();\n','',False,FIN),
+('F26','Finisher: abandon does not run the pool step first',FI,'        if (_stepPending()) _runPoolStep();\n        if (!a.isGraduated()) revert SaleDidNotGraduate();','        if (!a.isGraduated()) revert SaleDidNotGraduate();',False,FIN),
+('F27','Finisher: abandon sends nothing to the floor alone (15 : 60 of everything)',FI,'uint256 toFloorOnly = arrived * SaleParams.POOL_RATE / SaleParams.RATE_SCALE;','uint256 toFloorOnly = 1;',False,FIN),
+('F28','Finisher: a guard that names someone else counts as the project\'s guard',FI,'            if (creator != address(strategy)) return false;','',False,FIN),
+('F29','Finisher: a hook that answers nothing makes the answer revert',FI,'        try IPinnedGuard(guard).authorized() returns (address creator) {\n            if (creator != address(strategy)) return false;\n        } catch {\n            return false;\n        }','        if (IPinnedGuard(guard).authorized() != address(strategy)) return false;',False,FIN),
+('F30','Finisher: a pool with no liquidity counts as open',FI,'return PoolRead.liquidity(poolManager, _poolId()) != 0;','return PoolRead.sqrtPrice(poolManager, _poolId()) != 0;',False,FIN),
+('F31','Finisher: no re-entry lock',FI,'        if (_locked) revert Reentrancy();','',False,FIN),
+('F32','Finisher: the pool key leaves out the guard (a stranger\'s plain pool counts)',FI,'            hooks: guard\n','            hooks: address(0)\n',False,FIN),
+('A01','Launcher: the guard may be no contract',L,'if (poolGuard_.code.length == 0 || uint160(poolGuard_)','if (uint160(poolGuard_)',False,LAU),
+('A02','Launcher: the guard may sit at an address without exactly the beforeInitialize bit',L,' || uint160(poolGuard_) & HOOK_BITS != BEFORE_INITIALIZE','',False,LAU),
+('A03','Launcher: the guard may name someone else as the pool\'s only creator',L,'            if (creator != strategy_) revert NoPoolGuard();','',False,LAU),
+('A04','Launcher: the fee controller may be no contract',L,'        if (controller.code.length == 0) revert BadStack();\n','',False,LAU),
+('A05','Launcher: the raise fee may be any rate',L,'IPinnedFeeController(controller).getProtocolFeeAmount(address(0), 1e6) != RAISE_FEE_PIPS','false',False,LAU),
+('A06','Launcher: the fee may go to nobody',L,'        if (recipient == address(0)) revert BadStack();\n','',False,LAU),
+('A07','Launcher: the fee controller may have an owner',L,'            revert BadStack(); // a controller with an owner can change the fee in the middle of a sale','',False,LAU),
+('A08','Launcher: the smallest bid may be anything',L,'            IPinnedMinBid(minBid_).minAmount() != MIN_BID\n                || ','            ',False,LAU),
+('A09','Launcher: the top-price cap may be anything',L,'\n                || IPinnedMinBid(minBid_).maxPriceMultiple() != MAX_PRICE_MULTIPLE','',False,LAU),
+('A10','Launcher: the strategy may be no contract',L,'strategy_ == address(0) || strategy_.code.length == 0 ||','strategy_ == address(0) ||',False,LAU),
+('A11','Launcher: the bid hook may be no contract',L,' || minBid_.code.length == 0) revert BadStack();',') revert BadStack();',False,LAU),
+('A12','Launcher: the Treasury trusts the founder as its opener',L,'                    opener: finisher,','                    opener: msg.sender,',False,LAU),
+('A13','Launcher: the Treasury trusts the founder as its sale path',L,'                    salePath: address(this),','                    salePath: msg.sender,',False,LAU),
+('A14','Launcher: the sale Shares are minted to the Launcher, not the Finisher',L,'(to[0], amounts[0]) = (finisher, SALE + POOL_RESERVE);','(to[0], amounts[0]) = (address(this), SALE + POOL_RESERVE);',False,LAU),
+('A15','Launcher: the holder cannot tell which Treasury a project\'s Shares belong to',L,'        treasuryOfShares[shares] = treasury;\n','',False,LAU),
+('A16','Launcher: the sale raises the current dollar setting, not the project\'s own (strategy side)',L,'currency: address(Treasury(p.treasury).quote()),\n            migrationBlock','currency: address(settings.quote),\n            migrationBlock',False,LAU),
+('A17','Launcher: the sale raises the current dollar setting, not the project\'s own (auction side)',L,'currency: address(Treasury(p.treasury).quote()),\n            tokensRecipient','currency: address(settings.quote),\n            tokensRecipient',False,LAU),
+('A18','Launcher: the pool position goes to the Finisher, not the LiquidityHolder',L,'            positionRecipient: holder,','            positionRecipient: p.finisher,',False,LAU),
+('A19','Launcher: what the pool leaves goes to the founder',L,'            recipient: p.finisher,\n            positionRecipient','            recipient: msg.sender,\n            positionRecipient',False,LAU),
+('A20','Launcher: the unsold Shares go to the founder',L,'            tokensRecipient: p.finisher,','            tokensRecipient: msg.sender,',False,LAU),
+('A21','Launcher: no bid rules',L,'            validationHook: minBid,','            validationHook: address(0),',False,LAU),
+('A22','Launcher: the pool has no guard',L,'tickSpacing: SaleParams.POOL_TICK_SPACING, hook: poolGuard','tickSpacing: SaleParams.POOL_TICK_SPACING, hook: address(0)',False,LAU),
+('A23','Launcher: the pool is reserved half the Shares',L,'reservedTokenAmountForLP: SaleParams.POOL_SHARES,','reservedTokenAmountForLP: SaleParams.POOL_SHARES / 2,',False,LAU),
+('A24','Launcher: the pool step may run later than the first block after the sale',L,'migrationBlock: endBlock_ + 1,','migrationBlock: endBlock_ + 5,',False,LAU),
+('A25','Launcher: bidders may claim later than the first block after the sale',L,'claimBlock: startBlock + SaleParams.SALE_BLOCKS + 1,','claimBlock: startBlock + SaleParams.SALE_BLOCKS + 2,',False,LAU),
+('A26','Launcher: the Standard minimum is 2,000 dollars',L,'return (10_000e6, 2500e6);','return (10_000e6, 2000e6);',False,LAU),
+('A27','Launcher: the Small goal is 5,000 dollars',L,'return (4000e6, 2000e6);','return (5000e6, 2000e6);',False,LAU),
+('A28','Launcher: the Large minimum is 10,000 dollars',L,'return (50_000e6, 12_500e6);','return (50_000e6, 10_000e6);',False,LAU),
+('A29','Launcher: the floor price is rounded down to the tick',L,'tickQ96 = (exact + TICKS_IN_FLOOR - 1) / TICKS_IN_FLOOR;','tickQ96 = exact / TICKS_IN_FLOOR;',False,LAU),
+('A30','Launcher: the sale starts in the block it is opened',L,'uint64 startBlock = uint64(block.number + 1);','uint64 startBlock = uint64(block.number);',False,LAU),
+('P01','Pinned: the pool takes 20 of every 100 raised',PI,'uint24 internal constant POOL_RATE = 2_268_041;','uint24 internal constant POOL_RATE = 2_061_856;',False,LAU),
+('P02','Pinned: the pool fee is 0.3 percent',PI,'uint24 internal constant POOL_FEE = 10_000;','uint24 internal constant POOL_FEE = 3000;',False,LAU),
+('P03','Pinned: the pool tick spacing is 60',PI,'int24 internal constant POOL_TICK_SPACING = 200;','int24 internal constant POOL_TICK_SPACING = 60;',False,LAU),
+('P04','Pinned: the sale is 6,000 blocks',PI,'uint64 internal constant SALE_BLOCKS = 7200;','uint64 internal constant SALE_BLOCKS = 6000;',False,LAU),
+('P05','Pinned: the pool state is read from the wrong storage slot',PI,'bytes32 internal constant POOLS_SLOT = bytes32(uint256(6));','bytes32 internal constant POOLS_SLOT = bytes32(uint256(5));',False,DRI),
+('P06','Pinned: abandon opens after one day',PI,'uint64 internal constant ABANDON_DELAY_BLOCKS = 50_400;','uint64 internal constant ABANDON_DELAY_BLOCKS = 7200;',False,FIN),
+('H01','LiquidityHolder: anyone\'s position may be collected, held or not',HO,'        if (positionManager.ownerOf(tokenId) != address(this)) revert NotHeld();\n','',False,HOL),
+('H02','LiquidityHolder: a position of a pool with no project in it may be collected',HO,'        if ((t0 == address(0)) == (t1 == address(0))) revert UnknownProject();\n','',False,HOL),
+('H03','LiquidityHolder: a position of a stranger\'s plain pool of a project\'s Shares may be collected',HO,'        if (key.hooks != guard) revert UnknownProject();\n','',False,HOL),
+('H04','LiquidityHolder: the platform gets all the dollar fees',HO,'        uint256 toPlatform = dollars / 2;','        uint256 toPlatform = dollars;',False,HOL),
+('H05','LiquidityHolder: the project gets nothing of the dollar fees',HO,'            ITreasuryFinish(treasury).topUp(toProject);\n','',False,HOL),
+('H06','LiquidityHolder: the Share fees are kept, not burned',HO,'        if (sharesBurned != 0) IShares(sharesToken).burn(sharesBurned);\n','',False,HOL),
+('H07','LiquidityHolder: a platform address the token refuses stops the whole collect',HO,'        if (!ok || (ret.length != 0 && !abi.decode(ret, (bool)))) {\n            owed[token][to] += amount;\n            emit Owed(token, to, amount);\n        }','        if (!ok || (ret.length != 0 && !abi.decode(ret, (bool)))) revert NotHeld();',False,HOL),
+('H08','LiquidityHolder: a collect takes out liquidity (a decrease of one unit)',HO,'params[0] = abi.encode(tokenId, uint256(0), uint128(0), uint128(0), bytes(""));','params[0] = abi.encode(tokenId, uint256(1), uint128(0), uint128(0), bytes(""));',False,HOL),
+('H09','LiquidityHolder: no re-entry lock',HO,'        if (_locked) revert Reentrancy();','',False,HOL),
+('H10','LiquidityHolder: owed amounts are paid out and not cleared',HO,'        owed[token][to] = 0;\n','',False,HOL),
+('X01','Treasury: anybody may mark the sale abandoned',T,'function markAbandoned() external nonReentrant {\n        if (msg.sender != opener) revert NotAllowed();','function markAbandoned() external nonReentrant {',False,TAB),
+('X02','Treasury: a sale may be abandoned after the pool opened',T,'        if (msg.sender != opener) revert NotAllowed();\n        if (poolOpen) revert PoolAlreadyOpen();\n        (poolOpen, abandoned) = (true, true);','        if (msg.sender != opener) revert NotAllowed();\n        (poolOpen, abandoned) = (true, true);',False,TAB),
+('X03','Treasury: anybody may put sale money wholly into the floor',T,'        if (msg.sender != opener) revert NotAllowed();\n        if (!abandoned) revert NotAbandoned();','        if (!abandoned) revert NotAbandoned();',False,TAB),
+('X04','Treasury: money may be put wholly into the floor when the sale was not abandoned',T,'        if (!abandoned) revert NotAbandoned();\n','',False,TAB),
+('X05','Treasury: more than arrived may be put into the floor',T,'        if (amount > arrived) revert NotArrived(amount, arrived);\n        _accrue();\n        _addMelting(amount);','        _accrue();\n        _addMelting(amount);',False,TAB),
+('X06','Treasury: an abandoned sale does not start the Vester\'s clock',T,'        (poolOpen, abandoned) = (true, true);\n        vester.startNow();','        (poolOpen, abandoned) = (true, true);',False,TAB),
+]
+MUT+=M3
 
 status = subprocess.run(['git', 'status', '--porcelain', 'src'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
 if status:
     sys.exit('src/ has uncommitted changes; commit or stash them first:\n' + status)
 
-def run(extra):
+def run(extra,suites=None):
     subprocess.run('find cache/fuzz cache/invariant -type f -delete 2>/dev/null',shell=True,cwd=ROOT)
-    cmd=['forge','test','--no-match-path',M1]+extra
+    cmd=['forge','test','--no-match-path',M1]+extra if not suites else ['forge','test','--match-path',suites]+extra
     p=subprocess.run(cmd,cwd=ROOT,env=ENV,capture_output=True,text=True)
     out=p.stdout+p.stderr
     fails=[]
@@ -143,9 +232,13 @@ def run(extra):
     total=re.findall(r'Encountered a total of (\d+) failing',out)
     comp='Compiler run failed' in out
     return sorted(set(fails)),comp,out,total
-sel=sys.argv[1:] 
-for (i,desc,f,old,new,inv) in MUT:
+sel=[a for a in sys.argv[1:] if not a.startswith('--')]
+only_m3='--m3' in sys.argv
+for entry in MUT:
+    (i,desc,f,old,new,inv)=entry[:6]
+    suites=entry[6] if len(entry)>6 else None
     if sel and i not in sel: continue
+    if only_m3 and i[0] not in 'FAHPX': continue
     path=os.path.join(ROOT,f)
     src=open(path).read()
     if src.count(old)!=1:
@@ -153,7 +246,7 @@ for (i,desc,f,old,new,inv) in MUT:
     open(path,'w').write(src.replace(old,new))
     try:
         extra=['--match-contract','Invariants'] if os.environ.get('INV_ONLY') else ['--no-match-contract','Invariants']
-        fails,comp,out,total=run(extra)
+        fails,comp,out,total=run(extra,suites)
     finally:
         subprocess.run(['git','checkout','--',f],cwd=ROOT,check=True)
     print(json.dumps({'inv_only':bool(os.environ.get('INV_ONLY')),'id':i,'what':desc,'compile_failed':comp,'failed':fails if os.environ.get('SHOW') else fails[:8],'n':len(fails),'total_failing_reported':total}),flush=True)

@@ -62,7 +62,9 @@ abstract contract SaleRulesBase is Platform {
             assertEq(mp.migrationBlock, s.auction.endBlock() + 1);
             assertEq(mp.reservedTokenAmountForLP, SaleParams.POOL_SHARES, "100M Shares to match the pool's dollars");
             assertEq(mp.recipient, address(p.finisher), "what the pool does not take comes back to the Finisher");
-            assertEq(mp.positionRecipient, address(holder), "the pool position is the LiquidityHolder's from its first block");
+            assertEq(
+                mp.positionRecipient, address(holder), "the pool position is the LiquidityHolder's from its first block"
+            );
             assertEq(mp.poolParameters.fee, 10_000, "1% pool fee");
             assertEq(mp.poolParameters.tickSpacing, 200);
             assertEq(mp.poolParameters.hook, guard, "the pool's hook is the platform's guard");
@@ -70,7 +72,9 @@ abstract contract SaleRulesBase is Platform {
             LiquidityAllocationBracket[] memory br = abi.decode(mp.lpAllocationSchedule, (LiquidityAllocationBracket[]));
             assertEq(br.length, 1, "one bracket");
             assertEq(br[0].lowerThreshold, 0);
-            assertEq(br[0].rate, 2_268_041, "22 of every 100 raised, as 2,268,041 of 10,000,000 of what is left after the 3");
+            assertEq(
+                br[0].rate, 2_268_041, "22 of every 100 raised, as 2,268,041 of 10,000,000 of what is left after the 3"
+            );
             assertEq(p.shares.balanceOf(address(p.finisher)), 0);
         }
     }
@@ -218,7 +222,11 @@ abstract contract SaleRulesBase is Platform {
         p.finisher.openPool();
         assertTrue(p.finisher.poolIsOpen(), "the project's own pool, at the guarded key, was made by the strategy");
         assertTrue(p.finisher.settle());
-        assertEq(_sqrtPrice(plain), uint160(1) << 96, "the stranger's plain pool is a different pool, at the stranger's price");
+        assertEq(
+            _sqrtPrice(plain),
+            uint160(1) << 96,
+            "the stranger's plain pool is a different pool, at the stranger's price"
+        );
         // and the Finisher's answer does not depend on the plain pool: a project with only a stranger's plain pool has none
         Proj memory q = _launch(founder, keccak256("poolfirst two"));
         PoolKey memory plain2 = _key(q);
@@ -252,7 +260,9 @@ abstract contract SaleRulesBase is Platform {
         vm.expectRevert();
         p.finisher.openPool();
         usd.setBlocked(address(p.finisher), false);
-        assertEq(usd.balanceOf(address(s.auction)), 32_000 * DOLLAR, "nothing was lost: every dollar is still in the auction");
+        assertEq(
+            usd.balanceOf(address(s.auction)), 32_000 * DOLLAR, "nothing was lost: every dollar is still in the auction"
+        );
         assertFalse(p.finisher.poolIsOpen());
 
         vm.prank(stranger);

@@ -223,14 +223,19 @@ contract Launcher {
         address factory = IPinnedStrategy(strategy_).initializerFactory();
         address controller = IPinnedAuctionFactory(factory).protocolFeeController();
         if (controller.code.length == 0) revert BadStack();
-        if (IPinnedFeeController(controller).getProtocolFeeAmount(address(0), 1e6) != RAISE_FEE_PIPS) revert BadStack();
+        if (IPinnedFeeController(controller).getProtocolFeeAmount(address(0), 1e6) != RAISE_FEE_PIPS) {
+            revert BadStack();
+        }
         address recipient = IPinnedFeeController(controller).protocolFeeRecipient();
         if (recipient == address(0)) revert BadStack();
         try IOwned(controller).owner() returns (address) {
             revert BadStack(); // a controller with an owner can change the fee in the middle of a sale
         } catch {}
         // the bid rules
-        if (IPinnedMinBid(minBid_).minAmount() != MIN_BID || IPinnedMinBid(minBid_).maxPriceMultiple() != MAX_PRICE_MULTIPLE) {
+        if (
+            IPinnedMinBid(minBid_).minAmount() != MIN_BID
+                || IPinnedMinBid(minBid_).maxPriceMultiple() != MAX_PRICE_MULTIPLE
+        ) {
             revert BadStack();
         }
         (strategy, poolGuard, minBid, auctionFactory, raiseFeeRecipient) =
@@ -435,7 +440,9 @@ contract Launcher {
             validationHook: minBid,
             floorPrice: floorQ96,
             requiredCurrencyRaised: uint128(minimum),
-            auctionStepsData: abi.encodePacked(bytes8(uint64(1388) << 40 | uint64(7100)), bytes8(uint64(1452) << 40 | uint64(100)))
+            auctionStepsData: abi.encodePacked(
+                bytes8(uint64(1388) << 40 | uint64(7100)), bytes8(uint64(1452) << 40 | uint64(100))
+            )
         });
     }
 

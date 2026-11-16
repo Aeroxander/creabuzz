@@ -1,6 +1,7 @@
 # contracts/next
 
-Milestone 1 of `docs/NEXT-VERSION-PLAN.md`: a separate Foundry project that proves the Uniswap route (sale, then a
+Milestones 1 to 3 of `docs/NEXT-VERSION-PLAN.md`: the Uniswap route (M1), Shares, Treasury, Vester (M2) and the whole sale into a
+pool with the floor, the exit, fees and the way out of a pool that never opens (M3). Milestone 1 of `docs/NEXT-VERSION-PLAN.md`: a separate Foundry project that proves the Uniswap route (sale, then a
 Uniswap v4 pool, then a trade) with a plain test token. It has its own `foundry.toml`, remappings, `out/` and `cache/`,
 so the existing contracts in `../` (and the bytecode pinned in the desktop app) are untouched. Findings are in
 `docs/next-version/M1-FACTS.md` and `docs/next-version/M1-REPORT.md`.
@@ -16,21 +17,35 @@ scripts/check-fork-degrades.sh   # checks the fork suites skip or move, not fail
 forge fmt --check src test
 ```
 
-Layout: `src/` is the new code: milestone 1 (`FixedFeeController`, `MinBid`, `PoolGuard`, `HookSalt`) and milestone 2
-(`ShareToken`, `Vester`, `Treasury`, `Launcher`, `RollingCap`, `Interfaces`); `test/helpers/` builds the Uniswap stack
+Layout: `src/` is the code: milestone 3 (`Launcher`, `Finisher`, `LiquidityHolder`, `Pinned`), milestone 1 (`FixedFeeController`, `MinBid`, `PoolGuard`, `HookSalt`) and milestone 2
+(`ShareToken`, `Vester`, `Treasury`, `RollingCap`, `Interfaces`); `test/helpers/` builds the Uniswap stack
 (local twin or Sepolia fork) and a sale, and holds the milestone 2 base contract and invariant handler; `test/*.t.sol`
 are the tests; `test/mocks/` holds a stand-in treasury, plain tokens, a dollar token that can misbehave and a call-back
 attacker. Test compiles are slow (via-IR): `Deployer.sol` exists so each test file does
 not recompile the whole Uniswap stack.
 
-## Milestone 2: Shares, Treasury, Vester, Launcher
+## Milestone 3: the sale into a pool
 
-**This Launcher is for local tests only. Do not deploy it anywhere else.** It can start projects, but it has no way to move
-the 500,000,000 Shares it holds for each project's sale and pool, so any project launched on it has half its Shares
-locked for ever. Its constructor refuses any chain but 31337 (the local test chain) for that reason. Milestone 3 ships a
-new Launcher; projects born on this one are not carried over. Its `opener` and `salePath` settings are plain addresses
-(stubs with access control), and the admin can change them for new projects at will (a founder's `launch` carries the
-hash of the settings they saw), so nothing real may be built on it while they stay plain addresses.
+`Launcher` (replaces the milestone 2 stub: no chain refusal, nothing a founder or an admin can point at a strategy, a guard, an
+opener or a sale path), `Finisher` (one clone per project; holds the sale Shares, receives the sale's dollars, runs the
+three-step finish, and is the only address the Treasury believes about the pool), `LiquidityHolder` (owns every pool position for
+good; collects and splits trading fees), `Pinned.sol` (our fixed view of the vendored Uniswap code), and the Treasury's abandoned
+state. **Nothing is deployed anywhere; a strategy and a pool guard must be mined to hook addresses per network** (see
+`script/DeployPlatform.s.sol` and the report). The licence of the vendored strategy is still for counsel.
+
+```bash
+forge build                      # ALWAYS first: tests load the vendored contracts and our 0.8.26 files from their build output
+forge test                       # the local suites (no RPC); fork suites skip with a message
+SEPOLIA_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com forge test   # adds the Sepolia fork suites
+forge test --match-path test/PinnedDrift.t.sol   # the one version-drift test
+python3 scripts/mutate-guards.py --m3            # remove each milestone 3 guard once, see a test fail, put it back
+```
+
+`forge test --match-path ...` compiles only what that path needs, so it can run against a stale build output of the 0.8.26
+files (the Deployer, the fee controller, the bid hook, the guard) that the 0.8.37 tests load by path. After changing any of those,
+run a plain `forge build` first.
+
+## Milestone 2: Shares, Treasury, Vester (the Launcher of that milestone was replaced in milestone 3)
 
 Milestone 2 files are first-party and need no Uniswap code, so they build with the repo's production compiler (solc
 0.8.37, optimizer 200 runs, see the last restriction in `foundry.toml`) while the milestone 1 files and everything vendored

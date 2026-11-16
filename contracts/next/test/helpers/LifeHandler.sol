@@ -77,7 +77,11 @@ contract LifeHandler is Platform {
         uint256 id = s.auction.nextBidId();
         vm.prank(bidders[who]);
         (bool ok,) = address(s.auction)
-            .call(abi.encodeCall(s.auction.submitBid, (_price(s, k), uint128(amount), bidders[who], s.floorQ96, bytes(""))));
+            .call(
+                abi.encodeCall(
+                    s.auction.submitBid, (_price(s, k), uint128(amount), bidders[who], s.floorQ96, bytes(""))
+                )
+            );
         if (ok) {
             bidIds.push(id);
             _count(0);

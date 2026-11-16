@@ -135,7 +135,11 @@ abstract contract LiquidityHolderBase is Platform {
         assertGt(dollars, 0);
         assertGt(shares_, 0);
         assertEq(usd.balanceOf(platform) - platformBefore, dollars / 2, "half to the platform, rounded down");
-        assertEq(proj.treasury.spendable() - spendable, dollars - dollars / 2, "the other half, with any odd unit, to the project's spendable");
+        assertEq(
+            proj.treasury.spendable() - spendable,
+            dollars - dollars / 2,
+            "the other half, with any odd unit, to the project's spendable"
+        );
         assertEq(supply - proj.shares.totalSupply(), shares_, "the Share side is burned");
         assertEq(usd.balanceOf(address(holder)), 0);
         assertEq(proj.shares.balanceOf(address(holder)), 0);
@@ -145,6 +149,16 @@ abstract contract LiquidityHolderBase is Platform {
         vm.prank(alice);
         (uint256 d2, uint256 s2) = holder.collect(positionId);
         assertEq(d2 + s2, 0);
+    }
+
+    /// @dev A dollar token that calls back into the holder while it is paying the platform: the call is refused.
+    function test_holder_aCallBackFromTheDollarTokenCannotReenterCollect() public {
+        _tradeForFees();
+        usd.armCallback(platform, address(holder), abi.encodeCall(LiquidityHolder.collect, (positionId)));
+        holder.collect(positionId);
+        assertTrue(usd.callbackFired());
+        assertFalse(usd.callbackOk(), "the call-back reverted");
+        assertEq(bytes4(usd.callbackRet()), LiquidityHolder.Reentrancy.selector);
     }
 
     function test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf() public {
@@ -170,7 +184,10 @@ abstract contract LiquidityHolderBase is Platform {
     // ================================================ a position that is not a project's =================================
 
     /// @dev Mint a position in a pool for `owner`, the way a person would: through the position manager, paying through Permit2.
-    function _mintPosition(PoolKey memory key, address owner, address token0, address token1) internal returns (uint256 id) {
+    function _mintPosition(PoolKey memory key, address owner, address token0, address token1)
+        internal
+        returns (uint256 id)
+    {
         id = pm.nextTokenId();
         QuoteToken(token0).mint(owner, 1_000_000_000e18);
         QuoteToken(token1).mint(owner, 1_000_000_000e18);
@@ -180,7 +197,16 @@ abstract contract LiquidityHolderBase is Platform {
         IPermit2Test(PERMIT2).approve(token0, positionManager, type(uint160).max, type(uint48).max);
         IPermit2Test(PERMIT2).approve(token1, positionManager, type(uint160).max, type(uint48).max);
         bytes[] memory params = new bytes[](2);
-        params[0] = abi.encode(key, int24(-887_200), int24(887_200), uint256(1e12), uint128(type(uint128).max), uint128(type(uint128).max), owner, bytes(""));
+        params[0] = abi.encode(
+            key,
+            int24(-887_200),
+            int24(887_200),
+            uint256(1e12),
+            uint128(type(uint128).max),
+            uint128(type(uint128).max),
+            owner,
+            bytes("")
+        );
         params[1] = abi.encode(key.currency0, key.currency1);
         pm.modifyLiquidities(abi.encode(abi.encodePacked(uint8(0x02), uint8(0x0d)), params), block.timestamp + 1);
         vm.stopPrank();
@@ -222,7 +248,16 @@ abstract contract LiquidityHolderBase is Platform {
         IPermit2Test(PERMIT2).approve(address(usd), positionManager, type(uint160).max, type(uint48).max);
         IPermit2Test(PERMIT2).approve(address(proj.shares), positionManager, type(uint160).max, type(uint48).max);
         bytes[] memory params = new bytes[](2);
-        params[0] = abi.encode(plain, int24(-887_200), int24(887_200), uint256(1e9), uint128(type(uint128).max), uint128(type(uint128).max), stranger, bytes(""));
+        params[0] = abi.encode(
+            plain,
+            int24(-887_200),
+            int24(887_200),
+            uint256(1e9),
+            uint128(type(uint128).max),
+            uint128(type(uint128).max),
+            stranger,
+            bytes("")
+        );
         params[1] = abi.encode(plain.currency0, plain.currency1);
         pm.modifyLiquidities(abi.encode(abi.encodePacked(uint8(0x02), uint8(0x0d)), params), block.timestamp + 1);
         pm.transferFrom(stranger, address(holder), id);

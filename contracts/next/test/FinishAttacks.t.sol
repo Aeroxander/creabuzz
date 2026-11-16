@@ -88,6 +88,71 @@ abstract contract FinishAttacksBase is Platform {
         }
     }
 
+    // ============================================== each step names why it refuses ====================================
+
+    function test_finish_stepsOnAProjectWithNoSaleRefuse() public {
+        Proj memory p = _launch(founder, keccak256("idle"));
+        vm.startPrank(stranger);
+        vm.expectRevert(Finisher.WrongStage.selector);
+        p.finisher.openPool();
+        vm.expectRevert(Finisher.WrongStage.selector);
+        p.finisher.settle();
+        vm.expectRevert(Finisher.WrongStage.selector);
+        p.finisher.sweep();
+        vm.expectRevert(Finisher.WrongStage.selector);
+        p.finisher.abandon();
+        vm.stopPrank();
+    }
+
+    /// @dev Each early call is refused with its own reason, and the reasons are the ones in the plan: the pool step must come
+    /// first, and the money is split before the Shares are swept.
+    function test_finish_eachStepRefusesWithItsOwnReasonWhenCalledTooEarly() public {
+        (Proj memory p,) = _endedSale();
+        vm.startPrank(stranger);
+        vm.expectRevert(Finisher.PoolStepNotRun.selector);
+        p.finisher.settle();
+        vm.expectRevert(Finisher.PoolStepNotRun.selector);
+        p.finisher.sweep();
+        p.finisher.openPool();
+        vm.expectRevert(Finisher.SettleFirst.selector);
+        p.finisher.sweep();
+        p.finisher.settle();
+        p.finisher.sweep();
+        vm.stopPrank();
+    }
+
+    /// @dev The auction's own report sets the least that must have come back. If the Finisher holds less (it cannot, short of a
+    /// bug in the strategy or the token), it refuses rather than split a smaller sum as though it were the whole.
+    function test_settle_refusesWhenLessCameBackThanTheAuctionsFiguresSay() public {
+        (Proj memory p, Sale memory s) = _endedSale();
+        uint256 raised = s.auction.currencyRaised();
+        uint256 net = raised - raised * 30_000 / 1_000_000;
+        uint256 least = net - net * SaleParams.POOL_RATE / SaleParams.RATE_SCALE;
+        p.finisher.openPool();
+        uint256 held = usd.balanceOf(address(p.finisher));
+        assertGe(held, least);
+        vm.prank(address(p.finisher));
+        usd.transfer(makeAddr("somewhere"), held - least + 1); // simulate the loss of one unit more than the pool could explain
+        vm.expectRevert(abi.encodeWithSelector(Finisher.MoneyMissing.selector, least - 1, least));
+        p.finisher.settle();
+        assertFalse(p.treasury.poolOpen(), "nothing was marked open");
+    }
+
+    // ============================================== no re-entry while a step runs ====================================
+
+    /// @dev A dollar token that calls back into the Finisher while the Finisher is paying the Treasury: the call is refused.
+    function test_settle_aCallBackFromTheDollarTokenCannotReenter() public {
+        (Proj memory p,) = _endedSale();
+        p.finisher.openPool();
+        usd.armCallback(address(p.treasury), address(p.finisher), abi.encodeCall(Finisher.settle, ()));
+        p.finisher.settle();
+        assertTrue(usd.callbackFired());
+        assertFalse(usd.callbackOk(), "the call-back reverted");
+        assertEq(
+            bytes4(usd.callbackRet()), Finisher.Reentrancy.selector, "because the Finisher was in the middle of a call"
+        );
+    }
+
     // ============================================== a failed pool step ================================================
 
     /// @dev The milestone 1 reproduction: the pool step fails inside the strategy and is reported as success, and the 97 of every
@@ -175,7 +240,11 @@ abstract contract FinishAttacksBase is Platform {
         uint256 rest = net - floorOnly;
         assertEq(p.treasury.spendable(), rest * 15 / 75, "15 of the 75 that would have come back");
         assertEq(p.treasury.melting(), net - rest * 15 / 75, "the other 60 and the 22 are floor");
-        assertEq(usd.balanceOf(platform) + p.treasury.spendable() + p.treasury.melting(), raised, "3 + 15 + 82 is every dollar raised");
+        assertEq(
+            usd.balanceOf(platform) + p.treasury.spendable() + p.treasury.melting(),
+            raised,
+            "3 + 15 + 82 is every dollar raised"
+        );
         assertApproxEqAbs(p.treasury.spendable(), raised * 15 / 100, raised / 1_000_000 + 2, "15 of every 100");
         assertApproxEqAbs(p.treasury.melting(), raised * 82 / 100, raised / 1_000_000 + 2, "82 of every 100");
         assertEq(usd.balanceOf(address(p.finisher)), 0);
@@ -198,9 +267,14 @@ abstract contract FinishAttacksBase is Platform {
         uint256 paid = p.treasury.handBack(got / 2);
         vm.stopPrank();
         assertGt(paid, 0, "an exit pays after an abandon");
-        // abandon is once
+        // abandon is once, and a project whose sale was abandoned does not open another
         vm.expectRevert(Finisher.WrongStage.selector);
         p.finisher.abandon();
+        assertFalse(p.finisher.canOpen());
+        vm.roll(block.number + 1_000_000);
+        vm.prank(founder);
+        vm.expectRevert(Finisher.CannotOpen.selector);
+        launcher.openSale(p.id, Launcher.Size.Small);
     }
 
     /// @dev Abandon runs the pool step itself if nobody has, so a pool that nobody ever tried to open is reached too.
@@ -304,7 +378,10 @@ abstract contract FinishAttacksBase is Platform {
         _finish(p, s2);
         assertTrue(p.treasury.saleClosed());
         assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Done));
-        assertEq(p.treasury.spendable() + p.treasury.melting() + usd.balanceOf(poolManager) + usd.balanceOf(platform), 2400 * DOLLAR);
+        assertEq(
+            p.treasury.spendable() + p.treasury.melting() + usd.balanceOf(poolManager) + usd.balanceOf(platform),
+            2400 * DOLLAR
+        );
         // a project that sold cannot sell again here
         vm.roll(block.number + 100_000);
         vm.prank(founder);
@@ -327,7 +404,9 @@ abstract contract FinishAttacksBase is Platform {
         assertApproxEqRel(sold, 200_000_000 * SHARE, 1e12, "half the sale Shares sold");
         _finish(p, s);
         assertEq(usd.balanceOf(platform), 150 * DOLLAR, "3% of 5,000");
-        assertApproxEqAbs(usd.balanceOf(poolManager), 1100 * DOLLAR, 1000, "22% of 5,000 in the pool (to a thousandth of a dollar)");
+        assertApproxEqAbs(
+            usd.balanceOf(poolManager), 1100 * DOLLAR, 1000, "22% of 5,000 in the pool (to a thousandth of a dollar)"
+        );
         assertApproxEqAbs(p.treasury.spendable(), 750 * DOLLAR, 1000);
         assertApproxEqAbs(p.treasury.melting(), 3000 * DOLLAR, 1000);
         uint256 inPool = p.shares.balanceOf(poolManager);

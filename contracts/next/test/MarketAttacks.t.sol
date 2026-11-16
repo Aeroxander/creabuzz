@@ -94,8 +94,19 @@ abstract contract MarketAttacksBase is Platform {
         (Proj memory p,,) = _flatProject(keccak256("bear"), Launcher.Size.Standard, 10_000 * DOLLAR);
         uint256 floorPS = _floorPerShare(p);
         PoolKey memory key = _key(p);
-        emit log_string(string.concat("bear: pool opens at ", _str(_spot(key), 18), " dollars a Share; the floor pays ", _str(floorPS, 18), " before the exit fee"));
-        emit log_string(string.concat("bear: Shares counted for exits ", _str(p.treasury.countingSupply(), 18), "; floor dollars ", _str(p.treasury.melting(), 6)));
+        emit log_string(string.concat(
+                "bear: pool opens at ",
+                _str(_spot(key), 18),
+                " dollars a Share; the floor pays ",
+                _str(floorPS, 18),
+                " before the exit fee"
+            ));
+        emit log_string(string.concat(
+                "bear: Shares counted for exits ",
+                _str(p.treasury.countingSupply(), 18),
+                "; floor dollars ",
+                _str(p.treasury.melting(), 6)
+            ));
         uint256 base = vm.snapshotState();
         uint256[10] memory discounts = [uint256(0), 100, 200, 400, 500, 600, 700, 800, 1000, 1500];
         uint256[3] memory sizes = [uint256(20 * DOLLAR), 200 * DOLLAR, 1000 * DOLLAR];
@@ -109,21 +120,40 @@ abstract contract MarketAttacksBase is Platform {
                 vm.revertToState(inner);
                 Trade memory t = _buyAndHandBack(p, sizes[k]);
                 int256 profit = int256(t.payout) - int256(t.spent);
-                emit log_string(
-                    string.concat(
-                        "bear: pool ", vm.toString(reached / 100), ".", vm.toString(reached % 100 / 10), "% under the floor, spend ",
-                        vm.toString(sizes[k] / DOLLAR), " dollars: Shares bought ", _str(t.got / 1e12, 6),
-                        " (millions), paid back ", _str(t.payout, 6), ", ", profit < 0 ? "loss " : "profit ",
-                        _str(uint256(profit < 0 ? -profit : profit), 6), ", gas buy ", vm.toString(t.gasBuy), " exit ", vm.toString(t.gasExit)
-                    )
-                );
+                emit log_string(string.concat(
+                        "bear: pool ",
+                        vm.toString(reached / 100),
+                        ".",
+                        vm.toString(reached % 100 / 10),
+                        "% under the floor, spend ",
+                        vm.toString(sizes[k] / DOLLAR),
+                        " dollars: Shares bought ",
+                        _str(t.got / 1e12, 6),
+                        " (millions), paid back ",
+                        _str(t.payout, 6),
+                        ", ",
+                        profit < 0 ? "loss " : "profit ",
+                        _str(uint256(profit < 0 ? -profit : profit), 6),
+                        ", gas buy ",
+                        vm.toString(t.gasBuy),
+                        " exit ",
+                        vm.toString(t.gasExit)
+                    ));
                 if (reached <= 500) assertLt(profit, 0, "no profit when the pool is within 5% of the floor");
                 if (k == 0 && profit > 0 && breakEvenBps == 0) breakEvenBps = reached;
-                if (d > 0) assertGe(profit, last[k] - int256(sizes[k] / 50), "the deeper the discount, the more is made (to a small rounding)");
+                if (d > 0) {
+                    assertGe(
+                        profit,
+                        last[k] - int256(sizes[k] / 50),
+                        "the deeper the discount, the more is made (to a small rounding)"
+                    );
+                }
                 last[k] = profit;
             }
         }
-        emit log_named_uint("bear: smallest discount (ten-thousandths) at which a 20-dollar trade profits", breakEvenBps);
+        emit log_named_uint(
+            "bear: smallest discount (ten-thousandths) at which a 20-dollar trade profits", breakEvenBps
+        );
         assertGt(breakEvenBps, 500, "the drain does not pay within 5% of the floor");
         assertLt(breakEvenBps, 1500, "but it does pay further down: this is the accepted bear-market drain");
     }
@@ -196,8 +226,16 @@ abstract contract MarketAttacksBase is Platform {
         assertEq(p.vester.claimable(friend), 0);
         assertEq(p.vester.claimable(wallet2), 0);
         assertEq(p.vester.claim(founder), 0);
-        assertEq(p.shares.balanceOf(founder) + p.shares.balanceOf(friend) + p.shares.balanceOf(wallet2), 0, "nobody holds a Share to sell");
-        assertEq(p.shares.balanceOf(address(p.vester)), 300_000_000 * SHARE, "200M + 100M of gifts are all still in the Vester");
+        assertEq(
+            p.shares.balanceOf(founder) + p.shares.balanceOf(friend) + p.shares.balanceOf(wallet2),
+            0,
+            "nobody holds a Share to sell"
+        );
+        assertEq(
+            p.shares.balanceOf(address(p.vester)),
+            300_000_000 * SHARE,
+            "200M + 100M of gifts are all still in the Vester"
+        );
         // the pool's Shares and the dollars in it are untouched by anything the team can do
         // no new grant after the clock has started: a last-second pre-pool gift cannot be made once the pool is open
         vm.prank(founder);
@@ -222,7 +260,15 @@ abstract contract MarketAttacksBase is Platform {
         uint256 dollars0 = usd.balanceOf(wallet2);
         _swap(key, address(p.shares), wallet2, false, 9_000_000 * SHARE);
         uint256 after_ = _spot(key);
-        emit log_string(string.concat("dump: 9,000,000 Shares sold at once right after the pool opens move the price from ", _str(before, 18), " to ", _str(after_, 18), " and raise ", _str(usd.balanceOf(wallet2) - dollars0, 6), " dollars"));
+        emit log_string(string.concat(
+                "dump: 9,000,000 Shares sold at once right after the pool opens move the price from ",
+                _str(before, 18),
+                " to ",
+                _str(after_, 18),
+                " and raise ",
+                _str(usd.balanceOf(wallet2) - dollars0, 6),
+                " dollars"
+            ));
         assertLt(after_, before);
     }
 
@@ -264,7 +310,16 @@ abstract contract MarketAttacksBase is Platform {
         uint256[2] memory amounts = [uint256(100 * DOLLAR), 2500 * DOLLAR];
         for (uint256 z; z < 2; ++z) {
             (Proj memory p,, uint256 poolDollars) = _flatProject(keccak256(abi.encode("snipe", z)), sizes[z], totals[z]);
-            emit log_string(string.concat("snipe: ", z == 0 ? "Standard" : "Small", " sale: pool holds ", _str(poolDollars, 6), " dollars and ", _str(p.shares.balanceOf(poolManager) / 1e12, 6), " Shares; opening price ", _str(_spot(_key(p)), 18)));
+            emit log_string(string.concat(
+                    "snipe: ",
+                    z == 0 ? "Standard" : "Small",
+                    " sale: pool holds ",
+                    _str(poolDollars, 6),
+                    " dollars and ",
+                    _str(p.shares.balanceOf(poolManager) / 1e12, 6),
+                    " Shares; opening price ",
+                    _str(_spot(_key(p)), 18)
+                ));
             uint256 base = vm.snapshotState();
             for (uint256 k; k < 2; ++k) {
                 for (uint256 dir; dir < 2; ++dir) {
@@ -276,14 +331,24 @@ abstract contract MarketAttacksBase is Platform {
                     uint256 slipBps = r.avgPrice > r.spotBefore
                         ? (r.avgPrice - r.spotBefore) * 10_000 / r.spotBefore
                         : (r.spotBefore - r.avgPrice) * 10_000 / r.spotBefore;
-                    emit log_string(
-                        string.concat(
-                            "snipe: ", z == 0 ? "Standard " : "Small ", dir == 0 ? "buy " : "sell ", vm.toString(amounts[k] / DOLLAR),
-                            " dollars: the price goes ", r.spotAfter > r.spotBefore ? "up " : "down ", vm.toString(moveBps / 100), ".",
-                            vm.toString(moveBps % 100 / 10), "%, and the average price paid is ", vm.toString(slipBps / 100), ".", vm.toString(slipBps % 100 / 10), "% ",
-                            dir == 0 ? "above" : "below", " the opening price"
-                        )
-                    );
+                    emit log_string(string.concat(
+                            "snipe: ",
+                            z == 0 ? "Standard " : "Small ",
+                            dir == 0 ? "buy " : "sell ",
+                            vm.toString(amounts[k] / DOLLAR),
+                            " dollars: the price goes ",
+                            r.spotAfter > r.spotBefore ? "up " : "down ",
+                            vm.toString(moveBps / 100),
+                            ".",
+                            vm.toString(moveBps % 100 / 10),
+                            "%, and the average price paid is ",
+                            vm.toString(slipBps / 100),
+                            ".",
+                            vm.toString(slipBps % 100 / 10),
+                            "% ",
+                            dir == 0 ? "above" : "below",
+                            " the opening price"
+                        ));
                     assertGt(moveBps, 0);
                     assertGt(slipBps, 100, "more than the 1% fee alone");
                 }
@@ -326,16 +391,30 @@ abstract contract MarketAttacksBase is Platform {
             uint256 raised = s.auction.currencyRaised();
             // what the founder cannot get back: the platform's 3 and the pool's 22 of what they spent (their share of the raise)
             uint256 lost = spent * 25 / 100;
-            emit log_string(
-                string.concat(
-                    "selfbid: founder bids ", vm.toString(founderBids[z] / DOLLAR), " on top of 10,000 honest: price ",
-                    _str(finalPrice * 100 / s.floorQ96, 2), "x the floor, raised ", _str(raised, 6),
-                    "; honest bidders get ", _str(honest / 1e12, 6), " Shares (",
-                    vm.toString(honestSharesBase == 0 ? 100 : honest * 100 / honestSharesBase), "% of the no-founder case); founder spent ", _str(spent, 6),
-                    " for ", _str(fShares / 1e12, 6), " Shares; of that spend ", _str(lost, 6), " goes to the platform and the pool and is not recoverable"
-                )
+            emit log_string(string.concat(
+                    "selfbid: founder bids ",
+                    vm.toString(founderBids[z] / DOLLAR),
+                    " on top of 10,000 honest: price ",
+                    _str(finalPrice * 100 / s.floorQ96, 2),
+                    "x the floor, raised ",
+                    _str(raised, 6),
+                    "; honest bidders get ",
+                    _str(honest / 1e12, 6),
+                    " Shares (",
+                    vm.toString(honestSharesBase == 0 ? 100 : honest * 100 / honestSharesBase),
+                    "% of the no-founder case); founder spent ",
+                    _str(spent, 6),
+                    " for ",
+                    _str(fShares / 1e12, 6),
+                    " Shares; of that spend ",
+                    _str(lost, 6),
+                    " goes to the platform and the pool and is not recoverable"
+                ));
+            assertLe(
+                finalPrice,
+                4 * s.floorQ96 + 4 * s.tickQ96,
+                "the 4-times cap bounds how far one account can pull the price"
             );
-            assertLe(finalPrice, 4 * s.floorQ96 + 4 * s.tickQ96, "the 4-times cap bounds how far one account can pull the price");
         }
     }
 
@@ -376,7 +455,11 @@ abstract contract MarketAttacksBase is Platform {
         b.finisher.sweep();
         assertEq(pm.ownerOf(idA), address(holder));
         assertEq(pm.ownerOf(idB), address(holder), "one holder owns both projects' positions");
-        assertEq(p_raise(sa) + p_raise(sb), usd.balanceOf(poolManager) + usd.balanceOf(platform) + a.treasury.spendable() + a.treasury.melting() + b.treasury.spendable() + b.treasury.melting());
+        assertEq(
+            p_raise(sa) + p_raise(sb),
+            usd.balanceOf(poolManager) + usd.balanceOf(platform) + a.treasury.spendable() + a.treasury.melting()
+                + b.treasury.spendable() + b.treasury.melting()
+        );
         // each project's buckets follow its own raise
         _checkSplit(a, sa);
         _checkSplit(b, sb);
@@ -418,7 +501,9 @@ abstract contract MarketAttacksBase is Platform {
         uint256 arrived = p.treasury.spendable() + p.treasury.melting();
         assertEq(p.treasury.spendable(), arrived * 15 / 75);
         assertLe(arrived, net);
-        assertApproxEqAbs(arrived, raised * 75 / 100, raised / 1_000_000 + 2, "75 of every 100 reached the project's Treasury");
+        assertApproxEqAbs(
+            arrived, raised * 75 / 100, raised / 1_000_000 + 2, "75 of every 100 reached the project's Treasury"
+        );
         assertTrue(p.treasury.saleClosed());
     }
 }

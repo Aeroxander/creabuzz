@@ -36,11 +36,17 @@ abstract contract LifeBase is Platform {
     function test_life_aWholeProjectLife() public {
         // ---- launch: the 40 / 10 / 20 / 20 / 10 allocation is where the plan says --------------------------------
         Proj memory p = _launchOrdered(founder, _quoteIsCurrency0());
-        assertEq((address(usd) < address(p.shares)), _quoteIsCurrency0(), "the dollar token is on the side the test wants");
+        assertEq(
+            (address(usd) < address(p.shares)), _quoteIsCurrency0(), "the dollar token is on the side the test wants"
+        );
         assertEq(p.shares.totalSupply(), SUPPLY);
-        assertEq(p.shares.balanceOf(address(p.finisher)), 500_000_000 * SHARE, "40% sale + 10% pool match: the Finisher");
+        assertEq(
+            p.shares.balanceOf(address(p.finisher)), 500_000_000 * SHARE, "40% sale + 10% pool match: the Finisher"
+        );
         assertEq(p.shares.balanceOf(address(p.vester)), 200_000_000 * SHARE, "20% founder: the Vester");
-        assertEq(p.shares.balanceOf(address(p.treasury)), 300_000_000 * SHARE, "20% work pot + 10% reserve: the Treasury");
+        assertEq(
+            p.shares.balanceOf(address(p.treasury)), 300_000_000 * SHARE, "20% work pot + 10% reserve: the Treasury"
+        );
         assertEq(p.treasury.workPot(), 200_000_000 * SHARE);
         assertEq(p.treasury.reserve(), 100_000_000 * SHARE);
         assertEq(p.treasury.opener(), address(p.finisher), "only the project's own Finisher can open its pool");
@@ -59,7 +65,9 @@ abstract contract LifeBase is Platform {
         assertEq(p.shares.balanceOf(address(s.auction)), SaleParams.SALE_SHARES, "the auction holds the 40% for sale");
         assertEq(p.shares.balanceOf(strategy), SaleParams.POOL_SHARES, "the strategy holds the 10% for the pool");
         assertEq(s.auction.fundsRecipient(), strategy, "the strategy receives the raise");
-        assertEq(s.auction.tokensRecipient(), address(p.finisher), "the Finisher receives unsold Shares, never the founder");
+        assertEq(
+            s.auction.tokensRecipient(), address(p.finisher), "the Finisher receives unsold Shares, never the founder"
+        );
         assertEq(s.auction.validationHook(), minBid, "the bid rules are the platform's");
         assertEq(s.endBlock - s.startBlock, SaleParams.SALE_BLOCKS, "24 hours");
         assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Open));
@@ -92,8 +100,16 @@ abstract contract LifeBase is Platform {
         assertEq(usd.balanceOf(platform), m.fee, "the platform got exactly 3% of the raise");
         assertLe(m.poolDollars, budget, "the pool took no more than 22 of every 100");
         assertGe(m.poolDollars + 1000, budget, "and nearly all of it");
-        assertEq(usd.balanceOf(address(p.finisher)), m.net - m.poolDollars, "the rest came back to the Finisher, not the founder");
-        assertEq(p.shares.balanceOf(address(p.finisher)), SaleParams.POOL_SHARES - m.poolShares, "unused pool Shares came back too");
+        assertEq(
+            usd.balanceOf(address(p.finisher)),
+            m.net - m.poolDollars,
+            "the rest came back to the Finisher, not the founder"
+        );
+        assertEq(
+            p.shares.balanceOf(address(p.finisher)),
+            SaleParams.POOL_SHARES - m.poolShares,
+            "unused pool Shares came back too"
+        );
         assertEq(pm.ownerOf(positionId), address(holder), "the LiquidityHolder owns the position from its first block");
         assertTrue(p.finisher.poolIsOpen(), "the pool exists, read from the pool manager");
         assertFalse(p.treasury.poolOpen(), "but nothing is settled until step 2");
@@ -114,10 +130,16 @@ abstract contract LifeBase is Platform {
         assertEq(p.treasury.melting(), m.toTreasury - p.treasury.spendable(), "the rest is the melting floor");
         assertEq(usd.balanceOf(address(p.treasury)), m.toTreasury, "every dollar that came back is in the Treasury");
         assertEq(usd.balanceOf(address(p.finisher)), 0, "none is left in the Finisher");
-        assertApproxEqAbs(p.treasury.spendable(), m.raised * 15 / 100, m.raised / 1_000_000 + 2, "15 of every 100 raised");
+        assertApproxEqAbs(
+            p.treasury.spendable(), m.raised * 15 / 100, m.raised / 1_000_000 + 2, "15 of every 100 raised"
+        );
         assertApproxEqAbs(p.treasury.melting(), m.raised * 60 / 100, m.raised / 1_000_000 + 2, "60 of every 100 raised");
         assertApproxEqAbs(m.poolDollars, m.raised * 22 / 100, m.raised / 1_000_000 + 2, "22 of every 100 raised");
-        assertEq(m.fee + m.poolDollars + p.treasury.spendable() + p.treasury.melting(), m.raised, "3 + 22 + 15 + 60 is every dollar raised");
+        assertEq(
+            m.fee + m.poolDollars + p.treasury.spendable() + p.treasury.melting(),
+            m.raised,
+            "3 + 22 + 15 + 60 is every dollar raised"
+        );
         vm.prank(alice);
         vm.expectRevert(Treasury.SaleNotClosed.selector);
         p.treasury.handBack(1); // settled, but unsold Shares are not swept yet: still closed
@@ -132,7 +154,11 @@ abstract contract LifeBase is Platform {
             299_000_000 * SHARE + unsold + (SaleParams.POOL_SHARES - m.poolShares),
             "work pot (less the 1M gift) + reserve + unsold + unused pool Shares"
         );
-        assertEq(p.treasury.reserve(), 100_000_000 * SHARE + unsold + (SaleParams.POOL_SHARES - m.poolShares), "the rest is plain reserve");
+        assertEq(
+            p.treasury.reserve(),
+            100_000_000 * SHARE + unsold + (SaleParams.POOL_SHARES - m.poolShares),
+            "the rest is plain reserve"
+        );
         assertTrue(p.treasury.saleClosed(), "exits are open");
         assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Done));
         // repeating any step is harmless
@@ -157,14 +183,20 @@ abstract contract LifeBase is Platform {
         assertGt(usd.balanceOf(erin), 0, "and got the unspent dollars back");
         assertApproxEqAbs(32_000 * DOLLAR, m.raised + refunds, 10, "dollars bid = dollars raised + dollars refunded");
         assertApproxEqAbs(filled, s.auction.totalCleared(), 10, "Shares claimed = Shares sold");
-        uint256 accounted = filled + m.poolShares + p.shares.balanceOf(address(p.treasury)) + p.shares.balanceOf(address(p.vester))
-            + p.shares.balanceOf(address(s.auction)) + p.shares.balanceOf(strategy);
+        uint256 accounted = filled + m.poolShares + p.shares.balanceOf(address(p.treasury))
+            + p.shares.balanceOf(address(p.vester)) + p.shares.balanceOf(address(s.auction))
+            + p.shares.balanceOf(strategy);
         assertEq(accounted, SUPPLY, "all 1,000,000,000 Shares are accounted for");
 
         // ---- the exit denominator, with the pool's Shares counted as in people's hands (owner call 1) ---------------
         uint256 counting = p.treasury.countingSupply();
         assertEq(counting, SUPPLY - p.shares.balanceOf(address(p.treasury)) - p.vester.unreleased());
-        assertApproxEqAbs(counting, filled + m.poolShares, 10, "buyers' Shares plus the pool's (the auction keeps a few units of dust)");
+        assertApproxEqAbs(
+            counting,
+            filled + m.poolShares,
+            10,
+            "buyers' Shares plus the pool's (the auction keeps a few units of dust)"
+        );
         emit log_named_decimal_uint("life: floor dollars", p.treasury.melting(), 6);
         emit log_named_decimal_uint("life: Shares counted for exits", counting, 18);
 
@@ -190,7 +222,9 @@ abstract contract LifeBase is Platform {
         assertApproxEqAbs(feeDollars, 1 * DOLLAR, 2, "the 1% pool fee on 100 dollars in");
         assertGt(feeShares, 0, "the pool fee on the Shares sold back");
         assertEq(usd.balanceOf(platform) - platformBefore, feeDollars / 2, "half the dollar fee to the platform");
-        assertEq(p.treasury.spendable() - spendableBefore, feeDollars - feeDollars / 2, "half to the project's spendable");
+        assertEq(
+            p.treasury.spendable() - spendableBefore, feeDollars - feeDollars / 2, "half to the project's spendable"
+        );
         assertEq(supplyBefore - p.shares.totalSupply(), feeShares, "the Share fee was burned");
         assertEq(usd.balanceOf(address(holder)), 0, "the holder keeps nothing");
         assertEq(p.shares.balanceOf(address(holder)), 0);

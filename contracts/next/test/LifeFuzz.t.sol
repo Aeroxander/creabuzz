@@ -23,11 +23,15 @@ contract LifeFuzzTest is Platform {
     }
 
     /// @dev Place up to `n` random bids; the auction may refuse some (price at or under the clearing price, over the cap).
-    function _randomBids(Sale memory s, uint256 seed, uint256 n) internal returns (Placed[] memory placed, uint256 count) {
+    function _randomBids(Sale memory s, uint256 seed, uint256 n)
+        internal
+        returns (Placed[] memory placed, uint256 count)
+    {
         placed = new Placed[](n);
         uint256 at = s.startBlock;
         // how big the bids are for this sale: 300 up to 120,000 dollars at most, so small sales fall short and big ones overshoot
-        uint256 scale = [uint256(300), 1500, 6000, 30_000, 120_000][uint256(keccak256(abi.encode(seed, "scale"))) % 5] * DOLLAR;
+        uint256 scale =
+            [uint256(300), 1500, 6000, 30_000, 120_000][uint256(keccak256(abi.encode(seed, "scale"))) % 5] * DOLLAR;
         vm.roll(at);
         for (uint256 i; i < n; ++i) {
             uint256 r = uint256(keccak256(abi.encode(seed, i)));
@@ -47,7 +51,9 @@ contract LifeFuzzTest is Platform {
     }
 
     /// forge-config: default.fuzz.runs = 2000
-    function testFuzz_everyDollarAndShareIsAccountedForOverTheWholeSale(uint256 seed, uint8 sizeSel, uint8 nBids) public {
+    function testFuzz_everyDollarAndShareIsAccountedForOverTheWholeSale(uint256 seed, uint8 sizeSel, uint8 nBids)
+        public
+    {
         Launcher.Size size = Launcher.Size(sizeSel % 3);
         uint256 n = 1 + nBids % 10;
         Proj memory p = _launch(founder, keccak256(abi.encode("fuzz", seed)));
@@ -58,7 +64,11 @@ contract LifeFuzzTest is Platform {
         bool graduated = s.auction.isGraduated();
         uint256 raised = s.auction.currencyRaised();
         (, uint256 minimum) = launcher.sizeOf(size);
-        assertEq(graduated, raised >= minimum || (raised + count >= minimum && raised >= minimum - count), "graduation follows the minimum");
+        assertEq(
+            graduated,
+            raised >= minimum || (raised + count >= minimum && raised >= minimum - count),
+            "graduation follows the minimum"
+        );
 
         // the three steps, called in a random order by strangers, some of them refused; then the natural order finishes it
         uint256 r = uint256(keccak256(abi.encode(seed, "order")));
@@ -91,7 +101,9 @@ contract LifeFuzzTest is Platform {
             assertEq(usd.balanceOf(platform), 0);
             assertEq(usd.balanceOf(poolManager), 0);
             assertEq(usd.balanceOf(address(p.treasury)), 0);
-            assertEq(p.shares.balanceOf(address(p.finisher)), 500_000_000 * SHARE, "all 500M Shares are back for a new try");
+            assertEq(
+                p.shares.balanceOf(address(p.finisher)), 500_000_000 * SHARE, "all 500M Shares are back for a new try"
+            );
             assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Failed));
             assertFalse(p.treasury.poolOpen());
         } else {

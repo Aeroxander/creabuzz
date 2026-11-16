@@ -32,6 +32,15 @@ contract QuoteToken {
     /// @notice Addresses the token refuses to send to or from (a frozen address, as a real stablecoin can have).
     mapping(address => bool) public blocked;
 
+    /// @notice One armed call-back: when dollars are sent to `callbackOn`, the token calls `callbackTarget` with `callbackData`
+    /// (a stand-in for a token that calls back into a contract that is in the middle of a call) and records how it went.
+    address public callbackOn;
+    address public callbackTarget;
+    bytes public callbackData;
+    bool public callbackFired;
+    bool public callbackOk;
+    bytes public callbackRet;
+
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
 
@@ -51,6 +60,10 @@ contract QuoteToken {
 
     function setHooked(address who, bool on) external {
         hooked[who] = on;
+    }
+
+    function armCallback(address on, address target, bytes calldata data) external {
+        (callbackOn, callbackTarget, callbackData, callbackFired) = (on, target, data, false);
     }
 
     function setBlocked(address who, bool on) external {
@@ -94,6 +107,10 @@ contract QuoteToken {
         balanceOf[to] += value - kept;
         totalSupply -= kept + extra;
         emit Transfer(from, to, value - kept);
+        if (callbackOn != address(0) && to == callbackOn && !callbackFired) {
+            callbackFired = true;
+            (callbackOk, callbackRet) = callbackTarget.call(callbackData);
+        }
         if (hooked[to]) IQuoteHook(to).onQuoteTransfer(from, to, value, true);
         return true;
     }

@@ -81,7 +81,9 @@ abstract contract FinisherPoolBase is Platform {
         address notGuard = address(uint160(0xBEEF99 << 14) | uint160(1 << 13)); // asks for beforeInitialize, answers nothing
         deployCodeTo("MockGuard.sol:NotAGuard", "", notGuard);
         Finisher f = _finisherWith(notGuard);
-        assertFalse(f.poolIsOpen(), "a hook with no authorized() is refused rather than trusted, and the call does not revert");
+        assertFalse(
+            f.poolIsOpen(), "a hook with no authorized() is refused rather than trusted, and the call does not revert"
+        );
     }
 
     function test_poolIsOpen_aPoolWithPriceLiquidityAndTheRightGuardIsThePool() public {

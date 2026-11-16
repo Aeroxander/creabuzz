@@ -23,6 +23,7 @@ import {
     Bid,
     Checkpoint
 } from "./UniswapTest.sol";
+
 /// @notice The whole platform on top of Uniswap, built the way a deploy script builds it: Uniswap's pool manager, position
 /// manager and Permit2 (the real ones on a Sepolia fork, or a local twin built from the vendored source), then our fee
 /// controller, auction factory, strategy (mined address), pool guard (mined address), bid hook, and the real Launcher with the
@@ -122,7 +123,8 @@ abstract contract Platform is ForkGate {
         strategy = deployer.strategy(positionManager, poolManager, factory);
         guard = deployer.guard(poolManager, strategy);
         minBid = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(4)));
-        launcher = Launcher(deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), strategy, guard, minBid)));
+        launcher =
+            Launcher(deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), strategy, guard, minBid)));
         holder = LiquidityHolder(launcher.holder());
     }
 
@@ -175,10 +177,12 @@ abstract contract Platform is ForkGate {
         bytes32 salt = keccak256(abi.encode(key, "shares"));
         address impl = launcher.shareImpl();
         // the same address `Clones.cloneDeterministic` makes: EIP-1167 runtime, deployed by the Launcher with CREATE2
-        bytes memory init = abi.encodePacked(
-            hex"3d602d80600a3d3981f3363d3d373d3d3d363d73", impl, hex"5af43d82803e903d91602b57fd5bf3"
-        );
-        return address(uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(launcher), salt, keccak256(init))))));
+        bytes memory init =
+            abi.encodePacked(hex"3d602d80600a3d3981f3363d3d373d3d3d363d73", impl, hex"5af43d82803e903d91602b57fd5bf3");
+        return
+            address(
+                uint160(uint256(keccak256(abi.encodePacked(bytes1(0xff), address(launcher), salt, keccak256(init)))))
+            );
     }
 
     function _open(Proj memory p, Launcher.Size size) internal returns (Sale memory s) {
@@ -330,7 +334,9 @@ abstract contract Platform is ForkGate {
                 SwapParams({
                     zeroForOne: zeroForOne,
                     amountSpecified: -int256(amountIn),
-                    sqrtPriceLimitX96: zeroForOne ? 4_295_128_740 : 1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_341
+                    sqrtPriceLimitX96: zeroForOne
+                        ? 4_295_128_740
+                        : 1_461_446_703_485_210_103_287_273_052_203_988_822_378_723_970_341
                 }),
                 TestSettings({takeClaims: false, settleUsingBurn: false}),
                 ""

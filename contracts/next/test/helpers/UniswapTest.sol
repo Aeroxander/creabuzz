@@ -92,7 +92,9 @@ interface ISwapTest {
 
 /// @notice The view of `Deployer` the tests use (the contract itself is deployed from its artifact).
 interface IDeployer {
-    function localStack(address permit2) external returns (address poolManager, address positionManager, address swapTest);
+    function localStack(address permit2)
+        external
+        returns (address poolManager, address positionManager, address swapTest);
     function auctionFactory(address feeController) external returns (address);
     function strategy(address positionManager, address poolManager, address factory) external returns (address);
     function guard(address poolManager, address strategy) external returns (address);
@@ -116,13 +118,9 @@ interface IPositionManagerTest {
     function permit(address spender, uint256 tokenId, uint256 deadline, uint256 nonce, bytes calldata signature)
         external
         payable;
-    function permitForAll(
-        address owner,
-        address operator,
-        uint256 deadline,
-        uint256 nonce,
-        bytes calldata signature
-    ) external payable;
+    function permitForAll(address owner, address operator, uint256 deadline, uint256 nonce, bytes calldata signature)
+        external
+        payable;
 }
 
 /// @notice The pool manager functions the tests call besides `extsload`.

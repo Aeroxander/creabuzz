@@ -253,16 +253,22 @@ contract LauncherTest is Base {
         address four = deployCode("FixedFeeController.sol:FixedFeeController", abi.encode(platform, uint24(40_000)));
         address owned = address(new OwnedFeeController(feeController));
         address none = makeAddr("no controller");
-        address[4] memory bad = [two, four, owned, none];
+        address noRecipient = address(new ZeroRecipientController(feeController));
+        address[5] memory bad = [two, four, owned, none, noRecipient];
         for (uint256 i; i < bad.length; ++i) {
             address f = address(new MockFactory(bad[i]));
             address strat = address(uint160(0x57A7E7 + i));
-            deployCodeTo("MockStrategy.sol:MockStrategy", abi.encode(FAKE_POOL_MANAGER, FAKE_POSITION_MANAGER, f), strat);
+            deployCodeTo(
+                "MockStrategy.sol:MockStrategy", abi.encode(FAKE_POOL_MANAGER, FAKE_POSITION_MANAGER, f), strat
+            );
             address g = address(uint160(0xAA00 << 20 | (i + 1) << 24) | uint160(1 << 13));
             deployCodeTo("MockGuard.sol:MockGuard", abi.encode(strat), g);
             vm.expectRevert(Launcher.BadStack.selector);
             deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), strat, g, minBid));
         }
+        // a strategy with no code at all
+        vm.expectRevert(Launcher.BadStack.selector);
+        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), makeAddr("not a strategy"), GUARD, minBid));
         // the right controller is accepted (the setUp Launcher), and its recipient is the platform's fee address
         assertEq(launcher.raiseFeeRecipient(), platform);
     }
@@ -377,7 +383,8 @@ contract OwnedFeeController {
     }
 
     function getProtocolFeeAmount(address c, uint256 a) external view returns (uint256) {
-        (bool ok, bytes memory r) = _real.staticcall(abi.encodeWithSignature("getProtocolFeeAmount(address,uint256)", c, a));
+        (bool ok, bytes memory r) =
+            _real.staticcall(abi.encodeWithSignature("getProtocolFeeAmount(address,uint256)", c, a));
         require(ok);
         return abi.decode(r, (uint256));
     }
@@ -386,5 +393,25 @@ contract OwnedFeeController {
         (bool ok, bytes memory r) = _real.staticcall(abi.encodeWithSignature("protocolFeeRecipient()"));
         require(ok);
         return abi.decode(r, (address));
+    }
+}
+
+/// @dev A fee controller with the right fee and no owner, but nobody to pay.
+contract ZeroRecipientController {
+    address private immutable _real;
+
+    constructor(address real) {
+        _real = real;
+    }
+
+    function getProtocolFeeAmount(address c, uint256 a) external view returns (uint256) {
+        (bool ok, bytes memory r) =
+            _real.staticcall(abi.encodeWithSignature("getProtocolFeeAmount(address,uint256)", c, a));
+        require(ok);
+        return abi.decode(r, (uint256));
+    }
+
+    function protocolFeeRecipient() external pure returns (address) {
+        return address(0);
     }
 }

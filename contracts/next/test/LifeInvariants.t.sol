@@ -98,15 +98,18 @@ contract LifeInvariantsTest is Test {
         }
         assertEq(h.U().balanceOf(h.FOUNDER()), 0, "the founder never holds a dollar");
         assertEq(h.U().balanceOf(address(h.L())), 0);
-        assertEq(h.U().balanceOf(address(h.H())), h.H().owed(address(h.U()), h.PLATFORM()), "the holder keeps only what it owes");
+        assertEq(
+            h.U().balanceOf(address(h.H())),
+            h.H().owed(address(h.U()), h.PLATFORM()),
+            "the holder keeps only what it owes"
+        );
         assertEq(h.U().balanceOf(h.STRATEGY()), 0, "the strategy never keeps a dollar");
     }
 
     /// The buckets never add up to more than the dollars held.
     function invariant_theBucketsNeverExceedTheBalance() public view {
-        (uint256 sp, uint256 me, uint256 pe, uint256 fo) = (
-            h.T().spendable(), h.T().melting(), h.T().permanentFloor(), h.T().feesOwed()
-        );
+        (uint256 sp, uint256 me, uint256 pe, uint256 fo) =
+            (h.T().spendable(), h.T().melting(), h.T().permanentFloor(), h.T().feesOwed());
         assertGe(h.U().balanceOf(address(h.T())), sp + me + pe + fo);
     }
 
@@ -144,10 +147,20 @@ contract LifeInvariantsTest is Test {
     function _treasuryFlags()
         internal
         view
-        returns (uint256, uint256, uint256, uint256, uint256, uint256, bool saleClosed, bool settled, bool abandoned, bool poolOpen)
+        returns (
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            uint256,
+            bool saleClosed,
+            bool settled,
+            bool abandoned,
+            bool poolOpen
+        )
     {
-        (saleClosed, settled, abandoned, poolOpen) = (
-            h.T().saleClosed(), h.T().settled(), h.T().abandoned(), h.T().poolOpen()
-        );
+        (saleClosed, settled, abandoned, poolOpen) =
+            (h.T().saleClosed(), h.T().settled(), h.T().abandoned(), h.T().poolOpen());
     }
 }

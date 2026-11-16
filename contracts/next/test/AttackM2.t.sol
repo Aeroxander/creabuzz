@@ -731,7 +731,9 @@ contract AttackM2LaunchTest is Base {
         (, address tr,) = _launch(founder, keccak256("late")); // the founder reads the new settings and commits to them
         assertEq(Treasury(tr).exitFeeBps(), 1000, "a founder who commits to the new settings gets them");
         assertEq(Treasury(tr).platform(), s.platform);
-        assertEq(Treasury(tr).opener(), launcher.project(founder, keccak256("late")).finisher, "but not a retargeted opener");
+        assertEq(
+            Treasury(tr).opener(), launcher.project(founder, keccak256("late")).finisher, "but not a retargeted opener"
+        );
         assertEq(Treasury(tr).salePath(), address(launcher), "and not a retargeted sale path");
     }
 

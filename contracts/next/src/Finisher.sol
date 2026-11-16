@@ -131,7 +131,8 @@ contract Finisher {
     /// @notice Set up the clone, once. The Launcher calls it in the transaction that makes the clone.
     function initialize(address treasury_, address shares_, address quote_) external {
         if (msg.sender != launcher) revert NotLauncher();
-        if (address(treasury) != address(0) || treasury_ == address(0) || shares_ == address(0) || quote_ == address(0)) {
+        if (address(treasury) != address(0) || treasury_ == address(0) || shares_ == address(0) || quote_ == address(0))
+        {
             revert BadSetup();
         }
         (treasury, shares, quote) = (ITreasuryFinish(treasury_), IShares(shares_), IERC20(quote_));
@@ -265,7 +266,7 @@ contract Finisher {
 
     // ================================================ reading ========================================================
 
-    /// @notice True when the project's pool exists: the pool manager has a price and liquidity at the key whose hook is the
+    /// @notice True when the project's pool exists: the pool manager holds liquidity at the key whose hook is the
     /// platform's guard, and that guard names the strategy as the only address that may create the pool. Read from the pool
     /// manager's storage, never from an event.
     function poolIsOpen() public view returns (bool) {
@@ -274,8 +275,8 @@ contract Finisher {
         } catch {
             return false;
         }
-        bytes32 id = _poolId();
-        return PoolRead.sqrtPrice(poolManager, id) != 0 && PoolRead.liquidity(poolManager, id) != 0;
+        // liquidity in a pool means the pool was created (a pool nobody created has none), so this is the only read needed
+        return PoolRead.liquidity(poolManager, _poolId()) != 0;
     }
 
     /// @notice The block from which `abandon` is allowed for the current sale.
@@ -314,6 +315,6 @@ contract Finisher {
 
     function _sharesToTreasury() private returns (uint256 held) {
         held = shares.balanceOf(address(this));
-        if (held != 0 && !shares.transfer(address(treasury), held)) revert WrongStage();
+        if (held != 0) shares.transfer(address(treasury), held); // the project's own token: it reverts rather than return false
     }
 }

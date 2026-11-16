@@ -37,6 +37,11 @@ compilation_restrictions = [
   # here is the repo's own (lib/openzeppelin-contracts, not the older one nested under the auction).
   { paths = "src/{ShareToken,Vester,Treasury,Launcher,RollingCap,Finisher,LiquidityHolder,Interfaces}.sol", version = "=0.8.37", optimizer_runs = 200 },
   { paths = "lib/openzeppelin-contracts/**", version = "=0.8.37", optimizer_runs = 200 },
+  # The milestone 2 and 3 test files too (they import first-party code, and their contracts must stay under the 49,152-byte
+  # creation-code limit). The shared helpers `ForkGate`, `ForkPick` and `UniswapTest` are `>=0.8.26` on purpose and are not listed.
+  { paths = "test/{AttackM2,Treasury,TreasuryActions,TreasuryAttacks,TreasuryEdges,TreasuryFuzz,TreasuryInvariants,TreasuryAbandon,Launcher,Life,LifeFuzz,LifeInvariants,FinishAttacks,FinisherPool,SaleRules,MarketAttacks,LiquidityHolder,GasM3,Gas,Vester,ShareToken,RollingCap}.t.sol", version = "=0.8.37", optimizer_runs = 200 },
+  { paths = "test/helpers/{Base,Platform,LifeHandler,TreasuryHandler}.sol", version = "=0.8.37", optimizer_runs = 200 },
+  { paths = "test/mocks/{QuoteToken,MockGuard,MockStrategy,BatchAccount}.sol", version = "=0.8.37", optimizer_runs = 200 },
 ]
 additional_compiler_profiles = [{ name = "own", optimizer_runs = 200 }]
 

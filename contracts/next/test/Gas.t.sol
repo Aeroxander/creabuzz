@@ -31,7 +31,9 @@ contract GasTest is Base {
         (bool ok,) = address(launcher).call(call);
         g -= gasleft();
         assertTrue(ok);
-        _measure("Launcher.launch: four clones, the allocation, the setup (first project of this founder)", g, 1_100_000);
+        _measure(
+            "Launcher.launch: four clones, the allocation, the setup (first project of this founder)", g, 1_100_000
+        );
         // a second project in the same network is the same work with warm settings
         vm.prank(bob);
         _cold();

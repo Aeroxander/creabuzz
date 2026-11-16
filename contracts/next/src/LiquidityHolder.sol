@@ -127,9 +127,8 @@ contract LiquidityHolder {
         address t0 = ILauncherView(launcher).treasuryOfShares(key.currency0);
         address t1 = ILauncherView(launcher).treasuryOfShares(key.currency1);
         if ((t0 == address(0)) == (t1 == address(0))) revert UnknownProject();
-        (treasury, sharesToken, quote) = t0 != address(0)
-            ? (t0, key.currency0, key.currency1)
-            : (t1, key.currency1, key.currency0);
+        (treasury, sharesToken, quote) =
+            t0 != address(0) ? (t0, key.currency0, key.currency1) : (t1, key.currency1, key.currency0);
         if (key.hooks != guard) revert UnknownProject();
     }
 

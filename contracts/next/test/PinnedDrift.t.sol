@@ -60,21 +60,20 @@ contract PinnedDriftTest is SaleBase {
     /// Any change to the vendored source or to these build settings changes a hash. When one fails: read the upstream diff, check
     /// `src/Pinned.sol` and the drift tests below against it, then update the hash. The hashes were taken on 16 November 2026 at
     /// continuous-clearing-auction v2.1.0 plus two commits and liquidity-launcher v3.0.0 (see docs/next-version/M1-FACTS.md).
-    bytes32 internal constant H_STRATEGY =
-        0x88c9c9fbe02f84bc1578973bc6a4cbe892b37aac9422996ef8fea9b4a3ac256c;
-    bytes32 internal constant H_FACTORY =
-        0x00c51816e2621745852769a04339565a64efa4d2ddf593845f4add765fe339d9;
-    bytes32 internal constant H_POOL_MANAGER =
-        0xf160a81a723908b264f322fad1f972109022837c4eac34a898797dc6e43c476e;
-    bytes32 internal constant H_POSITION_MANAGER =
-        0xa71370dc46d633b73f5bac3e9a55cde6073d7b523becc7f4c00a1f4d99c23640;
-    bytes32 internal constant H_POOL_GUARD =
-        0x12a9cad046b377bfe8b9148fb64ac14f0e3d6c7c56b15c919953e3d3851a00b5; // our PoolGuard, which is the vendored InitializerHook with one address
+    bytes32 internal constant H_STRATEGY = 0x88c9c9fbe02f84bc1578973bc6a4cbe892b37aac9422996ef8fea9b4a3ac256c;
+    bytes32 internal constant H_FACTORY = 0x00c51816e2621745852769a04339565a64efa4d2ddf593845f4add765fe339d9;
+    bytes32 internal constant H_POOL_MANAGER = 0xf160a81a723908b264f322fad1f972109022837c4eac34a898797dc6e43c476e;
+    bytes32 internal constant H_POSITION_MANAGER = 0xa71370dc46d633b73f5bac3e9a55cde6073d7b523becc7f4c00a1f4d99c23640;
+    bytes32 internal constant H_POOL_GUARD = 0x12a9cad046b377bfe8b9148fb64ac14f0e3d6c7c56b15c919953e3d3851a00b5; // our PoolGuard, which is the vendored InitializerHook with one address
 
     function test_drift_selectorsOfEveryPinnedFunctionAreTheVendoredOnes() public view {
         LBPStrategy st = LBPStrategy(payable(address(0))); // public variables expose their getter's selector on an instance
         InitializerHook gh = InitializerHook(address(0));
-        assertEq(IPinnedStrategy.initializeDistribution.selector, LBPStrategy.initializeDistribution.selector, "initializeDistribution");
+        assertEq(
+            IPinnedStrategy.initializeDistribution.selector,
+            LBPStrategy.initializeDistribution.selector,
+            "initializeDistribution"
+        );
         assertEq(IPinnedStrategy.migrate.selector, ILBPStrategy.migrate.selector, "migrate");
         assertEq(IPinnedStrategy.initializers.selector, ILBPStrategy.initializers.selector, "initializers");
         assertEq(IPinnedStrategy.registeredPoolIds.selector, st.registeredPoolIds.selector, "registeredPoolIds");
@@ -83,16 +82,46 @@ contract PinnedDriftTest is SaleBase {
         assertEq(IPinnedStrategy.initializerFactory.selector, st.initializerFactory.selector, "initializerFactory");
         assertEq(IPinnedAuction.isGraduated.selector, IContinuousClearingAuction.isGraduated.selector, "isGraduated");
         assertEq(IPinnedAuction.currencyRaised.selector, IAuctionStorage.currencyRaised.selector, "currencyRaised");
-        assertEq(IPinnedAuction.lbpInitializationParams.selector, ILBPInitializer.lbpInitializationParams.selector, "lbpInitializationParams");
+        assertEq(
+            IPinnedAuction.lbpInitializationParams.selector,
+            ILBPInitializer.lbpInitializationParams.selector,
+            "lbpInitializationParams"
+        );
         assertEq(IPinnedAuction.endBlock.selector, ILBPInitializer.endBlock.selector, "endBlock");
-        assertEq(IPinnedAuction.sweepUnsoldTokens.selector, ILBPInitializer.sweepUnsoldTokens.selector, "sweepUnsoldTokens");
-        assertEq(IPinnedAuctionFactory.protocolFeeController.selector, ContinuousClearingAuctionFactory.protocolFeeController.selector, "protocolFeeController");
-        assertEq(IPinnedFeeController.getProtocolFeeAmount.selector, IProtocolFeeController.getProtocolFeeAmount.selector, "getProtocolFeeAmount");
-        assertEq(IPinnedFeeController.protocolFeeRecipient.selector, IProtocolFeeController.protocolFeeRecipient.selector, "protocolFeeRecipient");
+        assertEq(
+            IPinnedAuction.sweepUnsoldTokens.selector, ILBPInitializer.sweepUnsoldTokens.selector, "sweepUnsoldTokens"
+        );
+        assertEq(
+            IPinnedAuctionFactory.protocolFeeController.selector,
+            ContinuousClearingAuctionFactory.protocolFeeController.selector,
+            "protocolFeeController"
+        );
+        assertEq(
+            IPinnedFeeController.getProtocolFeeAmount.selector,
+            IProtocolFeeController.getProtocolFeeAmount.selector,
+            "getProtocolFeeAmount"
+        );
+        assertEq(
+            IPinnedFeeController.protocolFeeRecipient.selector,
+            IProtocolFeeController.protocolFeeRecipient.selector,
+            "protocolFeeRecipient"
+        );
         // `extsload(bytes32)` is overloaded upstream, so its selector is proven by the read tests below, which call it
-        assertEq(IPinnedPositionManager.modifyLiquidities.selector, IPositionManager.modifyLiquidities.selector, "modifyLiquidities");
-        assertEq(IPinnedPositionManager.getPoolAndPositionInfo.selector, IPositionManager.getPoolAndPositionInfo.selector, "getPoolAndPositionInfo");
-        assertEq(IPinnedPositionManager.getPositionLiquidity.selector, IPositionManager.getPositionLiquidity.selector, "getPositionLiquidity");
+        assertEq(
+            IPinnedPositionManager.modifyLiquidities.selector,
+            IPositionManager.modifyLiquidities.selector,
+            "modifyLiquidities"
+        );
+        assertEq(
+            IPinnedPositionManager.getPoolAndPositionInfo.selector,
+            IPositionManager.getPoolAndPositionInfo.selector,
+            "getPoolAndPositionInfo"
+        );
+        assertEq(
+            IPinnedPositionManager.getPositionLiquidity.selector,
+            IPositionManager.getPositionLiquidity.selector,
+            "getPositionLiquidity"
+        );
         assertEq(IPinnedPositionManager.ownerOf.selector, bytes4(keccak256("ownerOf(uint256)")), "ownerOf");
         assertEq(IPinnedGuard.authorized.selector, gh.authorized.selector, "authorized");
     }
@@ -163,12 +192,15 @@ contract PinnedDriftTest is SaleBase {
             tickSpacing: 200,
             hooks: IHooks(address(0xC))
         });
-        PoolKey memory pk = PoolKey({currency0: address(0xA), currency1: address(0xB), fee: 10_000, tickSpacing: 200, hooks: address(0xC)});
+        PoolKey memory pk = PoolKey({
+            currency0: address(0xA), currency1: address(0xB), fee: 10_000, tickSpacing: 200, hooks: address(0xC)
+        });
         assertEq(abi.encode(vk), abi.encode(pk), "PoolKey");
         assertEq(PoolId.unwrap(vk.toId()), PoolRead.id(pk), "the pool id is the hash of the encoded key");
 
         VInit memory vi = VInit({initialPriceX96: 1, tokensSold: 2, currencyRaised: 3});
-        LBPInitializationParams memory pi = LBPInitializationParams({initialPriceX96: 1, tokensSold: 2, currencyRaised: 3});
+        LBPInitializationParams memory pi =
+            LBPInitializationParams({initialPriceX96: 1, tokensSold: 2, currencyRaised: 3});
         assertEq(abi.encode(vi), abi.encode(pi), "LBPInitializationParams");
         // an empty list of position definitions is the same bytes as an empty list of anything
         assertEq(abi.encode(new uint256[](0)).length, 64);
@@ -196,14 +228,20 @@ contract PinnedDriftTest is SaleBase {
         _bid(s, makeAddr("a"), 12_000e6, 100);
         _toEnd(s);
         vm.roll(s.endBlock + 1);
-        assertEq(PoolRead.sqrtPrice(IPinnedPoolManager(address(poolManager)), PoolRead.id(_pin(s.key))), 0, "no pool yet");
+        assertEq(
+            PoolRead.sqrtPrice(IPinnedPoolManager(address(poolManager)), PoolRead.id(_pin(s.key))), 0, "no pool yet"
+        );
         assertEq(PoolRead.liquidity(IPinnedPoolManager(address(poolManager)), PoolRead.id(_pin(s.key))), 0);
         treasury.openPool(ILBPStrategy(address(strategy)), ILBPInitializer(address(s.auction)));
         PoolId id = s.key.toId();
         (uint160 price,,,) = poolManager.getSlot0(id);
         assertGt(price, 0);
         assertEq(PoolRead.sqrtPrice(IPinnedPoolManager(address(poolManager)), PoolId.unwrap(id)), price, "price slot");
-        assertEq(PoolRead.liquidity(IPinnedPoolManager(address(poolManager)), PoolId.unwrap(id)), poolManager.getLiquidity(id), "liquidity slot");
+        assertEq(
+            PoolRead.liquidity(IPinnedPoolManager(address(poolManager)), PoolId.unwrap(id)),
+            poolManager.getLiquidity(id),
+            "liquidity slot"
+        );
         assertGt(poolManager.getLiquidity(id), 0);
         assertEq(PoolId.unwrap(id), PoolRead.id(_pin(s.key)));
         // and the pinned auction functions answer on the real auction
@@ -211,11 +249,20 @@ contract PinnedDriftTest is SaleBase {
         assertTrue(a.isGraduated());
         assertEq(a.currencyRaised(), s.auction.currencyRaised());
         assertEq(a.endBlock(), s.endBlock);
-        assertEq(a.lbpInitializationParams().currencyRaised + s.auction.currencyRaised() * 30_000 / 1_000_000, s.auction.currencyRaised());
+        assertEq(
+            a.lbpInitializationParams().currencyRaised + s.auction.currencyRaised() * 30_000 / 1_000_000,
+            s.auction.currencyRaised()
+        );
     }
 
     function _pin(VPoolKey memory k) internal pure returns (PoolKey memory) {
-        return PoolKey({currency0: Currency.unwrap(k.currency0), currency1: Currency.unwrap(k.currency1), fee: k.fee, tickSpacing: k.tickSpacing, hooks: address(k.hooks)});
+        return PoolKey({
+            currency0: Currency.unwrap(k.currency0),
+            currency1: Currency.unwrap(k.currency1),
+            fee: k.fee,
+            tickSpacing: k.tickSpacing,
+            hooks: address(k.hooks)
+        });
     }
 
     function test_drift_poolStateReadsMatchStateLibrary_local() public {
@@ -238,7 +285,13 @@ contract PinnedDriftTest is SaleBase {
             keccak256(vm.getCode("PoolGuard.sol:PoolGuard"))
         ];
         bytes32[5] memory want = [H_STRATEGY, H_FACTORY, H_POOL_MANAGER, H_POSITION_MANAGER, H_POOL_GUARD];
-        string[5] memory names = ["LBPStrategy", "ContinuousClearingAuctionFactory", "PoolManager", "PositionManager", "PoolGuard (the vendored InitializerHook and BaseHook inside it)"];
+        string[5] memory names = [
+            "LBPStrategy",
+            "ContinuousClearingAuctionFactory",
+            "PoolManager",
+            "PositionManager",
+            "PoolGuard (the vendored InitializerHook and BaseHook inside it)"
+        ];
         for (uint256 i; i < 5; ++i) {
             if (got[i] != want[i]) emit log_named_bytes32(string.concat("hash now: ", names[i]), got[i]);
         }
@@ -246,7 +299,11 @@ contract PinnedDriftTest is SaleBase {
             assertEq(
                 got[i],
                 want[i],
-                string.concat("UPSTREAM CHANGED: ", names[i], ". Review src/Pinned.sol and the other drift tests against the upstream diff, then update the hash")
+                string.concat(
+                    "UPSTREAM CHANGED: ",
+                    names[i],
+                    ". Review src/Pinned.sol and the other drift tests against the upstream diff, then update the hash"
+                )
             );
         }
     }

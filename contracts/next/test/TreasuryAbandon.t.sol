@@ -92,6 +92,8 @@ contract TreasuryAbandonTest is Base {
         t.markAbandoned();
         vm.prank(founder);
         t.giveShares(bob, 1000 * SHARE);
-        assertEq(shares.balanceOf(bob), 1000 * SHARE, "after: the sale phase is over, so a gift goes straight to the person");
+        assertEq(
+            shares.balanceOf(bob), 1000 * SHARE, "after: the sale phase is over, so a gift goes straight to the person"
+        );
     }
 }
