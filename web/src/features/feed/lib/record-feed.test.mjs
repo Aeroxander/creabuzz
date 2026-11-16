@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { parseTaskRecord } from "../../launchpad/lib/tasks.ts";
+import {
+  parseTaskRecord,
+  SELF_CHECKED_LABEL,
+} from "../../launchpad/lib/tasks.ts";
 import {
   answersLine,
   confirmedTaskIds,
@@ -200,6 +203,101 @@ test("work accepted is an item when the project's own rules accept it: confirmed
     );
     assert.deepEqual(items([bad.confirm], badRecords), []);
   }
+});
+
+/** A founder alone on a project: a task for themself, handed in and checked by them at `at`. */
+function ownWork(at) {
+  const task = ev(
+    FOUNDER,
+    [
+      ["l", "creaton-task"],
+      ["task-part", "task"],
+      ["task-helper", FOUNDER],
+      ["task-what", "Wrote the first page"],
+      ["task-done", "Wrote the first page"],
+      ["task-size", "small"],
+    ],
+    at - 20,
+  );
+  const step = (part, extra, when) =>
+    ev(
+      FOUNDER,
+      [
+        ["l", "creaton-task"],
+        ["task-part", part],
+        ["task", task.id],
+        ["e", task.id],
+        ...extra,
+      ],
+      when,
+    );
+  const evidence = step(
+    "evidence",
+    [["task-link", "https://example.org/p"]],
+    at - 10,
+  );
+  const confirm = step("confirm", [["task-evidence", evidence.id]], at);
+  return {
+    records: [task, evidence, confirm].map((e) => parseTaskRecord(e)),
+    confirm,
+  };
+}
+const aloneProject = new Map([
+  [
+    COORD,
+    {
+      coordinate: COORD,
+      founder: FOUNDER,
+      team: new Set([FOUNDER]),
+      voices: new Map([[FOUNDER, null]]),
+    },
+  ],
+]);
+const aloneItems = (events, taskRecords) =>
+  feedItems({ events, projects: aloneProject, taskRecords, now: NOW });
+
+test('work only the founder checked is labelled "Done, checked by the founder", never "Work done alone" or "accepted"', () => {
+  const { records, confirm } = ownWork(NOW - 500);
+  const out = aloneItems([confirm], records);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].selfChecked, true);
+  assert.equal(itemLabel(out[0]), SELF_CHECKED_LABEL);
+  assert.equal(SELF_CHECKED_LABEL, "Done, checked by the founder");
+});
+
+test("work the same project's later update already quotes is not shown again beneath it", () => {
+  const { records, confirm } = ownWork(NOW - 500);
+  const said = (at, body) =>
+    ev(FOUNDER, [["update-kind", "weekly"]], at, { title: "Week one", body });
+  const quoting = said(
+    NOW - 400,
+    "Done, checked by the founder: Wrote the first page",
+  );
+  // The update that says it, and nothing under it.
+  assert.deepEqual(
+    aloneItems([confirm, quoting], records).map((i) => i.kind),
+    ["update"],
+  );
+  // An update that says something else leaves the work its own item.
+  assert.deepEqual(
+    aloneItems([confirm, said(NOW - 400, "Quiet week")], records)
+      .map((i) => i.kind)
+      .sort(),
+    ["update", "work"],
+  );
+  // An update from before the check cannot have quoted it.
+  assert.deepEqual(
+    aloneItems(
+      [
+        confirm,
+        said(NOW - 600, "Done, checked by the founder: Wrote the first page"),
+      ],
+      records,
+    )
+      .map((i) => i.kind)
+      .sort(),
+    ["update", "work"],
+  );
 });
 
 test("items come newest first, and a record dated ahead is shown as signed now, not above everything", () => {

@@ -247,20 +247,17 @@ test("a week later Home asks once, for one project, with one green button and no
   await expect(
     page.getByTestId("home-top").locator("a.bg-primary, button.bg-primary"),
   ).toHaveCount(1);
-  // The update-day rail counts the project as due but does not ask a second time.
-  await expect(page.getByTestId("update-day-rail")).toContainText("1 is due");
-  await expect(
-    page.getByTestId("update-day-rail").getByRole("link"),
-  ).toHaveCount(0);
-  // Put away for a day, it stays put away: the rail still does not ask in its place.
+  // The update-day rail does not say it again: the project the next step asks about is not counted as due, and with
+  // nothing else to count the rail is not there.
+  await expect(step).toBeVisible();
+  await expect(page.getByTestId("update-day-rail")).toHaveCount(0);
+  // Put away for a day, it stays put away: the rail does not ask in its place.
   await step.getByTestId("home-next-step-dismiss").click();
   await expect(step).toHaveCount(0);
   await page.reload();
-  await expect(page.getByTestId("update-day-rail")).toContainText("1 is due");
+  await expect(page.getByTestId("home-top")).toBeVisible();
   await expect(step).toHaveCount(0);
-  await expect(
-    page.getByTestId("update-day-rail").getByRole("link"),
-  ).toHaveCount(0);
+  await expect(page.getByTestId("update-day-rail")).toHaveCount(0);
 });
 
 test("after ten days the next step asks for one line to start again", async ({

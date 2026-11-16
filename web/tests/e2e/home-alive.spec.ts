@@ -323,10 +323,10 @@ test("the update-day rail counts who has posted and who is due, and takes a foun
   await page.goto("/?tab=updates");
   const rail = page.getByTestId("update-day-rail");
   await expect(rail.getByTestId("update-day-words")).toContainText(
-    "2 projects have posted, 3 are due.",
+    "2 projects have posted, 2 are due.",
   );
   await expect(rail).not.toContainText(/late|missed|overdue/i);
-  // One reminder per project: Home's next step already asks for Mine's update, so the rail does not ask again.
+  // One reminder per project: Home's next step already asks for Mine's update, so the rail neither counts it nor asks again.
   const step = page.getByTestId("home-next-step");
   await expect(step).toContainText(
     "Mine: last update was 9 days ago. Post one to start a new run.",

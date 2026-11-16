@@ -4,9 +4,9 @@
  * so it never disagrees with a project's page.
  *
  * For someone who started a project that is due, it carries "Post your update" straight to that project's update, unless
- * Home's next step already carries that same project's due update (one reminder per project, never two). It shows only
- * when every project and update was read, so the counts are the whole server's; and nothing until a project is due or
- * has posted.
+ * Home's next step already carries that same project's due update (one reminder per project, never two): that project is
+ * left out of the count too, so the rail never says again what the next step just said. It shows only when every
+ * project and update was read, so the counts are the whole server's; and nothing until a project is due or has posted.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -56,16 +56,22 @@ export function UpdateDayRail() {
     );
   }, [listed, complete, me]);
   if (!tally) return null;
-  const words = updateDayWords(tally.posted.length, tally.due.length);
-  if (!words) return null;
-  // Home's next step already asks for a project's due update: the rail does not ask a second time. While that is still
-  // being read the rail waits rather than show a button that then goes away.
+  // Home's next step already asks for a project's due update: the rail neither asks a second time nor counts that
+  // project as due. While that is still being read the rail waits rather than show a line that then changes.
   const covered = new Set(
     mine.needs.flatMap(({ need }) =>
       need.kind === "update-due" ? [need.coordinate] : [],
     ),
   );
   const mayPost = mine.ready || mine.failed;
+  if (me && !mayPost) return null;
+  const words = updateDayWords(
+    tally.posted.length,
+    tally.due.filter(
+      ({ record }) => !covered.has(launchCoordinate(record.author, record.id)),
+    ).length,
+  );
+  if (!words) return null;
   const own = tally.due.filter(
     ({ record }) =>
       mayPost &&

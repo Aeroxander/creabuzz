@@ -22,6 +22,7 @@ import type { KnownAgents } from "../../launchpad/lib/task-own-check.ts";
 import {
   isTaskRecordTags,
   projectTasks,
+  SELF_CHECKED_LABEL,
   type TaskRecord,
 } from "../../launchpad/lib/tasks.ts";
 import { isTeamAnswerTags } from "../../launchpad/lib/team.ts";
@@ -248,6 +249,16 @@ export function feedItems(input: {
     });
     for (const task of tasks) {
       if (task.state !== "confirmed" || !task.accepted) continue;
+      // An update that came after the check and quotes the work already says it: the work is not shown again beneath.
+      const checkedAt = Math.min(task.accepted.confirmedAt, now);
+      const said = [...out.values()].some(
+        (item) =>
+          item.kind === "update" &&
+          item.coordinate === project.coordinate &&
+          item.at >= checkedAt &&
+          `${item.update.title}\n${item.update.body}`.includes(task.what),
+      );
+      if (said) continue;
       out.set(`work:${task.id}`, {
         id: `work:${task.id}`,
         kind: "work",
@@ -288,7 +299,7 @@ export function itemLabel(item: FeedItem): string {
           ? "Goal missed"
           : "Goal changed";
     case "work":
-      return item.selfChecked ? "Work done alone" : "Work accepted";
+      return item.selfChecked ? SELF_CHECKED_LABEL : "Work accepted";
     case "started":
       return "Just started";
     case "update":
