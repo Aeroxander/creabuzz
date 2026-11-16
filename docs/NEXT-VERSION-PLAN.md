@@ -315,7 +315,7 @@ Read in code, nothing run:
 
 Built in `contracts/next` (a separate Foundry project; the existing contracts are untouched). Report:
 `docs/next-version/M1-REPORT.md`; facts read from the vendored code and checked on Sepolia:
-`docs/next-version/M1-FACTS.md`. Everything below was run (88 tests, on a local copy of the Uniswap code and on a Sepolia
+`docs/next-version/M1-FACTS.md`. Everything below was run (96 tests at the last count, on a local copy of the Uniswap code and on a Sepolia
 fork against Uniswap's real pool manager, position manager and trade router) unless it says "outside knowledge".
 
 - **Section 8, row 1 is proven.** Sale, then pool, then a trade works, with exact balances at each step, with the dollar
@@ -356,3 +356,24 @@ were wrong:
   costs nothing to make.
 - **Section 7, item 1, "extend the first-day posting limit to project records"**, is not enough on its own: the limits are per
   account and accounts are free. Uploads have no byte quota yet, so the hosted example closes uploads to first-day accounts.
+
+## Milestone 1 review fixes and open points (16 November 2026)
+
+A reviewer checked milestone 1; the fixes are in `contracts/next`. Three things the plan must now say:
+
+- **The pool guard is mandatory.** Without a guard hook, a stranger's plain pool at the same price makes the finish think a
+  pool exists when it is not the project's pool. The Launcher (milestone 2) must refuse to open a sale with no guard, and
+  the finish counts only a pool whose hook is the guard. Today this is enforced only in the test stand-in; no Launcher exists.
+- **The licence is not cleared.** The strategy's code includes two BUSL-1.1 files from Uniswap's pool code
+  (`Pool.sol`, `Position.sol`; change date 2027-06-15). Section 4's "the licence of the vendored code must be checked first"
+  is still open. Counsel must say whether we can deploy a strategy we compiled before that date, or we use a deployment
+  built by Uniswap if one is published. Nothing is deployed anywhere.
+- **Fork tests repeat only where a cache exists.** The pinned block repeats from Foundry's local cache or an archive
+  node; elsewhere the fork tests now skip with a clear message instead of failing, and the local suite (47 tests) is what a
+  new machine runs.
+
+Also still open for the owner: what the unused part of the Share reserve becomes after the pool step; what happens to the
+money if the pool step fails (the treasury holds 97 of 100 dollars with no pool, and the plan now refuses to split it);
+whether to build with 11,111 optimizer runs (Uniswap's setting) or 200 (about 470,000 gas cheaper to open a sale); and
+whether the vendored strategy and auction versions are inside the audits Uniswap lists (they list audits only up to the
+earlier versions).
