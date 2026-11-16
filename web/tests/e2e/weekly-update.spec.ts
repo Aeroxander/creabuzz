@@ -167,9 +167,9 @@ async function openDialog(page: Page) {
   await page.goto(PAGE);
   await page
     .getByTestId("project-update-card")
-    .getByRole("button", { name: "Post one" })
+    .getByRole("button", { name: "Post this week's update" })
     .click();
-  return page.getByRole("dialog", { name: "Post update" });
+  return page.getByRole("dialog", { name: "Post this week's update" });
 }
 
 /** Title, "In one line" and "Draft from the record" are under "More options", closed until asked for. */
@@ -468,7 +468,7 @@ async function openFresh(page: Page) {
     .getByRole("button", { name: /^Post (this week's )?update$/ })
     .first()
     .click();
-  return page.getByRole("dialog", { name: "Post update" });
+  return page.getByRole("dialog", { name: "Post this week's update" });
 }
 
 test("after the first update: the next update's date, 'Add a weekly reminder' as the one filled button, and a calendar file that promises no email or push", async ({
@@ -744,6 +744,32 @@ test("'Nothing new this week' fills a quiet week, goes away once there are words
     expect.arrayContaining([
       ["update-part", "done", "Quiet week. Still working on it."],
     ]),
+  );
+});
+
+test("'Nothing new this week' is not offered while work finished is listed, and comes back once every line is left out", async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const relay = createMockRelay({ applyDeletions: true });
+  seed(relay, 10);
+  soloTask(relay, "Write the first page", now() - 4 * DAY);
+  await install(page, relay, ME_KEY);
+  const dialog = await openDialog(page);
+  const quiet = dialog.getByRole("button", { name: "Nothing new this week" });
+  await expect(dialog.getByTestId("update-accepted-item")).toHaveCount(1, {
+    timeout: 30_000,
+  });
+  // A week with work done is not a quiet one: the line would contradict the work above it.
+  await expect(quiet).toHaveCount(0);
+  await dialog
+    .getByRole("button", { name: "Leave out: Write the first page" })
+    .click();
+  await expect(dialog.getByTestId("update-accepted-item")).toHaveCount(0);
+  await expect(quiet).toBeVisible();
+  await quiet.click();
+  await expect(dialog.getByLabel("What happened this week")).toHaveValue(
+    "Quiet week. Still working on it.",
   );
 });
 

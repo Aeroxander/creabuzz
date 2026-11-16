@@ -270,7 +270,8 @@ export function PostUpdateDialog({
                 rows={3}
                 value={done}
               />
-              {done.trim() === "" ? (
+              {/* A week with work finished is not a quiet one: the link goes while a work line is offered. */}
+              {done.trim() === "" && offered.length === 0 ? (
                 <Button
                   className="h-auto p-0 max-sm:min-h-11"
                   data-testid="update-quiet-week"

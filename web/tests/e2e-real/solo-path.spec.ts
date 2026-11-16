@@ -47,7 +47,7 @@ const PROJECT = `Lantern ${RUN}`;
 const GOAL = "A first page three people read";
 const WORK = `Wrote the first page ${RUN}`;
 const PROMISE = "Publish the first page";
-const QUIET = "Quiet week. Still working on it.";
+const SAID_WORK = `Done, checked by the founder: ${WORK}`;
 const WIDE = { width: 1280, height: 800 };
 const PHONE = { width: 390, height: 844 };
 
@@ -379,7 +379,7 @@ test("3. the record, the scorecard and the picture say done, checked by the foun
   await expect(feed).not.toContainText(/accepted/i);
 });
 
-test("4. the first update, with a quiet-week note: the next update is dated, and the reminder is offered", async () => {
+test("4. the first update says the work done: the next update is dated, and the reminder is offered", async () => {
   test.setTimeout(120_000);
   await page.goto(projectPath);
   await expect(page.getByTestId("first-week-work-done")).toBeVisible();
@@ -388,14 +388,15 @@ test("4. the first update, with a quiet-week note: the next update is dated, and
     page.getByTestId("first-week").locator("button.bg-primary"),
   ).toHaveText("Post this week's update");
   await page.getByTestId("first-week-post").click();
-  const dialog = page.getByRole("dialog", { name: "Post update" });
+  const dialog = page.getByRole("dialog", { name: "Post this week's update" });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel("What happened this week")).toBeFocused();
   await stop("12-update-dialog");
-  await dialog.getByTestId("update-quiet-week").click();
-  await expect(dialog.getByLabel("What happened this week")).toHaveValue(QUIET);
+  // The work done is listed, so "Nothing new this week" is not offered beside it.
+  await expect(dialog.getByTestId("update-accepted-item")).toContainText(WORK);
+  await expect(dialog.getByTestId("update-quiet-week")).toHaveCount(0);
   await dialog.getByLabel("What's next").fill(PROMISE);
-  await stop("13-update-quiet-week");
+  await stop("13-update-work-listed");
   await dialog.getByRole("button", { name: "Publish update" }).click();
   await expect(dialog).toHaveCount(0);
   const posted = page.getByTestId("update-posted");
@@ -413,9 +414,11 @@ test("4. the first update, with a quiet-week note: the next update is dated, and
   const parts = await projectRecords("update-part");
   expect(
     parts.some(
-      (e) => e.content.includes(QUIET) || e.tags.some((t) => t.includes(QUIET)),
+      (e) =>
+        e.content.includes(SAID_WORK) ||
+        e.tags.some((t) => t.some((cell) => cell.includes(SAID_WORK))),
     ),
-    "the quiet-week note was published",
+    "the work done was published",
   ).toBe(true);
   const promised = await projectRecords("promise");
   expect(promised.map((e) => e.pubkey)).toContain(founder.pubkey);
