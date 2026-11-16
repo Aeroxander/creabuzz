@@ -36,7 +36,7 @@ export function StartedCard({
       className="glass flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-primary/40 px-3 py-1.5"
       data-testid="started-card"
     >
-      <p className="min-w-0 flex-1 break-all text-sm">
+      <p className="min-w-0 flex-1 text-sm max-sm:truncate sm:break-all">
         <span className="font-semibold">Your project is live:</span>{" "}
         <span data-testid="started-link-short">
           {window.location.host}

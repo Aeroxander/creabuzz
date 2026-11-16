@@ -113,11 +113,13 @@ for (const viewport of VIEWPORTS) {
     await expect(
       page.getByTestId("first-week").locator("button.bg-primary"),
     ).toHaveText("Add what you did");
-    // The card, with its green button, is on the first screen.
+    // The card, with its green button, is on the first screen: all of it, above the phone's Test version strip.
     const add = await page.getByTestId("first-week-add").boundingBox();
-    expect((add?.y ?? 9999) + (add?.height ?? 0)).toBeLessThanOrEqual(
-      viewport.height,
-    );
+    const strip = page.getByTestId("testnet-strip");
+    const limit = (await strip.isVisible())
+      ? ((await strip.boundingBox())?.y ?? viewport.height)
+      : viewport.height;
+    expect((add?.y ?? 9999) + (add?.height ?? 0)).toBeLessThanOrEqual(limit);
     // Chat, Announce and the listing choice are not on the page until "More to set up" is opened.
     for (const id of [
       "launch-chat",

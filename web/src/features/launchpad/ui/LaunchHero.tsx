@@ -112,7 +112,7 @@ export function LaunchHero({
           className={
             stage === "graduated"
               ? "h-16 overflow-hidden rounded-2xl sm:h-20"
-              : "h-24 overflow-hidden rounded-2xl sm:h-32"
+              : "h-16 overflow-hidden rounded-2xl sm:h-32"
           }
           style={
             record.image
