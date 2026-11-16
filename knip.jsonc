@@ -46,6 +46,13 @@
       "exports",
       "types"
     ],
+    // Shared pieces of the UI overhaul (batch 1), mounted by its later batches (project page, record, scorecard, Home).
+    // Remove each entry when its first screen uses the file.
+    "web/src/features/launchpad/ui/{CheckedBy,RecordLine}.tsx": [
+      "files",
+      "types"
+    ],
+    "web/src/shared/ui/empty-state.tsx": ["files"],
     // Desktop is not scanned (see above); its duplicate aliases are desktop's own clean-up.
     "desktop/src/**": ["duplicates"]
   }
