@@ -197,27 +197,35 @@ abstract contract LifeBase is Platform {
             10,
             "buyers' Shares plus the pool's (the auction keeps a few units of dust)"
         );
-        emit log_named_decimal_uint("life: dollars raised", m.raised, 6);
-        emit log_named_decimal_uint("life: fee to the platform (3)", m.fee, 6);
-        emit log_named_decimal_uint("life: dollars in the pool (22)", m.poolDollars, 6);
-        emit log_named_decimal_uint("life: spendable by the project (15)", p.treasury.spendable(), 6);
-        emit log_named_decimal_uint("life: melting floor (60)", p.treasury.melting(), 6);
-        emit log_named_decimal_uint("life: Shares in the pool", m.poolShares, 18);
-        emit log_named_decimal_uint(
-            "life: Shares back with the Treasury from the pool reserve", SaleParams.POOL_SHARES - m.poolShares, 18
-        );
-        emit log_named_decimal_uint("life: unsold Shares to the Treasury", unsold, 18);
-        emit log_named_decimal_uint("life: Shares bidders hold", filled, 18);
-        emit log_named_decimal_uint("life: Shares counted for exits", counting, 18);
-        emit log_named_decimal_uint(
-            "life: floor per Share, dollars, counting the pool's Shares", p.treasury.melting() * 1e30 / counting, 18
-        );
-        emit log_named_decimal_uint(
-            "life: floor per Share, dollars, leaving the pool's Shares out",
-            p.treasury.melting() * 1e30 / (counting - m.poolShares),
-            18
-        );
-        emit log_named_decimal_uint("life: price the pool opened at, dollars", _spot(_key(p)), 18);
+    }
+}
+
+abstract contract LifeBase2 is Platform {
+    function _fork() internal pure virtual returns (bool);
+
+    function setUp() public virtual {
+        _setUpPlatform(_fork());
+    }
+    function _quoteIsCurrency0() internal pure virtual returns (bool);
+
+    /// @dev The second half of the life: with a finished sale and the bids collected, a trade through the pool, the pool fees
+    /// collected and split, a hand back at the floor, and the daily release over time with a check-in lapse.
+    function test_life_tradesFeesHandBackAndTheDailyRelease() public {
+        Proj memory p = _launchOrdered(founder, _quoteIsCurrency0());
+        vm.prank(founder);
+        p.treasury.giveShares(bob, 1_000_000 * SHARE);
+        Sale memory s = _open(p, Launcher.Size.Standard);
+        uint256[5] memory ids = _fiveBids(s);
+        _toEnd(s);
+        IPositionManagerTest pm = IPositionManagerTest(positionManager);
+        uint256 positionId = pm.nextTokenId();
+        _finish(p, s);
+        for (uint256 i; i < 5; ++i) {
+            _collectBid(s, ids[i]);
+        }
+        assertEq(pm.ownerOf(positionId), address(holder));
+        uint256 finalPrice = s.auction.clearingPrice();
+        finalPrice;
 
         // ---- a trade through the pool, then collect the pool fees ------------------------------------------------------------
         usd.mint(trader, 100 * DOLLAR);
@@ -291,6 +299,58 @@ abstract contract LifeBase is Platform {
         assertEq(p.vester.released(founder), 200_000_000 * SHARE * elapsed / 365 days);
         assertEq(p.vester.released(bob), 1_000_000 * SHARE * elapsed / 365 days);
     }
+}
+
+abstract contract LifeBase3 is Platform {
+    function _fork() internal pure virtual returns (bool);
+
+    function setUp() public virtual {
+        _setUpPlatform(_fork());
+    }
+    function _quoteIsCurrency0() internal pure virtual returns (bool);
+
+    /// @dev Prints the figures of the main sale (the numbers the milestone 3 report quotes): where every dollar and Share went and
+    /// what the floor pays per Share with and without the pool's Shares in the count.
+    function test_life_theFiguresOfTheMainSale() public {
+        Proj memory p = _launchOrdered(founder, _quoteIsCurrency0());
+        Sale memory s = _open(p, Launcher.Size.Standard);
+        uint256[5] memory ids = _fiveBids(s);
+        _toEnd(s);
+        uint256 dollarsBefore = usd.balanceOf(poolManager);
+        _finish(p, s);
+        uint256 unsold = s.auction.remainingSupply();
+        uint256 filled;
+        for (uint256 i; i < 5; ++i) {
+            (, uint256 got) = _collectBid(s, ids[i]);
+            filled += got;
+        }
+        uint256 raised = s.auction.currencyRaised();
+        uint256 fee = raised * 30_000 / 1_000_000;
+        uint256 poolDollars = usd.balanceOf(poolManager) - dollarsBefore;
+        uint256 poolShares = p.shares.balanceOf(poolManager);
+        uint256 counting = p.treasury.countingSupply();
+        emit log_named_decimal_uint("life: dollars raised", raised, 6);
+        emit log_named_decimal_uint("life: fee to the platform (3)", fee, 6);
+        emit log_named_decimal_uint("life: dollars in the pool (22)", poolDollars, 6);
+        emit log_named_decimal_uint("life: spendable by the project (15)", p.treasury.spendable(), 6);
+        emit log_named_decimal_uint("life: melting floor (60)", p.treasury.melting(), 6);
+        emit log_named_decimal_uint("life: Shares in the pool", poolShares, 18);
+        emit log_named_decimal_uint(
+            "life: Shares back with the Treasury from the pool reserve", SaleParams.POOL_SHARES - poolShares, 18
+        );
+        emit log_named_decimal_uint("life: unsold Shares to the Treasury", unsold, 18);
+        emit log_named_decimal_uint("life: Shares bidders hold", filled, 18);
+        emit log_named_decimal_uint("life: Shares counted for exits", counting, 18);
+        emit log_named_decimal_uint(
+            "life: floor per Share, dollars, counting the pool's Shares", p.treasury.melting() * 1e30 / counting, 18
+        );
+        emit log_named_decimal_uint(
+            "life: floor per Share, dollars, leaving the pool's Shares out",
+            p.treasury.melting() * 1e30 / (counting - poolShares),
+            18
+        );
+        emit log_named_decimal_uint("life: price the pool opened at, dollars", _spot(_key(p)), 18);
+    }
 
     function test_life_theStrangerWhoFinishesFirstChangesNothingAboutTheOutcome() public {
         // the same sale finished by a different mix of strangers gives the same buckets
@@ -358,6 +418,86 @@ contract LifeForkQuote0Test is LifeBase {
 }
 
 contract LifeForkQuote1Test is LifeBase {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+
+    function _quoteIsCurrency0() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract LifeLocalQuote02Test is LifeBase2 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+
+    function _quoteIsCurrency0() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract LifeLocalQuote03Test is LifeBase3 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+
+    function _quoteIsCurrency0() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract LifeLocalQuote12Test is LifeBase2 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+
+    function _quoteIsCurrency0() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract LifeLocalQuote13Test is LifeBase3 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+
+    function _quoteIsCurrency0() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract LifeForkQuote02Test is LifeBase2 {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+
+    function _quoteIsCurrency0() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract LifeForkQuote03Test is LifeBase3 {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+
+    function _quoteIsCurrency0() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract LifeForkQuote12Test is LifeBase2 {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+
+    function _quoteIsCurrency0() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract LifeForkQuote13Test is LifeBase3 {
     function _fork() internal pure override returns (bool) {
         return true;
     }

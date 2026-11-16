@@ -63,21 +63,10 @@ abstract contract FinishAttacksBase is Platform {
         assertTrue(p.treasury.saleClosed());
 
         uint8[3][6] memory perms = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
-        bytes4[3] memory sel = _selectors();
         for (uint256 i; i < perms.length; ++i) {
             vm.revertToState(base);
-            uint256 completed;
             // each order is tried twice in a row; a call that reverts must leave the state exactly as it was
-            for (uint256 round; round < 2; ++round) {
-                for (uint256 j; j < 3; ++j) {
-                    bytes32 before = _state(p);
-                    vm.prank(address(uint160(0x5000 + i * 10 + j)));
-                    (bool ok,) = address(p.finisher).call(abi.encodeWithSelector(sel[perms[i][j]]));
-                    if (!ok) assertEq(_state(p), before, "a refused step changed nothing");
-                    else completed++;
-                }
-            }
-            assertGe(completed, 2, "some of the calls did work");
+            assertGe(_tryOrder(p, i, perms[i]), 2, "some of the calls did work");
             // whatever fell, a stranger who then does the three steps in order brings it to the natural end state
             vm.startPrank(stranger);
             p.finisher.openPool();
@@ -85,6 +74,20 @@ abstract contract FinishAttacksBase is Platform {
             p.finisher.sweep();
             vm.stopPrank();
             assertEq(_state(p), want, "every order ends in the state of the natural order");
+        }
+    }
+
+    /// @dev Call the three steps in the given order, twice, each by a different stranger; returns how many calls went through.
+    function _tryOrder(Proj memory p, uint256 who, uint8[3] memory order) internal returns (uint256 completed) {
+        bytes4[3] memory sel = _selectors();
+        for (uint256 round; round < 2; ++round) {
+            for (uint256 j; j < 3; ++j) {
+                bytes32 before = _state(p);
+                vm.prank(address(uint160(0x5000 + who * 10 + j)));
+                (bool ok,) = address(p.finisher).call(abi.encodeWithSelector(sel[order[j]]));
+                if (!ok) assertEq(_state(p), before, "a refused step changed nothing");
+                else completed++;
+            }
         }
     }
 
@@ -150,6 +153,41 @@ abstract contract FinishAttacksBase is Platform {
         assertFalse(usd.callbackOk(), "the call-back reverted");
         assertEq(
             bytes4(usd.callbackRet()), Finisher.Reentrancy.selector, "because the Finisher was in the middle of a call"
+        );
+    }
+}
+
+abstract contract FinishAttacksBase2 is Platform {
+    function _fork() internal pure virtual returns (bool);
+
+    function setUp() public virtual {
+        _setUpPlatform(_fork());
+    }
+
+    /// @dev One standard sale of 32,000 dollars of demand (the route's), over, all bids placed.
+    function _endedSale() internal returns (Proj memory p, Sale memory s) {
+        p = _launch(founder, keccak256("finish"));
+        s = _open(p, Launcher.Size.Standard);
+        _fiveBids(s);
+        _toEnd(s);
+        vm.roll(s.endBlock + 1);
+    }
+
+    function _state(Proj memory p) internal view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                p.treasury.spendable(),
+                p.treasury.melting(),
+                p.treasury.poolOpen(),
+                p.treasury.saleClosed(),
+                p.treasury.settled(),
+                uint8(p.finisher.stage()),
+                p.finisher.settled(),
+                usd.balanceOf(address(p.treasury)),
+                usd.balanceOf(address(p.finisher)),
+                p.shares.balanceOf(address(p.treasury)),
+                p.shares.balanceOf(address(p.finisher))
+            )
         );
     }
 
@@ -308,6 +346,14 @@ abstract contract FinishAttacksBase is Platform {
         vm.expectRevert(Finisher.WrongStage.selector);
         p.finisher.abandon();
     }
+}
+
+abstract contract FinishAttacksBase3 is Platform {
+    function _fork() internal pure virtual returns (bool);
+
+    function setUp() public virtual {
+        _setUpPlatform(_fork());
+    }
 
     function test_abandon_isRefusedForASaleThatFailedItsMinimum() public {
         Proj memory p = _launch(founder, keccak256("under"));
@@ -388,6 +434,14 @@ abstract contract FinishAttacksBase is Platform {
         vm.expectRevert(Finisher.CannotOpen.selector);
         launcher.openSale(p.id, Launcher.Size.Standard);
     }
+}
+
+abstract contract FinishAttacksBase4 is Platform {
+    function _fork() internal pure virtual returns (bool);
+
+    function setUp() public virtual {
+        _setUpPlatform(_fork());
+    }
 
     // ============================================== a partial sale =====================================================
 
@@ -428,6 +482,42 @@ contract FinishAttacksLocalTest is FinishAttacksBase {
 }
 
 contract FinishAttacksForkTest is FinishAttacksBase {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract FinishAttacksLocal2Test is FinishAttacksBase2 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract FinishAttacksLocal3Test is FinishAttacksBase3 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract FinishAttacksFork2Test is FinishAttacksBase2 {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract FinishAttacksFork3Test is FinishAttacksBase3 {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract FinishAttacksLocal4Test is FinishAttacksBase4 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract FinishAttacksFork4Test is FinishAttacksBase4 {
     function _fork() internal pure override returns (bool) {
         return true;
     }

@@ -13,7 +13,7 @@ contract LifeInvariantsTest is Test {
     LifeHandler internal h;
 
     function setUp() public {
-        h = new LifeHandler();
+        h = LifeHandler(deployCode("LifeHandler.sol:LifeHandler")); // from the build output: the handler holds a whole platform, too large to embed
         targetContract(address(h));
         bytes4[] memory sels = new bytes4[](14);
         sels[0] = h.bid.selector;

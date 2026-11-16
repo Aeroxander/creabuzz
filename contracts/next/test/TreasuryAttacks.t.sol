@@ -307,6 +307,15 @@ contract TreasuryAttacksTest is Base {
         shares.transfer(address(v), donated);
         assertEq(t.countingSupply(), 500_000_000 * SHARE - donated);
     }
+}
+
+/// @notice The second half of the Treasury's attack tests (split from the first to keep each test contract under the creation-code limit).
+contract TreasuryAttacksMoreTest is Base {
+    /// @dev What `handBack(amount)` would pay now, worked out here from the written rule.
+    function _quote(uint256 amount) internal view returns (uint256) {
+        uint256 slice = (t.melting() + t.permanentFloor()) * amount / t.countingSupply();
+        return slice - (slice * 500 + 9999) / 10_000;
+    }
 
     function test_attack_vesterAndTreasurySharesNeverEnterTheExitDenominator() public {
         _world();

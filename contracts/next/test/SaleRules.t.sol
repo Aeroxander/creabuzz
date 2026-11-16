@@ -107,6 +107,25 @@ abstract contract SaleRulesBase is Platform {
         assertEq(IPinnedStrategy(strategy).initializers(address(s.auction)).currency, address(usd));
     }
 
+    // ============================================== a stranger creates the pool first ================================
+
+    function _initializeAt(PoolKey memory key) internal returns (bool ok) {
+        vm.prank(stranger);
+        try IPoolManagerTest(poolManager).initialize(key, uint160(1) << 96) returns (int24) {
+            return true;
+        } catch {
+            return false;
+        }
+    }
+}
+
+abstract contract SaleRulesBase2 is Platform {
+    function _fork() internal pure virtual returns (bool);
+
+    function setUp() public virtual {
+        _setUpPlatform(_fork());
+    }
+
     function test_openSale_onlyTheFounderOpensAndOnlyThroughTheLauncher() public {
         Proj memory p = _launch(founder, keccak256("mine"));
         vm.prank(alice);
@@ -173,6 +192,25 @@ abstract contract SaleRulesBase is Platform {
         vm.stopPrank();
         assertEq(_price(s, 300), 4 * s.floorQ96, "tick 300 above the floor is 4 times the floor");
     }
+}
+
+abstract contract SaleRulesBase3 is Platform {
+    function _fork() internal pure virtual returns (bool);
+
+    function setUp() public virtual {
+        _setUpPlatform(_fork());
+    }
+
+    // ============================================== a stranger creates the pool first ================================
+
+    function _initializeAt(PoolKey memory key) internal returns (bool ok) {
+        vm.prank(stranger);
+        try IPoolManagerTest(poolManager).initialize(key, uint160(1) << 96) returns (int24) {
+            return true;
+        } catch {
+            return false;
+        }
+    }
 
     // ============================================== who may sweep what =================================================
 
@@ -192,17 +230,6 @@ abstract contract SaleRulesBase is Platform {
             vm.stopPrank();
         }
         assertEq(usd.balanceOf(platform), 0, "no fee was taken by those calls");
-    }
-
-    // ============================================== a stranger creates the pool first ================================
-
-    function _initializeAt(PoolKey memory key) internal returns (bool ok) {
-        vm.prank(stranger);
-        try IPoolManagerTest(poolManager).initialize(key, uint160(1) << 96) returns (int24) {
-            return true;
-        } catch {
-            return false;
-        }
     }
 
     /// @dev Before the sale opens, while it runs and after the pool step: a stranger cannot create the guarded pool (the guard
@@ -292,6 +319,30 @@ contract SaleRulesLocalTest is SaleRulesBase {
 }
 
 contract SaleRulesForkTest is SaleRulesBase {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract SaleRulesLocal2Test is SaleRulesBase2 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract SaleRulesLocal3Test is SaleRulesBase3 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract SaleRulesFork2Test is SaleRulesBase2 {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract SaleRulesFork3Test is SaleRulesBase3 {
     function _fork() internal pure override returns (bool) {
         return true;
     }

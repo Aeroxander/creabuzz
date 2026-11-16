@@ -62,7 +62,8 @@ contract DeployPlatform is Script {
         bytes memory guardInit =
             abi.encodePacked(vm.getCode("out/PoolGuard.sol/PoolGuard.json"), abi.encode(poolManager, d.strategy));
         (d.guard, d.guardSalts) = _create2Mined(guardInit);
-        d.minBid = _create(abi.encodePacked(vm.getCode("out/MinBid.sol/MinBid.json"), abi.encode(uint128(1e6), uint256(4))));
+        d.minBid =
+            _create(abi.encodePacked(vm.getCode("out/MinBid.sol/MinBid.json"), abi.encode(uint128(1e6), uint256(4))));
         // Settings: quote, platform, exit fee 5%, platform part 1%, split 15 : 60, agents' defaults 25 dollars and 0.1% of Shares
         d.launcher = _create(
             abi.encodePacked(

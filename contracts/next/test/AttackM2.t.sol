@@ -396,7 +396,10 @@ contract AttackM2Test is Base {
         vm.warp(_now() + 34 days);
         assertEq(t.giftsUsed(), 0);
     }
+}
 
+/// @notice The second half of the reviewers' attack tests (split from the first to keep each test contract under the creation-code limit).
+contract AttackM2MoreTest is Base {
     /// @dev The two extremes of the ring, by hand: a full month's gift made in the last second of a 3-day part is still
     /// counted 30 days later less one second (so nothing is let through early), and is free again within 33 days (so the
     /// cap does not stick).

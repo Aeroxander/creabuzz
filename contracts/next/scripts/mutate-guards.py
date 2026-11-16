@@ -29,7 +29,7 @@ MUT=[
 ('T03','Treasury: anybody may declare the pool open',T,'function markPoolOpen() external nonReentrant {\n        if (msg.sender != opener) revert NotAllowed();\n        if (poolOpen) revert PoolAlreadyOpen();','function markPoolOpen() external nonReentrant {\n        if (poolOpen) revert PoolAlreadyOpen();',False),
 ('T04','Treasury: the pool may be declared open twice',T,'function markPoolOpen() external nonReentrant {\n        if (msg.sender != opener) revert NotAllowed();\n        if (poolOpen) revert PoolAlreadyOpen();','function markPoolOpen() external nonReentrant {\n        if (msg.sender != opener) revert NotAllowed();',False),
 ('T05','Treasury: settle works with no proven pool',T,'if (!poolOpen) revert NoPool();\n        if (amount == 0)','if (amount == 0)',False),
-('T06','Treasury: settle may split more than arrived',T,'if (amount > arrived) revert NotArrived(amount, arrived);','',False),
+('T06','Treasury: settle may split more than arrived',T,'        if (amount > arrived) revert NotArrived(amount, arrived);\n        _accrue();\n        uint256 toSpendable','        _accrue();\n        uint256 toSpendable',False),
 ('T07','Treasury: settle ratio is not 15:60',T,'amount * spendableParts / (spendableParts + floorParts)','amount * spendableParts / (spendableParts + floorParts) * 2',True),
 ('T08','Treasury: any settle renews the check-in window',T,'if (!settled) {\n            (settled, accruedUpTo, lastCheckIn) = (true, block.timestamp, block.timestamp);\n        }','settled = true; accruedUpTo = block.timestamp; lastCheckIn = block.timestamp;',False),
 ('T09','Treasury: hand back before the sale money is split',T,'if (!settled) revert NotSettled();','',False),

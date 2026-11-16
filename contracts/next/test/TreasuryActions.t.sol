@@ -307,7 +307,10 @@ contract TreasuryActionsTest is Base {
         v.claim(founder); // released Shares leave the Vester and now count
         assertEq(t.countingSupply(), before + 200_000_000 * SHARE);
     }
+}
 
+/// @notice The second half of the Treasury's action tests (split from the first to keep each test contract under the creation-code limit).
+contract TreasuryActionsExitTest is Base {
     function test_handBack_takesFromBothFloorsInProportion() public {
         _world();
         usd.mint(alice, 3000 * DOLLAR);

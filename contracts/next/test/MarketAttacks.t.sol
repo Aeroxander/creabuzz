@@ -158,6 +158,70 @@ abstract contract MarketAttacksBase is Platform {
         assertLt(breakEvenBps, 1500, "but it does pay further down: this is the accepted bear-market drain");
     }
 
+    // ============================================== sniping the pool at graduation ===================================
+
+    struct Impact {
+        uint256 spotBefore;
+        uint256 spotAfter;
+        uint256 shares;
+        uint256 avgPrice;
+    }
+
+    function _snipe(Proj memory p, bool buy, uint256 amount) internal returns (Impact memory r) {
+        PoolKey memory key = _key(p);
+        r.spotBefore = _spot(key);
+        if (buy) {
+            usd.mint(trader, amount);
+            (uint256 paid, uint256 got) = _swap(key, address(p.shares), trader, true, amount);
+            r.shares = got;
+            r.avgPrice = paid * 1e30 / got;
+        } else {
+            // sell Shares worth `amount` dollars at the opening price
+            uint256 n = amount * 1e30 / r.spotBefore;
+            vm.prank(address(p.treasury));
+            p.shares.transfer(alice, n); // the seller is given the Shares; only the pool's reaction is measured
+            (uint256 paid, uint256 got) = _swap(key, address(p.shares), alice, false, n);
+            r.shares = paid;
+            r.avgPrice = got * 1e30 / paid;
+        }
+        r.spotAfter = _spot(key);
+    }
+
+    function p_raise(Sale memory s) internal view returns (uint256) {
+        return s.auction.currencyRaised();
+    }
+
+    function p_shares(address who, Proj memory a, Proj memory b) internal view returns (uint256) {
+        return a.shares.balanceOf(who) + b.shares.balanceOf(who);
+    }
+
+    function _checkSplit(Proj memory p, Sale memory s) internal view {
+        uint256 raised = s.auction.currencyRaised();
+        uint256 net = raised - raised * 30_000 / 1_000_000;
+        uint256 arrived = p.treasury.spendable() + p.treasury.melting();
+        assertEq(p.treasury.spendable(), arrived * 15 / 75);
+        assertLe(arrived, net);
+        assertApproxEqAbs(
+            arrived, raised * 75 / 100, raised / 1_000_000 + 2, "75 of every 100 reached the project's Treasury"
+        );
+        assertTrue(p.treasury.saleClosed());
+    }
+}
+
+abstract contract MarketAttacksBase2 is Platform {
+    function _fork() internal pure virtual returns (bool);
+
+    function setUp() public virtual {
+        _setUpPlatform(_fork());
+    }
+
+    function _str(uint256 x, uint256 decimals) internal pure returns (string memory) {
+        uint256 unit = 10 ** decimals;
+        string memory frac = vm.toString(x % unit);
+        while (bytes(frac).length < decimals) frac = string.concat("0", frac);
+        return string.concat(vm.toString(x / unit), ".", frac);
+    }
+
     // ============================================== hand back before the finish is complete ==========================
 
     /// @dev A holder tries to hand Shares back at each stage of the finish: nothing before step 2 (no money has been split), nothing
@@ -270,6 +334,38 @@ abstract contract MarketAttacksBase is Platform {
                 " dollars"
             ));
         assertLt(after_, before);
+    }
+}
+
+abstract contract MarketAttacksBase3 is Platform {
+    function _fork() internal pure virtual returns (bool);
+
+    function setUp() public virtual {
+        _setUpPlatform(_fork());
+    }
+
+    /// @dev A standard sale at exactly its goal (the price stays at the floor), finished, every bidder paid out.
+    function _flatProject(bytes32 id, Launcher.Size size, uint256 total)
+        internal
+        returns (Proj memory p, Sale memory s, uint256 poolDollars)
+    {
+        p = _launch(founder, id);
+        s = _open(p, size);
+        uint256[5] memory ids = _flat(s, total);
+        _toEnd(s);
+        uint256 before = usd.balanceOf(poolManager);
+        _finish(p, s);
+        poolDollars = usd.balanceOf(poolManager) - before;
+        for (uint256 i; i < 5; ++i) {
+            _collectBid(s, ids[i]);
+        }
+    }
+
+    function _str(uint256 x, uint256 decimals) internal pure returns (string memory) {
+        uint256 unit = 10 ** decimals;
+        string memory frac = vm.toString(x % unit);
+        while (bytes(frac).length < decimals) frac = string.concat("0", frac);
+        return string.concat(vm.toString(x / unit), ".", frac);
     }
 
     // ============================================== sniping the pool at graduation ===================================
@@ -417,6 +513,34 @@ abstract contract MarketAttacksBase is Platform {
             );
         }
     }
+}
+
+abstract contract MarketAttacksBase4 is Platform {
+    function _fork() internal pure virtual returns (bool);
+
+    function setUp() public virtual {
+        _setUpPlatform(_fork());
+    }
+
+    function p_raise(Sale memory s) internal view returns (uint256) {
+        return s.auction.currencyRaised();
+    }
+
+    function p_shares(address who, Proj memory a, Proj memory b) internal view returns (uint256) {
+        return a.shares.balanceOf(who) + b.shares.balanceOf(who);
+    }
+
+    function _checkSplit(Proj memory p, Sale memory s) internal view {
+        uint256 raised = s.auction.currencyRaised();
+        uint256 net = raised - raised * 30_000 / 1_000_000;
+        uint256 arrived = p.treasury.spendable() + p.treasury.melting();
+        assertEq(p.treasury.spendable(), arrived * 15 / 75);
+        assertLe(arrived, net);
+        assertApproxEqAbs(
+            arrived, raised * 75 / 100, raised / 1_000_000 + 2, "75 of every 100 reached the project's Treasury"
+        );
+        assertTrue(p.treasury.saleClosed());
+    }
 
     // ============================================== two projects, one strategy ========================================
 
@@ -486,26 +610,6 @@ abstract contract MarketAttacksBase is Platform {
         assertApproxEqAbs(fb, DOLLAR / 2, 2, "B's 1% fee on 50 dollars");
         assertEq(b.treasury.spendable() - spB, fb - fb / 2, "to B's Treasury");
     }
-
-    function p_raise(Sale memory s) internal view returns (uint256) {
-        return s.auction.currencyRaised();
-    }
-
-    function p_shares(address who, Proj memory a, Proj memory b) internal view returns (uint256) {
-        return a.shares.balanceOf(who) + b.shares.balanceOf(who);
-    }
-
-    function _checkSplit(Proj memory p, Sale memory s) internal view {
-        uint256 raised = s.auction.currencyRaised();
-        uint256 net = raised - raised * 30_000 / 1_000_000;
-        uint256 arrived = p.treasury.spendable() + p.treasury.melting();
-        assertEq(p.treasury.spendable(), arrived * 15 / 75);
-        assertLe(arrived, net);
-        assertApproxEqAbs(
-            arrived, raised * 75 / 100, raised / 1_000_000 + 2, "75 of every 100 reached the project's Treasury"
-        );
-        assertTrue(p.treasury.saleClosed());
-    }
 }
 
 contract MarketAttacksLocalTest is MarketAttacksBase {
@@ -515,6 +619,42 @@ contract MarketAttacksLocalTest is MarketAttacksBase {
 }
 
 contract MarketAttacksForkTest is MarketAttacksBase {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract MarketAttacksLocal2Test is MarketAttacksBase2 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract MarketAttacksLocal3Test is MarketAttacksBase3 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract MarketAttacksLocal4Test is MarketAttacksBase4 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract MarketAttacksFork2Test is MarketAttacksBase2 {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract MarketAttacksFork3Test is MarketAttacksBase3 {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract MarketAttacksFork4Test is MarketAttacksBase4 {
     function _fork() internal pure override returns (bool) {
         return true;
     }
