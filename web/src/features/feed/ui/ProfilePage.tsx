@@ -57,6 +57,11 @@ import { Button } from "@/shared/ui/button";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
 import { ServerImage } from "@/shared/ui/ServerImage";
 
+import {
+  defaultProfileTab,
+  type ProfileTab,
+  tabFromHash,
+} from "../lib/profile-tab";
 import { EMPTY_TALLY } from "../lib/ranking";
 import { trustTierLabel } from "../lib/trust-weight";
 import { useVoteTallies, useVoteWeights } from "../use-feed";
@@ -66,8 +71,9 @@ import { ForecastRecordLine } from "@/features/launchpad/ui/ForecastRecordLine";
 import { AccountAgentBadge } from "@/features/launchpad/ui/AccountAgentBadge";
 import { moneyOffered } from "@/features/launchpad/lib/money-offered";
 import { PersonTrackRecord } from "@/features/launchpad/ui/PersonTrackRecord";
+import { useTrackRecord } from "@/features/launchpad/use-tasks";
 
-type Tab = "posts" | "replies" | "media" | "likes" | "launches" | "record";
+type Tab = ProfileTab;
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: "posts", label: "Posts" },
@@ -172,8 +178,8 @@ function AuthorPosts({
   }
   if (view === "empty") {
     return (
-      <EmptyState testId="profile-posts-list" title="Nothing here yet">
-        When this account posts, it shows up here.
+      <EmptyState testId="profile-posts-list" title="Nothing posted yet.">
+        Updates and work from this person show up here.
       </EmptyState>
     );
   }
@@ -287,7 +293,7 @@ function Launches({ pubkey }: { pubkey: string }) {
       ) : null}
       {founded.length === 0 ? (
         <p className="mt-3 text-sm text-black/60 dark:text-white/60">
-          No launches started yet.
+          No projects started yet.
         </p>
       ) : (
         <ul className="mt-3 flex flex-col gap-2">
@@ -367,8 +373,36 @@ export function ProfileMissing({ signedOut }: { signedOut: boolean }) {
  */
 export function ProfilePage({ pubkey }: { pubkey: string }) {
   const me = existingUserPubkey();
-  const [tab, setTab] = useState<Tab>("posts");
+  // The tab the reader pressed, or one the address names, always wins over the default.
+  const [chosen, setChosen] = useState<Tab | null>(() =>
+    tabFromHash(window.location.hash),
+  );
   const [editing, setEditing] = useState(false);
+  const record = useTrackRecord(pubkey);
+  const launches = useLaunches();
+  const recordRead = record.data
+    ? "done"
+    : record.isError
+      ? "failed"
+      : "pending";
+  const preferred = defaultProfileTab({
+    // A project list still being read counts as unread: a founder is not shown "Posts" first and then moved.
+    read: recordRead === "done" && launches.isLoading ? "pending" : recordRead,
+    foundedProject: (launches.data ?? []).some(
+      (launch) =>
+        launch.record.author === pubkey &&
+        (me === pubkey || !notListedYet(launch.record)),
+    ),
+    hasWork: Boolean(
+      record.data &&
+        (record.data.helper.accepted.length > 0 ||
+          record.data.helper.doneAlone.length > 0 ||
+          record.data.helper.open > 0 ||
+          record.data.founder.updates > 0),
+    ),
+  });
+  const waiting = chosen === null && preferred === "pending";
+  const tab: Tab = chosen ?? (preferred === "pending" ? "posts" : preferred);
   const people = usePeople([pubkey]);
   const profile = people[pubkey];
   const isSelf = me === pubkey;
@@ -447,7 +481,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
                 />
                 <Button
                   asChild
-                  className="rounded-full"
+                  className="rounded-full max-sm:h-11 max-sm:w-11"
                   size="icon"
                   variant="outline"
                 >
@@ -506,7 +540,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
             <button
               aria-controls="profile-points-help"
               aria-expanded={pointsHelp}
-              className="text-left"
+              className="text-left max-sm:min-h-11"
               onClick={() => setPointsHelp((open) => !open)}
               title={`Up votes minus down votes on their newest ${SCORE_POSTS} posts and ${SCORE_POSTS} board posts: feedback on posts, not votes in any project and not Shares`}
               type="button"
@@ -554,15 +588,36 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
         <TabStrip
           idBase="profile-tabs"
           label="Profile"
-          onChange={setTab}
+          onChange={setChosen}
           tabs={TABS}
           value={tab}
         />
       </div>
 
       <div {...tabPanelProps("profile-tabs", tab)}>
-        {tab === "posts" || tab === "replies" || tab === "media" ? (
-          <AuthorPosts pubkey={pubkey} tab={tab} />
+        {waiting ? (
+          <TimelineSkeleton />
+        ) : tab === "posts" || tab === "replies" || tab === "media" ? (
+          <>
+            {chosen === null && recordRead === "failed" && tab === "posts" ? (
+              <p
+                className="px-4 pt-3 text-sm"
+                data-testid="profile-record-failed"
+                role="status"
+              >
+                Couldn't read their record, so this opens on Posts.{" "}
+                <Button
+                  onClick={() => void record.refetch()}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  Try again
+                </Button>
+              </p>
+            ) : null}
+            <AuthorPosts pubkey={pubkey} tab={tab} />
+          </>
         ) : tab === "likes" ? (
           <Likes pubkey={pubkey} />
         ) : tab === "record" ? (

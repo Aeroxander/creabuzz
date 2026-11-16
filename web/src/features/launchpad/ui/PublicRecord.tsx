@@ -18,6 +18,7 @@ import { Button } from "@/shared/ui/button";
 import { Chip, type ChipTone } from "@/shared/ui/chip";
 
 import { PROMISE_STATE_LABEL, type PromiseState } from "../lib/promises";
+import { whenWords } from "../lib/record-date";
 import type { PublicRecordView } from "../lib/public-record";
 import { ASK_FOR_INVITE_TEXT, PUBLIC_RECORD_TEXT } from "../lib/refusal-copy";
 import { freshnessLine } from "../lib/weekly-update";
@@ -29,11 +30,7 @@ const TONE: Partial<Record<PromiseState, ChipTone>> = {
 };
 
 const day = (seconds: number) =>
-  new Date(seconds * 1000).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  whenWords(seconds, Math.floor(Date.now() / 1000));
 
 function Fact({
   label,
@@ -291,8 +288,8 @@ export function PublicRecord({
                   }
                 >
                   {piece.selfChecked
-                    ? `Done ${day(piece.acceptedAt)}, checked by the founder, working alone.`
-                    : `Accepted ${day(piece.acceptedAt)}, checked by someone other than the person who did it.`}
+                    ? `Done, checked by the founder · ${day(piece.acceptedAt)}`
+                    : `Accepted by someone other than the person who did it · ${day(piece.acceptedAt)}`}
                 </span>
               </li>
             ))}

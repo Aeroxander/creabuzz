@@ -17,21 +17,28 @@ import { useState } from "react";
 import { useUserNames } from "@/features/profiles/use-profiles";
 import { Button } from "@/shared/ui/button";
 import { Chip } from "@/shared/ui/chip";
+import { MoreInfo } from "@/shared/ui/more-info";
 
 import { agentLabel } from "../lib/agent-label";
 import { promiseTotalsLine } from "../lib/promises";
 import { memberRemovedLine, removedLine } from "../lib/removed-records";
+import { recordDay, whenWords } from "../lib/record-date";
+import { doneAloneLine as doneByFounderLine } from "../lib/task-checks";
 import { TRACK_PROJECTS } from "../lib/task-reads";
+import { HOW_WORK_COUNTS } from "../lib/tasks";
 import {
   acceptedLine,
   confirmedByLine,
   missesLine,
   tieLine,
-  doneAloneLine,
   updatesLine,
 } from "../lib/track-record";
 import { useTrackRecord } from "../use-tasks";
-import { day, EvidenceLinks } from "./TaskParts";
+import { EvidenceLinks } from "./TaskParts";
+
+/** A moment in the record's one date style: "today", "3 days ago", "Nov 9". */
+const day = (seconds: number) =>
+  whenWords(seconds, Math.floor(Date.now() / 1000));
 
 /** How many accepted pieces show at first, and how many more each press adds. */
 const PAGE = 10;
@@ -87,9 +94,14 @@ export function PersonTrackRecord({
   const { helper, founder, removed, projects } = data;
   const misses = missesLine(helper);
   const promises = promiseTotalsLine(founder.promises);
-  const removedText = removedLine(removed, day);
+  const removedText = removedLine(removed, recordDay);
   const helperKnown = data.helperComplete;
-  const alone = doneAloneLine(helper);
+  // Work only the founder checked is its own line, apart from what other people accepted. To the person it is "you".
+  const alone =
+    doneByFounderLine(helper.doneAlone.length)?.replace(
+      "checked by the founder",
+      isSelf ? "checked by you" : "checked by the founder",
+    ) ?? null;
   const nothing =
     helper.accepted.length === 0 &&
     helper.doneAlone.length === 0 &&
@@ -114,16 +126,15 @@ export function PersonTrackRecord({
       >
         Track record
       </h2>
-      <p
-        className="text-xs text-muted-foreground"
-        data-testid="track-record-how"
-      >
-        Counted only from signed records, and only for tasks this account signed
-        a step on. Work counts when someone on that project's team now, other
-        than the person who did it, confirmed it. Anyone can start a project and
-        confirm work on it, so read who confirmed each piece. A project's team
-        can change. Nobody is scored or ranked.
-      </p>
+      <MoreInfo label="How this is counted" testId="track-record-how">
+        <p>{HOW_WORK_COUNTS}</p>
+        <p className="mt-1">
+          Counted only from signed records, and only for tasks this account
+          signed a step on. Anyone can start a project and check work on it, so
+          read who checked each piece. A project's team can change. Nobody is
+          scored or ranked.
+        </p>
+      </MoreInfo>
       {helper.agent ? (
         <p className="mt-2 text-sm">
           <Chip data-testid="track-record-agent" tone="info">
@@ -149,20 +160,15 @@ export function PersonTrackRecord({
             data-testid="track-record-empty"
           >
             {isSelf
-              ? "Nothing here yet. Work shows here once a project's team confirms it, and updates show once you post them on a project of your own."
-              : "Nothing here yet. Work shows here once a project's team confirms it."}
+              ? "Nothing here yet. Finish something on your project and it shows here, with the updates you post."
+              : "Nothing here yet. Work shows here once it is checked, and updates once they are posted."}
           </p>
         ) : (
           <div className="mt-3 text-sm" data-testid="track-record-totals">
             <p className="font-semibold" data-testid="track-record-accepted">
               {acceptedLine(helper)}
             </p>
-            {alone ? (
-              <p data-testid="track-record-alone">
-                {alone}. Nobody else was on the project to check it, so it is
-                not counted as accepted.
-              </p>
-            ) : null}
+            {alone ? <p data-testid="track-record-alone">{alone}</p> : null}
             {helper.soleConfirmer.map((sole) => (
               <p data-testid="track-record-sole" key={sole.coordinate}>
                 On {projectName(sole.coordinate)}, one person ({names(sole.by)})
@@ -260,7 +266,7 @@ export function PersonTrackRecord({
         const line = memberRemovedLine(
           `${names(owner.pubkey)}, who runs this account,`,
           owner.removed,
-          day,
+          recordDay,
         );
         return line ? (
           <p
@@ -277,7 +283,7 @@ export function PersonTrackRecord({
       {helperKnown && helper.doneAlone.length > 0 ? (
         <>
           <h3 className="mt-4 text-sm font-bold text-black dark:text-white">
-            Work done alone
+            Work done
           </h3>
           <ol
             className="mt-2 flex flex-col gap-3"
@@ -295,7 +301,7 @@ export function PersonTrackRecord({
                   <p className="break-words text-xs text-muted-foreground">
                     {project ? (
                       <Link
-                        className="text-foreground underline"
+                        className="text-foreground underline max-sm:inline-block max-sm:py-4"
                         params={{ launchId: project.id }}
                         search={{ author: project.author }}
                         to="/launchpad/$launchId"
@@ -306,7 +312,11 @@ export function PersonTrackRecord({
                       "A project"
                     )}
                     {" · "}
-                    checked by the founder, working alone, dated {day(work.at)}
+                    {isSelf
+                      ? "Done, checked by you"
+                      : "Done, checked by the founder"}
+                    {" · "}
+                    {day(work.at)}
                   </p>
                   <EvidenceLinks files={work.files} links={work.links} />
                 </li>
@@ -339,7 +349,7 @@ export function PersonTrackRecord({
                   <p className="break-words text-xs text-muted-foreground">
                     {project ? (
                       <Link
-                        className="text-foreground underline"
+                        className="text-foreground underline max-sm:inline-block max-sm:py-4"
                         params={{ launchId: project.id }}
                         search={{ author: project.author }}
                         to="/launchpad/$launchId"
@@ -350,7 +360,7 @@ export function PersonTrackRecord({
                       "A project"
                     )}
                     {" · "}
-                    {confirmedByLine(work, names)}, dated {day(work.at)}
+                    {confirmedByLine(work, names)} · {day(work.at)}
                   </p>
                   {tie ? (
                     <p
