@@ -139,8 +139,10 @@ more levels. 1% looks right for a 10,000-dollar sale. A bid has to be placed abo
    frozen for the fee, or accept that risk and monitor it.
 9. **Settings I chose** (change freely): pool fee 1% with tick spacing 200; one full-range position (no extra
    ranges); migration allowed from one block after the end; bidders may claim from one block after the end.
-10. **The strategy's own code is 473 lines I did not write and have not audited.** The plan's list of "off until an
-    outside review" should name it explicitly.
+10. **The strategy's own code is 473 lines I did not write and have not audited.** The vendored docs list audits for the
+    launcher only up to v2.0.0; the strategy comes from v3.0.0 and I found no audit listed for it (M1-FACTS 10). The
+    plan's "off until an outside review" list should name it and the auction (audited at v2.0.0, vendored at v2.1.0 plus
+    two commits) explicitly.
 
 ## Open questions for you
 

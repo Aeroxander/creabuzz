@@ -217,6 +217,9 @@ Each line is a test in `contracts/next/test`; the report (`M1-REPORT.md`) has th
   production route calls Uniswap's own deployment. Our tests compile and deploy a copy of it **in memory** for the local
   twin only; that is a test use and a counsel question if anyone ever wants to ship that copy.
 * Our new files (`contracts/next/src`) are written as MIT, matching the code they extend.
-* The plan's section 9 list "off until an outside review" should name these vendored contracts and their audits
-  (`CHANGELOG`/`docs/audits` of each library list Spearbit, OpenZeppelin and ABDK for the auction; OpenZeppelin for the
-  launcher at v2.0.0) rather than treat them as ours.
+* **Audits listed in the vendored docs** (read, not verified): the auction lists OpenZeppelin and Spearbit reports for v2.0.0
+  (16 June 2026; we vendor v2.1.0 plus two later commits) and older ones (`docs/audits/README.md`); the launcher lists
+  reports up to its **v2.0.0** (OpenZeppelin 23 Jan 2026, Spearbit 21 Jan 2026 and older) (`README.md`, `docs/audit/`).
+  The strategy we use is from launcher **v3.0.0**, which merged the old strategy factories into the single `LBPStrategy`
+  (CHANGELOG); I found **no audit listed for v3.0.0** in the vendored docs. Ask Uniswap or the auditors whether it is
+  covered before any real network. This belongs on the plan's section 9 "off until an outside review" list.
