@@ -102,7 +102,7 @@ export function LaunchHero({
     <header className="flex flex-col gap-3" data-testid="launch-hero">
       {/* The way back is the list of projects, named as the top bar names it; "Launchpad" only where sales are offered. */}
       <Link
-        className="flex items-center gap-1 text-sm text-muted-foreground hover:underline"
+        className="flex items-center gap-1 text-sm text-muted-foreground hover:underline max-sm:min-h-11"
         to={back.to}
       >
         <ArrowLeft aria-hidden className="h-4 w-4" /> {back.label}

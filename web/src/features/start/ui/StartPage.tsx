@@ -178,7 +178,7 @@ export function StartPage() {
         onToggle={(event) => rememberMore(event.currentTarget.open)}
         open={moreOpen}
       >
-        <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">
+        <summary className="cursor-pointer text-sm font-semibold text-muted-foreground max-sm:py-3">
           More ways to start
         </summary>
         <div className="mt-4 flex flex-col gap-6">
