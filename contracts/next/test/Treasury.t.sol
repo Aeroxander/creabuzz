@@ -297,7 +297,7 @@ contract TreasuryTest is Base {
         s2;
         ve2;
         usd.mint(tr2, 7500 * DOLLAR);
-        vm.prank(opener);
+        vm.prank(launcher.project(alice, keccak256("two")).finisher);
         t2.markPoolOpen();
         t2.settle(7500 * DOLLAR);
         vm.warp(_now() + 10 days);

@@ -9,10 +9,13 @@ import {Vester} from "../../src/Vester.sol";
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {QuoteToken} from "../mocks/QuoteToken.sol";
 import {MockGuard, NotAGuard} from "../mocks/MockGuard.sol"; // built here so `deployCodeTo` finds them
+import {MockStrategy} from "../mocks/MockStrategy.sol"; // likewise
 
-/// @notice A launched project with the people around it, for the milestone 2 tests. "The sale" is simulated the way
-/// milestone 3 will do it: sale money is sent to the Treasury, Shares held by the Launcher are handed to buyers, and the
-/// opener says the pool is proven.
+/// @notice A launched project with the people around it, for the Treasury, Vester, Launcher and attack tests. "The sale" is
+/// simulated: sale money is sent to the Treasury, Shares held by the project's Finisher are handed to buyers, and the
+/// opener (the Finisher's address, pranked) says the pool is proven. The strategy, pool guard and fee path are small fakes
+/// (`MockStrategy`, `MockGuard`) around the real `FixedFeeController` and `MinBid`; the real Uniswap route is tested in
+/// `Life.t.sol`.
 abstract contract Base is Test {
     uint256 internal constant DOLLAR = 1e6;
     uint256 internal constant SHARE = 1e18;
@@ -20,14 +23,15 @@ abstract contract Base is Test {
 
     QuoteToken internal usd;
     Launcher internal launcher;
+    address internal finisher; // the project's Finisher: the Treasury's `opener`, and the holder of the sale Shares
     ShareToken internal shares;
     Treasury internal t;
     Vester internal v;
 
     address internal admin = makeAddr("admin");
     address internal platform = makeAddr("platform");
-    address internal opener = makeAddr("opener");
-    address internal salePath = makeAddr("salePath");
+    address internal opener; // the project's Finisher, set once the project is launched
+    address internal salePath; // the Launcher, set once it is deployed
     address internal founder = makeAddr("founder");
     address internal agent = makeAddr("agent");
     address internal alice = makeAddr("alice");
@@ -40,22 +44,32 @@ abstract contract Base is Test {
     /// the `beforeInitialize` hook bit (1 << 13), holding a guard that names the strategy.
     address internal constant STRATEGY = address(0x57A7E6);
     address internal constant GUARD = address(uint160(0xA11CE << 20) | uint160(1 << 13));
+    address internal constant FAKE_POOL_MANAGER = address(0xB001);
+    address internal constant FAKE_POSITION_MANAGER = address(0xB002);
+    address internal feeController;
+    address internal minBid;
 
     function setUp() public virtual {
         vm.warp(1_800_000_000);
         usd = new QuoteToken();
         deployCodeTo("MockGuard.sol:MockGuard", abi.encode(STRATEGY), GUARD);
+        feeController = deployCode("FixedFeeController.sol:FixedFeeController", abi.encode(platform, uint24(30_000)));
+        minBid = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(4)));
+        address factory = address(new MockFactory(feeController));
+        deployCodeTo(
+            "MockStrategy.sol:MockStrategy", abi.encode(FAKE_POOL_MANAGER, FAKE_POSITION_MANAGER, factory), STRATEGY
+        );
         launcher = _deployLauncher(admin, _settings());
+        salePath = address(launcher);
         (address s, address tr, address ve) = _launch(founder, PROJECT);
         (shares, t, v) = (ShareToken(s), Treasury(tr), Vester(ve));
+        finisher = opener = launcher.project(founder, PROJECT).finisher;
     }
 
     function _settings() internal view virtual returns (Launcher.Settings memory) {
         return Launcher.Settings({
             quote: IERC20(address(usd)),
             platform: platform,
-            opener: opener,
-            salePath: salePath,
             exitFeeBps: 500,
             platformFeeBps: 100,
             spendableParts: 15,
@@ -75,7 +89,7 @@ abstract contract Base is Test {
         internal
         returns (Launcher)
     {
-        return Launcher(deployCode("Launcher.sol:Launcher", abi.encode(admin_, s, strategy_, guard_)));
+        return Launcher(deployCode("Launcher.sol:Launcher", abi.encode(admin_, s, strategy_, guard_, minBid)));
     }
 
     /// @dev `block.timestamp` cannot be read after a `vm.warp` in the same test: the optimizer treats it as a constant
@@ -136,9 +150,9 @@ abstract contract Base is Test {
         _approveAll(bob);
     }
 
-    /// @dev The sale delivers Shares: the Launcher's holding goes to a buyer.
+    /// @dev The sale delivers Shares: the Finisher's holding goes to a buyer.
     function _buy(address who, uint256 amount) internal {
-        vm.prank(address(launcher));
+        vm.prank(finisher);
         shares.transfer(who, amount);
     }
 
@@ -154,5 +168,14 @@ abstract contract Base is Test {
 
     function _buckets() internal view returns (uint256) {
         return t.spendable() + t.melting() + t.permanentFloor() + t.feesOwed();
+    }
+}
+
+/// @notice A stand-in for the auction factory: only the fee controller the Launcher reads.
+contract MockFactory {
+    address public immutable protocolFeeController;
+
+    constructor(address controller) {
+        protocolFeeController = controller;
     }
 }

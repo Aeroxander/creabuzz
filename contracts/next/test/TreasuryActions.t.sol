@@ -368,7 +368,7 @@ contract TreasuryActionsTest is Base {
         vm.expectRevert(Treasury.SaleNotClosed.selector);
         t.handBack(100_000_000 * SHARE);
         // step 3: the unsold Shares are swept to the Treasury, and the finish is marked complete
-        vm.prank(address(launcher));
+        vm.prank(finisher);
         shares.transfer(address(t), 400_000_000 * SHARE);
         _closeSale();
         assertEq(t.countingSupply(), 100_000_000 * SHARE);

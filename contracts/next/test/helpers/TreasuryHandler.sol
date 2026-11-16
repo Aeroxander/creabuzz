@@ -176,10 +176,10 @@ contract TreasuryHandler is Test {
 
     // ===================================================================================================== Shares
 
-    /// @dev The sale delivers Shares (milestone 3 will do this from the Launcher's holding).
+    /// @dev The sale delivers Shares (from the project's Finisher, which is the opener).
     function distribute(uint256 to, uint256 amount) external {
-        amount = bound(amount, 0, shares.balanceOf(address(launcher)));
-        vm.prank(address(launcher));
+        amount = bound(amount, 0, shares.balanceOf(opener));
+        vm.prank(opener);
         shares.transfer(_holder(to), amount);
     }
 

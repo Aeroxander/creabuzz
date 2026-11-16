@@ -37,8 +37,8 @@ contract Treasury {
         IVester vester; // the project's Vester
         address founder; // the person who runs the project
         address platform; // receives the platform's part of exit fees
-        address opener; // may say the pool is proven, once (a stub until milestone 3)
-        address salePath; // may take the reserve out for a public sale (a stub until milestone 3)
+        address opener; // the project's Finisher: the only address that may say the pool is open, the sale closed, or abandoned
+        address salePath; // the Launcher: the only address that may take reserve Shares out for a public sale
         uint16 exitFeeBps; // total exit fee, in ten-thousandths
         uint16 platformFeeBps; // the part of the exit fee that goes to the platform
         uint16 spendableParts; // settle: parts of fresh money that go to `spendable` (15)
@@ -94,9 +94,10 @@ contract Treasury {
     uint256 public lastCheckIn; // the window of active time runs to this plus CHECK_IN_WINDOW
 
     // ---- state of the project
-    bool public poolOpen; // a pool is proven (a stub flag until milestone 3)
+    bool public poolOpen; // the sale phase is over and the Vester's clock runs: a pool was proven open, or the sale was abandoned
+    bool public abandoned; // the sale was abandoned: no pool was ever made (`poolOpen` is true too)
     bool public settled; // sale money has been split at least once
-    bool public saleClosed; // the sale's last finish step is done: unsold Shares are back here (a stub flag until milestone 3)
+    bool public saleClosed; // the sale's last finish step is done: unsold Shares are back here
     uint256 public workPot; // Shares still available for Give Shares
 
     mapping(address => Agent) public agents;
@@ -127,6 +128,9 @@ contract Treasury {
     event AgentSet(address indexed agent, bool active, uint256 usdCap, uint256 shareCap);
     /// @notice The pool was proven open and the Vester's clock started.
     event PoolOpened(uint256 time);
+    /// @notice The sale was abandoned: no pool exists, the Vester's clock started, and the money meant for the pool goes to
+    /// the floor.
+    event SaleAbandoned(uint256 time);
     /// @notice The sale's finish is complete; exits are open from now (once sale money has been split).
     event SaleClosed(uint256 time);
     /// @notice Reserve Shares left through the sale path.
@@ -142,6 +146,8 @@ contract Treasury {
     error BadInput();
     /// @notice There is no proven pool, so sale money cannot be split.
     error NoPool();
+    /// @notice The sale was not abandoned, so this is not allowed.
+    error NotAbandoned();
     /// @notice The pool is already proven.
     error PoolAlreadyOpen();
     /// @notice The sale's finish is not complete (unsold Shares may still be outside the treasury), so nothing can be
@@ -193,8 +199,8 @@ contract Treasury {
 
     // ================================================ money coming in ================================================
 
-    /// @notice Say that the project's pool is proven open, once, and start the Vester's clock. Stub until milestone 3:
-    /// only the `opener` the Launcher named may call it.
+    /// @notice Say that the project's pool is proven open, once, and start the Vester's clock. Only the `opener` (the
+    /// project's Finisher, which has read the pool at the guarded key) may call it.
     function markPoolOpen() external nonReentrant {
         if (msg.sender != opener) revert NotAllowed();
         if (poolOpen) revert PoolAlreadyOpen();
@@ -203,10 +209,22 @@ contract Treasury {
         emit PoolOpened(block.timestamp);
     }
 
+    /// @notice Say that the sale was abandoned, once: seven days after it ended no pool exists. The Vester's clock starts
+    /// (the founder's Shares must not stay locked for ever behind a pool that will never open), the project behaves as
+    /// one whose sale phase is over, and the Finisher may then split the money with `settle` and `settleToFloor`. Only the
+    /// `opener` may call it.
+    function markAbandoned() external nonReentrant {
+        if (msg.sender != opener) revert NotAllowed();
+        if (poolOpen) revert PoolAlreadyOpen();
+        (poolOpen, abandoned) = (true, true);
+        vester.startNow();
+        emit SaleAbandoned(block.timestamp);
+    }
+
     /// @notice Say that the sale's finish is complete, once: the unsold Shares have been swept back to this treasury, so
-    /// every Share outside the treasury and the Vester is in a person's hands. Exits open only after this. Stub until
-    /// milestone 3: only the `opener` the Launcher named may call it, and only after the pool is proven. Milestone 3's
-    /// version must be something any stranger can trigger by finishing the sweep, so exits can never wait on one person.
+    /// every Share outside the treasury and the Vester is in a person's hands. Exits open only after this. Only the `opener`
+    /// (the project's Finisher) may call it, once, and only after the pool is proven or the sale abandoned; the Finisher's
+    /// sweep is open to anyone, so exits never wait on one person.
     function markSaleClosed() external nonReentrant {
         if (msg.sender != opener) revert NotAllowed();
         if (!poolOpen) revert NoPool();
@@ -217,9 +235,10 @@ contract Treasury {
 
     /// @notice Split sale money that has arrived: `spendableParts : floorParts` (15 : 60 of each 75 that reach the
     /// treasury, which is 15 and 60 of each 100 raised; the other 25 are the platform's 3 and the pool's 22, handled
-    /// before the money gets here). Anyone may call it. Refused until a pool is proven, so a sale whose pool step failed
-    /// is not split. `amount` is capped by the dollars that arrived and are not in a bucket, so a caller cannot invent
-    /// money; the ratio is fixed at birth, so a caller cannot choose it. The first call starts the check-in window.
+    /// before the money gets here). Anyone may call it. Refused until the pool is proven (or the sale abandoned), and the
+    /// Finisher moves the sale money here and proves the pool in one transaction, so no stranger can split a part first.
+    /// `amount` is capped by the dollars that arrived and are not in a bucket, so a caller cannot invent money; the ratio
+    /// is fixed at birth, so a caller cannot choose it. The first call starts the check-in window.
     /// @dev Several partial calls are fine: each part is split the same way and the floor's release time is blended by
     /// money (`meltRemaining` becomes the money-weighted mean of the old remainder and 365 days).
     function settle(uint256 amount) external nonReentrant {
@@ -230,14 +249,33 @@ contract Treasury {
         _accrue();
         uint256 toSpendable = amount * spendableParts / (spendableParts + floorParts);
         uint256 toFloor = amount - toSpendable;
+        spendable += toSpendable;
+        _addMelting(toFloor);
+        emit Settled(amount, toSpendable, toFloor);
+    }
+
+    /// @notice Put sale money wholly into the melting floor. Only after an abandoned sale, and only the `opener`: the 22
+    /// of every 100 raised that was meant for a pool that never opened goes to the floor (so with the 15 : 60 split of the
+    /// rest, 15 spendable : 82 floor of each 100 raised). Capped by the dollars that arrived and are in no bucket.
+    function settleToFloor(uint256 amount) external nonReentrant {
+        if (msg.sender != opener) revert NotAllowed();
+        if (!abandoned) revert NotAbandoned();
+        if (amount == 0) revert BadInput();
+        uint256 arrived = unaccounted();
+        if (amount > arrived) revert NotArrived(amount, arrived);
+        _accrue();
+        _addMelting(amount);
+        emit Settled(amount, 0, amount);
+    }
+
+    /// @dev Add to the melting floor, blending its release time by money, and open the check-in window on the first call.
+    function _addMelting(uint256 toFloor) private {
         uint256 m = melting;
         meltRemaining = m == 0 ? RELEASE_PERIOD : (m * meltRemaining + toFloor * RELEASE_PERIOD) / (m + toFloor);
         melting = m + toFloor;
-        spendable += toSpendable;
         if (!settled) {
             (settled, accruedUpTo, lastCheckIn) = (true, block.timestamp, block.timestamp);
         }
-        emit Settled(amount, toSpendable, toFloor);
     }
 
     /// @notice Add dollars to `spendable` (for example, fees a platform project pays itself).

@@ -78,7 +78,7 @@ contract TreasuryInvariantsTest is Base {
 
     function invariant_sharesAreConservedAcrossVestGiftAndExit() public view {
         assertEq(shares.totalSupply(), SUPPLY - h.burned());
-        uint256 sum = shares.balanceOf(address(launcher)) + shares.balanceOf(address(v)) + shares.balanceOf(address(t))
+        uint256 sum = shares.balanceOf(finisher) + shares.balanceOf(address(v)) + shares.balanceOf(address(t))
             + shares.balanceOf(founder);
         for (uint256 i; i < 4; ++i) {
             sum += shares.balanceOf(h.holders(i));

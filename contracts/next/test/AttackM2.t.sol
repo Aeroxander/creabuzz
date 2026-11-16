@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {Base} from "./helpers/Base.sol";
 import {Launcher} from "../src/Launcher.sol";
+import {Finisher} from "../src/Finisher.sol";
 import {Treasury} from "../src/Treasury.sol";
 import {ShareToken} from "../src/ShareToken.sol";
 import {Vester} from "../src/Vester.sol";
@@ -695,11 +696,11 @@ contract AttackM2LaunchTest is Base {
         sImpl.initialize("x", "x", to, am);
     }
 
-    /// @dev The owner's rule for milestone 2 is "the Launcher must refuse to open a sale with no pool guard". The review
-    /// found the stub took both the strategy and the hook from the caller, so a contract the founder wrote, answering with
-    /// the strategy the founder named, passed. Now the strategy and the guard are the platform's, fixed at construction,
-    /// and `openSale` takes only the project id: the old three-argument entry point does not exist, and a Launcher whose
-    /// platform guard is not the guard for its strategy refuses (see `LauncherTest`).
+    /// @dev The owner's rule is "the Launcher must refuse to open a sale with no pool guard". The milestone 2 review found the
+    /// stub took both the strategy and the hook from the caller, so a contract the founder wrote, answering with the strategy
+    /// the founder named, passed. Now the strategy and the guard are the platform's, fixed at construction, and `openSale`
+    /// takes only the project id and a size: the old three-argument entry point does not exist, and no Launcher can be made
+    /// whose guard is not the guard for its strategy (see `LauncherTest`).
     function test_attack_aFakeGuardNamedByTheFounderCannotPassTheLaunchersGuardCheck() public {
         address strategy = makeAddr("founders own strategy");
         FakeGuard fake = new FakeGuard(strategy);
@@ -712,24 +713,42 @@ contract AttackM2LaunchTest is Base {
         assertTrue(launcher.poolGuard() != address(fake));
     }
 
-    /// @dev The admin can change the settings (the opener, the sale path, the quote token, the fees) in the block before a
-    /// launch. The review's point: a founder's launch signed against the old settings must not land on the new ones.
-    /// `launch` now takes the settings hash the founder saw. What stays true, and is documented until milestone 3 makes
-    /// `opener` and `salePath` contracts the Launcher derives: a founder who reads the NEW settings and commits to them
-    /// gets exactly those.
+    /// @dev The admin can change the settings (the quote token, the platform address, the fees) in the block before a launch.
+    /// The review's point: a founder's launch signed against the old settings must not land on the new ones, so `launch` takes
+    /// the settings hash the founder saw. The review's second point, now closed: `opener` and `salePath` are not settings. Whatever
+    /// the admin sets and whatever a founder commits to, the Treasury's opener is the project's own Finisher and its sale path is
+    /// the Launcher.
     function test_attack_theAdminCanChangeTheSettingsInTheBlockBeforeALaunch() public {
         bytes32 seen = launcher.settingsHash();
         Launcher.Settings memory s = _settings();
-        s.opener = makeAddr("evil opener");
         s.exitFeeBps = 1000;
+        s.platform = makeAddr("a different platform address");
         vm.prank(admin);
         launcher.setSettings(s);
         vm.prank(founder);
         vm.expectRevert(Launcher.SettingsMoved.selector);
         launcher.launch(keccak256("late"), "Late", "LT", seen);
         (, address tr,) = _launch(founder, keccak256("late")); // the founder reads the new settings and commits to them
-        assertEq(Treasury(tr).opener(), s.opener, "a founder who commits to the new settings gets them");
-        assertEq(Treasury(tr).exitFeeBps(), 1000);
+        assertEq(Treasury(tr).exitFeeBps(), 1000, "a founder who commits to the new settings gets them");
+        assertEq(Treasury(tr).platform(), s.platform);
+        assertEq(Treasury(tr).opener(), launcher.project(founder, keccak256("late")).finisher, "but not a retargeted opener");
+        assertEq(Treasury(tr).salePath(), address(launcher), "and not a retargeted sale path");
+    }
+
+    /// @dev The Finisher is a clone of an implementation: nobody can set the implementation or a clone up again.
+    function test_attack_noOneCanInitialiseAFinisherOrItsImplementation() public {
+        Finisher impl = Finisher(launcher.finisherImpl());
+        vm.prank(address(launcher));
+        vm.expectRevert(Finisher.BadSetup.selector);
+        Finisher(finisher).initialize(address(1), address(2), address(3)); // even the Launcher cannot set it up twice
+        vm.prank(address(launcher));
+        impl.initialize(address(t), address(shares), address(usd)); // the Launcher never does this; if it did, only it could
+        vm.prank(alice);
+        vm.expectRevert(Finisher.NotLauncher.selector);
+        Finisher(finisher).initialize(address(1), address(2), address(3));
+        vm.prank(alice);
+        vm.expectRevert(Finisher.NotLauncher.selector);
+        impl.initialize(address(1), address(2), address(3));
     }
 
     /// @dev Donated Shares make the reserve bigger but never the work pot: the founder cannot give them as work.

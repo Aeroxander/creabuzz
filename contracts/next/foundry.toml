@@ -35,7 +35,7 @@ compilation_restrictions = [
   { paths = "lib/continuous-clearing-auction/lib/blocknumberish/**", version = "=0.8.26" },
   # First-party milestone 2 code: the repo's production compiler and optimizer setting. The OpenZeppelin copy used
   # here is the repo's own (lib/openzeppelin-contracts, not the older one nested under the auction).
-  { paths = "src/{ShareToken,Vester,Treasury,Launcher,RollingCap}.sol", version = "=0.8.37", optimizer_runs = 200 },
+  { paths = "src/{ShareToken,Vester,Treasury,Launcher,RollingCap,Finisher,LiquidityHolder,Interfaces}.sol", version = "=0.8.37", optimizer_runs = 200 },
   { paths = "lib/openzeppelin-contracts/**", version = "=0.8.37", optimizer_runs = 200 },
 ]
 additional_compiler_profiles = [{ name = "own", optimizer_runs = 200 }]

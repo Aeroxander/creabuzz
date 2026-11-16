@@ -10,17 +10,15 @@ import {ShareToken} from "../src/ShareToken.sol";
 import {Vester} from "../src/Vester.sol";
 import {IShares} from "../src/Interfaces.sol";
 import {MockGuard, NotAGuard} from "./mocks/MockGuard.sol";
+import {MockFactory} from "./helpers/Base.sol";
 
 /// @notice The Launcher: one transaction makes a project, nobody but the Treasury's rules can move its money, settings
-/// reach only new projects, and a sale with no pool guard is refused.
+/// reach only new projects, and no Launcher can be made with an unguarded sale. The real sale path is in `Life.t.sol`.
 contract LauncherTest is Base {
     function test_launch_mintsEveryShareToItsPlace() public view {
         assertEq(shares.totalSupply(), SUPPLY);
-        assertEq(
-            shares.balanceOf(address(launcher)),
-            500_000_000 * SHARE,
-            "400M sale + 100M pool match, held for milestone 3"
-        );
+        assertEq(shares.balanceOf(finisher), 500_000_000 * SHARE, "400M sale + 100M pool match, held by the Finisher");
+        assertEq(shares.balanceOf(address(launcher)), 0, "the Launcher itself holds none");
         assertEq(shares.balanceOf(address(v)), 200_000_000 * SHARE, "the founder's 20%");
         assertEq(shares.balanceOf(address(t)), 300_000_000 * SHARE, "200M work pot + 100M reserve");
         assertEq(shares.balanceOf(founder), 0, "the founder holds nothing yet");
@@ -36,6 +34,7 @@ contract LauncherTest is Base {
         _sale(7500 * DOLLAR);
         assertEq(usd.balanceOf(founder), 0);
         assertEq(usd.balanceOf(address(launcher)), 0);
+        assertEq(usd.balanceOf(finisher), 0);
         assertEq(usd.balanceOf(address(t)), 7500 * DOLLAR);
     }
 
@@ -45,6 +44,9 @@ contract LauncherTest is Base {
         assertEq(p.shares, address(shares));
         assertEq(p.treasury, address(t));
         assertEq(p.vester, address(v));
+        assertEq(p.finisher, finisher);
+        assertEq(launcher.treasuryOfShares(address(shares)), address(t));
+        assertEq(launcher.treasuryOfShares(address(usd)), address(0), "only a project's Shares are known");
         assertEq(p.launchedAt, 1_800_000_000);
         assertEq(launcher.project(alice, PROJECT).shares, address(0), "someone else's id is not ours");
     }
@@ -62,14 +64,18 @@ contract LauncherTest is Base {
             address eShares,
             address eTreasury,
             address eVester,
+            address eFinisher,
             address eQuote,
             address ePlatform,
             Launcher.Allocation memory a,
             Launcher.Settings memory st
-        ) = abi.decode(e.data, (address, address, address, address, address, Launcher.Allocation, Launcher.Settings));
+        ) = abi.decode(
+            e.data, (address, address, address, address, address, address, Launcher.Allocation, Launcher.Settings)
+        );
         assertEq(eShares, s);
         assertEq(eTreasury, tr);
         assertEq(eVester, ve);
+        assertEq(eFinisher, launcher.project(alice, keccak256("indexed")).finisher);
         assertEq(eQuote, address(usd));
         assertEq(ePlatform, platform);
         assertEq(a.sale, 400_000_000 * SHARE);
@@ -78,8 +84,6 @@ contract LauncherTest is Base {
         assertEq(a.workPot, 200_000_000 * SHARE);
         assertEq(a.reserve, 100_000_000 * SHARE);
         assertEq(a.sale + a.poolReserve + a.founder + a.workPot + a.reserve, SUPPLY);
-        assertEq(st.opener, opener);
-        assertEq(st.salePath, salePath);
         assertEq(st.exitFeeBps, 500);
     }
 
@@ -161,12 +165,16 @@ contract LauncherTest is Base {
             Launcher.Settings memory s = _settings();
             if (i == 0) s.quote = IERC20(address(0));
             if (i == 1) s.platform = address(0);
-            if (i == 2) s.opener = address(0);
-            if (i == 3) s.salePath = address(0);
+            if (i == 2) (s.exitFeeBps, s.platformFeeBps) = (0, 0); // allowed: no exit fee
+            if (i == 3) s.agentUsd = 0; // allowed: agents that cannot spend
             if (i == 4) s.exitFeeBps = 1001;
             if (i == 5) s.platformFeeBps = 501;
             if (i == 6) s.spendableParts = 0;
             if (i == 7) s.floorParts = 0;
+            if (i == 2 || i == 3) {
+                launcher.setSettings(s);
+                continue;
+            }
             if (i == 8) {
                 s.exitFeeBps = 1000;
                 s.platformFeeBps = 1000;
@@ -182,14 +190,15 @@ contract LauncherTest is Base {
     function test_constructor_refusesBadSettings() public {
         Launcher.Settings memory s = _settings();
         s.platform = address(0);
-        bytes memory args = abi.encode(admin, s, STRATEGY, GUARD);
         vm.expectRevert(Launcher.BadSettings.selector);
-        deployCode("Launcher.sol:Launcher", args);
-        // the platform's own strategy and guard must be named
-        vm.expectRevert(Launcher.BadSettings.selector);
-        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), address(0), GUARD));
-        vm.expectRevert(Launcher.BadSettings.selector);
-        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, address(0)));
+        deployCode("Launcher.sol:Launcher", abi.encode(admin, s, STRATEGY, GUARD, minBid));
+        // the platform's own strategy, guard and bid rules must be named
+        vm.expectRevert(Launcher.BadStack.selector);
+        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), address(0), GUARD, minBid));
+        vm.expectRevert(Launcher.NoPoolGuard.selector);
+        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, address(0), minBid));
+        vm.expectRevert(Launcher.BadStack.selector);
+        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, GUARD, address(0)));
     }
 
     function test_admin_canHandOnOrRenounce_andRenouncingFreezesSettings() public {
@@ -209,18 +218,19 @@ contract LauncherTest is Base {
         launcher.setSettings(_settings());
     }
 
-    // ------------------------------------------------------------------------------------------- open sale
+    // ------------------------------------------------------------------------------------------- the platform's stack
 
     function test_openSale_refusesAnUnknownProject() public {
         vm.prank(alice);
         vm.expectRevert(Launcher.UnknownProject.selector);
-        launcher.openSale(PROJECT);
+        launcher.openSale(PROJECT, Launcher.Size.Standard);
     }
 
-    /// @dev The strategy and the guard are the platform's, fixed when the Launcher is made. Each way the platform's own
-    /// guard can be wrong (no contract there, an address without exactly the `beforeInitialize` bit, a contract that is
-    /// not a guard, a guard naming someone else) makes `openSale` refuse.
-    function test_openSale_refusesASaleWithNoPoolGuard() public {
+    /// @dev The strategy and the guard are the platform's, fixed when the Launcher is made, and the Launcher cannot exist
+    /// without a guard: each way the platform's guard can be wrong (no contract there, an address without exactly the
+    /// `beforeInitialize` bit, a contract that is not a guard, a guard naming someone else) stops the Launcher being built, so
+    /// no sale can ever open unguarded.
+    function test_constructor_refusesASaleWithNoPoolGuard() public {
         address noContract = address(uint160(0xB0B << 20) | uint160(1 << 13));
         address wrongBits = address(uint160(0xC0C << 20) | uint160(1 << 12)); // right code, but not `beforeInitialize`
         address extraBit = address(uint160(0xD0D << 20) | uint160(1 << 13) | 1); // `beforeInitialize` and one more
@@ -232,43 +242,65 @@ contract LauncherTest is Base {
         deployCodeTo("MockGuard.sol:MockGuard", abi.encode(address(0xCAFE)), otherGuard); // names someone else
         address[5] memory bad = [noContract, wrongBits, extraBit, notAGuard, otherGuard];
         for (uint256 i; i < bad.length; ++i) {
-            Launcher l = _deployLauncherWith(admin, _settings(), STRATEGY, bad[i]);
-            bytes32 h = l.settingsHash();
-            vm.prank(founder);
-            l.launch(PROJECT, "P", "P", h);
-            vm.prank(founder);
             vm.expectRevert(Launcher.NoPoolGuard.selector);
-            l.openSale(PROJECT);
+            deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, bad[i], minBid));
         }
     }
 
-    function test_openSale_withTheRightGuardStopsOnlyBecauseTheSaleIsNotBuiltYet() public {
-        vm.prank(founder);
-        vm.expectRevert(Launcher.SaleNotBuilt.selector);
-        launcher.openSale(PROJECT);
+    function test_constructor_theFeeMustBeExactlyThreePercentAndHaveNoOwner() public {
+        // a controller that takes 2% , one that takes 4%, one with an owner (the vendored one's shape), none at all
+        address two = deployCode("FixedFeeController.sol:FixedFeeController", abi.encode(platform, uint24(20_000)));
+        address four = deployCode("FixedFeeController.sol:FixedFeeController", abi.encode(platform, uint24(40_000)));
+        address owned = address(new OwnedFeeController(feeController));
+        address none = makeAddr("no controller");
+        address[4] memory bad = [two, four, owned, none];
+        for (uint256 i; i < bad.length; ++i) {
+            address f = address(new MockFactory(bad[i]));
+            address strat = address(uint160(0x57A7E7 + i));
+            deployCodeTo("MockStrategy.sol:MockStrategy", abi.encode(FAKE_POOL_MANAGER, FAKE_POSITION_MANAGER, f), strat);
+            address g = address(uint160(0xAA00 << 20 | (i + 1) << 24) | uint160(1 << 13));
+            deployCodeTo("MockGuard.sol:MockGuard", abi.encode(strat), g);
+            vm.expectRevert(Launcher.BadStack.selector);
+            deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), strat, g, minBid));
+        }
+        // the right controller is accepted (the setUp Launcher), and its recipient is the platform's fee address
+        assertEq(launcher.raiseFeeRecipient(), platform);
     }
 
-    // ------------------------------------------------------------------------ a stub that must not leave the lab
-
-    function test_constructor_refusesToRunOnAnyRealChain() public {
-        bytes memory args = abi.encode(admin, _settings(), STRATEGY, GUARD);
-        vm.chainId(11_155_111); // Sepolia
-        vm.expectRevert(Launcher.TestChainOnly.selector);
-        deployCode("Launcher.sol:Launcher", args);
-        vm.chainId(1);
-        vm.expectRevert(Launcher.TestChainOnly.selector);
-        deployCode("Launcher.sol:Launcher", args);
-        vm.chainId(31_337); // the local test chain is fine
-        deployCode("Launcher.sol:Launcher", args);
+    function test_constructor_theBidRulesMustBeOneDollarAndFourTimes() public {
+        address noMin = deployCode("MinBid.sol:MinBid", abi.encode(uint128(0), uint256(4)));
+        address smallMin = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e5), uint256(4)));
+        address noCap = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(0)));
+        address bigCap = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(40)));
+        address[4] memory bad = [noMin, smallMin, noCap, bigCap];
+        for (uint256 i; i < bad.length; ++i) {
+            vm.expectRevert(Launcher.BadStack.selector);
+            deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, GUARD, bad[i]));
+        }
     }
 
-    function test_theHeldSharesHaveNoWayOut_soThisLauncherIsForLocalTestsOnly() public {
-        uint256 held = shares.balanceOf(address(launcher));
-        assertEq(held, 500_000_000 * SHARE);
-        vm.prank(founder);
-        vm.expectRevert(Launcher.SaleNotBuilt.selector);
-        launcher.openSale(PROJECT);
-        assertEq(shares.balanceOf(address(launcher)), held, "still all there, and nothing can move it");
+    function test_thePlatformStackIsFixedAndNoSettingReachesIt() public view {
+        assertEq(launcher.strategy(), STRATEGY);
+        assertEq(launcher.poolGuard(), GUARD);
+        assertEq(launcher.minBid(), minBid);
+        assertEq(t.opener(), finisher, "the Treasury's opener is the project's Finisher");
+        assertEq(t.salePath(), address(launcher), "the Treasury's sale path is the Launcher");
+    }
+
+    function test_sizes_theMenuIsFixed() public view {
+        (uint256 g, uint256 m) = launcher.sizeOf(Launcher.Size.Small);
+        assertEq(g, 4000 * DOLLAR);
+        assertEq(m, 2000 * DOLLAR);
+        (g, m) = launcher.sizeOf(Launcher.Size.Standard);
+        assertEq(g, 10_000 * DOLLAR);
+        assertEq(m, 2500 * DOLLAR);
+        (g, m) = launcher.sizeOf(Launcher.Size.Large);
+        assertEq(g, 50_000 * DOLLAR);
+        assertEq(m, 12_500 * DOLLAR);
+        (uint256 floorQ96, uint256 tickQ96) = launcher.salePrices(Launcher.Size.Standard);
+        assertEq(floorQ96, tickQ96 * 100, "the floor is exactly tick 100");
+        // 10,000 dollars (raw 1e10) over 400,000,000 Shares (raw 4e26) is 2.5e-17 raw dollars a raw Share, times 2^96
+        assertApproxEqRel(floorQ96, (uint256(10_000e6) << 96) / uint256(400_000_000e18), 0.01e18);
     }
 
     // ------------------------------------------------------------------------------- settings a founder commits to
@@ -276,7 +308,7 @@ contract LauncherTest is Base {
     function test_launch_refusesSettingsTheFounderDidNotSee() public {
         bytes32 seen = launcher.settingsHash();
         Launcher.Settings memory s = _settings();
-        s.salePath = makeAddr("a new sale path"); // the admin retargets a trust anchor after the founder looked
+        s.platform = makeAddr("a new platform address"); // the admin changes where the exit fee goes after the founder looked
         vm.prank(admin);
         launcher.setSettings(s);
         assertTrue(launcher.settingsHash() != seen);
@@ -330,4 +362,29 @@ contract LauncherTest is Base {
 /// @dev A token with the wrong scale.
 contract EighteenDecimals {
     uint8 public constant decimals = 18;
+}
+
+/// @dev A fee controller shaped like the vendored one: right fee, but it has an owner who could change it.
+contract OwnedFeeController {
+    address private immutable _real;
+
+    constructor(address real) {
+        _real = real;
+    }
+
+    function owner() external pure returns (address) {
+        return address(0xBEEF);
+    }
+
+    function getProtocolFeeAmount(address c, uint256 a) external view returns (uint256) {
+        (bool ok, bytes memory r) = _real.staticcall(abi.encodeWithSignature("getProtocolFeeAmount(address,uint256)", c, a));
+        require(ok);
+        return abi.decode(r, (uint256));
+    }
+
+    function protocolFeeRecipient() external view returns (address) {
+        (bool ok, bytes memory r) = _real.staticcall(abi.encodeWithSignature("protocolFeeRecipient()"));
+        require(ok);
+        return abi.decode(r, (address));
+    }
 }

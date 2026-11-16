@@ -31,7 +31,7 @@ contract GasTest is Base {
         (bool ok,) = address(launcher).call(call);
         g -= gasleft();
         assertTrue(ok);
-        _measure("Launcher.launch: three clones, the allocation, the setup (first project of this founder)", g, 900_000);
+        _measure("Launcher.launch: four clones, the allocation, the setup (first project of this founder)", g, 1_100_000);
         // a second project in the same network is the same work with warm settings
         vm.prank(bob);
         _cold();
@@ -39,16 +39,16 @@ contract GasTest is Base {
         (ok,) = address(launcher).call(call);
         g -= gasleft();
         assertTrue(ok);
-        _measure("Launcher.launch: another founder", g, 900_000);
+        _measure("Launcher.launch: another founder", g, 1_100_000);
     }
 
     function test_gas_deployTheLauncher() public {
-        bytes memory args = abi.encode(admin, _settings(), STRATEGY, GUARD);
+        bytes memory args = abi.encode(admin, _settings(), STRATEGY, GUARD, minBid);
         _cold();
         uint256 g = gasleft();
         deployCode("Launcher.sol:Launcher", args);
         g -= gasleft();
-        _measure("deploy Launcher (with the three implementations inside)", g, 6_000_000);
+        _measure("deploy Launcher (with the five implementations inside)", g, 9_000_000);
     }
 
     function test_gas_giveShares() public {
