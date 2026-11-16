@@ -2533,6 +2533,46 @@ impl Db {
         Ok(row.try_get::<i64, _>("n")?)
     }
 
+    /// How many records of these `kinds` this server received from `pubkey` in this community since `since` (all
+    /// time when `None`) that carry every one of `tags`, each a `(name, value)` pair. Counted by the server's own
+    /// receive time, which a client cannot set, and including records since deleted, so deleting makes no room.
+    #[datastore_span(name = "count_tagged_events_received_since", system = "postgresql")]
+    pub async fn count_tagged_events_received_since(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+        kinds: &[i32],
+        tags: &[(&str, &str)],
+        since: Option<DateTime<Utc>>,
+    ) -> Result<i64> {
+        let mut connection = crate::observability::acquire_writer(
+            &self.pool,
+            crate::observability::WriterOperation::Authorization,
+        )
+        .await?;
+        let wanted = serde_json::Value::Array(
+            tags.iter()
+                .map(|(name, value)| serde_json::json!([name, value]))
+                .collect(),
+        );
+        let since = since.unwrap_or(DateTime::<Utc>::UNIX_EPOCH);
+        let row = sqlx::query(
+            r#"
+            SELECT COUNT(*) AS n FROM events
+            WHERE community_id = $1 AND pubkey = $2 AND kind = ANY($3) AND received_at >= $4
+              AND tags @> $5::jsonb
+            "#,
+        )
+        .bind(community_id.as_uuid())
+        .bind(pubkey)
+        .bind(kinds)
+        .bind(since)
+        .bind(wanted)
+        .fetch_one(&mut *connection)
+        .await?;
+        Ok(row.try_get::<i64, _>("n")?)
+    }
+
     /// Inserts an event. Returns `(StoredEvent, was_inserted)` — `false` on duplicate.
     #[datastore_span(name = "insert_event", system = "postgresql")]
     pub async fn insert_event(

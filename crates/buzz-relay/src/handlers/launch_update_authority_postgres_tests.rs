@@ -12,7 +12,8 @@ use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
 
 use super::board_moderation_postgres_tests::{accept, community, refuse};
 use super::launch_update_authority::{
-    NOT_FOUNDER, NOT_HELPER, NOT_TEAM, NO_PROJECT, NO_TASK, OTHER_PROJECT, OWN_WORK,
+    ASKED_ENOUGH, ASKING_TOO_MUCH, NOT_FOUNDER, NOT_HELPER, NOT_TEAM, NO_PROJECT, NO_TASK, ON_TEAM,
+    OTHER_PROJECT, OWN_WORK,
 };
 use crate::state::AppState;
 
@@ -989,6 +990,160 @@ async fn an_agent_hands_in_reported_numbers_and_the_bounds_hold_at_the_door() {
         ),
         NOT_TEAM,
         "an agent confirming its own work",
+    )
+    .await;
+}
+
+/// An ask to join as the web app signs it: the label, a name, and the person's own yes to that name. `note` keeps two
+/// asks signed in the same second from being one event.
+fn ask(who: &Keys, coordinate: &str, invite: &str, note: &str) -> Event {
+    record(
+        who,
+        coordinate,
+        &[
+            &["l", "creaton-join"],
+            &["join-ask", invite],
+            &["l", "creaton-team"],
+            &["team-answer", "yes"],
+            &["team-invite", invite],
+            &["note", note],
+        ],
+    )
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_stranger_may_ask_to_join_and_may_do_nothing_else_on_the_project() {
+    let (state, tenant, p, coord) = world().await;
+    let first = ask(&p.stranger, &coord, "abc123", "1");
+    accept(&state, &tenant, first.clone(), "a stranger's ask to join").await;
+    assert!(stored(&state, &tenant, &first).await);
+
+    // The ask lends nothing: what a stranger may not post is still refused.
+    refuse(
+        &state,
+        &tenant,
+        record(&p.stranger, &coord, &[&["update-part", "done", "Shipped"]]),
+        NOT_TEAM,
+        "a stranger's update after asking",
+    )
+    .await;
+    refuse(
+        &state,
+        &tenant,
+        task(&p.stranger, &coord, &p.helper, "A map"),
+        NOT_TEAM,
+        "a stranger's task after asking",
+    )
+    .await;
+    refuse(
+        &state,
+        &tenant,
+        record(&p.stranger, &coord, &[&["goal", "g1"]]),
+        NOT_FOUNDER,
+        "a stranger's goal after asking",
+    )
+    .await;
+    // An ask dressed as an update is no ask.
+    refuse(
+        &state,
+        &tenant,
+        record(
+            &p.stranger,
+            &coord,
+            &[
+                &["l", "creaton-join"],
+                &["join-ask", "zzz"],
+                &["update-part", "done", "Shipped"],
+            ],
+        ),
+        "cannot also be anything else",
+        "an ask that is also an update",
+    )
+    .await;
+    // The team is on the project already, and a project the server does not hold cannot be asked.
+    refuse(
+        &state,
+        &tenant,
+        ask(&p.mate, &coord, "abc123", "m"),
+        ON_TEAM,
+        "a team member asking",
+    )
+    .await;
+    refuse(
+        &state,
+        &tenant,
+        ask(
+            &p.stranger,
+            &coordinate(&p.founder, "nowhere"),
+            "abc123",
+            "n",
+        ),
+        NO_PROJECT,
+        "an ask to a project that is not here",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn asking_again_is_capped_for_a_project_and_for_a_day() {
+    let (state, tenant, p, coord) = world().await;
+    for n in 0..3 {
+        accept(
+            &state,
+            &tenant,
+            ask(&p.stranger, &coord, &format!("name{n}"), &n.to_string()),
+            "an ask within the cap",
+        )
+        .await;
+    }
+    let fourth = ask(&p.stranger, &coord, "name3", "3");
+    refuse(
+        &state,
+        &tenant,
+        fourth.clone(),
+        ASKED_ENOUGH,
+        "a fourth ask to one project",
+    )
+    .await;
+    assert!(!stored(&state, &tenant, &fourth).await);
+    // Another person is not held to the first one's count.
+    accept(
+        &state,
+        &tenant,
+        ask(&p.helper, &coord, "other1", "h"),
+        "someone else's ask",
+    )
+    .await;
+
+    // A day's asks across projects: the stranger has used 3 on orbit; 17 more on other projects reach 20.
+    for n in 0..18 {
+        let d = format!("side{n}");
+        accept(
+            &state,
+            &tenant,
+            project(&p.founder, &d, &[], 0),
+            "another project",
+        )
+        .await;
+    }
+    for n in 0..17 {
+        let d = format!("side{n}");
+        accept(
+            &state,
+            &tenant,
+            ask(&p.stranger, &coordinate(&p.founder, &d), "again", "d"),
+            "an ask within the day's cap",
+        )
+        .await;
+    }
+    refuse(
+        &state,
+        &tenant,
+        ask(&p.stranger, &coordinate(&p.founder, "side17"), "again", "d"),
+        ASKING_TOO_MUCH,
+        "the twenty-first ask in a day",
     )
     .await;
 }

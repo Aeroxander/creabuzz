@@ -605,8 +605,10 @@ fn is_served(event: &nostr::Event, team: &Team, accepted: &Accepted) -> bool {
         match fields.first().map(String::as_str) {
             Some("goal" | "promise" | "promise-mark") => founders = true,
             Some("update-part" | "update-kind" | "help-needed") => weekly = true,
-            // An offer of help, the team's reply to one, "help found", an answer to a team invitation.
-            Some("help-offer" | "help-reply" | "help-found" | "team-answer") => return false,
+            // An offer of help, the team's reply to one, "help found", an answer to a team invitation, an ask to join.
+            Some("help-offer" | "help-reply" | "help-found" | "team-answer" | "join-ask") => {
+                return false
+            }
             Some("task-part") => steps.push(fields.get(1).map(String::as_str).unwrap_or("")),
             _ => {}
         }
@@ -1453,6 +1455,7 @@ mod tests {
             &[&["help-reply", "ff"]],
             &[&["help-found", "ff"]],
             &[&["team-answer", "yes"]],
+            &[&["join-ask", "abc123"]],
             &[&["update-part", "done", "x"], &["help-reply", "ff"]],
         ] {
             for signer in [&founder, &teammate, &helper] {

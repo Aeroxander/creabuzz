@@ -1852,7 +1852,7 @@ fn is_0x_address(value: &str) -> bool {
 /// Counted over raw tags (see `PROJECT_MEMBER_CAP`): the caps must hold before
 /// any allocation proportional to the tag list.
 const LAUNCH_A_TAG_CAP: usize = 64;
-const LAUNCH_TEAM_TAG_CAP: usize = 64;
+const LAUNCH_TEAM_TAG_CAP: usize = 200;
 const LAUNCH_CHANNEL_TAG_CAP: usize = 8;
 const LAUNCH_NAME_MAX_LEN: usize = 256;
 /// Launch content is JSON; bound well above any honest record so a junk
@@ -8653,6 +8653,20 @@ mod postgres_tests {
             &["team", &coord_owner, "founder"],
         ]);
         assert!(validate_launch_record_envelope(&ev).is_ok());
+    }
+
+    #[test]
+    fn launch_record_envelope_holds_a_team_of_two_hundred_and_no_more() {
+        let member = "b".repeat(64);
+        let with_team = |count: usize| {
+            let mut tags: Vec<Vec<&str>> = vec![vec!["d", "nebula"]];
+            tags.extend((0..count).map(|_| vec!["team", member.as_str(), "member"]));
+            let tags: Vec<&[&str]> = tags.iter().map(Vec::as_slice).collect();
+            validate_launch_record_envelope(&make_launch_record(&tags))
+        };
+        assert!(with_team(200).is_ok());
+        let err = with_team(201).unwrap_err();
+        assert!(err.contains("at most 200 `team` tags"), "got: {err}");
     }
 
     #[test]

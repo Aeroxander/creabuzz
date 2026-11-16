@@ -17,6 +17,8 @@
 //! | `update-part`, `update-kind`, `help-needed`       | the founder or a team member         |
 //! | `help-reply`, `help-found`                        | the founder or a team member         |
 //! | `help-offer`                                      | anyone (the project must exist)      |
+//! | `join-ask`                                        | anyone signed in but the team; a few |
+//! |                                                   | a day, and a few for one project     |
 //! | `task-part` = task, send-back, grant, cancel      | the founder or a team member         |
 //! | `task-part` = confirm                             | founder or team, never the helper;   |
 //! |                                                   | a founder working alone may check    |
@@ -107,6 +109,21 @@ pub(crate) const NO_TASK: &str = "invalid: this step names a task that is not on
 /// Said when a step names a task that belongs to a different project than its `a` tag.
 pub(crate) const OTHER_PROJECT: &str = "invalid: this step names a task from another project";
 
+/// Said when someone already on the team asks to join it.
+pub(crate) const ON_TEAM: &str = "invalid: you are already on this project's team";
+/// Said when an account has asked to join one project too often.
+pub(crate) const ASKED_ENOUGH: &str =
+    "restricted: you have already asked to join this project; the founder has been told";
+/// Said when an account asks to join too many projects in a day.
+pub(crate) const ASKING_TOO_MUCH: &str =
+    "rate-limited: you can ask to join a few projects a day; try again tomorrow";
+/// The `l` label an ask to join carries, so a project's asks are read apart from its other records.
+pub(crate) const JOIN_LABEL: &str = "creaton-join";
+/// How many times one account may ask to join one project (a person removed from a team may ask again).
+const ASKS_PER_PROJECT: i64 = 3;
+/// How many projects one account may ask to join in a day.
+const ASKS_PER_DAY: i64 = 20;
+
 /// Which step of a task a record is (`task-part`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TaskPart {
@@ -169,6 +186,8 @@ pub(crate) struct Requirement {
     pub(crate) team: bool,
     /// A task record: its step, and for every step but the first the task it names.
     pub(crate) step: Option<(TaskPart, Option<[u8; 32]>)>,
+    /// An ask to join the project (`join-ask`): any signed-in account but the team may sign it.
+    pub(crate) join: bool,
 }
 
 impl Requirement {
@@ -236,6 +255,8 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
     let mut parts: Vec<&str> = Vec::new();
     let mut task_id: Option<&str> = None;
     let mut helper: Option<&str> = None;
+    let mut joins: Vec<&str> = Vec::new();
+    let mut labelled_join = false;
     for tag in event.tags.iter() {
         let fields = tag.as_slice();
         let Some(name) = fields.first().map(|s| s.as_str()) else {
@@ -247,6 +268,8 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
             "update-part" | "update-kind" | "help-needed" => team = true,
             "help-offer" | "help-reply" | "help-found" => help_marks.push((name, value)),
             "task-part" => parts.push(value),
+            "join-ask" => joins.push(value),
+            "l" if value == JOIN_LABEL => labelled_join = true,
             // The first of each, as the readers take it.
             "task" if task_id.is_none() => task_id = Some(value),
             "task-helper" if helper.is_none() => helper = Some(value),
@@ -297,6 +320,36 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
 
     check_hand_in_extras(event, step.map(|(part, _)| part))?;
 
+    if !joins.is_empty() {
+        let [invite] = joins.as_slice() else {
+            return Err("a record can carry only one `join-ask` tag".into());
+        };
+        let name_ok = !invite.is_empty()
+            && invite.len() <= 32
+            && invite
+                .bytes()
+                .all(|b| b.is_ascii_digit() || b.is_ascii_lowercase());
+        if !name_ok {
+            return Err(
+                "`join-ask` tag must hold a short name of lowercase letters and digits".into(),
+            );
+        }
+        if !labelled_join {
+            return Err(format!(
+                "an ask to join must carry the `l` label {JOIN_LABEL:?}"
+            ));
+        }
+        if founder || team || known || step.is_some() {
+            return Err("an ask to join cannot also be anything else".into());
+        }
+        return Ok(Some(Requirement {
+            founder: false,
+            team: false,
+            step: None,
+            join: true,
+        }));
+    }
+
     if !(founder || team || known || step.is_some()) {
         if is_open_work_record(event) {
             return Ok(None);
@@ -308,6 +361,7 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
         founder,
         team,
         step,
+        join: false,
     }))
 }
 
@@ -497,6 +551,14 @@ fn decide_by_place(
     task: Option<&TaskFacts>,
     confirm: &ConfirmFacts,
 ) -> Result<(), &'static str> {
+    if requirement.join {
+        // Anyone may ask, the team included only in the sense that they need not: a person already on it is told so.
+        return if team.has(signer) {
+            Err(ON_TEAM)
+        } else {
+            Ok(())
+        };
+    }
     if requirement.founder && !team.is_founder(signer) {
         return Err(NOT_FOUNDER);
     }
@@ -673,7 +735,54 @@ pub(crate) async fn enforce_launch_update_authority(
         } else {
             IngestError::Rejected(reason.into())
         }
-    })
+    })?;
+
+    if requirement.join {
+        enforce_join_caps(state, community, event, &coordinate).await?;
+    }
+    Ok(())
+}
+
+/// Hold an ask to join to its caps: a few for one project, a few projects a day. Counted by the server's receive time,
+/// and a refused ask is not stored, so it uses no room. The web app shows one button and hides it once asked, so a
+/// person meets these only by asking again after being taken off a team, or by a script.
+async fn enforce_join_caps(
+    state: &Arc<AppState>,
+    community: buzz_core::tenant::CommunityId,
+    event: &Event,
+    coordinate: &str,
+) -> Result<(), IngestError> {
+    let kinds = [KIND_LAUNCH_UPDATE as i32];
+    let signer = event.pubkey.to_bytes();
+    let for_project = state
+        .db
+        .count_tagged_events_received_since(
+            community,
+            &signer,
+            &kinds,
+            &[("l", JOIN_LABEL), ("a", coordinate)],
+            None,
+        )
+        .await
+        .map_err(|e| internal("counting asks to join this project", e))?;
+    if for_project >= ASKS_PER_PROJECT {
+        return Err(IngestError::AuthFailed(ASKED_ENOUGH.into()));
+    }
+    let today = state
+        .db
+        .count_tagged_events_received_since(
+            community,
+            &signer,
+            &kinds,
+            &[("l", JOIN_LABEL)],
+            Some(chrono::Utc::now() - chrono::Duration::hours(24)),
+        )
+        .await
+        .map_err(|e| internal("counting asks to join today", e))?;
+    if today >= ASKS_PER_DAY {
+        return Err(IngestError::Rejected(ASKING_TOO_MUCH.into()));
+    }
+    Ok(())
 }
 
 /// Whether the server has `account` on record as an agent account: someone runs it.
@@ -1478,5 +1587,72 @@ mod tests {
             ],
         );
         assert!(classify(&plain).unwrap_err().contains("handed in"));
+    }
+    /// An ask to join, as the web app signs it: its label, its name, and the person's own yes to that name.
+    fn ask(w: &World, who: &Keys, invite: &str) -> Event {
+        w.record(
+            who,
+            &[
+                &["l", JOIN_LABEL],
+                &["join-ask", invite],
+                &["l", "creaton-team"],
+                &["team-answer", "yes"],
+                &["team-invite", invite],
+            ],
+        )
+    }
+
+    #[test]
+    fn anyone_not_on_the_team_may_ask_to_join_and_nobody_else_gets_a_say() {
+        let w = World::new();
+        // A stranger, the helper and someone who was on an earlier version of the team may ask.
+        for who in [&w.stranger, &w.helper, &w.former] {
+            assert_eq!(w.verdict(&ask(&w, who, "abc123"), None), Ok(()));
+        }
+        // An agent account may ask: an ask needs no person.
+        assert_eq!(
+            w.verdict_agent(&ask(&w, &w.stranger, "abc123"), None),
+            Ok(())
+        );
+        // A person on the team is told so, not stored a second time.
+        for who in [&w.mate, &w.founder] {
+            assert_eq!(w.verdict(&ask(&w, who, "abc123"), None), Err(ON_TEAM));
+        }
+        // The ask grants nothing else: the same stranger still cannot post an update, a goal or a task.
+        let update = w.record(&w.stranger, &[&["update-part", "done", "Shipped"]]);
+        assert_eq!(w.verdict(&update, None), Err(NOT_TEAM));
+        assert_eq!(w.verdict(&w.task(&w.stranger), None), Err(NOT_TEAM));
+        assert_eq!(
+            w.verdict(&w.record(&w.stranger, &[&["goal", "g1"]]), None),
+            Err(NOT_FOUNDER)
+        );
+    }
+
+    #[test]
+    fn an_ask_to_join_is_nothing_but_an_ask() {
+        let w = World::new();
+        let refused = |tags: &[&[&str]]| classify(&w.record(&w.stranger, tags)).unwrap_err();
+        // Dressed as an update, a goal or an offer it is refused, so asking never lends a stranger a place.
+        for other in [
+            &["update-part", "done", "x"][..],
+            &["goal", "g1"],
+            &["help-offer", ID],
+        ] {
+            assert!(
+                refused(&[&["l", JOIN_LABEL], &["join-ask", "abc"], other])
+                    .contains("cannot also be anything else"),
+                "{other:?}"
+            );
+        }
+        assert!(refused(&[&["join-ask", "abc"]]).contains(JOIN_LABEL));
+        assert!(refused(&[&["l", JOIN_LABEL], &["join-ask", ""]]).contains("short name"));
+        assert!(refused(&[&["l", JOIN_LABEL], &["join-ask", "Has Space"]]).contains("short name"));
+        assert!(
+            refused(&[&["l", JOIN_LABEL], &["join-ask", &"a".repeat(33)]]).contains("short name")
+        );
+        assert!(
+            refused(&[&["l", JOIN_LABEL], &["join-ask", "a"], &["join-ask", "b"]])
+                .contains("only one `join-ask`")
+        );
     }
 }
