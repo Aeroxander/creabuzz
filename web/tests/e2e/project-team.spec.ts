@@ -138,11 +138,13 @@ test("the founder adds a person, they say yes, post an update and confirm work; 
   await install(page, relay, FOUNDER_KEY);
   await page.goto(PROJECT);
 
-  // Alone, the founder's own work cannot be confirmed.
+  // Alone, the founder checks their own work: the row says so and offers "I did it", never "someone else has to".
   const task = page.getByTestId("project-tasks").getByTestId("task");
-  await expect(task.getByTestId("task-cannot-confirm")).toContainText(
-    "Nobody else is on this project's team yet",
+  await expect(task).toContainText(
+    "You are the only person here, so you check it yourself.",
   );
+  await expect(task.getByRole("button", { name: "I did it" })).toBeVisible();
+  await expect(task.getByTestId("task-cannot-confirm")).toHaveCount(0);
 
   // The dialog says exactly what the server does before anyone is added.
   // Alone, the team card is on the page with its one "Add a person" button.
@@ -238,12 +240,12 @@ test("the founder adds a person, they say yes, post an update and confirm work; 
     "Write the install guide",
   ]);
 
-  // They confirm the work the founder could not confirm alone.
+  // They confirm the work the founder's own check does not make accepted.
   await task.getByRole("button", { name: "Confirm it's done" }).click();
   await task.getByRole("button", { name: "Yes, confirm" }).click();
   await expect(
     page.getByTestId("project-record").getByTestId("record-work-accepted"),
-  ).toContainText("Checked by Max Mate");
+  ).toContainText("Checked by you");
 
   // The founder removes them. The record says they left and when, and a visitor reads it.
   await openAs(page, FOUNDER_KEY, PROJECT);

@@ -181,7 +181,7 @@ test("Home connects project reports, reading history, discussion and the four ma
       .getByTestId("record-card")
       .first()
       .getByTestId("record-card-label"),
-  ).toHaveText("Update");
+  ).toHaveText("First update");
   await expectAccessible(page, "Home project progress cards");
   await expect(
     progress.getByRole("link", { name: /Artifact 1/ }),

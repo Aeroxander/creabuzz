@@ -634,8 +634,9 @@ test("a founder's own check that reaches a project with a team is still shown as
   await expect(record.getByTestId("record-work-accepted")).toHaveCount(0);
   seedStep(relay, MATE, task, "confirm", [["task-evidence", work.id]]);
   await page.reload();
+  // The page is read as Max Mate, so the check that took its place is "you".
   await expect(record.getByTestId("record-work-accepted")).toContainText(
-    "Checked by Max Mate",
+    "Done by Fay Founder · Checked by you",
   );
   await expect(record.getByTestId("record-work-alone")).toHaveCount(0);
 });

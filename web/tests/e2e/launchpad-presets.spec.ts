@@ -36,6 +36,8 @@ test("an idea's sale starts from a size, and the highlight lets go once the numb
     .fill("An open-source tool that maps the night sky for everyone.");
   await page.getByRole("button", { name: "Put it out there" }).click();
   await page.waitForURL(/\/launchpad\/.+/, { timeout: 20_000 });
+  // The founder's next steps are put away under "More to set up" on a new project's page.
+  await page.getByTestId("more-to-set-up-toggle").click();
   await page
     .getByRole("button", { name: /I already have backers elsewhere/ })
     .click();

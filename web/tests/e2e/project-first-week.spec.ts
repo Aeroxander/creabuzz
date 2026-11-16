@@ -316,7 +316,10 @@ test("a team member on the record brings in the Team card as it is, and the task
 });
 test("the first update ends the first week: 3 of 3, one line with the next date, then Ask for help", async ({
   page,
+  context,
 }) => {
+  // "Copy the link" says it copied only when the browser let it.
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const relay = createMockRelay();
   seedNew(relay);
   await install(page, relay, FOUNDER_KEY);
