@@ -649,6 +649,7 @@ async fn an_agent_account_may_ask_to_join_but_never_accepts_an_ask() {
             &[
                 &["l", "creaton-join"],
                 &["join-ask", "abc123"],
+                &["p", &hex(&p.founder)],
                 &["note", note],
             ],
         )

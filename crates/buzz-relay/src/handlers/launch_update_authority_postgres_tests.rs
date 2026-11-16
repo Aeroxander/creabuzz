@@ -997,6 +997,7 @@ async fn an_agent_hands_in_reported_numbers_and_the_bounds_hold_at_the_door() {
 /// An ask to join as the web app signs it: the label, a name, and the person's own yes to that name. `note` keeps two
 /// asks signed in the same second from being one event.
 fn ask(who: &Keys, coordinate: &str, invite: &str, note: &str) -> Event {
+    let founder = coordinate.split(':').nth(1).unwrap_or_default();
     record(
         who,
         coordinate,
@@ -1006,6 +1007,7 @@ fn ask(who: &Keys, coordinate: &str, invite: &str, note: &str) -> Event {
             &["l", "creaton-team"],
             &["team-answer", "yes"],
             &["team-invite", invite],
+            &["p", founder],
             &["note", note],
         ],
     )
@@ -1146,4 +1148,103 @@ async fn asking_again_is_capped_for_a_project_and_for_a_day() {
         "the twenty-first ask in a day",
     )
     .await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn an_ask_is_small_and_aimed_at_the_projects_founder_only() {
+    let (state, tenant, p, coord) = world().await;
+    let founder = hex(&p.founder);
+    // A valid-JSON body far over the cap is refused and not stored (a stranger signs these for nothing).
+    let body = format!(
+        r#"{{"title":"Asked to join","body":"{}"}}"#,
+        "x".repeat(250_000)
+    );
+    let big = signed_body(
+        &p.stranger,
+        KIND_LAUNCH_UPDATE,
+        &[
+            &["a", &coord],
+            &["l", "creaton-join"],
+            &["join-ask", "big1"],
+            &["p", &founder],
+        ],
+        0,
+        &body,
+    );
+    refuse(
+        &state,
+        &tenant,
+        big.clone(),
+        "bytes of content",
+        "a 250 KB ask",
+    )
+    .await;
+    assert!(!stored(&state, &tenant, &big).await);
+
+    // An ask on this project that names somebody else in `p` is refused, so a stranger cannot fill a victim's inbox.
+    let victim = hex(&p.helper);
+    let aimed = record(
+        &p.stranger,
+        &coord,
+        &[
+            &["l", "creaton-join"],
+            &["join-ask", "aim1"],
+            &["p", &victim],
+        ],
+    );
+    refuse(
+        &state,
+        &tenant,
+        aimed.clone(),
+        "founder",
+        "an ask aimed at someone else",
+    )
+    .await;
+    assert!(!stored(&state, &tenant, &aimed).await);
+    let none = record(
+        &p.stranger,
+        &coord,
+        &[&["l", "creaton-join"], &["join-ask", "aim2"]],
+    );
+    refuse(&state, &tenant, none, "founder", "an ask that names nobody").await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn only_the_founder_turns_an_ask_away() {
+    let (state, tenant, p, coord) = world().await;
+    let asker = hex(&p.stranger);
+    let decline = |who: &Keys| {
+        record(
+            who,
+            &coord,
+            &[&["l", "creaton-join"], &["join-decline", &asker]],
+        )
+    };
+    refuse(
+        &state,
+        &tenant,
+        decline(&p.mate),
+        NOT_FOUNDER,
+        "a team member turning someone away",
+    )
+    .await;
+    refuse(
+        &state,
+        &tenant,
+        decline(&p.stranger),
+        NOT_FOUNDER,
+        "the asker turning themselves away",
+    )
+    .await;
+    let ok = decline(&p.founder);
+    accept(
+        &state,
+        &tenant,
+        ok.clone(),
+        "the founder turning someone away",
+    )
+    .await;
+    assert!(stored(&state, &tenant, &ok).await);
 }

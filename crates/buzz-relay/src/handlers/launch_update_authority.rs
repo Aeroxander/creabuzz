@@ -18,7 +18,10 @@
 //! | `help-reply`, `help-found`                        | the founder or a team member         |
 //! | `help-offer`                                      | anyone (the project must exist)      |
 //! | `join-ask`                                        | anyone signed in but the team; a few |
-//! |                                                   | a day, and a few for one project     |
+//! |                                                   | a day, and a few for one project;    |
+//! |                                                   | small, and its `p` tag is the        |
+//! |                                                   | project's founder                    |
+//! | `join-decline`                                    | the founder (turns an ask away)      |
 //! | `task-part` = task, send-back, grant, cancel      | the founder or a team member         |
 //! | `task-part` = confirm                             | founder or team, never the helper;   |
 //! |                                                   | a founder working alone may check    |
@@ -122,6 +125,13 @@ pub(crate) const ASKING_TOO_MUCH: &str =
     "rate-limited: you can ask to join a few projects a day; try again tomorrow";
 /// The `l` label an ask to join carries, so a project's asks are read apart from its other records.
 pub(crate) const JOIN_LABEL: &str = "creaton-join";
+/// The most JSON content an ask to join may carry, in bytes. The web app sends `{"title":"Asked to join","body":""}`
+/// and never reads more, so nothing an ask holds is worth more than this to anyone, and a stranger's ask is small.
+pub(crate) const JOIN_CONTENT_MAX: usize = 1024;
+/// The most tags an ask to join may carry (the web app sends seven; a script may add a note or two).
+const JOIN_TAGS_MAX: usize = 12;
+/// The most bytes all of an ask's tag fields may hold together (the web app's are about 400).
+const JOIN_TAG_BYTES_MAX: usize = 1536;
 /// How many times one account may ask to join one project (a person removed from a team may ask again).
 const ASKS_PER_PROJECT: i64 = 3;
 /// How many projects one account may ask to join in a day.
@@ -259,7 +269,10 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
     let mut task_id: Option<&str> = None;
     let mut helper: Option<&str> = None;
     let mut joins: Vec<&str> = Vec::new();
+    let mut declines: Vec<&str> = Vec::new();
     let mut labelled_join = false;
+    let mut named: Vec<&str> = Vec::new();
+    let mut project: Option<&str> = None;
     for tag in event.tags.iter() {
         let fields = tag.as_slice();
         let Some(name) = fields.first().map(|s| s.as_str()) else {
@@ -272,6 +285,9 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
             "help-offer" | "help-reply" | "help-found" => help_marks.push((name, value)),
             "task-part" => parts.push(value),
             "join-ask" => joins.push(value),
+            "join-decline" => declines.push(value),
+            "p" => named.push(value),
+            "a" if project.is_none() => project = Some(value),
             "l" if value == JOIN_LABEL => labelled_join = true,
             // The first of each, as the readers take it.
             "task" if task_id.is_none() => task_id = Some(value),
@@ -342,8 +358,19 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
                 "an ask to join must carry the `l` label {JOIN_LABEL:?}"
             ));
         }
-        if founder || team || known || step.is_some() {
+        if founder || team || known || step.is_some() || !declines.is_empty() {
             return Err("an ask to join cannot also be anything else".into());
+        }
+        check_ask_is_small(event)?;
+        // The ask names the project's founder and nobody else, so the founder's own reads (`#p`) find it and a
+        // stranger cannot aim one at somebody else's inbox.
+        let project_founder = project
+            .and_then(|coordinate| coordinate.split(':').nth(1))
+            .unwrap_or("");
+        if named != [project_founder] {
+            return Err(
+                "an ask to join must name the project's founder, and only the founder, in its `p` tag".into(),
+            );
         }
         return Ok(Some(Requirement {
             founder: false,
@@ -351,6 +378,18 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
             step: None,
             join: true,
         }));
+    }
+
+    if !declines.is_empty() {
+        let [asker] = declines.as_slice() else {
+            return Err("a record can carry only one `join-decline` tag".into());
+        };
+        if id_bytes(asker).is_none() {
+            return Err("`join-decline` tag must hold the key of the person turned away".into());
+        }
+        // Turning someone away is the founder's, as accepting is: the founder alone saves the project record.
+        founder = true;
+        known = true;
     }
 
     if !(founder || team || known || step.is_some()) {
@@ -366,6 +405,29 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
         step,
         join: false,
     }))
+}
+
+/// Hold an ask to join to a small size: its JSON content, its tag count and the bytes of its tag fields. A stranger can
+/// sign one for nothing, and the founder's page reads up to 200 of them every few seconds, so one ask must never be
+/// worth more than a few hundred bytes.
+fn check_ask_is_small(event: &Event) -> Result<(), String> {
+    if event.content.len() > JOIN_CONTENT_MAX {
+        return Err(format!(
+            "an ask to join carries at most {JOIN_CONTENT_MAX} bytes of content"
+        ));
+    }
+    let tags = event.tags.len();
+    let bytes: usize = event
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice().iter().map(String::len).sum::<usize>())
+        .sum();
+    if tags > JOIN_TAGS_MAX || bytes > JOIN_TAG_BYTES_MAX {
+        return Err(format!(
+            "an ask to join carries at most {JOIN_TAGS_MAX} tags and {JOIN_TAG_BYTES_MAX} bytes of them"
+        ));
+    }
+    Ok(())
 }
 
 /// Hold the reported-result tags of a hand-in to their bounds (`buzz_core::task_result`).
@@ -1666,6 +1728,7 @@ mod tests {
     }
     /// An ask to join, as the web app signs it: its label, its name, and the person's own yes to that name.
     fn ask(w: &World, who: &Keys, invite: &str) -> Event {
+        let founder = w.founder.public_key().to_hex();
         w.record(
             who,
             &[
@@ -1674,8 +1737,19 @@ mod tests {
                 &["l", "creaton-team"],
                 &["team-answer", "yes"],
                 &["team-invite", invite],
+                &["p", &founder],
             ],
         )
+    }
+
+    /// An ask with these extra tags and this body, otherwise as the web app signs it.
+    fn ask_with(w: &World, extra: &[&[&str]], body: &str) -> Event {
+        let founder = w.founder.public_key().to_hex();
+        let mut tags: Vec<&[&str]> = vec![&["l", JOIN_LABEL], &["join-ask", "abc123"]];
+        let p = ["p", founder.as_str()];
+        tags.push(&p);
+        tags.extend_from_slice(extra);
+        with_body(w, &w.stranger, &tags, body)
     }
 
     #[test]
@@ -1730,5 +1804,85 @@ mod tests {
             refused(&[&["l", JOIN_LABEL], &["join-ask", "a"], &["join-ask", "b"]])
                 .contains("only one `join-ask`")
         );
+    }
+
+    #[test]
+    fn an_ask_to_join_is_small_and_names_only_the_founder() {
+        let w = World::new();
+        let ok = |event: &Event| classify(event).is_ok();
+        let error = |event: &Event| classify(event).unwrap_err();
+        // As the web app signs it.
+        assert!(ok(&ask_with(
+            &w,
+            &[],
+            r#"{"title":"Asked to join","body":""}"#
+        )));
+        // A body of any size beyond the cap is refused, even valid JSON (a stranger signs these for nothing).
+        let big = format!(
+            r#"{{"title":"Asked to join","body":"{}"}}"#,
+            "x".repeat(250_000)
+        );
+        assert!(error(&ask_with(&w, &[], &big)).contains("bytes of content"));
+        let just_over = format!(r#"{{"body":"{}"}}"#, "x".repeat(JOIN_CONTENT_MAX));
+        assert!(error(&ask_with(&w, &[], &just_over)).contains("bytes of content"));
+        let just_under = format!(r#"{{"body":"{}"}}"#, "x".repeat(JOIN_CONTENT_MAX - 12));
+        assert!(ok(&ask_with(&w, &[], &just_under)));
+        // The tags are held to a size too, so the bulk cannot move there.
+        let fat = "y".repeat(JOIN_TAG_BYTES_MAX);
+        assert!(error(&ask_with(&w, &[&["note", &fat]], "{}")).contains("tags"));
+        let many: Vec<[&str; 2]> = (0..JOIN_TAGS_MAX).map(|_| ["note", "n"]).collect();
+        let many: Vec<&[&str]> = many.iter().map(|t| t.as_slice()).collect();
+        assert!(error(&ask_with(&w, &many, "{}")).contains("tags"));
+        // The p tag is the project's founder, and only the founder: not nobody, not somebody else, not two.
+        let other = w.stranger.public_key().to_hex();
+        let founder = w.founder.public_key().to_hex();
+        let no_p = with_body(
+            &w,
+            &w.stranger,
+            &[&["l", JOIN_LABEL], &["join-ask", "abc123"]],
+            "{}",
+        );
+        assert!(error(&no_p).contains("founder"));
+        assert!(error(&ask_with(&w, &[&["p", &other]], "{}")).contains("founder"));
+        let aimed = with_body(
+            &w,
+            &w.stranger,
+            &[&["l", JOIN_LABEL], &["join-ask", "abc123"], &["p", &other]],
+            "{}",
+        );
+        assert!(error(&aimed).contains("founder"));
+        // Two p tags, even with the founder among them, would put the ask in another person's inbox.
+        let twice = ask_with(&w, &[&["p", &founder]], "{}");
+        assert!(error(&twice).contains("founder"));
+    }
+
+    #[test]
+    fn only_the_founder_turns_an_ask_away() {
+        let w = World::new();
+        let asker = w.stranger.public_key().to_hex();
+        let decline = |who: &Keys| w.record(who, &[&["l", JOIN_LABEL], &["join-decline", &asker]]);
+        assert_eq!(w.verdict(&decline(&w.founder), None), Ok(()));
+        // A team member, the person themselves and a stranger have no say.
+        for who in [&w.mate, &w.stranger, &w.helper] {
+            assert_eq!(w.verdict(&decline(who), None), Err(NOT_FOUNDER));
+        }
+        // Turning someone away is for a person, as accepting is.
+        assert_eq!(
+            w.verdict_agent(&decline(&w.founder), None),
+            Err(AGENT_LIMIT)
+        );
+        let refused = |tags: &[&[&str]]| classify(&w.record(&w.founder, tags)).unwrap_err();
+        assert!(refused(&[&["join-decline", "nobody"]]).contains("key of the person"));
+        assert!(
+            refused(&[&["join-decline", &asker], &["join-decline", &asker]])
+                .contains("only one `join-decline`")
+        );
+        // It is no ask, and an ask is no decline.
+        assert!(refused(&[
+            &["l", JOIN_LABEL],
+            &["join-ask", "abc"],
+            &["join-decline", &asker]
+        ])
+        .contains("cannot also be anything else"));
     }
 }
