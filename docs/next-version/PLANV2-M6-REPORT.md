@@ -13,12 +13,36 @@ glossy green 48 px button with option F's spring press. It installs on a phone (
 service worker that keeps the shell only). The social side people liked is carried over and restyled: Home, posts and
 comments, profiles, private messages and notifications. Sign-up and sign-in with a passkey are the same code `web/` runs,
 moved into `packages/creaton-core`, with the legal text word for word. A project page has the stage line and Updates,
-Tasks, People and Money, where Updates and People work from the server and Tasks and Money say plainly that they are
-coming. Start is three answers and one press. Join is 4 presses and 1 field for a new person, and the founder accepts in
+Tasks and People (and Money where the server turns investing on), where Updates and People work from the server and
+Tasks and Money say plainly that they are coming. Start is three answers and one press. Join is 4 presses and 1 field for a new person, and the founder accepts in
 1 press, each held by a test.
 
 What part 1 does not do: anything with money (no Back box, no rounds, no receipts; they need the chain reader of
 milestone 5), the weekly update with check-in on This week, tasks, and a run against a real server.
+
+## Review fixes (second round, 17 November 2026)
+
+Two reviews came back: a design and accessibility review at 360, 390 and 1280, and a code review. The code review's
+text reached the fixer only up to its third finding plus the start of a fourth (the manifest and icons); the rest was
+cut off, so any later finding of that review is not covered here and should be re-sent.
+
+| Finding | What changed | Held by |
+|---|---|---|
+| **Blocker:** with investing on, a team that never raised money showed Backed as done | The stage line marks only stages actually reached (`reachedStages`); no money stage is reached until the chain reader exists. Screen readers hear "done" or "not reached" per stage | `StageLine.test.tsx`; smoke "with investing on, a team that never raised money is not shown as backed" |
+| **Blocker:** component CSS was unlayered, so utilities in `className` were ignored (Back and Close green, Like always green, the chat box 96 px with a grip) | All component rules sit in `@layer components`; Like is muted until liked | screenshots 08, 13 |
+| **Blocker:** a failed profile read on You published an empty profile over the old one | A failed read stops the save with "Your profile could not be read, so nothing was changed. Try again."; where a profile was shown, a read that finds none also stops it; only sign-up starts from empty | `profile-save.test.ts` (4 cases) |
+| Sign-out kept the old account's messages and follows in memory | Sign-out removes `buzz.identity.backedUp` and reloads the page, as `web/` does | smoke "signing out reloads the page" |
+| The service worker could store an image or a markdown file as the offline app; the manifest and icons never updated | Only `text/html`, non-redirected responses become the shell; unhashed files under `/assets/` (manifest, icons) go network first; cache name bumped to v2 | checked by hand against the build's file names |
+| The green link buttons had no press | `ButtonLink` (TanStack `createLink`) carries the press; used for Start a project, Create your account and Message | `button.test.tsx` (touch, Enter, reduced motion) |
+| Money tab shown with investing off; four tabs cut off at 360 | Money is left out when investing is off; at 360 "soon" becomes a small dot (the word stays from 380 px up), tab padding 10 px | smoke checks the rail does not scroll at 360 |
+| Muted text under 4.5:1 over the bright lower half | Muted is `hsl(262 50% 90%)`, problem text `hsl(4 92% 80%)`, and panes with small text (cards, lists, empty states, the tab rail, the Messages row) add a 45% dark tint under the same frost; the sign-up footer sits on the calm pane | re-measured on the real pixels: no failing small text left at 390 or 360 except two at 4.3 to 4.5 at the 5th percentile (medians 6 to 7) and the page behind an open sheet |
+| Focus hidden under the tab bar; invisible tab panel stop; "Taskssoon" | `scroll-padding-bottom` on `html`; tab panels have the green ring; the tab reads "Tasks (coming soon)" | smoke uses the tab's accessible name |
+| Headings | One h1 per screen: an sr-only "Home" when signed in, BackHeader's title is plain text where the screen has its own h1, the name on You is an h2; Home sections use `aria-labelledby` | |
+| Touch targets under 44 px | Small buttons and tabs keep their 40 px look with a 44 px touch area; byline names grow their touch area | |
+| Tab bar labels over unblurred text | The bar is 97% solid | |
+| Empty Home offered nothing; Start disabled with no reason | Empty Home has a secondary Start a project; Start stays pressable and says which answers are missing, moving to the first; placeholders begin "For example:" | smoke "Start pressed with answers missing" |
+| Links used the browser's focus ring | One green ring for every link (base layer) | |
+| White initials under 3:1 on some avatar colours | Avatar colours darker (40% to 28% lightness): the worst is now 4.06:1 | |
 
 ## Carried over, new, placeholder
 
@@ -81,15 +105,16 @@ messages) sits on a calmer, darker pane, the open point DIRECTION.md left.
 | Copy check (`app/scripts/check-copy.mjs`) over `app/src` and the moved core folders | passes (the shared rules plus key-format and the old product name) |
 | px-text check | passes |
 | File sizes (600 lines for `src`) | passes |
-| `vite build` + bundle budget | entry 405 KiB (132 KiB gzip) under the 450 KiB budget; every screen but Home and Project loads on first open; only `index.html`, `sw.js` and `assets/` in `dist` |
-| Unit tests (`vitest`, 2 workers) | **30 passed**: the press (pointer, touch leave and cancel, Space, Enter, blur, right button ignored, reduced motion, disabled, caller handlers kept), option F's values in the stylesheet, Field, Avatar, Card, EmptyState, Tabs, Sheet, Toast, the project record reader, Start's records |
-| Playwright, phone 390x844, touch, one worker (`smoke`) | **9 passed**: sign-up shows the boxes word for word and waits for them; Home; investing switch; Project stage, updates, people, Tasks and Money placeholders; a post with comments; You signed in and out; Start within 3 presses and 3 fields; Join |
+| `vite build` + bundle budget | entry 386 KiB (121 KiB gzip) under the 450 KiB budget; every screen but Home and Project loads on first open; only `index.html`, `sw.js` and `assets/` in `dist` |
+| Unit tests (`vitest`, 2 workers) | **38 passed**: the press (pointer, touch leave and cancel, Space, Enter, blur, right button ignored, reduced motion, disabled, caller handlers kept) on the button and the link button, option F's values in the stylesheet, Field, Avatar, Card, EmptyState, Tabs, Sheet, Toast, the stage line, the profile save, the project record reader, Start's records |
+| Playwright, phone 390x844, touch, one worker (`smoke`) | **12 passed** (with Join): sign-up shows the boxes word for word and waits for them; Home; investing switch; Project stage, updates, people, Tasks placeholder, no Money tab without investing; with investing on at 360, Backed not done and four tabs fit; a post with comments; You signed in and out; sign-out reloads; Start with answers missing; Start within 3 presses and 3 fields; Join |
 | Join budget (`join.spec.ts`) | a new person on the hosted settings: **4 presses, 1 field** (Ask, name, age tick, terms tick, Create); the ask is sent by itself after sign-up, once, and not again on reload. The founder: **1 press** (Accept); the person is then on the team and the stage reads Team |
 | `knip` (whole repo, app added) | clean |
 | `web/`: `tsc --noEmit`, node tests, `vite build`, copy and px-text checks | clean; **3594 passed, 0 failed** (1 skipped, as before) |
 | `packages/creaton-core` node tests | **1004 passed, 0 failed** |
 
 Not run: `just ci` (it runs cargo and the whole repo; the machine is shared), cargo, forge, the real-server loop.
+The review fixes touched only `app/`, so `web/` and core were not re-run after them.
 
 ## Screenshots
 
@@ -99,7 +124,9 @@ every file hash is distinct:
 `01-home`, `02-home-signed-out`, `03-project`, `04-project-people`, `05-start`, `06-you`, `07-sign-up`, `08-post`,
 `09-messages`, `10-messages-list`, `11-home-investing-on`.
 
-Six are copied for the lead: home, project, start, you, sign-up, messages.
+After the review fixes they were retaken, with three more at 360x740 from the review's own run:
+`12-project-investing-on-360` (Backed not done, four tabs fit), `13-conversation-empty-360` (white Back, one-row
+message box) and `14-start-missing-answers-360`. The set is in the session scratchpad folder `m6-screens/`.
 
 ## For a person to try
 
@@ -126,6 +153,7 @@ Six are copied for the lead: home, project, start, you, sign-up, messages.
    `BUZZ_WEB_DIR=app/dist` and runs the join and Start journeys against a scratch database.
 4. **Passkey end to end.** The passkey code is `web/`'s, unchanged, and its node tests pass; the app's Playwright runs use
    the plain account. A spec with Chrome's virtual authenticator (as `web/tests/e2e/passkey.spec.ts`) should follow.
+10. **The rest of the code review.** Its findings after the fourth did not reach the fixer (see Review fixes).
 5. **Not carried yet from the social side:** reposts and quotes, bookmarks, mute lists, search and hashtags, explore,
    reporting a post, editing and deleting a post, publishing the DM server list (kind 10050), the recovery key download,
    images in posts. The record code for most of these is now in core.
