@@ -10,6 +10,7 @@ import {Treasury} from "../src/Treasury.sol";
 import {Vester} from "../src/Vester.sol";
 import {IShares} from "../src/Interfaces.sol";
 import {Clones} from "oz5/proxy/Clones.sol";
+import {BASE_SHARES_PER_RAW_DOLLAR, BASE_START_Q96} from "./helpers/Prices.sol";
 
 /// @dev A contract that claims to be a Pair with the founder as a signer, but was not made by the Launcher.
 contract FakePair {
@@ -151,7 +152,7 @@ contract PlanV2M4FixesTest is RoundsBase {
         _both(address(launcher), abi.encodeCall(Launcher.windDown, (key)));
         _bothRefused(
             address(launcher),
-            abi.encodeCall(Launcher.openAuction, (key)),
+            abi.encodeCall(Launcher.openAuction, (key, BASE_START_Q96)),
             abi.encodeWithSelector(Launcher.WrongStage.selector)
         );
     }
@@ -243,7 +244,7 @@ contract PlanV2M4FixesTest is RoundsBase {
         uint256 sumAcc;
         uint256 back;
         for (uint256 i; i < 3; ++i) {
-            sumAcc += rd.positionOf(id, who[i]).bought / rd.SHARES_PER_RAW_DOLLAR();
+            sumAcc += rd.positionOf(id, who[i]).bought / BASE_SHARES_PER_RAW_DOLLAR;
             back += usd.balanceOf(who[i]);
         }
         uint256 dust = 10_000 * DOLLAR - sumAcc;
@@ -253,7 +254,7 @@ contract PlanV2M4FixesTest is RoundsBase {
         assertEq(back, 3 * ask - sumAcc, "the dust went back to the backers");
         assertEq(rd.raised(), sumAcc + dust, "raised = the sum of Settled.accepted plus the dust");
         assertEq(rd.roundOf(id).accepted, rd.raised());
-        assertEq(rd.reserved(), dust * rd.SHARES_PER_RAW_DOLLAR(), "the dust's Shares stay set aside");
+        assertEq(rd.reserved(), dust * BASE_SHARES_PER_RAW_DOLLAR, "the dust's Shares stay set aside");
     }
 
     // ============================================ R4: Team rules not built (pinned) =============================================

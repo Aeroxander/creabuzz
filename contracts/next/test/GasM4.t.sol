@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import {RoundsBase} from "./helpers/RoundsBase.sol";
 import {Pair} from "../src/Pair.sol";
 import {Launcher} from "../src/Launcher.sol";
+import {BASE_SHARES_PER_RAW_DOLLAR} from "./helpers/Prices.sol";
 
 /// @notice Gas of the backing-round and Team steps (cold storage for the first touch, as on a real network). The auction's steps
 /// are in `GasM3.t.sol` and `AuctionV2.t.sol`.
@@ -37,7 +38,7 @@ contract GasM4Test is RoundsBase {
         _cold();
         vm.prank(founder);
         uint256 g = gasleft();
-        uint256 id = launcher.openRound(key);
+        uint256 id = launcher.openRound(key, BASE_SHARES_PER_RAW_DOLLAR);
         _measure("Launcher.openRound (first round)", g - gasleft(), 200_000);
         usd.mint(alice, 1000 * DOLLAR);
         vm.prank(alice);
@@ -142,7 +143,7 @@ contract GasM4Test is RoundsBase {
         g = gasleft();
         pair.checkIn();
         _measure("Pair.checkIn", g - gasleft(), 100_000);
-        bytes memory data = abi.encodeCall(Launcher.openRound, (key));
+        bytes memory data = abi.encodeCall(Launcher.openRound, (key, BASE_SHARES_PER_RAW_DOLLAR));
         _cold();
         vm.prank(founder);
         g = gasleft();

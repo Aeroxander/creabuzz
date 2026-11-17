@@ -9,53 +9,103 @@ import {Treasury} from "../src/Treasury.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {IShares, IVester, ITreasuryRounds} from "../src/Interfaces.sol";
+import {BASE_SHARES_PER_RAW_DOLLAR} from "./helpers/Prices.sol";
 
 /// @notice Backing rounds, one rule at a time: the price, the 24 hours, asks and lowering, the close and the scale-back, the
 /// 3 / 15 / 82 split, the 26-week release inside the check-in window, the personal refund and its numbers, the wind-down.
 contract RoundsTest is RoundsBase {
     // ================================================ the price and the round ==========================================
 
-    function test_price_oneDollarBuysExactly3000Shares_and50000BuysTheWholeBudget() public view {
-        assertEq(rd.SHARES_PER_RAW_DOLLAR() * DOLLAR, 3000 * SHARE, "1 dollar buys 3,000 Shares");
-        assertEq(rd.SHARES_PER_RAW_DOLLAR() * 50_000 * DOLLAR, 150_000_000 * SHARE, "50,000 dollars buy the 150M");
+    /// @dev Founder-set prices: the range is 3,000 Shares a dollar (333,333 dollars for the whole project; 50,000 dollars buy
+    /// exactly the 150M backing Shares) to 20 Shares a dollar (50,000,000 for the whole project).
+    function test_price_theRangeIs333333To50000000ForTheWholeProject() public view {
+        assertEq(rd.MAX_SHARES_PER_RAW_DOLLAR() * DOLLAR, 3000 * SHARE, "lowest price: 1 dollar buys 3,000 Shares");
+        assertEq(rd.MAX_SHARES_PER_RAW_DOLLAR() * 50_000 * DOLLAR, 150_000_000 * SHARE, "50,000 dollars buy the 150M");
+        assertEq(rd.MIN_SHARES_PER_RAW_DOLLAR() * DOLLAR, 20 * SHARE, "highest price: 1 dollar buys 20 Shares");
+        assertEq(rd.MIN_SHARES_PER_RAW_DOLLAR() * 50_000_000 * DOLLAR, 1_000_000_000 * SHARE, "50M buys every Share");
         assertEq(shares.balanceOf(rounds), 150_000_000 * SHARE);
         assertEq(rd.unsold(), 150_000_000 * SHARE);
     }
 
-    function test_open_onlyTheLauncher_oneAtATime_andNeverBeyondTheSharesLeft() public {
-        vm.expectRevert(Rounds.NotAllowed.selector);
-        rd.open(1000 * DOLLAR);
+    /// @dev The lowest price: 3e15 opens, one raw unit more (a lower price) does not.
+    function test_open_theLowestPrice_3e15Opens_3e15PlusOneIsRefused() public {
         vm.startPrank(address(launcher));
         vm.expectRevert(Rounds.CannotOpen.selector);
-        rd.open(DOLLAR - 1); // under 1 dollar
+        rd.open(DOLLAR, 3e15 + 1);
+        rd.open(DOLLAR, 3e15);
+        vm.stopPrank();
+        assertEq(rd.roundOf(1).sharesPerRawDollar, 3e15);
+    }
+
+    /// @dev The highest price: 2e13 opens, one raw unit less (a higher price) does not.
+    function test_open_theHighestPrice_2e13Opens_2e13LessOneIsRefused() public {
+        vm.startPrank(address(launcher));
         vm.expectRevert(Rounds.CannotOpen.selector);
-        rd.open(50_000 * DOLLAR + 1); // more than the 150M can cover
-        uint256 id = rd.open(50_000 * DOLLAR); // the budget exactly
+        rd.open(DOLLAR, 2e13 - 1);
+        rd.open(DOLLAR, 2e13);
+        vm.stopPrank();
+        assertEq(rd.roundOf(1).sharesPerRawDollar, 2e13);
+    }
+
+    /// @dev The Launcher passes the runner's price through; the Rounds refuse one outside the range.
+    function test_openRound_aPriceOutsideTheRangeIsRefusedThroughTheLauncher() public {
+        vm.startPrank(founder);
+        vm.expectRevert(Rounds.CannotOpen.selector);
+        launcher.openRound(key, 3e15 + 1);
+        vm.expectRevert(Rounds.CannotOpen.selector);
+        launcher.openRound(key, 2e13 - 1);
+        uint256 id = launcher.openRound(key, 166_666_666_666_666);
+        vm.stopPrank();
+        assertEq(rd.roundOf(id).sharesPerRawDollar, 166_666_666_666_666, "6,000,000 for the whole project");
+    }
+
+    function test_open_onlyTheLauncher_oneAtATime_andNeverBeyondTheSharesLeft() public {
+        vm.expectRevert(Rounds.NotAllowed.selector);
+        rd.open(1000 * DOLLAR, BASE_SHARES_PER_RAW_DOLLAR);
+        vm.startPrank(address(launcher));
+        vm.expectRevert(Rounds.CannotOpen.selector);
+        rd.open(DOLLAR - 1, BASE_SHARES_PER_RAW_DOLLAR); // under 1 dollar
+        vm.expectRevert(Rounds.CannotOpen.selector);
+        rd.open(50_000 * DOLLAR + 1, BASE_SHARES_PER_RAW_DOLLAR); // more than the 150M can cover
+        uint256 id = rd.open(50_000 * DOLLAR, BASE_SHARES_PER_RAW_DOLLAR); // the budget exactly
         assertEq(id, 1);
         assertTrue(rd.isOpen());
         vm.expectRevert(Rounds.CannotOpen.selector);
-        rd.open(DOLLAR); // one at a time
+        rd.open(DOLLAR, BASE_SHARES_PER_RAW_DOLLAR); // one at a time
         vm.stopPrank();
         Rounds.Round memory r = rd.roundOf(1);
         assertEq(r.size, 50_000 * DOLLAR);
+        assertEq(r.sharesPerRawDollar, BASE_SHARES_PER_RAW_DOLLAR);
         assertEq(r.openedAt, _now());
     }
 
-    function test_open_eventCarriesSizeAndTimes() public {
+    /// @dev Both RoundOpened events carry the round's price (the milestone 5 server reads it).
+    function test_open_eventsCarrySizePriceAndTimes() public {
         vm.recordLogs();
         vm.prank(founder);
-        launcher.openRound(key);
+        launcher.openRound(key, 166_666_666_666_666);
         Vm.Log[] memory logs = vm.getRecordedLogs();
-        bool seen;
+        uint256 seen;
         for (uint256 i; i < logs.length; ++i) {
             if (logs[i].emitter == rounds && logs[i].topics[0] == Rounds.RoundOpened.selector) {
-                (uint256 size, uint256 opens, uint256 closes) = abi.decode(logs[i].data, (uint256, uint256, uint256));
+                (uint256 size, uint256 price, uint256 opens, uint256 closes) =
+                    abi.decode(logs[i].data, (uint256, uint256, uint256, uint256));
                 assertEq(size, 10_000 * DOLLAR);
+                assertEq(price, 166_666_666_666_666);
                 assertEq(closes - opens, 1 days);
-                seen = true;
+                seen++;
+            }
+            if (logs[i].emitter == address(launcher) && logs[i].topics[0] == Launcher.RoundOpened.selector) {
+                (uint256 size, uint256 cap, uint256 before, uint256 price) =
+                    abi.decode(logs[i].data, (uint256, uint256, uint256, uint256));
+                assertEq(size, 10_000 * DOLLAR);
+                assertEq(cap, 10_000 * DOLLAR);
+                assertEq(before, 0);
+                assertEq(price, 166_666_666_666_666);
+                seen++;
             }
         }
-        assertTrue(seen);
+        assertEq(seen, 2);
     }
 
     // ================================================ asks =============================================================

@@ -7,6 +7,7 @@ import {Launcher} from "../src/Launcher.sol";
 import {Pair} from "../src/Pair.sol";
 import {PoolKey, SaleParams} from "../src/Pinned.sol";
 import {IPositionManagerTest} from "./helpers/UniswapTest.sol";
+import {BASE_START_Q96, BASE_SHARES_PER_RAW_DOLLAR} from "./helpers/Prices.sol";
 
 /// @notice Gas of the steps of milestone 3, with the production settings for our code (0.8.37, 200 runs) and the vendored
 /// Uniswap code at its own (0.8.26, 11,111 runs), on the local twin. Contracts are made cold first (`vm.cool`) so a call pays for its
@@ -46,7 +47,7 @@ contract GasM3Test is Platform {
     function test_gas_openTheSale() public {
         Proj memory p = _launch(founder, keccak256("gas open"));
         Pair pair = _team(p);
-        bytes memory data = abi.encodeCall(Launcher.openAuction, (p.key));
+        bytes memory data = abi.encodeCall(Launcher.openAuction, (p.key, BASE_START_Q96));
         vm.prank(founder);
         pair.propose(address(launcher), data);
         vm.cool(address(launcher));
@@ -70,7 +71,9 @@ contract GasM3Test is Platform {
         targets[0] = address(launcher);
         calls[0] = abi.encodeCall(Launcher.launch, (keccak256("gas batch"), "Batch", "BTC", launcher.settingsHash()));
         targets[1] = address(launcher);
-        calls[1] = abi.encodeCall(Launcher.openRound, (launcher.keyOf(address(account), keccak256("gas batch"))));
+        calls[1] = abi.encodeCall(
+            Launcher.openRound, (launcher.keyOf(address(account), keccak256("gas batch")), BASE_SHARES_PER_RAW_DOLLAR)
+        );
         uint256 g = gasleft();
         account.execute(targets, calls);
         g -= gasleft();

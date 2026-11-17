@@ -7,6 +7,7 @@ import {IAuctionTest} from "./helpers/UniswapTest.sol";
 import {Rounds} from "../src/Rounds.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {Treasury} from "../src/Treasury.sol";
+import {BASE_SHARES_PER_RAW_DOLLAR} from "./helpers/Prices.sol";
 
 /// @notice Plan version 2, milestone 4, from the attacker's side: backing rounds, the refund, the held Shares and the wind-down.
 /// `test_fixed_*` was a defect the attacker found (it failed at 802c5d690) and passes since the fix. `test_pinned_*` is a defect
@@ -116,7 +117,7 @@ contract AttackPlanV2M4Test is RoundsBase {
         rd.settle(id, alice);
         rd.settleMany(id, socks);
         Rounds.Round memory r = rd.roundOf(id);
-        uint256 a = rd.positionOf(id, alice).bought / rd.SHARES_PER_RAW_DOLLAR();
+        uint256 a = rd.positionOf(id, alice).bought / BASE_SHARES_PER_RAW_DOLLAR;
         assertApproxEqAbs(a * r.asked, 1000 * DOLLAR * r.accepted, r.asked, "alice gets the same percent as everyone");
         uint256 back;
         for (uint256 i; i < 20; ++i) {
@@ -124,7 +125,7 @@ contract AttackPlanV2M4Test is RoundsBase {
         }
         uint256 accSocks;
         for (uint256 i; i < 20; ++i) {
-            accSocks += rd.positionOf(id, socks[i]).bought / rd.SHARES_PER_RAW_DOLLAR();
+            accSocks += rd.positionOf(id, socks[i]).bought / BASE_SHARES_PER_RAW_DOLLAR;
         }
         assertLe(back, accSocks * 779 / 1000, "the socks never get back more than 77.9 of each 100 accepted");
         assertApproxEqAbs(back, accSocks * 779 / 1000, 40, "and lose exactly the plan's 22.1");

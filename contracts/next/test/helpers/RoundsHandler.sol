@@ -9,6 +9,7 @@ import {Vester} from "../../src/Vester.sol";
 import {Rounds} from "../../src/Rounds.sol";
 import {Pair} from "../../src/Pair.sol";
 import {QuoteToken} from "../mocks/QuoteToken.sol";
+import {BASE_SHARES_PER_RAW_DOLLAR} from "./Prices.sol";
 
 /// @notice The random user of one project's backing rounds and everything around them, for `RoundsInvariants.t.sol`: the runner
 /// opens rounds (alone, or as a Pair after `team`), backers ask, lower, get settled, take money back and claim Shares, time passes
@@ -98,8 +99,12 @@ contract RoundsHandler is Test {
 
     // ================================================ the rounds ====================================================
 
-    function openRound() external {
-        _asRunner(address(launcher), abi.encodeCall(Launcher.openRound, (key)));
+    /// @dev Any allowed price: half the time today's 3,000 Shares a dollar, else anywhere in the founder-set range.
+    function openRound(uint256 price) external {
+        price = price % 2 == 0
+            ? BASE_SHARES_PER_RAW_DOLLAR
+            : bound(price, rd.MIN_SHARES_PER_RAW_DOLLAR(), rd.MAX_SHARES_PER_RAW_DOLLAR());
+        _asRunner(address(launcher), abi.encodeCall(Launcher.openRound, (key, price)));
     }
 
     function team() external {
@@ -147,7 +152,7 @@ contract RoundsHandler is Test {
         uint256 t0 = usd.balanceOf(address(t));
         try rd.settle(id, b) {
             settles++;
-            uint256 acc = rd.positionOf(id, b).bought / rd.SHARES_PER_RAW_DOLLAR();
+            uint256 acc = rd.positionOf(id, b).bought / rd.roundOf(id).sharesPerRawDollar;
             if (rd.platformOwed() - owed0 != acc * 300 / 10_000) platformOvercharged = true;
         } catch {}
         toTreasury += usd.balanceOf(address(t)) - t0;

@@ -9,6 +9,7 @@ import {Treasury} from "../src/Treasury.sol";
 import {Vester} from "../src/Vester.sol";
 import {RollingCap} from "../src/RollingCap.sol";
 import {ITreasuryRunner} from "../src/Interfaces.sol";
+import {BASE_SHARES_PER_RAW_DOLLAR, BASE_START_Q96} from "./helpers/Prices.sol";
 
 /// @notice The Team runner: two signers, 500 dollars a week alone, both for anything more; becoming Team in two transactions.
 contract PairTest is RoundsBase {
@@ -144,13 +145,13 @@ contract PairTest is RoundsBase {
     function test_aRaiseNeedsBoth_oneSignerAloneCannotOpenARoundOrTheAuction() public {
         vm.prank(founder);
         vm.expectRevert(Launcher.NotRunner.selector);
-        launcher.openRound(key);
+        launcher.openRound(key, BASE_SHARES_PER_RAW_DOLLAR);
         vm.prank(cosigner);
         vm.expectRevert(Launcher.NotRunner.selector);
-        launcher.openAuction(key);
+        launcher.openAuction(key, BASE_START_Q96);
         // the Pair alone is the runner, and it moves only when both agree
         vm.prank(founder);
-        pair.propose(address(launcher), abi.encodeCall(Launcher.openRound, (key)));
+        pair.propose(address(launcher), abi.encodeCall(Launcher.openRound, (key, BASE_SHARES_PER_RAW_DOLLAR)));
         assertFalse(Rounds(rounds).isOpen(), "a proposal opens nothing");
     }
 
@@ -192,13 +193,13 @@ contract StagesTest is RoundsBase {
         assertEq(rd.raised(), 10_000 * DOLLAR);
         vm.prank(founder);
         vm.expectRevert(abi.encodeWithSelector(Launcher.CapReached.selector, 10_000 * DOLLAR));
-        launcher.openRound(key);
+        launcher.openRound(key, BASE_SHARES_PER_RAW_DOLLAR);
         // a refund does not reopen the cap
         rd.settle(id2, bob);
         _refund(id, alice);
         vm.prank(founder);
         vm.expectRevert(abi.encodeWithSelector(Launcher.CapReached.selector, 10_000 * DOLLAR));
-        launcher.openRound(key);
+        launcher.openRound(key, BASE_SHARES_PER_RAW_DOLLAR);
     }
 
     function test_team_capIs50000InTotal() public {
@@ -212,7 +213,7 @@ contract StagesTest is RoundsBase {
         assertEq(rd.unsold(), 0, "all 150M backing Shares are sold");
         _bothRefused(
             address(launcher),
-            abi.encodeCall(Launcher.openRound, (key)),
+            abi.encodeCall(Launcher.openRound, (key, BASE_SHARES_PER_RAW_DOLLAR)),
             abi.encodeWithSelector(Launcher.CapReached.selector, 50_000 * DOLLAR)
         );
     }
@@ -220,19 +221,19 @@ contract StagesTest is RoundsBase {
     function test_openRound_onlyTheRunner_neverAfterAMarketOrAWindDown() public {
         vm.prank(stranger);
         vm.expectRevert(Launcher.NotRunner.selector);
-        launcher.openRound(key);
+        launcher.openRound(key, BASE_SHARES_PER_RAW_DOLLAR);
         vm.expectRevert(Launcher.UnknownProject.selector);
-        launcher.openRound(bytes32(uint256(1)));
+        launcher.openRound(bytes32(uint256(1)), BASE_SHARES_PER_RAW_DOLLAR);
         _market();
         vm.prank(founder);
         vm.expectRevert(Launcher.WrongStage.selector);
-        launcher.openRound(key);
+        launcher.openRound(key, BASE_SHARES_PER_RAW_DOLLAR);
     }
 
     function test_openAuction_aSingleFounderCannot() public {
         vm.prank(founder);
         vm.expectRevert(abi.encodeWithSelector(Launcher.WrongRunner.selector, Launcher.RunnerKind.Pair));
-        launcher.openAuction(key);
+        launcher.openAuction(key, BASE_START_Q96);
     }
 
     function test_openAuction_notWhileARoundIsOpen_notAfterAMarket() public {
@@ -240,7 +241,7 @@ contract StagesTest is RoundsBase {
         _openRound();
         _bothRefused(
             address(launcher),
-            abi.encodeCall(Launcher.openAuction, (key)),
+            abi.encodeCall(Launcher.openAuction, (key, BASE_START_Q96)),
             abi.encodeWithSelector(Launcher.WrongStage.selector)
         );
     }
@@ -271,7 +272,7 @@ contract StagesTest is RoundsBase {
         tt.handOver(pa, false);
         vm.prank(cosigner);
         Pair p = Pair(l.makePair(k, founder));
-        bytes memory data = abi.encodeCall(Launcher.openAuction, (k));
+        bytes memory data = abi.encodeCall(Launcher.openAuction, (k, BASE_START_Q96));
         vm.prank(founder);
         p.propose(address(l), data);
         vm.prank(cosigner);
@@ -301,10 +302,10 @@ contract StagesTest is RoundsBase {
         assertEq(t.reserve(), 100_000_000 * SHARE, "no stake without a market");
         vm.prank(founder);
         vm.expectRevert(Launcher.WrongStage.selector);
-        launcher.openRound(key);
+        launcher.openRound(key, BASE_SHARES_PER_RAW_DOLLAR);
         _team();
         bytes memory wrong = abi.encodeWithSelector(Launcher.WrongStage.selector);
-        _bothRefused(address(launcher), abi.encodeCall(Launcher.openAuction, (key)), wrong);
+        _bothRefused(address(launcher), abi.encodeCall(Launcher.openAuction, (key, BASE_START_Q96)), wrong);
         _bothRefused(address(launcher), abi.encodeCall(Launcher.declareNoMarket, (key)), wrong); // once
     }
 

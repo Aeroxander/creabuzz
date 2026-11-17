@@ -11,6 +11,7 @@ import {Vester} from "../src/Vester.sol";
 import {IShares} from "../src/Interfaces.sol";
 import {MockGuard, NotAGuard} from "./mocks/MockGuard.sol";
 import {MockFactory} from "./helpers/Base.sol";
+import {BASE_START_Q96} from "./helpers/Prices.sol";
 
 /// @notice The Launcher: one transaction makes a project, nobody but the Treasury's rules can move its money, settings
 /// reach only new projects, and no Launcher can be made with an unguarded sale. The real sale path is in `Life.t.sol`.
@@ -214,11 +215,14 @@ contract LauncherTest is Base {
         deployCode(
             "Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, GUARD, minBid, empty, councilMaker)
         );
-        // and the stake address must be named
+        // a zero stake address is accepted: projects launched with it take no stake (project zero; FOUNDER-PRICE.md)
         s = _settings();
         s.stake = address(0);
-        vm.expectRevert(Launcher.BadSettings.selector);
-        deployCode("Launcher.sol:Launcher", abi.encode(admin, s, STRATEGY, GUARD, minBid, parts, councilMaker));
+        Launcher l = Launcher(
+            deployCode("Launcher.sol:Launcher", abi.encode(admin, s, STRATEGY, GUARD, minBid, parts, councilMaker))
+        );
+        (,, address stake,,,,,,) = l.settings();
+        assertEq(stake, address(0));
     }
 
     function test_admin_canHandOnOrRenounce_andRenouncingFreezesSettings() public {
@@ -244,7 +248,7 @@ contract LauncherTest is Base {
         bytes32 k = launcher.keyOf(alice, PROJECT);
         vm.prank(alice);
         vm.expectRevert(Launcher.UnknownProject.selector);
-        launcher.openAuction(k);
+        launcher.openAuction(k, BASE_START_Q96);
     }
 
     /// @dev The strategy and the guard are the platform's, fixed when the Launcher is made, and the Launcher cannot exist

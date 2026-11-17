@@ -26,6 +26,7 @@ import {
     Bid,
     Checkpoint
 } from "./UniswapTest.sol";
+import {BASE_START_Q96} from "./Prices.sol";
 
 /// @notice The whole platform on top of Uniswap, built the way a deploy script builds it: Uniswap's pool manager, position
 /// manager and Permit2 (the real ones on a Sepolia fork, or a local twin built from the vendored source), then our fee
@@ -245,16 +246,26 @@ abstract contract Platform is ForkGate {
 
     /// @dev Open the project's one auction: become Team if not yet, then both signers open it.
     function _open(Proj memory p) internal returns (Sale memory s) {
+        return _openAt(p, BASE_START_Q96);
+    }
+
+    /// @dev Open the project's one auction at the starting price `start` (Q96).
+    function _openAt(Proj memory p, uint256 start) internal returns (Sale memory s) {
         if (!launcher.isPair(p.treasury.runner())) _team(p);
-        _both(p, address(launcher), abi.encodeCall(Launcher.openAuction, (p.key)));
+        _both(p, address(launcher), abi.encodeCall(Launcher.openAuction, (p.key, start)));
         s = _saleOf(p);
     }
 
     /// @dev Both signers try to open the auction and the Launcher (or what it calls) refuses with `err`.
     function _openRefused(Proj memory p, bytes memory err) internal {
+        _openRefusedAt(p, BASE_START_Q96, err);
+    }
+
+    /// @dev Both signers try to open the auction at the starting price `start` and it is refused with `err`.
+    function _openRefusedAt(Proj memory p, uint256 start, bytes memory err) internal {
         if (!launcher.isPair(p.treasury.runner())) _team(p);
         Pair pair = Pair(p.treasury.runner());
-        bytes memory data = abi.encodeCall(Launcher.openAuction, (p.key));
+        bytes memory data = abi.encodeCall(Launcher.openAuction, (p.key, start));
         (address first, address second) = (pair.first(), pair.second());
         vm.prank(first);
         pair.propose(address(launcher), data);
@@ -302,7 +313,7 @@ abstract contract Platform is ForkGate {
 
     function _saleOf(Proj memory p) internal view returns (Sale memory s) {
         s.auction = IAuctionTest(p.finisher.auction());
-        (s.floorQ96, s.tickQ96) = launcher.salePrices();
+        (s.floorQ96, s.tickQ96) = (s.auction.floorPrice(), s.auction.tickSpacing()); // the start the runner chose
         s.startBlock = s.auction.startBlock();
         s.endBlock = s.auction.endBlock();
     }

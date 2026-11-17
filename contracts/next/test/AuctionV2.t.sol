@@ -7,6 +7,7 @@ import {Launcher} from "../src/Launcher.sol";
 import {Treasury} from "../src/Treasury.sol";
 import {Pair} from "../src/Pair.sol";
 import {PoolKey, SaleParams} from "../src/Pinned.sol";
+import {BASE_START_Q96} from "./helpers/Prices.sol";
 
 /// @notice Plan version 2's one auction on the real Uniswap stack (local twin, and the Sepolia fork when an RPC is set): the
 /// 100,000 worked example with the stake, demand at the cap ten times the supply, a founder bidding through a second account then
@@ -164,7 +165,7 @@ abstract contract AuctionV2Base is Platform {
         t.handOver(pa, false);
         vm.prank(cosigner);
         Pair pair = Pair(l.makePair(k, founder));
-        bytes memory data = abi.encodeCall(Launcher.openAuction, (k));
+        bytes memory data = abi.encodeCall(Launcher.openAuction, (k, BASE_START_Q96));
         vm.prank(founder);
         pair.propose(address(l), data);
         vm.prank(cosigner);
@@ -179,7 +180,7 @@ abstract contract AuctionV2Base is Platform {
         vm.prank(council);
         t.takeSeat();
         vm.prank(council);
-        address auction = l.openAuction(k);
+        address auction = l.openAuction(k, BASE_START_Q96);
         assertEq(IAuctionTest(auction).totalSupply(), SaleParams.SALE_SHARES, "the Council opened the one auction");
     }
 

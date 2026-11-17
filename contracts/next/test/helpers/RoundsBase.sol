@@ -6,6 +6,7 @@ import {Rounds} from "../../src/Rounds.sol";
 import {Pair} from "../../src/Pair.sol";
 import {Launcher} from "../../src/Launcher.sol";
 import {Treasury} from "../../src/Treasury.sol";
+import {BASE_SHARES_PER_RAW_DOLLAR} from "./Prices.sol";
 
 /// @notice The milestone 2 world (mock strategy and guard, the real Launcher, Treasury, Vester, Rounds and Pair) with helpers for
 /// backing rounds, the Pair and the stage rules. The real auction is tested on the Uniswap stack in `AuctionV2.t.sol`.
@@ -23,14 +24,19 @@ abstract contract RoundsBase is Base {
         key = launcher.keyOf(founder, PROJECT);
     }
 
-    /// @dev The runner (founder, or both signers of the Pair) opens a round; returns its id.
+    /// @dev The runner (founder, or both signers of the Pair) opens a round at today's price; returns its id.
     function _openRound() internal returns (uint256 id) {
+        return _openRoundAt(BASE_SHARES_PER_RAW_DOLLAR);
+    }
+
+    /// @dev The runner opens a round at `price` raw Share units per raw dollar unit; returns its id.
+    function _openRoundAt(uint256 price) internal returns (uint256 id) {
         address r = t.runner();
         if (launcher.isPair(r)) {
-            return abi.decode(_both(address(launcher), abi.encodeCall(Launcher.openRound, (key))), (uint256));
+            return abi.decode(_both(address(launcher), abi.encodeCall(Launcher.openRound, (key, price))), (uint256));
         }
         vm.prank(r);
-        return launcher.openRound(key);
+        return launcher.openRound(key, price);
     }
 
     function _ask(uint256 id, address who, uint256 amount) internal {

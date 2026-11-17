@@ -107,7 +107,7 @@ contract RoundsInvariantsTest is Base {
 
     /// A scripted run through the handler, to show its actions reach the states the invariants are about.
     function test_handlerReachesTheStates() public {
-        h.openRound();
+        h.openRound(0); // today's price
         h.ask(0, 3000 * DOLLAR);
         h.ask(1, 9000 * DOLLAR);
         h.warp(1 days);
@@ -121,7 +121,7 @@ contract RoundsInvariantsTest is Base {
         h.refund(0, 0);
         assertEq(h.refunds(), 1);
         h.team();
-        h.openRound();
+        h.openRound(1); // a price from the founder-set range
         assertEq(rd.count(), 2);
         h.warp(1 days);
         h.close();

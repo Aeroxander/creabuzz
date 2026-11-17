@@ -6,12 +6,16 @@ import {SafeERC20} from "oz5/token/ERC20/utils/SafeERC20.sol";
 import {IShares, IVester, ITreasuryRounds} from "./Interfaces.sol";
 
 /// @title Rounds
-/// @notice A project's backing rounds: one fixed price, no auction, no market, and a personal refund of the money not yet paid
-/// to the project. One copy per project, made by the Launcher with the 150,000,000 Shares for backing.
+/// @notice A project's backing rounds: a fixed price per round, no auction, no market, and a personal refund of the money not
+/// yet paid to the project. One copy per project, made by the Launcher with the 150,000,000 Shares for backing.
 ///
 /// The rules, as integers (dollars are a 6-decimal token, Shares have 18 decimals):
-///  - Price: 1 raw dollar unit buys `SHARES_PER_RAW_DOLLAR` = 3e15 raw Share units, so 1 dollar buys exactly 3,000 Shares and
-///    50,000 dollars buy exactly the 150,000,000 backing Shares. The same for every project; nobody types it.
+///  - Price: the runner sets each round's price when it opens, as raw Share units one raw dollar unit buys
+///    (`sharesPerRawDollar`), and it never changes during the round. It must lie between `MIN_SHARES_PER_RAW_DOLLAR` = 2e13
+///    (20 Shares a dollar: 50,000,000 dollars for the whole project of 1,000,000,000 Shares) and `MAX_SHARES_PER_RAW_DOLLAR`
+///    = 3e15 (3,000 Shares a dollar: 333,333 dollars for the whole project; at it 50,000 dollars buy exactly the 150,000,000
+///    backing Shares, so the dollar caps run out before the Shares at any allowed price). A later round may be priced higher
+///    or lower than an earlier one. Every backer of a round pays that round's price.
 ///  - A round lasts 24 hours from `open`. Its size (set by the Launcher: whatever is left under the stage's cap) is the most it
 ///    can accept. Anyone may ask, any amount; a backer's ask in a round must total at least 1 dollar; no per-account cap.
 ///    An ask may be lowered or withdrawn only in the first 12 hours; after that it can only grow.
@@ -20,8 +24,8 @@ import {IShares, IVester, ITreasuryRounds} from "./Interfaces.sol";
 ///    ask is returned. The rounding dust (`accepted` less the sum of the parts: under one raw unit per backer) therefore goes
 ///    back to the backers with the rest of their asks. It still counts in `accepted`, in `raised` (what the caps measure) and in
 ///    `RoundClosed.accepted`, so the sum of `Settled.accepted` is up to that dust below them; the stage caps are measured on
-///    `raised`, which is the sum of `RoundClosed.accepted`. The dust's Shares (3e15 raw units per raw dollar of dust) stay set
-///    aside in `reserved` and are never returned to the reserve.
+///    `raised`, which is the sum of `RoundClosed.accepted`. The dust's Shares (the round's `sharesPerRawDollar` raw units per raw
+///    dollar of dust) stay set aside in `reserved` and are never returned to the reserve.
 ///  - Each accepted 100: 3 to the platform (`acc * 300 / 10000`, rounded down), 82 held here (`acc * 8200 / 10000`, rounded
 ///    down), and the rest, 15 plus the rounding dust, to the project's `spendable` at once.
 ///  - The held 82 is released to the project evenly over 26 weeks (182 days) of ACTIVE time: time counts only inside the
@@ -43,8 +47,12 @@ import {IShares, IVester, ITreasuryRounds} from "./Interfaces.sol";
 contract Rounds {
     using SafeERC20 for IERC20;
 
-    /// @notice Raw Share units bought by one raw dollar unit: 3,000 Shares a dollar.
-    uint256 public constant SHARES_PER_RAW_DOLLAR = 3e15;
+    /// @notice The most raw Share units one raw dollar unit may buy in a round: 3,000 Shares a dollar, the lowest price
+    /// (333,333 dollars for the whole project).
+    uint256 public constant MAX_SHARES_PER_RAW_DOLLAR = 3e15;
+    /// @notice The fewest raw Share units one raw dollar unit may buy in a round: 20 Shares a dollar, the highest price
+    /// (50,000,000 dollars for the whole project).
+    uint256 public constant MIN_SHARES_PER_RAW_DOLLAR = 2e13;
     /// @notice The smallest total ask of a backer in a round, and the smallest round: 1 dollar.
     uint256 public constant MIN_ASK = 1e6;
     /// @notice How long a round takes asks.
@@ -68,6 +76,7 @@ contract Rounds {
         uint64 openedAt;
         uint64 closedAt; // zero while open
         uint256 size; // the most it may accept
+        uint256 sharesPerRawDollar; // the round's price, fixed at open: raw Share units per raw dollar unit
         uint256 asked; // the sum of every ask
         uint256 accepted; // set at close: min(asked, size)
         uint256 activeAtClose; // the shared clock (`activeNow`) when it closed
@@ -120,8 +129,10 @@ contract Rounds {
     mapping(uint256 => mapping(address => Position)) internal _positions;
     bool private transient _locked;
 
-    /// @notice A round opened for asks.
-    event RoundOpened(uint256 indexed round, uint256 size, uint256 opensAt, uint256 closesAt);
+    /// @notice A round opened for asks at `sharesPerRawDollar` raw Share units per raw dollar unit, fixed for the round.
+    event RoundOpened(
+        uint256 indexed round, uint256 size, uint256 sharesPerRawDollar, uint256 opensAt, uint256 closesAt
+    );
     /// @notice A backer's ask in a round is now `total` (asked more: `added` > 0; lowered or withdrawn: `added` == 0).
     event Asked(uint256 indexed round, address indexed backer, uint256 total, uint256 added);
     /// @notice A backer lowered (or, with `total` 0, withdrew) their ask; `returned` dollars came back.
@@ -165,7 +176,8 @@ contract Rounds {
     error NotAllowed();
     /// @notice A call came back in while another was running.
     error Reentrancy();
-    /// @notice A round is still open, or the size is below 1 dollar or more than the Shares left can cover.
+    /// @notice A round is still open, the size is below 1 dollar or more than the Shares left can cover, or the price is outside
+    /// the allowed range.
     error CannotOpen();
     /// @notice No such round, or it is not in the right phase for this.
     error WrongPhase();
@@ -205,16 +217,21 @@ contract Rounds {
 
     // ================================================ a round =======================================================
 
-    /// @notice Open a round of `size` raw dollars for 24 hours. Only the Launcher, which checks the runner and the stage's
-    /// cap. Refused while another round is open or when the Shares left (not bought, not owed) cannot cover the size.
+    /// @notice Open a round of `size` raw dollars for 24 hours at `sharesPerRawDollar` raw Share units per raw dollar unit.
+    /// Only the Launcher, which checks the runner and the stage's cap. Refused while another round is open, when the price is
+    /// outside `MIN_SHARES_PER_RAW_DOLLAR` to `MAX_SHARES_PER_RAW_DOLLAR`, or when the Shares left (not bought, not owed)
+    /// cannot cover the size at that price. The price is stored in the round and never changes.
     /// @return id The new round's id.
-    function open(uint256 size) external returns (uint256 id) {
+    function open(uint256 size, uint256 sharesPerRawDollar) external returns (uint256 id) {
         if (msg.sender != launcher) revert NotAllowed();
-        if (isOpen() || size < MIN_ASK || size * SHARES_PER_RAW_DOLLAR > unsold()) revert CannotOpen();
+        if (
+            isOpen() || size < MIN_ASK || sharesPerRawDollar > MAX_SHARES_PER_RAW_DOLLAR
+                || sharesPerRawDollar < MIN_SHARES_PER_RAW_DOLLAR || size * sharesPerRawDollar > unsold()
+        ) revert CannotOpen();
         id = ++count;
         Round storage r = _rounds[id];
-        (r.openedAt, r.size) = (uint64(block.timestamp), size);
-        emit RoundOpened(id, size, block.timestamp, block.timestamp + WINDOW);
+        (r.openedAt, r.size, r.sharesPerRawDollar) = (uint64(block.timestamp), size, sharesPerRawDollar);
+        emit RoundOpened(id, size, sharesPerRawDollar, block.timestamp, block.timestamp + WINDOW);
     }
 
     /// @notice Ask to back round `id` with `amount` more raw dollars (approve this contract first). The dollars wait here
@@ -255,7 +272,7 @@ contract Rounds {
         uint256 clock = activeNow();
         (r.closedAt, r.accepted, r.activeAtClose) = (uint64(block.timestamp), accepted, clock);
         raised += accepted;
-        reserved += accepted * SHARES_PER_RAW_DOLLAR;
+        reserved += accepted * r.sharesPerRawDollar;
         if (accepted != 0 && firstMoneyAt == 0) firstMoneyAt = block.timestamp;
         emit RoundClosed(id, r.asked, accepted, clock);
     }
@@ -425,7 +442,7 @@ contract Rounds {
         uint256 toPlatform = acc * PLATFORM_BPS / BPS;
         uint256 held_ = acc * HELD_BPS / BPS;
         uint256 toProject = acc - toPlatform - held_;
-        uint256 bought = acc * SHARES_PER_RAW_DOLLAR;
+        uint256 bought = acc * r.sharesPerRawDollar;
         (p.settled, p.held, p.bought) = (true, held_, bought);
         r.held += held_;
         reserved -= bought;

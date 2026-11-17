@@ -45,14 +45,17 @@ interface IOwned {
 /// the founder chose. From then on the project's runner (the Treasury's `runner`: the founder, then a Pair, later a Council)
 /// asks this contract for every raise, and this contract enforces the stage rules:
 ///  - Solo to Backed: `openRound` opens a 24-hour backing round sized to whatever is left under the cap: 10,000 dollars in
-///    total while the runner is one person, 50,000 with a Pair (or a Council). A project is Backed once a round closed with
-///    money in it (read from the Rounds). Rounds may follow each other with no wait inside the cap.
+///    total while the runner is one person, 50,000 with a Pair (or a Council). The runner names the round's price (see
+///    `Rounds`: 333,333 to 50,000,000 dollars for the whole project), fixed for the round; the caps stay in dollars at every
+///    price. A project is Backed once a round closed with money in it (read from the Rounds). Rounds may follow each other
+///    with no wait inside the cap.
 ///  - Team: the founder offers the runner seat to a Pair and the second signer accepts with `makePair` (two transactions).
 ///  - The one auction (`openAuction`): only a Pair runner (and, when `requireCouncilForAuction`, only a Council runner);
-///    250,000,000 Shares from a starting price of 0.0004 dollars a Share, a minimum of 100,000 dollars (every Share sold at the
-///    starting price or above), bids at most 4 times the starting price, no bids in the last 720 blocks, the 3 / 22 / 15 / 60
-///    split through the built Finisher. Creaton's stake (20,000,000 Shares from the reserve, held) is set aside by the Treasury
-///    when the Finisher proves the pool open.
+///    250,000,000 Shares from a starting price the runner names (at least 0.0004 dollars a Share, `salePrices`, and at most
+///    0.05, `MAX_START_Q96`), a minimum of what all 250,000,000 raise at that price (100,000 dollars at 0.0004: every Share
+///    sold at the starting price or above), bids at most 4 times the starting price, no bids in the last 720 blocks, the
+///    3 / 22 / 15 / 60 split through the built Finisher. Creaton's stake (20,000,000 Shares from the reserve, held) is set
+///    aside by the Treasury when the Finisher proves the pool open.
 ///  - "No market" (`declareNoMarket`): the runner, 365 days after the first round that took money (or after launch if none
 ///    did), while no auction is running: the Vester's clock starts and no auction ever opens.
 ///  - Reserve sales (`openReserveSale`): a plain auction of reserve Shares, starting at the last sale's end price, at least
@@ -64,13 +67,14 @@ interface IOwned {
 /// Shares and Shares cancelled by refunds join the reserve.
 ///
 /// What the founder never touches: the dollars (rounds pay the Treasury, the auction pays the Finisher and the Finisher pays
-/// the Treasury), the strategy, the pool guard, the fee path, the bid rules, the prices, the caps and the pool's owner (all
-/// fixed when this Launcher is made), and the three addresses the Treasury trusts (`opener` is the project's Finisher,
+/// the Treasury), the strategy, the pool guard, the fee path, the bid rules, the price ranges, the caps and the pool's owner
+/// (all fixed when this Launcher is made), and the three addresses the Treasury trusts (`opener` is the project's Finisher,
 /// `salePath` is this Launcher, `rounds` is the project's Rounds).
 ///
-/// What the admin can change, for new projects only: the dollar token, the platform's address for fees, the stake's address,
-/// the exit fee, the 15 : 60 split and the agents' default limits. A founder commits to the exact set they saw by passing its
-/// hash to `launch`. Nothing in a launched project follows a later change.
+/// What the admin can change, for new projects only: the dollar token, the platform's address for fees, the stake's address
+/// (zero: projects launched then take no stake; meant for Creaton's own launch, project zero), the exit fee, the 15 : 60
+/// split and the agents' default limits. A founder commits to the exact set they saw by passing its hash to `launch`.
+/// Nothing in a launched project follows a later change.
 /// @dev The Council is milestone 9. The seam here: `councilMaker`, fixed at construction (zero on every network until the
 /// Council contract exists), is the only address that may mark an address as a Council (`registerCouncil`) and name a
 /// project's pauser (`setPauser`, for the holders' vote).
@@ -97,7 +101,7 @@ contract Launcher {
     struct Settings {
         IERC20 quote; // the dollar token
         address platform; // receives the platform's part of exit and refund fees and of backing rounds
-        address stake; // receives Creaton's stake (held) when a project's market opens
+        address stake; // receives Creaton's stake (held) when a project's market opens; zero: no stake (project zero)
         uint16 exitFeeBps; // total exit fee in ten-thousandths: 500 = 5%
         uint16 platformFeeBps; // the part of it owed to the platform: 100 = 1%
         uint16 spendableParts; // 15
@@ -153,8 +157,12 @@ contract Launcher {
     uint256 public constant SOLO_CAP = 10_000e6;
     /// @notice The most backing rounds may take in total with a Pair or Council runner: 50,000 dollars.
     uint256 public constant TEAM_CAP = 50_000e6;
-    /// @notice The auction's minimum: 100,000 dollars, every auction Share sold at the starting price.
+    /// @notice The least auction minimum: 100,000 dollars, every auction Share sold at the lowest starting price. A higher
+    /// starting price has a higher minimum (all 250,000,000 Shares at that price).
     uint256 public constant AUCTION_MINIMUM = 100_000e6;
+    /// @notice The highest starting price the runner may name for the auction: 0.05 dollars a Share (50,000,000 dollars for
+    /// the whole project), as raw dollars per raw Share times 2^96.
+    uint256 public constant MAX_START_Q96 = (uint256(50_000) << 96) / 1e18;
     /// @notice "No market" may be declared this long after the first round that took money (or after launch).
     uint256 public constant NO_MARKET_AFTER = 365 days;
     /// @notice Reserve sales start at least this many blocks after the last sale ended: 28 days at 12 seconds.
@@ -232,14 +240,16 @@ contract Launcher {
         Allocation allocation,
         Settings settings
     );
-    /// @notice A backing round opened: `size` is what is left under `cap` after `raisedBefore`.
+    /// @notice A backing round opened: `size` is what is left under `cap` after `raisedBefore`; `sharesPerRawDollar` is the
+    /// round's price (raw Share units per raw dollar unit, fixed for the round).
     event RoundOpened(
         bytes32 indexed key,
         address indexed rounds,
         uint256 indexed round,
         uint256 size,
         uint256 cap,
-        uint256 raisedBefore
+        uint256 raisedBefore,
+        uint256 sharesPerRawDollar
     );
     /// @notice A project's auction was opened, with every figure the page shows.
     event SaleOpened(
@@ -311,6 +321,8 @@ contract Launcher {
     error CapReached(uint256 cap);
     /// @notice Too early: allowed from `from` (a time for "no market", a block for a reserve sale).
     error TooEarly(uint256 from);
+    /// @notice The auction's starting price is below `salePrices` or above `MAX_START_Q96`.
+    error BadStart();
 
     /// @param admin_ Who may change the settings for new projects.
     /// @param initial The first settings.
@@ -435,7 +447,7 @@ contract Launcher {
                     opener: p.finisher,
                     salePath: address(this),
                     stake: s.stake,
-                    stakeAmount: STAKE,
+                    stakeAmount: s.stake == address(0) ? 0 : STAKE,
                     exitFeeBps: s.exitFeeBps,
                     platformFeeBps: s.platformFeeBps,
                     spendableParts: s.spendableParts,
@@ -468,9 +480,12 @@ contract Launcher {
 
     /// @notice Open a 24-hour backing round sized to whatever is left under the project's cap (10,000 dollars in total for one
     /// person, 50,000 for a Pair or Council runner). Only the runner, only before any market, "no market" or wind-down, never
-    /// while the auction runs, and never while another round is open.
+    /// while the auction runs, and never while another round is open. A Pair runner's two signers both sign the price.
+    /// @param sharesPerRawDollar The round's price: raw Share units one raw dollar unit buys, from
+    /// `Rounds.MIN_SHARES_PER_RAW_DOLLAR` (2e13: 50,000,000 dollars for the whole project) to
+    /// `Rounds.MAX_SHARES_PER_RAW_DOLLAR` (3e15: 333,333 dollars). The Rounds refuse any other.
     /// @return round The round's id in the project's Rounds.
-    function openRound(bytes32 key) external returns (uint256 round) {
+    function openRound(bytes32 key, uint256 sharesPerRawDollar) external returns (uint256 round) {
         Project memory p = _project(key);
         Treasury t = Treasury(p.treasury);
         address runner = _runner(t);
@@ -478,8 +493,8 @@ contract Launcher {
         uint256 cap = capOf(runner);
         uint256 raised = Rounds(p.rounds).raised();
         if (raised >= cap) revert CapReached(cap);
-        round = Rounds(p.rounds).open(cap - raised);
-        emit RoundOpened(key, p.rounds, round, cap - raised, cap, raised);
+        round = Rounds(p.rounds).open(cap - raised, sharesPerRawDollar);
+        emit RoundOpened(key, p.rounds, round, cap - raised, cap, raised, sharesPerRawDollar);
     }
 
     /// @notice Accept the second seat: make the Pair of (`first`, the caller) for project `key`. The founder (the runner)
@@ -503,12 +518,16 @@ contract Launcher {
 
     /// @notice Open the project's one auction. Only a Pair runner (a Council runner too), and only a Council runner when
     /// `requireCouncilForAuction`. Refused once a market opened, "no market" was declared or the project wound down, and
-    /// while a backing round is open. Everything is fixed here: 250,000,000 Shares over 24 hours from a starting price of
-    /// 0.0004 dollars a Share, a minimum of 100,000 dollars, bids of at least 1 dollar and at most 4 times the starting price,
-    /// the 3% raise fee, the pool (22 of each 100 raised with the Shares that match them, 1% fee, the platform's guard, the
-    /// position owned by the LiquidityHolder) and the recipients (the project's Finisher, never a person).
+    /// while a backing round is open. Everything but the starting price is fixed here: 250,000,000 Shares over 24 hours, a
+    /// minimum of what all of them raise at the starting price (rounded down to a raw unit: 100,000 dollars at the lowest
+    /// start, 1,500,000 at 0.006), bids of at least 1 dollar and at most 4 times the starting price, the 3% raise fee, the
+    /// pool (22 of each 100 raised with the Shares that match them, 1% fee, the platform's guard, the position owned by the
+    /// LiquidityHolder) and the recipients (the project's Finisher, never a person). A failed auction may be opened again,
+    /// at a lower start too.
+    /// @param startQ96 The starting price, as raw dollars per raw Share times 2^96: at least the `salePrices` floor (0.0004
+    /// dollars a Share) and at most `MAX_START_Q96` (0.05). It is put on a grid of one hundredth of itself, rounded up.
     /// @return auction The new auction. Bids go to it.
-    function openAuction(bytes32 key) external returns (address auction) {
+    function openAuction(bytes32 key, uint256 startQ96) external returns (address auction) {
         Project memory p = _project(key);
         Treasury t = Treasury(p.treasury);
         address runner = _runner(t);
@@ -516,22 +535,24 @@ contract Launcher {
         if (kind == RunnerKind.Single) revert WrongRunner(RunnerKind.Pair);
         if (requireCouncilForAuction && kind != RunnerKind.Council) revert WrongRunner(RunnerKind.Council);
         if (t.poolOpen() || t.woundDown() || Rounds(p.rounds).isOpen()) revert WrongStage();
-        (uint256 floorQ96, uint256 tickQ96) = salePrices();
+        (uint256 baseQ96,) = salePrices();
+        if (startQ96 < baseQ96 || startQ96 > MAX_START_Q96) revert BadStart();
+        (uint256 floorQ96, uint256 tickQ96) = _floorAndTick(startQ96);
+        uint256 minimum = floorQ96 * SaleParams.SALE_SHARES >> 96;
         uint64 startBlock = uint64(block.number + 1);
         uint64 endBlock_ = startBlock + SaleParams.SALE_BLOCKS;
         bytes memory configData = abi.encode(
             _strategyParams(p, endBlock_),
-            abi.encode(
-                _auctionParams(address(t.quote()), p.finisher, strategy, AUCTION_MINIMUM, startBlock, floorQ96, tickQ96)
-            )
+            abi.encode(_auctionParams(address(t.quote()), p.finisher, strategy, minimum, startBlock, floorQ96, tickQ96))
         );
         (auction,) = IFinisher(p.finisher).open(configData);
-        emit SaleOpened(key, auction, runner, p.finisher, AUCTION_MINIMUM, startBlock, endBlock_, floorQ96, tickQ96);
+        emit SaleOpened(key, auction, runner, p.finisher, minimum, startBlock, endBlock_, floorQ96, tickQ96);
     }
 
-    /// @notice The auction's starting price and price grid, as the auction sees them (Q96: raw dollars per raw Share times
-    /// 2^96). The starting price is the price at which selling every auction Share raises the 100,000-dollar minimum, rounded
-    /// up to a whole tick; the tick is one hundredth of it, so a bid's top price may be any of 300 steps up to 4 times it.
+    /// @notice The lowest starting price the auction may have, and its price grid, as the auction sees them (Q96: raw dollars
+    /// per raw Share times 2^96): the price at which selling every auction Share raises `AUCTION_MINIMUM` (100,000 dollars),
+    /// rounded up to a whole tick; the tick is one hundredth of it, so a bid's top price may be any of 300 steps up to 4 times
+    /// it. Passed to `openAuction` it gives exactly the sale of a project that does not choose a price.
     function salePrices() public pure returns (uint256 floorQ96, uint256 tickQ96) {
         return _floorAndTick((AUCTION_MINIMUM << 96) / SaleParams.SALE_SHARES);
     }
@@ -794,9 +815,9 @@ contract Launcher {
 
     function _set(Settings memory s) private {
         if (
-            address(s.quote) == address(0) || s.platform == address(0) || s.stake == address(0)
-                || s.exitFeeBps > MAX_EXIT_FEE_BPS || s.platformFeeBps > s.exitFeeBps || s.spendableParts == 0
-                || s.floorParts == 0 || s.spendableParts > MAX_SPLIT_PART || s.floorParts > MAX_SPLIT_PART
+            address(s.quote) == address(0) || s.platform == address(0) || s.exitFeeBps > MAX_EXIT_FEE_BPS
+                || s.platformFeeBps > s.exitFeeBps || s.spendableParts == 0 || s.floorParts == 0
+                || s.spendableParts > MAX_SPLIT_PART || s.floorParts > MAX_SPLIT_PART
         ) revert BadSettings();
         // the dollar token must be a contract with the decimals every amount assumes, and fees must not go to the token
         // or to this contract (where they could never be collected)

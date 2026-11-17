@@ -16,6 +16,7 @@ import {
     PoolRead,
     SaleParams
 } from "../src/Pinned.sol";
+import {BASE_START_Q96} from "./helpers/Prices.sol";
 
 /// @notice What the Launcher fills in and what the sale enforces: the size menu, every setting of the auction and the pool,
 /// the bid rules on a real sale, recipient-only sweeps, a stranger creating the pool first, and a dollar token that misbehaves.
@@ -127,10 +128,10 @@ abstract contract SaleRulesBase2 is Platform {
         Proj memory p = _launch(founder, keccak256("mine"));
         vm.prank(alice);
         vm.expectRevert(Launcher.NotRunner.selector);
-        launcher.openAuction(p.key);
+        launcher.openAuction(p.key, BASE_START_Q96);
         vm.prank(founder);
         vm.expectRevert(abi.encodeWithSelector(Launcher.WrongRunner.selector, Launcher.RunnerKind.Pair));
-        launcher.openAuction(p.key); // a single founder may not open the auction
+        launcher.openAuction(p.key, BASE_START_Q96); // a single founder may not open the auction
         vm.prank(founder);
         vm.expectRevert(Finisher.NotLauncher.selector);
         p.finisher.open("");
@@ -142,13 +143,13 @@ abstract contract SaleRulesBase2 is Platform {
         p.treasury.authoriseAgent(bob);
         vm.prank(bob);
         vm.expectRevert(Launcher.NotRunner.selector);
-        launcher.openAuction(p.key);
+        launcher.openAuction(p.key, BASE_START_Q96);
         // with a Pair: one signer alone cannot (the Launcher answers only the Pair itself), both can, and a second open sale is
         // refused
         _team(p);
         vm.prank(founder);
         vm.expectRevert(Launcher.NotRunner.selector);
-        launcher.openAuction(p.key);
+        launcher.openAuction(p.key, BASE_START_Q96);
         _open(p);
         _openRefused(p, abi.encodeWithSelector(Finisher.CannotOpen.selector));
     }

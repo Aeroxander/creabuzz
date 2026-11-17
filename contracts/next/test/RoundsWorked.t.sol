@@ -5,6 +5,7 @@ import {RoundsBase} from "./helpers/RoundsBase.sol";
 import {Rounds} from "../src/Rounds.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {Treasury} from "../src/Treasury.sol";
+import {BASE_SHARES_PER_RAW_DOLLAR} from "./helpers/Prices.sol";
 
 /// @notice Plan version 2, section 4, the worked examples of backing rounds as exact numbers (the 100,000 auction is in
 /// `AuctionV2.t.sol`, on the real Uniswap stack).
@@ -51,7 +52,7 @@ contract RoundsWorkedTest is RoundsBase {
         assertEq(t.spendable(), 1500 * DOLLAR);
         vm.prank(founder);
         vm.expectRevert(abi.encodeWithSelector(Launcher.CapReached.selector, 10_000 * DOLLAR));
-        launcher.openRound(key);
+        launcher.openRound(key, BASE_SHARES_PER_RAW_DOLLAR);
         _live(15 days);
         rd.release(id);
         assertEq(t.spendable(), 1500 * DOLLAR + uint256(8200 * DOLLAR) * 15 / 182, "21.76 of each 100 by day 15");
@@ -184,7 +185,7 @@ contract RoundsAttackTest is RoundsBase {
         _refund(id, bob);
         vm.prank(founder);
         vm.expectRevert(abi.encodeWithSelector(Launcher.CapReached.selector, 10_000 * DOLLAR));
-        launcher.openRound(key);
+        launcher.openRound(key, BASE_SHARES_PER_RAW_DOLLAR);
     }
 
     /// @dev After the market opens a backer takes released Shares out and then refunds: the refund covers only what is still
