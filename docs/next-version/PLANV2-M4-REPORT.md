@@ -480,12 +480,23 @@ them; the n above for those eight is from the re-run. One of them guards a real 
 next round's id before it opens, and that round would then take asks it could never close or settle (its backers' dollars stuck).
 ND6 is the only check that keeps a reserve sale from taking work-pot Shares (the Launcher passes any amount the Council names).
 
+**Gates after the review fixes** (17 November 2026, same machine, one forge process at a time):
+
+| Gate | Result |
+|---|---|
+| `forge build --sizes` | exits 1 for the milestone 1 test helper `Deployer` only (unchanged). Treasury 14,272 runtime / 14,317 creation (was 13,918 / 13,963), Vester 3,635 / 3,679, Rounds and Launcher unchanged |
+| Local suite, no RPC (`forge test`) | **463 passed, 0 failed, 35 skipped** in 106 suites (the 35 are the Sepolia fork twins); the 31 invariants at 256 runs x depth 200 among them |
+| Sepolia fork suite (`--match-contract Fork`, publicnode RPC), the second and last run of this milestone | **136 passed, 0 failed, 0 skipped** in 35 suites |
+| `forge fmt --check src test script` | clean |
+| Guard removals | the 34 new entries above, one at a time, with the default fuzz and invariant counts: 31 fail at least one test, 3 are redundant (NF1, NF2, NF3). The earlier 108 milestone 4 entries were not re-run after these fixes |
+
 ## What I ran, and what I did not do
 
 - Ran: everything in "Gates"; each test file while writing it; the removal script for the 108 new and 29 moved guards. Nothing
   else was run against Sepolia; nothing is deployed; no key was used.
-- Not done: the Council, HolderVote, Tasks (milestones 8 and 9); the Team takeover after 28 silent days; a trim for a founder who
-  leaves after the market; the server side. The milestone 1 to 3 removal entries whose code did not move were not re-run.
+- Not done: the Council, HolderVote, Tasks (milestones 8 and 9); the Team takeover after 28 silent days and "agents included" in
+  the 500 a week (pinned, owner decision, milestone 7); who gets the money stranded by a wind-down (pinned, owner decision); a
+  trim for a founder who leaves after the market, or through a Council; the server side. The milestone 1 to 3 removal entries whose code did not move were not re-run.
 - `Launcher.finishReserveSale` moves the reserve sale's dollars with a plain `transfer` (a token that returns false makes the
   Treasury's `settleReserveSale` revert with `NotArrived`, so nothing is lost silently); `SafeERC20` would give a clearer error.
 - The Deploy script (`script/DeployPlatform.s.sol`) was updated to make `Parts` first and pass the stake address and a zero
