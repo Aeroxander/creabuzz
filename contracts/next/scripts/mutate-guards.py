@@ -3,7 +3,7 @@
 
     python3 scripts/mutate-guards.py            # every removal, unit/fuzz/attack suites (about 75 seconds each)
     python3 scripts/mutate-guards.py T09 L03    # only these ids
-    python3 scripts/mutate-guards.py --m3       # only the milestone 3 entries (their ids start with F, A, H, P or X)
+    python3 scripts/mutate-guards.py --m3       # only the milestone 3 entries (their ids start with F, A, H, P, X, E or B)
     M2_ONLY=1 python3 scripts/mutate-guards.py  # the milestone 2 entries, against the milestone 2 suites only (about 25 seconds each)
     INV_ONLY=1 python3 scripts/mutate-guards.py T10 T15   # only the invariant suite
 
@@ -214,6 +214,41 @@ M3=[
 ('X05','Treasury: more than arrived may be put into the floor',T,'        if (amount > arrived) revert NotArrived(amount, arrived);\n        _accrue();\n        _addMelting(amount);','        _accrue();\n        _addMelting(amount);',False,TAB),
 ('X06','Treasury: an abandoned sale does not start the Vester\'s clock',T,'        (poolOpen, abandoned) = (true, true);\n        vester.startNow();','        (poolOpen, abandoned) = (true, true);',False,TAB),
 ]
+
+# ---- the milestone 3 fix round: the closing window, "this sale's pool", the events the server reads, the false-answering token.
+# E = an event is no longer emitted (`emit X(` becomes `abi.encode(`, which keeps the arguments and drops the event), B = MinBid.
+MB='src/MinBid.sol'; TR='src/Treasury.sol'
+AM3='test/AttackM3.t.sol'
+EVT='test/{FinishEvents,LiquidityHolder}.t.sol'
+WIN='test/{SaleRules,Launcher,AttackM3}.t.sol'
+M3+=[
+('F33','Finisher: a pool the pool step did not fund counts as this sale\'s pool (the fake pool after a failed step)',FI,'return settled || (poolAtTheKey() && _poolTookTheMoney());','return settled || poolAtTheKey();',False,'test/{AttackM3,FinishAttacks}.t.sol'),
+('F34','Finisher: a pool that took only 5 of each 100 dollars of its budget counts',FI,'MIN_TAKEN_PERCENT = 50;','MIN_TAKEN_PERCENT = 5;',False,AM3),
+('F35','Finisher: after the sale is done the pool is not reported open',FI,'        if (s == Stage.Done) return true;\n','',False,'test/{AttackM3,FinishAttacks,Life}.t.sol'),
+('F36','Finisher: after step 2 the pool is judged by the dollars held again (a gift can reopen the way out)',FI,'return settled || (poolAtTheKey()','return (poolAtTheKey()',False,AM3),
+('A31','Launcher: the bid hook may have any closing window',L,'\n                || IPinnedMinBid(minBid_).closingBlocks() != BID_CLOSING_BLOCKS','',False,'test/Launcher.t.sol'),
+('B01','MinBid: bids are accepted in the closing window',MB,'            if (block.number + closingBlocks > end) {\n                revert BidTooLate(block.number, end > closingBlocks ? end - closingBlocks : 0);\n            }\n','',False,WIN),
+('B02','MinBid: the window is one block short',MB,'if (block.number + closingBlocks > end)','if (block.number + closingBlocks > end + 1)',False,WIN),
+('H11','LiquidityHolder: a guarded pool of a stranger\'s own token may be collected',HO,'        if (treasury == address(0)) revert UnknownProject();\n','',False,'test/LiquidityHolder.t.sol'),
+('H12','LiquidityHolder: a token that answers false counts as paid',HO,'if (!ok || (ret.length != 0 && !abi.decode(ret, (bool)))) {','if (!ok) {',False,'test/LiquidityHolder.t.sol'),
+('E01','Launcher: SaleOpened is not emitted',L,'        emit SaleOpened(','        abi.encode(',False,EVT),
+('E02','Finisher: SaleOpenedBy is not emitted',FI,'        emit SaleOpenedBy(','        abi.encode(',False,EVT),
+('E03','Finisher: PoolStep is not emitted',FI,'        emit PoolStep(','        abi.encode(',False,EVT),
+('E04','Finisher: PoolOpened is not emitted',FI,'        emit PoolOpened(','        abi.encode(',False,EVT),
+('E05','Finisher: Settled is not emitted',FI,'        emit Settled(','        abi.encode(',False,EVT),
+('E06','Finisher: Swept is not emitted by sweep',FI,'        emit Swept(address(a), held);','        abi.encode(address(a), held);',False,EVT),
+('E07','Finisher: Swept is not emitted by abandon',FI,'        emit Swept(address(a), sharesBack);','        abi.encode(address(a), sharesBack);',False,EVT),
+('E08','Finisher: SaleFailed is not emitted',FI,'            emit SaleFailed(','            abi.encode(',False,EVT),
+('E09','Finisher: Abandoned is not emitted',FI,'        emit Abandoned(','        abi.encode(',False,EVT),
+('E10','LiquidityHolder: Collected is not emitted',HO,'        emit Collected(','        abi.encode(',False,EVT),
+('E11','LiquidityHolder: Owed is not emitted',HO,'            emit Owed(','            abi.encode(',False,EVT),
+('E12','LiquidityHolder: OwedSent is not emitted',HO,'        emit OwedSent(','        abi.encode(',False,EVT),
+('E13','Treasury: PoolOpened is not emitted',TR,'        emit PoolOpened(','        abi.encode(',False,EVT),
+('E14','Treasury: SaleAbandoned is not emitted',TR,'        emit SaleAbandoned(','        abi.encode(',False,EVT),
+('E15','Treasury: SaleClosed is not emitted',TR,'        emit SaleClosed(','        abi.encode(',False,EVT),
+('E16','Treasury: the floor-only Settled is not emitted',TR,'        emit Settled(amount, 0, amount);','        abi.encode(amount, 0, amount);',False,EVT),
+('E17','Treasury: Settled is not emitted by settle',TR,'        emit Settled(amount, toSpendable, toFloor);','        abi.encode(amount, toSpendable, toFloor);',False,EVT),
+]
 MUT+=M3
 
 status = '' if PRISTINE else subprocess.run(['git', 'status', '--porcelain', 'src'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
@@ -247,8 +282,8 @@ for entry in MUT:
     (i,desc,f,old,new,inv)=entry[:6]
     suites=entry[6] if len(entry)>6 else None
     if sel and i not in sel: continue
-    if only_m3 and i[0] not in 'FAHPX': continue
-    if os.environ.get('M2_ONLY') and i[0] in 'FAHPX': continue
+    if only_m3 and i[0] not in 'FAHPXEB': continue
+    if os.environ.get('M2_ONLY') and i[0] in 'FAHPXEB': continue
     if os.environ.get('M2_ONLY') and not suites: suites=M2SUITES
     pos+=1
     if pos%n!=k: continue

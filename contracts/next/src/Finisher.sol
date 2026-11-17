@@ -297,8 +297,8 @@ contract Finisher {
     /// a failed pool step has freed the key): such a pool takes none of this sale's money, because a failed step returns all of
     /// it. After step 2 it is true until the sale is abandoned or never opened.
     /// @dev What a stranger can still do: send dollars to this contract before step 2, which makes a real pool look as if it
-    /// took less. It needs more than half of the pool's budget (more than 11 of each 100 dollars the pool holds) and the dollars
-    /// become the project's.
+    /// took less. It needs more than half of the pool's budget (more than 11 of each 100 dollars raised) and the dollars become the
+    /// project's.
     function poolIsOpen() public view returns (bool) {
         Stage s = stage;
         if (s == Stage.Done) return true;
