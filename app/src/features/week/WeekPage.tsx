@@ -57,7 +57,7 @@ export function WeekPage() {
               >
                 {project.name}
               </Link>
-              <span className="num text-xs text-muted">
+              <span className="text-xs text-muted">
                 started {relativeTime(project.startedAt)}
               </span>
             </div>

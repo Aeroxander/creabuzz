@@ -75,7 +75,7 @@ export function MessagesPage() {
                       {conversation.last.content}
                     </span>
                   </span>
-                  <span className="num shrink-0 text-xs text-muted">
+                  <span className="shrink-0 text-xs text-muted">
                     {relativeTime(conversation.last.at)}
                   </span>
                 </Link>

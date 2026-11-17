@@ -24,7 +24,7 @@ import { type NostrEvent, publishAsUser, read } from "../../lib/relay";
 
 export type { Engagement, Row, SignedEvent };
 
-export const postKeys = {
+const postKeys = {
   all: ["posts"] as const,
   recent: (authors: readonly string[] | null) =>
     ["posts", "recent", authors?.join(",") ?? "everyone"] as const,

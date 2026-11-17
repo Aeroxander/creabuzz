@@ -12,7 +12,7 @@ export type { ProfileMetadata };
 /** At most this many people's profiles per read (the server caps `authors` too). */
 const PROFILE_BATCH = 100;
 
-export const profileKeys = {
+const profileKeys = {
   all: ["profiles"] as const,
   many: (pubkeys: readonly string[]) => ["profiles", ...pubkeys] as const,
 };

@@ -37,9 +37,7 @@ export function Byline({
         >
           {name}
         </Link>
-        <span className="num shrink-0 text-xs text-muted">
-          {relativeTime(at)}
-        </span>
+        <span className="shrink-0 text-xs text-muted">{relativeTime(at)}</span>
       </div>
     </div>
   );
@@ -80,21 +78,23 @@ export function PostActions({
   return (
     <div className="flex items-center gap-1 text-sm text-muted">
       <button
-        aria-label={liked ? "Liked" : "Like"}
+        aria-label={`Like, ${engagement.ups}`}
         aria-pressed={liked}
         className={cn(
           "btn btn-ghost btn-sm text-muted",
           liked && "text-mint-ink",
         )}
         data-testid="post-like"
-        disabled={liked || like.isPending}
-        onClick={() =>
+        disabled={like.isPending}
+        onClick={() => {
+          // A like is kept once given; pressing it again changes nothing.
+          if (liked) return;
           requireAccount(() =>
             like.mutate(event, {
               onError: (error) => toast(error.message, "problem"),
             }),
-          )
-        }
+          );
+        }}
         type="button"
       >
         <Heart
@@ -105,7 +105,7 @@ export function PostActions({
         <span className="num">{engagement.ups}</span>
       </button>
       <Link
-        aria-label={`${engagement.replies} replies`}
+        aria-label={`Comments, ${engagement.replies}`}
         className="btn btn-ghost btn-sm text-muted"
         params={{ id: event.id }}
         to="/post/$id"

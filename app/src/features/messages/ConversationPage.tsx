@@ -62,7 +62,7 @@ export function ConversationPage({ peer }: { peer: string }) {
               </p>
               <p
                 className={cn(
-                  "num mt-1 text-2xs",
+                  "mt-1 text-2xs",
                   mine ? "text-on-mint/70" : "text-muted",
                 )}
               >
@@ -103,7 +103,7 @@ export function ConversationPage({ peer }: { peer: string }) {
           Message
         </label>
         <textarea
-          className="field glass min-h-12 flex-1 py-3"
+          className="field glass min-h-12 flex-1 resize-none py-3"
           data-testid="message-text"
           id="message-text"
           onChange={(e) => setText(e.target.value)}

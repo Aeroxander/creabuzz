@@ -12,7 +12,7 @@ import {
 import { projectCoordinate, slugFromName } from "../project/project-record";
 
 export const NAME_MAX = 80;
-export const PITCH_MAX = 140;
+const PITCH_MAX = 140;
 export { GOAL_LIMITS };
 
 export interface StartDraft {

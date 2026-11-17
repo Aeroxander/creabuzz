@@ -42,7 +42,7 @@ export async function readLatest(
 }
 
 /** Newest first, ties broken by id so the order never flickers. */
-export function newestFirst<T extends { id: string; created_at: number }>(
+function newestFirst<T extends { id: string; created_at: number }>(
   events: readonly T[],
 ): T[] {
   return [...events].sort(

@@ -9,7 +9,7 @@ import type {
 export const PRESSED_CLASS = "is-pressed";
 
 /** Whether the person asked for less motion: then the press does not move at all. */
-export function prefersReducedMotion(): boolean {
+function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }

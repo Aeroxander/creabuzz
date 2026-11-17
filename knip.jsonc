@@ -24,6 +24,20 @@
         "tests/**/*.{ts,mjs}"
       ]
     },
+    // The new phone-first app (plan v2 milestone 6): its entry, its tests and its guard scripts.
+    "app": {
+      "entry": [
+        "src/**/*.test.{ts,tsx}",
+        "tests/**/*.ts",
+        "scripts/*.mjs",
+        "public/sw.js"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx,css}",
+        "scripts/**/*.mjs",
+        "tests/**/*.ts"
+      ]
+    },
     // Core publishes every file (`exports: "./*"`); still report exports no workspace imports.
     "packages/creaton-core": {
       "entry": ["src/**/*.test.mjs"],

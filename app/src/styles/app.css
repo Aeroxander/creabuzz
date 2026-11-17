@@ -50,9 +50,13 @@
   color-scheme: dark;
 }
 
+/* The page colour sits on html only: a body background would paint over the fixed gradient below. */
+html {
+  background: var(--grad-1);
+}
+
 html,
 body {
-  background: var(--grad-1);
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
@@ -60,6 +64,7 @@ body {
 }
 
 body {
+  background: transparent;
   min-height: 100dvh;
   overscroll-behavior-y: none;
 }
@@ -287,7 +292,7 @@ textarea.field {
   padding-bottom: var(--safe-bottom);
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
-  background: hsl(266 60% 9% / 0.72);
+  background: hsl(266 60% 9% / 0.9);
   border-top: 1px solid rgb(255 255 255 / 0.16);
   -webkit-backdrop-filter: blur(18px) saturate(1.5);
   backdrop-filter: blur(18px) saturate(1.5);

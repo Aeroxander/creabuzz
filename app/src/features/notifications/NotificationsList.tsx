@@ -117,7 +117,7 @@ export function NotificationsList() {
             <span className="min-w-0 flex-1 text-sm">
               <span className="font-semibold">{who(names)}</span> {row.text}
             </span>
-            <span className="num shrink-0 text-xs text-muted">
+            <span className="shrink-0 text-xs text-muted">
               {relativeTime(row.at)}
             </span>
           </>

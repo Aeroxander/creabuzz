@@ -81,7 +81,7 @@ export function UpdatesTab({
               <span className="font-semibold text-ink">
                 {nameOf(profiles, update.author)}
               </span>
-              <span className="num">{relativeTime(update.at)}</span>
+              <span>{relativeTime(update.at)}</span>
             </div>
             {update.title ? (
               <h3 className="font-semibold">{update.title}</h3>

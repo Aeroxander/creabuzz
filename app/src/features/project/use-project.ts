@@ -30,7 +30,7 @@ import {
   recordWithTeam,
 } from "./project-record";
 
-export const projectKeys = {
+const projectKeys = {
   all: ["project"] as const,
   one: (ref: string) => ["project", "record", ref] as const,
   activity: (coordinate: string) =>

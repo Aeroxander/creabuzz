@@ -11,7 +11,7 @@ import {
 import { useSyncExternalStore } from "react";
 
 /** Sent on this window whenever an account is made, restored or forgotten here. */
-export const ACCOUNT_CHANGED_EVENT = "creaton:account-changed";
+const ACCOUNT_CHANGED_EVENT = "creaton:account-changed";
 
 export function announceAccountChange(): void {
   window.dispatchEvent(new Event(ACCOUNT_CHANGED_EVENT));
