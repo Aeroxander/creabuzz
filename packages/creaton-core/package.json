@@ -2,7 +2,7 @@
   "name": "@creaton/core",
   "version": "0.0.0",
   "private": true,
-  "description": "Pure logic shared by the Creaton web and desktop apps: launchpad calldata and flows, org authority.",
+  "description": "Pure logic shared by the Creaton apps (web, desktop and the new phone-first app): the account and passkey, the relay client, record signing, social and project records, launchpad calldata and flows, org authority.",
   "type": "module",
   "exports": {
     "./*": "./src/*"
@@ -12,6 +12,7 @@
     "check": "biome check ."
   },
   "dependencies": {
-    "@noble/hashes": "^2.2.0"
+    "@noble/hashes": "^2.2.0",
+    "nostr-tools": "^2.23.3"
   }
 }

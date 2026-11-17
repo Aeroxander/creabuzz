@@ -13,6 +13,20 @@ import { describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const SRC = fileURLToPath(new URL("../../", import.meta.url));
+
+const CORE_SRC = join(SRC, "../../packages/creaton-core/src");
+
+/** A file moved to `@creaton/core` leaves a one-line shim here: read the moved source in its place, so the scan still covers it. */
+function readSource(path) {
+  const text = readFileSync(path, "utf8");
+  const code = text
+    .split("\n")
+    .filter((line) => line && !line.startsWith("//"));
+  const moved =
+    code.length === 1 &&
+    code[0].match(/^export \* from "@creaton\/core\/(.+)";$/);
+  return moved ? readFileSync(join(CORE_SRC, moved[1]), "utf8") : text;
+}
 const CREATORS = [
   "getOrCreateIdentity",
   "importIdentity",
@@ -124,7 +138,7 @@ function callSites(text) {
 const all = new Map(
   sourceFiles(SRC).map((path) => [
     relative(SRC, path).split("\\").join("/"),
-    readFileSync(path, "utf8"),
+    readSource(path),
   ]),
 );
 

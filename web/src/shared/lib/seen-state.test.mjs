@@ -60,7 +60,10 @@ test("both bells read and write this one time", () => {
     "utf8",
   );
   const timeline = readFileSync(
-    new URL("../../features/social/lib/notifications.ts", import.meta.url),
+    new URL(
+      "../../../../packages/creaton-core/src/social/notifications.ts",
+      import.meta.url,
+    ),
     "utf8",
   );
   for (const source of [rooms, timeline]) {
