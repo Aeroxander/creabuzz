@@ -166,9 +166,12 @@ contract RoundsTest is RoundsBase {
         assertEq(usd.balanceOf(bob), 3000 * DOLLAR - b);
         // the same percent for everyone, to the unit
         assertEq(a * 12_000 / 6000, 10_000 * DOLLAR);
-        // dust (a raw unit or two of accepted money no one holds Shares for) is split like the rest
+        // the scale-back dust (a raw unit or two of accepted money no one holds Shares for) went back to the backers with the
+        // rest of their asks; `raised` (what the caps measure) still counts it
         uint256 accepted = a + 2 * b;
         assertLe(10_000 * DOLLAR - accepted, 2);
+        assertEq(usd.balanceOf(alice) + usd.balanceOf(bob) + usd.balanceOf(carol), 12_000 * DOLLAR - accepted);
+        assertEq(rd.raised(), 10_000 * DOLLAR, "raised counts the dust");
         assertEq(rd.reserved(), (10_000 * DOLLAR - accepted) * 3e15, "only the dust's Shares stay set aside");
     }
 
@@ -347,6 +350,7 @@ contract RoundsTest is RoundsBase {
         _sale(7500 * DOLLAR); // the market opens: the clock of held Shares starts
         _live(73 days);
         uint256 full = rd.refundable(id, alice);
+        vm.prank(alice);
         assertEq(v.claimHeld(id, alice), 3_000_000 * SHARE * 73 days / 365 days, "a fifth released and taken out");
         uint256 part = rd.refundable(id, alice);
         assertApproxEqAbs(part, full * 4 / 5, 2, "the refund now covers the four fifths still held");
@@ -367,6 +371,7 @@ contract RoundsTest is RoundsBase {
         uint256 id = _round(alice, 1000 * DOLLAR);
         _sale(7500 * DOLLAR);
         _live(366 days);
+        vm.prank(alice);
         v.claimHeld(id, alice);
         vm.expectRevert(Rounds.NothingToRefund.selector);
         _refund(id, alice);

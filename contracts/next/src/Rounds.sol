@@ -17,8 +17,11 @@ import {IShares, IVester, ITreasuryRounds} from "./Interfaces.sol";
 ///    An ask may be lowered or withdrawn only in the first 12 hours; after that it can only grow.
 ///  - Close (anyone, after 24 hours): `accepted` = the smaller of what was asked and the size. If more was asked, every ask is
 ///    scaled back by the same ratio: a backer's accepted part is `ask * accepted / asked`, rounded down, and the rest of the
-///    ask is returned. The rounding dust (under one raw unit per backer) is accepted money nobody holds Shares for: it is split
-///    like the rest, so it ends with the platform and the project.
+///    ask is returned. The rounding dust (`accepted` less the sum of the parts: under one raw unit per backer) therefore goes
+///    back to the backers with the rest of their asks. It still counts in `accepted`, in `raised` (what the caps measure) and in
+///    `RoundClosed.accepted`, so the sum of `Settled.accepted` is up to that dust below them; the stage caps are measured on
+///    `raised`, which is the sum of `RoundClosed.accepted`. The dust's Shares (3e15 raw units per raw dollar of dust) stay set
+///    aside in `reserved` and are never returned to the reserve.
 ///  - Each accepted 100: 3 to the platform (`acc * 300 / 10000`, rounded down), 82 held here (`acc * 8200 / 10000`, rounded
 ///    down), and the rest, 15 plus the rounding dust, to the project's `spendable` at once.
 ///  - The held 82 is released to the project evenly over 26 weeks (182 days) of ACTIVE time: time counts only inside the

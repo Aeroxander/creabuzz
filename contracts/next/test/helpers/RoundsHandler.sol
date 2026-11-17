@@ -204,6 +204,7 @@ contract RoundsHandler is Test {
     function claimHeld(uint256 i, uint256 sel) external {
         uint256 id = _round(sel);
         if (id == 0) return;
+        vm.prank(backers[i % N]); // only the backer may take their held Shares out
         if (v.claimHeld(id, backers[i % N]) != 0) claims++;
     }
 

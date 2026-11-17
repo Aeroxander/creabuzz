@@ -112,3 +112,17 @@ interface ILauncherView {
     /// @notice The Treasury of the project whose Shares these are; zero for any other token.
     function treasuryOfShares(address shares) external view returns (address);
 }
+
+/// @notice What a project's Treasury asks of the Launcher before a hand-over that trims the founder.
+interface ILauncherPairs {
+    /// @notice True for a Pair the Launcher made.
+    function isPair(address who) external view returns (bool);
+}
+
+/// @notice The two signers of a Pair.
+interface IPairSigners {
+    /// @notice The first signer (the founder who offered the seat).
+    function first() external view returns (address);
+    /// @notice The second signer (who accepted).
+    function second() external view returns (address);
+}

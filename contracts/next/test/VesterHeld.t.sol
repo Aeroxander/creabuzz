@@ -38,6 +38,7 @@ contract VesterHeldTest is RoundsBase {
         uint256 id2 = _round(bob, 1000 * DOLLAR);
         _sale(7500 * DOLLAR);
         _live(73 days);
+        vm.prank(bob);
         v.claimHeld(id2, bob);
         _refund(id2, bob);
         assertLe(v.unreleased(), v.committed(), "nothing unreleased is missing from the Vester");

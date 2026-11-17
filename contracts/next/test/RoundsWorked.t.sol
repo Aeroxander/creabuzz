@@ -115,6 +115,7 @@ contract RoundsAttackTest is RoundsBase {
         _live(1 days);
         uint256 freed;
         for (uint256 i; i < 20; ++i) {
+            vm.prank(sybils[i]);
             freed += v.claimHeld(id, sybils[i]);
         }
         assertEq(freed, 30_000_000 * SHARE / 365 / 20 * 20, "1/365 of the 30M on the first day (rounded per account)");
@@ -193,6 +194,7 @@ contract RoundsAttackTest is RoundsBase {
         _sale(7500 * DOLLAR);
         _buy(alice, 100_000_000 * SHARE);
         _live(100 days);
+        vm.prank(carol);
         v.claimHeld(id, carol);
         uint256 melting = t.melting();
         uint256 permanent = t.permanentFloor();

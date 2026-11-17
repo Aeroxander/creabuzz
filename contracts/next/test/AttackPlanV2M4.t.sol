@@ -9,20 +9,20 @@ import {Launcher} from "../src/Launcher.sol";
 import {Treasury} from "../src/Treasury.sol";
 
 /// @notice Plan version 2, milestone 4, from the attacker's side: backing rounds, the refund, the held Shares and the wind-down.
-/// The two `test_defect_*` tests state a rule the plan promises and FAIL on today's code: each is a defect, not a broken test.
-/// The `test_probe_*` tests are attacks that the code withstood; they pass.
+/// `test_fixed_*` was a defect the attacker found (it failed at 802c5d690) and passes since the fix. `test_pinned_*` is a defect
+/// whose fix is the owner's decision: it pins today's measured effect. The `test_probe_*` tests are attacks the code withstood.
 contract AttackPlanV2M4Test is RoundsBase {
-    /// @dev DEFECT. The plan: "After a market opens the refund continues for Shares still held for you; Shares YOU take out to
-    /// sell end that part of it", and "nobody else ... changes your number". But `Vester.claimHeld(round, backer)` may be called
-    /// by anyone, and `Rounds.refund` covers only Shares not yet claimed. So any stranger (the founder's bot, or the platform's
-    /// own helper job that "delivers Shares with nobody pressing") can take a backer's released Shares out for them and so end
-    /// their refund for those Shares. The money for those Shares stays in the round and is released to the project: the founder
-    /// side gains exactly what the backer loses, and the backer is left holding Shares worth a fraction of it at the floor.
+    /// @dev FIXED (finding M4A-1). The plan: "After a market opens the refund continues for Shares still held for you; Shares YOU
+    /// take out to sell end that part of it", and "nobody else ... changes your number". `Rounds.refund` covers only Shares not
+    /// yet claimed, and `Vester.claimHeld(round, backer)` could be called by anyone: any stranger (the founder's bot, or a helper
+    /// job that delivers Shares) could take a backer's released Shares out for them and so end their refund for those Shares,
+    /// moving that money to the project (at 802c5d690: alice's refund fell from 6,634.34 to 3,362.61). Now only the backer may
+    /// take out their own held Shares, and this test passes because the stranger's call is refused.
     ///
     /// Scenario: alice backs 10,000; the founder goes quiet after the round (13 active days counted), the market opens on day
     /// 100 (its first money opens one 14-day window), and 180 days into the market the founder's bot claims alice's released
     /// Shares for her.
-    function test_defect_aStrangerClaimingABackersSharesShrinksTheirRefund() public {
+    function test_fixed_aStrangerCannotEndABackersRefundByClaimingForThem() public {
         uint256 id = _round(alice, 10_000 * DOLLAR);
         vm.warp(_now() + 100 days); // the founder does not check in
         _sale(7500 * DOLLAR); // the market opens; the Vester's clock starts
@@ -63,11 +63,14 @@ contract AttackPlanV2M4Test is RoundsBase {
         assertEq(afterClaim, before, "nobody but alice can end alice's refund");
     }
 
-    /// @dev DEFECT. After a wind-down the release stops for good and backers take back their unreleased money, but only for
-    /// Shares still in the Vester. The unreleased money behind Shares already claimed (by the backer, or by any stranger, see
-    /// above) can then never be released to the project nor refunded: it stays in the Rounds for ever with no one able to take
-    /// it. A runner may wind down before a market, which includes after "no market", when the held Shares are releasing.
-    function test_defect_aWindDownStrandsTheHeldMoneyOfClaimedShares() public {
+    /// @dev PINNED, OWNER DECISION (finding M4A-2). After a wind-down the release stops for good and backers take back their
+    /// unreleased money, but only for Shares still in the Vester. The unreleased money behind Shares the backer already took out
+    /// can then never be released to the project nor refunded: it stays in the Rounds for ever with no one able to take it. A
+    /// runner may wind down before a market, which includes after "no market", when the held Shares are releasing (and after a
+    /// market a Council may, from milestone 9). The plan says "payments stop for good" and "Shares you take out end that part of
+    /// it", so neither side is owed this money; who gets it (the project, or the floor for holders) is the owner's choice. This
+    /// test pins today's measured effect: 152.285715 dollars without an owner on a 1,000-dollar backing.
+    function test_pinned_aWindDownStrandsTheHeldMoneyOfClaimedShares() public {
         uint256 id = _round(alice, 1000 * DOLLAR); // 820 held; the founder goes quiet: 13 active days counted
         vm.warp(rd.firstMoneyAt() + 365 days);
         vm.prank(founder);
@@ -84,7 +87,7 @@ contract AttackPlanV2M4Test is RoundsBase {
         uint256 stuck = usd.balanceOf(rounds) - rd.platformOwed();
         emit log_named_decimal_uint("dollars in the Rounds nobody can ever take", stuck, 6);
         assertEq(rd.releasable(id), 0);
-        assertEq(stuck, 0, "every held dollar reaches the project or a backer");
+        assertEq(stuck, 152_285_715, "pinned: the money behind the claimed fifth has no owner (owner decision)");
     }
 
     /// @dev PROBE. A founder's second account asks big, lowers in hour 11, withdraws, re-asks at the last second, from 20 more
@@ -147,7 +150,8 @@ contract AttackPlanV2M4Test is RoundsBase {
         _refund(id, bob);
         rd.release(id);
         assertEq(rd.refundable(id, alice), a);
-        assertEq(v.claimHeld(id, alice), 0, "before the market nothing can be taken out for her");
+        vm.prank(alice);
+        assertEq(v.claimHeld(id, alice), 0, "before the market nothing can be taken out");
     }
 }
 

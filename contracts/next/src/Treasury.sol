@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {SafeERC20} from "oz5/token/ERC20/utils/SafeERC20.sol";
-import {IShares, IVester, IRounds, MAX_SPLIT_PART} from "./Interfaces.sol";
+import {IShares, IVester, IRounds, ILauncherPairs, IPairSigners, MAX_SPLIT_PART} from "./Interfaces.sol";
 import {RollingCap} from "./RollingCap.sol";
 
 /// @title Treasury
@@ -420,10 +420,12 @@ contract Treasury {
 
     /// @notice Offer the runner seat to `next` (a successor, a Pair, a Council). Only the runner. Nothing moves until `next`
     /// calls `takeSeat`. With `founderLeaves`, taking the seat also trims the founder's grant (before a market only): the
-    /// founder keeps the days served since launch out of 365 and the rest returns to the work pot. A new offer replaces the
-    /// last one.
+    /// founder keeps the days served since launch out of 365 and the rest returns to the work pot. Only the founder may offer
+    /// that: as the runner in person, or through a Pair the Launcher made with the founder as one of its two signers (a Pair
+    /// hands the seat over only when both agree). A later runner cannot cut the founder's grant. A new offer replaces the last.
     function handOver(address next, bool founderLeaves) external onlyRunner {
         if (next == address(0) || next == runner) revert BadInput();
+        if (founderLeaves && !_founderAgrees()) revert NotAllowed();
         (pendingRunner, pendingTrim) = (next, founderLeaves);
         emit SeatOffered(msg.sender, next, founderLeaves);
     }
@@ -684,6 +686,14 @@ contract Treasury {
     }
 
     // ================================================== plumbing =====================================================
+
+    /// @dev The founder agrees to the runner's call: they are the runner, or the runner is a Pair made by the Launcher (the
+    /// `salePath`) with the founder as a signer, which makes a call only when both signers agreed.
+    function _founderAgrees() private view returns (bool) {
+        if (msg.sender == founder) return true;
+        if (!ILauncherPairs(salePath).isPair(msg.sender)) return false;
+        return IPairSigners(msg.sender).first() == founder || IPairSigners(msg.sender).second() == founder;
+    }
 
     function _sendShares(address to, uint256 amount) private {
         if (!shares.transfer(to, amount)) revert BadInput();

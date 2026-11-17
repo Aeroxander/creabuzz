@@ -227,10 +227,11 @@ contract Vester {
         emit Claimed(beneficiary, amount);
     }
 
-    /// @notice Send a backer the released Shares of their grant of round `round`. Anyone may call it. Taking Shares out ends
-    /// the backer's refund for those Shares (the Rounds refund only what is still held here).
+    /// @notice Take out your released Shares of your grant of round `round`. Only the backer: taking Shares out ends the
+    /// backer's refund for those Shares (the Rounds refund only what is still held here), so nobody else may end it for them.
     /// @return amount Shares sent.
     function claimHeld(uint256 round, address backer) external returns (uint256 amount) {
+        if (msg.sender != backer) revert NotAllowed();
         amount = claimableHeld(round, backer);
         if (amount == 0) return 0;
         heldGrants[round][backer].claimed += amount;
