@@ -247,7 +247,7 @@ function CreateView({
           Create without a passkey
         </Button>
       </div>
-      <div className="flex items-center justify-between gap-2 border-t border-white/15 pt-3 text-sm">
+      <div className="plain flex items-center justify-between gap-2 rounded-2xl px-3 text-sm">
         <button
           className="link min-h-11 font-semibold"
           data-testid="onboarding-signin"

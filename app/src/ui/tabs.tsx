@@ -33,7 +33,7 @@ export function Tabs({
     >
       <RadixTabs.List
         aria-label={label}
-        className="glass flex gap-1 overflow-x-auto rounded-xl p-1"
+        className="glass glass-text flex gap-1 overflow-x-auto rounded-xl p-1"
       >
         {items.map((item) => (
           <RadixTabs.Trigger
@@ -49,7 +49,7 @@ export function Tabs({
                 {/* The word where it fits; a small dot on the narrowest phones, so four tabs fit without scrolling. */}
                 <span
                   aria-hidden="true"
-                  className="ml-0.5 hidden align-middle text-2xs font-medium text-muted min-[380px]:inline"
+                  className="ml-0.5 hidden align-middle text-2xs font-medium min-[380px]:inline"
                 >
                   soon
                 </span>

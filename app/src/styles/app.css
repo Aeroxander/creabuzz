@@ -15,13 +15,13 @@
   --text-2xs--line-height: 1rem;
 
   --color-ink: hsl(0 0% 100%);
-  --color-muted: hsl(262 45% 87%);
+  --color-muted: hsl(262 50% 90%);
   --color-mint: #63c88e;
   --color-mint-deep: #47a873;
   --color-mint-ink: #86d6a8;
   --color-on-mint: hsl(266 55% 14%);
   --color-night: hsl(266 66% 13%);
-  --color-danger: hsl(4 90% 76%);
+  --color-danger: hsl(4 92% 80%);
   --color-warn: hsl(40 90% 62%);
 }
 
@@ -38,7 +38,7 @@
   --glass-line: rgb(255 255 255 / 0.38);
   --glass-shade: hsl(266 70% 8% / 0.6);
   /* Under the frost of a pane that holds small text: keeps muted text at 4.5:1 over the bright lower half. */
-  --glass-tint: hsl(266 60% 12% / 0.32);
+  --glass-tint: hsl(266 60% 12% / 0.45);
   /* The calmer surface for long reading (a post, a thread): the open point in DIRECTION.md. */
   --plain: hsl(266 55% 11% / 0.62);
   --plain-line: rgb(255 255 255 / 0.14);
