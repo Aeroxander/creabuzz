@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Creaton</title>
+    <meta
+      name="description"
+      content="Start a project, post what you did each week, and find people to build it with."
+    />
+    <!--
+      The card a pasted link shows. A project's own address gets its title, description and image from the server
+      instead (crates/buzz-relay/src/share_preview.rs replaces these); every other page keeps this.
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Creaton" />
+    <meta property="og:title" content="Creaton" />
+    <meta
+      property="og:description"
+      content="Start a project, post what you did each week, and find people to build it with."
+    />
+    <meta name="twitter:card" content="summary" />
+    <!-- Installable: everything under /assets/, the only prefix the relay serves as files. -->
+    <link rel="manifest" href="/assets/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/assets/icons/mark.svg" />
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#1e0b37" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Creaton" />
+    <!--
+      Document policy, as web/ has it: no script from another origin runs, fonts come from this origin only.
+      `connect-src` stays open because the app may point at any relay.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; font-src 'self' data:; connect-src 'self' http: https: ws: wss:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
+    <!-- The gradient's darkest colour before the bundle loads, so there is no white flash. -->
+    <style>
+      html { background: #1e0b37; color-scheme: dark; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
