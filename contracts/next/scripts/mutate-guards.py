@@ -4,6 +4,7 @@
     python3 scripts/mutate-guards.py            # every removal, unit/fuzz/attack suites (about 75 seconds each)
     python3 scripts/mutate-guards.py T09 L03    # only these ids
     python3 scripts/mutate-guards.py --m3       # only the milestone 3 entries (their ids start with F, A, H, P, X, E or B)
+    python3 scripts/mutate-guards.py --m4       # only the plan version 2 milestone 4 entries (their ids start with N)
     M2_ONLY=1 python3 scripts/mutate-guards.py  # the milestone 2 entries, against the milestone 2 suites only (about 25 seconds each)
     INV_ONLY=1 python3 scripts/mutate-guards.py T10 T15   # only the invariant suite
 
@@ -29,29 +30,29 @@ MUT=[
 ('T03','Treasury: anybody may declare the pool open',T,'function markPoolOpen() external nonReentrant {\n        if (msg.sender != opener) revert NotAllowed();\n        if (poolOpen) revert PoolAlreadyOpen();','function markPoolOpen() external nonReentrant {\n        if (poolOpen) revert PoolAlreadyOpen();',False),
 ('T04','Treasury: the pool may be declared open twice',T,'function markPoolOpen() external nonReentrant {\n        if (msg.sender != opener) revert NotAllowed();\n        if (poolOpen) revert PoolAlreadyOpen();','function markPoolOpen() external nonReentrant {\n        if (msg.sender != opener) revert NotAllowed();',False),
 ('T05','Treasury: settle works with no proven pool',T,'if (!poolOpen) revert NoPool();\n        if (amount == 0)','if (amount == 0)',False),
-('T06','Treasury: settle may split more than arrived',T,'        if (amount > arrived) revert NotArrived(amount, arrived);\n        _accrue();\n        uint256 toSpendable','        _accrue();\n        uint256 toSpendable',False),
+('T06', 'Treasury: settle may split more than arrived', T, '        if (amount > arrived) revert NotArrived(amount, arrived);\n        _accrue();\n        uint256 toSpendable = amount * spendableParts', '        _accrue();\n        uint256 toSpendable = amount * spendableParts', False),
 ('T07','Treasury: settle ratio is not 15:60',T,'amount * spendableParts / (spendableParts + floorParts)','amount * spendableParts / (spendableParts + floorParts) * 2',True),
-('T08','Treasury: any settle renews the check-in window',T,'if (!settled) {\n            (settled, accruedUpTo, lastCheckIn) = (true, block.timestamp, block.timestamp);\n        }','settled = true; accruedUpTo = block.timestamp; lastCheckIn = block.timestamp;',False),
+('T08', 'Treasury: any settle renews the check-in window', T, 'if (!settled) {\n            rounds.sync();\n            (settled, accruedUpTo, lastCheckIn) = (true, block.timestamp, block.timestamp);\n        }', 'rounds.sync(); settled = true; accruedUpTo = block.timestamp; lastCheckIn = block.timestamp;', False),
 ('T09','Treasury: hand back before the sale money is split',T,'if (!settled) revert NotSettled();','',False),
 ('T10','Treasury: the Vester counts in the exit denominator (its whole balance leaves the count, claimed or not)',T,' - vester.unreleased();',' - shares.balanceOf(address(vester));',True),
-('T11','Treasury: the Treasury counts in the exit denominator',T,'shares.totalSupply() - shares.balanceOf(address(this)) - vester.unreleased()','shares.totalSupply() - vester.unreleased()',True),
-('T12','Treasury: the exit slice reaches spendable',T,'uint256 slice = floorTotal * amount / counting;','uint256 slice = (floorTotal + spendable) * amount / counting;',True),
-('T13','Treasury: no exit fee',T,'paid = slice - (slice * exitFeeBps + BPS - 1) / BPS;','paid = slice;',True),
-('T14','Treasury: exit fee rounds down',T,'(slice * exitFeeBps + BPS - 1) / BPS','(slice * exitFeeBps) / BPS',False),
+('T11', 'Treasury: the Treasury counts in the exit denominator', T, 'return shares.totalSupply() - shares.balanceOf(address(this)) - shares.balanceOf(address(rounds))', 'return shares.totalSupply() - shares.balanceOf(address(rounds))', True),
+('T12', 'Treasury: the exit slice reaches spendable', T, 'uint256 slice = fromMelting + fromPermanent;', 'uint256 slice = fromMelting + fromPermanent + spendable * amount / counting;', True),
+('T13', 'Treasury: no exit fee', T, 'paid = slice - (slice * feeBps + BPS - 1) / BPS;', 'paid = slice;', True),
+('T14', 'Treasury: exit fee rounds down', T, '(slice * feeBps + BPS - 1) / BPS', '(slice * feeBps) / BPS', False),
 ('T15','Treasury: the platform part of the fee is not recorded',T,'        feesOwed += toPlatform;\n','',True),
 ('T16','Treasury: an exit does not burn the Shares',T,'        shares.burnFrom(msg.sender, amount);\n','',True),
 ('T17','Treasury: an exit does not first work out the daily release',T,'        if (amount == 0) revert BadInput();\n        _accrue();\n        uint256 counting','        if (amount == 0) revert BadInput();\n        uint256 counting',False),
 ('T18','Treasury: the release ignores the check-in window',T,'uint256 upto = block.timestamp < end ? block.timestamp : end;','uint256 upto = block.timestamp; end;',False),
-('T19','Treasury: anyone may check in',T,'if (msg.sender != founder && !agents[msg.sender].active) revert NotAllowed();','',False),
+('T19', 'Treasury: anyone (an agent too) may check in', T, 'if (msg.sender != runner) revert NotAllowed();\n        _sync();\n        lastCheckIn', '_sync();\n        lastCheckIn', False),
 ('T20','Treasury: an agent spends with no daily cap',T,'_agentUsd[msg.sender].consume(DAY, DAY_PARTS, a.usdCap, amount);','',False),
 ('T21','Treasury: spend does not stop at spendable (error kind)',T,'if (amount > spendable) revert TooMuch(amount, spendable);','',False),
 ('T22','Treasury: an agent gives Shares with no daily cap',T,'_agentShares[msg.sender].consume(DAY, DAY_PARTS, a.shareCap, amount);','',False),
-('T23','Treasury: no monthly cap on gifts after the pool',T,'_gifts.consume(MONTH, MONTH_PARTS, shares.totalSupply() * GIFT_CAP_BPS / BPS, amount);','',True),
+('T23', 'Treasury: no monthly cap on gifts after the pool', T, '_gifts.consume(MONTH, MONTH_PARTS, countingSupply() * GIFT_CAP_BPS / BPS, amount);', '', True),
 ('T24','Treasury: gifts before the pool go straight to the person',T,'if (poolOpen) {\n            _gifts','if (true) {\n            _gifts',False),
 ('T25','Treasury: the work pot may be overdrawn (error kind)',T,'if (amount > workPot) revert WorkPotShort(amount, workPot);','',False),
-('T26','Treasury: anyone may take the reserve out',T,'if (msg.sender != salePath) revert NotAllowed();','',True),
-('T27','Treasury: anyone may set agents',T,'        if (msg.sender != founder) revert NotAllowed();\n        if (agent == address(0)) revert BadInput();','        if (agent == address(0)) revert BadInput();',False),
-('T28','Treasury: anyone may switch agents off',T,'        if (msg.sender != founder) revert NotAllowed();\n        agents[agent].active = false;','        agents[agent].active = false;',False),
+('T26', 'Treasury: anyone may take the reserve out', T, 'function releaseReserve(address to, uint256 amount) external nonReentrant {\n        if (msg.sender != salePath) revert NotAllowed();', 'function releaseReserve(address to, uint256 amount) external nonReentrant {', True),
+('T27', 'Treasury: anyone may set agents', T, '        if (msg.sender != runner) revert NotAllowed();\n        if (agent == address(0)) revert BadInput();', '        if (agent == address(0)) revert BadInput();', False),
+('T28', 'Treasury: anyone may switch agents off', T, '        if (msg.sender != runner) revert NotAllowed();\n        agents[agent].active = false;', '        agents[agent].active = false;', False),
 ('T29','Treasury: an outgoing token fee is not noticed',T,'if (afterBal > before || before - afterBal != amount) revert TokenMisbehaved();','',False),
 ('T30','Treasury: a pulled amount is credited as asked, not as received',T,'got = quote.balanceOf(address(this)) - before;','got = amount;',False),
 ('T31','Treasury: fees are swept to the caller',T,'_pay(platform, owed);','_pay(msg.sender, owed);',False),
@@ -61,18 +62,18 @@ MUT=[
 ('T35','Treasury: gifts to the Vester address are allowed',T,'|| to == address(vester) ||','||',False),
 ('T36','Treasury: more than the counting supply may be handed back (error kind)',T,'if (amount > counting) revert TooMuch(amount, counting);','',False),
 ('T37','Treasury: a hand back that pays nothing still burns',T,'if (paid == 0) revert NothingToPay();','',False),
-('T38','Treasury: the exit takes everything from the melting floor',T,'uint256 fromPermanent = leaves * permanentFloor / floorTotal;','uint256 fromPermanent = 0;',False),
+('T38', 'Treasury: the exit takes nothing from the Share revenue', T, 'uint256 fromPermanent = permanentFloor * amount / shares.totalSupply();', 'uint256 fromPermanent = 0;', False),
 ('T39','Treasury: shareRevenue goes to the melting floor',T,'permanentFloor += got;\n        emit ShareRevenue','melting += got;\n        emit ShareRevenue',False),
 ('T40','Treasury birth check: an exit fee of 100% or more is accepted',T,'|| s.exitFeeBps >= BPS ||','||',False),
 ('V01','Vester: anyone may start the clock',V,'if (msg.sender != starter) revert NotAllowed();','',False),
 ('V02','Vester: the clock may be started twice',V,'if (start != 0) revert WrongPhase();\n        start = block.timestamp;','start = block.timestamp;',False),
-('V03','Vester: grants may be added after the clock started',V,'if (start != 0) revert WrongPhase();\n        _grant','_grant',False),
+('V03', 'Vester: plain grants may be added after the clock started', V, 'if (msg.sender != granter) revert NotAllowed();\n        if (start != 0) revert WrongPhase();\n        if (beneficiary', 'if (msg.sender != granter) revert NotAllowed();\n        if (beneficiary', False),
 ('V04','Vester: a grant needs no Shares behind it',V,'if (shares.balanceOf(address(this)) < committed + amount) revert NotFunded();','',False),
 ('V05','Vester: Shares release before the clock starts',V,'if (s == 0) return 0;','if (s == 0) s = 1;',False),
 ('V06','Vester: the release does not stop at the grant',V,'return elapsed >= DURATION ? total : total * elapsed / DURATION;','return total * elapsed / DURATION;',False),
 ('V07','Vester: initialize may be called twice',V,'if (starter != address(0)) revert AlreadyInitialized();','',False),
 ('V08','Vester: a claim does not record what was claimed',V,'        grants[beneficiary].claimed += amount;\n','',False),
-('V09','Vester: anyone may add grants',V,'if (msg.sender != granter) revert NotAllowed();','',False),
+('V09', 'Vester: anyone may add grants', V, 'if (msg.sender != granter) revert NotAllowed();\n        if (start != 0) revert WrongPhase();\n        if (beneficiary', 'if (start != 0) revert WrongPhase();\n        if (beneficiary', False),
 ('S01','ShareToken: birth may be repeated',S,'if (_born || to.length != amounts.length) revert BadBirth();','if (to.length != amounts.length) revert BadBirth();',False),
 ('S02','ShareToken: birth amounts need not add up to the supply',S,'if (sum != SUPPLY) revert BadBirth();','',False),
 ('S03','ShareToken: burnFrom ignores the allowance',S,'        _spendAllowance(from, value);\n        _burn(from, value);','        _burn(from, value);',False),
@@ -93,23 +94,23 @@ MUT=[
 ('T29b','Treasury: raw transfer, no balance measurement on the way out (both layers)',T,'quote.safeTransfer(to, amount);\n        uint256 afterBal = quote.balanceOf(address(this));\n        if (afterBal > before || before - afterBal != amount) revert TokenMisbehaved();','quote.transfer(to, amount);',False),
 ('T30b','Treasury: raw transferFrom, no arrival check on the way in (both layers)',T,'quote.safeTransferFrom(msg.sender, address(this), amount);\n        got = quote.balanceOf(address(this)) - before;\n        if (got == 0) revert TokenMisbehaved();','quote.transferFrom(msg.sender, address(this), amount);\n        got = amount;',False),
 ('T42','Treasury birth check: a platform part above the whole fee is accepted',T,'|| s.platformFeeBps > s.exitFeeBps ||','||',False),
-('T43','Treasury: a check-in does not first work out the release',T,'        _accrue();\n        lastCheckIn = block.timestamp;','        lastCheckIn = block.timestamp;',False),
+('T43', 'Treasury: a check-in does not first work out the release', T, '_sync();\n        lastCheckIn = block.timestamp;', 'rounds.sync();\n        lastCheckIn = block.timestamp;', False),
 ('T44','Treasury: spend does not work out the release first',T,'        _accrue();\n        if (amount > spendable)','        if (amount > spendable)',False),
-('T45','Treasury: the exit takes the fee from the floor instead of leaving it (the 4 percent leaves too)',T,'uint256 leaves = paid + toPlatform;','uint256 leaves = slice;',True),
-('T46','Treasury: an exit pays twice its slice',T,'uint256 slice = floorTotal * amount / counting;','uint256 slice = floorTotal * amount / counting * 2;',False),
+('T45', "Treasury: the exit fee's 4 stays in the floor (milestone 2's rule; B2 comes back)", T, '        melting -= fromMelting;\n        spendable += toProject;', '        melting -= fromMelting - toProject;', True),
+('T46', 'Treasury: an exit pays twice its slice', T, 'uint256 slice = fromMelting + fromPermanent;', 'uint256 slice = (fromMelting + fromPermanent) * 2;', False),
 ('T47','Treasury: the platform part is recorded twice',T,'feesOwed += toPlatform;','feesOwed += toPlatform * 2;',False),
 ('T48','Treasury: spend lets spendable fall below zero silently',T,'if (amount > spendable) revert TooMuch(amount, spendable);\n        spendable -= amount;','spendable = spendable > amount ? spendable - amount : 0;',False),
 # ---- milestone 2 review round (fix round)
-('T49','Treasury: hand back before the sale is closed (unsold Shares count as held)',T,'if (!saleClosed) revert SaleNotClosed();','',False),
+('T49', 'Treasury: hand back before the sale is closed (unsold Shares count as held)', T, 'if (!saleClosed || reserveSaleOpen) revert SaleNotClosed();', 'if (reserveSaleOpen) revert SaleNotClosed();', False),
 ('T50','Treasury: anybody may mark the sale closed',T,'        if (msg.sender != opener) revert NotAllowed();\n        if (!poolOpen) revert NoPool();\n        if (saleClosed)','        if (!poolOpen) revert NoPool();\n        if (saleClosed)',False),
 ('T51','Treasury: the sale may be marked closed before the pool is proven',T,'        if (!poolOpen) revert NoPool();\n        if (saleClosed)','        if (saleClosed)',False),
 ('T52','Treasury: the sale may be marked closed twice',T,'if (saleClosed) revert SaleAlreadyClosed();','',False),
 ('T53','Treasury birth check: no ceiling on the spendable part of the split',T,'|| s.spendableParts > MAX_SPLIT_PART','',False),
 ('T54','Treasury birth check: no ceiling on the floor part of the split',T,'|| s.floorParts > MAX_SPLIT_PART','',False),
-('V10','Vester: unreleased is nothing before the clock starts',V,'if (s == 0) return granted;','if (s == 0) return 0;',False),
-('V11','Vester: unreleased does not fall with time',V,'return elapsed >= DURATION ? 0 : granted - granted * elapsed / DURATION;','return elapsed >= DURATION ? 0 : granted;',False),
+('V10', 'Vester: unreleased is nothing before the clock starts', V, 'uint256 g = granted;\n        return g - _released(g);', 'uint256 g = granted;\n        return start == 0 ? 0 : g - _released(g);', False),
+('V11', 'Vester: unreleased does not fall with time', V, 'uint256 g = granted;\n        return g - _released(g);', 'uint256 g = granted;\n        return start != 0 && block.timestamp - start >= DURATION ? 0 : g;', False),
 ('V12','Vester: unreleased forgets what was granted',V,'        granted += amount;\n','',False),
-('V13','Vester: unreleased falls with claims (the old denominator)',V,'return elapsed >= DURATION ? 0 : granted - granted * elapsed / DURATION;','return elapsed >= DURATION ? 0 : committed - (committed * elapsed / DURATION);',False),
+('V13', 'Vester: unreleased falls with claims (the old denominator)', V, 'uint256 g = granted;\n        return g - _released(g);', 'uint256 g = committed;\n        return g - _released(g);', False),
 ('L13','Launcher: launch ignores the settings hash the founder saw',L,'if (settingsHash() != expectedSettingsHash) revert SettingsMoved();','',False),
 ('L15','Launcher: the dollar token may be an account, not a contract',L,' || address(s.quote).code.length == 0','',False),
 ('L16','Launcher: the dollar token may have any decimals',L,'if (d != QUOTE_DECIMALS) revert BadSettings();','',False),
@@ -124,7 +125,7 @@ MUT=[
 # A seventh field names the test files to run (the milestone 3 suites are slow and each guard has one or two that must catch it).
 FIN='test/{FinishAttacks,Life,SaleRules,FinisherPool}.t.sol'
 FINA='test/{AttackM2,FinishAttacks}.t.sol'
-LAU='test/{Launcher,SaleRules,Life,AttackM2}.t.sol'
+LAU='test/{Launcher,SaleRules,Life,AttackM2,PairStages}.t.sol'
 HOL='test/{LiquidityHolder,Life,MarketAttacks}.t.sol'
 TAB='test/{TreasuryAbandon,FinishAttacks}.t.sol'
 DRI='test/PinnedDrift.t.sol'
@@ -172,26 +173,24 @@ M3=[
 ('A08','Launcher: the smallest bid may be anything',L,'            IPinnedMinBid(minBid_).minAmount() != MIN_BID\n                || ','            ',False,LAU),
 ('A09','Launcher: the top-price cap may be anything',L,'\n                || IPinnedMinBid(minBid_).maxPriceMultiple() != MAX_PRICE_MULTIPLE','',False,LAU),
 ('A10','Launcher: the strategy may be no contract',L,'strategy_ == address(0) || strategy_.code.length == 0 ||','strategy_ == address(0) ||',False,LAU),
-('A11','Launcher: the bid hook may be no contract',L,' || minBid_.code.length == 0) revert BadStack();',') revert BadStack();',False,LAU),
-('A12','Launcher: the Treasury trusts the founder as its opener',L,'                    opener: finisher,','                    opener: msg.sender,',False,LAU),
+('A11', 'Launcher: the bid hook may be no contract', L, 'strategy_.code.length == 0 || minBid_.code.length == 0) {', 'strategy_.code.length == 0) {', False, LAU),
+('A12', 'Launcher: the Treasury trusts the founder as its opener', L, '                    opener: p.finisher,', '                    opener: msg.sender,', False, LAU),
 ('A13','Launcher: the Treasury trusts the founder as its sale path',L,'                    salePath: address(this),','                    salePath: msg.sender,',False,LAU),
-('A14','Launcher: the sale Shares are minted to the Launcher, not the Finisher',L,'(to[0], amounts[0]) = (finisher, SALE + POOL_RESERVE);','(to[0], amounts[0]) = (address(this), SALE + POOL_RESERVE);',False,LAU),
+('A14', 'Launcher: the sale Shares are minted to the Launcher, not the Finisher', L, '(to[0], amounts[0]) = (p.finisher, SALE + POOL_RESERVE);', '(to[0], amounts[0]) = (address(this), SALE + POOL_RESERVE);', False, LAU),
 ('A15','Launcher: the holder cannot tell which Treasury a project\'s Shares belong to',L,'        treasuryOfShares[shares] = treasury;\n','',False,LAU),
 ('A16','Launcher: the sale raises the current dollar setting, not the project\'s own (strategy side)',L,'currency: address(Treasury(p.treasury).quote()),\n            migrationBlock','currency: address(settings.quote),\n            migrationBlock',False,LAU),
-('A17','Launcher: the sale raises the current dollar setting, not the project\'s own (auction side)',L,'currency: address(Treasury(p.treasury).quote()),\n            tokensRecipient','currency: address(settings.quote),\n            tokensRecipient',False,LAU),
+('A17', "Launcher: the sale raises the current dollar setting, not the project's own (auction side)", L, '_auctionParams(address(t.quote()), p.finisher', '_auctionParams(address(settings.quote), p.finisher', False, LAU),
 ('A18','Launcher: the pool position goes to the Finisher, not the LiquidityHolder',L,'            positionRecipient: holder,','            positionRecipient: p.finisher,',False,LAU),
 ('A19','Launcher: what the pool leaves goes to the founder',L,'            recipient: p.finisher,\n            positionRecipient','            recipient: msg.sender,\n            positionRecipient',False,LAU),
-('A20','Launcher: the unsold Shares go to the founder',L,'            tokensRecipient: p.finisher,','            tokensRecipient: msg.sender,',False,LAU),
+('A20', 'Launcher: the unsold Shares go to the runner', L, 'address(t.quote()), p.finisher, strategy, AUCTION_MINIMUM', 'address(t.quote()), msg.sender, strategy, AUCTION_MINIMUM', False, LAU),
 ('A21','Launcher: no bid rules',L,'            validationHook: minBid,','            validationHook: address(0),',False,LAU),
 ('A22','Launcher: the pool has no guard',L,'tickSpacing: SaleParams.POOL_TICK_SPACING, hook: poolGuard','tickSpacing: SaleParams.POOL_TICK_SPACING, hook: address(0)',False,LAU),
 ('A23','Launcher: the pool is reserved half the Shares',L,'reservedTokenAmountForLP: SaleParams.POOL_SHARES,','reservedTokenAmountForLP: SaleParams.POOL_SHARES / 2,',False,LAU),
 ('A24','Launcher: the pool step may run later than the first block after the sale',L,'migrationBlock: endBlock_ + 1,','migrationBlock: endBlock_ + 5,',False,LAU),
 ('A25','Launcher: bidders may claim later than the first block after the sale',L,'claimBlock: startBlock + SaleParams.SALE_BLOCKS + 1,','claimBlock: startBlock + SaleParams.SALE_BLOCKS + 2,',False,LAU),
-('A26','Launcher: the Standard minimum is 2,000 dollars',L,'return (10_000e6, 2500e6);','return (10_000e6, 2000e6);',False,LAU),
-('A27','Launcher: the Small goal is 5,000 dollars',L,'return (4000e6, 2000e6);','return (5000e6, 2000e6);',False,LAU),
-('A28','Launcher: the Large minimum is 10,000 dollars',L,'return (50_000e6, 12_500e6);','return (50_000e6, 10_000e6);',False,LAU),
-('A29','Launcher: the floor price is rounded down to the tick',L,'tickQ96 = (exact + TICKS_IN_FLOOR - 1) / TICKS_IN_FLOOR;','tickQ96 = exact / TICKS_IN_FLOOR;',False,LAU),
-('A30','Launcher: the sale starts in the block it is opened',L,'uint64 startBlock = uint64(block.number + 1);','uint64 startBlock = uint64(block.number);',False,LAU),
+('A26', "Launcher: the auction's minimum is 90,000 dollars", L, 'uint256 public constant AUCTION_MINIMUM = 100_000e6;', 'uint256 public constant AUCTION_MINIMUM = 90_000e6;', False, LAU),
+('A29', 'Launcher: the floor price is rounded down to the tick', L, 'tickQ96 = (exactQ96 + TICKS_IN_FLOOR - 1) / TICKS_IN_FLOOR;', 'tickQ96 = exactQ96 / TICKS_IN_FLOOR;', False, LAU),
+('A30', 'Launcher: the sale starts in the block it is opened', L, 'uint64 startBlock = uint64(block.number + 1);\n        uint64 endBlock_', 'uint64 startBlock = uint64(block.number);\n        uint64 endBlock_', False, LAU),
 ('P01','Pinned: the pool takes 20 of every 100 raised',PI,'uint24 internal constant POOL_RATE = 2_268_041;','uint24 internal constant POOL_RATE = 2_061_856;',False,LAU),
 ('P02','Pinned: the pool fee is 0.3 percent',PI,'uint24 internal constant POOL_FEE = 10_000;','uint24 internal constant POOL_FEE = 3000;',False,LAU),
 ('P03','Pinned: the pool tick spacing is 60',PI,'int24 internal constant POOL_TICK_SPACING = 200;','int24 internal constant POOL_TICK_SPACING = 60;',False,LAU),
@@ -250,6 +249,132 @@ M3+=[
 ('E17','Treasury: Settled is not emitted by settle',TR,'        emit Settled(amount, toSpendable, toFloor);','        abi.encode(amount, toSpendable, toFloor);',False,EVT),
 ]
 MUT+=M3
+# ---------------------------------------------------------------- plan version 2, milestone 4 (ids N..): run with --m4
+RO='src/Rounds.sol'; PA='src/Pair.sol'; MB='src/MinBid.sol'
+M4R='test/{Rounds,RoundsFuzz,RoundsWorked,RoundsReentry,PairStages}.t.sol'
+M4V='test/{Vester,VesterHeld,Rounds,RoundsWorked,PairStages,AttackM2,TreasuryActions}.t.sol'
+M4T='test/{Treasury,TreasuryActions,TreasuryEdges,TreasuryAttacks,TreasuryFuzz,TreasuryAbandon,TreasurySeams,AttackM2,Rounds,RoundsWorked,RoundsReentry,PairStages}.t.sol'
+M4TA='test/{TreasurySeams,AuctionV2}.t.sol'  # the reserve sale's money and exits are tested on the real auction
+M4L='test/{Launcher,PairStages,Rounds,RoundsWorked,AuctionV2}.t.sol'
+M4P='test/{PairStages,RoundsWorked}.t.sol'
+M4B='test/{MarketAttacks,SaleRules,Pieces}.t.sol'
+M4=[
+# Rounds
+('N01','Rounds: anyone may open a round',RO,'if (msg.sender != launcher) revert NotAllowed();\n        if (isOpen()','if (isOpen()',False,M4R),
+('N02','Rounds: a round may open while another is open',RO,'if (isOpen() || size < MIN_ASK','if (size < MIN_ASK',False,M4R),
+('N03','Rounds: a round may be larger than the Shares left',RO,' || size * SHARES_PER_RAW_DOLLAR > unsold()','',False,M4R),
+('N04','Rounds: asks are taken after the 24 hours',RO,'if (r.openedAt == 0 || block.timestamp >= r.openedAt + WINDOW) revert WrongPhase();','if (r.openedAt == 0) revert WrongPhase();',False,M4R),
+('N05','Rounds: an ask under 1 dollar is taken',RO,'if (amount == 0 || total < MIN_ASK) revert BadAmount();','if (amount == 0) revert BadAmount();',False,M4R),
+('N06','Rounds: a dollar token that delivers less is not noticed',RO,'if (quote.balanceOf(address(this)) - before != amount) revert TokenMisbehaved();','',False,M4R),
+('N07','Rounds: asks may be lowered after the 12th hour',RO,'block.timestamp >= r.openedAt + LOWER_WINDOW','false',False,M4R),
+('N08','Rounds: an ask may be lowered to under 1 dollar',RO,' || (total != 0 && total < MIN_ASK)','',False,M4R),
+('N09','Rounds: a round may close before 24 hours',RO,'r.closedAt != 0 || block.timestamp < r.openedAt + WINDOW','r.closedAt != 0',False,M4R),
+('N10','Rounds: a round may close twice',RO,' || r.closedAt != 0 || block.timestamp < r.openedAt + WINDOW',' || block.timestamp < r.openedAt + WINDOW',False,M4R),
+('N11','Rounds: a round accepts more than its size',RO,'uint256 accepted = r.asked < r.size ? r.asked : r.size;','uint256 accepted = r.asked;',False,M4R),
+('N12','Rounds: accepted money does not count against the cap',RO,'        raised += accepted;\n','',False,M4R),
+('N13','Rounds: no scale-back',RO,'uint256 acc = r.asked <= r.size ? askd : askd * r.accepted / r.asked;','uint256 acc = askd;',False,M4R),
+('N14','Rounds: a backer may be settled twice',RO,'if (p.settled || askd == 0) revert WrongPhase();','if (askd == 0) revert WrongPhase();',False,M4R),
+('N15','Rounds: a backer may be settled before the close',RO,'        if (r.closedAt == 0) revert WrongPhase();\n        Position storage p = _positions[id][backer];\n        uint256 askd','        Position storage p = _positions[id][backer];\n        uint256 askd',False,M4R),
+('N16','Rounds: the platform takes 30 instead of 3',RO,'uint256 toPlatform = acc * PLATFORM_BPS / BPS;','uint256 toPlatform = acc * PLATFORM_BPS * 10 / BPS;',False,M4R),
+('N17','Rounds: nothing is held, all goes to the project at once',RO,'uint256 held_ = acc * HELD_BPS / BPS;','uint256 held_ = 0;',False,M4R),
+('N18','Rounds: bought Shares go straight to the backer, not held',RO,'if (!shares.transfer(address(vester), bought)) revert TokenMisbehaved();\n            vester.grantHeld(id, backer, bought);','if (!shares.transfer(backer, bought)) revert TokenMisbehaved();',False,M4R),
+('N19','Rounds: 6,000 Shares a dollar',RO,'uint256 bought = acc * SHARES_PER_RAW_DOLLAR;','uint256 bought = acc * SHARES_PER_RAW_DOLLAR * 2;',False,M4R),
+('N20','Rounds: the held money is released at once',RO,'uint256 due = r.held * _elapsed(r) / RELEASE + r.frozen;','uint256 due = r.held + r.frozen;',False,M4R),
+('N21','Rounds: time outside the check-in window counts',RO,'uint256 upto = block.timestamp < end ? block.timestamp : end;','uint256 upto = block.timestamp; end;',False,M4R),
+('N22','Rounds: a release is not recorded (paid again)',RO,'        _rounds[id].paidOut += amount;\n','',False,M4R),
+('N23','Rounds: a refund ignores the release (the whole held money back)',RO,'uint256 released_ = _releasedUp(part, _elapsed(r));','uint256 released_ = 0;',False,M4R),
+('N24','Rounds: a refund has no fee',RO,'uint256 fee = (unreleased_ * feeBps + BPS - 1) / BPS;','uint256 fee = 0;',False,M4R),
+('N25','Rounds: the refund fee rounds down',RO,'uint256 fee = (unreleased_ * feeBps + BPS - 1) / BPS;','uint256 fee = (unreleased_ * feeBps) / BPS;',False,M4R),
+('N26','Rounds: a refund leaves the held Shares in place',RO,'(uint256 cancelled,) = vester.cancelHeld(id, msg.sender);','uint256 cancelled;',False,M4R),
+('N27','Rounds: after the market a refund covers Shares already taken out',RO,'uint256 part = still == total ? p.held : p.held * still / total;\n        uint256 released_','uint256 part = p.held;\n        uint256 released_',False,M4R),
+('N28','Rounds: a refund does not lower the round\'s held money',RO,'(r.held, r.frozen, p.held) = (r.held - part, r.frozen + released_, p.held - part);','(r.frozen, p.held) = (r.frozen + released_, p.held - part);',False,M4R),
+('N29','Rounds: a refund\'s released part rounds down (the fuzz finding: a unit paid twice)',RO,'return (part * elapsed + RELEASE - 1) / RELEASE;','return part * elapsed / RELEASE;',False,M4R),
+('N30','Rounds: the whole refund fee goes to the platform',RO,'uint256 toPlatform = woundDown ? fee : unreleased_ * REFUND_PLATFORM_BPS / BPS;','uint256 toPlatform = fee;',False,M4R),
+('N31','Rounds: after a wind-down the refund fee stays 5',RO,'uint256 feeBps = woundDown ? REFUND_PLATFORM_BPS : REFUND_FEE_BPS;\n        uint256 fee','uint256 feeBps = REFUND_FEE_BPS;\n        uint256 fee',False,M4R),
+('N32','Rounds: anyone may wind the Rounds down',RO,'if (msg.sender != address(treasury)) revert NotAllowed();\n        woundDown = true;','woundDown = true;',False,M4R),
+('N33','Rounds: unsold Shares may leave before any market',RO,'if (!treasury.poolOpen() && !treasury.woundDown()) revert WrongPhase();','',False,M4R),
+('N34','Rounds: unsold includes the Shares owed to accepted asks',RO,'return shares.balanceOf(address(this)) - reserved;','return shares.balanceOf(address(this));',False,M4R),
+('N35','Rounds: initialize may be called again',RO,'if (launcher != address(0) || launcher_ == address(0)) revert BadSetup();','if (launcher_ == address(0)) revert BadSetup();',False,M4R),
+('N36','Rounds: no re-entrancy lock',RO,'if (_locked) revert Reentrancy();','',False,M4R),
+('N37','Rounds: fees are swept to the caller',RO,'_send(platform, owed);','_send(msg.sender, owed);',False,M4R),
+# Vester
+('N40','Vester: anyone may add a backer grant',V,'if (msg.sender != rounds) revert NotAllowed();\n        if (backer == address(0)) revert BadGrant();','if (backer == address(0)) revert BadGrant();',False,M4V),
+('N41','Vester: anyone may cancel a backer grant',V,'if (msg.sender != rounds) revert NotAllowed();\n        Grant storage g = heldGrants','Grant storage g = heldGrants',False,M4V),
+('N42','Vester: a cancel takes back Shares already claimed',V,'cancelled = total - g.claimed;','cancelled = total;',False,M4V),
+('N43','Vester: a cancelled grant stays on the clock (unreleased overcounted)',V,'granted -= total; //','granted -= 0; //',False,M4V),
+('N44','Vester: a grant may be cancelled with nothing held',V,'if (cancelled == 0) revert NothingHeld();','',False,M4V),
+('N45','Vester: anyone may trim the founder',V,'if (msg.sender != granter) revert NotAllowed();\n        if (start != 0 || trimmed) revert WrongPhase();','if (start != 0 || trimmed) revert WrongPhase();',False,M4V),
+('N46','Vester: the founder may be trimmed after the clock started',V,'if (start != 0 || trimmed) revert WrongPhase();','if (trimmed) revert WrongPhase();',False,M4V),
+('N47','Vester: a trimmed founder keeps nothing',V,'uint256 keep = served >= DURATION ? amount : amount * served / DURATION;','uint256 keep = 0;',False,M4V),
+('N48','Vester: a backer grant is claimable before its release',V,'Grant memory g = heldGrants[round][backer];\n        uint256 r = _released(g.total);','Grant memory g = heldGrants[round][backer];\n        uint256 r = g.total;',False,M4V),
+# Treasury
+('N51','Treasury: a check-in does not work out the Rounds\' clock first',T,'_sync();\n        lastCheckIn = block.timestamp;','_accrue();\n        lastCheckIn = block.timestamp;',False,M4T),
+('N52','Treasury: anyone may offer the runner seat',T,'function handOver(address next, bool founderLeaves) external onlyRunner {','function handOver(address next, bool founderLeaves) external {',False,M4T),
+('N53','Treasury: anyone may take the runner seat',T,'if (msg.sender != pendingRunner || msg.sender == address(0)) revert NotAllowed();','',False,M4T),
+('N54','Treasury: a hand-over leaves the old runner\'s agents working',T,'        ++agentEpoch;\n','',False,M4T),
+('N55','Treasury: the trimmed Shares do not return to the work pot',T,'            workPot += cut;\n','',False,M4T),
+('N56','Treasury: anyone may pause',T,'if (msg.sender != pauser || msg.sender == address(0)) revert NotAllowed();','',False,M4T),
+('N57','Treasury: a pause does not stop the release',T,'if (paused || woundDown) return 0;','if (woundDown) return 0;',False,M4T),
+('N58','Treasury: anyone may name the pauser',T,'function setPauser(address next) external {\n        if (msg.sender != salePath) revert NotAllowed();','function setPauser(address next) external {',False,M4T),
+('N59','Treasury: anyone may wind the project down',T,'function markWoundDown() external nonReentrant {\n        if (msg.sender != salePath) revert NotAllowed();','function markWoundDown() external nonReentrant {',False,M4T),
+('N60','Treasury: a wind-down does not stop the release',T,'if (paused || woundDown) return 0;','if (paused) return 0;',False,M4T),
+('N61','Treasury: a wind-down does not reach the Rounds',T,'        rounds.windDown();\n','',False,M4T),
+('N62','Treasury: after a wind-down the exit fee stays 5',T,'uint256 feeBps = woundDown ? platformFeeBps : exitFeeBps;','uint256 feeBps = exitFeeBps;',False,M4T),
+('N63','Treasury: anyone may declare no market',T,'function markNoMarket() external nonReentrant {\n        if (msg.sender != salePath) revert NotAllowed();','function markNoMarket() external nonReentrant {',False,M4T),
+('N64','Treasury: no market does not start the clock',T,'(poolOpen, noMarket) = (true, true);\n        vester.startNow();','(poolOpen, noMarket) = (true, true);',False,M4T),
+('N65','Treasury: the stake is not granted (sent but not set aside)',T,'            vester.grant(stake, s);\n','',False,M4T),
+('N67','Treasury: Share revenue is shared by the Shares in hands (B3 comes back)',T,'uint256 fromPermanent = permanentFloor * amount / shares.totalSupply();','uint256 fromPermanent = permanentFloor * amount / counting;',True,M4T),
+('N68','Treasury: the gift cap is on all Shares (B3 comes back)',T,'_gifts.consume(MONTH, MONTH_PARTS, countingSupply() * GIFT_CAP_BPS / BPS, amount);','_gifts.consume(MONTH, MONTH_PARTS, shares.totalSupply() * GIFT_CAP_BPS / BPS, amount);',True,M4T),
+('N69','Treasury: the Rounds\' Shares count as in hands',T,' - shares.balanceOf(address(rounds))','',True,M4T),
+('N70','Treasury: the Finisher\'s Shares count as in hands',T,'\n            - shares.balanceOf(opener) - vester.unreleased();',' - vester.unreleased();',True,M4T),
+('N71','Treasury: exits run while a reserve sale is out',T,'if (!saleClosed || reserveSaleOpen) revert SaleNotClosed();','if (!saleClosed) revert SaleNotClosed();',False,M4TA),
+('N72','Treasury: a second reserve sale may start while one is out',T,'if (reserveSaleOpen) revert ReserveSaleState();\n        uint256 left','uint256 left',False,M4T),
+('N73','Treasury: anyone may settle a reserve sale',T,'if (msg.sender != salePath) revert NotAllowed();\n        if (amount == 0) revert BadInput();\n        uint256 arrived','if (amount == 0) revert BadInput();\n        uint256 arrived',False,M4T),
+('N74','Treasury: a reserve sale is all spendable',T,'uint256 toSpendable = amount * RESERVE_SPENDABLE_PARTS / (RESERVE_SPENDABLE_PARTS + RESERVE_FLOOR_PARTS);','uint256 toSpendable = amount;',False,M4TA),
+('N75','Treasury: anyone may close a reserve sale',T,'function closeReserveSale() external nonReentrant {\n        if (msg.sender != salePath) revert NotAllowed();','function closeReserveSale() external nonReentrant {',False,M4T),
+('N76','Treasury: the first settle does not work out the Rounds\' clock',T,'            rounds.sync();\n            (settled, accruedUpTo, lastCheckIn)','            (settled, accruedUpTo, lastCheckIn)',False,M4T),
+('N77','Treasury: setAgent does not record the runner\'s epoch',T,'        agentEpochOf[agent] = agentEpoch;\n','',False,M4T),
+('N78','Treasury: spend ignores the agent epoch',T,'if (!a.active || agentEpochOf[msg.sender] != agentEpoch) revert NotAllowed();\n            _agentUsd','if (!a.active) revert NotAllowed();\n            _agentUsd',False,M4T),
+# Launcher
+('N80','Launcher: anyone may act as the runner',L,'if (msg.sender != runner) revert NotRunner();','',False,M4L),
+('N81','Launcher: a single founder may raise 50,000',L,'return runnerKind(runner) == RunnerKind.Single ? SOLO_CAP : TEAM_CAP;','return TEAM_CAP;',False,M4L),
+('N82','Launcher: a round is sized to the whole cap, not what is left',L,'round = Rounds(p.rounds).open(cap - raised);','round = Rounds(p.rounds).open(cap);',False,M4L),
+('N83','Launcher: no cap check before the round opens',L,'if (raised >= cap) revert CapReached(cap);','',False,M4L),
+('N84','Launcher: rounds open after a market',L,'if (t.poolOpen() || t.woundDown() || Finisher(p.finisher).stage() == Finisher.Stage.Open) revert WrongStage();','if (t.woundDown() || Finisher(p.finisher).stage() == Finisher.Stage.Open) revert WrongStage();',False,M4L),
+('N85','Launcher: a single founder may open the auction',L,'if (kind == RunnerKind.Single) revert WrongRunner(RunnerKind.Pair);','',False,M4L),
+('N86','Launcher: the Council requirement is ignored',L,'if (requireCouncilForAuction && kind != RunnerKind.Council) revert WrongRunner(RunnerKind.Council);','',False,M4L),
+('N87','Launcher: the Council requirement is off on every network',L,'requireCouncilForAuction = block.chainid != 31_337 && block.chainid != 11_155_111;','requireCouncilForAuction = false;',False,M4L),
+('N88','Launcher: the auction opens while a round is open',L,' || Rounds(p.rounds).isOpen()) revert WrongStage();\n        (uint256 floorQ96',') revert WrongStage();\n        (uint256 floorQ96',False,M4L),
+('N90','Launcher: no market may be declared at once',L,'if (block.timestamp < from) revert TooEarly(from);\n        t.markNoMarket();','t.markNoMarket();',False,M4L),
+('N91','Launcher: no market counts from the launch even after a round',L,'(since == 0 ? p.launchedAt : since)','p.launchedAt',False,M4L),
+('N92','Launcher: a Pair may wind down after a market',L,'if (market && !isCouncil[runner]) revert WrongRunner(RunnerKind.Council);','',False,M4L),
+('N93','Launcher: any runner may open a reserve sale',L,'if (!isCouncil[_runner(t)]) revert WrongRunner(RunnerKind.Council);','_runner(t);',False,M4L),
+('N94','Launcher: reserve sales need no 28 days between them',L,'if (block.number < lastEnd + RESERVE_SALE_GAP_BLOCKS) revert TooEarly(lastEnd + RESERVE_SALE_GAP_BLOCKS);','',False,M4L),
+('N95','Launcher: a reserve sale may open before the market',L,'if (Finisher(p.finisher).stage() != Finisher.Stage.Done || t.woundDown()) revert WrongStage();','if (t.woundDown()) revert WrongStage();',False,M4L),
+('N96','Launcher: a reserve sale starts at the first sale\'s starting price',L,'(uint256 floorQ96, uint256 tickQ96) = _floorAndTick(lastPrice);','(uint256 floorQ96, uint256 tickQ96) = salePrices();',False,M4L),
+('N97','Launcher: anyone may register a Council',L,'if (msg.sender != councilMaker || council == address(0)) revert NotCouncilMaker();','if (council == address(0)) revert NotCouncilMaker();',False,M4L),
+('N98','Launcher: anyone may name a pauser',L,'function setPauser(bytes32 key, address pauser) external {\n        if (msg.sender != councilMaker) revert NotCouncilMaker();','function setPauser(bytes32 key, address pauser) external {',False,M4L),
+('N99','Launcher: a Pair it made is not marked as a Pair',L,'        isPair[pair] = true;\n','',False,M4L),
+('NA0','Launcher: no stake',L,'                    stakeAmount: STAKE,','                    stakeAmount: 0,',False,M4L),
+('NA1','Launcher: the backing Shares are minted to the Treasury',L,'(to[3], amounts[3]) = (p.rounds, BACKING);','(to[3], amounts[3]) = (treasury, BACKING);',False,M4L),
+('NA2','Launcher: parts with no code are accepted',L,'shareImpl.code.length == 0 || treasuryImpl.code.length == 0 || vesterImpl.code.length == 0\n                || roundsImpl.code.length == 0 || pairImpl.code.length == 0','false',False,M4L),
+('NA3','Launcher: the stake address may be zero',L,' || s.stake == address(0)','',False,M4L),
+('NA4','Launcher: a finished reserve sale\'s money is not split',L,'            Treasury(p.treasury).settleReserveSale(got);\n','',False,M4L),
+('NA5','Launcher: a finished reserve sale leaves exits closed',L,'        Treasury(p.treasury).closeReserveSale();\n','',False,M4L),
+# Pair
+('NP0','Pair: a signer alone spends with no weekly limit',PA,'_spent[msg.sender].consume(WINDOW, PARTS, ALONE_CAP, amount);','',False,M4P),
+('NP1','Pair: anyone may act as a signer',PA,'if (msg.sender != first && msg.sender != second) revert NotAllowed();','',False,M4P),
+('NP2','Pair: a signer may confirm their own proposal',PA,'if (by == msg.sender) revert NotAllowed();','',False,M4P),
+('NP3','Pair: a proposal may run twice',PA,'        delete proposer[id];\n        bool ok;','        bool ok;',False,M4P),
+('NP4','Pair: calls may go anywhere',PA,'if (target != address(treasury) && target != launcher) revert BadTarget();','',False,M4P),
+('NP5','Pair: the two signers share one weekly limit',PA,'_spent[msg.sender].consume','_spent[first].consume',False,M4P),
+('NP6','Pair: initialize may be called again',PA,'if (launcher != address(0) || msg.sender != launcher_) revert BadSetup();','if (msg.sender != launcher_) revert BadSetup();',False,M4P),
+('NP7','Pair: the same person may be both signers',PA,' || first_ == second_','',False,M4P),
+('NP8','Pair: anyone may cancel a proposal',PA,'if (proposer[id] != msg.sender) revert NotAllowed();\n        delete proposer[id];\n        emit Cancelled','delete proposer[id];\n        emit Cancelled',False,M4P),
+# MinBid
+('NB0','MinBid: the cap is 64 times the starting price (back towards milestone 3\'s ladder)',MB,'IAuctionPrice(msg.sender).floorPrice() * maxPriceMultiple','IAuctionPrice(msg.sender).floorPrice() * maxPriceMultiple * 16',False,M4B),
+]
+MUT+=M4
 
 status = '' if PRISTINE else subprocess.run(['git', 'status', '--porcelain', 'src'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
 if status:
@@ -275,6 +400,7 @@ def run(extra,suites=None):
     return sorted(set(fails)),comp,out,total
 sel=[a for a in sys.argv[1:] if not a.startswith('--')]
 only_m3='--m3' in sys.argv
+only_m4='--m4' in sys.argv
 shard=[a for a in sys.argv[1:] if a.startswith('--shard=')]
 k,n=(int(x) for x in shard[0][8:].split('/')) if shard else (0,1)
 pos=-1
@@ -283,6 +409,7 @@ for entry in MUT:
     suites=entry[6] if len(entry)>6 else None
     if sel and i not in sel: continue
     if only_m3 and i[0] not in 'FAHPXEB': continue
+    if only_m4 and i[0] != 'N': continue
     if os.environ.get('M2_ONLY') and i[0] in 'FAHPXEB': continue
     if os.environ.get('M2_ONLY') and not suites: suites=M2SUITES
     pos+=1

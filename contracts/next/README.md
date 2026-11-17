@@ -24,6 +24,23 @@ are the tests; `test/mocks/` holds a stand-in treasury, plain tokens, a dollar t
 attacker. Test compiles are slow (via-IR): `Deployer.sol` exists so each test file does
 not recompile the whole Uniswap stack.
 
+## Plan version 2, milestone 4: the money rules
+
+`docs/PLAN-V2.md` section 9 row 4; report `docs/next-version/PLANV2-M4-REPORT.md`. New: `Rounds` (backing rounds at 3,000 Shares a
+dollar, the 26-week release, the personal refund), `Pair` (the Team runner), `Parts` (the five implementations the Launcher's clones
+copy). Rewritten: `Launcher` (birth 20/20/15/25/10/10, stage caps, the one auction of 250M Shares with a 100,000 minimum, the
+stake, "no market", wind down, the reserve sale, the Council seam). Changed: `Treasury` (the runner seat, check-in by the runner,
+the exit fee's 4 to spendable, Share revenue shared by every Share, the gift cap on Shares in hands, pause, wind down), `Vester`
+(backer grants, the founder's trim), `MinBid` (the cap is 4 times the starting price, absolute). The milestone 3 sale tests below
+now run at the one auction's size and open it through a Pair.
+
+```bash
+forge test --match-path 'test/{Rounds,RoundsFuzz,RoundsWorked,RoundsReentry,PairStages,GasM4}.t.sol'   # backing rounds, Team, stages
+forge test --match-contract RoundsInvariantsTest                                                          # the rounds' invariants
+forge test --match-path test/AuctionV2.t.sol -vv   # the one auction: 100,000 example, 10x demand, self-bid, Council, reserve sale
+python3 scripts/mutate-guards.py --m4               # remove each milestone 4 guard once, see a test fail, put it back
+```
+
 ## Milestone 3: the sale into a pool
 
 `Launcher` (replaces the milestone 2 stub: no chain refusal, nothing a founder or an admin can point at a strategy, a guard, an

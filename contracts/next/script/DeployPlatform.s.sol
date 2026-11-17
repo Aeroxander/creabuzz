@@ -4,7 +4,8 @@ pragma solidity >=0.8.26;
 import {Script} from "forge-std/Script.sol";
 
 /// @notice OUTLINE of the per-network deployment of the platform, in the order that works: fee controller, auction factory,
-/// strategy (mined address), pool guard (mined address), bid hook, Launcher. Nothing here has run on any real network and no key
+/// strategy (mined address), pool guard (mined address), bid hook, Parts (the five implementations), Launcher. Nothing here has
+/// run on any real network and no key
 /// is held: it is checked by simulating it against a Sepolia fork (`forge script script/DeployPlatform.s.sol --fork-url
 /// $SEPOLIA_RPC_URL`, no `--broadcast`). The strategy and the pool guard must sit at addresses whose lowest 14 bits are exactly
 /// 0x2000 (Uniswap v4 reads a hook's permissions from its address), so each is created through the standard CREATE2 deployer at a
@@ -16,8 +17,10 @@ import {Script} from "forge-std/Script.sol";
 ///
 /// Inputs (environment, with the Sepolia values as defaults): `POOL_MANAGER`, `POSITION_MANAGER` (Uniswap's deployments);
 /// `QUOTE` (the platform's 6-decimal dollar token; on a simulation without it a test token is made); `PLATFORM` (receives the 3
-/// percent of every raise and the platform part of exit fees); `ADMIN` (may change the settings of new projects; use the
-/// zero address to freeze them).
+/// percent of every raise and the platform part of exit fees); `STAKE` (receives Creaton's 2% stake, held, when a project's
+/// market opens; defaults to `PLATFORM`); `ADMIN` (may change the settings of new projects; use the zero address to freeze
+/// them). The council maker is the zero address until milestone 9 builds the Council, so on any network but Sepolia (and a
+/// local chain) no auction can open: the Launcher requires a Council runner there (D230).
 contract DeployPlatform is Script {
     /// @dev The standard CREATE2 deployer (exists on Sepolia, M1-FACTS section 8).
     address internal constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
@@ -30,6 +33,7 @@ contract DeployPlatform is Script {
         address strategy;
         address guard;
         address minBid;
+        address parts;
         address launcher;
         uint256 strategySalts;
         uint256 guardSalts;
@@ -40,6 +44,7 @@ contract DeployPlatform is Script {
         address positionManager = vm.envOr("POSITION_MANAGER", address(0x429ba70129df741B2Ca2a85BC3A2a3328e5c09b4));
         address platform = vm.envOr("PLATFORM", msg.sender);
         address admin = vm.envOr("ADMIN", msg.sender);
+        address stake = vm.envOr("STAKE", platform);
         address quote = vm.envOr("QUOTE", address(0));
 
         vm.startBroadcast();
@@ -67,7 +72,9 @@ contract DeployPlatform is Script {
                 vm.getCode("out/MinBid.sol/MinBid.json"), abi.encode(uint128(1e6), uint256(4), uint64(720))
             )
         );
-        // Settings: quote, platform, exit fee 5%, platform part 1%, split 15 : 60, agents' defaults 25 dollars and 0.1% of Shares
+        d.parts = _create(vm.getCode("out/Parts.sol/Parts.json"));
+        // Settings: quote, platform, stake, exit fee 5%, platform part 1%, split 15 : 60, agents' defaults 25 dollars and 0.1% of
+        // Shares; then the stack, the parts and the council maker (none yet)
         d.launcher = _create(
             abi.encodePacked(
                 vm.getCode("out/Launcher.sol/Launcher.json"),
@@ -75,6 +82,7 @@ contract DeployPlatform is Script {
                     admin,
                     quote,
                     platform,
+                    stake,
                     uint16(500),
                     uint16(100),
                     uint16(15),
@@ -83,7 +91,9 @@ contract DeployPlatform is Script {
                     uint128(1_000_000e18),
                     d.strategy,
                     d.guard,
-                    d.minBid
+                    d.minBid,
+                    d.parts,
+                    address(0)
                 )
             )
         );
