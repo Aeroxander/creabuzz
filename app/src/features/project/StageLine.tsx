@@ -18,7 +18,7 @@ export function currentStage(acceptedMembers: number): Stage {
  * stage before the current one is not done by its place in the line. Until the chain reader exists (milestone 5) no
  * money stage is ever reached here: the line never says a project was backed when it was not.
  */
-export function reachedStages(stage: Stage): ReadonlySet<Stage> {
+function reachedStages(stage: Stage): ReadonlySet<Stage> {
   return new Set<Stage>(stage === "Team" ? ["Solo", "Team"] : ["Solo"]);
 }
 
