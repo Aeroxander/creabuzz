@@ -514,10 +514,10 @@ deployed; nothing was pushed. "Price" means the price for the whole project: dol
 
 | Where | Change |
 |---|---|
-| `Rounds` | `SHARES_PER_RAW_DOLLAR` is gone. `MAX_SHARES_PER_RAW_DOLLAR = 3e15` (the lowest price, 333,333; 50,000 still buys exactly the 150M backing Shares) and `MIN_SHARES_PER_RAW_DOLLAR = 2e13` (the highest, 50,000,000). `open(size, sharesPerRawDollar)` refuses (`CannotOpen`) a price outside the two, stores it in the round (`Round.sharesPerRawDollar`, after `size`), and `close` and `settle` use the round's own price. No setter: the price cannot change during the round |
+| `Rounds` | `SHARES_PER_RAW_DOLLAR` is gone. `MAX_SHARES_PER_RAW_DOLLAR = 3e15` (the lowest price, 333,333; 50,000 still buys exactly the 150M backing Shares) and `MIN_SHARES_PER_RAW_DOLLAR = 2e13` (the highest, 50,000,000). `open(size, sharesPerRawDollar)` refuses (`CannotOpen`) a price outside the two, stores it in the round (`Round.sharesPerRawDollar`, a `uint64` next to `openedAt` and `closedAt` since the review), and `close` and `settle` use the round's own price. No setter: the price cannot change during the round |
 | `Launcher.openRound(key, sharesPerRawDollar)` | Passes the price to `Rounds.open`. A Pair runner's call goes through `propose` / `confirm` unchanged, so both signers sign the price |
 | `Launcher.openAuction(key, startQ96)` | The runner names the start. `BadStart()` below `salePrices()`'s floor (0.0004 a Share) or above `MAX_START_Q96 = (50,000 << 96) / 1e18` (0.05 a Share). The start goes on its own grid (a tick of one hundredth, rounded up), and the minimum is `floorQ96 * 250M >> 96`: all 250M Shares at the start, rounded down to a raw unit. At the base start this is exactly 100,000.000000 (measured below). `AUCTION_MINIMUM` stays as the least minimum and `salePrices()` as the base start |
-| Zero stake (project zero) | `_set` accepts `stake == address(0)`; `launch` then passes `stakeAmount: 0` (the Treasury already accepted a zero stake with a zero amount). Projects launched while the setting is zero take no 2% stake; put the address back and later projects take it again |
+| No stake for project zero (as changed after the review) | The stake address must be named, as before. The admin names project zero once by its key: `nameProjectZero(bytes32 key)` (`key = keyOf(founder, projectId)`). That one launch passes a zero stake address and `stakeAmount: 0` to the Treasury (which already accepted that pair) and shows `stake` zero in `ProjectLaunched.settings`; it uses the name up (`projectZeroKey` back to zero) and sets `projectZeroLaunched`, after which no project zero can be named again. Every other launch takes the stake, in the same block too. First built as "a zero stake address in the settings", which let any founder launching in that window skip the stake (review F1 / A8) |
 | NatSpec | Rounds' price rule and dust note; the Launcher's contract notice, `openRound`, `openAuction`, `salePrices`, `AUCTION_MINIMUM`, the `stake` setting |
 
 Unchanged, as the note says: MinBid (its 4x cap already reads the auction's own floor), Finisher, Pinned, SaleParams,
@@ -540,9 +540,14 @@ a dollar a Share is `(m << 96) / 1e18` (0.006 is 6,000; the app's 1.2 x 6M pre-f
   price is the new last field, not indexed).
 - `Launcher.SaleOpened(...)`: signature unchanged; its `minimum`, `floorPriceQ96` and `tickSpacingQ96` now follow the
   runner's start (100,000 / the `salePrices` pair at the base start).
-- `Treasury.StakeGranted`: not emitted when a zero-stake project's pool opens; `ProjectLaunched.settings.stake` is zero for it.
+- `Treasury.StakeGranted`: not emitted when project zero's pool opens; `ProjectLaunched.settings.stake` is zero for it (and
+  only for it).
+- New: `Launcher.ProjectZeroNamed(bytes32 indexed key)`, topic
+  `0x311fe7bf90a7bdeeb731fc3a6c2e1bfe77e45bd6018aac40d99db75229bf518c` (key zero: the name was taken back); call
+  `nameProjectZero(bytes32)` `0x7e7f786f`; reads `projectZeroKey()` `0x436cac73` and `projectZeroLaunched()` `0xd8048522`.
 - Calls: `openRound(bytes32,uint256)` `0x6cd5141d`, `openAuction(bytes32,uint256)` `0xb045c1de`, `Rounds.open(uint256,uint256)`
-  `0x4082de67`, new error `BadStart()` `0x5fb01790`. `Rounds.roundOf` returns `sharesPerRawDollar` as its fourth field. The
+  `0x4082de67`, new error `BadStart()` `0x5fb01790`. `Rounds.roundOf` returns `sharesPerRawDollar` as its **third** field
+  (after `openedAt` and `closedAt`, before `size`; it was the fourth before the review packed it). The
   server's average price paid per project is the sum over rounds of `RoundClosed.accepted` with each round's price from
   `RoundOpened`.
 
@@ -568,7 +573,7 @@ the 7 rounds invariants pass at 256 runs x depth 200.
 | `test_failedAt0006_retryAt00024Opens_andSells` | no trap after a failed high start | NI0, NI1 |
 | `test_start0006_selfBidThenSellIntoThePool_measured` | the M4 self-bid table at 0.006 | (measured) |
 | `test_worked_creatonAtSixMillion`, `test_aLaterRoundMayBeLower` | Creaton's numbers; down rounds allowed | NH3 |
-| `test_zeroStake_projectZeroTakesNoStake` (and `test_constructor_refusesBadSettings` now accepts a zero stake) | zero stake | NI2, NI3 |
+| `test_zeroStake_projectZeroTakesNoStake`, `test_projectZero_onlyTheAdmin_onlyTheNamedKey_stakeAddressAlwaysNamed`, `test_projectZero_fullSaleAndFinish_grantsNoStake_reserveKeepsThe20M` (real stack), `test_attack_zeroStakeWindow_closed_onlyTheNamedProjectTakesNoStake`, and `test_constructor_refusesBadSettings` (refuses a zero stake address again) | project zero by key (after the review) | NI2, NI5 to NJ3 |
 
 **Guard removals, one at a time** (`python3 scripts/mutate-guards.py <ids>`, default fuzz and invariant counts, no RPC):
 
@@ -586,12 +591,13 @@ the 7 rounds invariants pass at 256 runs x depth 200.
 | NH9 | Launcher: an auction start above 0.05 is accepted | 1 | `test_openAuction_aStartBelowTheBaseOrAboveTheCeilingIsRefused` |
 | NI0 | Launcher: the minimum stays 100,000 at any start | 3 | `test_start0006_minimumIs1500000_oneDollarShortFails_theMinimumSellsEveryShare` |
 | NI1 | Launcher: the auction starts at 0.0004 whatever the runner signed | 5 | `test_start0006_aBidAboveFourTimesTheStartIsRefused` |
-| NI2 | Launcher: a zero stake address still asks for the 20M | 1 | `test_zeroStake_projectZeroTakesNoStake` |
-| NI3 | Launcher: the stake address must be named again (the old NA3 check put back) | 2 | `test_zeroStake_projectZeroTakesNoStake` |
+| NI2 | Launcher: project zero still gives the 20M stake (re-run after the review) | 4 | `test_zeroStake_projectZeroTakesNoStake` |
+| NI3 | retired after the review: the stake-address check is back in the code; NI5 removes it | | |
 | NI4 | Pair: the proposal id leaves out the call data | 1 | `test_pair_aConfirmWithAnotherPriceDoesNotRun` |
 
 Re-pinned to the new source text and re-run: A20 (n 6), N01 (1), N02 (1), N03 (1), N19 (27; now "twice the round's Shares a
-dollar"), N82 (3), N88 (1), NA0 (3). NA3 ("the stake address may be zero") is retired: zero is now the project-zero setting.
+dollar"), N82 (3), N88 (1), NA0 (3). NA3 ("the stake address may be zero") was retired; after the review its check is
+back and NI5 is its removal.
 NI4 is worth a note: **no earlier test noticed a Pair proposal id that ignores the call data** (only the new price test fails),
 so before this a co-signer's confirmation was pinned to the target and nonce by the code but by no test.
 
@@ -608,21 +614,24 @@ the tests with `-vv`. "Start 0.006" is 6,000,000 for the whole project.
 | Self-bid then sell at 0.006 (750,000 / 1,500,000 / 4,500,000 next to 1,500,000 honest; top price 4x) | price 1.49 / 1.99 / 3.99 times the start; back from the pool 39.59 / 30.46 / 22.62 of each 100 spent; the project gets 75 (15 at once); loss at once 45.41 / 54.54 / 62.38; if the whole floor melts to the runner, a gain of 14.59 / 5.46, then a loss of 2.38. The same as M4's table at 100,000 (39.6 / 30.5 / 22.6): the ratios do not depend on the price |
 | Failed at 0.006 with 1,000,000, retry at 0.0024 | each of the five bidders refunded 200,000 in full; after 24 hours the retry opens (minimum 600,000), the same 1,000,000 sells every Share at 1.01 times the start: 606,000 raised, a pool of 133,319.99 dollars and 54,999,994.25 Shares |
 | Creaton's rounds at 6,000,000 | 10,000 alone buys 1,666,666.67 Shares; the 50,000 Team cap 8,333,333.33; `returnUnsold` sends 141,666,666.67 to the reserve when the market opens |
-| Project zero, no stake | the pool opening grants nothing; the reserve keeps its 100,000,000 (a default project gives 20,000,000) |
+| Project zero, no stake | the pool opening grants nothing; the reserve keeps its 100,000,000 (a default project gives 20,000,000). After the review, on the real stack: a full 100,000 sale and the Finisher's three steps leave project zero's Treasury 345,000,005.75 Shares, exactly 20,000,000 more than the same sale for an ordinary project; no `StakeGranted`; spendable, floor and counting supply (304,999,994.25) the same as the ordinary project's, because held Shares never count |
 
 **Gas** (measured, `GasM4.t.sol`, `GasM3.t.sol`; cold storage as before):
 
 | Step | Before | With the price argument |
 |---|---|---|
-| `Launcher.openRound` (first round) | 130,485 | 152,625 (+22,140: the price takes a new storage slot) |
+| `Launcher.openRound` (first round) | 130,485 | 152,625 (+22,140: the price takes a new storage slot); after the review, packed: **130,565** |
 | Launch and open the first round in one passkey batch | 1,476,598 | 1,498,895 |
 | `Rounds.close` | 133,337 | 135,422 (one more storage read) |
 | `Rounds.settle`, one backer, cold | 273,469 | 275,599 |
 | `settleMany`, 10 backers, each | 132,278 | 132,405 |
 | `Pair.confirm(Launcher.openAuction)` | 4,410,537 | 4,411,080 |
 
-Option, not taken (judgement): the note says `uint256 sharesPerRawDollar`; stored as a `uint64` next to `openedAt` and
-`closedAt` (3e15 fits) it would share their slot and save most of the 22,140 on each round opened (not measured).
+Taken after the review (F7): the price is stored as a `uint64` next to `openedAt` and `closedAt` (3e15 fits; the cast is
+after the range check), so it shares their slot. After the review (measured, the full local run): `openRound` 130,565,
+`Rounds.close` 133,440, `Rounds.settle` one backer 273,544, `settleMany` 10 backers 132,350 each, launch and first round in
+one batch 1,478,961, `Pair.confirm(openAuction)` 4,411,124, `Launcher.launch` 1,386,281 (was 1,383,989: +2,292, one more
+storage read for the project-zero name).
 
 ### Gates (17 November 2026, one forge process at a time)
 
@@ -638,3 +647,57 @@ Not built here: the app (Open backing's price row and chips, the Back box, the a
 budgets), the server (average price paid, the notice to earlier backers when a lower round opens, the "what's new" note,
 the signed earlier-raise record) and the "earlier backers" contract step (owner said no). Plan section 3, 4, 5 and 10 text
 (owner question 8) is not rewritten here.
+
+### Review fixes (17 November 2026)
+
+Two reviews of the three commits above (a code review and an attack run, `test/AttackFounderPrice.t.sol`). Neither found a
+blocker. What was fixed, in `contracts/next` only:
+
+| Finding | Fix |
+|---|---|
+| F1 / A8 (important): the zero stake was one platform setting, so any founder launching while it was zero took no stake (measured: 20,000,000 Shares lost per such project) | Project zero is named by its key (`nameProjectZero`), once, by the admin; the stake address must be named again. A stranger launching in the same block, with Creaton's project id or any other, takes the stake (`test_attack_zeroStakeWindow_closed_onlyTheNamedProjectTakesNoStake`). The owner's rule (project zero takes no stake in itself) is unchanged; only the way it is set is |
+| F2: the 4x bid cap test accepted any revert | It expects MinBid's `TopPriceTooHigh(price, 4 x this sale's floor)` inside the auction's `ValidationHookCallFailed`. NI1 is now caught by the cap check itself |
+| F3: the per-backer dust bound was fuzzed only at today's price | `testFuzz_aRoundConservesEveryDollar_andEachRefundIsPersonalAndBounded` draws the round's price from the whole range (today's a quarter of the time) and checks the bound at that price (1,000 runs) |
+| F4: no zero-stake test on the real path | `FounderPriceZeroStakeLocalTest` runs the same full sale for an ordinary project and for project zero from one state and compares them (numbers in the table above) |
+| F7: the price took a storage slot (+22,140 gas a round) | Packed as a `uint64`; `openRound` 130,565 (measured). `roundOf`'s price is now its third field |
+| F5, A9, A9b, F6 / A6 (app and server) | Written into `FOUNDER-PRICE.md` "App changes": send exactly 3e15 for the lowest price; pre-fill the auction start from the money-weighted average, at most 0.05, and check the range before proposing; tell backers when the auction start is below what they paid; cancel a signer's older pending price proposal and list pending ones with their age |
+
+**Open (not fixed here):**
+- A6, a Pair proposal never expires (measured: an old round price confirmed 21 days later). Left to the app (cancel and
+  list, above). A contract expiry (for example 7 days, storing the proposal time next to the proposer) would change Pair
+  for every call, not only prices; not done without the owner's word.
+- A9, a low auction start after high rounds (measured: 50,000 paid at 50,000,000 is worth 400 at a 0.0004 start; the
+  refund gives back 77.47 of each 100 one day after the round closed). Accepted by the design (the start is free on chain);
+  the server notice above is not built.
+- A1 / A2, anchoring and down rounds to own accounts: work as the design accepts and give the founder side no more Shares
+  than today's default (measured in the attack file). The app's per-round price, money and accounts, and the average
+  price, are not built.
+- Deployment order for project zero (judgement): the admin calls `nameProjectZero(keyOf(Creaton's founder, its id))`, then
+  that founder launches with the current `settingsHash()`. Nothing else is needed and there is no window to close.
+
+**Guard removals** (`python3 scripts/mutate-guards.py <ids>`, one at a time, no RPC; new group `M4FPZ` runs FounderPrice,
+FounderPriceAuction, AttackFounderPrice and Launcher):
+
+| Id | Removed or broken | n | A test that fails |
+|---|---|---|---|
+| NI5 | the stake address may be zero again | 3 | `test_constructor_refusesBadSettings` |
+| NI6 | the project zero name is ignored | 4 | `test_zeroStake_projectZeroTakesNoStake` |
+| NI7 | the name is not used up | 1 | `test_zeroStake_projectZeroTakesNoStake` |
+| NI8 | project zero's launch is not recorded | 1 | `test_zeroStake_projectZeroTakesNoStake` |
+| NI9 | anyone may name project zero | 2 | `test_projectZero_onlyTheAdmin_onlyTheNamedKey_stakeAddressAlwaysNamed` |
+| NJ0 | a second project zero may be named after the first launched | 1 | `test_zeroStake_projectZeroTakesNoStake` |
+| NJ1 | a project already launched may be named project zero | 1 | `test_projectZero_onlyTheAdmin_onlyTheNamedKey_stakeAddressAlwaysNamed` |
+| NJ2 | any launch while a name is set takes no stake (the window again) | 2 | `test_attack_zeroStakeWindow_closed_onlyTheNamedProjectTakesNoStake` |
+| NJ3 | `ProjectLaunched` and the Treasury show project zero with the stake address | 4 | `test_zeroStake_projectZeroTakesNoStake` |
+
+Re-run after the review: NH2 (29, re-pinned to the `uint64` line), NI1 (5, now including the exact cap error), NI2 (4), NA0 (3).
+
+**Gates after the review** (one forge process at a time, `nice`, default fuzz and invariant counts):
+
+| Gate | Result |
+|---|---|
+| Local suite, no RPC | **494 passed, 0 failed, 35 skipped** in 113 suites (the 35 are the Sepolia fork twins) |
+| Sepolia fork suite, once (`--match-contract Fork`, publicnode RPC) | **136 passed, 0 failed, 0 skipped** in 35 suites |
+| `forge fmt --check src test script` | clean |
+| `forge build --sizes` | exits 1 for the milestone 1 test helper `Deployer` only (unchanged). Launcher 20,062 runtime / 35,901 creation (was 19,747 / 35,561), Rounds 8,733 / 8,777 (was 8,660 / 8,704), Parts 437 / 33,511; limits 24,576 / 49,152 |
+

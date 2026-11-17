@@ -391,6 +391,8 @@ network before the Council runner exists; reserve sales; the stake; sponsored fe
    50,000,000; down rounds allowed; the runner's auction start from 0.0004 to 0.05 a Share with the minimum at all 250M;
    project zero may launch with no stake). No "earlier backers" contract step: earlier backers use Give Shares. Report:
    `docs/next-version/PLANV2-M4-REPORT.md`, section "Founder-set prices: built". The app and server parts are not built.
+   After the review, project zero is named once by the admin by its key (`nameProjectZero`), so no other project can
+   launch without the stake; the stake address must always be named.
 
 ## What I verified for this plan
 

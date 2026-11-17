@@ -3,7 +3,9 @@
 Status: **built, 17 November 2026** (contracts only), branch `v4-governance-rework`, after the owner's go: section "Contract
 changes" and the contract rows of "Tests to add", with the recommended answers to questions 3 to 6. Not built: the "earlier
 backers" step (the owner said earlier backers use Give Shares), the app and the server. What was built, measured and gated:
-`docs/next-version/PLANV2-M4-REPORT.md`, section "Founder-set prices: built". The design as first written follows. It
+`docs/next-version/PLANV2-M4-REPORT.md`, section "Founder-set prices: built". One change after the review: project zero
+is named by its key (`nameProjectZero`), not by a zero stake address, so no other project can launch without the stake
+(see "Contract changes" and "App changes" below for the review's notes). The design as first written follows. It
 answers the owner's "Creaton did raise at a 6m valuation, so we would need to have founders be able to set it, as Creaton
 will be project zero", and the earlier ask for "a smooth way to up the valuation every time there are a lot of
 improvements". It is the judge's merge of three designs (economist, attacker, project zero). Plan of record:
@@ -128,6 +130,12 @@ For after the other engineer's fix lands and the owner says go. Sizes (estimate)
 - `AUCTION_MINIMUM` stays as the least minimum; `salePrices()` stays as the base start. NatSpec lines 52-53, 506-534.
 - Only if the owner says yes to question 6: `_set` accepts `stake == address(0)`, and `launch` passes
   `stakeAmount: s.stake == address(0) ? 0 : STAKE` (`Treasury.initialize` already accepts a zero stake with zero amount).
+  **As built after the review:** a zero stake address was one platform setting, so any founder who launched while it was
+  zero also took no stake (measured: 20,000,000 Shares lost per such project). Instead the stake address must always be
+  named, and the admin names project zero once by its key: `nameProjectZero(keyOf(founder, projectId))`. Only that launch
+  takes no stake; it uses the name up and sets `projectZeroLaunched`, after which no second project zero can be named.
+  The name may be changed or taken back (zero) before that launch. Deployment step: the admin calls `nameProjectZero`,
+  then Creaton's founder launches; a stranger launching in between takes the stake as usual.
 
 **Unchanged:** MinBid, Finisher, Pinned, SaleParams, LiquidityHolder, Vester, Treasury, Pair, the reserve sale.
 
@@ -146,9 +154,22 @@ For after the other engineer's fix lands and the owner says go. Sizes (estimate)
 - **Back box:** the price, Shares a dollar, what 100 dollars buys as a percent, each earlier round's price with its money
   and accounts, "below the price earlier backers paid" when true, and the "what's new" note.
 - **Auction proposal** (milestone 7, Pair): start pre-filled 1.2 x the last round's price, showing the minimum (250M x
-  start), the most at 4x, and the average price backers paid; 0 fields typed by default.
+  start), the most at 4x, and the average price backers paid; 0 fields typed by default. *After the review:* pre-fill
+  `min(1.2 x the money-weighted average round price, 0.05 a Share)`, not 1.2 x the last price: above 41,666,666 the
+  last-price pre-fill is over the 0.05 ceiling and the chain refuses it after both signers signed (measured: a 1-dollar
+  round at 50,000,000 makes it 0.06), and a 1-dollar round could set it. Check the range before proposing. The proposal
+  shows each round's price next to the chosen start and says when the start is below what backers paid.
+- **Lowest price:** "333,333" is 333,333.33 for the whole project. The app sends exactly 3e15 raw Shares a raw dollar
+  for it; working it out from 333,333 gives 3,000,003,000,003,000, which the chain refuses (measured). Other prices:
+  `min(3e15, floor(1e27 / (price x 1e6)))`. The default Open backing press needs an app test on this path.
+- **Pending price proposals** (Pair): a proposal never expires, so an old round price can still be confirmed weeks later
+  (measured: 21 days). When a signer proposes a new `openRound` or `openAuction`, the app cancels that signer's earlier
+  pending one for the same call, and lists a project's pending proposals with their price and age, with Cancel.
 - **Project page:** "Raised before Creaton" record with "confirmed by k of N".
-- **Server:** compute the average price paid; notify a project's backers when a lower-priced round opens; store the "what's
+- **Server:** compute the average price paid; notify a project's backers when a lower-priced round opens, and when the
+  auction opens with a start below the price they paid (after the review: the refund is their only protection, it falls
+  to 0 at week 26, and a start of 0.0004 after a round at 50,000,000 makes 50,000 of backing worth 400 at the sale price,
+  measured); store the "what's
   new" note and the earlier-raise statement (signed by the founder; browser copies refused as today).
 - Copy: "price for the whole project", never protocol words (CLAUDE.md copy rules).
 
@@ -169,7 +190,7 @@ Each must fail when its guard is removed.
 | A bid above 4 x a 0.006 start reverts | bid cap follows the chosen start |
 | Failed auction at 0.006, retry at 0.0024 opens | no trap |
 | Worked example: Creaton, 10,000 at 6M gives 1.67M Shares; later `returnUnsold` returns the rest | Creaton numbers |
-| Only with question 6: launch with zero stake; pool open grants nothing and the reserve keeps 20M | zero stake |
+| Only with question 6: launch with zero stake; pool open grants nothing and the reserve keeps 20M | zero stake (as built: project zero named by key; any other launch, in the same block too, takes the stake) |
 | App: Open backing default 1 press 0 fields; price path 1 field; auction proposal 0 fields typed | press budgets |
 
 Re-pin: the 3,000-Shares price test becomes the range tests above; guard-list entry N19 and the price NatSpec.
