@@ -260,6 +260,7 @@ M4P='test/{PairStages,RoundsWorked}.t.sol'
 M4B='test/{MarketAttacks,SaleRules,Pieces}.t.sol'
 M4FP='test/{FounderPrice,Rounds,Launcher,PairStages,RoundsWorked}.t.sol'  # founder-set prices
 M4FPA='test/{FounderPriceAuction,AuctionV2,SaleRules,Launcher}.t.sol'
+M4FPZ='test/{FounderPrice,FounderPriceAuction,AttackFounderPrice,Launcher}.t.sol'  # project zero by key (review F1 / A8)
 M4X='test/{Rounds,RoundsWorked,RoundsReentry,PairStages,Vester,VesterHeld,Launcher,AuctionV2,TreasurySeams,PlanV2M4Fixes,AttackPlanV2M4}.t.sol'  # the review's entries
 M4=[
 # Rounds
@@ -412,7 +413,7 @@ M4=[
 # project-zero setting; NI3 puts the old check back to show the zero-stake tests notice it.
 ('NH0','Rounds: a round may be priced below 333,333 (more than 3,000 Shares a dollar)',RO,' || sharesPerRawDollar > MAX_SHARES_PER_RAW_DOLLAR','',False,M4FP),
 ('NH1','Rounds: a round may be priced above 50,000,000 (fewer than 20 Shares a dollar)',RO,'\n                || sharesPerRawDollar < MIN_SHARES_PER_RAW_DOLLAR','',False,M4FP),
-('NH2','Rounds: the price is not stored in the round',RO,'(r.openedAt, r.size, r.sharesPerRawDollar) = (uint64(block.timestamp), size, sharesPerRawDollar);','(r.openedAt, r.size) = (uint64(block.timestamp), size);',False,M4FP),
+('NH2','Rounds: the price is not stored in the round',RO,'(r.openedAt, r.size, r.sharesPerRawDollar) = (uint64(block.timestamp), size, uint64(sharesPerRawDollar));','(r.openedAt, r.size) = (uint64(block.timestamp), size);',False,M4FP),
 ('NH3','Rounds: close sets aside Shares at the lowest price, not the round\'s',RO,'reserved += accepted * r.sharesPerRawDollar;','reserved += accepted * MAX_SHARES_PER_RAW_DOLLAR;',False,M4FP),
 ('NH4','Rounds: settle pays the latest round\'s price, not the backer\'s round\'s',RO,'uint256 bought = acc * r.sharesPerRawDollar;','uint256 bought = acc * _rounds[count].sharesPerRawDollar;',False,M4FP),
 ('NH5','Rounds: RoundOpened leaves out the price',RO,'emit RoundOpened(id, size, sharesPerRawDollar,','emit RoundOpened(id, size, 0,',False,M4FP),
@@ -422,9 +423,20 @@ M4=[
 ('NH9','Launcher: an auction start above 0.05 is accepted',L,'if (startQ96 < baseQ96 || startQ96 > MAX_START_Q96) revert BadStart();','if (startQ96 < baseQ96) revert BadStart();',False,M4FPA),
 ('NI0','Launcher: the minimum stays 100,000 at any start',L,'uint256 minimum = floorQ96 * SaleParams.SALE_SHARES >> 96;','uint256 minimum = AUCTION_MINIMUM;',False,M4FPA),
 ('NI1','Launcher: the auction starts at 0.0004 whatever the runner signed',L,'(uint256 floorQ96, uint256 tickQ96) = _floorAndTick(startQ96);','(uint256 floorQ96, uint256 tickQ96) = salePrices();',False,M4FPA),
-('NI2','Launcher: a zero stake address still asks for the 20M (project zero cannot launch)',L,'stakeAmount: s.stake == address(0) ? 0 : STAKE,','stakeAmount: STAKE,',False,M4FP),
-('NI3','Launcher: the stake address must be named (NA3 back: project zero cannot be set up)',L,'address(s.quote) == address(0) || s.platform == address(0) ||','address(s.quote) == address(0) || s.platform == address(0) || s.stake == address(0) ||',False,M4FP),
+('NI2','Launcher: project zero still gives the 20M stake',L,'stakeAmount: s.stake == address(0) ? 0 : STAKE,','stakeAmount: STAKE,',False,M4FPZ),
+# NI3 (the stake address must be named) is retired: after the review that check is back in the code (project zero is named by
+# its key instead of a zero stake address), and NI5 removes it.
 ('NI4','Pair: the proposal id leaves out the call data (a confirm may change the price both signed)',PA,'return keccak256(abi.encode(address(this), target, data, n));','return keccak256(abi.encode(address(this), target, n));',False,M4FP),
+# project zero by key (review F1 / A8): only the named project launches with no stake, once
+('NI5','Launcher: the stake address may be zero again (every project launched then takes no stake)',L,'s.platform == address(0) || s.stake == address(0)\n','s.platform == address(0)\n',False,M4FPZ),
+('NI6','Launcher: the project zero name is ignored (Creaton cannot launch without the stake)',L,'if (key == projectZeroKey) {','if (false) {',False,M4FPZ),
+('NI7','Launcher: the project zero name is not used up',L,'(projectZeroKey, projectZeroLaunched, s.stake) = (bytes32(0), true, address(0));','(projectZeroLaunched, s.stake) = (true, address(0));',False,M4FPZ),
+('NI8','Launcher: project zero\'s launch is not recorded (a second project zero can be named)',L,'(projectZeroKey, projectZeroLaunched, s.stake) = (bytes32(0), true, address(0));','(projectZeroKey, s.stake) = (bytes32(0), address(0));',False,M4FPZ),
+('NI9','Launcher: anyone may name project zero',L,'function nameProjectZero(bytes32 key) external {\n        if (msg.sender != admin) revert NotAdmin();','function nameProjectZero(bytes32 key) external {',False,M4FPZ),
+('NJ0','Launcher: a second project zero may be named after the first launched',L,'if (projectZeroLaunched || _projects[key].shares != address(0)) revert ProjectExists();','if (_projects[key].shares != address(0)) revert ProjectExists();',False,M4FPZ),
+('NJ1','Launcher: a project already launched may be named project zero',L,'if (projectZeroLaunched || _projects[key].shares != address(0)) revert ProjectExists();','if (projectZeroLaunched) revert ProjectExists();',False,M4FPZ),
+('NJ2','Launcher: any launch while a name is set takes no stake (the window again)',L,'if (key == projectZeroKey) {','if (projectZeroKey != bytes32(0)) {',False,M4FPZ),
+('NJ3','Launcher: ProjectLaunched shows project zero with the stake address (its Treasury too)',L,'(projectZeroKey, projectZeroLaunched, s.stake) = (bytes32(0), true, address(0));','(projectZeroKey, projectZeroLaunched) = (bytes32(0), true);',False,M4FPZ),
 # MinBid
 ('NB0','MinBid: the cap is 64 times the starting price (back towards milestone 3\'s ladder)',MB,'IAuctionPrice(msg.sender).floorPrice() * maxPriceMultiple','IAuctionPrice(msg.sender).floorPrice() * maxPriceMultiple * 16',False,M4B),
 ]
