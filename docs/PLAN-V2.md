@@ -426,3 +426,24 @@ Where building and measuring showed this plan to be wrong or loose:
    Milestone 9 (Council) should decide.
 8. **Not built here, by scope:** the Team rule "after 28 silent days the second signer takes over", and "agents included" in
    the 500 a week (each signer has 500 a week; agents keep the Treasury's own daily caps).
+
+## Milestone 4 review fixes (17 November 2026)
+
+A review and an attack test of milestone 4 found the following; details in `docs/next-version/PLANV2-M4-REPORT.md`, section
+"Review fixes".
+
+1. **Fixed: a stranger could end a backer's refund** by taking their released held Shares out for them after the market (the
+   money behind them then went to the project). Only the backer may take out their own held Shares now. The server's helper job
+   must not deliver held Shares; it can still deliver founder, gift and stake Shares.
+2. **Fixed: a later runner could cut the founder's grant** with a hand-over marked "founder leaves". Only the founder may mark
+   it, in person or through a Pair they sign for.
+3. **Correction to finding 4 above:** the faker's cost is 22.1 of each 100 *the faker had accepted*: 2,077 dollars when the
+   honest backers hold 6% of the 10,000 cap (measured), at most 2,210 if the faker holds all of it.
+4. **Owner decision: money stranded by a wind-down.** After a wind-down the release stops and the refund covers only Shares
+   still held, so the unreleased money behind Shares a backer already took out belongs to nobody and stays in the round for
+   ever (measured: 152.29 dollars on a 1,000 backing whose backer took out a fifth after "no market"). Section 3 says payments
+   stop for good and section 4 that Shares taken out end the refund, so neither side is owed it. Choose: pay it to the
+   project at the wind-down, or put it into the floor for holders to hand back against.
+5. **Still open for the owner** (unchanged, now with tests pinning today's numbers): fake demand using up a cap (finding 4);
+   D230 against the first election (finding 6); the Team takeover after 28 silent days and "agents included" in the 500 a
+   week (finding 8; measured: one signer's key and three default agents spend 950 in 7 days). Team in the app is milestone 7.

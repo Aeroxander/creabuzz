@@ -58,12 +58,12 @@ records which tests fail (section "Guard removals").
 | One price for every project | 1 raw dollar unit buys `SHARES_PER_RAW_DOLLAR` = 3e15 raw Share units: 1 dollar = 3,000 Shares; 50,000 dollars = exactly the 150M backing Shares | `test_price_oneDollarBuysExactly3000Shares_and50000BuysTheWholeBudget`, worked examples | N19 |
 | Size = what is left under the stage cap; smallest backing 1 dollar | The Launcher opens a round of `cap - raised`; Rounds refuses a size under 1 dollar or one the unsold Shares cannot cover, and a second round while one is open; a backer's total ask in a round must be at least 1 dollar | `test_open_*`, `test_ask_*`, `test_solo_capIs10000InTotal_andRoundsFollowWithNoWait`, `test_team_capIs50000InTotal` | N01, N02, N03, N05, N82, N83 |
 | 24 hours; lower or withdraw only in the first 12 | `ask` until `openedAt + 24h`; `lower` (to zero or to 1 dollar and more) until `openedAt + 12h`; the amount can only grow after that | `test_ask_*`, `test_lower_*`, `test_attack_fakeDemandForcesAScaleBack_measured` | N04, N07, N08 |
-| Scale-back: the same percent for everyone | Close (anyone, after 24 hours, once): `accepted = min(asked, size)`. Settle (anyone, per backer): `acc = ask * accepted / asked` rounded down, the rest of the ask returned. The rounding dust (under one raw dollar unit per backer) is accepted money nobody holds Shares for; it is split like the rest, so it ends with the platform (3) and the project (97). | `test_settle_scaleBack_everyAskTheSamePercent_restReturned`, fuzz | N09, N10, N11, N13, N14, N15 |
+| Scale-back: the same percent for everyone | Close (anyone, after 24 hours, once): `accepted = min(asked, size)`. Settle (anyone, per backer): `acc = ask * accepted / asked` rounded down, the rest of the ask returned. The rounding dust (`accepted` less the sum of the parts, under one raw dollar unit per backer) goes back to the backers with the rest of their asks; `raised` and `RoundClosed.accepted` still count it, and its Shares (3e15 raw units per raw dollar) stay set aside in `reserved` for good. (Corrected in the review: this row said the dust was split like the rest; the code never did that.) | `test_settle_scaleBack_everyAskTheSamePercent_restReturned`, `test_scaleBackDust_goesBackToTheBackers_raisedCountsIt`, fuzz | N09, N10, N11, N13, N14, N15 |
 | Each 100: 3 platform, 15 at once, 82 over 26 weeks | `toPlatform = acc*300/10000`, `held = acc*8200/10000` (both rounded down), `toProject = acc - toPlatform - held` (15 plus the dust) to `spendable` at once | `test_settle_splits3_15_82_andHoldsTheSharesInTheVester`, worked examples | N16, N17 |
 | Released evenly over 26 weeks while checked in | One shared clock of active seconds: time counts only up to `treasury.activeEnd()` (the last check-in + 14 days; zero while paused or wound down). A round's release is `held * min(active since its close, 182 days) / 182 days`, rounded down. A lapse pushes the end date out by exactly the lapse and is never paid back (the built Treasury's rule); the Treasury works the clock out before every change of the window (check-in, pause, resume, wind down, the auction's first money) | `test_release_evenlyOver26WeeksWhileCheckedIn`, `test_release_aLapsePushesTheEndDateOutAndIsNeverPaidBack`, `test_release_pausedTimeDoesNotCount`, `test_theAuctionsFirstMoneyDoesNotPayTheRoundsForALapse`, `testFuzz_theReleaseDoesNotDependOnHowOftenItIsAsked` | N20, N21, N22, N51, N76 |
-| Bought Shares are held (one clock) | At settle the Shares go to the Vester as a backer grant of that round (`grantHeld`); released over 365 days from the market or a "no market" declaration, claimable with `claimHeld` | `test_settle_splits...`, `test_attack_aFounderFillsTheirOwnRoundsThroughManyAccounts_andCannotSellBeforeRelease` | N18, N40, N48 |
+| Bought Shares are held (one clock) | At settle the Shares go to the Vester as a backer grant of that round (`grantHeld`); released over 365 days from the market or a "no market" declaration, taken out with `claimHeld` by the backer only (review fix M4A-1) | `test_settle_splits...`, `test_attack_aFounderFillsTheirOwnRoundsThroughManyAccounts_andCannotSellBeforeRelease` | N18, N40, N48 |
 | Personal refund, per round | `refund(round)`: the backer's own held money for the Shares still held for them (`part = held * stillHeld / granted`), less its released part (rounded UP), less a 5% fee rounded up (1 of each 100 to the platform rounded down, the rest of the fee to `spendable`); the Shares still held are cancelled into the reserve. Per 100 paid: 77.90 on day 0, 65.92 at week 4, 38.95 at week 13, nothing at week 26 | `test_refund_thePlansNumbers`, `test_refund_theFeeIs...`, `test_refund_nobodyElseLeavingChangesYourNumber`, fuzz, invariants | N23, N24, N25, N26, N28, N29, N30, N41, N42, N43, N44 |
-| After a market the refund continues for Shares still held | Shares the backer took out (`claimHeld`) end the refund for their share of the money; that money keeps releasing to the project | `test_refund_afterTheMarket_onlyForSharesStillHeld`, `test_attack_aRefundAfterTheMarketTakesNothingFromTheFloor` | N27 |
+| After a market the refund continues for Shares still held | Shares the backer took out (`claimHeld`, which only the backer may call) end the refund for their share of the money; that money keeps releasing to the project | `test_refund_afterTheMarket_onlyForSharesStillHeld`, `test_attack_aRefundAfterTheMarketTakesNothingFromTheFloor`, `test_fixed_aStrangerCannotEndABackersRefundByClaimingForThem` | N27, NE0 |
 | Refunds do not reopen the cap | `raised` counts every accepted dollar ever (my choice; see "Numbers I chose") | `test_solo_capIs...`, `test_attack_refundThenReAskGainsNothing` | N12 |
 | Wind down | Releases stop for good; the refund fee becomes the platform's 1 | `test_windDown_releaseStopsForGood_andTheRefundFeeIsThePlatformsOne` | N31, N32, N60, N61 |
 | Unsold backing Shares join the reserve | `returnUnsold` (anyone) once no round can open (market, "no market", wind-down); Shares owed to unsettled accepted asks stay | `test_returnUnsold_onlyOnceNoRoundCanOpen_andKeepsWhatIsOwed` | N33, N34 |
@@ -73,7 +73,7 @@ records which tests fail (section "Guard removals").
 | Rule | As built | Tests | Guards |
 |---|---|---|---|
 | One clock for held Shares | Everything handed out before a market (founder, gifts, backers, the stake) is in the Vester; `start` is set when the Finisher proves the pool or when "no market" is declared | `test_noMarket_*`, `test_stake_*`, M2 Vester tests | V01-V13, N64 |
-| A leaving founder keeps the days served | `handOver(next, true)` then `takeSeat()`: the founder keeps `200M * min(days since launch, 365) / 365`, the rest returns to the work pot; before a market only (refused after it) | `test_handOver_aLeavingFounderKeepsTheDaysServed_theRestReturnsToTheWorkPot`, `test_handOver_aTrimAfterTheMarketIsRefused_andTheSeatStaysPut`, `test_trim_onlyTheTreasury` | N45, N46, N47, N55 |
+| A leaving founder keeps the days served | `handOver(next, true)` then `takeSeat()`: the founder keeps `200M * min(days since launch, 365) / 365`, the rest returns to the work pot; before a market only (refused after it); once only; and only the founder may offer it, in person or through a Pair the Launcher made with the founder as a signer (review fix R1: a later runner cannot cut the founder's grant) | `test_handOver_aLeavingFounderKeepsTheDaysServed_theRestReturnsToTheWorkPot`, `test_handOver_aTrimAfterTheMarketIsRefused_andTheSeatStaysPut`, `test_trim_onlyTheTreasury`, `test_trim_aSuccessorCannotStartTheFoundersTrim`, `test_trim_aPairWithoutTheFounderCannotStartIt`, `test_trim_aFakePairNamingTheFounderCannotStartIt`, `test_trim_theFoundersPairMayStartIt`, `test_trim_onlyOnce` | N45, N46, N47, N55, ND0, ND1, ND2, NE1 |
 | The fee's 4 goes to spendable (B2) | The whole slice leaves the floor: 95 to the holder, 1 owed to the platform, 4 to `spendable` | `test_fixed_exitingInPiecesPaysTheSameAsOneExit` (400 pieces pay 4,560.00 less rounding, as one exit does), `test_edge_exitingInManyPiecesPaysWhatOneExitPays`, `test_handBack_workedExample` | T45, T13, T14 |
 | Share revenue is shared by all Shares; the gift cap is on Shares in hands (B3) | `slice = melting * burned / countingSupply + permanentFloor * burned / totalSupply`; the 30-day gift cap is 1% of `countingSupply()` | `test_fixed_postPoolGiftsToFreshWalletsNeverThinTheRevenueFloor`, `test_fixed_giftsThroughFreshWalletsTakeUnderATenthOfTheRevenueFloor`, `test_handBack_takesFromBothFloorsInProportion` | N67, N68, T23, T38 |
 | Held Shares never count | `countingSupply = totalSupply - Treasury - Rounds - Finisher - vester.unreleased()` | `invariant_heldSharesNeverCount`, `invariant_rule3_*`, `test_attack_aFounderFills...` (zero counting before a market) | T10, T11, N69, N70 |
@@ -274,7 +274,7 @@ field names the Shares, Treasury, Vester, Finisher and Rounds) or from `Launcher
 **Rounds** (one per project)
 - `RoundOpened(uint256 indexed round, uint256 size, uint256 opensAt, uint256 closesAt)`.
 - `Asked(uint256 indexed round, address indexed backer, uint256 total, uint256 added)`; `AskLowered(uint256 indexed round, address indexed backer, uint256 total, uint256 returned)`.
-- `RoundClosed(uint256 indexed round, uint256 asked, uint256 accepted, uint256 activeAtClose)`: the scale-back percent is `accepted / asked` when below one.
+- `RoundClosed(uint256 indexed round, uint256 asked, uint256 accepted, uint256 activeAtClose)`: the scale-back percent is `accepted / asked` when below one. **Total raised against the cap is the sum of `RoundClosed.accepted`** (equal to `Rounds.raised`), not the sum of `Settled.accepted`: the scale-back dust (under one raw unit per backer) is counted in `accepted` but returned to the backers, so the sum of `Settled.accepted` is up to that dust lower, and lower still while backers are unsettled.
 - `Settled(uint256 indexed round, address indexed backer, uint256 accepted, uint256 returned, uint256 shares, uint256 toPlatform, uint256 toProject, uint256 held)`: Shares delivered (held) and the money split for one backer.
 - `Released(uint256 indexed round, uint256 amount)`: held money to the project's spendable.
 - `Refunded(uint256 indexed round, address indexed backer, uint256 unreleased, uint256 paid, uint256 toProject, uint256 toPlatform, uint256 shares)`.
@@ -282,7 +282,7 @@ field names the Shares, Treasury, Vester, Finisher and Rounds) or from `Launcher
 
 **Vester**
 - `Granted(address indexed beneficiary, uint256 amount)`, `Claimed(address indexed beneficiary, uint256 amount)`, `Started(uint256 time)` (the clock: market open or "no market").
-- `HeldGranted(uint256 indexed round, address indexed backer, uint256 amount)`, `HeldCancelled(uint256 indexed round, address indexed backer, uint256 amount)`, `HeldClaimed(uint256 indexed round, address indexed backer, uint256 amount)`.
+- `HeldGranted(uint256 indexed round, address indexed backer, uint256 amount)`, `HeldCancelled(uint256 indexed round, address indexed backer, uint256 amount)`, `HeldClaimed(uint256 indexed round, address indexed backer, uint256 amount)`. `HeldClaimed` comes only from the backer's own call: **the server's helper job must never claim held Shares** (it cannot; and claiming would end the backer's refund for them). Plain grants (`Claimed`: founder, gifts, stake) can still be delivered by anyone.
 - `FounderTrimmed(uint256 kept, uint256 cut)`.
 
 **Treasury**
@@ -290,7 +290,7 @@ field names the Shares, Treasury, Vester, Finisher and Rounds) or from `Launcher
 - Release and window: `Released(uint256 amount)`, `CheckedIn(address indexed by)`, `Paused(bool on)`, `PauserSet(address indexed pauser)`.
 - Out: `Spent(address indexed by, address indexed to, uint256 amount)`, `SharesGiven(address indexed by, address indexed to, uint256 amount, bool vested)`, `HandedBack(address indexed holder, uint256 shares, uint256 paid, uint256 toPlatform, uint256 toProject)` (the last field was "stays" in milestones 2 and 3), `FeesSwept(address indexed to, uint256 amount)`, `ReserveReleased(address indexed to, uint256 amount)`, `ReserveSaleClosed(uint256 time)`.
 - State: `PoolOpened(uint256 time)`, `StakeGranted(address indexed stake, uint256 amount)`, `SaleAbandoned(uint256 time)`, `SaleClosed(uint256 time)`, `NoMarketDeclared(uint256 time)`, `WoundDown(uint256 time)`.
-- Runner and agents: `SeatOffered(address indexed from, address indexed to, bool founderLeaves)`, `RunnerChanged(address indexed from, address indexed to, uint256 cut)`, `AgentSet(address indexed agent, bool active, uint256 usdCap, uint256 shareCap)`.
+- Runner and agents: `SeatOffered(address indexed from, address indexed to, bool founderLeaves)` (`founderLeaves` true only on the founder's own offer, or their Pair's), `RunnerChanged(address indexed from, address indexed to, uint256 cut)`, `AgentSet(address indexed agent, bool active, uint256 usdCap, uint256 shareCap)`.
 
 **Pair**: `SpentAlone(address indexed by, address indexed to, uint256 amount)`, `Proposed(bytes32 indexed id, address indexed by, address target, bytes data, uint256 nonce)`, `Executed(bytes32 indexed id, address indexed confirmedBy)`, `Cancelled(bytes32 indexed id)`.
 
@@ -418,6 +418,67 @@ The full list and what each removal broke (first failing test shown; "n" is the 
 | NB0 | MinBid: the cap is 64 times the starting price (back towards milestone 3's ladder) | 5 | `test_bids_aTopPriceAboveFourTimesIsRefusedAndFourTimesIsNot` |
 
 (Ids N36, N40, N41, N43, N44, N59, N71, N72, N74 and N76 are from the second pass, after their tests were written.)
+
+## Review fixes (17 November 2026)
+
+A spec and code review (R1 to R6) and an attack tester (M4A-1, M4A-2) read this milestone after the report above. I checked
+each finding against the code before changing anything.
+
+| Finding | Real? | What I did | Test that fails without it | Guard ids |
+|---|---|---|---|---|
+| M4A-1 (blocker): anyone could call `Vester.claimHeld(round, backer)`, which ends the backer's refund for the Shares taken out | Yes: the attacker's test failed at 802c5d690 (alice's refund fell from 6,634.34 to 3,362.61 after a stranger's claim) | `claimHeld` is now the backer's own call only. The plain `claim` (founder, gifts, stake) stays open to anyone. Five existing tests and the rounds handler now claim as the backer | `test_fixed_aStrangerCannotEndABackersRefundByClaimingForThem` (the attacker's test, renamed; it passes now because the stranger is refused) | NE0 |
+| M4A-2: after a wind-down, the unreleased money behind held Shares the backer already took out belongs to nobody | Yes: 152.285715 dollars on a 1,000 backing stay in the Rounds for ever | **Owner decision, not changed**: section 3 says payments stop for good and section 4 that Shares taken out end the refund, so who gets it (the project, or the floor) is a money rule. The test is pinned at the measured amount | `test_pinned_aWindDownStrandsTheHeldMoneyOfClaimedShares` (pinned) | none |
+| R1: any runner could mark a hand-over "founder leaves" and so cut the founder's 200M | Yes (by reading `handOver`; no test covered it) | Only the founder may mark it: as the runner in person, or through a Pair the Launcher made (`isPair`) with the founder as a signer, since a Pair hands over only when both agree. A Council runner cannot (milestone 9 decides). The trim is still measured to `takeSeat` | `test_trim_aSuccessorCannotStartTheFoundersTrim`, `test_trim_aPairWithoutTheFounderCannotStartIt`, `test_trim_aFakePairNamingTheFounderCannotStartIt`, `test_trim_theFoundersPairMayStartIt` | ND0, ND1, ND2 |
+| R2: four milestone 4 guards protected nothing (X1 wind-down while the auction runs, X2 no market while a round is open, X3 one trim, X4 no auction after a wind-down) | Yes: none of the four had an entry in the script, and no existing test asserts those refusals (checked by reading the tests; the reviewer's removal run is the evidence that none failed; I ran the removals only after writing the new tests) | Tests for each; then a pass over every revert in Launcher, Treasury, Vester, Rounds and Pair with no entry: 34 new entries (NC0-NC9, ND0-ND8, NE0-NE3, NF0-NF7, NG0-NG2) | X1 `test_windDown_notWhileTheAuctionRuns`, X2 `test_noMarket_notWhileARoundIsOpen`, X3 `test_trim_onlyOnce`, X4 `test_openAuction_notAfterAWindDown` | NC0, NC2, NE1, NC5 (and the table below) |
+| R3: the NatSpec, this report and a test comment said the scale-back dust "is split like the rest"; the code returns it to the backers | Yes | Corrected the three texts (no code change): the dust goes back to the backers with the rest of their asks; `raised` and `RoundClosed.accepted` count it; its Shares stay in `reserved` for good (0.003 Shares per raw dollar unit of dust). The server measures the cap on the sum of `RoundClosed.accepted` (= `Rounds.raised`), not on `Settled.accepted` | `test_scaleBackDust_goesBackToTheBackers_raisedCountsIt` and two new asserts in `test_settle_scaleBack_everyAskTheSamePercent_restReturned` pin what the texts now say | none (a text fix) |
+| R4: the Team takeover after 28 silent days and "agents included" in the 500 a week are not built | Yes (already in "not done") | **Not built; for the owner** (Team in the app is milestone 7): what "takes over" means (the second signer alone as a Team runner, or a new second signer) and whose 500 an agent spends are design choices. Two pinned tests measure today | `test_pinned_aPairsAgentsSpendOutsideTheSignersWeeklyLimit` (one signer's key and three default agents: **950 dollars in 7 days**, against the plan's 500), `test_pinned_aSilentFounderLeavesTheSecondSignerWithoutRaises` | none |
+| R5: fake demand uses up a cap; refunds do not reopen it | Yes (already measured) | **Owner decision** (a cap rule). Unchanged; `test_attack_fakeDemandForcesAScaleBack_measured` stays. Correction: the faker's cost is 22.1 of each 100 the faker had accepted, 2,077.40 in the measured case, at most 2,210 | the existing measured test | none |
+| R6: D230 (Council for the auction on real networks) against the first election | Yes (already flagged) | **Owner decision**, unchanged | `test_onARealNetworkOnlyACouncilOpensTheAuction` | none |
+
+**The new entries, removed one at a time** (`python3 scripts/mutate-guards.py <ids>`, suites `M4X`; first failing test shown):
+
+| Id | Removed | n | A test that fails |
+|---|---|---|---|
+| NC0 | Launcher: wind down while the auction runs (X1) | 1 | `test_windDown_notWhileTheAuctionRuns` |
+| NC1 | Launcher: wind down while a round is open | 1 | `test_windDown_notWhileARoundIsOpen` |
+| NC2 | Launcher: no market while a round is open (X2) | 1 | `test_noMarket_notWhileARoundIsOpen` |
+| NC3 | Launcher: no market while the auction runs | 1 | `test_noMarket_notWhileTheAuctionRuns` |
+| NC4 | Launcher: no market after a market (Launcher check) | 1 | `test_noMarket_onlyAfter365DaysFromTheFirstMoneyRound_thenTheClockStartsAndTheAuctionIsClosed` |
+| NC5 | Launcher: the auction opens after a wind-down (X4) | 1 | `test_openAuction_notAfterAWindDown` |
+| NC6 | Launcher: the auction opens after a market | 1 | `test_noMarket_onlyAfter365DaysFromTheFirstMoneyRound_thenTheClockStartsAndTheAuctionIsClosed` |
+| NC7 | Launcher: a second reserve sale while one is out | 1 | `test_reserveSale_endToEnd` |
+| NC8 | Launcher: finish a reserve sale when none is out | 1 | `test_reserveSale_onlyACouncil_onlyAfterAMarket` |
+| NC9 | Launcher: an unknown project is not refused | 2 | `test_openAuction_refusesAnUnknownProject` |
+| ND0 | Treasury: any runner may start the founder's trim (R1) | 3 | `test_trim_aFakePairNamingTheFounderCannotStartIt` |
+| ND1 | Treasury: a contract that only says it is the founder's Pair may trim (R1) | 2 | `test_trim_aFakePairNamingTheFounderCannotStartIt` |
+| ND2 | Treasury: any Pair may trim the founder (R1) | 1 | `test_trim_aPairWithoutTheFounderCannotStartIt` |
+| ND3 | Treasury: the seat may be offered to nobody or to the runner | 1 | `test_handOver_twoSteps_onlyTheRunnerOffers_onlyTheNamedTakes` |
+| ND4 | Treasury: the project may wind down twice | 1 | `test_windDown_theRunnerBeforeAMarket_onlyACouncilAfter` |
+| ND5 | Treasury: no market after a market (Treasury check) | 1 | `test_noMarket_neverAfterAMarket_evenFromTheLauncher` (re-run) |
+| ND6 | Treasury: more than the reserve may go out for sale | 1 | `test_reserveSale_neverMoreThanTheReserve_neverNothing_neverToNobody` (re-run) |
+| ND7 | Treasury: a reserve sale of nothing or to nobody | 1 | `test_reserveSale_neverMoreThanTheReserve_neverNothing_neverToNobody` (re-run) |
+| ND8 | Treasury: a reserve sale may be closed when none is out | 1 | `test_reserveSale_oneAtATime_andExitsWaitWhileItIsOut` |
+| NE0 | Vester: anyone may take out a backer's held Shares (M4A-1) | 1 | `test_fixed_aStrangerCannotEndABackersRefundByClaimingForThem` |
+| NE1 | Vester: the founder may be trimmed twice (X3) | 1 | `test_trim_onlyOnce` |
+| NE2 | Vester: a backer grant to nobody | 1 | `test_vester_aBackerGrantToNobodyIsRefused` (re-run) |
+| NE3 | Vester: a founder grant to nobody | 1 | `test_vester_aFounderGrantToNobodyIsRefused` (re-run) |
+| NF0 | Rounds: a refund that pays nothing still cancels the held Shares | 2 | `test_refund_thePlansNumbers` |
+| NF1 | Rounds: a refund with no held money is not refused early | 0 | none: redundant early exit (`paid == 0` refuses the same calls with the same error) |
+| NF2 | Rounds: a refund with every Share taken out is not refused early | 0 | none: redundant early exit, as NF1 |
+| NF3 | Rounds: unsold Shares leave while a round is open | 0 | none: redundant defence (the Launcher refuses a round after a market or a wind-down, and a market, "no market" or a wind-down while a round is open) |
+| NF4 | Rounds: an ask may be "lowered" to the same or more | 2 | `test_lower_onlyInTheFirst12Hours_downOrToZero_andTheDifferenceComesBack` |
+| NF5 | Rounds: a round under 1 dollar may open | 1 | `test_open_onlyTheLauncher_oneAtATime_andNeverBeyondTheSharesLeft` |
+| NF6 | Rounds: a round that was never opened may be closed | 1 | `test_close_aRoundNeverOpenedIsRefused` (re-run) |
+| NF7 | Rounds: a dollar token that sends less is not noticed | 1 | `test_send_aTokenThatTakesMoreFromTheRoundsThanItSendsIsRefused` (re-run) |
+| NG0 | Pair: a call nobody proposed may be confirmed | 3 | `test_bothSigners_spendMore` |
+| NG1 | Pair: a failing call is confirmed as if it ran | 10 | `test_confirm_aFailingCallRevertsWithItsOwnErrorAndStaysPending` |
+| NG2 | Pair: a signer may be nobody | 1 | `test_pair_aSignerMayNotBeNobody` (re-run) |
+
+In the first run 11 of the 34 failed no test (ND5, ND6, ND7, NE2, NE3, NF1, NF2, NF3, NF6, NF7, NG2). Three are redundant (NF1,
+NF2, NF3, marked so in the script). For the other eight I wrote tests (`PlanV2M4Fixes.t.sol`, `TreasurySeams.t.sol`) and re-ran
+them; the n above for those eight is from the re-run. One of them guards a real attack: without NF6 a stranger could close the
+next round's id before it opens, and that round would then take asks it could never close or settle (its backers' dollars stuck).
+ND6 is the only check that keeps a reserve sale from taking work-pot Shares (the Launcher passes any amount the Council names).
 
 ## What I ran, and what I did not do
 
