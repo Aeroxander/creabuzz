@@ -14,8 +14,17 @@ export function currentStage(acceptedMembers: number): Stage {
 }
 
 /**
- * The stage line: every stage, the current one lit, the next one named. Only the current stage and the single next
- * step are spelled out (plan section 3). It also says what a stage does not prove.
+ * The stages a project has actually reached. A project can skip a stage (a team without ever raising money), so a
+ * stage before the current one is not done by its place in the line. Until the chain reader exists (milestone 5) no
+ * money stage is ever reached here: the line never says a project was backed when it was not.
+ */
+export function reachedStages(stage: Stage): ReadonlySet<Stage> {
+  return new Set<Stage>(stage === "Team" ? ["Solo", "Team"] : ["Solo"]);
+}
+
+/**
+ * The stage line: every stage, the current one lit, the ones reached faded green, the rest not reached. Only the
+ * current stage and the single next step are spelled out (plan section 3). It also says what a stage does not prove.
  */
 export function StageLine({
   stage,
@@ -25,17 +34,19 @@ export function StageLine({
   investing: boolean;
 }) {
   const stages: readonly Stage[] = investing ? ALL_STAGES : NO_MONEY_STAGES;
-  const at = stages.indexOf(stage);
+  const reached = reachedStages(stage);
   return (
     <div className="flex flex-col gap-2" data-testid="stage-line">
       <ol aria-label="Stage" className="flex items-center gap-1.5">
-        {stages.map((name, index) => {
-          const done = index < at;
-          const current = index === at;
+        {stages.map((name) => {
+          const current = name === stage;
+          const done = !current && reached.has(name);
           return (
             <li
               aria-current={current ? "step" : undefined}
               className="flex flex-1 flex-col gap-1.5"
+              data-reached={current ? "now" : done ? "done" : "no"}
+              data-testid={`stage-${name.toLowerCase()}`}
               key={name}
             >
               <span
@@ -52,7 +63,13 @@ export function StageLine({
                 )}
               >
                 {name}
-                {current ? <span className="sr-only"> (now)</span> : null}
+                {current ? (
+                  <span className="sr-only"> (now)</span>
+                ) : done ? (
+                  <span className="sr-only"> (done)</span>
+                ) : (
+                  <span className="sr-only"> (not reached)</span>
+                )}
               </span>
             </li>
           );

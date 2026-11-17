@@ -18,7 +18,8 @@ import { useState, useSyncExternalStore } from "react";
 import { Button } from "../../ui/button";
 import { Sheet } from "../../ui/sheet";
 
-const BACKED_UP_KEY = "buzz.identity.backedUp";
+/** Set once this account's recovery key was saved (the same key web/ uses). */
+export const BACKED_UP_KEY = "buzz.identity.backedUp";
 
 function currentExport() {
   let stored: string | null = null;

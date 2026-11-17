@@ -20,7 +20,7 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "glass flex flex-col items-center gap-3 rounded-2xl px-5 py-8 text-center",
+        "glass glass-text flex flex-col items-center gap-3 rounded-2xl px-5 py-8 text-center",
         className,
       )}
       data-testid={testId}

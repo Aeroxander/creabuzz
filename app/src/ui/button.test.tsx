@@ -134,3 +134,44 @@ describe("the stylesheet", () => {
     );
   });
 });
+
+describe("ButtonLink", () => {
+  async function renderLink() {
+    const { ButtonLink } = await import("./button");
+    const {
+      createMemoryHistory,
+      createRootRoute,
+      createRouter,
+      RouterProvider,
+    } = await import("@tanstack/react-router");
+    const rootRoute = createRootRoute({
+      component: () => <ButtonLink to="/">Start a project</ButtonLink>,
+    });
+    const router = createRouter({
+      routeTree: rootRoute,
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    render(<RouterProvider router={router} />);
+    return screen.findByRole("link", { name: "Start a project" });
+  }
+
+  it("looks like the green button and presses like it, on touch and from the keyboard", async () => {
+    const link = await renderLink();
+    expect(link.className).toContain("btn btn-primary");
+    fireEvent.pointerDown(link, { pointerType: "touch" });
+    expect(link.classList.contains(PRESSED_CLASS)).toBe(true);
+    fireEvent.pointerUp(link, { pointerType: "touch" });
+    expect(link.classList.contains(PRESSED_CLASS)).toBe(false);
+    fireEvent.keyDown(link, { key: "Enter" });
+    expect(link.classList.contains(PRESSED_CLASS)).toBe(true);
+    fireEvent.keyUp(link, { key: "Enter" });
+    expect(link.classList.contains(PRESSED_CLASS)).toBe(false);
+  });
+
+  it("holds still under reduced motion", async () => {
+    setReducedMotion(true);
+    const link = await renderLink();
+    fireEvent.pointerDown(link, { pointerType: "touch" });
+    expect(link.classList.contains(PRESSED_CLASS)).toBe(false);
+  });
+});

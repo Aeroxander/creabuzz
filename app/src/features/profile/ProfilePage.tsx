@@ -1,4 +1,3 @@
-import { Link } from "@tanstack/react-router";
 import { MessageSquare } from "lucide-react";
 import { BackHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
@@ -6,7 +5,7 @@ import { useFollowPerson, useFollows } from "../../lib/follows";
 import { nameOf, pictureOf, useProfiles } from "../../lib/profiles";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Avatar } from "../../ui/avatar";
-import { Button, buttonClass } from "../../ui/button";
+import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
 import { ProjectCard } from "../home/ProjectCard";
@@ -14,8 +13,15 @@ import { PostCard } from "../posts/PostCard";
 import { engagementOf, useEngagement, usePostsBy } from "../posts/use-posts";
 import { useProjectsBy } from "./use-own-projects";
 
-/** The head of a profile: picture, name, about. */
-export function ProfileHead({ pubkey }: { pubkey: string }) {
+/** The head of a profile: picture, name, about. The name is the screen's h1 unless the screen has its own. */
+export function ProfileHead({
+  pubkey,
+  level = "h1",
+}: {
+  pubkey: string;
+  level?: "h1" | "h2";
+}) {
+  const Heading = level;
   const profiles = useProfiles([pubkey]).data;
   const name = nameOf(profiles, pubkey);
   const about = profiles?.[pubkey]?.about?.trim();
@@ -28,7 +34,7 @@ export function ProfileHead({ pubkey }: { pubkey: string }) {
         size="lg"
       />
       <div className="min-w-0">
-        <h1 className="headline truncate text-2xl">{name}</h1>
+        <Heading className="headline truncate text-2xl">{name}</Heading>
         {about ? (
           <p className="mt-1 line-clamp-3 text-sm text-muted">{about}</p>
         ) : null}
@@ -55,7 +61,7 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
       className="screen mx-auto flex max-w-lg flex-col gap-5"
       data-testid="profile-page"
     >
-      <BackHeader title="Profile" />
+      <BackHeader heading={false} title="Profile" />
       <ProfileHead pubkey={pubkey} />
       {self ? null : (
         <div className="flex gap-2">
@@ -76,20 +82,26 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
           >
             {following ? "Following" : "Follow"}
           </Button>
-          <Link
-            className={buttonClass({ variant: "secondary" })}
+          <ButtonLink
             data-testid="profile-message"
             params={{ peer: pubkey }}
             to="/you/messages/$peer"
+            variant="secondary"
           >
             <MessageSquare aria-hidden="true" size={18} />
             Message
-          </Link>
+          </ButtonLink>
         </div>
       )}
       {projects.length > 0 ? (
-        <section aria-label="Projects" className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+        <section
+          aria-labelledby="profile-projects"
+          className="flex flex-col gap-3"
+        >
+          <h2
+            id="profile-projects"
+            className="text-sm font-semibold uppercase tracking-wider text-muted"
+          >
             Projects
           </h2>
           {projects.map((project) => (
@@ -101,8 +113,11 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
           ))}
         </section>
       ) : null}
-      <section aria-label="Posts" className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+      <section aria-labelledby="profile-posts" className="flex flex-col gap-3">
+        <h2
+          id="profile-posts"
+          className="text-sm font-semibold uppercase tracking-wider text-muted"
+        >
           Posts
         </h2>
         {posts.length === 0 ? (

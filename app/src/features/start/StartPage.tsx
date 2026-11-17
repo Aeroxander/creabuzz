@@ -2,7 +2,7 @@ import { KIND_LAUNCH_RECORD } from "@creaton/core/kinds.ts";
 import { userPubkey } from "@creaton/core/client/identity.ts";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScreenHeader } from "../../app/BackHeader";
 import { publishAsUser, read } from "../../lib/relay";
 import { useRequireAccount } from "../../lib/use-require-account";
@@ -18,6 +18,7 @@ import {
   projectId,
   projectRecordTemplate,
   type StartDraft,
+  missingAnswers,
   startProblems,
   startReady,
 } from "./start-record";
@@ -65,7 +66,19 @@ export function StartPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   useEffect(() => saveDraft(draft), [draft]);
-  const problems = startProblems(draft);
+  // After a press with answers missing, each empty box says what it needs, and the first one takes the focus.
+  const [tried, setTried] = useState(0);
+  const formRef = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    if (tried > 0)
+      formRef.current
+        ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+        ?.focus();
+  }, [tried]);
+  const problems = {
+    ...(tried > 0 ? missingAnswers(draft) : {}),
+    ...startProblems(draft),
+  };
   const set = (field: keyof StartDraft) => (value: string) =>
     setDraft((d) => ({ ...d, [field]: value }));
 
@@ -128,9 +141,15 @@ export function StartPage() {
       <form
         className="flex flex-col gap-5"
         data-testid="start-form"
+        ref={formRef}
+        noValidate
         onSubmit={(event) => {
           event.preventDefault();
-          if (!startReady(draft) || sending) return;
+          if (sending) return;
+          if (!startReady(draft)) {
+            setTried((n) => n + 1);
+            return;
+          }
           requireAccount(() => void start());
         }}
       >
@@ -140,7 +159,7 @@ export function StartPage() {
           data-testid="start-name"
           label="Name"
           onChange={(e) => set("name")(e.target.value)}
-          placeholder="Night Sky Maps"
+          placeholder="For example: Night Sky Maps"
           problem={problems.name}
           value={draft.name}
         />
@@ -149,7 +168,7 @@ export function StartPage() {
           data-testid="start-goal"
           label="What will you make?"
           onChange={(e) => set("goal")(e.target.value)}
-          placeholder="A first version that ten people use."
+          placeholder="For example: a first version that ten people use."
           problem={problems.goal}
           rows={3}
           value={draft.goal}
@@ -159,7 +178,7 @@ export function StartPage() {
           data-testid="start-how"
           label="How will people know it worked?"
           onChange={(e) => set("how")(e.target.value)}
-          placeholder="Ten people use it every week."
+          placeholder="For example: ten people use it every week."
           problem={problems.how}
           rows={2}
           value={draft.how}
@@ -172,7 +191,7 @@ export function StartPage() {
         <Button
           block
           data-testid="start-submit"
-          disabled={!startReady(draft) || sending}
+          disabled={sending}
           type="submit"
         >
           {sending ? "Starting…" : "Start"}

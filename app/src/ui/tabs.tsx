@@ -37,23 +37,35 @@ export function Tabs({
       >
         {items.map((item) => (
           <RadixTabs.Trigger
-            className="relative min-h-10 flex-1 whitespace-nowrap rounded-lg px-3 text-sm font-semibold text-muted transition-colors data-[state=active]:bg-white/18 data-[state=active]:text-ink focus-visible:outline-2 focus-visible:outline-mint-ink"
+            className="relative min-h-10 flex-1 whitespace-nowrap rounded-lg px-2.5 text-sm font-semibold text-muted transition-colors after:absolute after:inset-x-0 after:-inset-y-0.5 after:content-[''] data-[state=active]:bg-white/18 data-[state=active]:text-ink focus-visible:outline-2 focus-visible:outline-mint-ink"
             data-testid={`tab-${item.value}`}
             key={item.value}
             value={item.value}
           >
             {item.label}
             {item.soon ? (
-              <span className="ml-1.5 align-middle text-2xs font-medium text-muted">
-                soon
-              </span>
+              <>
+                {" "}
+                {/* The word where it fits; a small dot on the narrowest phones, so four tabs fit without scrolling. */}
+                <span
+                  aria-hidden="true"
+                  className="ml-0.5 hidden align-middle text-2xs font-medium text-muted min-[380px]:inline"
+                >
+                  soon
+                </span>
+                <span
+                  aria-hidden="true"
+                  className="ml-0.5 inline-block h-1.5 w-1.5 -translate-y-1.5 rounded-full bg-mint-ink/70 min-[380px]:hidden"
+                />
+                <span className="sr-only">(coming soon)</span>
+              </>
             ) : null}
           </RadixTabs.Trigger>
         ))}
       </RadixTabs.List>
       {items.map((item) => (
         <RadixTabs.Content
-          className="outline-none"
+          className="rounded-2xl outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-mint-ink"
           key={item.value}
           value={item.value}
         >

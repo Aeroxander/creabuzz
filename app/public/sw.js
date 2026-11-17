@@ -5,7 +5,7 @@
  *
  * Bounded: one cache, emptied of older versions on activation, and trimmed to MAX_ASSETS files.
  */
-const CACHE = "creaton-shell-v1";
+const CACHE = "creaton-shell-v2";
 const SHELL = [
   "/",
   "/assets/manifest.webmanifest",
@@ -13,6 +13,8 @@ const SHELL = [
   "/assets/icons/mark.svg",
 ];
 const MAX_ASSETS = 60;
+/** A built file's name ends in a content hash (`index-BX3aPc-r.js`); the manifest and icons do not. */
+const HASHED = /-[A-Za-z0-9_-]{8}\.[a-z0-9]+$/;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -43,7 +45,7 @@ async function trim(cache) {
 }
 
 async function keep(request, response) {
-  if (!response.ok || response.type !== "basic") return;
+  if (!response.ok || response.type !== "basic" || response.redirected) return;
   const cache = await caches.open(CACHE);
   await cache.put(request, response);
   await trim(cache);
@@ -60,7 +62,11 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          event.waitUntil(keep(new Request("/"), response.clone()));
+          // Only the app's own page becomes the offline shell: never a server file opened as a page (an image, a
+          // markdown or JSON file), and never a redirect, which a browser refuses to show for a page load.
+          const type = response.headers.get("content-type") ?? "";
+          if (type.startsWith("text/html"))
+            event.waitUntil(keep(new Request("/"), response.clone()));
           return response;
         })
         .catch(() => caches.match("/").then((hit) => hit ?? Response.error())),
@@ -68,17 +74,33 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // The shell's own files: built with a content hash in their names, so a kept copy is always right.
-  if (url.pathname.startsWith("/assets/")) {
+  if (!url.pathname.startsWith("/assets/")) return;
+
+  // The manifest and the icons keep their names between versions: the network first, so an update reaches the
+  // installed app; the kept copy when offline.
+  if (!HASHED.test(url.pathname)) {
     event.respondWith(
-      caches.match(request).then(
-        (hit) =>
-          hit ??
-          fetch(request).then((response) => {
-            event.waitUntil(keep(request, response.clone()));
-            return response;
-          }),
-      ),
+      fetch(request)
+        .then((response) => {
+          event.waitUntil(keep(request, response.clone()));
+          return response;
+        })
+        .catch(() =>
+          caches.match(request).then((hit) => hit ?? Response.error()),
+        ),
     );
+    return;
   }
+
+  // The built files: a content hash in their names, so a kept copy is always right.
+  event.respondWith(
+    caches.match(request).then(
+      (hit) =>
+        hit ??
+        fetch(request).then((response) => {
+          event.waitUntil(keep(request, response.clone()));
+          return response;
+        }),
+    ),
+  );
 });

@@ -37,6 +37,23 @@ export function startProblems(
   return out;
 }
 
+/** What to say for each answer still empty when Start is pressed. */
+const MISSING_WORDS: Record<keyof StartDraft, string> = {
+  name: "Give the project a name.",
+  goal: "Say what you will make.",
+  how: "Say how people will know it worked.",
+};
+
+/** The answers still empty, field by field, in the order they are asked. */
+export function missingAnswers(
+  draft: StartDraft,
+): Partial<Record<keyof StartDraft, string>> {
+  const out: Partial<Record<keyof StartDraft, string>> = {};
+  for (const field of ["name", "goal", "how"] as const)
+    if (draft[field].trim() === "") out[field] = MISSING_WORDS[field];
+  return out;
+}
+
 export function startReady(draft: StartDraft): boolean {
   return (
     draft.name.trim() !== "" &&

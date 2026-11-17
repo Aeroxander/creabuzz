@@ -1,15 +1,14 @@
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { APP_NAME } from "@creaton/core/brand.ts";
-import { Link } from "@tanstack/react-router";
 import { PenLine, Sprout } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { Mark } from "../../app/Mark";
 import { useAccount } from "../../lib/account";
 import { useFollows } from "../../lib/follows";
 import { useProfiles } from "../../lib/profiles";
 import { investingOn } from "../../lib/server";
 import { useRequireAccount } from "../../lib/use-require-account";
-import { Button, buttonClass } from "../../ui/button";
+import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { ComposerSheet } from "../posts/Composer";
@@ -31,13 +30,17 @@ function Section({
   children: ReactNode;
   testId?: string;
 }) {
+  const id = useId();
   return (
     <section
-      aria-label={title}
+      aria-labelledby={id}
       className="flex flex-col gap-3"
       data-testid={testId}
     >
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted">
+      <h2
+        className="text-sm font-semibold uppercase tracking-wider text-muted"
+        id={id}
+      >
         {title}
       </h2>
       {children}
@@ -92,6 +95,7 @@ export function HomePage() {
         </Button>
       </header>
 
+      {pubkey ? <h1 className="sr-only">Home</h1> : null}
       {pubkey ? null : (
         <section className="flex flex-col gap-4" data-testid="home-welcome">
           <h1 className="headline text-4xl">
@@ -102,9 +106,9 @@ export function HomePage() {
             Every project says what it will do, posts what it did each week, and
             shows whether it kept its word.
           </p>
-          <Link className={buttonClass({ block: true })} to="/start">
+          <ButtonLink block data-testid="home-start" to="/start">
             Start a project
-          </Link>
+          </ButtonLink>
         </section>
       )}
 
@@ -153,7 +157,22 @@ export function HomePage() {
             {readFailureWords(projects.error).text}
           </EmptyState>
         ) : shipping.length === 0 && followed.length === 0 ? (
-          <EmptyState icon={<Sprout size={28} />} title="No projects yet">
+          <EmptyState
+            action={
+              // Signed out, the welcome above already has the green Start; secondary here keeps one green per screen.
+              pubkey ? (
+                <ButtonLink
+                  data-testid="home-empty-start"
+                  to="/start"
+                  variant="secondary"
+                >
+                  Start a project
+                </ButtonLink>
+              ) : null
+            }
+            icon={<Sprout size={28} />}
+            title="No projects yet"
+          >
             Be the first: say what you are making.
           </EmptyState>
         ) : (

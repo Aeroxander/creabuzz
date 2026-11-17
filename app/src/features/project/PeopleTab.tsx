@@ -41,7 +41,7 @@ function Person({
       />
       <div className="min-w-0 flex-1">
         <Link
-          className="block truncate font-semibold hover:underline"
+          className="-my-1.5 block truncate py-1.5 font-semibold hover:underline"
           params={{ pubkey }}
           to="/u/$pubkey"
         >

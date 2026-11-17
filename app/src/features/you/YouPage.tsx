@@ -5,7 +5,7 @@ import {
   removePasskeyIdentity,
 } from "@creaton/core/account/passkey-identity.ts";
 import { forgetIdentity } from "@creaton/core/client/identity.ts";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import {
   ChevronRight,
   KeyRound,
@@ -15,18 +15,18 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { ScreenHeader } from "../../app/BackHeader";
-import { announceAccountChange, useAccount } from "../../lib/account";
+import { useAccount } from "../../lib/account";
 import { nameOf, useProfiles } from "../../lib/profiles";
 import { saveProfile } from "../../lib/profile-save";
 import { investingOn } from "../../lib/server";
-import { Button, buttonClass } from "../../ui/button";
+import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { Field, TextArea } from "../../ui/field";
 import { Dialog, Sheet } from "../../ui/sheet";
 import { Tabs } from "../../ui/tabs";
 import { useToast } from "../../ui/toast";
-import { RecoveryKeyPanel } from "../account/RecoveryKeySheet";
+import { BACKED_UP_KEY, RecoveryKeyPanel } from "../account/RecoveryKeySheet";
 import { ProjectCard } from "../home/ProjectCard";
 import { NotificationsList } from "../notifications/NotificationsList";
 import { ProfileHead } from "../profile/ProfilePage";
@@ -46,13 +46,9 @@ function SignedOut() {
       <EmptyState
         action={
           <div className="flex flex-col items-center gap-3">
-            <Link
-              className={buttonClass()}
-              data-testid="you-sign-up"
-              to="/welcome"
-            >
+            <ButtonLink data-testid="you-sign-up" to="/welcome">
               {CREATE_ACCOUNT}
-            </Link>
+            </ButtonLink>
             <Link
               className="link min-h-11 font-semibold"
               search={{ mode: "signin" }}
@@ -95,9 +91,9 @@ function SignedIn({ me }: { me: string }) {
         }
         title="You"
       />
-      <ProfileHead pubkey={me} />
+      <ProfileHead level="h2" pubkey={me} />
       <Link
-        className="glass flex min-h-14 items-center gap-3 rounded-2xl px-4"
+        className="glass glass-text flex min-h-14 items-center gap-3 rounded-2xl px-4"
         data-testid="you-messages"
         to="/you/messages"
       >
@@ -161,6 +157,7 @@ function SignedIn({ me }: { me: string }) {
         initialName={
           nameOf(profiles, me) === "Someone" ? "" : nameOf(profiles, me)
         }
+        hasProfile={Boolean(profiles?.[me])}
         initialAbout={profiles?.[me]?.about ?? ""}
         me={me}
         onOpenChange={setEditing}
@@ -176,8 +173,11 @@ function EditProfileSheet({
   onOpenChange,
   initialName,
   initialAbout,
+  hasProfile,
 }: {
   me: string;
+  /** The person's profile was read: saving must then build on it, never start from empty. */
+  hasProfile: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialName: string;
@@ -215,7 +215,7 @@ function EditProfileSheet({
         disabled={!name.trim() || saving}
         onClick={() => {
           setSaving(true);
-          saveProfile(me, { name, about })
+          saveProfile(me, { name, about }, { expectExisting: hasProfile })
             .then(() => {
               toast("Saved", "done");
               onOpenChange(false);
@@ -233,7 +233,6 @@ function EditProfileSheet({
 function AccountTab() {
   const [showKey, setShowKey] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const navigate = useNavigate();
   return (
     <div className="flex flex-col gap-3" data-testid="account-tab">
       <Button block onClick={() => setShowKey(true)} variant="secondary">
@@ -274,9 +273,14 @@ function AccountTab() {
               clearPasskeySession();
               if (hasPasskeyIdentity()) removePasskeyIdentity();
               forgetIdentity();
-              announceAccountChange();
-              setSigningOut(false);
-              void navigate({ to: "/" });
+              try {
+                localStorage.removeItem(BACKED_UP_KEY);
+              } catch {
+                // Storage refused: there is nothing kept to remove.
+              }
+              // A full page load, as web/ does: it drops everything held in memory for this account (opened
+              // messages, notifications, follows), so nothing of it stays readable on a shared phone.
+              window.location.assign("/");
             }}
             variant="secondary"
           >

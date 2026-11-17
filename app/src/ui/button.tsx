@@ -1,3 +1,4 @@
+import { createLink } from "@tanstack/react-router";
 import type { ComponentProps } from "react";
 import { cn } from "./cn";
 import { pressHandlers } from "./press";
@@ -70,3 +71,47 @@ export function Button({
     />
   );
 }
+
+interface ButtonAnchorProps extends ComponentProps<"a"> {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  block?: boolean;
+}
+
+/** An anchor that looks and presses like the button: the same spring on a finger, a mouse, Space and Enter. */
+function ButtonAnchor({
+  variant,
+  size,
+  block,
+  className,
+  onPointerDown,
+  onPointerUp,
+  onPointerLeave,
+  onPointerCancel,
+  onKeyDown,
+  onKeyUp,
+  onBlur,
+  ...rest
+}: ButtonAnchorProps) {
+  return (
+    <a
+      {...rest}
+      {...pressHandlers({
+        onPointerDown,
+        onPointerUp,
+        onPointerLeave,
+        onPointerCancel,
+        onKeyDown,
+        onKeyUp,
+        onBlur,
+      })}
+      className={cn(buttonClass({ variant, size, block }), className)}
+    />
+  );
+}
+
+/**
+ * A link to another screen that looks like a button (the green "Start a project"), with the press a button has. Use
+ * it instead of a `Link` with `buttonClass()`, which would look like a button but not press like one.
+ */
+export const ButtonLink = createLink(ButtonAnchor);

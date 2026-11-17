@@ -16,7 +16,7 @@ export function ProjectCard({
   const people = 1 + project.team.length;
   return (
     <Link
-      className="glass flex flex-col gap-2 rounded-2xl p-4 transition-[filter] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-mint-ink"
+      className="glass glass-text flex flex-col gap-2 rounded-2xl p-4 transition-[filter] hover:brightness-110 focus-visible:outline-2 focus-visible:outline-mint-ink"
       data-testid="project-card"
       params={{ ref: projectRef(project) }}
       to="/p/$ref"

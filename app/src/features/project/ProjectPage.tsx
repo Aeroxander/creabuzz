@@ -87,6 +87,7 @@ function ProjectView({ project }: { project: Project }) {
     >
       <BackHeader
         action={<FollowButton coordinate={project.coordinate} />}
+        heading={false}
         title="Project"
       />
       <header className="flex flex-col gap-3">
@@ -158,12 +159,17 @@ function ProjectView({ project }: { project: Project }) {
               />
             ),
           },
-          {
-            value: "money",
-            label: "Money",
-            soon: true,
-            content: <MoneyTab investing={investing} />,
-          },
+          // Money exists only where the server turns investing on: nothing set, nothing shown.
+          ...(investing
+            ? [
+                {
+                  value: "money",
+                  label: "Money",
+                  soon: true,
+                  content: <MoneyTab />,
+                },
+              ]
+            : []),
         ]}
         label={`${project.name} sections`}
         onValueChange={setTab}
@@ -174,18 +180,7 @@ function ProjectView({ project }: { project: Project }) {
 }
 
 /** Money is a placeholder in this part: what it will hold, and the ownership line wherever money is offered. */
-function MoneyTab({ investing }: { investing: boolean }) {
-  if (!investing)
-    return (
-      <EmptyState
-        icon={<Banknote size={28} />}
-        testId="money-off"
-        title="No money on this server"
-      >
-        This server does not offer backing, so projects here have no money to
-        show.
-      </EmptyState>
-    );
+function MoneyTab() {
   return (
     <EmptyState
       icon={<Banknote size={28} />}

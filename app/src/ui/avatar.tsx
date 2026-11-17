@@ -57,7 +57,7 @@ export function Avatar({
         showPicture
           ? undefined
           : {
-              background: `linear-gradient(160deg, hsl(${hue} 60% 52%), hsl(${(hue + 40) % 360} 55% 34%))`,
+              background: `linear-gradient(160deg, hsl(${hue} 55% 40%), hsl(${(hue + 40) % 360} 55% 28%))`,
             }
       }
     >

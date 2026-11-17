@@ -14,7 +14,7 @@ export function Card({
     <div
       {...rest}
       className={cn(
-        tone === "glass" ? "glass" : "plain",
+        tone === "glass" ? "glass glass-text" : "plain",
         "rounded-2xl p-4",
         className,
       )}

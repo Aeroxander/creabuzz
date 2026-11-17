@@ -180,7 +180,7 @@ test("the open rounds slot shows only where the server turns investing on", asyn
   });
 });
 
-test("a project shows its stage, its updates and its people; Tasks and Money are marked as coming", async ({
+test("a project shows its stage, its updates and its people; Tasks is marked as coming and Money is absent without investing", async ({
   page,
 }) => {
   const relay = createMockRelay();
@@ -202,13 +202,49 @@ test("a project shows its stage, its updates and its people; Tasks and Money are
   await expect(page.getByTestId("project-people")).toContainText("Max Mate");
   await page.getByTestId("tab-tasks").click();
   await expect(page.getByTestId("tasks-placeholder")).toBeVisible();
-  await page.getByTestId("tab-money").click();
-  await expect(page.getByTestId("money-off")).toBeVisible();
+  // Nothing set on the server, nothing shown: no Money tab at all.
+  await expect(page.getByTestId("tab-money")).toHaveCount(0);
+  await expect(
+    page.getByRole("tab", { name: "Tasks (coming soon)" }),
+  ).toBeVisible();
   await expect(page.getByTestId("tab-link-home")).toHaveAttribute(
     "aria-current",
     "page",
   );
   await expectNoSidewaysScroll(page, "Project");
+});
+
+test("with investing on, a team that never raised money is not shown as backed, and four tabs fit at 360", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  const relay = createMockRelay();
+  seed(relay);
+  await install(page, relay, READER_KEY, { investing: true });
+  await page.goto(PROJECT);
+  await expect(page.getByTestId("project-name")).toHaveText("Lantern", {
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("stage-team")).toHaveAttribute(
+    "data-reached",
+    "now",
+  );
+  await expect(page.getByTestId("stage-solo")).toHaveAttribute(
+    "data-reached",
+    "done",
+  );
+  await expect(page.getByTestId("stage-backed")).toHaveAttribute(
+    "data-reached",
+    "no",
+  );
+  const rail = page.getByRole("tablist");
+  const fits = await rail.evaluate((el) => el.scrollWidth <= el.clientWidth);
+  expect(fits, "the four tabs fit without scrolling at 360").toBe(true);
+  await page.getByTestId("tab-money").click();
+  await expect(page.getByTestId("money-placeholder")).toContainText(
+    "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one.",
+  );
+  await expectNoSidewaysScroll(page, "Project, investing on, 360");
 });
 
 test("a post opens with its comments", async ({ page }) => {
@@ -242,12 +278,62 @@ test("You shows notifications, projects and the account, signed in", async ({
   await expectNoSidewaysScroll(page, "You");
 });
 
+test("signing out reloads the page, so nothing of the account stays in memory", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seed(relay);
+  await install(page, relay, FOUNDER_KEY);
+  await page.goto("/you");
+  await expect(page.getByTestId("profile-head")).toContainText("Fay Founder", {
+    timeout: 20_000,
+  });
+  // A mark that only survives without a page load; and the next load comes up signed out.
+  await page.evaluate(() => {
+    (window as unknown as { kept?: number }).kept = 1;
+    localStorage.setItem("e2e.key", "none");
+  });
+  await page.getByTestId("tab-account").click();
+  await page.getByTestId("sign-out").click();
+  await page.getByTestId("sign-out-confirm").click();
+  await page.waitForURL((url) => url.pathname === "/");
+  await expect(page.getByTestId("home-welcome")).toBeVisible({
+    timeout: 20_000,
+  });
+  expect(
+    await page.evaluate(() => ({
+      kept: (window as unknown as { kept?: number }).kept ?? null,
+      backedUp: localStorage.getItem("buzz.identity.backedUp"),
+      key: localStorage.getItem("buzz.identity.nsec"),
+    })),
+  ).toEqual({ kept: null, backedUp: null, key: null });
+});
+
 test("You asks a signed-out person to make an account", async ({ page }) => {
   const relay = createMockRelay();
   await install(page, relay, null);
   await page.goto("/you");
   await expect(page.getByTestId("you-signed-out")).toBeVisible();
   await expectAtMostOneGreen(page, "You, signed out");
+});
+
+test("Start pressed with answers missing says what each needs and moves to the first", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seed(relay);
+  await install(page, relay, READER_KEY);
+  await page.goto("/start");
+  await page.getByTestId("start-goal").fill("A map of the night sky.");
+  await page.getByTestId("start-submit").click();
+  await expect(page.getByText("Give the project a name.")).toBeVisible();
+  await expect(
+    page.getByText("Say how people will know it worked."),
+  ).toBeVisible();
+  await expect(page.getByTestId("start-name")).toBeFocused();
+  expect(
+    relay.events.some((e) => e.kind === 37001 && e.pubkey === READER),
+  ).toBe(false);
 });
 
 test("Start: three answers and the presses the plan allows, then the project's page", async ({

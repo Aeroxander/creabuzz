@@ -4,7 +4,7 @@ import { CalendarCheck, PenLine } from "lucide-react";
 import { useState } from "react";
 import { ScreenHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
-import { buttonClass, Button } from "../../ui/button";
+import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { ComposerSheet } from "../posts/Composer";
@@ -30,11 +30,7 @@ export function WeekPage() {
       </p>
       {!pubkey || (projects.data && projects.data.length === 0) ? (
         <EmptyState
-          action={
-            <Link className={buttonClass()} to="/start">
-              Start a project
-            </Link>
-          }
+          action={<ButtonLink to="/start">Start a project</ButtonLink>}
           icon={<CalendarCheck size={28} />}
           title="Nothing to do yet"
         >

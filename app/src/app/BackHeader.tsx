@@ -2,14 +2,20 @@ import { useRouter } from "@tanstack/react-router";
 import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
 
-/** A screen reached from another: Back on the left (to where the person came from, else Home), a title, an action. */
+/**
+ * A screen reached from another: Back on the left (to where the person came from, else Home), a title, an action.
+ * The title is the screen's heading unless the screen has its own (`heading={false}`), so there is one h1 per screen.
+ */
 export function BackHeader({
   title,
   action,
+  heading = true,
 }: {
   title: string;
   action?: ReactNode;
+  heading?: boolean;
 }) {
+  const Title = heading ? "h1" : "p";
   const router = useRouter();
   return (
     <header className="flex min-h-12 items-center justify-between gap-2">
@@ -25,7 +31,7 @@ export function BackHeader({
         <ChevronLeft aria-hidden="true" size={20} />
         Back
       </button>
-      <h1 className="truncate text-base font-semibold">{title}</h1>
+      <Title className="truncate text-base font-semibold">{title}</Title>
       <div className="min-w-16 text-right">{action}</div>
     </header>
   );

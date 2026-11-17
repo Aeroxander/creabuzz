@@ -31,7 +31,7 @@ export function Byline({
       />
       <div className="flex min-w-0 items-baseline gap-2">
         <Link
-          className="truncate text-sm font-semibold hover:underline"
+          className="-my-3 truncate py-3 text-sm font-semibold hover:underline"
           params={{ pubkey }}
           to="/u/$pubkey"
         >
@@ -81,8 +81,8 @@ export function PostActions({
         aria-label={`Like, ${engagement.ups}`}
         aria-pressed={liked}
         className={cn(
-          "btn btn-ghost btn-sm text-muted",
-          liked && "text-mint-ink",
+          "btn btn-ghost btn-sm",
+          liked ? "text-mint-ink" : "text-muted",
         )}
         data-testid="post-like"
         disabled={like.isPending}

@@ -37,6 +37,8 @@
   --glass-strong: rgb(255 255 255 / 0.22);
   --glass-line: rgb(255 255 255 / 0.38);
   --glass-shade: hsl(266 70% 8% / 0.6);
+  /* Under the frost of a pane that holds small text: keeps muted text at 4.5:1 over the bright lower half. */
+  --glass-tint: hsl(266 60% 12% / 0.32);
   /* The calmer surface for long reading (a post, a thread): the open point in DIRECTION.md. */
   --plain: hsl(266 55% 11% / 0.62);
   --plain-line: rgb(255 255 255 / 0.14);
@@ -53,6 +55,9 @@
 /* The page colour sits on html only: a body background would paint over the fixed gradient below. */
 html {
   background: var(--grad-1);
+  /* Keyboard focus never hides under the fixed tab bar or the notch (WCAG 2.4.11). */
+  scroll-padding-top: var(--safe-top);
+  scroll-padding-bottom: calc(var(--tabbar-height) + var(--safe-bottom) + 8px);
 }
 
 html,
@@ -69,269 +74,336 @@ body {
   overscroll-behavior-y: none;
 }
 
-/* The gradient and its two glows, fixed behind every screen. */
-.app-bg {
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(70% 55% at 100% 100%, var(--glow-mint), transparent 70%),
-    radial-gradient(60% 45% at 0% 0%, var(--glow-violet), transparent 70%),
-    linear-gradient(
-      155deg,
-      var(--grad-1) 0%,
-      var(--grad-2) 38%,
-      var(--grad-3) 72%,
-      var(--grad-4) 100%
-    );
-}
-
-/* Headlines: Geist bold, tight. */
-.headline {
-  font-weight: 700;
-  letter-spacing: -0.035em;
-  line-height: 1.08;
-  text-wrap: balance;
-}
-
-/* Every number that lines up. */
-.num {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-/* A frosted pane on the gradient: fields, chips, cards, secondary buttons. */
-.glass {
-  background: var(--glass);
-  border: 1px solid var(--glass-line);
-  -webkit-backdrop-filter: blur(14px) saturate(1.5);
-  backdrop-filter: blur(14px) saturate(1.5);
-  box-shadow:
-    inset 0 1px 0 var(--glass-strong),
-    0 6px 16px -10px var(--glass-shade);
-}
-
-.plain {
-  background: var(--plain);
-  border: 1px solid var(--plain-line);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  backdrop-filter: blur(14px) saturate(1.2);
-}
-
-.field {
-  height: 48px;
-  border-radius: 12px;
-  padding: 0 14px;
-  font-size: 1rem;
-  color: var(--color-ink);
-  width: 100%;
-  outline: none;
-}
-textarea.field {
-  height: auto;
-  min-height: 96px;
-  padding: 12px 14px;
-  resize: vertical;
-  line-height: 1.45;
-}
-.field::placeholder {
-  color: var(--color-muted);
-  opacity: 0.8;
-}
-.field:focus-visible {
-  border-color: var(--color-mint-ink);
-  box-shadow:
-    inset 0 1px 0 var(--glass-strong),
-    0 0 0 3px rgb(134 214 168 / 0.35);
-}
-.field[aria-invalid="true"] {
-  border-color: var(--color-danger);
-}
-
-.chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border-radius: 8px;
-  padding: 4px 10px;
-  font-size: 0.8125rem;
-  line-height: 1.3;
-}
-.chip-ok::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--color-mint);
+/* One focus ring for every link: the same green ring the buttons and cards have. In the base layer, so a link's own
+ * utilities can still change it. */
+@layer base {
+  a:focus-visible {
+    outline: 2px solid var(--color-mint-ink);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
 }
 
 /*
- * Buttons. 48px tall (40px small), 12px corners, 16px semibold. The press: scale to 96.5% in about 70ms, spring back
- * in about 300ms with a small overshoot. `.is-pressed` is the same as `:active` for touch screens that do not report
- * :active (set by `usePress`, never under reduced motion).
+ * The components sit in Tailwind's components layer, so a utility passed in className (text-ink on a ghost button,
+ * min-h-12 on a text box) always wins over them. Unlayered rules would beat every utility.
  */
-.btn {
-  font-family: var(--font-sans);
-  font-size: 1rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  height: 48px;
-  padding: 0 22px;
-  border-radius: 12px;
-  border: 1px solid transparent;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  cursor: pointer;
-  color: var(--color-ink);
-  background: transparent;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-  transition:
-    transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
-    box-shadow 0.3s ease,
-    background 0.15s ease,
-    filter 0.15s ease;
-  will-change: transform;
-}
-.btn:focus-visible {
-  outline: 3px solid var(--color-mint-ink);
-  outline-offset: 2px;
-}
-.btn:hover {
-  filter: brightness(1.05);
-}
-.btn:active,
-.btn.is-pressed {
-  transition-duration: 0.07s, 0.07s, 0.07s, 0.07s;
-  transition-timing-function: cubic-bezier(0.2, 0, 0.4, 1);
-  transform: scale(0.965);
-  filter: brightness(0.97);
-}
-.btn-primary {
-  color: var(--color-on-mint);
-  border-color: var(--glass-line);
-  /* the green of the Creaton mark's gradient, shaded down for the lower half */
-  background: linear-gradient(180deg, #63c88e, #47a873);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.6),
-    inset 0 -8px 14px -10px hsl(153 75% 24% / 0.5),
-    0 10px 24px -10px hsl(153 59% 35% / 0.75);
-}
-.btn-primary:hover {
-  transform: translateY(-1px);
-  box-shadow:
-    inset 0 1px 0 rgb(255 255 255 / 0.55),
-    inset 0 -8px 14px -10px rgb(30 90 60 / 0.6),
-    0 14px 28px -10px rgb(40 120 80 / 0.8);
-}
-.btn-primary:active,
-.btn-primary.is-pressed {
-  transform: scale(0.965);
-  box-shadow:
-    inset 0 2px 6px hsl(153 75% 20% / 0.45),
-    0 2px 6px -4px hsl(153 59% 35% / 0.6);
-}
-.btn-secondary {
-  border-color: var(--glass-line);
-  background: var(--glass);
-  -webkit-backdrop-filter: blur(14px) saturate(1.5);
-  backdrop-filter: blur(14px) saturate(1.5);
-  box-shadow:
-    inset 0 1px 0 var(--glass-strong),
-    0 6px 16px -10px var(--glass-shade);
-}
-.btn-secondary:hover {
-  background: var(--glass-strong);
-}
-.btn-ghost {
-  color: var(--color-mint-ink);
-  padding: 0 8px;
-}
-.btn-ghost:hover {
-  background: rgb(255 255 255 / 0.14);
-}
-.btn-sm {
-  height: 40px;
-  font-size: 0.875rem;
-  padding: 0 15px;
-}
-.btn-block {
-  width: 100%;
-}
-.btn[disabled],
-.btn[aria-disabled="true"] {
-  opacity: 0.45;
-  cursor: not-allowed;
-  transform: none;
-  filter: none;
-}
-.btn-primary[disabled] {
-  box-shadow: none;
-}
+@layer components {
+  /* The gradient and its two glows, fixed behind every screen. */
+  .app-bg {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(70% 55% at 100% 100%, var(--glow-mint), transparent 70%),
+      radial-gradient(60% 45% at 0% 0%, var(--glow-violet), transparent 70%),
+      linear-gradient(
+        155deg,
+        var(--grad-1) 0%,
+        var(--grad-2) 38%,
+        var(--grad-3) 72%,
+        var(--grad-4) 100%
+      );
+  }
 
-/* Reduced motion turns the press off: no travel, no spring. */
-@media (prefers-reduced-motion: reduce) {
-  .btn,
-  .btn:hover,
+  /* Headlines: Geist bold, tight. */
+  .headline {
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+    text-wrap: balance;
+  }
+
+  /* Every number that lines up. */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A frosted pane on the gradient: fields, chips, cards, secondary buttons. */
+  .glass {
+    background: var(--glass);
+    border: 1px solid var(--glass-line);
+    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+    backdrop-filter: blur(14px) saturate(1.5);
+    box-shadow:
+      inset 0 1px 0 var(--glass-strong),
+      0 6px 16px -10px var(--glass-shade);
+  }
+
+  /* The same frost over a dark tint, for a glass pane with small text on it (cards, lists, empty states). */
+  .glass-text {
+    background: linear-gradient(var(--glass), var(--glass)), var(--glass-tint);
+  }
+
+  .plain {
+    background: var(--plain);
+    border: 1px solid var(--plain-line);
+    -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    backdrop-filter: blur(14px) saturate(1.2);
+  }
+
+  .field {
+    height: 48px;
+    border-radius: 12px;
+    padding: 0 14px;
+    font-size: 1rem;
+    color: var(--color-ink);
+    width: 100%;
+    outline: none;
+  }
+  textarea.field {
+    height: auto;
+    min-height: 96px;
+    padding: 12px 14px;
+    resize: vertical;
+    line-height: 1.45;
+  }
+  .field::placeholder {
+    color: var(--color-muted);
+    opacity: 0.8;
+  }
+  .field:focus-visible {
+    border-color: var(--color-mint-ink);
+    box-shadow:
+      inset 0 1px 0 var(--glass-strong),
+      0 0 0 3px rgb(134 214 168 / 0.35);
+  }
+  .field[aria-invalid="true"] {
+    border-color: var(--color-danger);
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 0.8125rem;
+    line-height: 1.3;
+  }
+  .chip-ok::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-mint);
+  }
+
+  /*
+   * Buttons. 48px tall (40px small), 12px corners, 16px semibold. The press: scale to 96.5% in about 70ms, spring back
+   * in about 300ms with a small overshoot. `.is-pressed` is the same as `:active` for touch screens that do not report
+   * :active (set by `usePress`, never under reduced motion).
+   */
+  .btn {
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    height: 48px;
+    padding: 0 22px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: pointer;
+    color: var(--color-ink);
+    background: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+    transition:
+      transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+      box-shadow 0.3s ease,
+      background 0.15s ease,
+      filter 0.15s ease;
+    will-change: transform;
+  }
+  .btn:focus-visible {
+    outline: 3px solid var(--color-mint-ink);
+    outline-offset: 2px;
+  }
+  .btn:hover {
+    filter: brightness(1.05);
+  }
   .btn:active,
-  .btn.is-pressed,
-  .btn-primary:hover,
+  .btn.is-pressed {
+    transition-duration: 0.07s, 0.07s, 0.07s, 0.07s;
+    transition-timing-function: cubic-bezier(0.2, 0, 0.4, 1);
+    transform: scale(0.965);
+    filter: brightness(0.97);
+  }
+  .btn-primary {
+    color: var(--color-on-mint);
+    border-color: var(--glass-line);
+    /* the green of the Creaton mark's gradient, shaded down for the lower half */
+    background: linear-gradient(180deg, #63c88e, #47a873);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.6),
+      inset 0 -8px 14px -10px hsl(153 75% 24% / 0.5),
+      0 10px 24px -10px hsl(153 59% 35% / 0.75);
+  }
+  .btn-primary:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.55),
+      inset 0 -8px 14px -10px rgb(30 90 60 / 0.6),
+      0 14px 28px -10px rgb(40 120 80 / 0.8);
+  }
   .btn-primary:active,
   .btn-primary.is-pressed {
-    transition: none;
+    transform: scale(0.965);
+    box-shadow:
+      inset 0 2px 6px hsl(153 75% 20% / 0.45),
+      0 2px 6px -4px hsl(153 59% 35% / 0.6);
+  }
+  .btn-secondary {
+    border-color: var(--glass-line);
+    background: var(--glass);
+    -webkit-backdrop-filter: blur(14px) saturate(1.5);
+    backdrop-filter: blur(14px) saturate(1.5);
+    box-shadow:
+      inset 0 1px 0 var(--glass-strong),
+      0 6px 16px -10px var(--glass-shade);
+  }
+  .btn-secondary:hover {
+    background: var(--glass-strong);
+  }
+  .btn-ghost {
+    color: var(--color-mint-ink);
+    padding: 0 8px;
+  }
+  .btn-ghost:hover {
+    background: rgb(255 255 255 / 0.14);
+  }
+  .btn-sm {
+    position: relative;
+    height: 40px;
+    font-size: 0.875rem;
+    padding: 0 15px;
+  }
+  /* A small button looks 40px tall but takes a 44px touch. */
+  .btn-sm::after {
+    content: "";
+    position: absolute;
+    inset: -2px 0;
+  }
+  .btn-block {
+    width: 100%;
+  }
+  .btn[disabled],
+  .btn[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
     transform: none;
+    filter: none;
+  }
+  .btn-primary[disabled] {
+    box-shadow: none;
+  }
+
+  /* Reduced motion turns the press off: no travel, no spring. */
+  @media (prefers-reduced-motion: reduce) {
+    .btn,
+    .btn:hover,
+    .btn:active,
+    .btn.is-pressed,
+    .btn-primary:hover,
+    .btn-primary:active,
+    .btn-primary.is-pressed {
+      transition: none;
+      transform: none;
+    }
+  }
+
+  /* The bottom tab bar, over the home indicator. */
+  .tabbar {
+    padding-bottom: var(--safe-bottom);
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
+    /* Nearly solid: Chromium does not blur the post panes (they have their own blur) under the labels. */
+    background: hsl(266 60% 9% / 0.97);
+    border-top: 1px solid rgb(255 255 255 / 0.16);
+    -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    backdrop-filter: blur(18px) saturate(1.5);
+  }
+
+  .screen {
+    padding-top: calc(var(--safe-top) + 12px);
+    padding-left: max(16px, var(--safe-left));
+    padding-right: max(16px, var(--safe-right));
+    padding-bottom: calc(var(--tabbar-height) + var(--safe-bottom) + 24px);
+  }
+
+  /* Sheets and dialogs from Radix. */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: hsl(266 70% 5% / 0.55);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
+  .sheet {
+    background: linear-gradient(
+      180deg,
+      hsl(266 55% 18% / 0.94),
+      hsl(266 60% 12% / 0.96)
+    );
+    border: 1px solid var(--glass-line);
+    -webkit-backdrop-filter: blur(18px) saturate(1.4);
+    backdrop-filter: blur(18px) saturate(1.4);
+    box-shadow: 0 -20px 48px -24px hsl(266 70% 4% / 0.8);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .sheet[data-state="open"] {
+      animation: sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+    .toast-item {
+      animation: toast-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+  }
+  /* Links in running text. */
+  .link {
+    color: var(--color-mint-ink);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  /* A checkbox that reads on the gradient. */
+  .check {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    flex: none;
+    border-radius: 6px;
+    border: 1.5px solid var(--glass-line);
+    background: var(--glass);
+    display: grid;
+    place-content: center;
+    cursor: pointer;
+  }
+  .check:checked {
+    background: linear-gradient(180deg, #63c88e, #47a873);
+    border-color: transparent;
+  }
+  .check:checked::after {
+    content: "";
+    width: 6px;
+    height: 11px;
+    border: solid var(--color-on-mint);
+    border-width: 0 2.5px 2.5px 0;
+    transform: translateY(-1px) rotate(45deg);
+  }
+  .check:focus-visible {
+    outline: 3px solid var(--color-mint-ink);
+    outline-offset: 2px;
   }
 }
 
-/* The bottom tab bar, over the home indicator. */
-.tabbar {
-  padding-bottom: var(--safe-bottom);
-  padding-left: var(--safe-left);
-  padding-right: var(--safe-right);
-  background: hsl(266 60% 9% / 0.9);
-  border-top: 1px solid rgb(255 255 255 / 0.16);
-  -webkit-backdrop-filter: blur(18px) saturate(1.5);
-  backdrop-filter: blur(18px) saturate(1.5);
-}
-
-.screen {
-  padding-top: calc(var(--safe-top) + 12px);
-  padding-left: max(16px, var(--safe-left));
-  padding-right: max(16px, var(--safe-right));
-  padding-bottom: calc(var(--tabbar-height) + var(--safe-bottom) + 24px);
-}
-
-/* Sheets and dialogs from Radix. */
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: hsl(266 70% 5% / 0.55);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-}
-.sheet {
-  background: linear-gradient(
-    180deg,
-    hsl(266 55% 18% / 0.94),
-    hsl(266 60% 12% / 0.96)
-  );
-  border: 1px solid var(--glass-line);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  backdrop-filter: blur(18px) saturate(1.4);
-  box-shadow: 0 -20px 48px -24px hsl(266 70% 4% / 0.8);
-}
-@media (prefers-reduced-motion: no-preference) {
-  .sheet[data-state="open"] {
-    animation: sheet-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-  .toast-item {
-    animation: toast-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-}
 @keyframes sheet-up {
   from {
     transform: translateY(24px);
@@ -343,42 +415,4 @@ textarea.field {
     transform: translateY(-8px);
     opacity: 0;
   }
-}
-
-/* Links in running text. */
-.link {
-  color: var(--color-mint-ink);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
-/* A checkbox that reads on the gradient. */
-.check {
-  appearance: none;
-  -webkit-appearance: none;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  border-radius: 6px;
-  border: 1.5px solid var(--glass-line);
-  background: var(--glass);
-  display: grid;
-  place-content: center;
-  cursor: pointer;
-}
-.check:checked {
-  background: linear-gradient(180deg, #63c88e, #47a873);
-  border-color: transparent;
-}
-.check:checked::after {
-  content: "";
-  width: 6px;
-  height: 11px;
-  border: solid var(--color-on-mint);
-  border-width: 0 2.5px 2.5px 0;
-  transform: translateY(-1px) rotate(45deg);
-}
-.check:focus-visible {
-  outline: 3px solid var(--color-mint-ink);
-  outline-offset: 2px;
 }
