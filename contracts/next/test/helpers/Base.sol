@@ -48,6 +48,10 @@ abstract contract Base is Test {
     address internal constant FAKE_POSITION_MANAGER = address(0xB002);
     address internal feeController;
     address internal minBid;
+    address internal parts;
+    address internal rounds; // the project's Rounds (holds the 150M backing Shares)
+    address internal stakeHolder = makeAddr("stake");
+    address internal councilMaker = makeAddr("council maker");
 
     function setUp() public virtual {
         vm.warp(1_800_000_000);
@@ -59,17 +63,20 @@ abstract contract Base is Test {
         deployCodeTo(
             "MockStrategy.sol:MockStrategy", abi.encode(FAKE_POOL_MANAGER, FAKE_POSITION_MANAGER, factory), STRATEGY
         );
+        parts = deployCode("Parts.sol:Parts");
         launcher = _deployLauncher(admin, _settings());
         salePath = address(launcher);
         (address s, address tr, address ve) = _launch(founder, PROJECT);
         (shares, t, v) = (ShareToken(s), Treasury(tr), Vester(ve));
         finisher = opener = launcher.project(founder, PROJECT).finisher;
+        rounds = launcher.project(founder, PROJECT).rounds;
     }
 
     function _settings() internal view virtual returns (Launcher.Settings memory) {
         return Launcher.Settings({
             quote: IERC20(address(usd)),
             platform: platform,
+            stake: stakeHolder,
             exitFeeBps: 500,
             platformFeeBps: 100,
             spendableParts: 15,
@@ -89,7 +96,9 @@ abstract contract Base is Test {
         internal
         returns (Launcher)
     {
-        return Launcher(deployCode("Launcher.sol:Launcher", abi.encode(admin_, s, strategy_, guard_, minBid)));
+        return Launcher(
+            deployCode("Launcher.sol:Launcher", abi.encode(admin_, s, strategy_, guard_, minBid, parts, councilMaker))
+        );
     }
 
     /// @dev `block.timestamp` cannot be read after a `vm.warp` in the same test: the optimizer treats it as a constant
@@ -150,10 +159,19 @@ abstract contract Base is Test {
         _approveAll(bob);
     }
 
-    /// @dev The sale delivers Shares: the Finisher's holding goes to a buyer.
+    /// @dev The sale delivers Shares: the Finisher's holding (350M) goes to a buyer, then, once it is empty, the Rounds' backing
+    /// Shares (150M) stand in for more sale Shares, so the milestone 2 world still has 500M Shares in people's hands.
     function _buy(address who, uint256 amount) internal {
-        vm.prank(finisher);
-        shares.transfer(who, amount);
+        uint256 fromFinisher = shares.balanceOf(finisher);
+        if (fromFinisher > amount) fromFinisher = amount;
+        if (fromFinisher != 0) {
+            vm.prank(finisher);
+            shares.transfer(who, fromFinisher);
+        }
+        if (amount > fromFinisher) {
+            vm.prank(rounds);
+            shares.transfer(who, amount - fromFinisher);
+        }
     }
 
     function _approveAll(address who) internal {

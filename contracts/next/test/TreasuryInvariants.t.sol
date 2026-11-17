@@ -43,7 +43,8 @@ contract TreasuryInvariantsTest is Base {
         assertFalse(h.perShareFell());
     }
 
-    function invariant_rule2_anExitNeverTouchesSpendable() public view {
+    /// Plan version 2: an exit never lowers `spendable`; it adds exactly the fee's 4 to it.
+    function invariant_rule2_anExitNeverTakesFromSpendable() public view {
         assertFalse(h.exitTookSpendable());
         assertFalse(h.spendableTouched(), "only `spend` ever lowers spendable");
     }
@@ -79,7 +80,7 @@ contract TreasuryInvariantsTest is Base {
     function invariant_sharesAreConservedAcrossVestGiftAndExit() public view {
         assertEq(shares.totalSupply(), SUPPLY - h.burned());
         uint256 sum = shares.balanceOf(finisher) + shares.balanceOf(address(v)) + shares.balanceOf(address(t))
-            + shares.balanceOf(founder);
+            + shares.balanceOf(founder) + shares.balanceOf(rounds);
         for (uint256 i; i < 4; ++i) {
             sum += shares.balanceOf(h.holders(i));
         }
@@ -93,7 +94,9 @@ contract TreasuryInvariantsTest is Base {
 
     function invariant_theWorkPotAndReserveStayBacked() public view {
         assertGe(shares.balanceOf(address(t)), t.workPot());
-        assertEq(t.reserve(), 100_000_000 * SHARE + h.sharesDonatedToTreasury() - h.reserveReleased());
+        assertEq(
+            t.reserve(), 100_000_000 * SHARE + h.sharesDonatedToTreasury() - h.reserveReleased() - h.stakeGranted()
+        );
     }
 
     function invariant_theMeltingClockNeverPassesAYear() public view {
@@ -178,7 +181,7 @@ contract TreasuryInvariantsTest is Base {
         h.closeSale();
         h.handBack(0, 10_000_000 * SHARE);
         assertEq(h.exits(), 1);
-        h.giveShares(0, 2, 5_000_000 * SHARE);
+        h.giveShares(0, 2, 2_000_000 * SHARE); // under 1% of the 240M in people's hands (the Finisher held 350M)
         h.giveShares(1, 3, 100_000 * SHARE);
         assertEq(h.giftsMade(), 2);
         assertEq(h.giftCount(), 2);

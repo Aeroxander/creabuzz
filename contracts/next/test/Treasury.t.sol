@@ -90,10 +90,13 @@ contract TreasuryTest is Base {
             quote: IERC20(address(usd)),
             shares: IShares(address(shares)),
             vester: IVester(address(v)),
+            rounds: rounds,
             founder: founder,
             platform: platform,
             opener: opener,
             salePath: salePath,
+            stake: stakeHolder,
+            stakeAmount: 20_000_000 * SHARE,
             exitFeeBps: 500,
             platformFeeBps: 100,
             spendableParts: 15,
@@ -323,7 +326,8 @@ contract TreasuryTest is Base {
         assertEq(t.spendable(), S + first + (M - first) * 5 days / (365 days - 14 days));
     }
 
-    function test_checkIn_onlyFounderOrAnAgent() public {
+    /// @dev Plan version 2: a person's touch. Only the runner checks in; an agent account may not, even one the runner set.
+    function test_checkIn_onlyTheRunner_notAnAgent() public {
         _sale(7500 * DOLLAR);
         vm.prank(alice);
         vm.expectRevert(Treasury.NotAllowed.selector);
@@ -332,13 +336,11 @@ contract TreasuryTest is Base {
         t.setAgent(agent, 0, 0);
         vm.warp(_now() + 10 days);
         vm.prank(agent);
-        t.checkIn();
-        assertEq(t.lastCheckIn(), _now());
-        vm.prank(founder);
-        t.revokeAgent(agent);
-        vm.prank(agent);
         vm.expectRevert(Treasury.NotAllowed.selector);
         t.checkIn();
+        vm.prank(founder);
+        t.checkIn();
+        assertEq(t.lastCheckIn(), _now());
     }
 
     function test_checkIn_aStrangerSettlingDustDoesNotRenewTheWindow() public {

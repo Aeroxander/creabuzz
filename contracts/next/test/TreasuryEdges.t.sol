@@ -23,10 +23,8 @@ contract TreasuryEdgesTest is Base {
         assertEq(t.pendingRelease(), 0);
         t.release();
         assertEq(t.spendable(), afterWindow);
-        // an agent presses check-in: the release resumes from this second, with no back pay for the 60 days
+        // the runner presses check-in: the release resumes from this second, with no back pay for the 60 days
         vm.prank(founder);
-        t.setAgent(agent, 0, 0);
-        vm.prank(agent);
         t.checkIn();
         vm.warp(_now() + 1 days);
         assertEq(t.pendingRelease(), (M - M * 14 days / 365 days) * 1 days / (365 days - 14 days));
@@ -43,8 +41,8 @@ contract TreasuryEdgesTest is Base {
         uint256 floorWhilePaused = t.melting();
         vm.warp(_now() + 200 days);
         assertEq(t.melting(), floorWhilePaused);
-        // 300 days after the pool opened, 300/365 of the founder's 200M are released (claimed or not) and count
-        uint256 counting = 500_000_000 * SHARE + 200_000_000 * SHARE * 300 days / 365 days;
+        // 300 days after the pool opened, 300/365 of the founder's 200M and of the 20M stake are released (claimed or not) and count
+        uint256 counting = 500_000_000 * SHARE + 220_000_000 * SHARE * 300 days / 365 days;
         uint256 slice = floorWhilePaused * (100_000_000 * SHARE) / counting;
         uint256 paid = _handBack(alice, 100_000_000 * SHARE);
         assertEq(paid, slice - (slice * 500 + 9999) / 10_000);
@@ -117,9 +115,9 @@ contract TreasuryEdgesTest is Base {
         assertLe(t.melting(), M - 1);
     }
 
-    /// The 4% of an exit that stays in the floor goes to "those who remain", and a holder who exits in pieces is one of
-    /// them. So the fee is not a flat 5% against a holder who exits many times: the report says how much this is worth.
-    function test_edge_exitingInManyPiecesRecoversPartOfTheFeeBoundedByTheHoldersShare() public {
+    /// Milestone 2 measured that exiting in pieces won back part of the 4% that stayed in the floor (B2). Plan version 2 sends
+    /// the 4% to the project's spendable instead, so the whole slice leaves and pieces pay what one exit pays, less rounding.
+    function test_edge_exitingInManyPiecesPaysWhatOneExitPays() public {
         _world();
         uint256 snapshot = vm.snapshotState();
         uint256 oneGo = _handBack(alice, 100_000_000 * SHARE); // 20% of the counting Shares
@@ -130,10 +128,8 @@ contract TreasuryEdgesTest is Base {
         }
         emit log_named_uint("alice 20%, one exit (micro dollars)", oneGo);
         emit log_named_uint("alice 20%, 100 exits (micro dollars)", total);
-        assertGt(total, oneGo, "a few more cents: she is one of those who remain");
-        assertLt(total, oneGo * 1005 / 1000, "under half a percent more for a holder of a fifth of the counting Shares");
-        // the most that anyone could take back is the 4% that stays, so a fee of 5% never falls under 1% of the slice
-        assertGt(total, 6000 * DOLLAR / 5 * 95 / 100);
+        assertLe(total, oneGo, "pieces never pay more than one exit");
+        assertGe(total + 100, oneGo, "and less only by a raw unit of rounding per piece");
         vm.revertToState(snapshot);
         uint256 bobOne = _handBack(bob, 400_000_000 * SHARE); // 80%
         vm.revertToState(snapshot);
@@ -143,8 +139,8 @@ contract TreasuryEdgesTest is Base {
         }
         emit log_named_uint("bob 80%, one exit", bobOne);
         emit log_named_uint("bob 80%, 400 exits", bobMany);
-        assertLt(bobMany, 6000 * DOLLAR * 99 / 100, "never more than the floor less the platform's 1%");
-        assertGt(bobMany, bobOne);
+        assertLe(bobMany, bobOne, "400 pieces never pay more than one exit");
+        assertGe(bobMany + 400, bobOne);
     }
 
     // ------------------------------------------------------------------------------------------ big and small
@@ -282,10 +278,10 @@ contract TreasuryEdgesTest is Base {
         _runFor(366 days);
         t.release();
         assertEq(t.melting(), 0);
-        // a year on, all of the founder's 200M are released and count whether or not the founder has claimed: 700M count
-        uint256 slice = 500 * DOLLAR * 100 / 700;
+        // plan version 2: Share revenue is shared by every Share that exists (1,000M), so alice's 100M reach a tenth of it
+        uint256 slice = 500 * DOLLAR * 100 / 1000;
         uint256 paid = _handBack(alice, 100_000_000 * SHARE);
-        assertEq(paid, slice - (slice * 500 + 9999) / 10_000, "a seventh of the 500 permanent floor, less 5%");
+        assertEq(paid, slice - (slice * 500 + 9999) / 10_000, "a tenth of the 500 permanent floor, less 5%");
     }
 
     function test_edge_vestedSharesAreFreeExactlyAtTheEndOfTheYear() public {
@@ -301,20 +297,21 @@ contract TreasuryEdgesTest is Base {
         vm.prank(founder);
         t.giveShares(alice, 50_000_000 * SHARE); // vests; far over 1%
         _openPool();
+        _buy(carol, 500_000_000 * SHARE); // 500M in people's hands: 1% is 5M
         assertEq(t.giftsUsed(), 0);
         vm.prank(founder);
-        t.giveShares(bob, 10_000_000 * SHARE);
-        assertEq(shares.balanceOf(bob), 10_000_000 * SHARE);
+        t.giveShares(bob, 5_000_000 * SHARE);
+        assertEq(shares.balanceOf(bob), 5_000_000 * SHARE);
     }
 
-    function test_edge_theCapFollowsTheSharesThatExistAfterBurns() public {
+    function test_edge_theCapFollowsTheSharesInHandsAfterBurns() public {
         _world();
         vm.prank(alice);
-        shares.burn(100_000_000 * SHARE); // 10% of all Shares burned: 1% is now 9,000,000
+        shares.burn(100_000_000 * SHARE); // 100M of the 500M in hands burned: 1% is now 4,000,000
         vm.startPrank(founder);
-        t.giveShares(carol, 9_000_000 * SHARE);
+        t.giveShares(carol, 4_000_000 * SHARE);
         vm.expectRevert();
-        t.giveShares(carol, 1);
+        t.giveShares(carol, 40_001 * SHARE); // past 1% of the 404M in hands with the gift
         vm.stopPrank();
     }
 }

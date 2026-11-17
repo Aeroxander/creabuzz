@@ -17,7 +17,10 @@ import {MockFactory} from "./helpers/Base.sol";
 contract LauncherTest is Base {
     function test_launch_mintsEveryShareToItsPlace() public view {
         assertEq(shares.totalSupply(), SUPPLY);
-        assertEq(shares.balanceOf(finisher), 500_000_000 * SHARE, "400M sale + 100M pool match, held by the Finisher");
+        assertEq(
+            shares.balanceOf(finisher), 350_000_000 * SHARE, "250M auction + 100M pool match, held by the Finisher"
+        );
+        assertEq(shares.balanceOf(rounds), 150_000_000 * SHARE, "150M for backing rounds, held by the Rounds");
         assertEq(shares.balanceOf(address(launcher)), 0, "the Launcher itself holds none");
         assertEq(shares.balanceOf(address(v)), 200_000_000 * SHARE, "the founder's 20%");
         assertEq(shares.balanceOf(address(t)), 300_000_000 * SHARE, "200M work pot + 100M reserve");
@@ -45,6 +48,12 @@ contract LauncherTest is Base {
         assertEq(p.treasury, address(t));
         assertEq(p.vester, address(v));
         assertEq(p.finisher, finisher);
+        assertEq(p.rounds, rounds);
+        assertEq(address(t.rounds()), rounds, "the Treasury tells this Rounds before its window changes");
+        assertEq(v.rounds(), rounds, "only this Rounds adds and cancels backer grants");
+        assertEq(t.runner(), founder, "the founder is the first runner");
+        assertEq(t.stake(), stakeHolder);
+        assertEq(t.stakeAmount(), 20_000_000 * SHARE);
         assertEq(launcher.treasuryOfShares(address(shares)), address(t));
         assertEq(launcher.treasuryOfShares(address(usd)), address(0), "only a project's Shares are known");
         assertEq(p.launchedAt, 1_800_000_000);
@@ -58,32 +67,26 @@ contract LauncherTest is Base {
         Vm.Log memory e = logs[logs.length - 1];
         assertEq(e.emitter, address(launcher));
         assertEq(e.topics[0], Launcher.ProjectLaunched.selector);
-        assertEq(e.topics[1], keccak256("indexed"));
-        assertEq(address(uint160(uint256(e.topics[2]))), alice);
-        (
-            address eShares,
-            address eTreasury,
-            address eVester,
-            address eFinisher,
-            address eQuote,
-            address ePlatform,
-            Launcher.Allocation memory a,
-            Launcher.Settings memory st
-        ) = abi.decode(
-            e.data, (address, address, address, address, address, address, Launcher.Allocation, Launcher.Settings)
-        );
-        assertEq(eShares, s);
-        assertEq(eTreasury, tr);
-        assertEq(eVester, ve);
-        assertEq(eFinisher, launcher.project(alice, keccak256("indexed")).finisher);
-        assertEq(eQuote, address(usd));
-        assertEq(ePlatform, platform);
-        assertEq(a.sale, 400_000_000 * SHARE);
+        assertEq(e.topics[1], launcher.keyOf(alice, keccak256("indexed")));
+        assertEq(e.topics[2], keccak256("indexed"));
+        assertEq(address(uint160(uint256(e.topics[3]))), alice);
+        (Launcher.Project memory ep, Launcher.Allocation memory a, Launcher.Settings memory st) =
+            abi.decode(e.data, (Launcher.Project, Launcher.Allocation, Launcher.Settings));
+        assertEq(ep.shares, s);
+        assertEq(ep.treasury, tr);
+        assertEq(ep.vester, ve);
+        assertEq(ep.finisher, launcher.project(alice, keccak256("indexed")).finisher);
+        assertEq(ep.rounds, launcher.project(alice, keccak256("indexed")).rounds);
+        assertEq(address(st.quote), address(usd));
+        assertEq(st.platform, platform);
+        assertEq(st.stake, stakeHolder);
+        assertEq(a.sale, 250_000_000 * SHARE);
         assertEq(a.poolReserve, 100_000_000 * SHARE);
         assertEq(a.founder, 200_000_000 * SHARE);
         assertEq(a.workPot, 200_000_000 * SHARE);
         assertEq(a.reserve, 100_000_000 * SHARE);
-        assertEq(a.sale + a.poolReserve + a.founder + a.workPot + a.reserve, SUPPLY);
+        assertEq(a.backing, 150_000_000 * SHARE);
+        assertEq(a.sale + a.poolReserve + a.founder + a.workPot + a.reserve + a.backing, SUPPLY);
         assertEq(st.exitFeeBps, 500);
     }
 
@@ -117,7 +120,7 @@ contract LauncherTest is Base {
         Vester vImpl = Vester(launcher.vesterImpl());
         ShareToken sImpl = ShareToken(launcher.shareImpl());
         vm.expectRevert(Vester.AlreadyInitialized.selector);
-        vImpl.initialize(IShares(address(shares)), alice, alice, alice, 1);
+        vImpl.initialize(IShares(address(shares)), alice, alice, alice, alice, 1);
         vm.expectRevert(ShareToken.BadBirth.selector);
         sImpl.initialize("x", "x", new address[](0), new uint256[](0));
     }
@@ -191,14 +194,31 @@ contract LauncherTest is Base {
         Launcher.Settings memory s = _settings();
         s.platform = address(0);
         vm.expectRevert(Launcher.BadSettings.selector);
-        deployCode("Launcher.sol:Launcher", abi.encode(admin, s, STRATEGY, GUARD, minBid));
+        deployCode("Launcher.sol:Launcher", abi.encode(admin, s, STRATEGY, GUARD, minBid, parts, councilMaker));
         // the platform's own strategy, guard and bid rules must be named
         vm.expectRevert(Launcher.BadStack.selector);
-        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), address(0), GUARD, minBid));
+        deployCode(
+            "Launcher.sol:Launcher", abi.encode(admin, _settings(), address(0), GUARD, minBid, parts, councilMaker)
+        );
         vm.expectRevert(Launcher.NoPoolGuard.selector);
-        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, address(0), minBid));
+        deployCode(
+            "Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, address(0), minBid, parts, councilMaker)
+        );
         vm.expectRevert(Launcher.BadStack.selector);
-        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, GUARD, address(0)));
+        deployCode(
+            "Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, GUARD, address(0), parts, councilMaker)
+        );
+        // the parts must be real: a contract whose implementations have no code is refused
+        address empty = address(new EmptyParts());
+        vm.expectRevert(Launcher.BadStack.selector);
+        deployCode(
+            "Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, GUARD, minBid, empty, councilMaker)
+        );
+        // and the stake address must be named
+        s = _settings();
+        s.stake = address(0);
+        vm.expectRevert(Launcher.BadSettings.selector);
+        deployCode("Launcher.sol:Launcher", abi.encode(admin, s, STRATEGY, GUARD, minBid, parts, councilMaker));
     }
 
     function test_admin_canHandOnOrRenounce_andRenouncingFreezesSettings() public {
@@ -220,10 +240,11 @@ contract LauncherTest is Base {
 
     // ------------------------------------------------------------------------------------------- the platform's stack
 
-    function test_openSale_refusesAnUnknownProject() public {
+    function test_openAuction_refusesAnUnknownProject() public {
+        bytes32 k = launcher.keyOf(alice, PROJECT);
         vm.prank(alice);
         vm.expectRevert(Launcher.UnknownProject.selector);
-        launcher.openSale(PROJECT, Launcher.Size.Standard);
+        launcher.openAuction(k);
     }
 
     /// @dev The strategy and the guard are the platform's, fixed when the Launcher is made, and the Launcher cannot exist
@@ -243,7 +264,9 @@ contract LauncherTest is Base {
         address[5] memory bad = [noContract, wrongBits, extraBit, notAGuard, otherGuard];
         for (uint256 i; i < bad.length; ++i) {
             vm.expectRevert(Launcher.NoPoolGuard.selector);
-            deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, bad[i], minBid));
+            deployCode(
+                "Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, bad[i], minBid, parts, councilMaker)
+            );
         }
     }
 
@@ -264,11 +287,14 @@ contract LauncherTest is Base {
             address g = address(uint160(0xAA00 << 20 | (i + 1) << 24) | uint160(1 << 13));
             deployCodeTo("MockGuard.sol:MockGuard", abi.encode(strat), g);
             vm.expectRevert(Launcher.BadStack.selector);
-            deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), strat, g, minBid));
+            deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), strat, g, minBid, parts, councilMaker));
         }
         // a strategy with no code at all
         vm.expectRevert(Launcher.BadStack.selector);
-        deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), makeAddr("not a strategy"), GUARD, minBid));
+        deployCode(
+            "Launcher.sol:Launcher",
+            abi.encode(admin, _settings(), makeAddr("not a strategy"), GUARD, minBid, parts, councilMaker)
+        );
         // the right controller is accepted (the setUp Launcher), and its recipient is the platform's fee address
         assertEq(launcher.raiseFeeRecipient(), platform);
     }
@@ -284,7 +310,9 @@ contract LauncherTest is Base {
         address[7] memory bad = [noMin, smallMin, noCap, bigCap, noWindow, shortWindow, longWindow];
         for (uint256 i; i < bad.length; ++i) {
             vm.expectRevert(Launcher.BadStack.selector);
-            deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, GUARD, bad[i]));
+            deployCode(
+                "Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, GUARD, bad[i], parts, councilMaker)
+            );
         }
         assertEq(launcher.BID_CLOSING_BLOCKS(), 720);
     }
@@ -297,20 +325,17 @@ contract LauncherTest is Base {
         assertEq(t.salePath(), address(launcher), "the Treasury's sale path is the Launcher");
     }
 
-    function test_sizes_theMenuIsFixed() public view {
-        (uint256 g, uint256 m) = launcher.sizeOf(Launcher.Size.Small);
-        assertEq(g, 4000 * DOLLAR);
-        assertEq(m, 2000 * DOLLAR);
-        (g, m) = launcher.sizeOf(Launcher.Size.Standard);
-        assertEq(g, 10_000 * DOLLAR);
-        assertEq(m, 2500 * DOLLAR);
-        (g, m) = launcher.sizeOf(Launcher.Size.Large);
-        assertEq(g, 50_000 * DOLLAR);
-        assertEq(m, 12_500 * DOLLAR);
-        (uint256 floorQ96, uint256 tickQ96) = launcher.salePrices(Launcher.Size.Standard);
-        assertEq(floorQ96, tickQ96 * 100, "the floor is exactly tick 100");
-        // 10,000 dollars (raw 1e10) over 400,000,000 Shares (raw 4e26) is 2.5e-17 raw dollars a raw Share, times 2^96
-        assertApproxEqRel(floorQ96, (uint256(10_000e6) << 96) / uint256(400_000_000e18), 0.01e18);
+    function test_theOneAuction_sizeAndStartingPriceAreFixed() public view {
+        assertEq(launcher.AUCTION_MINIMUM(), 100_000 * DOLLAR);
+        assertEq(launcher.SALE(), 250_000_000 * SHARE);
+        (uint256 floorQ96, uint256 tickQ96) = launcher.salePrices();
+        assertEq(floorQ96, tickQ96 * 100, "the starting price is exactly tick 100");
+        // 0.0004 dollars a Share: 400 raw dollars per 1e18 raw Shares, times 2^96; rounded up by less than one tick
+        uint256 exact = (uint256(400) << 96) / 1e18;
+        assertGe(floorQ96, exact);
+        assertLt(floorQ96 - exact, tickQ96 * 2);
+        // every auction Share sold at the starting price raises at least the minimum
+        assertGe(floorQ96 * 250_000_000e18 >> 96, 100_000 * DOLLAR);
     }
 
     // ------------------------------------------------------------------------------- settings a founder commits to
@@ -367,6 +392,15 @@ contract LauncherTest is Base {
         launcher.setSettings(s);
         vm.stopPrank();
     }
+}
+
+/// @dev A parts contract whose implementations are plain addresses with no code.
+contract EmptyParts {
+    address public shareImpl = address(0x51);
+    address public treasuryImpl = address(0x52);
+    address public vesterImpl = address(0x53);
+    address public roundsImpl = address(0x54);
+    address public pairImpl = address(0x55);
 }
 
 /// @dev A token with the wrong scale.

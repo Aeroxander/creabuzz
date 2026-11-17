@@ -99,12 +99,23 @@ interface IPinnedAuction {
     function endBlock() external view returns (uint64);
     /// @notice Send the unsold Shares to the tokens recipient. Only that recipient may call it.
     function sweepUnsoldTokens() external;
+    /// @notice Send the raised dollars, less the platform's fee, to the funds recipient (the fee goes to the fee controller's
+    /// recipient). Only that recipient may call it, after the end.
+    function sweepCurrency() external;
+    /// @notice The price the sale clears at (Q96, raw dollars per raw Share); its final value once the sale is over.
+    function clearingPrice() external view returns (uint256);
+    /// @notice The sale's starting price (Q96).
+    function floorPrice() external view returns (uint256);
+    /// @notice Tell the auction its Shares arrived (it checks its balance).
+    function onTokensReceived() external;
 }
 
 /// @notice The only auction-factory function the Launcher reads, to check the fee path (`ContinuousClearingAuctionFactory`).
 interface IPinnedAuctionFactory {
     /// @notice The fee controller every auction of this factory asks for its fee.
     function protocolFeeController() external view returns (address);
+    /// @notice Make a plain auction of `amount` of `token` with the encoded `AuctionParameters` (used by the reserve sale).
+    function create(address token, uint256 amount, bytes calldata configData, bytes32 salt) external returns (address);
 }
 
 /// @notice The fee controller functions read (liquidity-launcher `interfaces/IProtocolFeeController.sol`).
@@ -191,8 +202,8 @@ library SaleParams {
     uint24 internal constant POOL_RATE = 2_268_041;
     /// @notice The scale of `POOL_RATE`.
     uint256 internal constant RATE_SCALE = 10_000_000;
-    /// @notice Shares in the sale: 40% of 1,000,000,000.
-    uint256 internal constant SALE_SHARES = 400_000_000e18;
+    /// @notice Shares in the one auction: 25% of 1,000,000,000 (plan version 2; milestone 3 sold 40%).
+    uint256 internal constant SALE_SHARES = 250_000_000e18;
     /// @notice Shares held back to match the pool's dollars: 10% of 1,000,000,000.
     uint128 internal constant POOL_SHARES = 100_000_000e18;
     /// @notice Blocks after the sale ends before anyone may abandon a sale whose pool never opened: 7 days at 12 seconds.

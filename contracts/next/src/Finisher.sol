@@ -17,7 +17,7 @@ import {
 
 /// @title Finisher
 /// @notice One per project, made by the Launcher in the same transaction as the project's Shares and Treasury. It holds the
-/// 500,000,000 Shares set aside at birth for the first sale and the pool, opens that sale when the Launcher says so, and is
+/// 350,000,000 Shares set aside at birth for the one auction and the pool, opens that sale when the Launcher says so, and is
 /// the auction's Shares recipient and the pool step's recipient: the sale's dollars and unsold Shares come to this contract,
 /// never to the founder. It is the only address the Treasury believes when it says the pool is open, the sale closed, or the
 /// sale abandoned.
@@ -162,7 +162,7 @@ contract Finisher {
         return s == Stage.Idle || (s == Stage.Failed && block.number >= retryBlock);
     }
 
-    /// @notice Open the sale: hand the strategy the 500,000,000 Shares and the finished settings the Launcher built. Only the
+    /// @notice Open the sale: hand the strategy the 350,000,000 Shares and the finished settings the Launcher built. Only the
     /// Launcher may call it, and only when `canOpen`.
     /// @param configData The strategy's settings and the auction's, encoded by the Launcher.
     /// @return auction_ The new auction.

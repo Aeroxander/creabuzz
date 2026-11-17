@@ -43,26 +43,18 @@ contract AttackM2Test is Base {
         emit log_named_uint("alice after 400 exits", alicePieces);
     }
 
-    /// @dev OWNER DECISION PENDING (the review's "the 4% that stays also lifts the leaver's own floor"). Every fix changes a
-    /// money rule of the plan (the whole slice leaves and the fee is paid out, so nothing "stays for those who remain"; or
-    /// the fee is burned or goes to the platform), so it is not made here. This test pins what the plan's rule does today
-    /// so any change, a fix or a worse leak, shows: a holder of 80% exiting in 400 pieces is paid 4,670.84 instead of
-    /// 4,560.00 (+2.43%, and never past the 0.95/0.96 limit of the floor) and the one holder left is paid 1,215.99 instead of 1,322.40 (-8.0%).
-    function test_openDecision_exitingInPiecesPaysALargeHolderMoreThanOneExit() public {
+    /// @dev B2, closed by plan version 2 (D228): the fee's 4 goes to the project's spendable, so the whole slice leaves the floor
+    /// and nobody's floor per Share moves. Milestone 2 measured 4,670.84 for 400 pieces against 4,560.00 for one exit (+2.43%) and
+    /// 1,215.99 instead of 1,322.40 (-8.0%) for the holder left behind. Now 400 pieces pay 4,560.00 less rounding, and the holder left
+    /// behind is paid the same whatever the leaver did.
+    function test_fixed_exitingInPiecesPaysTheSameAsOneExit() public {
         (uint256 single, uint256 pieces, uint256 aliceSingle, uint256 alicePieces) = _exitInPieces();
-        assertGt(pieces, single, "the leak is there (if this fails, the exit rule changed: update the report)");
-        assertLt(pieces * 1000, single * 1030, "the leak is more than the measured 2.43 percent");
-        assertLt(alicePieces, aliceSingle, "the holder left behind is paid less");
-        assertGt(alicePieces * 100, aliceSingle * 90, "the holder left behind loses more than the measured 8 percent");
-    }
-
-    /// @dev The property the review wants: pieces add up to no more than one exit and those who remain keep the 4%. Skipped
-    /// until the owner decides how the fee should work; the pin above must then be turned round.
-    function test_defect_exitingInPiecesPaysMoreThanOneExit() public {
-        vm.skip(true, "owner decision pending: see test_openDecision_exitingInPiecesPaysALargeHolderMoreThanOneExit");
-        (uint256 single, uint256 pieces, uint256 aliceSingle, uint256 alicePieces) = _exitInPieces();
-        assertLe(pieces, single + 400, "the pieces pay the leaver more than the single exit");
-        assertGe(alicePieces + 400, aliceSingle, "those who remain lose part of the 4% that was meant to stay for them");
+        assertEq(single, 4560 * DOLLAR, "one exit: 4,800 of the 6,000 floor, less 5%");
+        assertLe(pieces, single, "the pieces never pay the leaver more than one exit");
+        assertGe(pieces + 400, single, "and less only by a raw unit of rounding per piece");
+        assertEq(aliceSingle, 1140 * DOLLAR, "the holder left behind: 1,200 of the floor, less 5%");
+        assertGe(alicePieces, aliceSingle, "is never paid less because the other left in pieces");
+        assertLe(alicePieces, aliceSingle + 400);
     }
 
     /// Pieces so small that rounding dominates never beat one exit (the rounding all goes against the leaver).
@@ -173,7 +165,7 @@ contract AttackM2Test is Base {
             vm.prank(founder);
             t.checkIn();
             address sybil = makeAddr(string.concat("sybil", vm.toString(i)));
-            uint256 gift = shares.totalSupply() / 100; // exactly the 1%-of-all-Shares cap
+            uint256 gift = t.countingSupply() / 100; // exactly 1% of the Shares in people's hands, the monthly cap
             vm.prank(founder);
             t.giveShares(sybil, gift);
             vm.startPrank(sybil);
@@ -187,22 +179,52 @@ contract AttackM2Test is Base {
         emit log_named_uint("permanent floor now                   ", permanentNow);
     }
 
-    /// @dev OWNER DECISION PENDING (the review's "gifts let the founder drain the floor through fresh wallets"). Every fix
-    /// changes a rule of the plan's section 3 ("Shares given after the pool opens are free at once"): post-pool gifts also
-    /// vest, or the cap is measured on the Shares people hold, or gifted Shares cannot be handed back for a while. None is
-    /// made here. This test pins what the plan's rule does today: in a year of such gifts the wallets take between a tenth
-    /// and a quarter of the 100,000 dollars of Share revenue (measured here: 15.3 percent, 15,830 dollars; the review measured about 18 percent on the code before this round's fixes).
-    function test_openDecision_postPoolGiftsToFreshWalletsTakeAShareOfTheFloor() public {
-        (uint256 start, uint256 now_, uint256 taken) = _drainThroughFreshWallets();
-        assertLt(now_ * 100, start * 90, "the drain is there (if this fails, the gift rule changed: update the report)");
-        assertGt(now_ * 100, start * 75, "the drain is more than the measured 15 percent");
-        assertGt(taken, 0);
+    /// @dev B3, closed by plan version 2 (D228): Share revenue is shared by every Share that exists and the monthly gift cap is 1%
+    /// of the Shares in people's hands, so a gift handed straight back takes only its own slice of the revenue and the claim per
+    /// Share of everyone else never falls. Milestone 2 measured 100,000 to 84,728 of the never-melting floor (-15.3%) in a year of
+    /// such gifts. Now the wallets take under a tenth of it, and every holder's claim per Share on it is unchanged.
+    function test_fixed_postPoolGiftsToFreshWalletsNeverThinTheRevenueFloor() public {
+        uint256 perShareBefore;
+        _world();
+        perShareBefore = 100_000 * DOLLAR * 1e18 / shares.totalSupply(); // computed once the revenue is in, below
+        (uint256 start, uint256 now_, uint256 taken) = _drainThroughFreshWalletsAgain();
+        emit log_named_uint("permanent floor at the start", start);
+        emit log_named_uint("permanent floor after 11 gifts handed back", now_);
+        assertGe(now_ * 100, start * 90, "gifts took more than a tenth of the money that never melts");
+        assertGt(taken, 0, "the gifts were real and paid their own slice");
+        // the claim per Share that exists did not fall (it rounds up for those who stay)
+        assertGe(t.permanentFloor() * 1e18 / shares.totalSupply() + 1, perShareBefore);
     }
 
-    /// @dev The property the review wants: gifts that are handed straight back take at most a tenth of the money that never
-    /// melts. Skipped until the owner decides; the pin above must then be turned round.
-    function test_defect_giftsLetTheFounderDrainTheFloorThroughFreshWallets() public {
-        vm.skip(true, "owner decision pending: see test_openDecision_postPoolGiftsToFreshWalletsTakeAShareOfTheFloor");
+    /// @dev `_drainThroughFreshWallets` on a world that is already set up.
+    function _drainThroughFreshWalletsAgain()
+        internal
+        returns (uint256 permanentStart, uint256 permanentNow, uint256 taken)
+    {
+        usd.mint(carol, 100_000 * DOLLAR);
+        vm.startPrank(carol);
+        usd.approve(address(t), type(uint256).max);
+        t.shareRevenue(100_000 * DOLLAR);
+        vm.stopPrank();
+        permanentStart = t.permanentFloor();
+        for (uint256 i; i < 11; ++i) {
+            vm.warp(_now() + 33 days);
+            vm.prank(founder);
+            t.checkIn();
+            address sybil = makeAddr(string.concat("sybil", vm.toString(i)));
+            uint256 gift = t.countingSupply() / 100;
+            vm.prank(founder);
+            t.giveShares(sybil, gift);
+            vm.startPrank(sybil);
+            shares.approve(address(t), type(uint256).max);
+            taken += t.handBack(shares.balanceOf(sybil));
+            vm.stopPrank();
+        }
+        permanentNow = t.permanentFloor();
+    }
+
+    /// @dev The same plan through the original helper (which builds its own world): under a tenth taken.
+    function test_fixed_giftsThroughFreshWalletsTakeUnderATenthOfTheRevenueFloor() public {
         (uint256 start, uint256 now_,) = _drainThroughFreshWallets();
         assertGe(now_ * 100, start * 90, "gifts took more than a tenth of the money that never melts");
     }
@@ -404,30 +426,32 @@ contract AttackM2MoreTest is Base {
     /// counted 30 days later less one second (so nothing is let through early), and is free again within 33 days (so the
     /// cap does not stick).
     function test_attack_theMonthlyCapNeverExpiresEarlyAndNeverSticks() public {
-        _sale(7500 * DOLLAR);
+        _world(); // 500M in people's hands
         uint256 edge = (_now() / 3 days + 2) * 3 days; // the start of a part, far enough ahead
         vm.warp(edge - 1); // the last second of the part before it
-        uint256 cap = shares.totalSupply() / 100;
+        uint256 cap = t.countingSupply() / 100;
         vm.prank(founder);
         t.giveShares(alice, cap);
         uint256 usedAt = _now();
         vm.warp(usedAt + 30 days - 1);
+        // the cap follows the Shares in people's hands, which the Vester's release grows by about 18M in 30 days (180,000 more
+        // to give); 1,000,000 is past it while the month's gift still counts
         vm.prank(founder);
         vm.expectRevert();
-        t.giveShares(bob, 1);
+        t.giveShares(bob, 1_000_000 * SHARE);
         vm.warp(usedAt + 33 days);
         vm.prank(founder);
         t.giveShares(bob, 1);
         // and from the first second of a part
         vm.warp((_now() / 3 days + 1) * 3 days);
-        uint256 free = shares.totalSupply() / 100 - t.giftsUsed();
+        uint256 free = t.countingSupply() / 100 - t.giftsUsed();
         vm.prank(founder);
         t.giveShares(carol, free);
         usedAt = _now();
         vm.warp(usedAt + 30 days - 1);
         vm.prank(founder);
         vm.expectRevert();
-        t.giveShares(bob, 1);
+        t.giveShares(bob, 1_000_000 * SHARE);
         vm.warp(usedAt + 33 days);
         assertEq(t.giftsUsed(), 0);
     }
@@ -622,7 +646,7 @@ contract AttackM2LaunchTest is Base {
         v.claim(founder);
         assertEq(shares.balanceOf(founder), 200_000_000 * SHARE);
         assertEq(v.claim(founder), 0);
-        assertEq(shares.balanceOf(address(v)), 0);
+        assertEq(shares.balanceOf(address(v)), 20_000_000 * SHARE, "only the stake, released and not yet claimed");
     }
 
     function test_attack_launcherIdsAreTheFoundersOwn() public {
@@ -686,9 +710,9 @@ contract AttackM2LaunchTest is Base {
         vm.expectRevert(Treasury.BadSetup.selector);
         tImpl.initialize(st);
         vm.expectRevert(Vester.AlreadyInitialized.selector);
-        v.initialize(IShares(address(shares)), address(this), address(this), address(this), 1);
+        v.initialize(IShares(address(shares)), address(this), address(this), address(this), address(this), 1);
         vm.expectRevert(Vester.AlreadyInitialized.selector);
-        vImpl.initialize(IShares(address(shares)), address(this), address(this), address(this), 1);
+        vImpl.initialize(IShares(address(shares)), address(this), address(this), address(this), address(this), 1);
         address[] memory to = new address[](1);
         uint256[] memory am = new uint256[](1);
         to[0] = address(this);
@@ -762,7 +786,7 @@ contract AttackM2LaunchTest is Base {
         vm.prank(alice);
         shares.transfer(address(t), 1_000_000 * SHARE);
         vm.prank(founder);
-        t.giveShares(carol, 10_000_000 * SHARE);
+        t.giveShares(carol, 4_990_000 * SHARE); // 1% of the 499M Shares in people's hands
         uint256 left = t.workPot();
         vm.warp(_now() + 40 days);
         vm.prank(founder);

@@ -135,19 +135,22 @@ contract TreasuryActionsTest is Base {
         _world();
         vm.startPrank(founder);
         uint256 gifted = _now();
-        t.giveShares(carol, 6_000_000 * SHARE);
-        assertEq(shares.balanceOf(carol), 6_000_000 * SHARE);
-        t.giveShares(carol, 4_000_000 * SHARE); // exactly 1% of 1,000,000,000
-        assertEq(t.giftsUsed(), 10_000_000 * SHARE);
+        t.giveShares(carol, 3_000_000 * SHARE);
+        assertEq(shares.balanceOf(carol), 3_000_000 * SHARE);
+        t.giveShares(carol, 2_000_000 * SHARE); // exactly 1% of the 500,000,000 in people's hands when the month began
+        assertEq(t.giftsUsed(), 5_000_000 * SHARE);
+        // the cap is measured on the Shares in people's hands now (505M with the gifts): 5,050,000
         vm.expectRevert(
-            abi.encodeWithSelector(RollingCap.CapExceeded.selector, 10_000_000 * SHARE, 1, 10_000_000 * SHARE)
+            abi.encodeWithSelector(
+                RollingCap.CapExceeded.selector, 5_000_000 * SHARE, 50_001 * SHARE, 5_050_000 * SHARE
+            )
         );
-        t.giveShares(alice, 1);
+        t.giveShares(alice, 50_001 * SHARE);
         vm.warp(gifted + 30 days - 1);
         vm.expectRevert();
-        t.giveShares(alice, 1); // a gift counts for at least 30 days...
+        t.giveShares(alice, 1_000_000 * SHARE); // a gift counts for at least 30 days...
         vm.warp(gifted + 33 days);
-        t.giveShares(alice, 10_000_000 * SHARE); // ...and at most 33
+        t.giveShares(alice, 5_000_000 * SHARE); // ...and at most 33
         vm.stopPrank();
     }
 
@@ -195,6 +198,7 @@ contract TreasuryActionsTest is Base {
         vm.stopPrank();
         assertEq(t.agentSharesUsed(agent), 1_000_000 * SHARE);
         _openPool(); // after the pool opens the same daily cap holds on the direct road
+        _buy(carol, 100_000_000 * SHARE); // Shares in people's hands, so the monthly cap (1% of them) is not what stops it
         vm.warp(_now() + 28 hours);
         vm.startPrank(agent);
         t.giveShares(alice, 1_000_000 * SHARE);
@@ -236,17 +240,18 @@ contract TreasuryActionsTest is Base {
         _world();
         assertEq(t.countingSupply(), 500_000_000 * SHARE);
         uint256 paid = _handBack(alice, 100_000_000 * SHARE);
-        // slice 6000 * 100M / 500M = 1200; fee 5% = 60 (4% = 48 stays, 1% = 12 owed to the platform)
+        // slice 6000 * 100M / 500M = 1200, all of it leaves the floor; fee 5% = 60 (4% = 48 to the project's spendable, 1% = 12
+        // owed to the platform)
         assertEq(paid, 1140 * DOLLAR);
         assertEq(usd.balanceOf(alice), 1140 * DOLLAR);
         assertEq(t.feesOwed(), 12 * DOLLAR);
-        assertEq(t.melting(), M - 1152 * DOLLAR);
-        assertEq(t.spendable(), S, "the spendable bucket is never reachable");
+        assertEq(t.melting(), M - 1200 * DOLLAR);
+        assertEq(t.spendable(), S + 48 * DOLLAR, "the 4 goes to the project; the exit never takes from spendable");
         assertEq(shares.balanceOf(alice), 0);
         assertEq(t.countingSupply(), 400_000_000 * SHARE);
-        // the 48 that stayed lifted the floor per Share for bob: 4848 / 400M against 6000 / 500M before
+        // bob's floor per Share is what it was: 4800 / 400M against 6000 / 500M before
         uint256 bobPaid = _handBack(bob, 400_000_000 * SHARE);
-        assertEq(bobPaid, (4848 * DOLLAR * 95) / 100);
+        assertEq(bobPaid, (4800 * DOLLAR * 95) / 100);
         assertEq(_buckets(), usd.balanceOf(address(t)));
     }
 
@@ -297,20 +302,23 @@ contract TreasuryActionsTest is Base {
 
     function test_handBack_vesterAndTreasurySharesNeverCount() public {
         _world();
-        // 200M in the Vester, 300M in the Treasury, 500M with holders: the floor is shared among holders only
+        // 220M in the Vester (the founder's 200M and the 20M stake), 280M in the Treasury, 500M with holders: the floor is shared
+        // among holders only
         assertEq(t.countingSupply(), shares.totalSupply() - shares.balanceOf(address(t)) - shares.balanceOf(address(v)));
         vm.prank(founder);
         t.giveShares(carol, 1_000_000 * SHARE); // the pool is open: straight to carol, who now counts
         assertEq(t.countingSupply(), 501_000_000 * SHARE);
         uint256 before = t.countingSupply();
         vm.warp(_now() + 365 days);
-        v.claim(founder); // released Shares leave the Vester and now count
-        assertEq(t.countingSupply(), before + 200_000_000 * SHARE);
+        v.claim(founder); // released Shares count, claimed or not (the stake's too)
+        assertEq(t.countingSupply(), before + 220_000_000 * SHARE);
     }
 }
 
 /// @notice The second half of the Treasury's action tests (split from the first to keep each test contract under the creation-code limit).
 contract TreasuryActionsExitTest is Base {
+    /// @dev Plan version 2 (the B3 fix): the melting floor is shared by the Shares in people's hands, the Share revenue by every
+    /// Share that exists.
     function test_handBack_takesFromBothFloorsInProportion() public {
         _world();
         usd.mint(alice, 3000 * DOLLAR);
@@ -318,12 +326,14 @@ contract TreasuryActionsExitTest is Base {
         usd.approve(address(t), 3000 * DOLLAR);
         t.shareRevenue(3000 * DOLLAR); // permanent 3000, melting 6000
         vm.stopPrank();
-        _handBack(bob, 250_000_000 * SHARE); // half of the counting Shares: slice 4500, paid 4275, platform 45
-        assertEq(t.feesOwed(), 45 * DOLLAR);
-        assertEq(usd.balanceOf(bob), 4275 * DOLLAR);
-        // leaves = 4275 + 45 = 4320: 1/3 from permanent, 2/3 from melting
-        assertEq(t.permanentFloor(), 3000 * DOLLAR - 1440 * DOLLAR);
-        assertEq(t.melting(), M - 2880 * DOLLAR);
+        // half of the 500M in hands: 3000 of the melting 6000; a quarter of the 1,000M that exist: 750 of the permanent 3000.
+        // Slice 3750, paid 3562.50, 37.50 owed to the platform, 150 to the project's spendable
+        _handBack(bob, 250_000_000 * SHARE);
+        assertEq(t.feesOwed(), 37.5e6);
+        assertEq(usd.balanceOf(bob), 3562.5e6);
+        assertEq(t.permanentFloor(), 3000 * DOLLAR - 750 * DOLLAR);
+        assertEq(t.melting(), M - 3000 * DOLLAR);
+        assertEq(t.spendable(), S + 150 * DOLLAR);
     }
 
     function test_handBack_includesTheDailyReleaseAlreadyOwed() public {
@@ -331,12 +341,13 @@ contract TreasuryActionsExitTest is Base {
         vm.warp(_now() + 14 days);
         uint256 gone = M * 14 days / 365 days; // moved to spendable by this very call
         uint256 floorLeft = M - gone;
-        // the founder's 200M are released by the day, claimed or not, and released Shares count as held by people
-        uint256 counting = 500_000_000 * SHARE + 200_000_000 * SHARE * 14 days / 365 days;
+        // the founder's 200M and the 20M stake are released by the day, claimed or not, and released Shares count as held
+        uint256 counting = 500_000_000 * SHARE + 220_000_000 * SHARE * 14 days / 365 days;
         uint256 slice = floorLeft * (100_000_000 * SHARE) / counting;
         uint256 paid = _handBack(alice, 100_000_000 * SHARE);
         assertEq(paid, slice - (slice * 500 + 9999) / 10_000);
-        assertEq(t.spendable(), S + gone);
+        uint256 toProject = slice - paid - slice * 100 / 10_000; // the fee's 4
+        assertEq(t.spendable(), S + gone + toProject);
     }
 
     /// @dev The review's blocker: the exit count used to subtract the Vester's whole balance, so a claim (anyone may press
@@ -344,38 +355,36 @@ contract TreasuryActionsExitTest is Base {
     function test_countingSupply_countsReleasedSharesWhetherOrNotClaimed() public {
         _world();
         vm.warp(_now() + 180 days);
-        uint256 released = 200_000_000 * SHARE * 180 days / 365 days;
-        uint256 expected = 500_000_000 * SHARE + released; // buyers, plus the founder's released Shares
+        uint256 released = 220_000_000 * SHARE * 180 days / 365 days; // the founder's 200M and the 20M stake
+        uint256 expected = 500_000_000 * SHARE + released; // buyers, plus the released Shares
         assertEq(t.countingSupply(), expected, "released but unclaimed");
         assertGt(v.claimable(founder), 0);
         v.claim(founder); // a stranger presses claim
         assertEq(t.countingSupply(), expected, "released and claimed: the same number");
-        assertEq(shares.balanceOf(founder), released);
+        assertEq(shares.balanceOf(founder), 200_000_000 * SHARE * 180 days / 365 days);
     }
 
-    /// @dev The review's second finding on the exit count: the Launcher's unsold Shares (and, in milestone 3, the auction's
-    /// and the strategy's) are outside the Treasury but in nobody's hands. The exit therefore waits for the finish's last
-    /// step, the sweep of unsold Shares to the Treasury. Here alice bought 100M and 400M are unsold.
+    /// @dev The review's second finding on the exit count: unsold Shares outside the Treasury are in nobody's hands. The exit
+    /// therefore waits for the finish's last step, the sweep of unsold Shares to the Treasury. Here alice bought 100M and 250M
+    /// are unsold in the Finisher (plan version 2 also leaves the Finisher's and the Rounds' Shares out of the count).
     function test_handBack_waitsForTheSaleToCloseSoUnsoldSharesNeverCountAsHeld() public {
         _arrive(7500 * DOLLAR);
         _openPool();
         t.settle(7500 * DOLLAR); // step 2 of the finish is done: the money is split
         _buy(alice, 100_000_000 * SHARE);
         _approveAll(alice);
-        assertEq(
-            t.countingSupply(),
-            500_000_000 * SHARE,
-            "while 400M sit unsold they would count, and alice's slice is a fifth"
-        );
+        assertEq(t.countingSupply(), 100_000_000 * SHARE, "the Finisher's and the Rounds' Shares are in nobody's hands");
         vm.prank(alice);
         vm.expectRevert(Treasury.SaleNotClosed.selector);
         t.handBack(100_000_000 * SHARE);
         // step 3: the unsold Shares are swept to the Treasury, and the finish is marked complete
         vm.prank(finisher);
-        shares.transfer(address(t), 400_000_000 * SHARE);
+        shares.transfer(address(t), 250_000_000 * SHARE);
         _closeSale();
         assertEq(t.countingSupply(), 100_000_000 * SHARE);
-        assertEq(t.reserve(), 500_000_000 * SHARE, "the unsold Shares are plain reserve");
+        assertEq(
+            t.reserve(), 330_000_000 * SHARE, "the unsold Shares are plain reserve (80M after the 20M stake, + 250M)"
+        );
         uint256 paid = _handBack(alice, 100_000_000 * SHARE);
         assertEq(
             paid, M - M * 500 / 10_000, "the whole floor, less the 5 percent fee: nothing was lost to unsold Shares"
@@ -415,6 +424,8 @@ contract TreasuryActionsExitTest is Base {
         t.sweepFees();
         assertEq(t.feesOwed(), 12 * DOLLAR);
         _handBack(bob, 100_000_000 * SHARE);
-        assertEq(t.feesOwed(), 12 * DOLLAR + 12_120_000, "the second exit's 1% of 1,212 is owed too");
+        assertEq(
+            t.feesOwed(), 24 * DOLLAR, "the second exit's 1% of 1,200 is owed too (the floor per Share did not move)"
+        );
     }
 }

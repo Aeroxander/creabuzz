@@ -77,6 +77,7 @@ contract TreasuryAbandonTest is Base {
         assertEq(t.spendable(), 1200 * DOLLAR);
         assertEq(t.melting(), 6300 * DOLLAR);
         _buy(alice, 100_000_000 * SHARE);
+        _buy(bob, 400_000_000 * SHARE); // the rest of the sale's Shares in people's hands (Shares held by the Finisher never count)
         _approveAll(alice);
         _closeSale();
         assertTrue(t.saleClosed());
@@ -90,6 +91,7 @@ contract TreasuryAbandonTest is Base {
         assertEq(shares.balanceOf(alice), 0, "before: a gift goes to the Vester");
         vm.prank(opener);
         t.markAbandoned();
+        _buy(carol, 100_000_000 * SHARE); // 100M in people's hands: the monthly cap is 1M
         vm.prank(founder);
         t.giveShares(bob, 1000 * SHARE);
         assertEq(

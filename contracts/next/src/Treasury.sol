@@ -3,7 +3,7 @@ pragma solidity ^0.8.30;
 
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {SafeERC20} from "oz5/token/ERC20/utils/SafeERC20.sol";
-import {IShares, IVester, MAX_SPLIT_PART} from "./Interfaces.sol";
+import {IShares, IVester, IRounds, MAX_SPLIT_PART} from "./Interfaces.sol";
 import {RollingCap} from "./RollingCap.sol";
 
 /// @title Treasury
@@ -12,12 +12,18 @@ import {RollingCap} from "./RollingCap.sol";
 ///
 /// Dollars (the "quote token", any standard 6-decimal ERC-20) sit in four buckets that always add up to no more than
 /// the balance:
-///  - `spendable`: the founder (and agents inside daily limits) may send it anywhere;
-///  - `melting`: the melting floor, 60 of every 75 settled; it moves to `spendable` evenly over 365 active days;
-///  - `permanentFloor`: money added as "Share revenue"; it never melts;
+///  - `spendable`: the runner (and agents inside daily limits) may send it anywhere;
+///  - `melting`: the melting floor, 60 of every 75 settled from the auction and 82 of every 97 from a reserve sale; it moves
+///    to `spendable` evenly over 365 active days;
+///  - `permanentFloor`: money added as "Share revenue"; it never melts and is shared by every Share that exists;
 ///  - `feesOwed`: the platform's cut of exits, waiting to be swept (so a blocked platform address cannot block exits).
 ///
-/// Nobody, the founder included, can move floor money anywhere except to an exiting holder or, through the daily
+/// The runner is an address: the founder at birth, later a Pair (two signers), later a Council. Only the runner checks in,
+/// spends, gives Shares and sets agents, and only the runner can hand the seat on (the next runner takes it in a second
+/// transaction). Backing-round money is held by the project's Rounds, not here; the Rounds release it into `spendable` on
+/// the same check-in window as the melting floor.
+///
+/// Nobody, the runner included, can move floor money anywhere except to an exiting holder or, through the daily
 /// release, into `spendable`. Anything sent to this contract outside the functions below is never counted as money of
 /// any bucket and never reaches anyone (it is a donation).
 ///
@@ -35,10 +41,13 @@ contract Treasury {
         IERC20 quote; // the dollar token
         IShares shares; // the project's ShareToken
         IVester vester; // the project's Vester
-        address founder; // the person who runs the project
+        address rounds; // the project's Rounds (backing rounds); told before the active window changes
+        address founder; // the person who started the project, and its first runner
         address platform; // receives the platform's part of exit fees
         address opener; // the project's Finisher: the only address that may say the pool is open, the sale closed, or abandoned
-        address salePath; // the Launcher: the only address that may take reserve Shares out for a public sale
+        address salePath; // the Launcher: reserve sales, "no market", wind down and the pauser
+        address stake; // receives Creaton's stake as held Shares when the market opens
+        uint256 stakeAmount; // the stake: 20,000,000 Shares from the reserve
         uint16 exitFeeBps; // total exit fee, in ten-thousandths
         uint16 platformFeeBps; // the part of the exit fee that goes to the platform
         uint16 spendableParts; // settle: parts of fresh money that go to `spendable` (15)
@@ -59,8 +68,13 @@ contract Treasury {
     uint256 public constant RELEASE_PERIOD = 365 days;
     /// @notice How long after a check-in the daily release keeps accruing.
     uint256 public constant CHECK_IN_WINDOW = 14 days;
-    /// @notice Gifts after the pool opens: at most this many ten-thousandths of all Shares in any 30 days.
+    /// @notice Gifts after the pool opens: at most this many ten-thousandths of the Shares in people's hands
+    /// (`countingSupply`) in any 30 days.
     uint256 public constant GIFT_CAP_BPS = 100;
+    /// @notice A reserve sale's money (after the platform's 3): 15 parts spendable, 82 parts melting floor.
+    uint256 public constant RESERVE_SPENDABLE_PARTS = 15;
+    /// @notice See `RESERVE_SPENDABLE_PARTS`.
+    uint256 public constant RESERVE_FLOOR_PARTS = 82;
     uint256 private constant BPS = 10_000;
     uint256 private constant DAY = 1 days;
     uint256 private constant DAY_PARTS = 6; // an agent's used amount counts for 24 to 28 hours
@@ -71,10 +85,13 @@ contract Treasury {
     IERC20 public quote;
     IShares public shares;
     IVester public vester;
+    IRounds public rounds;
     address public founder;
     address public platform;
     address public opener;
     address public salePath;
+    address public stake;
+    uint256 public stakeAmount;
     uint16 public exitFeeBps;
     uint16 public platformFeeBps;
     uint16 public spendableParts;
@@ -98,7 +115,19 @@ contract Treasury {
     bool public abandoned; // the sale was abandoned: no pool was ever made (`poolOpen` is true too)
     bool public settled; // sale money has been split at least once
     bool public saleClosed; // the sale's last finish step is done: unsold Shares are back here
+    bool public noMarket; // the project declared "no market": the clock runs, no auction ever opens (`poolOpen` is true too)
+    bool public woundDown; // payments stopped for good; the exit fee is the platform's part only
+    bool public paused; // the pauser stopped the release (backing rounds and the melting floor) until it says otherwise
+    bool public reserveSaleOpen; // reserve Shares are out in a sale: exits wait until it is finished
     uint256 public workPot; // Shares still available for Give Shares
+
+    // ---- who runs the project
+    address public runner; // the founder at birth, then whoever the runner hands the seat to
+    address public pendingRunner; // the seat was offered to this address; it takes it with `takeSeat`
+    bool public pendingTrim; // the hand-over on offer trims the founder's grant (the founder is leaving)
+    address public pauser; // may pause the release (set by the Launcher; later the holders' vote)
+    uint256 public agentEpoch; // agents set before the last hand-over are switched off
+    mapping(address => uint256) public agentEpochOf;
 
     mapping(address => Agent) public agents;
     mapping(address => RollingCap.Ring) private _agentUsd;
@@ -110,14 +139,15 @@ contract Treasury {
     event Settled(uint256 amount, uint256 toSpendable, uint256 toFloor);
     /// @notice The daily release moved melting floor to spendable.
     event Released(uint256 amount);
-    /// @notice The founder or an agent checked in; the release accrues for 14 days from now.
+    /// @notice The runner checked in; the release accrues for 14 days from now.
     event CheckedIn(address indexed by);
     /// @notice Dollars were sent from `spendable`.
     event Spent(address indexed by, address indexed to, uint256 amount);
     /// @notice Shares were given from the work pot; `vested` says they went to the Vester.
     event SharesGiven(address indexed by, address indexed to, uint256 amount, bool vested);
-    /// @notice A holder handed Shares back for their slice of the floor.
-    event HandedBack(address indexed holder, uint256 shares, uint256 paid, uint256 toPlatform, uint256 stays);
+    /// @notice A holder handed Shares back for their slice of the floor. The whole slice left the floor: `paid` to the holder,
+    /// `toPlatform` owed to the platform and `toProject` added to `spendable`.
+    event HandedBack(address indexed holder, uint256 shares, uint256 paid, uint256 toPlatform, uint256 toProject);
     /// @notice Dollars were added to the permanent floor.
     event ShareRevenue(address indexed from, uint256 amount);
     /// @notice Dollars were added to `spendable`.
@@ -133,8 +163,26 @@ contract Treasury {
     event SaleAbandoned(uint256 time);
     /// @notice The sale's finish is complete; exits are open from now (once sale money has been split).
     event SaleClosed(uint256 time);
-    /// @notice Reserve Shares left through the sale path.
+    /// @notice Reserve Shares left through the sale path for a reserve sale; exits wait until it is finished.
     event ReserveReleased(address indexed to, uint256 amount);
+    /// @notice The reserve sale finished; exits are open again.
+    event ReserveSaleClosed(uint256 time);
+    /// @notice A reserve sale's money was split: 15 parts spendable, 82 parts melting floor.
+    event ReserveSaleSettled(uint256 amount, uint256 toSpendable, uint256 toFloor);
+    /// @notice Creaton's stake was set aside in the Vester as held Shares when the market opened.
+    event StakeGranted(address indexed stake, uint256 amount);
+    /// @notice The runner offered the seat to `to`; `founderLeaves` trims the founder's grant when it is taken.
+    event SeatOffered(address indexed from, address indexed to, bool founderLeaves);
+    /// @notice `to` took the runner seat from `from`; `cut` Shares of the founder's grant went back to the work pot.
+    event RunnerChanged(address indexed from, address indexed to, uint256 cut);
+    /// @notice The address that may pause the release was set.
+    event PauserSet(address indexed pauser);
+    /// @notice The release was paused (`on`) or resumed.
+    event Paused(bool on);
+    /// @notice The project wound down: payments stopped for good, the exit fee is the platform's part only.
+    event WoundDown(uint256 time);
+    /// @notice The project declared "no market": the Vester's clock started and no auction will ever open.
+    event NoMarketDeclared(uint256 time);
 
     /// @notice The clone was already set up, or the setup is not valid.
     error BadSetup();
@@ -167,6 +215,10 @@ contract Treasury {
     error WorkPotShort(uint256 amount, uint256 left);
     /// @notice The quote token moved a different amount than it was asked to.
     error TokenMisbehaved();
+    /// @notice The project wound down already.
+    error AlreadyWoundDown();
+    /// @notice A reserve sale is open already, or none is.
+    error ReserveSaleState();
 
     modifier nonReentrant() {
         if (_locked) revert Reentrancy();
@@ -179,19 +231,26 @@ contract Treasury {
         founder = address(1); // locks the implementation the clones point at
     }
 
+    modifier onlyRunner() {
+        if (msg.sender != runner) revert NotAllowed();
+        _;
+    }
+
     /// @notice Set up the clone, once. The Launcher calls it in the transaction that creates the clone, so nobody can
     /// get in first.
     function initialize(Setup calldata s) external {
         if (founder != address(0)) revert BadSetup();
         if (
             s.founder == address(0) || s.platform == address(0) || s.opener == address(0) || s.salePath == address(0)
+                || s.rounds == address(0) || (s.stake == address(0) && s.stakeAmount != 0)
                 || address(s.quote) == address(0) || address(s.vester) == address(0) || address(s.shares) == address(0)
                 || s.exitFeeBps >= BPS || s.platformFeeBps > s.exitFeeBps || s.spendableParts == 0 || s.floorParts == 0
                 || s.spendableParts > MAX_SPLIT_PART || s.floorParts > MAX_SPLIT_PART
                 || s.shares.balanceOf(address(this)) < s.workPot
         ) revert BadSetup();
         (quote, shares, vester, founder, platform) = (s.quote, s.shares, s.vester, s.founder, s.platform);
-        (opener, salePath, workPot) = (s.opener, s.salePath, s.workPot);
+        (opener, salePath, workPot, runner) = (s.opener, s.salePath, s.workPot, s.founder);
+        (rounds, stake, stakeAmount) = (IRounds(s.rounds), s.stake, s.stakeAmount);
         (exitFeeBps, platformFeeBps, spendableParts, floorParts) =
             (s.exitFeeBps, s.platformFeeBps, s.spendableParts, s.floorParts);
         (defaultAgentUsd, defaultAgentShares) = (s.agentUsd, s.agentShares);
@@ -200,13 +259,34 @@ contract Treasury {
     // ================================================ money coming in ================================================
 
     /// @notice Say that the project's pool is proven open, once, and start the Vester's clock. Only the `opener` (the
-    /// project's Finisher, which has read the pool at the guarded key) may call it.
+    /// project's Finisher, which has read the pool at the guarded key) may call it. Creaton's stake (`stakeAmount` Shares, or
+    /// the whole reserve if it ever held less) moves from the reserve into the Vester as held Shares in the same call, so it
+    /// is on the same clock as everyone and exists only for a project whose market opened.
     function markPoolOpen() external nonReentrant {
         if (msg.sender != opener) revert NotAllowed();
         if (poolOpen) revert PoolAlreadyOpen();
         poolOpen = true;
+        uint256 s = stakeAmount;
+        uint256 left = reserve();
+        if (s > left) s = left;
+        if (s != 0) {
+            _sendShares(address(vester), s);
+            vester.grant(stake, s);
+            emit StakeGranted(stake, s);
+        }
         vester.startNow();
         emit PoolOpened(block.timestamp);
+    }
+
+    /// @notice Declare "no market", once, before any market: the Vester's clock starts (held Shares begin their 365-day
+    /// release) and the Launcher never opens an auction for this project again. Only the `salePath` (the Launcher, which
+    /// checks who asks and when).
+    function markNoMarket() external nonReentrant {
+        if (msg.sender != salePath) revert NotAllowed();
+        if (poolOpen) revert PoolAlreadyOpen();
+        (poolOpen, noMarket) = (true, true);
+        vester.startNow();
+        emit NoMarketDeclared(block.timestamp);
     }
 
     /// @notice Say that the sale was abandoned, once: seven days after it ended no pool exists. The Vester's clock starts
@@ -268,12 +348,28 @@ contract Treasury {
         emit Settled(amount, 0, amount);
     }
 
+    /// @notice Split a reserve sale's money that has arrived: 15 parts spendable, 82 parts melting floor (the platform's 3 was
+    /// taken by the auction). Only the `salePath`, which moves the money here and calls this in one transaction.
+    function settleReserveSale(uint256 amount) external nonReentrant {
+        if (msg.sender != salePath) revert NotAllowed();
+        if (amount == 0) revert BadInput();
+        uint256 arrived = unaccounted();
+        if (amount > arrived) revert NotArrived(amount, arrived);
+        _accrue();
+        uint256 toSpendable = amount * RESERVE_SPENDABLE_PARTS / (RESERVE_SPENDABLE_PARTS + RESERVE_FLOOR_PARTS);
+        spendable += toSpendable;
+        _addMelting(amount - toSpendable);
+        emit ReserveSaleSettled(amount, toSpendable, amount - toSpendable);
+    }
+
     /// @dev Add to the melting floor, blending its release time by money, and open the check-in window on the first call.
+    /// The Rounds' clock is worked out first, because opening the window changes it.
     function _addMelting(uint256 toFloor) private {
         uint256 m = melting;
         meltRemaining = m == 0 ? RELEASE_PERIOD : (m * meltRemaining + toFloor * RELEASE_PERIOD) / (m + toFloor);
         melting = m + toFloor;
         if (!settled) {
+            rounds.sync();
             (settled, accruedUpTo, lastCheckIn) = (true, block.timestamp, block.timestamp);
         }
     }
@@ -286,7 +382,8 @@ contract Treasury {
     }
 
     /// @notice Add dollars to the permanent floor ("Share revenue"). It never melts and belongs to holders only through
-    /// the exit right.
+    /// the exit right, shared by every Share that exists (`handBack` pays `permanentFloor * burned / totalSupply`), so Shares
+    /// that enter people's hands later (gifts, releases) never thin the claim of those already holding.
     function shareRevenue(uint256 amount) external nonReentrant {
         uint256 got = _pull(amount);
         permanentFloor += got;
@@ -302,13 +399,82 @@ contract Treasury {
 
     // ============================================== the daily release ================================================
 
-    /// @notice Press check-in. The founder or an agent calls it; the daily release then accrues for 14 days. Time that
-    /// passed outside a window is never paid back.
+    /// @notice Press check-in. Only the runner (a person, or the Pair or Council contract a person signs for); an agent
+    /// account may not. The daily release (here and in the backing rounds) then accrues for 14 days. Time that passed
+    /// outside a window is never paid back.
     function checkIn() external nonReentrant {
-        if (msg.sender != founder && !agents[msg.sender].active) revert NotAllowed();
-        _accrue();
+        if (msg.sender != runner) revert NotAllowed();
+        _sync();
         lastCheckIn = block.timestamp;
         emit CheckedIn(msg.sender);
+    }
+
+    /// @notice The end of the active window right now: the last check-in plus 14 days, or zero while the release is paused
+    /// or after the project wound down. The melting floor and the backing rounds count release time only up to it.
+    function activeEnd() public view returns (uint256) {
+        if (paused || woundDown) return 0;
+        return lastCheckIn + CHECK_IN_WINDOW;
+    }
+
+    // ============================================ the seam for later stages ==========================================
+
+    /// @notice Offer the runner seat to `next` (a successor, a Pair, a Council). Only the runner. Nothing moves until `next`
+    /// calls `takeSeat`. With `founderLeaves`, taking the seat also trims the founder's grant (before a market only): the
+    /// founder keeps the days served since launch out of 365 and the rest returns to the work pot. A new offer replaces the
+    /// last one.
+    function handOver(address next, bool founderLeaves) external onlyRunner {
+        if (next == address(0) || next == runner) revert BadInput();
+        (pendingRunner, pendingTrim) = (next, founderLeaves);
+        emit SeatOffered(msg.sender, next, founderLeaves);
+    }
+
+    /// @notice Take the runner seat that was offered to the caller. Agents set by earlier runners stop working.
+    function takeSeat() external nonReentrant {
+        if (msg.sender != pendingRunner || msg.sender == address(0)) revert NotAllowed();
+        uint256 cut;
+        if (pendingTrim) {
+            cut = vester.trimFounder();
+            workPot += cut;
+        }
+        address from = runner;
+        (runner, pendingRunner, pendingTrim) = (msg.sender, address(0), false);
+        ++agentEpoch;
+        emit RunnerChanged(from, msg.sender, cut);
+    }
+
+    /// @notice Name the address that may pause the release. Only the `salePath` (the Launcher, for the holders' vote).
+    function setPauser(address next) external {
+        if (msg.sender != salePath) revert NotAllowed();
+        pauser = next;
+        emit PauserSet(next);
+    }
+
+    /// @notice Pause (`on`) or resume the release of the melting floor and of the backing rounds. Only the pauser. Paused
+    /// time is never paid back, like time outside a check-in window.
+    function setPaused(bool on) external nonReentrant {
+        if (msg.sender != pauser || msg.sender == address(0)) revert NotAllowed();
+        _sync();
+        paused = on;
+        emit Paused(on);
+    }
+
+    /// @notice Wind the project down, once, for good. Only the `salePath` (the Launcher checks who asks: the runner before
+    /// a market, a Council after it). Payments stop for good (no more release here or in the backing rounds), the exit
+    /// fee drops to the platform's part, and backers' refunds keep working with only that part as their fee. The floor
+    /// stays for holders to hand back against; `spendable` stays the runner's.
+    function markWoundDown() external nonReentrant {
+        if (msg.sender != salePath) revert NotAllowed();
+        if (woundDown) revert AlreadyWoundDown();
+        _sync();
+        woundDown = true;
+        rounds.windDown();
+        emit WoundDown(block.timestamp);
+    }
+
+    /// @dev Work out the release here and in the Rounds before the active window changes.
+    function _sync() private {
+        _accrue();
+        rounds.sync();
     }
 
     /// @notice Work out the release up to now. Anyone may call it; every other function that reads `spendable` does it
@@ -333,7 +499,7 @@ contract Treasury {
         remaining = meltRemaining;
         uint256 m = melting;
         if (from == 0 || m == 0) return (0, remaining);
-        uint256 end = lastCheckIn + CHECK_IN_WINDOW;
+        uint256 end = activeEnd();
         uint256 upto = block.timestamp < end ? block.timestamp : end;
         if (upto <= from) return (0, remaining);
         uint256 active = upto - from;
@@ -355,12 +521,13 @@ contract Treasury {
 
     // ============================================ spending and Shares out ============================================
 
-    /// @notice Send dollars out of `spendable`. The founder may send any amount; an agent only inside its daily limit.
+    /// @notice Send dollars out of `spendable`. The runner may send any amount (a Pair limits each signer itself); an agent
+    /// only inside its daily limit.
     function spend(address to, uint256 amount) external nonReentrant {
         if (to == address(0) || amount == 0) revert BadInput();
-        if (msg.sender != founder) {
+        if (msg.sender != runner) {
             Agent memory a = agents[msg.sender];
-            if (!a.active) revert NotAllowed();
+            if (!a.active || agentEpochOf[msg.sender] != agentEpoch) revert NotAllowed();
             _agentUsd[msg.sender].consume(DAY, DAY_PARTS, a.usdCap, amount);
         }
         _accrue();
@@ -370,22 +537,23 @@ contract Treasury {
         emit Spent(msg.sender, to, amount);
     }
 
-    /// @notice Give Shares from the work pot to a person, in one call. The founder may give any amount the pot has; an
-    /// agent only inside its daily Share limit. Before the pool opens the Shares go to the Vester and follow its
-    /// 365-day release; after it they go straight to `to`, at most 1% of all Shares in any 30 days for the whole project.
+    /// @notice Give Shares from the work pot to a person, in one call. The runner may give any amount the pot has; an
+    /// agent only inside its daily Share limit. Before the clock starts the Shares go to the Vester and follow its
+    /// 365-day release; after it they go straight to `to`, at most 1% of the Shares in people's hands (`countingSupply`) in
+    /// any 30 days for the whole project.
     function giveShares(address to, uint256 amount) external nonReentrant {
         if (to == address(0) || to == address(this) || to == address(vester) || to == address(shares) || amount == 0) {
             revert BadInput();
         }
-        if (msg.sender != founder) {
+        if (msg.sender != runner) {
             Agent memory a = agents[msg.sender];
-            if (!a.active) revert NotAllowed();
+            if (!a.active || agentEpochOf[msg.sender] != agentEpoch) revert NotAllowed();
             _agentShares[msg.sender].consume(DAY, DAY_PARTS, a.shareCap, amount);
         }
         if (amount > workPot) revert WorkPotShort(amount, workPot);
         workPot -= amount;
         if (poolOpen) {
-            _gifts.consume(MONTH, MONTH_PARTS, shares.totalSupply() * GIFT_CAP_BPS / BPS, amount);
+            _gifts.consume(MONTH, MONTH_PARTS, countingSupply() * GIFT_CAP_BPS / BPS, amount);
             _sendShares(to, amount);
         } else {
             _sendShares(address(vester), amount);
@@ -394,19 +562,29 @@ contract Treasury {
         emit SharesGiven(msg.sender, to, amount, !poolOpen);
     }
 
-    /// @notice Take reserve Shares out for a public sale. Only the sale path the Launcher named may call it (a stub
-    /// until milestone 3); the reserve is the Shares held here beyond the work pot.
+    /// @notice Take reserve Shares out for a reserve sale. Only the sale path (the Launcher); the reserve is the Shares held
+    /// here beyond the work pot. Exits wait until `closeReserveSale`, so Shares out for sale never count as held by people.
     function releaseReserve(address to, uint256 amount) external nonReentrant {
         if (msg.sender != salePath) revert NotAllowed();
+        if (reserveSaleOpen) revert ReserveSaleState();
         uint256 left = reserve();
         if (to == address(0) || amount == 0) revert BadInput();
         if (amount > left) revert TooMuch(amount, left);
+        reserveSaleOpen = true;
         _sendShares(to, amount);
         emit ReserveReleased(to, amount);
     }
 
-    /// @notice Shares held here that are not the work pot: the 10% reserve, plus any Shares returned by the pool step or
-    /// donated. They leave only through `releaseReserve`.
+    /// @notice The reserve sale is finished and its unsold Shares are back: exits open again. Only the sale path.
+    function closeReserveSale() external nonReentrant {
+        if (msg.sender != salePath) revert NotAllowed();
+        if (!reserveSaleOpen) revert ReserveSaleState();
+        reserveSaleOpen = false;
+        emit ReserveSaleClosed(block.timestamp);
+    }
+
+    /// @notice Shares held here that are not the work pot: the 10% reserve, plus any Shares returned by the pool step, the
+    /// backing rounds (unsold or refunded) or donated. They leave only through `releaseReserve` and the stake.
     function reserve() public view returns (uint256) {
         return shares.balanceOf(address(this)) - workPot;
     }
@@ -418,18 +596,20 @@ contract Treasury {
         setAgent(agent, defaultAgentUsd, defaultAgentShares);
     }
 
-    /// @notice Let an account act as an agent with chosen daily limits, or change them. Only the founder. What the agent
-    /// already used still counts, so switching an agent off and on again does not reset its limit.
+    /// @notice Let an account act as an agent with chosen daily limits, or change them. Only the runner. What the agent
+    /// already used still counts, so switching an agent off and on again does not reset its limit. An agent works only
+    /// under the runner that set it: a hand-over switches every agent off.
     function setAgent(address agent, uint128 usdCap, uint128 shareCap) public {
-        if (msg.sender != founder) revert NotAllowed();
+        if (msg.sender != runner) revert NotAllowed();
         if (agent == address(0)) revert BadInput();
         agents[agent] = Agent({active: true, usdCap: usdCap, shareCap: shareCap});
+        agentEpochOf[agent] = agentEpoch;
         emit AgentSet(agent, true, usdCap, shareCap);
     }
 
-    /// @notice Switch an agent off. Only the founder.
+    /// @notice Switch an agent off. Only the runner.
     function revokeAgent(address agent) external {
-        if (msg.sender != founder) revert NotAllowed();
+        if (msg.sender != runner) revert NotAllowed();
         agents[agent].active = false;
         emit AgentSet(agent, false, agents[agent].usdCap, agents[agent].shareCap);
     }
@@ -444,48 +624,54 @@ contract Treasury {
         return _agentShares[agent].used(DAY, DAY_PARTS);
     }
 
-    /// @notice Shares given after the pool opened that still count against the 1% in 30 days.
+    /// @notice Shares given after the clock started that still count against the 1% in 30 days.
     function giftsUsed() external view returns (uint256) {
         return _gifts.used(MONTH, MONTH_PARTS);
     }
 
     // ================================================== the exit =====================================================
 
-    /// @notice Shares in people's hands for the exit right: all Shares minus those held here and those the Vester has not
-    /// released yet. Released Shares count whether or not their owner has pressed claim, so no stranger's claim can
-    /// move anyone's price. Read each time; no caller supplies it.
+    /// @notice Shares in people's hands for the exit right: all Shares minus those held here, by the Rounds (unsold or
+    /// bought and not yet set aside), by the Finisher (not yet sold) and those the Vester has not released yet. Released
+    /// Shares count whether or not their owner has pressed claim, so no stranger's claim can move anyone's price. Read each
+    /// time; no caller supplies it.
     function countingSupply() public view returns (uint256) {
-        return shares.totalSupply() - shares.balanceOf(address(this)) - vester.unreleased();
+        return shares.totalSupply() - shares.balanceOf(address(this)) - shares.balanceOf(address(rounds))
+            - shares.balanceOf(opener) - vester.unreleased();
     }
 
     /// @notice Hand Shares back: burn your own (approve this contract first) and receive your slice of the floor, less
-    /// the exit fee. Slice = (melting + permanent floor) * burned / countingSupply, worked out after today's release. Only
-    /// the floor is reachable, never `spendable`. Refused until sale money has been split and the sale's finish is
-    /// complete (so unsold Shares are not counted as held by people). The fee is 5% of the slice:
-    /// 4% stays in the floor for those who remain and 1% is owed to the platform. The last holder pays it too: the 4%
-    /// then stays in the floor for whoever holds Shares next.
+    /// the exit fee. Slice = melting * burned / countingSupply + permanentFloor * burned / totalSupply, worked out after
+    /// today's release: the melting floor is shared by the Shares in people's hands, the Share revenue by every Share that
+    /// exists. Only the floor is reachable, never `spendable`. Refused until sale money has been split and the sale's
+    /// finish is complete, and while a reserve sale is out (so unsold Shares are never counted as held by people). The whole
+    /// slice leaves the floor, so the floor per Share of those who remain never moves and leaving in pieces pays exactly
+    /// what leaving at once pays: the fee is 5% of the slice (rounded up), 1% owed to the platform and 4% added to the
+    /// project's `spendable`. After a wind-down the fee is the platform's 1% only.
     /// @param amount Shares to burn.
     /// @return paid Dollars sent to the caller.
     function handBack(uint256 amount) external nonReentrant returns (uint256 paid) {
         if (!settled) revert NotSettled();
-        if (!saleClosed) revert SaleNotClosed();
+        if (!saleClosed || reserveSaleOpen) revert SaleNotClosed();
         if (amount == 0) revert BadInput();
         _accrue();
         uint256 counting = countingSupply();
         if (amount > counting) revert TooMuch(amount, counting);
-        uint256 floorTotal = melting + permanentFloor;
-        uint256 slice = floorTotal * amount / counting;
-        paid = slice - (slice * exitFeeBps + BPS - 1) / BPS; // the fee rounds up, so the holder never pays less than it
+        uint256 fromMelting = melting * amount / counting;
+        uint256 fromPermanent = permanentFloor * amount / shares.totalSupply();
+        uint256 slice = fromMelting + fromPermanent;
+        uint256 feeBps = woundDown ? platformFeeBps : exitFeeBps;
+        paid = slice - (slice * feeBps + BPS - 1) / BPS; // the fee rounds up, so the holder never pays less than it
         if (paid == 0) revert NothingToPay();
-        uint256 toPlatform = slice * platformFeeBps / BPS;
-        uint256 leaves = paid + toPlatform; // the rest of the fee never leaves the floor
-        uint256 fromPermanent = leaves * permanentFloor / floorTotal;
+        uint256 toPlatform = woundDown ? slice - paid : slice * platformFeeBps / BPS;
+        uint256 toProject = slice - paid - toPlatform;
         permanentFloor -= fromPermanent;
-        melting -= leaves - fromPermanent;
+        melting -= fromMelting;
+        spendable += toProject;
         feesOwed += toPlatform;
         shares.burnFrom(msg.sender, amount);
         _pay(msg.sender, paid);
-        emit HandedBack(msg.sender, amount, paid, toPlatform, slice - leaves);
+        emit HandedBack(msg.sender, amount, paid, toPlatform, toProject);
     }
 
     /// @notice Send the platform its owed exit fees. Anyone may call it.

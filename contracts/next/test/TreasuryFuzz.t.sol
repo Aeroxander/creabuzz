@@ -48,24 +48,27 @@ contract TreasuryFuzzTest is Base {
         t.release();
         amount = bound(amount, 1, holding);
 
-        uint256 floorBefore = t.melting() + t.permanentFloor();
+        uint256 meltingBefore = t.melting();
+        uint256 permanentBefore = t.permanentFloor();
         uint256 countingBefore = t.countingSupply();
         uint256 spendableBefore = t.spendable();
         uint256 balanceBefore = usd.balanceOf(address(t));
         uint256 supplyBefore = shares.totalSupply();
         vm.prank(alice);
         try t.handBack(amount) returns (uint256 paid) {
-            uint256 slice = floorBefore * amount / countingBefore;
+            // plan version 2: melting by the Shares in hands, Share revenue by every Share that exists
+            uint256 slice = meltingBefore * amount / countingBefore + permanentBefore * amount / supplyBefore;
             assertLe(paid, slice, "never more than its slice");
             assertGe(paid + (slice * 500 + 9999) / 10_000, slice, "never less than the slice less the 5 percent fee");
             assertLe(paid + t.feesOwed(), slice, "the holder and the platform together get under the slice");
-            assertEq(t.spendable(), spendableBefore, "spendable untouched");
+            assertEq(t.spendable(), spendableBefore + (slice - paid - t.feesOwed()), "spendable only gains the fee's 4");
             assertEq(usd.balanceOf(address(t)), balanceBefore - paid, "exactly what was paid left the balance");
             assertEq(shares.totalSupply(), supplyBefore - amount);
             assertEq(usd.balanceOf(address(t)), _buckets() + t.unaccounted());
             assertEq(t.unaccounted(), 0);
-            // the floor per Share of the others did not fall
-            assertGe((t.melting() + t.permanentFloor()) * countingBefore, floorBefore * t.countingSupply());
+            // the floor per Share of the others did not fall, on either floor
+            assertGe(t.melting() * countingBefore, meltingBefore * t.countingSupply());
+            assertGe(t.permanentFloor() * supplyBefore, permanentBefore * shares.totalSupply());
         } catch (bytes memory err) {
             assertEq(bytes4(err), Treasury.NothingToPay.selector, "the only refusal here is a slice too small to pay");
             assertEq(shares.totalSupply(), supplyBefore, "and nothing was burned");
@@ -82,17 +85,18 @@ contract TreasuryFuzzTest is Base {
             uint256 bal = shares.balanceOf(who);
             if (bal == 0) continue;
             uint256 amount = bound(seed >> 8, 1, bal);
-            uint256 slice = (t.melting() + t.permanentFloor()) * amount / t.countingSupply();
+            uint256 slice = t.melting() * amount / t.countingSupply();
             vm.prank(who);
             try t.handBack(amount) returns (uint256 paid) {
                 assertLe(paid, slice);
                 totalPaid += paid;
             } catch {}
         }
-        // the 4% an exit leaves goes to those who remain, so later exits recover some of it; nobody gets past the floor
-        assertLe(totalPaid + t.feesOwed(), M, "all exits and the platform's part together cannot pass the floor");
-        assertLe(totalPaid, M * 99 / 100, "and the platform's 1% of every slice is never paid out");
-        assertEq(t.spendable(), S);
+        // the whole slice leaves with each exit: the holder's 95, the platform's 1 and the project's 4 never pass the floor
+        assertLe(
+            totalPaid + t.feesOwed() + (t.spendable() - S), M, "all exits and both fee parts cannot pass the floor"
+        );
+        assertLe(totalPaid, M * 95 / 100, "and the 5% fee of every slice is never paid out");
         assertEq(usd.balanceOf(address(t)), _buckets());
     }
 

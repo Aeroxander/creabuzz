@@ -51,8 +51,14 @@ contract TreasuryAttacksTest is Base {
         uint256 a = _handBack(alice, 100_000_000 * SHARE);
         uint256 b = _handBack(bob, 400_000_000 * SHARE); // every holder leaves
         assertEq(t.countingSupply(), 0);
-        assertEq(t.spendable(), S, "the spendable bucket is untouched by every exit");
-        assertEq(a + b + t.feesOwed() + t.melting(), M, "everything paid came out of the 6,000 floor and nothing else");
+        // the exit never takes from spendable; it adds the fee's 4 to it (plan version 2)
+        assertEq(t.spendable(), S + M * 4 / 100, "spendable only grew, by 4 of every 100 of floor handed back");
+        assertEq(t.melting(), 0, "the whole floor left with the holders, the platform and the project");
+        assertEq(
+            a + b + t.feesOwed() + (t.spendable() - S),
+            M,
+            "everything paid came out of the 6,000 floor and nothing else"
+        );
         assertGe(usd.balanceOf(address(t)), S + t.feesOwed() + t.melting());
         // and a second wave of exits finds nothing to burn Shares for
         vm.prank(carol);
@@ -67,10 +73,13 @@ contract TreasuryAttacksTest is Base {
             quote: IERC20(address(usd)),
             shares: IShares(address(shares)),
             vester: IVester(address(v)),
+            rounds: carol,
             founder: carol,
             platform: carol,
             opener: carol,
             salePath: carol,
+            stake: carol,
+            stakeAmount: 0,
             exitFeeBps: 0,
             platformFeeBps: 0,
             spendableParts: 1,
@@ -87,7 +96,7 @@ contract TreasuryAttacksTest is Base {
         vm.expectRevert(Treasury.BadSetup.selector);
         t.initialize(evil);
         vm.expectRevert(Vester.AlreadyInitialized.selector);
-        v.initialize(IShares(address(shares)), carol, carol, carol, 1);
+        v.initialize(IShares(address(shares)), carol, carol, carol, carol, 1);
         vm.expectRevert(ShareToken.BadBirth.selector);
         shares.initialize("Mine", "MINE", to, amounts);
         vm.stopPrank();
@@ -145,24 +154,31 @@ contract TreasuryAttacksTest is Base {
         _world();
         vm.prank(founder);
         t.setAgent(agent, type(uint128).max, type(uint128).max); // the runner lifted the agent's own caps entirely
-        // ten recipients, one million each, by two different givers: the project's 1% (10,000,000) is shared by all
+        // ten recipients, half a million each, by two different givers: the project's 1% of the 500M in hands is shared by all
         for (uint256 i; i < 5; ++i) {
             vm.prank(founder);
-            t.giveShares(address(uint160(0x3000 + i)), 1_000_000 * SHARE);
+            t.giveShares(address(uint160(0x3000 + i)), 500_000 * SHARE);
             vm.prank(agent);
-            t.giveShares(address(uint160(0x4000 + i)), 1_000_000 * SHARE);
+            t.giveShares(address(uint160(0x4000 + i)), 500_000 * SHARE);
         }
-        assertEq(t.giftsUsed(), 10_000_000 * SHARE);
+        assertEq(t.giftsUsed(), 5_000_000 * SHARE);
+        // the cap follows the Shares in hands, gifts included (505M now): one unit past it is refused for every giver
+        uint256 over = t.countingSupply() / 100 - t.giftsUsed() + 1;
         vm.prank(founder);
         vm.expectRevert();
-        t.giveShares(address(uint160(0x5000)), 1);
+        t.giveShares(address(uint160(0x5000)), over);
         vm.prank(agent);
         vm.expectRevert();
-        t.giveShares(address(uint160(0x5001)), 1);
-        // many tiny gifts do not get around it either
-        vm.prank(founder);
-        vm.expectRevert();
-        t.giveShares(address(uint160(0x5002)), 1);
+        t.giveShares(address(uint160(0x5001)), over);
+        // many small gifts that each fill the room left never pass 1% of the Shares in hands before them, over 99
+        uint256 before = 500_000_000 * SHARE;
+        for (uint256 i; i < 10; ++i) {
+            uint256 room = t.countingSupply() / 100 - t.giftsUsed();
+            if (room == 0) break;
+            vm.prank(founder);
+            t.giveShares(address(uint160(0x6000 + i)), room);
+        }
+        assertLe(t.giftsUsed(), before / 99 + 1, "at most 1.0101 percent of the Shares in hands before the gifts");
     }
 
     // ---------------------------------------------------------------------------------- founder dump at pool open
@@ -215,17 +231,17 @@ contract TreasuryAttacksTest is Base {
         _world();
         address puppet = makeAddr("puppet");
         vm.startPrank(founder);
-        t.giveShares(puppet, 10_000_000 * SHARE); // the most a month allows
+        t.giveShares(puppet, 5_000_000 * SHARE); // 1% of the 500M in people's hands
         vm.expectRevert();
-        t.giveShares(puppet, 1);
+        t.giveShares(puppet, 50_001 * SHARE); // past 1% of the 505M in hands now
         vm.stopPrank();
-        assertEq(shares.balanceOf(puppet), 10_000_000 * SHARE);
+        assertEq(shares.balanceOf(puppet), 5_000_000 * SHARE);
         vm.startPrank(puppet);
         shares.approve(address(t), type(uint256).max);
-        uint256 paid = t.handBack(10_000_000 * SHARE);
+        uint256 paid = t.handBack(5_000_000 * SHARE);
         vm.stopPrank();
-        // 10M of 510M counting Shares of a 6,000 dollar floor, less the 5% fee
-        assertEq(paid, 6000 * DOLLAR * 10_000_000 / 510_000_000 * 95 / 100);
+        // 5M of 505M counting Shares of a 6,000 dollar floor, less the 5% fee
+        assertEq(paid, 6000 * DOLLAR * 5_000_000 / 505_000_000 * 95 / 100);
         assertLt(paid, M * 2 / 100);
     }
 
@@ -339,12 +355,8 @@ contract TreasuryAttacksMoreTest is Base {
         vm.expectRevert();
         t.handBack(1);
         assertEq(usd.balanceOf(address(t)), balance);
-        // a later holder (a public sale of the reserve) finds the left-over floor (the 4% fees) waiting for them
-        vm.prank(salePath);
-        t.releaseReserve(carol, 1 * SHARE);
-        _approveAll(carol);
-        uint256 paid = _handBack(carol, 1 * SHARE);
-        assertGt(paid, 0);
+        // plan version 2: the whole slice leaves with each exit, so nothing of the melting floor is left for nobody
+        assertEq(t.melting(), 0);
     }
 
     // ------------------------------------------------------------------------ nobody can declare the pool open

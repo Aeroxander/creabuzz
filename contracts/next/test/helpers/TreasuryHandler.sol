@@ -43,7 +43,8 @@ contract TreasuryHandler is Test {
     uint256 public poolOpenedAt; // when the pool was proven open (0 before)
     bool public spendableTouched; // anything but `spend` lowered `spendable`
     bool public spentTooMuch; // `spend` sent more than spendable plus what the release owed
-    bool public exitTookSpendable; // an exit changed `spendable` beyond the release it triggered
+    bool public exitTookSpendable; // an exit lowered `spendable`, or added more to it than the fee's 4
+    uint256 public stakeGranted; // the stake moved out of the reserve when the pool opened
     uint256 public exits;
     uint256 public spends;
     uint256 public giftsMade;
@@ -113,9 +114,12 @@ contract TreasuryHandler is Test {
     // ===================================================================================================== sale money
 
     function openPool() external {
+        uint256 reserveBefore = t.reserve();
         vm.prank(opener);
         try t.markPoolOpen() {
             poolOpenedAt = _now();
+            stakeGranted = reserveBefore - t.reserve();
+            grantedGhost += stakeGranted; // the stake is held in the Vester like every Share given before the market
         } catch {}
     }
 
@@ -125,15 +129,17 @@ contract TreasuryHandler is Test {
         try t.markSaleClosed() {} catch {}
     }
 
-    /// @dev What the exit denominator must be, from the handler's own books: all Shares, less the Treasury's, less the
-    /// part of everything ever granted in the Vester that the 365-day schedule has not released, whoever claimed.
+    /// @dev What the exit denominator must be, from the handler's own books: all Shares, less the Treasury's, the Rounds' and the
+    /// Finisher's, less the part of everything ever granted in the Vester that the 365-day schedule has not released, whoever
+    /// claimed.
     function independentCounting() public view returns (uint256) {
         uint256 unreleased = grantedGhost;
         if (poolOpenedAt != 0) {
             uint256 elapsed = _now() - poolOpenedAt;
             unreleased = elapsed >= 365 days ? 0 : grantedGhost - grantedGhost * elapsed / 365 days;
         }
-        return shares.totalSupply() - shares.balanceOf(address(t)) - unreleased;
+        return shares.totalSupply() - shares.balanceOf(address(t)) - shares.balanceOf(address(t.rounds()))
+            - shares.balanceOf(opener) - unreleased;
     }
 
     /// @dev Sale money (or a donation) arrives at the Treasury without being split.
@@ -210,7 +216,7 @@ contract TreasuryHandler is Test {
         address giver = _giver(sel);
         amount = bound(amount, 0, 12_000_000 * SHARE);
         bool open = t.poolOpen();
-        uint256 cap = shares.totalSupply() * t.GIFT_CAP_BPS() / 10_000;
+        uint256 cap = t.countingSupply() * t.GIFT_CAP_BPS() / 10_000; // 1% of the Shares in people's hands
         vm.prank(giver);
         try t.giveShares(_holder(to), amount) {
             giftsMade++;
@@ -238,6 +244,12 @@ contract TreasuryHandler is Test {
         try t.releaseReserve(_holder(to), amount) {
             reserveReleased += amount;
         } catch {}
+    }
+
+    /// @dev The reserve sale is finished (the sale path says so); exits open again.
+    function closeReserveSale() external {
+        vm.prank(salePath);
+        try t.closeReserveSale() {} catch {}
     }
 
     // ==================================================================================================== spending
@@ -279,7 +291,10 @@ contract TreasuryHandler is Test {
         amount = bound(amount, 0, shares.balanceOf(a) + 3);
         // work out today's release first, so the numbers below are the ones the exit will use
         t.release();
-        uint256 floorBefore = t.melting() + t.permanentFloor();
+        uint256 meltingBefore = t.melting();
+        uint256 permanentBefore = t.permanentFloor();
+        uint256 supplyBefore = shares.totalSupply();
+        uint256 feesBefore = t.feesOwed();
         uint256 countingBefore = t.countingSupply();
         if (countingBefore != independentCounting()) denominatorWrong = true;
         bool closed = t.saleClosed();
@@ -289,12 +304,17 @@ contract TreasuryHandler is Test {
             exits++;
             if (!closed) exitedBeforeClose = true;
             burned += amount;
-            if (paid * countingBefore > floorBefore * amount) exitOverpaid = true;
-            // the floor per Share of those who remain never falls: floorAfter / countingAfter >= floorBefore / countingBefore
+            // the slice: melting by the Shares in hands, Share revenue by every Share that exists
+            uint256 slice = meltingBefore * amount / countingBefore + permanentBefore * amount / supplyBefore;
+            if (paid > slice) exitOverpaid = true;
+            // the floor per Share of those who remain never falls, on either floor
             uint256 countingAfter = t.countingSupply();
-            uint256 floorAfter = t.melting() + t.permanentFloor();
-            if (countingAfter > 0 && floorAfter * countingBefore < floorBefore * countingAfter) perShareFell = true;
-            if (t.spendable() != spendableBefore) exitTookSpendable = true;
+            if (countingAfter > 0 && t.melting() * countingBefore < meltingBefore * countingAfter) perShareFell = true;
+            if (t.permanentFloor() * supplyBefore < permanentBefore * shares.totalSupply()) perShareFell = true;
+            // spendable gains exactly the fee's 4: the slice less what the holder and the platform got
+            if (t.spendable() != spendableBefore + (slice - paid - (t.feesOwed() - feesBefore))) {
+                exitTookSpendable = true;
+            }
         } catch {}
     }
 

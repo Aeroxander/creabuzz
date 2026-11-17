@@ -13,6 +13,7 @@ contract VesterTest is Test {
     Vester internal v;
     address internal starter = makeAddr("starter");
     address internal granter = makeAddr("granter");
+    address internal backerDesk = makeAddr("rounds");
     address internal founder = makeAddr("founder");
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
@@ -28,7 +29,7 @@ contract VesterTest is Test {
         (to[0], amounts[0]) = (address(v), 250_000_000e18); // 200M for the founder and 50M for gifts
         (to[1], amounts[1]) = (alice, 750_000_000e18);
         token.initialize("P", "P", to, amounts);
-        v.initialize(IShares(address(token)), starter, granter, founder, FOUNDER_SHARES);
+        v.initialize(IShares(address(token)), starter, granter, backerDesk, founder, FOUNDER_SHARES);
     }
 
     function _now() internal view returns (uint256) {
@@ -48,19 +49,19 @@ contract VesterTest is Test {
         assertEq(v.starter(), starter);
         assertEq(v.granter(), granter);
         vm.expectRevert(Vester.AlreadyInitialized.selector);
-        v.initialize(IShares(address(token)), alice, alice, alice, 1);
+        v.initialize(IShares(address(token)), alice, alice, alice, alice, 1);
     }
 
     function test_init_theImplementationIsLocked() public {
         Vester impl = new Vester();
         vm.expectRevert(Vester.AlreadyInitialized.selector);
-        impl.initialize(IShares(address(token)), alice, alice, alice, 1);
+        impl.initialize(IShares(address(token)), alice, alice, alice, alice, 1);
     }
 
     function test_init_theFounderGrantMustBeHeldHere() public {
         Vester fresh = Vester(Clones.clone(address(new Vester())));
         vm.expectRevert(Vester.NotFunded.selector);
-        fresh.initialize(IShares(address(token)), starter, granter, founder, 1);
+        fresh.initialize(IShares(address(token)), starter, granter, backerDesk, founder, 1);
     }
 
     function test_nothingIsReleasedUntilTheClockStarts() public {

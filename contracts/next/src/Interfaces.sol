@@ -21,14 +21,57 @@ interface IShares {
     function approve(address spender, uint256 value) external returns (bool);
 }
 
-/// @notice The part of a project's Vester the treasury uses.
+/// @notice The part of a project's Vester the treasury and the Rounds use.
 interface IVester {
     /// @notice Shares granted that the schedule has not released yet (depends only on the clock, not on claims).
     function unreleased() external view returns (uint256);
     /// @notice Start the release clock now, once.
     function startNow() external;
+    /// @notice When the clock started; zero until then.
+    function start() external view returns (uint256);
     /// @notice Set aside Shares (already sent here) for a beneficiary, before the clock starts.
     function grant(address beneficiary, uint256 amount) external;
+    /// @notice Cut a leaving founder's birth grant to the days served out of 365; the cut goes to the caller (the treasury).
+    function trimFounder() external returns (uint256 cut);
+    /// @notice Set aside Shares (already sent here) that `backer` bought in round `round`.
+    function grantHeld(uint256 round, address backer, uint256 amount) external;
+    /// @notice Cancel what is still held for `backer` in round `round`; returns the Shares cancelled and the grant before.
+    function cancelHeld(uint256 round, address backer) external returns (uint256 cancelled, uint256 total);
+    /// @notice A backer grant and how much of it was claimed.
+    function heldGrants(uint256 round, address backer) external view returns (uint256 total, uint256 claimed);
+}
+
+/// @notice What a project's Treasury tells its Rounds, and what the Rounds ask of it.
+interface ITreasuryRounds {
+    /// @notice The end of the active window right now: the last check-in plus 14 days, or zero while payments are paused or
+    /// after the project wound down. Release time counts only up to it.
+    function activeEnd() external view returns (uint256);
+    /// @notice Add dollars to `spendable` (pulls from the caller).
+    function topUp(uint256 amount) external;
+    /// @notice The market opened or "no market" was declared: the sale phase is over.
+    function poolOpen() external view returns (bool);
+    /// @notice The project wound down.
+    function woundDown() external view returns (bool);
+}
+
+/// @notice What a project's Treasury asks of its Rounds.
+interface IRounds {
+    /// @notice Work the shared release clock out up to now (the treasury calls it before it changes the active window).
+    function sync() external;
+    /// @notice The project wound down: releases stop for good and the refund fee falls to the platform's part.
+    function windDown() external;
+}
+
+/// @notice The runner seat of a project's Treasury, as the Pair and the Launcher see it.
+interface ITreasuryRunner {
+    /// @notice Who runs the project: the founder, a Pair, later a Council.
+    function runner() external view returns (address);
+    /// @notice Send dollars out of `spendable`.
+    function spend(address to, uint256 amount) external;
+    /// @notice Press check-in.
+    function checkIn() external;
+    /// @notice Take the runner seat that was offered to the caller.
+    function takeSeat() external;
 }
 
 /// @notice What a project's Finisher asks of its Treasury: say the pool is open, say the sale was abandoned, say the sale
