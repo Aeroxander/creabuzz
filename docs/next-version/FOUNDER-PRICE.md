@@ -1,6 +1,9 @@
 # Founder-set prices
 
-Status: a design, 17 November 2026, branch `v4-governance-rework`. **Nothing here is built; no contract was edited.** It
+Status: **built, 17 November 2026** (contracts only), branch `v4-governance-rework`, after the owner's go: section "Contract
+changes" and the contract rows of "Tests to add", with the recommended answers to questions 3 to 6. Not built: the "earlier
+backers" step (the owner said earlier backers use Give Shares), the app and the server. What was built, measured and gated:
+`docs/next-version/PLANV2-M4-REPORT.md`, section "Founder-set prices: built". The design as first written follows. It
 answers the owner's "Creaton did raise at a 6m valuation, so we would need to have founders be able to set it, as Creaton
 will be project zero", and the earlier ask for "a smooth way to up the valuation every time there are a lot of
 improvements". It is the judge's merge of three designs (economist, attacker, project zero). Plan of record:

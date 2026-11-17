@@ -387,6 +387,10 @@ network before the Council runner exists; reserve sales; the stake; sponsored fe
    its starting price (at least 0.0004), and the minimum is what all 250M raise at that price, so a default project keeps
    exactly 100,000. Creaton opens its rounds at 6,000,000. Its earlier backers get work-pot Shares at the price they paid,
    held on the same 365-day clock. This replaces "one price for every project, typed by nobody" in sections 4, 5 and 10.
+   **The owner said go on 17 November 2026; the contracts are built** with the recommended answers (range 333,333 to
+   50,000,000; down rounds allowed; the runner's auction start from 0.0004 to 0.05 a Share with the minimum at all 250M;
+   project zero may launch with no stake). No "earlier backers" contract step: earlier backers use Give Shares. Report:
+   `docs/next-version/PLANV2-M4-REPORT.md`, section "Founder-set prices: built". The app and server parts are not built.
 
 ## What I verified for this plan
 

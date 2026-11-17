@@ -501,3 +501,140 @@ ND6 is the only check that keeps a reserve sale from taking work-pot Shares (the
   Treasury's `settleReserveSale` revert with `NotArrived`, so nothing is lost silently); `SafeERC20` would give a clearer error.
 - The Deploy script (`script/DeployPlatform.s.sol`) was updated to make `Parts` first and pass the stake address and a zero
   council maker; it was not simulated in this milestone.
+
+## Founder-set prices: built (17 November 2026)
+
+The owner's go ("Creaton did raise at a 6m valuation, so we would need to have founders be able to set it, as Creaton will
+be project zero") for plan decision 7, with the design note's recommended answers (`docs/next-version/FOUNDER-PRICE.md`).
+Built exactly as its "Contract changes" section says; **the "earlier backers" contract step was not built** (on the owner's
+word: earlier backers use the existing Give Shares, and Creaton's earlier-raise facts are still unknown). Nothing is
+deployed; nothing was pushed. "Price" means the price for the whole project: dollars for all 1,000,000,000 Shares.
+
+### What changed
+
+| Where | Change |
+|---|---|
+| `Rounds` | `SHARES_PER_RAW_DOLLAR` is gone. `MAX_SHARES_PER_RAW_DOLLAR = 3e15` (the lowest price, 333,333; 50,000 still buys exactly the 150M backing Shares) and `MIN_SHARES_PER_RAW_DOLLAR = 2e13` (the highest, 50,000,000). `open(size, sharesPerRawDollar)` refuses (`CannotOpen`) a price outside the two, stores it in the round (`Round.sharesPerRawDollar`, after `size`), and `close` and `settle` use the round's own price. No setter: the price cannot change during the round |
+| `Launcher.openRound(key, sharesPerRawDollar)` | Passes the price to `Rounds.open`. A Pair runner's call goes through `propose` / `confirm` unchanged, so both signers sign the price |
+| `Launcher.openAuction(key, startQ96)` | The runner names the start. `BadStart()` below `salePrices()`'s floor (0.0004 a Share) or above `MAX_START_Q96 = (50,000 << 96) / 1e18` (0.05 a Share). The start goes on its own grid (a tick of one hundredth, rounded up), and the minimum is `floorQ96 * 250M >> 96`: all 250M Shares at the start, rounded down to a raw unit. At the base start this is exactly 100,000.000000 (measured below). `AUCTION_MINIMUM` stays as the least minimum and `salePrices()` as the base start |
+| Zero stake (project zero) | `_set` accepts `stake == address(0)`; `launch` then passes `stakeAmount: 0` (the Treasury already accepted a zero stake with a zero amount). Projects launched while the setting is zero take no 2% stake; put the address back and later projects take it again |
+| NatSpec | Rounds' price rule and dust note; the Launcher's contract notice, `openRound`, `openAuction`, `salePrices`, `AUCTION_MINIMUM`, the `stake` setting |
+
+Unchanged, as the note says: MinBid (its 4x cap already reads the auction's own floor), Finisher, Pinned, SaleParams,
+LiquidityHolder, Vester, Treasury, Pair and the reserve sale. Size: Rounds +7 code lines and Launcher +4, without comments
+and blank lines (the note estimated about 40); the rest of the diff is NatSpec.
+
+**Caution for the app and server (measured, `test_prices_sixMillionIsTheExpectedRawRate`):** working the lowest price out
+from "333,333" gives 1e27 / 333,333e6 = 3,000,003,000,003,000 raw Shares a raw dollar, just above the 3e15 limit, so the
+round is refused. The app must send exactly 3e15 for the lowest price (333,333.33 for the whole project). Other prices:
+`floor(1e27 / (price x 1e6))`, so 6,000,000 is 166,666,666,666,666 and 50,000,000 is 2e13. A start of `m` millionths of
+a dollar a Share is `(m << 96) / 1e18` (0.006 is 6,000; the app's 1.2 x 6M pre-fill, 0.0072, is 7,200).
+
+### Events and calls changed (for the milestone 5 server)
+
+- `Rounds.RoundOpened(uint256 indexed round, uint256 size, uint256 sharesPerRawDollar, uint256 opensAt, uint256 closesAt)`,
+  topic `0xeae4e388ff074a9a2b7c4b70ca3e14eea20bee144bfa34d3dfa79d5e0c9dc4a3` (was `RoundOpened(uint256 indexed round, uint256
+  size, uint256 opensAt, uint256 closesAt)`).
+- `Launcher.RoundOpened(bytes32 indexed key, address indexed rounds, uint256 indexed round, uint256 size, uint256 cap, uint256
+  raisedBefore, uint256 sharesPerRawDollar)`, topic `0x06c75cbb2343c6c16b7dc4c07a0455c44baf40b91d81ae686bba265b237f2e44` (the
+  price is the new last field, not indexed).
+- `Launcher.SaleOpened(...)`: signature unchanged; its `minimum`, `floorPriceQ96` and `tickSpacingQ96` now follow the
+  runner's start (100,000 / the `salePrices` pair at the base start).
+- `Treasury.StakeGranted`: not emitted when a zero-stake project's pool opens; `ProjectLaunched.settings.stake` is zero for it.
+- Calls: `openRound(bytes32,uint256)` `0x6cd5141d`, `openAuction(bytes32,uint256)` `0xb045c1de`, `Rounds.open(uint256,uint256)`
+  `0x4082de67`, new error `BadStart()` `0x5fb01790`. `Rounds.roundOf` returns `sharesPerRawDollar` as its fourth field. The
+  server's average price paid per project is the sum over rounds of `RoundClosed.accepted` with each round's price from
+  `RoundOpened`.
+
+### Tests added (each fails when its guard is removed)
+
+`test/FounderPrice.t.sol` (milestone 2 world), `test/FounderPriceAuction.t.sol` (the real Uniswap stack, local twin; two
+contracts so each test contract stays under the 49,152-byte creation limit), four tests in `Rounds.t.sol`, and
+`test/helpers/Prices.sol` (today's 3e15 and the `salePrices` floor as constants, so every old test caller keeps today's
+numbers). The rounds invariant handler now opens rounds at today's price half the time and anywhere in the range otherwise;
+the 7 rounds invariants pass at 256 runs x depth 200.
+
+| Test | Guard it pins | Ids |
+|---|---|---|
+| `test_open_theLowestPrice_3e15Opens_3e15PlusOneIsRefused`, `test_open_theHighestPrice_2e13Opens_2e13LessOneIsRefused`, `test_openRound_aPriceOutsideTheRangeIsRefusedThroughTheLauncher`, `test_price_theRangeIs333333To50000000ForTheWholeProject` | the range (replaces the 3,000-Shares price test) | NH0, NH1, NH6 |
+| `test_settle_usesThePriceOfTheBackersOwnRound` (round 1 at 6M closes, round 2 opens at 333,333 and closes, then round 1's backer settles: `bought == accepted * 166666666666666`) | the price stored per round | NH2, NH4 |
+| `test_close_setsAsideTheAcceptedMoneyAtTheRoundsPrice` | close uses the round's price | NH3 |
+| `test_open_eventsCarrySizePriceAndTimes` | both RoundOpened events carry the price | NH5, NH7 |
+| `test_pair_aConfirmWithAnotherPriceDoesNotRun` | both signers sign the price | NI4 |
+| `test_openAuction_aStartBelowTheBaseOrAboveTheCeilingIsRefused` | the auction start range (and the ceiling itself opens: minimum 12,500,000) | NH8, NH9 |
+| `test_openAuction_atTheBaseStart_todaysFloorTickAndMinimumExactly` | a default project's sale is today's | NI0, NI1 |
+| `test_start0006_minimumIs1500000_oneDollarShortFails_theMinimumSellsEveryShare` | minimum = 250M x start | NI0, NI1 |
+| `test_start0006_aBidAboveFourTimesTheStartIsRefused` | the bid cap follows the chosen start | NI1 |
+| `test_failedAt0006_retryAt00024Opens_andSells` | no trap after a failed high start | NI0, NI1 |
+| `test_start0006_selfBidThenSellIntoThePool_measured` | the M4 self-bid table at 0.006 | (measured) |
+| `test_worked_creatonAtSixMillion`, `test_aLaterRoundMayBeLower` | Creaton's numbers; down rounds allowed | NH3 |
+| `test_zeroStake_projectZeroTakesNoStake` (and `test_constructor_refusesBadSettings` now accepts a zero stake) | zero stake | NI2, NI3 |
+
+**Guard removals, one at a time** (`python3 scripts/mutate-guards.py <ids>`, default fuzz and invariant counts, no RPC):
+
+| Id | Removed or broken | n | A test that fails |
+|---|---|---|---|
+| NH0 | Rounds: a round may be priced below 333,333 | 2 | `test_open_theLowestPrice_3e15Opens_3e15PlusOneIsRefused` |
+| NH1 | Rounds: a round may be priced above 50,000,000 | 2 | `test_open_theHighestPrice_2e13Opens_2e13LessOneIsRefused` |
+| NH2 | Rounds: the price is not stored in the round | 29 | `test_aLaterRoundMayBeLower` |
+| NH3 | Rounds: close sets aside Shares at the lowest price, not the round's | 3 | `test_close_setsAsideTheAcceptedMoneyAtTheRoundsPrice` |
+| NH4 | Rounds: settle pays the latest round's price, not the backer's round's | 1 | `test_settle_usesThePriceOfTheBackersOwnRound` |
+| NH5 | Rounds: RoundOpened leaves out the price | 1 | `test_open_eventsCarrySizePriceAndTimes` |
+| NH6 | Launcher: the round opens at the lowest price whatever the runner signed | 6 | `test_openRound_aPriceOutsideTheRangeIsRefusedThroughTheLauncher` |
+| NH7 | Launcher: RoundOpened names the lowest price | 1 | `test_open_eventsCarrySizePriceAndTimes` |
+| NH8 | Launcher: an auction start below 0.0004 is accepted | 1 | `test_openAuction_aStartBelowTheBaseOrAboveTheCeilingIsRefused` |
+| NH9 | Launcher: an auction start above 0.05 is accepted | 1 | `test_openAuction_aStartBelowTheBaseOrAboveTheCeilingIsRefused` |
+| NI0 | Launcher: the minimum stays 100,000 at any start | 3 | `test_start0006_minimumIs1500000_oneDollarShortFails_theMinimumSellsEveryShare` |
+| NI1 | Launcher: the auction starts at 0.0004 whatever the runner signed | 5 | `test_start0006_aBidAboveFourTimesTheStartIsRefused` |
+| NI2 | Launcher: a zero stake address still asks for the 20M | 1 | `test_zeroStake_projectZeroTakesNoStake` |
+| NI3 | Launcher: the stake address must be named again (the old NA3 check put back) | 2 | `test_zeroStake_projectZeroTakesNoStake` |
+| NI4 | Pair: the proposal id leaves out the call data | 1 | `test_pair_aConfirmWithAnotherPriceDoesNotRun` |
+
+Re-pinned to the new source text and re-run: A20 (n 6), N01 (1), N02 (1), N03 (1), N19 (27; now "twice the round's Shares a
+dollar"), N82 (3), N88 (1), NA0 (3). NA3 ("the stake address may be zero") is retired: zero is now the project-zero setting.
+NI4 is worth a note: **no earlier test noticed a Pair proposal id that ignores the call data** (only the new price test fails),
+so before this a co-signer's confirmation was pinned to the target and nonce by the code but by no test.
+
+### Measured at Creaton's prices
+
+All (measured) on the local twin of the real Uniswap stack (`FounderPriceAuction.t.sol`, `FounderPrice.t.sol`), printed by
+the tests with `-vv`. "Start 0.006" is 6,000,000 for the whole project.
+
+| What | Number |
+|---|---|
+| Minimum at the base start / 0.0024 / 0.006 / 0.05 | 100,000.000000 / 600,000.000000 / 1,500,000.000000 / 12,500,000.000000 |
+| A sale that fills at 0.006 (1,500,000 in five bids one tick up) | graduates at the start; 249,999,999.99999 Shares sold; platform 45,000; pool 329,999.97 dollars and 54,999,994.25 Shares; 225,000.01 spendable at once; 900,000.03 into the floor (15 / 22 / 60 of each 100, as at 100,000) |
+| One dollar short at 0.006 (1,499,999) | fails; everyone refunded |
+| Self-bid then sell at 0.006 (750,000 / 1,500,000 / 4,500,000 next to 1,500,000 honest; top price 4x) | price 1.49 / 1.99 / 3.99 times the start; back from the pool 39.59 / 30.46 / 22.62 of each 100 spent; the project gets 75 (15 at once); loss at once 45.41 / 54.54 / 62.38; if the whole floor melts to the runner, a gain of 14.59 / 5.46, then a loss of 2.38. The same as M4's table at 100,000 (39.6 / 30.5 / 22.6): the ratios do not depend on the price |
+| Failed at 0.006 with 1,000,000, retry at 0.0024 | each of the five bidders refunded 200,000 in full; after 24 hours the retry opens (minimum 600,000), the same 1,000,000 sells every Share at 1.01 times the start: 606,000 raised, a pool of 133,319.99 dollars and 54,999,994.25 Shares |
+| Creaton's rounds at 6,000,000 | 10,000 alone buys 1,666,666.67 Shares; the 50,000 Team cap 8,333,333.33; `returnUnsold` sends 141,666,666.67 to the reserve when the market opens |
+| Project zero, no stake | the pool opening grants nothing; the reserve keeps its 100,000,000 (a default project gives 20,000,000) |
+
+**Gas** (measured, `GasM4.t.sol`, `GasM3.t.sol`; cold storage as before):
+
+| Step | Before | With the price argument |
+|---|---|---|
+| `Launcher.openRound` (first round) | 130,485 | 152,625 (+22,140: the price takes a new storage slot) |
+| Launch and open the first round in one passkey batch | 1,476,598 | 1,498,895 |
+| `Rounds.close` | 133,337 | 135,422 (one more storage read) |
+| `Rounds.settle`, one backer, cold | 273,469 | 275,599 |
+| `settleMany`, 10 backers, each | 132,278 | 132,405 |
+| `Pair.confirm(Launcher.openAuction)` | 4,410,537 | 4,411,080 |
+
+Option, not taken (judgement): the note says `uint256 sharesPerRawDollar`; stored as a `uint64` next to `openedAt` and
+`closedAt` (3e15 fits) it would share their slot and save most of the 22,140 on each round opened (not measured).
+
+### Gates (17 November 2026, one forge process at a time)
+
+| Gate | Result |
+|---|---|
+| `forge build --sizes` | exits 1 for the milestone 1 test helper `Deployer` only (unchanged). Launcher 19,747 runtime / 35,561 creation (was 19,236 / 35,075), Rounds 8,660 / 8,704 (was 8,641 / 8,685), Parts 437 / 33,438; limits 24,576 / 49,152. The test contract `LauncherTest` warns at 52,585 creation bytes (over 49,152; Foundry runs it as usual); with this change's lines taken out it is 52,479, so the overrun is not from this change |
+| Local suite, no RPC (`forge test`) | **479 passed, 0 failed, 35 skipped** in 109 suites (the 35 are the Sepolia fork twins); the invariants at 256 runs x depth 200 among them |
+| Sepolia fork suite, once (`--match-contract Fork`, publicnode RPC) | **136 passed, 0 failed, 0 skipped** in 35 suites (the new auction tests are local only) |
+| `forge fmt --check` | clean |
+| Guard removals | the 15 new and 8 re-pinned entries above, one at a time: every one fails at least one test. The other entries were not re-run |
+
+Not built here: the app (Open backing's price row and chips, the Back box, the auction proposal's pre-fill and its press
+budgets), the server (average price paid, the notice to earlier backers when a lower round opens, the "what's new" note,
+the signed earlier-raise record) and the "earlier backers" contract step (owner said no). Plan section 3, 4, 5 and 10 text
+(owner question 8) is not rewritten here.
