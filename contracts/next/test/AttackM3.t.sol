@@ -419,7 +419,21 @@ abstract contract AttackM3PoolSeedBase is AttackM3Common {
             s.auction.submitBid(maxPrice, uint128(10 * DOLLAR), mallory, s.floorQ96, "");
         }
     }
+}
 
+contract AttackM3PoolSeedLocalTest is AttackM3PoolSeedBase {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract AttackM3PoolSeedForkTest is AttackM3PoolSeedBase {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+abstract contract AttackM3PoolSeedBase2 is AttackM3Common {
     /// @dev The founder's second account does the same, and the dollars it takes out of the pool are other bidders' money. The
     /// founder's whole position is counted: what the Treasury holds (his to spend now or over a year), what the second account takes
     /// from the pool, less what that account put into the sale. The same sale with only the honest bidders is the baseline.
@@ -486,13 +500,13 @@ abstract contract AttackM3PoolSeedBase is AttackM3Common {
     }
 }
 
-contract AttackM3PoolSeedLocalTest is AttackM3PoolSeedBase {
+contract AttackM3PoolSeed2LocalTest is AttackM3PoolSeedBase2 {
     function _fork() internal pure override returns (bool) {
         return false;
     }
 }
 
-contract AttackM3PoolSeedForkTest is AttackM3PoolSeedBase {
+contract AttackM3PoolSeed2ForkTest is AttackM3PoolSeedBase2 {
     function _fork() internal pure override returns (bool) {
         return true;
     }
@@ -563,49 +577,6 @@ abstract contract AttackM3FinishBase is AttackM3Common {
         assertGt(p.vester.start(), 0, "the founder's Shares start releasing");
     }
 
-    /// @dev After step 2 the pool is the project's for good: dollars sent to the Finisher then (more than the pool's budget, so that
-    /// "dollars missing from what the Finisher holds" would read as nothing taken) must not make the pool look absent and open the way
-    /// out, which would split the sale's money a second time.
-    function test_attack_aGiftAfterStepTwoCannotOpenTheWayOutAgain() public {
-        (Proj memory p, Sale memory s, uint256 mid) = _soldOutStandard(keccak256("after-two"));
-        _collectBid(s, mid);
-        p.finisher.openPool();
-        p.finisher.settle();
-        assertTrue(p.finisher.poolIsOpen());
-        usd.mint(address(p.finisher), 100_000 * DOLLAR);
-        assertTrue(p.finisher.poolIsOpen(), "a gift after step 2 changes nothing");
-        vm.roll(s.endBlock + 50_400);
-        vm.expectRevert(Finisher.PoolExists.selector);
-        p.finisher.abandon();
-        p.finisher.sweep();
-        assertTrue(p.treasury.saleClosed());
-        assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Done));
-    }
-
-    /// @dev Measured, a limit of the fix: dollars sent to the Finisher before step 2 make a real pool look as if it took less. Up to
-    /// 1,095 dollars on this 10,000-dollar sale (the pool's budget is 2,200) change nothing; 1,105 hide the pool: step 2 refuses, and
-    /// seven days later the way out opens although a pool exists (the money is conserved and exits open; the gift went to the project,
-    /// so the sender paid 1,105 dollars for it).
-    function test_measured_aGiftOfMoreThanHalfThePoolsBudgetHidesARealPool() public {
-        (Proj memory p, Sale memory s, uint256 mid) = _soldOutStandard(keccak256("grief"));
-        _collectBid(s, mid);
-        uint256 snap = vm.snapshotState();
-        usd.mint(address(p.finisher), 1095 * DOLLAR);
-        p.finisher.openPool();
-        assertTrue(p.finisher.poolIsOpen(), "a gift under half the budget changes nothing");
-        p.finisher.settle();
-        vm.revertToState(snap);
-        usd.mint(address(p.finisher), 1105 * DOLLAR);
-        p.finisher.openPool();
-        assertTrue(p.finisher.poolAtTheKey(), "the real pool is there");
-        assertFalse(p.finisher.poolIsOpen(), "but it looks as if it took less than half its budget");
-        vm.expectRevert(Finisher.NoPool.selector);
-        p.finisher.settle();
-        vm.roll(s.endBlock + 50_400);
-        p.finisher.abandon();
-        assertTrue(p.treasury.saleClosed(), "exits are open, so nobody is trapped");
-    }
-
     /// @dev Measured, a limit that no code in this project can remove: the auction pays its 3% only through the strategy, and the
     /// strategy's recovery path pays it too. If the dollar token freezes the fee recipient, the pool step reverts (it is not
     /// swallowed), so `openPool` reverts, and so does `abandon`, which starts by running that step. The way out covers a pool step
@@ -633,7 +604,21 @@ abstract contract AttackM3FinishBase is AttackM3Common {
         vm.expectRevert();
         this.callFakePool(p, s);
     }
+}
 
+contract AttackM3FinishLocalTest is AttackM3FinishBase {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract AttackM3FinishForkTest is AttackM3FinishBase {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+abstract contract AttackM3FinishBase2 is AttackM3Common {
     /// @dev The auction's own comment says the checkpoint "can revert with out of gas if there are a large number of ticks". The price
     /// grid between the floor and four times the floor has 300 levels; a $1 bid at each makes 300 initialised ticks, and one large
     /// bid in the last block that takes bids (the closing window keeps later ones out) moves the clearing price across all of them in
@@ -792,13 +777,70 @@ abstract contract AttackM3FinishBase is AttackM3Common {
     }
 }
 
-contract AttackM3FinishLocalTest is AttackM3FinishBase {
+contract AttackM3Finish2LocalTest is AttackM3FinishBase2 {
     function _fork() internal pure override returns (bool) {
         return false;
     }
 }
 
-contract AttackM3FinishForkTest is AttackM3FinishBase {
+contract AttackM3Finish2ForkTest is AttackM3FinishBase2 {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+abstract contract AttackM3FinishBase3 is AttackM3Common {
+    /// @dev Measured, a limit of the fix: dollars sent to the Finisher before step 2 make a real pool look as if it took less. Up to
+    /// 1,095 dollars on this 10,000-dollar sale (the pool's budget is 2,200) change nothing; 1,105 hide the pool: step 2 refuses, and
+    /// seven days later the way out opens although a pool exists (the money is conserved and exits open; the gift went to the project,
+    /// so the sender paid 1,105 dollars for it).
+    function test_measured_aGiftOfMoreThanHalfThePoolsBudgetHidesARealPool() public {
+        (Proj memory p, Sale memory s, uint256 mid) = _soldOutStandard(keccak256("grief"));
+        _collectBid(s, mid);
+        uint256 snap = vm.snapshotState();
+        usd.mint(address(p.finisher), 1095 * DOLLAR);
+        p.finisher.openPool();
+        assertTrue(p.finisher.poolIsOpen(), "a gift under half the budget changes nothing");
+        p.finisher.settle();
+        vm.revertToState(snap);
+        usd.mint(address(p.finisher), 1105 * DOLLAR);
+        p.finisher.openPool();
+        assertTrue(p.finisher.poolAtTheKey(), "the real pool is there");
+        assertFalse(p.finisher.poolIsOpen(), "but it looks as if it took less than half its budget");
+        vm.expectRevert(Finisher.NoPool.selector);
+        p.finisher.settle();
+        vm.roll(s.endBlock + 50_400);
+        p.finisher.abandon();
+        assertTrue(p.treasury.saleClosed(), "exits are open, so nobody is trapped");
+    }
+
+    /// @dev After step 2 the pool is the project's for good: dollars sent to the Finisher then (more than the pool's budget, so that
+    /// "dollars missing from what the Finisher holds" would read as nothing taken) must not make the pool look absent and open the way
+    /// out, which would split the sale's money a second time.
+    function test_attack_aGiftAfterStepTwoCannotOpenTheWayOutAgain() public {
+        (Proj memory p, Sale memory s, uint256 mid) = _soldOutStandard(keccak256("after-two"));
+        _collectBid(s, mid);
+        p.finisher.openPool();
+        p.finisher.settle();
+        assertTrue(p.finisher.poolIsOpen());
+        usd.mint(address(p.finisher), 100_000 * DOLLAR);
+        assertTrue(p.finisher.poolIsOpen(), "a gift after step 2 changes nothing");
+        vm.roll(s.endBlock + 50_400);
+        vm.expectRevert(Finisher.PoolExists.selector);
+        p.finisher.abandon();
+        p.finisher.sweep();
+        assertTrue(p.treasury.saleClosed());
+        assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Done));
+    }
+}
+
+contract AttackM3Finish3LocalTest is AttackM3FinishBase3 {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract AttackM3Finish3ForkTest is AttackM3FinishBase3 {
     function _fork() internal pure override returns (bool) {
         return true;
     }

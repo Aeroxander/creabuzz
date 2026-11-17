@@ -21,7 +21,7 @@ import {
 
 /// @notice The LiquidityHolder: it owns every project's pool position for good, only trading fees leave it, and a position that
 /// is not a project's pool's is a gift nobody can use.
-abstract contract LiquidityHolderBase is Platform {
+abstract contract LiquidityHolderSetup is Platform {
     uint256 internal positionId;
     Proj internal proj;
     Sale internal sale;
@@ -54,7 +54,9 @@ abstract contract LiquidityHolderBase is Platform {
         (, uint256 got) = _swap(key, address(proj.shares), trader, true, 77 * DOLLAR + 12_345);
         _swap(key, address(proj.shares), trader, false, got / 3);
     }
+}
 
+abstract contract LiquidityHolderBase is LiquidityHolderSetup {
     // ================================================ for good ========================================================
 
     function test_holder_ownsThePositionAndNobodyCanMoveItOrTakeLiquidityOut() public {
@@ -212,103 +214,6 @@ abstract contract LiquidityHolderBase is Platform {
         holder.sweepOwed(address(usd), platform); // nothing left: harmless
     }
 
-    /// @dev The same freeze as above, with a dollar token that answers `false` instead of reverting (some tokens do). The platform's half
-    /// must be kept as owed, not counted as paid: the dollars stay in the holder, `owed` names them, and `sweepOwed` pays them
-    /// once the address is free (a `false` answer makes `sweepOwed` revert, so the amount stays owed).
-    function test_holder_aTokenThatAnswersFalseForAFrozenPlatformKeepsItsHalfOwed() public {
-        _tradeForFees();
-        usd.setBlocked(platform, true);
-        usd.setBlockedReturnsFalse(true);
-        uint256 spendable = proj.treasury.spendable();
-        uint256 platformBefore = usd.balanceOf(platform);
-        (uint256 dollars,) = holder.collect(positionId);
-        assertGt(dollars, 1, "there were fees");
-        assertEq(holder.owed(address(usd), platform), dollars / 2, "the platform's half is owed");
-        assertEq(usd.balanceOf(platform), platformBefore, "and was not paid");
-        assertEq(usd.balanceOf(address(holder)), dollars / 2, "it is still in the holder, so the books agree");
-        assertEq(proj.treasury.spendable() - spendable, dollars - dollars / 2, "the project's half went through");
-        vm.expectRevert();
-        holder.sweepOwed(address(usd), platform); // still frozen: the false answer is an error, not a payment
-        assertEq(holder.owed(address(usd), platform), dollars / 2, "still owed");
-        usd.setBlocked(platform, false);
-        holder.sweepOwed(address(usd), platform);
-        assertEq(usd.balanceOf(platform) - platformBefore, dollars / 2, "paid once free");
-        assertEq(usd.balanceOf(address(holder)), 0);
-    }
-
-    /// @dev The strategy builds a guarded pool for anyone's token: a stranger's own token and the platform's dollar, the platform's
-    /// guard as the hook, the position minted to the holder. It is a pool with the right guard whose Shares side is no project's.
-    /// The holder refuses to collect from it, with its own error.
-    function test_holder_aGuardedPoolOfAStrangersOwnTokenIsNoProjectsPool() public {
-        QuoteToken mine = new QuoteToken();
-        mine.mint(stranger, 2e18);
-        (uint256 floorQ96, uint256 tickQ96) = launcher.salePrices(Launcher.Size.Standard);
-        uint64 start = uint64(block.number + 1);
-        uint64 end = start + 10;
-        LiquidityAllocationBracket[] memory br = new LiquidityAllocationBracket[](1);
-        br[0] = LiquidityAllocationBracket({lowerThreshold: 0, rate: 10_000_000});
-        MigratorParameters memory mp = MigratorParameters({
-            token: address(mine),
-            currency: address(usd),
-            migrationBlock: end + 1,
-            reservedTokenAmountForLP: 1e18,
-            recipient: stranger,
-            positionRecipient: address(holder),
-            poolParameters: PoolParameters({
-                fee: SaleParams.POOL_FEE, tickSpacing: SaleParams.POOL_TICK_SPACING, hook: guard
-            }),
-            positionDefinitions: abi.encode(new uint256[](0)),
-            lpAllocationSchedule: abi.encode(br)
-        });
-        AuctionParameters memory ap = AuctionParameters({
-            currency: address(usd),
-            tokensRecipient: stranger,
-            fundsRecipient: strategy,
-            startBlock: start,
-            endBlock: end,
-            claimBlock: end + 1,
-            tickSpacing: tickQ96,
-            validationHook: address(0),
-            floorPrice: floorQ96,
-            requiredCurrencyRaised: 1,
-            auctionStepsData: abi.encodePacked(bytes8(uint64(1_000_000) << 40 | uint64(10)))
-        });
-        vm.startPrank(stranger);
-        mine.approve(strategy, 2e18);
-        IPinnedStrategy(strategy)
-            .initializeDistribution(address(mine), 2e18, abi.encode(mp, abi.encode(ap)), bytes32(0));
-        vm.stopPrank();
-        // the strategy says which auction it built through the pool id it reserved
-        Sale memory fake;
-        fake.auction = IAuctionTest(_registeredAuction(mine));
-        vm.roll(start);
-        _fund(stranger, 2 * DOLLAR, fake);
-        vm.prank(stranger);
-        fake.auction.submitBid(floorQ96 + tickQ96, uint128(2 * DOLLAR), stranger, floorQ96, "");
-        vm.roll(end);
-        fake.auction.checkpoint();
-        vm.roll(end + 1);
-        uint256 id = pm.nextTokenId();
-        IPinnedStrategy(strategy).migrate(address(fake.auction));
-        assertEq(pm.ownerOf(id), address(holder), "the position was minted to the holder");
-        (PoolKey memory key,) = IPinnedPositionManager(positionManager).getPoolAndPositionInfo(id);
-        assertEq(key.hooks, guard, "the pool's hook is the platform's guard");
-        vm.expectRevert(LiquidityHolder.UnknownProject.selector);
-        holder.collect(id);
-    }
-
-    function _registeredAuction(QuoteToken token) private view returns (address) {
-        (address q, address t) = (address(usd), address(token));
-        PoolKey memory key = PoolKey({
-            currency0: q < t ? q : t,
-            currency1: q < t ? t : q,
-            fee: SaleParams.POOL_FEE,
-            tickSpacing: SaleParams.POOL_TICK_SPACING,
-            hooks: guard
-        });
-        return IPinnedStrategy(strategy).registeredPoolIds(keccak256(abi.encode(key)));
-    }
-
     // ================================================ a position that is not a project's =================================
 
     /// @dev Mint a position in a pool for `owner`, the way a person would: through the position manager, paying through Permit2.
@@ -408,6 +313,105 @@ abstract contract LiquidityHolderBase is Platform {
     }
 }
 
+abstract contract LiquidityHolderEdgesBase is LiquidityHolderSetup {
+    /// @dev The same freeze as above, with a dollar token that answers `false` instead of reverting (some tokens do). The platform's half
+    /// must be kept as owed, not counted as paid: the dollars stay in the holder, `owed` names them, and `sweepOwed` pays them
+    /// once the address is free (a `false` answer makes `sweepOwed` revert, so the amount stays owed).
+    function test_holder_aTokenThatAnswersFalseForAFrozenPlatformKeepsItsHalfOwed() public {
+        _tradeForFees();
+        usd.setBlocked(platform, true);
+        usd.setBlockedReturnsFalse(true);
+        uint256 spendable = proj.treasury.spendable();
+        uint256 platformBefore = usd.balanceOf(platform);
+        (uint256 dollars,) = holder.collect(positionId);
+        assertGt(dollars, 1, "there were fees");
+        assertEq(holder.owed(address(usd), platform), dollars / 2, "the platform's half is owed");
+        assertEq(usd.balanceOf(platform), platformBefore, "and was not paid");
+        assertEq(usd.balanceOf(address(holder)), dollars / 2, "it is still in the holder, so the books agree");
+        assertEq(proj.treasury.spendable() - spendable, dollars - dollars / 2, "the project's half went through");
+        vm.expectRevert();
+        holder.sweepOwed(address(usd), platform); // still frozen: the false answer is an error, not a payment
+        assertEq(holder.owed(address(usd), platform), dollars / 2, "still owed");
+        usd.setBlocked(platform, false);
+        holder.sweepOwed(address(usd), platform);
+        assertEq(usd.balanceOf(platform) - platformBefore, dollars / 2, "paid once free");
+        assertEq(usd.balanceOf(address(holder)), 0);
+    }
+
+    /// @dev The strategy builds a guarded pool for anyone's token: a stranger's own token and the platform's dollar, the platform's
+    /// guard as the hook, the position minted to the holder. It is a pool with the right guard whose Shares side is no project's.
+    /// The holder refuses to collect from it, with its own error.
+    function test_holder_aGuardedPoolOfAStrangersOwnTokenIsNoProjectsPool() public {
+        QuoteToken mine = new QuoteToken();
+        mine.mint(stranger, 2e18);
+        (uint256 floorQ96, uint256 tickQ96) = launcher.salePrices(Launcher.Size.Standard);
+        uint64 start = uint64(block.number + 1);
+        uint64 end = start + 10;
+        LiquidityAllocationBracket[] memory br = new LiquidityAllocationBracket[](1);
+        br[0] = LiquidityAllocationBracket({lowerThreshold: 0, rate: 10_000_000});
+        MigratorParameters memory mp = MigratorParameters({
+            token: address(mine),
+            currency: address(usd),
+            migrationBlock: end + 1,
+            reservedTokenAmountForLP: 1e18,
+            recipient: stranger,
+            positionRecipient: address(holder),
+            poolParameters: PoolParameters({
+                fee: SaleParams.POOL_FEE, tickSpacing: SaleParams.POOL_TICK_SPACING, hook: guard
+            }),
+            positionDefinitions: abi.encode(new uint256[](0)),
+            lpAllocationSchedule: abi.encode(br)
+        });
+        AuctionParameters memory ap = AuctionParameters({
+            currency: address(usd),
+            tokensRecipient: stranger,
+            fundsRecipient: strategy,
+            startBlock: start,
+            endBlock: end,
+            claimBlock: end + 1,
+            tickSpacing: tickQ96,
+            validationHook: address(0),
+            floorPrice: floorQ96,
+            requiredCurrencyRaised: 1,
+            auctionStepsData: abi.encodePacked(bytes8(uint64(1_000_000) << 40 | uint64(10)))
+        });
+        vm.startPrank(stranger);
+        mine.approve(strategy, 2e18);
+        IPinnedStrategy(strategy)
+            .initializeDistribution(address(mine), 2e18, abi.encode(mp, abi.encode(ap)), bytes32(0));
+        vm.stopPrank();
+        // the strategy says which auction it built through the pool id it reserved
+        Sale memory fake;
+        fake.auction = IAuctionTest(_registeredAuction(mine));
+        vm.roll(start);
+        _fund(stranger, 2 * DOLLAR, fake);
+        vm.prank(stranger);
+        fake.auction.submitBid(floorQ96 + tickQ96, uint128(2 * DOLLAR), stranger, floorQ96, "");
+        vm.roll(end);
+        fake.auction.checkpoint();
+        vm.roll(end + 1);
+        uint256 id = pm.nextTokenId();
+        IPinnedStrategy(strategy).migrate(address(fake.auction));
+        assertEq(pm.ownerOf(id), address(holder), "the position was minted to the holder");
+        (PoolKey memory key,) = IPinnedPositionManager(positionManager).getPoolAndPositionInfo(id);
+        assertEq(key.hooks, guard, "the pool's hook is the platform's guard");
+        vm.expectRevert(LiquidityHolder.UnknownProject.selector);
+        holder.collect(id);
+    }
+
+    function _registeredAuction(QuoteToken token) private view returns (address) {
+        (address q, address t) = (address(usd), address(token));
+        PoolKey memory key = PoolKey({
+            currency0: q < t ? q : t,
+            currency1: q < t ? t : q,
+            fee: SaleParams.POOL_FEE,
+            tickSpacing: SaleParams.POOL_TICK_SPACING,
+            hooks: guard
+        });
+        return IPinnedStrategy(strategy).registeredPoolIds(keccak256(abi.encode(key)));
+    }
+}
+
 contract LiquidityHolderLocalTest is LiquidityHolderBase {
     function _fork() internal pure override returns (bool) {
         return false;
@@ -415,6 +419,18 @@ contract LiquidityHolderLocalTest is LiquidityHolderBase {
 }
 
 contract LiquidityHolderForkTest is LiquidityHolderBase {
+    function _fork() internal pure override returns (bool) {
+        return true;
+    }
+}
+
+contract LiquidityHolderEdgesLocalTest is LiquidityHolderEdgesBase {
+    function _fork() internal pure override returns (bool) {
+        return false;
+    }
+}
+
+contract LiquidityHolderEdgesForkTest is LiquidityHolderEdgesBase {
     function _fork() internal pure override returns (bool) {
         return true;
     }
