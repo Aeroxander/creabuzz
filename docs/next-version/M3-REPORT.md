@@ -318,7 +318,7 @@ So "for good" is a fact about the owner, which is the `LiquidityHolder`, and abo
    a pool "ours": the strategy builds a guarded pool for anyone's token, and a holder of a project's Shares can build one at the project's own key once a failed
    pool step has freed it. So the holder's second check (one side of the pool is a real project's Shares, known to the Launcher) matters and is tested
    with a stranger's own token; a stranger's position in a project's guarded pool earns fees that are split like any other and reaches nobody's money.
-5. The Shares the pool earns as fees are burned, which lowers the Share supply a little (and with it the 1% gift cap).
+5. The Shares the pool collects as trading fees are burned, which lowers the Share supply a little (and with it the 1% gift cap).
 
 ## The pinned interfaces and the drift test
 
