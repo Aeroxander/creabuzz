@@ -12,6 +12,8 @@ import {Vester} from "../../src/Vester.sol";
 import {ShareToken} from "../../src/ShareToken.sol";
 import {Finisher} from "../../src/Finisher.sol";
 import {LiquidityHolder} from "../../src/LiquidityHolder.sol";
+import {Rounds} from "../../src/Rounds.sol";
+import {Pair} from "../../src/Pair.sol";
 import {PoolKey, PoolRead, IPinnedPoolManager, IPinnedStrategy, SaleParams} from "../../src/Pinned.sol";
 import {QuoteToken} from "../mocks/QuoteToken.sol";
 import {
@@ -47,6 +49,7 @@ abstract contract Platform is ForkGate {
     address internal strategy;
     address internal guard;
     address internal minBid;
+    address internal parts;
     address internal feeController;
     address internal factory;
     LiquidityHolder internal holder;
@@ -55,6 +58,10 @@ abstract contract Platform is ForkGate {
     /// @dev Receives the 3% of every raise (the fee controller's recipient) and the exit fee's platform part.
     address internal platform = makeAddr("platform");
     address internal founder = makeAddr("founder");
+    /// @dev The second signer of every project's Pair (the auction needs a Pair runner).
+    address internal cosigner = makeAddr("cosigner");
+    address internal stakeHolder = makeAddr("stake");
+    address internal councilMaker = makeAddr("council maker");
     address internal stranger = makeAddr("stranger");
     address internal alice = makeAddr("alice");
     address internal bob = makeAddr("bob");
@@ -71,12 +78,13 @@ abstract contract Platform is ForkGate {
         Treasury treasury;
         Vester vester;
         Finisher finisher;
+        Rounds rounds;
+        bytes32 key;
     }
 
     /// @notice One sale's figures.
     struct Sale {
         IAuctionTest auction;
-        Launcher.Size size;
         uint256 floorQ96;
         uint256 tickQ96;
         uint64 startBlock;
@@ -146,8 +154,12 @@ abstract contract Platform is ForkGate {
         strategy = deployer.strategy(positionManager, poolManager, factory);
         guard = deployer.guard(poolManager, strategy);
         minBid = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(4), uint64(720)));
-        launcher =
-            Launcher(deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), strategy, guard, minBid)));
+        parts = deployCode("Parts.sol:Parts");
+        launcher = Launcher(
+            deployCode(
+                "Launcher.sol:Launcher", abi.encode(admin, _settings(), strategy, guard, minBid, parts, councilMaker)
+            )
+        );
         holder = LiquidityHolder(launcher.holder());
     }
 
@@ -155,6 +167,7 @@ abstract contract Platform is ForkGate {
         return Launcher.Settings({
             quote: IERC20(address(usd)),
             platform: platform,
+            stake: stakeHolder,
             exitFeeBps: 500,
             platformFeeBps: 100,
             spendableParts: 15,
@@ -180,7 +193,9 @@ abstract contract Platform is ForkGate {
             shares: ShareToken(s),
             treasury: Treasury(t),
             vester: Vester(v),
-            finisher: Finisher(launcher.project(who, id).finisher)
+            finisher: Finisher(launcher.project(who, id).finisher),
+            rounds: Rounds(launcher.project(who, id).rounds),
+            key: launcher.keyOf(who, id)
         });
     }
 
@@ -208,16 +223,86 @@ abstract contract Platform is ForkGate {
             );
     }
 
-    function _open(Proj memory p, Launcher.Size size) internal returns (Sale memory s) {
+    /// @dev Team: the founder offers the runner seat to the Pair of (founder, `cosigner`) and the cosigner accepts.
+    function _team(Proj memory p) internal returns (Pair pair) {
+        address predicted = launcher.pairAddress(p.key, p.founder, cosigner);
         vm.prank(p.founder);
-        launcher.openSale(p.id, size);
-        s = _saleOf(p, size);
+        p.treasury.handOver(predicted, false);
+        vm.prank(cosigner);
+        pair = Pair(launcher.makePair(p.key, p.founder));
     }
 
-    function _saleOf(Proj memory p, Launcher.Size size) internal view returns (Sale memory s) {
+    /// @dev Both signers of the project's Pair agree to a call to `target` (the founder proposes, the cosigner confirms).
+    function _both(Proj memory p, address target, bytes memory data) internal returns (bytes memory result) {
+        Pair pair = Pair(p.treasury.runner());
+        (address first, address second) = (pair.first(), pair.second());
+        vm.prank(first);
+        pair.propose(target, data);
+        uint256 n = pair.nonce() - 1;
+        vm.prank(second);
+        result = pair.confirm(target, data, n);
+    }
+
+    /// @dev Open the project's one auction: become Team if not yet, then both signers open it.
+    function _open(Proj memory p) internal returns (Sale memory s) {
+        if (!launcher.isPair(p.treasury.runner())) _team(p);
+        _both(p, address(launcher), abi.encodeCall(Launcher.openAuction, (p.key)));
+        s = _saleOf(p);
+    }
+
+    /// @dev Both signers try to open the auction and the Launcher (or what it calls) refuses with `err`.
+    function _openRefused(Proj memory p, bytes memory err) internal {
+        if (!launcher.isPair(p.treasury.runner())) _team(p);
+        Pair pair = Pair(p.treasury.runner());
+        bytes memory data = abi.encodeCall(Launcher.openAuction, (p.key));
+        (address first, address second) = (pair.first(), pair.second());
+        vm.prank(first);
+        pair.propose(address(launcher), data);
+        uint256 n = pair.nonce() - 1;
+        vm.prank(second);
+        vm.expectRevert(err);
+        pair.confirm(address(launcher), data, n);
+    }
+
+    /// @dev Both signers of the project's Pair agree to a call and it reverts (with anything).
+    function _bothReverts(Proj memory p, address target, bytes memory data) internal {
+        Pair pair = Pair(p.treasury.runner());
+        (address first, address second) = (pair.first(), pair.second());
+        vm.prank(first);
+        pair.propose(target, data);
+        uint256 n = pair.nonce() - 1;
+        vm.prank(second);
+        vm.expectRevert();
+        pair.confirm(target, data, n);
+    }
+
+    /// @dev The runner checks in (through the Pair when there is one).
+    function _checkIn(Proj memory p) internal {
+        address r = p.treasury.runner();
+        if (launcher.isPair(r)) {
+            address first = Pair(r).first();
+            vm.prank(first);
+            Pair(r).checkIn();
+        } else {
+            vm.prank(r);
+            p.treasury.checkIn();
+        }
+    }
+
+    /// @dev The runner gives Shares (both signers when it is a Pair).
+    function _give(Proj memory p, address to, uint256 amount) internal {
+        address r = p.treasury.runner();
+        if (launcher.isPair(r)) {
+            _both(p, address(p.treasury), abi.encodeCall(Treasury.giveShares, (to, amount)));
+        } else {
+            vm.prank(r);
+            p.treasury.giveShares(to, amount);
+        }
+    }
+
+    function _saleOf(Proj memory p) internal view returns (Sale memory s) {
         s.auction = IAuctionTest(p.finisher.auction());
-        s.size = size;
-        (s.floorQ96, s.tickQ96) = launcher.salePrices(size);
+        (s.floorQ96, s.tickQ96) = launcher.salePrices();
         s.startBlock = s.auction.startBlock();
         s.endBlock = s.auction.endBlock();
     }
@@ -324,19 +409,19 @@ abstract contract Platform is ForkGate {
         vm.stopPrank();
     }
 
-    /// @dev Five bidders, 32,000 dollars of demand for a 10,000-dollar sale: a low early bid that ends up outbid, and bids at
+    /// @dev Five bidders, 320,000 dollars of demand for the 100,000-dollar auction: a low early bid that ends up outbid, and bids at
     /// 1.2x, 1.5x, 3x and 4x the floor price, at different blocks across the 24 hours (the milestone 1 route's demand).
     function _fiveBids(Sale memory s) internal returns (uint256[5] memory ids) {
         vm.roll(s.startBlock);
-        ids[0] = _bid(s, erin, 2000 * DOLLAR, 1);
+        ids[0] = _bid(s, erin, 20_000 * DOLLAR, 1);
         vm.roll(s.startBlock + 500);
-        ids[1] = _bid(s, dave, 3000 * DOLLAR, 20);
+        ids[1] = _bid(s, dave, 30_000 * DOLLAR, 20);
         vm.roll(s.startBlock + 2000);
-        ids[2] = _bid(s, carol, 12_000 * DOLLAR, 150);
+        ids[2] = _bid(s, carol, 120_000 * DOLLAR, 150);
         vm.roll(s.startBlock + 4000);
-        ids[3] = _bid(s, bob, 9000 * DOLLAR, 200);
+        ids[3] = _bid(s, bob, 90_000 * DOLLAR, 200);
         vm.roll(s.startBlock + 6000);
-        ids[4] = _bid(s, alice, 6000 * DOLLAR, 300);
+        ids[4] = _bid(s, alice, 60_000 * DOLLAR, 300);
     }
 
     // ================================================ trading ========================================================

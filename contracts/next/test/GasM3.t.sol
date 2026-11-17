@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import {Platform} from "./helpers/Platform.sol";
 import {BatchAccount} from "./mocks/BatchAccount.sol";
 import {Launcher} from "../src/Launcher.sol";
+import {Pair} from "../src/Pair.sol";
 import {PoolKey, SaleParams} from "../src/Pinned.sol";
 import {IPositionManagerTest} from "./helpers/UniswapTest.sol";
 
@@ -44,16 +45,21 @@ contract GasM3Test is Platform {
 
     function test_gas_openTheSale() public {
         Proj memory p = _launch(founder, keccak256("gas open"));
+        Pair pair = _team(p);
+        bytes memory data = abi.encodeCall(Launcher.openAuction, (p.key));
         vm.prank(founder);
+        pair.propose(address(launcher), data);
         vm.cool(address(launcher));
         vm.cool(address(p.finisher));
         vm.cool(address(p.treasury));
+        vm.cool(address(pair));
         vm.cool(strategy);
         vm.cool(address(usd));
+        vm.prank(cosigner);
         uint256 g = gasleft();
-        launcher.openSale(p.id, Launcher.Size.Standard);
+        pair.confirm(address(launcher), data, 0);
         g -= gasleft();
-        _measure("Launcher.openSale: Finisher, strategy and a new auction (Standard)", g, 5_000_000);
+        _measure("Pair.confirm(Launcher.openAuction): Finisher, strategy and a new auction", g, 5_000_000);
     }
 
     /// @dev The batch a passkey account sends as one action: make the project and open its sale.
@@ -64,17 +70,17 @@ contract GasM3Test is Platform {
         targets[0] = address(launcher);
         calls[0] = abi.encodeCall(Launcher.launch, (keccak256("gas batch"), "Batch", "BTC", launcher.settingsHash()));
         targets[1] = address(launcher);
-        calls[1] = abi.encodeCall(Launcher.openSale, (keccak256("gas batch"), Launcher.Size.Standard));
+        calls[1] = abi.encodeCall(Launcher.openRound, (launcher.keyOf(address(account), keccak256("gas batch"))));
         uint256 g = gasleft();
         account.execute(targets, calls);
         g -= gasleft();
-        _measure("batch: launch the project and open the Standard sale, in one call", g, 6_500_000);
+        _measure("batch: launch the project and open its first backing round, in one call", g, 6_500_000);
         emit log_string("batch: add the approval of dollars to Permit2 and the bid's Permit2 allowance for a bidder: about 0.1 million more (milestone 1)");
     }
 
     function test_gas_theFinishAndTheFees() public {
         Proj memory p = _launch(founder, keccak256("gas finish"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         _fiveBids(s);
         _toEnd(s);
         vm.roll(s.endBlock + 1);
@@ -111,7 +117,7 @@ contract GasM3Test is Platform {
 
     function test_gas_abandon() public {
         Proj memory p = _launch(founder, keccak256("gas abandon"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         _fiveBids(s);
         _toEnd(s);
         vm.roll(s.endBlock + 1);

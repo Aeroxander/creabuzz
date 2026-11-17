@@ -220,7 +220,7 @@ contract PinnedDriftTest is SaleBase {
         assertEq(SaleParams.POOL_RATE, 2_268_041, "22 of every 100 raised");
         assertEq(SaleParams.POOL_FEE, 10_000, "1 percent");
         assertEq(int256(SaleParams.POOL_TICK_SPACING), 200);
-        assertEq(SaleParams.SALE_SHARES, 400_000_000e18);
+        assertEq(SaleParams.SALE_SHARES, 250_000_000e18); // plan version 2: the one auction sells 25%
         assertEq(uint256(SaleParams.POOL_SHARES), 100_000_000e18);
     }
 

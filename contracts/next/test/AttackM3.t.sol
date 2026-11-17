@@ -58,15 +58,22 @@ abstract contract AttackM3Common is Platform {
 
     /// @dev The closing window: the last block that takes a bid is `endBlock - CLOSING`.
     uint256 internal constant CLOSING = 720;
+    /// @dev The one auction of plan version 2: every one of its 250M Shares sold at the starting price raises exactly this.
+    uint256 internal constant GOAL = 100_000e6;
 
-    /// @dev The attacker's spike bid in block `blk`: a top price of the highest tick the 4-times rule allows against that block's
-    /// clearing price, with enough dollars to buy every Share still to be issued at that price three times over (the rest is
-    /// refunded). With `tryIt` a refused bid is skipped. Returns the bid and the dollars put in.
+    /// @dev The attacker's spike bid in block `blk`: a top price of the highest tick the 4-times rule allows (milestone 3: four times
+    /// that block's clearing price; plan version 2: four times the starting price, whichever is lower), with enough dollars to buy
+    /// every Share still to be issued at that price three times over (the rest is refunded). With `tryIt` a refused bid is skipped.
+    /// Returns the bid and the dollars put in.
     function _spikeAt(Sale memory s, uint256 blk, bool tryIt) internal returns (uint256 bidId, uint256 amount) {
         vm.roll(blk);
         s.auction.checkpoint();
         uint256 c = s.auction.clearingPrice();
-        uint256 maxPrice = s.floorQ96 + ((4 * c - s.floorQ96) / s.tickQ96) * s.tickQ96;
+        uint256 top = 4 * c < 4 * s.floorQ96 ? 4 * c : 4 * s.floorQ96;
+        uint256 maxPrice = s.floorQ96 + ((top - s.floorQ96) / s.tickQ96) * s.tickQ96;
+        // with the absolute cap a spike is impossible once the price has reached it: the auction takes only bids above the
+        // clearing price, and none may name more than 4 times the starting price
+        if (maxPrice <= c) return (type(uint256).max, 0);
         uint256 need = maxPrice * ((s.endBlock - blk) * 60_000e18) >> 96;
         amount = need * 3 + DOLLAR;
         _fund(mallory, amount, s);
@@ -86,20 +93,17 @@ abstract contract AttackM3Common is Platform {
     /// `ordinary` dollars at one tick above the floor, then `spikes` bids by the attacker in the last `spikes` blocks, each with the
     /// top price the 4-times rule allows against the clearing price of that block. Finished by a stranger.
     function _sale(bytes32 id, uint256 ordinary, uint256 spikes) internal returns (Run memory r) {
-        return _saleSized(Launcher.Size.Standard, id, ordinary, spikes);
+        return _saleSized(id, ordinary, spikes);
     }
 
-    function _saleSized(Launcher.Size size, bytes32 id, uint256 ordinary, uint256 spikes)
-        internal
-        returns (Run memory r)
-    {
+    function _saleSized(bytes32 id, uint256 ordinary, uint256 spikes) internal returns (Run memory r) {
         r.p = _launch(founder, id);
-        r.s = _open(r.p, size);
+        r.s = _open(r.p);
         vm.roll(r.s.startBlock);
-        (uint256 goal,) = launcher.sizeOf(size);
+        uint256 goal = GOAL;
         address[4] memory honest = [alice, bob, carol, dave];
         for (uint256 i; i < 4; ++i) {
-            _bid(r.s, honest[i], goal * 225 / 1000, 1);
+            _bid(r.s, honest[i], goal / 4, 1); // honest demand is exactly the minimum: every Share at the starting price
         }
         r.attackerBids = new uint256[](spikes + 1);
         if (ordinary != 0) {
@@ -120,7 +124,7 @@ abstract contract AttackM3Common is Platform {
         key;
         // the attacker collects every bid
         for (uint256 b; b < r.attackerBids.length; ++b) {
-            if (b == 0 && ordinary == 0) continue;
+            if ((b == 0 && ordinary == 0) || r.attackerBids[b] == type(uint256).max) continue;
             _collectBid(r.s, r.attackerBids[b]);
         }
         r.refundedAndSpent = usd.balanceOf(mallory);
@@ -234,13 +238,13 @@ abstract contract AttackM3Common is Platform {
 
     function _soldOutStandard(bytes32 id) internal returns (Proj memory p, Sale memory s, uint256 malloryBid) {
         p = _launch(founder, id);
-        s = _open(p, Launcher.Size.Standard);
+        s = _open(p);
         vm.roll(s.startBlock);
         address[4] memory honest = [alice, bob, carol, dave];
         for (uint256 i; i < 4; ++i) {
-            _bid(s, honest[i], 2250 * DOLLAR, 1);
+            _bid(s, honest[i], 22_500 * DOLLAR, 1);
         }
-        malloryBid = _bid(s, mallory, 1000 * DOLLAR, 1);
+        malloryBid = _bid(s, mallory, 10_000 * DOLLAR, 1);
         _toEnd(s);
         vm.roll(s.endBlock + 1);
     }
@@ -323,11 +327,10 @@ abstract contract AttackM3Common is Platform {
 
     // ================================ buy below the floor and hand back, by sale size =================================
 
-    function _bearProject(Launcher.Size size, bytes32 id) internal returns (Proj memory p) {
+    function _bearProject(bytes32 id) internal returns (Proj memory p) {
         p = _launch(founder, id);
-        Sale memory s = _open(p, size);
-        (uint256 goal,) = launcher.sizeOf(size);
-        uint256[5] memory ids = _flat(s, goal);
+        Sale memory s = _open(p);
+        uint256[5] memory ids = _flat(s, GOAL);
         _toEnd(s);
         _finish(p, s);
         for (uint256 i; i < 5; ++i) {
@@ -385,14 +388,14 @@ abstract contract AttackM3PoolSeedBase is AttackM3Common {
     /// consecutive blocks ending at the edge of the window, and requires that none of them pays.
     function test_attack_spikeBidsAtTheEdgeOfTheClosingWindowSeedThePoolButLoseMoney() public {
         uint256 base = vm.snapshotState();
-        Run memory r0 = _sale(keccak256("a0"), 1000 * DOLLAR, 0);
+        Run memory r0 = _sale(keccak256("a0"), 10_000 * DOLLAR, 0);
         int256 p0 = _report("baseline (no spike)", r0);
         assertLt(p0, 0, "without a spike, selling into the pool loses money");
 
         for (uint256 spikes = 1; spikes <= 4; ++spikes) {
             vm.revertToState(base);
             base = vm.snapshotState();
-            Run memory r = _sale(keccak256(abi.encode("a", spikes)), 1000 * DOLLAR, spikes);
+            Run memory r = _sale(keccak256(abi.encode("a", spikes)), 10_000 * DOLLAR, spikes);
             int256 profit = _report(string.concat(vm.toString(spikes), " spike bid(s) at the edge of the window"), r);
             assertGt(r.finalPriceQ96, r0.finalPriceQ96, "the price is lifted: the attack is real, it just does not pay");
             assertLt(profit, 0, "a lift paid for on every block of the closing window costs more than the pool holds");
@@ -404,15 +407,16 @@ abstract contract AttackM3PoolSeedBase is AttackM3Common {
     /// @dev The same bids one block later (inside the window) are refused, in the first block of it and in the last.
     function test_attack_aBidInTheClosingWindowIsRefused() public {
         Proj memory p = _launch(founder, keccak256("window-attack"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         vm.roll(s.startBlock);
-        _bid(s, alice, 9000 * DOLLAR, 1);
+        _bid(s, alice, 90_000 * DOLLAR, 1);
         uint256[3] memory blocks_ = [uint256(s.endBlock - CLOSING + 1), s.endBlock - 1, s.endBlock];
         for (uint256 i; i < blocks_.length; ++i) {
             vm.roll(blocks_[i]);
             s.auction.checkpoint();
             uint256 c = s.auction.clearingPrice();
-            uint256 maxPrice = s.floorQ96 + ((4 * c - s.floorQ96) / s.tickQ96) * s.tickQ96;
+            uint256 maxPrice =
+                s.floorQ96 + (((4 * c < 4 * s.floorQ96 ? 4 * c : 4 * s.floorQ96) - s.floorQ96) / s.tickQ96) * s.tickQ96;
             _fund(mallory, 10 * DOLLAR, s);
             vm.prank(mallory);
             vm.expectRevert();
@@ -442,7 +446,7 @@ abstract contract AttackM3PoolSeedBase2 is AttackM3Common {
         Run memory r0 = _sale(keccak256("founder-base"), 0, 0);
         uint256 v0 = r0.p.treasury.spendable() + r0.p.treasury.melting();
         vm.revertToState(base);
-        Run memory r = _sale(keccak256("founder-two"), 1000 * DOLLAR, 4);
+        Run memory r = _sale(keccak256("founder-two"), 10_000 * DOLLAR, 4);
         uint256 v1 = r.p.treasury.spendable() + r.p.treasury.melting();
         (uint256 got,) = _bestDump(r);
         uint256 spent = r.minted - r.refundedAndSpent;
@@ -463,14 +467,13 @@ abstract contract AttackM3PoolSeedBase2 is AttackM3Common {
     /// the profit must be negative for every size.
     function test_attack_edgeSpikes_bySaleSize() public {
         uint256 base = vm.snapshotState();
-        Launcher.Size[3] memory sizes = [Launcher.Size.Small, Launcher.Size.Standard, Launcher.Size.Large];
-        for (uint256 z; z < 3; ++z) {
-            (uint256 goal,) = launcher.sizeOf(sizes[z]);
+        for (uint256 z; z < 1; ++z) {
+            uint256 goal = GOAL;
             uint256[3] memory blocks_ = [uint256(0), 1, 4];
             for (uint256 b; b < 3; ++b) {
                 vm.revertToState(base);
                 base = vm.snapshotState();
-                Run memory r = _saleSized(sizes[z], keccak256(abi.encode("bs", z, b)), goal / 10, blocks_[b]);
+                Run memory r = _saleSized(keccak256(abi.encode("bs", z, b)), goal / 10, blocks_[b]);
                 (uint256 got,) = _bestDump(r);
                 uint256 spent = r.minted - r.refundedAndSpent;
                 emit log_string(string.concat(
@@ -573,7 +576,8 @@ abstract contract AttackM3FinishBase is AttackM3Common {
         assertTrue(p.treasury.saleClosed(), "exits are open");
         assertApproxEqAbs(p.treasury.spendable(), raised * 15 / 100, 1000, "15 of each 100 raised are spendable");
         assertApproxEqAbs(p.treasury.melting(), raised * 82 / 100, 1000, "82 of each 100 are the floor");
-        assertEq(usd.balanceOf(platform), raised * 3 / 100, "3 to the platform");
+        // the platform also took 3% of the fake auction's few raw units
+        assertApproxEqAbs(usd.balanceOf(platform), raised * 3 / 100, 100, "3 to the platform");
         assertGt(p.vester.start(), 0, "the founder's Shares start releasing");
     }
 
@@ -626,7 +630,7 @@ abstract contract AttackM3FinishBase2 is AttackM3Common {
     /// steps; the pool step must still be callable.
     function test_attack_threeHundredTicksThenOneJumpDoesNotWedgeTheFinish() public {
         Proj memory p = _launch(founder, keccak256("ticks"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         vm.roll(s.startBlock);
         for (uint256 k = 1; k <= 300; ++k) {
             usd.mint(mallory, DOLLAR);
@@ -638,14 +642,15 @@ abstract contract AttackM3FinishBase2 is AttackM3Common {
             _bidAt(s, mallory, DOLLAR, s.floorQ96 + k * s.tickQ96, s.floorQ96 + (k - 1) * s.tickQ96);
         }
         vm.stopPrank();
-        _bid(s, alice, 9000 * DOLLAR, 1);
+        _bid(s, alice, 90_000 * DOLLAR, 1);
         vm.roll(s.endBlock - CLOSING);
         s.auction.checkpoint();
         uint256 c = s.auction.clearingPrice();
-        uint256 maxPrice = s.floorQ96 + ((4 * c - s.floorQ96) / s.tickQ96) * s.tickQ96;
-        _fund(bob, 5000 * DOLLAR, s);
+        uint256 maxPrice =
+            s.floorQ96 + (((4 * c < 4 * s.floorQ96 ? 4 * c : 4 * s.floorQ96) - s.floorQ96) / s.tickQ96) * s.tickQ96;
+        _fund(bob, 50_000 * DOLLAR, s);
         vm.prank(bob);
-        s.auction.submitBid(maxPrice, uint128(5000 * DOLLAR), bob, s.floorQ96 + 299 * s.tickQ96, "");
+        s.auction.submitBid(maxPrice, uint128(50_000 * DOLLAR), bob, s.floorQ96 + 299 * s.tickQ96, "");
         vm.roll(s.endBlock - CLOSING + 1);
         uint256 g0 = gasleft();
         s.auction.checkpoint();
@@ -748,9 +753,9 @@ abstract contract AttackM3FinishBase2 is AttackM3Common {
         p.finisher.settle();
         p.finisher.sweep();
         assertApproxEqAbs(
-            p.treasury.spendable(), raised * 15 / 100, 1000, "split by amounts, not prices: 15 of each 100 raised"
+            p.treasury.spendable(), raised * 15 / 100, 5000, "split by amounts, not prices: 15 of each 100 raised"
         );
-        assertApproxEqAbs(p.treasury.melting(), raised * 60 / 100, 1000, "and 60 into the floor");
+        assertApproxEqAbs(p.treasury.melting(), raised * 60 / 100, 5000, "and 60 into the floor (to a few thousandths)");
         vm.revertToState(snap);
     }
 
@@ -791,19 +796,19 @@ contract AttackM3Finish2ForkTest is AttackM3FinishBase2 {
 
 abstract contract AttackM3FinishBase3 is AttackM3Common {
     /// @dev Measured, a limit of the fix: dollars sent to the Finisher before step 2 make a real pool look as if it took less. Up to
-    /// 1,095 dollars on this 10,000-dollar sale (the pool's budget is 2,200) change nothing; 1,105 hide the pool: step 2 refuses, and
-    /// seven days later the way out opens although a pool exists (the money is conserved and exits open; the gift went to the project,
-    /// so the sender paid 1,105 dollars for it).
+    /// 10,950 dollars on this 100,000-dollar sale (the pool's budget is 22,000) change nothing; 11,050 hide the pool: step 2 refuses,
+    /// and seven days later the way out opens although a pool exists (the money is conserved and exits open; the gift went to the
+    /// project, so the sender paid 11,050 dollars for it).
     function test_measured_aGiftOfMoreThanHalfThePoolsBudgetHidesARealPool() public {
         (Proj memory p, Sale memory s, uint256 mid) = _soldOutStandard(keccak256("grief"));
         _collectBid(s, mid);
         uint256 snap = vm.snapshotState();
-        usd.mint(address(p.finisher), 1095 * DOLLAR);
+        usd.mint(address(p.finisher), 10_950 * DOLLAR);
         p.finisher.openPool();
         assertTrue(p.finisher.poolIsOpen(), "a gift under half the budget changes nothing");
         p.finisher.settle();
         vm.revertToState(snap);
-        usd.mint(address(p.finisher), 1105 * DOLLAR);
+        usd.mint(address(p.finisher), 11_050 * DOLLAR);
         p.finisher.openPool();
         assertTrue(p.finisher.poolAtTheKey(), "the real pool is there");
         assertFalse(p.finisher.poolIsOpen(), "but it looks as if it took less than half its budget");
@@ -853,16 +858,10 @@ abstract contract AttackM3MarketBase is AttackM3Common {
     /// 15% of the raise plus a fifth of the gifts, the floor never holds less than 60% of the raise plus four fifths of the gifts,
     /// no dollar stays in the Finisher or the strategy, and a sale under its minimum refunds everyone and pays nobody.
     /// forge-config: default.fuzz.runs = 3000
-    function testFuzz_splitAndConservationUnderSpikesAndGifts(
-        uint256 seed,
-        uint8 sizeSel,
-        uint8 spikes,
-        uint16 giftDollars
-    ) public {
-        Launcher.Size size = Launcher.Size(sizeSel % 3);
-        (uint256 goal,) = launcher.sizeOf(size);
+    function testFuzz_splitAndConservationUnderSpikesAndGifts(uint256 seed, uint8 spikes, uint16 giftDollars) public {
+        uint256 goal = GOAL;
         Proj memory p = _launch(founder, keccak256(abi.encode("fz", seed)));
-        Sale memory s = _open(p, size);
+        Sale memory s = _open(p);
         vm.roll(s.startBlock);
         uint256 honestTotal = goal * (30 + seed % 150) / 100;
         address[4] memory honest = [alice, bob, carol, dave];
@@ -911,17 +910,16 @@ abstract contract AttackM3MarketBase is AttackM3Common {
     /// pays, for a small, a medium and a large trade, with the pool's 1% fee, the price the trade moves and the 5% exit fee in.
     function test_attack_buyBelowTheFloorAndHandBack_bySaleSize() public {
         uint256 base = vm.snapshotState();
-        Launcher.Size[3] memory sizes = [Launcher.Size.Small, Launcher.Size.Standard, Launcher.Size.Large];
         uint256[6] memory discounts = [uint256(0), 600, 700, 800, 1000, 1500];
-        for (uint256 z; z < 3; ++z) {
-            (uint256 goal,) = launcher.sizeOf(sizes[z]);
+        for (uint256 z; z < 1; ++z) {
+            uint256 goal = GOAL;
             uint256[3] memory trades = [goal / 500, goal / 50, goal / 10];
             for (uint256 d; d < discounts.length; ++d) {
                 string memory line = string.concat("size ", vm.toString(goal / DOLLAR), " discount ");
                 for (uint256 t; t < 3; ++t) {
                     vm.revertToState(base);
                     base = vm.snapshotState();
-                    Proj memory p = _bearProject(sizes[z], keccak256(abi.encode("bg", z, d)));
+                    Proj memory p = _bearProject(keccak256(abi.encode("bg", z, d)));
                     uint256 reached = discounts[d] == 0 ? 0 : _dumpToDiscount(p, discounts[d]);
                     int256 profit = _buyAndHandBack(p, trades[t]);
                     line = string.concat(

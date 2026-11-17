@@ -51,7 +51,7 @@ contract LifeHandler is Platform {
         _setUpPlatform(false);
         bidders = [alice, bob, carol, dave, erin];
         p = _launch(founder, keccak256("invariant"));
-        s = _open(p, Launcher.Size.Standard);
+        s = _open(p);
         vm.roll(s.startBlock); // the sale is running from the first call
     }
 
@@ -71,7 +71,7 @@ contract LifeHandler is Platform {
     function bid(uint256 who, uint256 amount, uint256 k) external {
         if (block.number < s.startBlock || block.number >= s.endBlock) return;
         who = who % 5;
-        amount = bound(amount, DOLLAR, 40_000 * DOLLAR);
+        amount = bound(amount, DOLLAR, 400_000 * DOLLAR);
         k = bound(k, 1, 300);
         _fund(bidders[who], amount, s);
         uint256 id = s.auction.nextBidId();
@@ -159,12 +159,12 @@ contract LifeHandler is Platform {
         }
     }
 
-    function reopen(uint256 sizeSel) external {
-        if (!p.finisher.canOpen()) return;
-        vm.prank(founder);
-        (bool ok,) = address(launcher).call(abi.encodeCall(Launcher.openSale, (p.id, Launcher.Size(sizeSel % 3))));
-        if (ok) {
-            s = _saleOf(p, Launcher.Size(sizeSel % 3));
+    function reopen(uint256) external {
+        if (!p.finisher.canOpen() || p.treasury.poolOpen()) return;
+        Proj memory q = p;
+        _open(q); // both signers of the project's Pair
+        {
+            s = _saleOf(q);
             delete bidIds;
             positionId = 0;
             _count(7);
@@ -235,9 +235,7 @@ contract LifeHandler is Platform {
     }
 
     function checkIn() external {
-        vm.prank(founder);
-        (bool ok,) = address(p.treasury).call(abi.encodeWithSignature("checkIn()"));
-        ok;
+        _checkIn(p);
         _count(12);
     }
 

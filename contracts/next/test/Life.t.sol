@@ -41,7 +41,7 @@ abstract contract LifeBase is Platform {
         );
         assertEq(p.shares.totalSupply(), SUPPLY);
         assertEq(
-            p.shares.balanceOf(address(p.finisher)), 500_000_000 * SHARE, "40% sale + 10% pool match: the Finisher"
+            p.shares.balanceOf(address(p.finisher)), 350_000_000 * SHARE, "25% auction + 10% pool match: the Finisher"
         );
         assertEq(p.shares.balanceOf(address(p.vester)), 200_000_000 * SHARE, "20% founder: the Vester");
         assertEq(
@@ -60,9 +60,9 @@ abstract contract LifeBase is Platform {
         assertEq(granted, 1_000_000 * SHARE);
 
         // ---- open the sale: one transaction by the founder ----------------------------------------------------------
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         assertEq(p.shares.balanceOf(address(p.finisher)), 0, "the Finisher handed everything to the strategy");
-        assertEq(p.shares.balanceOf(address(s.auction)), SaleParams.SALE_SHARES, "the auction holds the 40% for sale");
+        assertEq(p.shares.balanceOf(address(s.auction)), SaleParams.SALE_SHARES, "the auction holds the 25% for sale");
         assertEq(p.shares.balanceOf(strategy), SaleParams.POOL_SHARES, "the strategy holds the 10% for the pool");
         assertEq(s.auction.fundsRecipient(), strategy, "the strategy receives the raise");
         assertEq(
@@ -75,7 +75,7 @@ abstract contract LifeBase is Platform {
 
         // ---- bids from five accounts ----------------------------------------------------------------------------------
         uint256[5] memory ids = _fiveBids(s);
-        assertEq(usd.balanceOf(address(s.auction)), 32_000 * DOLLAR, "every dollar bid is held by the auction");
+        assertEq(usd.balanceOf(address(s.auction)), 320_000 * DOLLAR, "every dollar bid is held by the auction");
 
         // ---- the sale ends; the figures are the auction's ------------------------------------------------------------
         _toEnd(s);
@@ -151,13 +151,13 @@ abstract contract LifeBase is Platform {
         assertEq(p.shares.balanceOf(address(p.finisher)), 0, "the Finisher holds nothing");
         assertEq(
             p.shares.balanceOf(address(p.treasury)),
-            299_000_000 * SHARE + unsold + (SaleParams.POOL_SHARES - m.poolShares),
-            "work pot (less the 1M gift) + reserve + unsold + unused pool Shares"
+            279_000_000 * SHARE + unsold + (SaleParams.POOL_SHARES - m.poolShares),
+            "work pot (less the 1M gift) + reserve (less the 20M stake) + unsold + unused pool Shares"
         );
         assertEq(
             p.treasury.reserve(),
-            100_000_000 * SHARE + unsold + (SaleParams.POOL_SHARES - m.poolShares),
-            "the rest is plain reserve"
+            80_000_000 * SHARE + unsold + (SaleParams.POOL_SHARES - m.poolShares),
+            "the rest is plain reserve (the 20M stake went to the Vester as held Shares)"
         );
         assertTrue(p.treasury.saleClosed(), "exits are open");
         assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Done));
@@ -181,16 +181,21 @@ abstract contract LifeBase is Platform {
         }
         assertGt(p.shares.balanceOf(erin), 0, "the early low bid bought some Shares before it was outbid");
         assertGt(usd.balanceOf(erin), 0, "and got the unspent dollars back");
-        assertApproxEqAbs(32_000 * DOLLAR, m.raised + refunds, 10, "dollars bid = dollars raised + dollars refunded");
+        assertApproxEqAbs(320_000 * DOLLAR, m.raised + refunds, 10, "dollars bid = dollars raised + dollars refunded");
         assertApproxEqAbs(filled, s.auction.totalCleared(), 10, "Shares claimed = Shares sold");
         uint256 accounted = filled + m.poolShares + p.shares.balanceOf(address(p.treasury))
             + p.shares.balanceOf(address(p.vester)) + p.shares.balanceOf(address(s.auction))
-            + p.shares.balanceOf(strategy);
+            + p.shares.balanceOf(strategy) + p.shares.balanceOf(address(p.rounds));
         assertEq(accounted, SUPPLY, "all 1,000,000,000 Shares are accounted for");
 
         // ---- the exit denominator, with the pool's Shares counted as in people's hands (owner call 1) ---------------
         uint256 counting = p.treasury.countingSupply();
-        assertEq(counting, SUPPLY - p.shares.balanceOf(address(p.treasury)) - p.vester.unreleased());
+        assertEq(
+            counting,
+            SUPPLY - p.shares.balanceOf(address(p.treasury)) - p.shares.balanceOf(address(p.rounds))
+                - p.shares.balanceOf(address(p.finisher)) - p.vester.unreleased(),
+            "every Share but the Treasury's, the Rounds' (unsold backing Shares), the Finisher's and the unreleased"
+        );
         assertApproxEqAbs(
             counting,
             filled + m.poolShares,
@@ -214,7 +219,7 @@ abstract contract LifeBase2 is Platform {
         Proj memory p = _launchOrdered(founder, _quoteIsCurrency0());
         vm.prank(founder);
         p.treasury.giveShares(bob, 1_000_000 * SHARE);
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         uint256[5] memory ids = _fiveBids(s);
         _toEnd(s);
         IPositionManagerTest pm = IPositionManagerTest(positionManager);
@@ -280,8 +285,7 @@ abstract contract LifeBase2 is Platform {
         uint256 m0 = p.treasury.melting();
         uint256 sp0 = p.treasury.spendable();
         vm.warp(_now() + 10 days);
-        vm.prank(founder);
-        p.treasury.checkIn(); // accrues the 10 days first, then renews the window
+        _checkIn(p); // accrues the 10 days first, then renews the window (a signer of the Pair)
         uint256 r1 = m0 * 10 days / 365 days;
         assertEq(p.treasury.melting(), m0 - r1, "ten days of the year released, exactly");
         assertEq(p.treasury.spendable(), sp0 + r1);
@@ -313,7 +317,7 @@ abstract contract LifeBase3 is Platform {
     /// what the floor pays per Share with and without the pool's Shares in the count.
     function test_life_theFiguresOfTheMainSale() public {
         Proj memory p = _launchOrdered(founder, _quoteIsCurrency0());
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         uint256[5] memory ids = _fiveBids(s);
         _toEnd(s);
         uint256 dollarsBefore = usd.balanceOf(poolManager);
@@ -358,7 +362,7 @@ abstract contract LifeBase3 is Platform {
         for (uint256 round; round < 2; ++round) {
             uint256 snap = vm.snapshotState();
             Proj memory p = _launchOrdered(founder, _quoteIsCurrency0());
-            Sale memory s = _open(p, Launcher.Size.Standard);
+            Sale memory s = _open(p);
             _fiveBids(s);
             _toEnd(s);
             vm.roll(s.endBlock + 1);

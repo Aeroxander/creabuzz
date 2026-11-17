@@ -19,12 +19,12 @@ abstract contract MarketAttacksBase is Platform {
     }
 
     /// @dev A standard sale at exactly its goal (the price stays at the floor), finished, every bidder paid out.
-    function _flatProject(bytes32 id, Launcher.Size size, uint256 total)
+    function _flatProject(bytes32 id, uint256 total)
         internal
         returns (Proj memory p, Sale memory s, uint256 poolDollars)
     {
         p = _launch(founder, id);
-        s = _open(p, size);
+        s = _open(p);
         uint256[5] memory ids = _flat(s, total);
         _toEnd(s);
         uint256 before = usd.balanceOf(poolManager);
@@ -91,7 +91,7 @@ abstract contract MarketAttacksBase is Platform {
     /// reported in units, separately. Asserted: no profit within 5% of the floor; a profit exists some way further down;
     /// and the deeper the discount the more is made.
     function test_attack_buyBelowTheFloorAndHandBack_measuredAtOnePercentFivePercentTenPercent() public {
-        (Proj memory p,,) = _flatProject(keccak256("bear"), Launcher.Size.Standard, 10_000 * DOLLAR);
+        (Proj memory p,,) = _flatProject(keccak256("bear"), 100_000 * DOLLAR);
         uint256 floorPS = _floorPerShare(p);
         PoolKey memory key = _key(p);
         emit log_string(string.concat(
@@ -229,8 +229,8 @@ abstract contract MarketAttacksBase2 is Platform {
     /// after step 3.
     function test_attack_handBackBeforeSettleAndBeforeTheSaleIsClosed() public {
         Proj memory p = _launch(founder, keccak256("early"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
-        uint256[5] memory ids = _flat(s, 6000 * DOLLAR); // a partial sale, so unsold Shares exist to dilute
+        Sale memory s = _open(p);
+        uint256[5] memory ids = _flat(s, 100_000 * DOLLAR); // the auction still holds the Shares bidders have not claimed
         _toEnd(s);
         vm.roll(s.endBlock + 1);
         // a bidder with Shares tries to hand them back before anything is done
@@ -278,8 +278,8 @@ abstract contract MarketAttacksBase2 is Platform {
         p.treasury.giveShares(friend, 50_000_000 * SHARE);
         p.treasury.giveShares(wallet2, 50_000_000 * SHARE);
         vm.stopPrank();
-        Sale memory s = _open(p, Launcher.Size.Standard);
-        uint256[5] memory ids = _flat(s, 10_000 * DOLLAR);
+        Sale memory s = _open(p);
+        uint256[5] memory ids = _flat(s, 100_000 * DOLLAR);
         _toEnd(s);
         // in the block the pool opens
         _finish(p, s);
@@ -297,13 +297,12 @@ abstract contract MarketAttacksBase2 is Platform {
         );
         assertEq(
             p.shares.balanceOf(address(p.vester)),
-            300_000_000 * SHARE,
-            "200M + 100M of gifts are all still in the Vester"
+            320_000_000 * SHARE,
+            "200M + 100M of gifts + the 20M stake are all still in the Vester"
         );
         // the pool's Shares and the dollars in it are untouched by anything the team can do
         // no new grant after the clock has started: a last-second pre-pool gift cannot be made once the pool is open
-        vm.prank(founder);
-        p.treasury.giveShares(friend, 1_000_000 * SHARE); // after the pool: straight to the person, inside the 1% cap
+        _give(p, friend, 1_000_000 * SHARE); // after the pool: straight to the person, inside the 1% cap (both signers)
         assertEq(p.shares.balanceOf(friend), 1_000_000 * SHARE, "a gift after the pool is free at once");
         vm.expectRevert(); // the Vester takes no grant after the pool opened
         vm.prank(address(p.treasury));
@@ -313,19 +312,20 @@ abstract contract MarketAttacksBase2 is Platform {
         assertEq(p.vester.claimable(founder), 200_000_000 * SHARE * 1 days / 365 days);
         assertEq(p.vester.claimable(friend), 50_000_000 * SHARE * 1 days / 365 days);
 
-        // the allowance, measured: 1% of all Shares (10,000,000) gifted to a fresh wallet and sold into the pool at once
+        // the allowance, measured: 1% of the Shares in people's hands gifted to a fresh wallet and sold into the pool at once
         PoolKey memory key = _key(p);
         uint256 before = _spot(key);
-        vm.prank(founder);
-        p.treasury.giveShares(wallet2, 9_000_000 * SHARE); // 1M already given this month: the cap is 10M in all
-        vm.prank(founder);
-        vm.expectRevert(); // one Share more than the cap
-        p.treasury.giveShares(wallet2, 1 * SHARE + 1);
+        uint256 room = p.treasury.countingSupply() / 100 - p.treasury.giftsUsed(); // 1M already given this month
+        _give(p, wallet2, room);
+        uint256 over = p.treasury.countingSupply() / 100 - p.treasury.giftsUsed() + 1;
+        _bothReverts(p, address(p.treasury), abi.encodeCall(Treasury.giveShares, (wallet2, over))); // one unit past the cap
         uint256 dollars0 = usd.balanceOf(wallet2);
-        _swap(key, address(p.shares), wallet2, false, 9_000_000 * SHARE);
+        _swap(key, address(p.shares), wallet2, false, room);
         uint256 after_ = _spot(key);
         emit log_string(string.concat(
-                "dump: 9,000,000 Shares sold at once right after the pool opens move the price from ",
+                "dump: ",
+                _str(room / 1e12, 6),
+                " Shares (1% of those in hands) sold at once right after the pool opens move the price from ",
                 _str(before, 18),
                 " to ",
                 _str(after_, 18),
@@ -345,12 +345,12 @@ abstract contract MarketAttacksBase3 is Platform {
     }
 
     /// @dev A standard sale at exactly its goal (the price stays at the floor), finished, every bidder paid out.
-    function _flatProject(bytes32 id, Launcher.Size size, uint256 total)
+    function _flatProject(bytes32 id, uint256 total)
         internal
         returns (Proj memory p, Sale memory s, uint256 poolDollars)
     {
         p = _launch(founder, id);
-        s = _open(p, size);
+        s = _open(p);
         uint256[5] memory ids = _flat(s, total);
         _toEnd(s);
         uint256 before = usd.balanceOf(poolManager);
@@ -401,14 +401,13 @@ abstract contract MarketAttacksBase3 is Platform {
     /// at the Standard and the Small size. The pool is small, so the numbers are large; this is the plan's "small pools" warning
     /// measured.
     function test_attack_snipingThePoolAtGraduation_measured() public {
-        Launcher.Size[2] memory sizes = [Launcher.Size.Standard, Launcher.Size.Small];
-        uint256[2] memory totals = [uint256(10_000 * DOLLAR), 4000 * DOLLAR];
+        uint256[1] memory totals = [uint256(100_000 * DOLLAR)];
         uint256[2] memory amounts = [uint256(100 * DOLLAR), 2500 * DOLLAR];
-        for (uint256 z; z < 2; ++z) {
-            (Proj memory p,, uint256 poolDollars) = _flatProject(keccak256(abi.encode("snipe", z)), sizes[z], totals[z]);
+        for (uint256 z; z < 1; ++z) {
+            (Proj memory p,, uint256 poolDollars) = _flatProject(keccak256(abi.encode("snipe", z)), totals[z]);
             emit log_string(string.concat(
                     "snipe: ",
-                    z == 0 ? "Standard" : "Small",
+                    "the 100,000 auction",
                     " sale: pool holds ",
                     _str(poolDollars, 6),
                     " dollars and ",
@@ -455,20 +454,20 @@ abstract contract MarketAttacksBase3 is Platform {
     // ============================================== the founder bids in their own sale ===============================
 
     /// @dev The founder can bid through a second account. The 4-times rule limits what ONE BLOCK of bids can do (every bid here is placed
-    /// in the first block of the sale, when the price is the floor), not how far the price can go over several blocks: see the ladder
-    /// test below. For three sizes of founder bid, against 10,000 dollars of honest demand: how far the price goes in that one block,
+    /// in the first block of the sale, when the price is the floor); plan version 2 made the cap absolute, so no block can pass it: see the ladder
+    /// test below. For three sizes of founder bid, against 100,000 dollars of honest demand: how far the price goes in that one block,
     /// what the honest bidders get, what the founder ends with, and what it cost the founder.
     function test_attack_theFounderBidsInTheirOwnSale_measured() public {
-        uint256[4] memory founderBids = [uint256(0), 5000 * DOLLAR, 20_000 * DOLLAR, 100_000 * DOLLAR];
+        uint256[4] memory founderBids = [uint256(0), 50_000 * DOLLAR, 200_000 * DOLLAR, 1_000_000 * DOLLAR];
         uint256 honestSharesBase;
         for (uint256 z; z < founderBids.length; ++z) {
             Proj memory p = _launch(founder, keccak256(abi.encode("selfbid", z)));
-            Sale memory s = _open(p, Launcher.Size.Standard);
+            Sale memory s = _open(p);
             vm.roll(s.startBlock);
             uint256[3] memory ids;
-            ids[0] = _bid(s, alice, 3334 * DOLLAR, 300);
-            ids[1] = _bid(s, bob, 3333 * DOLLAR, 300);
-            ids[2] = _bid(s, carol, 3333 * DOLLAR, 300);
+            ids[0] = _bid(s, alice, 33_334 * DOLLAR, 300);
+            ids[1] = _bid(s, bob, 33_333 * DOLLAR, 300);
+            ids[2] = _bid(s, carol, 33_333 * DOLLAR, 300);
             address second = makeAddr("founder's second account");
             uint256 fid;
             if (founderBids[z] != 0) fid = _bid(s, second, founderBids[z], 300);
@@ -491,7 +490,7 @@ abstract contract MarketAttacksBase3 is Platform {
             emit log_string(string.concat(
                     "selfbid: founder bids ",
                     vm.toString(founderBids[z] / DOLLAR),
-                    " on top of 10,000 honest: price ",
+                    " on top of 100,000 honest: price ",
                     _str(finalPrice * 100 / s.floorQ96, 2),
                     "x the floor, raised ",
                     _str(raised, 6),
@@ -515,56 +514,52 @@ abstract contract MarketAttacksBase3 is Platform {
         }
     }
 
-    /// @dev The rule is "4 times the clearing price AT THE TIME OF THE BID", not 4 times the floor. Bids placed some blocks apart can each
-    /// name 4 times the price the one before set. A founder's second account places four such bids, 20 blocks apart and well before the
-    /// closing window, each sized to buy every Share still to be sold at its top price, and the price climbs far past 4 times the floor.
-    /// What stops it is what it costs: the Shares are bought at the lifted price, and 25 of each 100 spent (the platform's 3 and the pool's
-    /// 22) never come back. Measured here; the report and the plan state this rule.
-    function test_attack_aLadderOfBidsClimbsFarPastFourTimesTheFloor_measured() public {
+    /// @dev Milestone 3 measured a ladder: the rule was "4 times the clearing price AT THE TIME OF THE BID", so four bids some blocks
+    /// apart lifted the price 4, 16, 64 and 256 times the floor. Plan version 2 made the cap absolute: no bid may name more than 4
+    /// times the auction's starting price. The same ladder now stops at the first step: the second account's first bid lifts the
+    /// price to the cap, every later rung (4 times the new price) is refused, the final price is at most 4 times the starting price,
+    /// and the bids at the cap are filled (the fill test of the change).
+    function test_fixed_aLadderOfBidsCannotPassFourTimesTheStartingPrice() public {
         Proj memory p = _launch(founder, keccak256("ladder"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         vm.roll(s.startBlock);
-        uint256 honestBid = _bid(s, alice, 10_000 * DOLLAR, 300);
+        uint256 honestBid = _bid(s, alice, 100_000 * DOLLAR, 300);
         address second = makeAddr("founder's second account");
-        uint256 spentIn;
         uint256[4] memory ids;
-        uint256[4] memory multiples; // the price at the next block, in hundredths of the floor
+        uint256 refused;
         for (uint256 step; step < 4; ++step) {
             vm.roll(s.startBlock + 100 + 20 * step);
             s.auction.checkpoint();
             uint256 c = s.auction.clearingPrice();
-            uint256 maxPrice = s.floorQ96 + ((4 * c - s.floorQ96) / s.tickQ96) * s.tickQ96;
-            uint256 amount = (maxPrice * ((s.endBlock - block.number) * 60_000e18) >> 96) * 3 + DOLLAR;
+            uint256 maxPrice = s.floorQ96 + ((4 * c - s.floorQ96) / s.tickQ96) * s.tickQ96; // milestone 3's rung
+            uint256 amount = (maxPrice * ((s.endBlock - block.number) * 40_000e18) >> 96) * 3 + DOLLAR;
             _fund(second, amount, s);
             ids[step] = s.auction.nextBidId();
             vm.prank(second);
-            s.auction.submitBid(maxPrice, uint128(amount), second, s.floorQ96, "");
-            spentIn += amount;
+            try s.auction.submitBid(maxPrice, uint128(amount), second, s.floorQ96, "") {}
+            catch {
+                ++refused;
+                ids[step] = type(uint256).max;
+            }
             vm.roll(block.number + 1);
             s.auction.checkpoint();
-            multiples[step] = s.auction.clearingPrice() * 100 / s.floorQ96;
             emit log_named_uint(
                 string.concat("ladder: price after step ", vm.toString(step + 1), ", hundredths of the floor"),
-                multiples[step]
+                s.auction.clearingPrice() * 100 / s.floorQ96
             );
         }
-        assertGt(multiples[0], 380, "the first bid lifts the price to about 4 times the floor");
-        assertGt(multiples[1], 1500, "the second names 4 times THAT price: about 16 times the floor");
-        assertGt(multiples[3], 4 * 6000, "after four steps the price is above 240 times the floor, not capped at 4");
+        assertEq(ids[0], 1, "the first rung (4 times the starting price) is taken");
+        assertEq(refused, 3, "every later rung names more than 4 times the starting price and is refused");
         _toEnd(s);
+        uint256 finalPrice = s.auction.clearingPrice();
+        assertLe(finalPrice, 4 * s.floorQ96, "the price never passes 4 times the starting price");
         _finish(p, s);
-        (uint256 refund,) = _collectBid(s, ids[0]);
-        uint256 spent;
-        for (uint256 i = 1; i < 4; ++i) {
-            (uint256 r,) = _collectBid(s, ids[i]);
-            refund += r;
-        }
-        spent = spentIn - refund;
-        _collectBid(s, honestBid);
+        (, uint256 got) = _collectBid(s, ids[0]);
+        (, uint256 gotHonest) = _collectBid(s, honestBid);
+        assertGt(got, 0, "a bid at the cap is filled");
+        assertGt(gotHonest, 0, "and so is the honest bid at the cap");
         emit log_named_uint("ladder: dollars raised", s.auction.currencyRaised());
-        emit log_named_uint("ladder: dollars the second account spent net of refunds", spent);
-        emit log_named_uint("ladder: dollars in the pool", usd.balanceOf(poolManager));
-        assertGt(spent * 25 / 100, 0);
+        emit log_named_uint("ladder: final price, hundredths of the floor", finalPrice * 100 / s.floorQ96);
     }
 }
 
@@ -603,14 +598,14 @@ abstract contract MarketAttacksBase4 is Platform {
         address founderB = makeAddr("founder b");
         Proj memory a = _launch(founder, keccak256("project a"));
         Proj memory b = _launch(founderB, keccak256("project b"));
-        Sale memory sa = _open(a, Launcher.Size.Standard);
-        Sale memory sb = _open(b, Launcher.Size.Small);
+        Sale memory sa = _open(a);
+        Sale memory sb = _open(b);
         assertEq(sa.startBlock, sb.startBlock, "opened in the same block");
         vm.roll(sa.startBlock);
-        uint256 a1 = _bid(sa, alice, 6000 * DOLLAR, 100);
-        uint256 b1 = _bid(sb, bob, 3000 * DOLLAR, 100);
-        uint256 a2 = _bid(sa, carol, 7000 * DOLLAR, 200);
-        uint256 b2 = _bid(sb, dave, 2500 * DOLLAR, 50);
+        uint256 a1 = _bid(sa, alice, 60_000 * DOLLAR, 100);
+        uint256 b1 = _bid(sb, bob, 60_000 * DOLLAR, 100);
+        uint256 a2 = _bid(sa, carol, 70_000 * DOLLAR, 200);
+        uint256 b2 = _bid(sb, dave, 50_000 * DOLLAR, 50);
         _toEnd(sa);
         _toEnd(sb);
         vm.roll(sa.endBlock + 1);

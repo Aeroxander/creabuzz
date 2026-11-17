@@ -28,20 +28,17 @@ abstract contract SaleRulesBase is Platform {
 
     // ============================================== every setting is filled in ========================================
 
-    function test_openSale_fillsInEverySettingFromTheSize() public {
-        Launcher.Size[3] memory sizes = [Launcher.Size.Small, Launcher.Size.Standard, Launcher.Size.Large];
-        for (uint256 i; i < 3; ++i) {
+    function test_openAuction_fillsInEverySetting() public {
+        for (uint256 i; i < 1; ++i) {
             Proj memory p = _launch(founder, keccak256(abi.encode("sizes", i)));
-            uint256 g = gasleft();
-            Sale memory s = _open(p, sizes[i]);
-            emit log_named_uint(string.concat("gas: open a sale, size ", vm.toString(i)), g - gasleft());
-            (uint256 goal, uint256 minimum) = launcher.sizeOf(sizes[i]);
-            assertEq(goal, i == 0 ? 4000 * DOLLAR : i == 1 ? 10_000 * DOLLAR : 50_000 * DOLLAR);
-            assertEq(minimum, i == 0 ? 2000 * DOLLAR : i == 1 ? 2500 * DOLLAR : 12_500 * DOLLAR);
+            Sale memory s = _open(p);
+            uint256 goal = 100_000 * DOLLAR;
+            assertEq(launcher.AUCTION_MINIMUM(), goal, "the minimum is every Share sold at the starting price");
             // the auction
             assertEq(s.auction.currency(), address(usd));
             assertEq(s.auction.token(), address(p.shares));
-            assertEq(s.auction.totalSupply(), SaleParams.SALE_SHARES, "400M Shares for sale");
+            assertEq(s.auction.totalSupply(), SaleParams.SALE_SHARES, "250M Shares for sale");
+            assertEq(SaleParams.SALE_SHARES, 250_000_000 * SHARE);
             assertEq(s.auction.startBlock(), block.number + 1);
             assertEq(s.auction.endBlock(), s.auction.startBlock() + 7200, "24 hours");
             assertEq(s.auction.claimBlock(), s.auction.endBlock() + 1);
@@ -51,7 +48,7 @@ abstract contract SaleRulesBase is Platform {
             assertEq(s.auction.validationHook(), minBid);
             assertEq(s.auction.fundsRecipient(), strategy);
             assertEq(s.auction.tokensRecipient(), address(p.finisher));
-            // selling all 400M Shares at the floor price raises the goal (the floor is rounded up to a whole tick, under 1% more)
+            // selling all 250M Shares at the floor price raises the goal (the floor is rounded up to a whole tick, under 1% more)
             uint256 atFloor = SaleParams.SALE_SHARES * s.floorQ96 >> 96;
             assertGe(atFloor, goal);
             assertApproxEqRel(atFloor, goal, 0.01e18);
@@ -79,16 +76,16 @@ abstract contract SaleRulesBase is Platform {
         }
     }
 
-    /// @dev The minimum to go through, for each size: one dollar under it the sale fails (everyone refunded), at it the sale goes.
-    function test_openSale_theMinimumOfEachSizeIsTheMinimum() public {
-        Launcher.Size[3] memory sizes = [Launcher.Size.Small, Launcher.Size.Standard, Launcher.Size.Large];
-        for (uint256 i; i < 3; ++i) {
-            (, uint256 minimum) = launcher.sizeOf(sizes[i]);
+    /// @dev The minimum to go through: one dollar under it the sale fails (everyone refunded), at it the sale goes. The minimum is
+    /// the full sale at the starting price, so the bid goes in at a top price above it (10 ticks) for the auction to clear it all.
+    function test_openAuction_theMinimumIsTheMinimum() public {
+        for (uint256 i; i < 1; ++i) {
+            uint256 minimum = 100_000 * DOLLAR;
             for (uint256 under; under < 2; ++under) {
                 Proj memory p = _launch(founder, keccak256(abi.encode("min", i, under)));
-                Sale memory s = _open(p, sizes[i]);
+                Sale memory s = _open(p);
                 vm.roll(s.startBlock);
-                _bid(s, alice, under == 1 ? minimum - DOLLAR : minimum, 1);
+                _bid(s, alice, under == 1 ? minimum - DOLLAR : minimum, 10);
                 _toEnd(s);
                 assertEq(s.auction.isGraduated(), under == 0, "goes through at the minimum, fails a dollar below it");
             }
@@ -102,7 +99,7 @@ abstract contract SaleRulesBase is Platform {
         st.quote = IERC20(address(other));
         vm.prank(admin);
         launcher.setSettings(st);
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         assertEq(s.auction.currency(), address(usd), "the sale raises the project's own dollar token");
         assertEq(IPinnedStrategy(strategy).initializers(address(s.auction)).currency, address(usd));
     }
@@ -126,49 +123,52 @@ abstract contract SaleRulesBase2 is Platform {
         _setUpPlatform(_fork());
     }
 
-    function test_openSale_onlyTheFounderOpensAndOnlyThroughTheLauncher() public {
+    function test_openAuction_onlyThePairOpensAndOnlyThroughTheLauncher() public {
         Proj memory p = _launch(founder, keccak256("mine"));
         vm.prank(alice);
-        vm.expectRevert(Launcher.UnknownProject.selector);
-        launcher.openSale(p.id, Launcher.Size.Standard);
+        vm.expectRevert(Launcher.NotRunner.selector);
+        launcher.openAuction(p.key);
+        vm.prank(founder);
+        vm.expectRevert(abi.encodeWithSelector(Launcher.WrongRunner.selector, Launcher.RunnerKind.Pair));
+        launcher.openAuction(p.key); // a single founder may not open the auction
         vm.prank(founder);
         vm.expectRevert(Finisher.NotLauncher.selector);
         p.finisher.open("");
         vm.prank(address(p.treasury));
         vm.expectRevert(Finisher.NotLauncher.selector);
         p.finisher.open("");
-        // an agent of the project is a different account: opening a sale is the founder's own touch
+        // an agent of the project is a different account: opening a sale is the runner's own touch
         vm.prank(founder);
         p.treasury.authoriseAgent(bob);
         vm.prank(bob);
-        vm.expectRevert(Launcher.UnknownProject.selector);
-        launcher.openSale(p.id, Launcher.Size.Standard);
-        // a second open sale and a sale of a project that sold are refused
+        vm.expectRevert(Launcher.NotRunner.selector);
+        launcher.openAuction(p.key);
+        // with a Pair: one signer alone cannot (the Launcher answers only the Pair itself), both can, and a second open sale is
+        // refused
+        _team(p);
         vm.prank(founder);
-        launcher.openSale(p.id, Launcher.Size.Standard);
-        vm.prank(founder);
-        vm.expectRevert(Finisher.CannotOpen.selector);
-        launcher.openSale(p.id, Launcher.Size.Small);
+        vm.expectRevert(Launcher.NotRunner.selector);
+        launcher.openAuction(p.key);
+        _open(p);
+        _openRefused(p, abi.encodeWithSelector(Finisher.CannotOpen.selector));
     }
 
     function test_openSale_aProjectThatAlreadySoldCannotSellAgain() public {
         Proj memory p = _launch(founder, keccak256("sold"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
-        _flat(s, 10_000 * DOLLAR);
+        Sale memory s = _open(p);
+        _flat(s, 100_000 * DOLLAR);
         _toEnd(s);
         _finish(p, s);
         assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Done));
         vm.roll(block.number + 1_000_000);
-        vm.prank(founder);
-        vm.expectRevert(Finisher.CannotOpen.selector);
-        launcher.openSale(p.id, Launcher.Size.Standard);
+        _openRefused(p, abi.encodeWithSelector(Launcher.WrongStage.selector));
     }
 
     // ============================================== bid rules on a real sale ===========================================
 
     function test_bids_dustIsRefusedAndOneDollarIsNot() public {
         Proj memory p = _launch(founder, keccak256("dust"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         vm.roll(s.startBlock);
         _fund(alice, 5 * DOLLAR, s);
         vm.startPrank(alice);
@@ -182,7 +182,7 @@ abstract contract SaleRulesBase2 is Platform {
 
     function test_bids_aTopPriceAboveFourTimesIsRefusedAndFourTimesIsNot() public {
         Proj memory p = _launch(founder, keccak256("cap"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         vm.roll(s.startBlock);
         _fund(alice, 100 * DOLLAR, s);
         vm.startPrank(alice);
@@ -197,7 +197,7 @@ abstract contract SaleRulesBase2 is Platform {
     /// refuses from `end`) a bid is refused with the block and the last allowed block in the error. (Why: `MinBid` and `AttackM3.t.sol`.)
     function test_bids_nothingInTheLast720BlocksOfTheSale() public {
         Proj memory p = _launch(founder, keccak256("window"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         assertEq(s.endBlock - s.startBlock, 7200, "the sale is 7,200 blocks");
         _fund(alice, 100 * DOLLAR, s);
         vm.roll(s.endBlock - 720);
@@ -238,7 +238,7 @@ abstract contract SaleRulesBase3 is Platform {
 
     function test_sweeps_onlyTheNamedRecipientsMaySweep() public {
         Proj memory p = _launch(founder, keccak256("sweeps"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         _fiveBids(s);
         _toEnd(s);
         vm.roll(s.endBlock + 1);
@@ -263,7 +263,7 @@ abstract contract SaleRulesBase3 is Platform {
         PoolKey memory plain = key;
         plain.hooks = address(0);
         assertTrue(_initializeAt(plain), "a plain pool of the same two tokens is the stranger's own, and harmless");
-        Sale memory s = _open(p, Launcher.Size.Standard); // the sale opens although a plain pool exists
+        Sale memory s = _open(p); // the sale opens although a plain pool exists
         assertFalse(_initializeAt(key), "while the sale runs: still refused");
         _fiveBids(s);
         _toEnd(s);
@@ -292,7 +292,7 @@ abstract contract SaleRulesBase3 is Platform {
     /// money) until the address is unfrozen, and nothing is lost meanwhile.
     function test_attack_aDollarTokenThatFreezesAnAddressStopsTheFinishWithoutHalfDoingIt() public {
         Proj memory p = _launch(founder, keccak256("hostile"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         _fiveBids(s);
         _toEnd(s);
         vm.roll(s.endBlock + 1);
@@ -310,7 +310,9 @@ abstract contract SaleRulesBase3 is Platform {
         p.finisher.openPool();
         usd.setBlocked(address(p.finisher), false);
         assertEq(
-            usd.balanceOf(address(s.auction)), 32_000 * DOLLAR, "nothing was lost: every dollar is still in the auction"
+            usd.balanceOf(address(s.auction)),
+            320_000 * DOLLAR,
+            "nothing was lost: every dollar is still in the auction"
         );
         assertFalse(p.finisher.poolIsOpen());
 

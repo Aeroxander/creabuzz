@@ -2,11 +2,11 @@
 pragma solidity ^0.8.30;
 
 import {Platform} from "./helpers/Platform.sol";
-import {Launcher} from "../src/Launcher.sol";
 import {Finisher} from "../src/Finisher.sol";
 import {SaleParams} from "../src/Pinned.sol";
 
-/// @notice Random sales through the whole route on the real platform: a random size, a random set of bids at random times and
+/// @notice Random sales through the whole route on the real platform (the one auction of plan version 2: 250M Shares, minimum
+/// 100,000 dollars, bids at most 4 times the starting price): a random set of bids at random times and
 /// prices (some refused by the auction's own rules, which is part of the point), the finish steps called by strangers in a random
 /// order, then every bidder collects. After each, the money is accounted for to the unit that can be accounted for:
 /// raised = 3 + 22 + 15 + 60 and every dollar bid is the raise or a refund, every Share is somewhere, and a sale that fails to
@@ -29,9 +29,11 @@ contract LifeFuzzTest is Platform {
     {
         placed = new Placed[](n);
         uint256 at = s.startBlock;
-        // how big the bids are for this sale: 300 up to 120,000 dollars at most, so small sales fall short and big ones overshoot
+        // how big the bids are for this sale: 3,000 up to 1,200,000 dollars at most, so some sales fall short of the 100,000
+        // minimum and others overshoot it
         uint256 scale =
-            [uint256(300), 1500, 6000, 30_000, 120_000][uint256(keccak256(abi.encode(seed, "scale"))) % 5] * DOLLAR;
+            [uint256(3000), 15_000, 60_000, 300_000, 1_200_000][uint256(keccak256(abi.encode(seed, "scale"))) % 5]
+                * DOLLAR;
         vm.roll(at);
         for (uint256 i; i < n; ++i) {
             uint256 r = uint256(keccak256(abi.encode(seed, i)));
@@ -51,19 +53,16 @@ contract LifeFuzzTest is Platform {
     }
 
     /// forge-config: default.fuzz.runs = 2000
-    function testFuzz_everyDollarAndShareIsAccountedForOverTheWholeSale(uint256 seed, uint8 sizeSel, uint8 nBids)
-        public
-    {
-        Launcher.Size size = Launcher.Size(sizeSel % 3);
+    function testFuzz_everyDollarAndShareIsAccountedForOverTheWholeSale(uint256 seed, uint8 nBids) public {
         uint256 n = 1 + nBids % 10;
         Proj memory p = _launch(founder, keccak256(abi.encode("fuzz", seed)));
-        Sale memory s = _open(p, size);
+        Sale memory s = _open(p);
         (Placed[] memory placed, uint256 count) = _randomBids(s, seed, n);
         _toEnd(s);
         vm.roll(s.endBlock + 1);
         bool graduated = s.auction.isGraduated();
         uint256 raised = s.auction.currencyRaised();
-        (, uint256 minimum) = launcher.sizeOf(size);
+        uint256 minimum = 100_000 * DOLLAR;
         assertEq(
             graduated,
             raised >= minimum || (raised + count >= minimum && raised >= minimum - count),
@@ -102,7 +101,7 @@ contract LifeFuzzTest is Platform {
             assertEq(usd.balanceOf(poolManager), 0);
             assertEq(usd.balanceOf(address(p.treasury)), 0);
             assertEq(
-                p.shares.balanceOf(address(p.finisher)), 500_000_000 * SHARE, "all 500M Shares are back for a new try"
+                p.shares.balanceOf(address(p.finisher)), 350_000_000 * SHARE, "all 350M Shares are back for a new try"
             );
             assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Failed));
             assertFalse(p.treasury.poolOpen());
@@ -128,15 +127,15 @@ contract LifeFuzzTest is Platform {
         // every Share is somewhere
         uint256 total = claimed + p.shares.balanceOf(address(p.finisher)) + p.shares.balanceOf(address(p.treasury))
             + p.shares.balanceOf(address(p.vester)) + p.shares.balanceOf(poolManager) + p.shares.balanceOf(strategy)
-            + p.shares.balanceOf(address(s.auction)) + p.shares.balanceOf(address(holder));
+            + p.shares.balanceOf(address(s.auction)) + p.shares.balanceOf(address(holder))
+            + p.shares.balanceOf(address(p.rounds));
         assertEq(total, SUPPLY, "all 1,000,000,000 Shares are accounted for");
         assertLe(p.shares.balanceOf(address(s.auction)), 1e9, "at most dust is left in the auction");
         assertEq(p.shares.balanceOf(strategy), 0);
     }
 
     /// @dev How often the random sales reach each state, over 90 seeds taken in order: the fuzz test is worth what it reaches.
-    function test_fuzzReach_bothGraduatedAndFailedSalesAndAllSizesAreReached() public {
-        uint256[3] memory bySize;
+    function test_fuzzReach_bothGraduatedAndFailedSalesAreReached() public {
         uint256 graduated;
         uint256 refused;
         uint256 placedTotal;
@@ -144,16 +143,14 @@ contract LifeFuzzTest is Platform {
         uint256 snap = vm.snapshotState();
         for (uint256 seed; seed < 90; ++seed) {
             vm.revertToState(snap);
-            Launcher.Size size = Launcher.Size(seed % 3);
             uint256 n = 1 + (seed * 7) % 10;
             Proj memory p = _launch(founder, keccak256(abi.encode("reach", seed)));
-            Sale memory s = _open(p, size);
+            Sale memory s = _open(p);
             (, uint256 count) = _randomBids(s, seed, n);
             attempted += n;
             placedTotal += count;
             refused += n - count;
             _toEnd(s);
-            bySize[uint256(size)]++;
             if (s.auction.isGraduated()) graduated++;
         }
         emit log_named_uint("fuzz reach: sales", 90);
@@ -164,6 +161,5 @@ contract LifeFuzzTest is Platform {
         assertGt(graduated, 15);
         assertGt(90 - graduated, 15);
         assertGt(refused, 30);
-        assertEq(bySize[0] + bySize[1] + bySize[2], 90);
     }
 }

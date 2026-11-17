@@ -130,7 +130,9 @@ abstract contract PiecesBase is SaleBase {
         assertGt(s.auction.MAX_BID_PRICE(), s.floorQ96 * 1e18, "the auction's own max price is enormous");
     }
 
-    function test_minBid_theLimitMovesWithTheMarket() public {
+    /// @dev Plan version 2 made the cap absolute (milestone 1 checked the opposite: that the limit moved with the market). Even
+    /// after the price has risen well above the floor, no bid may name more than 4 times the floor, and one exactly at it is taken.
+    function test_minBid_theLimitDoesNotMoveWithTheMarket() public {
         Sale memory s = _openSale(_standard());
         vm.roll(s.startBlock);
         _bid(s, alice(), 30_000e6, 300); // 3x the goal at up to 4x: pushes the clearing price up
@@ -138,9 +140,12 @@ abstract contract PiecesBase is SaleBase {
         s.auction.checkpoint();
         uint256 clearing = s.auction.clearingPrice();
         assertGt(clearing, _price(s, 50), "the price has risen well above the floor");
-        // 4x floor is now far below 4x the market, so a bid above 4x floor is allowed
-        _bid(s, bob(), 2000e6, 300 + 100); // 5x floor, allowed because the market is higher now
-        assertEq(s.auction.nextBidId(), 2, "accepted");
+        _fund(bob(), 4000e6, s);
+        vm.prank(bob());
+        vm.expectRevert();
+        s.auction.submitBid(_price(s, 301), uint128(2000e6), bob(), s.floorQ96, ""); // one tick over 4x the floor
+        _bid(s, bob(), 2000e6, 300); // exactly 4x the floor is still taken
+        assertEq(s.auction.nextBidId(), 2, "the bid at the cap is accepted");
     }
 
     function test_minBid_withoutTheHookDustAndExtremePricesGoIn() public {

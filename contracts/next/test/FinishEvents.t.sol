@@ -21,8 +21,8 @@ abstract contract FinishEventsBase is Platform {
     /// @dev A Standard sale with 10,000 dollars of demand from four buyers, at the floor price, ended.
     function _soldOut(bytes32 id) internal returns (Proj memory p, Sale memory s) {
         p = _launch(founder, id);
-        s = _open(p, Launcher.Size.Standard);
-        _flat(s, 10_000 * DOLLAR);
+        s = _open(p);
+        _flat(s, 100_000 * DOLLAR);
         _toEnd(s);
         vm.roll(s.endBlock + 1);
     }
@@ -32,27 +32,17 @@ abstract contract FinishEventsBase is Platform {
     function test_events_openingASale() public {
         Proj memory p = _launch(founder, keccak256("ev-open"));
         vm.recordLogs();
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         Vm.Log[] memory logs = vm.getRecordedLogs();
 
         Vm.Log memory a = _one(logs, address(launcher), Launcher.SaleOpened.selector);
-        assertEq(a.topics[1], p.id, "the project id");
-        assertEq(_addr(a.topics[2]), founder, "the founder");
-        assertEq(_addr(a.topics[3]), address(s.auction), "the auction");
-        (
-            address fin,
-            uint8 size,
-            uint256 goal,
-            uint256 minimum,
-            uint64 startBlock,
-            uint64 endBlock,
-            uint256 floorQ96,
-            uint256 tickQ96
-        ) = abi.decode(a.data, (address, uint8, uint256, uint256, uint64, uint64, uint256, uint256));
+        assertEq(a.topics[1], p.key, "the project's key");
+        assertEq(_addr(a.topics[2]), address(s.auction), "the auction");
+        assertEq(_addr(a.topics[3]), p.treasury.runner(), "the runner that opened it (the Pair)");
+        (address fin, uint256 minimum, uint64 startBlock, uint64 endBlock, uint256 floorQ96, uint256 tickQ96) =
+            abi.decode(a.data, (address, uint256, uint64, uint64, uint256, uint256));
         assertEq(fin, address(p.finisher));
-        assertEq(size, uint8(Launcher.Size.Standard));
-        assertEq(goal, 10_000 * DOLLAR);
-        assertEq(minimum, 2500 * DOLLAR);
+        assertEq(minimum, 100_000 * DOLLAR);
         assertEq(startBlock, block.number + 1, "the sale starts in the next block");
         assertEq(endBlock, startBlock + 7200);
         assertEq(floorQ96, s.floorQ96);
@@ -69,7 +59,7 @@ abstract contract FinishEventsBase is Platform {
         (Proj memory p, Sale memory s) = _soldOut(keccak256("ev-good"));
         PoolKey memory key = _key(p);
         uint256 raised = s.auction.currencyRaised();
-        assertEq(raised, 10_000 * DOLLAR);
+        assertEq(raised, 100_000 * DOLLAR);
         uint256 afterFee = raised * 97 / 100;
         uint256 pmUsd = usd.balanceOf(poolManager);
         uint256 pmShares = p.shares.balanceOf(poolManager);
@@ -84,7 +74,7 @@ abstract contract FinishEventsBase is Platform {
         assertTrue(abi.decode(step.data, (bool)), "the pool is open after the step, read from the pool manager");
         uint256 poolUsd = usd.balanceOf(poolManager) - pmUsd;
         uint256 poolShares = p.shares.balanceOf(poolManager) - pmShares;
-        assertGt(poolUsd, 2199 * DOLLAR, "22 of each 100 raised went into the pool");
+        assertGt(poolUsd, 21_999 * DOLLAR, "22 of each 100 raised went into the pool");
 
         // step 2
         vm.recordLogs();
@@ -139,8 +129,8 @@ abstract contract FinishEventsBase is Platform {
 
     function test_events_aSaleUnderItsMinimum() public {
         Proj memory p = _launch(founder, keccak256("ev-fail"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
-        _flat(s, 1000 * DOLLAR); // the minimum is 2,500
+        Sale memory s = _open(p);
+        _flat(s, 10_000 * DOLLAR); // the minimum is 100,000
         _toEnd(s);
         vm.roll(s.endBlock + 1);
         vm.recordLogs();

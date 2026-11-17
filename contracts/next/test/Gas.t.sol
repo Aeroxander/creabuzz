@@ -32,7 +32,7 @@ contract GasTest is Base {
         g -= gasleft();
         assertTrue(ok);
         _measure(
-            "Launcher.launch: four clones, the allocation, the setup (first project of this founder)", g, 1_100_000
+            "Launcher.launch: five clones, the allocation, the setup (first project of this founder)", g, 1_600_000
         );
         // a second project in the same network is the same work with warm settings
         vm.prank(bob);
@@ -41,16 +41,21 @@ contract GasTest is Base {
         (ok,) = address(launcher).call(call);
         g -= gasleft();
         assertTrue(ok);
-        _measure("Launcher.launch: another founder", g, 1_100_000);
+        _measure("Launcher.launch: another founder", g, 1_600_000);
     }
 
     function test_gas_deployTheLauncher() public {
-        bytes memory args = abi.encode(admin, _settings(), STRATEGY, GUARD, minBid);
         _cold();
         uint256 g = gasleft();
+        address parts_ = deployCode("Parts.sol:Parts");
+        g -= gasleft();
+        _measure("deploy Parts (the ShareToken, Treasury, Vester, Rounds and Pair implementations)", g, 9_000_000);
+        bytes memory args = abi.encode(admin, _settings(), STRATEGY, GUARD, minBid, parts_, councilMaker);
+        _cold();
+        g = gasleft();
         deployCode("Launcher.sol:Launcher", args);
         g -= gasleft();
-        _measure("deploy Launcher (with the five implementations inside)", g, 9_000_000);
+        _measure("deploy Launcher (with the Finisher implementation and the LiquidityHolder inside)", g, 9_000_000);
     }
 
     function test_gas_giveShares() public {
@@ -68,6 +73,7 @@ contract GasTest is Base {
         g -= gasleft();
         _measure("giveShares before the pool (same beneficiary again)", g, 200_000);
         _openPool();
+        _buy(makeAddr("dave"), 100_000_000 * SHARE); // Shares in people's hands: the monthly cap is 1% of them
         vm.prank(founder);
         _cold();
         g = gasleft();

@@ -17,10 +17,10 @@ abstract contract FinishAttacksBase is Platform {
         _setUpPlatform(_fork());
     }
 
-    /// @dev One standard sale of 32,000 dollars of demand (the route's), over, all bids placed.
+    /// @dev One sale of 320,000 dollars of demand (the route's, times ten for the 100,000 auction), over, all bids placed.
     function _endedSale() internal returns (Proj memory p, Sale memory s) {
         p = _launch(founder, keccak256("finish"));
-        s = _open(p, Launcher.Size.Standard);
+        s = _open(p);
         _fiveBids(s);
         _toEnd(s);
         vm.roll(s.endBlock + 1);
@@ -164,10 +164,10 @@ abstract contract FinishAttacksBase2 is Platform {
         _setUpPlatform(_fork());
     }
 
-    /// @dev One standard sale of 32,000 dollars of demand (the route's), over, all bids placed.
+    /// @dev One sale of 320,000 dollars of demand (the route's, times ten for the 100,000 auction), over, all bids placed.
     function _endedSale() internal returns (Proj memory p, Sale memory s) {
         p = _launch(founder, keccak256("finish"));
-        s = _open(p, Launcher.Size.Standard);
+        s = _open(p);
         _fiveBids(s);
         _toEnd(s);
         vm.roll(s.endBlock + 1);
@@ -310,9 +310,7 @@ abstract contract FinishAttacksBase2 is Platform {
         p.finisher.abandon();
         assertFalse(p.finisher.canOpen());
         vm.roll(block.number + 1_000_000);
-        vm.prank(founder);
-        vm.expectRevert(Finisher.CannotOpen.selector);
-        launcher.openSale(p.id, Launcher.Size.Small);
+        _openRefused(p, abi.encodeWithSelector(Launcher.WrongStage.selector)); // the Treasury's sale phase is over
     }
 
     /// @dev Abandon runs the pool step itself if nobody has, so a pool that nobody ever tried to open is reached too.
@@ -357,9 +355,9 @@ abstract contract FinishAttacksBase3 is Platform {
 
     function test_abandon_isRefusedForASaleThatFailedItsMinimum() public {
         Proj memory p = _launch(founder, keccak256("under"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         vm.roll(s.startBlock);
-        _bid(s, alice, 2000 * DOLLAR, 1); // minimum is 2,500
+        _bid(s, alice, 20_000 * DOLLAR, 1); // minimum is 100,000
         _toEnd(s);
         vm.roll(uint256(s.endBlock) + SaleParams.ABANDON_DELAY_BLOCKS);
         vm.prank(stranger);
@@ -373,11 +371,11 @@ abstract contract FinishAttacksBase3 is Platform {
     /// the project can try again 24 hours after the failed sale ended, with any size; a project that sold cannot.
     function test_underMinimum_refundsEveryoneAndTheProjectTriesAgain() public {
         Proj memory p = _launch(founder, keccak256("under"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
+        Sale memory s = _open(p);
         vm.roll(s.startBlock);
-        uint256 a = _bid(s, alice, 1500 * DOLLAR, 1);
-        uint256 b = _bid(s, bob, 900 * DOLLAR, 50);
-        _toEnd(s); // 2,400 raised: under the 2,500 minimum
+        uint256 a = _bid(s, alice, 15_000 * DOLLAR, 1);
+        uint256 b = _bid(s, bob, 9000 * DOLLAR, 50);
+        _toEnd(s); // 24,000 raised: under the 100,000 minimum
         assertFalse(s.auction.isGraduated());
         vm.roll(s.endBlock + 1);
 
@@ -389,7 +387,7 @@ abstract contract FinishAttacksBase3 is Platform {
         assertFalse(p.finisher.sweep());
         vm.stopPrank();
         assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Failed));
-        assertEq(p.shares.balanceOf(address(p.finisher)), 500_000_000 * SHARE, "all 500M Shares are back");
+        assertEq(p.shares.balanceOf(address(p.finisher)), 350_000_000 * SHARE, "all 350M Shares are back");
         assertEq(usd.balanceOf(platform), 0, "no fee on a sale that did not go through");
         assertEq(usd.balanceOf(poolManager), 0, "no pool");
         assertFalse(p.treasury.poolOpen());
@@ -398,41 +396,36 @@ abstract contract FinishAttacksBase3 is Platform {
         // everyone refunded in full, to the unit
         (uint256 ra,) = _collectBid(s, a);
         (uint256 rb,) = _collectBid(s, b);
-        assertEq(ra, 1500 * DOLLAR);
-        assertEq(rb, 900 * DOLLAR);
+        assertEq(ra, 15_000 * DOLLAR);
+        assertEq(rb, 9000 * DOLLAR);
         assertEq(usd.balanceOf(address(s.auction)), 0, "the auction holds nothing");
 
         // not before 24 hours after the sale ended
         uint256 retry = uint256(s.endBlock) + SaleParams.SALE_BLOCKS;
         assertEq(p.finisher.retryBlock(), retry);
         assertFalse(p.finisher.canOpen());
-        vm.prank(founder);
-        vm.expectRevert(Finisher.CannotOpen.selector);
-        launcher.openSale(p.id, Launcher.Size.Small);
+        _openRefused(p, abi.encodeWithSelector(Finisher.CannotOpen.selector));
         vm.roll(retry - 1);
-        vm.prank(founder);
-        vm.expectRevert(Finisher.CannotOpen.selector);
-        launcher.openSale(p.id, Launcher.Size.Small);
+        _openRefused(p, abi.encodeWithSelector(Finisher.CannotOpen.selector));
         vm.roll(retry);
         assertTrue(p.finisher.canOpen());
-        // the second try, at the smallest size, goes through completely
-        Sale memory s2 = _open(p, Launcher.Size.Small);
+        // the second try goes through completely
+        Sale memory s2 = _open(p);
         assertTrue(address(s2.auction) != address(s.auction));
         vm.roll(s2.startBlock);
-        _bid(s2, carol, 2400 * DOLLAR, 1); // minimum for Small is 2,000
+        _bid(s2, carol, 120_000 * DOLLAR, 1); // the minimum is 100,000
         _toEnd(s2);
         _finish(p, s2);
         assertTrue(p.treasury.saleClosed());
         assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Done));
-        assertEq(
+        assertApproxEqAbs(
             p.treasury.spendable() + p.treasury.melting() + usd.balanceOf(poolManager) + usd.balanceOf(platform),
-            2400 * DOLLAR
+            s2.auction.currencyRaised(),
+            2
         );
-        // a project that sold cannot sell again here
+        // a project that sold cannot sell again
         vm.roll(block.number + 100_000);
-        vm.prank(founder);
-        vm.expectRevert(Finisher.CannotOpen.selector);
-        launcher.openSale(p.id, Launcher.Size.Standard);
+        _openRefused(p, abi.encodeWithSelector(Launcher.WrongStage.selector));
     }
 }
 
@@ -443,33 +436,46 @@ abstract contract FinishAttacksBase4 is Platform {
         _setUpPlatform(_fork());
     }
 
-    // ============================================== a partial sale =====================================================
+    // ============================== the minimum is the whole sale at the starting price ==============================
 
-    /// @dev Sold less than the goal but more than the minimum: the price stays at the floor, half the Shares sell, the pool opens
-    /// at the floor price with 22 of every 100 raised, and the Shares that did not sell are reserve.
-    function test_partialSale_worksAndTheUnsoldSharesAreReserve() public {
-        Proj memory p = _launch(founder, keccak256("partial"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
-        _flat(s, 5000 * DOLLAR); // half the goal; the minimum is 2,500
+    /// @dev Plan version 2 re-run: the minimum (100,000) is every one of the 250M Shares sold at the starting price, so there is no
+    /// partial sale any more. Half that demand fails and refunds everyone; the whole of it sells every Share at the starting
+    /// price, the pool opens with 22,000 dollars and the 55M Shares that match them, and the pool reserve it did not need is
+    /// plain reserve.
+    function test_minimumIsTheWholeSale_halfTheDemandFails_theWholeDemandSellsEveryShare() public {
+        uint256 snap = vm.snapshotState();
+        Proj memory p = _launch(founder, keccak256("half"));
+        Sale memory s = _open(p);
+        _flat(s, 50_000 * DOLLAR);
+        _toEnd(s);
+        assertFalse(s.auction.isGraduated(), "half the minimum: the sale fails");
+        vm.revertToState(snap);
+        p = _launch(founder, keccak256("whole"));
+        s = _open(p);
+        _flat(s, 100_000 * DOLLAR);
         _toEnd(s);
         assertTrue(s.auction.isGraduated());
-        assertEq(s.auction.clearingPrice(), s.floorQ96, "the price stays at the floor");
+        assertEq(s.auction.clearingPrice(), s.floorQ96, "the price stays at the starting price");
         uint256 sold = s.auction.totalCleared();
-        assertApproxEqRel(sold, 200_000_000 * SHARE, 1e12, "half the sale Shares sold");
-        _finish(p, s);
-        assertEq(usd.balanceOf(platform), 150 * DOLLAR, "3% of 5,000");
-        assertApproxEqAbs(
-            usd.balanceOf(poolManager), 1100 * DOLLAR, 1000, "22% of 5,000 in the pool (to a thousandth of a dollar)"
+        assertApproxEqRel(
+            sold, SaleParams.SALE_SHARES, 0.01e18, "every auction Share sold (the floor is rounded up a tick)"
         );
-        assertApproxEqAbs(p.treasury.spendable(), 750 * DOLLAR, 1000);
-        assertApproxEqAbs(p.treasury.melting(), 3000 * DOLLAR, 1000);
+        uint256 raised = s.auction.currencyRaised();
+        assertGe(raised, 100_000 * DOLLAR - 10);
+        _finish(p, s);
+        assertEq(usd.balanceOf(platform), raised * 3 / 100, "3%");
+        assertApproxEqAbs(usd.balanceOf(poolManager), raised * 22 / 100, 5000, "22% in the pool (a few thousandths)");
+        assertApproxEqAbs(p.treasury.spendable(), raised * 15 / 100, 5000);
+        assertApproxEqAbs(p.treasury.melting(), raised * 60 / 100, 5000);
         uint256 inPool = p.shares.balanceOf(poolManager);
-        assertApproxEqRel(inPool, 44_000_000 * SHARE, 1e12, "the pool's Shares match its dollars at the floor price");
+        assertApproxEqRel(
+            inPool, 55_000_000 * SHARE, 0.01e18, "the pool's Shares match its dollars at the starting price"
+        );
         assertApproxEqAbs(
             p.shares.balanceOf(address(p.treasury)),
-            300_000_000 * SHARE + (SaleParams.SALE_SHARES - sold) + (SaleParams.POOL_SHARES - inPool),
+            280_000_000 * SHARE + (SaleParams.SALE_SHARES - sold) + (SaleParams.POOL_SHARES - inPool),
             10,
-            "unsold Shares and the unused pool reserve are plain reserve (the auction keeps a few units of dust)"
+            "unsold dust and the unused pool reserve are plain reserve (after the 20M stake left it)"
         );
         assertTrue(p.treasury.saleClosed());
     }

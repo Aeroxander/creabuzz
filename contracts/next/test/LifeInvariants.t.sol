@@ -124,7 +124,7 @@ contract LifeInvariantsTest is Test {
     function invariant_aFailedSaleReturnsEveryShare() public view {
         Finisher f = h.F();
         if (f.stage() == Finisher.Stage.Failed) {
-            assertEq(h.S().balanceOf(address(f)), 500_000_000e18);
+            assertEq(h.S().balanceOf(address(f)), 350_000_000e18);
             assertEq(h.U().balanceOf(address(h.H())), 0);
         }
     }

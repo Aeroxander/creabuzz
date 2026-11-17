@@ -33,8 +33,8 @@ abstract contract LiquidityHolderSetup is Platform {
         _setUpPlatform(_fork());
         pm = IPositionManagerTest(positionManager);
         Proj memory p = _launch(founder, keccak256("holder"));
-        Sale memory s = _open(p, Launcher.Size.Standard);
-        _flat(s, 10_000 * DOLLAR);
+        Sale memory s = _open(p);
+        _flat(s, 100_000 * DOLLAR);
         _toEnd(s);
         vm.roll(s.endBlock + 1);
         positionId = pm.nextTokenId();
@@ -344,7 +344,7 @@ abstract contract LiquidityHolderEdgesBase is LiquidityHolderSetup {
     function test_holder_aGuardedPoolOfAStrangersOwnTokenIsNoProjectsPool() public {
         QuoteToken mine = new QuoteToken();
         mine.mint(stranger, 2e18);
-        (uint256 floorQ96, uint256 tickQ96) = launcher.salePrices(Launcher.Size.Standard);
+        (uint256 floorQ96, uint256 tickQ96) = launcher.salePrices();
         uint64 start = uint64(block.number + 1);
         uint64 end = start + 10;
         LiquidityAllocationBracket[] memory br = new LiquidityAllocationBracket[](1);
