@@ -258,6 +258,7 @@ M4TA='test/{TreasurySeams,AuctionV2}.t.sol'  # the reserve sale's money and exit
 M4L='test/{Launcher,PairStages,Rounds,RoundsWorked,AuctionV2}.t.sol'
 M4P='test/{PairStages,RoundsWorked}.t.sol'
 M4B='test/{MarketAttacks,SaleRules,Pieces}.t.sol'
+M4X='test/{Rounds,RoundsWorked,RoundsReentry,PairStages,Vester,VesterHeld,Launcher,AuctionV2,TreasurySeams,PlanV2M4Fixes,AttackPlanV2M4}.t.sol'  # the review's entries
 M4=[
 # Rounds
 ('N01','Rounds: anyone may open a round',RO,'if (msg.sender != launcher) revert NotAllowed();\n        if (isOpen()','if (isOpen()',False,M4R),
@@ -371,6 +372,41 @@ M4=[
 ('NP6','Pair: initialize may be called again',PA,'if (launcher != address(0) || msg.sender != launcher_) revert BadSetup();','if (msg.sender != launcher_) revert BadSetup();',False,M4P),
 ('NP7','Pair: the same person may be both signers',PA,' || first_ == second_','',False,M4P),
 ('NP8','Pair: anyone may cancel a proposal',PA,'if (proposer[id] != msg.sender) revert NotAllowed();\n        delete proposer[id];\n        emit Cancelled','delete proposer[id];\n        emit Cancelled',False,M4P),
+# milestone 4 review (R1, R2, M4A-1): guards no entry covered, and the fixes' own guards
+('NC0','Launcher: wind down while the auction runs (X1)',L,'if (Rounds(p.rounds).isOpen() || Finisher(p.finisher).stage() == Finisher.Stage.Open) revert WrongStage();\n        t.markWoundDown();','if (Rounds(p.rounds).isOpen()) revert WrongStage();\n        t.markWoundDown();',False,M4X),
+('NC1','Launcher: wind down while a round is open',L,'if (Rounds(p.rounds).isOpen() || Finisher(p.finisher).stage() == Finisher.Stage.Open) revert WrongStage();\n        t.markWoundDown();','if (Finisher(p.finisher).stage() == Finisher.Stage.Open) revert WrongStage();\n        t.markWoundDown();',False,M4X),
+('NC2','Launcher: no market while a round is open (X2)',L,' || Rounds(p.rounds).isOpen()) {\n            revert WrongStage();',') {\n            revert WrongStage();',False,M4X),
+('NC3','Launcher: no market while the auction runs',L,'if (t.poolOpen() || Finisher(p.finisher).stage() == Finisher.Stage.Open || Rounds(p.rounds).isOpen()) {','if (t.poolOpen() || Rounds(p.rounds).isOpen()) {',False,M4X),
+('NC4','Launcher: no market after a market (Launcher check)',L,'if (t.poolOpen() || Finisher(p.finisher).stage() == Finisher.Stage.Open || Rounds(p.rounds).isOpen()) {','if (Finisher(p.finisher).stage() == Finisher.Stage.Open || Rounds(p.rounds).isOpen()) {',False,M4X),
+('NC5','Launcher: the auction opens after a wind-down (X4)',L,'if (t.poolOpen() || t.woundDown() || Rounds(p.rounds).isOpen()) revert WrongStage();','if (t.poolOpen() || Rounds(p.rounds).isOpen()) revert WrongStage();',False,M4X),
+('NC6','Launcher: the auction opens after a market',L,'if (t.poolOpen() || t.woundDown() || Rounds(p.rounds).isOpen()) revert WrongStage();','if (t.woundDown() || Rounds(p.rounds).isOpen()) revert WrongStage();',False,M4X),
+('NC7','Launcher: a second reserve sale while one is out (Launcher check)',L,'if (rs.auction != address(0)) revert WrongStage();','',False,M4X),
+('NC8','Launcher: finish a reserve sale when none is out',L,'if (address(a) == address(0)) revert WrongStage();','',False,M4X),
+('NC9','Launcher: an unknown project is not refused',L,'if (p.shares == address(0)) revert UnknownProject();','',False,M4X),
+('ND0','Treasury: any runner may start the founder\'s trim (R1)',T,'if (founderLeaves && !_founderAgrees()) revert NotAllowed();','',False,M4X),
+('ND1','Treasury: a contract that only says it is the founder\'s Pair may trim (R1)',T,'        if (!ILauncherPairs(salePath).isPair(msg.sender)) return false;\n','',False,M4X),
+('ND2','Treasury: any Pair may trim the founder (R1)',T,'return IPairSigners(msg.sender).first() == founder || IPairSigners(msg.sender).second() == founder;','return true;',False,M4X),
+('ND3','Treasury: the seat may be offered to nobody or to the runner',T,'if (next == address(0) || next == runner) revert BadInput();','',False,M4X),
+('ND4','Treasury: the project may wind down twice',T,'if (woundDown) revert AlreadyWoundDown();','',False,M4X),
+('ND5','Treasury: no market after a market (Treasury check)',T,'if (msg.sender != salePath) revert NotAllowed();\n        if (poolOpen) revert PoolAlreadyOpen();','if (msg.sender != salePath) revert NotAllowed();',False,M4X),
+('ND6','Treasury: more than the reserve may go out for sale',T,'if (amount > left) revert TooMuch(amount, left);','',False,M4X),
+('ND7','Treasury: a reserve sale of nothing or to nobody',T,'if (to == address(0) || amount == 0) revert BadInput();\n        if (amount > left)','if (amount > left)',False,M4X),
+('ND8','Treasury: a reserve sale may be closed when none is out',T,'if (!reserveSaleOpen) revert ReserveSaleState();','',False,M4X),
+('NE0','Vester: anyone may take out a backer\'s held Shares (M4A-1)',V,'if (msg.sender != backer) revert NotAllowed();','',False,M4X),
+('NE1','Vester: the founder may be trimmed twice (X3)',V,'if (start != 0 || trimmed) revert WrongPhase();','if (start != 0) revert WrongPhase();',False,M4X),
+('NE2','Vester: a backer grant to nobody',V,'if (backer == address(0)) revert BadGrant();','',False,M4X),
+('NE3','Vester: a founder grant to nobody',V,'if (founder_ == address(0)) revert BadGrant();','',False,M4X),
+('NF0','Rounds: a refund that pays nothing still cancels the held Shares',RO,'if (paid == 0) revert NothingToRefund();','',False,M4X),
+('NF1','Rounds: a refund with no held money is not refused early',RO,'if (p.held == 0) revert NothingToRefund();','',False,M4X),
+('NF2','Rounds: a refund with every Share taken out is not refused early',RO,'if (still == 0) revert NothingToRefund();','',False,M4X),
+('NF3','Rounds: unsold Shares leave while a round is open',RO,'if (isOpen()) revert WrongPhase();','',False,M4X),
+('NF4','Rounds: an ask may be "lowered" to the same or more',RO,'if (total >= old || (total != 0 && total < MIN_ASK)) revert BadAmount();','if (total != 0 && total < MIN_ASK) revert BadAmount();',False,M4X),
+('NF5','Rounds: a round under 1 dollar may open',RO,' || size < MIN_ASK','',False,M4X),
+('NF6','Rounds: a round that was never opened may be closed',RO,'if (r.openedAt == 0 || r.closedAt != 0 || block.timestamp < r.openedAt + WINDOW) revert WrongPhase();','if (r.closedAt != 0 || block.timestamp < r.openedAt + WINDOW) revert WrongPhase();',False,M4X),
+('NF7','Rounds: a dollar token that sends less is not noticed',RO,'if (before - quote.balanceOf(address(this)) != amount) revert TokenMisbehaved();','',False,M4X),
+('NG0','Pair: a call nobody proposed may be confirmed',PA,'if (by == address(0)) revert UnknownCall();','',False,M4X),
+('NG1','Pair: a failing call is confirmed as if it ran',PA,'if (!ok) {','if (false) {',False,M4X),
+('NG2','Pair: a signer may be nobody',PA,'if (first_ == address(0) || second_ == address(0) || first_ == second_) revert BadSetup();','if (first_ == second_) revert BadSetup();',False,M4X),
 # MinBid
 ('NB0','MinBid: the cap is 64 times the starting price (back towards milestone 3\'s ladder)',MB,'IAuctionPrice(msg.sender).floorPrice() * maxPriceMultiple','IAuctionPrice(msg.sender).floorPrice() * maxPriceMultiple * 16',False,M4B),
 ]
