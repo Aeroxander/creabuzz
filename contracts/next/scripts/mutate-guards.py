@@ -182,7 +182,7 @@ M3=[
 ('A17', "Launcher: the sale raises the current dollar setting, not the project's own (auction side)", L, '_auctionParams(address(t.quote()), p.finisher', '_auctionParams(address(settings.quote), p.finisher', False, LAU),
 ('A18','Launcher: the pool position goes to the Finisher, not the LiquidityHolder',L,'            positionRecipient: holder,','            positionRecipient: p.finisher,',False,LAU),
 ('A19','Launcher: what the pool leaves goes to the founder',L,'            recipient: p.finisher,\n            positionRecipient','            recipient: msg.sender,\n            positionRecipient',False,LAU),
-('A20', 'Launcher: the unsold Shares go to the runner', L, 'address(t.quote()), p.finisher, strategy, AUCTION_MINIMUM', 'address(t.quote()), msg.sender, strategy, AUCTION_MINIMUM', False, LAU),
+('A20', 'Launcher: the unsold Shares go to the runner', L, 'address(t.quote()), p.finisher, strategy, minimum', 'address(t.quote()), msg.sender, strategy, minimum', False, LAU),
 ('A21','Launcher: no bid rules',L,'            validationHook: minBid,','            validationHook: address(0),',False,LAU),
 ('A22','Launcher: the pool has no guard',L,'tickSpacing: SaleParams.POOL_TICK_SPACING, hook: poolGuard','tickSpacing: SaleParams.POOL_TICK_SPACING, hook: address(0)',False,LAU),
 ('A23','Launcher: the pool is reserved half the Shares',L,'reservedTokenAmountForLP: SaleParams.POOL_SHARES,','reservedTokenAmountForLP: SaleParams.POOL_SHARES / 2,',False,LAU),
@@ -258,12 +258,14 @@ M4TA='test/{TreasurySeams,AuctionV2}.t.sol'  # the reserve sale's money and exit
 M4L='test/{Launcher,PairStages,Rounds,RoundsWorked,AuctionV2}.t.sol'
 M4P='test/{PairStages,RoundsWorked}.t.sol'
 M4B='test/{MarketAttacks,SaleRules,Pieces}.t.sol'
+M4FP='test/{FounderPrice,Rounds,Launcher,PairStages,RoundsWorked}.t.sol'  # founder-set prices
+M4FPA='test/{FounderPriceAuction,AuctionV2,SaleRules,Launcher}.t.sol'
 M4X='test/{Rounds,RoundsWorked,RoundsReentry,PairStages,Vester,VesterHeld,Launcher,AuctionV2,TreasurySeams,PlanV2M4Fixes,AttackPlanV2M4}.t.sol'  # the review's entries
 M4=[
 # Rounds
-('N01','Rounds: anyone may open a round',RO,'if (msg.sender != launcher) revert NotAllowed();\n        if (isOpen()','if (isOpen()',False,M4R),
-('N02','Rounds: a round may open while another is open',RO,'if (isOpen() || size < MIN_ASK','if (size < MIN_ASK',False,M4R),
-('N03','Rounds: a round may be larger than the Shares left',RO,' || size * SHARES_PER_RAW_DOLLAR > unsold()','',False,M4R),
+('N01','Rounds: anyone may open a round',RO,'if (msg.sender != launcher) revert NotAllowed();\n        if (\n            isOpen()','if (\n            isOpen()',False,M4R),
+('N02','Rounds: a round may open while another is open',RO,'isOpen() || size < MIN_ASK ||','size < MIN_ASK ||',False,M4R),
+('N03','Rounds: a round may be larger than the Shares left',RO,' || size * sharesPerRawDollar > unsold()','',False,M4R),
 ('N04','Rounds: asks are taken after the 24 hours',RO,'if (r.openedAt == 0 || block.timestamp >= r.openedAt + WINDOW) revert WrongPhase();','if (r.openedAt == 0) revert WrongPhase();',False,M4R),
 ('N05','Rounds: an ask under 1 dollar is taken',RO,'if (amount == 0 || total < MIN_ASK) revert BadAmount();','if (amount == 0) revert BadAmount();',False,M4R),
 ('N06','Rounds: a dollar token that delivers less is not noticed',RO,'if (quote.balanceOf(address(this)) - before != amount) revert TokenMisbehaved();','',False,M4R),
@@ -279,7 +281,7 @@ M4=[
 ('N16','Rounds: the platform takes 30 instead of 3',RO,'uint256 toPlatform = acc * PLATFORM_BPS / BPS;','uint256 toPlatform = acc * PLATFORM_BPS * 10 / BPS;',False,M4R),
 ('N17','Rounds: nothing is held, all goes to the project at once',RO,'uint256 held_ = acc * HELD_BPS / BPS;','uint256 held_ = 0;',False,M4R),
 ('N18','Rounds: bought Shares go straight to the backer, not held',RO,'if (!shares.transfer(address(vester), bought)) revert TokenMisbehaved();\n            vester.grantHeld(id, backer, bought);','if (!shares.transfer(backer, bought)) revert TokenMisbehaved();',False,M4R),
-('N19','Rounds: 6,000 Shares a dollar',RO,'uint256 bought = acc * SHARES_PER_RAW_DOLLAR;','uint256 bought = acc * SHARES_PER_RAW_DOLLAR * 2;',False,M4R),
+('N19','Rounds: a backer buys twice the round\'s Shares a dollar',RO,'uint256 bought = acc * r.sharesPerRawDollar;','uint256 bought = acc * r.sharesPerRawDollar * 2;',False,M4R),
 ('N20','Rounds: the held money is released at once',RO,'uint256 due = r.held * _elapsed(r) / RELEASE + r.frozen;','uint256 due = r.held + r.frozen;',False,M4R),
 ('N21','Rounds: time outside the check-in window counts',RO,'uint256 upto = block.timestamp < end ? block.timestamp : end;','uint256 upto = block.timestamp; end;',False,M4R),
 ('N22','Rounds: a release is not recorded (paid again)',RO,'        _rounds[id].paidOut += amount;\n','',False,M4R),
@@ -339,13 +341,13 @@ M4=[
 # Launcher
 ('N80','Launcher: anyone may act as the runner',L,'if (msg.sender != runner) revert NotRunner();','',False,M4L),
 ('N81','Launcher: a single founder may raise 50,000',L,'return runnerKind(runner) == RunnerKind.Single ? SOLO_CAP : TEAM_CAP;','return TEAM_CAP;',False,M4L),
-('N82','Launcher: a round is sized to the whole cap, not what is left',L,'round = Rounds(p.rounds).open(cap - raised);','round = Rounds(p.rounds).open(cap);',False,M4L),
+('N82','Launcher: a round is sized to the whole cap, not what is left',L,'round = Rounds(p.rounds).open(cap - raised, sharesPerRawDollar);','round = Rounds(p.rounds).open(cap, sharesPerRawDollar);',False,M4L),
 ('N83','Launcher: no cap check before the round opens',L,'if (raised >= cap) revert CapReached(cap);','',False,M4L),
 ('N84','Launcher: rounds open after a market',L,'if (t.poolOpen() || t.woundDown() || Finisher(p.finisher).stage() == Finisher.Stage.Open) revert WrongStage();','if (t.woundDown() || Finisher(p.finisher).stage() == Finisher.Stage.Open) revert WrongStage();',False,M4L),
 ('N85','Launcher: a single founder may open the auction',L,'if (kind == RunnerKind.Single) revert WrongRunner(RunnerKind.Pair);','',False,M4L),
 ('N86','Launcher: the Council requirement is ignored',L,'if (requireCouncilForAuction && kind != RunnerKind.Council) revert WrongRunner(RunnerKind.Council);','',False,M4L),
 ('N87','Launcher: the Council requirement is off on every network',L,'requireCouncilForAuction = block.chainid != 31_337 && block.chainid != 11_155_111;','requireCouncilForAuction = false;',False,M4L),
-('N88','Launcher: the auction opens while a round is open',L,' || Rounds(p.rounds).isOpen()) revert WrongStage();\n        (uint256 floorQ96',') revert WrongStage();\n        (uint256 floorQ96',False,M4L),
+('N88','Launcher: the auction opens while a round is open',L,' || Rounds(p.rounds).isOpen()) revert WrongStage();\n        (uint256 baseQ96,)',') revert WrongStage();\n        (uint256 baseQ96,)',False,M4L),
 ('N90','Launcher: no market may be declared at once',L,'if (block.timestamp < from) revert TooEarly(from);\n        t.markNoMarket();','t.markNoMarket();',False,M4L),
 ('N91','Launcher: no market counts from the launch even after a round',L,'(since == 0 ? p.launchedAt : since)','p.launchedAt',False,M4L),
 ('N92','Launcher: a Pair may wind down after a market',L,'if (market && !isCouncil[runner]) revert WrongRunner(RunnerKind.Council);','',False,M4L),
@@ -356,10 +358,9 @@ M4=[
 ('N97','Launcher: anyone may register a Council',L,'if (msg.sender != councilMaker || council == address(0)) revert NotCouncilMaker();','if (council == address(0)) revert NotCouncilMaker();',False,M4L),
 ('N98','Launcher: anyone may name a pauser',L,'function setPauser(bytes32 key, address pauser) external {\n        if (msg.sender != councilMaker) revert NotCouncilMaker();','function setPauser(bytes32 key, address pauser) external {',False,M4L),
 ('N99','Launcher: a Pair it made is not marked as a Pair',L,'        isPair[pair] = true;\n','',False,M4L),
-('NA0','Launcher: no stake',L,'                    stakeAmount: STAKE,','                    stakeAmount: 0,',False,M4L),
+('NA0','Launcher: no stake',L,'stakeAmount: s.stake == address(0) ? 0 : STAKE,','stakeAmount: 0,',False,M4L),
 ('NA1','Launcher: the backing Shares are minted to the Treasury',L,'(to[3], amounts[3]) = (p.rounds, BACKING);','(to[3], amounts[3]) = (treasury, BACKING);',False,M4L),
 ('NA2','Launcher: parts with no code are accepted',L,'shareImpl.code.length == 0 || treasuryImpl.code.length == 0 || vesterImpl.code.length == 0\n                || roundsImpl.code.length == 0 || pairImpl.code.length == 0','false',False,M4L),
-('NA3','Launcher: the stake address may be zero',L,' || s.stake == address(0)','',False,M4L),
 ('NA4','Launcher: a finished reserve sale\'s money is not split',L,'            Treasury(p.treasury).settleReserveSale(got);\n','',False,M4L),
 ('NA5','Launcher: a finished reserve sale leaves exits closed',L,'        Treasury(p.treasury).closeReserveSale();\n','',False,M4L),
 # Pair
@@ -407,6 +408,23 @@ M4=[
 ('NG0','Pair: a call nobody proposed may be confirmed',PA,'if (by == address(0)) revert UnknownCall();','',False,M4X),
 ('NG1','Pair: a failing call is confirmed as if it ran',PA,'if (!ok) {','if (false) {',False,M4X),
 ('NG2','Pair: a signer may be nobody',PA,'if (first_ == address(0) || second_ == address(0) || first_ == second_) revert BadSetup();','if (first_ == second_) revert BadSetup();',False,M4X),
+# founder-set prices (FOUNDER-PRICE.md, plan decision 7). NA3 ("the stake address may be zero") is retired: zero is now the
+# project-zero setting; NI3 puts the old check back to show the zero-stake tests notice it.
+('NH0','Rounds: a round may be priced below 333,333 (more than 3,000 Shares a dollar)',RO,' || sharesPerRawDollar > MAX_SHARES_PER_RAW_DOLLAR','',False,M4FP),
+('NH1','Rounds: a round may be priced above 50,000,000 (fewer than 20 Shares a dollar)',RO,'\n                || sharesPerRawDollar < MIN_SHARES_PER_RAW_DOLLAR','',False,M4FP),
+('NH2','Rounds: the price is not stored in the round',RO,'(r.openedAt, r.size, r.sharesPerRawDollar) = (uint64(block.timestamp), size, sharesPerRawDollar);','(r.openedAt, r.size) = (uint64(block.timestamp), size);',False,M4FP),
+('NH3','Rounds: close sets aside Shares at the lowest price, not the round\'s',RO,'reserved += accepted * r.sharesPerRawDollar;','reserved += accepted * MAX_SHARES_PER_RAW_DOLLAR;',False,M4FP),
+('NH4','Rounds: settle pays the latest round\'s price, not the backer\'s round\'s',RO,'uint256 bought = acc * r.sharesPerRawDollar;','uint256 bought = acc * _rounds[count].sharesPerRawDollar;',False,M4FP),
+('NH5','Rounds: RoundOpened leaves out the price',RO,'emit RoundOpened(id, size, sharesPerRawDollar,','emit RoundOpened(id, size, 0,',False,M4FP),
+('NH6','Launcher: the round opens at the lowest price whatever the runner signed',L,'round = Rounds(p.rounds).open(cap - raised, sharesPerRawDollar);','round = Rounds(p.rounds).open(cap - raised, 3e15);',False,M4FP),
+('NH7','Launcher: RoundOpened names the lowest price',L,'emit RoundOpened(key, p.rounds, round, cap - raised, cap, raised, sharesPerRawDollar);','emit RoundOpened(key, p.rounds, round, cap - raised, cap, raised, 3e15);',False,M4FP),
+('NH8','Launcher: an auction start below 0.0004 is accepted',L,'if (startQ96 < baseQ96 || startQ96 > MAX_START_Q96) revert BadStart();','if (startQ96 > MAX_START_Q96) revert BadStart();',False,M4FPA),
+('NH9','Launcher: an auction start above 0.05 is accepted',L,'if (startQ96 < baseQ96 || startQ96 > MAX_START_Q96) revert BadStart();','if (startQ96 < baseQ96) revert BadStart();',False,M4FPA),
+('NI0','Launcher: the minimum stays 100,000 at any start',L,'uint256 minimum = floorQ96 * SaleParams.SALE_SHARES >> 96;','uint256 minimum = AUCTION_MINIMUM;',False,M4FPA),
+('NI1','Launcher: the auction starts at 0.0004 whatever the runner signed',L,'(uint256 floorQ96, uint256 tickQ96) = _floorAndTick(startQ96);','(uint256 floorQ96, uint256 tickQ96) = salePrices();',False,M4FPA),
+('NI2','Launcher: a zero stake address still asks for the 20M (project zero cannot launch)',L,'stakeAmount: s.stake == address(0) ? 0 : STAKE,','stakeAmount: STAKE,',False,M4FP),
+('NI3','Launcher: the stake address must be named (NA3 back: project zero cannot be set up)',L,'address(s.quote) == address(0) || s.platform == address(0) ||','address(s.quote) == address(0) || s.platform == address(0) || s.stake == address(0) ||',False,M4FP),
+('NI4','Pair: the proposal id leaves out the call data (a confirm may change the price both signed)',PA,'return keccak256(abi.encode(address(this), target, data, n));','return keccak256(abi.encode(address(this), target, n));',False,M4FP),
 # MinBid
 ('NB0','MinBid: the cap is 64 times the starting price (back towards milestone 3\'s ladder)',MB,'IAuctionPrice(msg.sender).floorPrice() * maxPriceMultiple','IAuctionPrice(msg.sender).floorPrice() * maxPriceMultiple * 16',False,M4B),
 ]
