@@ -1,0 +1,277 @@
+<title>Creaton Type and Buttons</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,700&family=Figtree:wght@400;500;700;800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one column of four bands (today, then three directions); each band = a specimen column beside two phone-width screens. */
+:root {
+  --bg: hsl(260 30% 97%); --fg: hsl(266 43% 17%); --card: hsl(0 0% 100%);
+  --mint: hsl(153 59% 47%); --mint-ink: hsl(153 75% 24%); --on-mint: hsl(266 43% 17%);
+  --soft: hsl(262 30% 92%); --muted: hsl(262 14% 36%); --line: hsl(262 20% 84%);
+  --violet: hsl(262 83% 68%); --warn: hsl(36 90% 38%);
+  --glass: rgb(255 255 255 / .5); --glass-strong: rgb(255 255 255 / .7); --glass-line: rgb(255 255 255 / .85); --glass-shade: hsl(266 43% 17% / .12);
+  --blob-mint: hsl(153 65% 50% / .42); --blob-violet: hsl(262 83% 68% / .38);
+  --ink-line: hsl(266 55% 22%); --blob-deep: hsl(266 72% 38% / .5);
+  --page-font: "Instrument Sans", "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: hsl(266 66% 8%); --fg: hsl(0 0% 100%); --card: hsl(266 31% 16%);
+  --mint: hsl(153 59% 50%); --mint-ink: hsl(153 59% 50%); --on-mint: hsl(266 43% 17%);
+  --soft: hsl(266 31% 24%); --muted: hsl(255 20% 78%); --line: hsl(266 24% 28%);
+  --violet: hsl(262 83% 76%); --warn: hsl(40 90% 62%);
+  --glass: rgb(255 255 255 / .08); --glass-strong: rgb(255 255 255 / .14); --glass-line: rgb(255 255 255 / .22); --glass-shade: rgb(0 0 0 / .35);
+  --blob-mint: hsl(153 65% 50% / .30); --blob-violet: hsl(262 83% 68% / .40);
+  --ink-line: hsl(262 70% 82%); --blob-deep: hsl(266 85% 45% / .6); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: hsl(266 66% 8%); --fg: hsl(0 0% 100%); --card: hsl(266 31% 16%);
+  --mint: hsl(153 59% 50%); --mint-ink: hsl(153 59% 50%); --on-mint: hsl(266 43% 17%);
+  --soft: hsl(266 31% 24%); --muted: hsl(255 20% 78%); --line: hsl(266 24% 28%);
+  --violet: hsl(262 83% 76%); --warn: hsl(40 90% 62%);
+  --glass: rgb(255 255 255 / .08); --glass-strong: rgb(255 255 255 / .14); --glass-line: rgb(255 255 255 / .22); --glass-shade: rgb(0 0 0 / .35);
+  --blob-mint: hsl(153 65% 50% / .30); --blob-violet: hsl(262 83% 68% / .40);
+  --ink-line: hsl(262 70% 82%); --blob-deep: hsl(266 85% 45% / .6); color-scheme: dark }
+
+body { background: var(--bg); color: var(--fg); font-family: var(--page-font); font-size: 16px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 28px 64px; }
+.wrap { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+.intro h1 { font-size: 1.75rem; line-height: 1.15; margin: 0 0 8px; font-weight: 700; text-wrap: balance; }
+.intro p { margin: 0; color: var(--muted); max-width: 64ch; }
+.band { border-top: 1px solid var(--line); padding-top: 24px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
+@media (min-width: 900px) { .band { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); } }
+.band > * { min-width: 0; }
+.label { font-size: .75rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+.band h2 { font-size: 1.25rem; margin: 0 0 6px; font-weight: 700; }
+.band .why { margin: 0 0 16px; color: var(--muted); font-size: .9375rem; }
+.spec { display: flex; flex-direction: column; gap: 14px; }
+.spec dl { margin: 0; display: grid; grid-template-columns: auto minmax(0,1fr); gap: 4px 12px; font-size: .875rem; }
+.spec dt { color: var(--muted); } .spec dd { margin: 0; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.screens { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 20px; align-items: start; }
+.phone { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.phone .cap { font-family: var(--page-font); font-size: .6875rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+/* ---- what each direction controls ---- */
+.d { font-family: var(--f-body); }
+.d .h { font-family: var(--f-display); font-weight: var(--w-display); letter-spacing: var(--ls-display); line-height: 1.08; font-size: var(--s-display); margin: 0; text-wrap: balance; }
+.d .h em { font-style: var(--em-style); color: var(--violet); }
+.d .h3 { font-family: var(--f-display); font-weight: var(--w-display); letter-spacing: var(--ls-display); font-size: 1.25rem; line-height: 1.2; margin: 0; }
+.d p { margin: 0; font-size: 1rem; color: var(--muted); }
+.d .fieldlabel { font-size: .875rem; font-weight: 600; color: var(--fg); }
+.d .field { border: 1.5px solid var(--line); border-radius: var(--r-field); background: var(--bg); padding: 0 14px; height: 48px; display: flex; align-items: center; color: var(--muted); font-size: 1rem; }
+.d .num { font-family: var(--f-num); font-variant-numeric: tabular-nums; }
+.d .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.d .chip { font-size: .8125rem; padding: 4px 10px; border-radius: var(--r-chip); background: var(--soft); color: var(--fg); display: inline-flex; gap: 6px; align-items: center; }
+.d .chip.ok::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--mint); }
+.d .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: .9375rem; }
+.d .steps li { display: flex; gap: 10px; align-items: baseline; }
+.d .steps .tick { color: var(--mint-ink); font-weight: 700; } .d .steps .todo { color: var(--muted); }
+.d .bar { height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; } .d .bar i { display: block; width: 33%; height: 100%; background: var(--mint); }
+.d .meta { font-size: .8125rem; color: var(--muted); }
+
+.d .btn { font-family: var(--f-btn); font-size: var(--s-btn); font-weight: var(--w-btn); letter-spacing: var(--ls-btn); height: var(--h-btn); padding: 0 var(--px-btn);
+  border-radius: var(--r-btn); border: var(--bw-btn) solid transparent; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: transform .08s, box-shadow .08s, background .12s; color: var(--fg); background: transparent; }
+.d .btn:focus-visible { outline: 3px solid var(--violet); outline-offset: 2px; }
+.d .btn.primary { background: var(--mint); color: var(--on-mint); border-color: var(--edge-primary); box-shadow: var(--shadow-primary); }
+.d .btn.primary:hover { transform: var(--hover-move); box-shadow: var(--shadow-primary-hover); }
+.d .btn.primary:active { transform: var(--active-move); box-shadow: none; }
+.d .btn.outline { border-color: var(--edge-outline); background: var(--card); box-shadow: var(--shadow-outline); }
+.d .btn.outline:hover { background: var(--soft); }
+.d .btn.ghost { color: var(--mint-ink); padding: 0 8px; }
+.d .btn.ghost:hover { background: var(--soft); }
+.d .btn.sm { height: var(--h-btn-sm); font-size: var(--s-btn-sm); padding: 0 calc(var(--px-btn) * .7); }
+.d .btn.block { width: 100%; }
+.d .btn[disabled] { opacity: .45; cursor: not-allowed; box-shadow: none; }
+@media (prefers-reduced-motion: reduce) { .d .btn { transition: none; } }
+
+/* Today: Figtree, stock component-kit buttons (36px, small text) */
+.d0 { --f-display: "Figtree", sans-serif; --f-body: "Figtree", sans-serif; --f-num: "Figtree", sans-serif; --f-btn: "Figtree", sans-serif;
+  --w-display: 800; --ls-display: -.01em; --s-display: 1.875rem; --em-style: normal;
+  --s-btn: .875rem; --w-btn: 500; --ls-btn: 0; --h-btn: 36px; --h-btn-sm: 32px; --s-btn-sm: .75rem; --px-btn: 16px; --r-btn: 10px; --bw-btn: 1px;
+  --edge-primary: transparent; --shadow-primary: 0 1px 2px rgb(0 0 0 / .12); --shadow-primary-hover: 0 1px 2px rgb(0 0 0 / .12); --hover-move: none; --active-move: none;
+  --edge-outline: var(--line); --shadow-outline: 0 1px 1px rgb(0 0 0 / .05); --r-field: 10px; --r-chip: 999px; }
+/* A Workbench: one tight grotesk, mono figures, squared tactile buttons */
+.dA { --f-display: "Geist", "Helvetica Neue", sans-serif; --f-body: "Geist", "Helvetica Neue", sans-serif; --f-num: "Geist Mono", ui-monospace, monospace; --f-btn: "Geist", sans-serif;
+  --w-display: 700; --ls-display: -.035em; --s-display: 2rem; --em-style: normal;
+  --s-btn: 1rem; --w-btn: 600; --ls-btn: -.01em; --h-btn: 48px; --h-btn-sm: 40px; --s-btn-sm: .875rem; --px-btn: 22px; --r-btn: 8px; --bw-btn: 1.5px;
+  --edge-primary: var(--on-mint); --shadow-primary: 0 3px 0 var(--on-mint); --shadow-primary-hover: 0 4px 0 var(--on-mint); --hover-move: translateY(-1px); --active-move: translateY(3px);
+  --edge-outline: var(--fg); --shadow-outline: none; --r-field: 8px; --r-chip: 6px; }
+/* B Friendly: characterful display, soft body, big pill buttons */
+.dB { --f-display: "Bricolage Grotesque", "Trebuchet MS", sans-serif; --f-body: "DM Sans", "Segoe UI", sans-serif; --f-num: "DM Sans", sans-serif; --f-btn: "DM Sans", sans-serif;
+  --w-display: 800; --ls-display: -.02em; --s-display: 2.125rem; --em-style: normal;
+  --s-btn: 1.0625rem; --w-btn: 700; --ls-btn: 0; --h-btn: 52px; --h-btn-sm: 42px; --s-btn-sm: .9375rem; --px-btn: 28px; --r-btn: 999px; --bw-btn: 2px;
+  --edge-primary: transparent; --shadow-primary: 0 6px 16px -6px hsl(153 59% 35% / .7), inset 0 1px 0 rgb(255 255 255 / .35); --shadow-primary-hover: 0 10px 22px -8px hsl(153 59% 35% / .8), inset 0 1px 0 rgb(255 255 255 / .35); --hover-move: translateY(-1px); --active-move: translateY(1px);
+  --edge-outline: var(--line); --shadow-outline: none; --r-field: 16px; --r-chip: 999px; }
+/* C Record: serif headlines like a published record, sans body, mono figures, ink-edged buttons */
+.dC { --f-display: "Instrument Serif", Georgia, serif; --f-body: "Instrument Sans", "Segoe UI", sans-serif; --f-num: "JetBrains Mono", ui-monospace, monospace; --f-btn: "Instrument Sans", sans-serif;
+  --w-display: 400; --ls-display: -.01em; --s-display: 2.5rem; --em-style: italic;
+  --s-btn: 1rem; --w-btn: 600; --ls-btn: .005em; --h-btn: 48px; --h-btn-sm: 40px; --s-btn-sm: .875rem; --px-btn: 24px; --r-btn: 4px; --bw-btn: 1.5px;
+  --edge-primary: var(--on-mint); --shadow-primary: 4px 4px 0 var(--violet); --shadow-primary-hover: 6px 6px 0 var(--violet); --hover-move: translate(-1px,-1px); --active-move: translate(3px,3px);
+  --edge-outline: var(--fg); --shadow-outline: none; --r-field: 4px; --r-chip: 4px; }
+.dC .h3 { font-size: 1.5rem; }
+/* D Hybrid: C's serif only on the big headline (smaller, upright accent), A's grotesk and mono everywhere else, A's press-down button with C's violet as the edge */
+.dD { --f-display: "Instrument Serif", Georgia, serif; --f-body: "Geist", "Helvetica Neue", sans-serif; --f-num: "Geist Mono", ui-monospace, monospace; --f-btn: "Geist", sans-serif;
+  --w-display: 400; --ls-display: -.015em; --s-display: 2.25rem; --em-style: italic;
+  --s-btn: 1rem; --w-btn: 600; --ls-btn: -.01em; --h-btn: 48px; --h-btn-sm: 40px; --s-btn-sm: .875rem; --px-btn: 22px; --r-btn: 7px; --bw-btn: 1.5px;
+  --edge-primary: var(--on-mint); --shadow-primary: 0 3px 0 var(--violet); --shadow-primary-hover: 0 4px 0 var(--violet); --hover-move: translateY(-1px); --active-move: translateY(3px);
+  --edge-outline: var(--fg); --shadow-outline: none; --r-field: 7px; --r-chip: 6px; }
+.dD .h3 { font-family: "Geist", "Helvetica Neue", sans-serif; font-weight: 650; letter-spacing: -.03em; font-size: 1.25rem; }
+/* C and D press: the button travels onto its own edge quickly, then springs back with a small overshoot */
+.dC .btn, .dD .btn { transition: transform .32s cubic-bezier(.34,1.56,.64,1), box-shadow .32s cubic-bezier(.34,1.56,.64,1), background .15s ease, filter .15s ease; will-change: transform; }
+.dC .btn:active, .dD .btn:active { transition-duration: .07s, .07s, .07s, .07s; transition-timing-function: cubic-bezier(.2,0,.4,1); }
+.dC .btn.primary:active { transform: translate(4px,4px); box-shadow: 0 0 0 var(--violet); filter: brightness(.95); }
+.dD .btn.primary:active { transform: translateY(3px); box-shadow: 0 0 0 var(--violet); filter: brightness(.95); }
+.dC .btn.outline { box-shadow: 2px 2px 0 var(--fg); }
+.dC .btn.outline:hover { transform: translate(-1px,-1px); box-shadow: 3px 3px 0 var(--fg); }
+.dC .btn.outline:active { transform: translate(2px,2px); box-shadow: 0 0 0 var(--fg); }
+.dD .btn.outline { box-shadow: 0 2px 0 var(--fg); }
+.dD .btn.outline:hover { transform: translateY(-1px); box-shadow: 0 3px 0 var(--fg); }
+.dD .btn.outline:active { transform: translateY(2px); box-shadow: 0 0 0 var(--fg); }
+.dC .btn.ghost:active, .dD .btn.ghost:active { transform: scale(.96); }
+.dC .btn[disabled], .dD .btn[disabled] { transform: none; box-shadow: none; filter: none; }
+@media (prefers-reduced-motion: reduce) { .dC .btn, .dD .btn, .dC .btn:active, .dD .btn:active { transition: none; } }
+/* E Hybrid of B and C: C's serif headline and violet edge, B's soft text, project-name face and big pill buttons; the same spring press as C and D */
+.dE { --f-display: "Instrument Serif", Georgia, serif; --f-body: "DM Sans", "Segoe UI", sans-serif; --f-num: "DM Sans", sans-serif; --f-btn: "DM Sans", sans-serif;
+  --w-display: 400; --ls-display: -.015em; --s-display: 2.375rem; --em-style: italic;
+  --s-btn: 1.0625rem; --w-btn: 700; --ls-btn: 0; --h-btn: 50px; --h-btn-sm: 42px; --s-btn-sm: .9375rem; --px-btn: 28px; --r-btn: 999px; --bw-btn: 1.5px;
+  --edge-primary: var(--on-mint); --shadow-primary: 0 4px 0 var(--violet); --shadow-primary-hover: 0 5px 0 var(--violet); --hover-move: translateY(-1px); --active-move: translateY(4px);
+  --edge-outline: var(--fg); --shadow-outline: none; --r-field: 16px; --r-chip: 999px; }
+.dE .h3 { font-family: "Bricolage Grotesque", "Trebuchet MS", sans-serif; font-weight: 700; letter-spacing: -.02em; font-size: 1.375rem; }
+.dE .btn { transition: transform .32s cubic-bezier(.34,1.56,.64,1), box-shadow .32s cubic-bezier(.34,1.56,.64,1), background .15s ease, filter .15s ease; will-change: transform; }
+.dE .btn:active { transition-duration: .07s, .07s, .07s, .07s; transition-timing-function: cubic-bezier(.2,0,.4,1); }
+.dE .btn.primary:active { transform: translateY(4px); box-shadow: 0 0 0 var(--violet); filter: brightness(.95); }
+.dE .btn.outline { box-shadow: 0 3px 0 var(--fg); }
+.dE .btn.outline:hover { transform: translateY(-1px); box-shadow: 0 4px 0 var(--fg); }
+.dE .btn.outline:active { transform: translateY(3px); box-shadow: 0 0 0 var(--fg); }
+.dE .btn.ghost:active { transform: scale(.96); }
+.dE .btn[disabled] { transform: none; box-shadow: none; filter: none; }
+@media (prefers-reduced-motion: reduce) { .dE .btn, .dE .btn:active { transition: none; } }
+/* F = A with glass; G = F's glass with B's type and pills. Glass needs colour behind it, so these screens sit on soft mint and violet light. */
+.dF { --f-display: "Geist", "Helvetica Neue", sans-serif; --f-body: "Geist", "Helvetica Neue", sans-serif; --f-num: "Geist Mono", ui-monospace, monospace; --f-btn: "Geist", sans-serif;
+  --w-display: 700; --ls-display: -.035em; --s-display: 2rem; --em-style: normal;
+  --s-btn: 1rem; --w-btn: 600; --ls-btn: -.01em; --h-btn: 48px; --h-btn-sm: 40px; --s-btn-sm: .875rem; --px-btn: 22px; --r-btn: 12px; --bw-btn: 1px;
+  --edge-primary: var(--glass-line); --shadow-primary: none; --shadow-primary-hover: none; --hover-move: none; --active-move: none;
+  --edge-outline: var(--glass-line); --shadow-outline: none; --r-field: 12px; --r-chip: 8px; }
+.dG { --f-display: "Bricolage Grotesque", "Trebuchet MS", sans-serif; --f-body: "DM Sans", "Segoe UI", sans-serif; --f-num: "DM Sans", sans-serif; --f-btn: "DM Sans", sans-serif;
+  --w-display: 800; --ls-display: -.02em; --s-display: 2.125rem; --em-style: normal;
+  --s-btn: 1.0625rem; --w-btn: 700; --ls-btn: 0; --h-btn: 52px; --h-btn-sm: 42px; --s-btn-sm: .9375rem; --px-btn: 28px; --r-btn: 999px; --bw-btn: 1px;
+  --edge-primary: var(--glass-line); --shadow-primary: none; --shadow-primary-hover: none; --hover-move: none; --active-move: none;
+  --edge-outline: var(--glass-line); --shadow-outline: none; --r-field: 18px; --r-chip: 999px; }
+.phone.dF, .phone.dG, .spec .d.dF, .spec .d.dG { background:
+    radial-gradient(120% 80% at 0% 0%, var(--blob-violet), transparent 60%),
+    radial-gradient(100% 70% at 100% 35%, var(--blob-mint), transparent 60%),
+    radial-gradient(90% 60% at 25% 100%, var(--blob-violet), transparent 65%), var(--card);
+  border: 1px solid var(--glass-line); box-shadow: 0 20px 40px -24px var(--glass-shade); }
+.phone.dG { border-radius: 26px; }
+.spec .d.dF, .spec .d.dG { padding: 14px; border-radius: 16px; }
+.dF .field, .dF .chip, .dF .bar, .dF .btn.outline, .dG .field, .dG .chip, .dG .bar, .dG .btn.outline {
+  background: var(--glass); border: 1px solid var(--glass-line); -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5);
+  box-shadow: inset 0 1px 0 var(--glass-strong), 0 6px 16px -10px var(--glass-shade); }
+.dF .field, .dG .field { color: var(--fg); }
+.dF .btn.primary, .dG .btn.primary { background: linear-gradient(180deg, hsl(153 62% 58% / .9), hsl(153 59% 44% / .88)); -webkit-backdrop-filter: blur(10px) saturate(1.6); backdrop-filter: blur(10px) saturate(1.6);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .6), inset 0 -8px 14px -10px hsl(153 75% 24% / .5), 0 10px 24px -10px hsl(153 59% 35% / .75); }
+.dF .btn, .dG .btn { transition: transform .3s cubic-bezier(.34,1.56,.64,1), box-shadow .3s ease, background .15s ease, filter .15s ease; will-change: transform; }
+.dF .btn:hover, .dG .btn:hover { filter: brightness(1.05); }
+.dF .btn.primary:hover, .dG .btn.primary:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgb(255 255 255 / .7), inset 0 -8px 14px -10px hsl(153 75% 24% / .5), 0 14px 28px -10px hsl(153 59% 35% / .85); }
+.dF .btn.outline:hover, .dG .btn.outline:hover { background: var(--glass-strong); }
+.dF .btn:active, .dG .btn:active { transition-duration: .07s, .07s, .07s, .07s; transition-timing-function: cubic-bezier(.2,0,.4,1); transform: scale(.965); filter: brightness(.97); }
+.dF .btn.primary:active, .dG .btn.primary:active { box-shadow: inset 0 2px 6px hsl(153 75% 20% / .45), 0 2px 6px -4px hsl(153 59% 35% / .6); }
+.dF .btn[disabled], .dG .btn[disabled] { transform: none; filter: none; }
+@media (prefers-reduced-motion: reduce) { .dF .btn, .dG .btn, .dF .btn:active, .dG .btn:active { transition: none; } }
+/* H = F made bolder: deeper purple light behind the glass, 2px ink borders on every pane and button, and A's hard bottom edge so the main action is unmistakable */
+.dH { --s-display: 2.125rem; --bw-btn: 2px; --r-btn: 12px; }
+.phone.dH, .spec .d.dH { background:
+    radial-gradient(120% 85% at 0% 0%, var(--blob-deep), transparent 62%),
+    radial-gradient(100% 70% at 100% 38%, var(--blob-mint), transparent 60%),
+    radial-gradient(95% 65% at 20% 100%, var(--blob-deep), transparent 66%), var(--card);
+  border: 2px solid var(--ink-line); }
+.dH p { color: var(--fg); opacity: .86; }
+.dH .chip { font-weight: 600; }
+.dH .field, .dH .chip, .dH .bar, .dH .btn.outline { background: var(--glass-strong); border: 2px solid var(--ink-line); box-shadow: inset 0 1px 0 var(--glass-strong); }
+.dH .bar { height: 10px; border-radius: 5px; }
+.dH .btn.primary { border-color: var(--ink-line); box-shadow: inset 0 1px 0 rgb(255 255 255 / .6), 0 3px 0 var(--ink-line); }
+.dH .btn.primary:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 rgb(255 255 255 / .7), 0 4px 0 var(--ink-line); }
+.dH .btn.primary:active { transform: translateY(3px); box-shadow: inset 0 2px 5px hsl(153 75% 20% / .4), 0 0 0 var(--ink-line); }
+.dH .btn.outline { box-shadow: inset 0 1px 0 var(--glass-strong), 0 2px 0 var(--ink-line); }
+.dH .btn.outline:hover { transform: translateY(-1px); box-shadow: inset 0 1px 0 var(--glass-strong), 0 3px 0 var(--ink-line); }
+.dH .btn.outline:active { transform: translateY(2px); box-shadow: inset 0 1px 0 var(--glass-strong), 0 0 0 var(--ink-line); }
+.dH .btn.ghost { font-weight: 700; }
+.dH .btn.ghost:active { transform: scale(.96); }
+.dH .btn[disabled] { transform: none; box-shadow: none; }
+/* F (and H, which builds on it): a real gradient surface, dark purple running into violet and a mint corner. The surface is dark in both themes, so its colours are set here and do not follow the page theme. */
+.phone.dF, .spec .d.dF {
+  --fg: hsl(0 0% 100%); --muted: hsl(262 45% 87%); --mint: #63c88e; --mint-ink: #86d6a8; --on-mint: hsl(266 55% 14%); --violet: #86d6a8;
+  --soft: rgb(255 255 255 / .14); --line: rgb(255 255 255 / .3);
+  --glass: rgb(255 255 255 / .12); --glass-strong: rgb(255 255 255 / .22); --glass-line: rgb(255 255 255 / .38); --glass-shade: hsl(266 70% 8% / .6); --ink-line: rgb(255 255 255 / .92);
+  color: var(--fg);
+  background:
+    radial-gradient(70% 55% at 100% 100%, rgb(99 200 142 / .62), transparent 70%),
+    radial-gradient(60% 45% at 0% 0%, hsl(280 75% 55% / .55), transparent 70%),
+    linear-gradient(155deg, hsl(266 66% 13%) 0%, hsl(266 62% 24%) 38%, hsl(262 60% 40%) 72%, hsl(210 55% 42%) 100%);
+  border: 1px solid var(--glass-line); box-shadow: 0 24px 48px -24px hsl(266 70% 20% / .7); }
+.phone.dH, .spec .d.dH { border: 2px solid var(--ink-line); }
+.dF .field { color: var(--muted); }
+/* the green of the Creaton mark's gradient (#63c88e), shaded down for the lower half */
+.dF .btn.primary { background: linear-gradient(180deg, #63c88e, #47a873); }
+.dF .btn.primary:hover { box-shadow: inset 0 1px 0 rgb(255 255 255 / .55), inset 0 -8px 14px -10px rgb(30 90 60 / .6), 0 14px 28px -10px rgb(40 120 80 / .8); }
+.dH p { opacity: .92; }
+.pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .9375rem; color: var(--muted); }
+</style>
+
+<div class="wrap">
+  <header class="intro">
+    <h1>Eight ways to replace the type and the buttons</h1>
+    <p>Same colours as today in every option. Each one is shown on the same two phone screens: the signed-out Home card and a founder's first-week card. Buttons are live, so hover and press them. Tell me a letter, or mix: for example "A's buttons with C's headlines".</p>
+  </header>
+  <div id="bands"></div>
+</div>
+
+<script>
+var DIRS = [
+  { k: 'd0', tag: 'Today', name: 'What the app has now', why: 'For comparison. One typeface for everything and the stock buttons of the component kit: 36 px tall with small text.',
+    facts: [['Headlines','Figtree, extra bold'],['Text','Figtree'],['Numbers','Figtree'],['Buttons','36 px, small text, lightly rounded']] },
+  { k: 'dA', tag: 'Option A', name: 'Workbench', why: 'Feels like a tool builders use. One tight typeface, numbers in a fixed-width face so they line up, and squared buttons with a hard edge that press down.',
+    facts: [['Headlines','Geist, tight'],['Text','Geist'],['Numbers','Geist Mono'],['Buttons','48 px, squared, hard edge, press down']] },
+  { k: 'dB', tag: 'Option B', name: 'Friendly', why: 'The most welcoming for a first-time founder. A headline face with character, soft text, and large pill buttons that are easy to hit on a phone.',
+    facts: [['Headlines','Bricolage Grotesque'],['Text','DM Sans'],['Numbers','DM Sans'],['Buttons','52 px, full pill, soft glow']] },
+  { k: 'dC', tag: 'Option C', name: 'Record', why: 'Leans on the idea that every project keeps a public record. Serif headlines like a published page, plain text, figures in a fixed-width face, and ink-edged buttons with a violet offset.',
+    facts: [['Headlines','Instrument Serif'],['Text','Instrument Sans'],['Numbers','JetBrains Mono'],['Buttons','48 px, nearly square, violet offset']] },
+  { k: 'dD', tag: 'Option D', name: 'Hybrid of A and C', why: 'C\'s serif kept for the one big headline on a screen, a little smaller. Everything else is A: the tight typeface for text and project names, fixed-width numbers, and the press-down button, with C\'s violet as its bottom edge.',
+    facts: [['Big headline','Instrument Serif'],['Text and names','Geist'],['Numbers','Geist Mono'],['Buttons','48 px, squared, violet edge, press down']] },
+  { k: 'dE', tag: 'Option E', name: 'Hybrid of B and C', why: 'C\'s serif for the one big headline and C\'s violet as the button edge. Everything else is B: soft text, the characterful face for project names, and large pill buttons. The press is the same spring as C and D.',
+    facts: [['Big headline','Instrument Serif'],['Project names','Bricolage Grotesque'],['Text and numbers','DM Sans'],['Buttons','50 px, full pill, violet edge, press down']] },
+  { k: 'dF', tag: 'Option F', name: 'A with glass', why: 'A\'s tight typeface and fixed-width numbers on a full gradient: dark purple running into violet, with a mint corner. Fields, chips and outline buttons are frosted glass panes on top of it; the main button is solid glossy mint and sinks slightly when pressed.',
+    facts: [['Headlines and text','Geist'],['Numbers','Geist Mono'],['Surfaces','Glass panes on a dark purple to mint gradient'],['Buttons','48 px, rounded, glossy mint, press in']] },
+  { k: 'dG', tag: 'Option G', name: 'Hybrid of F and B', why: 'F\'s frosted glass with B\'s character: the Bricolage headline, soft text and large pill buttons, on rounder panes.',
+    facts: [['Headlines','Bricolage Grotesque'],['Text and numbers','DM Sans'],['Surfaces','Frosted glass over soft colour'],['Buttons','52 px, full pill, glossy, press in']] },
+  { k: 'dF dH', tag: 'Option H', name: 'F, bolder', why: 'The same dark purple gradient as F, with 2 px bright borders on every pane and button. The main button gets A\'s hard bottom edge back and presses down onto it, so the one action on a screen is unmistakable.',
+    facts: [['Headlines and text','Geist'],['Numbers','Geist Mono'],['Surfaces','Glass on the dark purple gradient, 2 px bright borders'],['Buttons','48 px, glossy mint, bright edge, press down']] }
+];
+function esc(s){ return String(s).replace(/[&<>]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c]; }); }
+function band(d){
+  var facts = d.facts.map(function(f){ return '<dt>'+esc(f[0])+'</dt><dd>'+esc(f[1])+'</dd>'; }).join('');
+  return '<section class="band">'+
+    '<div class="spec"><div><p class="label">'+esc(d.tag)+'</p><h2>'+esc(d.name)+'</h2><p class="why">'+esc(d.why)+'</p></div>'+
+      '<dl>'+facts+'</dl>'+
+      '<div class="d '+d.k+'"><div class="btnrow"><button class="btn primary" type="button">Start a project</button><button class="btn outline" type="button">Sign up</button></div>'+
+      '<div class="btnrow" style="margin-top:10px"><button class="btn primary sm" type="button">Accept</button><button class="btn outline sm" type="button">Decline</button><button class="btn ghost sm" type="button">Find work</button><button class="btn primary sm" type="button" disabled>Posted</button></div></div>'+
+    '</div>'+
+    '<div class="screens">'+
+      '<div class="phone d '+d.k+'"><span class="cap">Home, signed out</span>'+
+        '<h3 class="h">Real projects, <em>built in the open.</em></h3>'+
+        '<p>Every project says what it will do, posts what it did each week, and shows whether it kept its word.</p>'+
+        '<span class="fieldlabel">What are you making?</span><div class="field">A first version that ten people use.</div>'+
+        '<button class="btn primary block" type="button">Start a project</button>'+
+        '<div class="btnrow"><button class="btn ghost sm" type="button">Find work</button></div>'+
+      '</div>'+
+      '<div class="phone d '+d.k+'"><span class="cap">Project page, founder, week one</span>'+
+        '<h3 class="h3">Lantern</h3>'+
+        '<div class="chips"><span class="chip">Started 3 days ago</span><span class="chip">First update due Mon, Nov 23</span><span class="chip ok">1 piece of work done</span></div>'+
+        '<div><div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px"><span class="fieldlabel">Your first week</span><span class="meta num">1 of 3</span></div><div class="bar" style="margin-top:8px"><i></i></div></div>'+
+        '<ul class="steps"><li><span class="tick">✓</span><span>Say your goal</span></li><li><span class="todo">○</span><span>Get one thing done</span></li><li><span class="todo">○</span><span>Post this week\'s update</span></li></ul>'+
+        '<button class="btn primary block" type="button">Add what you did</button>'+
+        '<div class="btnrow"><button class="btn outline sm" type="button">Copy link to invite people</button></div>'+
+        '<p class="meta">Followers <span class="num">12</span> · Promises kept <span class="num">3 of 4</span> · Next update in <span class="num">4 days</span></p>'+
+      '</div>'+
+    '</div></section>';
+}
+document.getElementById('bands').innerHTML = DIRS.map(band).join('');
+</script>

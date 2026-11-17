@@ -394,6 +394,6 @@ Read in the reports and code; nothing was built or run except the simulations.
 6. The BUSL-1.1 files and their change date (`NEXT-VERSION-PLAN.md`, milestone 1 review fixes).
 
 Simulations (plain Python, standard library), all under
-`/tmp/claude-0/-home-user-creabuzz/760bbfe4-cd00-52d2-a0ba-d5904ad4bed9/scratchpad/econ/`: `plan_v2.py` (this
+`docs/next-version/econ/`: `plan_v2.py` (this
 plan's own numbers), and the designers' and attacker's `econ.py`, `platform_create.py`, `stage_ladder.py`,
-`attacker.py`. The scratchpad can be cleared; copy the files if they should be kept.
+`attacker.py`. Copied into the repo on 17 November 2026.
