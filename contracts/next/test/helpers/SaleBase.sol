@@ -118,7 +118,7 @@ abstract contract SaleBase is Stack {
         factory = ContinuousClearingAuctionFactory(deployer.auctionFactory(address(feeController)));
         strategy = _deployStrategy(address(factory));
         if (c.useGuard) guard = _deployGuard(address(strategy));
-        minBid = new MinBid(c.minBid, c.topPriceMultiple);
+        minBid = new MinBid(c.minBid, c.topPriceMultiple, 0);
     }
 
     // ---- opening a sale -------------------------------------------------------------------------------------------

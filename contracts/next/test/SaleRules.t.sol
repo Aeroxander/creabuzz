@@ -192,6 +192,28 @@ abstract contract SaleRulesBase2 is Platform {
         vm.stopPrank();
         assertEq(_price(s, 300), 4 * s.floorQ96, "tick 300 above the floor is 4 times the floor");
     }
+
+    /// @dev The closing window: the last bid that counts is in block end - 720; from end - 719 to the last block of the sale (end - 1; the auction itself
+    /// refuses from `end`) a bid is refused with the block and the last allowed block in the error. (Why: `MinBid` and `AttackM3.t.sol`.)
+    function test_bids_nothingInTheLast720BlocksOfTheSale() public {
+        Proj memory p = _launch(founder, keccak256("window"));
+        Sale memory s = _open(p, Launcher.Size.Standard);
+        assertEq(s.endBlock - s.startBlock, 7200, "the sale is 7,200 blocks");
+        _fund(alice, 100 * DOLLAR, s);
+        vm.roll(s.endBlock - 720);
+        vm.prank(alice);
+        s.auction.submitBid(_price(s, 1), uint128(DOLLAR), alice, s.floorQ96, ""); // the last block that takes bids
+        uint256[3] memory late = [uint256(s.endBlock - 719), s.endBlock - 360, s.endBlock - 1];
+        for (uint256 i; i < late.length; ++i) {
+            vm.roll(late[i]);
+            bytes memory reason =
+                abi.encodeWithSignature("BidTooLate(uint256,uint256)", late[i], uint256(s.endBlock - 720));
+            vm.prank(alice);
+            vm.expectRevert(abi.encodeWithSignature("ValidationHookCallFailed(bytes)", reason));
+            s.auction.submitBid(_price(s, 1), uint128(DOLLAR), alice, s.floorQ96, "");
+        }
+        assertEq(s.auction.nextBidId(), 1, "only the early bid went in");
+    }
 }
 
 abstract contract SaleRulesBase3 is Platform {

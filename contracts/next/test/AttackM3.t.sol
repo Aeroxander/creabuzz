@@ -18,11 +18,12 @@ import {
     IPinnedStrategy
 } from "../src/Pinned.sol";
 
-/// @notice Attack tests for milestone 3, written by a tester who may not change the sources. Each test is one hostile plan.
-/// A test whose name starts `test_attack_` and which FAILS today is a defect found: its assertion says what must hold. Three fail on
-/// the code as committed: the two pool-seed tests (a few dollars of bids in the last blocks set the pool's opening price and let a
-/// holder take its dollars) and the fake-pool test (after a failed pool step any holder can make a pool the Finisher takes as the
-/// project's). The others pass and record an attack that did not work, with the figures it was measured at.
+/// @notice Attack tests for milestone 3, first written by a tester who could not change the sources, then kept as regression tests
+/// once the two defects they found were fixed. Each test is one hostile plan; a test whose name starts `test_attack_` states what
+/// must hold. The first two defects: (1) a few dollars of bids in the last blocks of a sale set the pool's opening price and let a
+/// holder take the pool's dollars, fixed by the closing window of 720 blocks in `MinBid` (the plan now is the same, placed at the
+/// window's edge, and it loses money); (2) after a failed pool step any holder could make a pool at the project's key and the
+/// Finisher took it for the project's, fixed by `Finisher.poolIsOpen` also asking that the pool step took this sale's money.
 /// Run: `forge test --match-path test/AttackM3.t.sol -vv` (the fork variants need SEPOLIA_RPC_URL).
 abstract contract AttackM3Common is Platform {
     function _fork() internal pure virtual returns (bool);
@@ -55,6 +56,32 @@ abstract contract AttackM3Common is Platform {
         uint256 attackerShares;
     }
 
+    /// @dev The closing window: the last block that takes a bid is `endBlock - CLOSING`.
+    uint256 internal constant CLOSING = 720;
+
+    /// @dev The attacker's spike bid in block `blk`: a top price of the highest tick the 4-times rule allows against that block's
+    /// clearing price, with enough dollars to buy every Share still to be issued at that price three times over (the rest is
+    /// refunded). With `tryIt` a refused bid is skipped. Returns the bid and the dollars put in.
+    function _spikeAt(Sale memory s, uint256 blk, bool tryIt) internal returns (uint256 bidId, uint256 amount) {
+        vm.roll(blk);
+        s.auction.checkpoint();
+        uint256 c = s.auction.clearingPrice();
+        uint256 maxPrice = s.floorQ96 + ((4 * c - s.floorQ96) / s.tickQ96) * s.tickQ96;
+        uint256 need = maxPrice * ((s.endBlock - blk) * 60_000e18) >> 96;
+        amount = need * 3 + DOLLAR;
+        _fund(mallory, amount, s);
+        bidId = s.auction.nextBidId();
+        vm.prank(mallory);
+        if (tryIt) {
+            try s.auction.submitBid(maxPrice, uint128(amount), mallory, s.floorQ96, "") {}
+            catch {
+                amount = 0;
+            }
+        } else {
+            s.auction.submitBid(maxPrice, uint128(amount), mallory, s.floorQ96, "");
+        }
+    }
+
     /// @dev One Standard sale: four honest bidders with 2,250 dollars each at one tick above the floor, the attacker with
     /// `ordinary` dollars at one tick above the floor, then `spikes` bids by the attacker in the last `spikes` blocks, each with the
     /// top price the 4-times rule allows against the clearing price of that block. Finished by a stranger.
@@ -80,20 +107,8 @@ abstract contract AttackM3Common is Platform {
             r.minted += ordinary;
         }
         for (uint256 j; j < spikes; ++j) {
-            vm.roll(r.s.endBlock - (spikes - j));
-            r.s.auction.checkpoint();
-            uint256 c = r.s.auction.clearingPrice();
-            uint256 k = (4 * c - r.s.floorQ96) / r.s.tickQ96; // the highest tick the rule allows
-            uint256 maxPrice = r.s.floorQ96 + k * r.s.tickQ96;
-            // enough dollars to buy every Share still to be issued at that price, three times over; the rest is refunded
-            uint256 blocksLeft = spikes - j;
-            uint256 need = maxPrice * (blocksLeft * 60_000e18) >> 96;
-            uint256 amount = need * 3 + DOLLAR;
-            _fund(mallory, amount, r.s);
-            uint256 id_ = r.s.auction.nextBidId();
-            vm.prank(mallory);
-            r.s.auction.submitBid(maxPrice, uint128(amount), mallory, r.s.floorQ96, "");
-            r.attackerBids[j + 1] = id_;
+            (uint256 bidId, uint256 amount) = _spikeAt(r.s, r.s.endBlock - CLOSING - (spikes - 1 - j), false);
+            r.attackerBids[j + 1] = bidId;
             r.minted += amount;
         }
         _toEnd(r.s);
@@ -293,15 +308,7 @@ abstract contract AttackM3Common is Platform {
 
     function _spikeBids(Sale memory s, uint256 spikes) internal {
         for (uint256 j; j < spikes; ++j) {
-            vm.roll(s.endBlock - (spikes - j));
-            s.auction.checkpoint();
-            uint256 c = s.auction.clearingPrice();
-            uint256 maxPrice = s.floorQ96 + ((4 * c - s.floorQ96) / s.tickQ96) * s.tickQ96;
-            uint256 need = (maxPrice * ((spikes - j) * 60_000e18)) >> 96;
-            uint256 amount = need * 3 + DOLLAR;
-            _fund(mallory, amount, s);
-            vm.prank(mallory);
-            try s.auction.submitBid(maxPrice, uint128(amount), mallory, s.floorQ96, "") {} catch {}
+            _spikeAt(s, s.endBlock - CLOSING - (spikes - 1 - j), true);
         }
     }
 
@@ -369,39 +376,53 @@ abstract contract AttackM3Common is Platform {
 }
 
 abstract contract AttackM3PoolSeedBase is AttackM3Common {
-    /// @dev A bidder who holds ordinary Shares bought at the floor, and who spends a few dollars on bids in the last blocks of
-    /// the sale, makes the final clearing price (which is the pool's opening price) a multiple of what every buyer paid. The pool
-    /// then holds the same dollars (22 of 100 raised) and far fewer Shares, so Shares sold into it return a multiple of what they
-    /// cost. The test measures a no-attack baseline, then 1, 2, 3 and 4 blocks of spikes.
-    function test_attack_lastBlocksBidsSeedThePoolAtAnInflatedPriceAndEmptyIt() public {
+    /// @dev The plan: a bidder who holds ordinary Shares bought at the floor spends on bids that lift the final clearing price (the
+    /// pool's opening price), so the pool holds the same dollars (22 of 100 raised) and far fewer Shares and Shares sold into it
+    /// return a multiple of what they cost. Before the closing window the bids could go into the last block, where a few dollars
+    /// bought the whole lift (x4 for 5.66 dollars, x256 for 493 on a 10,000-dollar sale; the best dump then took 64% and 99% of the
+    /// pool's dollars, a profit of 410 and 794 on a 1,000-dollar position). Now the last bid that counts is 720 blocks before the end, so
+    /// a lifted price must be paid on every one of those blocks. The test measures a no-attack baseline, then 1 to 4 spike bids in
+    /// consecutive blocks ending at the edge of the window, and requires that none of them pays.
+    function test_attack_spikeBidsAtTheEdgeOfTheClosingWindowSeedThePoolButLoseMoney() public {
         uint256 base = vm.snapshotState();
         Run memory r0 = _sale(keccak256("a0"), 1000 * DOLLAR, 0);
         int256 p0 = _report("baseline (no spike)", r0);
         assertLt(p0, 0, "without a spike, selling into the pool loses money");
 
-        int256[5] memory profits;
-        uint256[5] memory prices;
-        uint256[5] memory poolUsds;
         for (uint256 spikes = 1; spikes <= 4; ++spikes) {
             vm.revertToState(base);
             base = vm.snapshotState();
             Run memory r = _sale(keccak256(abi.encode("a", spikes)), 1000 * DOLLAR, spikes);
-            profits[spikes] = _report(string.concat("spike over the last ", vm.toString(spikes), " block(s)"), r);
-            prices[spikes] = r.finalPriceQ96;
-            poolUsds[spikes] = r.poolUsd;
+            int256 profit = _report(string.concat(vm.toString(spikes), " spike bid(s) at the edge of the window"), r);
+            assertGt(r.finalPriceQ96, r0.finalPriceQ96, "the price is lifted: the attack is real, it just does not pay");
+            assertLt(profit, 0, "a lift paid for on every block of the closing window costs more than the pool holds");
+            uint256 spent = r.minted - r.refundedAndSpent;
+            assertGt(spent, r.poolUsd, "the lift alone costs more than all the dollars in the pool");
         }
-        // What must hold: a few dollars of bids in the last blocks must not turn the pool into a place where Shares bought at
-        // the floor are sold for a profit. These fail today: the 4-times rule is per bid, against the current price, so it does not
-        // limit the final price, and the final price is the price the pool opens at.
-        assertLe(prices[1], r0.finalPriceQ96 * 125 / 100, "ONE spike block moves the pool's opening price by 4x");
-        assertLt(profits[1], 0, "selling Shares into the pool must not pay after a spike of a few dollars");
-        assertLt(profits[4], 0, "nor after four blocks of spikes (price x256)");
-        poolUsds;
     }
 
-    /// @dev The founder's second account does exactly the same, and the dollars it takes out of the pool are other bidders' money.
-    /// The founder's whole position is counted: what the Treasury holds (his to spend now or over a year), what the second account
-    /// takes from the pool, less what that account put into the sale. The same sale with only the honest bidders is the baseline.
+    /// @dev The same bids one block later (inside the window) are refused, in the first block of it and in the last.
+    function test_attack_aBidInTheClosingWindowIsRefused() public {
+        Proj memory p = _launch(founder, keccak256("window-attack"));
+        Sale memory s = _open(p, Launcher.Size.Standard);
+        vm.roll(s.startBlock);
+        _bid(s, alice, 9000 * DOLLAR, 1);
+        uint256[3] memory blocks_ = [uint256(s.endBlock - CLOSING + 1), s.endBlock - 1, s.endBlock];
+        for (uint256 i; i < blocks_.length; ++i) {
+            vm.roll(blocks_[i]);
+            s.auction.checkpoint();
+            uint256 c = s.auction.clearingPrice();
+            uint256 maxPrice = s.floorQ96 + ((4 * c - s.floorQ96) / s.tickQ96) * s.tickQ96;
+            _fund(mallory, 10 * DOLLAR, s);
+            vm.prank(mallory);
+            vm.expectRevert();
+            s.auction.submitBid(maxPrice, uint128(10 * DOLLAR), mallory, s.floorQ96, "");
+        }
+    }
+
+    /// @dev The founder's second account does the same, and the dollars it takes out of the pool are other bidders' money. The
+    /// founder's whole position is counted: what the Treasury holds (his to spend now or over a year), what the second account takes
+    /// from the pool, less what that account put into the sale. The same sale with only the honest bidders is the baseline.
     function test_attack_aFounderDrainsThePoolWithASecondAccount() public {
         uint256 base = vm.snapshotState();
         Run memory r0 = _sale(keccak256("founder-base"), 0, 0);
@@ -420,16 +441,13 @@ abstract contract AttackM3PoolSeedBase is AttackM3Common {
         emit log_named_int("the founder's gain from the attack (6 decimals)", gain);
         assertLt(got, r.poolUsd, "cannot take more than the pool holds");
         assertLe(gain, 0, "THE FOUNDER GAINS BY BIDDING IN HIS OWN SALE: the pool's dollars are other bidders' money");
-        assertLt(
-            got * 100,
-            r.poolUsd * 50,
-            "THE SECOND ACCOUNT TAKES MORE THAN HALF OF THE POOL'S DOLLARS OUT, AT A COST OF A FEW PERCENT"
-        );
+        assertLt(got, spent, "what the second account takes out is less than it put in");
     }
 
-    /// @dev The same plan at each sale size: the attacker holds 10% of the goal in ordinary Shares and spends on spike bids in the last
-    /// one and four blocks. Reports how much of the pool's dollars the best dump takes out, and the attacker's profit.
-    function test_attack_lastBlockSpikes_bySaleSize() public {
+    /// @dev The same plan at each sale size: the attacker holds 10% of the goal in ordinary Shares and places one and four spike bids at
+    /// the edge of the closing window. Reports how much of the pool's dollars the best dump takes out, and the attacker's profit;
+    /// the profit must be negative for every size.
+    function test_attack_edgeSpikes_bySaleSize() public {
         uint256 base = vm.snapshotState();
         Launcher.Size[3] memory sizes = [Launcher.Size.Small, Launcher.Size.Standard, Launcher.Size.Large];
         for (uint256 z; z < 3; ++z) {
@@ -460,6 +478,9 @@ abstract contract AttackM3PoolSeedBase is AttackM3Common {
                         got >= spent ? "+" : "-",
                         _str(got >= spent ? got - spent : spent - got, 6)
                     ));
+                if (blocks_[b] != 0) {
+                    assertLt(got, spent, "a spike at the edge of the window does not pay at any size");
+                }
             }
         }
     }
@@ -514,6 +535,97 @@ abstract contract AttackM3FinishBase is AttackM3Common {
         assertFalse(fakeIsTakenForReal, "A POOL THAT THE ATTACKER MADE WITH TWO SHARES IS TAKEN FOR THE PROJECT'S POOL");
     }
 
+    /// @dev The fix for the fake pool: it is at the key, but the pool step took none of this sale's money, so the Finisher does not
+    /// count it. Step 2 refuses, and seven days after the sale the way out opens and pays what a sale with no pool pays: of each
+    /// 100 raised 3 to the platform, 15 spendable, 82 into the floor (before the fix it was refused with `PoolExists` for good, and
+    /// step 2 split 19.4 : 77.6).
+    function test_attack_afterAFakePoolTheWayOutStillOpensAndPaysFifteenAndEightyTwo() public {
+        (Proj memory p, Sale memory s, uint256 mid) = _soldOutStandard(keccak256("fake-out"));
+        uint256 raised = s.auction.currencyRaised();
+        _failThePoolStep(true);
+        p.finisher.openPool();
+        _failThePoolStep(false);
+        _collectBid(s, mid);
+        _fakePool(p, s);
+        assertTrue(p.finisher.poolAtTheKey(), "the fake pool is at the key, with liquidity and the right guard");
+        assertFalse(p.finisher.poolIsOpen(), "but the pool step took none of this sale's money");
+        vm.expectRevert(Finisher.NoPool.selector);
+        p.finisher.settle();
+        vm.roll(s.endBlock + 50_400);
+        vm.prank(stranger);
+        p.finisher.abandon();
+        assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Abandoned));
+        assertFalse(p.finisher.poolIsOpen(), "an abandoned sale has no pool of its own, whatever stands at the key");
+        assertTrue(p.treasury.saleClosed(), "exits are open");
+        assertApproxEqAbs(p.treasury.spendable(), raised * 15 / 100, 1000, "15 of each 100 raised are spendable");
+        assertApproxEqAbs(p.treasury.melting(), raised * 82 / 100, 1000, "82 of each 100 are the floor");
+        assertEq(usd.balanceOf(platform), raised * 3 / 100, "3 to the platform");
+        assertGt(p.vester.start(), 0, "the founder's Shares start releasing");
+    }
+
+    /// @dev After step 2 the pool is the project's for good: dollars sent to the Finisher then (more than the pool's budget, so that
+    /// "dollars missing from what the Finisher holds" would read as nothing taken) must not make the pool look absent and open the way
+    /// out, which would split the sale's money a second time.
+    function test_attack_aGiftAfterStepTwoCannotOpenTheWayOutAgain() public {
+        (Proj memory p, Sale memory s, uint256 mid) = _soldOutStandard(keccak256("after-two"));
+        _collectBid(s, mid);
+        p.finisher.openPool();
+        p.finisher.settle();
+        assertTrue(p.finisher.poolIsOpen());
+        usd.mint(address(p.finisher), 100_000 * DOLLAR);
+        assertTrue(p.finisher.poolIsOpen(), "a gift after step 2 changes nothing");
+        vm.roll(s.endBlock + 50_400);
+        vm.expectRevert(Finisher.PoolExists.selector);
+        p.finisher.abandon();
+        p.finisher.sweep();
+        assertTrue(p.treasury.saleClosed());
+        assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Done));
+    }
+
+    /// @dev Measured, a limit of the fix: dollars sent to the Finisher before step 2 make a real pool look as if it took less. Up to
+    /// 1,095 dollars on this 10,000-dollar sale (the pool's budget is 2,200) change nothing; 1,105 hide the pool: step 2 refuses, and
+    /// seven days later the way out opens although a pool exists (the money is conserved and exits open; the gift went to the project,
+    /// so the sender paid 1,105 dollars for it).
+    function test_measured_aGiftOfMoreThanHalfThePoolsBudgetHidesARealPool() public {
+        (Proj memory p, Sale memory s, uint256 mid) = _soldOutStandard(keccak256("grief"));
+        _collectBid(s, mid);
+        uint256 snap = vm.snapshotState();
+        usd.mint(address(p.finisher), 1095 * DOLLAR);
+        p.finisher.openPool();
+        assertTrue(p.finisher.poolIsOpen(), "a gift under half the budget changes nothing");
+        p.finisher.settle();
+        vm.revertToState(snap);
+        usd.mint(address(p.finisher), 1105 * DOLLAR);
+        p.finisher.openPool();
+        assertTrue(p.finisher.poolAtTheKey(), "the real pool is there");
+        assertFalse(p.finisher.poolIsOpen(), "but it looks as if it took less than half its budget");
+        vm.expectRevert(Finisher.NoPool.selector);
+        p.finisher.settle();
+        vm.roll(s.endBlock + 50_400);
+        p.finisher.abandon();
+        assertTrue(p.treasury.saleClosed(), "exits are open, so nobody is trapped");
+    }
+
+    /// @dev Measured, a limit that no code in this project can remove: the auction pays its 3% only through the strategy, and the
+    /// strategy's recovery path pays it too. If the dollar token freezes the fee recipient, the pool step reverts (it is not
+    /// swallowed), so `openPool` reverts, and so does `abandon`, which starts by running that step. The way out covers a pool step
+    /// that never ran and one that failed and was swallowed; it does not cover a frozen fee recipient. Unfreezing frees it.
+    function test_limit_aFrozenFeeRecipientStopsTheFinishAndTheWayOutToo() public {
+        (Proj memory p, Sale memory s,) = _soldOutStandard(keccak256("frozen-fee"));
+        usd.setBlocked(platform, true);
+        vm.roll(s.endBlock + 50_400);
+        vm.expectRevert();
+        p.finisher.openPool();
+        vm.expectRevert();
+        p.finisher.abandon();
+        assertFalse(p.treasury.saleClosed(), "nobody can exit while the fee recipient is frozen");
+        usd.setBlocked(platform, false);
+        p.finisher.openPool();
+        p.finisher.settle();
+        p.finisher.sweep();
+        assertTrue(p.treasury.saleClosed(), "unfrozen, the ordinary finish completes");
+    }
+
     /// @dev While the sale's own pool step is still pending the strategy has the key reserved: a second distribution cannot take it.
     function test_attack_theKeyIsReservedWhileTheSalesOwnPoolStepIsPending() public {
         (Proj memory p, Sale memory s, uint256 mid) = _soldOutStandard(keccak256("reserved"));
@@ -524,8 +636,9 @@ abstract contract AttackM3FinishBase is AttackM3Common {
 
     /// @dev The auction's own comment says the checkpoint "can revert with out of gas if there are a large number of ticks". The price
     /// grid between the floor and four times the floor has 300 levels; a $1 bid at each makes 300 initialised ticks, and one large
-    /// bid in the last block moves the clearing price across all of them in the final checkpoint. Measures the gas of that
-    /// checkpoint and of the three finish steps; the pool step must still be callable.
+    /// bid in the last block that takes bids (the closing window keeps later ones out) moves the clearing price across all of them in
+    /// the checkpoint of the next block, and the sale then runs to its end. Measures the gas of that checkpoint and of the three finish
+    /// steps; the pool step must still be callable.
     function test_attack_threeHundredTicksThenOneJumpDoesNotWedgeTheFinish() public {
         Proj memory p = _launch(founder, keccak256("ticks"));
         Sale memory s = _open(p, Launcher.Size.Standard);
@@ -541,19 +654,21 @@ abstract contract AttackM3FinishBase is AttackM3Common {
         }
         vm.stopPrank();
         _bid(s, alice, 9000 * DOLLAR, 1);
-        vm.roll(s.endBlock - 1);
+        vm.roll(s.endBlock - CLOSING);
         s.auction.checkpoint();
         uint256 c = s.auction.clearingPrice();
         uint256 maxPrice = s.floorQ96 + ((4 * c - s.floorQ96) / s.tickQ96) * s.tickQ96;
         _fund(bob, 5000 * DOLLAR, s);
         vm.prank(bob);
         s.auction.submitBid(maxPrice, uint128(5000 * DOLLAR), bob, s.floorQ96 + 299 * s.tickQ96, "");
-        vm.roll(s.endBlock);
+        vm.roll(s.endBlock - CLOSING + 1);
         uint256 g0 = gasleft();
         s.auction.checkpoint();
         uint256 gCheckpoint = g0 - gasleft();
-        emit log_named_uint("gas of the final checkpoint across ~300 initialised ticks", gCheckpoint);
-        emit log_named_uint("final price in thousandths of the floor", s.auction.clearingPrice() * 1000 / s.floorQ96);
+        emit log_named_uint("gas of the checkpoint that crosses ~300 initialised ticks", gCheckpoint);
+        emit log_named_uint("price in thousandths of the floor", s.auction.clearingPrice() * 1000 / s.floorQ96);
+        vm.roll(s.endBlock);
+        s.auction.checkpoint();
         vm.roll(s.endBlock + 1);
         g0 = gasleft();
         p.finisher.openPool();
@@ -563,7 +678,7 @@ abstract contract AttackM3FinishBase is AttackM3Common {
         p.finisher.sweep();
         emit log_named_uint("gas of settle and sweep", g0 - gasleft());
         assertTrue(p.treasury.saleClosed(), "the finish completes");
-        assertLt(gCheckpoint, 15_000_000, "the final checkpoint fits in a quarter of a block");
+        assertLt(gCheckpoint, 15_000_000, "the checkpoint fits in a quarter of a block");
     }
 
     /// @dev Dollars and Shares are sent to the strategy, the Finisher, the Treasury, the auction, the position manager, the pool
@@ -578,7 +693,7 @@ abstract contract AttackM3FinishBase is AttackM3Common {
         p.finisher.sweep();
         Outcome memory a = _outcome(p);
         vm.revertToState(base);
-        _giftEverything(p, s, 777 * DOLLAR, 1_000_000e18);
+        _giftEverything(p, s, 300 * DOLLAR, 1_000_000e18);
         p.finisher.openPool();
         p.finisher.settle();
         p.finisher.sweep();
@@ -589,7 +704,7 @@ abstract contract AttackM3FinishBase is AttackM3Common {
         // what was given to the Finisher, the Treasury and the position manager (which hands its whole balance back to the strategy
         // as leftover, and the strategy to the Finisher) is split with the sale money; the rest stays where it was given
         assertEq(
-            b.arrived - a.arrived, 3 * 777 * DOLLAR, "only the gifts that reach the Finisher or the Treasury are split"
+            b.arrived - a.arrived, 3 * 300 * DOLLAR, "only the gifts that reach the Finisher or the Treasury are split"
         );
         assertTrue(b.closed);
         assertGe(
@@ -717,11 +832,14 @@ abstract contract AttackM3MarketBase is AttackM3Common {
         _toEnd(s);
         vm.roll(s.endBlock + 1);
         bool graduated = s.auction.isGraduated();
+        uint256 raised = s.auction.currencyRaised();
+        // a gift to the Finisher of more than half the pool's budget (11 of each 100 raised) makes the pool step look as if it
+        // took too little (`test_measured_aGiftOfMoreThanHalfThePoolsBudgetHidesARealPool`), so the fuzzed gift stays under 40% of it
         uint256 gift = uint256(giftDollars) * DOLLAR;
+        if (gift > raised * 22 / 100 * 40 / 100) gift = raised * 22 / 100 * 40 / 100;
         usd.mint(address(p.finisher), gift);
         usd.mint(address(p.treasury), gift);
         _finishOrFail(p, s);
-        uint256 raised = s.auction.currencyRaised();
         if (!graduated) {
             assertEq(usd.balanceOf(platform), 0, "a failed sale pays no fee");
             assertEq(p.treasury.spendable() + p.treasury.melting(), 0, "and splits nothing");
@@ -732,10 +850,13 @@ abstract contract AttackM3MarketBase is AttackM3Common {
         assertApproxEqAbs(pool, raised * 22 / 100, 1500 + raised / 1_000_000, "22% of the raise in the pool");
         uint256 sp = p.treasury.spendable();
         uint256 fl = p.treasury.melting();
+        // the pool's liquidity rounds, so what the pool leaves behind is the budget's rounding (a few thousandths of a dollar, and
+        // about 3 in a billion of a very large raise: a counterexample at a 1.3-million-dollar raise was 0.004 dollars off)
+        uint256 dust = 2000 + raised / 100_000_000;
         assertLe(
-            sp * 100, raised * 15 + 2 * gift * 20 + 2000 * 100, "the founder never gets more than 15% of the raise"
+            sp * 100, raised * 15 + 2 * gift * 20 + dust * 100, "the founder never gets more than 15% of the raise"
         );
-        assertGe(fl * 100 + 2000 * 100, raised * 60 + 2 * gift * 80, "the floor never gets less than 60% of the raise");
+        assertGe(fl * 100 + dust * 100, raised * 60 + 2 * gift * 80, "the floor never gets less than 60% of the raise");
         assertEq(usd.balanceOf(address(p.finisher)), 0, "nothing stays in the Finisher");
         assertEq(usd.balanceOf(strategy), 0, "nothing stays in the strategy");
         assertLe(p.treasury.unaccounted(), 2, "nothing unsplit in the Treasury");

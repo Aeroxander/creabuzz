@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
+import {Vm} from "forge-std/Vm.sol";
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {Math} from "oz5/utils/math/Math.sol";
 import {ForkGate} from "./ForkGate.sol";
@@ -82,6 +83,28 @@ abstract contract Platform is ForkGate {
         uint64 endBlock;
     }
 
+    /// @dev The one log `emitter` wrote with event `sig`; fails if there are none or several.
+    function _one(Vm.Log[] memory logs, address emitter, bytes32 sig) internal pure returns (Vm.Log memory found) {
+        uint256 n;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == emitter && logs[i].topics.length != 0 && logs[i].topics[0] == sig) {
+                found = logs[i];
+                ++n;
+            }
+        }
+        require(n == 1, string.concat("expected exactly one log, found ", vm.toString(n)));
+    }
+
+    function _count(Vm.Log[] memory logs, address emitter, bytes32 sig) internal pure returns (uint256 n) {
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == emitter && logs[i].topics.length != 0 && logs[i].topics[0] == sig) ++n;
+        }
+    }
+
+    function _addr(bytes32 topic) internal pure returns (address) {
+        return address(uint160(uint256(topic)));
+    }
+
     /// @dev Call first in `setUp`. Returns false when the fork mode was asked for and cannot run (tests skip).
     function _setUpPlatform(bool fork) internal returns (bool) {
         onFork = fork;
@@ -122,7 +145,7 @@ abstract contract Platform is ForkGate {
         factory = deployer.auctionFactory(feeController);
         strategy = deployer.strategy(positionManager, poolManager, factory);
         guard = deployer.guard(poolManager, strategy);
-        minBid = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(4)));
+        minBid = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(4), uint64(720)));
         launcher =
             Launcher(deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), strategy, guard, minBid)));
         holder = LiquidityHolder(launcher.holder());

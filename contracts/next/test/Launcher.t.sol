@@ -273,16 +273,20 @@ contract LauncherTest is Base {
         assertEq(launcher.raiseFeeRecipient(), platform);
     }
 
-    function test_constructor_theBidRulesMustBeOneDollarAndFourTimes() public {
-        address noMin = deployCode("MinBid.sol:MinBid", abi.encode(uint128(0), uint256(4)));
-        address smallMin = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e5), uint256(4)));
-        address noCap = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(0)));
-        address bigCap = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(40)));
-        address[4] memory bad = [noMin, smallMin, noCap, bigCap];
+    function test_constructor_theBidRulesMustBeOneDollarFourTimesAndAClosingWindow() public {
+        address noMin = deployCode("MinBid.sol:MinBid", abi.encode(uint128(0), uint256(4), uint64(720)));
+        address smallMin = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e5), uint256(4), uint64(720)));
+        address noCap = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(0), uint64(720)));
+        address bigCap = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(40), uint64(720)));
+        address noWindow = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(4), uint64(0)));
+        address shortWindow = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(4), uint64(719)));
+        address longWindow = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(4), uint64(721)));
+        address[7] memory bad = [noMin, smallMin, noCap, bigCap, noWindow, shortWindow, longWindow];
         for (uint256 i; i < bad.length; ++i) {
             vm.expectRevert(Launcher.BadStack.selector);
             deployCode("Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, GUARD, bad[i]));
         }
+        assertEq(launcher.BID_CLOSING_BLOCKS(), 720);
     }
 
     function test_thePlatformStackIsFixedAndNoSettingReachesIt() public view {

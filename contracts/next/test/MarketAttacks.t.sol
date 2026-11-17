@@ -454,9 +454,10 @@ abstract contract MarketAttacksBase3 is Platform {
 
     // ============================================== the founder bids in their own sale ===============================
 
-    /// @dev The founder can bid through a second account. The 4-times cap limits the damage, it does not prevent it. For three sizes
-    /// of founder bid, against 10,000 dollars of honest demand: how far the price goes, what the honest bidders get, what the founder
-    /// ends with, and what it cost the founder.
+    /// @dev The founder can bid through a second account. The 4-times rule limits what ONE BLOCK of bids can do (every bid here is placed
+    /// in the first block of the sale, when the price is the floor), not how far the price can go over several blocks: see the ladder
+    /// test below. For three sizes of founder bid, against 10,000 dollars of honest demand: how far the price goes in that one block,
+    /// what the honest bidders get, what the founder ends with, and what it cost the founder.
     function test_attack_theFounderBidsInTheirOwnSale_measured() public {
         uint256[4] memory founderBids = [uint256(0), 5000 * DOLLAR, 20_000 * DOLLAR, 100_000 * DOLLAR];
         uint256 honestSharesBase;
@@ -509,9 +510,61 @@ abstract contract MarketAttacksBase3 is Platform {
             assertLe(
                 finalPrice,
                 4 * s.floorQ96 + 4 * s.tickQ96,
-                "the 4-times cap bounds how far one account can pull the price"
+                "within one block the 4-times rule bounds how far one account can pull the price (it is against the price of that block)"
             );
         }
+    }
+
+    /// @dev The rule is "4 times the clearing price AT THE TIME OF THE BID", not 4 times the floor. Bids placed some blocks apart can each
+    /// name 4 times the price the one before set. A founder's second account places four such bids, 20 blocks apart and well before the
+    /// closing window, each sized to buy every Share still to be sold at its top price, and the price climbs far past 4 times the floor.
+    /// What stops it is what it costs: the Shares are bought at the lifted price, and 25 of each 100 spent (the platform's 3 and the pool's
+    /// 22) never come back. Measured here; the report and the plan state this rule.
+    function test_attack_aLadderOfBidsClimbsFarPastFourTimesTheFloor_measured() public {
+        Proj memory p = _launch(founder, keccak256("ladder"));
+        Sale memory s = _open(p, Launcher.Size.Standard);
+        vm.roll(s.startBlock);
+        uint256 honestBid = _bid(s, alice, 10_000 * DOLLAR, 300);
+        address second = makeAddr("founder's second account");
+        uint256 spentIn;
+        uint256[4] memory ids;
+        uint256[4] memory multiples; // the price at the next block, in hundredths of the floor
+        for (uint256 step; step < 4; ++step) {
+            vm.roll(s.startBlock + 100 + 20 * step);
+            s.auction.checkpoint();
+            uint256 c = s.auction.clearingPrice();
+            uint256 maxPrice = s.floorQ96 + ((4 * c - s.floorQ96) / s.tickQ96) * s.tickQ96;
+            uint256 amount = (maxPrice * ((s.endBlock - block.number) * 60_000e18) >> 96) * 3 + DOLLAR;
+            _fund(second, amount, s);
+            ids[step] = s.auction.nextBidId();
+            vm.prank(second);
+            s.auction.submitBid(maxPrice, uint128(amount), second, s.floorQ96, "");
+            spentIn += amount;
+            vm.roll(block.number + 1);
+            s.auction.checkpoint();
+            multiples[step] = s.auction.clearingPrice() * 100 / s.floorQ96;
+            emit log_named_uint(
+                string.concat("ladder: price after step ", vm.toString(step + 1), ", hundredths of the floor"),
+                multiples[step]
+            );
+        }
+        assertGt(multiples[0], 380, "the first bid lifts the price to about 4 times the floor");
+        assertGt(multiples[1], 1500, "the second names 4 times THAT price: about 16 times the floor");
+        assertGt(multiples[3], 4 * 6000, "after four steps the price is above 240 times the floor, not capped at 4");
+        _toEnd(s);
+        _finish(p, s);
+        (uint256 refund,) = _collectBid(s, ids[0]);
+        uint256 spent;
+        for (uint256 i = 1; i < 4; ++i) {
+            (uint256 r,) = _collectBid(s, ids[i]);
+            refund += r;
+        }
+        spent = spentIn - refund;
+        _collectBid(s, honestBid);
+        emit log_named_uint("ladder: dollars raised", s.auction.currencyRaised());
+        emit log_named_uint("ladder: dollars the second account spent net of refunds", spent);
+        emit log_named_uint("ladder: dollars in the pool", usd.balanceOf(poolManager));
+        assertGt(spent * 25 / 100, 0);
     }
 }
 

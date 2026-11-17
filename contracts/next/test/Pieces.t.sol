@@ -145,7 +145,7 @@ abstract contract PiecesBase is SaleBase {
 
     function test_minBid_withoutTheHookDustAndExtremePricesGoIn() public {
         // Control: the same sale with a permissive hook accepts what the real one refuses.
-        minBid = new MinBid(0, 0); // the sale below takes its hook from `minBid`
+        minBid = new MinBid(0, 0, 0); // the sale below takes its hook from `minBid`
         Sale memory s = _openSale(_standard());
         vm.roll(s.startBlock);
         _fund(alice(), 10e6, s);

@@ -31,6 +31,8 @@ contract QuoteToken {
     mapping(address => bool) public hooked;
     /// @notice Addresses the token refuses to send to or from (a frozen address, as a real stablecoin can have).
     mapping(address => bool) public blocked;
+    /// @notice A blocked address makes a transfer return false (and move nothing) instead of reverting, as some tokens do.
+    bool public blockedReturnsFalse;
 
     /// @notice One armed call-back: when dollars are sent to `callbackOn`, the token calls `callbackTarget` with `callbackData`
     /// (a stand-in for a token that calls back into a contract that is in the middle of a call) and records how it went.
@@ -70,6 +72,10 @@ contract QuoteToken {
         blocked[who] = on;
     }
 
+    function setBlockedReturnsFalse(bool on) external {
+        blockedReturnsFalse = on;
+    }
+
     function approve(address spender, uint256 value) external returns (bool) {
         allowance[msg.sender][spender] = value;
         emit Approval(msg.sender, spender, value);
@@ -95,7 +101,10 @@ contract QuoteToken {
 
     function _transfer(address from, address to, uint256 value) private returns (bool) {
         if (alwaysFalse) return false;
-        if (blocked[from] || blocked[to]) revert("blocked");
+        if (blocked[from] || blocked[to]) {
+            if (blockedReturnsFalse) return false;
+            revert("blocked");
+        }
         uint256 extra = value * senderFeeBps / 10_000;
         if (balanceOf[from] < value + extra) {
             if (falseOnFail) return false;

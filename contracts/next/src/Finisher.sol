@@ -25,7 +25,8 @@ import {
 /// The finish is three steps. Each can be called by anyone, each is safe to repeat, and each works whoever did the one before:
 ///  1. `openPool`: run the strategy's pool step if nobody has. The strategy swallows a failure inside that step and reports
 ///     success, so nothing here believes an event or the strategy's say-so: step 2 reads the pool itself.
-///  2. `settle`: only if a pool exists at the guarded key and holds liquidity, send every dollar that came back from the
+///  2. `settle`: only if this sale's pool exists (liquidity at the guarded key, and the pool step took this sale's money: see
+///     `poolIsOpen`), send every dollar that came back from the
 ///     strategy to the Treasury, mark the pool open (the Vester's clock starts) and split the money 15 : 60, all in one
 ///     transaction. Nobody can split a part of the money first, because the Treasury refuses to split until the pool is
 ///     marked open and the money is only ever sent in this same call.
@@ -45,6 +46,10 @@ contract Finisher {
         Failed, // the sale did not reach its minimum: everyone was refunded and a new sale may open after `retryBlock`
         Abandoned // no pool ever opened: the money went to the floor, exits are open
     }
+
+    /// @notice The least share of the pool's dollar budget, in percent, the pool step must have taken for the pool to count as
+    /// this sale's. A real pool takes all of it to the unit; a pool made by somebody else takes none.
+    uint256 public constant MIN_TAKEN_PERCENT = 50;
 
     /// @notice The Launcher that made this project; the only caller of `initialize` and `open`.
     address public immutable launcher;
@@ -81,11 +86,20 @@ contract Finisher {
     event PoolStep(address indexed auction, bool poolOpen);
     /// @notice Step 2: the money reached the Treasury and was split, and the pool was marked open.
     event Settled(address indexed auction, uint256 raised, uint256 afterFee, uint256 toTreasury);
+    /// @notice Step 2: the sale's pool, as it stands when the money is split. `poolId` is the pool's id at the pool manager,
+    /// `sqrtPriceX96` its price right then, `poolDollars` and `poolShares` what the pool step put into it. The two amounts are the
+    /// auction's raise after the fee less the dollars that came back to this contract, and the pool reserve less the Shares that came
+    /// back; they read low if somebody sent dollars or Shares to this contract before step 2. Always emitted by `settle`, even when
+    /// a stranger ran the pool step directly (then there is no `PoolStep`). The position's token id is not here: the position
+    /// manager's own `Transfer` to the LiquidityHolder in the pool step's transaction names it.
+    event PoolOpened(
+        address indexed auction, bytes32 poolId, uint160 sqrtPriceX96, uint256 poolDollars, uint256 poolShares
+    );
     /// @notice Step 3: Shares went to the Treasury and the sale was marked closed.
     event Swept(address indexed auction, uint256 sharesToTreasury);
     /// @notice The sale did not reach its minimum; a new sale may open from `retryBlock`.
     event SaleFailed(address indexed auction, uint64 retryBlock);
-    /// @notice Seven days after the sale ended no pool existed: the money went to the floor and exits opened.
+    /// @notice Seven days after the sale ended no pool of this sale existed: the money went to the floor and exits opened.
     event Abandoned(address indexed auction, uint256 toFloorOnly, uint256 split);
 
     /// @notice The caller is not the Launcher.
@@ -100,7 +114,7 @@ contract Finisher {
     error WrongStage();
     /// @notice The pool step has not run, so the money has not come back from the strategy yet.
     error PoolStepNotRun();
-    /// @notice No pool exists at the guarded key, or it holds no liquidity, so the money is not split.
+    /// @notice This sale's pool does not exist: nothing is at the guarded key, or what is there did not take this sale's money.
     error NoPool();
     /// @notice The sale did not reach its minimum: there is nothing to settle (its Shares come back with `sweep`).
     error SaleDidNotGraduate();
@@ -180,7 +194,7 @@ contract Finisher {
         return true;
     }
 
-    /// @notice Step 2. Needs step 1. If a pool exists at the guarded key and holds liquidity, send the Treasury every dollar the
+    /// @notice Step 2. Needs step 1. If this sale's pool exists (`poolIsOpen`), send the Treasury every dollar the
     /// strategy returned, mark the pool open and split the money 15 : 60, in this one transaction. Refuses otherwise, and
     /// leaves nothing half done. Returns false when already done.
     /// @dev The dollars that come back are the raise after the platform's 3 less what the pool took; the auction's own report
@@ -199,6 +213,15 @@ contract Finisher {
         uint256 held = quote.balanceOf(address(this));
         if (held < least) revert MoneyMissing(held, least);
         settled = true;
+        uint256 sharesBack = shares.balanceOf(address(this));
+        bytes32 poolId = _poolId();
+        emit PoolOpened(
+            address(a),
+            poolId,
+            PoolRead.sqrtPrice(poolManager, poolId),
+            held < afterFee ? afterFee - held : 0,
+            sharesBack < SaleParams.POOL_SHARES ? SaleParams.POOL_SHARES - sharesBack : 0
+        );
         quote.safeTransfer(address(treasury), held);
         treasury.markPoolOpen();
         uint256 arrived = treasury.unaccounted();
@@ -233,8 +256,8 @@ contract Finisher {
         return true;
     }
 
-    /// @notice The way out when no pool ever opens. Seven days after the sale ended (50,400 blocks), if no pool exists at the
-    /// guarded key, anyone may call this. It runs the pool step first if nobody has (if that makes the pool, the call reverts
+    /// @notice The way out when no pool ever opens. Seven days after the sale ended (50,400 blocks), if this sale's pool does
+    /// not exist (`poolIsOpen`), anyone may call this. It runs the pool step first if nobody has (if that makes the pool, the call reverts
     /// `PoolExists` and the normal finish applies). Then, in one transaction: the dollars that came back go to the Treasury, the
     /// sale is marked abandoned (the Vester's clock starts), the 22 of each 100 raised that was meant for the pool go wholly
     /// into the melting floor and the rest is split 15 : 60, so of each 100 raised 15 are spendable and 82 are floor (3 went to the
@@ -266,17 +289,21 @@ contract Finisher {
 
     // ================================================ reading ========================================================
 
-    /// @notice True when the project's pool exists: the pool manager holds liquidity at the key whose hook is the
-    /// platform's guard, and that guard names the strategy as the only address that may create the pool. Read from the pool
-    /// manager's storage, never from an event.
+    /// @notice True when THIS SALE's pool exists. Before step 2 that means two things, both read from the pool manager and the
+    /// auction, never from an event: the key whose hook is the platform's guard holds liquidity (and the guard names the strategy
+    /// as the only creator), AND the pool step took this sale's money, that is, at least half of the pool's budget of dollars is
+    /// missing from what the strategy returned to this contract. The second part is what tells the sale's own pool from a pool
+    /// somebody else made at the same key through the strategy (the strategy lets any holder of the project's Shares do that once
+    /// a failed pool step has freed the key): such a pool takes none of this sale's money, because a failed step returns all of
+    /// it. After step 2 it is true until the sale is abandoned or never opened.
+    /// @dev What a stranger can still do: send dollars to this contract before step 2, which makes a real pool look as if it
+    /// took less. It needs more than half of the pool's budget (more than 11 of each 100 dollars the pool holds) and the dollars
+    /// become the project's.
     function poolIsOpen() public view returns (bool) {
-        try IPinnedGuard(guard).authorized() returns (address creator) {
-            if (creator != address(strategy)) return false;
-        } catch {
-            return false;
-        }
-        // liquidity in a pool means the pool was created (a pool nobody created has none), so this is the only read needed
-        return PoolRead.liquidity(poolManager, _poolId()) != 0;
+        Stage s = stage;
+        if (s == Stage.Done) return true;
+        if (s != Stage.Open) return false;
+        return settled || (poolAtTheKey() && _poolTookTheMoney());
     }
 
     /// @notice The block from which `abandon` is allowed for the current sale.
@@ -297,6 +324,36 @@ contract Finisher {
     }
 
     // ================================================ plumbing =======================================================
+
+    /// @notice True when a pool exists at this project's key whose hook is the platform's guard, that guard names the strategy as
+    /// the only creator, and the pool holds liquidity (a pool nobody created has none). It does not say whose pool it is: after a
+    /// failed pool step a holder of the project's Shares can make one through the strategy. `poolIsOpen` is the answer that
+    /// counts.
+    function poolAtTheKey() public view returns (bool) {
+        try IPinnedGuard(guard).authorized() returns (address creator) {
+            if (creator != address(strategy)) return false;
+        } catch {
+            return false;
+        }
+        return PoolRead.liquidity(poolManager, _poolId()) != 0;
+    }
+
+    /// @dev The pool step keeps what the pool takes and returns the rest of the raise (after the fee) to this contract; a failed
+    /// step returns all of it. So the dollars missing from what this contract holds are what the pool took. `MIN_TAKEN_PERCENT`
+    /// of the pool's budget is the least that counts.
+    function _poolTookTheMoney() private view returns (bool) {
+        IPinnedAuction a = IPinnedAuction(auction);
+        uint256 afterFee;
+        try a.lbpInitializationParams() returns (LBPInitializationParams memory p) {
+            afterFee = p.currencyRaised;
+        } catch {
+            return false;
+        }
+        uint256 held = quote.balanceOf(address(this));
+        uint256 took = held >= afterFee ? 0 : afterFee - held;
+        uint256 budget = afterFee * SaleParams.POOL_RATE / SaleParams.RATE_SCALE;
+        return took * 100 >= budget * MIN_TAKEN_PERCENT;
+    }
 
     function _poolId() private view returns (bytes32) {
         return PoolRead.id(poolKey());

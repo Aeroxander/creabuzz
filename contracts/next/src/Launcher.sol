@@ -55,7 +55,7 @@ interface IOwned {
 /// @dev Deploying a Launcher needs the platform's stack to exist already: the fee controller, the auction factory, the
 /// strategy (at a mined address), the pool guard (at a mined address) and the bid hook. The constructor checks that they fit
 /// each other and refuses otherwise, so a Launcher cannot exist with an unguarded sale, a changeable fee, or a bid hook other
-/// than 1 dollar and a 4 times cap.
+/// than 1 dollar, a 4 times cap and a closing window of 720 blocks.
 contract Launcher {
     using Clones for address;
 
@@ -115,8 +115,12 @@ contract Launcher {
     uint256 public constant RAISE_FEE_PIPS = 30_000;
     /// @notice The smallest bid: 1 dollar in raw units.
     uint128 public constant MIN_BID = 1e6;
-    /// @notice The highest top price a bid may name, as a multiple of the price at the time.
+    /// @notice The highest top price a bid may name, as a multiple of the clearing price AT THE TIME OF THAT BID (not of the floor
+    /// price: bids some blocks apart can each name four times the price the one before set, so the price can climb 4x, 16x, 64x;
+    /// what limits that is its cost, 25 of every 100 spent is gone for good).
     uint256 public constant MAX_PRICE_MULTIPLE = 4;
+    /// @notice No bids in the last 720 blocks of a sale (see `MinBid`).
+    uint64 public constant BID_CLOSING_BLOCKS = SaleParams.BID_CLOSING_BLOCKS;
     /// @dev The price grid is one hundredth of the floor price, so the floor is tick 100 and the 4-times cap is tick 400.
     uint256 private constant TICKS_IN_FLOOR = 100;
     /// @dev Uniswap v4 reads a hook's permissions from the low 14 bits of its address; the pool guard asks for exactly
@@ -207,7 +211,7 @@ contract Launcher {
     /// @param initial The first settings.
     /// @param strategy_ The pool strategy every sale will use (mined to a hook address).
     /// @param poolGuard_ The pool guard that is the hook of every project's pool (mined to a hook address).
-    /// @param minBid_ The bid hook: 1 dollar minimum, 4 times cap.
+    /// @param minBid_ The bid hook: 1 dollar minimum, 4 times cap on the price at the time of the bid, no bids in the last 720 blocks.
     constructor(address admin_, Settings memory initial, address strategy_, address poolGuard_, address minBid_) {
         if (strategy_ == address(0) || strategy_.code.length == 0 || minBid_.code.length == 0) revert BadStack();
         // the guard: a contract at an address that asks for exactly the `beforeInitialize` bit, naming the strategy as the
@@ -235,6 +239,7 @@ contract Launcher {
         if (
             IPinnedMinBid(minBid_).minAmount() != MIN_BID
                 || IPinnedMinBid(minBid_).maxPriceMultiple() != MAX_PRICE_MULTIPLE
+                || IPinnedMinBid(minBid_).closingBlocks() != BID_CLOSING_BLOCKS
         ) {
             revert BadStack();
         }

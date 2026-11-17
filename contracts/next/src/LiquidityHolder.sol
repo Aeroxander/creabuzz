@@ -24,9 +24,13 @@ import {IPinnedPositionManager, PoolKey} from "./Pinned.sol";
 ///    contract cannot protect against; and a dollar token that freezes the platform's address makes the platform's half wait
 ///    in `owed` (the project's half and the burn go through).
 /// @dev One per Launcher, made in its constructor, so `launcher` is the contract that made this one. A position counts only if
-/// its pool has the platform's guard as its hook and one of its currencies is a real project's Shares. Only the strategy can
-/// create a pool with that hook, and only for a sale this platform's Launcher opened, so the fee, the tick spacing and the dollar
-/// token are the project's own by construction; an NFT of any other pool that is sent here is a gift that nobody can use.
+/// its pool has the platform's guard as its hook and one of its currencies is a real project's Shares (the Launcher knows
+/// which Treasury they belong to). The guard lets only the strategy create such a pool, but the strategy is open: any holder
+/// of any token can have it create a guarded pool for that token, and a holder of a project's Shares can do so at the
+/// project's own key once that key is free. So a guarded pool is not proof of a sale this platform opened: the check that the
+/// pool is a project's, by its Shares, is the one that matters, and a position of any other pool is a gift nobody can use. What a
+/// stranger's position in a project's guarded pool can do is earn fees that this contract splits like any other; it cannot reach
+/// anyone else's money.
 contract LiquidityHolder {
     using SafeERC20 for IERC20;
 
@@ -120,16 +124,16 @@ contract LiquidityHolder {
         emit OwedSent(token, to, amount);
     }
 
-    /// @dev The project a position belongs to. The pool's hook must be the platform's guard: only the strategy can create such a
-    /// pool, and only for a sale this platform's Launcher opened, so one of its two currencies is that project's Shares and the other
-    /// its dollar token, and the fee and tick spacing are the Launcher's. (A removal run showed a separate "exactly one side is a
-    /// project's Shares" check could never be reached without a guarded pool, so there is none.)
+    /// @dev The project a position belongs to. The pool's hook must be the platform's guard, and one of its two currencies must be
+    /// a project's Shares (the other side is then taken to be its dollar token). A guarded pool of a stranger's own tokens exists
+    /// (the strategy builds guarded pools for anyone), so the second check is reachable and has its own test.
     function _project(PoolKey memory key) private view returns (address treasury, address sharesToken, address quote) {
         if (key.hooks != guard) revert UnknownProject();
         address t0 = ILauncherView(launcher).treasuryOfShares(key.currency0);
         (treasury, sharesToken, quote) = t0 != address(0)
             ? (t0, key.currency0, key.currency1)
             : (ILauncherView(launcher).treasuryOfShares(key.currency1), key.currency1, key.currency0);
+        if (treasury == address(0)) revert UnknownProject();
     }
 
     /// @dev A token that refuses a transfer (a frozen address) must not stop the project's half or the burn.

@@ -9,8 +9,9 @@ import {MockGuard, NotAGuard} from "./mocks/MockGuard.sol"; // built here so `de
 import {Finisher} from "../src/Finisher.sol";
 import {PoolKey} from "../src/Pinned.sol";
 
-/// @notice What the Finisher counts as "the project's pool". Its answer is the one thing that lets money be split and the
-/// Vester's clock start, so each part of it is tried alone, against a Finisher built by hand around a guard the test controls
+/// @notice What the Finisher counts as "a pool at the project's key" (`poolAtTheKey`), the first of the two parts of "the project's
+/// pool" (`poolIsOpen`; the second, that the pool step took this sale's money, is tried on a whole sale in `AttackM3.t.sol` and
+/// `FinishAttacks.t.sol`). Its answer is one of the two things that let money be split and the Vester's clock start, so each part of it is tried alone, against a Finisher built by hand around a guard the test controls
 /// (the Launcher never builds one with a wrong guard, so only a hand-built one can show what each check does).
 abstract contract FinisherPoolBase is Platform {
     int24 internal constant FULL_LOWER = -887_200;
@@ -59,6 +60,7 @@ abstract contract FinisherPoolBase is Platform {
 
     function test_poolIsOpen_noPoolIsNoPool() public {
         Finisher f = _finisherWith(guard);
+        assertFalse(f.poolAtTheKey());
         assertFalse(f.poolIsOpen());
     }
 
@@ -67,14 +69,14 @@ abstract contract FinisherPoolBase is Platform {
         _makePool(f, false, strategy);
         assertGt(_sqrtPrice(f.poolKey()), 0, "the pool exists and has a price");
         assertEq(_poolLiquidity(f.poolKey()), 0);
-        assertFalse(f.poolIsOpen(), "a pool nobody can trade in is not the project's pool");
+        assertFalse(f.poolAtTheKey(), "a pool nobody can trade in is not the project's pool");
     }
 
     function test_poolIsOpen_aPoolWhoseGuardNamesSomeoneElseIsNoPool() public {
         Finisher f = _finisherWith(_guardNaming(address(this), 3)); // this test is the one creator the guard allows
         _makePool(f, true, address(this));
         assertGt(_poolLiquidity(f.poolKey()), 0, "the pool has price and liquidity");
-        assertFalse(f.poolIsOpen(), "but its guard does not name the platform's strategy as the only creator");
+        assertFalse(f.poolAtTheKey(), "but its guard does not name the platform's strategy as the only creator");
     }
 
     function test_poolIsOpen_aGuardThatIsNotAGuardIsNoPool() public {
@@ -82,14 +84,15 @@ abstract contract FinisherPoolBase is Platform {
         deployCodeTo("MockGuard.sol:NotAGuard", "", notGuard);
         Finisher f = _finisherWith(notGuard);
         assertFalse(
-            f.poolIsOpen(), "a hook with no authorized() is refused rather than trusted, and the call does not revert"
+            f.poolAtTheKey(), "a hook with no authorized() is refused rather than trusted, and the call does not revert"
         );
     }
 
-    function test_poolIsOpen_aPoolWithPriceLiquidityAndTheRightGuardIsThePool() public {
+    function test_poolIsOpen_aPoolWithPriceLiquidityAndTheRightGuardIsAPoolAtTheKeyButNotYetTheSalesPool() public {
         Finisher f = _finisherWith(guard); // the platform's own guard, as every project has
         _makePool(f, true, strategy);
-        assertTrue(f.poolIsOpen());
+        assertTrue(f.poolAtTheKey());
+        assertFalse(f.poolIsOpen(), "a pool at the key is not yet this sale's pool: no sale took any money into it");
     }
 
     function test_poolIsOpen_aPoolAtAnotherKeyIsNotThisProjectsPool() public {
@@ -102,7 +105,7 @@ abstract contract FinisherPoolBase is Platform {
         PoolKey memory plain = f.poolKey();
         plain.hooks = address(0);
         IPoolManagerTest(poolManager).initialize(plain, uint160(1) << 96);
-        assertFalse(f.poolIsOpen());
+        assertFalse(f.poolAtTheKey());
     }
 }
 

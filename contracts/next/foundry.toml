@@ -39,7 +39,7 @@ compilation_restrictions = [
   { paths = "lib/openzeppelin-contracts/**", version = "=0.8.37", optimizer_runs = 200 },
   # The milestone 3 test files and their base, built like the code they test: with the optimizer at 200 runs the large via-IR test
   # functions compile where the 11,111-run setting runs out of stack in one of them.
-  { paths = "test/{Life,LifeFuzz,LifeInvariants,FinishAttacks,FinisherPool,SaleRules,MarketAttacks,LiquidityHolder,GasM3,TreasuryAbandon}.t.sol", version = "=0.8.37", optimizer_runs = 200 },
+  { paths = "test/{Life,LifeFuzz,LifeInvariants,FinishAttacks,FinishEvents,FinisherPool,SaleRules,MarketAttacks,LiquidityHolder,GasM3,TreasuryAbandon}.t.sol", version = "=0.8.37", optimizer_runs = 200 },
   { paths = "test/helpers/{Platform,LifeHandler}.sol", version = "=0.8.37", optimizer_runs = 200 },
 ]
 additional_compiler_profiles = [{ name = "own", optimizer_runs = 200 }]

@@ -115,12 +115,14 @@ interface IPinnedFeeController {
     function protocolFeeRecipient() external view returns (address);
 }
 
-/// @notice The bid hook's two settings (our `MinBid`).
+/// @notice The bid hook's three settings (our `MinBid`).
 interface IPinnedMinBid {
     /// @notice The smallest accepted bid in raw dollar units.
     function minAmount() external view returns (uint128);
     /// @notice The top-price limit as a multiple of the clearing price.
     function maxPriceMultiple() external view returns (uint256);
+    /// @notice No bid is accepted in the last this-many blocks of the sale.
+    function closingBlocks() external view returns (uint64);
 }
 
 /// @notice The one pool-manager function used: a raw read of its storage (v4-core `Extsload`).
@@ -177,6 +179,9 @@ library PoolRead {
 library SaleParams {
     /// @notice The auction runs 7,200 blocks: 24 hours at 12 seconds a block (the length of a Sepolia or Ethereum slot).
     uint64 internal constant SALE_BLOCKS = 7200;
+    /// @notice No bids in the last 720 blocks of the sale: a tenth of it, 2.4 hours at 12 seconds. A bid placed this early must pay
+    /// any price it lifts on every block until the end, which costs more than the pool is worth (`MinBid` explains why it exists).
+    uint64 internal constant BID_CLOSING_BLOCKS = 720;
     /// @notice Pool trading fee: 1% in v4's hundredths of a basis point.
     uint24 internal constant POOL_FEE = 10_000;
     /// @notice Pool tick spacing.

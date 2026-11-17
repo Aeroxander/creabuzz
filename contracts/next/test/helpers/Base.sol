@@ -54,7 +54,7 @@ abstract contract Base is Test {
         usd = new QuoteToken();
         deployCodeTo("MockGuard.sol:MockGuard", abi.encode(STRATEGY), GUARD);
         feeController = deployCode("FixedFeeController.sol:FixedFeeController", abi.encode(platform, uint24(30_000)));
-        minBid = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(4)));
+        minBid = deployCode("MinBid.sol:MinBid", abi.encode(uint128(1e6), uint256(4), uint64(720)));
         address factory = address(new MockFactory(feeController));
         deployCodeTo(
             "MockStrategy.sol:MockStrategy", abi.encode(FAKE_POOL_MANAGER, FAKE_POSITION_MANAGER, factory), STRATEGY
