@@ -178,7 +178,9 @@ contract RoundsHandler is Test {
         vm.prank(b);
         try rd.refund(id) returns (uint256 paid) {
             refunds++;
-            if (pos.settled && paid > own - own * 5 / 100) refundOverpaid = true;
+            // the fee is 5 of each 100, or the platform's 1 after a wind-down
+            uint256 feePct = rd.woundDown() ? 1 : 5;
+            if (pos.settled && paid > own - own * feePct / 100) refundOverpaid = true;
             if (rd.platformOwed() - owed0 > paid / 95 + 1 && !rd.woundDown()) platformOvercharged = true;
             for (uint256 k = 1; k <= rd.count(); ++k) {
                 for (uint256 j; j < N; ++j) {
