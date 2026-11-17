@@ -42,4 +42,31 @@ contract TreasurySeamsTest is RoundsBase {
         vm.expectRevert(Treasury.ReserveSaleState.selector);
         t.closeReserveSale(); // none is out
     }
+
+    /// @dev A reserve sale takes only reserve Shares: never more than the reserve (the rest is the work pot), never nothing, never
+    /// to nobody. The Launcher passes any amount the Council names, so this is the only check.
+    function test_reserveSale_neverMoreThanTheReserve_neverNothing_neverToNobody() public {
+        _world();
+        uint256 left = t.reserve();
+        uint256 pot = t.workPot();
+        vm.startPrank(salePath);
+        vm.expectRevert(abi.encodeWithSelector(Treasury.TooMuch.selector, left + 1, left));
+        t.releaseReserve(salePath, left + 1);
+        vm.expectRevert(Treasury.BadInput.selector);
+        t.releaseReserve(salePath, 0);
+        vm.expectRevert(Treasury.BadInput.selector);
+        t.releaseReserve(address(0), 1);
+        t.releaseReserve(salePath, left);
+        vm.stopPrank();
+        assertEq(shares.balanceOf(address(t)), pot, "the work pot stays");
+    }
+
+    /// @dev "No market" cannot follow a market, even if the Launcher asked.
+    function test_noMarket_neverAfterAMarket_evenFromTheLauncher() public {
+        _market();
+        vm.prank(salePath);
+        vm.expectRevert(Treasury.PoolAlreadyOpen.selector);
+        t.markNoMarket();
+        assertFalse(t.noMarket());
+    }
 }

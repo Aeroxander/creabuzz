@@ -8,6 +8,8 @@ import {Pair} from "../src/Pair.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {Treasury} from "../src/Treasury.sol";
 import {Vester} from "../src/Vester.sol";
+import {IShares} from "../src/Interfaces.sol";
+import {Clones} from "oz5/proxy/Clones.sol";
 
 /// @dev A contract that claims to be a Pair with the founder as a signer, but was not made by the Launcher.
 contract FakePair {
@@ -173,6 +175,53 @@ contract PlanV2M4FixesTest is RoundsBase {
         vm.prank(cosigner);
         vm.expectRevert(Pair.UnknownCall.selector);
         pair.confirm(address(t), data, 0);
+    }
+
+    /// @dev A round that was never opened cannot be closed. Without this a stranger could close the next round's id before the
+    /// Launcher opens it: that round would then take asks for 24 hours but could never be closed, and its backers' dollars could
+    /// never be settled or returned.
+    function test_close_aRoundNeverOpenedIsRefused() public {
+        vm.warp(_now() + 2 days);
+        vm.expectRevert(Rounds.WrongPhase.selector);
+        rd.close(1);
+        uint256 id = _openRound();
+        vm.expectRevert(Rounds.WrongPhase.selector);
+        rd.close(id + 1);
+    }
+
+    /// @dev A dollar token that takes more from the Rounds than it sends is refused (the books would no longer match the money).
+    function test_send_aTokenThatTakesMoreFromTheRoundsThanItSendsIsRefused() public {
+        uint256 id = _openRound();
+        _ask(id, alice, 100 * DOLLAR);
+        usd.setFees(0, 100); // 1% charged to the sender on top
+        vm.prank(alice);
+        vm.expectRevert(Rounds.TokenMisbehaved.selector);
+        rd.lower(id, 40 * DOLLAR);
+    }
+
+    /// @dev A Pair needs two real signers: a seat offered to the Pair of nobody and the cosigner cannot be taken.
+    function test_pair_aSignerMayNotBeNobody() public {
+        address pa = launcher.pairAddress(key, address(0), cosigner);
+        vm.prank(founder);
+        t.handOver(pa, false);
+        vm.prank(cosigner);
+        vm.expectRevert(Pair.BadSetup.selector);
+        launcher.makePair(key, address(0));
+        assertEq(t.runner(), founder);
+    }
+
+    /// @dev The Vester refuses a backer grant to nobody, even from the Rounds.
+    function test_vester_aBackerGrantToNobodyIsRefused() public {
+        vm.prank(rounds);
+        vm.expectRevert(Vester.BadGrant.selector);
+        v.grantHeld(1, address(0), 1);
+    }
+
+    /// @dev A Vester cannot be set up with nobody as the founder.
+    function test_vester_aFounderGrantToNobodyIsRefused() public {
+        Vester fresh = Vester(Clones.clone(launcher.vesterImpl()));
+        vm.expectRevert(Vester.BadGrant.selector);
+        fresh.initialize(IShares(address(shares)), address(this), address(this), address(this), address(0), 1);
     }
 
     // ============================================ R3: the scale-back dust ========================================================
