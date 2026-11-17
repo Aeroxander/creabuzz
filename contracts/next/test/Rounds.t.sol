@@ -261,7 +261,7 @@ contract RoundsTest is RoundsBase {
     function test_refund_thePlansNumbers() public {
         uint256 snap = vm.snapshotState();
         uint256[4] memory weeks_ = [uint256(0), 4, 13, 26];
-        uint256[4] memory want = [uint256(77_900_000), 65_915_385, 38_950_000, 0];
+        uint256[4] memory want = [uint256(77_900_000), 65_915_384, 38_950_000, 0];
         for (uint256 i; i < 4; ++i) {
             vm.revertToState(snap);
             uint256 id = _round(alice, 100 * DOLLAR);
@@ -384,7 +384,7 @@ contract RoundsTest is RoundsBase {
         _live(60 days);
         assertEq(rd.releasable(id), rel, "no release after the wind-down");
         uint256 held = 82e6;
-        uint256 unrel = held - held * 28 / 182;
+        uint256 unrel = held - (held * 28 + 181) / 182; // the released part rounds up against the backer
         uint256 fee = (unrel + 99) / 100;
         assertEq(_refund(id, alice), unrel - fee, "only the platform's 1 is kept");
         assertEq(rd.platformOwed(), 3 * DOLLAR + fee);

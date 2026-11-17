@@ -28,7 +28,8 @@ import {IShares, IVester, ITreasuryRounds} from "./Interfaces.sol";
 ///  - Shares bought are set aside in the Vester as held Shares of that round (released over 365 days from the market or a
 ///    "no market" declaration, like every Share handed out before a market).
 ///  - Refund (personal, per round, any time): the backer takes back their own unreleased money for the Shares still held for
-///    them, less 5% of it (rounded up against the backer; 1% to the platform, 4% to the project's `spendable`), and those
+///    them (its released part rounded up, so the unreleased part rounds down against the backer), less 5% of it (rounded up
+///    against the backer; 1% to the platform, 4% to the project's `spendable`), and those
 ///    held Shares are cancelled (they go to the treasury's reserve). Before a market nothing has been claimed, so it is the
 ///    whole position: per 100 paid, 77.9 on day 0, 65.9 at week 4, 38.95 at week 13, nothing at week 26. After a market the
 ///    refund covers only the Shares still in the Vester for the backer: taking Shares out ends the refund for those Shares.
@@ -294,7 +295,7 @@ contract Rounds {
         uint256 still = total - claimed;
         if (still == 0) revert NothingToRefund();
         uint256 part = still == total ? p.held : p.held * still / total;
-        uint256 released_ = part * _elapsed(r) / RELEASE;
+        uint256 released_ = _releasedUp(part, _elapsed(r));
         uint256 unreleased_ = part - released_;
         uint256 feeBps = woundDown ? REFUND_PLATFORM_BPS : REFUND_FEE_BPS;
         uint256 fee = (unreleased_ * feeBps + BPS - 1) / BPS; // rounded up: the backer never pays less than the fee
@@ -381,7 +382,7 @@ contract Rounds {
         uint256 still = total - claimed;
         if (still == 0) return 0;
         uint256 part = still == total ? p.held : p.held * still / total;
-        uint256 unreleased_ = part - part * _elapsed(_rounds[id]) / RELEASE;
+        uint256 unreleased_ = part - _releasedUp(part, _elapsed(_rounds[id]));
         uint256 feeBps = woundDown ? REFUND_PLATFORM_BPS : REFUND_FEE_BPS;
         return unreleased_ - (unreleased_ * feeBps + BPS - 1) / BPS;
     }
@@ -397,6 +398,13 @@ contract Rounds {
     }
 
     // ================================================ plumbing ======================================================
+
+    /// @dev The released part of a position that is taken back, rounded UP (against the backer). The round's release to the
+    /// project rounds the whole round's held money down, so rounding each refunded position's released part up keeps the sum of
+    /// the parts never below what the project was already paid: no raw unit is ever paid twice.
+    function _releasedUp(uint256 part, uint256 elapsed) private pure returns (uint256) {
+        return (part * elapsed + RELEASE - 1) / RELEASE;
+    }
 
     /// @dev Active seconds since round `r` closed, at most 26 weeks.
     function _elapsed(Round storage r) private view returns (uint256) {
