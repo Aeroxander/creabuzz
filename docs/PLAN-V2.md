@@ -378,6 +378,15 @@ network before the Council runner exists; reserve sales; the stake; sponsored fe
    Recommended: yes, with counsel reading section 10 before any real network.
 6. **Build shape:** a new thin web app beside the old one; all five stages in the plan, with the Council contracts
    built at milestone 9 and required before any auction on a real network. Recommended: yes, then say go.
+7. **Founder-set prices** (added 17 November 2026; full design: `docs/next-version/FOUNDER-PRICE.md`). The owner asked
+   for founders to set the price, because Creaton raised at 6 million and will be project zero. Recommended: yes. Each
+   backing round gets its own price for the whole project, from 333,333 to 50,000,000. The price is fixed when the round
+   opens. The box is pre-filled (333,333 for a first round, then the last price), so a solo founder presses nothing extra.
+   Raising the price is one tap (+25% / +50% / x2) with a "what's new" note built from the weekly updates. Prices may also
+   go down; the page shows a warning. The caps stay in dollars. The auction always offers all 250M Shares, the runner picks
+   its starting price (at least 0.0004), and the minimum is what all 250M raise at that price, so a default project keeps
+   exactly 100,000. Creaton opens its rounds at 6,000,000. Its earlier backers get work-pot Shares at the price they paid,
+   held on the same 365-day clock. This replaces "one price for every project, typed by nobody" in sections 4, 5 and 10.
 
 ## What I verified for this plan
 
