@@ -397,3 +397,32 @@ Simulations (plain Python, standard library), all under
 `docs/next-version/econ/`: `plan_v2.py` (this
 plan's own numbers), and the designers' and attacker's `econ.py`, `platform_create.py`, `stage_ladder.py`,
 `attacker.py`. Copied into the repo on 17 November 2026.
+
+## Milestone 4 findings (17 November 2026)
+
+Milestone 4 built sections 4 and 7's money rules in `contracts/next` (report: `docs/next-version/PLANV2-M4-REPORT.md`).
+Where building and measuring showed this plan to be wrong or loose:
+
+1. **Self-bidding is not "a real loss of about 7 to 15 of each 100".** Measured on the real Uniswap stack next to 100,000
+   of honest demand, a founder's second account that bids 50,000 / 100,000 / 300,000 and sells everything into the pool
+   gets back 39.6 / 30.5 / 22.6 of each 100 from the pool at once, and the project receives 75 of each 100 (15 at once, 60
+   into the floor). So the loss at once is 45 to 62 of each 100; but if no holder hands back and the whole floor melts to
+   the runner over a year, the founder side ends 14.6 / 5.5 of each 100 **ahead** at the two smaller sizes (2.4 behind at
+   the largest). The protection is the holders' hand-back against the floor during that year, not the cost.
+2. **The day-45 refund is 58.64 of each 100, not 58.60** (82 x 137/182 x 0.95 = 58.639).
+3. **The auction's floor releases 1,150.68 a week, not 1,154**: the release runs per second over 365 days; the plan divided
+   by 52 weeks.
+4. **Fake demand can use up a project's whole cap.** Refunds do not reopen the cap (otherwise a founder could raise, take
+   the money back through second accounts and raise again without limit). So an outsider who asks far more than the cap and
+   keeps the ask past the 12th hour, then takes the money back, uses up a Solo project's 10,000 for about 22.1 of each 100
+   accepted (2,210 dollars), and honest backers get the same small percent. Owner decision.
+5. **The 1% gift cap measured on Shares in hands compounds slightly**: gifts count once given, so within 30 days the gifts
+   can reach 1/99 of the Shares in hands before them (1.0101%), and the cap grows as held Shares release.
+6. **The Council requirement (D230) and the first election contradict each other on a real network.** The auction needs a
+   Council runner there, but the plan elects the Council's seats from auction buyers after the market opens. As built, no
+   project can open the auction on a real network until milestone 9 says how a Council exists before a market.
+7. **A founder leaving after the market is not trimmed.** The trim ("days served out of 365") is built for before a market
+   only; after it the founder's grant is already on the market clock and a trim would have to undo released Shares.
+   Milestone 9 (Council) should decide.
+8. **Not built here, by scope:** the Team rule "after 28 silent days the second signer takes over", and "agents included" in
+   the 500 a week (each signer has 500 a week; agents keep the Treasury's own daily caps).
