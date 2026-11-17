@@ -275,7 +275,8 @@ sponsored fees without the global cap; later-round sales.
 - Nobody checks that an update is true. The record beside the price is self-reported.
 - The floor can be misread as a guarantee. It melts; the page must draw the melting line.
 - A backer with only a passkey has no dollars on a real network. Not solved here.
-- Founders can bid in their own sale through a second account; the 4-times cap limits it, it does not prevent it.
+- Founders can bid in their own sale through a second account. The 4-times rule is against the price at the time of each bid, not the floor, so bids
+  some blocks apart climb 4x, 16x, 64x, 256x (measured); what limits it is cost, 25 of every 100 spent is gone for good. It limits it, it does not prevent it.
 - A lost passkey is lost Shares until the back-up passkey ships.
 - Existing Sepolia projects and all three contract generations are abandoned. During testnet, a bug in a project's
   treasury copy means relaunching that project.
@@ -419,8 +420,8 @@ plan was wrong or loose:
 - **Section 4, the floor per Share example (48%)**, counting the pool's Shares as the rule says: 49.2% of the opening price for a sale at its goal,
   35.4% when demand lifted the price 3x. Leaving the pool's Shares out would give 60.0% and 40.7%.
 - **Sections 3 and 9, thin pools:** a 100-dollar buy moves a Small pool (880 dollars) up 23.7% and a 2,500-dollar buy multiplies its price by 14.5;
-  at the Standard size 9.2% and 4.5x. A founder's second account can pull the price from 1x to the 4-times cap and leave the other bidders 9% of the Shares
-  their money would have bought, at a cost of 25% of the extra spend.
+  at the Standard size 9.2% and 4.5x. A founder's second account can pull the price to the 4-times limit in one block and leave the other bidders 9% of the Shares
+  their money would have bought, at a cost of 25% of the extra spend. (The fix round below corrects this: over several blocks the price can go far past 4x.)
 - **Section 5, "Launcher: opens the sale", needs a Finisher per project** (one clone each): the strategy returns the money left after the pool to one
   address, and any stranger may run the pool step directly, so only a per-project address can tell whose money it is.
 - **A way out of a pool that never opens was missing.** Seven days (50,400 blocks) after the sale, anyone may abandon: of each 100 raised 3 to the platform,
@@ -431,3 +432,35 @@ plan was wrong or loose:
 - **Gas, measured:** open a sale 4,380,084; start a project and open its sale as one batched call 5,262,795; the three finish steps 766,203, 271,524 and 67,081;
   collect pool fees 262,173; abandon 306,784 (724,725 when it runs the failing pool step itself); deploy the Launcher 7,503,861. The strategy and pool guard are
   found in about 14,000 to 24,000 tries on average (15 and 5 milliseconds with `cast create2`).
+
+## Milestone 3 fix round (17 November 2026)
+
+A reviewer and an attacker-tester went through milestone 3. Nothing in sections 3 and 4 (the split, the fee, the exit rule, the gift rules) was
+changed. Where this plan was wrong or loose, and what was done:
+
+- **Section 5, the bid rules, were wrong about the 4-times cap.** The rule is "a top price of at most 4 times the clearing price at the time of that bid",
+  not 4 times the floor. Bids placed some blocks apart can each name 4 times the price the one before set: a ladder of four bids 20 blocks apart took a
+  Standard sale to 4x, 16x, 64x and 256x the floor (2.5 million dollars spent by the second account, 25 of every 100 of it gone for good). The defence
+  is cost, not the rule. The report and the Launcher say so now. Making the cap absolute (4 times the floor) is an owner decision: it would also limit
+  honest late bidders when demand is real.
+- **A new rule: no bids in the last 720 blocks of a sale** (a tenth of it, 2.4 hours at 12 seconds; `MinBid`, checked by the Launcher's constructor).
+  Reason: the pool opens at the price the sale ends at, and a bid in the last blocks can only buy the last blocks' supply, so a few dollars lifted the
+  final price to the 4-times limit (5.66 dollars for 4x on a 10,000-dollar sale, 493 for 256x), which shrank the pool's Shares and let a holder of cheap Shares
+  take 64% to 99% of the pool's dollars: other bidders' money, and a founder's second account gained 1,909 dollars (21% of the honest raise) that way. With the
+  window, the last bid that counts is 720 blocks before the end and must pay the lifted price on every block after it: the same attack placed at the edge
+  cost more than all the dollars in the pool at every size (1 bid: 1,139 to 14,233 dollars lost on Small to Large, 4 bids: 82,473 to 1,030,916 lost). The cost
+  to honest bidders: they cannot bid or raise a bid in the last 2.4 hours; a sale just under its minimum when the window opens cannot be topped up.
+- **Section 5, "a pool exists", was not enough.** "Liquidity at the guarded key" is also true of a pool someone else makes there through the strategy after a
+  failed pool step (any holder of the project's Shares can). The Finisher now also asks that the pool step took this sale's money: at least half of the pool's
+  dollar budget is missing from what the strategy returned (a failed step returns all of it). After step 2 the answer stays true, so a gift cannot reopen
+  the way out. Limit, measured: dollars sent to the Finisher before step 2 hide a real pool if they are more than half the pool's budget (11 of each 100
+  raised); the sender loses them to the project, and exits still open after seven days.
+- **Section 5, abandon, does not cover everything.** It covers a pool step that never ran and one that failed and was swallowed. It does not cover a
+  dollar token that freezes the fee recipient (the 3%): the auction pays that fee only through the strategy, so the pool step reverts (it is not swallowed),
+  and `abandon` and `openPool` revert with it, for every project at once. Treat a freezable dollar token, and a freezable fee recipient address, as a single point of failure for the platform
+  when the token is chosen.
+- **Events are the contract with the server (milestone 4), so every one is now asserted with its figures**; `Finisher.PoolOpened` (pool id, price, dollars, Shares) is new. `PoolStep` may be
+  missing (a stranger can run the strategy's `migrate` directly), `PoolOpened` and `Settled` come from step 2 always. After an abandon the Treasury's first `Settled` is the
+  floor-only part, followed by the ordinary one.
+- **Still open for the owner:** the sealed reserve (no function takes reserve Shares out of this Launcher), the closing window's length and whether the cap should be absolute, the dollar token, B3.
+

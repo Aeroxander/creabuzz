@@ -37,6 +37,61 @@ What is new, in one line each:
 * **Pinned.sol**: our fixed view of the vendored Uniswap code, with one drift test that fails if upstream moves.
 * **Treasury**: two small additions for the abandoned case (`markAbandoned`, `settleToFloor`). Nothing else changed in what it does.
 
+## Fix round after review (17 November 2026)
+
+A reviewer and an attacker-tester went through this milestone (the report below is the earlier text, corrected where it was wrong). **Two findings
+were real defects; the rest were test gaps, wrong words, or things only the owner can decide.** Each was checked first. Nothing in the split, the
+fee, the exit rule or the gift rules was changed (those are the owner's); nothing was deployed.
+
+| Finding | Real? | What I did |
+|---|---|---|
+| **F1 (blocker)** a few dollars of bids in the last blocks lift the pool's opening price and let a holder of cheap Shares empty the pool | Yes. The tester's numbers (I did not re-run the unfixed code; instead, removing the fix again, entries B01 and F33 below, makes the attack tests fail): Standard sale, 1 spike block cost 5.66 dollars for a 4.0x price and a best dump took 64% of the pool's dollars (profit +409.68); 4 spike blocks cost 493 for 256x and took 99% (+793.52); a founder's second account ended 1,909.43 dollars ahead (21% of the honest raise) | **No bids in the last 720 blocks of a sale** (a tenth of it, 2.4 hours at 12 seconds): `MinBid` has a third setting, the Launcher's constructor refuses a hook that does not have 720. A lifted price now has to be paid on every block after the last bid that counts. The same attack placed at the edge of the window loses money at every size (table below). Option 2 of the finding (abandon when the final price is high) was **not** used: it would also abandon honest sales whose demand rose, and it changes the split. |
+| **F2 / R-01** a pool made by someone else at the project's key after a swallowed failure counts as the project's | Yes (the reviewer's and the tester's reproduction; removing the fix, entry F33, makes the fake-pool tests fail): spendable 19.39% instead of 15.00, floor 77.60% instead of 82, the way out shut (`PoolExists`) for good | `Finisher.poolIsOpen` now needs both: a guarded pool with liquidity at the key **and** that the pool step took this sale's money (at least half of the pool's dollar budget missing from what the strategy returned; a failed step returns all of it). After step 2 it stays true. Tested with the squat (both fail-and-squat flows), the way out after it (15 / 82, Vester clock, exits), and a gift after step 2. |
+| **R-02** the 4-times rule is against the price at the time of each bid, not the floor | Yes, as stated | Reported as it is: "4 times the clearing price at the time of that bid". A ladder test measures 4x, 16x, 64x, 256x (below). The cap is **not** made absolute: that limits honest late bidders, so it is an owner decision (listed below). The Launcher, `MinBid`, the plan and the test comments say the real rule. |
+| **R-03** the events were asserted nowhere | Yes: I deleted `emit Settled`, `Collected` and `SaleOpened` one by one and the old suite passed | `FinishEvents.t.sol` asserts every event of the finish, the sale opening, the failed sale, the way out and a pool step run directly by a stranger, with figures; the holder's `Collected`, `Owed`, `OwedSent` are asserted in its own tests. 17 removals of an `emit` (E01 to E17) each fail a test. New `Finisher.PoolOpened(auction, poolId, sqrtPrice, poolDollars, poolShares)` always comes from step 2. The position's token id is **not** in it: no bounded on-chain way to find it exists (the holder has no callback and scanning is unbounded); it is the position manager's `Transfer(0, holder, id)` in the pool step's transaction. `PoolStep` can be missing (a stranger may call the strategy's `migrate`); the server must not rely on it. |
+| **R-04** abandon does not help when the pool step reverts for good (frozen fee recipient) | Yes. Reproduced here by a test that now stays in the suite: `openPool` and `abandon` revert; `settle` and exits wait | No code fix is possible (the auction pays its 3% only through the strategy). Stated now, and pinned by a test: **abandon covers a pool step that never ran and one that failed and was swallowed, not a frozen fee recipient.** Treat a freezable dollar token and a freezable fee recipient as one point of failure for every project when the token is chosen (owner). |
+| **R-05** the sealed reserve | Yes, already flagged | Owner decision, unchanged: see "What the plan got wrong" point 5. I did not add a function to the Launcher. |
+| **R-06** the branch for a token that answers `false` had no test | Yes: changing it to `if (!ok)` passed all 320 tests | New `QuoteToken` mode and a holder test (the platform's half stays owed and in the holder, `sweepOwed` reverts while frozen and pays after). Removal H12 is caught. |
+| **F2 variant, found while fixing** a guarded pool of a stranger's own token | Reachable (the strategy builds guarded pools for anyone) | The holder's "one side is a project's Shares" check is back, with its own test (earlier removal H02 had called it unreachable; that was wrong, it was only unreachable by the project's own path). |
+
+**What the closing window costs, and what it does not stop.** Honest bidders cannot bid or raise a bid in the last 720 blocks. A sale just under its
+minimum when the window opens cannot be topped up. The price can still rise in the window from bids placed before it (a bid is spent evenly over the
+rest of the sale), so a founder or a rich bidder can still lift the price, but only by paying it on every block. Measured on the local twin: the attacker
+holds 10% of the goal in ordinary Shares and places 1 or 4 spike bids ending at the last block that takes bids, then sells into the new pool the best way
+of 10 sizes. The profit is negative at every size, and the lift alone costs more than all the dollars in the pool.
+
+| Sale | No spike: profit | 1 spike bid at the edge: price, spent, pool dollars taken, profit | 4 spike bids: price, spent, taken, profit |
+|---|---|---|---|
+| Small (4,000) | -126.90 | 4.00x, 1,968.99, 830.34 (72% of a 1,145.52 pool), -1,138.65 | 256x, 103,396.06, 20,922.81, -82,473.25 |
+| Standard (10,000) | -317.24 | 4.00x, 4,922.46, 2,075.84 (72% of 2,863.80), -2,846.62 | 256x, 258,490.16, 52,307.03, -206,183.13 |
+| Large (50,000) | -1,586.21 | 4.00x, 24,612.32, 10,379.20 (72% of 14,319.01), -14,233.12 | 256x, 1,292,450.80, 261,535.13, -1,030,915.67 |
+
+The Standard row also for 2 and 3 spike bids: 16x (-12,330.14) and 64x (-51,052.71). A founder's second account in the Standard sale (honest 9,000, 1,000 of
+ordinary Shares, 4 spike bids) ends **12,997.21 dollars worse off** than the same sale without the attack (before the window: 1,909.43 better off).
+
+**The ladder (R-02), Standard sale, 10,000 honest, a second account placing four bids 20 blocks apart well before the window, each at 4 times the
+price of that block and sized to buy every Share still for sale:** the price after each bid was 4.00x, 16.00x, 64.00x and 256.00x the floor; the sale raised
+2,505,618.16 dollars, the second account spent 2,505,471.41 net of refunds, 551,235.94 dollars were in the pool. The rule limits one bid's jump,
+not the climb; cost does (25 of each 100 spent goes to the platform and the pool and never comes back).
+
+**What fixing F2 cannot do, measured.** Dollars sent to the Finisher before step 2 make a real pool look as if it took less. On the Standard sale (pool
+budget 2,200 dollars) a gift of 1,095 changes nothing and a gift of 1,105 hides the pool: step 2 refuses, and seven days later the way out opens although
+a pool exists. The gift goes to the project, so the sender pays more than 11 of each 100 dollars raised for it; exits still open, and the money is conserved.
+(Before the fix a gift never mattered, but a fake pool did.)
+
+**Gas after the fix (local twin, cold):** `openPool` 776,832 (was 766,203: it now reads the auction and the balance to report the outcome),
+`settle` 286,619 (was 271,524: reads the pool, emits the new event), `sweep` 67,006, `collect` 265,227 (was 262,173), `abandon` 311,675 / 734,010 (was 306,784 /
+724,725). Opening a sale and the batched start-and-open call are unchanged (4,380,084 and 5,262,762).
+
+**Test changes that were not defects.** Some old tests were rewritten or tightened because the rules changed: the three reviewer attack tests (bids in the last
+blocks now sit at the edge of the window), the "gifts to every contract" test (gifts of 300 dollars, not 777, because 3 x 777 is more than half the pool's budget:
+the limit above), the whole-sale fuzz (gifts to the Finisher capped at 40% of the pool's budget; its tolerance for pool rounding now grows with the raise,
+after a counterexample at a 1.3-million-dollar raise was 0.004 dollars over the 2,000-unit allowance), the 300-tick test (the big bid now sits at the edge of the window; the checkpoint that
+crosses 300 ticks costs 327,826 gas), and the pool-reading tests (`poolAtTheKey` is the new name of the old "a pool exists" read).
+
+**Owner calls this round** (nothing here changes sections 3 and 4): (a) the closing window's length (720 blocks, a tenth) and the choice **not** to make the 4-times
+cap absolute, (b) the sealed reserve (R-05), (c) the dollar token and the frozen-recipient limit (R-04), (d) B3 (open) and B2 (accepted), as before.
+
 ## Owner calls, and how each was followed
 
 1. **Pool Shares and unsold Shares in the exit count.** Followed as the milestone 2 rule says. The pool's Shares count as in people's
@@ -73,8 +128,9 @@ What is new, in one line each:
 6. **A real Launcher.** No chain-id refusal. The strategy, the pool guard and the bid rules are immutables of the Launcher, and its
    constructor refuses to build unless they fit: the guard is a contract at a mined address with exactly the `beforeInitialize` bit and
    names the strategy as the only creator; the strategy's fee controller reports exactly 3% of a test amount, pays someone, and has no
-   owner; the bid hook is 1 dollar and 4 times. The size menu is fixed (goal 4,000 / 10,000 / 50,000; minimum 2,000 / 2,500 / 12,500;
-   24-hour sale; smallest bid 1 dollar; 4-times cap through the bid hook). `launch` still takes the settings hash the founder saw.
+   owner; the bid hook is 1 dollar, 4 times the price at the time of the bid, and no bids in the last 720 blocks (added in the fix round). The size menu is fixed (goal 4,000 / 10,000 / 50,000; minimum 2,000 / 2,500 / 12,500;
+   24-hour sale; smallest bid 1 dollar; 4-times cap through the bid hook, against the price at the time of the bid; no bids in the last 720 blocks).
+   `launch` still takes the settings hash the founder saw.
 7. **Compiler.** First-party code, and the milestone 3 tests, build with 0.8.37 and 200 runs; the vendored strategy and auction stay at
    their own pins and are reached only through `Pinned.sol`. One drift test (`PinnedDrift.t.sol`) fails if upstream changes (below).
 8. **Licence with counsel; nothing deployed; a mined strategy address per network.** The licence question is untouched. The search cost I
@@ -84,32 +140,33 @@ What is new, in one line each:
 
 | File | Job | Lines (file / code only) |
 |---|---|---|
-| `Launcher.sol` | Makes a project (four clones), opens its one sale with every setting filled in, checks the platform's stack at construction | 468 / 325 |
-| `Finisher.sol` | Per project: holds the sale Shares, three-step finish, abandon, reads the pool | 320 / 195 |
-| `LiquidityHolder.sol` | Owns the positions, collects and splits fees | 143 / 83 |
-| `Pinned.sol` | Copies of the vendored structs and interfaces, the pool-state reader, the sale's shared numbers | 195 / 110 |
+| `Launcher.sol` | Makes a project (four clones), opens its one sale with every setting filled in, checks the platform's stack at construction | 473 / 327 |
+| `Finisher.sol` | Per project: holds the sale Shares, three-step finish, abandon, reads the pool | 377 / 227 |
+| `LiquidityHolder.sol` | Owns the positions, collects and splits fees | 147 / 83 |
+| `Pinned.sol` | Copies of the vendored structs and interfaces, the pool-state reader, the sale's shared numbers | 200 / 112 |
 | `Treasury.sol` | Two additions: abandoned state, floor-only split | 523 / 336 (was 484 / 312) |
 | `Interfaces.sol` | Two more small interfaces | 71 / 34 |
 
-The plan estimated Launcher 400, LiquidityHolder 120, PoolGuard 30, Pinned interfaces 150 lines: these come to 325 + 195 (Finisher, not in the
-plan's table) + 83 + 110 code lines. Contract sizes: Launcher 9,533 bytes of code and 38,998 of creation code (limit 49,152, so
-it deploys), Finisher 7,064, LiquidityHolder 3,737, Treasury 10,209.
+The plan estimated Launcher 400, LiquidityHolder 120, PoolGuard 30, Pinned interfaces 150 lines: these come to 327 + 227 (Finisher, not in the
+plan's table) + 83 + 112 code lines (after the fix round; `MinBid` is 34 code lines). Contract sizes: Launcher 9,572 bytes of code and 39,945 of creation code (limit 49,152, so
+it deploys), Finisher 7,857 (8,278 creation code), LiquidityHolder 3,710 (3,918), Treasury 10,209.
 
 ## The rules, where they live, and the test that fails without them
 
 Every guard added or changed in this milestone was **removed once, in its own run** (`contracts/next/scripts/mutate-guards.py`, which holds the
 list), the file restored from git after each, and the suites that should catch it run (the finish, sale, Launcher, holder, Treasury or drift
-suites, local twin only; the fork copies run the same tests). **83 removals, run twice (once, then again after the test files were split into smaller contracts); every one made at least one test fail in both runs**; none failed to compile. The table is the second run. The number in
+suites, local twin only; the fork copies run the same tests). **109 removals: the 83 of the first round (run twice then) and 26 added in the fix round; the whole list was run again after the fixes, in three copies of the project at once, and every one made at least one test fail**; none failed to compile. The table is that last run (the failing tests of some old entries changed with the fixes: F28 to F30 now fail the `poolAtTheKey` tests). The number in
 brackets is how many tests failed in all. The id letters: F = Finisher, A = Launcher, H = LiquidityHolder, P = the numbers in `Pinned.sol`, X = the
-Treasury's abandoned state.
+Treasury's abandoned state, B = the bid hook (`MinBid`), E = an event that is no longer emitted (written as `emit X(` turned into `abi.encode(`, which keeps the arguments and drops the event). The fix-round entries are F33 to F36, A31, B01, B02, H11, H12 and E01 to E17.
 
 How the runs found real weaknesses, and what I did about them:
 * **P06** (abandon after one day instead of seven) was not caught on the first run, because the tests took the seven-day number from the
   same constant that was changed. The tests now write the numbers out (50,400 blocks, the pool rate, the fee, the tick spacing, the
   sale and pool Share amounts), and the removal is caught.
-* **H02** (a check in the LiquidityHolder that exactly one side of the position's pool is a project's Shares) was not caught, because it can
-  never be reached: a pool with the platform's guard as its hook can only be made by the strategy for a project's sale. I deleted the
-  check and kept the hook test, which is the one that matters (its removal, H03, is caught).
+* **H02** (a check in the LiquidityHolder that exactly one side of the position's pool is a project's Shares) was not caught, so I deleted it,
+  reasoning that a pool with the platform's guard as its hook can only be made for a project's sale. **That reasoning was wrong** (fix round): the strategy builds a
+  guarded pool for anyone's token, and for a project's own Shares once a failed pool step has freed the key. A check that a project owns one side is back
+  (`UnknownProject` when neither side is a project's Shares), with a test that makes such a pool for a stranger's token (H11 is caught).
 
 Guards not removed, and why: the zero-address and zero-amount refusals of the Treasury and the checked-arithmetic guards (as in milestone 2);
 the Finisher's `initialize` refusals of a zero treasury, Shares or dollar token (one test sets up a clone with real values, none with zero);
@@ -125,21 +182,21 @@ liquidity read and by the retry test, and were not removed separately.
 | A05 | Launcher: the raise fee may be any rate | `test_constructor_theFeeMustBeExactlyThreePercentAndHaveNoOwner` (1) |
 | A06 | Launcher: the fee may go to nobody | `test_constructor_theFeeMustBeExactlyThreePercentAndHaveNoOwner` (1) |
 | A07 | Launcher: the fee controller may have an owner | `test_constructor_theFeeMustBeExactlyThreePercentAndHaveNoOwner` (1) |
-| A08 | Launcher: the smallest bid may be anything | `test_constructor_theBidRulesMustBeOneDollarAndFourTimes` (1) |
-| A09 | Launcher: the top-price cap may be anything | `test_constructor_theBidRulesMustBeOneDollarAndFourTimes` (1) |
+| A08 | Launcher: the smallest bid may be anything | `test_constructor_theBidRulesMustBeOneDollarFourTimesAndAClosingWindow` (1) |
+| A09 | Launcher: the top-price cap may be anything | `test_constructor_theBidRulesMustBeOneDollarFourTimesAndAClosingWindow` (1) |
 | A10 | Launcher: the strategy may be no contract | `test_constructor_theFeeMustBeExactlyThreePercentAndHaveNoOwner` (1) |
 | A11 | Launcher: the bid hook may be no contract | `test_constructor_refusesBadSettings` (1) |
 | A12 | Launcher: the Treasury trusts the founder as its opener | `testFuzz_attack_aStrangerCannotMakeTheFounderLoseRelease` (26) |
 | A13 | Launcher: the Treasury trusts the founder as its sale path | `test_attack_theAdminCanChangeTheSettingsInTheBlockBeforeALaunch` (3) |
-| A14 | Launcher: the sale Shares are minted to the Launcher, not the Finisher | `testFuzz_attack_changingTheCountingSupplyNeverPaysTheSender` (26) |
+| A14 | Launcher: the sale Shares are minted to the Launcher, not the Finisher | `testFuzz_attack_changingTheCountingSupplyNeverPaysTheSender` (27) |
 | A15 | Launcher: the holder cannot tell which Treasury a project's Shares belong to | `test_launch_recordsTheProjectUnderFounderAndId` (2) |
 | A16 | Launcher: the sale raises the current dollar setting, not the project's own (strategy side) | `test_openSale_theProjectsOwnDollarTokenIsUsedNotTheCurrentSetting` (1) |
 | A17 | Launcher: the sale raises the current dollar setting, not the project's own (auction side) | `test_openSale_theProjectsOwnDollarTokenIsUsedNotTheCurrentSetting` (1) |
 | A18 | Launcher: the pool position goes to the Finisher, not the LiquidityHolder | `test_life_aWholeProjectLife` (3) |
 | A19 | Launcher: what the pool leaves goes to the founder | `test_attack_aDollarTokenThatFreezesAnAddressStopsTheFinishWithoutHalfDoingIt` (8) |
 | A20 | Launcher: the unsold Shares go to the founder | `test_life_aWholeProjectLife` (7) |
-| A21 | Launcher: no bid rules | `test_bids_aTopPriceAboveFourTimesIsRefusedAndFourTimesIsNot` (4) |
-| A22 | Launcher: the pool has no guard | `test_attack_aDollarTokenThatFreezesAnAddressStopsTheFinishWithoutHalfDoingIt` (14) |
+| A21 | Launcher: no bid rules | `test_bids_aTopPriceAboveFourTimesIsRefusedAndFourTimesIsNot` (5) |
+| A22 | Launcher: the pool has no guard | `test_attack_aDollarTokenThatFreezesAnAddressStopsTheFinishWithoutHalfDoingIt` (15) |
 | A23 | Launcher: the pool is reserved half the Shares | `test_life_aWholeProjectLife` (2) |
 | A24 | Launcher: the pool step may run later than the first block after the sale | `test_attack_aDollarTokenThatFreezesAnAddressStopsTheFinishWithoutHalfDoingIt` (8) |
 | A25 | Launcher: bidders may claim later than the first block after the sale | `test_life_aWholeProjectLife` (4) |
@@ -179,20 +236,20 @@ liquidity read and by the retry test, and were not removed separately.
 | F29 | Finisher: a hook that answers nothing makes the answer revert | `test_poolIsOpen_aGuardThatIsNotAGuardIsNoPool` (1) |
 | F30 | Finisher: a pool with no liquidity counts as open | `test_poolIsOpen_aPoolWithAPriceAndNoLiquidityIsNoPool` (1) |
 | F31 | Finisher: no re-entry lock | `test_settle_aCallBackFromTheDollarTokenCannotReenter` (1) |
-| F32 | Finisher: the pool key leaves out the guard (a stranger's plain pool counts) | `test_abandon_gives15And82AndOpensExits` (26) |
+| F32 | Finisher: the pool key leaves out the guard (a stranger's plain pool counts) | `test_abandon_gives15And82AndOpensExits` (27) |
 | H01 | LiquidityHolder: anyone's position may be collected, held or not | `test_holder_aPositionItDoesNotOwnCannotBeCollected` (1) |
-| H03 | LiquidityHolder: a position of a stranger's plain pool of a project's Shares may be collected | `test_holder_aPlainPoolOfARealProjectsSharesIsNotTheProjectsPool` (2) |
-| H04 | LiquidityHolder: the platform gets all the dollar fees | `test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf` (4) |
-| H05 | LiquidityHolder: the project gets nothing of the dollar fees | `test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf` (4) |
+| H03 | LiquidityHolder: a position of a stranger's plain pool of a project's Shares may be collected | `test_holder_aPlainPoolOfARealProjectsSharesIsNotTheProjectsPool` (1) |
+| H04 | LiquidityHolder: the platform gets all the dollar fees | `test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf` (5) |
+| H05 | LiquidityHolder: the project gets nothing of the dollar fees | `test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf` (5) |
 | H06 | LiquidityHolder: the Share fees are kept, not burned | `test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf` (3) |
-| H07 | LiquidityHolder: a platform address the token refuses stops the whole collect | `test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf` (1) |
+| H07 | LiquidityHolder: a platform address the token refuses stops the whole collect | `test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf` (2) |
 | H08 | LiquidityHolder: a collect takes out liquidity (a decrease of one unit) | `test_holder_collectSplitsHalfToThePlatformHalfToTheProjectAndBurnsTheShares` (2) |
 | H09 | LiquidityHolder: no re-entry lock | `test_holder_aCallBackFromTheDollarTokenCannotReenterCollect` (1) |
 | H10 | LiquidityHolder: owed amounts are paid out and not cleared | `test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf` (1) |
 | P01 | Pinned: the pool takes 20 of every 100 raised | `test_life_aWholeProjectLife` (2) |
 | P02 | Pinned: the pool fee is 0.3 percent | `test_life_tradesFeesHandBackAndTheDailyRelease` (2) |
 | P03 | Pinned: the pool tick spacing is 60 | `test_openSale_fillsInEverySettingFromTheSize` (1) |
-| P04 | Pinned: the sale is 6,000 blocks | `test_attack_aDollarTokenThatFreezesAnAddressStopsTheFinishWithoutHalfDoingIt` (14) |
+| P04 | Pinned: the sale is 6,000 blocks | `test_attack_aDollarTokenThatFreezesAnAddressStopsTheFinishWithoutHalfDoingIt` (15) |
 | P05 | Pinned: the pool state is read from the wrong storage slot | `test_drift_poolStateReadsMatchStateLibrary_local` (1) |
 | P06 | Pinned: abandon opens after one day | `test_abandon_isNotUsableEarlyAndUsableOnTime` (1) |
 | X01 | Treasury: anybody may mark the sale abandoned | `test_markAbandoned_onlyTheOpener_onceAndNotAfterThePoolOpened` (1) |
@@ -201,6 +258,32 @@ liquidity read and by the retry test, and were not removed separately.
 | X04 | Treasury: money may be put wholly into the floor when the sale was not abandoned | `test_settleToFloor_onlyTheOpener_onlyWhenAbandoned_andOnlyWhatArrived` (1) |
 | X05 | Treasury: more than arrived may be put into the floor | `test_settleToFloor_onlyTheOpener_onlyWhenAbandoned_andOnlyWhatArrived` (1) |
 | X06 | Treasury: an abandoned sale does not start the Vester's clock | `test_abandon_gives15And82AndOpensExits` (2) |
+| F33 | Finisher: a pool the pool step did not fund counts as this sale's pool (the fake pool after a failed step) | `test_attack_afterAFakePoolTheWayOutStillOpensAndPaysFifteenAndEightyTwo` (3) |
+| F34 | Finisher: a pool that took only 5 of each 100 dollars of its budget counts | `test_measured_aGiftOfMoreThanHalfThePoolsBudgetHidesARealPool` (1) |
+| F35 | Finisher: after the sale is done the pool is not reported open | `test_attack_abandonOnTheFirstBlockWithTheStepNeverRunLeavesTheSaleWhole` (1) |
+| F36 | Finisher: after step 2 the pool is judged by the dollars held again (a gift can reopen the way out) | `test_attack_aGiftAfterStepTwoCannotOpenTheWayOutAgain` (1) |
+| A31 | Launcher: the bid hook may have any closing window | `test_constructor_theBidRulesMustBeOneDollarFourTimesAndAClosingWindow` (1) |
+| B01 | MinBid: bids are accepted in the closing window | `test_attack_aBidInTheClosingWindowIsRefused` (2) |
+| B02 | MinBid: the window is one block short | `test_attack_aBidInTheClosingWindowIsRefused` (2) |
+| H11 | LiquidityHolder: a guarded pool of a stranger's own token may be collected | `test_holder_aGuardedPoolOfAStrangersOwnTokenIsNoProjectsPool` (1) |
+| H12 | LiquidityHolder: a token that answers false counts as paid | `test_holder_aTokenThatAnswersFalseForAFrozenPlatformKeepsItsHalfOwed` (1) |
+| E01 | Launcher: SaleOpened is not emitted | `test_events_openingASale` (1) |
+| E02 | Finisher: SaleOpenedBy is not emitted | `test_events_openingASale` (1) |
+| E03 | Finisher: PoolStep is not emitted | `test_events_aSaleUnderItsMinimum` (3) |
+| E04 | Finisher: PoolOpened is not emitted | `test_events_aStrangerRunsThePoolStepDirectly` (2) |
+| E05 | Finisher: Settled is not emitted | `test_events_aStrangerRunsThePoolStepDirectly` (2) |
+| E06 | Finisher: Swept is not emitted by sweep | `test_events_theThreeStepsOfAGoodFinish` (1) |
+| E07 | Finisher: Swept is not emitted by abandon | `test_events_theWayOut` (1) |
+| E08 | Finisher: SaleFailed is not emitted | `test_events_aSaleUnderItsMinimum` (1) |
+| E09 | Finisher: Abandoned is not emitted | `test_events_theWayOut` (1) |
+| E10 | LiquidityHolder: Collected is not emitted | `test_holder_collectSplitsHalfToThePlatformHalfToTheProjectAndBurnsTheShares` (1) |
+| E11 | LiquidityHolder: Owed is not emitted | `test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf` (1) |
+| E12 | LiquidityHolder: OwedSent is not emitted | `test_holder_aFrozenPlatformAddressOnlyDelaysThePlatformsHalf` (1) |
+| E13 | Treasury: PoolOpened is not emitted | `test_events_aStrangerRunsThePoolStepDirectly` (2) |
+| E14 | Treasury: SaleAbandoned is not emitted | `test_events_theWayOut` (1) |
+| E15 | Treasury: SaleClosed is not emitted | `test_events_theThreeStepsOfAGoodFinish` (2) |
+| E16 | Treasury: the floor-only Settled is not emitted | `test_events_theWayOut` (1) |
+| E17 | Treasury: Settled is not emitted by settle | `test_events_theThreeStepsOfAGoodFinish` (2) |
 
 **Milestone 2's removals, re-run.** The Launcher was replaced and the Treasury's `settle` was reorganised, so I re-ran the milestone 2 list
 against the milestone 2 suites: **90 entries, every one fails at least one test.** Eight entries of the old list are gone because the code they
@@ -231,7 +314,10 @@ So "for good" is a fact about the owner, which is the `LiquidityHolder`, and abo
 3. A dollar token that freezes the platform's address delays the platform's half of the fees (it waits in `owed`); a token that freezes
    the Treasury would stop `collect` entirely until unfrozen, because the project's half is paid by a call into the Treasury (by reading
    the code; not tested). Nothing is lost: the fees keep accruing in the position.
-4. A stranger can send the holder any NFT. It stays there for ever, and cannot be collected unless its pool is a project's pool.
+4. A stranger can send the holder any NFT. It stays there for ever, and cannot be collected unless its pool is a project's pool. The guard does not make
+   a pool "ours": the strategy builds a guarded pool for anyone's token, and a holder of a project's Shares can build one at the project's own key once a failed
+   pool step has freed it. So the holder's second check (one side of the pool is a real project's Shares, known to the Launcher) matters and is tested
+   with a stranger's own token; a stranger's position in a project's guarded pool earns fees that are split like any other and reaches nobody's money.
 5. The Shares the pool earns as fees are burned, which lowers the Share supply a little (and with it the 1% gift cap).
 
 ## The pinned interfaces and the drift test
@@ -255,8 +341,10 @@ byte in any of them fails it, with a message naming what to review. The hashes w
 * **Step 2 sends the Treasury every dollar the Finisher holds**, and uses the auction's own report of the raise only as the least that must
   be there (`afterFee - afterFee x 2,268,041 / 10,000,000`). The exact amount cannot be read from the raise, because the pool may take
   less than its budget (it is limited by the Shares it can pair). A dollar donated to the Finisher before step 2 is split like the rest.
-* **"A pool exists" means** the pool manager holds liquidity at the project's guarded key, and the guard names the strategy as the only
-  creator. Read from the pool manager's storage, never from an event. A price with no liquidity does not count.
+* **"This sale's pool exists" means** (fix round) the pool manager holds liquidity at the project's guarded key, the guard names the strategy as the only
+  creator (`poolAtTheKey`), **and** the pool step took this sale's money: at least half of the pool's dollar budget is missing from what the strategy returned
+  to the Finisher. Read from the pool manager's storage and the auction, never from an event. A price with no liquidity does not count; a pool at the key
+  that took none of this sale's money (made by someone else after a failed step) does not count; after step 2 it stays true.
 * **Time is counted in blocks:** the sale 7,200 blocks, abandon after 50,400 blocks, retry 7,200 blocks after a failed sale ended. They are
   24 hours, 7 days and 24 hours only at 12 seconds a block (Ethereum and Sepolia). On another chain they are different lengths.
 * **Abandon** runs the pool step itself if nobody did (so "nobody ever called it" is covered), reverts `PoolExists` if that makes a pool
@@ -335,10 +423,12 @@ fresh wallet and sold into a Standard pool at once move the price from $0.000025
 | 20,000 | 2.99 x | 133.3M (33%) | 20,000 | 266.7M | 5,000 |
 | 100,000 | 4.00 x (the cap) | 36.4M (9%) | 36,364 | 363.6M | 9,091 |
 
-How much the price can be pulled: from 1x to the 4-times cap, at a cost of 25% of what the founder spends (the 3 to the platform and 22 into
-the pool; the 15 returns to the founder's own spendable, the 60 is the floor that every holder, the founder included, can hand back
-against). **The honest bidders pay the most: at the cap they get 9% of the Shares their money would have bought.** The 4-times cap
-bounds this; it does not prevent it. Nothing on chain tells a founder's second account from anyone else's.
+How much the price can be pulled **in one block**: from 1x to 4x (this table has every bid in the first block, when the price is the floor), at a cost
+of 25% of what the founder spends (the 3 to the platform and 22 into the pool; the 15 returns to the founder's own spendable, the 60 is the floor that every
+holder, the founder included, can hand back against). **The honest bidders pay the most: at 4x they get 9% of the Shares their money would have bought.**
+**This is not a ceiling.** The rule (corrected in the fix round) is "4 times the clearing price at the time of that bid", so bids some blocks apart
+climb: a ladder of four bids 20 blocks apart took the same sale to 4x, 16x, 64x, 256x the floor (see "Fix round"). The only limit is the cost, 25 of each 100
+spent. Nothing on chain tells a founder's second account from anyone else's.
 
 ### Two projects at the same time
 
@@ -401,7 +491,9 @@ guard** (the guard names the strategy), and a deployment must come with the CREA
 6. **Sniping and thin pools are worse than "prices will jump"** (section 9): a 100-dollar buy moves a Small pool 24% and a 2,500-dollar buy
    multiplies its price by 14.5.
 7. **The founder's own bids** can hand honest bidders 9% of what their money would have bought (table above), at a cost to the founder of 25%
-   of the extra spend. The 4-times cap is the whole defence.
+   of the extra spend. **Corrected in the fix round:** the 4-times rule is against the price at the time of each bid, so it is not "the whole defence"
+   and not a ceiling: the price can climb 4x, 16x, 64x, 256x over several blocks. The defence is the cost (25 of each 100 spent is gone for good); the
+   closing window stops the cheap last-minute version of the same move.
 8. **Section 5, "the app reads the outcome from the strategy's event":** the strategy's events say success on a failed step (milestone 1). The
    outcome is `Finisher.poolIsOpen()`, which reads the pool manager. The app and the server must use that, not the event.
 9. **The size table was high again** (Launcher estimated 400 lines, built 325 code lines; but the Finisher, 195, is not in the plan's table).
@@ -418,10 +510,13 @@ Everything below is an event (or a view) of a contract in this milestone. Indexe
   floorPriceQ96, tickSpacingQ96)`: the sale's figures, in raw dollars (6 decimals) and the auction's Q96 price units.
 * `SettingsChanged`, `AdminChanged` (only for the settings screen).
 
-**Finisher** (one per project; the server follows each one from `ProjectLaunched`):
-* `SaleOpenedBy(auction (i), endBlock, attempt)`; `PoolStep(auction (i), poolOpen)` (the true outcome, read from the pool manager);
-  `Settled(auction (i), raised, afterFee, toTreasury)`; `Swept(auction (i), sharesToTreasury)`; `SaleFailed(auction (i), retryBlock)`;
-  `Abandoned(auction (i), toFloorOnly, split)`.
+**Finisher** (one per project; the server follows each one from `ProjectLaunched`); every event below is asserted with its figures in `FinishEvents.t.sol`:
+* `SaleOpenedBy(auction (i), endBlock, attempt)`; `PoolStep(auction (i), poolOpen)` (the true outcome, read from the pool manager; **may be missing**: anyone may call
+  the strategy's `migrate` directly, then the Finisher emits no `PoolStep`, and the server learns of the pool from step 2);
+  `PoolOpened(auction (i), poolId, sqrtPriceX96, poolDollars, poolShares)` (new; always from step 2; the two amounts read low if someone sent dollars or Shares to the Finisher
+  before step 2); `Settled(auction (i), raised, afterFee, toTreasury)`; `Swept(auction (i), sharesToTreasury)`; `SaleFailed(auction (i), retryBlock)`;
+  `Abandoned(auction (i), toFloorOnly, split)`. After an abandon the Treasury emits two `Settled` events, the first (amount, 0, amount) the floor-only part
+  (the same shape as an ordinary one), so the server must read `Abandoned` (or `SaleAbandoned`) to tell the two apart.
 * Views to read each time: `stage()` (0 Idle, 1 Open, 2 Done, 3 Failed, 4 Abandoned), `poolIsOpen()`, `settled()`, `endBlock()`,
   `retryBlock()`, `abandonBlock()`, `auction()`, `canOpen()`, `poolKey()`.
 
@@ -429,9 +524,9 @@ Everything below is an event (or a view) of a contract in this milestone. Indexe
 `Released`, `CheckedIn`, `Spent`, `SharesGiven`, `HandedBack(holder, shares, paid, toPlatform, stays)`, `ShareRevenue`, `ToppedUp` (the pool
 fee's project half arrives as `ToppedUp` with `from` = the LiquidityHolder), `FeesSwept`, `AgentSet`, `ReserveReleased`.
 
-**LiquidityHolder**: `Collected(tokenId (i), treasury (i), dollars, toPlatform, toProject, sharesBurned)`, `Owed`, `OwedSent`. The position's
-token id is found in the pool step's transaction as the ERC-721 `Transfer(0, holder, tokenId)` of the position manager (the project's one
-full-range position); it is also `positionManager.nextTokenId()` read just before the step.
+**LiquidityHolder**: `Collected(tokenId (i), treasury (i), dollars, toPlatform, toProject, sharesBurned)`, `Owed(token (i), to (i), amount)`, `OwedSent(token (i), to (i), amount)`. The position's
+token id is in no first-party event (nothing on chain can find it in bounded work); it is the ERC-721 `Transfer(0, holder, tokenId)` of the position manager in the pool
+step's transaction (the project's one full-range position), and `positionManager.getPoolAndPositionInfo(tokenId)` gives its pool key to check against `poolKey()`.
 
 **Auction** (from `SaleOpened.auction`): `BidSubmitted(id (i), owner (i), priceQ96, amount)`, `BidExited`, `TokensClaimed`,
 `CheckpointUpdated(blockNumber, clearingPriceQ96, cumulativeMps)`, `ClearingPriceUpdated`. **Strategy:** `Migrated`, `MigrationFailed`,
@@ -452,7 +547,10 @@ down before trying it (section 7).
 * **The strategy's licence** (two BUSL-1.1 files of Uniswap's pool code reach its bytecode): counsel.
 * **A mined strategy and guard per network, and the CREATE2 deployer on that network.** The script outline simulates on Sepolia only.
 * **Which dollar token.** A token that can freeze addresses can stop the pool step until it is unfrozen (the strategy cannot pay a frozen
-  fee recipient or a frozen Finisher; tested): nothing is lost, but the finish waits. A token that takes a fee on transfer breaks the
+  fee recipient or a frozen Finisher; tested): nothing is lost, but the finish waits. **Abandon does not help here** (fix round, tested): it runs the pool
+  step itself, and when that step reverts for good (a frozen fee recipient: the auction pays its 3% only through the strategy) `abandon`, `openPool` and every
+  exit wait with it, for every project at once. Abandon covers a step that never ran and one that failed and was swallowed. A freezable token or fee-recipient
+  address is a single point of failure for the platform; choose a token that cannot freeze, or accept that. A token that takes a fee on transfer breaks the
   sale itself. The platform must name a plain 6-decimal token.
 * **The 12-second block assumption** behind 24 hours, 7 days and the retry wait. Chains with other block times need their own numbers.
 * **The sealed reserve** (point 5 above) and the **two open owner decisions** (B2 accepted, B3 open).
@@ -468,17 +566,17 @@ Run from `contracts/next` on this machine (`forge 1.4.3`, solc 0.8.37 for first-
 | Gate | Result |
 |---|---|
 | `forge build` | passes. A forced rebuild prints compiler warnings only of the kinds milestone 1 and 2 had (style lints on test code, the creation-code size of milestone 1's four big test contracts and the Deployer's code size). **None from `src/`.** In my new test files: lint notes for unnamed return variables and unchecked token calls in test code. |
-| `forge test`, no node (`SEPOLIA_RPC_URL` unset) | **320 passed, 0 failed, 29 skipped** in 73 suites (27 skips are fork suites saying they have no node; 2 are the reviewers' held-back B2 and B3 tests). Before this milestone: 241 passed. |
-| `forge test` with the public Sepolia node | **421 passed, 0 failed, 2 skipped** in 73 suites. Every milestone 3 fork suite ran at a recent block, **12,150,544** in the last run (12,150,279 in the one before): the node's head minus 3, because the pinned block is no longer served, so the suites move to a recent block and say so. The fork tests do not depend on the block; the numbers in this report are identical on the local twin and on the fork. |
+| `forge test`, no node (`SEPOLIA_RPC_URL` unset) | **346 passed, 0 failed, 36 skipped** in 88 suites (34 skips are fork suites saying they have no node; 2 are the reviewers' held-back B2 and B3 tests). Before the fix round: 320 passed; before this milestone: 241. Fuzz at 1,000 runs and the invariant suites at 256 runs of depth 200 are inside this run. |
+| `forge test` with the public Sepolia node | **471 passed, 0 failed, 2 skipped** in 88 suites (before the fix round: 421). The fork suites ran at a recent block (the node's head minus 3; the head was about 12,151,400 when the run was made), because the pinned block is no longer served, so the suites move to a recent block and say so. The fork tests do not depend on the block; the numbers in this report are identical on the local twin and on the fork. |
 | New test functions in milestone 3 | about 90 (the same test runs on the local twin and on the fork, in both token orders for the whole life): Life 4, FinishAttacks 13, SaleRules 10, MarketAttacks 6, LiquidityHolder 8, FinisherPool 6, PinnedDrift 6, TreasuryAbandon 5, LifeFuzz 2, LifeInvariants 9, GasM3 4, MinedCost 1, and 6 more Launcher tests |
 | Fuzz | **2,000 runs** of the whole-sale conservation test (random size, random bids at random times and prices, random finish order, every bidder collects) with a reach test beside it: of 90 sales taken in order, 52 reached their minimum, 38 did not, and the auction refused 88 of 495 bids by its own price rules. Milestone 2's fuzz counts are unchanged (1,000 to 3,000). |
 | Invariants | milestone 3: **9 invariants, each 256 runs of depth 200 (51,200 calls each, 460,800 in all)** on the real platform, with a handler of 14 actions (bids, time, the three steps by any stranger, the strategy's pool step called directly, a failing pool step, abandon, a week passing, a new try, claims, trades, fee collection, hand backs, check-ins, donations). Reach over those 460,800 calls: 1,410 bids placed, 9,828 pool steps, 1,184 settles, 5,158 sweeps, 421 abandons, 1,937 new tries, 1,337 claims, 4,119 trades, 4,573 fee collections, 1,253 hand backs. Milestone 2's 15 invariants (256 runs of depth 200) still pass. |
 | `forge fmt --check src test` | clean |
-| `forge build --sizes` | Launcher 38,998 bytes of creation code (limit 49,152), Finisher 7,478, LiquidityHolder 3,945, Treasury 10,254 |
-| The guard-removal script, milestone 3 entries | **83 of 83 caught** (`python3 scripts/mutate-guards.py --m3`, run in three copies of the project at once) |
+| `forge build --sizes` | Launcher 39,945 bytes of creation code (limit 49,152), Finisher 8,278, LiquidityHolder 3,918, Treasury 10,254 |
+| The guard-removal script, milestone 3 entries | **109 of 109 caught.** 83 of the first round were run twice (first round, then in three copies of the project after the review fixes); the 26 fix-round entries (F33 to F36, A31, B01, B02, H11, H12, E01 to E17) were run again one at a time on the final tree (`python3 scripts/mutate-guards.py F33 ... E17`): each made 1 to 3 tests fail, none failed to compile, the tree was clean afterwards. B01 reported "old string count 0" in one of the three-copy runs (a copy out of date), and was caught in the final run. The 83 older entries were not run a third time after the last test-file split (commit a81d00535, tests only). |
 | The guard-removal script, milestone 2 entries | **90 of 90 caught** (`M2_ONLY=1 python3 scripts/mutate-guards.py`), see above |
 | The deploy script outline | `forge script script/DeployPlatform.s.sol --fork-url <Sepolia>` (a simulation, nothing sent): runs, 26,974,221 gas estimated over seven transactions, strategy mined in 19,815 tries, guard in 1,999 |
-| `git diff --stat 06343285a..HEAD` (the commit before milestone 3) | 43 files changed, 6,414 insertions, 310 deletions: 41 under `contracts/next`, `docs/NEXT-VERSION-PLAN.md`, and `docs/next-version/M3-REPORT.md`. Nothing under `contracts/src`, `contracts/test`, `contracts/script`, `contracts/lib`, `web`, `crates` or `packages`. |
+| `git diff --stat 06343285a` (the commit before milestone 3) | 48 files changed, about 8,150 insertions, 317 deletions (with this report and the plan's fix-round section): 46 under `contracts/next`, `docs/NEXT-VERSION-PLAN.md`, and `docs/next-version/M3-REPORT.md`. Nothing under `contracts/src`, `contracts/test`, `contracts/script`, `contracts/lib`, `web`, `crates` or `packages`. |
 
 What was not run: nothing on a real network; no key; the old suite in `contracts/`; any external review; the server side (milestone 4 does not exist).
 
