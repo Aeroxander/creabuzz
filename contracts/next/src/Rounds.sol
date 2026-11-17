@@ -75,8 +75,8 @@ contract Rounds {
     struct Round {
         uint64 openedAt;
         uint64 closedAt; // zero while open
+        uint64 sharesPerRawDollar; // the round's price, fixed at open: raw Share units per raw dollar unit (at most 3e15)
         uint256 size; // the most it may accept
-        uint256 sharesPerRawDollar; // the round's price, fixed at open: raw Share units per raw dollar unit
         uint256 asked; // the sum of every ask
         uint256 accepted; // set at close: min(asked, size)
         uint256 activeAtClose; // the shared clock (`activeNow`) when it closed
@@ -230,7 +230,9 @@ contract Rounds {
         ) revert CannotOpen();
         id = ++count;
         Round storage r = _rounds[id];
-        (r.openedAt, r.size, r.sharesPerRawDollar) = (uint64(block.timestamp), size, sharesPerRawDollar);
+        // casting to 'uint64' is safe because the price was just checked to be at most 3e15 (and a time fits for ages)
+        // forge-lint: disable-next-line(unsafe-typecast)
+        (r.openedAt, r.size, r.sharesPerRawDollar) = (uint64(block.timestamp), size, uint64(sharesPerRawDollar));
         emit RoundOpened(id, size, sharesPerRawDollar, block.timestamp, block.timestamp + WINDOW);
     }
 

@@ -6,6 +6,7 @@ import {Platform} from "./helpers/Platform.sol";
 import {BASE_START_Q96, startQ96} from "./helpers/Prices.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {Finisher} from "../src/Finisher.sol";
+import {Treasury} from "../src/Treasury.sol";
 import {SaleParams} from "../src/Pinned.sol";
 
 /// @notice Founder-set prices, the auction (`docs/next-version/FOUNDER-PRICE.md`): the runner names the starting price, from
@@ -118,7 +119,12 @@ contract FounderPriceAuctionLocalTest is FounderPriceAuctionBase {
         vm.roll(s.startBlock);
         _fund(alice, 100 * DOLLAR, s);
         vm.startPrank(alice);
-        vm.expectRevert();
+        // refused by the bid rules, with this sale's own limit (4 times its 0.006 floor) in the error
+        // (MinBid and the auction's library are on another compiler version, so their selectors are spelled out here)
+        bytes memory reason = abi.encodeWithSelector(
+            bytes4(keccak256("TopPriceTooHigh(uint256,uint256)")), _price(s, 301), 4 * s.floorQ96
+        );
+        vm.expectRevert(abi.encodeWithSelector(bytes4(keccak256("ValidationHookCallFailed(bytes)")), reason));
         s.auction.submitBid(_price(s, 301), uint128(10 * DOLLAR), alice, s.floorQ96, "");
         s.auction.submitBid(_price(s, 300), uint128(10 * DOLLAR), alice, s.floorQ96, "");
         vm.stopPrank();
@@ -225,5 +231,72 @@ contract FounderPriceSelfBidLocalTest is FounderPriceAuctionBase {
             assertGt(lossNowPer100, 3000, "at once, more than 30 of each 100 is gone");
             assertEq(projectPer100 * 100 / 7500, 100, "75 of each 100 spent reached the project (15 + 60)");
         }
+    }
+}
+
+/// @notice Project zero on the real stack (local twin): the admin names its key, it launches with no stake, and a full sale
+/// at today's start and the Finisher's three steps grant nothing. The same sale run for an ordinary project, from the same
+/// state, gives the 20M stake; every other figure is the same.
+contract FounderPriceZeroStakeLocalTest is FounderPriceAuctionBase {
+    struct After {
+        uint256 reserveBalance; // the Treasury's Shares
+        uint256 stakeGranted; // the stake address's grant in the Vester
+        uint256 counting; // countingSupply()
+        uint256 vesterUnreleased;
+        uint256 spendable;
+        uint256 melting;
+        uint256 stakeEvents;
+    }
+
+    function _run(bool projectZero) internal returns (After memory a) {
+        bytes32 id = keccak256("creaton");
+        if (projectZero) {
+            bytes32 key0 = launcher.keyOf(founder, id); // read first: a prank applies to the next call
+            vm.prank(admin);
+            launcher.nameProjectZero(key0);
+        }
+        Proj memory p = _launch(founder, id);
+        assertEq(p.treasury.stakeAmount(), projectZero ? 0 : 20_000_000 * SHARE);
+        Sale memory s = _open(p);
+        _flat(s, 100_000 * DOLLAR);
+        _toEnd(s);
+        assertTrue(s.auction.isGraduated());
+        vm.recordLogs();
+        _finish(p, s);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] == Treasury.StakeGranted.selector) ++a.stakeEvents;
+        }
+        assertEq(uint256(p.finisher.stage()), uint256(Finisher.Stage.Done));
+        (a.stakeGranted,) = p.vester.grants(stakeHolder);
+        a.reserveBalance = p.shares.balanceOf(address(p.treasury));
+        a.counting = p.treasury.countingSupply();
+        a.vesterUnreleased = p.vester.unreleased();
+        a.spendable = p.treasury.spendable();
+        a.melting = p.treasury.melting();
+        assertEq(
+            a.counting,
+            p.shares.totalSupply() - a.reserveBalance - p.shares.balanceOf(address(p.rounds))
+                - p.shares.balanceOf(address(p.finisher)) - a.vesterUnreleased,
+            "countingSupply is the formula"
+        );
+    }
+
+    function test_projectZero_fullSaleAndFinish_grantsNoStake_reserveKeepsThe20M() public {
+        uint256 snap = vm.snapshotState();
+        After memory ordinary = _run(false);
+        vm.revertToState(snap);
+        After memory zero = _run(true);
+        assertEq(ordinary.stakeEvents, 1);
+        assertEq(ordinary.stakeGranted, 20_000_000 * SHARE);
+        assertEq(zero.stakeEvents, 0, "no StakeGranted");
+        assertEq(zero.stakeGranted, 0);
+        assertEq(zero.reserveBalance, ordinary.reserveBalance + 20_000_000 * SHARE, "the reserve keeps the 20M");
+        assertEq(zero.vesterUnreleased + 20_000_000 * SHARE, ordinary.vesterUnreleased, "nothing held for the stake");
+        assertEq(zero.counting, ordinary.counting, "the held stake never counted, so the count is the same");
+        assertEq(zero.spendable, ordinary.spendable);
+        assertEq(zero.melting, ordinary.melting);
+        emit log_named_decimal_uint("project zero: Treasury Shares after the sale", zero.reserveBalance, 18);
+        emit log_named_decimal_uint("project zero: counting supply after the sale", zero.counting, 18);
     }
 }

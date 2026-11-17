@@ -21,7 +21,10 @@ contract RoundsFuzzTest is RoundsBase {
         uint256 n = 1 + count % 12;
         address[] memory b = _backers(n);
         _checkIn();
-        uint256 id = _openRound(); // 10,000 for a single founder
+        // the round's price: anywhere in the founder's range, today's lowest price a quarter of the time
+        uint256 price = uint256(keccak256(abi.encode(seed, "price")));
+        price = price % 4 == 0 ? 3e15 : 2e13 + (price >> 2) % (3e15 - 2e13 + 1);
+        uint256 id = _openRoundAt(price); // 10,000 for a single founder
         uint256 asked;
         uint256 paidIn; // every dollar the backers sent (lowered asks come back to them)
         for (uint256 i; i < n; ++i) {
@@ -54,8 +57,8 @@ contract RoundsFuzzTest is RoundsBase {
             (uint256 total,) = v.heldGrants(id, b[i]);
             assertEq(total, rd.positionOf(id, b[i]).bought, "every Share bought is held for its backer");
         }
-        assertLe(boughtTotal, accepted * 3e15);
-        assertGe(boughtTotal + n * 3e15, accepted * 3e15, "under one raw dollar's Shares of dust per backer");
+        assertLe(boughtTotal, accepted * price);
+        assertGe(boughtTotal + n * price, accepted * price, "under one raw dollar's Shares of dust per backer");
         // time passes with random check-in lapses; random backers leave at random moments
         for (uint256 step; step < 6; ++step) {
             uint256 r = uint256(keccak256(abi.encode(seed, step, "time")));

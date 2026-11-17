@@ -120,15 +120,30 @@ contract FounderPriceTest is RoundsBase {
         emit log_named_decimal_uint("Creaton at 6M: backing Shares back to the reserve", 150_000_000 * SHARE - sold, 18);
     }
 
-    /// @dev Project zero: the admin names no stake address; a project launched then takes no stake. Its pool opening grants
-    /// nothing and the reserve keeps the 20M a default project would give. Projects launched after the setting returns take the
-    /// stake again.
+    /// @dev Project zero: the admin names its key and that one launch takes no stake. Its pool opening grants nothing and the
+    /// reserve keeps the 20M a default project would give. The name is used up: every later project takes the stake.
     function test_zeroStake_projectZeroTakesNoStake() public {
-        Launcher.Settings memory s = _settings();
-        s.stake = address(0);
+        bytes32 key0 = launcher.keyOf(founder, keccak256("project zero"));
+        vm.expectEmit(true, false, false, false, address(launcher));
+        emit Launcher.ProjectZeroNamed(key0);
         vm.prank(admin);
-        launcher.setSettings(s);
+        launcher.nameProjectZero(key0);
+        assertEq(launcher.projectZeroKey(), key0);
+        vm.recordLogs();
         (, address tr,) = _launch(founder, keccak256("project zero"));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 launched = Launcher.ProjectLaunched.selector;
+        bool seen;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] != launched) continue;
+            (,, Launcher.Settings memory st) =
+                abi.decode(logs[i].data, (Launcher.Project, Launcher.Allocation, Launcher.Settings));
+            assertEq(st.stake, address(0), "ProjectLaunched shows project zero's stake address as zero");
+            seen = true;
+        }
+        assertTrue(seen);
+        assertEq(launcher.projectZeroKey(), bytes32(0), "the name is used up");
+        assertTrue(launcher.projectZeroLaunched());
         Treasury t0 = Treasury(tr);
         assertEq(t0.stake(), address(0));
         assertEq(t0.stakeAmount(), 0);
@@ -137,7 +152,7 @@ contract FounderPriceTest is RoundsBase {
         vm.recordLogs();
         vm.prank(launcher.project(founder, keccak256("project zero")).finisher);
         t0.markPoolOpen();
-        Vm.Log[] memory logs = vm.getRecordedLogs();
+        logs = vm.getRecordedLogs();
         for (uint256 i; i < logs.length; ++i) {
             assertTrue(logs[i].topics[0] != Treasury.StakeGranted.selector, "no stake granted");
         }
@@ -149,10 +164,49 @@ contract FounderPriceTest is RoundsBase {
         uint256 r = t.reserve();
         _market();
         assertEq(r - t.reserve(), 20_000_000 * SHARE, "a default project's stake");
-        // the stake comes back for projects launched after the setting is restored
-        vm.prank(admin);
-        launcher.setSettings(_settings());
+        // every project after project zero takes the stake, and no second project zero can be named
         (, address tr2,) = _launch(founder, keccak256("project one hundred"));
         assertEq(Treasury(tr2).stakeAmount(), 20_000_000 * SHARE);
+        bytes32 two = launcher.keyOf(founder, keccak256("project two"));
+        vm.prank(admin);
+        vm.expectRevert(Launcher.ProjectExists.selector);
+        launcher.nameProjectZero(two);
+    }
+
+    /// @dev Only the admin names project zero; a name may be changed or taken back before that project launches, never to a
+    /// project already launched; the stake address itself must always be named; and a project other than the named one
+    /// takes the stake, in the same block too.
+    function test_projectZero_onlyTheAdmin_onlyTheNamedKey_stakeAddressAlwaysNamed() public {
+        bytes32 key0 = launcher.keyOf(founder, keccak256("project zero"));
+        vm.prank(founder);
+        vm.expectRevert(Launcher.NotAdmin.selector);
+        launcher.nameProjectZero(key0);
+        Launcher.Settings memory s = _settings();
+        s.stake = address(0);
+        vm.prank(admin);
+        vm.expectRevert(Launcher.BadSettings.selector);
+        launcher.setSettings(s);
+        // the project launched in setUp cannot become project zero after the fact
+        vm.prank(admin);
+        vm.expectRevert(Launcher.ProjectExists.selector);
+        launcher.nameProjectZero(key);
+        // named, changed, taken back, named again
+        bytes32 x = launcher.keyOf(alice, keccak256("x"));
+        vm.startPrank(admin);
+        launcher.nameProjectZero(x);
+        launcher.nameProjectZero(bytes32(0));
+        assertEq(launcher.projectZeroKey(), bytes32(0));
+        launcher.nameProjectZero(key0);
+        vm.stopPrank();
+        // another founder, and the named founder with another id, launch in the same block: both take the stake
+        (, address other,) = _launch(alice, keccak256("project zero"));
+        (, address sameFounder,) = _launch(founder, keccak256("not project zero"));
+        assertEq(Treasury(other).stakeAmount(), 20_000_000 * SHARE);
+        assertEq(Treasury(other).stake(), stakeHolder);
+        assertEq(Treasury(sameFounder).stakeAmount(), 20_000_000 * SHARE);
+        assertEq(launcher.projectZeroKey(), key0, "still waiting for project zero");
+        assertFalse(launcher.projectZeroLaunched());
+        (, address zero,) = _launch(founder, keccak256("project zero"));
+        assertEq(Treasury(zero).stakeAmount(), 0);
     }
 }

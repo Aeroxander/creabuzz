@@ -215,14 +215,11 @@ contract LauncherTest is Base {
         deployCode(
             "Launcher.sol:Launcher", abi.encode(admin, _settings(), STRATEGY, GUARD, minBid, empty, councilMaker)
         );
-        // a zero stake address is accepted: projects launched with it take no stake (project zero; FOUNDER-PRICE.md)
+        // and the stake address must be named (project zero is named by its key instead: `nameProjectZero`)
         s = _settings();
         s.stake = address(0);
-        Launcher l = Launcher(
-            deployCode("Launcher.sol:Launcher", abi.encode(admin, s, STRATEGY, GUARD, minBid, parts, councilMaker))
-        );
-        (,, address stake,,,,,,) = l.settings();
-        assertEq(stake, address(0));
+        vm.expectRevert(Launcher.BadSettings.selector);
+        deployCode("Launcher.sol:Launcher", abi.encode(admin, s, STRATEGY, GUARD, minBid, parts, councilMaker));
     }
 
     function test_admin_canHandOnOrRenounce_andRenouncingFreezesSettings() public {

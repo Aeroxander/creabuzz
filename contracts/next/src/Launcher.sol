@@ -71,10 +71,10 @@ interface IOwned {
 /// (all fixed when this Launcher is made), and the three addresses the Treasury trusts (`opener` is the project's Finisher,
 /// `salePath` is this Launcher, `rounds` is the project's Rounds).
 ///
-/// What the admin can change, for new projects only: the dollar token, the platform's address for fees, the stake's address
-/// (zero: projects launched then take no stake; meant for Creaton's own launch, project zero), the exit fee, the 15 : 60
-/// split and the agents' default limits. A founder commits to the exact set they saw by passing its hash to `launch`.
-/// Nothing in a launched project follows a later change.
+/// What the admin can change, for new projects only: the dollar token, the platform's address for fees, the stake's address,
+/// the exit fee, the 15 : 60 split and the agents' default limits. A founder commits to the exact set they saw by passing its
+/// hash to `launch`. Nothing in a launched project follows a later change. The admin may also name, once, the one project
+/// that launches with no stake (`nameProjectZero`: Creaton's own project, project zero); no other project can.
 /// @dev The Council is milestone 9. The seam here: `councilMaker`, fixed at construction (zero on every network until the
 /// Council contract exists), is the only address that may mark an address as a Council (`registerCouncil`) and name a
 /// project's pauser (`setPauser`, for the holders' vote).
@@ -101,7 +101,7 @@ contract Launcher {
     struct Settings {
         IERC20 quote; // the dollar token
         address platform; // receives the platform's part of exit and refund fees and of backing rounds
-        address stake; // receives Creaton's stake (held) when a project's market opens; zero: no stake (project zero)
+        address stake; // receives Creaton's stake (held) when a project's market opens
         uint16 exitFeeBps; // total exit fee in ten-thousandths: 500 = 5%
         uint16 platformFeeBps; // the part of it owed to the platform: 100 = 1%
         uint16 spendableParts; // 15
@@ -228,6 +228,11 @@ contract Launcher {
     mapping(address => bool) public isPair;
     /// @notice Addresses the council maker registered as Councils.
     mapping(address => bool) public isCouncil;
+    /// @notice The key (`keyOf`) of the one project that launches with no stake: project zero, Creaton's own. Zero when none
+    /// is named. Its launch uses the name up and sets `projectZeroLaunched`.
+    bytes32 public projectZeroKey;
+    /// @notice True once project zero launched: every later project takes the stake.
+    bool public projectZeroLaunched;
     mapping(bytes32 => Project) private _projects;
     mapping(bytes32 => ReserveSales) private _reserve;
 
@@ -291,6 +296,8 @@ contract Launcher {
     event SettingsChanged(Settings settings);
     /// @notice The admin role moved (to zero when renounced).
     event AdminChanged(address indexed admin);
+    /// @notice The admin named the project that will launch with no stake (zero: the name was taken back).
+    event ProjectZeroNamed(bytes32 indexed key);
 
     /// @notice This founder already launched a project with this id.
     error ProjectExists();
@@ -413,6 +420,10 @@ contract Launcher {
             revert BadName();
         }
         Settings memory s = settings;
+        // project zero (named by the admin, used up here) takes no stake; it reads `stake` zero in ProjectLaunched too
+        if (key == projectZeroKey) {
+            (projectZeroKey, projectZeroLaunched, s.stake) = (bytes32(0), true, address(0));
+        }
         Project memory p = Project({
             founder: msg.sender,
             shares: shareImpl.cloneDeterministic(keccak256(abi.encode(key, "shares"))),
@@ -733,6 +744,16 @@ contract Launcher {
         _set(next);
     }
 
+    /// @notice Name the one project that launches with no stake: project zero, Creaton's own, by its key (`keyOf` of its
+    /// founder and id). Only the admin, only before that project launched and only while no project zero has launched; a
+    /// name may be changed or taken back (zero) until then. Every other project takes the stake whatever is named.
+    function nameProjectZero(bytes32 key) external {
+        if (msg.sender != admin) revert NotAdmin();
+        if (projectZeroLaunched || _projects[key].shares != address(0)) revert ProjectExists();
+        projectZeroKey = key;
+        emit ProjectZeroNamed(key);
+    }
+
     /// @notice Hand the admin role on, or renounce it with the zero address (settings then never change again).
     function transferAdmin(address next) external {
         if (msg.sender != admin) revert NotAdmin();
@@ -815,9 +836,9 @@ contract Launcher {
 
     function _set(Settings memory s) private {
         if (
-            address(s.quote) == address(0) || s.platform == address(0) || s.exitFeeBps > MAX_EXIT_FEE_BPS
-                || s.platformFeeBps > s.exitFeeBps || s.spendableParts == 0 || s.floorParts == 0
-                || s.spendableParts > MAX_SPLIT_PART || s.floorParts > MAX_SPLIT_PART
+            address(s.quote) == address(0) || s.platform == address(0) || s.stake == address(0)
+                || s.exitFeeBps > MAX_EXIT_FEE_BPS || s.platformFeeBps > s.exitFeeBps || s.spendableParts == 0
+                || s.floorParts == 0 || s.spendableParts > MAX_SPLIT_PART || s.floorParts > MAX_SPLIT_PART
         ) revert BadSettings();
         // the dollar token must be a contract with the decimals every amount assumes, and fees must not go to the token
         // or to this contract (where they could never be collected)

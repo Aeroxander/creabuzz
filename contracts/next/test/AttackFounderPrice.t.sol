@@ -261,34 +261,35 @@ contract AttackFounderPriceRoundsTest is RoundsBase {
 
     // ================================================ zero stake =====================================================
 
-    /// @dev A8. The zero stake is a platform setting, not a founder input: a founder cannot set it, and `launch` takes no stake
-    /// argument. But it is one global setting: while it is zero (between the admin's two transactions around Creaton's launch)
-    /// ANY founder who launches gets no stake. Worked: 20M Shares the platform does not get for that project.
-    function test_attack_zeroStakeWindow_anyFounderLaunchesWithoutTheStake() public {
+    /// @dev A8. The zero stake was one global setting (the stake address set to zero), so ANY founder who launched while it
+    /// was zero took no stake. Fixed: the stake address must always be named, and the admin names project zero by its key
+    /// (`nameProjectZero`), used up by that one launch. A stranger who launches in the same block, with the same project id or
+    /// any other, takes the stake. A founder still cannot set any of it.
+    function test_attack_zeroStakeWindow_closed_onlyTheNamedProjectTakesNoStake() public {
         Launcher.Settings memory s = _settings();
         s.stake = address(0);
         vm.prank(founder);
         vm.expectRevert(Launcher.NotAdmin.selector);
         launcher.setSettings(s);
         vm.prank(admin);
+        vm.expectRevert(Launcher.BadSettings.selector);
         launcher.setSettings(s);
-        // a founder who read the settings before the change cannot be pushed into them
-        bytes32 old = keccak256(abi.encode(_settings()));
-        vm.prank(stranger);
-        vm.expectRevert(Launcher.SettingsMoved.selector);
-        launcher.launch(keccak256("old hash"), "X", "X", old);
-        // Creaton launches, and so does a stranger in the same window
-        (, address creaton,) = _launch(founder, keccak256("creaton"));
-        (, address dodger,) = _launch(stranger, keccak256("not project zero"));
-        assertEq(Treasury(creaton).stakeAmount(), 0);
-        assertEq(Treasury(dodger).stakeAmount(), 0, "an ordinary project took no stake either");
+        bytes32 creatonKey = launcher.keyOf(founder, keccak256("creaton")); // read first: a prank applies to the next call
+        vm.prank(founder);
+        vm.expectRevert(Launcher.NotAdmin.selector);
+        launcher.nameProjectZero(creatonKey);
         vm.prank(admin);
-        launcher.setSettings(_settings());
+        launcher.nameProjectZero(creatonKey);
+        // a stranger watching the chain launches in the same block, with Creaton's project id too: the stake is taken
+        (, address dodger,) = _launch(stranger, keccak256("creaton"));
+        (, address dodger2,) = _launch(stranger, keccak256("not project zero"));
+        (, address creaton,) = _launch(founder, keccak256("creaton"));
+        assertEq(Treasury(dodger).stakeAmount(), 20_000_000 * SHARE, "the stranger took the stake");
+        assertEq(Treasury(dodger2).stakeAmount(), 20_000_000 * SHARE);
+        assertEq(Treasury(creaton).stakeAmount(), 0, "only project zero takes none");
         (, address later,) = _launch(stranger, keccak256("after"));
         assertEq(Treasury(later).stakeAmount(), 20_000_000 * SHARE);
-        emit log_named_decimal_uint(
-            "A8 stake the platform loses per project launched in the window", 20_000_000 * SHARE, 18
-        );
+        emit log_named_decimal_uint("A8 stake the platform loses on a project launched in the window (now)", 0, 18);
     }
 }
 
