@@ -4,6 +4,7 @@ import {
   chainKeyFromTags,
   chainKeyOf,
   numbersBelongTo,
+  withChainKey,
   projectIdOf,
 } from "./project-chain.ts";
 
@@ -79,4 +80,21 @@ test("numbers belong to a project only when key, founder, id and record all agre
     false,
   );
   assert.equal(numbersBelongTo({ ...good, projectId: 7 }), false);
+});
+
+test("a record names its launch with one chain-key tag, replacing any earlier one", () => {
+  const key = `0x${"Ab".repeat(32)}`;
+  const tags = [
+    ["d", "lantern"],
+    ["chain-key", `0x${"11".repeat(32)}`],
+    ["t", "lamps"],
+  ];
+  const out = withChainKey(tags, key);
+  assert.deepEqual(out, [
+    ["d", "lantern"],
+    ["t", "lamps"],
+    ["chain-key", key.toLowerCase()],
+  ]);
+  assert.equal(chainKeyFromTags(out), key.toLowerCase());
+  assert.throws(() => withChainKey(tags, "0x1234"));
 });

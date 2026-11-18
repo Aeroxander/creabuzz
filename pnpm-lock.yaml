@@ -404,6 +404,9 @@ importers:
 
   packages/creaton-core:
     dependencies:
+      '@noble/curves':
+        specifier: ^2.4.0
+        version: 2.4.0
       '@noble/hashes':
         specifier: ^2.2.0
         version: 2.4.0

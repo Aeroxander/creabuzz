@@ -9,6 +9,9 @@
  *
  * The key is `self`, the key the server signs its own records with (the project numbers), read by `serverRelaySigner()`.
  *
+ * The second setting is `trading`: whether buying and selling Shares in a project's pool is offered. No server sends it
+ * yet (an operator switch is server work), so it stays off; it counts only where `investing` is on too.
+ *
  * Only a plain `true` or `false` counts: anything else (a string, a number, a null) is "says nothing", so a
  * malformed document can never switch money screens on.
  *
@@ -18,9 +21,11 @@
 export interface ServerSettings {
   /** True or false when the server said so; null when it said nothing. */
   investing: boolean | null;
+  /** Whether trading in a project's pool is offered; null when the server said nothing (then it is off). */
+  trading: boolean | null;
 }
 
-const NOTHING: ServerSettings = { investing: null };
+const NOTHING: ServerSettings = { investing: null, trading: null };
 
 let current: ServerSettings = NOTHING;
 
@@ -47,13 +52,24 @@ export function serverRelaySigner(): string | null {
 /** The settings in a server's information document; "says nothing" for anything that is not one. */
 export function parseServerSettings(info: unknown): ServerSettings {
   if (!info || typeof info !== "object" || Array.isArray(info)) return NOTHING;
-  const investing = (info as { investing?: unknown }).investing;
-  return { investing: typeof investing === "boolean" ? investing : null };
+  const { investing, trading } = info as {
+    investing?: unknown;
+    trading?: unknown;
+  };
+  return {
+    investing: typeof investing === "boolean" ? investing : null,
+    trading: typeof trading === "boolean" ? trading : null,
+  };
 }
 
 /** What the server said about investing, or null when it said nothing (or has not been asked yet). */
 export function serverInvesting(): boolean | null {
   return current.investing;
+}
+
+/** What the server said about trading in the pool, or null when it said nothing (or has not been asked yet). */
+export function serverTrading(): boolean | null {
+  return current.trading;
 }
 
 /** Keep what the server said (or nothing, for a document that could not be read). */

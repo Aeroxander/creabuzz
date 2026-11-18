@@ -12,6 +12,7 @@
     "check": "biome check ."
   },
   "dependencies": {
+    "@noble/curves": "^2.4.0",
     "@noble/hashes": "^2.2.0",
     "nostr-tools": "^2.23.3"
   }

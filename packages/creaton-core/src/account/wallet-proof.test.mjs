@@ -14,6 +14,7 @@ import {
   resolvePaymentWalletChecked,
   siweMessageHash,
   walletAttestationDigest,
+  walletTypedData,
 } from "./wallet-proof.ts";
 
 // Public Anvil development key; no user wallet or funds.
@@ -291,4 +292,13 @@ test("expired, revoked and tampered smart-account proofs never reach the chain",
   // And an untouched one does ask, once.
   assert.equal((await check([smartRecord()])).state, "verified");
   assert.equal(asked, 1);
+});
+
+test("the typed data a wallet signs names the account, the key and the chain, never a transfer", () => {
+  const attestation = newWalletAttestation(address, pubkey, 31337, now, 9);
+  const typed = walletTypedData(attestation);
+  assert.equal(typed.primaryType, "NostrSigner");
+  assert.equal(typed.domain.chainId, 31337);
+  assert.equal(typed.message.account, address);
+  assert.equal(typed.message.npub, `0x${pubkey}`);
 });

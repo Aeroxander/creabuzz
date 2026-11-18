@@ -54,6 +54,25 @@ export function chainKeyFromTags(
 }
 
 /**
+ * The tags of a project record that names `chainKey` as its launch: any earlier `chain-key` tag is replaced, every other
+ * tag is kept in order. Throws for a key that is not 32 bytes of hex, so a malformed link is never written.
+ *
+ * The link itself (a tag on the founder's own record, written after `Launcher.launch` lands) is the lead's proposal
+ * from milestone 6 part 2 and still waits for the owner's decision.
+ */
+export function withChainKey(
+  tags: readonly (readonly string[])[],
+  chainKey: string,
+): string[][] {
+  const key = chainKey.toLowerCase();
+  if (!BYTES32.test(key)) throw new Error("A chain key is 32 bytes of hex.");
+  return [
+    ...tags.filter((tag) => tag[0] !== CHAIN_KEY_TAG).map((tag) => [...tag]),
+    [CHAIN_KEY_TAG, key],
+  ];
+}
+
+/**
  * Whether a record of numbers (its `d` tag and the founder and id it carries) belongs to the project at `coordinate`
  * whose record names `chainKey`. All four must agree.
  */
