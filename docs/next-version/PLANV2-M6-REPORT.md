@@ -320,3 +320,59 @@ set, in `app/test-results/screens/` (ignored by git); all 18 hashes are distinct
    a VoiceOver walk (7), and **the rest of part 1's code review**, whose findings after the fourth never arrived (10).
    Part 1's items 3 (real-server loop), 4 (passkey end to end) and 6 (milestone 6 part 2) are done above, except as
    listed here.
+
+## Review fixes (part 2, 18 November 2026)
+
+Two reviews of part 2 found 3 blockers (F1 to F3), 4 important findings (F4 to F7), 2 optional ones (F8, F9) and 10
+attacks on the money screens (A1 to A10). Every blocker and every important finding is fixed, and both optional ones
+too. Each fix has a test that fails on 3c2f6ab37: the unit tests in `app/src/features/money/money-screens.test.tsx`
+(15, all failing on the reviewed screens), `wallet.test.ts`, `money-copy.test.ts` and `numbers.test.ts`, and the
+journeys in `app/tests/e2e/money-review.spec.ts` (F1, F2; now in the `smoke` project). The reviewers' untracked
+proving files were adopted into those files and removed.
+
+| Finding | Fix | Test |
+|---|---|---|
+| F1 Back fails from a wallet on another network | `MoneyWallet.ensureChain` runs before the calls are built, so the dollar token is read on the project's network | `money-review.spec.ts` F1 (wallet starts on chain 1); `money-screens` F1 |
+| F2 numbers cached by chain key alone | the project's coordinate is part of the query key; each record is checked on its own | `money-review.spec.ts` F2 |
+| F3 a failed receipt lookup said "Nothing changed" | a failed lookup is one more poll; any error once a hash exists is "not landed yet" with that hash, never "nothing changed" | `wallet.test.ts` (2 cases) |
+| F4, A4 You and Home read only the 100 newest records | You reads up to 5 pages of 100 (bounded); when older records were left unread, You and Home say so instead of "has not backed" or "no round is open right now"; a refund missing from a cut list reads "not in the newest numbers yet", not "Nothing left" | `money-screens` A4 (2 cases) |
+| F5 Open backing offered to the wrong wallet and at Team | shown only at Solo and Backed; only the wallet that runs the project gets the button, others are told which wallet can; `NotRunner()` and `WrongRunner(uint8)` have their own sentence | `money-copy.test.ts` F5 |
+| F6 the gas error read as "not enough dollars" | the node's "insufficient funds" now asks for a little of the network's own coin; dollar refusals match by selector | `money-copy.test.ts` F6 |
+| F7 `join.spec.ts` failed biome | formatted; `biome check` re-run on the whole app | gate below |
+| F8 "held for more than N accounts" | `holderCount` is the full count; "At least" only on the Share total and only when the list is shorter than the count | `money-screens` F8 |
+| F9 a copy could hide a project's name on receipts | every record naming a chain key is kept, and the one that checks out is used | covered by the F2 check in `parseNumbers` |
+| A1 a quick double press sent two backings | each money step has one in-flight guard, set before the mutation starts; the weekly submit has its own | `money-screens` A1 |
+| A2 a taken-back receipt was misread | `refunded` is parsed as the server writes it, `{paid, at}`, and the receipt says how much came back | `money-screens` A2 |
+| A3 a backer cut from the holders list was told 0 Shares | when the list is cut before this wallet, the card says so and gives the Shares its receipts set aside | `money-screens` A3 |
+| A5 the refund line read as 95 of each 100 back | the sheet now says at most 77.90 of each 100 can come back, falling over 26 weeks of check-ins to nothing (`mostBack` in `calls.ts`) | `money-screens` A5, `numbers.test.ts`, `money.spec.ts` |
+| A6 a cheaper earlier round was never named | the Back box names every earlier round priced differently | `money-screens` A6 |
+| A7 an oversubscribed round promised full Shares | the box shows dollars asked so far of the round's size; the sheet's Shares estimate and "about N of each 100" use what has been asked | `money-screens` A7 |
+| A8 a round past its 24 hours read "open now" | rounds are open, waiting to be closed, or closed; Open backing is hidden while any round is not closed | `money-screens` A8, `numbers.test.ts` |
+| A9 taking out released Shares was one unreviewed press | a sheet first, naming the Shares and the refund it ends (about X dollars as of the record's time); 2 presses | `money-screens` A9 |
+| A10 a retry after "not landed yet" sent a second ask | a sent call whose outcome is unknown is remembered per step (`pending-sends.ts`, this browser's storage, at most 50); the next press looks it up and sends again only if the network says it reverted or never saw it, and only the calls after the last one that landed | `money-screens` A10 (3 cases), `wallet.test.ts` |
+
+None was declined.
+
+### Gates after the review fixes
+
+| Gate | Result |
+|---|---|
+| app `tsc --noEmit`, `biome check .` | clean |
+| app copy check, px-text, file sizes (`CHECK_FILE_SIZES_BASE=3d7ecf83d`) | pass |
+| app `vitest` | **85 passed** (part 2: 63) |
+| app `vite build` + bundle budget | entry 389 KiB of 450 (part 2: 384) |
+| Playwright `smoke`, 390x844 touch | **38 passed** (part 2: 36; `money-review.spec.ts` adds F1 and F2). On the first full run the passkey spec failed once (the unlock bar did not show within 20 seconds of the reload, right after the 12 axe runs); it passed alone and in a full re-run. Recorded as possibly flaky |
+| Playwright `screens` | 9 passed; 18 shots, every hash distinct |
+| `knip` (whole repo) | clean |
+| `node scripts/regen-kinds.mjs --check` | up to date |
+
+`packages/creaton-core` and `web/` did not change in these fixes, so their gates were not re-run. Not run: cargo, forge.
+
+### Still open after the review fixes
+
+- The steps waiting to be looked up live in this browser's storage. A backer who switches devices while a call is
+  pending is not protected from a second ask there; reading `Rounds.positionOf(round, me)` before an ask would be.
+- The passkey spec failed once in a full smoke run and passed on both re-runs; if it repeats, look at the reload's
+  timing after the axe runs.
+- You reads at most 500 records of numbers. Past that it says the list may be incomplete; reading a backer's projects
+  directly needs a backer index on the record (server work).
