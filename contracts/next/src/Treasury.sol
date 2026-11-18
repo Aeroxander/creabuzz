@@ -86,7 +86,7 @@ contract Treasury {
     /// @notice See `RESERVE_SPENDABLE_PARTS`.
     uint256 public constant RESERVE_FLOOR_PARTS = 82;
     /// @notice Project zero's team budget accrues evenly over this long from the launch: `payTeam` never pays more than
-    /// the part accrued so far (paid in arrears, like a monthly payment; catching up is always allowed).
+    /// the part accrued so far (paid in arrears, like monthly pay; catching up is always allowed).
     uint256 public constant TEAM_PAY_SPAN = 730 days;
     uint256 private constant BPS = 10_000;
     uint256 private constant DAY = 1 days;

@@ -571,7 +571,7 @@ contract EarlierConsentTest is EarlierBase {
         eb.voidConsent(0, address(0), keccak256("evidence"));
         EarlierBackers.Entry memory e = eb.entryOf(0);
         assertEq(e.consentAt, 0);
-        assertEq(e.receiver, address(0), "never redirected");
+        assertEq(e.receiver, address(0), "no receiver after a void");
         assertEq(e.barred, holders[0]);
         assertEq(eb.consentedTotal(), 0);
         assertEq(eb.consentedCount(), 0);

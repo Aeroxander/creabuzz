@@ -120,7 +120,7 @@ contract TeamBudgetTest is EarlierBase {
         t.payTeam(teamWallet, 1); // one signer alone cannot
     }
 
-    /// The manager's plan: paid monthly for 30 months (2.5 years), each paid at the end of its month (in arrears): 12
+    /// The manager's plan: monthly payments for 30 months (2.5 years), each made at the end of its month (in arrears): 12
     /// before the market (held) at a 30-day step, then 18 after it (free) at a 33-day step, the step at which one month's
     /// gifts have left the cap's memory; the teammate is paid alongside from the work pot. The pace (`teamPayable`, the
     /// budget over 730 days) never stops a monthly payment. The budget is used up exactly; the work pot falls by the
@@ -147,9 +147,9 @@ contract TeamBudgetTest is EarlierBase {
         assertEq(t.teamBudget(), 0, "used up");
         assertEq(t.workPot(), 200_000_000e18 - TEAMMATE);
         assertEq(t.reserve(), 100_000_000e18);
-        (uint256 heldOwner,) = v.grants(teamWallet);
+        (uint256 heldTeam,) = v.grants(teamWallet);
         (uint256 heldMate,) = v.grants(teammate);
-        assertEq(heldOwner, perMonth * 12, "12 months held");
+        assertEq(heldTeam, perMonth * 12, "12 months held");
         assertEq(heldMate, mate * 12);
         vm.warp(_now() + 365 days);
         v.claim(teamWallet);
