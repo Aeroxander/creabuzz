@@ -118,7 +118,7 @@ impl Chain {
             time,
             runners: self.runners.clone(),
         };
-        derive(&KEY, &self.logs, &as_of)
+        derive(&KEY, &self.logs, &HashMap::new(), &as_of)
             .expect("derives")
             .expect("launched")
     }
@@ -466,7 +466,9 @@ fn no_launch_no_numbers() {
         time: 1,
         runners: Runners::default(),
     };
-    assert!(derive(&KEY, &[], &as_of).expect("derives").is_none());
+    assert!(derive(&KEY, &[], &HashMap::new(), &as_of)
+        .expect("derives")
+        .is_none());
 }
 
 #[test]

@@ -282,7 +282,7 @@ BEGIN
     END IF;
 END $$;
 
--- Chain reader tables (migrations 0065, 0066) are operator-global: public chain facts
+-- Chain reader tables (migrations 0065 to 0067) are operator-global: public chain facts
 -- read for the whole deployment. pgschema skips the registry seed rows, so
 -- insert them here and assert the live registry, or the community_id lint and
 -- the deletion catalog would treat them as tenant tables.
@@ -293,7 +293,9 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('chain_logs', 'deployment-global contract events read from the chain; public chain facts'),
     ('chain_project_numbers', 'deployment-global record of the project numbers the reader signed'),
     ('chain_helper_jobs', 'deployment-global calls the chain helper sends; public chain facts'),
-    ('chain_helper_sends', 'deployment-global transactions the chain helper broadcast and their fees')
+    ('chain_helper_sends', 'deployment-global transactions the chain helper broadcast and their fees'),
+    ('chain_balances', 'deployment-global Shares balances the chain reader keeps; public chain facts'),
+    ('chain_balance_changes', 'deployment-global Shares balance changes by block, undone on a rollback')
 ON CONFLICT (table_name) DO NOTHING;
 
 DO $$
@@ -304,7 +306,8 @@ BEGIN
       INTO missing
       FROM unnest(ARRAY['chain_reader_cursor', 'chain_blocks', 'chain_contracts',
                         'chain_logs', 'chain_project_numbers',
-                        'chain_helper_jobs', 'chain_helper_sends']) AS t(name)
+                        'chain_helper_jobs', 'chain_helper_sends',
+                        'chain_balances', 'chain_balance_changes']) AS t(name)
      WHERE NOT EXISTS (SELECT 1 FROM _operator_global_tables g WHERE g.table_name = t.name);
     IF missing IS NOT NULL THEN
         RAISE EXCEPTION 'chain reader tables missing from _operator_global_tables after pgschema apply: %', missing;

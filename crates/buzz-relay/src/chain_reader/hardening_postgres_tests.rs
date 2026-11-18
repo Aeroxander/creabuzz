@@ -261,3 +261,80 @@ async fn auctions_pool_trades_and_fees_reach_the_record() {
     let holders = n["holders"].to_string();
     assert!(!holders.contains(&hex0x(&MANAGER)), "{holders}");
 }
+
+/// F5: Shares balances are kept as ranges are committed (Transfers are not
+/// loaded with the project's logs any more) and a rollback takes the gone
+/// Transfers back out of them.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn running_balances_follow_transfers_and_a_rollback() {
+    use super::events::Role;
+    use super::postgres_tests::{a, data, topic, u, SHARES};
+    const ALICE: [u8; 20] = [0xa1; 20];
+    const CAROL: [u8; 20] = [0xc3; 20];
+    let transfer = |from: &[u8; 20], to: &[u8; 20], value: u128| {
+        (
+            SHARES,
+            vec![topic(Role::Shares, "Transfer"), a(from), a(to)],
+            data(&[u(value)]),
+        )
+    };
+    let chain = Arc::new(FakeChain::default());
+    let (reader, state, host) = setup(Arc::clone(&chain), 0).await;
+    chain.mine(T0, 1, with_launcher(launch_logs(), reader.config.launcher)); // 0
+    chain.mine(T0 + 10, 1, vec![transfer(&[0; 20], &ALICE, 1_000)]); // 1: a mint
+    chain.mine(T0 + 20, 1, vec![transfer(&ALICE, &CAROL, 400)]); // 2
+    chain.mine(T0 + 30, 1, vec![]); // 3
+    chain.mine(T0 + 40, 1, vec![]); // 4
+    reader.pass().await.expect("pass");
+    let free_of = |n: &serde_json::Value, who: &[u8; 20]| {
+        n["holders"]
+            .as_array()
+            .expect("holders")
+            .iter()
+            .find(|h| h["account"] == hex0x(who))
+            .map(|h| h["free"].as_str().unwrap_or_default().to_owned())
+    };
+    let n = latest_record(&state, &host).await.expect("a record");
+    assert_eq!(
+        free_of(&n, &ALICE).as_deref(),
+        Some("600"),
+        "{}",
+        n["holders"]
+    );
+    assert_eq!(free_of(&n, &CAROL).as_deref(), Some("400"));
+    let stored: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM chain_logs WHERE reader = $1 AND event = 'Transfer'",
+    )
+    .bind(reader.reader_id())
+    .fetch_one(state.db.pool())
+    .await
+    .expect("count");
+    assert_eq!(stored, 2, "the Transfers are kept as rows");
+
+    // Block 2 leaves the chain: the 400 never moved.
+    chain.truncate(2);
+    chain.mine(T0 + 21, 2, vec![]); // 2'
+    chain.mine(T0 + 31, 2, vec![]); // 3'
+    chain.mine(T0 + 41, 2, vec![]); // 4'
+    chain.mine(T0 + 51, 2, vec![]); // 5'
+    let (scanned, _) = reader.pass().await.expect("pass after the rollback");
+    assert_eq!(scanned.rolled_back_to, Some(1));
+    let n = latest_record(&state, &host).await.expect("a record");
+    assert_eq!(
+        free_of(&n, &ALICE).as_deref(),
+        Some("1000"),
+        "{}",
+        n["holders"]
+    );
+    assert_eq!(free_of(&n, &CAROL), None);
+    let carol: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM chain_balances WHERE reader = $1 AND account = $2",
+    )
+    .bind(reader.reader_id())
+    .bind(CAROL.as_slice())
+    .fetch_one(state.db.pool())
+    .await
+    .expect("count");
+    assert_eq!(carol, 0, "an emptied balance is not kept");
+}

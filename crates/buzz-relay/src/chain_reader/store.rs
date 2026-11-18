@@ -289,6 +289,35 @@ pub async fn commit_range(pool: &PgPool, reader: &str, w: RangeWrite<'_>) -> any
         .bind(&l.decoded)
         .execute(&mut *tx)
         .await?;
+        if let Some((key, moves)) = balance_moves(l) {
+            for (account, delta) in moves {
+                sqlx::query(
+                    "INSERT INTO chain_balance_changes \
+                         (reader, block_number, log_index, account, project_key, delta) \
+                     VALUES ($1, $2, $3, $4, $5, $6::numeric)",
+                )
+                .bind(reader)
+                .bind(i64_of(l.block_number)?)
+                .bind(i32::try_from(l.log_index).context("log index")?)
+                .bind(account.as_slice())
+                .bind(key.as_slice())
+                .bind(&delta)
+                .execute(&mut *tx)
+                .await?;
+                sqlx::query(
+                    "INSERT INTO chain_balances (reader, project_key, account, balance) \
+                     VALUES ($1, $2, $3, $4::numeric) \
+                     ON CONFLICT (reader, project_key, account) \
+                     DO UPDATE SET balance = chain_balances.balance + EXCLUDED.balance",
+                )
+                .bind(reader)
+                .bind(key.as_slice())
+                .bind(account.as_slice())
+                .bind(&delta)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
     }
     sqlx::query(
         "DELETE FROM chain_blocks b WHERE b.reader = $1 AND b.number < $2 AND b.number <> $3 \
@@ -320,6 +349,26 @@ pub async fn rollback(
 ) -> anyhow::Result<u64> {
     let mut tx = fenced(pool, reader, expected_next).await?;
     let fork_i = i64_of(fork)?;
+    // The running balances lose the changes of the logs that are going.
+    sqlx::query(
+        "UPDATE chain_balances b SET balance = b.balance - c.total \
+         FROM (SELECT project_key, account, sum(delta) AS total FROM chain_balance_changes \
+               WHERE reader = $1 AND block_number > $2 GROUP BY project_key, account) c \
+         WHERE b.reader = $1 AND b.project_key = c.project_key AND b.account = c.account",
+    )
+    .bind(reader)
+    .bind(fork_i)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM chain_balance_changes WHERE reader = $1 AND block_number > $2")
+        .bind(reader)
+        .bind(fork_i)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM chain_balances WHERE reader = $1 AND balance = 0")
+        .bind(reader)
+        .execute(&mut *tx)
+        .await?;
     let removed = sqlx::query("DELETE FROM chain_logs WHERE reader = $1 AND block_number > $2")
         .bind(reader)
         .bind(fork_i)
@@ -408,6 +457,7 @@ pub async fn project_logs(
         "SELECT l.block_number, l.log_index, b.block_time, l.role, l.address, l.event, l.decoded \
          FROM chain_logs l JOIN chain_blocks b ON b.reader = l.reader AND b.number = l.block_number \
          WHERE l.reader = $1 AND l.project_key = $2 AND l.block_number <= $3 AND l.decoded IS NOT NULL \
+           AND NOT (l.role = 'shares' AND l.event = 'Transfer') \
          ORDER BY l.block_number, l.log_index",
     )
     .bind(reader)
@@ -430,6 +480,66 @@ pub async fn project_logs(
             })
         })
         .collect()
+}
+
+/// The Shares moves a stored log makes: its project and, for a Shares
+/// `Transfer`, the sender's and the receiver's changes as decimal text (the
+/// zero address, mint and burn, is not an account).
+fn balance_moves(l: &StoredLog) -> Option<(Word, Vec<([u8; 20], String)>)> {
+    if l.role != Role::Shares || l.event != "Transfer" {
+        return None;
+    }
+    let key = l.project_key?;
+    let addr = |name: &str| {
+        l.decoded
+            .get(name)
+            .and_then(Value::as_str)
+            .and_then(super::word::parse_fixed::<20>)
+    };
+    let (from, to) = (addr("from")?, addr("to")?);
+    let value = l.decoded.get("value").and_then(Value::as_str)?.to_owned();
+    let mut moves = Vec::with_capacity(2);
+    if from != to {
+        if from != [0u8; 20] {
+            moves.push((from, format!("-{value}")));
+        }
+        if to != [0u8; 20] {
+            moves.push((to, value));
+        }
+    }
+    Some((key, moves))
+}
+
+/// A project's free Shares per account as of `final_block` (lower-case `0x`
+/// text): the running balances, less any change stored past that block
+/// (review F5: Transfers are no longer loaded with the project's logs).
+pub async fn balances(
+    pool: &PgPool,
+    reader: &str,
+    key: &Word,
+    final_block: u64,
+) -> anyhow::Result<HashMap<String, i128>> {
+    let rows: Vec<(Vec<u8>, String)> = sqlx::query_as(
+        "SELECT b.account, (b.balance - COALESCE((SELECT sum(c.delta) FROM chain_balance_changes c \
+                 WHERE c.reader = b.reader AND c.project_key = b.project_key \
+                   AND c.account = b.account AND c.block_number > $3), 0))::text \
+         FROM chain_balances b WHERE b.reader = $1 AND b.project_key = $2",
+    )
+    .bind(reader)
+    .bind(key.as_slice())
+    .bind(i64_of(final_block)?)
+    .fetch_all(pool)
+    .await?;
+    let mut out = HashMap::with_capacity(rows.len());
+    for (account, balance) in rows {
+        let balance: i128 = balance
+            .parse()
+            .with_context(|| format!("a stored balance is not a number: {balance}"))?;
+        if balance != 0 {
+            out.insert(super::word::hex0x(&account), balance);
+        }
+    }
+    Ok(out)
 }
 
 /// What was last signed, per project.

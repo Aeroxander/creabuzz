@@ -386,7 +386,8 @@ impl ChainReader {
         let pool = self.state.db.pool();
         let reader = self.scan.reader.as_str();
         let logs = store::project_logs(pool, reader, key, as_of.block).await?;
-        let Some(content) = numbers::derive(key, &logs, as_of)? else {
+        let balances = store::balances(pool, reader, key, as_of.block).await?;
+        let Some(content) = numbers::derive(key, &logs, &balances, as_of)? else {
             return Ok(false);
         };
         let facts = digest(&numbers::facts_of(&content));

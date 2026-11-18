@@ -242,7 +242,15 @@ struct Account {
 
 /// Work out the numbers for project `key` from its events, oldest first, or
 /// `Ok(None)` when its launch is not among them (for example after a rollback).
-pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Option<Value>> {
+/// `balances` are the free Shares per account the reader keeps as ranges are
+/// committed (Shares Transfers are not among the stored logs it loads, review
+/// F5); Transfers in `logs`, if any, are counted on top.
+pub fn derive(
+    key: &Word,
+    logs: &[LogRow],
+    balances: &HashMap<String, i128>,
+    as_of: &AsOf,
+) -> anyhow::Result<Option<Value>> {
     let Some(launch) = logs
         .iter()
         .find(|l| l.role == Role::Launcher && l.event == "ProjectLaunched")
@@ -278,7 +286,18 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     let mut clock = Clock::started(launched_at);
     let mut rounds: BTreeMap<u64, RoundState> = BTreeMap::new();
     let mut positions: BTreeMap<(u64, String), Position> = BTreeMap::new();
-    let mut accounts: HashMap<String, Account> = HashMap::new();
+    let mut accounts: HashMap<String, Account> = balances
+        .iter()
+        .map(|(a, free)| {
+            (
+                a.clone(),
+                Account {
+                    held: 0,
+                    free: *free,
+                },
+            )
+        })
+        .collect();
     // The first Pair made for this project (shown), and since when the current
     // runner has been a Pair or a Council: the cap and the Team stage follow
     // the current runner (`Launcher.capOf`, `stageOf`), so a Pair that hands
@@ -501,7 +520,12 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
                 }
             }
             (Role::Vester, "Started") => vester_started = Some(t),
-            (Role::Earlier, _) => earlier.apply(row)?,
+            (Role::Earlier, event) => {
+                if event == "Delivered" {
+                    receivers.insert(text(row, "receiver")?);
+                }
+                earlier.apply(row)?;
+            }
             (Role::Auction | Role::Holder | Role::PoolManager, _) => {
                 market.apply(row, shares_first, &own[1])?;
             }

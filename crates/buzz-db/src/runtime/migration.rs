@@ -565,6 +565,8 @@ mod postgres_tests {
             "chain_project_numbers",
             "chain_helper_jobs",
             "chain_helper_sends",
+            "chain_balances",
+            "chain_balance_changes",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -778,7 +780,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 66);
+        assert_eq!(migrations.len(), 67);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1663,6 +1665,44 @@ mod postgres_tests {
                 desired_schema.contains(role),
                 "schema.sql must allow {role}"
             );
+        }
+    }
+
+    #[test]
+    fn chain_balance_tables_are_operator_global_in_every_schema_source() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[66].version, 67);
+        let chain_balances = migrations[66].sql.as_str();
+        let desired_schema = crate::test_support::desired_state_schema_sql();
+        let reconcile = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../scripts/reconcile-schema-after-pgschema.sql"),
+        )
+        .expect("read the post-pgschema reconcile script");
+        for table in ["chain_balances", "chain_balance_changes"] {
+            let registered = format!("('{table}', 'deployment-global");
+            assert!(
+                chain_balances.contains(&registered),
+                "migration 0067 must register {table}"
+            );
+            assert!(
+                desired_schema.contains(&registered),
+                "schema seeds must register {table}"
+            );
+            assert!(
+                reconcile.contains(&registered),
+                "the reconcile script must register {table} (pgschema skips seeds)"
+            );
+            assert!(
+                reconcile.contains(&format!("'{table}'")),
+                "the reconcile script must assert {table} is registered"
+            );
+            assert!(
+                desired_schema.contains(&format!("CREATE TABLE {table} (")),
+                "schema.sql must declare {table}"
+            );
+            assert!(!chain_balances.contains(&format!("attach_community_write_fence('{table}')")));
         }
     }
 

@@ -150,6 +150,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 \i tables/public/chain_project_numbers.sql
 \i tables/public/chain_helper_jobs.sql
 \i tables/public/chain_helper_sends.sql
+\i tables/public/chain_balances.sql
+\i tables/public/chain_balance_changes.sql
 
 -- partitions
 \i partitions/events.sql
@@ -232,6 +234,8 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 \i seeds/chain_project_numbers.sql
 \i seeds/chain_helper_jobs.sql
 \i seeds/chain_helper_sends.sql
+\i seeds/chain_balances.sql
+\i seeds/chain_balance_changes.sql
 
 -- Fence any community-scoped table that lacks an explicit attach.
 \i community_write_fence.sql
