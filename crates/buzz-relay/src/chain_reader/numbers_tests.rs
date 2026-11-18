@@ -17,6 +17,7 @@ const KEY: Word = [0xab; 32];
 struct Chain {
     logs: Vec<LogRow>,
     block: u64,
+    runners: Runners,
 }
 
 impl Chain {
@@ -24,6 +25,7 @@ impl Chain {
         let mut c = Self {
             logs: Vec::new(),
             block: 100,
+            runners: Runners::default(),
         };
         c.push(T0, Role::Launcher, "ProjectLaunched", json!({
             "key": hex0x(&KEY), "projectId": hex0x(&[1u8; 32]), "founder": FOUNDER,
@@ -113,6 +115,7 @@ impl Chain {
             launcher: [0x11; 20],
             block: self.block,
             time,
+            runners: self.runners.clone(),
         };
         derive(&KEY, &self.logs, &as_of)
             .expect("derives")
@@ -336,6 +339,72 @@ fn stages_follow_the_launcher_rules() {
     assert_eq!(council["noMarketFrom"], Value::Null);
 }
 
+/// Review B1 / F4: the cap and the Team stage follow the current runner
+/// (`Launcher.capOf(runner)`, `stageOf`), not "a Pair was ever made".
+#[test]
+fn a_pair_that_hands_the_seat_to_one_person_ends_team_and_the_bigger_cap() {
+    let (mut c, close) = worked_2500();
+    let pair = "0x00000000000000000000000000000000000000aa";
+    let carol = "0x00000000000000000000000000000000000000cc";
+    // makePair: the Pair takes the seat (RunnerChanged), then PairMade.
+    c.push(
+        close + DAY,
+        Role::Treasury,
+        "RunnerChanged",
+        json!({"from": FOUNDER, "to": pair, "cut": "0"}),
+    );
+    c.push(
+        close + DAY,
+        Role::Launcher,
+        "PairMade",
+        json!({"key": hex0x(&KEY), "pair": pair, "first": FOUNDER, "second": ALICE}),
+    );
+    let team = c.numbers(close + DAY);
+    assert_eq!(team["stage"]["name"], "team");
+    assert_eq!(team["stage"]["since"], close + DAY);
+    assert_eq!(team["raised"]["cap"], "50000000000");
+    // The co-founder leaves: both signers hand the seat to Carol alone.
+    c.push(
+        close + 2 * DAY,
+        Role::Treasury,
+        "RunnerChanged",
+        json!({"from": pair, "to": carol, "cut": "0"}),
+    );
+    let single = c.numbers(close + 2 * DAY);
+    assert_eq!(single["treasury"]["runner"], carol);
+    assert_eq!(single["stage"]["name"], "backed");
+    assert_eq!(single["stage"]["since"], close);
+    assert_eq!(single["raised"]["cap"], "10000000000");
+    assert_eq!(single["raised"]["left"], "7500000000");
+    assert_eq!(single["eligible"], json!({"for": "team", "since": close}));
+    // The project's first Pair is still named.
+    assert_eq!(single["contracts"]["pair"], pair);
+}
+
+/// `Launcher.isPair` is one list for the whole Launcher: a Pair made for
+/// another project that takes this project's seat makes it Team as well.
+#[test]
+fn a_pair_made_for_another_project_counts_as_a_pair_runner() {
+    let (mut c, close) = worked_2500();
+    let other_pair = "0x00000000000000000000000000000000000000ee";
+    c.push(
+        close + DAY,
+        Role::Treasury,
+        "RunnerChanged",
+        json!({"from": FOUNDER, "to": other_pair, "cut": "0"}),
+    );
+    assert_eq!(c.numbers(close + DAY)["stage"]["name"], "backed");
+    c.runners.pairs.insert(other_pair.to_owned());
+    let n = c.numbers(close + DAY);
+    assert_eq!(n["stage"]["name"], "team");
+    assert_eq!(n["raised"]["cap"], "50000000000");
+    assert_eq!(n["contracts"]["pair"], Value::Null);
+    // A registered Council runner counts too.
+    c.runners.pairs.clear();
+    c.runners.councils.insert(other_pair.to_owned());
+    assert_eq!(c.numbers(close + DAY)["raised"]["cap"], "50000000000");
+}
+
 #[test]
 fn a_refund_ends_the_position_and_cancelled_shares_leave_the_holder() {
     let (mut c, close) = worked_2500();
@@ -368,6 +437,7 @@ fn no_launch_no_numbers() {
         launcher: [0; 20],
         block: 1,
         time: 1,
+        runners: Runners::default(),
     };
     assert!(derive(&KEY, &[], &as_of).expect("derives").is_none());
 }
@@ -451,6 +521,54 @@ fn an_auction_holding_shares_for_sale_is_not_listed_as_a_holder() {
     let n = c.numbers(close + DAY);
     assert_eq!(n["holderCount"], 2);
     assert_eq!(n["sale"]["auction"], auction);
+}
+
+/// Project zero (contracts commit fb0f84d75): the earlier backers' claim
+/// contract holds its Vester grant for the people on its list, so it is not
+/// listed as a holder; team pay from the budget is summed.
+#[test]
+fn project_zero_split_and_team_pay() {
+    let (mut c, close) = worked_2500();
+    let claim = "0x00000000000000000000000000000000000000c1";
+    c.push(
+        close,
+        Role::Vester,
+        "Granted",
+        json!({"beneficiary": claim, "amount": "80000000000000000000000000"}),
+    );
+    c.push(
+        close,
+        Role::Launcher,
+        "ProjectZeroSplit",
+        json!({"key": hex0x(&KEY), "claim": claim,
+        "fromBacking": "50000000000000000000000000", "fromFounder": "30000000000000000000000000",
+        "teamBudget": "120000000000000000000000000"}),
+    );
+    c.push(
+        close + DAY,
+        Role::Treasury,
+        "TeamPaid",
+        json!({"to": ALICE,
+        "amount": "1000000000000000000000000", "left": "119000000000000000000000000"}),
+    );
+    let n = c.numbers(close + DAY);
+    assert_eq!(n["earlierBackers"]["claim"], claim);
+    assert_eq!(
+        n["earlierBackers"]["teamBudget"],
+        "120000000000000000000000000"
+    );
+    assert_eq!(n["treasury"]["teamPaid"], "1000000000000000000000000");
+    assert_eq!(
+        n["treasury"]["teamBudgetLeft"],
+        "119000000000000000000000000"
+    );
+    let listed: Vec<&Value> = n["holders"]
+        .as_array()
+        .expect("holders")
+        .iter()
+        .map(|h| &h["account"])
+        .collect();
+    assert!(!listed.contains(&&json!(claim)), "{listed:?}");
 }
 
 #[test]

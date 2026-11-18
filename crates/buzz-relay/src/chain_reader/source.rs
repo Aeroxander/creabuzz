@@ -4,7 +4,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, bail, Context};
+use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use buzz_evm_allowance::EvmRpc;
 use serde_json::{json, Value};
@@ -68,8 +68,46 @@ pub trait ChainSource: Send + Sync {
 /// Logs from at most this many addresses go into one `eth_getLogs` call.
 pub const ADDRESSES_PER_CALL: usize = 100;
 /// A node answering more logs than this for one call is refused, not
-/// truncated: the reader then asks for a smaller block range.
+/// truncated: the reader then asks for a smaller block range (see
+/// [`is_too_many_logs`]).
 pub const MAX_LOGS_PER_CALL: usize = 10_000;
+
+/// A log request the reader or the node refused as too big for one answer.
+#[derive(Debug)]
+pub struct TooManyLogs(pub String);
+
+impl std::fmt::Display for TooManyLogs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "too many logs for one request: {}", self.0)
+    }
+}
+
+impl std::error::Error for TooManyLogs {}
+
+/// Whether `error` says a log request covered too much: the reader's own
+/// [`TooManyLogs`], or a node's result or block-range limit (JSON-RPC -32005
+/// "query returned more than 10000 results", "block range is too large",
+/// "log response size exceeded", ...), not a rate limit or a timeout. The
+/// reader then halves the range.
+pub fn is_too_many_logs(error: &anyhow::Error) -> bool {
+    if error.chain().any(|e| e.is::<TooManyLogs>()) {
+        return true;
+    }
+    let text = format!("{error:#}").to_lowercase();
+    [
+        "-32005",
+        "more than",
+        "too many results",
+        "too many logs",
+        "range too large",
+        "range is too large",
+        "range too wide",
+        "block range",
+        "response size",
+    ]
+    .iter()
+    .any(|needle| text.contains(needle))
+}
 
 /// [`ChainSource`] over a JSON-RPC node.
 pub struct RpcChainSource {
@@ -197,10 +235,11 @@ impl ChainSource for RpcChainSource {
                 .as_array()
                 .ok_or_else(|| anyhow!("eth_getLogs answer is not a list"))?;
             if entries.len() > MAX_LOGS_PER_CALL {
-                bail!(
-                    "eth_getLogs answered {} logs for blocks {from}..={to}; ask a smaller range",
+                return Err(TooManyLogs(format!(
+                    "eth_getLogs answered {} logs for blocks {from}..={to}",
                     entries.len()
-                );
+                ))
+                .into());
             }
             for entry in entries {
                 out.push(parse_log(entry)?);
@@ -241,5 +280,28 @@ mod tests {
         assert_eq!((l.block_number, l.log_index, l.removed), (27, 2, false));
         assert!(l.data.is_empty());
         assert!(parse_log(&json!({"topics": []})).is_err());
+    }
+
+    #[test]
+    fn too_many_logs_is_told_apart_from_other_failures() {
+        let own: anyhow::Error = TooManyLogs("12000 logs".into()).into();
+        assert!(is_too_many_logs(&own));
+        assert!(is_too_many_logs(&own.context("read blocks 1..=2000")));
+        for node in [
+            "eth_getLogs: rpc error -32005: query returned more than 10000 results",
+            "eth_getLogs: block range is too large",
+            "eth_getLogs: Log response size exceeded.",
+        ] {
+            assert!(is_too_many_logs(&anyhow!("{node}")), "{node}");
+        }
+        for other in [
+            "eth_getLogs: timed out",
+            "eth_getLogs: HTTP 429 Too Many Requests",
+            "eth_getLogs: rate limit exceeded",
+            "block 7 is not on the chain",
+            "a log of block 3 names another block; the chain moved",
+        ] {
+            assert!(!is_too_many_logs(&anyhow!("{other}")), "{other}");
+        }
     }
 }

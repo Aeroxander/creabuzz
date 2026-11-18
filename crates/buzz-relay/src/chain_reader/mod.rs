@@ -18,6 +18,7 @@ pub mod store;
 pub mod word;
 
 use std::collections::HashSet;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,6 +43,11 @@ const RPC_TIMEOUT: Duration = Duration::from_secs(20);
 /// After this many failed passes in a row the reader waits the longest pause
 /// between passes ([`MAX_BACKOFF`]) until one succeeds.
 const MAX_BACKOFF: Duration = Duration::from_secs(600);
+/// The newest blocks the reader never reads, whatever the confirmation depth:
+/// a load-balanced node can answer the newest headers before its log index has
+/// the newest blocks' logs, and a block read without its logs would be passed
+/// for good (review F2). A confirmation depth below this acts as this.
+pub const MIN_LAG: u64 = 2;
 
 /// One reader: a chain, a Launcher, a community to publish into.
 pub struct ChainReader {
@@ -49,6 +55,9 @@ pub struct ChainReader {
     source: Arc<dyn ChainSource>,
     config: ChainReaderConfig,
     scan: ScanSettings,
+    /// Blocks per log request now: halved when a node refuses a range as too
+    /// big, grown back after ranges that pass (review I2 / F1).
+    span: AtomicU64,
     host: String,
 }
 
@@ -83,15 +92,18 @@ impl ChainReader {
             launcher: config.launcher,
             start_block: config.start_block,
             range: config.log_range,
+            lag: config.confirmations.max(MIN_LAG),
             max_ranges: 20,
             keep_blocks: config.confirmations + 64,
             max_fork_walk: 2_048,
         };
+        let span = AtomicU64::new(scan.range.max(1));
         Self {
             state,
             source,
             config,
             scan,
+            span,
             host,
         }
     }
@@ -104,7 +116,8 @@ impl ChainReader {
     /// One pass: scan, then sign what changed.
     pub async fn pass(&self) -> anyhow::Result<(ScanReport, PublishReport)> {
         let pool = self.state.db.pool();
-        let scanned = scan::scan(pool, self.source.as_ref(), &self.scan).await?;
+        let scanned =
+            scan::scan_with_span(pool, self.source.as_ref(), &self.scan, &self.span).await?;
         let published = self.publish_pass(scanned.head).await?;
         Ok((scanned, published))
     }
@@ -125,7 +138,9 @@ impl ChainReader {
         let pool = self.state.db.pool();
         let reader = self.scan.reader.as_str();
         let mut report = PublishReport::default();
-        let final_block = head.saturating_sub(self.config.confirmations);
+        let Some(final_block) = head.checked_sub(self.scan.lag) else {
+            return Ok(report);
+        };
         if final_block < self.config.start_block
             || store::cursor(pool, reader).await? <= final_block
         {
@@ -148,23 +163,32 @@ impl ChainReader {
             launcher: self.config.launcher,
             block: final_block,
             time: as_of_header.time,
+            runners: store::runners(pool, reader, final_block).await?,
         };
         let now = chrono::Utc::now().timestamp();
         let projects = store::final_projects(pool, reader, final_block).await?;
         let previous = store::published(pool, reader).await?;
         let refresh = i64::try_from(self.config.refresh_secs).unwrap_or(i64::MAX);
 
-        // Changed projects first, then those due a refresh, at most a pass's worth.
-        let mut work: Vec<(Word, u64, bool)> = projects
+        // Changed projects first, then those due a refresh, longest unchecked
+        // first, at most a pass's worth.
+        let mut work: Vec<(Word, u64, Option<f64>)> = projects
             .iter()
             .filter_map(|(key, src)| match previous.get(key) {
-                None => Some((*key, *src, true)),
-                Some(p) if p.stale || p.source_block != *src => Some((*key, *src, true)),
-                Some(p) if now - p.published_at >= refresh => Some((*key, *src, false)),
+                None => Some((*key, *src, None)),
+                Some(p) if p.stale || p.source_block != *src => Some((*key, *src, None)),
+                Some(p) if now - p.published_at >= refresh => {
+                    Some((*key, *src, Some(p.checked_at)))
+                }
                 Some(_) => None,
             })
             .collect();
-        work.sort_by_key(|(_, _, changed)| !*changed);
+        work.sort_by(|a, b| match (a.2, b.2) {
+            (None, None) => std::cmp::Ordering::Equal,
+            (None, Some(_)) => std::cmp::Ordering::Less,
+            (Some(_), None) => std::cmp::Ordering::Greater,
+            (Some(x), Some(y)) => x.total_cmp(&y),
+        });
         work.truncate(MAX_PUBLISH_PER_PASS);
 
         for (key, source_block, _) in work {
@@ -248,8 +272,9 @@ impl ChainReader {
                 now - p.published_at >= i64::try_from(self.config.refresh_secs).unwrap_or(i64::MAX);
             if same_facts && !p.stale && (same_shown || !refresh_due) {
                 // Nothing a reader would see changed (or only the clock, and not
-                // for long): keep the record, remember the block it covers.
-                store::touch_source_block(pool, reader, key, source_block).await?;
+                // for long): keep the record, remember the block it covers, and
+                // when nothing at all changed, that it was checked now.
+                store::touch_source_block(pool, reader, key, source_block, same_shown).await?;
                 return Ok(false);
             }
         }
@@ -332,3 +357,5 @@ pub fn spawn(state: Arc<AppState>) -> anyhow::Result<Option<tokio::task::JoinHan
 
 #[cfg(test)]
 mod postgres_tests;
+#[cfg(test)]
+mod review_postgres_tests;

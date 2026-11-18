@@ -138,7 +138,7 @@ After a launch that later leaves the chain the record becomes `{"version": 1, "c
 | `BUZZ_CHAIN_ID` | required with the URL | The chain the node must serve (checked before every pass) |
 | `BUZZ_CHAIN_LAUNCHER` | required with the URL | The Launcher; every project's own contracts are found in its events |
 | `BUZZ_CHAIN_START_BLOCK` | 0 | The first block to read (the Launcher's deployment block) |
-| `BUZZ_CHAIN_CONFIRMATIONS` | 12 | Blocks under the head before a log counts |
+| `BUZZ_CHAIN_CONFIRMATIONS` | 12 | Blocks under the head before a log counts; the reader reads no block above that, and never the newest 2 (a lower setting acts as 2) |
 | `BUZZ_CHAIN_POLL_SECS` | 12 | Seconds between passes |
 | `BUZZ_CHAIN_REFRESH_SECS` | 3600 (60 to 7 days) | How often a record whose time-moving numbers changed is signed again without a new event |
 | `BUZZ_CHAIN_LOG_RANGE` | 2000 (at most 10,000) | Blocks per log request |
@@ -222,9 +222,9 @@ database, all pass.
 - **"Raised before Creaton"** (the founder-signed earlier-raise record): not built.
 - **No running totals:** a project's numbers are worked out from all of its final logs each time they are checked. Fine
   for hundreds of projects; a project with tens of thousands of logs would want a summary table kept as logs arrive.
-- **The artifact test follows `contracts/next/out`.** Another run is changing `contracts/next/src` (Vester, Treasury,
-  Launcher, a new EarlierBackers contract) on this branch. When `out/` is rebuilt with new or changed events, the
-  catalog test fails by design and the catalog must be updated with them.
+- **The event list follows `testdata/next-events.json`** (since the review fixes). After an event changes in
+  `contracts/next/src`, run `forge build` there and `node scripts/chain-reader-events.mjs`, and add the event to
+  `events.rs`; CI does not build `contracts/next`, so `--check` against a fresh build is a local step.
 
 ## The helper job (design note, not built)
 
@@ -256,3 +256,54 @@ Proposed shape, for part 2:
 On `v4-governance-rework`, not pushed: `329e4accc` the kind; `c28c8d037` the tables; `5e9b54878` the reader and its
 tests; then the real-server loop and this report. The other run's uncommitted contract work and its `econ/*.py` files are
 not in these commits.
+
+## Review fixes
+
+Two reviews of part 1 found one blocker and seven important defects (B1 = F4, I1 = F3, I2 = F1, I3, I4, F2, F5) and
+eight optional ones. Every blocker and every important defect that is a concrete failure is fixed below, each with a
+test that fails without the fix. F5 (cost grows with history) is left, with the reason.
+
+| Finding | What was wrong | Fix | Test that fails without it |
+|---|---|---|---|
+| **B1 / F4** (blocker) | Team and the 50,000 cap stayed on for good once any Pair was made for the project, while `Launcher.capOf` and `stageOf` follow the current runner. A Pair that hands the seat to one person left the record saying Team, cap 50,000, 40,000 too much room. A Pair made for another project (`isPair` is one list for the whole Launcher) was not seen at all. | Team now comes from the current runner (`Treasury.RunnerChanged`): a Pair made by this Launcher for any project, read from the stored `Launcher.PairMade` rows up to the final block, or a registered Council (`CouncilRegistered`). Team's "since" is when the current Pair (or Council) runner took the seat; handing the seat to one person goes back to Backed (or Solo) and the 10,000 cap. | `numbers_tests::a_pair_that_hands_the_seat_to_one_person_ends_team_and_the_bigger_cap` (pure: backed, cap 10,000, left 7,500 after the hand-over), `numbers_tests::a_pair_made_for_another_project_counts_as_a_pair_runner`, and through Postgres `review_postgres_tests::a_pair_made_for_another_project_raises_the_cap` |
+| **I1 / F3** | A record due a refresh whose shown numbers had not changed was checked again on every pass (its `published_at` never moved), and the due list was in key order and cut at 100. With more than 100 quiet projects, the ones later in key order whose refund really moved were never signed again; below 100, every quiet project was worked out again every 12 seconds. | A check that finds nothing changed now moves `published_at` (the row's "signed or last checked" time) to now, so the project leaves the queue for the refresh time; the due list is ordered longest-unchecked first (to the microsecond). Changed projects still go first. | `review_postgres_tests::quiet_projects_do_not_starve_a_moving_one_of_its_refresh` (100 quiet projects with keys 1 to 100 and one backed project with key 0xfe: five days later its record is signed again as of the new block with a lower refund, and a quiet project is marked checked, not signed) |
+| **I2 / F1** | A range answering more logs than allowed (the reader's own 10,000 limit or a node's `-32005 query returned more than N results`, "block range is too large", "log response size exceeded") failed the pass, and the next pass asked for the same range: the reader stopped for good. | The refusal is a typed error (`TooManyLogs`) or recognised by the node's words (not rate limits or timeouts); the reader halves the range and reads again, down to one block, then doubles back toward `BUZZ_CHAIN_LOG_RANGE` after ranges that pass, and keeps the size reached for the next pass. One block alone over the limit fails with a message that says so. | `review_postgres_tests::a_range_with_too_many_logs_is_read_in_smaller_ranges` (a node that refuses more than 5 logs, 10 logs in a 3-block range: read in pieces, cursor 3; and one 4-log block with a limit of 2 fails with "block 0 alone"); `source::tests::too_many_logs_is_told_apart_from_other_failures` |
+| **F2** | The reader read up to the head. A load-balanced node whose log index trails its headers answers the newest block with no logs while every hash check passes; the cursor moved past it and those logs were never read. | The reader reads only up to the head less the confirmation depth, and never the newest `MIN_LAG` = 2 blocks even when `BUZZ_CHAIN_CONFIRMATIONS` is lower (a depth under 2 acts as 2). Nothing above the final block was used anyway. | `review_postgres_tests::a_log_index_behind_the_headers_loses_no_logs` (the node's log index misses the head block's logs throughout: the 100-dollar ask is in the record) |
+| **I3** | A log whose event is in the list but does not decode was stored for good as `unknown` and left out of the signed numbers with only a warning. | The range fails with the event, block and log named ("does not decode ... the event list does not match the deployed contracts"), so nothing is stored and the pass is retried until the list is fixed. | `review_postgres_tests::a_known_event_that_does_not_decode_stops_the_reader` (an `Asked` with one data word: the pass fails, no row stored) |
+| **I4** | The chain reader's pure tests ran in no CI lane, and the event-list test needed a local `forge build` of `contracts/next` (not built in CI) and failed whenever `out/` was rebuilt from other work. | `test(/^chain_reader::/)` is in the relay's infra-free lane of `just test-unit`, and a `chain_reader::` step is in `scripts/run-tests.sh`; the Postgres tests are `#[ignore]`d and named `*postgres_tests` so the PostgreSQL lane's `postgres_tests::` filter runs them. The event-list test now compares the reader's list with `testdata/next-events.json`, recorded from the `contracts/next` build by `node scripts/chain-reader-events.mjs` (`--check` compares the file with a fresh build). | `events_tests::the_catalog_matches_every_recorded_event` runs with no build |
+| Events committed meanwhile | The other run committed its contract work (`fb0f84d75`): `Launcher.EarlierBackersNamed`, `Launcher.ProjectZeroSplit` and `Treasury.TeamPaid` (the `EarlierBackersFunded` of the earlier failure no longer exists). | Added to the event list (68 events) and to the record: `earlierBackers` (the claim contract, from backing, from the founder, team budget), `treasury.teamPaid` and `treasury.teamBudgetLeft`; the claim contract is not listed as a holder (it holds Shares for the people on its list). | `events_tests::project_zero_split_and_team_pay_decode` (data from `cast abi-encode`, topics from `cast sig-event`), `numbers_tests::project_zero_split_and_team_pay` |
+
+Left, and why:
+
+- **F5, cost grows with history.** Every check of a project loads all its final logs, Shares Transfers included, and
+  `final_projects` groups every stored log. This is a scale limit, not a wrong number, and the volume that would hurt
+  (every pool swap emits a Transfer) arrives with the pool trades in part 2. The fix belongs there: per-account balances
+  kept as ranges are committed (with block-numbered changes a rollback undoes), Transfers left out of `project_logs`, and a
+  per-project newest-log block instead of the grouping. I1's fix already stops quiet projects being worked out every pass.
+- **O1** (Council from `Treasury.PoolOpened`, while `stageOf` waits for `Finisher.Swept` to set Done), **O2** (`noMarketFrom`
+  shown after an abandoned sale or while the auction runs): optional; they belong with the auction and pool events of
+  part 2 and are noted there.
+- **O3 / F6** (two relay replicas both signing; a record the store keeps as superseded still remembered as signed):
+  optional; one reader per chain and Launcher is the supported setup, and the next event heals it. To do with part 2's
+  helper, which needs one writer anyway.
+- **F7** (a node behind the stored blocks read as a rollback): optional; the reader now reads two blocks or more below the
+  head, which makes it rarer. The cost is re-reading recent ranges, never a wrong number.
+- **F8** (the Uniswap PoolManager listed as a holder once the pool opens): optional; with the pool trades in part 2.
+- **F9** (a panic in the reader task ends it while the relay keeps serving the last records): optional; the reader has no
+  `unwrap` or `expect` in its paths. A restart wrapper and a "last good pass" health number are for part 2.
+
+### Re-run after the fixes
+
+- `cargo fmt --all -- --check`: clean. `cargo clippy -p buzz-relay --all-targets -- -D warnings`: clean.
+- `cargo test -p buzz-relay --lib chain_reader`: 30 passed, 8 ignored (the Postgres tests).
+- With a local Postgres (migrated to 65) and Redis,
+  `cargo test -p buzz-relay --lib chain_reader -- --include-ignored --test-threads=1`: 38 passed, 0 failed.
+- `node scripts/chain-reader-events.mjs --check` against a fresh `contracts/next` build: the recorded list matches
+  (68 events; the earlier backers' claim contract's own events are not followed, since the reader does not read that
+  contract).
+- Each fix was undone on its own and the review tests run again: reading up to the head fails
+  `a_log_index_behind_the_headers_loses_no_logs` (the ask in block 1 is lost); storing an undecodable known event fails
+  `a_known_event_that_does_not_decode_stops_the_reader`; failing at the first too-many-logs refusal fails
+  `a_range_with_too_many_logs_is_read_in_smaller_ranges`; not marking an unchanged record as checked fails
+  `quiet_projects_do_not_starve_a_moving_one_of_its_refresh` (the moving project stays at block 3). The Team tests fail
+  against the old "a Pair was ever made" rule by construction (they assert Backed and the 10,000 cap after the hand-over).

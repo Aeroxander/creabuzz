@@ -1,9 +1,11 @@
 //! The reader against real Postgres and a fake chain: discovery, a chain
 //! rollback undone, the confirmation depth, the signed record, and a posted
-//! copy refused through the real `ingest_event` seam. Ignored without
+//! copy refused through the real `ingest_event` seam (the review fixes are in
+//! `review_postgres_tests.rs`, on the same fake chain). Ignored without
 //! infrastructure (a migrated database and Redis); run with
 //! `cargo test -p buzz-relay --lib chain_reader::postgres_tests -- --ignored`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -20,10 +22,10 @@ use super::word::{hex0x, Word};
 use super::{ChainReader, ChainReaderConfig};
 use crate::handlers::ingest::{ingest_event, IngestAuth, IngestError};
 
-const T0: u64 = 1_700_000_000;
-const DAY: u64 = 86_400;
+pub(super) const T0: u64 = 1_700_000_000;
+pub(super) const DAY: u64 = 86_400;
 
-fn topic(role: Role, name: &str) -> Word {
+pub(super) fn topic(role: Role, name: &str) -> Word {
     EVENTS
         .iter()
         .find(|e| e.role == role && e.name == name)
@@ -31,32 +33,36 @@ fn topic(role: Role, name: &str) -> Word {
         .expect("event")
 }
 
-fn u(v: u128) -> Word {
+pub(super) fn u(v: u128) -> Word {
     let mut w = [0u8; 32];
     w[16..].copy_from_slice(&v.to_be_bytes());
     w
 }
 
-fn a(addr: &[u8; 20]) -> Word {
+pub(super) fn a(addr: &[u8; 20]) -> Word {
     let mut w = [0u8; 32];
     w[12..].copy_from_slice(addr);
     w
 }
 
-fn data(words: &[Word]) -> Vec<u8> {
+pub(super) fn data(words: &[Word]) -> Vec<u8> {
     words.iter().flat_map(|w| w.iter().copied()).collect()
 }
 
-/// A chain held in memory; `fork` replaces its tail.
+/// A chain held in memory; `fork` replaces its tail. `limit` makes it refuse
+/// a log answer over that many logs as a node does; `lagging` makes its log
+/// index miss the newest block's logs while headers are up to date.
 #[derive(Default)]
-struct FakeChain {
+pub(super) struct FakeChain {
     blocks: Mutex<Vec<(Header, Vec<RawLog>)>>,
+    pub(super) limit: Mutex<Option<usize>>,
+    pub(super) lagging: AtomicBool,
 }
 
 impl FakeChain {
     /// Append a block at `time` holding `logs` (address, topics, data);
     /// `salt` makes a different block at the same height after a fork.
-    fn mine(&self, time: u64, salt: u8, logs: Vec<([u8; 20], Vec<Word>, Vec<u8>)>) {
+    pub(super) fn mine(&self, time: u64, salt: u8, logs: Vec<([u8; 20], Vec<Word>, Vec<u8>)>) {
         let mut blocks = self.blocks.lock().expect("lock");
         let number = blocks.len() as u64;
         let parent = blocks.last().map(|(h, _)| h.hash).unwrap_or([0; 32]);
@@ -113,34 +119,47 @@ impl ChainSource for FakeChain {
         from: u64,
         to: u64,
     ) -> anyhow::Result<Vec<RawLog>> {
-        let blocks = self.blocks.lock().expect("lock");
-        Ok(blocks
-            .iter()
-            .filter(|(h, _)| h.number >= from && h.number <= to)
-            .flat_map(|(_, logs)| logs.iter())
-            .filter(|l| addresses.contains(&l.address) && topics.contains(&l.topics[0]))
-            .cloned()
-            .collect())
+        let found: Vec<RawLog> = {
+            let blocks = self.blocks.lock().expect("lock");
+            let indexed = if self.lagging.load(Ordering::SeqCst) {
+                (blocks.len() as u64).saturating_sub(2)
+            } else {
+                u64::MAX
+            };
+            blocks
+                .iter()
+                .filter(|(h, _)| h.number >= from && h.number <= to.min(indexed))
+                .flat_map(|(_, logs)| logs.iter())
+                .filter(|l| addresses.contains(&l.address) && topics.contains(&l.topics[0]))
+                .cloned()
+                .collect()
+        };
+        if let Some(max) = *self.limit.lock().expect("lock") {
+            if found.len() > max {
+                anyhow::bail!("rpc error -32005: query returned more than {max} results");
+            }
+        }
+        Ok(found)
     }
 }
 
-const LAUNCHER: [u8; 20] = [0x11; 20];
-const FOUNDER: [u8; 20] = [0xf0; 20];
-const SHARES: [u8; 20] = [0x21; 20];
-const TREASURY: [u8; 20] = [0x22; 20];
-const VESTER: [u8; 20] = [0x23; 20];
-const FINISHER: [u8; 20] = [0x24; 20];
-const ROUNDS: [u8; 20] = [0x25; 20];
-const BOB: [u8; 20] = [0xb0; 20];
-const PRICE: u128 = 3_000_000_000_000_000;
+pub(super) const LAUNCHER: [u8; 20] = [0x11; 20];
+pub(super) const FOUNDER: [u8; 20] = [0xf0; 20];
+pub(super) const SHARES: [u8; 20] = [0x21; 20];
+pub(super) const TREASURY: [u8; 20] = [0x22; 20];
+pub(super) const VESTER: [u8; 20] = [0x23; 20];
+pub(super) const FINISHER: [u8; 20] = [0x24; 20];
+pub(super) const ROUNDS: [u8; 20] = [0x25; 20];
+pub(super) const BOB: [u8; 20] = [0xb0; 20];
+pub(super) const PRICE: u128 = 3_000_000_000_000_000;
 
-fn key() -> Word {
+pub(super) fn key() -> Word {
     [0x4b; 32]
 }
 
 /// The launch block: the Vester's founder grant comes before the Launcher's
 /// event, as on the real chain, and must still be read.
-fn launch_logs() -> Vec<([u8; 20], Vec<Word>, Vec<u8>)> {
+pub(super) fn launch_logs() -> Vec<([u8; 20], Vec<Word>, Vec<u8>)> {
     let mut words = vec![
         a(&FOUNDER),
         a(&SHARES),
@@ -196,7 +215,7 @@ fn launch_logs() -> Vec<([u8; 20], Vec<Word>, Vec<u8>)> {
     ]
 }
 
-fn ask(amount: u128) -> ([u8; 20], Vec<Word>, Vec<u8>) {
+pub(super) fn ask(amount: u128) -> ([u8; 20], Vec<Word>, Vec<u8>) {
     (
         ROUNDS,
         vec![topic(Role::Rounds, "Asked"), u(1), a(&BOB)],
@@ -204,7 +223,7 @@ fn ask(amount: u128) -> ([u8; 20], Vec<Word>, Vec<u8>) {
     )
 }
 
-fn close_and_settle(amount: u128) -> Vec<([u8; 20], Vec<Word>, Vec<u8>)> {
+pub(super) fn close_and_settle(amount: u128) -> Vec<([u8; 20], Vec<Word>, Vec<u8>)> {
     let held = amount * 82 / 100;
     vec![
         (
@@ -246,7 +265,7 @@ fn config(confirmations: u64) -> ChainReaderConfig {
     }
 }
 
-async fn setup(
+pub(super) async fn setup(
     chain: Arc<FakeChain>,
     confirmations: u64,
 ) -> (ChainReader, Arc<crate::state::AppState>, String) {
@@ -264,7 +283,7 @@ async fn setup(
     (reader, state, host)
 }
 
-async fn latest_record(state: &crate::state::AppState, host: &str) -> Option<Value> {
+pub(super) async fn latest_record(state: &crate::state::AppState, host: &str) -> Option<Value> {
     let community = state
         .db
         .lookup_community_by_host(host)
@@ -296,7 +315,7 @@ async fn log_count(state: &crate::state::AppState, reader: &str) -> i64 {
 }
 
 /// Launch replaces the launcher address in the fixture logs with the test's own.
-fn with_launcher(
+pub(super) fn with_launcher(
     mut logs: Vec<([u8; 20], Vec<Word>, Vec<u8>)>,
     launcher: [u8; 20],
 ) -> Vec<([u8; 20], Vec<Word>, Vec<u8>)> {
@@ -318,6 +337,9 @@ async fn reads_discovers_rolls_back_and_signs_the_numbers() {
     chain.mine(T0 + 10, 1, vec![ask(100_000_000)]); // block 1
     chain.mine(T0 + DAY, 1, close_and_settle(100_000_000)); // block 2
     chain.mine(T0 + DAY + 12, 1, vec![]); // block 3
+                                          // The newest two blocks are never read (MIN_LAG), even with no confirmations.
+    chain.mine(T0 + DAY + 24, 1, vec![]); // block 4
+    chain.mine(T0 + DAY + 36, 1, vec![]); // block 5
 
     // log_range 3: two ranges, and the project's contracts are found inside
     // the first one, in the same block as their first logs.
@@ -341,6 +363,7 @@ async fn reads_discovers_rolls_back_and_signs_the_numbers() {
     chain.mine(T0 + DAY, 2, close_and_settle(40_000_000)); // a different block 2
     chain.mine(T0 + DAY + 12, 2, vec![]);
     chain.mine(T0 + DAY + 24, 2, vec![]);
+    chain.mine(T0 + DAY + 36, 2, vec![]);
     let (scanned, published) = reader.pass().await.expect("pass after the rollback");
     assert_eq!(scanned.rolled_back_to, Some(1));
     assert_eq!(scanned.logs_removed, 3);
@@ -370,8 +393,9 @@ async fn numbers_count_only_logs_past_the_confirmation_depth() {
     chain.mine(T0 + DAY, 1, close_and_settle(100_000_000)); // 2
     chain.mine(T0 + DAY + 12, 1, vec![]); // 3
     let (scanned, _) = reader.pass().await.expect("pass");
-    assert_eq!(scanned.scanned_to, Some(3));
-    // Head 3, two confirmations: block 1 is final, the close in block 2 is not.
+    // Head 3, two confirmations: block 1 is final, the close in block 2 is not
+    // final and not even read.
+    assert_eq!(scanned.scanned_to, Some(1));
     let n = latest_record(&state, &host).await.expect("a record");
     assert_eq!(n["asOf"]["block"], 1);
     assert_eq!(n["raised"]["total"], "0");

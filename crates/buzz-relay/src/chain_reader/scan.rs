@@ -2,13 +2,14 @@
 //! read the next block ranges into the tables.
 
 use std::collections::{BTreeSet, HashMap};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{anyhow, bail};
 use serde_json::Value;
 use sqlx::PgPool;
 
 use super::events::{self, Role};
-use super::source::{ChainSource, Header, RawLog};
+use super::source::{is_too_many_logs, ChainSource, Header, RawLog};
 use super::store::{self, Contract, RangeWrite, StoredLog};
 use super::word::{parse_fixed, Word};
 
@@ -21,8 +22,13 @@ pub struct ScanSettings {
     pub launcher: [u8; 20],
     /// The first block to read.
     pub start_block: u64,
-    /// Blocks per `eth_getLogs` range.
+    /// Blocks per `eth_getLogs` range at most.
     pub range: u64,
+    /// The newest blocks not read (the confirmation depth, at least
+    /// [`super::MIN_LAG`]): only blocks the numbers count are read, so a node
+    /// whose log index trails its headers cannot make the reader pass a block
+    /// before its logs are there.
+    pub lag: u64,
     /// Ranges read per pass at most (so one pass is bounded).
     pub max_ranges: u32,
     /// Blocks without logs are kept this far below the newest scanned block,
@@ -266,21 +272,22 @@ async fn scan_range(
             .topics
             .first()
             .and_then(|t| events::lookup(contract.role, t));
-        let (event, decoded) = match def {
-            Some(def) => match events::decode(def, &log.topics, &log.data) {
-                Ok(v) => (def.name.to_owned(), v),
-                Err(e) => {
-                    tracing::warn!(
-                        block = log.block_number,
-                        index = log.log_index,
-                        ?e,
-                        "chain reader: log not decoded"
-                    );
-                    ("unknown".to_owned(), Value::Null)
-                }
-            },
-            None => continue,
-        };
+        let Some(def) = def else { continue };
+        // A known event that does not decode means the catalog and the
+        // deployed contracts disagree. Storing it as unknown would leave it out
+        // of the signed numbers for good (the rows are final), so the range
+        // fails and is read again until the catalog is fixed (review I3).
+        let decoded = events::decode(def, &log.topics, &log.data).map_err(|e| {
+            anyhow!(
+                "{:?}.{} in block {} (log {}) does not decode ({e:?}); the event list does not \
+                 match the deployed contracts",
+                contract.role,
+                def.name,
+                log.block_number,
+                log.log_index
+            )
+        })?;
+        let event = def.name.to_owned();
         stored.push(StoredLog {
             project_key: project_of(contract.role, contract.project_key, &event, &log),
             block_number: log.block_number,
@@ -315,11 +322,25 @@ async fn scan_range(
 }
 
 /// One pass: undo a rollback if the chain moved under the stored rows, then
-/// read up to `max_ranges` ranges toward the chain's head.
+/// read up to `max_ranges` ranges toward the chain's head, less `lag`.
 pub async fn scan(
     pool: &PgPool,
     source: &dyn ChainSource,
     s: &ScanSettings,
+) -> anyhow::Result<ScanReport> {
+    let span = AtomicU64::new(s.range.max(1));
+    scan_with_span(pool, source, s, &span).await
+}
+
+/// [`scan`], starting from `span` blocks per range. A range the node (or the
+/// reader's own limit) refuses as too many logs is halved and read again, down
+/// to one block; ranges that pass double it back toward `s.range`. `span`
+/// keeps the size reached for the next pass.
+pub async fn scan_with_span(
+    pool: &PgPool,
+    source: &dyn ChainSource,
+    s: &ScanSettings,
+    span: &AtomicU64,
 ) -> anyhow::Result<ScanReport> {
     store::ensure_reader(pool, &s.reader, &s.launcher, s.start_block).await?;
     let mut report = ScanReport {
@@ -328,14 +349,48 @@ pub async fn scan(
     };
     let mut next = store::cursor(pool, &s.reader).await?;
     next = check_rollback(pool, source, s, next, &mut report).await?;
-    for _ in 0..s.max_ranges {
-        if next > report.head {
-            break;
+    let Some(last) = report.head.checked_sub(s.lag) else {
+        return Ok(report);
+    };
+    let full = s.range.max(1);
+    let mut width = span.load(Ordering::Relaxed).clamp(1, full);
+    let mut done = 0u32;
+    // Each refusal halves a width of at most `full`, so at most 64 refusals in
+    // a row; each success counts toward `max_ranges`. Bounded either way.
+    let mut refusals = 0u32;
+    while done < s.max_ranges && next <= last {
+        let to = last.min(next.saturating_add(width - 1));
+        match scan_range(pool, source, s, next, to).await {
+            Ok(n) => {
+                report.logs += n;
+                report.scanned_to = Some(to);
+                next = to + 1;
+                done += 1;
+                refusals = 0;
+                width = width.saturating_mul(2).min(full);
+            }
+            Err(e) if is_too_many_logs(&e) => {
+                if to == next {
+                    span.store(1, Ordering::Relaxed);
+                    return Err(e.context(format!(
+                        "block {next} alone holds more logs than the node answers in one request; \
+                         the reader cannot pass it until the node allows a bigger answer"
+                    )));
+                }
+                refusals += 1;
+                if refusals > 64 {
+                    return Err(e.context("the node kept refusing smaller and smaller ranges"));
+                }
+                // Half of the `to - next + 1` blocks just refused (`to > next`).
+                width = (to - next).div_ceil(2).max(1);
+                tracing::warn!(reader = %s.reader, from = next, to, width, "chain reader: too many logs; reading a smaller range");
+            }
+            Err(e) => {
+                span.store(width, Ordering::Relaxed);
+                return Err(e);
+            }
         }
-        let to = report.head.min(next + s.range.max(1) - 1);
-        report.logs += scan_range(pool, source, s, next, to).await?;
-        report.scanned_to = Some(to);
-        next = to + 1;
     }
+    span.store(width, Ordering::Relaxed);
     Ok(report)
 }

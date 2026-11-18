@@ -17,7 +17,7 @@
 //!   wind-down. The released part is rounded up and the 5% fee (1% after a
 //!   wind-down) is rounded up, as `Rounds.refundable` does.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use anyhow::{anyhow, Context};
 use serde_json::{json, Map, Value};
@@ -65,6 +65,18 @@ pub struct LogRow {
     pub fields: Value,
 }
 
+/// The runners the Launcher counts as more than one person
+/// (`Launcher.runnerKind`): every Pair it made, for any project (`isPair` is
+/// one list for the whole Launcher), and every Council it registered, read from
+/// its final events.
+#[derive(Clone, Debug, Default)]
+pub struct Runners {
+    /// `Launcher.PairMade.pair`, lower-case `0x` text.
+    pub pairs: HashSet<String>,
+    /// `Launcher.CouncilRegistered.council`, lower-case `0x` text.
+    pub councils: HashSet<String>,
+}
+
 /// Where and when the numbers are taken.
 #[derive(Clone, Debug)]
 pub struct AsOf {
@@ -76,6 +88,8 @@ pub struct AsOf {
     pub block: u64,
     /// Its time.
     pub time: u64,
+    /// The Launcher's Pair and Council runners as of `block`.
+    pub runners: Runners,
 }
 
 fn field<'a>(row: &'a LogRow, name: &str) -> anyhow::Result<&'a Value> {
@@ -256,9 +270,23 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     let mut rounds: BTreeMap<u64, RoundState> = BTreeMap::new();
     let mut positions: BTreeMap<(u64, String), Position> = BTreeMap::new();
     let mut accounts: HashMap<String, Account> = HashMap::new();
-    let mut pair: Option<(String, u64)> = None;
-    let mut pairs: Vec<String> = Vec::new();
+    // The first Pair made for this project (shown), and since when the current
+    // runner has been a Pair or a Council: the cap and the Team stage follow
+    // the current runner (`Launcher.capOf`, `stageOf`), so a Pair that hands
+    // the seat to one person ends Team.
+    let mut pair: Option<String> = None;
+    let own_pairs: HashSet<&str> = logs
+        .iter()
+        .filter(|l| l.role == Role::Launcher && l.event == "PairMade")
+        .filter_map(|l| l.fields.get("pair").and_then(Value::as_str))
+        .collect();
+    let is_team = |who: &str| {
+        own_pairs.contains(who)
+            || as_of.runners.pairs.contains(who)
+            || as_of.runners.councils.contains(who)
+    };
     let mut runner = founder.clone();
+    let mut team_since: Option<u64> = None;
     let mut first_money_at: Option<u64> = None;
     let mut pool_opened_at: Option<u64> = None;
     let mut vester_started: Option<u64> = None;
@@ -271,8 +299,10 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     let mut handed_back_count: u64 = 0;
     let mut sale = Map::new();
     let mut reserve_sales: Vec<Value> = Vec::new();
-    // Auctions hold Shares for sale, not for an account.
+    // Auctions hold Shares for sale, and project zero's earlier backers' claim
+    // contract holds Shares for the people on its list, not for an account.
     let mut auctions: Vec<String> = Vec::new();
+    let mut earlier_backers: Option<Value> = None;
     let mut clock_mismatch: Option<(u64, u64, u64)> = None;
 
     let add = |sums: &mut BTreeMap<&'static str, u128>, k: &'static str, v: u128| {
@@ -294,11 +324,23 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
             }
             (Role::Launcher, "PairMade") => {
                 let p = text(row, "pair")?;
-                pairs.push(p.clone());
                 if pair.is_none() {
-                    pair = Some((p.clone(), t));
+                    pair = Some(p.clone());
                 }
-                runner = p;
+                // Treasury.RunnerChanged to the Pair comes first, in the same
+                // transaction; this keeps the runner right if it did not.
+                if runner != p {
+                    runner = p;
+                    team_since = team_since.or(Some(t));
+                }
+            }
+            (Role::Launcher, "ProjectZeroSplit") => {
+                let claim = text(row, "claim")?;
+                auctions.push(claim.clone());
+                earlier_backers = Some(json!({
+                    "claim": claim, "fromBacking": field(row, "fromBacking")?,
+                    "fromFounder": field(row, "fromFounder")?, "teamBudget": field(row, "teamBudget")?,
+                }));
             }
             (Role::Launcher, "SaleOpened") => {
                 for k in [
@@ -470,14 +512,20 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
             (Role::Treasury, "NoMarketDeclared") => no_market_at = Some(t),
             (Role::Treasury, "RunnerChanged") => {
                 runner = text(row, "to")?;
-                if pairs.contains(&runner) && pair.is_none() {
-                    pair = Some((runner.clone(), t));
-                }
+                team_since = if is_team(&runner) {
+                    team_since.or(Some(t))
+                } else {
+                    None
+                };
             }
             (Role::Treasury, "ToppedUp") => add(&mut sums, "toppedUp", num(row, "amount")?),
             (Role::Treasury, "ShareRevenue") => add(&mut sums, "shareRevenue", num(row, "amount")?),
             (Role::Treasury, "Released") => add(&mut sums, "floorReleased", num(row, "amount")?),
             (Role::Treasury, "Spent") => add(&mut sums, "spent", num(row, "amount")?),
+            (Role::Treasury, "TeamPaid") => {
+                add(&mut sums, "teamPaid", num(row, "amount")?);
+                treasury.insert("teamBudgetLeft".into(), json!(text(row, "left")?));
+            }
             (Role::Treasury, "SharesGiven") => add(&mut sums, "sharesGiven", num(row, "amount")?),
             (Role::Treasury, "StakeGranted") => add(&mut sums, "stakeGranted", num(row, "amount")?),
             (Role::Treasury, "HandedBack") => {
@@ -514,7 +562,7 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     }
 
     // ── raised against the cap, prices ──────────────────────────────────────
-    let team = pair.is_some();
+    let team = team_since.is_some();
     let cap = if team { TEAM_CAP } else { SOLO_CAP };
     let total_raised: u128 = rounds.values().map(|r| r.accepted).sum();
     let mut weighted: u128 = 0; // sum of accepted x price = Shares sold in raw units
@@ -557,8 +605,8 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     // ── stage and eligibility (Launcher.stageOf) ─────────────────────────────
     let (stage, stage_since) = if let Some(t) = pool_opened_at {
         ("council", t)
-    } else if let Some((_, t)) = &pair {
-        ("team", *t)
+    } else if let Some(t) = team_since {
+        ("team", t)
     } else if let Some(t) = first_money_at {
         ("backed", t)
     } else {
@@ -622,10 +670,7 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     let mut holder_list: Vec<(String, i128, i128)> = accounts
         .into_iter()
         .filter(|(addr, _)| {
-            *addr != zero
-                && !own.contains(addr)
-                && !pairs.contains(addr)
-                && !auctions.contains(addr)
+            *addr != zero && !own.contains(addr) && !is_team(addr) && !auctions.contains(addr)
         })
         .map(|(addr, a)| (addr, a.held.max(0), a.free.max(0)))
         .filter(|(_, held, free)| *held > 0 || *free > 0)
@@ -666,9 +711,10 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
         "founder": founder,
         "launchedAt": launched_at,
         "projectZero": project_zero,
+        "earlierBackers": earlier_backers,
         "contracts": {
             "shares": own[0], "treasury": own[1], "vester": own[2], "finisher": own[3], "rounds": own[4],
-            "pair": pair.as_ref().map(|(p, _)| p.clone()),
+            "pair": pair,
         },
         "stage": {"name": stage, "since": stage_since, "openAt": open_at},
         "eligible": eligible,

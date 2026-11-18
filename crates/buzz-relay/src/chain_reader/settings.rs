@@ -20,7 +20,8 @@ pub struct ChainReaderConfig {
     /// Launcher's deployment block.
     pub start_block: u64,
     /// Blocks a log must be under the head before the numbers count it
-    /// (`BUZZ_CHAIN_CONFIRMATIONS`, default 12).
+    /// (`BUZZ_CHAIN_CONFIRMATIONS`, default 12). The reader reads no block
+    /// above that; below [`super::MIN_LAG`] it acts as `MIN_LAG`.
     pub confirmations: u64,
     /// Seconds between passes (`BUZZ_CHAIN_POLL_SECS`, default 12).
     pub poll_secs: u64,

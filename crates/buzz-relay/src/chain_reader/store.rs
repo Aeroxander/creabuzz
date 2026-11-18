@@ -12,7 +12,7 @@ use serde_json::Value;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 
 use super::events::Role;
-use super::numbers::LogRow;
+use super::numbers::{LogRow, Runners};
 use super::source::Header;
 use super::word::Word;
 
@@ -65,8 +65,10 @@ pub struct Published {
     pub facts_digest: Vec<u8>,
     /// Digest of everything but `asOf`.
     pub content_digest: Vec<u8>,
-    /// When it was signed (unix seconds).
+    /// When it was signed, or last checked and found unchanged (unix seconds).
     pub published_at: i64,
+    /// The same, to the microsecond, to refresh the longest-unchecked first.
+    pub checked_at: f64,
     /// A rollback removed rows it was worked out from.
     pub stale: bool,
 }
@@ -423,7 +425,8 @@ pub async fn project_logs(
 pub async fn published(pool: &PgPool, reader: &str) -> anyhow::Result<HashMap<Word, Published>> {
     let rows = sqlx::query(
         "SELECT project_key, source_block, facts_digest, content_digest, \
-                extract(epoch FROM published_at)::bigint AS at, stale \
+                floor(extract(epoch FROM published_at))::bigint AS at, \
+                extract(epoch FROM published_at)::float8 AS checked, stale \
          FROM chain_project_numbers WHERE reader = $1",
     )
     .bind(reader)
@@ -438,6 +441,7 @@ pub async fn published(pool: &PgPool, reader: &str) -> anyhow::Result<HashMap<Wo
                 facts_digest: r.try_get("facts_digest")?,
                 content_digest: r.try_get("content_digest")?,
                 published_at: r.try_get("at")?,
+                checked_at: r.try_get("checked")?,
                 stale: r.try_get("stale")?,
             },
         );
@@ -497,18 +501,48 @@ pub async fn forget_published(pool: &PgPool, reader: &str, key: &Word) -> anyhow
     Ok(())
 }
 
-/// Remember that the record already covers the project's logs up to `source_block`.
+/// Remember that the record already covers the project's logs up to
+/// `source_block`. With `checked`, the record was also found unchanged now:
+/// `published_at` moves to now, so the project is not due a refresh again for
+/// the refresh time and others get their turn (review I1 / F3).
 pub async fn touch_source_block(
     pool: &PgPool,
     reader: &str,
     key: &Word,
     source_block: u64,
+    checked: bool,
 ) -> anyhow::Result<()> {
-    sqlx::query("UPDATE chain_project_numbers SET source_block = $3, stale = false WHERE reader = $1 AND project_key = $2")
-        .bind(reader)
-        .bind(key.as_slice())
-        .bind(i64_of(source_block)?)
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "UPDATE chain_project_numbers SET source_block = $3, stale = false, \
+             published_at = CASE WHEN $4 THEN greatest(published_at, now()) ELSE published_at END \
+         WHERE reader = $1 AND project_key = $2",
+    )
+    .bind(reader)
+    .bind(key.as_slice())
+    .bind(i64_of(source_block)?)
+    .bind(checked)
+    .execute(pool)
+    .await?;
     Ok(())
+}
+
+/// The Launcher's Pair and Council runners made in final blocks (`Launcher.runnerKind`).
+pub async fn runners(pool: &PgPool, reader: &str, final_block: u64) -> anyhow::Result<Runners> {
+    let rows = sqlx::query(
+        "SELECT decoded->>'pair' AS pair, decoded->>'council' AS council FROM chain_logs \
+         WHERE reader = $1 AND role = 'launcher' AND event IN ('PairMade', 'CouncilRegistered') \
+           AND block_number <= $2",
+    )
+    .bind(reader)
+    .bind(i64_of(final_block)?)
+    .fetch_all(pool)
+    .await?;
+    let mut out = Runners::default();
+    for r in rows {
+        let pair: Option<String> = r.try_get("pair")?;
+        let council: Option<String> = r.try_get("council")?;
+        out.pairs.extend(pair);
+        out.councils.extend(council);
+    }
+    Ok(out)
 }
