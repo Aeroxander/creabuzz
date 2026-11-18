@@ -197,12 +197,13 @@ Re-pin: the 3,000-Shares price test becomes the range tests above; guard-list en
 
 ## Owner questions
 
-1. **Creaton's earlier raise:** how much, when, at 6M before or after the money, what kind of deal, how many backers, and
-   what were they promised? *Recommended:* earlier backers get Shares at their price from the work pot, held 365 days from
-   the market, no refund, labelled; on a real network only after each agrees in writing and counsel reads it.
-2. **If the earlier raise is over 300,000 at 6M** (a quarter of the work pot): keep the work pot, or build an "earlier
-   backers" step that takes them from the unused backing Shares (about 30 lines, estimate)? *Recommended:* work pot up to
-   300,000; the new step above it.
+1. **Creaton's earlier raise.** *Answered 18 November 2026:* 1,229,957 dollars from 21 entries under SAFTs with an older
+   company, at 2.2M (seed) and 5.06M (private) for the whole project, 4.26M blended; not at 6M. The "raised at 6M" above
+   is wrong. See `docs/next-version/EARLIER-BACKERS.md`.
+2. **Over 300,000, so the work pot cannot hold it.** *Answered 18 November 2026:* keeping their percent is 288.68M Shares
+   (simulated), more than the whole work pot. Recommended now: a claim contract funded at project zero's launch from
+   unused backing first, then the founder's grant, with a signed SAFT replacement per backer. Design and the remaining
+   owner questions: `docs/next-version/EARLIER-BACKERS.md`.
 3. **Price range 333,333 to 50,000,000?** *Recommended:* yes.
 4. **Down rounds allowed with a warning and a notice to earlier backers?** *Recommended:* yes; the ban traps solo founders.
 5. **Auction start chosen by the runner, minimum = all 250M at that start** (Creaton 1,500,000 at 6M, or 600,000 at 2.4M)?

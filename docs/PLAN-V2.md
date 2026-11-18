@@ -393,6 +393,12 @@ network before the Council runner exists; reserve sales; the stake; sponsored fe
    `docs/next-version/PLANV2-M4-REPORT.md`, section "Founder-set prices: built". The app and server parts are not built.
    After the review, project zero is named once by the admin by its key (`nameProjectZero`), so no other project can
    launch without the stake; the stake address must always be named.
+   **Earlier backers (18 November 2026).** The old token sheet shows Creaton raised 1,229,957 dollars from 21 entries
+   at 2.2M (seed) and 5.06M (private) for the whole project, 4.26M blended, not at 6M (6M was an unsold tranche).
+   Keeping their percent is 288.68M Shares (28.87%, simulated), more than the whole 200M work pot, so "earlier backers
+   use Give Shares" cannot carry it. Recommended instead: a claim contract funded at project zero's launch from unused
+   backing first, then the founder's grant (founder keeps 5.30%), each backer signing a SAFT replacement drafted for
+   counsel. Full design, options and owner questions: `docs/next-version/EARLIER-BACKERS.md`. Not built.
 
 ## What I verified for this plan
 
