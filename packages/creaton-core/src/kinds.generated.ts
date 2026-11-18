@@ -439,6 +439,17 @@ export const KIND_THREAD_WINDOW_BOUNDS = 39007;
 /// transaction as every board moderation command.
 export const KIND_BOARD_STATE = 39008;
 
+/// Project numbers (relay-signed, addressable, `d` = the project's key on the
+/// chain, `0x` + 64 hex): what the server's chain reader works out for one
+/// project from the contracts' events and the chain cannot give directly:
+/// total raised against the cap, each round's price and the money-weighted
+/// average, the stage and since when, "quiet since", the refund per 100 for
+/// each backing, and held and free Shares per account. Content is JSON with a
+/// `version` field (see `docs/next-version/PLANV2-M5-REPORT.md`). Only the
+/// server writes it; a posted copy is refused. Republished when the numbers
+/// change.
+export const KIND_PROJECT_NUMBERS = 39009;
+
 /// Workflow definition (parameterized replaceable, d=workflow_uuid).
 export const KIND_WORKFLOW_DEF = 30620;
 

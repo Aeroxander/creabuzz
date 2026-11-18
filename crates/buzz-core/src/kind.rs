@@ -567,6 +567,16 @@ pub const KIND_THREAD_WINDOW_BOUNDS: u32 = 39007;
 /// ends. Rebuilt from the database in the same
 /// transaction as every board moderation command.
 pub const KIND_BOARD_STATE: u32 = 39008;
+/// Project numbers (relay-signed, addressable, `d` = the project's key on the
+/// chain, `0x` + 64 hex): what the server's chain reader works out for one
+/// project from the contracts' events and the chain cannot give directly:
+/// total raised against the cap, each round's price and the money-weighted
+/// average, the stage and since when, "quiet since", the refund per 100 for
+/// each backing, and held and free Shares per account. Content is JSON with a
+/// `version` field (see `docs/next-version/PLANV2-M5-REPORT.md`). Only the
+/// server writes it; a posted copy is refused. Republished when the numbers
+/// change.
+pub const KIND_PROJECT_NUMBERS: u32 = 39009;
 
 /// Workflow definition (parameterized replaceable, d=workflow_uuid).
 pub const KIND_WORKFLOW_DEF: u32 = 30620;
@@ -1257,6 +1267,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_WINDOW_BOUNDS,
     KIND_THREAD_WINDOW_BOUNDS,
     KIND_BOARD_STATE,
+    KIND_PROJECT_NUMBERS,
     KIND_PRESENCE_UPDATE,
     KIND_TYPING_INDICATOR,
     KIND_WIKI_SYNC,
@@ -1480,6 +1491,7 @@ pub const fn is_relay_only_kind(kind: u32) -> bool {
             | KIND_BOARD_STATE
             | KIND_BOARD_MODERATION_LOG
             | KIND_SYSTEM_MESSAGE
+            | KIND_PROJECT_NUMBERS
     )
 }
 
@@ -1577,6 +1589,7 @@ const _: () = assert!(is_board_moderation_command_kind(
 const _: () = assert!(!is_moderation_command_kind(KIND_BOARD_MUTE));
 const _: () = assert!(!is_board_moderation_command_kind(KIND_MODERATION_TIMEOUT));
 const _: () = assert!(is_parameterized_replaceable(KIND_BOARD_STATE));
+const _: () = assert!(is_parameterized_replaceable(KIND_PROJECT_NUMBERS));
 const _: () = assert!(!is_replaceable(KIND_BOARD_MODERATION_LOG));
 
 #[cfg(test)]
@@ -1664,6 +1677,13 @@ mod tests {
         assert!(is_relay_only_kind(KIND_BOARD_STATE));
         assert!(is_relay_only_kind(KIND_BOARD_MODERATION_LOG));
         assert!(!is_relay_only_kind(KIND_BOARD_LOCK_THREAD));
+    }
+
+    #[test]
+    fn project_numbers_are_relay_only_and_addressable() {
+        assert_eq!(KIND_PROJECT_NUMBERS, 39009);
+        assert!(is_relay_only_kind(KIND_PROJECT_NUMBERS));
+        assert!(is_parameterized_replaceable(KIND_PROJECT_NUMBERS));
     }
 
     #[test]
