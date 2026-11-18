@@ -3,7 +3,15 @@ pragma solidity ^0.8.30;
 
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {SafeERC20} from "oz5/token/ERC20/utils/SafeERC20.sol";
-import {IShares, IVester, IRounds, ILauncherPairs, IPairSigners, MAX_SPLIT_PART} from "./Interfaces.sol";
+import {
+    IShares,
+    IVester,
+    IRounds,
+    ILauncherPairs,
+    IPairSigners,
+    IEarlierBackers,
+    MAX_SPLIT_PART
+} from "./Interfaces.sol";
 import {RollingCap} from "./RollingCap.sol";
 
 /// @title Treasury
@@ -55,6 +63,8 @@ contract Treasury {
         uint128 agentUsd; // default daily dollar limit of an agent
         uint128 agentShares; // default daily Share limit of an agent
         uint256 workPot; // Shares the founder may give for work (the rest of the Shares held here are the reserve)
+        address earlier; // project zero's earlier backers' claim contract; zero for every other project
+        uint256 teamBudget; // project zero's founder slice, paid out over time with `payTeam`; zero for every other project
     }
 
     /// @notice What an agent account may do, and its daily limits.
@@ -92,6 +102,9 @@ contract Treasury {
     address public salePath;
     address public stake;
     uint256 public stakeAmount;
+    /// @notice Project zero's earlier backers' claim contract (`EarlierBackers`); zero for every other project. Shares it has
+    /// released but not delivered are not in anyone's hands (`countingSupply`).
+    address public earlier;
     uint16 public exitFeeBps;
     uint16 public platformFeeBps;
     uint16 public spendableParts;
@@ -120,6 +133,9 @@ contract Treasury {
     bool public paused; // the pauser stopped the release (backing rounds and the melting floor) until it says otherwise
     bool public reserveSaleOpen; // reserve Shares are out in a sale: exits wait until it is finished
     uint256 public workPot; // Shares still available for Give Shares
+    /// @notice Project zero only: what is left of its team budget (its founder's slice, held here instead of in the Vester),
+    /// which the runner pays out over time with `payTeam`, under the same rules as a gift. Zero for every other project.
+    uint256 public teamBudget;
 
     // ---- who runs the project
     address public runner; // the founder at birth, then whoever the runner hands the seat to
@@ -143,8 +159,12 @@ contract Treasury {
     event CheckedIn(address indexed by);
     /// @notice Dollars were sent from `spendable`.
     event Spent(address indexed by, address indexed to, uint256 amount);
-    /// @notice Shares were given from the work pot; `vested` says they went to the Vester.
+    /// @notice Shares were given from the work pot (or, with `TeamPaid` beside it, from the team budget); `vested` says they
+    /// went to the Vester.
     event SharesGiven(address indexed by, address indexed to, uint256 amount, bool vested);
+    /// @notice Project zero's runner paid `amount` Shares of the team budget to `to` (as a gift: `SharesGiven` beside it says
+    /// whether they are held); `left` is what remains of the budget.
+    event TeamPaid(address indexed to, uint256 amount, uint256 left);
     /// @notice A holder handed Shares back for their slice of the floor. The whole slice left the floor: `paid` to the holder,
     /// `toPlatform` owed to the platform and `toProject` added to `spendable`.
     event HandedBack(address indexed holder, uint256 shares, uint256 paid, uint256 toPlatform, uint256 toProject);
@@ -213,6 +233,8 @@ contract Treasury {
     error NothingToPay();
     /// @notice The work pot has fewer Shares than asked.
     error WorkPotShort(uint256 amount, uint256 left);
+    /// @notice The team budget has fewer Shares than asked.
+    error TeamBudgetShort(uint256 amount, uint256 left);
     /// @notice The quote token moved a different amount than it was asked to.
     error TokenMisbehaved();
     /// @notice The project wound down already.
@@ -246,11 +268,12 @@ contract Treasury {
                 || address(s.quote) == address(0) || address(s.vester) == address(0) || address(s.shares) == address(0)
                 || s.exitFeeBps >= BPS || s.platformFeeBps > s.exitFeeBps || s.spendableParts == 0 || s.floorParts == 0
                 || s.spendableParts > MAX_SPLIT_PART || s.floorParts > MAX_SPLIT_PART
-                || s.shares.balanceOf(address(this)) < s.workPot
+                || s.shares.balanceOf(address(this)) < s.workPot + s.teamBudget
         ) revert BadSetup();
         (quote, shares, vester, founder, platform) = (s.quote, s.shares, s.vester, s.founder, s.platform);
         (opener, salePath, workPot, runner) = (s.opener, s.salePath, s.workPot, s.founder);
-        (rounds, stake, stakeAmount) = (IRounds(s.rounds), s.stake, s.stakeAmount);
+        (rounds, stake, stakeAmount, earlier, teamBudget) =
+            (IRounds(s.rounds), s.stake, s.stakeAmount, s.earlier, s.teamBudget);
         (exitFeeBps, platformFeeBps, spendableParts, floorParts) =
             (s.exitFeeBps, s.platformFeeBps, s.spendableParts, s.floorParts);
         (defaultAgentUsd, defaultAgentShares) = (s.agentUsd, s.agentShares);
@@ -544,9 +567,7 @@ contract Treasury {
     /// 365-day release; after it they go straight to `to`, at most 1% of the Shares in people's hands (`countingSupply`) in
     /// any 30 days for the whole project.
     function giveShares(address to, uint256 amount) external nonReentrant {
-        if (to == address(0) || to == address(this) || to == address(vester) || to == address(shares) || amount == 0) {
-            revert BadInput();
-        }
+        _checkGift(to, amount);
         if (msg.sender != runner) {
             Agent memory a = agents[msg.sender];
             if (!a.active || agentEpochOf[msg.sender] != agentEpoch) revert NotAllowed();
@@ -554,6 +575,32 @@ contract Treasury {
         }
         if (amount > workPot) revert WorkPotShort(amount, workPot);
         workPot -= amount;
+        _gift(to, amount);
+    }
+
+    /// @notice Project zero only: pay a team member from the team budget (its founder's slice, held here, earmarked and
+    /// public: `teamBudget` is what is left). The rules are a gift's: before the market the Shares go to the Vester and
+    /// release over 365 days from the market opening; after it they go straight to `to`, inside the same 1% of the Shares in
+    /// people's hands in any 30 days that every gift shares. Only the runner (never an agent); the work pot and the reserve
+    /// are never touched.
+    function payTeam(address to, uint256 amount) external nonReentrant onlyRunner {
+        _checkGift(to, amount);
+        uint256 left = teamBudget;
+        if (amount > left) revert TeamBudgetShort(amount, left);
+        teamBudget = left - amount;
+        _gift(to, amount);
+        emit TeamPaid(to, amount, left - amount);
+    }
+
+    /// @dev A gift goes to a person: never to nobody, this contract, the Vester or the Shares, and never of nothing.
+    function _checkGift(address to, uint256 amount) private view {
+        if (to == address(0) || to == address(this) || to == address(vester) || to == address(shares) || amount == 0) {
+            revert BadInput();
+        }
+    }
+
+    /// @dev Deliver a gift: held in the Vester before the clock starts, straight to `to` after it under the monthly cap.
+    function _gift(address to, uint256 amount) private {
         if (poolOpen) {
             _gifts.consume(MONTH, MONTH_PARTS, countingSupply() * GIFT_CAP_BPS / BPS, amount);
             _sendShares(to, amount);
@@ -585,10 +632,11 @@ contract Treasury {
         emit ReserveSaleClosed(block.timestamp);
     }
 
-    /// @notice Shares held here that are not the work pot: the 10% reserve, plus any Shares returned by the pool step, the
-    /// backing rounds (unsold or refunded) or donated. They leave only through `releaseReserve` and the stake.
+    /// @notice Shares held here that are not the work pot or project zero's team budget: the 10% reserve, plus any Shares
+    /// returned by the pool step, the backing rounds (unsold or refunded) or donated. They leave only through
+    /// `releaseReserve` and the stake.
     function reserve() public view returns (uint256) {
-        return shares.balanceOf(address(this)) - workPot;
+        return shares.balanceOf(address(this)) - workPot - teamBudget;
     }
 
     // ================================================== agents =======================================================
@@ -635,11 +683,13 @@ contract Treasury {
 
     /// @notice Shares in people's hands for the exit right: all Shares minus those held here, by the Rounds (unsold or
     /// bought and not yet set aside), by the Finisher (not yet sold) and those the Vester has not released yet. Released
-    /// Shares count whether or not their owner has pressed claim, so no stranger's claim can move anyone's price. Read each
-    /// time; no caller supplies it.
+    /// Shares count whether or not their owner has pressed claim, so no stranger's claim can move anyone's price. For
+    /// project zero, Shares released to the earlier backers' claim contract but not yet delivered (entries not agreed to,
+    /// in their challenge window or behind the lock-up gate) are left out too. Read each time; no caller supplies it.
     function countingSupply() public view returns (uint256) {
+        uint256 held = earlier == address(0) ? 0 : IEarlierBackers(earlier).undelivered();
         return shares.totalSupply() - shares.balanceOf(address(this)) - shares.balanceOf(address(rounds))
-            - shares.balanceOf(opener) - vester.unreleased();
+            - shares.balanceOf(opener) - vester.unreleased() - held;
     }
 
     /// @notice Hand Shares back: burn your own (approve this contract first) and receive your slice of the floor, less

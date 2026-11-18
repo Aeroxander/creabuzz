@@ -291,8 +291,17 @@ contract FounderPriceZeroStakeLocalTest is FounderPriceAuctionBase {
         assertEq(ordinary.stakeGranted, 20_000_000 * SHARE);
         assertEq(zero.stakeEvents, 0, "no StakeGranted");
         assertEq(zero.stakeGranted, 0);
-        assertEq(zero.reserveBalance, ordinary.reserveBalance + 20_000_000 * SHARE, "the reserve keeps the 20M");
-        assertEq(zero.vesterUnreleased + 20_000_000 * SHARE, ordinary.vesterUnreleased, "nothing held for the stake");
+        // project zero's founder slice (200M, no earlier raise named here) is the Treasury's team budget, not a Vester grant
+        assertEq(
+            zero.reserveBalance,
+            ordinary.reserveBalance + 20_000_000 * SHARE + 200_000_000 * SHARE,
+            "the reserve keeps the 20M; the team budget is held here too"
+        );
+        assertEq(
+            zero.vesterUnreleased + 20_000_000 * SHARE + 200_000_000 * SHARE,
+            ordinary.vesterUnreleased,
+            "nothing held for the stake or the founder"
+        );
         assertEq(zero.counting, ordinary.counting, "the held stake never counted, so the count is the same");
         assertEq(zero.spendable, ordinary.spendable);
         assertEq(zero.melting, ordinary.melting);

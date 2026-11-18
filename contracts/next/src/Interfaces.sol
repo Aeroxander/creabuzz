@@ -39,6 +39,12 @@ interface IVester {
     function cancelHeld(uint256 round, address backer) external returns (uint256 cancelled, uint256 total);
     /// @notice A backer grant and how much of it was claimed.
     function heldGrants(uint256 round, address backer) external view returns (uint256 total, uint256 claimed);
+    /// @notice A plain grant and how much of it was claimed.
+    function grants(address beneficiary) external view returns (uint256 total, uint256 claimed);
+    /// @notice How much of a plain grant the clock has released so far (claimed or not).
+    function released(address beneficiary) external view returns (uint256);
+    /// @notice Send a beneficiary the released Shares of their plain grant (anyone may call it).
+    function claim(address beneficiary) external returns (uint256 amount);
 }
 
 /// @notice What a project's Treasury tells its Rounds, and what the Rounds ask of it.
@@ -125,4 +131,35 @@ interface IPairSigners {
     function first() external view returns (address);
     /// @notice The second signer (who accepted).
     function second() external view returns (address);
+}
+
+/// @notice A project's addresses as the Launcher stores them (the same fields, in the same order, as `Launcher.Project`).
+struct ProjectAddresses {
+    address founder;
+    address shares;
+    address treasury;
+    address vester;
+    address finisher;
+    address rounds;
+    uint64 launchedAt;
+}
+
+/// @notice What the earlier backers' claim contract reads of the Launcher.
+interface ILauncherProjects {
+    /// @notice What the Launcher knows of a project, by key (all zero before its launch).
+    function projectByKey(bytes32 key) external view returns (ProjectAddresses memory);
+}
+
+/// @notice What the Launcher and the Treasury read of project zero's earlier backers' claim contract (`EarlierBackers`).
+interface IEarlierBackers {
+    /// @notice The Launcher the list was made for.
+    function launcher() external view returns (address);
+    /// @notice The project (its Launcher key) the list was made for.
+    function key() external view returns (bytes32);
+    /// @notice The Shares the whole list is owed.
+    function total() external view returns (uint256);
+    /// @notice Shares the clock has released for the list that have not reached a backer or the reserve yet.
+    function undelivered() external view returns (uint256);
+    /// @notice Read the project's contracts from the Launcher, once, after the launch.
+    function bind() external;
 }

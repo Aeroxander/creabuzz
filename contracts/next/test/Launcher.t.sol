@@ -121,7 +121,7 @@ contract LauncherTest is Base {
         Vester vImpl = Vester(launcher.vesterImpl());
         ShareToken sImpl = ShareToken(launcher.shareImpl());
         vm.expectRevert(Vester.AlreadyInitialized.selector);
-        vImpl.initialize(IShares(address(shares)), alice, alice, alice, alice, 1);
+        vImpl.initialize(IShares(address(shares)), alice, alice, alice, alice, 1, address(0), 0);
         vm.expectRevert(ShareToken.BadBirth.selector);
         sImpl.initialize("x", "x", new address[](0), new uint256[](0));
     }

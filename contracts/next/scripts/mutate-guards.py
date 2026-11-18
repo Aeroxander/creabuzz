@@ -5,6 +5,7 @@
     python3 scripts/mutate-guards.py T09 L03    # only these ids
     python3 scripts/mutate-guards.py --m3       # only the milestone 3 entries (their ids start with F, A, H, P, X, E or B)
     python3 scripts/mutate-guards.py --m4       # only the plan version 2 milestone 4 entries (their ids start with N)
+    python3 scripts/mutate-guards.py --eb       # only project zero's earlier backers and team budget (ids start with Q)
     M2_ONLY=1 python3 scripts/mutate-guards.py  # the milestone 2 entries, against the milestone 2 suites only (about 25 seconds each)
     INV_ONLY=1 python3 scripts/mutate-guards.py T10 T15   # only the invariant suite
 
@@ -34,7 +35,7 @@ MUT=[
 ('T07','Treasury: settle ratio is not 15:60',T,'amount * spendableParts / (spendableParts + floorParts)','amount * spendableParts / (spendableParts + floorParts) * 2',True),
 ('T08', 'Treasury: any settle renews the check-in window', T, 'if (!settled) {\n            rounds.sync();\n            (settled, accruedUpTo, lastCheckIn) = (true, block.timestamp, block.timestamp);\n        }', 'rounds.sync(); settled = true; accruedUpTo = block.timestamp; lastCheckIn = block.timestamp;', False),
 ('T09','Treasury: hand back before the sale money is split',T,'if (!settled) revert NotSettled();','',False),
-('T10','Treasury: the Vester counts in the exit denominator (its whole balance leaves the count, claimed or not)',T,' - vester.unreleased();',' - shares.balanceOf(address(vester));',True),
+('T10','Treasury: the Vester counts in the exit denominator (its whole balance leaves the count, claimed or not)',T,' - vester.unreleased() - held;',' - shares.balanceOf(address(vester)) - held;',True),
 ('T11', 'Treasury: the Treasury counts in the exit denominator', T, 'return shares.totalSupply() - shares.balanceOf(address(this)) - shares.balanceOf(address(rounds))', 'return shares.totalSupply() - shares.balanceOf(address(rounds))', True),
 ('T12', 'Treasury: the exit slice reaches spendable', T, 'uint256 slice = fromMelting + fromPermanent;', 'uint256 slice = fromMelting + fromPermanent + spendable * amount / counting;', True),
 ('T13', 'Treasury: no exit fee', T, 'paid = slice - (slice * feeBps + BPS - 1) / BPS;', 'paid = slice;', True),
@@ -90,7 +91,7 @@ MUT=[
 
 ('L07','Launcher: the platform part may exceed the whole fee',L,'|| s.platformFeeBps > s.exitFeeBps','',False),
 ('L10','Launcher: the founder is the Launcher, not the caller',L,'                    founder: msg.sender,','                    founder: address(this),',False),
-('T41','Treasury: the reserve ignores Shares returned or donated to it',T,'return shares.balanceOf(address(this)) - workPot;','return 100_000_000e18;',False),
+('T41','Treasury: the reserve ignores Shares returned or donated to it',T,'return shares.balanceOf(address(this)) - workPot - teamBudget;','return 100_000_000e18;',False),
 ('T29b','Treasury: raw transfer, no balance measurement on the way out (both layers)',T,'quote.safeTransfer(to, amount);\n        uint256 afterBal = quote.balanceOf(address(this));\n        if (afterBal > before || before - afterBal != amount) revert TokenMisbehaved();','quote.transfer(to, amount);',False),
 ('T30b','Treasury: raw transferFrom, no arrival check on the way in (both layers)',T,'quote.safeTransferFrom(msg.sender, address(this), amount);\n        got = quote.balanceOf(address(this)) - before;\n        if (got == 0) revert TokenMisbehaved();','quote.transferFrom(msg.sender, address(this), amount);\n        got = amount;',False),
 ('T42','Treasury birth check: a platform part above the whole fee is accepted',T,'|| s.platformFeeBps > s.exitFeeBps ||','||',False),
@@ -111,7 +112,7 @@ MUT=[
 ('V11', 'Vester: unreleased does not fall with time', V, 'uint256 g = granted;\n        return g - _released(g);', 'uint256 g = granted;\n        return start != 0 && block.timestamp - start >= DURATION ? 0 : g;', False),
 ('V12','Vester: unreleased forgets what was granted',V,'        granted += amount;\n','',False),
 ('V13', 'Vester: unreleased falls with claims (the old denominator)', V, 'uint256 g = granted;\n        return g - _released(g);', 'uint256 g = committed;\n        return g - _released(g);', False),
-('L13','Launcher: launch ignores the settings hash the founder saw',L,'if (settingsHash() != expectedSettingsHash) revert SettingsMoved();','',False),
+('L13','Launcher: launch ignores the settings hash the founder saw',L,'if (launchHash(key) != expectedSettingsHash) revert SettingsMoved();','',False),
 ('L15','Launcher: the dollar token may be an account, not a contract',L,' || address(s.quote).code.length == 0','',False),
 ('L16','Launcher: the dollar token may have any decimals',L,'if (d != QUOTE_DECIMALS) revert BadSettings();','',False),
 ('L17','Launcher: platform address may be the Launcher',L,'s.platform == address(this) ||','',False),
@@ -330,7 +331,7 @@ M4=[
 ('N67','Treasury: Share revenue is shared by the Shares in hands (B3 comes back)',T,'uint256 fromPermanent = permanentFloor * amount / shares.totalSupply();','uint256 fromPermanent = permanentFloor * amount / counting;',True,M4T),
 ('N68','Treasury: the gift cap is on all Shares (B3 comes back)',T,'_gifts.consume(MONTH, MONTH_PARTS, countingSupply() * GIFT_CAP_BPS / BPS, amount);','_gifts.consume(MONTH, MONTH_PARTS, shares.totalSupply() * GIFT_CAP_BPS / BPS, amount);',True,M4T),
 ('N69','Treasury: the Rounds\' Shares count as in hands',T,' - shares.balanceOf(address(rounds))','',True,M4T),
-('N70','Treasury: the Finisher\'s Shares count as in hands',T,'\n            - shares.balanceOf(opener) - vester.unreleased();',' - vester.unreleased();',True,M4T),
+('N70','Treasury: the Finisher\'s Shares count as in hands',T,'\n            - shares.balanceOf(opener) - vester.unreleased() - held;',' - vester.unreleased() - held;',True,M4T),
 ('N71','Treasury: exits run while a reserve sale is out',T,'if (!saleClosed || reserveSaleOpen) revert SaleNotClosed();','if (!saleClosed) revert SaleNotClosed();',False,M4TA),
 ('N72','Treasury: a second reserve sale may start while one is out',T,'if (reserveSaleOpen) revert ReserveSaleState();\n        uint256 left','uint256 left',False,M4T),
 ('N73','Treasury: anyone may settle a reserve sale',T,'if (msg.sender != salePath) revert NotAllowed();\n        if (amount == 0) revert BadInput();\n        uint256 arrived','if (amount == 0) revert BadInput();\n        uint256 arrived',False,M4T),
@@ -360,7 +361,7 @@ M4=[
 ('N98','Launcher: anyone may name a pauser',L,'function setPauser(bytes32 key, address pauser) external {\n        if (msg.sender != councilMaker) revert NotCouncilMaker();','function setPauser(bytes32 key, address pauser) external {',False,M4L),
 ('N99','Launcher: a Pair it made is not marked as a Pair',L,'        isPair[pair] = true;\n','',False,M4L),
 ('NA0','Launcher: no stake',L,'stakeAmount: s.stake == address(0) ? 0 : STAKE,','stakeAmount: 0,',False,M4L),
-('NA1','Launcher: the backing Shares are minted to the Treasury',L,'(to[3], amounts[3]) = (p.rounds, BACKING);','(to[3], amounts[3]) = (treasury, BACKING);',False,M4L),
+('NA1','Launcher: the backing Shares are minted to the Treasury',L,'(to[3], amounts[3]) = (p.rounds, BACKING - fromBacking);','(to[3], amounts[3]) = (treasury, BACKING - fromBacking);',False,M4L),
 ('NA2','Launcher: parts with no code are accepted',L,'shareImpl.code.length == 0 || treasuryImpl.code.length == 0 || vesterImpl.code.length == 0\n                || roundsImpl.code.length == 0 || pairImpl.code.length == 0','false',False,M4L),
 ('NA4','Launcher: a finished reserve sale\'s money is not split',L,'            Treasury(p.treasury).settleReserveSale(got);\n','',False,M4L),
 ('NA5','Launcher: a finished reserve sale leaves exits closed',L,'        Treasury(p.treasury).closeReserveSale();\n','',False,M4L),
@@ -442,6 +443,106 @@ M4=[
 ]
 MUT+=M4
 
+# ---------------------------------------------------------------- project zero's earlier backers and team budget (ids Q..): --eb
+# EARLIER-BACKERS.md "Earlier backers: built": the claim contract (EB..), the Launcher's cut (LZ..), the team budget.
+EB='src/EarlierBackers.sol'; PT='src/Parts.sol'
+QE='test/{EarlierBackers,EarlierBackersFuzz}.t.sol'
+QT='test/{TeamBudget,EarlierBackers}.t.sol'
+QL='test/{EarlierBackers,EarlierBackersFuzz,TeamBudget,FounderPriceAuction}.t.sol'
+Q=[
+('Q01','EarlierBackers EB01: bind twice',EB,'if (address(vester) != address(0)) revert BindState();','',False,QE),
+('Q02','EarlierBackers EB01: bind before the launch',EB,'if (p.shares == address(0)) revert BindState();','',False,QE),
+('Q03','EarlierBackers EB02: an entry out of range',EB,'        if (funding() != total) revert NotFunded();\n        if (entry >= _leaves.length) revert UnknownEntry();','        if (funding() != total) revert NotFunded();',False,QE),
+('Q04','EarlierBackers EB03: the leaf is not checked',EB,'if (_leaves[entry] != leafOf(entry, holder, amount, salt)) revert NotOnList();','',False,QE),
+('Q05','EarlierBackers EB04: an entry with no holder',EB,'if (signer == address(0)) revert BadHolder();','',False,QE),
+('Q06','EarlierBackers EB05: an empty signature from anyone',EB,'if (msg.sender != signer) revert BadSignature();','',False,QE),
+('Q07','EarlierBackers EB06: the signature is not checked',EB,'!SignatureChecker.isValidSignatureNowCalldata(','!true && !SignatureChecker.isValidSignatureNowCalldata(',False,QE),
+('Q08','EarlierBackers EB07: the domain leaves out the chain',EB,'VERSION_HASH, block.chainid, address(this)','VERSION_HASH, uint256(1), address(this)',False,QE),
+('Q09','EarlierBackers EB07: the domain leaves out this contract',EB,'VERSION_HASH, block.chainid, address(this)','VERSION_HASH, block.chainid, address(0)',False,QE),
+('Q10','EarlierBackers EB07: the message leaves out the text version',EB,'                textVersion,\n                summaryHash,','                uint256(1),\n                summaryHash,',False,QE),
+('Q11','EarlierBackers EB07: the message leaves out the summary',EB,'                summaryHash,\n                _entries[entry].holderVersion,','                bytes32(0),\n                _entries[entry].holderVersion,',False,QE),
+('Q12','EarlierBackers EB07: the message leaves out the holder version',EB,'                _entries[entry].holderVersion,\n','                uint32(0),\n',False,QE),
+('Q13','EarlierBackers EB07: the message leaves out the project',EB,'                key,\n                textHash,\n                textVersion,','                bytes32(0),\n                textHash,\n                textVersion,',False,QE),
+('Q14','EarlierBackers EB08: no deadline',EB,'if (block.timestamp > validUntil) revert Expired();','',False,QE),
+('Q15','EarlierBackers EB09: an entry agreed to twice',EB,'        if (e.consentAt != 0) revert EntryState();\n        if (signer == e.barred','        if (signer == e.barred',False,QE),
+('Q16','EarlierBackers EB10: consent after the close',EB,'        if (closed) revert ClosedState();\n        if (funding() != total)','        if (funding() != total)',False,QE),
+('Q17','EarlierBackers EB11: a receiver with no code that is not the holder',EB,'if (receiver.code.length == 0 && receiver != holder) revert BadReceiver();','',False,QE),
+('Q18','EarlierBackers EB11: the claim contract itself as receiver',EB,'receiver == address(this) ||','false ||',False,QE),
+('Q19','EarlierBackers EB11: the Launcher as receiver',EB,'|| receiver == launcher ||','|| false ||',False,QE),
+('Q20','EarlierBackers EB11: the Shares contract as receiver',EB,'|| receiver == address(shares) ||','|| false ||',False,QE),
+('Q21','EarlierBackers EB11: the Treasury as receiver',EB,'|| receiver == treasury\n','|| false\n',False,QE),
+('Q22','EarlierBackers EB11: the Vester as receiver',EB,'|| receiver == address(vester) ||','|| false ||',False,QE),
+('Q23','EarlierBackers EB11: the Rounds as receiver',EB,'|| receiver == _rounds ||','|| false ||',False,QE),
+('Q24','EarlierBackers EB11: the Finisher as receiver',EB,'|| receiver == _finisher','|| false',False,QE),
+('Q25','EarlierBackers EB12: a consent leaves a pending replacement',EB,'            (e.pending, e.pendingAt) = (address(0), 0);\n            emit ReplacementCancelled(entry, signer);','            emit ReplacementCancelled(entry, signer);',False,QE),
+('Q26','EarlierBackers EB13: delivery ignores the clock',EB,'return e.amount * vester.released(address(this)) / granted - e.taken;','return e.amount - e.taken;',False,QE),
+('Q27','EarlierBackers EB14: delivery to the caller',EB,'_send(e.receiver, amount);','_send(msg.sender, amount);',False,QE),
+('Q28','EarlierBackers EB13: a delivery is not recorded',EB,'        e.taken += amount;\n','',False,QE),
+('Q29','EarlierBackers EB16: the reserve gets its part only, not the strays',EB,'sent = shares.balanceOf(address(this)) - (claimed - delivered - part);','sent = part;',False,QE),
+('Q30','EarlierBackers EB17: close before the long-stop',EB,'if (block.timestamp < longStop) revert TooEarly(longStop);','',False,QE),
+('Q31','EarlierBackers EB17: close twice',EB,'        if (closed) revert ClosedState();\n        closed = true;','        closed = true;',False,QE),
+('Q32','EarlierBackers EB17: to the reserve before the close',EB,'if (!closed) revert ClosedState();','',False,QE),
+('Q33','EarlierBackers EB18: anyone may propose a holder',EB,'        if (msg.sender != keeper) revert NotKeeper();\n        if (entry >= _leaves.length) revert UnknownEntry();\n        if (next == address(0)) revert BadHolder();','        if (entry >= _leaves.length) revert UnknownEntry();\n        if (next == address(0)) revert BadHolder();',False,QE),
+('Q34','EarlierBackers EB18: a replacement for an entry out of range',EB,'        if (entry >= _leaves.length) revert UnknownEntry();\n        if (next == address(0)) revert BadHolder();','        if (next == address(0)) revert BadHolder();',False,QE),
+('Q35','EarlierBackers EB18: a replacement by nobody',EB,'if (next == address(0)) revert BadHolder();','',False,QE),
+('Q36','EarlierBackers EB19: a replacement for an agreed entry',EB,'        if (e.consentAt != 0) revert EntryState();\n        (e.pending, e.pendingAt)','        (e.pending, e.pendingAt)',False,QE),
+('Q37','EarlierBackers EB20: no 30-day wait',EB,'if (block.timestamp < e.pendingAt + REPLACE_WAIT) revert TooEarly(e.pendingAt + REPLACE_WAIT);','',False,QE),
+('Q38','EarlierBackers EB21: anyone may veto',EB,'if (!isHolder || msg.sender == e.barred) revert NoReplacement();','if (msg.sender == e.barred) revert NoReplacement();',False,QE),
+('Q39','EarlierBackers EB21/EB29: the voided holder may veto',EB,'if (!isHolder || msg.sender == e.barred) revert NoReplacement();','if (!isHolder) revert NoReplacement();',False,QE),
+('Q40','EarlierBackers EB21: the holder version does not grow',EB,'uint32 version = e.holderVersion + 1;','uint32 version = e.holderVersion;',False,QE),
+('Q41','EarlierBackers EB21: apply with nothing pending',EB,'        if (next == address(0)) revert NoReplacement();\n','',False,QE),
+('Q42','EarlierBackers EB22: the text version does not grow',EB,'uint256 version = textVersion + 1;','uint256 version = textVersion;',False,QE),
+('Q43','EarlierBackers EB22: anyone may publish a text',EB,'        if (msg.sender != keeper) revert NotKeeper();\n        uint256 version = textVersion + 1;','        uint256 version = textVersion + 1;',False,QE),
+('Q44','EarlierBackers: a consent names an old text',EB,'if (text != textHash) revert TextMoved();','',False,QE),
+('Q45','EarlierBackers EB23: anyone may offer the keeper role',EB,'        if (msg.sender != keeper) revert NotKeeper();\n        pendingKeeper = next;','        pendingKeeper = next;',False,QE),
+('Q46','EarlierBackers EB23: anyone may take the keeper role',EB,'if (msg.sender != pendingKeeper || msg.sender == address(0)) revert NotKeeper();','',False,QE),
+('Q47','EarlierBackers EB24: no sum guard',EB,'if (agreed > total) revert OverTotal();','',False,QE),
+('Q48','EarlierBackers EB25: consent before the grant is funded',EB,'if (funding() != total) revert NotFunded();','',False,QE),
+('Q49','EarlierBackers EB26: delivery inside the challenge window',EB,'if (block.timestamp < since + CHALLENGE) revert TooEarly(since + CHALLENGE);','',False,QE),
+('Q50','EarlierBackers EB27: the lock-up gate is ignored',EB,'if (block.timestamp < since + minHoldFromConsent) revert TooEarly(since + minHoldFromConsent);','',False,'test/EarlierBackers.t.sol'),
+('Q51','EarlierBackers: delivery for an open entry',EB,'        if (since == 0) revert EntryState();\n        if (block.timestamp < since + CHALLENGE)','        if (block.timestamp < since + CHALLENGE)',False,QE),
+('Q52','EarlierBackers EB28: anyone may void',EB,'    function voidConsent(uint256 entry, bytes32 evidence) external {\n        if (msg.sender != keeper) revert NotKeeper();','    function voidConsent(uint256 entry, bytes32 evidence) external {',False,QE),
+('Q53','EarlierBackers EB28: void after the window',EB,'if (block.timestamp >= since + CHALLENGE) revert WindowOver();','',False,QE),
+('Q54','EarlierBackers EB28: void an open entry',EB,'        if (since == 0) revert EntryState();\n        if (block.timestamp >= since + CHALLENGE)','        if (block.timestamp >= since + CHALLENGE)',False,QE),
+('Q55','EarlierBackers: a void keeps the receiver',EB,'(e.consentAt, e.signer, e.receiver, e.amount) = (0, address(0), address(0), 0);','(e.consentAt, e.signer, e.amount) = (0, address(0), 0);',False,QE),
+('Q56','EarlierBackers EB29: the voided holder agrees again while a replacement is pending',EB,'if (signer == e.barred && e.pending != address(0)) revert Barred();','',False,QE),
+('Q57','EarlierBackers: undelivered counts what was delivered',EB,'return vester.released(address(this)) - delivered - reserveTaken;','return vester.released(address(this)) - reserveTaken;',False,QE),
+('Q58','EarlierBackers: a keeper of nobody',EB,'if (keeper_ == address(0)) revert BadSetup();','',False,QE),
+('Q59','EarlierBackers: no list or more than 64 entries',EB,'if (n == 0 || n > MAX_ENTRIES) revert BadSetup();','',False,QE),
+('Q60','EarlierBackers: a Launcher of nobody',EB,'if (launcher_ == address(0)) revert BadSetup();','',False,QE),
+('Q61','EarlierBackers: a total of nothing',EB,'if (total_ == 0) revert BadSetup();','',False,QE),
+('Q62','EarlierBackers: a long-stop under two years',EB,'if (longStop_ < block.timestamp + MIN_LONG_STOP) revert BadSetup();','',False,QE),
+('Q63','EarlierBackers: a hold over two years',EB,'if (minHoldFromConsent_ > MAX_HOLD) revert BadSetup();','',False,QE),
+# the Launcher's cut, the Parts code hash and the Vester's second grant (LZ1 to LZ6)
+('Q70','Launcher LZ5: project zero\'s founder slice stays a Vester grant (no team budget)',L,'(founderGrant, team) = (0, FOUNDER - fromFounder);','',False,QL),
+('Q71','Launcher LZ6: the backing slice is not cut',L,'(to[3], amounts[3]) = (p.rounds, BACKING - fromBacking);','(to[3], amounts[3]) = (p.rounds, BACKING);',False,QL),
+('Q72','Launcher LZ1: more backing kept than the backing slice',L,'if (keep > BACKING) revert BadCut();','',False,QL),
+('Q73','Launcher LZ1: a cut larger than the founder\'s slice',L,'if (fromFounder > FOUNDER) revert BadCut();','',False,QL),
+('Q74','Launcher LZ2: any code as the claim',L,'claim.codehash != earlierCodeHash || ','',False,QL),
+('Q75','Launcher LZ2: a claim made for another Launcher',L,'IEarlierBackers(claim).launcher() != address(this)','false',False,QL),
+('Q76','Launcher LZ2: a claim made for another project',L,'|| IEarlierBackers(claim).key() != key','|| false',False,QL),
+('Q77','Launcher: anyone may name the earlier raise',L,'    function nameEarlierBackers(address claim, uint256 keepBacking) external {\n        if (msg.sender != admin) revert NotAdmin();','    function nameEarlierBackers(address claim, uint256 keepBacking) external {',False,QL),
+('Q78','Launcher LZ4: the launch hash leaves out the cut',L,'if (key == projectZeroKey && claim != address(0)) h = keccak256(abi.encode(h, claim, earlierKeep));','',False,QL),
+('Q79','Launcher: naming project zero again keeps the old claim',L,'(projectZeroKey, earlierClaim) = (key, address(0));','projectZeroKey = key;',False,QL),
+('Q80','Launcher: the launch does not bind the claim',L,'if (claim != address(0)) IEarlierBackers(claim).bind();','',False,QL),
+('Q81','Launcher: the Treasury is not told about the claim',L,'earlier: claim,','earlier: address(0),',False,QL),
+('Q82','Launcher: the Treasury is not told the team budget',L,'teamBudget: team','teamBudget: 0',False,QL),
+('Q83','Launcher LZ3: the claim\'s grant leaves out the founder\'s part',L,'                fromBacking + fromFounder\n','                fromBacking\n',False,QL),
+('Q84','Parts: the code hash is not the claim\'s',PT,'earlierCodeHash = keccak256(type(EarlierBackers).runtimeCode);','earlierCodeHash = bytes32(0);',False,QL),
+('Q85','Vester: the claim grant may go to nobody or to the founder',V,'if (earlier_ == address(0) || earlier_ == founder_) revert BadGrant();','',False,QE),
+('Q86','Vester: a zero founder grant is still made (project zero cannot launch)',V,'if (founderAmount_ != 0) {','if (true) {',False,QL),
+# the team budget in the Treasury
+('Q90','Treasury: anyone may pay the team',T,'function payTeam(address to, uint256 amount) external nonReentrant onlyRunner {','function payTeam(address to, uint256 amount) external nonReentrant {',False,QT),
+('Q91','Treasury: the team budget may be overdrawn (error kind)',T,'if (amount > left) revert TeamBudgetShort(amount, left);','',False,QT),
+('Q92','Treasury: team pay does not lower the budget',T,'        teamBudget = left - amount;\n','',False,QT),
+('Q93','Treasury: the reserve includes the team budget',T,'return shares.balanceOf(address(this)) - workPot - teamBudget;','return shares.balanceOf(address(this)) - workPot;',False,QT),
+('Q94','Treasury: the team budget is not stored',T,'s.earlier, s.teamBudget);','s.earlier, s.teamBudget * 0);',False,QT),
+('Q95','Treasury: the birth check leaves out the team budget',T,'< s.workPot + s.teamBudget','< s.workPot',False,QT),
+('Q96','Treasury: team pay skips the gift checks',T,'        _checkGift(to, amount);\n        uint256 left = teamBudget;','        uint256 left = teamBudget;',False,QT),
+('Q97','Treasury: undelivered earlier-backer Shares count',T,' - vester.unreleased() - held;',' - vester.unreleased();',False,QE),
+]
+MUT+=Q
+
 status = '' if PRISTINE else subprocess.run(['git', 'status', '--porcelain', 'src'], cwd=ROOT, capture_output=True, text=True).stdout.strip()
 if status:
     sys.exit('src/ has uncommitted changes; commit or stash them first:\n' + status)
@@ -467,6 +568,7 @@ def run(extra,suites=None):
 sel=[a for a in sys.argv[1:] if not a.startswith('--')]
 only_m3='--m3' in sys.argv
 only_m4='--m4' in sys.argv
+only_eb='--eb' in sys.argv
 shard=[a for a in sys.argv[1:] if a.startswith('--shard=')]
 k,n=(int(x) for x in shard[0][8:].split('/')) if shard else (0,1)
 pos=-1
@@ -476,6 +578,7 @@ for entry in MUT:
     if sel and i not in sel: continue
     if only_m3 and i[0] not in 'FAHPXEB': continue
     if only_m4 and i[0] != 'N': continue
+    if only_eb and i[0] != 'Q': continue
     if os.environ.get('M2_ONLY') and i[0] in 'FAHPXEB': continue
     if os.environ.get('M2_ONLY') and not suites: suites=M2SUITES
     pos+=1

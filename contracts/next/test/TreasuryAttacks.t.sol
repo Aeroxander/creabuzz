@@ -86,7 +86,9 @@ contract TreasuryAttacksTest is Base {
             floorParts: 1,
             agentUsd: 0,
             agentShares: 0,
-            workPot: 0
+            workPot: 0,
+            earlier: address(0),
+            teamBudget: 0
         });
         address[] memory to = new address[](1);
         uint256[] memory amounts = new uint256[](1);
@@ -96,7 +98,7 @@ contract TreasuryAttacksTest is Base {
         vm.expectRevert(Treasury.BadSetup.selector);
         t.initialize(evil);
         vm.expectRevert(Vester.AlreadyInitialized.selector);
-        v.initialize(IShares(address(shares)), carol, carol, carol, carol, 1);
+        v.initialize(IShares(address(shares)), carol, carol, carol, carol, 1, address(0), 0);
         vm.expectRevert(ShareToken.BadBirth.selector);
         shares.initialize("Mine", "MINE", to, amounts);
         vm.stopPrank();

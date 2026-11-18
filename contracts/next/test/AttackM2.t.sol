@@ -710,9 +710,13 @@ contract AttackM2LaunchTest is Base {
         vm.expectRevert(Treasury.BadSetup.selector);
         tImpl.initialize(st);
         vm.expectRevert(Vester.AlreadyInitialized.selector);
-        v.initialize(IShares(address(shares)), address(this), address(this), address(this), address(this), 1);
+        v.initialize(
+            IShares(address(shares)), address(this), address(this), address(this), address(this), 1, address(0), 0
+        );
         vm.expectRevert(Vester.AlreadyInitialized.selector);
-        vImpl.initialize(IShares(address(shares)), address(this), address(this), address(this), address(this), 1);
+        vImpl.initialize(
+            IShares(address(shares)), address(this), address(this), address(this), address(this), 1, address(0), 0
+        );
         address[] memory to = new address[](1);
         uint256[] memory am = new uint256[](1);
         to[0] = address(this);

@@ -103,7 +103,9 @@ contract TreasuryTest is Base {
             floorParts: 60,
             agentUsd: uint128(25 * DOLLAR),
             agentShares: uint128(1_000_000 * SHARE),
-            workPot: 200_000_000 * SHARE
+            workPot: 200_000_000 * SHARE,
+            earlier: address(0),
+            teamBudget: 0
         });
     }
 

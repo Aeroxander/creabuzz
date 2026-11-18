@@ -222,7 +222,9 @@ contract PlanV2M4FixesTest is RoundsBase {
     function test_vester_aFounderGrantToNobodyIsRefused() public {
         Vester fresh = Vester(Clones.clone(launcher.vesterImpl()));
         vm.expectRevert(Vester.BadGrant.selector);
-        fresh.initialize(IShares(address(shares)), address(this), address(this), address(this), address(0), 1);
+        fresh.initialize(
+            IShares(address(shares)), address(this), address(this), address(this), address(0), 1, address(0), 0
+        );
     }
 
     // ============================================ R3: the scale-back dust ========================================================

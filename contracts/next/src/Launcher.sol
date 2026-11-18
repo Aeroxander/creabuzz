@@ -11,7 +11,15 @@ import {Rounds} from "./Rounds.sol";
 import {Pair} from "./Pair.sol";
 import {Parts} from "./Parts.sol";
 import {LiquidityHolder} from "./LiquidityHolder.sol";
-import {IShares, IVester, IFinisher, ITreasuryRounds, ITreasuryRunner, MAX_SPLIT_PART} from "./Interfaces.sol";
+import {
+    IShares,
+    IVester,
+    IFinisher,
+    ITreasuryRounds,
+    ITreasuryRunner,
+    IEarlierBackers,
+    MAX_SPLIT_PART
+} from "./Interfaces.sol";
 import {
     IPinnedStrategy,
     IPinnedAuctionFactory,
@@ -75,6 +83,16 @@ interface IOwned {
 /// the exit fee, the 15 : 60 split and the agents' default limits. A founder commits to the exact set they saw by passing its
 /// hash to `launch`. Nothing in a launched project follows a later change. The admin may also name, once, the one project
 /// that launches with no stake (`nameProjectZero`: Creaton's own project, project zero); no other project can.
+///
+/// Project zero only (Creaton's own project, `docs/next-version/EARLIER-BACKERS.md`), two differences from every other
+/// launch. First, its founder's slice is not granted to the founder: it goes to the Treasury as a public, earmarked team
+/// budget the runner pays out over time (`Treasury.payTeam`, a gift's rules), and the founder's Vester grant is zero.
+/// Second, its earlier raise (Creaton's backers under the old SAFTs): the admin names the claim contract
+/// (`nameEarlierBackers`: an `EarlierBackers` made for this Launcher and project zero's key) and the backing Shares project
+/// zero keeps for its own rounds. At that launch the list's total comes first from the backing Shares beyond those kept,
+/// then from the founder's slice (so the team budget is what is left of it); the Vester makes the claim contract one plain
+/// grant of it, and project zero's launch hash covers the claim and the amount kept. The work pot, the reserve, the auction
+/// and the pool match are never touched, and no other launch can use either.
 /// @dev The Council is milestone 9. The seam here: `councilMaker`, fixed at construction (zero on every network until the
 /// Council contract exists), is the only address that may mark an address as a Council (`registerCouncil`) and name a
 /// project's pauser (`setPauser`, for the holders' vote).
@@ -125,7 +143,7 @@ contract Launcher {
     struct Allocation {
         uint256 sale; // to the Finisher, for the one auction
         uint256 poolReserve; // to the Finisher, to pair with the auction's dollars in the pool
-        uint256 founder; // to the Vester
+        uint256 founder; // to the Vester (zero for project zero: its slice is the team budget, see `ProjectZeroSplit`)
         uint256 workPot; // to the Treasury, for Give Shares
         uint256 reserve; // to the Treasury, leaves only through a reserve sale and the stake
         uint256 backing; // to the Rounds, for backing rounds
@@ -217,6 +235,8 @@ contract Launcher {
     address public immutable councilMaker;
     /// @notice True on every network but a local test chain (31337) and Sepolia: the auction then needs a Council runner.
     bool public immutable requireCouncilForAuction;
+    /// @notice The code hash every earlier backers' claim contract must have (read from `Parts`).
+    bytes32 public immutable earlierCodeHash;
 
     /// @notice Who may change the settings (for new projects) or hand this role on. Zero once renounced.
     address public admin;
@@ -233,6 +253,10 @@ contract Launcher {
     bytes32 public projectZeroKey;
     /// @notice True once project zero launched: every later project takes the stake.
     bool public projectZeroLaunched;
+    /// @notice Project zero's earlier backers' claim contract (zero: none). Cleared when project zero is named again.
+    address public earlierClaim;
+    /// @notice The backing Shares project zero keeps for its own rounds; the rest of the backing slice goes to the claim.
+    uint256 public earlierKeep;
     mapping(bytes32 => Project) private _projects;
     mapping(bytes32 => ReserveSales) private _reserve;
 
@@ -298,6 +322,15 @@ contract Launcher {
     event AdminChanged(address indexed admin);
     /// @notice The admin named the project that will launch with no stake (zero: the name was taken back).
     event ProjectZeroNamed(bytes32 indexed key);
+    /// @notice The admin named project zero's earlier backers' claim contract (zero: none) and the backing Shares it keeps.
+    event EarlierBackersNamed(bytes32 indexed key, address indexed claim, uint256 keepBacking);
+    /// @notice Project zero launched: the earlier backers' claim contract (zero: none) has a Vester grant of `fromBacking`
+    /// (from the backing slice) plus `fromFounder` (from the founder's slice), and the rest of the founder's slice,
+    /// `teamBudget`, is in the Treasury as the team budget. `ProjectLaunched` beside it shows a founder grant of zero and the
+    /// backing slice after the cut.
+    event ProjectZeroSplit(
+        bytes32 indexed key, address indexed claim, uint256 fromBacking, uint256 fromFounder, uint256 teamBudget
+    );
 
     /// @notice This founder already launched a project with this id.
     error ProjectExists();
@@ -330,6 +363,9 @@ contract Launcher {
     error TooEarly(uint256 from);
     /// @notice The auction's starting price is below `salePrices` or above `MAX_START_Q96`.
     error BadStart();
+    /// @notice The earlier backers' claim is not the known code, not made for this Launcher and project zero, or does not fit
+    /// in the backing Shares beyond those kept plus the founder's slice.
+    error BadCut();
 
     /// @param admin_ Who may change the settings for new projects.
     /// @param initial The first settings.
@@ -391,6 +427,7 @@ contract Launcher {
         finisherImpl = address(new Finisher(address(this), strategy_, poolGuard_));
         holder = address(new LiquidityHolder(IPinnedStrategy(strategy_).positionManager(), poolGuard_));
         councilMaker = councilMaker_;
+        earlierCodeHash = parts_.earlierCodeHash();
         requireCouncilForAuction = block.chainid != 31_337 && block.chainid != 11_155_111;
         admin = admin_;
         _set(initial);
@@ -405,14 +442,15 @@ contract Launcher {
     /// @param projectId The id in the founder's signed project record.
     /// @param name The Shares' name (1 to 64 bytes).
     /// @param symbol The Shares' ticker (1 to 64 bytes).
-    /// @param expectedSettingsHash `settingsHash()` as the founder saw it. If the admin changed the settings since, the
-    /// launch reverts instead of giving the founder a project built on settings they never agreed to.
+    /// @param expectedSettingsHash `launchHash(keyOf(founder, projectId))` as the founder saw it (`settingsHash()` for every
+    /// project but project zero with an earlier raise). If the admin changed the settings (or project zero's earlier raise)
+    /// since, the launch reverts instead of giving the founder a project built on settings they never agreed to.
     function launch(bytes32 projectId, string calldata name, string calldata symbol, bytes32 expectedSettingsHash)
         external
         returns (address shares, address treasury, address vester)
     {
-        if (settingsHash() != expectedSettingsHash) revert SettingsMoved();
         bytes32 key = keyOf(msg.sender, projectId);
+        if (launchHash(key) != expectedSettingsHash) revert SettingsMoved();
         if (_projects[key].shares != address(0)) revert ProjectExists();
         if (
             bytes(name).length == 0 || bytes(name).length > 64 || bytes(symbol).length == 0 || bytes(symbol).length > 64
@@ -420,9 +458,19 @@ contract Launcher {
             revert BadName();
         }
         Settings memory s = settings;
-        // project zero (named by the admin, used up here) takes no stake; it reads `stake` zero in ProjectLaunched too
+        // project zero (named by the admin, used up here) takes no stake; it reads `stake` zero in ProjectLaunched too. Its
+        // earlier raise, if named, comes from the backing Shares beyond those kept, then from the founder's slice, and the
+        // rest of that slice is the Treasury's team budget: its founder's Vester grant is zero.
+        address claim;
+        uint256 fromBacking;
+        uint256 fromFounder;
+        uint256 founderGrant = FOUNDER;
+        uint256 team;
         if (key == projectZeroKey) {
             (projectZeroKey, projectZeroLaunched, s.stake) = (bytes32(0), true, address(0));
+            claim = earlierClaim;
+            if (claim != address(0)) (fromBacking, fromFounder) = _cut(IEarlierBackers(claim).total(), earlierKeep);
+            (founderGrant, team) = (0, FOUNDER - fromFounder);
         }
         Project memory p = Project({
             founder: msg.sender,
@@ -438,11 +486,21 @@ contract Launcher {
         address[] memory to = new address[](4);
         uint256[] memory amounts = new uint256[](4);
         (to[0], amounts[0]) = (p.finisher, SALE + POOL_RESERVE);
-        (to[1], amounts[1]) = (vester, FOUNDER);
-        (to[2], amounts[2]) = (treasury, WORK_POT + RESERVE);
-        (to[3], amounts[3]) = (p.rounds, BACKING);
+        (to[1], amounts[1]) = (vester, founderGrant + fromBacking + fromFounder);
+        (to[2], amounts[2]) = (treasury, WORK_POT + RESERVE + team);
+        (to[3], amounts[3]) = (p.rounds, BACKING - fromBacking);
         ShareToken(shares).initialize(name, symbol, to, amounts);
-        Vester(vester).initialize(IShares(shares), treasury, treasury, p.rounds, msg.sender, FOUNDER);
+        Vester(vester)
+            .initialize(
+                IShares(shares),
+                treasury,
+                treasury,
+                p.rounds,
+                msg.sender,
+                founderGrant,
+                claim,
+                fromBacking + fromFounder
+            );
         IFinisher(p.finisher).initialize(treasury, shares, address(s.quote));
         Rounds(p.rounds)
             .initialize(address(this), ITreasuryRounds(treasury), IVester(vester), IShares(shares), s.quote, s.platform);
@@ -465,11 +523,17 @@ contract Launcher {
                     floorParts: s.floorParts,
                     agentUsd: s.agentUsd,
                     agentShares: s.agentShares,
-                    workPot: WORK_POT
+                    workPot: WORK_POT,
+                    earlier: claim,
+                    teamBudget: team
                 })
             );
         _projects[key] = p;
         treasuryOfShares[shares] = treasury;
+        if (founderGrant == 0) {
+            if (claim != address(0)) IEarlierBackers(claim).bind();
+            emit ProjectZeroSplit(key, claim, fromBacking, fromFounder, team);
+        }
         emit ProjectLaunched(
             key,
             projectId,
@@ -478,10 +542,10 @@ contract Launcher {
             Allocation({
                 sale: SALE,
                 poolReserve: POOL_RESERVE,
-                founder: FOUNDER,
+                founder: founderGrant,
                 workPot: WORK_POT,
                 reserve: RESERVE,
-                backing: BACKING
+                backing: BACKING - fromBacking
             }),
             s
         );
@@ -731,6 +795,14 @@ contract Launcher {
         return keccak256(abi.encode(settings));
     }
 
+    /// @notice What `launch` checks for the project `key`: `settingsHash()`, and for project zero with an earlier raise named,
+    /// a hash of it with the claim contract and the backing Shares kept, so its founder commits to the cut too.
+    function launchHash(bytes32 key) public view returns (bytes32 h) {
+        h = settingsHash();
+        address claim = earlierClaim;
+        if (key == projectZeroKey && claim != address(0)) h = keccak256(abi.encode(h, claim, earlierKeep));
+    }
+
     /// @notice The key a project is stored under.
     function keyOf(address founder, bytes32 projectId) public pure returns (bytes32) {
         return keccak256(abi.encode(founder, projectId));
@@ -750,8 +822,27 @@ contract Launcher {
     function nameProjectZero(bytes32 key) external {
         if (msg.sender != admin) revert NotAdmin();
         if (projectZeroLaunched || _projects[key].shares != address(0)) revert ProjectExists();
-        projectZeroKey = key;
+        (projectZeroKey, earlierClaim) = (key, address(0));
         emit ProjectZeroNamed(key);
+    }
+
+    /// @notice Name project zero's earlier raise: `claim`, an `EarlierBackers` made for this Launcher and the named project
+    /// zero, and `keepBacking`, the backing Shares project zero keeps for its own rounds (Creaton: 8,333,333.33, what the
+    /// 50,000 Team cap buys at 6,000,000). At its launch the list's total comes from the rest of the backing slice first,
+    /// then from the founder's slice (the rest of which is the team budget). Only the admin, only while project zero is
+    /// named and has not launched; zero `claim` takes it back. Naming project zero again clears it.
+    function nameEarlierBackers(address claim, uint256 keepBacking) external {
+        if (msg.sender != admin) revert NotAdmin();
+        bytes32 key = projectZeroKey; // zero when none is named: no claim is made for key zero's project, and none launches
+        if (claim != address(0)) {
+            if (
+                claim.codehash != earlierCodeHash || IEarlierBackers(claim).launcher() != address(this)
+                    || IEarlierBackers(claim).key() != key
+            ) revert BadCut();
+            _cut(IEarlierBackers(claim).total(), keepBacking);
+        }
+        (earlierClaim, earlierKeep) = (claim, keepBacking);
+        emit EarlierBackersNamed(key, claim, keepBacking);
     }
 
     /// @notice Hand the admin role on, or renounce it with the zero address (settings then never change again).
@@ -772,6 +863,15 @@ contract Launcher {
     function _runner(Treasury t) private view returns (address runner) {
         runner = t.runner();
         if (msg.sender != runner) revert NotRunner();
+    }
+
+    /// @dev The earlier raise's two parts: the backing Shares beyond `keep` first, then the founder's slice.
+    function _cut(uint256 total, uint256 keep) private pure returns (uint256 fromBacking, uint256 fromFounder) {
+        if (keep > BACKING) revert BadCut();
+        fromBacking = BACKING - keep;
+        if (total < fromBacking) fromBacking = total;
+        fromFounder = total - fromBacking;
+        if (fromFounder > FOUNDER) revert BadCut();
     }
 
     function _pairSalt(bytes32 key, address first, address second) private pure returns (bytes32) {

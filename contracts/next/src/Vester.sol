@@ -20,6 +20,10 @@ import {IShares} from "./Interfaces.sol";
 ///
 /// The founder's grant can be trimmed once, before the clock starts, when the founder leaves through the treasury's hand-over:
 /// the founder keeps the part matching the days served since launch out of 365 and the rest goes back to the treasury.
+///
+/// Project zero only: no founder grant (its founder's slice is the Treasury's team budget, paid out over time with the gift
+/// rules), and a plain grant made at birth to the earlier backers' claim contract (`EarlierBackers`), on the same clock. That
+/// grant is not the founder's, so a trim never reaches it.
 /// @dev One copy per project, a minimal clone created by the Launcher. Nothing here can move Shares anywhere but to the
 /// beneficiary they were granted to (as fast as the schedule allows) or back to the treasury (a cancel or a trim). No owner.
 contract Vester {
@@ -99,22 +103,35 @@ contract Vester {
     /// @param granter_ Who may add plain grants before it starts, trim the founder, and receives cancelled Shares.
     /// @param rounds_ Who may add and cancel backer grants.
     /// @param founder_ The founder, whose grant is `founderAmount_`.
-    /// @param founderAmount_ Shares granted to the founder; they must already be held here.
+    /// @param founderAmount_ Shares granted to the founder; they must already be held here. Zero for project zero only, whose
+    /// founder's slice is its Treasury's team budget instead (the Launcher decides; a trim then cuts nothing).
+    /// @param earlier_ Project zero's earlier backers' claim contract; zero for every other project.
+    /// @param earlierAmount_ Shares granted to `earlier_` (already held here); zero for every other project.
     function initialize(
         IShares shares_,
         address starter_,
         address granter_,
         address rounds_,
         address founder_,
-        uint256 founderAmount_
+        uint256 founderAmount_,
+        address earlier_,
+        uint256 earlierAmount_
     ) external {
         if (starter != address(0)) revert AlreadyInitialized();
         if (founder_ == address(0)) revert BadGrant();
         (shares, starter, granter, rounds) = (shares_, starter_, granter_, rounds_);
         (founder, founderAmount, bornAt) = (founder_, founderAmount_, block.timestamp);
-        _fund(founderAmount_);
-        grants[founder_].total += founderAmount_;
-        emit Granted(founder_, founderAmount_);
+        if (founderAmount_ != 0) {
+            _fund(founderAmount_);
+            grants[founder_].total += founderAmount_;
+            emit Granted(founder_, founderAmount_);
+        }
+        if (earlierAmount_ != 0) {
+            if (earlier_ == address(0) || earlier_ == founder_) revert BadGrant();
+            _fund(earlierAmount_);
+            grants[earlier_].total += earlierAmount_;
+            emit Granted(earlier_, earlierAmount_);
+        }
     }
 
     /// @notice Start the release clock at this moment, once. After this no plain grant can be added.
