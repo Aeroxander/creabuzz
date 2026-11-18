@@ -563,6 +563,8 @@ mod postgres_tests {
             "chain_contracts",
             "chain_logs",
             "chain_project_numbers",
+            "chain_helper_jobs",
+            "chain_helper_sends",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -776,7 +778,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 65);
+        assert_eq!(migrations.len(), 66);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1612,6 +1614,55 @@ mod postgres_tests {
                 "schema.sql must declare {table}"
             );
             assert!(!chain_reader.contains(&format!("attach_community_write_fence('{table}')")));
+        }
+    }
+
+    #[test]
+    fn chain_helper_tables_are_operator_global_in_every_schema_source() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[65].version, 66);
+        let chain_helper = migrations[65].sql.as_str();
+        let desired_schema = crate::test_support::desired_state_schema_sql();
+        let reconcile = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../scripts/reconcile-schema-after-pgschema.sql"),
+        )
+        .expect("read the post-pgschema reconcile script");
+        for table in ["chain_helper_jobs", "chain_helper_sends"] {
+            let registered = format!("('{table}', 'deployment-global");
+            assert!(
+                chain_helper.contains(&registered),
+                "migration 0066 must register {table}"
+            );
+            assert!(
+                desired_schema.contains(&registered),
+                "schema seeds must register {table}"
+            );
+            assert!(
+                reconcile.contains(&registered),
+                "the reconcile script must register {table} (pgschema skips seeds)"
+            );
+            assert!(
+                reconcile.contains(&format!("'{table}'")),
+                "the reconcile script must assert {table} is registered"
+            );
+            assert!(
+                desired_schema.contains(&format!("CREATE TABLE {table} (")),
+                "schema.sql must declare {table}"
+            );
+            assert!(!chain_helper.contains(&format!("attach_community_write_fence('{table}')")));
+        }
+        // The widened role list is the same in the migration and the desired state.
+        for role in ["'earlier'", "'auction'", "'holder'", "'pool_manager'"] {
+            assert!(
+                chain_helper.contains(role),
+                "migration 0066 must allow {role}"
+            );
+            assert!(
+                desired_schema.contains(role),
+                "schema.sql must allow {role}"
+            );
         }
     }
 
