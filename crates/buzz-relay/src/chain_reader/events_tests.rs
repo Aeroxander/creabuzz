@@ -1,5 +1,5 @@
-//! Decoding tests. Topics are checked against the built artifacts in
-//! `contracts/next/out`; the data below is real ABI encoding (`cast abi-encode`
+//! Decoding tests. Topics are checked against the events recorded from the
+//! `contracts/next` build (`testdata/next-events.json`); the data below is real ABI encoding (`cast abi-encode`
 //! of the event's non-indexed arguments, and logs captured from the anvil
 //! real-server loop in `scripts/chain-loop-e2e.sh`).
 
@@ -30,43 +30,14 @@ fn def(role: Role, name: &str) -> &'static EventDef {
         .expect("event in the catalog")
 }
 
-fn artifact_topics(contract: &str) -> Vec<(String, Word)> {
-    fn canonical(input: &serde_json::Value) -> String {
-        let ty = input["type"].as_str().unwrap_or_default();
-        if ty == "tuple" {
-            let inner: Vec<String> = input["components"]
-                .as_array()
-                .map(|c| c.iter().map(canonical).collect())
-                .unwrap_or_default();
-            format!("({})", inner.join(","))
-        } else {
-            ty.to_owned()
-        }
-    }
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
-        "../../contracts/next/out/{contract}.sol/{contract}.json"
-    ));
-    let text = std::fs::read_to_string(&path).expect("built artifact");
-    let json: serde_json::Value = serde_json::from_str(&text).expect("artifact json");
-    json["abi"]
-        .as_array()
-        .expect("abi array")
-        .iter()
-        .filter(|item| item["type"] == "event")
-        .map(|item| {
-            let inputs: Vec<String> = item["inputs"]
-                .as_array()
-                .map(|i| i.iter().map(canonical).collect())
-                .unwrap_or_default();
-            let name = item["name"].as_str().unwrap_or_default().to_owned();
-            let sig = format!("{name}({})", inputs.join(","));
-            (name, keccak256(sig.as_bytes()))
-        })
-        .collect()
-}
+/// The contracts' events as recorded from the contracts/next build by
+/// `node scripts/chain-reader-events.mjs` (its `--check` compares the file with
+/// a fresh build), so this test needs no local forge build.
+const RECORDED: &str = include_str!("testdata/next-events.json");
 
 #[test]
-fn the_catalog_matches_every_event_in_the_built_artifacts() {
+fn the_catalog_matches_every_recorded_event() {
+    let recorded: serde_json::Value = serde_json::from_str(RECORDED).expect("recorded events");
     for (contract, role) in [
         ("Launcher", Role::Launcher),
         ("Rounds", Role::Rounds),
@@ -76,19 +47,22 @@ fn the_catalog_matches_every_event_in_the_built_artifacts() {
         ("Pair", Role::Pair),
         ("ShareToken", Role::Shares),
     ] {
-        let from_abi = artifact_topics(contract);
-        for (name, topic) in &from_abi {
-            if contract == "ShareToken" && name == "Approval" {
-                continue; // allowances are not followed
-            }
-            let found = lookup(role, topic)
-                .unwrap_or_else(|| panic!("{contract}.{name} is missing from the catalog"));
-            assert_eq!(found.name, name.as_str());
+        let signatures: Vec<&str> = recorded[contract]
+            .as_array()
+            .unwrap_or_else(|| panic!("{contract} is not recorded"))
+            .iter()
+            .map(|s| s.as_str().expect("a signature"))
+            .collect();
+        for sig in &signatures {
+            let name = sig.split('(').next().unwrap_or_default();
+            let found = lookup(role, &keccak256(sig.as_bytes()))
+                .unwrap_or_else(|| panic!("{contract}.{sig} is missing from the catalog"));
+            assert_eq!(found.name, name);
         }
         for e in EVENTS.iter().filter(|e| e.role == role) {
             assert!(
-                from_abi.iter().any(|(_, t)| *t == e.topic()),
-                "{contract}.{} is not in the artifact (signature {})",
+                signatures.contains(&e.signature().as_str()),
+                "{contract}.{} is not recorded (signature {})",
                 e.name,
                 e.signature()
             );
@@ -225,6 +199,69 @@ fn refunded_decodes_the_worked_day_45_refund() {
     assert_eq!(v["unreleased"], "61725274");
     assert_eq!(v["paid"], "58639010");
     assert_eq!(v["shares"], "300000000000000000000000");
+}
+
+/// Project zero's earlier backers and team budget (contracts commit fb0f84d75);
+/// data from `cast abi-encode`, topics from `cast sig-event`.
+#[test]
+fn project_zero_split_and_team_pay_decode() {
+    let key = word_u(0x5a);
+    let claim = word_addr("0x00000000000000000000000000000000000000c1");
+    let split = def(Role::Launcher, "ProjectZeroSplit");
+    assert_eq!(
+        split.topic(),
+        w("0x830e4e799b68e9b2f364f19dff8e7afff7779b6e99eb8ceba2db7186d98375b6")
+    );
+    let v = decode(
+        split,
+        &[split.topic(), key, claim],
+        &parse_bytes(
+            "0x000000000000000000000000000000000000000000295be96e64066972000000\
+             00000000000000000000000000000000000000000018d0bf423c03d8de000000\
+             0000000000000000000000000000000000000000006342fd08f00f6378000000",
+        ),
+    )
+    .expect("decodes");
+    assert_eq!(v["claim"], "0x00000000000000000000000000000000000000c1");
+    assert_eq!(v["fromBacking"], "50000000000000000000000000");
+    assert_eq!(v["fromFounder"], "30000000000000000000000000");
+    assert_eq!(v["teamBudget"], "120000000000000000000000000");
+
+    let named = def(Role::Launcher, "EarlierBackersNamed");
+    assert_eq!(
+        named.topic(),
+        w("0xac205200a39ccb31c844250943a590c6937cc2bf540a5383be72e128313e842b")
+    );
+    let v = decode(
+        named,
+        &[named.topic(), key, claim],
+        &parse_bytes("0x000000000000000000000000000000000000000000295be96e64066972000000"),
+    )
+    .expect("decodes");
+    assert_eq!(v["keepBacking"], "50000000000000000000000000");
+
+    let paid = def(Role::Treasury, "TeamPaid");
+    assert_eq!(
+        paid.topic(),
+        w("0x00daf0fab740e97e239cdb322620013afbbda09282525c5039d3a6c7441845ed")
+    );
+    let v = decode(
+        paid,
+        &[
+            paid.topic(),
+            word_addr("0x00000000000000000000000000000000000000cc"),
+        ],
+        &parse_bytes(
+            "0x00000000000000000000000000000000000000000000d3c21bcecceda1000000\
+             000000000000000000000000000000000000000000626f3aed214275d7000000",
+        ),
+    )
+    .expect("decodes");
+    assert_eq!(v["to"], "0x00000000000000000000000000000000000000cc");
+    assert_eq!(v["amount"], "1000000000000000000000000");
+    assert_eq!(v["left"], "119000000000000000000000000");
+    // One topic short is refused.
+    assert!(decode(paid, &[paid.topic()], &[0u8; 64]).is_err());
 }
 
 fn parse_bytes(text: &str) -> Vec<u8> {

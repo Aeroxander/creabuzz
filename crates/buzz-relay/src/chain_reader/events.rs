@@ -244,6 +244,26 @@ pub static EVENTS: &[EventDef] = &[
         ]
     ),
     ev!(Launcher, "ProjectZeroNamed", [ix("key", Ty::Bytes32)]),
+    ev!(
+        Launcher,
+        "EarlierBackersNamed",
+        [
+            ix("key", Ty::Bytes32),
+            ix("claim", Ty::Address),
+            p("keepBacking", U256),
+        ]
+    ),
+    ev!(
+        Launcher,
+        "ProjectZeroSplit",
+        [
+            ix("key", Ty::Bytes32),
+            ix("claim", Ty::Address),
+            p("fromBacking", U256),
+            p("fromFounder", U256),
+            p("teamBudget", U256),
+        ]
+    ),
     ev!(Launcher, "CouncilRegistered", [ix("council", Ty::Address)]),
     ev!(
         Launcher,
@@ -414,6 +434,11 @@ pub static EVENTS: &[EventDef] = &[
             ix("to", Ty::Address),
             p("amount", U256)
         ]
+    ),
+    ev!(
+        Treasury,
+        "TeamPaid",
+        [ix("to", Ty::Address), p("amount", U256), p("left", U256)]
     ),
     ev!(
         Treasury,

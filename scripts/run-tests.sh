@@ -219,6 +219,11 @@ run_unit_tests() {
   run_test_step "buzz-relay config tests" \
     cargo test -p buzz-relay --lib config::tests:: -- --skip nip_fi_config:: --test-threads=1 --nocapture
 
+  # The chain reader's decoding and derived numbers (its Postgres tests are
+  # #[ignore]d). Keep in step with `just test-unit`.
+  run_test_step "buzz-relay chain reader tests" \
+    cargo test -p buzz-relay --lib chain_reader:: -- --nocapture
+
   # Mirror the NIP-FI (S3) stanza from `just test-unit`: module filters, then
   # each exact name. Keep this list in step with that stanza's `test(=...)`s.
   run_test_step "buzz-relay NIP-FI config tests" \
