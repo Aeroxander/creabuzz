@@ -1,6 +1,6 @@
 import { relativeTime } from "@creaton/core/client/relative-time.ts";
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
-import { Banknote, ListChecks } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import { useState } from "react";
 import { BackHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
@@ -14,6 +14,11 @@ import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { Tabs } from "../../ui/tabs";
 import { useToast } from "../../ui/toast";
+import { BackBox } from "../money/BackBox";
+import { MoneyTab } from "../money/MoneyTab";
+import { openRound } from "../money/numbers";
+import { OpenBacking } from "../money/OpenBacking";
+import { useProjectNumbers } from "../money/use-money";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
 import type { Project } from "./project-record";
@@ -79,6 +84,24 @@ function ProjectView({ project }: { project: Project }) {
     ...(activity.data?.updates.map((u) => u.author) ?? []),
   ]).data;
   const founderName = nameOf(profiles, project.author);
+  // Money only where the server turns investing on: with it off the numbers are never even asked for.
+  const numbersRead = useProjectNumbers(investing ? project : null);
+  const numbers =
+    investing && numbersRead.data && !numbersRead.data.removed
+      ? numbersRead.data
+      : null;
+  const now = Math.floor(Date.now() / 1000);
+  const round = numbers ? openRound(numbers, now) : null;
+  const money = numbers
+    ? { stage: numbers.stage.name, raised: numbers.raised.total }
+    : null;
+  const canOpen =
+    numbers !== null &&
+    isFounder &&
+    round === null &&
+    numbers.raised.left > 0n &&
+    !numbers.clock.woundDown &&
+    ["solo", "backed", "team"].includes(numbers.stage.name);
 
   return (
     <main
@@ -113,9 +136,29 @@ function ProjectView({ project }: { project: Project }) {
         </div>
       </header>
 
-      <StageLine investing={investing} stage={currentStage(accepted.length)} />
+      <StageLine
+        investing={investing}
+        money={money}
+        stage={currentStage(accepted.length, money)}
+      />
 
-      <JoinBox activity={activity.data} onTeam={onTeam} project={project} />
+      {numbers && round ? (
+        <BackBox
+          now={now}
+          numbers={numbers}
+          primary
+          projectName={project.name}
+          round={round}
+        />
+      ) : null}
+      {numbers && canOpen ? <OpenBacking numbers={numbers} /> : null}
+
+      <JoinBox
+        activity={activity.data}
+        onTeam={onTeam}
+        project={project}
+        secondary={round !== null}
+      />
 
       <Tabs
         items={[
@@ -165,8 +208,18 @@ function ProjectView({ project }: { project: Project }) {
                 {
                   value: "money",
                   label: "Money",
-                  soon: true,
-                  content: <MoneyTab />,
+                  content: (
+                    <MoneyTab
+                      error={numbersRead.error}
+                      loading={
+                        numbersRead.isPending &&
+                        numbersRead.fetchStatus !== "idle"
+                      }
+                      now={now}
+                      numbers={numbersRead.data}
+                      onRetry={() => void numbersRead.refetch()}
+                    />
+                  ),
                 },
               ]
             : []),
@@ -176,26 +229,6 @@ function ProjectView({ project }: { project: Project }) {
         value={tab}
       />
     </main>
-  );
-}
-
-/** Money is a placeholder in this part: what it will hold, and the ownership line wherever money is offered. */
-function MoneyTab() {
-  return (
-    <EmptyState
-      icon={<Banknote size={28} />}
-      testId="money-placeholder"
-      title="Backing shows here"
-    >
-      <p>
-        Rounds, what was paid in and what can still be taken back show here once
-        the server reads them from the network.
-      </p>
-      <p className="mt-3">
-        Buyers acquire ownership only: governance and exit. No dividends or
-        revenue share, ever, unless they contribute and earn one.
-      </p>
-    </EmptyState>
   );
 }
 

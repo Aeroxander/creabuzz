@@ -21,7 +21,10 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   projects: [
-    { name: "smoke", testMatch: ["**/smoke.spec.ts", "**/join.spec.ts"] },
+    {
+      name: "smoke",
+      testMatch: ["**/smoke.spec.ts", "**/join.spec.ts", "**/money.spec.ts"],
+    },
     { name: "screens", testMatch: ["**/screens.spec.ts"] },
   ],
   webServer: {

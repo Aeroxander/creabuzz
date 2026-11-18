@@ -11,6 +11,7 @@ import { useRequireAccount } from "../../lib/use-require-account";
 import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
+import { OpenRounds } from "../money/OpenRounds";
 import { ComposerSheet } from "../posts/Composer";
 import { PostCard } from "../posts/PostCard";
 import {
@@ -49,8 +50,7 @@ function Section({
 }
 
 /**
- * Home: open rounds on top (a placeholder until the server reads the chain, milestone 5, and only where investing is
- * on), the projects you follow, the projects shipping now, and recent posts. Never sorted by money.
+ * Home: open rounds on top (only where investing is on, from the server's reading of the chain), the projects you follow, the projects shipping now, and recent posts. Never sorted by money.
  */
 export function HomePage() {
   const { pubkey } = useAccount();
@@ -114,16 +114,7 @@ export function HomePage() {
 
       {investingOn() ? (
         <Section testId="home-rounds" title="Open rounds">
-          <Card
-            className="flex flex-col gap-1"
-            data-testid="rounds-placeholder"
-          >
-            <p className="font-semibold">Backing rounds show here</p>
-            <p className="text-sm text-muted">
-              Rounds open for 24 hours. They appear here once the server reads
-              them from the network.
-            </p>
-          </Card>
+          <OpenRounds projects={all} />
         </Section>
       ) : null}
 

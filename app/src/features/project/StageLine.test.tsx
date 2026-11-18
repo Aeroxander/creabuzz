@@ -20,6 +20,23 @@ describe("StageLine", () => {
     );
   });
 
+  it("marks Backed done only when money came in, from the server's numbers", () => {
+    const money = { stage: "team" as const, raised: 2_500_000_000n };
+    render(
+      <StageLine investing money={money} stage={currentStage(0, money)} />,
+    );
+    expect(state("solo")).toBe("done");
+    expect(state("backed")).toBe("done");
+    expect(state("team")).toBe("now");
+    expect(state("council")).toBe("no");
+  });
+
+  it("a backed project is Backed now; a later record stage wins over an earlier chain one", () => {
+    expect(currentStage(0, { stage: "backed", raised: 1n })).toBe("Backed");
+    expect(currentStage(1, { stage: "backed", raised: 1n })).toBe("Team");
+    expect(currentStage(0, { stage: "solo", raised: 0n })).toBe("Solo");
+  });
+
   it("without investing shows only Solo and Team", () => {
     render(<StageLine investing={false} stage={currentStage(0)} />);
     expect(state("solo")).toBe("now");

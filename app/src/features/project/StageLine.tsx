@@ -1,3 +1,4 @@
+import type { StageName } from "../money/numbers";
 import { cn } from "../../ui/cn";
 
 /** The stages of a project's life (plan section 3), in order. The money stages exist only where investing is on. */
@@ -5,21 +6,51 @@ const ALL_STAGES = ["Solo", "Backed", "Team", "Council", "Open"] as const;
 const NO_MONEY_STAGES = ["Solo", "Team"] as const;
 export type Stage = (typeof ALL_STAGES)[number];
 
+/** What the server read from the chain about a project's money stage, when investing is on and it has a launch. */
+export interface MoneyStage {
+  stage: StageName;
+  /** Total raised, in raw dollar units: above zero means Backed was reached, whatever came after. */
+  raised: bigint;
+}
+
+const BY_NAME: Record<StageName, Stage> = {
+  solo: "Solo",
+  backed: "Backed",
+  team: "Team",
+  council: "Council",
+  open: "Open",
+};
+
 /**
- * Where a project stands, as far as this app can read without the chain: Team once someone besides the founder has
- * said yes on the record, Solo before. The money stages (Backed, Council, Open) need the chain reader (milestone 5).
+ * Where a project stands: Team once someone besides the founder has said yes on the record, Solo before; where the
+ * server reads the project's launch (investing on), the chain's stage when it is further along.
  */
-export function currentStage(acceptedMembers: number): Stage {
-  return acceptedMembers > 0 ? "Team" : "Solo";
+export function currentStage(
+  acceptedMembers: number,
+  money?: MoneyStage | null,
+): Stage {
+  const fromRecord: Stage = acceptedMembers > 0 ? "Team" : "Solo";
+  if (!money) return fromRecord;
+  const fromChain = BY_NAME[money.stage];
+  return ALL_STAGES.indexOf(fromChain) > ALL_STAGES.indexOf(fromRecord)
+    ? fromChain
+    : fromRecord;
 }
 
 /**
  * The stages a project has actually reached. A project can skip a stage (a team without ever raising money), so a
- * stage before the current one is not done by its place in the line. Until the chain reader exists (milestone 5) no
- * money stage is ever reached here: the line never says a project was backed when it was not.
+ * stage before the current one is not done by its place in the line: Backed only when money came in, Council and Open
+ * only when the chain says so. The line never says a project was backed when it was not.
  */
-function reachedStages(stage: Stage): ReadonlySet<Stage> {
-  return new Set<Stage>(stage === "Team" ? ["Solo", "Team"] : ["Solo"]);
+function reachedStages(
+  stage: Stage,
+  money?: MoneyStage | null,
+): ReadonlySet<Stage> {
+  const reached = new Set<Stage>(["Solo", stage]);
+  if (money && money.raised > 0n) reached.add("Backed");
+  if (stage === "Council" || stage === "Open") reached.add("Team");
+  if (stage === "Open") reached.add("Council");
+  return reached;
 }
 
 /**
@@ -29,12 +60,14 @@ function reachedStages(stage: Stage): ReadonlySet<Stage> {
 export function StageLine({
   stage,
   investing,
+  money,
 }: {
   stage: Stage;
   investing: boolean;
+  money?: MoneyStage | null;
 }) {
   const stages: readonly Stage[] = investing ? ALL_STAGES : NO_MONEY_STAGES;
-  const reached = reachedStages(stage);
+  const reached = reachedStages(stage, investing ? money : null);
   return (
     <div className="flex flex-col gap-2" data-testid="stage-line">
       <ol aria-label="Stage" className="flex items-center gap-1.5">

@@ -6,13 +6,7 @@ import {
 } from "@creaton/core/account/passkey-identity.ts";
 import { forgetIdentity } from "@creaton/core/client/identity.ts";
 import { Link } from "@tanstack/react-router";
-import {
-  ChevronRight,
-  KeyRound,
-  LogOut,
-  MessageSquare,
-  Receipt,
-} from "lucide-react";
+import { ChevronRight, KeyRound, LogOut, MessageSquare } from "lucide-react";
 import { useState } from "react";
 import { ScreenHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
@@ -20,7 +14,6 @@ import { nameOf, useProfiles } from "../../lib/profiles";
 import { saveProfile } from "../../lib/profile-save";
 import { investingOn } from "../../lib/server";
 import { Button, ButtonLink } from "../../ui/button";
-import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { Field, TextArea } from "../../ui/field";
 import { Dialog, Sheet } from "../../ui/sheet";
@@ -28,6 +21,7 @@ import { Tabs } from "../../ui/tabs";
 import { useToast } from "../../ui/toast";
 import { BACKED_UP_KEY, RecoveryKeyPanel } from "../account/RecoveryKeySheet";
 import { ProjectCard } from "../home/ProjectCard";
+import { Receipts } from "../money/Receipts";
 import { NotificationsList } from "../notifications/NotificationsList";
 import { ProfileHead } from "../profile/ProfilePage";
 import { useProjectsBy } from "../profile/use-own-projects";
@@ -101,25 +95,7 @@ function SignedIn({ me }: { me: string }) {
         <span className="flex-1 font-semibold">Messages</span>
         <ChevronRight aria-hidden="true" className="text-muted" size={20} />
       </Link>
-      {investingOn() ? (
-        <Card
-          className="flex items-start gap-3"
-          data-testid="receipts-placeholder"
-        >
-          <Receipt
-            aria-hidden="true"
-            className="mt-0.5 text-mint-ink"
-            size={20}
-          />
-          <div>
-            <p className="font-semibold">Backing receipts</p>
-            <p className="text-sm text-muted">
-              What you paid, the Shares you hold and which are free, and what
-              you can still take back show here once the server reads them.
-            </p>
-          </div>
-        </Card>
-      ) : null}
+      {investingOn() ? <Receipts /> : null}
       <Tabs
         items={[
           {

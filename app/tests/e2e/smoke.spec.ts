@@ -175,7 +175,7 @@ test("the open rounds slot shows only where the server turns investing on", asyn
   seed(relay);
   await install(page, relay, READER_KEY, { investing: true });
   await page.goto("/");
-  await expect(page.getByTestId("rounds-placeholder")).toBeVisible({
+  await expect(page.getByTestId("rounds-none")).toBeVisible({
     timeout: 20_000,
   });
 });
@@ -241,7 +241,7 @@ test("with investing on, a team that never raised money is not shown as backed, 
   const fits = await rail.evaluate((el) => el.scrollWidth <= el.clientWidth);
   expect(fits, "the four tabs fit without scrolling at 360").toBe(true);
   await page.getByTestId("tab-money").click();
-  await expect(page.getByTestId("money-placeholder")).toContainText(
+  await expect(page.getByTestId("money-none")).toContainText(
     "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one.",
   );
   await expectNoSidewaysScroll(page, "Project, investing on, 360");

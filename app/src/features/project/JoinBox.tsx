@@ -28,10 +28,13 @@ export function JoinBox({
   project,
   activity,
   onTeam,
+  secondary = false,
 }: {
   project: Project;
   activity: ProjectActivity | undefined;
   onTeam: boolean;
+  /** When another action is the screen's main one (an open round's Back), Ask to join is not green. */
+  secondary?: boolean;
 }) {
   const { pubkey } = useAccount();
   const navigate = useNavigate();
@@ -80,6 +83,7 @@ export function JoinBox({
       block
       data-testid="join-ask"
       disabled={ask.isPending}
+      variant={secondary ? "secondary" : "primary"}
       onClick={() => {
         if (pubkey) {
           send();

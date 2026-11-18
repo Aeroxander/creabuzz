@@ -87,6 +87,8 @@ export async function install(
     keepSignUp?: boolean;
     policy?: unknown;
     investing?: boolean;
+    /** The server's own signing key, said in its information document (`self`): whose project numbers are believed. */
+    relaySelf?: string;
   } = {},
 ) {
   await relay.install(page);
@@ -101,7 +103,11 @@ export async function install(
       route.fulfill({
         status: 200,
         contentType: "application/nostr+json",
-        body: JSON.stringify({ name: "Mock server", investing: true }),
+        body: JSON.stringify({
+          name: "Mock server",
+          investing: true,
+          ...(options.relaySelf ? { self: options.relaySelf } : {}),
+        }),
       }),
     );
   await page.addInitScript(
