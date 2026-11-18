@@ -327,6 +327,26 @@ runs on Sepolia.
 In parallel: 5 beside 4 once the events are agreed; 6 beside 5; 8 beside 7; the design options page any time. About
 five to six months in all (estimate).
 
+**Milestone 9 requirement: progressive decentralization of project zero** (added 18 November 2026, owner's decision 5).
+Creaton starts centrally managed: its runner is the DAO LLC's manager. Holders take powers over in steps, and every
+step must work when the earlier backers (about 47% of voters after a year, simulated) do not vote.
+- **Votes count only Shares parked from a person's own wallet.** Never a balance of the Treasury (reserve, work pot,
+  team budget), the Vester (unreleased), the earlier backers' claim contract (released, not delivered), the Rounds or
+  the Finisher.
+- **Quorum is measured against votes cast, with a turnout floor that steps up.** A vote passes on a majority of the
+  Shares that voted (a supermajority for a wind-down, owner question 19), provided turnout reaches a floor that rises
+  by stage, for example 5% of the Shares in people's hands in the first year after the market, 10% in the second, 15%
+  from Open (judgement; the numbers are for the milestone's review). Not voting never counts as no.
+- **The manager's powers are bounded now and end by stage.** Before the market: the runner seat inside the existing caps
+  (spend only `spendable`, never the floor; gifts and team pay under the gift rules; agents inside daily limits). From
+  the market: holders can pause the release and replace the runner. At Council: spending moves to the Council (3 of 5).
+  At Open: the manager holds no power left except paying the team budget.
+- **The team budget stays payable by the manager until it is used up,** even after holders take over every other power:
+  milestone 9 adds a team-payer role (the manager's address, set at launch, moved only by the manager or a holders'
+  supermajority) that may call only `payTeam`, under the same gift rules. Today `payTeam` is the runner's, so this is a
+  contract change for milestone 9. What happens to an unused budget if the manager stops working is a question for
+  counsel (`EARLIER-BACKERS.md` section 11).
+
 ## 10. Off until an outside audit and counsel, and what could still go wrong
 
 **Off until an outside review:** any real network; real dollars; CREATE as a real token; the auction on a real
@@ -398,7 +418,22 @@ network before the Council runner exists; reserve sales; the stake; sponsored fe
    Keeping their percent is 288.68M Shares (28.87%, simulated), more than the whole 200M work pot, so "earlier backers
    use Give Shares" cannot carry it. Recommended instead: a claim contract funded at project zero's launch from unused
    backing first, then the founder's grant (founder keeps 5.30%), each backer signing a SAFT replacement drafted for
-   counsel. Full design, options and owner questions: `docs/next-version/EARLIER-BACKERS.md`. Not built.
+   counsel. Full design, options and owner questions: `docs/next-version/EARLIER-BACKERS.md`.
+   **The owner decided on 18 November 2026 (final), and it is built** (local tests only; `EARLIER-BACKERS.md` section
+   11): **S1**, the backers keep their percent, 288,677,273 Shares (28.868%) less any seed entry of the owner's own (the
+   total is an input). **Source D for project zero only:** unused backing first (141,666,666.67; Creaton keeps
+   8,333,333.33 for its own 6,000,000 rounds under the 50,000 Team cap), then the founder's slice; never the work pot,
+   the reserve, the auction or the pool match. **The owner's team Shares go to the Treasury:** project zero has no
+   founder grant; the rest of the founder's slice, 52,989,393.67 Shares (5.30%), is a public, earmarked team budget in
+   the Treasury, which the runner pays out about monthly (`payTeam`, a gift's rules: held 365 days from the market
+   opening before it, free at once after it under the 1%-in-30-days cap), roughly 52.99M over 2 to 3 years if the owner
+   stays. **The teammate** (the old Ambassadors line, 21,818,182 Shares, 2.18%) is paid from the work pot with Give
+   Shares, monthly by default or up front. **One clock** for everyone: evenly over 365 days from the market opening or a
+   "no market" declaration, never faster, no cliff; the lock-up gate is a setting, off by default, for counsel.
+   **Central management first:** project zero's runner is the DAO LLC's manager (one key, or a Pair of the manager's
+   keys) inside the existing caps, until the milestone 9 steps in section 9. Legal points (valuing team payments in
+   Shares, related-party payments, disclosure of the team budget) are questions for counsel, listed in
+   `EARLIER-BACKERS.md` section 11; nothing here is legal advice. Personal tax questions are not recorded in the repo.
 
 ## What I verified for this plan
 

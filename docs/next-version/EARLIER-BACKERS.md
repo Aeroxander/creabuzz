@@ -1,6 +1,7 @@
 # Creaton's earlier backers: from the old SAFTs to CREATE Shares
 
-Design note for the owner, 18 November 2026. Nothing here is built, live or signed. Nothing goes on a real network before
+Design note for the owner, 18 November 2026. Nothing here is live or signed; section 11 says what is now built (local
+tests only). Nothing goes on a real network before
 the outside audit and counsel. Labels: *measured* (from built contracts or tests), *simulated* (Python under
 `docs/next-version/econ/`, run with `python3 -I`), *judgement*. Scripts: `saft_sheet.py` (sizes, options, market),
 `earlier_claim.py` (claim contract accounting), `saft_legal.py` (rates, votes), `earlier_backer_list.py` and
@@ -131,7 +132,7 @@ signature offline. No names or emails on the server.
 > and a deadline. [Counsel: whether (b) alone counts.]
 > 14. *Law and disputes.* [counsel]
 
-## 5. The claim contract: `EarlierBackers` (not built; build only after the owner's yes)
+## 5. The claim contract: `EarlierBackers` (built after the owner's yes: section 11)
 
 **Shape.** One contract for project zero's earlier raise. At launch the Launcher's cut (below) makes one plain Vester
 grant to it, separate from the founder's grant, so the founder trim never reaches it. Each consented entry receives
@@ -315,3 +316,273 @@ more; no published series price.
 18. *Disclose on the auction page the 4.26M blended price and that the backers can out-vote you after a year?* **Yes.**
 19. *Milestone 9: a supermajority and minimum turnout for a wind-down at Open?* **Yes.**
 20. *Order: links only after the Shares rule, counsel's text and the entity are settled?* **Yes.**
+
+## 11. Earlier backers: built (18 November 2026)
+
+Built in `contracts/next` on branch `v4-governance-rework`, not pushed, not deployed anywhere. Local tests only; every
+holder, amount, salt and address in the tests is made up (21 entries that add up to the real S1 total).
+
+### The owner's decisions (18 November 2026, final)
+
+1. **Size S1.** The earlier backers keep their old percent: 288,677,273 Shares (28.868%), less the owner's own seed
+   entry if it is ever put on the list. The total is an input of the claim contract, not a constant.
+2. **Source D, project zero only.** First the backing Shares Creaton's own rounds cannot use (Creaton keeps
+   8,333,333.33 backing Shares, what the 50,000 Team cap buys at 6,000,000; the other 141,666,666.67 go to the list),
+   then the founder's slice. Never the work pot, the reserve, the auction or the pool match. Never a rule for other
+   founders.
+3. **The teammate** gets the old Ambassadors line: 2.4M of the old 110M = 2.1818% = 21,818,182 Shares, from the work
+   pot with Give Shares, on the same clock. Paid monthly by default (the plan text); one up-front gift also works. No
+   contract change.
+4. **One clock** for everyone (founder side, teammate, advisors, earlier backers): evenly over 365 days from the market
+   opening (or a "no market" declaration), never faster, no cliff. The lock-up gate (no delivery before 365 days from
+   each signature) is a setting, off by default, for counsel to switch on.
+5. **The owner's team Shares go to the Treasury, not to the owner** (changed later the same day). The founder's
+   remainder, 52,989,393.67 Shares (5.30%) at S1 with no owner seed entry, is not granted to the owner at launch: it
+   lands in project zero's Treasury as a public, earmarked **team budget**, and the runner pays it out over time with
+   the gift rules, about monthly, roughly 52.99M over 2 to 3 years if the owner stays. Project zero's founder Vester
+   grant is zero. The runner at first is the DAO LLC's manager (central management, a Single runner or a Pair of the
+   manager's keys), bounded by the existing caps.
+
+### What changed, file by file
+
+| File | Change |
+|---|---|
+| `src/EarlierBackers.sol` (new, 7,837 bytes runtime) | The claim contract of section 5, guards EB01 to EB28 plus EB29 (below) |
+| `src/Launcher.sol` | Project zero only: `nameEarlierBackers(claim, keepBacking)` (admin, after `nameProjectZero`; checks the code hash, the Launcher and the key: LZ2; the cut fits its slices: LZ1); `launchHash(key)` covers the claim and the kept backing (LZ4); at launch the claim gets one Vester grant of the list's total (LZ3), the founder's Vester grant is zero, the rest of the founder's slice goes to the Treasury as `teamBudget` (LZ5), and every Share is minted to its place (LZ6). New events `EarlierBackersNamed` and `ProjectZeroSplit(key, claim, fromBacking, fromFounder, teamBudget)`. `ProjectLaunched` keeps its shape: project zero shows `founder` 0 and `backing` after the cut |
+| `src/Parts.sol` | Records `keccak256(type(EarlierBackers).runtimeCode)`; the Launcher accepts only that code |
+| `src/Vester.sol` | A zero founder grant makes no grant (project zero); a second plain grant at birth for the claim, never to nobody or to the founder |
+| `src/Treasury.sol` | `teamBudget` (what is left, public), `payTeam(to, amount)` (runner only, never an agent; a gift's rules), event `TeamPaid(to, amount, left)` beside `SharesGiven`; `reserve()` leaves the team budget out; `countingSupply()` leaves out the claim's released but undelivered Shares |
+| `scripts/mutate-guards.py` | Entries Q01 to Q97 (`--eb`); T10, T41, L13, N70 and NA1 re-pinned to the changed lines |
+
+### Choices the note left open (the note's recommendation taken unless said)
+
+- **Who pays the team budget:** the runner only, never an agent (smaller power; an agent may still give from the work
+  pot inside its limit). The budget follows the seat: a successor or a Pair pays it.
+- **With no earlier raise named,** project zero's whole founder slice (200M) is the team budget. The rule is "project
+  zero has no founder grant", not "only when a list exists".
+- **The cut may use the whole founder slice** (team budget zero); the draft's "the founder keeps some" check is dropped,
+  because the remainder is no longer the founder's.
+- **The lock-up gate** is a constructor setting (`minHoldFromConsent`, zero by default, at most 730 days), fixed when
+  the list is fixed, so nobody can switch it on or off after a backer signs.
+- **Long-stop:** at least 730 days after the contract is made (the note: at least 2 years); counsel sets the date.
+- **No immutables** in `EarlierBackers`, so every copy has the same code hash and the Launcher can check it.
+- **EB29 (new, found while building):** after the keeper voids a consent (a leaked key) and proposes a new holder, the
+  voided key can neither agree again nor veto until the replacement applies. Without it the leaked key could re-sign
+  just before day 30 each time and block the replacement for ever. The holder whose consent was voided but who has no
+  replacement pending may sign again, so a mistaken void strands nobody.
+- **Dropped as redundant** (each was covered by another check, so no test could fail without it): a zero receiver (no
+  code and never the holder), "the entry is still open" in `applyHolder` (a replacement exists only for an open entry,
+  and EB12 or EB29 settle any consent while one is pending).
+- **The earlier raise is fixed at the launch:** `nameEarlierBackers` refuses once no project zero is named (before
+  naming, and after the launch), so `earlierClaim()` keeps showing the claim project zero launched with.
+
+### Numbers at S1 (measured, `EarlierLaunchTest`, `TeamBudgetTest`)
+
+| What | Shares |
+|---|---|
+| The claim's Vester grant (the list's total) | 288,677,273 |
+| of it from unused backing | 141,666,666.67 |
+| of it from the founder's slice | 147,010,606.33 |
+| Project zero's founder Vester grant | 0 |
+| Treasury team budget | 52,989,393.67 (5.30%) |
+| Backing kept for Creaton's rounds (a 6,000,000 Team round of 50,000 opens; one priced lower cannot) | 8,333,333.33 |
+| Work pot, reserve, auction and pool match | 200M, 100M, 250M + 100M (unchanged) |
+
+### How the Treasury's count and the founder trim interact
+
+- `countingSupply()` (the exit's denominator and the gift cap's base) leaves out the Treasury's whole balance (so the
+  team budget never counts until paid), the Vester's unreleased Shares (the claim's grant before release), and the
+  claim's released but undelivered Shares (open entries, the 21-day window, the lock-up gate). Measured: 365 days after
+  the market, with nobody signed, the count is the auction buyers' 350M only. Delivered Shares count at once.
+- The founder trim cuts only the founder's grant. Project zero has none, so a leaving founder's hand-over cuts nothing,
+  and it can never reach the claim's grant (a separate grant) or the team budget (the Treasury's, which follows the
+  seat). Measured in `test_trim_leavesTheClaimAndTheTeamBudgetWhole`.
+
+### Votes (for milestone 9; HolderVote is not built)
+
+Held earlier-backer Shares never sit in a backer's wallet before delivery: they are in the Vester (unreleased) or the
+claim contract (released, undelivered). The team budget is in the Treasury. So a vote that counts only Shares a person
+parks from their own wallet cannot count them. Milestone 9 must keep it that way: HolderVote counts parked Shares only,
+never a balance of the Treasury, Vester, claim contract, Rounds or Finisher, and never `countingSupply` as a stand-in
+for turnout.
+
+### Team pay, monthly (measured, `TeamBudgetTest`)
+
+- Before the market, each payment goes into the Vester and releases over 365 days from the market opening; after it,
+  each arrives at once, inside the one cap of 1% of the Shares in people's hands in any 30 days that every gift shares.
+- The manager's plan, run in a test: 30 monthly payments (12 before the market, 18 after), with the teammate paid from the
+  work pot in the same months. The budget is used up exactly; the work pot falls by the teammate's 21,818,182 only; the
+  reserve does not move.
+- **Finding:** the cap remembers a gift for 30 to 33 days. On a strict 30-day step after the market, the last month's
+  payment still counts, so two months count at once: at 2 years (3.12M a month for the owner and the teammate together,
+  with 350M Shares in hands) the second payment is refused. Pay on a 33-day step, or keep each month under half the cap.
+  Before the market there is no cap.
+- A Pair of the manager's keys pays with both signatures; one signer alone cannot.
+
+### Events for the server (milestone 5)
+
+New: `Launcher.EarlierBackersNamed(key, claim, keepBacking)`, `Launcher.ProjectZeroSplit(key, claim, fromBacking,
+fromFounder, teamBudget)`, `Treasury.TeamPaid(to, amount, left)` (always beside `SharesGiven`), and the claim
+contract's `Bound`, `Consented`, `Voided`, `Delivered`, `HolderProposed`, `HolderReplaced`, `ReplacementCancelled`,
+`TextPublished`, `ListClosed`, `SentToReserve`, `KeeperChanged`. Unchanged in shape: `ProjectLaunched` (project zero
+reads founder 0 and the backing after the cut) and `SharesGiven`. The chain reader should read the team budget from
+`ProjectZeroSplit` and `TeamPaid`, and the public "k of N agreed" from `consentedCount()` and `entryCount()`.
+
+### Tests (78 new, every one passes)
+
+| File | What |
+|---|---|
+| `test/EarlierBackers.t.sol` | Launch at S1 (LZ1 to LZ6, the split event, the 6M Team round, ordinary launches unchanged and unable to use it, no second project zero, the trim); the constructor; the typed data checked field by field; consent by EOA, in person, a 1271 wallet, a Kernel-style account, a 2-of-3 Safe-style wallet and a contract holder's direct call; wrong chain, contract, text version, holder version, deadline, leaf, amount or salt fails; receivers; void, replacement, veto, EB29, keeper hand-over; delivery (never early, exact at the end, only to the receiver, an outside `Vester.claim` changes nothing); the Treasury's count with and without undelivered Shares; the close and the reserve with a stray; the lock-up gate on |
+| `test/EarlierBackersFuzz.t.sol` | Fuzz: one leaf per entry; pro-rata delivery at any time and any set of signers; delivered plus sent to the reserve never above released; the sum guard on a list padded 60M over its total, in any order. The attack findings: a leaked key signs first; a receiver with no code; a chain-less replay; no early sweep and waiting thins nobody; D is not a general rule; the keeper cannot redirect. Gas |
+| `test/TeamBudget.t.sol` | The budget apart from the reserve and the work pot; runner only, never an agent; not more than the budget; bad receivers; held before the market, free after it under the shared cap; a Pair runner; 30 monthly payments with the teammate; the 33-day finding; the teammate's up-front gift; a reserve sale cannot take it; the budget follows the seat; the Treasury's birth check |
+| `test/helpers/EarlierBase.sol`, `test/mocks/Wallets.sol` | The S1 world with 21 made-up entries; the wallet mocks |
+
+### Gas (measured, `EarlierGasTest`)
+
+| Call | Gas |
+|---|---|
+| `consent`, EOA signature, the first on the list (fresh totals) | 180,379 |
+| `consent`, EOA signature, a later entry, a contract wallet receiving | 112,146 |
+| `deliver`, one entry (it also pulls the claim's released Shares from the Vester) | 140,943 |
+| `deliverMany`, all 21 entries | 1,157,816 |
+| `deliverMany`, 64 entries (the most a list may have) | 3,723,464 |
+| `Treasury.countingSupply` with the claim | 25,871 |
+| `payTeam` before the market (held in the Vester) | 95,319 |
+| `payTeam` after the market (free, under the cap) | 110,656 |
+
+The note estimated about 95k for a consent; it is higher because each consent writes six fresh storage slots. It is
+paid once per entry, by whoever submits (the server's relayer).
+
+### Guard removals (`python3 scripts/mutate-guards.py --eb`, one at a time, no RPC)
+
+| Id | Removed or broken | n | A test that fails |
+|---|---|---|---|
+| Q01 | EarlierBackers EB01: bind twice | 1 | `test_launch_emitsTheSplitAndBinds` |
+| Q02 | EarlierBackers EB01: bind before the launch | 1 | `test_consent_EB25_notBeforeTheLaunch` |
+| Q03 | EarlierBackers EB02: an entry out of range | 1 | `test_consent_EB02_EB03_theLeaf` |
+| Q04 | EarlierBackers EB03: the leaf is not checked | 2 | `testFuzz_oneLeafPerEntry` |
+| Q05 | EarlierBackers EB04: an entry with no holder | 1 | `test_consent_EB04_noHolderNoConsent` |
+| Q06 | EarlierBackers EB05: an empty signature from anyone | 1 | `test_consent_EB05_emptySignatureOnlyFromTheHolder` |
+| Q07 | EarlierBackers EB06: the signature is not checked | 8 | `test_1271_kernelStyle_ownWrapperOnly` |
+| Q08 | EarlierBackers EB07: the domain leaves out the chain | 3 | `test_attack_chainlessReplayRefused` |
+| Q09 | EarlierBackers EB07: the domain leaves out this contract | 2 | `test_consent_EB07_otherContractFails` |
+| Q10 | EarlierBackers EB07: the message leaves out the text version | 1 | `test_consent_EB07_EB22_newTextVoidsOldSignatures` |
+| Q11 | EarlierBackers EB07: the message leaves out the summary | 1 | `test_digest_matchesTheTypedDataByHand` |
+| Q12 | EarlierBackers EB07: the message leaves out the holder version | 1 | `test_replace_EB21_holderVersionBindsTheSignature` |
+| Q13 | EarlierBackers EB07: the message leaves out the project | 1 | `test_digest_matchesTheTypedDataByHand` |
+| Q14 | EarlierBackers EB08: no deadline | 1 | `test_consent_EB08_expired` |
+| Q15 | EarlierBackers EB09: an entry agreed to twice | 2 | `test_consent_EB09_oncePerEntry` |
+| Q16 | EarlierBackers EB10: consent after the close | 1 | `test_close_EB10_EB17` |
+| Q17 | EarlierBackers EB11: a receiver with no code that is not the holder | 3 | `test_attack_receiverWithoutCodeRefused` |
+| Q18 | EarlierBackers EB11: the claim contract itself as receiver | 1 | `test_consent_EB11_receiver` |
+| Q19 | EarlierBackers EB11: the Launcher as receiver | 1 | `test_consent_EB11_receiver` |
+| Q20 | EarlierBackers EB11: the Shares contract as receiver | 1 | `test_consent_EB11_receiver` |
+| Q21 | EarlierBackers EB11: the Treasury as receiver | 1 | `test_consent_EB11_receiver` |
+| Q22 | EarlierBackers EB11: the Vester as receiver | 1 | `test_consent_EB11_receiver` |
+| Q23 | EarlierBackers EB11: the Rounds as receiver | 1 | `test_consent_EB11_receiver` |
+| Q24 | EarlierBackers EB11: the Finisher as receiver | 1 | `test_consent_EB11_receiver` |
+| Q25 | EarlierBackers EB12: a consent leaves a pending replacement | 1 | `test_replace_EB12_consentCancelsIt` |
+| Q26 | EarlierBackers EB13: delivery ignores the clock | 8 | `testFuzz_closeNeverAboveReleased` |
+| Q27 | EarlierBackers EB14: delivery to the caller | 5 | `testFuzz_proRataDelivery` |
+| Q28 | EarlierBackers EB13: a delivery is not recorded | 4 | `testFuzz_closeNeverAboveReleased` |
+| Q29 | EarlierBackers EB16: the reserve gets its part only, not the strays | 1 | `test_close_openEntriesAndStraysToTheReserve` |
+| Q30 | EarlierBackers EB17: close before the long-stop | 2 | `test_close_EB10_EB17` |
+| Q31 | EarlierBackers EB17: close twice | 1 | `test_close_EB10_EB17` |
+| Q32 | EarlierBackers EB17: to the reserve before the close | 2 | `test_attack_noEarlySweep_andWaitingThinsNobody` |
+| Q33 | EarlierBackers EB18: anyone may propose a holder | 1 | `test_replace_EB18_to_EB21` |
+| Q34 | EarlierBackers EB18: a replacement for an entry out of range | 1 | `test_replace_EB18_to_EB21` |
+| Q35 | EarlierBackers EB18: a replacement by nobody | 1 | `test_replace_EB18_to_EB21` |
+| Q36 | EarlierBackers EB19: a replacement for an agreed entry | 1 | `test_replace_EB18_to_EB21` |
+| Q37 | EarlierBackers EB20: no 30-day wait | 1 | `test_replace_EB18_to_EB21` |
+| Q38 | EarlierBackers EB21: anyone may veto | 1 | `test_replace_EB18_to_EB21` |
+| Q39 | EarlierBackers EB21/EB29: the voided holder may veto | 1 | `test_replace_EB29_aVoidedKeyCannotBlockIt` |
+| Q40 | EarlierBackers EB21: the holder version does not grow | 2 | `test_replace_EB18_to_EB21` |
+| Q41 | EarlierBackers EB21: apply with nothing pending | 3 | `test_attack_keeperCannotRedirect` |
+| Q42 | EarlierBackers EB22: the text version does not grow | 1 | `test_consent_EB07_EB22_newTextVoidsOldSignatures` |
+| Q43 | EarlierBackers EB22: anyone may publish a text | 1 | `test_consent_EB07_EB22_newTextVoidsOldSignatures` |
+| Q44 | EarlierBackers: a consent names an old text | 1 | `test_consent_EB07_EB22_newTextVoidsOldSignatures` |
+| Q45 | EarlierBackers EB23: anyone may offer the keeper role | 1 | `test_keeper_EB23_twoSteps` |
+| Q46 | EarlierBackers EB23: anyone may take the keeper role | 1 | `test_keeper_EB23_twoSteps` |
+| Q47 | EarlierBackers EB24: no sum guard | 1 | `testFuzz_sumGuard` |
+| Q48 | EarlierBackers EB25: consent before the grant is funded | 1 | `test_consent_EB25_notBeforeTheLaunch` |
+| Q49 | EarlierBackers EB26: delivery inside the challenge window | 3 | `testFuzz_proRataDelivery` |
+| Q50 | EarlierBackers EB27: the lock-up gate is ignored | 1 | `test_deliver_EB27_holdFromTheSignature` |
+| Q51 | EarlierBackers: delivery for an open entry | 1 | `test_deliver_EB13_EB14_EB26` |
+| Q52 | EarlierBackers EB28: anyone may void | 1 | `test_void_EB28` |
+| Q53 | EarlierBackers EB28: void after the window | 1 | `test_void_EB28` |
+| Q54 | EarlierBackers EB28: void an open entry | 1 | `test_void_EB28` |
+| Q55 | EarlierBackers: a void keeps the receiver | 2 | `test_attack_keeperCannotRedirect` |
+| Q56 | EarlierBackers EB29: the voided holder agrees again while a replacement is pending | 2 | `test_attack_leakedKeyConsentsFirst` |
+| Q57 | EarlierBackers: undelivered counts what was delivered | 4 | `testFuzz_proRataDelivery` |
+| Q58 | EarlierBackers: a keeper of nobody | 1 | `test_constructor_refusesBadSettings` |
+| Q59 | EarlierBackers: no list or more than 64 entries | 1 | `test_constructor_refusesBadSettings` |
+| Q60 | EarlierBackers: a Launcher of nobody | 1 | `test_constructor_refusesBadSettings` |
+| Q61 | EarlierBackers: a total of nothing | 1 | `test_constructor_refusesBadSettings` |
+| Q62 | EarlierBackers: a long-stop under two years | 1 | `test_constructor_refusesBadSettings` |
+| Q63 | EarlierBackers: a hold over two years | 1 | `test_constructor_refusesBadSettings` |
+| Q70 | Launcher LZ5: project zero's founder slice stays a Vester grant (no team budget) | 5 | `setUp` |
+| Q71 | Launcher LZ6: the backing slice is not cut | 3 | `setUp` |
+| Q72 | Launcher LZ1: more backing kept than the backing slice | 1 | `test_name_LZ1_partsFitTheirSlices` |
+| Q73 | Launcher LZ1: a cut larger than the founder's slice | 1 | `test_name_LZ1_partsFitTheirSlices` |
+| Q74 | Launcher LZ2: any code as the claim | 1 | `test_name_LZ2_codeLauncherAndKey` |
+| Q75 | Launcher LZ2: a claim made for another Launcher | 1 | `test_name_LZ2_codeLauncherAndKey` |
+| Q76 | Launcher LZ2: a claim made for another project | 4 | `test_attack_notAGeneralRule` |
+| Q77 | Launcher: anyone may name the earlier raise | 1 | `test_name_onlyTheAdmin` |
+| Q78 | Launcher LZ4: the launch hash leaves out the cut | 1 | `test_launch_LZ4_theHashCoversTheCut` |
+| Q79 | Launcher: naming project zero again keeps the old claim | 1 | `test_name_projectZeroAgainClearsTheClaim` |
+| Q80 | Launcher: the launch does not bind the claim | 43 | `testFuzz_closeNeverAboveReleased` |
+| Q81 | Launcher: the Treasury is not told about the claim | 3 | `test_attack_noEarlySweep_andWaitingThinsNobody` |
+| Q82 | Launcher: the Treasury is not told the team budget | 14 | `test_budget_followsTheSeat` |
+| Q83 | Launcher LZ3: the claim's grant leaves out the founder's part | 44 | `testFuzz_closeNeverAboveReleased` |
+| Q84 | Parts: the code hash is not the claim's | 8 | `setUp` |
+| Q85 | Vester: the claim grant may go to nobody or to the founder | 1 | `test_vester_claimGrantRules` |
+| Q86 | Vester: a zero founder grant is still made (project zero cannot launch) | 6 | `setUp` |
+| Q87 | Launcher: the earlier raise may be renamed after the launch (or before project zero is named) | 1 | `test_name_notAfterTheLaunch` |
+| Q90 | Treasury: anyone may pay the team | 3 | `test_budget_followsTheSeat` |
+| Q91 | Treasury: the team budget may be overdrawn (error kind) | 2 | `test_launch_ordinaryProjectUnchanged` |
+| Q92 | Treasury: team pay does not lower the budget | 4 | `test_budget_followsTheSeat` |
+| Q93 | Treasury: the reserve includes the team budget | 4 | `test_budget_isPublicAndApart` |
+| Q94 | Treasury: the team budget is not stored | 14 | `test_budget_followsTheSeat` |
+| Q95 | Treasury: the birth check leaves out the team budget | 1 | `test_init_theTeamBudgetMustBeHeld` |
+| Q96 | Treasury: team pay skips the gift checks | 1 | `test_payTeam_badInputs` |
+| Q97 | Treasury: undelivered earlier-backer Shares count | 2 | `test_attack_noEarlySweep_andWaitingThinsNobody` |
+| T10 | Treasury: the Vester counts in the exit denominator (its whole balance leaves the count, claimed or not) | 11 | `testFuzz_attack_donatingSharesToTheProjectNeverPaysTheDonor` |
+| T41 | Treasury: the reserve ignores Shares returned or donated to it | 12 | `test_close_openEntriesAndStraysToTheReserve` |
+| L13 | Launcher: launch ignores the settings hash the founder saw | 3 | `test_attack_theAdminCanChangeTheSettingsInTheBlockBeforeALaunch` |
+| N70 | Treasury: the Finisher's Shares count as in hands | 2 | `test_attack_aFounderFillsTheirOwnRoundsThroughManyAccounts_andCannotSellBeforeRelease` |
+| NA1 | Launcher: the backing Shares are minted to the Treasury | 40 | `test_ask_aTokenThatDeliversLessIsRefused` |
+
+The first run found the constructor checks (Q58 to Q63) failing no test: `vm.expectRevert` does not notice a creation
+from inline assembly that succeeds. The test now checks the failed creation and its error itself; all six fail it.
+Q70, Q71, Q84 and Q86 break project zero's launch, so every suite's `setUp` fails.
+
+### Gates (18 November 2026, one forge process at a time, `nice`, another engineer building the Rust server meanwhile)
+
+| Gate | Result |
+|---|---|
+| `forge fmt --check src test script` | clean |
+| Local suite, no RPC (`env -u SEPOLIA_RPC_URL forge test`) | **572 passed, 0 failed, 35 skipped** in 125 suites (the 35 are the Sepolia fork twins); the invariants at 256 runs x depth 200 among them |
+| `forge build --sizes` | exits 1 for the milestone 1 test helper `Deployer` only (unchanged). Launcher 21,807 runtime / 37,749 creation (was 20,062 / 35,901; 2,769 bytes left under 24,576), EarlierBackers 7,837 / 8,533, Treasury 14,703 / 14,748, Vester 3,787 / 3,831, Parts 506 / 42,068 (creation limit 49,152) |
+| Guard removals | the 89 new entries (Q..) and the 5 re-pinned ones, one at a time: every one fails at least one test (table above) |
+| Sepolia fork suite | not run this time (no contract the fork tests read changed shape; run it before any deploy) |
+
+### Not built, and open
+
+- The app page, the owner's list and status screens, the records and the export, the public "Raised before Creaton"
+  card (section 6); the milestone 5 server reading the new events.
+- Fixing the leaves (counsel's checks, wallet proofs, attestation) and the real text, summary, long-stop and lock-up
+  setting. The owner's own seed amount (the list total is an input).
+- HolderVote and Council (milestone 9), with the progressive-decentralization requirement in `docs/PLAN-V2.md`.
+- **Questions for counsel** (questions only; nothing here is legal advice):
+  1. How does the DAO LLC value and record each team payment in Shares when there is no market yet (before the
+     auction) and after it?
+  2. The manager of the DAO LLC paying a company its owner controls is a related-party payment: what approval, conflict
+     rule, record or disclosure do the Marshall Islands DAO Act and the LLC agreement need, and should a second signer
+     (the Pair) or an outside check be required for each payment?
+  3. How must the team budget be disclosed to the earlier backers (the SAFT replacement text, section 4) and to auction
+     buyers (the auction page), and is a public on-chain earmark enough?
+  4. Is the unpaid team budget a liability of the DAO LLC or only an earmark? If the manager stops working before it is
+     used up, who decides what happens to the rest, and should it then return to the reserve?
+  5. Does paying for services in Shares, monthly, raise securities questions (an offer and sale each month, US and
+     non-US rules), and does the answer change before and after the market?
+  Each person's own tax treatment of team pay is a matter for their own adviser and is not recorded here.
