@@ -12,7 +12,7 @@ import { EmptyState } from "../../ui/empty-state";
 import { useToast } from "../../ui/toast";
 import { checkInCall } from "../money/calls";
 import { moneyProblem } from "../money/money-copy";
-import { dayText, isRunner, type ProjectNumbers } from "../money/numbers";
+import { dayText, type ProjectNumbers } from "../money/numbers";
 import {
   useMoneySend,
   useProjectNumbers,
@@ -20,6 +20,7 @@ import {
 } from "../money/use-money";
 import { useProjectsBy } from "../profile/use-own-projects";
 import { type Project, projectRef } from "../project/project-record";
+import { checkInTarget, usePair } from "../team/use-team";
 import { checkInAction, useLastWeekly } from "./use-week";
 import { WeeklySheet } from "./WeeklySheet";
 
@@ -81,7 +82,9 @@ function WeekCard({
       ? numbersRead.data
       : null;
   const address = useWalletAddress().data ?? null;
-  const checkIn = numbers ? checkInFor(numbers, address) : null;
+  const pair = usePair(numbers).data ?? null;
+  // Where this wallet's check-in goes: the Treasury when it runs the project, its Pair when it signs for it (Team).
+  const checkIn = numbers ? checkInTarget(numbers, address, pair) : null;
   const now = Math.floor(Date.now() / 1000);
   return (
     <Card className="flex flex-col gap-3" data-testid="week-project">
@@ -117,23 +120,16 @@ function WeekCard({
           : "Post this week's update"}
       </Button>
       {numbers && checkIn ? (
-        <CheckInAgain numbers={numbers} treasury={checkIn} />
+        <CheckInAgain numbers={numbers} to={checkIn} />
       ) : null}
       <WeeklySheet
-        checkIn={numbers && checkIn ? { numbers, treasury: checkIn } : null}
+        checkIn={numbers && checkIn ? { numbers, to: checkIn } : null}
         onOpenChange={setOpen}
         open={open}
         project={project}
       />
     </Card>
   );
-}
-
-/** The project's Treasury when this wallet runs the project and can check in on the network, else null. */
-function checkInFor(numbers: ProjectNumbers, address: string | null) {
-  const treasury = numbers.contracts.treasury;
-  if (!treasury || numbers.clock.woundDown) return null;
-  return isRunner(numbers, address) ? treasury : null;
 }
 
 function ClockLine({ numbers }: { numbers: ProjectNumbers }) {
@@ -167,12 +163,15 @@ function ClockLine({ numbers }: { numbers: ProjectNumbers }) {
  */
 function CheckInAgain({
   numbers,
-  treasury,
+  to,
 }: {
   numbers: ProjectNumbers;
-  treasury: string;
+  /** The Treasury, or the Pair for one of its signers: both take `checkIn()`. */
+  to: string;
 }) {
-  const send = useMoneySend(checkInAction(numbers.chainId, treasury));
+  const send = useMoneySend(
+    checkInAction(numbers.chainId, numbers.contracts.treasury ?? to),
+  );
   const toast = useToast();
   const [problem, setProblem] = useState<string | null>(null);
   return (
@@ -188,7 +187,7 @@ function CheckInAgain({
         onClick={() => {
           setProblem(null);
           send.send(
-            { chainId: numbers.chainId, build: () => [checkInCall(treasury)] },
+            { chainId: numbers.chainId, build: () => [checkInCall(to)] },
             {
               onSuccess: () =>
                 toast("Checked in. Payments run for 14 more days.", "done"),

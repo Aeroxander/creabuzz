@@ -1,7 +1,7 @@
 import { relativeTime } from "@creaton/core/client/relative-time.ts";
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { ListChecks } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { BackHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
 import { useFollowProject, useFollows } from "../../lib/follows";
@@ -18,13 +18,28 @@ import { BackBox } from "../money/BackBox";
 import { MoneyTab } from "../money/MoneyTab";
 import { anyRoundUnclosed, openRound } from "../money/numbers";
 import { OpenBacking } from "../money/OpenBacking";
-import { useProjectNumbers, useWalletAddress } from "../money/use-money";
+import {
+  chainKeyOfProject,
+  useProjectNumbers,
+  useWalletAddress,
+} from "../money/use-money";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
 import type { Project } from "./project-record";
 import { currentStage, StageLine } from "./StageLine";
 import { UpdatesTab } from "./UpdatesTab";
 import { projectPeople, useProject, useProjectActivity } from "./use-project";
+
+// Team and the market (milestone 7) load only when a project has numbers, so the first download stays small.
+const TeamMoney = lazy(() =>
+  import("../team/TeamMoney").then((m) => ({ default: m.TeamMoney })),
+);
+const LaunchProject = lazy(() =>
+  import("../team/LaunchProject").then((m) => ({ default: m.LaunchProject })),
+);
+const MemberActions = lazy(() =>
+  import("../team/MemberActions").then((m) => ({ default: m.MemberActions })),
+);
 
 /** The project page: its record, the stage line, Ask to join, then Updates, Tasks, People and Money. */
 export function ProjectPage({ projectRef }: { projectRef: string }) {
@@ -96,8 +111,9 @@ function ProjectView({ project }: { project: Project }) {
     ? { stage: numbers.stage.name, raised: numbers.raised.total }
     : null;
   const walletAddress = useWalletAddress().data ?? null;
-  // Offered to the founder while no round is open or waiting to be closed. Team's runner is the Pair, whose two signers
-  // are not in the app yet (M7), so Team is left out; who may press is the wallet that runs it (OpenBacking says so).
+  // Offered to the founder while no round is open or waiting to be closed, at Solo and Backed; who may press is the wallet
+  // that runs it (OpenBacking says so). At Team the Pair's signers open a round from the Money tab (TeamMoney), both
+  // signing.
   const canOpen =
     numbers !== null &&
     isFounder &&
@@ -202,6 +218,20 @@ function ProjectView({ project }: { project: Project }) {
                 activity={activity.data}
                 isFounder={isFounder}
                 loading={activity.isPending}
+                memberAction={
+                  numbers
+                    ? (member, name) => (
+                        <Suspense fallback={null}>
+                          <MemberActions
+                            name={name}
+                            numbers={numbers}
+                            pubkey={member}
+                            team={accepted.map((m) => m.pubkey)}
+                          />
+                        </Suspense>
+                      )
+                    : undefined
+                }
                 profiles={profiles}
                 project={project}
               />
@@ -214,16 +244,36 @@ function ProjectView({ project }: { project: Project }) {
                   value: "money",
                   label: "Money",
                   content: (
-                    <MoneyTab
-                      error={numbersRead.error}
-                      loading={
-                        numbersRead.isPending &&
-                        numbersRead.fetchStatus !== "idle"
-                      }
-                      now={now}
-                      numbers={numbersRead.data}
-                      onRetry={() => void numbersRead.refetch()}
-                    />
+                    <div className="flex flex-col gap-3">
+                      {isFounder && !chainKeyOfProject(project) ? (
+                        <Suspense fallback={null}>
+                          <LaunchProject project={project} />
+                        </Suspense>
+                      ) : null}
+                      {numbers ? (
+                        <Suspense fallback={null}>
+                          <TeamMoney
+                            founder={project.author}
+                            numbers={numbers}
+                            profiles={profiles}
+                            team={[
+                              project.author,
+                              ...accepted.map((m) => m.pubkey),
+                            ]}
+                          />
+                        </Suspense>
+                      ) : null}
+                      <MoneyTab
+                        error={numbersRead.error}
+                        loading={
+                          numbersRead.isPending &&
+                          numbersRead.fetchStatus !== "idle"
+                        }
+                        now={now}
+                        numbers={numbersRead.data}
+                        onRetry={() => void numbersRead.refetch()}
+                      />
+                    </div>
                   ),
                 },
               ]

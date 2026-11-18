@@ -7,7 +7,7 @@ import {
 import { forgetIdentity } from "@creaton/core/client/identity.ts";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, LogOut, MessageSquare } from "lucide-react";
-import { useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { ScreenHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
 import { nameOf, useProfiles } from "../../lib/profiles";
@@ -25,6 +25,11 @@ import { Receipts } from "../money/Receipts";
 import { NotificationsList } from "../notifications/NotificationsList";
 import { ProfileHead } from "../profile/ProfilePage";
 import { useProjectsBy } from "../profile/use-own-projects";
+
+// Linking a wallet (milestone 7) carries the wallet proof's code, so it loads only where investing is on.
+const LinkWallet = lazy(() =>
+  import("../team/LinkWallet").then((m) => ({ default: m.LinkWallet })),
+);
 
 /** You: your profile, notifications, messages, your projects and your account. */
 export function YouPage() {
@@ -96,6 +101,11 @@ function SignedIn({ me }: { me: string }) {
         <ChevronRight aria-hidden="true" className="text-muted" size={20} />
       </Link>
       {investingOn() ? <Receipts /> : null}
+      {investingOn() ? (
+        <Suspense fallback={null}>
+          <LinkWallet me={me} />
+        </Suspense>
+      ) : null}
       <Tabs
         items={[
           {

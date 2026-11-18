@@ -61,12 +61,15 @@ export function PeopleTab({
   profiles,
   isFounder,
   loading,
+  memberAction,
 }: {
   project: Project;
   activity: ProjectActivity | undefined;
   profiles: Record<string, ProfileMetadata> | undefined;
   isFounder: boolean;
   loading: boolean;
+  /** Team's actions for an accepted teammate (milestone 7), when the project has money on; nothing otherwise. */
+  memberAction?: (pubkey: string, name: string) => ReactNode;
 }) {
   const accept = useAcceptAsk(project);
   const toast = useToast();
@@ -110,6 +113,14 @@ export function PeopleTab({
           <Person line="Founder" profiles={profiles} pubkey={project.author} />
           {(people?.team.members ?? []).map((member) => (
             <Person
+              action={
+                member.state === "accepted"
+                  ? memberAction?.(
+                      member.pubkey,
+                      nameOf(profiles, member.pubkey),
+                    )
+                  : undefined
+              }
               key={member.pubkey}
               line={
                 member.state === "accepted"

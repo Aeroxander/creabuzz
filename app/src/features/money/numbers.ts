@@ -7,6 +7,7 @@
  */
 import { KIND_PROJECT_NUMBERS } from "@creaton/core/kinds.ts";
 import { numbersBelongTo } from "@creaton/core/launchpad/project-chain.ts";
+import { type MarketNumbers, parseMarket } from "./numbers-market";
 
 /** Raw dollar units in one dollar, and raw Share units in one Share. */
 export const DOLLAR = 1_000_000n;
@@ -96,6 +97,8 @@ export interface ProjectNumbers {
   runner: string | null;
   asOf: { block: number; time: number };
   now: { quietSince: number | null; refunds: RefundNow[] };
+  /** The Pair, the auction, the bids' totals and the pool (`numbers-market.ts`). */
+  market: MarketNumbers;
 }
 
 /** A launch that later left the chain: nothing about money is shown for it. */
@@ -311,6 +314,7 @@ export function parseNumbers(
         .map(parseRefund)
         .filter((r): r is RefundNow => r !== null),
     },
+    market: parseMarket(body),
   };
 }
 

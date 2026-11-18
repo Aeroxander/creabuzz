@@ -8,7 +8,14 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, "..");
 
 // Accepted exceptions: one string each, with the reason it may stay. Rewrite the text before adding one.
-const allow = [];
+const allow = [
+  {
+    file: "../packages/creaton-core/src/account/wallet-proof.ts",
+    contains: "NostrSigner(address account,bytes32 npub",
+    reason:
+      "the EIP-712 type string the wallet link signs (wire format, never shown); moved from web/ in milestone 7",
+  },
+];
 
 await runCopyCheck({
   ts,

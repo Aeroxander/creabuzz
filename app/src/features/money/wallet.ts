@@ -11,6 +11,14 @@
 import { walletError } from "@creaton/core/launchpad/wallet-errors.ts";
 import type { MoneyCall } from "./calls";
 
+/** A log as the network returns it (`eth_getLogs`). */
+export interface ChainLog {
+  address: string;
+  topics: string[];
+  data: string;
+  blockNumber: string;
+}
+
 export interface Eip1193Provider {
   request(args: { method: string; params?: unknown[] }): Promise<unknown>;
 }
@@ -61,6 +69,19 @@ export interface MoneyWallet {
   ): Promise<{ txHash: string; status: "confirmed" }>;
   /** A read-only call's raw answer. */
   readCall(to: string, data: string): Promise<string>;
+  /** The network's newest block number. */
+  blockNumber(): Promise<number>;
+  /** The network the wallet is on now. */
+  chainId(): Promise<number>;
+  /** Ask the wallet to sign typed data (EIP-712) as `from`; its signature. Never a transfer. */
+  signTypedData(from: string, typedData: unknown): Promise<string>;
+  /** Logs of `address` with `topics`, from block `from` to `to` (both included). Callers keep the range small. */
+  getLogs(filter: {
+    address: string;
+    topics: (string | null)[];
+    from: number;
+    to: number;
+  }): Promise<ChainLog[]>;
   /** Make sure the wallet is on chain `chainId`, asking it to switch when it is not. */
   ensureChain(chainId: number): Promise<void>;
   /**
@@ -249,6 +270,38 @@ export function injectedWallet(
       if (typeof answer !== "string") throw new Error("No answer.");
       return answer;
     },
+    async blockNumber() {
+      const block = quantity(await ask("eth_blockNumber"));
+      if (block === null) throw new Error("The network did not give a block.");
+      return block;
+    },
+    async chainId() {
+      const chain = quantity(await ask("eth_chainId"));
+      if (chain === null)
+        throw new Error("The wallet did not say its network.");
+      return chain;
+    },
+    async signTypedData(from, typedData) {
+      const signature = await ask("eth_signTypedData_v4", [
+        from,
+        JSON.stringify(typedData),
+      ]);
+      if (typeof signature !== "string" || !/^0x[0-9a-fA-F]+$/.test(signature))
+        throw new Error("The wallet gave no signature.");
+      return signature;
+    },
+    async getLogs(filter) {
+      const logs = await ask("eth_getLogs", [
+        {
+          address: filter.address,
+          topics: filter.topics,
+          fromBlock: `0x${filter.from.toString(16)}`,
+          toBlock: `0x${filter.to.toString(16)}`,
+        },
+      ]);
+      if (!Array.isArray(logs)) throw new Error("The network gave no logs.");
+      return logs.filter(isLog);
+    },
     ensureChain: onChain,
     async outcomeOf(sent) {
       const status = await receiptStatus(sent.hash);
@@ -264,6 +317,40 @@ export function injectedWallet(
       return "unknown";
     },
   };
+}
+
+function isLog(value: unknown): value is ChainLog {
+  if (!value || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.address === "string" &&
+    typeof v.data === "string" &&
+    typeof v.blockNumber === "string" &&
+    Array.isArray(v.topics) &&
+    v.topics.every((t) => typeof t === "string")
+  );
+}
+
+/**
+ * Logs over a window that may be wider than a wallet's node allows in one ask: read in pieces of `chunk` blocks, newest
+ * piece first, at most `pieces` of them (bounded; what lies before is not read and the caller is told so).
+ */
+export async function readLogsBack(
+  wallet: Pick<MoneyWallet, "getLogs">,
+  filter: { address: string; topics: (string | null)[] },
+  window: { from: number; to: number; chunk?: number; pieces?: number },
+): Promise<{ logs: ChainLog[]; complete: boolean }> {
+  const chunk = window.chunk ?? 10_000;
+  const pieces = window.pieces ?? 5;
+  const logs: ChainLog[] = [];
+  let to = window.to;
+  for (let piece = 0; piece < pieces; piece += 1) {
+    if (to < window.from) return { logs, complete: true };
+    const from = Math.max(window.from, to - chunk + 1);
+    logs.unshift(...(await wallet.getLogs({ ...filter, from, to })));
+    to = from - 1;
+  }
+  return { logs, complete: to < window.from };
 }
 
 /** An address from a 32-byte call answer, or null. */

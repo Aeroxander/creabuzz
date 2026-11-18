@@ -24,7 +24,8 @@ export function WeeklySheet({
   project: Project;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  checkIn: { numbers: ProjectNumbers; treasury: string } | null;
+  /** Where the check-in goes: the Treasury for the runner, the Pair for one of its signers. */
+  checkIn: { numbers: ProjectNumbers; to: string } | null;
 }) {
   const [text, setText] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
@@ -32,7 +33,12 @@ export function WeeklySheet({
   const [posted, setPosted] = useState(false);
   const post = usePostWeekly();
   const send = useMoneySend(
-    checkIn ? checkInAction(checkIn.numbers.chainId, checkIn.treasury) : "",
+    checkIn
+      ? checkInAction(
+          checkIn.numbers.chainId,
+          checkIn.numbers.contracts.treasury ?? checkIn.to,
+        )
+      : "",
   );
   /** Set while a submit runs: a second press before the button shows it is busy posts nothing twice. */
   const submitting = useRef(false);
@@ -52,7 +58,7 @@ export function WeeklySheet({
     try {
       await send.sendAsync({
         chainId: checkIn.numbers.chainId,
-        build: () => [checkInCall(checkIn.treasury)],
+        build: () => [checkInCall(checkIn.to)],
       });
       return true;
     } catch (error) {

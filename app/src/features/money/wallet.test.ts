@@ -5,6 +5,7 @@ import {
   addressFromWord,
   type Eip1193Provider,
   injectedWallet,
+  readLogsBack,
   WalletStepError,
 } from "./wallet";
 
@@ -246,5 +247,75 @@ describe("the injected wallet", () => {
       `0x${"ab".repeat(20)}`,
     );
     expect(addressFromWord("0x12")).toBeNull();
+  });
+});
+
+describe("reading the chain's logs", () => {
+  const LOG = {
+    address: "0x0a",
+    topics: ["0x01"],
+    data: "0x",
+    blockNumber: "0x10",
+  };
+
+  it("asks for the block number and the logs of one address in hex blocks", async () => {
+    const asked: unknown[] = [];
+    const wallet = injectedWallet({
+      async request({ method, params }) {
+        if (method === "eth_blockNumber") return "0x2a";
+        if (method === "eth_getLogs") {
+          asked.push(params?.[0]);
+          return [LOG, { junk: true }];
+        }
+        throw new Error(method);
+      },
+    });
+    expect(await wallet.blockNumber()).toBe(42);
+    expect(
+      await wallet.getLogs({
+        address: "0x0a",
+        topics: ["0x01", null],
+        from: 16,
+        to: 42,
+      }),
+    ).toEqual([LOG]);
+    expect(asked).toEqual([
+      {
+        address: "0x0a",
+        topics: ["0x01", null],
+        fromBlock: "0x10",
+        toBlock: "0x2a",
+      },
+    ]);
+  });
+
+  it("reads a long window in bounded pieces, newest first, and says when it stopped early", async () => {
+    const ranges: [number, number][] = [];
+    const getLogs = async (f: { from: number; to: number }) => {
+      ranges.push([f.from, f.to]);
+      return [{ ...LOG, blockNumber: `0x${f.to.toString(16)}` }];
+    };
+    const all = await readLogsBack(
+      { getLogs },
+      { address: "0x0a", topics: [] },
+      { from: 0, to: 24_999, chunk: 10_000, pieces: 5 },
+    );
+    expect(ranges).toEqual([
+      [15_000, 24_999],
+      [5_000, 14_999],
+      [0, 4_999],
+    ]);
+    expect(all.complete).toBe(true);
+    expect(all.logs.map((l) => Number.parseInt(l.blockNumber, 16))).toEqual([
+      4_999, 14_999, 24_999,
+    ]);
+    ranges.length = 0;
+    const cut = await readLogsBack(
+      { getLogs },
+      { address: "0x0a", topics: [] },
+      { from: 0, to: 99_999, chunk: 10_000, pieces: 2 },
+    );
+    expect(ranges.length).toBe(2);
+    expect(cut.complete).toBe(false);
   });
 });

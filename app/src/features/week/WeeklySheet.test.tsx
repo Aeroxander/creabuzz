@@ -59,7 +59,7 @@ async function doublePress(checkIn: boolean) {
               numbers: numbersOf(
                 numbersContent({ coordinate: COORDINATE, now: NOW }),
               ),
-              treasury: CONTRACTS.treasury,
+              to: CONTRACTS.treasury,
             }
           : null
       }

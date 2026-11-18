@@ -31,12 +31,6 @@ const allow = [
     reason:
       "the passkey demo page explains its own key derivation to developers",
   },
-  {
-    file: "src/features/identity/lib/wallet-proof.ts",
-    contains: "NostrSigner(",
-    reason:
-      "the typed-data shape a wallet signs; its field names are fixed by the contract, not text on the page",
-  },
 ];
 
 await runCopyCheck({
