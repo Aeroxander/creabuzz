@@ -67,15 +67,20 @@ reserve sales from the last end price, the 365-day hold, the 3% fee and 2% stake
 - *Demand step and 2x hand raise* (the lead's starting point). **Dropped on chain** (all three agree), kept as app chips.
 - *Earlier raise.* The project-zero design adds a new on-chain "earlier backers" list from the backing Shares. **Use the
   work pot gift that is already built** (no contract change); the new list stays an owner option (questions 2).
+  **Superseded (18 November 2026):** the owner chose the on-chain list for project zero; see `EARLIER-BACKERS.md`
+  section 11.
 
 ## Creaton as project zero and earlier raises
 
 - Creaton launches through the same Launcher. Its founder opens the first round at **6,000,000** (raw 166,666,666,666,666
   Shares per raw dollar): 10,000 alone buys 1.67M Shares (0.17%), 50,000 with a second person 8.33M (0.83%); the other
   141.7M backing Shares join the reserve when the market opens (built: `returnUnsold`) (simulated, `founder_price_judge.py` 1).
+  **Superseded for project zero (18 November 2026):** those 141.67M go to the earlier backers' claim at launch; Creaton
+  keeps 8,333,333.33 backing Shares for its rounds (`EARLIER-BACKERS.md` section 11).
 - Later Creaton rounds pre-fill 6,000,000; a raise is one chip.
-- **Earlier backers** (money raised before the platform): the runner gives each one Shares from the work pot with the
-  built Give Shares (`Treasury.giveShares`). Before a market these go to the Vester on the same 365-day clock, cannot be
+- **Earlier backers** (money raised before the platform; **superseded for project zero** by the claim contract of
+  `EARLIER-BACKERS.md` section 11, still the path for any other founder): the runner gives each one Shares from the work
+  pot with the built Give Shares (`Treasury.giveShares`). Before a market these go to the Vester on the same 365-day clock, cannot be
   refunded, and only free when the market opens. Shares = dollars x 1,000,000,000 / the price they paid; the app works it
   out. No fee: the money never passed through the platform. The server keeps a signed "raised before Creaton: X at Y,
   from N backers (the founder's statement, not checked)" record, and each earlier backer may confirm with one press.

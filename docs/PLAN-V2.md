@@ -343,9 +343,9 @@ step must work when the earlier backers (about 47% of voters after a year, simul
   At Open: the manager holds no power left except paying the team budget.
 - **The team budget stays payable by the manager until it is used up,** even after holders take over every other power:
   milestone 9 adds a team-payer role (the manager's address, set at launch, moved only by the manager or a holders'
-  supermajority) that may call only `payTeam`, under the same gift rules. Today `payTeam` is the runner's, so this is a
-  contract change for milestone 9. What happens to an unused budget if the manager stops working is a question for
-  counsel (`EARLIER-BACKERS.md` section 11).
+  supermajority) that may call only `payTeam`, under the same gift rules and the same 730-day pace. Today `payTeam` is
+  the runner's, so this is a contract change for milestone 9. What happens to an unused budget if the manager stops
+  working is a question for counsel (`EARLIER-BACKERS.md` section 11).
 
 ## 10. Off until an outside audit and counsel, and what could still go wrong
 
@@ -427,9 +427,12 @@ network before the Council runner exists; reserve sales; the stake; sponsored fe
    founder grant; the rest of the founder's slice, 52,989,393.67 Shares (5.30%), is a public, earmarked team budget in
    the Treasury, which the runner pays out about monthly (`payTeam`, a gift's rules: held 365 days from the market
    opening before it, free at once after it under the 1%-in-30-days cap), roughly 52.99M over 2 to 3 years if the owner
-   stays. **The teammate** (the old Ambassadors line, 21,818,182 Shares, 2.18%) is paid from the work pot with Give
-   Shares, monthly by default or up front. **One clock** for everyone: evenly over 365 days from the market opening or a
-   "no market" declaration, never faster, no cliff; the lock-up gate is a setting, off by default, for counsel.
+   stays. After the review the budget accrues evenly over 730 days from the launch and `payTeam` never pays more than
+   has accrued (paid in arrears; catching up allowed), so a manager who leaves early has been paid for the days served
+   only, as every other founder's trim keeps. **The teammate** (the old Ambassadors line, 21,818,182 Shares, 2.18%) is
+   paid from the work pot with Give Shares, monthly by default or up front. **One clock** for everyone: evenly over 365
+   days from the market opening or a "no market" declaration, never faster, no cliff; the lock-up gate is a setting, off
+   by default, for counsel.
    **Central management first:** project zero's runner is the DAO LLC's manager (one key, or a Pair of the manager's
    keys) inside the existing caps, until the milestone 9 steps in section 9. Legal points (valuing team payments in
    Shares, related-party payments, disclosure of the team budget) are questions for counsel, listed in

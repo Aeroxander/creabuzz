@@ -672,8 +672,10 @@ blocker. What was fixed, in `contracts/next` only:
 - A1 / A2, anchoring and down rounds to own accounts: work as the design accepts and give the founder side no more Shares
   than today's default (measured in the attack file). The app's per-round price, money and accounts, and the average
   price, are not built.
-- Deployment order for project zero (judgement): the admin calls `nameProjectZero(keyOf(Creaton's founder, its id))`, then
-  that founder launches with the current `settingsHash()`. Nothing else is needed and there is no window to close.
+- Deployment order for project zero (judgement; **updated 18 November 2026**, `EARLIER-BACKERS.md` section 11): the admin
+  calls `nameProjectZero(keyOf(Creaton's founder, its id))`, then `nameEarlierBackers(claim, keepBacking)`, then that
+  founder reads `launchHash(key)` and launches with it. The named project zero's hash always covers the name and the
+  earlier raise, so `settingsHash()` is refused for it (`SettingsMoved`).
 
 **Guard removals** (`python3 scripts/mutate-guards.py <ids>`, one at a time, no RPC; new group `M4FPZ` runs FounderPrice,
 FounderPriceAuction, AttackFounderPrice and Launcher):

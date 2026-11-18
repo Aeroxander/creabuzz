@@ -125,6 +125,11 @@ signature offline. No names or emails on the server.
 > count are recorded on a public network. Anyone can work out from them what you paid.
 > 11. *Your wallet.* You confirm you control [address] and sign this with it. Shares go only to that wallet or to a
 > wallet that already exists on [network]. If you lose the key before signing, [counsel: the recovery process].
+> For 21 days after you sign, the keeper (a 2-of-3 group: counsel, one independent person and the owner) may void your
+> signature with public evidence (for example, a key that leaked) and, in the same step, name a new holder for your
+> entry; the new holder takes the entry 30 days later and nothing is delivered meanwhile. You may stop a replacement of
+> an entry you have not signed once, in person; after that only your signature stops it. [Counsel: the keeper's
+> make-up, the evidence standard and how you are told.]
 > 12. *Your statements.* You sign for yourself or the entity named. Nobody has promised you anything not written here.
 > [US person or not; accredited or not; sanctions; you handle your own taxes.]
 > 13. *Signing.* (a) An electronic signature on this text; (b) a signature from your wallet over a structured message
@@ -150,9 +155,10 @@ keeper)`; refuses a zero keeper, more than 64 entries, `longStop` under 2 years.
 `keccak256(entry, holder, amount, salt)`: duplicates are impossible and addresses stay hidden until each consent.
 Writes: `bind()` (once, after launch); `consent(entry, holder, amount, salt, receiver, validUntil, signature)` (anyone
 submits; empty signature only from the holder itself, else ECDSA or EIP-1271); `deliver(entry)`, `deliverMany(ids)`
-(anyone; only to the receiver); `voidConsent(entry, evidence)` (keeper, inside the 21-day challenge window, back to open,
-never redirected); `proposeHolder(entry, next, evidence)`, `cancelHolder(entry)`, `applyHolder(entry)` (30-day wait;
-the holder can veto unless the keeper voided that holder's consent); `publishText(...)` (keeper, before any consent or
+(anyone; only to the receiver); `voidConsent(entry, next, evidence)` (keeper, inside the 21-day challenge window, back
+to open with no receiver; a non-zero `next` proposes the replacement in the same call, section 11 "Review fixes");
+`proposeHolder(entry, next, evidence)`, `cancelHolder(entry, amount, salt)`, `applyHolder(entry)` (30-day wait; the holder can veto
+once, unless the keeper voided that holder's consent); `publishText(...)` (keeper, before any consent or
 for non-material fixes); `close()` and `toReserve()` (anyone, after `longStop`); `offerKeeper`, `takeKeeper`. Views:
 `consentDigest`, `due`, `undelivered`, `closeAt`, `funding`. Events: Bound, Consented (entry, holder, receiver, amount,
 textHash), Voided, Delivered, HolderProposed, HolderReplaced, ReplacementCancelled, TextPublished, ListClosed,
@@ -260,7 +266,7 @@ more; no published series price.
 | Shares could move while the replacement had lapsed | The old LLC and the New Issuer sign first; the backer's signature completes it; no lapse clause |
 | No uniqueness or sum guard on the list | One stored leaf per entry; EB24 consented total <= total; EB25 consent only when fully funded; LZ3 funding equals total |
 | A receiver with no code on the claim's network can be captured | EB11: code on this network, or the holder itself; the app checks a passkey account on the target network |
-| An old leaked key consents first | 21-day challenge window; the keeper can void (never redirect) with public evidence; the app notifies on each consent |
+| An old leaked key consents first | 21-day challenge window; the keeper can void with public evidence, with the replacement in the same call; it never names a receiver, but a void with a replacement moves the entry to the new holder 30 days later (section 11, "Review fixes", R4); the app notifies on each consent |
 | Holdouts swept while their SAFT survives | No sweep until counsel's long-stop (at least 2 years); undelivered Shares do not count, so waiting thins nobody; a choice of a partial refund goes to counsel |
 | Held overhang and floor against Creaton's own baseline | Stated in section 3 and on the auction page; any money left from the old raise goes into Creaton's floor or treasury at launch (owner question 12); a 730-day clock can be offered as a trade |
 | D as a general rule = free self-fill and trim escape | Project zero only; any general version needs the fee and the 3,000-a-dollar cap |
@@ -340,7 +346,9 @@ holder, amount, salt and address in the tests is made up (21 entries that add up
    remainder, 52,989,393.67 Shares (5.30%) at S1 with no owner seed entry, is not granted to the owner at launch: it
    lands in project zero's Treasury as a public, earmarked **team budget**, and the runner pays it out over time with
    the gift rules, about monthly, roughly 52.99M over 2 to 3 years if the owner stays. Project zero's founder Vester
-   grant is zero. The runner at first is the DAO LLC's manager (central management, a Single runner or a Pair of the
+   grant is zero. After the review the contract enforces the pace: the budget accrues evenly over 730 days from the
+   launch and `payTeam` never pays more than has accrued, so nobody can be paid the whole budget at once ("Review
+   fixes"). The runner at first is the DAO LLC's manager (central management, a Single runner or a Pair of the
    manager's keys), bounded by the existing caps.
 
 ### What changed, file by file
@@ -352,7 +360,7 @@ holder, amount, salt and address in the tests is made up (21 entries that add up
 | `src/Parts.sol` | Records `keccak256(type(EarlierBackers).runtimeCode)`; the Launcher accepts only that code |
 | `src/Vester.sol` | A zero founder grant makes no grant (project zero); a second plain grant at birth for the claim, never to nobody or to the founder |
 | `src/Treasury.sol` | `teamBudget` (what is left, public), `payTeam(to, amount)` (runner only, never an agent; a gift's rules), event `TeamPaid(to, amount, left)` beside `SharesGiven`; `reserve()` leaves the team budget out; `countingSupply()` leaves out the claim's released but undelivered Shares |
-| `scripts/mutate-guards.py` | Entries Q01 to Q97 (`--eb`); T10, T41, L13, N70 and NA1 re-pinned to the changed lines |
+| `scripts/mutate-guards.py` | Entries Q01 to Q97 (`--eb`), then Q100 to Q108 for the review fixes; T10, T41, L13, N70 and NA1 re-pinned to the changed lines |
 
 ### Choices the note left open (the note's recommendation taken unless said)
 
@@ -369,7 +377,8 @@ holder, amount, salt and address in the tests is made up (21 entries that add up
 - **EB29 (new, found while building):** after the keeper voids a consent (a leaked key) and proposes a new holder, the
   voided key can neither agree again nor veto until the replacement applies. Without it the leaked key could re-sign
   just before day 30 each time and block the replacement for ever. The holder whose consent was voided but who has no
-  replacement pending may sign again, so a mistaken void strands nobody.
+  replacement pending may sign again, so a mistaken void strands nobody. (After the review the replacement goes in the
+  same call as the void, and the bare veto works once per entry: "Review fixes" below.)
 - **Dropped as redundant** (each was covered by another check, so no test could fail without it): a zero receiver (no
   code and never the holder), "the entry is still open" in `applyHolder` (a replacement exists only for an open entry,
   and EB12 or EB29 settle any consent while one is pending).
@@ -396,7 +405,8 @@ holder, amount, salt and address in the tests is made up (21 entries that add up
   the market, with nobody signed, the count is the auction buyers' 350M only. Delivered Shares count at once.
 - The founder trim cuts only the founder's grant. Project zero has none, so a leaving founder's hand-over cuts nothing,
   and it can never reach the claim's grant (a separate grant) or the team budget (the Treasury's, which follows the
-  seat). Measured in `test_trim_leavesTheClaimAndTheTeamBudgetWhole`.
+  seat). Measured in `test_trim_leavesTheClaimAndTheTeamBudgetWhole`. After the review, the team budget's 730-day pace
+  does the trim's job for project zero: a leaver has been paid for the days served at most ("Review fixes").
 
 ### Votes (for milestone 9; HolderVote is not built)
 
@@ -416,7 +426,7 @@ for turnout.
 - **Finding:** the cap remembers a gift for 30 to 33 days. On a strict 30-day step after the market, the last month's
   payment still counts, so two months count at once: at 2 years (3.12M a month for the owner and the teammate together,
   with 350M Shares in hands) the second payment is refused. Pay on a 33-day step, or keep each month under half the cap.
-  Before the market there is no cap.
+  Before the market there is no 1% cap; the 730-day pace applies before and after it (`teamPayable()`, "Review fixes").
 - A Pair of the manager's keys pays with both signatures; one signer alone cannot.
 
 ### Events for the server (milestone 5)
@@ -428,13 +438,14 @@ contract's `Bound`, `Consented`, `Voided`, `Delivered`, `HolderProposed`, `Holde
 reads founder 0 and the backing after the cut) and `SharesGiven`. The chain reader should read the team budget from
 `ProjectZeroSplit` and `TeamPaid`, and the public "k of N agreed" from `consentedCount()` and `entryCount()`.
 
-### Tests (78 new, every one passes)
+### Tests (78 new, then the review's; every one passes)
 
 | File | What |
 |---|---|
 | `test/EarlierBackers.t.sol` | Launch at S1 (LZ1 to LZ6, the split event, the 6M Team round, ordinary launches unchanged and unable to use it, no second project zero, the trim); the constructor; the typed data checked field by field; consent by EOA, in person, a 1271 wallet, a Kernel-style account, a 2-of-3 Safe-style wallet and a contract holder's direct call; wrong chain, contract, text version, holder version, deadline, leaf, amount or salt fails; receivers; void, replacement, veto, EB29, keeper hand-over; delivery (never early, exact at the end, only to the receiver, an outside `Vester.claim` changes nothing); the Treasury's count with and without undelivered Shares; the close and the reserve with a stray; the lock-up gate on |
-| `test/EarlierBackersFuzz.t.sol` | Fuzz: one leaf per entry; pro-rata delivery at any time and any set of signers; delivered plus sent to the reserve never above released; the sum guard on a list padded 60M over its total, in any order. The attack findings: a leaked key signs first; a receiver with no code; a chain-less replay; no early sweep and waiting thins nobody; D is not a general rule; the keeper cannot redirect. Gas |
-| `test/TeamBudget.t.sol` | The budget apart from the reserve and the work pot; runner only, never an agent; not more than the budget; bad receivers; held before the market, free after it under the shared cap; a Pair runner; 30 monthly payments with the teammate; the 33-day finding; the teammate's up-front gift; a reserve sale cannot take it; the budget follows the seat; the Treasury's birth check |
+| `test/EarlierBackersFuzz.t.sol` | Fuzz: one leaf per entry; pro-rata delivery at any time and any set of signers; delivered plus sent to the reserve never above released; the sum guard on a list padded 60M over its total, in any order. The attack findings: a leaked key signs first; a receiver with no code; a chain-less replay; no early sweep and waiting thins nobody; D is not a general rule; the keeper names no receiver (renamed from "cannot redirect" in the review). Gas |
+| `test/TeamBudget.t.sol` | The budget apart from the reserve and the work pot; the 730-day pace (review R3); runner only, never an agent; not more than the budget; bad receivers; held before the market, free after it under the shared cap; a Pair runner; 30 monthly payments with the teammate; the 33-day finding; the teammate's up-front gift; a reserve sale cannot take it; the budget follows the seat; the Treasury's birth check |
+| `test/AttackEarlierReview.t.sol` | The review's attacks, each failing before its fix: a gift or team payment to the claim (R1), naming project zero after the founder read the hash or taking the name back (R2), the whole team budget on day one (R3), a thief's endless veto (R5), the gap between a void and its replacement (F2) |
 | `test/helpers/EarlierBase.sol`, `test/mocks/Wallets.sol` | The S1 world with 21 made-up entries; the wallet mocks |
 
 ### Gas (measured, `EarlierGasTest`)
@@ -495,9 +506,9 @@ paid once per entry, by whoever submits (the server's relayer).
 | Q36 | EarlierBackers EB19: a replacement for an agreed entry | 1 | `test_replace_EB18_to_EB21` |
 | Q37 | EarlierBackers EB20: no 30-day wait | 1 | `test_replace_EB18_to_EB21` |
 | Q38 | EarlierBackers EB21: anyone may veto | 1 | `test_replace_EB18_to_EB21` |
-| Q39 | EarlierBackers EB21/EB29: the voided holder may veto | 1 | `test_replace_EB29_aVoidedKeyCannotBlockIt` |
+| Q39 | EarlierBackers EB21/EB29: the voided holder may veto | 2 | `test_replace_EB29_aVoidedKeyCannotBlockIt` |
 | Q40 | EarlierBackers EB21: the holder version does not grow | 2 | `test_replace_EB18_to_EB21` |
-| Q41 | EarlierBackers EB21: apply with nothing pending | 3 | `test_attack_keeperCannotRedirect` |
+| Q41 | EarlierBackers EB21: apply with nothing pending | 3 | `test_attack_keeperNamesNoReceiver` (was `keeperCannotRedirect`) |
 | Q42 | EarlierBackers EB22: the text version does not grow | 1 | `test_consent_EB07_EB22_newTextVoidsOldSignatures` |
 | Q43 | EarlierBackers EB22: anyone may publish a text | 1 | `test_consent_EB07_EB22_newTextVoidsOldSignatures` |
 | Q44 | EarlierBackers: a consent names an old text | 1 | `test_consent_EB07_EB22_newTextVoidsOldSignatures` |
@@ -511,7 +522,7 @@ paid once per entry, by whoever submits (the server's relayer).
 | Q52 | EarlierBackers EB28: anyone may void | 1 | `test_void_EB28` |
 | Q53 | EarlierBackers EB28: void after the window | 1 | `test_void_EB28` |
 | Q54 | EarlierBackers EB28: void an open entry | 1 | `test_void_EB28` |
-| Q55 | EarlierBackers: a void keeps the receiver | 2 | `test_attack_keeperCannotRedirect` |
+| Q55 | EarlierBackers: a void keeps the receiver | 2 | `test_attack_keeperNamesNoReceiver` (was `keeperCannotRedirect`) |
 | Q56 | EarlierBackers EB29: the voided holder agrees again while a replacement is pending | 2 | `test_attack_leakedKeyConsentsFirst` |
 | Q57 | EarlierBackers: undelivered counts what was delivered | 4 | `testFuzz_proRataDelivery` |
 | Q58 | EarlierBackers: a keeper of nobody | 1 | `test_constructor_refusesBadSettings` |
@@ -546,6 +557,15 @@ paid once per entry, by whoever submits (the server's relayer).
 | Q95 | Treasury: the birth check leaves out the team budget | 1 | `test_init_theTeamBudgetMustBeHeld` |
 | Q96 | Treasury: team pay skips the gift checks | 1 | `test_payTeam_badInputs` |
 | Q97 | Treasury: undelivered earlier-backer Shares count | 2 | `test_attack_noEarlySweep_andWaitingThinsNobody` |
+| Q100 | Treasury R1: a gift or team payment may go to the claim contract | 5 | `test_review_R1_runnerGiftToTheClaimBlocksEveryConsent` |
+| Q101 | Treasury R3: team pay is not paced | 3 | `test_review_R3_wholeTeamBudgetOnDayOne_escapesTheTrim` |
+| Q102 | Treasury R3: the budget at launch is not stored (nothing ever accrues) | 8 | `test_pace_teamPayAccruesOverTwoYears` |
+| Q103 | Treasury R3: the pace starts at time zero (all accrued at launch) | 3 | `test_pace_aLeaverHoldsTheDaysServedOnly` |
+| Q104 | Treasury R3: the pace forgets what was paid | 1 | `test_pace_teamPayAccruesOverTwoYears` |
+| Q105 | EarlierBackers F2: a void ignores its replacement | 4 | `test_review_F2_voidWithTheReplacementLeavesNoGap` |
+| Q106 | EarlierBackers R5: the holder may veto any number of times | 2 | `test_review_R5_oneVetoThenOnlyAConsent` |
+| Q107 | EarlierBackers R5: the veto is not recorded | 2 | `test_review_R5_oneVetoThenOnlyAConsent` |
+| Q108 | Launcher R2: the launch hash says project zero only when an earlier raise is named | 3 | `test_review_R2_namingProjectZeroIsNotInTheLaunchHash` |
 | T10 | Treasury: the Vester counts in the exit denominator (its whole balance leaves the count, claimed or not) | 11 | `testFuzz_attack_donatingSharesToTheProjectNeverPaysTheDonor` |
 | T41 | Treasury: the reserve ignores Shares returned or donated to it | 12 | `test_close_openEntriesAndStraysToTheReserve` |
 | L13 | Launcher: launch ignores the settings hash the founder saw | 3 | `test_attack_theAdminCanChangeTheSettingsInTheBlockBeforeALaunch` |
@@ -566,6 +586,44 @@ Q70, Q71, Q84 and Q86 break project zero's launch, so every suite's `setUp` fail
 | Guard removals | the 89 new entries (Q..) and the 5 re-pinned ones, one at a time: every one fails at least one test (table above) |
 | Sepolia fork suite | not run this time (no contract the fork tests read changed shape; run it before any deploy) |
 
+### Review fixes (18 November 2026)
+
+Two reviews of the build: a review against this note and an attack review that wrote failing tests
+(`test/AttackEarlierReview.t.sol`). Each fix below has a test that failed before it and a guard removal that fails a test.
+
+| Finding | What was wrong | Fix | Tests | Guard removals |
+|---|---|---|---|---|
+| R1 / F1 (blocker) | A gift or team payment to the claim contract's own address went through. Before the market it added to the claim's Vester grant, so EB25 (the grant equals the list) refused every later consent for good, and the unsigned entries would have gone to the reserve at the long-stop. One raw unit from the runner or an agent was enough | `Treasury` refuses the claim as the receiver of any gift or team payment, before and after the market | `test_review_R1_*` (4) | Q100 |
+| R2 | With no earlier raise named, `launchHash(key)` did not say "project zero", although being named takes the founder's 200M Vester grant away (it becomes the team budget). The admin could name a founder's key in the block before their launch | The named project zero's hash always covers the name, with or without an earlier raise. The app and the milestone 5 server compute `launchHash(key)` for project zero | `test_review_R2_*` (2) | Q108 |
+| R3 / F3 | Nothing paced the team budget, and the founder trim cannot reach it: the runner could pay the whole 52,989,393.67 on launch day, then leave, and nothing was cut | The budget accrues evenly over 730 days from the launch (`TEAM_PAY_SPAN`); `payTeam` never pays more than has accrued (`teamPayable()`, error `TeamPayTooFast`). Paid in arrears; catching up is allowed. 730 days is the short end of the reviewer's 730 to 1,095; the owner may lengthen it before launch | `test_review_R3_*`, `TeamBudgetTest` | Q101 to Q104 |
+| F2 | The keeper's void and proposal were two transactions; a leaked key watching the chain could sign again in between (nothing pending yet), and the proposal then failed | `voidConsent(entry, next, evidence)` proposes the replacement in the same call | `test_review_F2_*`, `test_attack_leakedKeyConsentsFirst` | Q105 |
+| R5 | A thief with a lost key and its salt never signs (EB29 bars only a key whose consent was voided) and vetoed every replacement for ever | The holder's bare veto works once per entry; after it, only a consent stops a replacement, and the keeper can void that with the replacement in the same call | `test_review_R5_*` (2) | Q106, Q107 |
+| R4 | The note said the keeper "can void (never redirect)". Since EB29 the keeper can move a signed entry: void it inside the 21 days with a replacement, and the new holder takes it 30 days later | Recorded as the design, not changed: no rule can tell a thief holding a key from the backer holding it. The protection is the keeper's make-up (2-of-3, at most one signer the owner) and the public `Voided` and `HolderProposed` events with evidence. Corrected in the contract's description, the section 8 row and clause 11 of the draft text (section 4) | `test_attack_keeperMovesASignedEntryOnlyInPublicAfter30Days`, `test_attack_keeperNamesNoReceiver` | Q41, Q55, Q56 |
+| F4 | Stale lines elsewhere | `FOUNDER-PRICE.md` marks the work-pot path and the 141.7M to the reserve as superseded for project zero; the milestone 4 report's deployment order now names `nameEarlierBackers` and `launchHash(key)`; `PLAN-V2.md` decision 7 no longer names an unbuilt alternative | | |
+
+**For the keeper:** for a leaked key, void with the replacement in the same call, never as two transactions. For a wrong
+wallet (the holder's own mistake), void with no replacement; the holder may then sign again.
+
+**Gates after the fixes** (one forge process at a time, `nice`): `forge fmt --check src test script` clean; the local
+suite (`env -u SEPOLIA_RPC_URL forge test`) **585 passed, 0 failed, 35 skipped** in 128 suites (the 35 are the Sepolia
+fork twins); `forge build --sizes`: Launcher 21,788 runtime / 37,730 creation (2,788 bytes left under 24,576),
+EarlierBackers 7,971 / 8,667, Treasury 15,002 / 15,047. Guard removals Q100 to Q108 and the entries whose lines or tests
+changed (Q38, Q39, Q41, Q52 to Q56), one at a time: every one fails at least one test (the table above).
+
+Optional findings, not changed:
+
+- **F5, a consent in person binds the text fingerprint only** (a signed consent also binds the text version and the
+  summary). An in-person consent is the holder's own transaction, so the version and summary in force are the ones
+  current in that block (the `TextPublished` history shows them), and only the keeper publishes texts. The keeper never
+  republishes a text with the same fingerprint and a new summary. Changing it would change the shape of `consent`, which
+  the app and the server use. The other half of F5 (a leaked key that never signs vetoes for ever) is R5, fixed.
+- **O1, `deliverMany` reverts the whole batch when one entry is not deliverable** (open, inside its 21 days, or behind the
+  lock-up gate). Nothing is lost. The server's daily job reads `entryOf()` and `due()` right before it sends and leaves
+  those entries out (a note for milestone 5).
+- **O2, Shares sent to the claim contract by a plain transfer by mistake** count as in people's hands until `toReserve`
+  after the close, which lowers every exit slice a little, as Shares held anywhere else do. R1 closes the gift route; a
+  plain transfer is the sender's own mistake, and the close sends those Shares to the reserve.
+
 ### Not built, and open
 
 - The app page, the owner's list and status screens, the records and the export, the public "Raised before Creaton"
@@ -580,7 +638,9 @@ Q70, Q71, Q84 and Q86 break project zero's launch, so every suite's `setUp` fail
      rule, record or disclosure do the Marshall Islands DAO Act and the LLC agreement need, and should a second signer
      (the Pair) or an outside check be required for each payment?
   3. How must the team budget be disclosed to the earlier backers (the SAFT replacement text, section 4) and to auction
-     buyers (the auction page), and is a public on-chain earmark enough?
+     buyers (the auction page), and is a public on-chain earmark with its on-chain pace (at most what has accrued over
+     730 days from the launch, `teamPayable()`) enough? The pace bounds how fast it is paid, not to whom: the manager
+     chooses each receiver, which question 2 covers.
   4. Is the unpaid team budget a liability of the DAO LLC or only an earmark? If the manager stops working before it is
      used up, who decides what happens to the rest, and should it then return to the reserve?
   5. Does paying for services in Shares, monthly, raise securities questions (an offer and sale each month, US and
