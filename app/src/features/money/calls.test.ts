@@ -77,10 +77,7 @@ describe("money calls", () => {
     expect(parseDollars("ten")).toEqual({ ok: false, reason: "format" });
     expect(parseDollars(" ")).toEqual({ ok: false, reason: "empty" });
     expect(parseDollars("0.99")).toEqual({ ok: false, reason: "small" });
-    expect(parseDollars("11", 10_000_000n)).toEqual({
-      ok: false,
-      reason: "large",
-    });
+    expect(parseDollars("20000")).toEqual({ ok: true, raw: 20_000_000_000n });
   });
 
   it("splits each 100 into 3, 15 and 82", () => {

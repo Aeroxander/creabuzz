@@ -111,14 +111,14 @@ export const QUOTE_CALL_DATA = encodeFunctionData("quote()", [], []);
 
 /**
  * Dollars typed by a person as raw units, or why not: digits with at most one dot and at most 6 decimals ("1,000" and
- * a leading "$" are allowed), at least 1 dollar, at most `max` when given.
+ * a leading "$" are allowed), at least 1 dollar. No upper limit: a round may be asked for more than it holds, and then
+ * everyone gets the same part.
  */
 export function parseDollars(
   text: string,
-  max?: bigint,
 ):
   | { ok: true; raw: bigint }
-  | { ok: false; reason: "empty" | "format" | "small" | "large" } {
+  | { ok: false; reason: "empty" | "format" | "small" } {
   const cleaned = text.trim().replace(/^\$/, "").replace(/,/g, "");
   if (cleaned === "") return { ok: false, reason: "empty" };
   const match = /^(\d{1,12})(?:\.(\d{0,6}))?$/.exec(cleaned);
@@ -126,7 +126,6 @@ export function parseDollars(
   const raw =
     BigInt(match[1]) * DOLLAR + BigInt((match[2] ?? "").padEnd(6, "0") || "0");
   if (raw < MIN_ASK) return { ok: false, reason: "small" };
-  if (max !== undefined && raw > max) return { ok: false, reason: "large" };
   return { ok: true, raw };
 }
 

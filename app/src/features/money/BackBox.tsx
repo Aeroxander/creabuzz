@@ -22,7 +22,6 @@ const AMOUNT_WORDS = {
   empty: "Say how many dollars.",
   format: "Write a number of dollars, like 25 or 25.50.",
   small: "The smallest backing is 1 dollar.",
-  large: "That is more than is left in this round.",
 } as const;
 
 /**
@@ -45,11 +44,11 @@ export function BackBox({
   const [text, setText] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   const [amount, setAmount] = useState<bigint | null>(null);
-  const left = round.size > round.asked ? round.size - round.asked : 0n;
   const titleId = useId();
 
   const review = () => {
-    const parsed = parseDollars(text, left > 0n ? left : undefined);
+    // More than the round holds may be asked: then everyone gets the same part and the rest comes back.
+    const parsed = parseDollars(text);
     if (!parsed.ok) {
       setProblem(AMOUNT_WORDS[parsed.reason]);
       return;
@@ -85,7 +84,7 @@ export function BackBox({
         <Field
           autoComplete="off"
           data-testid="back-amount"
-          hint={`From 1 dollar. ${dollarsText(left)} dollars left in this round.`}
+          hint={`From 1 dollar. The round takes up to ${dollarsText(round.size)} dollars in all.`}
           inputMode="decimal"
           label="How many dollars?"
           onChange={(event) => setText(event.target.value)}

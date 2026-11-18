@@ -125,7 +125,7 @@ export function Receipts() {
             disabled={connect.isPending}
             onClick={() =>
               connect.mutate(undefined, {
-                onError: (error) => setProblem(moneyProblem(error, "refund")),
+                onError: (error) => setProblem(moneyProblem(error, "connect")),
               })
             }
             size="sm"

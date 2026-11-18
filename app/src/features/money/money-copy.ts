@@ -7,7 +7,13 @@ import { selectorOf } from "@creaton/core/launchpad/evmAbi.ts";
 import { isUserRejection } from "@creaton/core/launchpad/wallet-errors.ts";
 import { WalletStepError } from "./wallet";
 
-export type MoneyAction = "back" | "refund" | "take-out" | "check-in" | "open";
+export type MoneyAction =
+  | "back"
+  | "refund"
+  | "take-out"
+  | "check-in"
+  | "open"
+  | "connect";
 
 /** The contracts' refusals these calls can meet (Rounds, Vester, Treasury, Launcher, the dollar token). */
 const REFUSALS = [
@@ -126,6 +132,7 @@ const ACTION_WORDS: Record<MoneyAction, string> = {
   "take-out": "Taking out your Shares",
   "check-in": "The check-in",
   open: "Opening backing",
+  connect: "Connecting your wallet",
 };
 
 /** What a person reads when a money step stops. */
