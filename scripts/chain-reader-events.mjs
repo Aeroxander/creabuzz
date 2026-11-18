@@ -23,7 +23,16 @@ const LIST = resolve(
   repoRoot,
   "crates/buzz-relay/src/chain_reader/testdata/next-events.json",
 );
-const CONTRACTS = ["Launcher", "Rounds", "Vester", "Treasury", "Finisher", "Pair", "ShareToken"];
+const CONTRACTS = [
+  "Launcher",
+  "Rounds",
+  "Vester",
+  "Treasury",
+  "Finisher",
+  "Pair",
+  "ShareToken",
+  "EarlierBackers",
+];
 // Allowances are not followed.
 const SKIPPED = new Set(["ShareToken.Approval"]);
 

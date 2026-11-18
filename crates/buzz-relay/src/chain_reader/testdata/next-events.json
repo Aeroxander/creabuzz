@@ -80,5 +80,18 @@
   ],
   "ShareToken": [
     "Transfer(address,address,uint256)"
+  ],
+  "EarlierBackers": [
+    "Bound(address,address)",
+    "Consented(uint256,address,address,uint256,bytes32)",
+    "Delivered(uint256,address,uint256)",
+    "HolderProposed(uint256,address,uint256,bytes32)",
+    "HolderReplaced(uint256,address,uint256)",
+    "KeeperChanged(address,bool)",
+    "ListClosed(uint256)",
+    "ReplacementCancelled(uint256,address)",
+    "SentToReserve(uint256)",
+    "TextPublished(uint256,bytes32,bytes32)",
+    "Voided(uint256,address,bytes32)"
   ]
 }

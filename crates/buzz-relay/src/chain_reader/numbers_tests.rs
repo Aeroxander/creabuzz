@@ -706,3 +706,123 @@ fn a_failed_sale_brings_the_no_market_date_back() {
     assert_eq!(after["noMarketFrom"], before);
     assert_eq!(after["stage"]["name"], "backed");
 }
+
+/// Project zero's claim contract is followed as counts and totals only: no
+/// entry, holder, receiver or single amount reaches the public record, and an
+/// account whose Shares came from the claim is not listed as a holder.
+#[test]
+fn earlier_backers_are_counts_and_totals_only() {
+    let (mut c, close) = worked_2500();
+    let claim = "0x00000000000000000000000000000000000000c1";
+    let holders = [
+        "0x00000000000000000000000000000000000000e1",
+        "0x00000000000000000000000000000000000000e2",
+        "0x00000000000000000000000000000000000000e3",
+    ];
+    let receiver = "0x00000000000000000000000000000000000000d1";
+    c.push(
+        close,
+        Role::Launcher,
+        "ProjectZeroSplit",
+        json!({"key": hex0x(&KEY), "claim": claim, "fromBacking": "50", "fromFounder": "30",
+        "teamBudget": "120"}),
+    );
+    c.push(
+        close,
+        Role::Earlier,
+        "Bound",
+        json!({"vester": "0x01", "treasury": "0x02"}),
+    );
+    for (i, h) in holders.iter().enumerate() {
+        c.push(
+            close + DAY,
+            Role::Earlier,
+            "Consented",
+            json!({"entry": i.to_string(), "holder": h, "receiver": receiver,
+            "amount": ((i + 1) * 100).to_string(), "textHash": "0x00"}),
+        );
+    }
+    // Entry 1's consent is voided, with a new holder proposed and applied;
+    // entry 2 gets a proposal that is cancelled.
+    c.push(
+        close + 2 * DAY,
+        Role::Earlier,
+        "Voided",
+        json!({"entry": "1", "holder": holders[1], "evidence": "0x00"}),
+    );
+    c.push(close + 2 * DAY, Role::Earlier, "HolderProposed", json!({"entry": "1", "next": "0x00000000000000000000000000000000000000e9", "from": "0", "evidence": "0x00"}));
+    c.push(close + 2 * DAY, Role::Earlier, "HolderProposed", json!({"entry": "2", "next": "0x00000000000000000000000000000000000000ea", "from": "0", "evidence": "0x00"}));
+    c.push(
+        close + 3 * DAY,
+        Role::Earlier,
+        "ReplacementCancelled",
+        json!({"entry": "2", "by": holders[2]}),
+    );
+    c.push(close + 40 * DAY, Role::Earlier, "HolderReplaced", json!({"entry": "1", "next": "0x00000000000000000000000000000000000000e9", "holderVersion": "1"}));
+    c.push(
+        close + 40 * DAY,
+        Role::Earlier,
+        "TextPublished",
+        json!({"version": "2", "textHash": "0x00", "summaryHash": "0x00"}),
+    );
+    c.push(
+        close + 40 * DAY,
+        Role::Earlier,
+        "KeeperChanged",
+        json!({"keeper": "0x03", "taken": false}),
+    );
+    c.push(
+        close + 40 * DAY,
+        Role::Earlier,
+        "Delivered",
+        json!({"entry": "0", "receiver": receiver, "amount": "7"}),
+    );
+    c.push(
+        close + 40 * DAY,
+        Role::Shares,
+        "Transfer",
+        json!({"from": claim, "to": receiver, "value": "7"}),
+    );
+    c.push(
+        close + 41 * DAY,
+        Role::Earlier,
+        "ListClosed",
+        json!({"open": "200"}),
+    );
+    c.push(
+        close + 41 * DAY,
+        Role::Earlier,
+        "SentToReserve",
+        json!({"amount": "200"}),
+    );
+
+    let n = c.numbers(close + 42 * DAY);
+    let eb = &n["earlierBackers"];
+    assert_eq!(eb["bound"], true);
+    assert_eq!(eb["textVersion"], 2);
+    assert_eq!(eb["consented"], json!({"count": 2, "total": "400"}));
+    assert_eq!(eb["voidedCount"], 1);
+    assert_eq!(eb["delivered"], json!({"count": 1, "total": "7"}));
+    assert_eq!(
+        eb["replacements"],
+        json!({"pending": 0, "done": 1, "cancelled": 1})
+    );
+    assert_eq!(
+        eb["listClosed"],
+        json!({"at": close + 41 * DAY, "open": "200"})
+    );
+    assert_eq!(eb["sentToReserve"], "200");
+    assert_eq!(eb["keeperChanges"], 1);
+    assert_eq!(eb["receivers"], json!({"count": 1, "shares": "7"}));
+
+    // No address but the claim's own, and no per-entry key, anywhere in it.
+    let text = eb.to_string();
+    for who in holders.iter().chain([&receiver]) {
+        assert!(!text.contains(who), "{who} is in the record: {text}");
+    }
+    for k in ["\"entry\"", "\"holder\"", "\"receiver\"", "\"next\""] {
+        assert!(!text.contains(k), "{k} is in the record: {text}");
+    }
+    let whole = n.to_string();
+    assert!(!whole.contains(receiver), "the receiver is listed: {whole}");
+}

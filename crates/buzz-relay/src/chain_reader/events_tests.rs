@@ -46,6 +46,7 @@ fn the_catalog_matches_every_recorded_event() {
         ("Finisher", Role::Finisher),
         ("Pair", Role::Pair),
         ("ShareToken", Role::Shares),
+        ("EarlierBackers", Role::Earlier),
     ] {
         let signatures: Vec<&str> = recorded[contract]
             .as_array()

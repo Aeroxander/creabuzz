@@ -313,6 +313,12 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     // contract holds Shares for the people on its list, not for an account.
     let mut auctions: Vec<String> = Vec::new();
     let mut earlier_backers: Option<Value> = None;
+    // Its events as counts and totals, and the accounts it delivered to: they
+    // are left out of the holder list, which would otherwise show each
+    // receiver with its entry's Shares.
+    let mut claim: Option<String> = None;
+    let mut earlier = numbers_earlier::Earlier::default();
+    let mut receivers: HashSet<String> = HashSet::new();
     let mut clock_mismatch: Option<(u64, u64, u64)> = None;
 
     let add = |sums: &mut BTreeMap<&'static str, u128>, k: &'static str, v: u128| {
@@ -345,10 +351,11 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
                 }
             }
             (Role::Launcher, "ProjectZeroSplit") => {
-                let claim = text(row, "claim")?;
-                auctions.push(claim.clone());
+                let named = text(row, "claim")?;
+                auctions.push(named.clone());
+                claim = Some(named.clone());
                 earlier_backers = Some(json!({
-                    "claim": claim, "fromBacking": field(row, "fromBacking")?,
+                    "claim": named, "fromBacking": field(row, "fromBacking")?,
                     "fromFounder": field(row, "fromFounder")?, "teamBudget": field(row, "teamBudget")?,
                 }));
             }
@@ -481,10 +488,14 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
                 }
             }
             (Role::Vester, "Started") => vester_started = Some(t),
+            (Role::Earlier, _) => earlier.apply(row)?,
             (Role::Shares, "Transfer") => {
                 let value = num(row, "value")? as i128;
                 let from = text(row, "from")?;
                 let to = text(row, "to")?;
+                if claim.as_deref() == Some(from.as_str()) {
+                    receivers.insert(to.clone());
+                }
                 accounts.entry(from).or_default().free -= value;
                 accounts.entry(to).or_default().free += value;
             }
@@ -703,6 +714,16 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
 
     // ── held and free Shares per account ──────────────────────────────────────
     let zero = hex0x(&[0u8; 20]);
+    let mut received = (0usize, 0i128);
+    for r in &receivers {
+        if let Some(a) = accounts.remove(r) {
+            received.0 += 1;
+            received.1 += a.held.max(0) + a.free.max(0);
+        }
+    }
+    if let Some(eb) = earlier_backers.as_mut() {
+        earlier.merge_into(eb, received);
+    }
     let mut holder_list: Vec<(String, i128, i128)> = accounts
         .into_iter()
         .filter(|(addr, _)| {
@@ -832,6 +853,9 @@ pub fn without_as_of(content: &Value) -> Value {
     }
     c
 }
+
+#[path = "numbers_earlier.rs"]
+mod numbers_earlier;
 
 #[cfg(test)]
 #[path = "numbers_tests.rs"]

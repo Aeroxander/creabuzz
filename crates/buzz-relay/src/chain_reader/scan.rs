@@ -137,6 +137,19 @@ fn discovered(log: &RawLog, event: &str, decoded: &Value) -> Vec<Contract> {
                 }
             }
         }
+        // Project zero's claim contract for its earlier backers, named at
+        // its launch. Only the claim in the split is followed:
+        // `EarlierBackersNamed` may name another before the launch.
+        "ProjectZeroSplit" => {
+            if let Some(address) = addr(decoded.get("claim")) {
+                out.push(Contract {
+                    address,
+                    role: Role::Earlier,
+                    project_key: Some(key),
+                    from_block: log.block_number,
+                });
+            }
+        }
         "PairMade" => {
             if let Some(address) = addr(decoded.get("pair")) {
                 out.push(Contract {

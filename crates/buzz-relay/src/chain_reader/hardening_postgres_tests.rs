@@ -118,3 +118,45 @@ async fn count_logs(state: &crate::state::AppState, reader: &str) -> i64 {
         .await
         .expect("count")
 }
+
+/// The claim contract named in `ProjectZeroSplit` is followed from its launch
+/// block, and its events reach project zero's record as counts and totals.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_earlier_backers_claim_is_found_and_counted() {
+    use super::events::Role;
+    use super::postgres_tests::{a, data, topic, u};
+    const CLAIM: [u8; 20] = [0xc1; 20];
+    let chain = Arc::new(FakeChain::default());
+    let (reader, state, host) = setup(Arc::clone(&chain), 0).await;
+    let launcher = reader.config.launcher;
+    let mut launch = with_launcher(launch_logs(), launcher);
+    launch.push((
+        launcher,
+        vec![topic(Role::Launcher, "ProjectZeroSplit"), key(), a(&CLAIM)],
+        data(&[u(50), u(30), u(120)]),
+    ));
+    chain.mine(T0, 1, launch); // 0
+    chain.mine(
+        T0 + DAY,
+        1,
+        vec![(
+            CLAIM,
+            vec![
+                topic(Role::Earlier, "Consented"),
+                u(0),
+                a(&[0xe1; 20]),
+                a(&[0xd1; 20]),
+            ],
+            data(&[u(100), [0; 32]]),
+        )],
+    ); // 1
+    chain.mine(T0 + DAY + 10, 1, vec![]); // 2
+    chain.mine(T0 + DAY + 20, 1, vec![]); // 3
+    let (_, published) = reader.pass().await.expect("pass");
+    assert_eq!(published.signed, 1);
+    let n = latest_record(&state, &host).await.expect("a record");
+    assert_eq!(n["earlierBackers"]["teamBudget"], "120");
+    assert_eq!(n["earlierBackers"]["consented"]["count"], 1);
+    assert_eq!(n["earlierBackers"]["consented"]["total"], "100");
+}

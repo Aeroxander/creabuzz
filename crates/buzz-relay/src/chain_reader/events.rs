@@ -31,6 +31,9 @@ pub enum Role {
     Rounds,
     /// A Team runner (two signers).
     Pair,
+    /// Project zero's earlier backers' claim contract (`EarlierBackers`),
+    /// named by `Launcher.ProjectZeroSplit`.
+    Earlier,
 }
 
 impl Role {
@@ -44,6 +47,7 @@ impl Role {
             Role::Finisher => "finisher",
             Role::Rounds => "rounds",
             Role::Pair => "pair",
+            Role::Earlier => "earlier",
         }
     }
 
@@ -57,6 +61,7 @@ impl Role {
             "finisher" => Role::Finisher,
             "rounds" => Role::Rounds,
             "pair" => Role::Pair,
+            "earlier" => Role::Earlier,
             _ => return None,
         })
     }
@@ -592,6 +597,83 @@ pub static EVENTS: &[EventDef] = &[
         [ix("id", Ty::Bytes32), ix("confirmedBy", Ty::Address)]
     ),
     ev!(Pair, "Cancelled", [ix("id", Ty::Bytes32)]),
+    // ── EarlierBackers (project zero's claim contract) ─────────────────────
+    // Its constructor's `TextPublished(1)` and `KeeperChanged` come before the
+    // Launcher names it, so the reader never sees them: version 1 is assumed.
+    ev!(
+        Earlier,
+        "Bound",
+        [ix("vester", Ty::Address), ix("treasury", Ty::Address)]
+    ),
+    ev!(
+        Earlier,
+        "Consented",
+        [
+            ix("entry", U256),
+            ix("holder", Ty::Address),
+            ix("receiver", Ty::Address),
+            p("amount", U256),
+            p("textHash", Ty::Bytes32),
+        ]
+    ),
+    ev!(
+        Earlier,
+        "Voided",
+        [
+            ix("entry", U256),
+            ix("holder", Ty::Address),
+            p("evidence", Ty::Bytes32)
+        ]
+    ),
+    ev!(
+        Earlier,
+        "Delivered",
+        [
+            ix("entry", U256),
+            ix("receiver", Ty::Address),
+            p("amount", U256)
+        ]
+    ),
+    ev!(
+        Earlier,
+        "HolderProposed",
+        [
+            ix("entry", U256),
+            ix("next", Ty::Address),
+            p("from", U256),
+            p("evidence", Ty::Bytes32),
+        ]
+    ),
+    ev!(
+        Earlier,
+        "HolderReplaced",
+        [
+            ix("entry", U256),
+            ix("next", Ty::Address),
+            p("holderVersion", U256)
+        ]
+    ),
+    ev!(
+        Earlier,
+        "ReplacementCancelled",
+        [ix("entry", U256), ix("by", Ty::Address)]
+    ),
+    ev!(
+        Earlier,
+        "TextPublished",
+        [
+            ix("version", U256),
+            p("textHash", Ty::Bytes32),
+            p("summaryHash", Ty::Bytes32)
+        ]
+    ),
+    ev!(Earlier, "ListClosed", [p("open", U256)]),
+    ev!(Earlier, "SentToReserve", [p("amount", U256)]),
+    ev!(
+        Earlier,
+        "KeeperChanged",
+        [ix("keeper", Ty::Address), p("taken", Ty::Bool)]
+    ),
     // ── Shares ──────────────────────────────────────────────────────────────
     ev!(
         Shares,
