@@ -325,10 +325,19 @@ set, in `app/test-results/screens/` (ignored by git); all 18 hashes are distinct
 
 Two reviews of part 2 found 3 blockers (F1 to F3), 4 important findings (F4 to F7), 2 optional ones (F8, F9) and 10
 attacks on the money screens (A1 to A10). Every blocker and every important finding is fixed, and both optional ones
-too. Each fix has a test that fails on 3c2f6ab37: the unit tests in `app/src/features/money/money-screens.test.tsx`
+too. Most fixes have a test that fails on 3c2f6ab37: the unit tests in `app/src/features/money/money-screens.test.tsx`
 (15, all failing on the reviewed screens), `wallet.test.ts`, `money-copy.test.ts` and `numbers.test.ts`, and the
 journeys in `app/tests/e2e/money-review.spec.ts` (F1, F2; now in the `smoke` project). The reviewers' untracked
 proving files were adopted into those files and removed.
+
+**Corrected after a review of these fixes:** this section first said that every fix had such a test. Four did not.
+F5's gate (only the runner's wallet gets the button, Team is not offered) was covered only by `money-copy.test.ts`,
+which checks the sentences, not who sees the button; A8's Project-page half (no Open backing while a round is not
+closed) only through the `anyRoundUnclosed` helper in `numbers.test.ts`, not through the page; F9 had no test (the
+`parseNumbers` check named below is not the fix, which is the candidate loop in `Receipts.tsx`); and the weekly sheet's
+double-submit guard (A1's second half) had none. Removing any of those four guards failed no test. Each now has one,
+listed under "Review of the review fixes" below, and each was seen to fail with its guard removed. A10's fix also left
+a way to ask twice (a call sped up in the wallet), fixed there too.
 
 | Finding | Fix | Test |
 |---|---|---|
@@ -336,20 +345,20 @@ proving files were adopted into those files and removed.
 | F2 numbers cached by chain key alone | the project's coordinate is part of the query key; each record is checked on its own | `money-review.spec.ts` F2 |
 | F3 a failed receipt lookup said "Nothing changed" | a failed lookup is one more poll; any error once a hash exists is "not landed yet" with that hash, never "nothing changed" | `wallet.test.ts` (2 cases) |
 | F4, A4 You and Home read only the 100 newest records | You reads up to 5 pages of 100 (bounded); when older records were left unread, You and Home say so instead of "has not backed" or "no round is open right now"; a refund missing from a cut list reads "not in the newest numbers yet", not "Nothing left" | `money-screens` A4 (2 cases) |
-| F5 Open backing offered to the wrong wallet and at Team | shown only at Solo and Backed; only the wallet that runs the project gets the button, others are told which wallet can; `NotRunner()` and `WrongRunner(uint8)` have their own sentence | `money-copy.test.ts` F5 |
+| F5 Open backing offered to the wrong wallet and at Team | shown only at Solo and Backed; only the wallet that runs the project gets the button, others are told which wallet can; `NotRunner()` and `WrongRunner(uint8)` have their own sentence | `money-copy.test.ts` F5 (the sentences only); who gets the button had none at first, now `money-gates.test.tsx` F5 and `ProjectPage.test.tsx` (Team) |
 | F6 the gas error read as "not enough dollars" | the node's "insufficient funds" now asks for a little of the network's own coin; dollar refusals match by selector | `money-copy.test.ts` F6 |
 | F7 `join.spec.ts` failed biome | formatted; `biome check` re-run on the whole app | gate below |
 | F8 "held for more than N accounts" | `holderCount` is the full count; "At least" only on the Share total and only when the list is shorter than the count | `money-screens` F8 |
-| F9 a copy could hide a project's name on receipts | every record naming a chain key is kept, and the one that checks out is used | covered by the F2 check in `parseNumbers` |
-| A1 a quick double press sent two backings | each money step has one in-flight guard, set before the mutation starts; the weekly submit has its own | `money-screens` A1 |
+| F9 a copy could hide a project's name on receipts | every record naming a chain key is kept, and the one that checks out is used | none at first (see the correction above); now `money-gates.test.tsx` F9 |
+| A1 a quick double press sent two backings | each money step has one in-flight guard, set before the mutation starts; the weekly submit has its own | `money-screens` A1; the weekly submit had none at first, now `WeeklySheet.test.tsx` |
 | A2 a taken-back receipt was misread | `refunded` is parsed as the server writes it, `{paid, at}`, and the receipt says how much came back | `money-screens` A2 |
 | A3 a backer cut from the holders list was told 0 Shares | when the list is cut before this wallet, the card says so and gives the Shares its receipts set aside | `money-screens` A3 |
 | A5 the refund line read as 95 of each 100 back | the sheet now says at most 77.90 of each 100 can come back, falling over 26 weeks of check-ins to nothing (`mostBack` in `calls.ts`) | `money-screens` A5, `numbers.test.ts`, `money.spec.ts` |
 | A6 a cheaper earlier round was never named | the Back box names every earlier round priced differently | `money-screens` A6 |
 | A7 an oversubscribed round promised full Shares | the box shows dollars asked so far of the round's size; the sheet's Shares estimate and "about N of each 100" use what has been asked | `money-screens` A7 |
-| A8 a round past its 24 hours read "open now" | rounds are open, waiting to be closed, or closed; Open backing is hidden while any round is not closed | `money-screens` A8, `numbers.test.ts` |
+| A8 a round past its 24 hours read "open now" | rounds are open, waiting to be closed, or closed; Open backing is hidden while any round is not closed | `money-screens` A8, `numbers.test.ts`; the Project page's half had none at first, now `ProjectPage.test.tsx` |
 | A9 taking out released Shares was one unreviewed press | a sheet first, naming the Shares and the refund it ends (about X dollars as of the record's time); 2 presses | `money-screens` A9 |
-| A10 a retry after "not landed yet" sent a second ask | a sent call whose outcome is unknown is remembered per step (`pending-sends.ts`, this browser's storage, at most 50); the next press looks it up and sends again only if the network says it reverted or never saw it, and only the calls after the last one that landed | `money-screens` A10 (3 cases), `wallet.test.ts` |
+| A10 a retry after "not landed yet" sent a second ask | a sent call whose outcome is unknown is remembered per step (`pending-sends.ts`, this browser's storage, at most 50); the next press looks it up and sends again only if the network says it reverted or never saw it, and only the calls after the last one that landed | `money-screens` A10 (3 cases, now in `money-sends.test.tsx`), `wallet.test.ts`. A call sped up in the wallet was still asked twice: fixed under "Review of the review fixes" |
 
 None was declined.
 
@@ -371,8 +380,37 @@ None was declined.
 ### Still open after the review fixes
 
 - The steps waiting to be looked up live in this browser's storage. A backer who switches devices while a call is
-  pending is not protected from a second ask there; reading `Rounds.positionOf(round, me)` before an ask would be.
+  pending is not protected from a second ask there; reading `Rounds.positionOf(round, me)` before every ask would be
+  (it is now read only when a waiting ask's place was taken by another call, below).
 - The passkey spec failed once in a full smoke run and passed on both re-runs; if it repeats, look at the reload's
   timing after the axe runs.
 - You reads at most 500 records of numbers. Past that it says the list may be incomplete; reading a backer's projects
   directly needs a backer index on the record (server work).
+
+### Review of the review fixes (18 November 2026)
+
+A review of the fixes above found one more way to ask twice (A10), the four missing tests named in the correction
+above, and an optional finding about pending-send keys. All are fixed. Each guard below was removed once and its test
+seen to fail, then put back.
+
+| Finding | Fix | Test |
+|---|---|---|
+| A10 left over: a call sped up in the wallet lands under a new hash; the old hash reads "unknown" and the step was sent again | the wallet keeps the sending account and the call's nonce (from the network's copy of the call, else the account's count before sending) with the waiting step. A gone hash whose nonce was used reads "replaced"; one whose nonce another waiting call holds reads "waiting"; a nonce not known is never taken as "never sent". For Back, a replaced ask is looked for in `Rounds.positionOf(round, me)` first (found when this account's ask there is at least the waiting amount); other steps are not sent again and the person is told to look in the wallet | `money-sends.test.tsx` (sped up: found, cancelled, a smaller earlier ask, a replacement still waiting; a refund not sent again), `wallet.test.ts` (outcomes, nonce kept, nonce fallback) |
+| Pending-send keys left out the sender and Back's amount | a step is kept per action and sending account (`sendKey`), so another account's call is never taken for this one's. A Back keeps its amount: the sheet names a waiting amount that differs from the one typed, the toast names the amount that landed, and an approval of another amount is sent again rather than skipped | `money-sends.test.tsx` (account switch, amount change, approval of another amount) |
+| F5 had no test of who gets the button | none needed in code | `money-gates.test.tsx` F5 (a wallet other than the runner: the runner line, no press), `ProjectPage.test.tsx` (no Open backing at Team) |
+| A8's Project-page half had no test | none needed in code | `ProjectPage.test.tsx` (a round past its 24 hours and not closed: no Back box, no Open backing; Backed with every round closed as the control) |
+| F9 had no test | none needed in code | `money-gates.test.tsx` F9 (a copy naming the same launch listed before, and after, the real record: the receipt keeps the real name; the first fails with the candidate loop taking the first record, the second with the code before F9) |
+| The weekly sheet's double-submit guard had no test | none needed in code | `WeeklySheet.test.tsx` (a quick double press posts once, and checks in once) |
+
+The money screens' shared test harness moved to `app/tests/helpers/money-harness.tsx`, and the waiting-call tests
+from `money-screens.test.tsx` to `money-sends.test.tsx`.
+
+Gates after these fixes (app only; nothing outside `app/` changed): `biome check .`, `tsc --noEmit`, copy check,
+px-text and file sizes (`CHECK_FILE_SIZES_BASE=3d7ecf83d`) clean; `vitest` **104 passed** (16 files; was 85);
+`pnpm build` with the bundle budget, entry 391 KiB of 450; Playwright `smoke` at 390x844 touch, **38 passed**.
+
+Still open from that review: when the record's `truncated` flag comes from the holders list alone, Receipts says the
+refund is not known yet. Telling which list was cut needs the record to say so (server work). The weekly sheet and
+Check in only share the check-in's waiting call but not the in-flight guard, which lives in each button's hook. The
+sheet is modal and cannot close while it sends, but a person who presses Check in only and then opens the sheet and
+posts while that check-in is still in flight sends a second check-in (it costs a second fee and changes nothing else).
