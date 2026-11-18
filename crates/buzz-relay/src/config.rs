@@ -2438,6 +2438,7 @@ mod tests {
         assert!(err.to_string().contains("BUZZ_CHAIN_HELPER_KEY"), "{err}");
 
         std::env::set_var("BUZZ_CHAIN_HELPER_KEY", dev_key);
+        std::env::set_var("BUZZ_CHAIN_HELPER_DAILY_GAS", "40000000");
         let helper = Config::from_env()
             .expect("helper on")
             .chain_reader
@@ -2450,7 +2451,7 @@ mod tests {
         );
         assert_eq!(
             (helper.daily_gas, helper.max_attempts, helper.batch),
-            (1_000_000, 8, 40)
+            (40_000_000, 8, 15)
         );
         let shown = format!("{helper:?}");
         assert!(
@@ -2462,6 +2463,8 @@ mod tests {
             ("BUZZ_CHAIN_HELPER_KEY", "0x1234"),
             ("BUZZ_CHAIN_HELPER_BATCH", "0"),
             ("BUZZ_CHAIN_HELPER_CALL_GAS_CAP", "9000000"),
+            // A day that cannot hold one call of the largest size (review B1).
+            ("BUZZ_CHAIN_HELPER_DAILY_GAS", "1000000"),
         ] {
             let keep = std::env::var(name).ok();
             std::env::set_var(name, bad);

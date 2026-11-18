@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context};
+use anyhow::anyhow;
 use buzz_evm_allowance::abi::selector;
 use sqlx::PgPool;
 
@@ -48,6 +48,10 @@ pub const MAX_PAUSE_SECS: f64 = 6.0 * 3_600.0;
 pub const FIRST_PAUSE_SECS: f64 = 60.0;
 /// The pause when a daily cap or an empty balance stops a send.
 pub const CAP_PAUSE_SECS: f64 = 3_600.0;
+/// The pause when the node did not answer a job's check or send: the job is
+/// put off without counting an attempt (a node that limits bursts must not
+/// end jobs for good), so the next pass starts with other jobs.
+pub const NODE_PAUSE_SECS: f64 = 300.0;
 /// `EarlierBackers.CHALLENGE`: no delivery inside 21 days of a consent.
 pub const CHALLENGE_SECS: u64 = 21 * 86_400;
 
@@ -72,6 +76,8 @@ pub struct HelperReport {
     pub returned: u32,
     /// Stuck transactions replaced at the same nonce with a higher fee.
     pub replaced: u32,
+    /// Jobs put off because the node did not answer their check or send.
+    pub node_errors: u32,
     /// A transaction is still in flight at the end of the pass.
     pub in_flight: bool,
 }
@@ -95,6 +101,27 @@ enum Outcome {
     Next,
     /// Stop the pass (a transaction in flight, or a cap reached).
     Stop,
+}
+
+/// Why a job could not be checked.
+enum Failure {
+    /// The job's own problem (a view reverted or answered nonsense): an
+    /// attempt is counted.
+    Job(String),
+    /// The node did not answer: the job is put off, nothing is counted.
+    Node(anyhow::Error),
+}
+
+/// A daily cap a send would pass.
+enum CapHit {
+    /// The whole cap: nothing more is sent this pass.
+    Whole(String),
+    /// The routine calls' share: only routine calls wait.
+    Routine(String),
+}
+
+fn job_failure(e: anyhow::Error) -> Failure {
+    Failure::Job(format!("{e:#}"))
 }
 
 fn word(data: &[u8], index: usize) -> Option<Word> {
@@ -130,6 +157,10 @@ fn addr_arg(a: &[u8; 20]) -> Word {
     let mut w = [0u8; 32];
     w[12..].copy_from_slice(a);
     w
+}
+
+fn margin(estimate: u64) -> u64 {
+    estimate.saturating_add(estimate / 5).saturating_add(10_000)
 }
 
 fn pause_after(attempts: i32) -> f64 {
@@ -186,14 +217,8 @@ impl Helper {
             }
         }
 
-        let mut due = store::due_jobs(pool, reader, 200).await?;
-        due.sort_by_key(|j| {
-            let priority = calls::HelperCall::parse(&j.call, j.target, &j.args)
-                .map(|c| c.priority())
-                .unwrap_or(0);
-            (priority, j.id)
-        });
-        due.truncate(JOBS_PER_PASS);
+        // Ordered in SQL: the calls a round or a sale waits on first.
+        let due = store::due_jobs(pool, reader, JOBS_PER_PASS as i64).await?;
         for job in due {
             if let Outcome::Stop = self.run(pool, reader, &job, head, &mut report).await? {
                 break;
@@ -238,18 +263,20 @@ impl Helper {
         target: &[u8; 20],
         data: Vec<u8>,
         index: usize,
-    ) -> anyhow::Result<u128> {
+    ) -> Result<u128, Failure> {
         match self.writer.call(target, &data).await {
-            Ok(answer) => uint(&answer, index),
-            Err(CallError::Reverted(d)) => Err(anyhow!("a view reverted: {}", short(&d))),
-            Err(CallError::Unavailable(e)) => Err(e),
+            Ok(answer) => uint(&answer, index).map_err(job_failure),
+            Err(CallError::Reverted(d)) => {
+                Err(Failure::Job(format!("a view reverted: {}", short(&d))))
+            }
+            Err(CallError::Unavailable(e)) => Err(Failure::Node(e)),
         }
     }
 
     /// Whether the call would still do something at the head, read from the
     /// contracts' views; batches lose the backers and entries that would make
     /// them revert.
-    async fn check(&self, call: HelperCall, head_time: u64) -> anyhow::Result<Check> {
+    async fn check(&self, call: HelperCall, head_time: u64) -> Result<Check, Failure> {
         let target = call.target();
         let positive = |v: u128, what: &str| {
             if v > 0 {
@@ -273,9 +300,9 @@ impl Helper {
                     let answer = match self.writer.call(rounds, &pos).await {
                         Ok(a) => a,
                         Err(CallError::Reverted(d)) => {
-                            anyhow::bail!("positionOf reverted: {}", short(&d))
+                            return Err(Failure::Job(format!("positionOf reverted: {}", short(&d))))
                         }
-                        Err(CallError::Unavailable(e)) => return Err(e),
+                        Err(CallError::Unavailable(e)) => return Err(Failure::Node(e)),
                     };
                     // Position { ask, held, bought, settled }: only an
                     // unsettled backer with an ask can be settled.
@@ -397,6 +424,60 @@ impl Helper {
         Ok(())
     }
 
+    /// The node did not answer for this job: put it off without counting an
+    /// attempt, and end the pass (the next pass starts with other jobs).
+    async fn node_failed(
+        &self,
+        pool: &PgPool,
+        job: &JobRow,
+        what: &str,
+        e: anyhow::Error,
+        report: &mut HelperReport,
+    ) -> anyhow::Result<Outcome> {
+        let reason = format!(
+            "the node did not answer ({what}): {}",
+            short(&format!("{e:#}"))
+        );
+        store::postpone(pool, job.id, &reason, NODE_PAUSE_SECS).await?;
+        report.node_errors += 1;
+        metrics::counter!("buzz_chain_helper_node_errors_total").increment(1);
+        tracing::warn!(job = %job.key, "chain helper: {reason}; put off");
+        Ok(Outcome::Stop)
+    }
+
+    /// The members of a batch whose own call succeeds at the head (each
+    /// simulated alone with `eth_call`; nothing is sent). Review I1: one
+    /// backer whose settle reverts must not hold back the rest of the batch.
+    async fn members_that_pass(&self, call: &HelperCall) -> Result<Vec<usize>, Failure> {
+        let mut keep = Vec::new();
+        for i in 0..call.members() {
+            let Some(one) = call.only(&[i]) else {
+                continue;
+            };
+            match self.writer.call(&one.target(), &one.calldata()).await {
+                Ok(_) => keep.push(i),
+                Err(CallError::Reverted(_)) => {}
+                Err(CallError::Unavailable(e)) => return Err(Failure::Node(e)),
+            }
+        }
+        Ok(keep)
+    }
+
+    /// The most gas one call of this kind may ask for: the per-call cap, and
+    /// never more than its daily budget (the whole cap for the calls a round
+    /// or a sale waits on, the routine share for the rest), so a call that is
+    /// sent can always fit an empty day.
+    fn gas_room(&self, call: &HelperCall) -> u64 {
+        let budget = if call.is_essential() {
+            self.config.daily_gas
+        } else {
+            self.config.daily_gas / 100 * calls::ROUTINE_SHARE_PERCENT
+        };
+        self.config
+            .call_gas_cap
+            .min(u64::try_from(budget).unwrap_or(u64::MAX))
+    }
+
     /// Check one due job at the head and send it.
     async fn run(
         &self,
@@ -417,39 +498,82 @@ impl Helper {
                 return Ok(Outcome::Next);
             }
         };
-        let call = match self.check(call, head.1).await {
+        // A routine call whose share of today's caps is used up waits
+        // without asking the node anything.
+        if !call.is_essential() {
+            if let Some(CapHit::Routine(reason) | CapHit::Whole(reason)) =
+                self.over_cap(pool, reader, 0, 0, false).await?
+            {
+                store::postpone(pool, job.id, &reason, CAP_PAUSE_SECS).await?;
+                report.postponed += 1;
+                return Ok(Outcome::Next);
+            }
+        }
+        let mut call = match self.check(call, head.1).await {
             Ok(Check::Due(call)) => call,
             Ok(Check::Nothing(reason)) => {
                 store::mark_dropped(pool, job.id, &reason, head.0).await?;
                 report.dropped += 1;
                 return Ok(Outcome::Next);
             }
-            Err(e) => {
-                // A view that reverts is the job's problem; a node that does
-                // not answer is not (the pass fails and nothing is counted).
-                if e.to_string().contains("reverted") {
-                    self.retry(pool, job, &format!("{e:#}"), report).await?;
-                    return Ok(Outcome::Next);
-                }
-                return Err(e);
+            Err(Failure::Job(e)) => {
+                self.retry(pool, job, &e, report).await?;
+                return Ok(Outcome::Next);
             }
+            Err(Failure::Node(e)) => return self.node_failed(pool, job, "a view", e, report).await,
         };
-        let target = call.target();
-        let data = call.calldata();
 
-        // The call itself, from the helper's address, at the head.
-        match self.writer.call(&target, &data).await {
-            Err(CallError::Reverted(detail)) => {
-                let lower = detail.to_ascii_lowercase();
-                if let Some(name) = call
-                    .nothing_to_do_errors()
-                    .iter()
-                    .find(|e| lower.contains(&hex::encode(selector(e))))
-                {
-                    store::mark_dropped(pool, job.id, &format!("nothing to do: {name}"), head.0)
+        // The call itself, from the helper's address, at the head. A batch
+        // that would revert is tried once more without the members whose own
+        // call reverts; they come back in a later batch of their own.
+        let mut narrowed = false;
+        let answer = loop {
+            match self.writer.call(&call.target(), &call.calldata()).await {
+                Ok(answer) => break answer,
+                Err(CallError::Unavailable(e)) => {
+                    return self.node_failed(pool, job, "eth_call", e, report).await
+                }
+                Err(CallError::Reverted(detail)) => {
+                    let lower = detail.to_ascii_lowercase();
+                    if let Some(name) = call
+                        .nothing_to_do_errors()
+                        .iter()
+                        .find(|e| lower.contains(&hex::encode(selector(e))))
+                    {
+                        store::mark_dropped(
+                            pool,
+                            job.id,
+                            &format!("nothing to do: {name}"),
+                            head.0,
+                        )
                         .await?;
-                    report.dropped += 1;
-                } else {
+                        report.dropped += 1;
+                        return Ok(Outcome::Next);
+                    }
+                    if !narrowed && call.members() > 1 {
+                        narrowed = true;
+                        let keep = match self.members_that_pass(&call).await {
+                            Ok(keep) => keep,
+                            Err(Failure::Node(e)) => {
+                                return self.node_failed(pool, job, "eth_call", e, report).await
+                            }
+                            Err(Failure::Job(e)) => {
+                                self.retry(pool, job, &e, report).await?;
+                                return Ok(Outcome::Next);
+                            }
+                        };
+                        if keep.len() < call.members() {
+                            if let Some(fewer) = call.only(&keep) {
+                                tracing::warn!(
+                                    job = %job.key,
+                                    left_out = call.members() - keep.len(),
+                                    "chain helper: members whose own call reverts are left out of the batch"
+                                );
+                                call = fewer;
+                                continue;
+                            }
+                        }
+                    }
                     self.retry(
                         pool,
                         job,
@@ -457,74 +581,120 @@ impl Helper {
                         report,
                     )
                     .await?;
-                }
-                return Ok(Outcome::Next);
-            }
-            Err(CallError::Unavailable(e)) => return Err(e.context("eth_call")),
-            Ok(answer) => {
-                let nothing = match &call {
-                    HelperCall::FinisherOpenPool { .. }
-                    | HelperCall::FinisherSettle { .. }
-                    | HelperCall::FinisherSweep { .. } => {
-                        is_zero_word(&answer, 0).then_some("the step answers false")
-                    }
-                    HelperCall::HolderCollect { .. } => (is_zero_word(&answer, 0)
-                        && is_zero_word(&answer, 1))
-                    .then_some("no fees to collect"),
-                    HelperCall::RoundsRelease { .. } | HelperCall::VesterClaim { .. } => {
-                        is_zero_word(&answer, 0).then_some("the call would move nothing")
-                    }
-                    _ => None,
-                };
-                if let Some(reason) = nothing {
-                    store::mark_dropped(pool, job.id, reason, head.0).await?;
-                    report.dropped += 1;
                     return Ok(Outcome::Next);
                 }
             }
-        }
-        let estimate = match self.writer.estimate_gas(&target, &data).await {
-            Ok(g) => g,
-            Err(CallError::Reverted(d)) => {
-                self.retry(
-                    pool,
-                    job,
-                    &format!("gas estimate reverted: {}", short(&d)),
-                    report,
-                )
-                .await?;
-                return Ok(Outcome::Next);
-            }
-            Err(CallError::Unavailable(e)) => return Err(e.context("eth_estimateGas")),
         };
-        let gas_limit = estimate.saturating_add(estimate / 5).saturating_add(10_000);
-        if gas_limit > self.config.call_gas_cap {
-            self.retry(
-                pool,
-                job,
-                &format!(
-                    "needs {gas_limit} gas, over the cap of {}",
-                    self.config.call_gas_cap
-                ),
-                report,
-            )
-            .await?;
+        let nothing = match &call {
+            HelperCall::FinisherOpenPool { .. }
+            | HelperCall::FinisherSettle { .. }
+            | HelperCall::FinisherSweep { .. } => {
+                is_zero_word(&answer, 0).then_some("the step answers false")
+            }
+            HelperCall::HolderCollect { .. } => (is_zero_word(&answer, 0)
+                && is_zero_word(&answer, 1))
+            .then_some("no fees to collect"),
+            HelperCall::RoundsRelease { .. } | HelperCall::VesterClaim { .. } => {
+                is_zero_word(&answer, 0).then_some("the call would move nothing")
+            }
+            _ => None,
+        };
+        if let Some(reason) = nothing {
+            store::mark_dropped(pool, job.id, reason, head.0).await?;
+            report.dropped += 1;
             return Ok(Outcome::Next);
         }
-        let fees = self.writer.fees().await.context("fees")?;
-        if let Some(reason) = self
-            .over_cap(pool, reader, gas_limit, fees.max_fee_per_gas)
+
+        // The gas, within the call's room. A batch over it is halved (review
+        // B1) and the first half sent; the rest is waiting still once that
+        // is final, so the builder makes it a job of its own. Each turn halves
+        // the batch, so this ends.
+        let room = self.gas_room(&call);
+        let gas_limit = loop {
+            let estimate = match self
+                .writer
+                .estimate_gas(&call.target(), &call.calldata())
+                .await
+            {
+                Ok(g) => g,
+                Err(CallError::Reverted(d)) => {
+                    self.retry(
+                        pool,
+                        job,
+                        &format!("gas estimate reverted: {}", short(&d)),
+                        report,
+                    )
+                    .await?;
+                    return Ok(Outcome::Next);
+                }
+                Err(CallError::Unavailable(e)) => {
+                    return self
+                        .node_failed(pool, job, "eth_estimateGas", e, report)
+                        .await
+                }
+            };
+            let gas_limit = margin(estimate);
+            if gas_limit <= room {
+                break gas_limit;
+            }
+            match call.first_half() {
+                Some(half) => {
+                    tracing::info!(
+                        job = %job.key,
+                        gas_limit,
+                        room,
+                        members = half.members(),
+                        "chain helper: batch over the gas room; sending its first half"
+                    );
+                    call = half;
+                }
+                None => {
+                    self.retry(
+                        pool,
+                        job,
+                        &format!("needs {gas_limit} gas, over the room of {room}"),
+                        report,
+                    )
+                    .await?;
+                    return Ok(Outcome::Next);
+                }
+            }
+        };
+        let fees = match self.writer.fees().await {
+            Ok(f) => f,
+            Err(e) => return self.node_failed(pool, job, "fees", e, report).await,
+        };
+        match self
+            .over_cap(
+                pool,
+                reader,
+                gas_limit,
+                fees.max_fee_per_gas,
+                call.is_essential(),
+            )
             .await?
         {
-            store::postpone(pool, job.id, &reason, CAP_PAUSE_SECS).await?;
-            report.postponed += 1;
-            tracing::warn!(job = %job.key, "chain helper: {reason}; put off");
-            return Ok(Outcome::Stop);
+            None => {}
+            Some(CapHit::Whole(reason)) => {
+                store::postpone(pool, job.id, &reason, CAP_PAUSE_SECS).await?;
+                report.postponed += 1;
+                tracing::warn!(job = %job.key, "chain helper: {reason}; put off");
+                return Ok(Outcome::Stop);
+            }
+            Some(CapHit::Routine(reason)) => {
+                store::postpone(pool, job.id, &reason, CAP_PAUSE_SECS).await?;
+                report.postponed += 1;
+                tracing::info!(job = %job.key, "chain helper: {reason}; put off");
+                return Ok(Outcome::Next);
+            }
         }
-        let nonce = self.writer.nonce().await.context("nonce")?;
+        let nonce = match self.writer.nonce().await {
+            Ok(n) => n,
+            Err(e) => return self.node_failed(pool, job, "nonce", e, report).await,
+        };
         let tx = TxRequest {
-            to: target,
-            data,
+            to: call.target(),
+            data: call.calldata(),
             nonce,
             gas_limit,
             fees,
@@ -532,27 +702,58 @@ impl Helper {
         self.broadcast(pool, reader, job, &call, tx, report).await
     }
 
-    /// `None` when `gas` at `fee` fits today's caps, else why not.
+    /// `None` when `gas` at `fee` fits today's caps (for a routine call, also
+    /// the routine share of them), else which cap it would pass.
     async fn over_cap(
         &self,
         pool: &PgPool,
         reader: &str,
         gas: u64,
         fee: u128,
-    ) -> anyhow::Result<Option<String>> {
-        let (used_gas, used_wei) = store::used_last_day(pool, reader).await?;
+        essential: bool,
+    ) -> anyhow::Result<Option<CapHit>> {
+        let used = store::used_last_day(pool, reader).await?;
         let reserve = u128::from(gas).saturating_mul(fee);
-        if used_gas.saturating_add(u128::from(gas)) > self.config.daily_gas {
-            return Ok(Some(format!(
-                "the daily gas cap ({}) is reached: {used_gas} used, {gas} more needed",
-                self.config.daily_gas
-            )));
+        let gas = u128::from(gas);
+        if used.gas.saturating_add(gas) > self.config.daily_gas {
+            return Ok(Some(CapHit::Whole(format!(
+                "the daily gas cap ({}) is reached: {} used, {gas} more needed",
+                self.config.daily_gas, used.gas
+            ))));
         }
-        if used_wei.saturating_add(reserve) > self.config.daily_spend_wei {
-            return Ok(Some(format!(
-                "the daily spend cap ({} wei) is reached: {used_wei} used, {reserve} more reserved",
-                self.config.daily_spend_wei
-            )));
+        if used.wei.saturating_add(reserve) > self.config.daily_spend_wei {
+            return Ok(Some(CapHit::Whole(format!(
+                "the daily spend cap ({} wei) is reached: {} used, {reserve} more reserved",
+                self.config.daily_spend_wei, used.wei
+            ))));
+        }
+        if !essential {
+            let share = |cap: u128| cap / 100 * calls::ROUTINE_SHARE_PERCENT;
+            let (gas_share, wei_share) = (
+                share(self.config.daily_gas),
+                share(self.config.daily_spend_wei),
+            );
+            // `>=` for the check before anything is asked (`gas` 0): a share
+            // used up exactly has no room left.
+            let over = |used: u128, more: u128, cap: u128| {
+                if more == 0 {
+                    used >= cap
+                } else {
+                    used.saturating_add(more) > cap
+                }
+            };
+            if over(used.routine_gas, gas, gas_share) {
+                return Ok(Some(CapHit::Routine(format!(
+                    "the routine calls' share of the daily gas cap ({gas_share}) is reached: {} used",
+                    used.routine_gas
+                ))));
+            }
+            if over(used.routine_wei, reserve, wei_share) {
+                return Ok(Some(CapHit::Routine(format!(
+                    "the routine calls' share of the daily spend cap ({wei_share} wei) is reached: {} used",
+                    used.routine_wei
+                ))));
+            }
         }
         Ok(None)
     }
@@ -586,6 +787,13 @@ impl Helper {
             Ok(_) => {
                 report.sent += 1;
                 tracing::info!(job = %job.key, tx = %hex0x(&hash), nonce = tx.nonce, "chain helper: sent");
+            }
+            Err(SendError::Rejected(detail))
+                if detail.to_ascii_lowercase().contains("already known") =>
+            {
+                // The node has this very transaction: it is in flight.
+                report.sent += 1;
+                tracing::info!(job = %job.key, tx = %hex0x(&hash), "chain helper: the node already has it");
             }
             Err(SendError::Rejected(detail)) => {
                 store::void_send(pool, reader, &hash).await?;
@@ -699,6 +907,18 @@ impl Helper {
             }
         }
         if latest > nonce || !known {
+            // Ours may have mined between the receipt check and the nonce
+            // read: look once more before cancelling its cost.
+            for s in &sends {
+                if let Some(r) = self.writer.receipt(&s.tx_hash).await? {
+                    for other in sends.iter().filter(|o| o.tx_hash != s.tx_hash) {
+                        store::void_send(pool, reader, &other.tx_hash).await?;
+                    }
+                    self.finish(pool, reader, job, &s.tx_hash, r, report)
+                        .await?;
+                    return Ok(Outcome::Next);
+                }
+            }
             // The nonce was used by another transaction, or the node no longer
             // has ours (a rollback, a dropped mempool): nothing of ours will
             // mine at this nonce. The job is checked again at the head.
@@ -734,8 +954,14 @@ impl Helper {
                 .max(bump(newest.max_priority_fee_per_gas)),
         };
         let call = HelperCall::parse(&job.call, job.target, &job.args)?;
-        if let Some(reason) = self
-            .over_cap(pool, reader, newest.gas_limit, fees.max_fee_per_gas)
+        if let Some(CapHit::Whole(reason) | CapHit::Routine(reason)) = self
+            .over_cap(
+                pool,
+                reader,
+                newest.gas_limit,
+                fees.max_fee_per_gas,
+                call.is_essential(),
+            )
             .await?
         {
             tracing::warn!(job = %job.key, "chain helper: stuck transaction not replaced: {reason}");
@@ -749,30 +975,36 @@ impl Helper {
             gas_limit: newest.gas_limit,
             fees,
         };
-        // Sent first and remembered after: a refused replacement leaves the
-        // first transaction in flight, still tracked.
+        // Remembered first, as the first send is, so a crash between the two
+        // cannot leave a broadcast transaction the caps never count. A refused
+        // replacement costs nothing and leaves the first one in flight.
+        let hash = self.writer.tx_hash(&tx)?;
+        store::record_send(
+            pool,
+            reader,
+            SendRow {
+                job_id: job.id,
+                tx_hash: &hash,
+                nonce,
+                gas_limit: tx.gas_limit,
+                max_fee_per_gas: fees.max_fee_per_gas,
+                max_priority_fee_per_gas: fees.max_priority_fee_per_gas,
+            },
+            &job.args,
+        )
+        .await?;
         match self.writer.send(&tx).await {
-            Ok(hash) => {
-                store::record_send(
-                    pool,
-                    reader,
-                    SendRow {
-                        job_id: job.id,
-                        tx_hash: &hash,
-                        nonce,
-                        gas_limit: tx.gas_limit,
-                        max_fee_per_gas: fees.max_fee_per_gas,
-                        max_priority_fee_per_gas: fees.max_priority_fee_per_gas,
-                    },
-                    &job.args,
-                )
-                .await?;
+            Ok(_) => {
                 report.sent += 1;
                 report.replaced += 1;
                 tracing::warn!(job = %job.key, nonce, tx = %hex0x(&hash), "chain helper: stuck transaction replaced with a higher fee");
             }
-            Err(e) => {
-                tracing::warn!(job = %job.key, nonce, "chain helper: replacement not sent: {e:?}");
+            Err(SendError::Rejected(detail)) => {
+                store::void_send(pool, reader, &hash).await?;
+                tracing::warn!(job = %job.key, nonce, "chain helper: replacement refused: {}", short(&detail));
+            }
+            Err(SendError::Uncertain(detail)) => {
+                tracing::warn!(job = %job.key, nonce, "chain helper: no clear answer to the replacement: {}", short(&detail));
             }
         }
         Ok(Outcome::Stop)
@@ -782,3 +1014,6 @@ impl Helper {
 #[cfg(test)]
 #[path = "helper_postgres_tests.rs"]
 mod helper_postgres_tests;
+#[cfg(test)]
+#[path = "review_m5p2_tests.rs"]
+mod review_m5p2_tests;

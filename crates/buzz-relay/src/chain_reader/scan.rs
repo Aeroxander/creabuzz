@@ -111,11 +111,8 @@ fn topic_key(log: &RawLog, index: usize) -> Option<Word> {
     log.topics.get(index).copied()
 }
 
-/// Contracts a decoded Launcher log reveals.
-fn discovered(log: &RawLog, event: &str, decoded: &Value) -> Vec<Contract> {
-    let Some(key) = topic_key(log, 1) else {
-        return Vec::new();
-    };
+/// Contracts a decoded Launcher log of project `key` in `block` reveals.
+fn discovered(key: Word, block: u64, event: &str, decoded: &Value) -> Vec<Contract> {
     let addr = |v: Option<&Value>| v.and_then(Value::as_str).and_then(parse_fixed::<20>);
     let mut out = Vec::new();
     match event {
@@ -132,7 +129,7 @@ fn discovered(log: &RawLog, event: &str, decoded: &Value) -> Vec<Contract> {
                         address,
                         role,
                         project_key: Some(key),
-                        from_block: log.block_number,
+                        from_block: block,
                     });
                 }
             }
@@ -145,7 +142,7 @@ fn discovered(log: &RawLog, event: &str, decoded: &Value) -> Vec<Contract> {
                     address,
                     role: Role::Auction,
                     project_key: Some(key),
-                    from_block: log.block_number,
+                    from_block: block,
                 });
             }
         }
@@ -158,7 +155,7 @@ fn discovered(log: &RawLog, event: &str, decoded: &Value) -> Vec<Contract> {
                     address,
                     role: Role::Earlier,
                     project_key: Some(key),
-                    from_block: log.block_number,
+                    from_block: block,
                 });
             }
         }
@@ -168,7 +165,7 @@ fn discovered(log: &RawLog, event: &str, decoded: &Value) -> Vec<Contract> {
                     address,
                     role: Role::Pair,
                     project_key: Some(key),
-                    from_block: log.block_number,
+                    from_block: block,
                 });
             }
         }
@@ -293,6 +290,37 @@ async fn scan_range(
         known.insert(c.address, c.clone());
         new_contracts.push(c);
     }
+    // Width of the pieces logs from before this range are read in: this
+    // range's own width, which shrinks when the node refuses too many logs.
+    let width = to - from + 1;
+    let mut raw: Vec<RawLog> = Vec::new();
+    // Contracts the stored Launcher rows name but the reader does not follow
+    // yet (it ran before they were followed: review I2). They are followed
+    // from now on, and their logs from where they were named up to this range
+    // are read too.
+    let mut late: Vec<Contract> = Vec::new();
+    for (key, block, event, decoded) in store::launcher_reveals(pool, &s.reader, from).await? {
+        for c in discovered(key, block, &event, &decoded) {
+            if !known.contains_key(&c.address) && !late.iter().any(|l| l.address == c.address) {
+                late.push(c);
+            }
+        }
+    }
+    if let Some(start) = late.iter().map(|c| c.from_block).min() {
+        let addrs: Vec<[u8; 20]> = late.iter().map(|c| c.address).collect();
+        // `start < from`; each piece moves `at` forward by at least one block.
+        let mut at = start;
+        while at < from {
+            let end = at.saturating_add(width - 1).min(from - 1);
+            raw.extend(source.logs(&addrs, &topics, at, end).await?);
+            at = end + 1;
+        }
+        tracing::warn!(reader = %s.reader, contracts = late.len(), from = start, "chain reader: following contracts named by stored rows; their earlier logs were read");
+        for c in late {
+            known.insert(c.address, c.clone());
+            new_contracts.push(c);
+        }
+    }
     // The pool manager is shared by every pool on the chain: only its `Swap`
     // logs for the projects' own pools are read, below.
     let mut asked: Vec<[u8; 20]> = known
@@ -300,8 +328,16 @@ async fn scan_range(
         .filter(|c| c.role != Role::PoolManager)
         .map(|c| c.address)
         .collect();
-    let mut raw: Vec<RawLog> = Vec::new();
     let mut seen: BTreeSet<(u64, u32)> = BTreeSet::new();
+    for log in &raw {
+        if log.removed {
+            bail!(
+                "the node returned a removed log in block {}; the chain moved",
+                log.block_number
+            );
+        }
+        seen.insert((log.block_number, log.log_index));
+    }
     let mut query_from = from;
     // Each round only asks for contracts found in the round before, and each
     // contract is found once, so this ends; the cap bounds a bad node.
@@ -328,8 +364,9 @@ async fn scan_range(
                         .first()
                         .and_then(|t| events::lookup(Role::Launcher, t))
                     {
-                        if let Ok(decoded) = events::decode(def, &log.topics, &log.data) {
-                            for c in discovered(&log, def.name, &decoded) {
+                        let decoded = events::decode(def, &log.topics, &log.data);
+                        if let (Ok(decoded), Some(key)) = (decoded, topic_key(&log, 1)) {
+                            for c in discovered(key, log.block_number, def.name, &decoded) {
                                 if !known.contains_key(&c.address) {
                                     found.push(c);
                                 }
@@ -351,6 +388,11 @@ async fn scan_range(
     // The projects' pool trades: `Swap` logs of the pools the Finishers
     // opened (stored, or opened in this range).
     let mut pools: HashMap<Word, Word> = store::pool_ids(pool, &s.reader).await?;
+    // Pools first named in this range, with their project and auction.
+    let mut named_here: Vec<(Word, Word, String)> = Vec::new();
+    // In this range, per (project, auction): the first pool step's block and
+    // the sale's last block.
+    let mut marks: HashMap<(Word, String), (Option<u64>, Option<u64>)> = HashMap::new();
     for log in &raw {
         let Some(c) = known.get(&log.address) else {
             continue;
@@ -362,16 +404,43 @@ async fn scan_range(
             .topics
             .first()
             .and_then(|t| events::lookup(Role::Finisher, t));
-        if let (Some(def), Some(key)) = (def, c.project_key) {
-            if def.name == "PoolOpened" {
-                if let Ok(decoded) = events::decode(def, &log.topics, &log.data) {
-                    if let Some(id) = decoded
-                        .get("poolId")
-                        .and_then(Value::as_str)
-                        .and_then(parse_fixed::<32>)
-                    {
-                        pools.insert(id, key);
+        let (Some(def), Some(key)) = (def, c.project_key) else {
+            continue;
+        };
+        if !matches!(def.name, "PoolOpened" | "PoolStep" | "SaleOpenedBy") {
+            continue;
+        }
+        let Ok(decoded) = events::decode(def, &log.topics, &log.data) else {
+            continue;
+        };
+        let Some(auction) = decoded.get("auction").and_then(Value::as_str) else {
+            continue;
+        };
+        let auction = auction.to_owned();
+        match def.name {
+            "PoolOpened" => {
+                if let Some(id) = decoded
+                    .get("poolId")
+                    .and_then(Value::as_str)
+                    .and_then(parse_fixed::<32>)
+                {
+                    if pools.insert(id, key).is_none() {
+                        named_here.push((id, key, auction));
                     }
+                }
+            }
+            "PoolStep" => {
+                let m = marks.entry((key, auction)).or_default();
+                m.0 = Some(m.0.map_or(log.block_number, |b| b.min(log.block_number)));
+            }
+            _ => {
+                if let Some(end) = decoded
+                    .get("endBlock")
+                    .and_then(Value::as_str)
+                    .and_then(|e| e.parse::<u64>().ok())
+                {
+                    let m = marks.entry((key, auction)).or_default();
+                    m.1 = Some(m.1.map_or(end, |b| b.max(end)));
                 }
             }
         }
@@ -384,10 +453,39 @@ async fn scan_range(
         let swap = events::topic_of(Role::PoolManager, "Swap")
             .ok_or_else(|| anyhow!("the event list has no pool Swap"))?;
         let ids: Vec<Word> = pools.keys().copied().collect();
-        for log in source
+        let mut swaps = source
             .logs_with_topic1(&manager, &swap, &ids, from, to)
-            .await?
-        {
+            .await?;
+        // A pool exists from its pool step (`Finisher.openPool`), but is named
+        // only by `settle()`, in a later transaction: trades in between that
+        // landed in ranges already committed are read back now (review I1).
+        for (id, key, auction) in &named_here {
+            let here = marks
+                .get(&(*key, auction.clone()))
+                .copied()
+                .unwrap_or_default();
+            let start = match here.0 {
+                Some(step) => Some(step),
+                None => match store::pool_start(pool, &s.reader, key, auction).await? {
+                    Some(b) => Some(b),
+                    None => here.1,
+                },
+            };
+            let Some(start) = start.filter(|b| *b < from) else {
+                continue;
+            };
+            let mut at = start;
+            while at < from {
+                let end = at.saturating_add(width - 1).min(from - 1);
+                swaps.extend(
+                    source
+                        .logs_with_topic1(&manager, &swap, &[*id], at, end)
+                        .await?,
+                );
+                at = end + 1;
+            }
+        }
+        for log in swaps {
             if log.removed {
                 bail!(
                     "the node returned a removed log in block {}; the chain moved",

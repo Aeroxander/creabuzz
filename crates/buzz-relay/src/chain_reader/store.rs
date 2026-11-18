@@ -268,13 +268,33 @@ pub async fn commit_range(pool: &PgPool, reader: &str, w: RangeWrite<'_>) -> any
         .execute(&mut *tx)
         .await?;
     }
+    // Logs from before the range: contracts or pools found late, read back
+    // to where they began (review I2 / I1). A row already stored is kept, and
+    // the projects they belong to are worked out and signed again.
+    let mut earlier_projects: Vec<Vec<u8>> = Vec::new();
     for l in w.logs {
+        let earlier = l.block_number < w.expected_next;
+        if earlier {
+            if let Some(k) = l.project_key {
+                if !earlier_projects
+                    .iter()
+                    .any(|e| e.as_slice() == k.as_slice())
+                {
+                    earlier_projects.push(k.to_vec());
+                }
+            }
+        }
         let topics: Vec<Vec<u8>> = l.topics.iter().map(|t| t.to_vec()).collect();
-        sqlx::query(
+        let inserted = sqlx::query(if earlier {
             "INSERT INTO chain_logs (reader, block_number, log_index, block_hash, tx_hash, address, \
                  role, project_key, event, topics, data, decoded) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-        )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) \
+             ON CONFLICT (reader, block_number, log_index) DO NOTHING"
+        } else {
+            "INSERT INTO chain_logs (reader, block_number, log_index, block_hash, tx_hash, address, \
+                 role, project_key, event, topics, data, decoded) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)"
+        })
         .bind(reader)
         .bind(i64_of(l.block_number)?)
         .bind(i32::try_from(l.log_index).context("log index")?)
@@ -288,7 +308,11 @@ pub async fn commit_range(pool: &PgPool, reader: &str, w: RangeWrite<'_>) -> any
         .bind(&l.data)
         .bind(&l.decoded)
         .execute(&mut *tx)
-        .await?;
+        .await?
+        .rows_affected();
+        if inserted == 0 {
+            continue;
+        }
         if let Some((key, moves)) = balance_moves(l) {
             for (account, delta) in moves {
                 sqlx::query(
@@ -318,6 +342,16 @@ pub async fn commit_range(pool: &PgPool, reader: &str, w: RangeWrite<'_>) -> any
                 .await?;
             }
         }
+    }
+    if !earlier_projects.is_empty() {
+        sqlx::query(
+            "UPDATE chain_project_numbers SET stale = true \
+             WHERE reader = $1 AND project_key = ANY($2)",
+        )
+        .bind(reader)
+        .bind(&earlier_projects)
+        .execute(&mut *tx)
+        .await?;
     }
     sqlx::query(
         "DELETE FROM chain_blocks b WHERE b.reader = $1 AND b.number < $2 AND b.number <> $3 \
@@ -705,4 +739,56 @@ pub async fn pool_ids(pool: &PgPool, reader: &str) -> anyhow::Result<HashMap<Wor
         out.insert(id, key);
     }
     Ok(out)
+}
+
+/// The stored Launcher rows that name contracts (`ProjectLaunched`, a sale's
+/// auction, project zero's claim, a Pair) in blocks before `before`: project
+/// key, block, event and decoded fields. A reader that ran before a contract
+/// kind was followed finds those contracts here (review I2).
+pub async fn launcher_reveals(
+    pool: &PgPool,
+    reader: &str,
+    before: u64,
+) -> anyhow::Result<Vec<(Word, u64, String, Value)>> {
+    let rows: Vec<(Vec<u8>, i64, String, Value)> = sqlx::query_as(
+        "SELECT project_key, block_number, event, decoded FROM chain_logs \
+         WHERE reader = $1 AND role = 'launcher' AND block_number < $2 \
+           AND project_key IS NOT NULL AND decoded IS NOT NULL \
+           AND event IN ('ProjectLaunched', 'SaleOpened', 'ReserveSaleOpened', 'ProjectZeroSplit', \
+                         'PairMade') \
+         ORDER BY block_number, log_index",
+    )
+    .bind(reader)
+    .bind(i64_of(before)?)
+    .fetch_all(pool)
+    .await?;
+    rows.into_iter()
+        .map(|(key, block, event, decoded)| Ok((word_of(key)?, u64_of(block)?, event, decoded)))
+        .collect()
+}
+
+/// Where a sale's pool can first trade, from the stored Finisher rows of
+/// project `key` for `auction` (lower-case `0x` text): the block of its pool
+/// step (`PoolStep`, the transaction that makes the pool), else the sale's
+/// last block (`SaleOpenedBy.endBlock`; no pool step runs before it).
+pub async fn pool_start(
+    pool: &PgPool,
+    reader: &str,
+    key: &Word,
+    auction: &str,
+) -> anyhow::Result<Option<u64>> {
+    let start: Option<i64> = sqlx::query_scalar(
+        "SELECT coalesce( \
+             (SELECT min(block_number) FROM chain_logs WHERE reader = $1 AND project_key = $2 \
+                AND role = 'finisher' AND event = 'PoolStep' AND decoded->>'auction' = $3), \
+             (SELECT max((decoded->>'endBlock')::bigint) FROM chain_logs WHERE reader = $1 \
+                AND project_key = $2 AND role = 'finisher' AND event = 'SaleOpenedBy' \
+                AND decoded->>'auction' = $3))",
+    )
+    .bind(reader)
+    .bind(key.as_slice())
+    .bind(auction)
+    .fetch_one(pool)
+    .await?;
+    start.map(u64_of).transpose()
 }

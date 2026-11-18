@@ -141,6 +141,46 @@ pub const NAMES: [&str; 14] = [
     "earlier.deliverMany",
 ];
 
+/// The share of the daily gas and spend caps the calls nothing waits on may
+/// use (see [`HelperCall::is_essential`]).
+pub const ROUTINE_SHARE_PERCENT: u128 = 50;
+
+/// The calls a round or a sale waits on (see [`HelperCall::is_essential`]).
+pub const ESSENTIAL: [&str; 6] = [
+    "rounds.close",
+    "rounds.settleMany",
+    "finisher.openPool",
+    "finisher.settle",
+    "finisher.sweep",
+    "finisher.abandon",
+];
+
+/// Whether the stored call `name` is one of [`ESSENTIAL`].
+pub fn is_essential_name(name: &str) -> bool {
+    ESSENTIAL.contains(&name)
+}
+
+/// The order of a stored call in a pass (lower first).
+pub fn priority_of(name: &str) -> u8 {
+    match name {
+        "rounds.close" => 0,
+        "rounds.settleMany" => 1,
+        "finisher.openPool" => 2,
+        "finisher.settle" => 3,
+        "finisher.sweep" => 4,
+        "finisher.abandon" => 5,
+        _ => 6,
+    }
+}
+
+/// Every stored call name, in pass order (the due jobs are read in this order
+/// in SQL, so a long queue of routine calls cannot hide a close).
+pub fn names_by_priority() -> Vec<&'static str> {
+    let mut names = NAMES.to_vec();
+    names.sort_by_key(|n| priority_of(n));
+    names
+}
+
 fn uint_word(v: u64) -> Word {
     let mut w = [0u8; 32];
     w[24..].copy_from_slice(&v.to_be_bytes());
@@ -361,15 +401,67 @@ impl HelperCall {
     /// Order inside one pass: a sale's steps run in their order, closes before
     /// settles, so a later step's check sees the earlier step's effect.
     pub fn priority(&self) -> u8 {
+        priority_of(self.name())
+    }
+
+    /// Whether a round or a sale waits on this call (a close, a settle, the
+    /// sale's finish). Part of the daily caps is kept for these: the other
+    /// calls (releases, sweeps, claims, deliveries, fee collection) may use at
+    /// most [`ROUTINE_SHARE_PERCENT`] of them (review I2: one project's many
+    /// small claims must not hold back another project's close).
+    pub fn is_essential(&self) -> bool {
+        is_essential_name(self.name())
+    }
+
+    /// How many backers or entries a batch call carries (1 for the others).
+    pub fn members(&self) -> usize {
         match self {
-            HelperCall::RoundsClose { .. } => 0,
-            HelperCall::RoundsSettleMany { .. } => 1,
-            HelperCall::FinisherOpenPool { .. } => 2,
-            HelperCall::FinisherSettle { .. } => 3,
-            HelperCall::FinisherSweep { .. } => 4,
-            HelperCall::FinisherAbandon { .. } => 5,
-            _ => 6,
+            HelperCall::RoundsSettleMany { backers, .. } => backers.len(),
+            HelperCall::EarlierDeliverMany { entries, .. } => entries.len(),
+            _ => 1,
         }
+    }
+
+    /// The same batch call with only the members at the indices in `keep`,
+    /// in their order; `None` for a call that is not a batch or an empty pick.
+    pub fn only(&self, keep: &[usize]) -> Option<HelperCall> {
+        if keep.is_empty() {
+            return None;
+        }
+        match self {
+            HelperCall::RoundsSettleMany {
+                rounds,
+                round,
+                backers,
+            } => Some(HelperCall::RoundsSettleMany {
+                rounds: *rounds,
+                round: *round,
+                backers: keep
+                    .iter()
+                    .filter_map(|i| backers.get(*i).copied())
+                    .collect(),
+            }),
+            HelperCall::EarlierDeliverMany { claim, entries } => {
+                Some(HelperCall::EarlierDeliverMany {
+                    claim: *claim,
+                    entries: keep
+                        .iter()
+                        .filter_map(|i| entries.get(*i).copied())
+                        .collect(),
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// The first half of a batch of two or more (review B1: a batch over the
+    /// gas cap is made smaller, never retried as it is).
+    pub fn first_half(&self) -> Option<HelperCall> {
+        let n = self.members();
+        if n < 2 {
+            return None;
+        }
+        self.only(&(0..n / 2).collect::<Vec<_>>())
     }
 
     /// Custom errors (their selectors) that mean "nothing for this job to do",

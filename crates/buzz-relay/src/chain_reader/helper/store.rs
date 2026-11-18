@@ -141,16 +141,25 @@ pub async fn in_flight(pool: &PgPool, reader: &str) -> anyhow::Result<Vec<JobRow
     rows.iter().map(job_of).collect()
 }
 
-/// Pending jobs whose next try has come, oldest first, at most `limit`.
+/// Pending jobs whose next try has come, at most `limit`: the calls a round or
+/// a sale waits on first (in their order, [`super::calls::priority_of`]), then
+/// the oldest first. Ordered in SQL, so a long queue of routine calls cannot
+/// keep a close out of the first `limit` (review I2).
 pub async fn due_jobs(pool: &PgPool, reader: &str, limit: i64) -> anyhow::Result<Vec<JobRow>> {
+    let order: Vec<String> = super::calls::names_by_priority()
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
     let rows = sqlx::query(concat!(
         "SELECT ",
         columns!(),
         " FROM chain_helper_jobs \
-         WHERE reader = $1 AND state = 'pending' AND next_try_at <= now() ORDER BY id LIMIT $2"
+         WHERE reader = $1 AND state = 'pending' AND next_try_at <= now() \
+         ORDER BY array_position($3::text[], call), id LIMIT $2"
     ))
     .bind(reader)
     .bind(limit)
+    .bind(&order)
     .fetch_all(pool)
     .await?;
     rows.iter().map(job_of).collect()
@@ -390,23 +399,51 @@ pub async fn back_to_pending(pool: &PgPool, id: i64, reason: &str) -> anyhow::Re
     Ok(())
 }
 
+/// What the helper used in the last 24 hours.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Used {
+    /// Gas, every call.
+    pub gas: u128,
+    /// Wei, every call.
+    pub wei: u128,
+    /// Gas of the routine calls (not [`super::calls::ESSENTIAL`]).
+    pub routine_gas: u128,
+    /// Wei of the routine calls.
+    pub routine_wei: u128,
+}
+
 /// Gas and wei used in the last 24 hours: what mined at its real cost, what is
-/// in flight at what it reserved.
-pub async fn used_last_day(pool: &PgPool, reader: &str) -> anyhow::Result<(u128, u128)> {
+/// in flight at what it reserved; in all, and by the routine calls (a send
+/// whose job is gone counts as routine).
+pub async fn used_last_day(pool: &PgPool, reader: &str) -> anyhow::Result<Used> {
+    let essential: Vec<String> = super::calls::ESSENTIAL
+        .iter()
+        .map(|n| (*n).to_owned())
+        .collect();
     let row = sqlx::query(
-        "SELECT coalesce(sum(coalesce(gas_used, gas_limit)), 0)::text AS gas, \
-                coalesce(sum(coalesce(spent_wei, reserved_wei)), 0)::text AS wei \
-         FROM chain_helper_sends WHERE reader = $1 AND sent_at > now() - interval '24 hours'",
+        "SELECT coalesce(sum(coalesce(s.gas_used, s.gas_limit)), 0)::text AS gas, \
+                coalesce(sum(coalesce(s.spent_wei, s.reserved_wei)), 0)::text AS wei, \
+                coalesce(sum(coalesce(s.gas_used, s.gas_limit)) \
+                    FILTER (WHERE j.call IS NULL OR NOT (j.call = ANY($2))), 0)::text AS routine_gas, \
+                coalesce(sum(coalesce(s.spent_wei, s.reserved_wei)) \
+                    FILTER (WHERE j.call IS NULL OR NOT (j.call = ANY($2))), 0)::text AS routine_wei \
+         FROM chain_helper_sends s LEFT JOIN chain_helper_jobs j ON j.id = s.job_id \
+         WHERE s.reader = $1 AND s.sent_at > now() - interval '24 hours'",
     )
     .bind(reader)
+    .bind(&essential)
     .fetch_one(pool)
     .await?;
-    let gas: String = row.try_get("gas")?;
-    let wei: String = row.try_get("wei")?;
-    Ok((
-        gas.parse().context("gas used")?,
-        wei.parse().context("wei spent")?,
-    ))
+    let number = |name: &str| -> anyhow::Result<u128> {
+        let text: String = row.try_get(name)?;
+        text.parse().with_context(|| format!("{name} used"))
+    };
+    Ok(Used {
+        gas: number("gas")?,
+        wei: number("wei")?,
+        routine_gas: number("routine_gas")?,
+        routine_wei: number("routine_wei")?,
+    })
 }
 
 /// Forget ended repeating jobs older than five weeks (their period is long

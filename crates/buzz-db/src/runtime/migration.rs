@@ -780,7 +780,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 67);
+        assert_eq!(migrations.len(), 68);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1703,6 +1703,25 @@ mod postgres_tests {
                 "schema.sql must declare {table}"
             );
             assert!(!chain_balances.contains(&format!("attach_community_write_fence('{table}')")));
+        }
+    }
+
+    /// Migration 0068 fills the chain reader's running balances from the
+    /// Transfers already stored (review I2). Data only: it changes no table,
+    /// so the desired-state schema needs nothing new for it.
+    #[test]
+    fn chain_balances_backfill_is_data_only() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[67].version, 68);
+        let backfill = migrations[67].sql.as_str().to_ascii_uppercase();
+        assert!(backfill.contains("INSERT INTO CHAIN_BALANCE_CHANGES"));
+        assert!(backfill.contains("INSERT INTO CHAIN_BALANCES"));
+        for ddl in ["CREATE ", "ALTER ", "DROP "] {
+            assert!(
+                !backfill.contains(ddl),
+                "migration 0068 must be data only ({ddl})"
+            );
         }
     }
 

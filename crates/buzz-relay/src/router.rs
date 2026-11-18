@@ -1110,8 +1110,11 @@ async fn status_handler(State(state): State<Arc<AppState>>) -> impl IntoResponse
     if state.config.chain_reader.is_some() {
         // Unix seconds of the chain reader's last pass that worked (null:
         // none yet). A number that stops moving means old project numbers.
-        payload["chain_reader"] =
-            json!({ "last_good_pass": crate::chain_reader::last_good_pass() });
+        // The helper's own number (null: off, or no good pass yet).
+        payload["chain_reader"] = json!({
+            "last_good_pass": crate::chain_reader::last_good_pass(),
+            "helper_last_good_pass": crate::chain_reader::last_good_helper_pass(),
+        });
     }
     Json(payload)
 }

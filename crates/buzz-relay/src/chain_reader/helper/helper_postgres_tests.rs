@@ -41,6 +41,8 @@ pub(super) struct FakeWriter {
     nonce: AtomicU64,
     pub(super) hold: AtomicBool,
     mined_block: AtomicU64,
+    /// The node does not answer calls and estimates.
+    pub(super) down: AtomicBool,
 }
 
 impl FakeWriter {
@@ -56,6 +58,7 @@ impl FakeWriter {
             nonce: AtomicU64::new(0),
             hold: AtomicBool::new(false),
             mined_block: AtomicU64::new(1_000_000),
+            down: AtomicBool::new(false),
         }
     }
 
@@ -101,6 +104,11 @@ impl ChainWriter for FakeWriter {
         self.address
     }
     async fn call(&self, _to: &[u8; 20], data: &[u8]) -> Result<Vec<u8>, CallError> {
+        if self.down.load(Ordering::SeqCst) {
+            return Err(CallError::Unavailable(anyhow::anyhow!(
+                "429 Too Many Requests"
+            )));
+        }
         let mut sel = [0u8; 4];
         sel.copy_from_slice(&data[..4]);
         if let Some(r) = self.reverts.lock().expect("lock").get(&sel) {
@@ -196,7 +204,7 @@ pub(super) async fn setup_helper(
     (reader, state)
 }
 
-fn closed(asked: u128) -> ([u8; 20], Vec<Word>, Vec<u8>) {
+pub(super) fn closed(asked: u128) -> ([u8; 20], Vec<Word>, Vec<u8>) {
     (
         ROUNDS,
         vec![topic(Role::Rounds, "RoundClosed"), u(1)],
@@ -213,13 +221,16 @@ fn asked_by(who: &[u8; 20], amount: u128) -> ([u8; 20], Vec<Word>, Vec<u8>) {
 }
 
 /// Head `n` blocks later, empty.
-fn idle(chain: &FakeChain, from_time: u64, n: u64) {
+pub(super) fn idle(chain: &FakeChain, from_time: u64, n: u64) {
     for i in 0..n {
         chain.mine(from_time + i, 1, vec![]);
     }
 }
 
-async fn jobs(state: &crate::state::AppState, reader: &str) -> Vec<(String, String, i32)> {
+pub(super) async fn jobs(
+    state: &crate::state::AppState,
+    reader: &str,
+) -> Vec<(String, String, i32)> {
     sqlx::query_as(
         "SELECT call, state, attempts FROM chain_helper_jobs WHERE reader = $1 ORDER BY id",
     )
@@ -377,8 +388,8 @@ async fn a_reverting_call_waits_longer_each_time_and_ends_failed() {
 async fn a_rollback_past_the_row_that_made_a_job_due_drops_it() {
     let chain = Arc::new(FakeChain::default());
     let writer = Arc::new(FakeWriter::new());
-    // A cap too small for any call keeps the job waiting.
-    let cfg = helper_config(|c| c.daily_gas = 50_000);
+    // A spend cap too small for any call keeps the job waiting.
+    let cfg = helper_config(|c| c.daily_spend_wei = 1);
     let (reader, state) = setup_helper(Arc::clone(&chain), Arc::clone(&writer), cfg, None).await;
     let launcher = reader.config.launcher;
     let mut launch = with_launcher(launch_logs(), launcher);

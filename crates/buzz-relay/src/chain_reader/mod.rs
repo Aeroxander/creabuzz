@@ -80,6 +80,10 @@ pub struct PassReport {
     pub published: PublishReport,
     /// The helper's pass (only by the writer, when the helper is on).
     pub helper: Option<helper::HelperReport>,
+    /// Why the helper's pass failed, when it did. The helper runs as its own
+    /// step: its failure is logged and counted but never fails the reader's
+    /// pass, which has scanned and signed already (review I3).
+    pub helper_error: Option<String>,
     /// Whether this replica held the writer lock.
     pub writer: bool,
 }
@@ -191,7 +195,19 @@ impl ChainReader {
         if report.writer && !scanned.behind {
             report.published = self.publish_pass(scanned.head).await?;
             if let Some(helper) = &self.helper {
-                report.helper = Some(self.helper_pass(helper, scanned.head).await?);
+                match self.helper_pass(helper, scanned.head).await {
+                    Ok(h) => {
+                        if h.node_errors == 0 {
+                            record_good_helper_pass();
+                        }
+                        report.helper = Some(h);
+                    }
+                    Err(e) => {
+                        metrics::counter!("buzz_chain_helper_pass_failed_total").increment(1);
+                        tracing::error!(reader = %self.reader_id(), "chain helper pass failed: {e:#}");
+                        report.helper_error = Some(format!("{e:#}"));
+                    }
+                }
             }
         }
         report.scanned = scanned;
@@ -424,10 +440,6 @@ impl ChainReader {
     }
 }
 
-fn writer_address(w: &dyn helper::writer::ChainWriter) -> [u8; 20] {
-    w.address()
-}
-
 /// Start the reader from the relay's configuration, if it is on. It checks the
 /// node serves the configured chain before its first pass; a failed pass is
 /// logged and retried with a growing pause (at most ten minutes), never ended.
@@ -462,7 +474,7 @@ pub fn spawn(state: Arc<AppState>) -> anyhow::Result<Option<tokio::task::JoinHan
             chain_id,
             RPC_TIMEOUT,
         );
-        tracing::info!(address = %hex0x(&writer_address(&writer)), "chain helper on");
+        tracing::info!(address = %hex0x(&helper::writer::ChainWriter::address(&writer)), "chain helper on");
         reader = reader.with_writer(Arc::new(writer));
     }
     let reader = Arc::new(reader);
@@ -495,6 +507,23 @@ fn record_good_pass() {
     let now = chrono::Utc::now().timestamp();
     LAST_GOOD_PASS.store(now, Ordering::Relaxed);
     metrics::gauge!("buzz_chain_reader_last_good_pass_seconds").set(now as f64);
+}
+
+/// Unix seconds of the helper's last pass that worked with the node answering
+/// every job it asked about (0: none yet).
+static LAST_GOOD_HELPER_PASS: AtomicI64 = AtomicI64::new(0);
+
+/// When the helper last finished a pass without an error (unix seconds), if
+/// ever: its own health number, apart from the reader's (also the
+/// `buzz_chain_helper_last_good_pass_seconds` gauge).
+pub fn last_good_helper_pass() -> Option<i64> {
+    Some(LAST_GOOD_HELPER_PASS.load(Ordering::Relaxed)).filter(|t| *t > 0)
+}
+
+fn record_good_helper_pass() {
+    let now = chrono::Utc::now().timestamp();
+    LAST_GOOD_HELPER_PASS.store(now, Ordering::Relaxed);
+    metrics::gauge!("buzz_chain_helper_last_good_pass_seconds").set(now as f64);
 }
 
 /// The reader's loop: a pass, then a pause (doubling after failed passes, at
@@ -627,5 +656,7 @@ mod supervise_tests {
 mod hardening_postgres_tests;
 #[cfg(test)]
 mod postgres_tests;
+#[cfg(test)]
+mod review_m5p2_postgres_tests;
 #[cfg(test)]
 mod review_postgres_tests;
