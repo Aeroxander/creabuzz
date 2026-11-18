@@ -12,7 +12,7 @@ import {
 import type { MoneyCall } from "../money/calls";
 
 /** A call's data: the signature's selector and its arguments. */
-export function callData(
+function callData(
   signature: string,
   types: readonly AbiType[] = [],
   values: readonly AbiValue[] = [],
@@ -122,7 +122,7 @@ export function giveSharesData(to: string, amount: bigint): string {
 }
 
 /** The data of `spend(to, amount)` (the Treasury's, and a Pair signer's alone, which has the same shape). */
-export function spendData(to: string, amount: bigint): string {
+function spendData(to: string, amount: bigint): string {
   return callData(
     "spend(address,uint256)",
     ["address", "uint256"],

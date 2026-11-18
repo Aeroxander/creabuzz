@@ -24,7 +24,7 @@ export interface SaleNumbers {
   abandonedAt: number | null;
 }
 
-export interface BidTotals {
+interface BidTotals {
   auction: string;
   count: number;
   amount: bigint;
@@ -152,4 +152,4 @@ export function auctionState(
 }
 
 /** No bids in the last 720 blocks of a sale (`MinBid.closingBlocks`). */
-export const BID_CLOSING_BLOCKS = 720;
+const BID_CLOSING_BLOCKS = 720;

@@ -9,11 +9,14 @@ import {
 } from "./server-settings.ts";
 
 test("the server's yes and no are read, and nothing else counts", () => {
+  // `trading` (milestone 7) is read the same way; nothing here says it, so it is null.
   assert.deepEqual(parseServerSettings({ investing: true }), {
     investing: true,
+    trading: null,
   });
   assert.deepEqual(parseServerSettings({ investing: false }), {
     investing: false,
+    trading: null,
   });
   for (const says of [
     {},
@@ -30,7 +33,7 @@ test("the server's yes and no are read, and nothing else counts", () => {
   ]) {
     assert.deepEqual(
       parseServerSettings(says),
-      { investing: null },
+      { investing: null, trading: null },
       JSON.stringify(says),
     );
   }

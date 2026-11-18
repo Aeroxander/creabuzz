@@ -10,7 +10,7 @@ import type { TeamWallet } from "./use-wallets";
 const SHARE = 10n ** 18n;
 
 /** The amounts Give Shares offers, as parts of all 1,000,000,000 Shares: nothing is typed. */
-export const GIFT_CHOICES = [
+const GIFT_CHOICES = [
   { label: "100,000 Shares", detail: "0.01%", amount: 100_000n * SHARE },
   { label: "1,000,000 Shares", detail: "0.1%", amount: 1_000_000n * SHARE },
   { label: "10,000,000 Shares", detail: "1%", amount: 10_000_000n * SHARE },
