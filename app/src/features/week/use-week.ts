@@ -84,3 +84,8 @@ export function usePostWeekly() {
     },
   });
 }
+
+/** The name a project's check-in step is remembered under while its call has not landed (shared by both buttons). */
+export function checkInAction(chainId: number, treasury: string): string {
+  return `check-in:${chainId}:${treasury.toLowerCase()}`;
+}

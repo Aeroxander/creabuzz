@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { MoneyCall } from "./calls";
+import { backCalls, type MoneyCall } from "./calls";
+import { moneyProblem } from "./money-copy";
 import {
   addressFromWord,
   type Eip1193Provider,
@@ -110,6 +111,86 @@ describe("the injected wallet", () => {
     expect(await wallet.connectedAddress()).toBeNull();
     const error = await wallet.sendCalls(calls, 1).catch((e: unknown) => e);
     expect((error as WalletStepError).reason).toBe("no-wallet");
+  });
+
+  it("a receipt lookup that fails after the call went out is not landed yet, never 'nothing changed' (F3)", async () => {
+    const sent: unknown[] = [];
+    const p: Eip1193Provider = {
+      async request({ method, params }) {
+        if (method === "eth_requestAccounts") return [FROM];
+        if (method === "eth_chainId") return "0x7a69";
+        if (method === "eth_sendTransaction") {
+          sent.push(params?.[0]);
+          return `0x${sent.length.toString(16).padStart(64, "0")}`;
+        }
+        // The approval landed; the wallet's node then rate-limits every receipt lookup for the ask.
+        if (method === "eth_getTransactionReceipt") {
+          if (params?.[0] === `0x${"1".padStart(64, "0")}`)
+            return { status: "0x1" };
+          throw { code: -32005, message: "request rate exceeded" };
+        }
+        throw new Error(method);
+      },
+    };
+    const error = await injectedWallet(p, { polls: 2, pollMs: 0 })
+      .sendCalls(
+        backCalls({
+          quote: `0x${"11".repeat(20)}`,
+          rounds: `0x${"22".repeat(20)}`,
+          round: 2,
+          amount: 25_000_000n,
+        }),
+        31337,
+      )
+      .catch((e: unknown) => e);
+    expect(sent).toHaveLength(2);
+    expect((error as WalletStepError).reason).toBe("pending");
+    expect((error as WalletStepError).hash).toBe(`0x${"2".padStart(64, "0")}`);
+    expect(moneyProblem(error, "back")).not.toMatch(
+      /Nothing changed|Nothing was taken/,
+    );
+  });
+
+  it("a lookup that fails once is one more poll, and the call then lands", async () => {
+    let lookups = 0;
+    const p: Eip1193Provider = {
+      async request({ method }) {
+        if (method === "eth_requestAccounts") return [FROM];
+        if (method === "eth_chainId") return "0x7a69";
+        if (method === "eth_sendTransaction") return "0xabc";
+        if (method === "eth_getTransactionReceipt") {
+          lookups += 1;
+          if (lookups === 1) throw new Error("connection dropped");
+          return { status: "0x1" };
+        }
+        throw new Error(method);
+      },
+    };
+    await expect(
+      injectedWallet(p, { pollMs: 0 }).sendCalls([calls[0]], 31337),
+    ).resolves.toEqual({ txHash: "0xabc", status: "confirmed" });
+  });
+
+  it("says what became of a call sent earlier", async () => {
+    const answers: Record<string, { receipt: unknown; tx: unknown }> = {
+      "0x1": { receipt: { status: "0x1" }, tx: {} },
+      "0x2": { receipt: { status: "0x0" }, tx: {} },
+      "0x3": { receipt: null, tx: { hash: "0x3" } },
+      "0x4": { receipt: null, tx: null },
+    };
+    const p: Eip1193Provider = {
+      async request({ method, params }) {
+        const a = answers[String(params?.[0])];
+        if (method === "eth_getTransactionReceipt") return a.receipt;
+        if (method === "eth_getTransactionByHash") return a.tx;
+        throw new Error(method);
+      },
+    };
+    const wallet = injectedWallet(p);
+    expect(await wallet.outcomeOf("0x1")).toBe("landed");
+    expect(await wallet.outcomeOf("0x2")).toBe("reverted");
+    expect(await wallet.outcomeOf("0x3")).toBe("waiting");
+    expect(await wallet.outcomeOf("0x4")).toBe("unknown");
   });
 
   it("reads an address out of a call's answer", () => {

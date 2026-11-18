@@ -139,3 +139,14 @@ export function backingSplit(amount: bigint): {
   const now = (amount * 15n) / 100n;
   return { platform, now, later: amount - platform - now };
 }
+
+/**
+ * The most of `amount` that can ever come back: the 82 of each 100 held for release, less 5 of each 100 of it, the day
+ * the round settles (77.90 of each 100). It falls as the money is released over 26 weeks of check-ins, to nothing. The
+ * 3 to the platform and the 15 paid at once never come back (`Rounds.HELD_BPS`, `Rounds.REFUND_FEE_BPS`).
+ */
+export function mostBack(amount: bigint): bigint {
+  const held = (amount * 8_200n) / 10_000n;
+  const fee = (held * 500n + 9_999n) / 10_000n; // rounded up, as the contract does
+  return held - fee;
+}

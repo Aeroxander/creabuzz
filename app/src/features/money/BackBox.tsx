@@ -4,7 +4,7 @@ import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
 import { Sheet } from "../../ui/sheet";
 import { useToast } from "../../ui/toast";
-import { backCalls, backingSplit, parseDollars } from "./calls";
+import { backCalls, backingSplit, mostBack, parseDollars } from "./calls";
 import { OwnershipLine, priceLine } from "./MoneyTab";
 import { moneyProblem } from "./money-copy";
 import {
@@ -13,6 +13,7 @@ import {
   LOWER_WINDOW_SECONDS,
   type ProjectNumbers,
   type RoundNumbers,
+  sharesPerDollar,
   sharesText,
   timeText,
 } from "./numbers";
@@ -45,6 +46,12 @@ export function BackBox({
   const [problem, setProblem] = useState<string | null>(null);
   const [amount, setAmount] = useState<bigint | null>(null);
   const titleId = useId();
+  // Earlier rounds at another price are named here, where money is offered, not only on the Money tab.
+  const otherPrices = numbers.rounds.filter(
+    (r) =>
+      r.round < round.round &&
+      r.sharesPerRawDollar !== round.sharesPerRawDollar,
+  );
 
   const review = () => {
     // More than the round holds may be asked: then everyone gets the same part and the rest comes back.
@@ -71,6 +78,25 @@ export function BackBox({
         <p className="mt-1 text-sm text-muted">
           Round {round.round} is open until {timeText(round.closesAt)}.{" "}
           {priceLine(round)}.
+        </p>
+        {otherPrices.length > 0 ? (
+          <p
+            className="mt-1 text-sm text-muted"
+            data-testid="back-other-prices"
+          >
+            {otherPrices
+              .map(
+                (r) =>
+                  `Round ${r.round} was priced at ${sharesPerDollar(r.sharesPerRawDollar)} Shares a dollar.`,
+              )
+              .join(" ")}
+          </p>
+        ) : null}
+        <p className="mt-1 text-sm text-muted" data-testid="back-asked">
+          <span className="num">{dollarsText(round.asked)}</span> dollars asked
+          so far by {round.backers} {round.backers === 1 ? "backer" : "backers"}
+          , of <span className="num">{dollarsText(round.size)}</span> this round
+          holds.
         </p>
       </div>
       <form
@@ -131,19 +157,27 @@ function BackSheet({
   now: number;
   onDone: () => void;
 }) {
-  const send = useMoneySend();
+  const rounds = numbers.contracts.rounds;
+  const send = useMoneySend(
+    `back:${numbers.chainId}:${rounds ?? ""}:${round.round}`,
+  );
   const toast = useToast();
   const [problem, setProblem] = useState<string | null>(null);
-  const rounds = numbers.contracts.rounds;
   const value = amount ?? 0n;
   const split = backingSplit(value);
-  const shares = value * round.sharesPerRawDollar;
+  const asked = round.asked + value;
+  // When more is asked than the round holds, every ask gets the same part: the size over everything asked.
+  const over = asked > round.size && asked > 0n;
+  const shares = over
+    ? (value * round.sharesPerRawDollar * round.size) / asked
+    : value * round.sharesPerRawDollar;
+  const per100 = over ? (round.size * 100n) / asked : 100n;
   const lowerable = canLower(round, now);
 
   const confirm = () => {
     if (!rounds || amount === null) return;
     setProblem(null);
-    send.mutate(
+    send.send(
       {
         chainId: numbers.chainId,
         build: async (wallet) =>
@@ -184,8 +218,10 @@ function BackSheet({
         <li>
           You get about{" "}
           <span className="num font-semibold">{sharesText(shares)}</span>{" "}
-          Shares, held for you. If more is asked than the round holds, everyone
-          gets the same part and the rest comes back.
+          Shares, held for you.{" "}
+          {over
+            ? `More is asked than the round holds (${dollarsText(asked)} dollars with yours, of ${dollarsText(round.size)}), so each ask gets about ${per100} of each 100 and the rest comes back.`
+            : "If more is asked than the round holds, everyone gets the same part and the rest comes back."}
         </li>
         <li>
           Of your {dollarsText(value)}: {dollarsText(split.platform)} to the
@@ -194,8 +230,11 @@ function BackSheet({
           checks in.
         </li>
         <li>
-          Until it is released you can take your money back, less 5 of each 100.
-          Taking it back cancels the Shares held for it.
+          At most {dollarsText(mostBack(value))} of your {dollarsText(value)}{" "}
+          can come back (77.90 of each 100): the part not yet released, less 5
+          of each 100 of it. It falls as the money is released over 26 weeks of
+          check-ins, to nothing. Taking money back cancels the Shares held for
+          it.
         </li>
         <li>
           {lowerable
@@ -225,7 +264,9 @@ function BackSheet({
       >
         {send.isPending
           ? "Waiting for your wallet…"
-          : `Back with ${dollarsText(value)} dollars`}
+          : send.waiting
+            ? "Look for your backing"
+            : `Back with ${dollarsText(value)} dollars`}
       </Button>
     </Sheet>
   );

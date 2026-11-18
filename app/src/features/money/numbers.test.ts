@@ -4,7 +4,9 @@ import {
   chainIdentity,
   numbersContent,
 } from "../../../tests/helpers/numbers-fixture";
+import { mostBack } from "./calls";
 import {
+  anyRoundUnclosed,
   canLower,
   dollarsText,
   holdingsFor,
@@ -15,6 +17,7 @@ import {
   type ProjectNumbers,
   receiptsFor,
   refundFor,
+  roundState,
   sharesPerDollar,
   sharesText,
 } from "./numbers";
@@ -48,6 +51,27 @@ function parsed(content: unknown, overrides: Partial<NumbersEvent> = {}) {
 }
 
 describe("project numbers", () => {
+  it("a round past its 24 hours but not closed is waiting, and keeps a new round from opening (A8)", () => {
+    const n = parsed(
+      numbersContent({
+        coordinate: COORDINATE,
+        now: NOW,
+        openRound: { openedAgo: 86_400 + 600 },
+      }),
+    );
+    const last = n.rounds[n.rounds.length - 1];
+    expect(openRound(n, NOW)).toBeNull();
+    expect(roundState(last, NOW)).toBe("waiting");
+    expect(roundState(n.rounds[0], NOW)).toBe("closed");
+    expect(roundState(last, last.opensAt + 60)).toBe("open");
+    expect(anyRoundUnclosed(n)).toBe(true);
+  });
+
+  it("at most 77.90 of each 100 can ever come back (A5)", () => {
+    expect(mostBack(100_000_000n)).toBe(77_900_000n);
+    expect(dollarsText(mostBack(25_000_000n))).toBe("19.47");
+  });
+
   it("reads stage, raised against the cap, rounds, receipts and holders", () => {
     const n = parsed(
       numbersContent({
@@ -72,6 +96,7 @@ describe("project numbers", () => {
     expect(holdingsFor(n, [BACKER_EVM])).toEqual({
       held: 300_000_000_000_000_000_000_000n,
       free: 0n,
+      listed: true,
     });
   });
 

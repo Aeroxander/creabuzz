@@ -16,9 +16,9 @@ import { Tabs } from "../../ui/tabs";
 import { useToast } from "../../ui/toast";
 import { BackBox } from "../money/BackBox";
 import { MoneyTab } from "../money/MoneyTab";
-import { openRound } from "../money/numbers";
+import { anyRoundUnclosed, openRound } from "../money/numbers";
 import { OpenBacking } from "../money/OpenBacking";
-import { useProjectNumbers } from "../money/use-money";
+import { useProjectNumbers, useWalletAddress } from "../money/use-money";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
 import type { Project } from "./project-record";
@@ -95,13 +95,16 @@ function ProjectView({ project }: { project: Project }) {
   const money = numbers
     ? { stage: numbers.stage.name, raised: numbers.raised.total }
     : null;
+  const walletAddress = useWalletAddress().data ?? null;
+  // Offered to the founder while no round is open or waiting to be closed. Team's runner is the Pair, whose two signers
+  // are not in the app yet (M7), so Team is left out; who may press is the wallet that runs it (OpenBacking says so).
   const canOpen =
     numbers !== null &&
     isFounder &&
-    round === null &&
+    !anyRoundUnclosed(numbers) &&
     numbers.raised.left > 0n &&
     !numbers.clock.woundDown &&
-    ["solo", "backed", "team"].includes(numbers.stage.name);
+    ["solo", "backed"].includes(numbers.stage.name);
 
   return (
     <main
@@ -151,7 +154,9 @@ function ProjectView({ project }: { project: Project }) {
           round={round}
         />
       ) : null}
-      {numbers && canOpen ? <OpenBacking numbers={numbers} /> : null}
+      {numbers && canOpen ? (
+        <OpenBacking address={walletAddress} numbers={numbers} />
+      ) : null}
 
       <JoinBox
         activity={activity.data}

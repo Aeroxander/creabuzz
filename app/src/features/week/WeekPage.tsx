@@ -20,7 +20,7 @@ import {
 } from "../money/use-money";
 import { useProjectsBy } from "../profile/use-own-projects";
 import { type Project, projectRef } from "../project/project-record";
-import { useLastWeekly } from "./use-week";
+import { checkInAction, useLastWeekly } from "./use-week";
 import { WeeklySheet } from "./WeeklySheet";
 
 /**
@@ -172,7 +172,7 @@ function CheckInAgain({
   numbers: ProjectNumbers;
   treasury: string;
 }) {
-  const send = useMoneySend();
+  const send = useMoneySend(checkInAction(numbers.chainId, treasury));
   const toast = useToast();
   const [problem, setProblem] = useState<string | null>(null);
   return (
@@ -187,7 +187,7 @@ function CheckInAgain({
         disabled={send.isPending}
         onClick={() => {
           setProblem(null);
-          send.mutate(
+          send.send(
             { chainId: numbers.chainId, build: () => [checkInCall(treasury)] },
             {
               onSuccess: () =>
@@ -199,7 +199,7 @@ function CheckInAgain({
         size="sm"
         variant="ghost"
       >
-        Check in only
+        {send.waiting ? "Look for your check-in" : "Check in only"}
       </Button>
     </>
   );

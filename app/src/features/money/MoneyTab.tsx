@@ -12,6 +12,7 @@ import {
   projectPriceText,
   type RemovedNumbers,
   type RoundNumbers,
+  roundState,
   STAGE_LABEL,
   sharesPerDollar,
   sharesText,
@@ -45,6 +46,15 @@ export function priceLine(
 ) {
   const whole = projectPriceText(round.projectPrice);
   return `1 dollar buys ${sharesPerDollar(round.sharesPerRawDollar)} Shares${whole ? ` (${whole} for the whole project)` : ""}`;
+}
+
+/** One round in the list: taking asks, past its 24 hours and waiting for someone to close it, or closed. */
+function roundLine(round: RoundNumbers, now: number): string {
+  const state = roundState(round, now);
+  if (state === "open") return `open until ${timeText(round.closesAt)}`;
+  if (state === "waiting")
+    return `stopped taking asks ${timeText(round.closesAt)}; waiting to be closed`;
+  return `closed ${dayText(round.closesAt)}: ${dollarsText(round.accepted ?? 0n)} dollars from ${round.backers} ${round.backers === 1 ? "backer" : "backers"}`;
 }
 
 /** The Money tab: where the project stands in money, from the server's reading of the chain. */
@@ -167,9 +177,7 @@ export function MoneyTab({
               <li className="text-sm" key={round.round}>
                 <span className="font-semibold">Round {round.round}</span>{" "}
                 <span className="text-muted">
-                  {round.closed
-                    ? `closed ${dayText(round.closesAt)}: ${dollarsText(round.accepted ?? 0n)} dollars from ${round.backers} ${round.backers === 1 ? "backer" : "backers"}`
-                    : "open now"}
+                  {roundLine(round, now)}
                   {round.acceptedPercent
                     ? `, ${round.acceptedPercent}% of each ask taken`
                     : ""}
@@ -185,10 +193,10 @@ export function MoneyTab({
       <Card data-testid="money-held">
         <h3 className="font-semibold">Shares already held</h3>
         <p className="mt-1 text-sm text-muted">
-          {numbers.truncated ? "At least " : ""}
+          {/* holderCount is the full count; only the list (and so the sum) may be cut. */}
+          {numbers.holders.length < numbers.holderCount ? "At least " : ""}
           <span className="num">{sharesText(heldTotal)}</span> Shares are held
-          for {numbers.truncated ? "more than " : ""}
-          {numbers.holderCount}{" "}
+          for {numbers.holderCount}{" "}
           {numbers.holderCount === 1 ? "account" : "accounts"}. Held Shares are
           released evenly over 365 days from the day a market opens; until then
           they cannot be sent or sold.

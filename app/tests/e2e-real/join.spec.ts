@@ -33,7 +33,10 @@ test("a stranger joins from the link in 4 presses and 1 field; the founder accep
   await stranger.goto(link);
   await expect(stranger.getByTestId("join-ask")).toBeVisible();
   const path = new PressCounter();
-  await path.press(stranger.getByTestId("join-ask"), "Ask to join (signed out)");
+  await path.press(
+    stranger.getByTestId("join-ask"),
+    "Ask to join (signed out)",
+  );
   const joiner = `Nia ${RUN}`;
   await signUp(stranger, joiner, path);
   await expect(stranger.getByTestId("join-asked")).toBeVisible();

@@ -50,12 +50,17 @@ function useLaunchedProjects(enabled: boolean) {
   });
 }
 
+/** You reads up to 5 pages of 100 records of numbers, newest first, so a quiet project's receipts still show. */
+const RECEIPT_PAGES = 5;
+
 interface Backed {
   numbers: ProjectNumbers;
   project: Project | null;
   receipts: ReceiptNumbers[];
   held: bigint;
   free: bigint;
+  /** False when this wallet is missing from a cut holders list: then its Shares are not known from the list. */
+  listed: boolean;
 }
 
 function Shell({ children }: { children: ReactNode }) {
@@ -86,7 +91,7 @@ export function Receipts() {
   const connect = useConnectWallet();
   const [problem, setProblem] = useState<string | null>(null);
   const me = address.data ?? null;
-  const recent = useRecentNumbers(me !== null);
+  const recent = useRecentNumbers(me !== null, RECEIPT_PAGES);
   const projects = useLaunchedProjects(me !== null);
 
   if (!wallet.isAvailable())
@@ -159,31 +164,30 @@ export function Receipts() {
     );
 
   const signer = serverRelaySigner();
-  const byKey = new Map<string, Project>();
+  // Every project record naming each chain key: a copy naming someone else's key must not hide the real project.
+  const byKey = new Map<string, Project[]>();
   for (const project of projects.data ?? []) {
     const key = chainKeyOfProject(project);
-    if (key) byKey.set(key, project);
+    if (key) byKey.set(key, [...(byKey.get(key) ?? []), project]);
   }
   const backed: Backed[] = [];
-  let cut = false;
-  for (const event of recent.data ?? []) {
+  let cut = recent.data?.complete === false;
+  for (const event of recent.data?.events ?? []) {
     const numbers = parseNumbers(event, signer);
     if (!numbers || numbers.removed) continue;
     cut ||= numbers.truncated;
     const receipts = receiptsFor(numbers, [me]);
-    const { held, free } = holdingsFor(numbers, [me]);
+    const { held, free, listed } = holdingsFor(numbers, [me]);
     if (receipts.length === 0 && held === 0n && free === 0n) continue;
-    const named = byKey.get(numbers.key) ?? null;
     // A record names a launch only when that launch was made for it.
     const project =
-      named &&
-      parseNumbers(event, signer, {
-        coordinate: named.coordinate,
-        chainKey: numbers.key,
-      })
-        ? named
-        : null;
-    backed.push({ numbers, project, receipts, held, free });
+      (byKey.get(numbers.key) ?? []).find((candidate) =>
+        parseNumbers(event, signer, {
+          coordinate: candidate.coordinate,
+          chainKey: numbers.key,
+        }),
+      ) ?? null;
+    backed.push({ numbers, project, receipts, held, free, listed });
   }
 
   return (
@@ -192,14 +196,22 @@ export function Receipts() {
         <Card data-testid="receipts-none">
           <p className="text-sm text-muted">
             {cut
-              ? "Nothing found for this wallet in the newest records. Long lists are cut at 200, so an older receipt may not show here yet."
+              ? "Nothing found for this wallet in the newest records. Not every record was read, so an older receipt may not show here yet."
               : "This wallet has not backed a project yet."}
           </p>
         </Card>
       ) : (
-        backed.map((item) => (
-          <BackedCard item={item} key={item.numbers.key} me={me} />
-        ))
+        <>
+          {backed.map((item) => (
+            <BackedCard item={item} key={item.numbers.key} me={me} />
+          ))}
+          {recent.data?.complete === false ? (
+            <p className="px-1 text-xs text-muted" data-testid="receipts-cut">
+              Only the newest records were read, so an older receipt may not
+              show here yet.
+            </p>
+          ) : null}
+        </>
       )}
     </Shell>
   );
@@ -235,13 +247,26 @@ function BackedCard({ item, me }: { item: Backed; me: string }) {
         />
       ))}
       <div className="text-sm" data-testid="receipt-shares">
-        <p>
-          Your Shares:{" "}
-          <span className="num font-semibold">{sharesText(item.held)}</span>{" "}
-          held for you,{" "}
-          <span className="num font-semibold">{sharesText(item.free)}</span>{" "}
-          free.
-        </p>
+        {item.listed || !numbers.truncated ? (
+          <p>
+            Your Shares:{" "}
+            <span className="num font-semibold">{sharesText(item.held)}</span>{" "}
+            held for you,{" "}
+            <span className="num font-semibold">{sharesText(item.free)}</span>{" "}
+            free.
+          </p>
+        ) : (
+          <p>
+            Your Shares: the list of holders was cut before this wallet. Your
+            receipts above set aside{" "}
+            <span className="num font-semibold">
+              {sharesText(
+                item.receipts.reduce((sum, r) => sum + r.sharesHeld, 0n),
+              )}
+            </span>{" "}
+            Shares for you.
+          </p>
+        )}
         <p className="mt-1 text-xs text-muted">
           Held Shares are released over 365 days once a market opens. Taking
           released Shares out of the hold ends the refund for them.
@@ -255,7 +280,8 @@ function BackedCard({ item, me }: { item: Backed; me: string }) {
                 key={`out-${r.round}`}
                 me={me}
                 numbers={numbers}
-                round={r.round}
+                receipt={r}
+                refund={refundFor(numbers, r.round, me)}
                 vester={numbers.contracts.vester as string}
               />
             ))
@@ -292,8 +318,10 @@ function ReceiptRow({
         dollars in round {receipt.round}.
       </p>
       {receipt.refunded !== null ? (
-        <p className="text-sm text-muted">
-          Taken back on {dayText(receipt.refunded)}.
+        <p className="text-sm text-muted" data-testid="receipt-refunded">
+          {receipt.refundedPaid !== null
+            ? `Took back ${dollarsText(receipt.refundedPaid)} dollars on ${dayText(receipt.refunded)}.`
+            : `Taken back on ${dayText(receipt.refunded)}.`}
         </p>
       ) : refund ? (
         <p className="text-sm text-muted" data-testid="receipt-refund">
@@ -303,6 +331,11 @@ function ReceiptRow({
           </span>{" "}
           dollars ({refund.per100} of each 100), as of{" "}
           {timeText(numbers.asOf.time)}.
+        </p>
+      ) : numbers.truncated ? (
+        // The record's list of refunds was cut: a missing entry says nothing about this receipt.
+        <p className="text-sm text-muted" data-testid="receipt-refund-unknown">
+          How much is left to take back is not in the newest numbers yet.
         </p>
       ) : (
         <p className="text-sm text-muted">Nothing left to take back.</p>
@@ -346,10 +379,12 @@ function RefundSheet({
   numbers: ProjectNumbers;
   projectName: string;
 }) {
-  const send = useMoneySend();
+  const rounds = numbers.contracts.rounds;
+  const send = useMoneySend(
+    `refund:${numbers.chainId}:${rounds ?? ""}:${receipt.round}`,
+  );
   const toast = useToast();
   const [problem, setProblem] = useState<string | null>(null);
-  const rounds = numbers.contracts.rounds;
   return (
     <Sheet
       description="Nothing is sent until you say so here and in your wallet."
@@ -391,7 +426,7 @@ function RefundSheet({
         onClick={() => {
           if (!rounds) return;
           setProblem(null);
-          send.mutate(
+          send.send(
             {
               chainId: numbers.chainId,
               build: () => [refundCall(rounds, receipt.round)],
@@ -408,54 +443,109 @@ function RefundSheet({
       >
         {send.isPending
           ? "Waiting for your wallet…"
-          : `Take back ${dollarsText(refund.refundable)} dollars`}
+          : send.waiting
+            ? "Look for your refund"
+            : `Take back ${dollarsText(refund.refundable)} dollars`}
       </Button>
     </Sheet>
   );
 }
 
+/**
+ * Taking released Shares out of the hold ends the refund for them for good, so it is reviewed on a sheet first, like
+ * Take money back: one press to open it, one to send.
+ */
 function TakeOut({
   numbers,
   vester,
-  round,
+  receipt,
+  refund,
   me,
 }: {
   numbers: ProjectNumbers;
   vester: string;
-  round: number;
+  receipt: ReceiptNumbers;
+  refund: RefundNow | null;
   me: string;
 }) {
-  const send = useMoneySend();
+  const round = receipt.round;
+  const send = useMoneySend(
+    `take-out:${numbers.chainId}:${vester}:${round}:${me}`,
+  );
   const toast = useToast();
+  const [open, setOpen] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   return (
-    <div className="flex flex-col gap-2">
-      {problem ? (
-        <p className="text-sm text-danger" role="alert">
-          {problem}
-        </p>
-      ) : null}
+    <>
       <Button
         data-testid="receipt-take-out"
-        disabled={send.isPending}
-        onClick={() =>
-          send.mutate(
-            {
-              chainId: numbers.chainId,
-              build: () => [claimHeldCall(vester, round, me)],
-            },
-            {
-              onSuccess: () =>
-                toast("Your released Shares are in your wallet.", "done"),
-              onError: (error) => setProblem(moneyProblem(error, "take-out")),
-            },
-          )
-        }
+        onClick={() => setOpen(true)}
         size="sm"
         variant="secondary"
       >
-        Take out released Shares of round {round} (ends their refund)
+        Take out released Shares of round {round}
       </Button>
-    </div>
+      <Sheet
+        description="Nothing is sent until you say so here and in your wallet."
+        onOpenChange={(next) => {
+          if (!send.isPending) {
+            setProblem(null);
+            setOpen(next);
+          }
+        }}
+        open={open}
+        testId="take-out-sheet"
+        title={`Take out your released Shares of round ${round}?`}
+      >
+        <ul className="flex list-disc flex-col gap-2 pl-5 text-sm">
+          <li>
+            The Shares released to you so far, of the{" "}
+            {sharesText(receipt.sharesHeld)} held for you in round {round}, come
+            out of the hold into your wallet.
+          </li>
+          <li>
+            {refund
+              ? `The refund for them ends for good. Right now you could take back about ${dollarsText(refund.refundable)} dollars in this round (as of ${timeText(numbers.asOf.time)}); after this, less.`
+              : "The refund for them ends for good. This cannot be undone."}
+          </li>
+        </ul>
+        {problem ? (
+          <p
+            className="rounded-xl bg-white/8 px-3 py-2 text-sm text-danger"
+            data-testid="take-out-problem"
+            role="alert"
+          >
+            {problem}
+          </p>
+        ) : null}
+        <Button
+          block
+          data-testid="take-out-confirm"
+          disabled={send.isPending}
+          onClick={() => {
+            setProblem(null);
+            send.send(
+              {
+                chainId: numbers.chainId,
+                build: () => [claimHeldCall(vester, round, me)],
+              },
+              {
+                onSuccess: () => {
+                  toast("Your released Shares are in your wallet.", "done");
+                  setOpen(false);
+                },
+                onError: (error) => setProblem(moneyProblem(error, "take-out")),
+              },
+            );
+          }}
+        >
+          {send.isPending
+            ? "Waiting for your wallet…"
+            : send.waiting
+              ? "Look for your Shares"
+              : "Take them out and end their refund"}
+        </Button>
+      </Sheet>
+    </>
   );
 }

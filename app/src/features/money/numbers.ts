@@ -46,6 +46,8 @@ export interface ReceiptNumbers {
   sharesHeld: bigint;
   /** When the backer took their money back, or null. */
   refunded: number | null;
+  /** How much they were paid back then, when the record says. */
+  refundedPaid: bigint | null;
 }
 
 interface HolderNumbers {
@@ -177,7 +179,9 @@ function parseReceipt(r: Json): ReceiptNumbers | null {
     shares: bigOr0(r.shares),
     heldMoney: bigOr0(r.heldMoney),
     sharesHeld: bigOr0(r.sharesHeld),
-    refunded: int(r.refunded),
+    // The chain reader writes `{"paid": "<raw dollars>", "at": <unix>}` once a receipt is taken back.
+    refunded: isObject(r.refunded) ? int(r.refunded.at) : int(r.refunded),
+    refundedPaid: isObject(r.refunded) ? big(r.refunded.paid) : null,
   };
 }
 
@@ -323,6 +327,23 @@ export function openRound(
   );
 }
 
+/**
+ * Where a round is at `now`: taking asks, past its 24 hours but not closed yet (anyone may close it; until then no new
+ * round can open), or closed.
+ */
+export function roundState(
+  round: RoundNumbers,
+  now: number,
+): "open" | "waiting" | "closed" {
+  if (round.closed) return "closed";
+  return now < round.closesAt ? "open" : "waiting";
+}
+
+/** Whether any round is not closed yet: then no new round can open. */
+export function anyRoundUnclosed(numbers: ProjectNumbers): boolean {
+  return numbers.rounds.some((r) => !r.closed);
+}
+
 /** Asks may be lowered or withdrawn only in a round's first 12 hours. */
 export const LOWER_WINDOW_SECONDS = 12 * 60 * 60;
 
@@ -353,20 +374,25 @@ export function refundFor(
   );
 }
 
-/** A person's Shares in a project: held for them (not free yet) and free, over all their addresses. */
+/**
+ * A person's Shares in a project: held for them (not free yet) and free, over all their addresses. `listed` is false
+ * when none of their addresses is in the holders list: on a cut list (`truncated`) that says nothing about what they hold.
+ */
 export function holdingsFor(
   numbers: ProjectNumbers,
   addresses: readonly string[],
-): { held: bigint; free: bigint } {
+): { held: bigint; free: bigint; listed: boolean } {
   const mine = new Set(addresses.map((a) => a.toLowerCase()));
   let held = 0n;
   let free = 0n;
+  let listed = false;
   for (const h of numbers.holders) {
     if (!mine.has(h.account)) continue;
+    listed = true;
     held += h.held;
     free += h.free;
   }
-  return { held, free };
+  return { held, free, listed };
 }
 
 /** Whether `address` runs the project (the only one who may check in on the chain). */

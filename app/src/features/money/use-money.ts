@@ -6,7 +6,7 @@ import { serverRelaySigner } from "@creaton/core/client/server-settings.ts";
 import { KIND_PROJECT_NUMBERS } from "@creaton/core/kinds.ts";
 import { chainKeyFromTags } from "@creaton/core/launchpad/project-chain.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { read } from "../../lib/relay";
 import { investingOn } from "../../lib/server";
 import type { Project } from "../project/project-record";
@@ -17,12 +17,20 @@ import {
   parseNumbers,
   type RemovedNumbers,
 } from "./numbers";
-import { addressFromWord, injectedWallet, type MoneyWallet } from "./wallet";
+import { forgetPending, pendingSend, rememberPending } from "./pending-sends";
+import {
+  addressFromWord,
+  injectedWallet,
+  type MoneyWallet,
+  WalletStepError,
+} from "./wallet";
 
 const moneyKeys = {
   all: ["money"] as const,
-  project: (key: string) => ["money", "numbers", key] as const,
-  recent: ["money", "recent"] as const,
+  // The coordinate is part of the key: two records naming one chain key are checked each on its own, never shared.
+  project: (key: string, coordinate: string) =>
+    ["money", "numbers", key, coordinate] as const,
+  recent: (pages: number) => ["money", "recent", pages] as const,
   address: ["money", "address"] as const,
   quote: (rounds: string) => ["money", "quote", rounds] as const,
 };
@@ -48,7 +56,7 @@ export function useProjectNumbers(project: Project | null | undefined) {
   const signer = serverRelaySigner();
   const on = investingOn() && Boolean(project && chainKey && signer);
   return useQuery({
-    queryKey: moneyKeys.project(chainKey ?? ""),
+    queryKey: moneyKeys.project(chainKey ?? "", project?.coordinate ?? ""),
     enabled: on,
     staleTime: 20_000,
     queryFn: async (): Promise<ProjectNumbers | RemovedNumbers | null> => {
@@ -70,29 +78,59 @@ export function useProjectNumbers(project: Project | null | undefined) {
   });
 }
 
-/** How many recent records of numbers Home and You read. */
-const RECENT_NUMBERS = 100;
+/** How many records of numbers one read asks for. */
+const NUMBERS_PAGE = 100;
 
-/** The server's recent records of numbers, newest per chain key (still to be matched to a project before use). */
-export function useRecentNumbers(enabled = true) {
+/** The server's newest records of numbers, `newestRecords` read at a time. */
+export interface RecentNumbers {
+  /** Newest per chain key (still to be matched to a project before use). */
+  events: NumbersEvent[];
+  /** False when older records were left unread: then "none" is never said about what was not found. */
+  complete: boolean;
+}
+
+/**
+ * The server's recent records of numbers, up to `pages` reads of 100 (Home needs only the newest; You reads further back
+ * so a quiet project's receipts still show). Bounded: what lies past the last page is reported as not read.
+ */
+export function useRecentNumbers(enabled = true, pages = 1) {
   const signer = serverRelaySigner();
   return useQuery({
-    queryKey: moneyKeys.recent,
+    queryKey: moneyKeys.recent(pages),
     enabled: enabled && investingOn() && Boolean(signer),
     staleTime: 30_000,
-    queryFn: async (): Promise<NumbersEvent[]> => {
-      if (!signer) return [];
-      const events = await read({
-        kinds: [KIND_PROJECT_NUMBERS],
-        authors: [signer],
-        limit: RECENT_NUMBERS,
-      });
-      const byKey = new Map<string, NumbersEvent>();
-      for (const event of newest(events)) {
-        const d = event.tags.find((t) => t[0] === "d")?.[1]?.toLowerCase();
-        if (d && !byKey.has(d)) byKey.set(d, event as NumbersEvent);
+    queryFn: async (): Promise<RecentNumbers> => {
+      if (!signer) return { events: [], complete: true };
+      const seen = new Map<string, NumbersEvent>();
+      let until: number | undefined;
+      let complete = false;
+      for (let page = 0; page < pages; page += 1) {
+        const events = (await read({
+          kinds: [KIND_PROJECT_NUMBERS],
+          authors: [signer],
+          limit: NUMBERS_PAGE,
+          ...(until === undefined ? {} : { until }),
+        })) as NumbersEvent[];
+        let added = 0;
+        for (const event of events)
+          if (!seen.has(event.id)) {
+            seen.set(event.id, event);
+            added += 1;
+          }
+        if (events.length < NUMBERS_PAGE) {
+          complete = true;
+          break;
+        }
+        // Older than the oldest so far; `until` is inclusive, so records sharing that second are read again and skipped.
+        if (added === 0) break;
+        until = Math.min(...events.map((e) => e.created_at));
       }
-      return [...byKey.values()];
+      const byKey = new Map<string, NumbersEvent>();
+      for (const event of newest([...seen.values()])) {
+        const d = event.tags.find((t) => t[0] === "d")?.[1]?.toLowerCase();
+        if (d && !byKey.has(d)) byKey.set(d, event);
+      }
+      return { events: [...byKey.values()], complete };
     },
   });
 }
@@ -159,18 +197,134 @@ export async function readQuote(
   return quote;
 }
 
+export interface MoneySendInput {
+  chainId: number;
+  /** The calls, built at press time (after the wallet is on the right network) so it can read what it needs first. */
+  build: (wallet: MoneyWallet) => Promise<MoneyCall[]> | MoneyCall[];
+}
+
+type SendResult = { txHash: string; status: "confirmed" };
+
 /**
  * Send money calls through the wallet, then read the numbers again (the server signs new ones once the chain moved).
- * `build` runs at press time so it can read what it needs (the dollar token) from the chain first.
+ *
+ * `action` names the step ("back:<rounds>:<round>"): one step runs at a time, and a step whose call went out but has
+ * not landed is remembered under it. Pressing again then looks that call up instead of sending a second one, and only
+ * a call the network says reverted or never saw lets the step be sent afresh.
  */
-export function useMoneySend() {
+export function useMoneySend(action: string) {
   const wallet = useWallet();
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: {
-      chainId: number;
-      build: (wallet: MoneyWallet) => Promise<MoneyCall[]> | MoneyCall[];
-    }) => wallet.sendCalls(await input.build(wallet), input.chainId),
+  const running = useRef(false);
+  const mutation = useMutation({
+    mutationFn: async (input: MoneySendInput): Promise<SendResult> => {
+      try {
+        return await sendStep(wallet, action, input);
+      } finally {
+        running.current = false;
+      }
+    },
     onSettled: () => queryClient.invalidateQueries({ queryKey: moneyKeys.all }),
+  });
+  const { mutate, mutateAsync } = mutation;
+  /** Send, unless this step is already running (a second press before the button shows it is busy does nothing). */
+  const send = useCallback(
+    (
+      input: MoneySendInput,
+      options?: {
+        onSuccess?: (result: SendResult) => void;
+        onError?: (error: unknown) => void;
+      },
+    ) => {
+      if (running.current) return;
+      running.current = true;
+      mutate(input, options);
+    },
+    [mutate],
+  );
+  /** `send` as a promise; a press while the step runs is refused. */
+  const sendAsync = useCallback(
+    (input: MoneySendInput): Promise<SendResult> => {
+      if (running.current)
+        return Promise.reject(new Error("This step is already running."));
+      running.current = true;
+      return mutateAsync(input);
+    },
+    [mutateAsync],
+  );
+  return {
+    send,
+    sendAsync,
+    isPending: mutation.isPending,
+    /** A call of this step went out earlier and has not landed: the next press looks it up (read on every render). */
+    waiting: pendingSend(action) !== null,
+  };
+}
+
+async function sendStep(
+  wallet: MoneyWallet,
+  action: string,
+  input: MoneySendInput,
+): Promise<SendResult> {
+  let skip = 0;
+  const earlier = pendingSend(action);
+  if (earlier) {
+    await wallet.ensureChain(earlier.chainId);
+    let outcome: Awaited<ReturnType<MoneyWallet["outcomeOf"]>>;
+    try {
+      outcome = await wallet.outcomeOf(earlier.hash);
+    } catch (error) {
+      throw new WalletStepError("pending", earlier.index, error, earlier.hash);
+    }
+    if (outcome === "waiting")
+      throw new WalletStepError(
+        "pending",
+        earlier.index,
+        undefined,
+        earlier.hash,
+      );
+    forgetPending(action);
+    if (outcome === "landed") {
+      if (earlier.index + 1 >= earlier.total)
+        return { txHash: earlier.hash, status: "confirmed" };
+      skip = earlier.index + 1; // the calls up to it landed; send the rest
+    }
+  }
+  // On the project's network before anything is read for the calls: a read on another network answers nothing.
+  await wallet.ensureChain(input.chainId);
+  const calls = await input.build(wallet);
+  try {
+    return await wallet.sendCalls(calls.slice(skip), input.chainId);
+  } catch (error) {
+    if (!(error instanceof WalletStepError) || skip === 0) {
+      if (error instanceof WalletStepError && error.reason === "pending")
+        remember(action, error, input.chainId, calls.length);
+      throw error;
+    }
+    const shifted = new WalletStepError(
+      error.reason,
+      error.landed + skip,
+      error.cause,
+      error.hash,
+    );
+    if (shifted.reason === "pending")
+      remember(action, shifted, input.chainId, calls.length);
+    throw shifted;
+  }
+}
+
+function remember(
+  action: string,
+  error: WalletStepError,
+  chainId: number,
+  total: number,
+) {
+  if (!error.hash) return;
+  rememberPending(action, {
+    hash: error.hash,
+    index: error.landed,
+    total,
+    chainId,
+    at: Math.floor(Date.now() / 1000),
   });
 }

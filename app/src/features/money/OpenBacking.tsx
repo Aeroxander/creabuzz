@@ -5,18 +5,34 @@ import { useToast } from "../../ui/toast";
 import { DEFAULT_SHARES_PER_RAW_DOLLAR, openBackingCall } from "./calls";
 import { OwnershipLine } from "./MoneyTab";
 import { moneyProblem } from "./money-copy";
-import { dollarsText, type ProjectNumbers, sharesPerDollar } from "./numbers";
-import { useMoneySend } from "./use-money";
+import {
+  dollarsText,
+  isRunner,
+  type ProjectNumbers,
+  sharesPerDollar,
+} from "./numbers";
+import { useConnectWallet, useMoneySend } from "./use-money";
 
 /**
  * The founder's one press to open a 24-hour backing round at the price every project has (1 dollar buys 3,000
  * Shares), sized to what is left under the stage's limit. The plan's budget: 1 press, nothing typed.
  */
-export function OpenBacking({ numbers }: { numbers: ProjectNumbers }) {
-  const send = useMoneySend();
+export function OpenBacking({
+  numbers,
+  address,
+}: {
+  numbers: ProjectNumbers;
+  /** The wallet account this site sees, or null. Only the wallet that runs the project can open a round. */
+  address: string | null;
+}) {
+  const send = useMoneySend(
+    `open:${numbers.chainId}:${numbers.launcher}:${numbers.key}`,
+  );
+  const connect = useConnectWallet();
   const toast = useToast();
   const [problem, setProblem] = useState<string | null>(null);
   const titleId = useId();
+  const runner = isRunner(numbers, address);
   return (
     <Card
       aria-labelledby={titleId}
@@ -45,26 +61,53 @@ export function OpenBacking({ numbers }: { numbers: ProjectNumbers }) {
           {problem}
         </p>
       ) : null}
-      <Button
-        block
-        data-testid="open-backing-press"
-        disabled={send.isPending}
-        onClick={() => {
-          setProblem(null);
-          send.mutate(
-            {
-              chainId: numbers.chainId,
-              build: () => [openBackingCall(numbers.launcher, numbers.key)],
-            },
-            {
-              onSuccess: () => toast("The round is open for 24 hours.", "done"),
-              onError: (error) => setProblem(moneyProblem(error, "open")),
-            },
-          );
-        }}
-      >
-        {send.isPending ? "Waiting for your wallet…" : "Open backing"}
-      </Button>
+      {runner ? null : (
+        <p className="text-sm" data-testid="open-backing-runner">
+          {address
+            ? "This wallet does not run this project. Switch your wallet to the account that put the project on the network to open backing."
+            : "Connect the wallet that runs this project to open backing."}
+        </p>
+      )}
+      {runner ? (
+        <Button
+          block
+          data-testid="open-backing-press"
+          disabled={send.isPending}
+          onClick={() => {
+            setProblem(null);
+            send.send(
+              {
+                chainId: numbers.chainId,
+                build: () => [openBackingCall(numbers.launcher, numbers.key)],
+              },
+              {
+                onSuccess: () =>
+                  toast("The round is open for 24 hours.", "done"),
+                onError: (error) => setProblem(moneyProblem(error, "open")),
+              },
+            );
+          }}
+        >
+          {send.isPending
+            ? "Waiting for your wallet…"
+            : send.waiting
+              ? "Look for your round"
+              : "Open backing"}
+        </Button>
+      ) : address ? null : (
+        <Button
+          disabled={connect.isPending}
+          onClick={() =>
+            connect.mutate(undefined, {
+              onError: (error) => setProblem(moneyProblem(error, "connect")),
+            })
+          }
+          size="sm"
+          variant="secondary"
+        >
+          Connect your wallet
+        </Button>
+      )}
     </Card>
   );
 }

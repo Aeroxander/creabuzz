@@ -25,6 +25,8 @@ const REFUSALS = [
   "TokenMisbehaved()",
   "CapReached(uint256)",
   "WrongStage()",
+  "NotRunner()",
+  "WrongRunner(uint8)",
   "ERC20InsufficientBalance(address,uint256,uint256)",
   "ERC20InsufficientAllowance(address,uint256,uint256)",
 ] as const;
@@ -37,14 +39,18 @@ type Refusal =
   | "TokenMisbehaved"
   | "CapReached"
   | "WrongStage"
-  | "NotEnoughDollars";
+  | "NotRunner"
+  | "NotEnoughDollars"
+  | "NoGas";
 
 const BY_SELECTOR = new Map<string, Refusal>(
   REFUSALS.map((signature) => {
     const name = signature.slice(0, signature.indexOf("("));
     const refusal: Refusal = name.startsWith("ERC20Insufficient")
       ? "NotEnoughDollars"
-      : (name as Refusal);
+      : name === "WrongRunner"
+        ? "NotRunner"
+        : (name as Refusal);
     return [selectorOf(signature).slice(2), refusal];
   }),
 );
@@ -57,6 +63,7 @@ const NAMES: readonly Refusal[] = [
   "TokenMisbehaved",
   "CapReached",
   "WrongStage",
+  "NotRunner",
 ];
 
 /** Every string and hex blob inside a provider's error, however deeply it nests them. */
@@ -80,7 +87,11 @@ export function refusalOf(error: unknown): Refusal | null {
       if (found) return found;
     }
     for (const name of NAMES) if (text.includes(name)) return name;
-    if (/exceeds balance|insufficient (?:balance|funds)/i.test(text))
+    if (text.includes("WrongRunner")) return "NotRunner";
+    // The node's own words when the wallet cannot pay for sending ("insufficient funds for gas * price + value"): this
+    // is the network's coin, not dollars. The dollar token's refusals are matched by selector above.
+    if (/insufficient funds/i.test(text)) return "NoGas";
+    if (/transfer amount exceeds balance/i.test(text))
       return "NotEnoughDollars";
   }
   return null;
@@ -121,8 +132,16 @@ const REFUSAL_WORDS: Record<
   TokenMisbehaved: {
     any: "The dollar token moved a different amount than asked, so nothing changed.",
   },
+  NotRunner: {
+    open: "Only the wallet that runs this project can open backing. Nothing changed.",
+    "check-in": "Only the wallet that runs this project can check in.",
+    any: "Only the wallet that runs this project can do this. Nothing changed.",
+  },
   NotEnoughDollars: {
     any: "Your wallet does not hold enough dollars for this. Nothing was taken.",
+  },
+  NoGas: {
+    any: "Your wallet needs a little of the network's own coin to pay for sending this. Add some and try again; nothing was sent.",
   },
 };
 
@@ -143,7 +162,7 @@ export function moneyProblem(error: unknown, action: MoneyAction): string {
     if (error.reason === "wrong-network")
       return "Your wallet is on another network. Switch it to the project's network and try again.";
     if (error.reason === "pending")
-      return "Your wallet sent it, but it has not landed yet. Look again in a few minutes before trying again.";
+      return "Your wallet sent it, but it has not landed yet. Press again in a few minutes to look for it: it is not sent a second time while it may still land.";
     const refusal = refusalOf(error.cause);
     if (refusal) {
       const words = REFUSAL_WORDS[refusal];

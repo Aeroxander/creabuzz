@@ -42,6 +42,29 @@ describe("money copy", () => {
     );
   });
 
+  it("tells a wallet without the network's coin to add some, not dollars (F6)", () => {
+    const gas = new WalletStepError("failed", 0, {
+      code: -32000,
+      message: "insufficient funds for gas * price + value",
+    });
+    expect(refusalOf(gas.cause)).toBe("NoGas");
+    expect(moneyProblem(gas, "back")).toMatch(/network's own coin/);
+    expect(moneyProblem(gas, "back")).not.toMatch(/enough dollars/);
+    expect(
+      refusalOf(revert("ERC20InsufficientAllowance(address,uint256,uint256)")),
+    ).toBe("NotEnoughDollars");
+  });
+
+  it("says only the wallet that runs the project can open backing (F5)", () => {
+    for (const sig of ["NotRunner()", "WrongRunner(uint8)"]) {
+      const error = new WalletStepError("failed", 0, revert(sig));
+      expect(refusalOf(error.cause)).toBe("NotRunner");
+      expect(moneyProblem(error, "open")).toBe(
+        "Only the wallet that runs this project can open backing. Nothing changed.",
+      );
+    }
+  });
+
   it("says what a wallet stop means, and what already went through", () => {
     expect(moneyProblem(new WalletStepError("no-wallet", 0), "back")).toMatch(
       /no wallet in this browser/,

@@ -180,7 +180,7 @@ test(`Back: ${PLAN_V2_BUDGETS.back.presses} presses and ${PLAN_V2_BUDGETS.back.f
   await expect(sheet).toContainText(
     "0.75 to the platform, 3.75 to the project now, and 20.50 released",
   );
-  await expect(sheet).toContainText("less 5 of each 100");
+  await expect(sheet).toContainText("At most 19.47 of your 25 can come back");
   await expect(sheet).toContainText("cancels the Shares held for it");
   await expect(sheet.getByTestId("ownership")).toHaveText(OWNERSHIP);
   await path.read(page, "the Back sheet");

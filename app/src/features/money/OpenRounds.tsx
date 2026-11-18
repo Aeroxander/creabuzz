@@ -14,7 +14,7 @@ export function OpenRounds({ projects }: { projects: readonly Project[] }) {
   const now = Math.floor(Date.now() / 1000);
   if (recent.isPending && recent.fetchStatus !== "idle")
     return <Card className="h-20 animate-pulse" />;
-  const open = matchNumbers(projects, recent.data ?? [])
+  const open = matchNumbers(projects, recent.data?.events ?? [])
     .map(({ project, numbers }) => ({
       project,
       round: openRound(numbers, now),
@@ -35,7 +35,9 @@ export function OpenRounds({ projects }: { projects: readonly Project[] }) {
   if (open.length === 0)
     return (
       <p className="px-1 text-sm text-muted" data-testid="rounds-none">
-        No round is open right now.
+        {recent.data?.complete === false
+          ? "No round is open among the newest projects."
+          : "No round is open right now."}
       </p>
     );
   return (

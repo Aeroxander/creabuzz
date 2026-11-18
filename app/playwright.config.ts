@@ -27,6 +27,7 @@ export default defineConfig({
         "**/smoke.spec.ts",
         "**/join.spec.ts",
         "**/money.spec.ts",
+        "**/money-review.spec.ts",
         "**/a11y.spec.ts",
         "**/passkey.spec.ts",
       ],

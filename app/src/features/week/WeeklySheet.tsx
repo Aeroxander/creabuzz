@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../../ui/button";
 import { TextArea } from "../../ui/field";
 import { Sheet } from "../../ui/sheet";
@@ -8,7 +8,7 @@ import { moneyProblem } from "../money/money-copy";
 import type { ProjectNumbers } from "../money/numbers";
 import { useMoneySend } from "../money/use-money";
 import type { Project } from "../project/project-record";
-import { usePostWeekly, WEEKLY_MAX } from "./use-week";
+import { checkInAction, usePostWeekly, WEEKLY_MAX } from "./use-week";
 
 /**
  * The weekly update: one box and one press. Where this wallet runs the project on the network, the same press also
@@ -31,7 +31,11 @@ export function WeeklySheet({
   /** Set once the update is posted and its check-in did not go through: only the check-in is left to do. */
   const [posted, setPosted] = useState(false);
   const post = usePostWeekly();
-  const send = useMoneySend();
+  const send = useMoneySend(
+    checkIn ? checkInAction(checkIn.numbers.chainId, checkIn.treasury) : "",
+  );
+  /** Set while a submit runs: a second press before the button shows it is busy posts nothing twice. */
+  const submitting = useRef(false);
   const toast = useToast();
   const busy = post.isPending || send.isPending;
   const empty = text.trim() === "";
@@ -46,7 +50,7 @@ export function WeeklySheet({
   const sendCheckIn = async () => {
     if (!checkIn) return true;
     try {
-      await send.mutateAsync({
+      await send.sendAsync({
         chainId: checkIn.numbers.chainId,
         build: () => [checkInCall(checkIn.treasury)],
       });
@@ -61,6 +65,16 @@ export function WeeklySheet({
   };
 
   const submit = async () => {
+    if (submitting.current) return;
+    submitting.current = true;
+    try {
+      await submitOnce();
+    } finally {
+      submitting.current = false;
+    }
+  };
+
+  const submitOnce = async () => {
     setProblem(null);
     if (!posted) {
       if (empty) {
