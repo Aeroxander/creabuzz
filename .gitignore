@@ -94,3 +94,6 @@ web/tests/e2e-real/.social-fixture.json
 
 # Foundry cache written at the repo root when a run does not name its own
 /cache/
+
+# Owner-only notes and sheets (personal tax, backer list). Never committed.
+/docs/private/
