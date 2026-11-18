@@ -37,6 +37,12 @@ const TeamMoney = lazy(() =>
 const TeamTop = lazy(() =>
   import("../team/TeamTop").then((m) => ({ default: m.TeamTop })),
 );
+const MarketTop = lazy(() =>
+  import("../market/MarketTop").then((m) => ({ default: m.MarketTop })),
+);
+const MarketMoney = lazy(() =>
+  import("../market/MarketMoney").then((m) => ({ default: m.MarketMoney })),
+);
 const LaunchProject = lazy(() =>
   import("../team/LaunchProject").then((m) => ({ default: m.LaunchProject })),
 );
@@ -178,6 +184,11 @@ function ProjectView({ project }: { project: Project }) {
       ) : null}
       {numbers ? (
         <Suspense fallback={null}>
+          <MarketTop numbers={numbers} />
+        </Suspense>
+      ) : null}
+      {numbers ? (
+        <Suspense fallback={null}>
           <TeamTop
             founder={project.author}
             numbers={numbers}
@@ -270,6 +281,11 @@ function ProjectView({ project }: { project: Project }) {
                               ...accepted.map((m) => m.pubkey),
                             ]}
                           />
+                        </Suspense>
+                      ) : null}
+                      {numbers ? (
+                        <Suspense fallback={null}>
+                          <MarketMoney numbers={numbers} />
                         </Suspense>
                       ) : null}
                       <MoneyTab

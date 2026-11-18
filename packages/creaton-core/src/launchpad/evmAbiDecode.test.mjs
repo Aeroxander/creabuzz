@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { decodeParameters, encodeParameters } from "./evmAbi.ts";
+import {
+  decodeParameters,
+  encodeParameters,
+  keccak256Hex,
+} from "./evmAbi.ts";
 
 const ADDRESS = "0x00000000000000000000000000000000000000aa";
 const WORD = `0x${"22".repeat(32)}`;
@@ -72,4 +76,13 @@ test("data that does not hold what is asked is refused, never filled in", () => 
     () => decodeParameters([{ array: "uint256" }], huge),
     /longer than/,
   );
+});
+
+test("keccak of raw bytes matches cast keccak (a pool's storage slot)", () => {
+  // cast keccak 0x<poolId 0x22..22><slot 6>
+  assert.equal(
+    keccak256Hex(`${WORD}${"0".repeat(63)}6`),
+    "0xf87a0fde8b67ea92fe6ee99fef07c87fbe67dae8e9e3cf59604f30e4dc085df8",
+  );
+  assert.throws(() => keccak256Hex("0x123"), /even-length hex/);
 });

@@ -18,6 +18,8 @@ export async function installChainWallet(
     account: string;
     /** Answers by function signature, e.g. { "first()": "0x…" }. Anything else reads as zero. */
     reads?: Record<string, string>;
+    /** Answers by the call's exact data (checked before `reads`), for a read whose answer depends on its arguments. */
+    exact?: Record<string, string>;
     logs?: unknown[];
     block?: number;
   },
@@ -25,6 +27,8 @@ export async function installChainWallet(
   const reads: Record<string, string> = {};
   for (const [signature, answer] of Object.entries(options.reads ?? {}))
     reads[selectorOf(signature)] = answer;
+  for (const [data, answer] of Object.entries(options.exact ?? {}))
+    reads[data.toLowerCase()] = answer;
   await page.addInitScript(
     ([account, readsIn, logs, block]) => {
       const w = window as unknown as {
@@ -50,10 +54,12 @@ export async function installChainWallet(
           if (method === "eth_getTransactionByHash") return null;
           if (method === "eth_signTypedData_v4") return `0x${"11".repeat(65)}`;
           if (method === "eth_call") {
-            const data = String((params?.[0] as { data: string }).data);
+            const data = String(
+              (params?.[0] as { data: string }).data,
+            ).toLowerCase();
+            const table = readsIn as Record<string, string>;
             return (
-              (readsIn as Record<string, string>)[data.slice(0, 10)] ??
-              `0x${"0".repeat(64)}`
+              table[data] ?? table[data.slice(0, 10)] ?? `0x${"0".repeat(64)}`
             );
           }
           if (method === "eth_getTransactionReceipt") return { status: "0x1" };

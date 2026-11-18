@@ -378,6 +378,15 @@ export function selectorOf(signature: string): string {
   return `0x${bytesToHex(digest.slice(0, 4))}`;
 }
 
+/** keccak-256 of raw bytes given as hex (with or without 0x), as 0x hex: storage slots, pool ids. */
+export function keccak256Hex(data: string): string {
+  const hex = bareHex(data, "data");
+  const bytes = Uint8Array.from(
+    hex.match(/../g)?.map((b) => Number.parseInt(b, 16)) ?? [],
+  );
+  return `0x${bytesToHex(keccak_256(bytes))}`;
+}
+
 /** ABI-encode a full call: selector of `signature` + argument block. */
 export function encodeFunctionData(
   signature: string,

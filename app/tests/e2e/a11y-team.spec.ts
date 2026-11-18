@@ -2,7 +2,7 @@ import { type Page, test } from "@playwright/test";
 import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll } from "../helpers/layout";
 import { BACKER_EVM, FOUNDER_EVM } from "../helpers/numbers-fixture";
-import { addressWord } from "./helpers/chain-wallet";
+import { addressWord, word } from "./helpers/chain-wallet";
 import {
   FOUNDER_KEY,
   MATE_KEY,
@@ -13,10 +13,50 @@ import {
 } from "./helpers/team-world";
 import { createMockRelay } from "./mock-relay";
 
+const AUCTION = "0xa11c000000000000000000000000000000000a11";
+const FLOOR = 31_691_265_005_800n;
+
+/** The one auction, running or settled with its pool open. */
+const withSale = (settled: boolean) => (content: Record<string, unknown>) => ({
+  sale: {
+    auction: AUCTION,
+    minimum: "100000000000",
+    startBlock: "1000",
+    endBlock: "8200",
+    floorPriceQ96: FLOOR.toString(),
+    tickSpacingQ96: (FLOOR / 100n).toString(),
+    openedAt: (content.asOf as { time: number }).time - 3600,
+    ...(settled
+      ? {
+          settled: {
+            raised: "120000000000",
+            afterFee: "116400000000",
+            toTreasury: "90000000000",
+          },
+          pool: {
+            poolId: `0x${"22".repeat(32)}`,
+            sqrtPriceX96: "1584563250285286751870879006720",
+            poolDollars: "26400000000",
+            poolShares: "66000000000000000000000000",
+          },
+        }
+      : {}),
+  },
+  bids: [
+    {
+      auction: AUCTION,
+      count: 5,
+      amount: "120000000000",
+      clearingPriceQ96: (FLOOR * 2n).toString(),
+    },
+  ],
+});
+
 /**
  * axe on Team's screens and sheets (milestone 7), at 390 and 360 wide, light and dark, as `a11y.spec.ts` does for the
- * rest of the app: the second seat (offer and accept), the Pair's card, Give Shares, hand over and wind down. Serious
- * and critical findings fail; nothing may scroll sideways.
+ * rest of the app: the second seat (offer and accept), the Pair's card, Give Shares, hand over and wind down, and the
+ * market's (the bid box and sheet, the disclosure before bidding, the pool with its depth, Hand back, the floor line).
+ * Serious and critical findings fail; nothing may scroll sideways.
  */
 
 async function check(page: Page, surface: string) {
@@ -100,5 +140,60 @@ for (const size of WIDTHS)
       await pair.getByTestId("give-review").waitFor();
       await check(pair, `Give Shares sheet, ${label}`);
       await pair.close();
+    });
+  }
+
+for (const size of WIDTHS)
+  for (const scheme of ["dark", "light"] as const) {
+    const label = `${size.width}, ${scheme}`;
+
+    test(`the market's screens are accessible (${label})`, async ({ page }) => {
+      test.setTimeout(180_000);
+      await page.setViewportSize(size);
+      await page.emulateMedia({ colorScheme: scheme });
+      let relay = createMockRelay();
+      seedTeam(relay, "team", withSale(false));
+      await openTeam(page, relay, MATE_KEY, {
+        account: BACKER_EVM,
+        block: 2_000,
+        reads: PAIR_READS,
+      });
+      await page.getByTestId("bid-box").waitFor({ timeout: 20_000 });
+      await check(page, `Bid box, ${label}`);
+      await page.getByTestId("bid-amount").fill("250");
+      await page.getByTestId("bid-review").click();
+      await page.getByTestId("bid-sheet").waitFor();
+      await check(page, `Bid sheet, ${label}`);
+      await page.keyboard.press("Escape");
+      await page.getByTestId("tab-money").click();
+      await page.getByTestId("auction-disclosure").waitFor({ timeout: 20_000 });
+      await check(page, `Before you bid, ${label}`);
+
+      relay = createMockRelay();
+      seedTeam(relay, "team", withSale(true));
+      const pool = await page.context().newPage();
+      await pool.setViewportSize(size);
+      await pool.emulateMedia({ colorScheme: scheme });
+      await openTeam(pool, relay, MATE_KEY, {
+        account: BACKER_EVM,
+        block: 9_000,
+        reads: {
+          "melting()": `0x${word(60_000_000_000n)}`,
+          "meltRemaining()": `0x${word(365n * 86_400n)}`,
+          "countingSupply()": `0x${word(250_000_000n * 10n ** 18n)}`,
+          "totalSupply()": `0x${word(10n ** 27n)}`,
+          "saleClosed()": `0x${word(1)}`,
+        },
+      });
+      await pool.getByTestId("hand-back").waitFor({ timeout: 20_000 });
+      await check(pool, `The pool, ${label}`);
+      await pool.getByTestId("hand-back").click();
+      await pool.getByTestId("hand-back-amount").fill("1000");
+      await check(pool, `Hand back sheet, ${label}`);
+      await pool.keyboard.press("Escape");
+      await pool.getByTestId("tab-money").click();
+      await pool.getByTestId("floor-line").waitFor({ timeout: 20_000 });
+      await check(pool, `The floor line, ${label}`);
+      await pool.close();
     });
   }
