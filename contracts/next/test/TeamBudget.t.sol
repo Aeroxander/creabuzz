@@ -41,6 +41,7 @@ contract TeamBudgetTest is EarlierBase {
     }
 
     function test_payTeam_notMoreThanTheBudget() public {
+        vm.warp(_now() + t.TEAM_PAY_SPAN()); // the whole budget has accrued
         vm.prank(founder);
         vm.expectRevert(abi.encodeWithSelector(Treasury.TeamBudgetShort.selector, TEAM + 1, TEAM));
         t.payTeam(teamWallet, TEAM + 1);
@@ -55,7 +56,7 @@ contract TeamBudgetTest is EarlierBase {
     }
 
     function test_payTeam_badInputs() public {
-        address[4] memory bad = [address(0), address(t), address(v), address(shares)];
+        address[5] memory bad = [address(0), address(t), address(v), address(shares), address(eb)];
         for (uint256 i; i < bad.length; ++i) {
             vm.prank(founder);
             vm.expectRevert(Treasury.BadInput.selector);
@@ -68,6 +69,7 @@ contract TeamBudgetTest is EarlierBase {
 
     /// Before the market: held in the Vester, released evenly over 365 days from the market opening.
     function test_payTeam_beforeTheMarket_heldOnTheClock() public {
+        vm.warp(_now() + 30 days); // a month of team pay has accrued
         vm.expectEmit(true, true, false, true, address(t));
         emit Treasury.SharesGiven(founder, teamWallet, 1_000_000e18, true);
         vm.expectEmit(true, false, false, true, address(t));
@@ -89,6 +91,7 @@ contract TeamBudgetTest is EarlierBase {
 
     /// After the market: free at once, inside the one gift cap that the work pot's gifts share.
     function test_payTeam_afterTheMarket_underTheSharedGiftCap() public {
+        vm.warp(_now() + 60 days); // two months of team pay have accrued
         _market();
         _buy(alice, 350_000_000e18);
         assertEq(t.countingSupply() / 100, 3_500_000e18, "1% of the Shares in people's hands");
@@ -108,6 +111,7 @@ contract TeamBudgetTest is EarlierBase {
 
     /// The manager's keys as a Pair (central management): both sign each payment.
     function test_payTeam_byAPairRunner() public {
+        vm.warp(_now() + 30 days);
         _team();
         _both(address(t), abi.encodeCall(Treasury.payTeam, (teamWallet, 2_000_000e18)));
         assertEq(t.teamBudget(), TEAM - 2_000_000e18);
@@ -116,15 +120,17 @@ contract TeamBudgetTest is EarlierBase {
         t.payTeam(teamWallet, 1); // one signer alone cannot
     }
 
-    /// The manager's plan: paid monthly for 30 months (2.5 years): 12 before the market (held) at a 30-day step, then 18
-    /// after it (free) at a 33-day step, the step at which one month's gifts have left the cap's memory; the teammate is paid
-    /// alongside from the work pot. The budget is used up exactly; the work pot falls by the teammate's pay only; the reserve,
-    /// the auction and the pool match never move.
+    /// The manager's plan: paid monthly for 30 months (2.5 years), each paid at the end of its month (in arrears): 12
+    /// before the market (held) at a 30-day step, then 18 after it (free) at a 33-day step, the step at which one month's
+    /// gifts have left the cap's memory; the teammate is paid alongside from the work pot. The pace (`teamPayable`, the
+    /// budget over 730 days) never stops a monthly payment. The budget is used up exactly; the work pot falls by the
+    /// teammate's pay only; the reserve, the auction and the pool match never move.
     function test_monthlyPay_s1_thirtyMonths() public {
         uint256 months = 30;
         uint256 perMonth = TEAM / months;
         uint256 mate = TEAMMATE / months;
         for (uint256 m; m < months; ++m) {
+            vm.warp(_now() + (m < 12 ? 30 days : 33 days)); // the month is worked, then paid
             if (m == 12) {
                 _market();
                 _buy(alice, 350_000_000e18);
@@ -137,7 +143,6 @@ contract TeamBudgetTest is EarlierBase {
             t.payTeam(teamWallet, pay);
             vm.prank(founder);
             t.giveShares(teammate, mPay);
-            vm.warp(_now() + (m < 12 ? 30 days : 33 days));
         }
         assertEq(t.teamBudget(), 0, "used up");
         assertEq(t.workPot(), 200_000_000e18 - TEAMMATE);
@@ -156,6 +161,7 @@ contract TeamBudgetTest is EarlierBase {
     /// A strict 30-day step after the market counts two months at once (the cap remembers a gift for 30 to 33 days): at
     /// this size the second month's pay would pass the cap. Pay on a 33-day step, or pay at most half the cap a month.
     function test_monthlyPay_thirtyDayStepCountsTwoMonths() public {
+        vm.warp(_now() + 90 days); // enough team pay has accrued for both months
         _market();
         _buy(alice, 350_000_000e18);
         uint256 pay = TEAM / 24 + TEAMMATE / 24; // 2 years: 3.12M a month
@@ -191,6 +197,7 @@ contract TeamBudgetTest is EarlierBase {
 
     /// A new runner (a successor or, later, a Council) pays the rest of the budget; it is not lost with the seat.
     function test_budget_followsTheSeat() public {
+        vm.warp(_now() + 30 days);
         vm.prank(founder);
         t.handOver(carol, false);
         vm.prank(carol);
@@ -201,6 +208,58 @@ contract TeamBudgetTest is EarlierBase {
         vm.prank(carol);
         t.payTeam(teamWallet, 1e18);
         assertEq(t.teamBudget(), TEAM - 1e18);
+    }
+
+    /// Review fix R3/F3: the team budget accrues evenly over 730 days from the launch and `payTeam` never pays more than
+    /// has accrued and not been paid (in arrears; catching up is always allowed). Nothing on launch day.
+    function test_pace_teamPayAccruesOverTwoYears() public {
+        assertEq(t.teamBudgetAtLaunch(), TEAM);
+        assertEq(t.teamPayable(), 0, "nothing accrued on launch day");
+        vm.prank(founder);
+        vm.expectRevert(abi.encodeWithSelector(Treasury.TeamPayTooFast.selector, 1, 0));
+        t.payTeam(teamWallet, 1);
+        vm.warp(_now() + 73 days); // a tenth of the span
+        uint256 tenth = TEAM / 10;
+        assertEq(t.teamPayable(), tenth);
+        vm.prank(founder);
+        vm.expectRevert(abi.encodeWithSelector(Treasury.TeamPayTooFast.selector, tenth + 1, tenth));
+        t.payTeam(teamWallet, tenth + 1);
+        vm.prank(founder);
+        t.payTeam(teamWallet, tenth / 2);
+        assertEq(t.teamPayable(), tenth - tenth / 2);
+        vm.warp(_now() + 292 days); // half the span: a missed month is caught up in one payment
+        vm.prank(founder);
+        t.payTeam(teamWallet, TEAM / 2 - tenth / 2);
+        assertEq(t.teamPayable(), 0);
+        vm.warp(_now() + 365 days); // the whole span; never more than the budget
+        assertEq(t.teamPayable(), t.teamBudget());
+        vm.warp(_now() + 365 days);
+        assertEq(t.teamPayable(), t.teamBudget());
+        uint256 rest = t.teamBudget(); // read first: a prank applies to the next call
+        vm.prank(founder);
+        t.payTeam(teamWallet, rest);
+        assertEq(t.teamBudget(), 0);
+        assertEq(t.teamPayable(), 0);
+    }
+
+    /// Review fix R3/F3: a founder who leaves early holds the team pay for the days served only (what an ordinary
+    /// founder's trim keeps), and the rest stays in the budget for the next runner.
+    function test_pace_aLeaverHoldsTheDaysServedOnly() public {
+        vm.warp(_now() + 146 days); // a fifth of the span
+        uint256 served = t.teamPayable();
+        assertEq(served, TEAM / 5);
+        vm.prank(founder);
+        vm.expectRevert(abi.encodeWithSelector(Treasury.TeamPayTooFast.selector, TEAM, served));
+        t.payTeam(founder, TEAM);
+        vm.prank(founder);
+        t.payTeam(founder, served);
+        vm.prank(founder);
+        t.handOver(carol, true);
+        vm.prank(carol);
+        t.takeSeat();
+        (uint256 held,) = v.grants(founder);
+        assertEq(held, served);
+        assertEq(t.teamBudget(), TEAM - served, "the rest waits for the next runner");
     }
 
     /// The Treasury refuses a setup whose Shares do not cover the work pot and the team budget together.

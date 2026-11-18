@@ -119,7 +119,7 @@ abstract contract Base is Test {
     }
 
     function _launch(address who, bytes32 id) internal returns (address s, address tr, address ve) {
-        bytes32 h = launcher.settingsHash(); // read first: a prank applies to the next call, which would be this read
+        bytes32 h = launcher.launchHash(launcher.keyOf(who, id)); // read first: a prank applies to the next call
         vm.prank(who);
         return launcher.launch(id, "Project One", "ONE", h);
     }

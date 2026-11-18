@@ -443,8 +443,8 @@ contract Launcher {
     /// @param name The Shares' name (1 to 64 bytes).
     /// @param symbol The Shares' ticker (1 to 64 bytes).
     /// @param expectedSettingsHash `launchHash(keyOf(founder, projectId))` as the founder saw it (`settingsHash()` for every
-    /// project but project zero with an earlier raise). If the admin changed the settings (or project zero's earlier raise)
-    /// since, the launch reverts instead of giving the founder a project built on settings they never agreed to.
+    /// project but the named project zero). If the admin changed the settings (or which project is project zero, or its
+    /// earlier raise) since, the launch reverts instead of giving the founder a project built on settings they never agreed to.
     function launch(bytes32 projectId, string calldata name, string calldata symbol, bytes32 expectedSettingsHash)
         external
         returns (address shares, address treasury, address vester)
@@ -795,12 +795,13 @@ contract Launcher {
         return keccak256(abi.encode(settings));
     }
 
-    /// @notice What `launch` checks for the project `key`: `settingsHash()`, and for project zero with an earlier raise named,
-    /// a hash of it with the claim contract and the backing Shares kept, so its founder commits to the cut too.
+    /// @notice What `launch` checks for the project `key`: `settingsHash()`, and for the named project zero a hash of it with
+    /// the earlier raise (the claim contract, zero for none, and the backing Shares kept), so its founder commits to being
+    /// project zero (no founder grant: the founder's slice is the team budget) and to the cut. Naming a key project zero, or
+    /// taking the name back, after its founder read the hash makes that launch revert.
     function launchHash(bytes32 key) public view returns (bytes32 h) {
         h = settingsHash();
-        address claim = earlierClaim;
-        if (key == projectZeroKey && claim != address(0)) h = keccak256(abi.encode(h, claim, earlierKeep));
+        if (key == projectZeroKey) h = keccak256(abi.encode(h, earlierClaim, earlierKeep));
     }
 
     /// @notice The key a project is stored under.

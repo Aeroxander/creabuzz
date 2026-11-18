@@ -234,7 +234,7 @@ contract EarlierNamingTest is EarlierBase {
         vm.prank(admin);
         launcher.nameProjectZero(k0);
         bytes32 h = launcher.launchHash(k0);
-        assertEq(h, launcher.settingsHash());
+        assertTrue(h != launcher.settingsHash(), "the founder commits to being project zero");
         vm.expectEmit(true, true, false, true, address(launcher));
         emit Launcher.ProjectZeroSplit(k0, address(0), 0, 0, FOUNDER_SLICE);
         vm.prank(founder);
@@ -562,13 +562,13 @@ contract EarlierConsentTest is EarlierBase {
         _consentTo(0, address(new Wallet1271(holders[0])));
         vm.prank(alice);
         vm.expectRevert(EarlierBackers.NotKeeper.selector);
-        eb.voidConsent(0, "evidence");
+        eb.voidConsent(0, address(0), "evidence");
         vm.prank(keeper);
         vm.expectRevert(EarlierBackers.EntryState.selector);
-        eb.voidConsent(1, "evidence");
+        eb.voidConsent(1, address(0), "evidence");
         vm.warp(_now() + 21 days - 1);
         vm.prank(keeper);
-        eb.voidConsent(0, keccak256("evidence"));
+        eb.voidConsent(0, address(0), keccak256("evidence"));
         EarlierBackers.Entry memory e = eb.entryOf(0);
         assertEq(e.consentAt, 0);
         assertEq(e.receiver, address(0), "never redirected");
@@ -579,7 +579,7 @@ contract EarlierConsentTest is EarlierBase {
         vm.warp(_now() + 21 days);
         vm.prank(keeper);
         vm.expectRevert(EarlierBackers.WindowOver.selector);
-        eb.voidConsent(0, "late");
+        eb.voidConsent(0, address(0), "late");
     }
 
     /// EB18 to EB21: keeper only, open entry only, 30 days, the holder's veto, the holder version grows.
@@ -669,7 +669,7 @@ contract EarlierConsentTest is EarlierBase {
     function test_replace_EB29_aVoidedKeyCannotBlockIt() public {
         _consent(0);
         vm.prank(keeper);
-        eb.voidConsent(0, keccak256("leaked key"));
+        eb.voidConsent(0, address(0), keccak256("leaked key"));
         address next = makeAddr("new key");
         vm.prank(keeper);
         eb.proposeHolder(0, next, keccak256("leaked key"));

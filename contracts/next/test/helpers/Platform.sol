@@ -185,7 +185,7 @@ abstract contract Platform is ForkGate {
     // ================================================ projects and sales =============================================
 
     function _launch(address who, bytes32 id) internal returns (Proj memory p) {
-        bytes32 h = launcher.settingsHash();
+        bytes32 h = launcher.launchHash(launcher.keyOf(who, id));
         vm.prank(who);
         (address s, address t, address v) = launcher.launch(id, "Project", "PRJ", h);
         p = Proj({

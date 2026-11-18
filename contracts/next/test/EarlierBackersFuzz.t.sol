@@ -121,9 +121,9 @@ contract EarlierPaddedFuzzTest is EarlierBase {
 
 /// @notice The attack findings of `EARLIER-BACKERS.md` section 8 that the contracts handle, one test each.
 contract EarlierAttacksTest is EarlierBase {
-    /// "An old leaked key consents first": the keeper voids inside the 21 days (nothing was delivered meanwhile), proposes
-    /// the backer's new wallet publicly, the leaked key can neither agree again nor veto, and the backer agrees after 30
-    /// days. The keeper never names a receiver.
+    /// "An old leaked key consents first": the keeper voids inside the 21 days (nothing was delivered meanwhile) and, in the
+    /// same call, proposes the backer's new wallet publicly (so the leaked key has no moment to agree again in between); the
+    /// leaked key can neither agree again nor veto, and the backer agrees after 30 days. The keeper never names a receiver.
     function test_attack_leakedKeyConsentsFirst() public {
         _market();
         uint256 thief = 0x7417;
@@ -132,11 +132,9 @@ contract EarlierAttacksTest is EarlierBase {
         vm.warp(_now() + 20 days);
         vm.expectRevert();
         eb.deliver(4); // still inside the window
-        vm.prank(keeper);
-        eb.voidConsent(4, keccak256("public evidence"));
         uint256 newKey = 0xB4C4;
         vm.prank(keeper);
-        eb.proposeHolder(4, vm.addr(newKey), keccak256("public evidence"));
+        eb.voidConsent(4, vm.addr(newKey), keccak256("public evidence"));
         uint256 until = _now() + 1 days;
         bytes memory again = _sign(4, address(drop), until);
         vm.expectRevert(EarlierBackers.Barred.selector);
@@ -199,12 +197,12 @@ contract EarlierAttacksTest is EarlierBase {
         assertEq(ve == address(v), false);
     }
 
-    /// "Owner decides who receives entries with no address": the keeper can void and propose (public, 30 days, vetoable)
-    /// but has no way to name where Shares go; a consent the keeper voided leaves no receiver.
-    function test_attack_keeperCannotRedirect() public {
+    /// "Owner decides who receives entries with no address": the keeper never names a receiver (a consent it voids leaves
+    /// none), and a replacement of an open entry is public, waits 30 days and is vetoable.
+    function test_attack_keeperNamesNoReceiver() public {
         _consent(9);
         vm.prank(keeper);
-        eb.voidConsent(9, "x");
+        eb.voidConsent(9, address(0), "x");
         assertEq(eb.entryOf(9).receiver, address(0));
         vm.prank(keeper);
         eb.proposeHolder(10, keeper, "keeper names itself");
@@ -213,6 +211,36 @@ contract EarlierAttacksTest is EarlierBase {
         vm.warp(_now() + 30 days);
         vm.expectRevert(EarlierBackers.NoReplacement.selector);
         eb.applyHolder(10);
+    }
+
+    /// Review finding R4, recorded as the design (note section 11, "Review fixes"): the keeper CAN move a signed entry to a
+    /// holder it names, by voiding the consent inside its window with a replacement. It is public (`Voided` and
+    /// `HolderProposed`, with evidence), it waits 30 days from the void, nothing is delivered meanwhile, and the voided key
+    /// can neither agree again nor veto. No rule can tell a thief holding the key from the backer holding it; the protection
+    /// is the keeper's make-up (2-of-3, at most one signer the owner) and the public events.
+    function test_attack_keeperMovesASignedEntryOnlyInPublicAfter30Days() public {
+        _market();
+        _consent(2);
+        address named = makeAddr("made-up holder the keeper names");
+        vm.warp(_now() + 20 days);
+        vm.expectEmit(true, true, false, true, address(eb));
+        emit EarlierBackers.Voided(2, holders[2], keccak256("public evidence"));
+        vm.expectEmit(true, true, false, true, address(eb));
+        emit EarlierBackers.HolderProposed(2, named, _now() + 30 days, keccak256("public evidence"));
+        vm.prank(keeper);
+        eb.voidConsent(2, named, keccak256("public evidence"));
+        assertEq(shares.balanceOf(holders[2]), 0, "nothing was delivered inside the window");
+        vm.expectRevert(EarlierBackers.EntryState.selector);
+        eb.deliver(2);
+        vm.prank(holders[2]);
+        vm.expectRevert(EarlierBackers.NoReplacement.selector);
+        eb.cancelHolder(2, amounts[2], salts[2]);
+        vm.warp(_now() + 30 days - 1);
+        vm.expectRevert(abi.encodeWithSelector(EarlierBackers.TooEarly.selector, _now() + 1));
+        eb.applyHolder(2);
+        vm.warp(_now() + 1);
+        eb.applyHolder(2);
+        assertEq(eb.entryOf(2).holder, named);
     }
 }
 
@@ -255,6 +283,7 @@ contract EarlierGasTest is EarlierBase {
     }
 
     function test_gas_payTeam() public {
+        vm.warp(_now() + 30 days); // a month of team pay has accrued
         vm.prank(founder);
         uint256 g = gasleft();
         t.payTeam(alice, 1_000_000e18);

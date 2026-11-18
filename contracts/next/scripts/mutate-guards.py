@@ -449,6 +449,7 @@ EB='src/EarlierBackers.sol'; PT='src/Parts.sol'
 QE='test/{EarlierBackers,EarlierBackersFuzz}.t.sol'
 QT='test/{TeamBudget,EarlierBackers}.t.sol'
 QL='test/{EarlierBackers,EarlierBackersFuzz,TeamBudget,FounderPriceAuction}.t.sol'
+QR='test/{AttackEarlierReview,EarlierBackers,EarlierBackersFuzz,TeamBudget,FounderPriceAuction}.t.sol'
 Q=[
 ('Q01','EarlierBackers EB01: bind twice',EB,'if (address(vester) != address(0)) revert BindState();','',False,QE),
 ('Q02','EarlierBackers EB01: bind before the launch',EB,'if (p.shares == address(0)) revert BindState();','',False,QE),
@@ -482,10 +483,10 @@ Q=[
 ('Q30','EarlierBackers EB17: close before the long-stop',EB,'if (block.timestamp < longStop) revert TooEarly(longStop);','',False,QE),
 ('Q31','EarlierBackers EB17: close twice',EB,'        if (closed) revert ClosedState();\n        closed = true;','        closed = true;',False,QE),
 ('Q32','EarlierBackers EB17: to the reserve before the close',EB,'if (!closed) revert ClosedState();','',False,QE),
-('Q33','EarlierBackers EB18: anyone may propose a holder',EB,'        if (msg.sender != keeper) revert NotKeeper();\n        if (entry >= _leaves.length) revert UnknownEntry();\n        if (next == address(0)) revert BadHolder();','        if (entry >= _leaves.length) revert UnknownEntry();\n        if (next == address(0)) revert BadHolder();',False,QE),
-('Q34','EarlierBackers EB18: a replacement for an entry out of range',EB,'        if (entry >= _leaves.length) revert UnknownEntry();\n        if (next == address(0)) revert BadHolder();','        if (next == address(0)) revert BadHolder();',False,QE),
+('Q33','EarlierBackers EB18: anyone may propose a holder',EB,'        if (msg.sender != keeper) revert NotKeeper();\n        if (entry >= _leaves.length) revert UnknownEntry();\n        Entry storage e','        if (entry >= _leaves.length) revert UnknownEntry();\n        Entry storage e',False,QE),
+('Q34','EarlierBackers EB18: a replacement for an entry out of range',EB,'        if (entry >= _leaves.length) revert UnknownEntry();\n        Entry storage e = _entries[entry];','        Entry storage e = _entries[entry];',False,QE),
 ('Q35','EarlierBackers EB18: a replacement by nobody',EB,'if (next == address(0)) revert BadHolder();','',False,QE),
-('Q36','EarlierBackers EB19: a replacement for an agreed entry',EB,'        if (e.consentAt != 0) revert EntryState();\n        (e.pending, e.pendingAt)','        (e.pending, e.pendingAt)',False,QE),
+('Q36','EarlierBackers EB19: a replacement for an agreed entry',EB,'        if (e.consentAt != 0) revert EntryState();\n        _propose(e, entry, next, evidence);','        _propose(e, entry, next, evidence);',False,QE),
 ('Q37','EarlierBackers EB20: no 30-day wait',EB,'if (block.timestamp < e.pendingAt + REPLACE_WAIT) revert TooEarly(e.pendingAt + REPLACE_WAIT);','',False,QE),
 ('Q38','EarlierBackers EB21: anyone may veto',EB,'if (!isHolder || msg.sender == e.barred) revert NoReplacement();','if (msg.sender == e.barred) revert NoReplacement();',False,QE),
 ('Q39','EarlierBackers EB21/EB29: the voided holder may veto',EB,'if (!isHolder || msg.sender == e.barred) revert NoReplacement();','if (!isHolder) revert NoReplacement();',False,QE),
@@ -501,7 +502,7 @@ Q=[
 ('Q49','EarlierBackers EB26: delivery inside the challenge window',EB,'if (block.timestamp < since + CHALLENGE) revert TooEarly(since + CHALLENGE);','',False,QE),
 ('Q50','EarlierBackers EB27: the lock-up gate is ignored',EB,'if (block.timestamp < since + minHoldFromConsent) revert TooEarly(since + minHoldFromConsent);','',False,'test/EarlierBackers.t.sol'),
 ('Q51','EarlierBackers: delivery for an open entry',EB,'        if (since == 0) revert EntryState();\n        if (block.timestamp < since + CHALLENGE)','        if (block.timestamp < since + CHALLENGE)',False,QE),
-('Q52','EarlierBackers EB28: anyone may void',EB,'    function voidConsent(uint256 entry, bytes32 evidence) external {\n        if (msg.sender != keeper) revert NotKeeper();','    function voidConsent(uint256 entry, bytes32 evidence) external {',False,QE),
+('Q52','EarlierBackers EB28: anyone may void',EB,'    function voidConsent(uint256 entry, address next, bytes32 evidence) external {\n        if (msg.sender != keeper) revert NotKeeper();','    function voidConsent(uint256 entry, address next, bytes32 evidence) external {',False,QE),
 ('Q53','EarlierBackers EB28: void after the window',EB,'if (block.timestamp >= since + CHALLENGE) revert WindowOver();','',False,QE),
 ('Q54','EarlierBackers EB28: void an open entry',EB,'        if (since == 0) revert EntryState();\n        if (block.timestamp >= since + CHALLENGE)','        if (block.timestamp >= since + CHALLENGE)',False,QE),
 ('Q55','EarlierBackers: a void keeps the receiver',EB,'(e.consentAt, e.signer, e.receiver, e.amount) = (0, address(0), address(0), 0);','(e.consentAt, e.signer, e.amount) = (0, address(0), 0);',False,QE),
@@ -523,7 +524,7 @@ Q=[
 ('Q76','Launcher LZ2: a claim made for another project',L,'|| IEarlierBackers(claim).key() != key','|| false',False,QL),
 ('Q77','Launcher: anyone may name the earlier raise',L,'    function nameEarlierBackers(address claim, uint256 keepBacking) external {\n        if (msg.sender != admin) revert NotAdmin();','    function nameEarlierBackers(address claim, uint256 keepBacking) external {',False,QL),
 ('Q87','Launcher: the earlier raise may be renamed after the launch (or before project zero is named)',L,'if (key == bytes32(0)) revert BadCut();','',False,QL),
-('Q78','Launcher LZ4: the launch hash leaves out the cut',L,'if (key == projectZeroKey && claim != address(0)) h = keccak256(abi.encode(h, claim, earlierKeep));','',False,QL),
+('Q78','Launcher LZ4: the launch hash leaves out the cut',L,'if (key == projectZeroKey) h = keccak256(abi.encode(h, earlierClaim, earlierKeep));','',False,QL),
 ('Q79','Launcher: naming project zero again keeps the old claim',L,'(projectZeroKey, earlierClaim) = (key, address(0));','projectZeroKey = key;',False,QL),
 ('Q80','Launcher: the launch does not bind the claim',L,'if (claim != address(0)) IEarlierBackers(claim).bind();','',False,QL),
 ('Q81','Launcher: the Treasury is not told about the claim',L,'earlier: claim,','earlier: address(0),',False,QL),
@@ -541,6 +542,16 @@ Q=[
 ('Q95','Treasury: the birth check leaves out the team budget',T,'< s.workPot + s.teamBudget','< s.workPot',False,QT),
 ('Q96','Treasury: team pay skips the gift checks',T,'        _checkGift(to, amount);\n        uint256 left = teamBudget;','        uint256 left = teamBudget;',False,QT),
 ('Q97','Treasury: undelivered earlier-backer Shares count',T,' - vester.unreleased() - held;',' - vester.unreleased();',False,QE),
+# the review fixes (EARLIER-BACKERS.md section 11, "Review fixes"); QR adds the review's attack suite
+('Q100','Treasury R1: a gift or team payment may go to the claim contract (its grant passes its list: every consent refused)',T,' || to == earlier\n','\n',False,QR),
+('Q101','Treasury R3: team pay is not paced (the whole budget on launch day, past the trim)',T,'if (amount > open) revert TeamPayTooFast(amount, open);','',False,QR),
+('Q102','Treasury R3: the budget at launch is not stored (nothing ever accrues)',T,'(teamBudgetAtLaunch, teamPayFrom) = (s.teamBudget, block.timestamp);','(teamBudgetAtLaunch, teamPayFrom) = (0, block.timestamp);',False,QR),
+('Q103','Treasury R3: the pace starts at time zero (all accrued at launch)',T,'(teamBudgetAtLaunch, teamPayFrom) = (s.teamBudget, block.timestamp);','(teamBudgetAtLaunch, teamPayFrom) = (s.teamBudget, 0);',False,QR),
+('Q104','Treasury R3: the pace forgets what was paid',T,'return accrued - (atLaunch - teamBudget);','return accrued;',False,QR),
+('Q105','EarlierBackers F2: a void ignores its replacement (a gap the leaked key re-signs in)',EB,'        if (next != address(0)) _propose(e, entry, next, evidence);\n','',False,QR),
+('Q106','EarlierBackers R5: the holder may veto any number of times',EB,'            if (e.vetoed) revert NoReplacement();\n','',False,QR),
+('Q107','EarlierBackers R5: the veto is not recorded',EB,'            e.vetoed = true;\n','',False,QR),
+('Q108','Launcher R2: the launch hash says project zero only when an earlier raise is named',L,'if (key == projectZeroKey) h =','if (key == projectZeroKey && earlierClaim != address(0)) h =',False,QR),
 ]
 MUT+=Q
 

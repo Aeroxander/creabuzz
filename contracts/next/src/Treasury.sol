@@ -85,6 +85,9 @@ contract Treasury {
     uint256 public constant RESERVE_SPENDABLE_PARTS = 15;
     /// @notice See `RESERVE_SPENDABLE_PARTS`.
     uint256 public constant RESERVE_FLOOR_PARTS = 82;
+    /// @notice Project zero's team budget accrues evenly over this long from the launch: `payTeam` never pays more than
+    /// the part accrued so far (paid in arrears, like a monthly payment; catching up is always allowed).
+    uint256 public constant TEAM_PAY_SPAN = 730 days;
     uint256 private constant BPS = 10_000;
     uint256 private constant DAY = 1 days;
     uint256 private constant DAY_PARTS = 6; // an agent's used amount counts for 24 to 28 hours
@@ -136,6 +139,10 @@ contract Treasury {
     /// @notice Project zero only: what is left of its team budget (its founder's slice, held here instead of in the Vester),
     /// which the runner pays out over time with `payTeam`, under the same rules as a gift. Zero for every other project.
     uint256 public teamBudget;
+    /// @notice Project zero only: the team budget at the launch (what is left plus everything paid from it).
+    uint256 public teamBudgetAtLaunch;
+    /// @notice When the team budget started to accrue (the launch).
+    uint256 public teamPayFrom;
 
     // ---- who runs the project
     address public runner; // the founder at birth, then whoever the runner hands the seat to
@@ -235,6 +242,8 @@ contract Treasury {
     error WorkPotShort(uint256 amount, uint256 left);
     /// @notice The team budget has fewer Shares than asked.
     error TeamBudgetShort(uint256 amount, uint256 left);
+    /// @notice Team pay faster than the budget accrues: only `open` Shares of it may be paid now.
+    error TeamPayTooFast(uint256 amount, uint256 open);
     /// @notice The quote token moved a different amount than it was asked to.
     error TokenMisbehaved();
     /// @notice The project wound down already.
@@ -274,6 +283,7 @@ contract Treasury {
         (opener, salePath, workPot, runner) = (s.opener, s.salePath, s.workPot, s.founder);
         (rounds, stake, stakeAmount, earlier, teamBudget) =
             (IRounds(s.rounds), s.stake, s.stakeAmount, s.earlier, s.teamBudget);
+        (teamBudgetAtLaunch, teamPayFrom) = (s.teamBudget, block.timestamp);
         (exitFeeBps, platformFeeBps, spendableParts, floorParts) =
             (s.exitFeeBps, s.platformFeeBps, s.spendableParts, s.floorParts);
         (defaultAgentUsd, defaultAgentShares) = (s.agentUsd, s.agentShares);
@@ -581,20 +591,36 @@ contract Treasury {
     /// @notice Project zero only: pay a team member from the team budget (its founder's slice, held here, earmarked and
     /// public: `teamBudget` is what is left). The rules are a gift's: before the market the Shares go to the Vester and
     /// release over 365 days from the market opening; after it they go straight to `to`, inside the same 1% of the Shares in
-    /// people's hands in any 30 days that every gift shares. Only the runner (never an agent); the work pot and the reserve
-    /// are never touched.
+    /// people's hands in any 30 days that every gift shares. And never faster than the budget accrues (`teamPayable`):
+    /// evenly over `TEAM_PAY_SPAN` from the launch, so a runner who leaves early has been paid for the days served only.
+    /// Only the runner (never an agent); the work pot and the reserve are never touched.
     function payTeam(address to, uint256 amount) external nonReentrant onlyRunner {
         _checkGift(to, amount);
         uint256 left = teamBudget;
         if (amount > left) revert TeamBudgetShort(amount, left);
+        uint256 open = teamPayable();
+        if (amount > open) revert TeamPayTooFast(amount, open);
         teamBudget = left - amount;
         _gift(to, amount);
         emit TeamPaid(to, amount, left - amount);
     }
 
-    /// @dev A gift goes to a person: never to nobody, this contract, the Vester or the Shares, and never of nothing.
+    /// @notice Project zero only: team pay accrued so far and not paid yet (the budget at launch times the time since the
+    /// launch over `TEAM_PAY_SPAN`, at most all of it, less what was paid). Zero for every other project.
+    function teamPayable() public view returns (uint256) {
+        uint256 atLaunch = teamBudgetAtLaunch;
+        uint256 elapsed = block.timestamp - teamPayFrom;
+        uint256 accrued = elapsed >= TEAM_PAY_SPAN ? atLaunch : atLaunch * elapsed / TEAM_PAY_SPAN;
+        return accrued - (atLaunch - teamBudget);
+    }
+
+    /// @dev A gift goes to a person: never to nobody, this contract, the Vester, the Shares or project zero's earlier
+    /// backers' claim contract (a grant to it would block every consent: its grant must equal its list), and never of nothing.
     function _checkGift(address to, uint256 amount) private view {
-        if (to == address(0) || to == address(this) || to == address(vester) || to == address(shares) || amount == 0) {
+        if (
+            to == address(0) || to == address(this) || to == address(vester) || to == address(shares) || to == earlier
+                || amount == 0
+        ) {
             revert BadInput();
         }
     }

@@ -24,8 +24,12 @@ import {IShares, IVester, ILauncherProjects, ProjectAddresses} from "./Interface
 /// or to the holder itself.
 ///
 /// The keeper (a 2-of-3 Safe in the design: counsel, one independent person and the owner) can do three things and nothing
-/// else: void a consent inside its 21-day challenge window (it goes back to open, never to someone else), replace the holder
-/// of an open entry after a public 30-day wait the holder can veto (a lost key), and publish a corrected text. Delivery
+/// else: void a consent inside its 21-day challenge window (the entry goes back to open with no receiver), replace the holder
+/// of an open entry after a public 30-day wait (a lost key), and publish a corrected text. The holder may veto a replacement
+/// in person once; after that only its consent stops one. A void can carry a replacement in the same call (a leaked key):
+/// the voided key may then neither agree again nor veto, so the keeper CAN move a signed entry to a new holder, publicly,
+/// 30 days after the void at the earliest. No rule here can tell a thief holding a key from the backer holding it; the
+/// protection is the keeper's make-up (at most one of its signers is the owner) and the public events. Delivery
 /// (`deliver`, anyone) waits out the challenge window and, when counsel switches it on, a hold from each signature
 /// (`minHoldFromConsent`, zero by default). Entries nobody agreed to by counsel's long-stop date go to the project's reserve
 /// (`close`, then `toReserve`); until then they wait, and the project's Treasury leaves Shares released here but not yet
@@ -61,6 +65,7 @@ contract EarlierBackers {
         uint64 consentAt; // when the current consent was given; zero while the entry is open
         address signer; // the holder who gave the current consent
         uint64 pendingAt; // when the pending replacement was proposed
+        bool vetoed; // the holder used its one bare veto; from then on only its consent stops a replacement
         address pending; // the proposed new holder; zero when none
         address barred; // the holder whose consent the keeper last voided: may not veto a replacement
         address receiver; // where the Shares go (set at consent)
@@ -357,8 +362,10 @@ contract EarlierBackers {
     // ================================================ the keeper ======================================================
 
     /// @notice Void a consent inside its 21-day window, with public evidence (a leaked key, a wrong wallet). The entry goes
-    /// back to open with no receiver; the keeper can never name one. The voided holder may not veto a replacement.
-    function voidConsent(uint256 entry, bytes32 evidence) external {
+    /// back to open with no receiver; the keeper can never name one. The voided holder may not veto a replacement. With
+    /// `next` (not zero), the replacement is proposed in the same call (a leaked key), so the voided key can never agree
+    /// again in between; with zero (a wrong wallet), the holder may agree again.
+    function voidConsent(uint256 entry, address next, bytes32 evidence) external {
         if (msg.sender != keeper) revert NotKeeper();
         Entry storage e = _entries[entry];
         uint256 since = e.consentAt;
@@ -369,22 +376,23 @@ contract EarlierBackers {
         e.barred = was;
         (e.consentAt, e.signer, e.receiver, e.amount) = (0, address(0), address(0), 0);
         emit Voided(entry, was, evidence);
+        if (next != address(0)) _propose(e, entry, next, evidence);
     }
 
     /// @notice Propose `next` as the holder of an open entry (a lost key), with public evidence. It applies after 30 days
-    /// unless the holder vetoes it or the holder's consent cancels it.
+    /// unless the holder vetoes it (once) or the holder's consent cancels it.
     function proposeHolder(uint256 entry, address next, bytes32 evidence) external {
         if (msg.sender != keeper) revert NotKeeper();
         if (entry >= _leaves.length) revert UnknownEntry();
-        if (next == address(0)) revert BadHolder();
         Entry storage e = _entries[entry];
         if (e.consentAt != 0) revert EntryState();
-        (e.pending, e.pendingAt) = (next, uint64(block.timestamp));
-        emit HolderProposed(entry, next, block.timestamp + REPLACE_WAIT, evidence);
+        _propose(e, entry, next, evidence);
     }
 
-    /// @notice Cancel a pending replacement: the keeper, or the entry's holder in person (unless the keeper voided that
-    /// holder's consent). A holder named only in the leaf proves it with the entry's `amount` and `salt`.
+    /// @notice Cancel a pending replacement: the keeper, or the entry's holder in person, once per entry (unless the keeper
+    /// voided that holder's consent). After that one veto, the holder stops a replacement only by agreeing, which the keeper
+    /// can void inside its window, so a thief holding a lost key cannot block the backer's replacement for ever. A holder
+    /// named only in the leaf proves it with the entry's `amount` and `salt`.
     function cancelHolder(uint256 entry, uint256 amount, bytes32 salt) external {
         Entry storage e = _entries[entry];
         if (e.pending == address(0)) revert NoReplacement();
@@ -394,6 +402,8 @@ contract EarlierBackers {
                 ? _leaves[entry] == leafOf(entry, msg.sender, amount, salt)  // a pending replacement implies a real entry
                 : msg.sender == holder;
             if (!isHolder || msg.sender == e.barred) revert NoReplacement();
+            if (e.vetoed) revert NoReplacement();
+            e.vetoed = true;
         }
         (e.pending, e.pendingAt) = (address(0), 0);
         emit ReplacementCancelled(entry, msg.sender);
@@ -497,6 +507,12 @@ contract EarlierBackers {
     }
 
     // ================================================ plumbing ========================================================
+
+    function _propose(Entry storage e, uint256 entry, address next, bytes32 evidence) private {
+        if (next == address(0)) revert BadHolder();
+        (e.pending, e.pendingAt) = (next, uint64(block.timestamp));
+        emit HolderProposed(entry, next, block.timestamp + REPLACE_WAIT, evidence);
+    }
 
     /// @dev The receiver is a wallet with code on this chain, or the holder itself (so never zero: a holder is never zero);
     /// never a project contract.
