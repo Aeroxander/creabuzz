@@ -279,7 +279,16 @@ export function projectRecordRefusal(
   )
     return AGENT_LIMIT;
   if (!part) return null;
-  if (part === "task") return team.has(event.pubkey) ? null : NOT_TEAM;
+  if (part === "task") {
+    // A task names its helper, or is open to anyone and says what it pays (whole dollars, 1 to 100,000).
+    const usd = tagOf(event, "task-usd");
+    if (
+      !tagOf(event, "task-helper") &&
+      !(usd && /^[1-9][0-9]*$/.test(usd) && Number(usd) <= 100_000)
+    )
+      return "invalid: a task must name its helper in a `task-helper` tag, or say what it pays in `task-usd` to be open to anyone";
+    return team.has(event.pubkey) ? null : NOT_TEAM;
+  }
   const task = events.find(
     (e) =>
       e.id === tagOf(event, "task") &&
@@ -290,7 +299,28 @@ export function projectRecordRefusal(
     return "invalid: this step names a task that is not on this server";
   if (tagOf(task, "a") !== coordinate)
     return "invalid: this step names a task from another project";
-  const helper = tagOf(task, "task-helper");
+  // A task open to anyone: its helper is the first take, by time then id, from someone who has not given it up.
+  const steps = events.filter(
+    (e) => e.kind === 47003 && tagOf(e, "task") === task.id,
+  );
+  const left = new Set(
+    steps
+      .filter((e) => tagOf(e, "task-part") === "give-up")
+      .map((e) => e.pubkey),
+  );
+  const firstTake = steps
+    .filter((e) => tagOf(e, "task-part") === "take" && !left.has(e.pubkey))
+    .sort((x, y) => x.created_at - y.created_at || (x.id < y.id ? -1 : 1))[0];
+  const helper = tagOf(task, "task-helper") ?? firstTake?.pubkey;
+  if (part === "take") {
+    if (team.has(event.pubkey))
+      return "invalid: a task open to anyone is taken by someone outside the team; the team names a helper instead";
+    if (tagOf(task, "task-helper"))
+      return "invalid: this task names its helper; only a task open to anyone can be taken";
+    if (firstTake || left.has(event.pubkey))
+      return "restricted: this task is taken, stopped, or was given up by you before; it can't be taken now";
+    return null;
+  }
   if (["accept", "evidence", "more-time", "give-up"].includes(part))
     return event.pubkey === helper
       ? null

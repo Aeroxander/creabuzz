@@ -1,6 +1,5 @@
 import { relativeTime } from "@creaton/core/client/relative-time.ts";
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
-import { ListChecks } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { BackHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
@@ -23,6 +22,7 @@ import {
   useProjectNumbers,
   useWalletAddress,
 } from "../money/use-money";
+import { TasksTab } from "../tasks/TasksTab";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
 import type { Project } from "./project-record";
@@ -211,16 +211,13 @@ function ProjectView({ project }: { project: Project }) {
           {
             value: "tasks",
             label: "Tasks",
-            soon: true,
             content: (
-              <EmptyState
-                icon={<ListChecks size={28} />}
-                testId="tasks-placeholder"
-                title="Tasks are coming"
-              >
-                Soon the team posts tasks here, anyone can take one, and the
-                team accepts the work.
-              </EmptyState>
+              <TasksTab
+                address={walletAddress}
+                numbers={numbers}
+                profiles={profiles}
+                project={project}
+              />
             ),
           },
           {

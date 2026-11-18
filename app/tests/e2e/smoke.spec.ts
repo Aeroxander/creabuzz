@@ -201,11 +201,11 @@ test("a project shows its stage, its updates and its people; Tasks is marked as 
   await expect(page.getByTestId("project-people")).toContainText("Fay Founder");
   await expect(page.getByTestId("project-people")).toContainText("Max Mate");
   await page.getByTestId("tab-tasks").click();
-  await expect(page.getByTestId("tasks-placeholder")).toBeVisible();
+  await expect(page.getByTestId("tasks-none")).toBeVisible();
   // Nothing set on the server, nothing shown: no Money tab at all.
   await expect(page.getByTestId("tab-money")).toHaveCount(0);
   await expect(
-    page.getByRole("tab", { name: "Tasks (coming soon)" }),
+    page.getByRole("tab", { name: "Tasks", exact: true }),
   ).toBeVisible();
   await expect(page.getByTestId("tab-link-home")).toHaveAttribute(
     "aria-current",
