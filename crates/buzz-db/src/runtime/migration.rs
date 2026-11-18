@@ -558,6 +558,11 @@ mod postgres_tests {
             "storage_accounting_snapshots",
             "operator_listener_pubkeys",
             "operator_listener_outbox",
+            "chain_reader_cursor",
+            "chain_blocks",
+            "chain_contracts",
+            "chain_logs",
+            "chain_project_numbers",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -771,7 +776,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 64);
+        assert_eq!(migrations.len(), 65);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1568,6 +1573,46 @@ mod postgres_tests {
         }
         assert!(board_moderation.contains("'board_moderator'"));
         assert!(desired_schema.contains("'board_moderator'"));
+    }
+
+    #[test]
+    fn chain_reader_tables_are_operator_global_in_every_schema_source() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[64].version, 65);
+        let chain_reader = migrations[64].sql.as_str();
+        let desired_schema = crate::test_support::desired_state_schema_sql();
+        let reconcile = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../scripts/reconcile-schema-after-pgschema.sql"),
+        )
+        .expect("read the post-pgschema reconcile script");
+        for table in [
+            "chain_reader_cursor",
+            "chain_blocks",
+            "chain_contracts",
+            "chain_logs",
+            "chain_project_numbers",
+        ] {
+            let registered = format!("('{table}', 'deployment-global");
+            assert!(
+                chain_reader.contains(&registered),
+                "migration 0065 must register {table}"
+            );
+            assert!(
+                desired_schema.contains(&registered),
+                "schema seeds must register {table}"
+            );
+            assert!(
+                reconcile.contains(&registered),
+                "the reconcile script must register {table} (pgschema skips seeds)"
+            );
+            assert!(
+                desired_schema.contains(&format!("CREATE TABLE {table} (")),
+                "schema.sql must declare {table}"
+            );
+            assert!(!chain_reader.contains(&format!("attach_community_write_fence('{table}')")));
+        }
     }
 
     #[test]
@@ -3492,6 +3537,10 @@ mod postgres_tests {
         }
     }
 
+    fn latest_version() -> i64 {
+        MIGRATOR.iter().map(|m| m.version).max().unwrap_or(0)
+    }
+
     /// The release-blocking brownfield case, once per earlier numbering: a
     /// database that recorded the fork's five migrations as 0045-0049 (the
     /// `feat/org-graph` fork) or as 0054-0058 (the first merge) fails sqlx
@@ -3512,8 +3561,8 @@ mod postgres_tests {
 
         assert_eq!(
             applied_versions(&pool).await,
-            (1_i64..=64).collect::<Vec<i64>>(),
-            "every migration through 0064 is applied exactly once"
+            (1_i64..=latest_version()).collect::<Vec<i64>>(),
+            "every migration is applied exactly once"
         );
         let renumbered: Vec<(i64, String)> = sqlx::query_as(
             "SELECT version, description FROM _sqlx_migrations \
@@ -3551,7 +3600,7 @@ mod postgres_tests {
     }
 
     /// A database that never ran the fork must be untouched by the repair: a
-    /// fresh migrate applies 0001-0064 in order and succeeds.
+    /// fresh migrate applies every migration in order and succeeds.
     #[tokio::test]
     #[ignore = "requires Postgres"]
     async fn fresh_database_is_unaffected_by_fork_row_repair() {
@@ -3559,7 +3608,7 @@ mod postgres_tests {
         run_migrations(&pool).await.expect("fresh migrate succeeds");
         assert_eq!(
             applied_versions(&pool).await,
-            (1_i64..=64).collect::<Vec<i64>>(),
+            (1_i64..=latest_version()).collect::<Vec<i64>>(),
             "a fresh database applies every migration in order"
         );
         drop_probe_database(&admin, &probe_db).await;

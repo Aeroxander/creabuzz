@@ -281,3 +281,29 @@ BEGIN
         RAISE EXCEPTION 'community write fence missing after pgschema apply on: %', unfenced;
     END IF;
 END $$;
+
+-- Chain reader tables (migration 0065) are operator-global: public chain facts
+-- read for the whole deployment. pgschema skips the registry seed rows, so
+-- insert them here and assert the live registry, or the community_id lint and
+-- the deletion catalog would treat them as tenant tables.
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('chain_reader_cursor', 'deployment-global chain reader position; public chain facts'),
+    ('chain_blocks', 'deployment-global chain reader block hashes; public chain facts'),
+    ('chain_contracts', 'deployment-global contracts the chain reader follows; public chain facts'),
+    ('chain_logs', 'deployment-global contract events read from the chain; public chain facts'),
+    ('chain_project_numbers', 'deployment-global record of the project numbers the reader signed')
+ON CONFLICT (table_name) DO NOTHING;
+
+DO $$
+DECLARE
+    missing TEXT;
+BEGIN
+    SELECT string_agg(t.name, ', ' ORDER BY t.name)
+      INTO missing
+      FROM unnest(ARRAY['chain_reader_cursor', 'chain_blocks', 'chain_contracts',
+                        'chain_logs', 'chain_project_numbers']) AS t(name)
+     WHERE NOT EXISTS (SELECT 1 FROM _operator_global_tables g WHERE g.table_name = t.name);
+    IF missing IS NOT NULL THEN
+        RAISE EXCEPTION 'chain reader tables missing from _operator_global_tables after pgschema apply: %', missing;
+    END IF;
+END $$;
