@@ -166,3 +166,157 @@ message box) and `14-start-missing-answers-360`. The set is in the session scrat
    instead.
 9. **The stage line without money** shows Solo and Team only, and reads Team once a second person has said yes on the
    record. The plan's Team stage also needs the on-chain second signer; that comes with milestone 7.
+
+# Part 2: money, This week, and the open items (18 November 2026)
+
+Written on branch `v6`. **Nothing is deployed and nothing was pushed.** Investing stays off by default: with the
+server's `investing` unset or false, the app asks for no project numbers and shows nothing about money (a smoke test
+counts the server's requests and finds none for kind 39009).
+
+## The short answer
+
+Where the server turns investing on, the app now reads each project's numbers from the server's reading of the chain
+(milestone 5's kind 39009 record) and shows them on the Project page and on Home; a person can back an open round in 2
+presses and 1 field, take money back from a receipt on You in 2 presses, and a founder can open a backing round in 1
+press. This week posts the founder's weekly update (the same record `web/` reads) in 2 presses and 1 field, with the
+check-in on the network in the same press when this wallet runs the project. Each of those budgets is held by a
+press-counted Playwright journey. The app also has an axe run on every screen (nothing serious or critical found), a
+passkey spec on Chrome's virtual authenticator, and a real-server loop that serves `app/dist` from the relay and runs
+Join and Start against a scratch database.
+
+What part 2 does not do: put a project on the chain (launch), send money from a phone (the passkey wallet), Give Shares,
+and the budgets whose contracts or screens belong to milestones 7 and 8. Each is listed under open items with the
+reason.
+
+## A decision for the lead: how a project record names its launch
+
+Milestone 5 left no link from a project's own record (kind 37001, `d` = a word, signed by the founder's Nostr key) to its
+project on the chain (39009 `d` = `keccak256(abi.encode(founderEvm, projectId))`). The contracts say `projectId` is "the
+id in the founder's signed project record", so part 2 takes, in `packages/creaton-core/src/launchpad/project-chain.ts`:
+
+- `projectId = keccak256(utf8("37001:<founder pubkey>:<d>"))`, the hash of the record's address;
+- the founder's record names its launch in a `["chain-key", "0x…"]` tag (`recordWithTeam` keeps it when the team changes);
+- the app believes a 39009 only when (1) it is signed by the server's own key (NIP-11 `self`, now read by
+  `serverRelaySigner()`), (2) its `d` is the record's `chain-key`, (3) `keccak256(abi.encode(founder, projectId))` from
+  its own content equals `d`, and (4) that `projectId` is the hash of this record's address.
+
+Checks 3 and 4 together mean a record that points at someone else's launch shows nothing, and a launch someone else
+made for this record's id (from another wallet) shows nothing either. The golden vector is milestone 5's record (founder
+`0x7099…79c8`, id `0x5c18…481d`, key `0x23ae…4db3`). Nothing writes the `chain-key` tag yet, because nothing in the app
+launches a project (open item 1); until then a project shows "No backing yet". Reading by the `d` tag only: multi-letter
+tag filters are not indexed by the server.
+
+## What was built, and where
+
+| Piece | Where | What it does |
+|---|---|---|
+| The server's own key | `packages/creaton-core/src/client/server-settings.ts` | `relaySignerFromInfo` / `serverRelaySigner()` from the information document's `self`; node test |
+| The chain-key link | `packages/creaton-core/src/launchpad/project-chain.ts` | `projectIdOf`, `chainKeyOf`, `chainKeyFromTags`, `numbersBelongTo`; node test with the milestone 5 vector |
+| Weekly update record | `packages/creaton-core/src/project/{weekly-update,record-date,promises}.ts` | Moved from `web/src/features/launchpad/lib/` unchanged, with one-line `export *` shims at the old paths (part 1's pattern); `web/`'s own tests of them still run through the shims |
+| Project numbers | `app/src/features/money/numbers.ts` | Parses 39009 (version 1, amounts as bigint, `removed`, `truncated`), the open round, the 12-hour lowering window, receipts, refunds and holdings by address, the runner; words for dollars, Shares and prices |
+| Calls | `app/src/features/money/calls.ts` | approve then `ask`, `refund`, `claimHeld`, `checkIn`, `openRound` at exactly 3e15, `quote()`; dollar parsing from 1 dollar (no upper limit: a round may be asked for more than it holds); built with core's hand-rolled ABI encoder, so no viem. Calldata pinned against `cast calldata` |
+| Wallet | `app/src/features/money/wallet.ts` | The browser's injected wallet behind web's sender shape (`getAddress`, `sendCalls`, `isAvailable`) plus `connectedAddress` (no prompt) and `readCall`. Switches to the record's chain, sends one call at a time and waits (bounded: about two minutes) for each to land before the next; reports how many landed |
+| Copy | `app/src/features/money/money-copy.ts` | Every refusal these calls can meet (`WrongPhase`, `BadAmount`, `NothingToRefund`, `NotAllowed`, `CannotOpen`, `TokenMisbehaved`, `CapReached`, `WrongStage`, the token's balance and allowance errors) and every wallet stop, as sentences, by action; found by selector or name anywhere in a provider's error. A test walks them and checks no name, code or hex leaks |
+| Reads | `app/src/features/money/use-money.ts` | One project's numbers by `#d`; the server's 100 newest records for Home and You; all gated on investing |
+| Project page | `ProjectPage.tsx`, `StageLine.tsx`, `money/MoneyTab.tsx`, `money/BackBox.tsx`, `money/OpenBacking.tsx` | The stage line marks Backed only when money came in, Council and Open from the chain; the current stage is the later of the record's and the chain's. Money tab: stage and since, eligible since, raised of the cap with a bar, the open round, every round's price ("1 dollar buys 3,000 Shares (333,333.33 for the whole project)"), Shares already held and by how many accounts and when they release, the check-in clock or "Quiet since", "As of", and the ownership line. The Back box sits above the tabs while a round is open (Back is then the screen's one green button, Ask to join steps back). Open backing shows for the founder when no round is open and the cap has room |
+| Home | `money/OpenRounds.tsx` | Open rounds, soonest closing first, never by money; "No round is open right now" otherwise |
+| You | `money/Receipts.tsx` | Without a wallet: how to see receipts. With a wallet that shares no account: Connect your wallet. Then per project: "Paid X dollars in round N", "Can still take back Y dollars (Z of each 100), as of <time>", Take money back (sheet, then confirm), Shares held and free, and after a market Take out released Shares (ends their refund). A list the server cut at 200 is never called empty |
+| This week | `week/WeekPage.tsx`, `week/WeeklySheet.tsx`, `week/use-week.ts` | Per project: when it last had an update, the check-in clock, one press to open the sheet, one box ("What did you do this week?"), one press to post. Where this wallet runs the project the press also checks in. A failed check-in after the update posted says "Your update is posted; the check-in did not go through." with the reason, keeps the update, and offers only Check in again; the card keeps a Check in only button, and the chain's own last check-in is what says whether one is still needed |
+
+Copy: every money sentence is plain words, the ownership line is word for word wherever money is offered (Money tab, the
+Back sheet, Open backing, each receipt), the refund is a property of the receipt and never of a Share, and "earn" never
+stands next to Shares (the copy check's `no-earn-shares` rule runs over all of it).
+
+Accessibility: `app/tests/e2e/a11y.spec.ts` runs axe (serious and critical fail) and the no-sideways-scroll check on
+Home signed in and out, the Project page with each tab, the Back sheet, You with receipts, the refund sheet, Start,
+Messages, a conversation, a post, a profile, This week and its sheet, sign-up and You signed out, at 390 and 360 wide,
+light and dark. It found nothing serious or critical, so nothing needed fixing; a throwaway check confirmed the helper
+does fail on a nameless button and low contrast. A VoiceOver walk is still to do.
+
+Passkey: `app/tests/e2e/passkey.spec.ts` signs up with a passkey on Chrome's virtual authenticator (PRF) on the
+`localhost` origin, sees the recovery key offered, reloads, unlocks to the same account, and checks that the browser keeps
+only `buzz.passkey.{credentialId,mode,pubkey,r1,salt}` and no secret key.
+
+Real server: `scripts/app-real-loop-e2e.sh` builds the app into a temporary folder, takes a hard link of the existing
+`target/debug/buzz-relay` (it never runs cargo; exit 2 when there is no relay), boots it on a scratch database (dropped on
+exit) with `BUZZ_WEB_DIR=<app dist>`, `BUZZ_WEB_SPA=full` and the hosted terms, privacy note and age box, and runs
+`app/playwright.real-relay.config.ts` over `app/tests/e2e-real/`: Join (a stranger on the link, 4 presses and 1 field,
+the ask sent by itself; the founder accepts in 1; the stranger reads "You're on the team" and Team) and Start then the
+week's update. An open server: milestone 5 found the numbers are not publicly readable on invite-only servers.
+
+## Budgets, as measured
+
+| Budget (plan section 6) | Plan | Measured | Held by |
+|---|---|---|---|
+| Start | 3 and 3 | 2 presses, 3 fields (mocked and on the real server) | `smoke.spec.ts`, `e2e-real/start.spec.ts` |
+| Join, new person, hosted settings | 4 and 1 | 4 and 1 (mocked and real); founder's Accept 1 | `join.spec.ts`, `e2e-real/join.spec.ts` |
+| Open backing | 1 and 0 | 1 and 0, the call is `openRound(key, 3e15)` exactly | `money.spec.ts` |
+| Back | 2 and 1 | 2 and 1 (21 words to read, about 9 s); calls are approve then ask, exactly | `money.spec.ts` |
+| Take money back | 2 and 0 | 2 and 0 (15 words, about 6 s); the call is `refund(round)` | `money.spec.ts` |
+| Weekly update with check-in | 2 and 1 | 2 and 1 (about 16 s), the update record plus `checkIn()`; 2 and 1 on the real server without a launch | `money.spec.ts`, `e2e-real/start.spec.ts` |
+| Give Shares | 4 and 0 | not built | open item 4 |
+| Add a second person | 2 and 0 | not built (the Pair, milestone 7) | open item 5 |
+| Post a task, Accept and pay | 2 and 2, 1 | not built (no Tasks contract; milestone 8) | open item 5 |
+| Bid, Buy, Sell, Hand back | 2 and 1 | not built (the auction and pool, milestone 7) | open item 5 |
+
+Wallet confirmations are the wallet's own and are not counted as presses in the app; each journey checks the exact
+calls the wallet was asked to send through a stand-in `window.ethereum` that records them.
+
+## Gates, as run on 18 November 2026
+
+| Gate | Result |
+|---|---|
+| `tsc --noEmit` (app), `biome check` (app and the changed core files) | clean |
+| Copy check (app, over `app/src` and core's account, client, social and project folders), px-text, file sizes (600 lines) | pass |
+| `vite build` + bundle budget | entry 384 KiB (part 1: 386) under 450; the money screens are in the Project page (entry) and in the You and This week chunks |
+| Unit tests (`vitest`, 2 workers) | **63 passed** (part 1: 38): numbers, calls against `cast`, the wallet's ordering, bounded wait and network switch, every money sentence, the stage line from the chain, the weekly update record |
+| Playwright `smoke`, 390x844 touch, one worker | **36 passed**: part 1's 12 (Join included), money 11 (numbers, a wrong signer, investing off, Back, a refusal, Take money back, Connect, Open backing, the weekly update with check-in, a failed check-in, no launch), axe 12, passkey 1 |
+| Playwright `screens` | 9 passed; 18 shots, every hash distinct |
+| `scripts/app-real-loop-e2e.sh` | 2 journeys passed; scratch database dropped, temporary build removed |
+| `knip` (whole repo) | clean |
+| `node scripts/regen-kinds.mjs --check` | up to date |
+| `web/`: `tsc --noEmit`, node tests, copy check | clean; **3596 passed, 0 failed, 1 skipped** |
+| `packages/creaton-core` node tests | **1010 passed, 0 failed** |
+
+Not run: cargo, forge, `just ci` (the machine is shared; nothing in `crates/` or `contracts/` changed here).
+
+## Screenshots
+
+`pnpm --dir app screens` adds `11-home-investing-on` (now with an open round), `15-project-back-box`,
+`16-project-money`, `17-back-sheet`, `18-you-receipts`, `19-refund-sheet`, `20-week` and `21-weekly-sheet` to part 1's
+set, in `app/test-results/screens/` (ignored by git); all 18 hashes are distinct.
+
+## For a person to try
+
+1. `scripts/app-real-loop-e2e.sh` (Postgres and Redis local, `target/debug/buzz-relay` built): both journeys pass.
+2. Money needs a server with investing on, the chain reader running (milestone 5) and a project whose record carries
+   its `chain-key`. Until launch exists in the app (open item 1) that record is written by hand; the mocked journeys in
+   `app/tests/e2e/money.spec.ts` show each screen.
+
+## Open items after part 2
+
+1. **Putting a project on the chain.** No app flow calls `Launcher.launch(projectId, name, symbol, expectedSettingsHash)`
+   and republishes the record with its `chain-key`. It needs the Launcher's address in the app (the record of numbers
+   carries it, but no record exists before launch: the information document or the build must say it), a symbol rule,
+   and `launchHash(keyOf(founder, projectId))` read first. Open backing works for a launched project.
+2. **The phone wallet.** The app sends through the browser's injected wallet only. The passkey account with sponsored gas
+   (`web/src/features/identity/lib/{sponsoredSender,kernel033,zerodev,aa-kernel,kernel-signature,passkey-wallet}.ts`,
+   about 2,700 lines with ZeroDev configuration) should move into core behind the same sender shape; until then a phone
+   without a wallet browser cannot back, refund or check in on the network. Web's own injected sender
+   (`web/src/features/launchpad/lib/wallet-sender.ts`) was not moved: its copy is about bids, and `money/wallet.ts` waits
+   for each call to land, which web's does not.
+3. **The dollar token's address is not in the record.** The app reads `Rounds.quote()` through the wallet before the
+   approval. Adding `quote` to the record's `contracts` is server work (milestone 5 part 2).
+4. **Give Shares (4 and 0).** `Treasury.giveShares(to, amount)` exists, but the app has no source for the recipient's
+   wallet address (the account-to-wallet link record is not read in the app yet) and no agreed amount choices. Not built.
+5. **Budgets for later milestones:** add a second person (Pair, milestone 7), bid, buy, sell and hand back (the auction and
+   the pool, milestone 7), post a task and accept and pay (no Tasks contract; milestone 8).
+6. **Wallet account changes.** The You page reads the wallet's account once a minute at most; switching accounts in the
+   wallet shows the new receipts after a reload.
+7. **The refund numbers are as of the record's time.** The sheet says so; the chain pays the exact amount. A live
+   `refundable(id, backer)` read before the press would make the number exact.
+8. Part 1's items still open: the service worker under the relay (1), which app the relay serves (2), the social
+   features not carried yet (5), the moved files' copy (8), the stage line's Team without the on-chain second signer (9),
+   a VoiceOver walk (7), and **the rest of part 1's code review**, whose findings after the fourth never arrived (10).
+   Part 1's items 3 (real-server loop), 4 (passkey end to end) and 6 (milestone 6 part 2) are done above, except as
+   listed here.
