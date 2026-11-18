@@ -45,6 +45,16 @@ Configuration (all need `BUZZ_CHAIN_RPC_URL`; any `BUZZ_CHAIN_HELPER_*` without 
 | `BUZZ_CHAIN_HELPER_CALL_GAS_CAP` | 3,000,000 (at most the transaction ceiling) |
 | `BUZZ_CHAIN_HELPER_BATCH` | 15 backers or entries per batch (a batch over the cap is halved) |
 
+**The spend cap and fees.** A batch is halved to fit the gas room only. The spend cap is checked whole: a call whose
+reserve (its gas limit times the max fee per gas) is over what is left of the day's spend is put off an hour at a time,
+with no attempt counted and no terminal state, and an essential call put off this way ends the pass. A 15-backer
+`settleMany` asks about 2.4M to 2.8M gas; at a 20 gwei max fee it reserves about 0.05 of the native coin, five times
+the default daily spend of 10^16 wei, so it would never go out. The default spend fits a call at the 3M per-call cap
+only while the max fee is under about 3.3 gwei, and a routine call (half the spend) under about 1.7 gwei. That is
+harmless on Base-like fees (well under 1 gwei). On a chain with higher fees, set `BUZZ_CHAIN_HELPER_DAILY_SPEND_WEI` to
+at least twice the per-call cap times the highest max fee expected. Startup does not check this, since the fee is not
+known then.
+
 ### 2. Reader hardening (`02d61160a`)
 
 - **F9:** the reader runs under `supervise`, which starts it again after a panic or an end, with a pause doubling up to
@@ -103,7 +113,7 @@ so no `Service-Worker-Allowed` header is needed.
 - **F8:** the LiquidityHolder and the pool manager are never listed as holders.
 - **F5, running totals (migration 0067):** `chain_balances` keeps each project's Shares per account as ranges commit;
   `chain_balance_changes` keeps each change under its block and log, and a rollback subtracts and deletes the changes past
-  the fork in the same transaction that deletes the logs (and drops emptied balances). A project's logs load without its
+  the fork in the same transaction that deletes the logs (an emptied balance is kept at 0, and reads leave zeros out). A project's logs load without its
   Transfers, and balances are read as of the final block (stored balance less any change past it). Both tables are
   operator-global, mirrored in `schema/`, registered in the reconcile script, and covered by a parity test.
 
@@ -195,14 +205,16 @@ The relay log had no failed pass. On anvil the reader also resolved the holder a
 ## Review fixes
 
 Two reviews found one blocker (both), three important defects in the first and two in the second. Each fix has a test
-that fails without it (checked by removing each guard in turn and restoring it). The reviewers' failing tests were
+that fails without it (checked by removing each guard in turn and restoring it), except one part of I3: the reader's
+pass keeping the helper's error (`pass_all`'s `match` on the helper's pass) failed no test when it was removed, since
+the I3 test's node errors no longer reach it. The second review of these fixes found that; its test is below. The reviewers' failing tests were
 adopted: the attack tests moved from `crates/buzz-relay/tests/attack_m5p2_helper.rs` (deleted, to save building a second
 test binary) into `chain_reader/helper/review_m5p2_tests.rs`, and the reader's into
 `chain_reader/review_m5p2_postgres_tests.rs`.
 
 | Finding | Fix | Test (fails without the fix) |
 |---|---|---|
-| **B1** (blocker, both reviews): the default batch of 40 settles needs about 6.0M gas with the margin, over the 3M per-call cap and the 5M daily cap; the job was retried as it was until `failed` | Defaults are now batch 15 and daily gas 30M. A batch whose estimate is over its room (the per-call cap, and never more than its daily budget) is halved until it fits, and the first part is sent with no attempt counted; the rest is still waiting once that send is final, so the builder makes it a new job. Startup refuses a daily gas cap below the per-call cap. | `a_default_sized_settle_batch_is_sent` (fails with the old defaults), `an_oversized_batch_is_halved_not_failed` (fails without the halving: `failed` after 8 attempts), `config::tests::the_chain_helper_is_off_unless_its_key_is_set_and_never_echoes_it` (the new startup check) |
+| **B1** (blocker, both reviews): the default batch of 40 settles needs about 6.0M gas with the margin, over the 3M per-call cap and the 5M daily cap; the job was retried as it was until `failed` | Defaults are now batch 15 and daily gas 30M. A batch whose estimate is over its room (the per-call cap, and never more than its daily budget) is halved until it fits, and the first part is sent with no attempt counted. For `settleMany` the rest is still waiting once that send is final, so the builder makes it a new job (for a repeating `deliverMany` it was not; see the second review below). Startup refuses a daily gas cap below the per-call cap. | `a_default_sized_settle_batch_is_sent` (fails with the old defaults), `an_oversized_batch_is_halved_not_failed` (fails without the halving: `failed` after 8 attempts), `config::tests::the_chain_helper_is_off_unless_its_key_is_set_and_never_echoes_it` (the new startup check) |
 | **I1** (second review): one backer whose settle reverts (a blacklisted dollar receiver) reverts the whole batch, which ended `failed` and left the rest unsettled | When a batch's `eth_call` reverts for a reason other than "nothing to do", each member is simulated alone with `eth_call` (nothing is sent). The batch is tried once more without the members that revert. Those come back later in a batch of their own, which can fail for good without holding back anyone else. | `one_reverting_backer_does_not_strand_the_rest_of_its_batch` |
 | **I2** (second review): the daily caps were one first-come budget, so many small `Vester.claim`s of one project could keep another project's round from closing | The calls a round or a sale waits on (`close`, `settleMany`, the Finisher's steps) are essential. Routine calls (releases, sweeps, claims, deliveries, collection) may use at most half of each daily cap (`ROUTINE_SHARE_PERCENT`); a routine call over its share is put off without an attempt and the pass goes on. A routine call whose share is used up waits without asking the node anything. Due jobs are now ordered by priority in SQL, not only within the first 200 by id. | `dust_claims_of_one_project_do_not_stop_another_projects_close` |
 | **I3** (first review) / O1 (second): any helper error failed the whole reader pass, slowing record signing to every 10 minutes and freezing the reader's health number | The helper runs as its own step: an error is logged, counted (`buzz_chain_helper_pass_failed_total`) and kept in `PassReport.helper_error`, never returned from `pass_all`. A node that does not answer a job's check, `eth_call`, estimate, fees or nonce puts that job off for 5 minutes without an attempt, ends the helper's pass and is counted (`node_errors`, `buzz_chain_helper_node_errors_total`), so the next pass starts with other jobs. A view answer that cannot be read counts an attempt. The helper has its own health number: `chain_reader::last_good_helper_pass()`, the gauge `buzz_chain_helper_last_good_pass_seconds`, and `chain_reader.helper_last_good_pass` in `/_status`. | `a_node_that_does_not_answer_the_helper_does_not_fail_the_pass` (the reader's pass failed before; now its record is signed and the close goes out once the node answers) |
@@ -243,4 +255,37 @@ Gates after the fixes:
 | `cargo test -p buzz-db --lib runtime::migration -- --include-ignored --test-threads=1` (scratch database, dropped after) | 32 passed |
 | `FOUNDRY_BIN=... bash scripts/chain-loop-e2e.sh` (relay rebuilt from this change) | exit 0: the helper closed the round and settled both backers in 1 transaction, 4 sent, every job done, the rollback undone and signed again |
 
-Migration 0068 was applied to the shared local `buzz` test database by the Postgres tests' normal migration run.
+The Postgres tests run migration 0068 from its file. The shared local `buzz` test database itself has migrations up to
+0067 only (checked in the second review): nothing in the relay's tests applies the embedded migrations to it.
+
+## Second review of the fixes
+
+The second review found two important defects that the fixes brought in, one test gap and two optional points. All are
+fixed here.
+
+| Finding | Fix | Test (fails without the fix) |
+|---|---|---|
+| A routine call that got stuck once the routine share was used up was never replaced: the replacement was checked for its whole cost again (the stuck send already counts), and against the routine share. With one nonce, no close, settle or finish step went out until it mined or the day passed (I2's starvation by another path). | The replacement is checked for what it adds over the sends still counted at its nonce (only one of them can mine: `store::reserved_at_nonce`), against the whole caps only. The call was let in when it was first sent. | `a_stuck_routine_call_is_replaced_when_its_share_is_used_up` (daily gas twice one claim, so the share holds one; replaced on stuck after 0 seconds; the writer never mines): fails without the fix (the stuck send is never replaced) |
+| A halved repeating `deliverMany` sent its first half and ended `done`. Its key names the day and the batch's position, so the builder made the same first half again each day and the second half was never delivered (with `BUZZ_CHAIN_HELPER_BATCH=64`, entries 32 to 63). | When a repeating batch is halved, the members left out are stored as a job of their own (the job's key plus `:rest:` and a digest of them) in the same transaction that records the send (`store::Rest`). A one-off `settleMany` is left to the builder as before. | `every_due_entry_of_a_halved_repeating_delivery_is_delivered` (64 entries in one batch, about 3.8M gas, over the 3M cap): fails without the fix (the second half is never delivered) |
+| Test gap: removing the reader pass's keeping of the helper's error failed no test. | | `a_node_error_on_the_send_in_flight_does_not_fail_the_readers_pass`: a transaction in flight whose receipt the node does not answer; `pass_all` is Ok, `helper_error` is kept and the record is signed. With `?` in place of the `match`, the pass fails. |
+| Optional: migration 0068 ended by deleting zero balances, and the reader's rollback did too. A rollback only subtracts from rows that exist, so an account at 0 with changes inside the rollback window was lost after a reorg past them (two rollbacks in a row, or a reorg after 0068). | The rollback keeps zero balances (`balances()` already leaves zeros out). 0068 already ran on local databases and sqlx refuses an applied migration whose checksum changed, so 0068 is left as it is and migration **0069** (insert only, data only) puts back a row for every account with kept changes and no balance. It changes no table, so `schema/` and the reconcile script need nothing (a fresh database has no rows); a buzz-db test pins it to inserts only. | `two_rollbacks_in_a_row_restore_a_balance_that_was_emptied` (fails with the rollback's delete put back), `migration_0069_puts_back_emptied_balances` (fails when 0069 deletes the zeros again), `runtime::migration::...::chain_balances_keep_zeros_is_insert_only`; `running_balances_follow_transfers_and_a_rollback` now expects the emptied balance kept at 0 |
+| Optional: the spend cap is checked whole and has no terminal state. | Stated under the configuration above. | |
+
+Guard removals, one at a time, each restored and the file touched so the next build used it: the old replacement check
+(`over_cap` with the stuck send's gas and the routine share) fails the first test; no rest job fails the second;
+`?` in `pass_all` fails the third; the rollback's `DELETE ... balance = 0` fails `two_rollbacks...`; a trailing
+`DELETE` in 0069 fails `migration_0069...`.
+
+Gates after the second review:
+
+| Lane | Result |
+|---|---|
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy -p buzz-relay -p buzz-db --all-targets -- -D warnings` | clean |
+| `cargo test -p buzz-relay --lib chain_reader` (pure) | 48 passed, 34 ignored |
+| `... chain_reader -- --include-ignored --test-threads=1` (Postgres and Redis) | 82 passed (5 new) |
+| `cargo test -p buzz-db --lib runtime::migration -- --include-ignored --test-threads=1` (scratch database, dropped after) | 33 passed |
+| `FOUNDRY_BIN=... bash scripts/chain-loop-e2e.sh` (relay rebuilt from this change) | exit 0: the helper closed the round and settled both backers in 1 transaction, 4 sent, every job done, the rollback undone and signed again |
+
+Still open, as the review accepted: reading earlier logs for contracts or pools named late is not bounded (many log
+requests on the first pass after a long gap), and `launcher_reveals` runs on every range.
