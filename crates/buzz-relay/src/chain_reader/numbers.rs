@@ -75,6 +75,10 @@ pub struct Runners {
     pub pairs: HashSet<String>,
     /// `Launcher.CouncilRegistered.council`, lower-case `0x` text.
     pub councils: HashSet<String>,
+    /// The Launcher's shared contracts that hold Shares for others (its
+    /// LiquidityHolder and the pool manager): never listed as holders
+    /// (review F8).
+    pub shared: HashSet<String>,
 }
 
 /// Where and when the numbers are taken.
@@ -261,6 +265,11 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
         .unwrap_or_default()
         .to_owned();
     let project_zero = stake == hex0x(&[0u8; 20]);
+    let quote = field(launch, "settings")?
+        .get("quote")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
     let own: Vec<String> = ["shares", "treasury", "vester", "finisher", "rounds"]
         .iter()
         .map(|n| contract(n))
@@ -319,6 +328,10 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     let mut claim: Option<String> = None;
     let mut earlier = numbers_earlier::Earlier::default();
     let mut receivers: HashSet<String> = HashSet::new();
+    // Auctions, pool trades and pool fees. The pool orders its two tokens by
+    // address: the Shares are `currency0` when theirs is the lower.
+    let mut market = numbers_market::Market::default();
+    let shares_first = own[0] < quote;
     let mut clock_mismatch: Option<(u64, u64, u64)> = None;
 
     let add = |sums: &mut BTreeMap<&'static str, u128>, k: &'static str, v: u128| {
@@ -489,6 +502,9 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
             }
             (Role::Vester, "Started") => vester_started = Some(t),
             (Role::Earlier, _) => earlier.apply(row)?,
+            (Role::Auction | Role::Holder | Role::PoolManager, _) => {
+                market.apply(row, shares_first, &own[1])?;
+            }
             (Role::Shares, "Transfer") => {
                 let value = num(row, "value")? as i128;
                 let from = text(row, "from")?;
@@ -727,7 +743,11 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     let mut holder_list: Vec<(String, i128, i128)> = accounts
         .into_iter()
         .filter(|(addr, _)| {
-            *addr != zero && !own.contains(addr) && !is_team(addr) && !auctions.contains(addr)
+            *addr != zero
+                && !own.contains(addr)
+                && !is_team(addr)
+                && !auctions.contains(addr)
+                && !as_of.runners.shared.contains(addr)
         })
         .map(|(addr, a)| (addr, a.held.max(0), a.free.max(0)))
         .filter(|(_, held, free)| *held > 0 || *free > 0)
@@ -799,6 +819,8 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
         "treasury": treasury,
         "sale": if sale.is_empty() { Value::Null } else { Value::Object(sale) },
         "reserveSales": reserve_sales,
+        "bids": market.bids_json(),
+        "pool": market.pool_json(),
         "asOf": {"block": as_of.block, "time": as_of.time},
         "now": {
             "stage": stage_now,
@@ -856,6 +878,8 @@ pub fn without_as_of(content: &Value) -> Value {
 
 #[path = "numbers_earlier.rs"]
 mod numbers_earlier;
+#[path = "numbers_market.rs"]
+mod numbers_market;
 
 #[cfg(test)]
 #[path = "numbers_tests.rs"]

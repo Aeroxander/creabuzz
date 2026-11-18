@@ -11,7 +11,7 @@ use sqlx::PgPool;
 use super::events::{self, Role};
 use super::source::{is_too_many_logs, ChainSource, Header, RawLog};
 use super::store::{self, Contract, RangeWrite, StoredLog};
-use super::word::{parse_fixed, Word};
+use super::word::{parse_fixed, word_to_address, Word};
 
 /// How the reader scans.
 #[derive(Clone, Debug)]
@@ -137,6 +137,18 @@ fn discovered(log: &RawLog, event: &str, decoded: &Value) -> Vec<Contract> {
                 }
             }
         }
+        // A sale's auction (the main sale and each reserve sale): its bids,
+        // exits, claims and clearing price.
+        "SaleOpened" | "ReserveSaleOpened" => {
+            if let Some(address) = addr(decoded.get("auction")) {
+                out.push(Contract {
+                    address,
+                    role: Role::Auction,
+                    project_key: Some(key),
+                    from_block: log.block_number,
+                });
+            }
+        }
         // Project zero's claim contract for its earlier backers, named at
         // its launch. Only the claim in the split is followed:
         // `EarlierBackersNamed` may name another before the launch.
@@ -179,6 +191,66 @@ fn project_of(role: Role, contract_key: Option<Word>, event: &str, log: &RawLog)
     }
 }
 
+/// The Launcher's fixed contracts, read once with `eth_call` at block `to` and
+/// stored like the others: its `LiquidityHolder` (`holder()`), which keeps
+/// every project's pool position and collects its fees, and the pool manager
+/// (`strategy().poolManager()`), which holds the pools' Shares and is never a
+/// holder. Nothing when they are known already, or when the source makes no
+/// calls; a failed call fails the range, so it is read again.
+async fn launcher_fixed(
+    source: &dyn ChainSource,
+    known: &HashMap<[u8; 20], Contract>,
+    from: u64,
+    to: u64,
+) -> anyhow::Result<Vec<Contract>> {
+    let Some(launcher) = known.values().find(|c| c.role == Role::Launcher) else {
+        return Ok(Vec::new());
+    };
+    let have = |role: Role| known.values().any(|c| c.role == role);
+    let mut out = Vec::new();
+    let address_at = |answer: Option<Vec<u8>>| -> Option<[u8; 20]> {
+        let bytes = answer?;
+        let word: Word = bytes.get(..32)?.try_into().ok()?;
+        Some(word_to_address(&word)).filter(|a| *a != [0u8; 20])
+    };
+    let selector = |sig: &str| buzz_evm_allowance::abi::selector(sig).to_vec();
+    if !have(Role::Holder) {
+        if let Some(holder) = address_at(
+            source
+                .eth_call(&launcher.address, &selector("holder()"), to)
+                .await?,
+        ) {
+            out.push(Contract {
+                address: holder,
+                role: Role::Holder,
+                project_key: None,
+                from_block: from,
+            });
+        }
+    }
+    if !have(Role::PoolManager) {
+        if let Some(strategy) = address_at(
+            source
+                .eth_call(&launcher.address, &selector("strategy()"), to)
+                .await?,
+        ) {
+            if let Some(manager) = address_at(
+                source
+                    .eth_call(&strategy, &selector("poolManager()"), to)
+                    .await?,
+            ) {
+                out.push(Contract {
+                    address: manager,
+                    role: Role::PoolManager,
+                    project_key: None,
+                    from_block: from,
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Read blocks `from..=to` and store them (one range).
 async fn scan_range(
     pool: &PgPool,
@@ -216,9 +288,19 @@ async fn scan_range(
     // from the block they were revealed in (their own logs in that block, such
     // as the founder's grant and the Shares minted at launch, come before the
     // Launcher's event).
-    let mut asked: Vec<[u8; 20]> = known.keys().copied().collect();
-    let mut raw: Vec<RawLog> = Vec::new();
     let mut new_contracts: Vec<Contract> = Vec::new();
+    for c in launcher_fixed(source, &known, from, to).await? {
+        known.insert(c.address, c.clone());
+        new_contracts.push(c);
+    }
+    // The pool manager is shared by every pool on the chain: only its `Swap`
+    // logs for the projects' own pools are read, below.
+    let mut asked: Vec<[u8; 20]> = known
+        .values()
+        .filter(|c| c.role != Role::PoolManager)
+        .map(|c| c.address)
+        .collect();
+    let mut raw: Vec<RawLog> = Vec::new();
     let mut seen: BTreeSet<(u64, u32)> = BTreeSet::new();
     let mut query_from = from;
     // Each round only asks for contracts found in the round before, and each
@@ -263,6 +345,58 @@ async fn scan_range(
         for c in found {
             known.insert(c.address, c.clone());
             new_contracts.push(c);
+        }
+    }
+
+    // The projects' pool trades: `Swap` logs of the pools the Finishers
+    // opened (stored, or opened in this range).
+    let mut pools: HashMap<Word, Word> = store::pool_ids(pool, &s.reader).await?;
+    for log in &raw {
+        let Some(c) = known.get(&log.address) else {
+            continue;
+        };
+        if c.role != Role::Finisher {
+            continue;
+        }
+        let def = log
+            .topics
+            .first()
+            .and_then(|t| events::lookup(Role::Finisher, t));
+        if let (Some(def), Some(key)) = (def, c.project_key) {
+            if def.name == "PoolOpened" {
+                if let Ok(decoded) = events::decode(def, &log.topics, &log.data) {
+                    if let Some(id) = decoded
+                        .get("poolId")
+                        .and_then(Value::as_str)
+                        .and_then(parse_fixed::<32>)
+                    {
+                        pools.insert(id, key);
+                    }
+                }
+            }
+        }
+    }
+    let manager = known
+        .values()
+        .find(|c| c.role == Role::PoolManager)
+        .map(|c| c.address);
+    if let (Some(manager), false) = (manager, pools.is_empty()) {
+        let swap = events::topic_of(Role::PoolManager, "Swap")
+            .ok_or_else(|| anyhow!("the event list has no pool Swap"))?;
+        let ids: Vec<Word> = pools.keys().copied().collect();
+        for log in source
+            .logs_with_topic1(&manager, &swap, &ids, from, to)
+            .await?
+        {
+            if log.removed {
+                bail!(
+                    "the node returned a removed log in block {}; the chain moved",
+                    log.block_number
+                );
+            }
+            if seen.insert((log.block_number, log.log_index)) {
+                raw.push(log);
+            }
         }
     }
     raw.sort_by_key(|l| (l.block_number, l.log_index));
@@ -315,8 +449,20 @@ async fn scan_range(
             )
         })?;
         let event = def.name.to_owned();
+        let project_key = match contract.role {
+            // The Launcher's one LiquidityHolder serves every project: a log
+            // belongs to the project whose Treasury it names.
+            Role::Holder => log.topics.get(2).and_then(|w| {
+                known
+                    .get(&word_to_address(w))
+                    .filter(|t| t.role == Role::Treasury)
+                    .and_then(|t| t.project_key)
+            }),
+            Role::PoolManager => log.topics.get(1).and_then(|id| pools.get(id).copied()),
+            role => project_of(role, contract.project_key, &event, &log),
+        };
         stored.push(StoredLog {
-            project_key: project_of(contract.role, contract.project_key, &event, &log),
+            project_key,
             block_number: log.block_number,
             log_index: log.log_index,
             block_hash: log.block_hash,

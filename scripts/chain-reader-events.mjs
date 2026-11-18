@@ -32,9 +32,26 @@ const CONTRACTS = [
   "Pair",
   "ShareToken",
   "EarlierBackers",
+  "ContinuousClearingAuction",
+  "LiquidityHolder",
+  "PoolManager",
 ];
 // Allowances are not followed.
 const SKIPPED = new Set(["ShareToken.Approval"]);
+// Contracts with many events of which the reader follows a few: only these.
+// The auction's own bookkeeping (steps, ticks, sweeps, fees) and every pool
+// manager event but the projects' trades are left out.
+const ONLY = {
+  ContinuousClearingAuction: [
+    "BidExited",
+    "BidSubmitted",
+    "CheckpointUpdated",
+    "ClearingPriceUpdated",
+    "TokensClaimed",
+    "TokensReceived",
+  ],
+  PoolManager: ["Swap"],
+};
 
 /** @param {{type: string, components?: object[]}} input */
 function canonical(input) {
@@ -54,6 +71,7 @@ export function signaturesFromBuild(outDir = OUT_DIR) {
     const abi = JSON.parse(readFileSync(path, "utf8")).abi;
     list[name] = abi
       .filter((item) => item.type === "event" && !SKIPPED.has(`${name}.${item.name}`))
+      .filter((item) => !ONLY[name] || ONLY[name].includes(item.name))
       .map((item) => `${item.name}(${item.inputs.map(canonical).join(",")})`)
       .sort();
   }

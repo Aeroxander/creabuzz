@@ -63,6 +63,33 @@ pub trait ChainSource: Send + Sync {
         from: u64,
         to: u64,
     ) -> anyhow::Result<Vec<RawLog>>;
+
+    /// Logs from one shared contract in blocks `from..=to` whose first topic
+    /// is `topic0` and whose second is one of `topic1` (the pool manager's
+    /// `Swap` for the projects' own pools only), in chain order. A source
+    /// that cannot filter on the second topic answers an error, never a
+    /// silent empty list.
+    async fn logs_with_topic1(
+        &self,
+        _address: &[u8; 20],
+        _topic0: &Word,
+        _topic1: &[Word],
+        _from: u64,
+        _to: u64,
+    ) -> anyhow::Result<Vec<RawLog>> {
+        anyhow::bail!("this chain source cannot filter logs on their second topic")
+    }
+
+    /// `eth_call` of `data` to `to` at block `at` (the Launcher's fixed
+    /// addresses). `None` when this source makes no calls.
+    async fn eth_call(
+        &self,
+        _to: &[u8; 20],
+        _data: &[u8],
+        _at: u64,
+    ) -> anyhow::Result<Option<Vec<u8>>> {
+        Ok(None)
+    }
 }
 
 /// Logs from at most this many addresses go into one `eth_getLogs` call.
@@ -247,6 +274,67 @@ impl ChainSource for RpcChainSource {
         }
         out.sort_by_key(|l| (l.block_number, l.log_index));
         Ok(out)
+    }
+
+    async fn logs_with_topic1(
+        &self,
+        address: &[u8; 20],
+        topic0: &Word,
+        topic1: &[Word],
+        from: u64,
+        to: u64,
+    ) -> anyhow::Result<Vec<RawLog>> {
+        if topic1.is_empty() {
+            return Ok(Vec::new());
+        }
+        let wanted: Vec<String> = topic1.iter().map(|t| hex0x(t)).collect();
+        let v = self
+            .call(
+                "eth_getLogs",
+                json!([{
+                    "fromBlock": format!("0x{from:x}"),
+                    "toBlock": format!("0x{to:x}"),
+                    "address": hex0x(address),
+                    "topics": [hex0x(topic0), wanted],
+                }]),
+            )
+            .await?;
+        let entries = v
+            .as_array()
+            .ok_or_else(|| anyhow!("eth_getLogs answer is not a list"))?;
+        if entries.len() > MAX_LOGS_PER_CALL {
+            return Err(TooManyLogs(format!(
+                "eth_getLogs answered {} logs for blocks {from}..={to}",
+                entries.len()
+            ))
+            .into());
+        }
+        let mut out = entries
+            .iter()
+            .map(parse_log)
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        out.sort_by_key(|l| (l.block_number, l.log_index));
+        Ok(out)
+    }
+
+    async fn eth_call(
+        &self,
+        to: &[u8; 20],
+        data: &[u8],
+        at: u64,
+    ) -> anyhow::Result<Option<Vec<u8>>> {
+        let v = self
+            .call(
+                "eth_call",
+                json!([{"to": hex0x(to), "data": hex0x(data)}, format!("0x{at:x}")]),
+            )
+            .await?;
+        let text = v
+            .as_str()
+            .ok_or_else(|| anyhow!("eth_call answer is not hex"))?;
+        super::word::parse_bytes(text)
+            .map(Some)
+            .ok_or_else(|| anyhow!("eth_call answer is not hex"))
     }
 }
 

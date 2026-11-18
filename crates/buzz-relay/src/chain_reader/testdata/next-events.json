@@ -93,5 +93,21 @@
     "SentToReserve(uint256)",
     "TextPublished(uint256,bytes32,bytes32)",
     "Voided(uint256,address,bytes32)"
+  ],
+  "ContinuousClearingAuction": [
+    "BidExited(uint256,address,uint256,uint256)",
+    "BidSubmitted(uint256,address,uint256,uint128)",
+    "CheckpointUpdated(uint256,uint256,uint24)",
+    "ClearingPriceUpdated(uint256,uint256)",
+    "TokensClaimed(uint256,address,uint256)",
+    "TokensReceived(uint128)"
+  ],
+  "LiquidityHolder": [
+    "Collected(uint256,address,uint256,uint256,uint256,uint256)",
+    "Owed(address,address,uint256)",
+    "OwedSent(address,address,uint256)"
+  ],
+  "PoolManager": [
+    "Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)"
   ]
 }

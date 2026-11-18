@@ -555,5 +555,41 @@ pub async fn runners(pool: &PgPool, reader: &str, final_block: u64) -> anyhow::R
         out.pairs.extend(pair);
         out.councils.extend(council);
     }
+    let shared: Vec<Vec<u8>> = sqlx::query_scalar(
+        "SELECT address FROM chain_contracts \
+         WHERE reader = $1 AND role IN ('holder', 'pool_manager') AND from_block <= $2",
+    )
+    .bind(reader)
+    .bind(i64_of(final_block)?)
+    .fetch_all(pool)
+    .await?;
+    out.shared
+        .extend(shared.iter().map(|a| super::word::hex0x(a)));
+    Ok(out)
+}
+
+/// The pools the projects' Finishers opened (`Finisher.PoolOpened.poolId`),
+/// each with its project: the pool manager's `Swap` logs are read for these.
+pub async fn pool_ids(pool: &PgPool, reader: &str) -> anyhow::Result<HashMap<Word, Word>> {
+    let rows: Vec<(Option<String>, Vec<u8>)> = sqlx::query_as(
+        "SELECT decoded->>'poolId', project_key FROM chain_logs \
+         WHERE reader = $1 AND role = 'finisher' AND event = 'PoolOpened' \
+           AND project_key IS NOT NULL",
+    )
+    .bind(reader)
+    .fetch_all(pool)
+    .await?;
+    let mut out = HashMap::new();
+    for (id, key) in rows {
+        let id = id
+            .as_deref()
+            .and_then(super::word::parse_fixed::<32>)
+            .context("a stored PoolOpened without a pool id")?;
+        let key: Word = key
+            .as_slice()
+            .try_into()
+            .context("a stored project key is not 32 bytes")?;
+        out.insert(id, key);
+    }
     Ok(out)
 }

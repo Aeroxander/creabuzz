@@ -59,6 +59,9 @@ pub(super) struct FakeChain {
     pub(super) lagging: AtomicBool,
     /// A node behind: its head and headers stop at this block.
     pub(super) behind: Mutex<Option<u64>>,
+    /// `eth_call` answers by (contract, calldata); none set: the source makes
+    /// no calls.
+    pub(super) calls: Mutex<std::collections::HashMap<([u8; 20], Vec<u8>), Vec<u8>>>,
 }
 
 impl FakeChain {
@@ -100,6 +103,43 @@ impl FakeChain {
 
 #[async_trait]
 impl ChainSource for FakeChain {
+    async fn eth_call(
+        &self,
+        to: &[u8; 20],
+        data: &[u8],
+        _at: u64,
+    ) -> anyhow::Result<Option<Vec<u8>>> {
+        let calls = self.calls.lock().expect("lock");
+        if calls.is_empty() {
+            return Ok(None);
+        }
+        calls
+            .get(&(*to, data.to_vec()))
+            .cloned()
+            .map(Some)
+            .ok_or_else(|| anyhow::anyhow!("execution reverted"))
+    }
+    async fn logs_with_topic1(
+        &self,
+        address: &[u8; 20],
+        topic0: &Word,
+        topic1: &[Word],
+        from: u64,
+        to: u64,
+    ) -> anyhow::Result<Vec<RawLog>> {
+        let blocks = self.blocks.lock().expect("lock");
+        Ok(blocks
+            .iter()
+            .filter(|(h, _)| h.number >= from && h.number <= to)
+            .flat_map(|(_, logs)| logs.iter())
+            .filter(|l| {
+                l.address == *address
+                    && l.topics.first() == Some(topic0)
+                    && l.topics.get(1).is_some_and(|t| topic1.contains(t))
+            })
+            .cloned()
+            .collect())
+    }
     async fn chain_id(&self) -> anyhow::Result<u64> {
         Ok(31337)
     }

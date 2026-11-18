@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 use buzz_evm_allowance::abi::keccak256;
 use serde_json::{Map, Value};
 
-use super::word::{hex0x, word_to_address, word_to_decimal, Word};
+use super::word::{hex0x, word_to_address, word_to_decimal, word_to_signed_decimal, Word};
 
 /// Which contract emitted a log.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -34,6 +34,16 @@ pub enum Role {
     /// Project zero's earlier backers' claim contract (`EarlierBackers`),
     /// named by `Launcher.ProjectZeroSplit`.
     Earlier,
+    /// A sale's auction (`ContinuousClearingAuction`), named by
+    /// `Launcher.SaleOpened` or `ReserveSaleOpened`.
+    Auction,
+    /// The Launcher's one `LiquidityHolder` (`Launcher.holder()`), which keeps
+    /// every project's pool position and collects its fees.
+    Holder,
+    /// The Uniswap v4 pool manager (`strategy().poolManager()`), shared by
+    /// every pool on the chain: only `Swap` logs of the projects' own pools
+    /// are read from it.
+    PoolManager,
 }
 
 impl Role {
@@ -48,6 +58,9 @@ impl Role {
             Role::Rounds => "rounds",
             Role::Pair => "pair",
             Role::Earlier => "earlier",
+            Role::Auction => "auction",
+            Role::Holder => "holder",
+            Role::PoolManager => "pool_manager",
         }
     }
 
@@ -62,6 +75,9 @@ impl Role {
             "rounds" => Role::Rounds,
             "pair" => Role::Pair,
             "earlier" => Role::Earlier,
+            "auction" => Role::Auction,
+            "holder" => Role::Holder,
+            "pool_manager" => Role::PoolManager,
             _ => return None,
         })
     }
@@ -74,6 +90,9 @@ pub enum Ty {
     Address,
     /// `uintN`, kept with its Solidity name for the signature.
     Uint(&'static str),
+    /// `intN` (two's complement), kept with its Solidity name; decoded as a
+    /// signed decimal string.
+    Int(&'static str),
     /// `bool`.
     Bool,
     /// `bytes32`.
@@ -674,6 +693,101 @@ pub static EVENTS: &[EventDef] = &[
         "KeeperChanged",
         [ix("keeper", Ty::Address), p("taken", Ty::Bool)]
     ),
+    // ── A sale's auction (ContinuousClearingAuction) ────────────────────────
+    ev!(
+        Auction,
+        "BidSubmitted",
+        [
+            ix("id", U256),
+            ix("owner", Ty::Address),
+            p("priceQ96", U256),
+            p("amount", Ty::Uint("uint128")),
+        ]
+    ),
+    ev!(
+        Auction,
+        "BidExited",
+        [
+            ix("bidId", U256),
+            ix("owner", Ty::Address),
+            p("tokensFilled", U256),
+            p("currencyRefunded", U256),
+        ]
+    ),
+    ev!(
+        Auction,
+        "TokensClaimed",
+        [
+            ix("bidId", U256),
+            ix("owner", Ty::Address),
+            p("tokensFilled", U256)
+        ]
+    ),
+    ev!(
+        Auction,
+        "CheckpointUpdated",
+        [
+            p("blockNumber", U256),
+            p("clearingPriceQ96", U256),
+            p("cumulativeMps", Ty::Uint("uint24")),
+        ]
+    ),
+    ev!(
+        Auction,
+        "ClearingPriceUpdated",
+        [p("blockNumber", U256), p("clearingPriceQ96", U256)]
+    ),
+    ev!(
+        Auction,
+        "TokensReceived",
+        [p("totalSupply", Ty::Uint("uint128"))]
+    ),
+    // ── The Launcher's LiquidityHolder ──────────────────────────────────────
+    ev!(
+        Holder,
+        "Collected",
+        [
+            ix("tokenId", U256),
+            ix("treasury", Ty::Address),
+            p("dollars", U256),
+            p("toPlatform", U256),
+            p("toProject", U256),
+            p("sharesBurned", U256),
+        ]
+    ),
+    ev!(
+        Holder,
+        "Owed",
+        [
+            ix("token", Ty::Address),
+            ix("to", Ty::Address),
+            p("amount", U256)
+        ]
+    ),
+    ev!(
+        Holder,
+        "OwedSent",
+        [
+            ix("token", Ty::Address),
+            ix("to", Ty::Address),
+            p("amount", U256)
+        ]
+    ),
+    // ── The pool manager (shared; only the projects' pools are read) ───────
+    ev!(
+        PoolManager,
+        "Swap",
+        [
+            ix("id", Ty::Bytes32),
+            ix("sender", Ty::Address),
+            p("amount0", Ty::Int("int128")),
+            p("amount1", Ty::Int("int128")),
+            p("sqrtPriceX96", Ty::Uint("uint160")),
+            p("liquidity", Ty::Uint("uint128")),
+            p("tick", Ty::Int("int24")),
+            p("fee", Ty::Uint("uint24")),
+        ]
+    ),
     // ── Shares ──────────────────────────────────────────────────────────────
     ev!(
         Shares,
@@ -689,7 +803,7 @@ pub static EVENTS: &[EventDef] = &[
 fn type_name(ty: &Ty, out: &mut String) {
     match ty {
         Ty::Address => out.push_str("address"),
-        Ty::Uint(name) => out.push_str(name),
+        Ty::Uint(name) | Ty::Int(name) => out.push_str(name),
         Ty::Bool => out.push_str("bool"),
         Ty::Bytes32 => out.push_str("bytes32"),
         Ty::Bytes => out.push_str("bytes"),
@@ -740,6 +854,14 @@ pub fn lookup(role: Role, topic0: &Word) -> Option<&'static EventDef> {
         .map(|(_, _, e)| *e)
 }
 
+/// The first topic of `role`'s event `name`, if the reader knows it.
+pub fn topic_of(role: Role, name: &str) -> Option<Word> {
+    table()
+        .iter()
+        .find(|(r, _, e)| *r == role && e.name == name)
+        .map(|(_, t, _)| *t)
+}
+
 /// Every first topic the reader follows (for a `topics[0]` filter).
 pub fn all_topics() -> Vec<Word> {
     let mut topics: Vec<Word> = table().iter().map(|(_, t, _)| *t).collect();
@@ -776,6 +898,7 @@ fn scalar(ty: &Ty, w: &Word) -> Value {
     match ty {
         Ty::Address => Value::String(hex0x(&word_to_address(w))),
         Ty::Uint(_) => Value::String(word_to_decimal(w)),
+        Ty::Int(_) => Value::String(word_to_signed_decimal(w)),
         Ty::Bool => Value::Bool(w[31] != 0),
         Ty::Bytes32 => Value::String(hex0x(w)),
         // Indexed dynamic values are hashes; not used by these events.

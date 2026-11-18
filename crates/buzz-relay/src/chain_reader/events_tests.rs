@@ -47,6 +47,9 @@ fn the_catalog_matches_every_recorded_event() {
         ("Pair", Role::Pair),
         ("ShareToken", Role::Shares),
         ("EarlierBackers", Role::Earlier),
+        ("ContinuousClearingAuction", Role::Auction),
+        ("LiquidityHolder", Role::Holder),
+        ("PoolManager", Role::PoolManager),
     ] {
         let signatures: Vec<&str> = recorded[contract]
             .as_array()
@@ -429,4 +432,37 @@ fn logs_captured_from_the_anvil_loop_decode_to_the_round_s_numbers() {
     ] {
         assert!(seen.contains(&name), "fixture lacks {name}");
     }
+}
+
+/// The pool manager's `Swap` carries signed amounts and tick (two's
+/// complement); data from `cast abi-encode`, topic from `cast sig-event`.
+#[test]
+fn a_pool_swap_decodes_with_its_signs() {
+    let swap = def(Role::PoolManager, "Swap");
+    assert_eq!(
+        swap.topic(),
+        w("0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f")
+    );
+    let v = decode(
+        swap,
+        &[
+            swap.topic(),
+            word_u(0x77),
+            word_addr("0x00000000000000000000000000000000000000b0"),
+        ],
+        &parse_bytes(
+            "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffe363c80\
+             000000000000000000000000000000000000000000000000000000000000005a\
+             0000000000000000000000000000000000000001000000000000000000000000\
+             0000000000000000000000000000000000000000000000000000000000000005\
+             fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff27618\
+             0000000000000000000000000000000000000000000000000000000000000bb8",
+        ),
+    )
+    .expect("decodes");
+    assert_eq!(v["amount0"], "-30000000");
+    assert_eq!(v["amount1"], "90");
+    assert_eq!(v["sqrtPriceX96"], "79228162514264337593543950336");
+    assert_eq!(v["tick"], "-887272");
+    assert_eq!(v["fee"], "3000");
 }

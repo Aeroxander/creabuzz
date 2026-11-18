@@ -39,6 +39,23 @@ pub fn word_to_decimal(word: &Word) -> String {
     String::from_utf8(digits).unwrap_or_default()
 }
 
+/// The decimal digits of a signed (two's complement) 256-bit word, with a
+/// leading `-` when it is negative (an `intN` is sign-extended to 256 bits).
+pub fn word_to_signed_decimal(word: &Word) -> String {
+    if word[0] & 0x80 == 0 {
+        return word_to_decimal(word);
+    }
+    // The magnitude of a negative word: invert every bit and add one.
+    let mut magnitude = [0u8; 32];
+    let mut carry = 1u16;
+    for i in (0..32).rev() {
+        let v = u16::from(!word[i]) + carry;
+        magnitude[i] = v as u8;
+        carry = v >> 8;
+    }
+    format!("-{}", word_to_decimal(&magnitude))
+}
+
 /// The word as a `u128`, or `None` when it does not fit.
 pub fn word_to_u128(word: &Word) -> Option<u128> {
     if word[..16].iter().any(|b| *b != 0) {
@@ -105,6 +122,31 @@ mod tests {
         );
         assert_eq!(word_to_u128(&w), None);
         assert_eq!(word_to_u128(&word_of(7)), Some(7));
+    }
+
+    /// Signed words (`int128`, `int24`) are two's complement, sign-extended.
+    #[test]
+    fn signed_decimals_keep_their_sign() {
+        assert_eq!(word_to_signed_decimal(&[0u8; 32]), "0");
+        assert_eq!(word_to_signed_decimal(&word_of(42)), "42");
+        assert_eq!(word_to_signed_decimal(&[0xff; 32]), "-1");
+        let minus = |v: i128| {
+            let mut w = [0xffu8; 32];
+            w[16..].copy_from_slice(&v.to_be_bytes());
+            w
+        };
+        assert_eq!(word_to_signed_decimal(&minus(-1_000_000)), "-1000000");
+        assert_eq!(
+            word_to_signed_decimal(&minus(i128::MIN)),
+            i128::MIN.to_string()
+        );
+        // The smallest 256-bit value has no positive twin; its digits still come out.
+        let mut min = [0u8; 32];
+        min[0] = 0x80;
+        assert_eq!(
+            word_to_signed_decimal(&min),
+            "-57896044618658097711785492504343953926634992332820282019728792003956564819968"
+        );
     }
 
     #[test]

@@ -826,3 +826,134 @@ fn earlier_backers_are_counts_and_totals_only() {
     let whole = n.to_string();
     assert!(!whole.contains(receiver), "the receiver is listed: {whole}");
 }
+
+/// The market side: an auction's bids, exits, claims and clearing price;
+/// the pool's trades (the trader's signed amounts: here the Shares are the
+/// pool's second token, since the fixture's dollar token sorts first); the
+/// pool fees for this project's Treasury only; and the shared LiquidityHolder
+/// and pool manager never listed as holders (review F8).
+#[test]
+fn bids_trades_and_pool_fees_are_added_up() {
+    let (mut c, close) = worked_2500();
+    let treasury = "0x0000000000000000000000000000000000000002";
+    let manager = "0x00000000000000000000000000000000000000ee";
+    let holder = "0x00000000000000000000000000000000000000ef";
+    c.runners.shared.insert(manager.to_owned());
+    c.runners.shared.insert(holder.to_owned());
+    let t = close + DAY;
+    c.push(
+        t,
+        Role::Auction,
+        "TokensReceived",
+        json!({"totalSupply": "250"}),
+    );
+    c.push(
+        t,
+        Role::Auction,
+        "BidSubmitted",
+        json!({"id": "1", "owner": ALICE, "priceQ96": "9", "amount": "300"}),
+    );
+    c.push(
+        t,
+        Role::Auction,
+        "BidSubmitted",
+        json!({"id": "2", "owner": BOB, "priceQ96": "9", "amount": "200"}),
+    );
+    c.push(
+        t,
+        Role::Auction,
+        "ClearingPriceUpdated",
+        json!({"blockNumber": "5", "clearingPriceQ96": "77"}),
+    );
+    c.push(
+        t,
+        Role::Auction,
+        "BidExited",
+        json!({"bidId": "2", "owner": BOB, "tokensFilled": "0", "currencyRefunded": "200"}),
+    );
+    c.push(
+        t,
+        Role::Auction,
+        "TokensClaimed",
+        json!({"bidId": "1", "owner": ALICE, "tokensFilled": "120"}),
+    );
+    // Shares bought (+90 Shares out, 30 dollars in), then sold (-40 Shares in, 12 dollars out).
+    c.push(
+        t,
+        Role::PoolManager,
+        "Swap",
+        json!({"id": "0x01", "sender": ALICE, "amount0": "-30", "amount1": "90",
+        "sqrtPriceX96": "1000", "liquidity": "5", "tick": "-12", "fee": "3000"}),
+    );
+    c.push(
+        t,
+        Role::PoolManager,
+        "Swap",
+        json!({"id": "0x01", "sender": BOB, "amount0": "12", "amount1": "-40",
+        "sqrtPriceX96": "990", "liquidity": "5", "tick": "-13", "fee": "3000"}),
+    );
+    c.push(
+        t,
+        Role::Holder,
+        "Collected",
+        json!({"tokenId": "7", "treasury": treasury, "dollars": "10",
+        "toPlatform": "3", "toProject": "7", "sharesBurned": "4"}),
+    );
+    c.push(
+        t,
+        Role::Holder,
+        "Owed",
+        json!({"token": "0x09", "to": treasury, "amount": "5"}),
+    );
+    c.push(t, Role::Holder, "Owed", json!({"token": "0x09", "to": "0x00000000000000000000000000000000000000aa", "amount": "50"}));
+    c.push(
+        t,
+        Role::Holder,
+        "OwedSent",
+        json!({"token": "0x09", "to": treasury, "amount": "2"}),
+    );
+    c.push(
+        t,
+        Role::Shares,
+        "Transfer",
+        json!({"from": FOUNDER, "to": manager, "value": "1000"}),
+    );
+    c.push(
+        t,
+        Role::Shares,
+        "Transfer",
+        json!({"from": FOUNDER, "to": holder, "value": "1000"}),
+    );
+
+    let n = c.numbers(t);
+    let bids = &n["bids"][0];
+    assert_eq!(bids["count"], 2);
+    assert_eq!(bids["amount"], "500");
+    assert_eq!(bids["exited"], 1);
+    assert_eq!(bids["refunded"], "200");
+    assert_eq!(bids["sharesClaimed"], "120");
+    assert_eq!(bids["clearingPriceQ96"], "77");
+    assert_eq!(bids["sharesForSale"], "250");
+    let pool = &n["pool"];
+    assert_eq!(pool["trades"], 2);
+    assert_eq!(pool["tradedDollars"], "42");
+    assert_eq!(pool["sharesBought"], "90");
+    assert_eq!(pool["sharesSold"], "40");
+    assert_eq!(pool["tick"], "-13");
+    assert_eq!(pool["fees"]["dollars"], "10");
+    assert_eq!(pool["fees"]["sharesBurned"], "4");
+    assert_eq!(pool["fees"]["owedToProject"], "3");
+    let listed = n["holders"].to_string();
+    assert!(
+        !listed.contains(manager),
+        "the pool manager is listed: {listed}"
+    );
+    assert!(
+        !listed.contains(holder),
+        "the LiquidityHolder is listed: {listed}"
+    );
+    assert!(
+        !n["bids"].to_string().contains(ALICE),
+        "no bidder in the bids"
+    );
+}
