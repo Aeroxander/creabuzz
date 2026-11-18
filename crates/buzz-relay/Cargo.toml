@@ -20,6 +20,7 @@ buzz-core = { workspace = true }
 buzz-conformance = { workspace = true }
 buzz-db = { workspace = true }
 buzz-evm-auth = { path = "../buzz-evm-auth", features = ["rpc"] }
+buzz-evm-allowance = { workspace = true }
 buzz-datastore-tracing = { workspace = true }
 buzz-deletion = { workspace = true }
 buzz-auth = { workspace = true }

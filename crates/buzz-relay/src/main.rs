@@ -1212,6 +1212,13 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         });
     }
 
+    // Chain reader (plan v2, milestone 5): off unless BUZZ_CHAIN_RPC_URL is set.
+    match buzz_relay::chain_reader::spawn(Arc::clone(&state)) {
+        Ok(Some(_)) => info!("chain reader on"),
+        Ok(None) => info!("chain reader off (BUZZ_CHAIN_RPC_URL not set)"),
+        Err(e) => return Err(anyhow::anyhow!("chain reader: {e:#}")),
+    }
+
     // NIP-PL matcher and worker are enabled as one unit behind the explicit
     // deployment opt-in. The gateway URL alone never enables push.
     if state.config.push_enabled {

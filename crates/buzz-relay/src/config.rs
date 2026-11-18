@@ -534,6 +534,11 @@ pub struct Config {
     /// and the relay stays stock-compatible.
     pub evm_auth: Option<EvmAuthConfig>,
 
+    /// The chain reader (plan v2, milestone 5): reads the contracts' events
+    /// and signs one "project numbers" record per project. Unset (no
+    /// `BUZZ_CHAIN_RPC_URL`) means it does not run.
+    pub chain_reader: Option<crate::chain_reader::ChainReaderConfig>,
+
     /// Relay-owned KLIPY integration. Unset means GIF search is not advertised
     /// and its proxy routes return 404.
     pub klipy: Option<KlipyConfig>,
@@ -1172,6 +1177,8 @@ impl Config {
                     .map(|v| v == "true" || v == "1")
                     .unwrap_or(false),
             });
+        let chain_reader = crate::chain_reader::ChainReaderConfig::from_env()
+            .map_err(ConfigError::InvalidValue)?;
         let klipy = std::env::var("BUZZ_KLIPY_API_KEY")
             .ok()
             .map(|value| value.trim().to_string())
@@ -1885,6 +1892,7 @@ impl Config {
             allow_nip_oa_auth,
             llm,
             evm_auth,
+            chain_reader,
             klipy,
             media,
             media_max_concurrent_uploads,
@@ -2320,6 +2328,73 @@ mod tests {
 
         std::env::remove_var("BUZZ_EVM_CHAIN_ID");
         std::env::remove_var("BUZZ_EVM_AUTH");
+    }
+
+    #[test]
+    fn the_chain_reader_is_off_unless_configured_and_bad_values_fail_startup() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        const KNOBS: [&str; 5] = [
+            "BUZZ_CHAIN_RPC_URL",
+            "BUZZ_CHAIN_ID",
+            "BUZZ_CHAIN_LAUNCHER",
+            "BUZZ_CHAIN_CONFIRMATIONS",
+            "BUZZ_CHAIN_START_BLOCK",
+        ];
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+        assert_eq!(Config::from_env().expect("defaults").chain_reader, None);
+
+        // Half a configuration is refused, not treated as off.
+        std::env::set_var(
+            "BUZZ_CHAIN_LAUNCHER",
+            "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+        );
+        let err = Config::from_env().expect_err("launcher without an RPC URL");
+        assert!(err.to_string().contains("BUZZ_CHAIN_RPC_URL"), "{err}");
+
+        std::env::set_var("BUZZ_CHAIN_RPC_URL", "http://127.0.0.1:8545");
+        std::env::set_var("BUZZ_CHAIN_ID", "31337");
+        std::env::set_var("BUZZ_CHAIN_START_BLOCK", "7");
+        let reader = Config::from_env()
+            .expect("valid chain reader")
+            .chain_reader
+            .expect("chain reader on");
+        assert_eq!(
+            (reader.chain_id, reader.start_block, reader.confirmations),
+            (31337, 7, 12)
+        );
+        assert_eq!(
+            reader.reader_id(),
+            "31337:0x5fbdb2315678afecb367f032d93f642f64180aa3"
+        );
+
+        for (name, bad) in [
+            ("BUZZ_CHAIN_ID", "sepolia"),
+            ("BUZZ_CHAIN_ID", "0"),
+            (
+                "BUZZ_CHAIN_LAUNCHER",
+                "5fbdb2315678afecb367f032d93f642f64180aa3",
+            ),
+            ("BUZZ_CHAIN_LAUNCHER", "0x1234"),
+            ("BUZZ_CHAIN_CONFIRMATIONS", "-1"),
+        ] {
+            let keep = std::env::var(name).ok();
+            std::env::set_var(name, bad);
+            let err = Config::from_env().expect_err("a bad value must fail startup");
+            assert!(err.to_string().contains(name), "{err}");
+            match keep {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        std::env::remove_var("BUZZ_CHAIN_ID");
+        let err = Config::from_env().expect_err("chain id is required");
+        assert!(err.to_string().contains("BUZZ_CHAIN_ID"), "{err}");
+
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
     }
 
     #[test]

@@ -1566,6 +1566,7 @@ dependencies = [
  "buzz-datastore-tracing",
  "buzz-db",
  "buzz-deletion",
+ "buzz-evm-allowance",
  "buzz-evm-auth",
  "buzz-media",
  "buzz-pubsub",

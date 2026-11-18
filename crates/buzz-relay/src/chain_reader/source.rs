@@ -1,0 +1,245 @@
+//! Where the reader gets blocks and logs: a JSON-RPC node, or a fake chain in
+//! tests.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use anyhow::{anyhow, bail, Context};
+use async_trait::async_trait;
+use buzz_evm_allowance::EvmRpc;
+use serde_json::{json, Value};
+
+use super::word::{hex0x, parse_bytes, parse_fixed, parse_quantity, Word};
+
+/// A block header: what the reader keeps to notice a chain rollback.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Header {
+    /// Block number.
+    pub number: u64,
+    /// Block hash.
+    pub hash: Word,
+    /// The parent block's hash.
+    pub parent: Word,
+    /// Block time (unix seconds).
+    pub time: u64,
+}
+
+/// One log as the node returns it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RawLog {
+    /// Block number.
+    pub block_number: u64,
+    /// Hash of the block the node says the log is in.
+    pub block_hash: Word,
+    /// Transaction hash.
+    pub tx_hash: Word,
+    /// Position in the block.
+    pub log_index: u32,
+    /// Emitting contract.
+    pub address: [u8; 20],
+    /// Topics, the first being the event's.
+    pub topics: Vec<Word>,
+    /// Non-indexed data.
+    pub data: Vec<u8>,
+    /// The node marks logs of a block that left the chain.
+    pub removed: bool,
+}
+
+/// The chain as the reader sees it.
+#[async_trait]
+pub trait ChainSource: Send + Sync {
+    /// The chain id the node serves.
+    async fn chain_id(&self) -> anyhow::Result<u64>;
+    /// The newest block number.
+    async fn head(&self) -> anyhow::Result<u64>;
+    /// The header of block `number`, or `None` if the chain is shorter.
+    async fn header(&self, number: u64) -> anyhow::Result<Option<Header>>;
+    /// Logs from `addresses` in blocks `from..=to` whose first topic is one of
+    /// `topics`, in chain order.
+    async fn logs(
+        &self,
+        addresses: &[[u8; 20]],
+        topics: &[Word],
+        from: u64,
+        to: u64,
+    ) -> anyhow::Result<Vec<RawLog>>;
+}
+
+/// Logs from at most this many addresses go into one `eth_getLogs` call.
+pub const ADDRESSES_PER_CALL: usize = 100;
+/// A node answering more logs than this for one call is refused, not
+/// truncated: the reader then asks for a smaller block range.
+pub const MAX_LOGS_PER_CALL: usize = 10_000;
+
+/// [`ChainSource`] over a JSON-RPC node.
+pub struct RpcChainSource {
+    rpc: Arc<dyn EvmRpc>,
+    timeout: Duration,
+}
+
+impl RpcChainSource {
+    /// Read through `rpc`, each call bounded by `timeout`.
+    pub fn new(rpc: Arc<dyn EvmRpc>, timeout: Duration) -> Self {
+        Self { rpc, timeout }
+    }
+
+    async fn call(&self, method: &'static str, params: Value) -> anyhow::Result<Value> {
+        self.rpc
+            .call(method, params, self.timeout)
+            .await
+            .map_err(|e| anyhow!("{method}: {e}"))
+    }
+}
+
+fn str_field<'a>(v: &'a Value, key: &str) -> anyhow::Result<&'a str> {
+    v.get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("missing {key}"))
+}
+
+fn quantity(v: &Value, key: &str) -> anyhow::Result<u64> {
+    parse_quantity(str_field(v, key)?).ok_or_else(|| anyhow!("bad {key}"))
+}
+
+fn word(v: &Value, key: &str) -> anyhow::Result<Word> {
+    parse_fixed::<32>(str_field(v, key)?).ok_or_else(|| anyhow!("bad {key}"))
+}
+
+/// Parse an `eth_getBlockByNumber` result.
+pub fn parse_header(v: &Value) -> anyhow::Result<Header> {
+    Ok(Header {
+        number: quantity(v, "number")?,
+        hash: word(v, "hash")?,
+        parent: word(v, "parentHash")?,
+        time: quantity(v, "timestamp")?,
+    })
+}
+
+/// Parse one entry of an `eth_getLogs` result.
+pub fn parse_log(v: &Value) -> anyhow::Result<RawLog> {
+    let topics = v
+        .get("topics")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("missing topics"))?
+        .iter()
+        .map(|t| {
+            t.as_str()
+                .and_then(parse_fixed::<32>)
+                .ok_or_else(|| anyhow!("bad topic"))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let log_index = u32::try_from(quantity(v, "logIndex")?).context("log index")?;
+    Ok(RawLog {
+        block_number: quantity(v, "blockNumber")?,
+        block_hash: word(v, "blockHash")?,
+        tx_hash: word(v, "transactionHash")?,
+        log_index,
+        address: parse_fixed::<20>(str_field(v, "address")?)
+            .ok_or_else(|| anyhow!("bad address"))?,
+        topics,
+        data: parse_bytes(str_field(v, "data")?).ok_or_else(|| anyhow!("bad data"))?,
+        removed: v.get("removed").and_then(Value::as_bool).unwrap_or(false),
+    })
+}
+
+#[async_trait]
+impl ChainSource for RpcChainSource {
+    async fn chain_id(&self) -> anyhow::Result<u64> {
+        let v = self.call("eth_chainId", json!([])).await?;
+        v.as_str()
+            .and_then(parse_quantity)
+            .ok_or_else(|| anyhow!("bad eth_chainId answer"))
+    }
+
+    async fn head(&self) -> anyhow::Result<u64> {
+        let v = self.call("eth_blockNumber", json!([])).await?;
+        v.as_str()
+            .and_then(parse_quantity)
+            .ok_or_else(|| anyhow!("bad eth_blockNumber answer"))
+    }
+
+    async fn header(&self, number: u64) -> anyhow::Result<Option<Header>> {
+        let v = self
+            .call(
+                "eth_getBlockByNumber",
+                json!([format!("0x{number:x}"), false]),
+            )
+            .await?;
+        if v.is_null() {
+            return Ok(None);
+        }
+        parse_header(&v).map(Some)
+    }
+
+    async fn logs(
+        &self,
+        addresses: &[[u8; 20]],
+        topics: &[Word],
+        from: u64,
+        to: u64,
+    ) -> anyhow::Result<Vec<RawLog>> {
+        let topic_list: Vec<String> = topics.iter().map(|t| hex0x(t)).collect();
+        let mut out = Vec::new();
+        for chunk in addresses.chunks(ADDRESSES_PER_CALL) {
+            let list: Vec<String> = chunk.iter().map(|a| hex0x(a)).collect();
+            let v = self
+                .call(
+                    "eth_getLogs",
+                    json!([{
+                        "fromBlock": format!("0x{from:x}"),
+                        "toBlock": format!("0x{to:x}"),
+                        "address": list,
+                        "topics": [topic_list],
+                    }]),
+                )
+                .await?;
+            let entries = v
+                .as_array()
+                .ok_or_else(|| anyhow!("eth_getLogs answer is not a list"))?;
+            if entries.len() > MAX_LOGS_PER_CALL {
+                bail!(
+                    "eth_getLogs answered {} logs for blocks {from}..={to}; ask a smaller range",
+                    entries.len()
+                );
+            }
+            for entry in entries {
+                out.push(parse_log(entry)?);
+            }
+        }
+        out.sort_by_key(|l| (l.block_number, l.log_index));
+        Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_an_anvil_header_and_log() {
+        let header = json!({
+            "number": "0x1b",
+            "hash": format!("0x{}", "aa".repeat(32)),
+            "parentHash": format!("0x{}", "bb".repeat(32)),
+            "timestamp": "0x6553f100",
+        });
+        let h = parse_header(&header).expect("header");
+        assert_eq!((h.number, h.time), (27, 0x6553_f100));
+        assert_eq!(h.parent, [0xbb; 32]);
+
+        let log = json!({
+            "address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+            "topics": [format!("0x{}", "11".repeat(32))],
+            "data": "0x",
+            "blockNumber": "0x1b",
+            "blockHash": format!("0x{}", "aa".repeat(32)),
+            "transactionHash": format!("0x{}", "cc".repeat(32)),
+            "logIndex": "0x2",
+            "removed": false,
+        });
+        let l = parse_log(&log).expect("log");
+        assert_eq!((l.block_number, l.log_index, l.removed), (27, 2, false));
+        assert!(l.data.is_empty());
+        assert!(parse_log(&json!({"topics": []})).is_err());
+    }
+}
