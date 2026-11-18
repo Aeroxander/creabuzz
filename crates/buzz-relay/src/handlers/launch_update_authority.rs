@@ -26,7 +26,12 @@
 //! | `task-part` = confirm                             | founder or team, never the helper;   |
 //! |                                                   | a founder working alone may check    |
 //! |                                                   | their own work (see below)           |
-//! | `task-part` = accept, evidence, more-time, give-up| the helper the task names            |
+//! | `task-part` = accept, evidence, more-time, give-up| the task's helper: the one it names, |
+//! |                                                   | or for a task open to anyone, its    |
+//! |                                                   | taker (see "Tasks open to anyone")   |
+//! | `task-part` = take                                | anyone signed in but the team, on a  |
+//! |                                                   | task open to anyone that nobody has  |
+//! |                                                   | taken; a few a day, and small        |
 //! | none of the above, body names on-chain work       | anyone, as before (no lookup)        |
 //! | none of the above (a plain update, anything else) | the founder or a team member         |
 //!
@@ -80,6 +85,19 @@
 //! at all. Readers show such a confirmation as the founder's own check, never
 //! as work accepted by someone else.
 //!
+//! # Tasks open to anyone
+//!
+//! A task that names no `task-helper` is open to anyone, and must say what it pays in whole dollars (`task-usd`,
+//! 1 to 100,000). Someone outside the team takes it with a `take` step, which may name the address the money goes to
+//! (`task-pay-to`, under the taker's own signature). The task's helper is then its taker: the first `take` stored for
+//! it, by `created_at` and then id, whose signer has not given the task up. A second take is refused while one is live,
+//! and someone who gave a task up cannot take it again. A task the team cancelled cannot be taken. The team's
+//! confirmation may carry the payment's transaction (`task-paid`); the money moves from the runner's own wallet in the
+//! app, never from the server or an agent, and the server does not check the transaction against the chain.
+//!
+//! An account on record as a manager agent (its profile says `["agent-role", "manager"]`, see `agent_label`) signs no
+//! task step at all: it drafts for the founder and never takes, hands in or confirms work.
+//!
 //! Records stored before this check existed are not looked at again.
 
 use std::collections::HashSet;
@@ -123,6 +141,26 @@ pub(crate) const ASKED_ENOUGH: &str =
 /// Said when an account asks to join too many projects in a day.
 pub(crate) const ASKING_TOO_MUCH: &str =
     "rate-limited: you can ask to join a few projects a day; try again tomorrow";
+/// Said when someone on the team takes a task open to anyone.
+pub(crate) const TEAM_TAKES: &str =
+    "invalid: a task open to anyone is taken by someone outside the team; the team names a helper instead";
+/// Said when a take names a task that names its helper.
+pub(crate) const NOT_OPEN: &str =
+    "invalid: this task names its helper; only a task open to anyone can be taken";
+/// Said when a take names a task someone else has taken, that was cancelled, or that the signer gave up before.
+pub(crate) const TAKEN: &str =
+    "restricted: this task is taken, stopped, or was given up by you before; it can't be taken now";
+/// Said when an account takes too many tasks in a day.
+pub(crate) const TAKING_TOO_MUCH: &str =
+    "rate-limited: you can take a few tasks a day; try again tomorrow";
+/// Said when a manager agent signs a task step.
+pub(crate) const MANAGER_LIMIT: &str =
+    "restricted: a manager agent drafts for the founder; it can't post, take, hand in or check tasks";
+/// The most a task open to anyone may pay, in whole dollars.
+pub(crate) const TASK_USD_MAX: u64 = 100_000;
+/// How many tasks one account may take in a day.
+const TAKES_PER_DAY: i64 = 20;
+
 /// The `l` label an ask to join carries, so a project's asks are read apart from its other records.
 pub(crate) const JOIN_LABEL: &str = "creaton-join";
 /// The most JSON content an ask to join may carry, in bytes. The web app sends `{"title":"Asked to join","body":""}`
@@ -158,10 +196,12 @@ pub(crate) enum TaskPart {
     MoreTime,
     /// The helper stops.
     GiveUp,
+    /// Someone outside the team takes a task open to anyone.
+    Take,
 }
 
 impl TaskPart {
-    fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "task" => Self::Task,
             "send-back" => Self::SendBack,
@@ -172,6 +212,7 @@ impl TaskPart {
             "evidence" => Self::Evidence,
             "more-time" => Self::MoreTime,
             "give-up" => Self::GiveUp,
+            "take" => Self::Take,
             _ => return None,
         })
     }
@@ -273,6 +314,7 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
     let mut labelled_join = false;
     let mut named: Vec<&str> = Vec::new();
     let mut project: Option<&str> = None;
+    let mut money: Vec<(&str, &str)> = Vec::new();
     for tag in event.tags.iter() {
         let fields = tag.as_slice();
         let Some(name) = fields.first().map(|s| s.as_str()) else {
@@ -292,6 +334,7 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
             // The first of each, as the readers take it.
             "task" if task_id.is_none() => task_id = Some(value),
             "task-helper" if helper.is_none() => helper = Some(value),
+            "task-usd" | "task-pay-to" | "task-paid" => money.push((name, value)),
             _ => {}
         }
     }
@@ -323,8 +366,19 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
                 return Err(format!("unknown task step {part:?}"));
             };
             if part == TaskPart::Task {
-                if helper.and_then(id_bytes).is_none() {
-                    return Err("a task must name its helper in a `task-helper` tag".into());
+                match helper {
+                    Some(helper) if id_bytes(helper).is_none() => {
+                        return Err("a task must name its helper in a `task-helper` tag".into());
+                    }
+                    // Open to anyone: it says what it pays.
+                    None if !money.iter().any(|(name, _)| *name == "task-usd") => {
+                        return Err(
+                            "a task must name its helper in a `task-helper` tag, or say what it pays in `task-usd` \
+                             to be open to anyone"
+                                .into(),
+                        );
+                    }
+                    _ => {}
                 }
                 Some((part, None))
             } else {
@@ -338,6 +392,10 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
     };
 
     check_hand_in_extras(event, step.map(|(part, _)| part))?;
+    check_money_tags(&money, step.map(|(part, _)| part))?;
+    if step.is_some_and(|(part, _)| part == TaskPart::Take) {
+        check_record_is_small(event, "a take")?;
+    }
 
     if !joins.is_empty() {
         let [invite] = joins.as_slice() else {
@@ -411,9 +469,55 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
 /// sign one for nothing, and the founder's page reads up to 200 of them every few seconds, so one ask must never be
 /// worth more than a few hundred bytes.
 fn check_ask_is_small(event: &Event) -> Result<(), String> {
+    check_record_is_small(event, "an ask to join")
+}
+
+/// What a task's money tags may hold, and on which step: `task-usd` (whole dollars, 1 to [`TASK_USD_MAX`]) on the task,
+/// `task-pay-to` (an address, `0x` and 40 hex digits) on a take, `task-paid` (a transaction, `0x` and 64 hex digits)
+/// on a confirmation. One of each at most, and none anywhere else.
+fn check_money_tags(money: &[(&str, &str)], part: Option<TaskPart>) -> Result<(), String> {
+    let hex_of = |value: &str, digits: usize| {
+        value.len() == digits + 2
+            && value.starts_with("0x")
+            && value[2..].bytes().all(|b| b.is_ascii_hexdigit())
+    };
+    let mut seen: Vec<&str> = Vec::new();
+    for (name, value) in money {
+        if seen.contains(name) {
+            return Err(format!("a record can carry only one `{name}` tag"));
+        }
+        seen.push(name);
+        let (step, ok) = match *name {
+            "task-usd" => (
+                TaskPart::Task,
+                !value.starts_with('0')
+                    && value.bytes().all(|b| b.is_ascii_digit())
+                    && value
+                        .parse::<u64>()
+                        .is_ok_and(|usd| (1..=TASK_USD_MAX).contains(&usd)),
+            ),
+            "task-pay-to" => (TaskPart::Take, hex_of(value, 40)),
+            _ => (TaskPart::Confirm, hex_of(value, 64)),
+        };
+        if part != Some(step) {
+            return Err(format!("`{name}` belongs on another step of a task"));
+        }
+        if !ok {
+            return Err(match *name {
+                "task-usd" => format!("`task-usd` must be whole dollars from 1 to {TASK_USD_MAX}"),
+                "task-pay-to" => "`task-pay-to` must be an address: 0x and 40 hex digits".into(),
+                _ => "`task-paid` must be a transaction: 0x and 64 hex digits".into(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Hold a record a stranger signs for nothing (an ask to join, a take) to a small size.
+fn check_record_is_small(event: &Event, what: &str) -> Result<(), String> {
     if event.content.len() > JOIN_CONTENT_MAX {
         return Err(format!(
-            "an ask to join carries at most {JOIN_CONTENT_MAX} bytes of content"
+            "{what} carries at most {JOIN_CONTENT_MAX} bytes of content"
         ));
     }
     let tags = event.tags.len();
@@ -424,7 +528,7 @@ fn check_ask_is_small(event: &Event) -> Result<(), String> {
         .sum();
     if tags > JOIN_TAGS_MAX || bytes > JOIN_TAG_BYTES_MAX {
         return Err(format!(
-            "an ask to join carries at most {JOIN_TAGS_MAX} tags and {JOIN_TAG_BYTES_MAX} bytes of them"
+            "{what} carries at most {JOIN_TAGS_MAX} tags and {JOIN_TAG_BYTES_MAX} bytes of them"
         ));
     }
     Ok(())
@@ -510,12 +614,55 @@ impl ProjectTeam {
 pub(crate) struct TaskFacts {
     /// The project the task names in its `a` tag.
     pub(crate) coordinate: String,
-    /// The helper the task is with (`task-helper`).
-    pub(crate) helper: String,
+    /// The helper the task names (`task-helper`); `None` for a task open to anyone.
+    pub(crate) helper: Option<String>,
+    /// For a task open to anyone, what its stored steps say about who has it (see [`TakeFacts`]).
+    pub(crate) takes: TakeFacts,
+}
+
+/// What the stored steps of a task open to anyone say, read by the server before a step is decided.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct TakeFacts {
+    /// Its taker: the first `take` by `created_at` and then id whose signer has not given the task up.
+    pub(crate) taker: Option<String>,
+    /// Whether the signer of the record being decided took this task before and gave it up.
+    pub(crate) signer_left: bool,
+    /// Whether the team cancelled the task.
+    pub(crate) cancelled: bool,
+}
+
+impl TaskFacts {
+    /// Who does the work: the helper the task names, or its taker.
+    pub(crate) fn worker(&self) -> Option<&str> {
+        self.helper.as_deref().or(self.takes.taker.as_deref())
+    }
+}
+
+/// The taker of a task open to anyone, from its stored steps: `(signer, created_at, id, step)` for each `take`,
+/// `give-up` and `cancel` the server holds for it. The first take by `created_at` and then id whose signer has not
+/// given the task up. Every reader (the CLI, the app) takes the same rule.
+pub(crate) fn read_takes(steps: &[(String, u64, String, TaskPart)], signer: &str) -> TakeFacts {
+    let left: HashSet<&str> = steps
+        .iter()
+        .filter(|(_, _, _, part)| *part == TaskPart::GiveUp)
+        .map(|(who, _, _, _)| who.as_str())
+        .collect();
+    let mut takes: Vec<&(String, u64, String, TaskPart)> = steps
+        .iter()
+        .filter(|(who, _, _, part)| *part == TaskPart::Take && !left.contains(who.as_str()))
+        .collect();
+    takes.sort_by(|a, b| (a.1, &a.2).cmp(&(b.1, &b.2)));
+    TakeFacts {
+        taker: takes.first().map(|(who, _, _, _)| who.clone()),
+        signer_left: left.contains(signer),
+        cancelled: steps
+            .iter()
+            .any(|(_, _, _, part)| *part == TaskPart::Cancel),
+    }
 }
 
 /// Read a stored event as a task record. `None` when it is not one: another
-/// kind, another step, or no helper.
+/// kind, another step, or a record that names neither a helper nor what it pays.
 pub(crate) fn task_facts(task: &Event) -> Option<TaskFacts> {
     if u32::from(task.kind.as_u16()) != KIND_LAUNCH_UPDATE {
         return None;
@@ -537,7 +684,8 @@ pub(crate) fn task_facts(task: &Event) -> Option<TaskFacts> {
     };
     Some(TaskFacts {
         coordinate: first("a")?,
-        helper: first("task-helper")?,
+        helper: first("task-helper"),
+        takes: TakeFacts::default(),
     })
 }
 
@@ -645,8 +793,22 @@ fn decide_by_place(
     if task.coordinate != coordinate {
         return Err(OTHER_PROJECT);
     }
+    if part == TaskPart::Take {
+        if team.has(signer) {
+            return Err(TEAM_TAKES);
+        }
+        if task.helper.is_some() {
+            return Err(NOT_OPEN);
+        }
+        let takes = &task.takes;
+        return if takes.taker.is_some() || takes.signer_left || takes.cancelled {
+            Err(TAKEN)
+        } else {
+            Ok(())
+        };
+    }
     if part.is_helpers() {
-        return if task.helper == signer {
+        return if task.worker() == Some(signer) {
             Ok(())
         } else {
             Err(NOT_HELPER)
@@ -655,7 +817,7 @@ fn decide_by_place(
     if !team.has(signer) {
         return Err(NOT_TEAM);
     }
-    let own_work = task.helper == signer || confirm.link != HelperLink::None;
+    let own_work = task.worker() == Some(signer) || confirm.link != HelperLink::None;
     if part == TaskPart::Confirm && own_work && !founder_alone(signer, team, task, confirm) {
         return Err(OWN_WORK);
     }
@@ -673,12 +835,13 @@ fn founder_alone(
     task: &TaskFacts,
     confirm: &ConfirmFacts,
 ) -> bool {
+    let worker = task.worker().unwrap_or("");
     team.is_founder(signer)
-        && (task.helper == signer || confirm.link == HelperLink::SignerRunsHelper)
-        && !team.has_another_person(&task.helper, &confirm.agents)
+        && (worker == signer || confirm.link == HelperLink::SignerRunsHelper)
+        && !team.has_another_person(worker, &confirm.agents)
 }
 
-fn internal(what: &str, error: impl std::fmt::Display) -> IngestError {
+pub(crate) fn internal(what: &str, error: impl std::fmt::Display) -> IngestError {
     IngestError::Internal(format!("error: db error {what}: {error}"))
 }
 
@@ -736,6 +899,12 @@ pub(crate) async fn enforce_launch_update_authority(
     let team = ProjectTeam::from_record(&record.event);
 
     let signer = event.pubkey.to_hex();
+    // A manager agent drafts for the founder and signs no task step, whatever its place on the team.
+    if requirement.step.is_some()
+        && super::task_takes::is_manager_agent(state, community, &event.pubkey.to_bytes()).await?
+    {
+        return Err(IngestError::AuthFailed(MANAGER_LIMIT.into()));
+    }
     let mut task = None;
     let mut confirm = ConfirmFacts::none();
     if let Some((part, Some(task_id))) = requirement.step {
@@ -745,9 +914,13 @@ pub(crate) async fn enforce_launch_update_authority(
             .await
             .map_err(|e| internal("reading the task", e))?
             .and_then(|stored| task_facts(&stored.event));
+        if let Some(facts) = task.as_mut().filter(|facts| facts.helper.is_none()) {
+            facts.takes =
+                super::task_takes::stored_takes(state, community, &task_id, &signer).await?;
+        }
         if let (TaskPart::Confirm, Some(helper)) = (
             part,
-            task.as_ref().and_then(|facts| id_bytes(&facts.helper)),
+            task.as_ref().and_then(TaskFacts::worker).and_then(id_bytes),
         ) {
             let signer_bytes = event.pubkey.to_bytes();
             if helper != signer_bytes {
@@ -804,6 +977,12 @@ pub(crate) async fn enforce_launch_update_authority(
 
     if requirement.join {
         enforce_join_caps(state, community, event, &coordinate).await?;
+    }
+    if requirement
+        .step
+        .is_some_and(|(part, _)| part == TaskPart::Take)
+    {
+        super::task_takes::enforce_take_caps(state, community, event, TAKES_PER_DAY).await?;
     }
     Ok(())
 }
@@ -924,7 +1103,7 @@ async fn enforce_join_caps(
 }
 
 /// Whether the server has `account` on record as an agent account: someone runs it.
-async fn is_agent_account(
+pub(crate) async fn is_agent_account(
     state: &Arc<AppState>,
     community: buzz_core::tenant::CommunityId,
     account: &[u8],
@@ -1884,5 +2063,235 @@ mod tests {
             &["join-decline", &asker]
         ])
         .contains("cannot also be anything else"));
+    }
+
+    /// A task open to anyone that the founder posts: no helper, and what it pays.
+    fn open_task(w: &World, usd: &str) -> Event {
+        w.record(
+            &w.founder,
+            &[
+                &["l", "creaton-task"],
+                &["task-part", "task"],
+                &["task-what", "Draw the map"],
+                &["task-usd", usd],
+            ],
+        )
+    }
+
+    /// The verdict on `event` naming the open `task`, with what its stored steps say.
+    fn verdict_open(
+        w: &World,
+        event: &Event,
+        task: &Event,
+        takes: TakeFacts,
+    ) -> Result<(), &'static str> {
+        let requirement = classify(event).expect("readable").expect("a known family");
+        let mut facts = task_facts(task).expect("a task");
+        facts.takes = takes;
+        decide(
+            &requirement,
+            &event.pubkey.to_hex(),
+            &w.coordinate(),
+            &w.team(),
+            Some(&facts),
+            &ConfirmFacts::none(),
+            false,
+        )
+    }
+
+    fn taken_by(who: &Keys) -> TakeFacts {
+        TakeFacts {
+            taker: Some(who.public_key().to_hex()),
+            ..TakeFacts::default()
+        }
+    }
+
+    #[test]
+    fn a_task_open_to_anyone_says_what_it_pays_and_the_money_tags_stay_on_their_step() {
+        let w = World::new();
+        assert!(classify(&open_task(&w, "40")).is_ok());
+        assert!(classify(&open_task(&w, "100000")).is_ok());
+        for bad in ["0", "040", "100001", "12.5", "-3", "", "1e3"] {
+            assert!(
+                classify(&open_task(&w, bad))
+                    .unwrap_err()
+                    .contains("whole dollars"),
+                "{bad}"
+            );
+        }
+        // No helper and no dollars is neither a named task nor an open one.
+        let neither = w.record(&w.founder, &[&["task-part", "task"], &["task-what", "x"]]);
+        assert!(classify(&neither).unwrap_err().contains("task-usd"));
+        let task = open_task(&w, "40");
+        let id = task.id.to_hex();
+        let take = |extra: &[&str]| {
+            let named = ["task", id.as_str()];
+            let mut tags: Vec<&[&str]> = vec![&["task-part", "take"], &named];
+            tags.push(extra);
+            w.record(&w.stranger, &tags)
+        };
+        assert!(classify(&take(&[
+            "task-pay-to",
+            "0x00000000000000000000000000000000000000aa"
+        ]))
+        .is_ok());
+        assert!(classify(&take(&["task-pay-to", "0xabc"]))
+            .unwrap_err()
+            .contains("address"));
+        // Each tag on its own step only.
+        assert!(classify(&take(&["task-usd", "40"]))
+            .unwrap_err()
+            .contains("another step"));
+        assert!(classify(&take(&["task-paid", &format!("0x{ID}")]))
+            .unwrap_err()
+            .contains("another step"));
+        let confirm = |paid: &str| {
+            w.record(
+                &w.founder,
+                &[
+                    &["task-part", "confirm"],
+                    &["task", &id],
+                    &["task-paid", paid],
+                ],
+            )
+        };
+        assert!(classify(&confirm(&format!("0x{ID}"))).is_ok());
+        assert!(classify(&confirm(ID)).unwrap_err().contains("transaction"));
+        let twice = w.record(
+            &w.founder,
+            &[
+                &["task-part", "task"],
+                &["task-usd", "4"],
+                &["task-usd", "5"],
+            ],
+        );
+        assert!(classify(&twice)
+            .unwrap_err()
+            .contains("only one `task-usd`"));
+        // A take is small, like an ask to join.
+        let big = with_body(
+            &w,
+            &w.stranger,
+            &[&["task-part", "take"], &["task", &id]],
+            &format!("\"{}\"", "x".repeat(JOIN_CONTENT_MAX)),
+        );
+        assert!(classify(&big)
+            .unwrap_err()
+            .contains("a take carries at most"));
+    }
+
+    #[test]
+    fn anyone_outside_the_team_takes_an_open_task_once_and_then_does_its_steps() {
+        let w = World::new();
+        let task = open_task(&w, "40");
+        let take = w.step(&w.stranger, "take", &task);
+        assert_eq!(verdict_open(&w, &take, &task, TakeFacts::default()), Ok(()));
+        // The team names a helper instead; nobody on it takes.
+        for who in [&w.founder, &w.mate] {
+            assert_eq!(
+                verdict_open(&w, &w.step(who, "take", &task), &task, TakeFacts::default()),
+                Err(TEAM_TAKES)
+            );
+        }
+        // Taken, stopped, or given up by this person before: no second take.
+        let other = Keys::generate();
+        let late = w.step(&other, "take", &task);
+        assert_eq!(
+            verdict_open(&w, &late, &task, taken_by(&w.stranger)),
+            Err(TAKEN)
+        );
+        let left = TakeFacts {
+            signer_left: true,
+            ..TakeFacts::default()
+        };
+        assert_eq!(verdict_open(&w, &late, &task, left), Err(TAKEN));
+        let cancelled = TakeFacts {
+            cancelled: true,
+            ..TakeFacts::default()
+        };
+        assert_eq!(verdict_open(&w, &late, &task, cancelled), Err(TAKEN));
+        // A task that names its helper is not open.
+        let named = w.task(&w.founder);
+        assert_eq!(
+            verdict_open(
+                &w,
+                &w.step(&w.stranger, "take", &named),
+                &named,
+                TakeFacts::default()
+            ),
+            Err(NOT_OPEN)
+        );
+        // The taker is the helper: they hand in; nobody else does, and before a take nobody does.
+        for part in ["evidence", "more-time", "give-up", "accept"] {
+            assert_eq!(
+                verdict_open(
+                    &w,
+                    &w.step(&w.stranger, part, &task),
+                    &task,
+                    taken_by(&w.stranger)
+                ),
+                Ok(()),
+                "{part}"
+            );
+            assert_eq!(
+                verdict_open(
+                    &w,
+                    &w.step(&other, part, &task),
+                    &task,
+                    taken_by(&w.stranger)
+                ),
+                Err(NOT_HELPER),
+                "{part}"
+            );
+            assert_eq!(
+                verdict_open(
+                    &w,
+                    &w.step(&w.stranger, part, &task),
+                    &task,
+                    TakeFacts::default()
+                ),
+                Err(NOT_HELPER),
+                "{part}"
+            );
+        }
+        // The team confirms the taker's work; the taker never does.
+        let confirm = |who: &Keys| w.step(who, "confirm", &task);
+        assert_eq!(
+            verdict_open(&w, &confirm(&w.founder), &task, taken_by(&w.stranger)),
+            Ok(())
+        );
+        assert_eq!(
+            verdict_open(&w, &confirm(&w.stranger), &task, taken_by(&w.stranger)),
+            Err(NOT_TEAM)
+        );
+        // A team member who took nothing confirms a stranger's work, and the founder's own taken work is the founder's.
+        assert_eq!(
+            verdict_open(&w, &confirm(&w.mate), &task, taken_by(&w.stranger)),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn the_first_take_that_was_not_given_up_is_the_tasks() {
+        let (a, b, c) = ("a".repeat(64), "b".repeat(64), "c".repeat(64));
+        let step = |who: &str, at: u64, id: &str, part: TaskPart| {
+            (who.to_string(), at, id.to_string(), part)
+        };
+        // Earliest by time, then by id; whatever order the server read them in.
+        let steps = vec![
+            step(&b, 20, "02", TaskPart::Take),
+            step(&a, 10, "09", TaskPart::Take),
+            step(&c, 10, "01", TaskPart::Take),
+        ];
+        assert_eq!(read_takes(&steps, &a).taker, Some(c.clone()));
+        // Whoever gave up is out, for good; the next one has it.
+        let mut gave_up = steps.clone();
+        gave_up.push(step(&c, 30, "03", TaskPart::GiveUp));
+        let facts = read_takes(&gave_up, &c);
+        assert_eq!(facts.taker, Some(a.clone()));
+        assert!(facts.signer_left);
+        assert!(!facts.cancelled);
+        assert!(read_takes(&[step(&a, 1, "0", TaskPart::Cancel)], &b).cancelled);
+        assert_eq!(read_takes(&[], &a), TakeFacts::default());
     }
 }

@@ -544,7 +544,9 @@ struct Accepted {
 /// | a goal, a promise, a promise's answer        | the founder signed it                         |
 /// | a weekly update (`update-part`, `update-kind`, `help-needed`) | the founder or the team signed it |
 /// | a plain update (no family tag; body holds only `title`, `body`, `links`) | the founder or the team signed it |
-/// | a task (`task-part` = task)                  | the team signed it and its work was accepted  |
+/// | a task (`task-part` = task)                  | the team signed it and its work was accepted, |
+/// |                                              | or it is open to anyone (no `task-helper`, a  |
+/// |                                              | `task-usd`), so a visitor sees a task to take |
 /// | work handed in (`task-part` = evidence)      | the task's helper signed it and it was accepted |
 /// | a confirmation (`task-part` = confirm)       | the team signed it, for work that was accepted |
 /// | anything else                                | never                                         |
@@ -585,7 +587,9 @@ fn is_served(event: &nostr::Event, team: &Team, accepted: &Accepted) -> bool {
         [step] if !founders && !weekly => {
             let id = event.id.to_hex();
             return match *step {
-                "task" => team.has(&signer) && accepted.tasks.contains(&id),
+                "task" => {
+                    team.has(&signer) && (accepted.tasks.contains(&id) || is_open_task(event))
+                }
                 "confirm" => {
                     team.has(&signer)
                         && tag_value(event, "task-evidence")
@@ -615,6 +619,13 @@ fn is_served(event: &nostr::Event, team: &Team, accepted: &Accepted) -> bool {
             body.keys()
                 .all(|key| matches!(key.as_str(), "title" | "body" | "links"))
         })
+}
+
+/// Whether a task record is open to anyone: it names no helper and says what it pays. Takes are signed by people
+/// outside the team and are not served, so a visitor may see a task someone has already taken; the taker's work, once
+/// accepted, is not served either (the report of milestone 8 lists both).
+fn is_open_task(event: &nostr::Event) -> bool {
+    tag_value(event, "task-helper").is_none() && tag_value(event, "task-usd").is_some()
 }
 
 /// What one request has looked up, so no project is read twice in it.
@@ -1223,6 +1234,33 @@ mod tests {
             !is_the_projects_own(&StoredEvent::new(note, None), &coordinate),
             "another kind"
         );
+    }
+
+    /// A task open to anyone is served from the team, before anyone has taken it; its take never is.
+    #[test]
+    fn an_open_task_is_served_from_the_team_and_a_take_is_not() {
+        let founder = nostr::Keys::generate();
+        let stranger = nostr::Keys::generate();
+        let project =
+            nostr::EventBuilder::new(nostr::Kind::Custom(KIND_LAUNCH_RECORD as u16), "{}")
+                .tags([nostr::Tag::parse(["d", "nebula"]).expect("tag")])
+                .sign_with_keys(&founder)
+                .expect("sign");
+        let team = Team::of(&project);
+        let nothing = Accepted::default();
+        let open: &[&[&str]] = &[&["task-part", "task"], &["task-usd", "40"]];
+        assert!(is_served(&record(&founder, open, "{}"), &team, &nothing));
+        assert!(!is_served(&record(&stranger, open, "{}"), &team, &nothing));
+        // A named task that nobody accepted yet, and a take, are for members.
+        let named: &[&[&str]] = &[
+            &["task-part", "task"],
+            &["task-helper", "ab"],
+            &["task-usd", "4"],
+        ];
+        assert!(!is_served(&record(&founder, named, "{}"), &team, &nothing));
+        let take: &[&[&str]] = &[&["task-part", "take"], &["task", "ab"]];
+        assert!(!is_served(&record(&stranger, take, "{}"), &team, &nothing));
+        assert!(!is_served(&record(&founder, take, "{}"), &team, &nothing));
     }
 
     /// The list in [`is_served`], family by family and signer by signer.

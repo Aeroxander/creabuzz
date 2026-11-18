@@ -72,6 +72,10 @@ pub mod report_resolution;
 pub mod req;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
+/// Tasks open to anyone and manager agents: the server's reads behind `launch_update_authority`.
+pub mod task_takes;
+#[cfg(test)]
+mod task_takes_postgres_tests;
 #[cfg(test)]
 #[path = "wiki_enforcement_tests.rs"]
 mod wiki_enforcement_postgres_tests;

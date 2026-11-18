@@ -28,7 +28,18 @@
 //!   refused.
 //!
 //! That record is what limits an agent's powers elsewhere (see
-//! `launch_update_authority`). A profile with neither tag is not looked at.
+//! `launch_update_authority`). A profile with neither tag is not looked at,
+//! unless its account is on record as a manager agent (below).
+//!
+//! # Manager agents
+//!
+//! A labelled profile may add `["agent-role", "manager"]`: the account is the
+//! project's AI manager, which drafts for the founder and signs no task step,
+//! so it is always a different account from the agents that do the work. The
+//! role is set once: a profile of an account already labelled whose role
+//! differs from the stored one is refused, and so is a manager's profile that
+//! drops its label. An `agent-role` with any other value, or without the
+//! label, is refused.
 
 use std::sync::Arc;
 
@@ -56,6 +67,60 @@ pub(crate) const NOT_COVERED: &str =
 /// Said when the server already has the account on record under another operator, or could not record it.
 pub(crate) const OTHER_OPERATOR: &str =
     "restricted: this account could not be put on record as run by that person; it may already be on record as run by someone else";
+
+/// Said when a profile names a role other than `manager`, or a role without the agent label.
+pub(crate) const BAD_ROLE: &str =
+    "invalid: `agent-role` can only be \"manager\", on a profile that carries the agent label";
+/// Said when a labelled account's profile changes its role.
+pub(crate) const ROLE_FIXED: &str =
+    "restricted: an agent's role is set once; make a new account for the other role";
+
+/// What an agent account is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentRole {
+    /// It does work: takes and hands in tasks. Every labelled account without a role.
+    Worker,
+    /// The project's AI manager: drafts for the founder, signs no task step.
+    Manager,
+}
+
+/// The role a stored or incoming profile gives its account: `None` when it carries no agent label at all. Pure: the
+/// signatures are checked by [`read_label`] when the profile is written.
+pub(crate) fn role_of(event: &Event) -> Option<AgentRole> {
+    let mut labelled = false;
+    let mut manager = false;
+    for tag in event.tags.iter() {
+        match tag.as_slice() {
+            [name, ..] if name == "agent" || name == "auth" => labelled = true,
+            [name, value, ..] if name == "agent-role" && value == "manager" => manager = true,
+            _ => {}
+        }
+    }
+    labelled.then_some(if manager {
+        AgentRole::Manager
+    } else {
+        AgentRole::Worker
+    })
+}
+
+/// Refuse an `agent-role` tag that is not `manager`, or that sits on a profile with no agent label.
+fn check_role_tag(event: &Event) -> Result<(), &'static str> {
+    let roles: Vec<&[String]> = event
+        .tags
+        .iter()
+        .map(|tag| tag.as_slice())
+        .filter(|fields| fields.first().map(String::as_str) == Some("agent-role"))
+        .collect();
+    match roles.as_slice() {
+        [] => Ok(()),
+        [fields]
+            if fields.get(1).map(String::as_str) == Some("manager") && role_of(event).is_some() =>
+        {
+            Ok(())
+        }
+        _ => Err(BAD_ROLE),
+    }
+}
 
 /// What a profile record says about its account being an agent.
 #[derive(Debug, PartialEq, Eq)]
@@ -143,6 +208,16 @@ pub(crate) async fn enforce_agent_label(
     tenant: &TenantContext,
     event: &Event,
 ) -> Result<(), IngestError> {
+    check_role_tag(event).map_err(|reason| IngestError::Rejected(reason.into()))?;
+    let community = tenant.community();
+    let account = event.pubkey.to_bytes();
+    // The role is set once: compared with the stored profile of an account already on record as an agent.
+    if super::launch_update_authority::is_agent_account(state, community, &account).await? {
+        let stored = super::task_takes::stored_role(state, community, &account).await?;
+        if stored.is_some_and(|stored| Some(stored) != role_of(event)) {
+            return Err(IngestError::AuthFailed(ROLE_FIXED.into()));
+        }
+    }
     let operator = match read_label(event) {
         Ok(Label::None) => return Ok(()),
         Ok(Label::Agent { operator }) => operator,
@@ -322,5 +397,37 @@ mod tests {
             "kind=0&valid_until=5",
             1_800_000_000
         ));
+    }
+
+    #[test]
+    fn a_manager_says_so_once_and_only_on_a_labelled_profile() {
+        let (agent, operator) = (Keys::generate(), Keys::generate());
+        let role = || vec!["agent-role".to_string(), "manager".to_string()];
+        let manager = profile(
+            &agent,
+            vec![agent_tag(&agent), auth_tag(&operator, &agent, ""), role()],
+        );
+        assert_eq!(role_of(&manager), Some(AgentRole::Manager));
+        assert_eq!(check_role_tag(&manager), Ok(()));
+        let worker = profile(
+            &agent,
+            vec![agent_tag(&agent), auth_tag(&operator, &agent, "")],
+        );
+        assert_eq!(role_of(&worker), Some(AgentRole::Worker));
+        assert_eq!(role_of(&profile(&agent, vec![])), None);
+        // A role without the label, another role, or two roles: refused.
+        assert_eq!(
+            check_role_tag(&profile(&agent, vec![role()])),
+            Err(BAD_ROLE)
+        );
+        let boss = vec!["agent-role".to_string(), "boss".to_string()];
+        assert_eq!(
+            check_role_tag(&profile(&agent, vec![agent_tag(&agent), boss])),
+            Err(BAD_ROLE)
+        );
+        assert_eq!(
+            check_role_tag(&profile(&agent, vec![agent_tag(&agent), role(), role()])),
+            Err(BAD_ROLE)
+        );
     }
 }
