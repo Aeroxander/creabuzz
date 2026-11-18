@@ -142,6 +142,9 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     // Static assets served by the SPA fallback; subtree
     "/assets/",
     "/favicon.svg",
+    // The app's service worker, at the root so its scope is the whole site;
+    // exact path
+    "/sw.js",
     // Invite landing page (SPA) — subtree
     "/invite/",
     // Git web GUI (SPA) — exact + subtree
@@ -457,6 +460,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         let admin_index = admin_web_dir.as_ref().map(|dir| dir.join("index.html"));
         let admin_files = admin_web_dir.map(ServeDir::new);
         let web_index = web_dir.as_ref().map(|dir| dir.join("index.html"));
+        let web_worker = web_dir.as_ref().map(|dir| dir.join(SERVICE_WORKER_FILE));
         let web_files = web_dir.map(ServeDir::new);
         let serve_git_web_gui = state.config.serve_git_web_gui;
         let web_spa_full = state.config.web_spa_full;
@@ -465,6 +469,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             let admin_index = admin_index.clone();
             let admin_files = admin_files.clone();
             let web_index = web_index.clone();
+            let web_worker = web_worker.clone();
             let web_files = web_files.clone();
             let state = fallback_state.clone();
             async move {
@@ -486,6 +491,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
                 }
 
                 if let (Some(index), Some(files)) = (web_index, web_files) {
+                    if path == SERVICE_WORKER_PATH {
+                        if let Some(worker) = web_worker {
+                            return Ok(with_spa_coi(service_worker(&worker).await));
+                        }
+                    }
                     if path.starts_with("/assets/") {
                         return files
                             .oneshot(req)
@@ -541,6 +551,31 @@ fn make_http_span(request: &Request<Body>) -> tracing::Span {
         otel.kind = "server",
         http.request.method = %request.method(),
     )
+}
+
+/// Where the app registers its service worker: the site root, so the
+/// worker's scope is the whole site without a `Service-Worker-Allowed` header.
+const SERVICE_WORKER_PATH: &str = "/sw.js";
+/// The worker's file in the web bundle (Vite copies it out of `public/`).
+const SERVICE_WORKER_FILE: &str = "sw.js";
+
+/// The app's service worker from the bundle, as JavaScript, never cached
+/// without asking (a browser checks a worker for updates on its own schedule;
+/// `no-cache` keeps an old one from outliving a deploy). A bundle without the
+/// file answers 404, never the app's page, which a browser would refuse as a
+/// worker script.
+async fn service_worker(file: &std::path::Path) -> axum::response::Response {
+    match tokio::fs::read(file).await {
+        Ok(body) => (
+            [
+                (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+                (header::CACHE_CONTROL, "no-cache"),
+            ],
+            body,
+        )
+            .into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 fn is_admin_spa_path(path: &str) -> bool {
@@ -2041,6 +2076,59 @@ mod tests {
                 "{path} must carry the admin CSP"
             );
         }
+    }
+
+    /// The app's service worker is served at `/sw.js` from the bundle, as
+    /// JavaScript that is never cached without asking; without the file it is
+    /// a 404, never the app's page (also in full-SPA mode), and the hashed
+    /// assets are unchanged. It is public: the NIP-FI guard lets it through.
+    #[tokio::test]
+    async fn the_service_worker_is_served_from_the_bundle_root() {
+        let web_dir = tempfile::tempdir().expect("public bundle dir");
+        write_bundle(web_dir.path());
+        std::fs::write(web_dir.path().join("sw.js"), "self.skipWaiting();").expect("sw.js");
+        for full in [false, true] {
+            let state = state_with(|config| {
+                config.web_dir = Some(web_dir.path().to_path_buf());
+                config.web_spa_full = full;
+            })
+            .await;
+            let response = spa_response(state.clone(), "public.example", "/sw.js").await;
+            assert_eq!(response.status(), StatusCode::OK, "full SPA: {full}");
+            let header_of = |name: header::HeaderName| {
+                response
+                    .headers()
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_owned)
+            };
+            assert_eq!(
+                header_of(header::CONTENT_TYPE).as_deref(),
+                Some("text/javascript; charset=utf-8")
+            );
+            assert_eq!(
+                header_of(header::CACHE_CONTROL).as_deref(),
+                Some("no-cache")
+            );
+            let body = axum::body::to_bytes(response.into_body(), 1 << 16)
+                .await
+                .expect("body");
+            assert_eq!(&body[..], b"self.skipWaiting();");
+
+            let asset = spa_response(state, "public.example", "/assets/app.js").await;
+            assert_eq!(asset.status(), StatusCode::OK);
+        }
+
+        std::fs::remove_file(web_dir.path().join("sw.js")).expect("remove sw.js");
+        let full = state_with(|config| {
+            config.web_dir = Some(web_dir.path().to_path_buf());
+            config.web_spa_full = true;
+        })
+        .await;
+        let response = spa_response(full, "public.example", "/sw.js").await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND, "never the page");
+        assert!(is_exempt("/sw.js"), "the worker is public");
+        assert!(!is_exempt("/sw.json"), "only the exact path");
     }
 
     #[tokio::test]
