@@ -163,6 +163,8 @@ export function moneyProblem(error: unknown, action: MoneyAction): string {
       return "Your wallet is on another network. Switch it to the project's network and try again.";
     if (error.reason === "pending")
       return "Your wallet sent it, but it has not landed yet. Press again in a few minutes to look for it: it is not sent a second time while it may still land.";
+    if (error.reason === "replaced")
+      return "Your wallet sent this again as another call (sped up or cancelled), so it cannot be looked up here. Look in your wallet's activity: if it went through, the numbers here show it soon. If it did not, press again to send it.";
     const refusal = refusalOf(error.cause);
     if (refusal) {
       const words = REFUSAL_WORDS[refusal];

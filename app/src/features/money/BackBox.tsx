@@ -17,7 +17,12 @@ import {
   sharesText,
   timeText,
 } from "./numbers";
-import { readQuote, useMoneySend } from "./use-money";
+import { readAsked, readQuote, useMoneySend } from "./use-money";
+
+/** Raw dollars kept with a waiting Back, or null. */
+function amountOf(detail: string | undefined): bigint | null {
+  return detail && /^\d{1,30}$/.test(detail) ? BigInt(detail) : null;
+}
 
 const AMOUNT_WORDS = {
   empty: "Say how many dollars.",
@@ -174,12 +179,16 @@ function BackSheet({
   const per100 = over ? (round.size * 100n) / asked : 100n;
   const lowerable = canLower(round, now);
 
+  // A Back sent earlier and still waiting may be for another amount than the one typed now: it is looked for first.
+  const waitingAmount = amountOf(send.waiting?.detail);
+
   const confirm = () => {
     if (!rounds || amount === null) return;
     setProblem(null);
     send.send(
       {
         chainId: numbers.chainId,
+        detail: amount.toString(),
         build: async (wallet) =>
           backCalls({
             quote: await readQuote(wallet, rounds),
@@ -187,11 +196,16 @@ function BackSheet({
             round: round.round,
             amount,
           }),
+        // The ask may have landed under another hash (sped up in the wallet): the round's record of this account says.
+        confirm: async (wallet, from, earlier) =>
+          (await readAsked(wallet, rounds, round.round, from)) >=
+          (amountOf(earlier.detail) ?? 1n),
       },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          const backed = amountOf(result.detail) ?? amount;
           toast(
-            "Backed. Your receipt shows on You once the round closes.",
+            `Backed with ${dollarsText(backed)} dollars. Your receipt shows on You once the round closes.`,
             "done",
           );
           onDone();
@@ -247,6 +261,13 @@ function BackSheet({
         </li>
       </ul>
       <OwnershipLine />
+      {waitingAmount !== null && waitingAmount !== value ? (
+        <p className="text-sm" data-testid="back-waiting-amount">
+          Your backing of {dollarsText(waitingAmount)} dollars sent earlier has
+          not been found yet. Pressing looks for it first; nothing new is sent
+          while it may still land.
+        </p>
+      ) : null}
       {problem ? (
         <p
           className="rounded-xl bg-white/8 px-3 py-2 text-sm text-danger"
@@ -264,9 +285,11 @@ function BackSheet({
       >
         {send.isPending
           ? "Waiting for your wallet…"
-          : send.waiting
-            ? "Look for your backing"
-            : `Back with ${dollarsText(value)} dollars`}
+          : waitingAmount !== null
+            ? `Look for your backing of ${dollarsText(waitingAmount)} dollars`
+            : send.waiting
+              ? "Look for your backing"
+              : `Back with ${dollarsText(value)} dollars`}
       </Button>
     </Sheet>
   );

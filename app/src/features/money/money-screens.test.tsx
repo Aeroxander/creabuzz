@@ -1,149 +1,43 @@
-// The money screens against the attacks found in review of milestone 6 part 2 (A1 to A10 in PLANV2-M6-REPORT.md's
-// "Review fixes"). Each test failed before its fix.
+// The money screens against the attacks found in review of milestone 6 part 2 (A1 to A9 in PLANV2-M6-REPORT.md's
+// "Review fixes"; A10, the waiting calls, is in money-sends.test.tsx). Each test failed before its fix.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
 } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  COORDINATE,
+  coordinateOf,
+  DAY,
+  installWallet,
+  NOW,
+  numbersOf,
+  record,
+  SERVER,
+  sent,
+  serve,
+  served,
+  wrap,
+} from "../../../tests/helpers/money-harness";
 import {
   BACKER_EVM,
   CONTRACTS,
-  chainIdentity,
   numbersContent,
 } from "../../../tests/helpers/numbers-fixture";
-import { ToastProvider } from "../../ui/toast";
 import { BackBox } from "./BackBox";
 import { MoneyTab } from "./MoneyTab";
 import { OpenRounds } from "./OpenRounds";
-import {
-  type NumbersEvent,
-  openRound,
-  parseNumbers,
-  type ProjectNumbers,
-} from "./numbers";
-import { forgetPending, rememberPending } from "./pending-sends";
+import { openRound, type ProjectNumbers } from "./numbers";
 import { Receipts } from "./Receipts";
 
-const SERVER = "f".repeat(64);
-const NOW = Math.floor(Date.now() / 1000);
-const DAY = 86_400;
-const coordinateOf = (i: number) => `37001:${"b".repeat(64)}:p${i}`;
-const COORDINATE = coordinateOf(0);
-
-/** What the mocked server holds; `read` answers like the relay: matching kinds, #d and until, newest first, cut at `limit`. */
-let served: NumbersEvent[] = [];
-vi.mock("../../lib/relay", () => ({
-  read: async (filter: {
-    kinds?: number[];
-    "#d"?: string[];
-    limit?: number;
-    until?: number;
-  }) =>
-    served
-      .filter((e) => !filter.kinds || filter.kinds.includes(e.kind))
-      .filter((e) => filter.until === undefined || e.created_at <= filter.until)
-      .filter(
-        (e) =>
-          !filter["#d"] ||
-          e.tags.some((t) => t[0] === "d" && filter["#d"]?.includes(t[1])),
-      )
-      .sort((a, b) => b.created_at - a.created_at)
-      .slice(0, filter.limit ?? served.length),
-  publishAsUser: async () => undefined,
-}));
-
-function record(
-  content: Record<string, unknown>,
-  coordinate = COORDINATE,
-  at = NOW,
-): NumbersEvent {
-  return {
-    id: `${at.toString(16)}${coordinate.slice(-3)}`.padStart(64, "0"),
-    pubkey: SERVER,
-    kind: 39009,
-    created_at: at,
-    tags: [["d", chainIdentity(coordinate).key]],
-    content: JSON.stringify(content),
-  };
-}
-
-function numbersOf(content: Record<string, unknown>): ProjectNumbers {
-  const parsed = parseNumbers(record(content), SERVER, {
-    coordinate: COORDINATE,
-    chainKey: chainIdentity(COORDINATE).key,
-  });
-  if (!parsed || parsed.removed) throw new Error("not parsed");
-  return parsed;
-}
-
-/**
- * A wallet in the page that records every transaction and answers at once (or never, for the `pendingFrom`th send). It
- * starts on `chain` (the project's network, 31337, unless given) and switches when asked; off the project's network
- * a read answers nothing, as a real one does.
- */
-let sent: { to: string; data: string }[] = [];
-function installWallet(
-  options: {
-    pendingFrom?: number;
-    chain?: string;
-    /** What the network says of a hash this wallet never sent (eth_getTransactionByHash). */
-    known?: (hash: string) => unknown;
-    /** Hashes sent earlier (before this page) that have landed. */
-    landedEarlier?: string[];
-  } = {},
-) {
-  sent = [];
-  let chain = options.chain ?? "0x7a69";
-  (window as unknown as { ethereum: unknown }).ethereum = {
-    async request({ method, params }: { method: string; params?: unknown[] }) {
-      if (method === "eth_accounts" || method === "eth_requestAccounts")
-        return [BACKER_EVM];
-      if (method === "eth_chainId") return chain;
-      if (method === "wallet_switchEthereumChain") {
-        chain = (params?.[0] as { chainId: string }).chainId;
-        return null;
-      }
-      if (method === "eth_getTransactionByHash" && options.known)
-        return options.known(String(params?.[0]));
-      if (method === "eth_call")
-        return chain === "0x7a69"
-          ? `0x${"0".repeat(24)}${CONTRACTS.quote.slice(2)}`
-          : "0x";
-      if (method === "eth_sendTransaction") {
-        sent.push(params?.[0] as { to: string; data: string });
-        return `0x${sent.length.toString(16).padStart(64, "0")}`;
-      }
-      if (method === "eth_getTransactionReceipt") {
-        const hash = String(params?.[0]);
-        if (options.landedEarlier?.includes(hash)) return { status: "0x1" };
-        const n = Number.parseInt(hash, 16);
-        if (!(n >= 1 && n <= sent.length)) return null; // not sent from this page
-        if (options.pendingFrom !== undefined && n === options.pendingFrom)
-          return null;
-        return { status: "0x1" };
-      }
-      throw { code: 4200, message: method };
-    },
-  };
-}
-
-function wrap(children: ReactNode) {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(
-    <QueryClientProvider client={client}>
-      <ToastProvider>{children}</ToastProvider>
-    </QueryClientProvider>,
-  );
-}
+vi.mock(
+  "../../lib/relay",
+  async () => (await import("../../../tests/helpers/money-harness")).relayMock,
+);
 
 async function openBackSheet(numbers: ProjectNumbers, amount = "25") {
   const round = openRound(numbers, NOW);
@@ -165,11 +59,10 @@ async function openBackSheet(numbers: ProjectNumbers, amount = "25") {
 }
 
 const isAsk = (c: { to: string }) => c.to === CONTRACTS.rounds;
-const BACK_ACTION = `back:31337:${CONTRACTS.rounds}:2`;
 
 beforeEach(() => {
   applyServerSettings({ investing: true, self: SERVER });
-  served = [];
+  serve([]);
   installWallet();
 });
 afterEach(() => {
@@ -222,7 +115,7 @@ describe("A3: Your Shares are never said to be 0 when the holders list was cut",
     content.holders = (content.holders as Record<string, unknown>[]).filter(
       (h) => h.account !== BACKER_EVM,
     );
-    served = [record(content)];
+    serve([record(content)]);
     wrap(<Receipts />);
     const shares = await screen.findByTestId("receipt-shares");
     expect(shares.textContent).not.toMatch(/Your Shares:\s*0 held/);
@@ -232,13 +125,13 @@ describe("A3: Your Shares are never said to be 0 when the holders list was cut",
 describe("A4: a backer's receipts survive more than 100 projects with numbers", () => {
   it("still shows the receipt when 100 newer projects have records", async () => {
     // The backer's project: its record was last signed 10 days ago (nothing moved since).
-    served = [
+    serve([
       record(
         numbersContent({ coordinate: COORDINATE, now: NOW - 10 * DAY }),
         COORDINATE,
         NOW - 10 * DAY,
       ),
-    ];
+    ]);
     for (let i = 1; i <= 100; i += 1) {
       const c = coordinateOf(i);
       served.push(
@@ -363,88 +256,11 @@ describe("A9: taking out released Shares (which ends their refund) is never one 
       stage: "team",
     });
     (content.stage as Record<string, unknown>).name = "council";
-    served = [record(content)];
+    serve([record(content)]);
     wrap(<Receipts />);
     fireEvent.click(await screen.findByTestId("receipt-take-out"));
     await new Promise((r) => setTimeout(r, 200));
     expect(sent).toHaveLength(0);
-  });
-});
-
-describe("A10: a Back whose ask has not landed cannot be sent again as a second ask", () => {
-  it("does not send a second ask after 'not landed yet'", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    installWallet({ pendingFrom: 2 }); // the first ask never lands in time; everything else does
-    const numbers = numbersOf(
-      numbersContent({
-        coordinate: COORDINATE,
-        now: NOW,
-        openRound: { openedAgo: 3600 },
-      }),
-    );
-    await openBackSheet(numbers);
-    fireEvent.click(screen.getByTestId("back-confirm"));
-    await waitFor(() => expect(sent).toHaveLength(2));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(200_000);
-    });
-    await screen.findByTestId("back-problem");
-    const confirm = screen.getByTestId("back-confirm");
-    if (!(confirm as HTMLButtonElement).disabled) fireEvent.click(confirm);
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_000);
-    });
-    expect(sent.filter(isAsk)).toHaveLength(1);
-    forgetPending(BACK_ACTION);
-  });
-
-  it("sends afresh once the network says the earlier call was never seen (the way back is never lost)", async () => {
-    rememberPending(BACK_ACTION, {
-      hash: `0x${"9".repeat(64)}`,
-      index: 1,
-      total: 2,
-      chainId: 31337,
-      at: NOW,
-    });
-    installWallet({ known: () => null });
-    const numbers = numbersOf(
-      numbersContent({
-        coordinate: COORDINATE,
-        now: NOW,
-        openRound: { openedAgo: 3600 },
-      }),
-    );
-    await openBackSheet(numbers);
-    expect(screen.getByTestId("back-confirm").textContent).toBe(
-      "Look for your backing",
-    );
-    fireEvent.click(screen.getByTestId("back-confirm"));
-    await screen.findByText(/^Backed\./);
-    expect(sent).toHaveLength(2);
-    expect(sent.filter(isAsk)).toHaveLength(1);
-  });
-
-  it("sends only the ask once the earlier approval is found to have landed", async () => {
-    rememberPending(BACK_ACTION, {
-      hash: `0x${"8".repeat(64)}`,
-      index: 0,
-      total: 2,
-      chainId: 31337,
-      at: NOW,
-    });
-    installWallet({ landedEarlier: [`0x${"8".repeat(64)}`] });
-    const numbers = numbersOf(
-      numbersContent({
-        coordinate: COORDINATE,
-        now: NOW,
-        openRound: { openedAgo: 3600 },
-      }),
-    );
-    await openBackSheet(numbers);
-    fireEvent.click(screen.getByTestId("back-confirm"));
-    await screen.findByText(/^Backed\./);
-    expect(sent).toHaveLength(1);
-    expect(sent.filter(isAsk)).toHaveLength(1);
   });
 });
 
@@ -460,7 +276,7 @@ describe("F1: Back works when the wallet starts on another network", () => {
     );
     await openBackSheet(numbers);
     fireEvent.click(screen.getByTestId("back-confirm"));
-    await screen.findByText(/^Backed\./);
+    await screen.findByText(/^Backed with 25 dollars\./);
     expect(sent).toHaveLength(2);
     expect(sent[0].to).toBe(CONTRACTS.quote);
   });

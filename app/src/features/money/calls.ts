@@ -106,6 +106,15 @@ export function openBackingCall(
   );
 }
 
+/** `positionOf(round, backer)` on a project's Rounds: that backer's ask, held money, Shares bought and settled flag. */
+export function positionCallData(round: number, backer: string): string {
+  return encodeFunctionData(
+    "positionOf(uint256,address)",
+    ["uint256", "address"],
+    [BigInt(round), backer],
+  );
+}
+
 /** `quote()` on a project's Rounds: the dollar token it takes. */
 export const QUOTE_CALL_DATA = encodeFunctionData("quote()", [], []);
 

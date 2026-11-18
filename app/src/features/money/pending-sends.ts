@@ -1,6 +1,6 @@
 /**
- * Money steps whose call went out but whose outcome is not known yet, kept per action ("back round 2 of this project")
- * so that pressing again looks the call up instead of sending a second one. Kept in this browser's storage, so closing
+ * Money steps whose call went out but whose outcome is not known yet, kept per action and sender ("back round 2 of this
+ * project, from this account": `sendKey`) so that pressing again looks the call up instead of sending a second one. Kept in this browser's storage, so closing
  * the sheet or reloading the page does not forget it; storage that cannot be used only loses that memory, never a step.
  */
 
@@ -11,6 +11,17 @@ export interface PendingSend {
   total: number;
   chainId: number;
   at: number;
+  /** The account that sent it. */
+  from: string;
+  /** Its nonce, or null when the network did not say (then a hash that is gone is never taken as "never sent"). */
+  nonce: number | null;
+  /** What the step was for, when the action alone does not say (a Back's amount in raw dollars). */
+  detail?: string;
+}
+
+/** The name a step is remembered under: the action and the account sending it. */
+export function sendKey(action: string, from: string): string {
+  return `${action}:${from.toLowerCase()}`;
 }
 
 const STORAGE_KEY = "creaton.money.pending";
@@ -30,7 +41,11 @@ function isPending(value: unknown): value is PendingSend {
     Number.isSafeInteger(v.index) &&
     Number.isSafeInteger(v.total) &&
     Number.isSafeInteger(v.chainId) &&
-    typeof v.at === "number"
+    typeof v.at === "number" &&
+    typeof v.from === "string" &&
+    (v.nonce === null || Number.isSafeInteger(v.nonce)) &&
+    (v.detail === undefined ||
+      (typeof v.detail === "string" && v.detail.length <= 80))
   );
 }
 
@@ -68,18 +83,18 @@ function writeAll(all: Record<string, PendingSend>) {
   }
 }
 
-/** The step waiting under `action`, or null. */
-export function pendingSend(action: string): PendingSend | null {
-  return readAll()[action] ?? null;
+/** The step waiting under `key` (from `sendKey`), or null. */
+export function pendingSend(key: string): PendingSend | null {
+  return readAll()[key] ?? null;
 }
 
-export function rememberPending(action: string, pending: PendingSend) {
-  writeAll({ ...readAll(), [action]: pending });
+export function rememberPending(key: string, pending: PendingSend) {
+  writeAll({ ...readAll(), [key]: pending });
 }
 
-export function forgetPending(action: string) {
+export function forgetPending(key: string) {
   const all = readAll();
-  if (!(action in all)) return;
-  delete all[action];
+  if (!(key in all)) return;
+  delete all[key];
   writeAll(all);
 }

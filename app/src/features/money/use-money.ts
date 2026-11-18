@@ -10,14 +10,20 @@ import { useCallback, useMemo, useRef } from "react";
 import { read } from "../../lib/relay";
 import { investingOn } from "../../lib/server";
 import type { Project } from "../project/project-record";
-import { type MoneyCall, QUOTE_CALL_DATA } from "./calls";
+import { type MoneyCall, positionCallData, QUOTE_CALL_DATA } from "./calls";
 import {
   type NumbersEvent,
   type ProjectNumbers,
   parseNumbers,
   type RemovedNumbers,
 } from "./numbers";
-import { forgetPending, pendingSend, rememberPending } from "./pending-sends";
+import {
+  forgetPending,
+  type PendingSend,
+  pendingSend,
+  rememberPending,
+  sendKey,
+} from "./pending-sends";
 import {
   addressFromWord,
   injectedWallet,
@@ -197,24 +203,58 @@ export async function readQuote(
   return quote;
 }
 
+/** Dollars `backer` has asked for in round `round` so far (`Rounds.positionOf(round, backer).ask`). */
+export async function readAsked(
+  wallet: MoneyWallet,
+  rounds: string,
+  round: number,
+  backer: string,
+): Promise<bigint> {
+  const word = (
+    await wallet.readCall(rounds, positionCallData(round, backer))
+  ).replace(/^0x/, "");
+  if (!/^[0-9a-fA-F]{64}/.test(word))
+    throw new Error("The backing could not be read.");
+  return BigInt(`0x${word.slice(0, 64)}`);
+}
+
 export interface MoneySendInput {
   chainId: number;
   /** The calls, built at press time (after the wallet is on the right network) so it can read what it needs first. */
   build: (wallet: MoneyWallet) => Promise<MoneyCall[]> | MoneyCall[];
+  /** What this press is for when the action alone does not say (a Back's amount), kept with a call still waiting. */
+  detail?: string;
+  /**
+   * Whether the step's last call took effect after all, read from the contract. Asked when that call's hash is gone
+   * but its nonce was used (the wallet sped it up or cancelled it): true sends nothing again. Without it such a step
+   * is never sent again on a guess; the person is told to look in the wallet.
+   */
+  confirm?: (
+    wallet: MoneyWallet,
+    from: string,
+    earlier: PendingSend,
+  ) => Promise<boolean>;
 }
 
-type SendResult = { txHash: string; status: "confirmed" };
+type SendResult = {
+  txHash: string;
+  status: "confirmed";
+  /** The `detail` of what landed: an earlier press's, when it was that press's call that was found. */
+  detail?: string;
+};
 
 /**
  * Send money calls through the wallet, then read the numbers again (the server signs new ones once the chain moved).
  *
  * `action` names the step ("back:<rounds>:<round>"): one step runs at a time, and a step whose call went out but has
- * not landed is remembered under it. Pressing again then looks that call up instead of sending a second one, and only
- * a call the network says reverted or never saw lets the step be sent afresh.
+ * not landed is remembered under it and the sending account. Pressing again then looks that call up instead of sending
+ * a second one, and only a call the network says reverted or never saw (nor any other call in its place) lets the step
+ * be sent afresh.
  */
 export function useMoneySend(action: string) {
   const wallet = useWallet();
   const queryClient = useQueryClient();
+  const address = useWalletAddress().data ?? null;
   const running = useRef(false);
   const mutation = useMutation({
     mutationFn: async (input: MoneySendInput): Promise<SendResult> => {
@@ -256,8 +296,11 @@ export function useMoneySend(action: string) {
     send,
     sendAsync,
     isPending: mutation.isPending,
-    /** A call of this step went out earlier and has not landed: the next press looks it up (read on every render). */
-    waiting: pendingSend(action) !== null,
+    /**
+     * The call of this step that went out earlier from the account the wallet shows and has not landed, or null: the
+     * next press looks it up (read on every render).
+     */
+    waiting: address ? pendingSend(sendKey(action, address)) : null,
   };
 }
 
@@ -266,65 +309,86 @@ async function sendStep(
   action: string,
   input: MoneySendInput,
 ): Promise<SendResult> {
+  // The account sending now names the step: another account's waiting call is never taken for this one's.
+  const from = await wallet.getAddress();
+  const key = sendKey(action, from);
   let skip = 0;
-  const earlier = pendingSend(action);
+  const earlier = pendingSend(key);
   if (earlier) {
+    const stillPending = (cause?: unknown) =>
+      new WalletStepError("pending", earlier.index, cause, earlier.hash);
     await wallet.ensureChain(earlier.chainId);
     let outcome: Awaited<ReturnType<MoneyWallet["outcomeOf"]>>;
     try {
-      outcome = await wallet.outcomeOf(earlier.hash);
+      outcome = await wallet.outcomeOf(earlier);
     } catch (error) {
-      throw new WalletStepError("pending", earlier.index, error, earlier.hash);
+      throw stillPending(error);
     }
-    if (outcome === "waiting")
-      throw new WalletStepError(
-        "pending",
-        earlier.index,
-        undefined,
-        earlier.hash,
-      );
-    forgetPending(action);
+    if (outcome === "waiting") throw stillPending();
+    const last = earlier.index + 1 >= earlier.total;
+    if (outcome === "replaced" && last) {
+      // Its place was taken: it may have landed under another hash. Never sent again on a guess.
+      if (!input.confirm) {
+        forgetPending(key);
+        throw new WalletStepError("replaced", earlier.index);
+      }
+      let found: boolean;
+      try {
+        found = await input.confirm(wallet, from, earlier);
+      } catch (error) {
+        throw stillPending(error);
+      }
+      if (found) {
+        forgetPending(key);
+        return {
+          txHash: earlier.hash,
+          status: "confirmed",
+          detail: earlier.detail,
+        };
+      }
+    }
+    // Landed, reverted, dropped, or (an earlier call of the step) replaced: the later calls never went out.
+    forgetPending(key);
     if (outcome === "landed") {
-      if (earlier.index + 1 >= earlier.total)
-        return { txHash: earlier.hash, status: "confirmed" };
-      skip = earlier.index + 1; // the calls up to it landed; send the rest
+      if (last)
+        return {
+          txHash: earlier.hash,
+          status: "confirmed",
+          detail: earlier.detail,
+        };
+      // The calls up to it landed; send the rest, unless they were for something else (an approval of another amount).
+      if (earlier.detail === input.detail) skip = earlier.index + 1;
     }
   }
   // On the project's network before anything is read for the calls: a read on another network answers nothing.
   await wallet.ensureChain(input.chainId);
   const calls = await input.build(wallet);
   try {
-    return await wallet.sendCalls(calls.slice(skip), input.chainId);
+    const result = await wallet.sendCalls(calls.slice(skip), input.chainId);
+    return { ...result, detail: input.detail };
   } catch (error) {
-    if (!(error instanceof WalletStepError) || skip === 0) {
-      if (error instanceof WalletStepError && error.reason === "pending")
-        remember(action, error, input.chainId, calls.length);
-      throw error;
-    }
-    const shifted = new WalletStepError(
-      error.reason,
-      error.landed + skip,
-      error.cause,
-      error.hash,
-    );
-    if (shifted.reason === "pending")
-      remember(action, shifted, input.chainId, calls.length);
+    if (!(error instanceof WalletStepError)) throw error;
+    const shifted =
+      skip === 0
+        ? error
+        : new WalletStepError(
+            error.reason,
+            error.landed + skip,
+            error.cause,
+            error.hash,
+            error.sent,
+          );
+    if (shifted.reason === "pending" && shifted.hash)
+      rememberPending(key, {
+        hash: shifted.hash,
+        index: shifted.landed,
+        total: calls.length,
+        chainId: input.chainId,
+        at: Math.floor(Date.now() / 1000),
+        from: shifted.sent?.from ?? from,
+        nonce: shifted.sent?.nonce ?? null,
+        ...(input.detail === undefined ? {} : { detail: input.detail }),
+      });
     throw shifted;
   }
-}
-
-function remember(
-  action: string,
-  error: WalletStepError,
-  chainId: number,
-  total: number,
-) {
-  if (!error.hash) return;
-  rememberPending(action, {
-    hash: error.hash,
-    index: error.landed,
-    total,
-    chainId,
-    at: Math.floor(Date.now() / 1000),
-  });
 }

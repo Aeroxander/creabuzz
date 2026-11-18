@@ -178,8 +178,14 @@ describe("the injected wallet", () => {
       "0x3": { receipt: null, tx: { hash: "0x3" } },
       "0x4": { receipt: null, tx: null },
     };
+    // FROM has used nonces 0 to 4 on chain ("latest" 5); one more call waits ("pending" 6).
+    const counts: Record<string, string> = { latest: "0x5", pending: "0x6" };
     const p: Eip1193Provider = {
       async request({ method, params }) {
+        if (method === "eth_getTransactionCount") {
+          expect(params?.[0]).toBe(FROM);
+          return counts[String(params?.[1])];
+        }
         const a = answers[String(params?.[0])];
         if (method === "eth_getTransactionReceipt") return a.receipt;
         if (method === "eth_getTransactionByHash") return a.tx;
@@ -187,10 +193,52 @@ describe("the injected wallet", () => {
       },
     };
     const wallet = injectedWallet(p);
-    expect(await wallet.outcomeOf("0x1")).toBe("landed");
-    expect(await wallet.outcomeOf("0x2")).toBe("reverted");
-    expect(await wallet.outcomeOf("0x3")).toBe("waiting");
-    expect(await wallet.outcomeOf("0x4")).toBe("unknown");
+    const at = (hash: string, nonce: number | null) =>
+      wallet.outcomeOf({ hash, from: FROM, nonce });
+    expect(await at("0x1", 3)).toBe("landed");
+    expect(await at("0x2", 3)).toBe("reverted");
+    expect(await at("0x3", 9)).toBe("waiting");
+    // Gone under its hash: never seen, nothing in its place.
+    expect(await at("0x4", 6)).toBe("unknown");
+    // Gone under its hash, its nonce mined: sped up or cancelled in the wallet.
+    expect(await at("0x4", 4)).toBe("replaced");
+    // Gone under its hash, another call with its nonce waits.
+    expect(await at("0x4", 5)).toBe("waiting");
+    // Its nonce not known: a gone hash is never taken as never sent.
+    expect(await at("0x4", null)).toBe("replaced");
+  });
+
+  it("keeps the account and nonce of a call that has not landed", async () => {
+    const { p } = provider({ status: (h) => (h === "0xhash1" ? null : "0x1") });
+    const nonces = new Map([["0xhash1", "0x2a"]]);
+    const withNonces: Eip1193Provider = {
+      async request(args) {
+        if (args.method === "eth_getTransactionByHash")
+          return { nonce: nonces.get(String(args.params?.[0])) };
+        if (args.method === "eth_getTransactionCount") return "0x29";
+        return p.request(args);
+      },
+    };
+    const error = await injectedWallet(withNonces, { polls: 2, pollMs: 0 })
+      .sendCalls(calls, 31337)
+      .catch((e) => e);
+    expect((error as WalletStepError).reason).toBe("pending");
+    expect((error as WalletStepError).sent).toEqual({ from: FROM, nonce: 42 });
+  });
+
+  it("falls back to the account's next nonce before sending when the network does not give the call's own", async () => {
+    const { p } = provider({ status: () => null });
+    const counting: Eip1193Provider = {
+      async request(args) {
+        if (args.method === "eth_getTransactionByHash") return null;
+        if (args.method === "eth_getTransactionCount") return "0x7";
+        return p.request(args);
+      },
+    };
+    const error = await injectedWallet(counting, { polls: 1, pollMs: 0 })
+      .sendCalls(calls, 31337)
+      .catch((e) => e);
+    expect((error as WalletStepError).sent).toEqual({ from: FROM, nonce: 7 });
   });
 
   it("reads an address out of a call's answer", () => {
