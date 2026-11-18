@@ -110,7 +110,7 @@ function AgentCardViewerContent({
     onSuccess: (saved) => {
       if (saved) {
         toast.success(
-          `Saved ${agentName}'s card. Share it — the card IS the agent.`,
+          `Saved ${agentName}'s card. Share it. The card IS the agent.`,
         );
       }
     },
@@ -143,7 +143,10 @@ function AgentCardViewerContent({
       toast.success(`Sent ${agentName}'s card.`);
       closeCardViewer();
     } else if (sent === false) {
-      toast.error("Couldn’t send the card. Try again.");
+      toast.error(
+        sendController.getCurrentError() ??
+          "Couldn’t send the card. Try again.",
+      );
     }
   }
 
@@ -162,8 +165,8 @@ function AgentCardViewerContent({
             {card.locked
               ? "This card is locked: only you and the agent can import it. Anyone else sees just the image."
               : card.memoryLevel === "none"
-                ? "The card carries the agent — anyone who imports this PNG gets a working copy (config only, fresh identity, no memories)."
-                : `The card carries the agent — anyone who imports this PNG gets a working copy (fresh identity) including its ${card.memoryLevel === "core" ? "core memory" : "memories"}, stored as plaintext.`}
+                ? "The card carries the agent. Anyone who imports this PNG gets a working copy (config only, fresh identity, no memories)."
+                : `The card carries the agent. Anyone who imports this PNG gets a working copy (fresh identity) including its ${card.memoryLevel === "core" ? "core memory" : "memories"}, stored as plaintext.`}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-4">
@@ -331,7 +334,7 @@ function AgentCardGalleryContent() {
           </div>
         ) : viewState.kind === "empty" ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            No cards yet — mint one from an agent’s profile.
+            No cards yet. Mint one from an agent’s profile.
           </p>
         ) : (
           <div className="grid max-h-[60vh] grid-cols-3 gap-3 overflow-y-auto pr-1">

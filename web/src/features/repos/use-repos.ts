@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
 import { relayWsUrl } from "@/shared/lib/relay-url";
 import { mockRepos } from "./mock-repos";
+import { getTag } from "@/shared/lib/event-fields";
 
 export interface Repo {
   id: string;
@@ -13,11 +14,6 @@ export interface Repo {
   owner: string;
   contributors: string[];
   createdAt: number;
-}
-
-/** Extract the first value for a given tag name from a Nostr event. */
-export function getTag(event: NostrEvent, name: string): string | undefined {
-  return event.tags.find((t) => t[0] === name)?.[1];
 }
 
 /** Extract all values for a given tag name from a Nostr event. */
@@ -49,7 +45,7 @@ function eventToRepo(event: NostrEvent): Repo {
 }
 
 /** Deduplicate NIP-33 parameterized replaceable events, keeping the latest per (pubkey, kind, d-tag). */
-export function dedup(events: NostrEvent[]): NostrEvent[] {
+function dedup(events: NostrEvent[]): NostrEvent[] {
   const best = new Map<string, NostrEvent>();
   for (const e of events) {
     const d = getTag(e, "d") ?? "";
@@ -62,26 +58,29 @@ export function dedup(events: NostrEvent[]): NostrEvent[] {
   return [...best.values()];
 }
 
-async function fetchRepos(): Promise<Repo[]> {
-  const events = await queryEvents(relayWsUrl(), { kinds: [30617] });
+async function fetchRepos(wsUrl: string): Promise<Repo[]> {
+  const events = await queryEvents(wsUrl, { kinds: [30617] });
   return dedup(events)
     .map(eventToRepo)
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
+// Keyed by the server address so another community's list is never shown as this one's.
 export function useRepos({ enabled = true }: { enabled?: boolean } = {}) {
+  const wsUrl = relayWsUrl();
   return useQuery({
-    queryKey: ["repos"],
-    queryFn: fetchRepos,
+    queryKey: ["repos", wsUrl],
+    queryFn: () => fetchRepos(wsUrl),
     enabled,
     staleTime: 60_000,
   });
 }
 
 export function useRepo(repoId: string, { preview = false } = {}) {
+  const wsUrl = relayWsUrl();
   return useQuery({
-    queryKey: preview ? ["repos", "mock"] : ["repos"],
-    queryFn: preview ? async () => mockRepos : fetchRepos,
+    queryKey: preview ? ["repos", "mock"] : ["repos", wsUrl],
+    queryFn: preview ? async () => mockRepos : () => fetchRepos(wsUrl),
     initialData: preview ? mockRepos : undefined,
     staleTime: 60_000,
     select: (repos) => repos.find((r) => r.id === repoId),

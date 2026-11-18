@@ -1,17 +1,22 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:buzz/features/activity/activity_page.dart';
 import 'package:buzz/features/activity/activity_provider.dart';
+import 'package:buzz/features/activity/compose_drafts_provider.dart';
 import 'package:buzz/features/activity/feed_item.dart';
 import 'package:buzz/features/activity/inbox_item.dart';
 import 'package:buzz/features/activity/reminders_provider.dart';
 import 'package:buzz/features/channels/channel.dart';
 import 'package:buzz/features/channels/channel_detail_page.dart';
+import 'package:buzz/features/channels/channel_management_provider.dart';
 import 'package:buzz/features/channels/message_content.dart';
 import 'package:buzz/features/channels/channels_provider.dart';
+import 'package:buzz/shared/identity_names/identity_names.dart';
+import 'package:buzz/shared/mentions/agent_identity_provider.dart';
 import 'package:buzz/shared/read_state/read_state_provider.dart';
-import 'package:buzz/features/profile/user_cache_provider.dart';
-import 'package:buzz/features/profile/user_profile.dart';
+import 'package:buzz/shared/profile/user_cache_provider.dart';
+import 'package:buzz/shared/profile/user_profile.dart';
 import 'package:buzz/shared/theme/theme.dart';
 import 'package:buzz/shared/widgets/anchored_popover_menu.dart';
 import 'package:buzz/shared/widgets/frosted_app_bar.dart';
@@ -20,7 +25,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:hooks_riverpod/misc.dart';
+import 'package:buzz/shared/theme/buzz_icons.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -29,7 +35,7 @@ void main() {
   final testMention = FeedItem(
     id: 'm1',
     kind: 9,
-    pubkey: 'alice_pk',
+    pubkey: 'a11ce00000000000000000000000000000000000000000000000000000000000',
     content: 'Hey check this out',
     createdAt: now - 120,
     channelId: 'ch1',
@@ -98,11 +104,13 @@ void main() {
   ];
 
   final testUsers = <String, UserProfile>{
-    'alice_pk': const UserProfile(
-      pubkey: 'alice_pk',
-      displayName: 'Alice',
-      nip05Handle: 'alice@example.com',
-    ),
+    'a11ce00000000000000000000000000000000000000000000000000000000000':
+        const UserProfile(
+          pubkey:
+              'a11ce00000000000000000000000000000000000000000000000000000000000',
+          displayName: 'Alice',
+          nip05Handle: 'alice@example.com',
+        ),
     'bob_pk': const UserProfile(pubkey: 'bob_pk', displayName: 'Bob'),
     'agent_pk': const UserProfile(pubkey: 'agent_pk', displayName: 'Scout'),
   };
@@ -115,6 +123,11 @@ void main() {
     List<Channel>? channels,
     TextScaler? textScaler,
     EdgeInsets mediaPadding = EdgeInsets.zero,
+    ValueListenable<int>? tabReselection,
+    List<ComposeDraft> drafts = const [],
+    List<Reminder> reminders = const [],
+    Set<String> knownAgentPubkeys = const {},
+    List<Override> overrides = const [],
   }) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
@@ -130,10 +143,15 @@ void main() {
         userCacheProvider.overrideWith(
           () => _FakeUserCacheNotifier(users ?? testUsers),
         ),
+        knownAgentPubkeysProvider.overrideWithValue(knownAgentPubkeys),
         readStateProvider.overrideWith(
           () => _FakeReadStateNotifier(readContexts),
         ),
-        remindersProvider.overrideWith(() => _FakeRemindersNotifier(const [])),
+        composeDraftsProvider.overrideWith(
+          () => _FakeComposeDraftsNotifier(drafts),
+        ),
+        remindersProvider.overrideWith(() => _FakeRemindersNotifier(reminders)),
+        ...overrides,
       ],
       child: MaterialApp(
         theme: AppTheme.light(),
@@ -143,7 +161,7 @@ void main() {
           ).copyWith(textScaler: textScaler, padding: mediaPadding),
           child: child!,
         ),
-        home: const ActivityPage(),
+        home: ActivityPage(tabReselection: tabReselection),
       ),
     );
   }
@@ -181,9 +199,42 @@ void main() {
     await tester.pumpWidget(await buildTestable());
     await tester.pumpAndSettle();
 
-    final appBar = tester.widget<FrostedAppBar>(find.byType(FrostedAppBar));
+    final appBar = tester.widget<FrostedAppBar>(
+      find.byType(FrostedAppBar).last,
+    );
     expect(appBar.automaticallyImplyLeading, isFalse);
+    expect(appBar.gradient, isNull);
+    expect(appBar.frosted, isTrue);
+    expect(appBar.showBottomDivider, isTrue);
+    expect(appBar.bottomHeight, Grid.xxs);
+    expect(appBar.centerTitle, isFalse);
     expect(find.byTooltip('Back'), findsNothing);
+  });
+
+  testWidgets('sizes the Activity app bar for its custom title style', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      await buildTestable(textScaler: const TextScaler.linear(2)),
+    );
+    await tester.pumpAndSettle();
+
+    final appBar = tester.widget<FrostedAppBar>(
+      find.byType(FrostedAppBar).last,
+    );
+    final titleStyle = appBar.titleStyle!;
+    expect(titleStyle.fontSize, 22);
+    expect(
+      tester.getSize(find.byType(ClipRect).last).height,
+      closeTo(
+        frostedAppBarHeight(
+          tester.element(find.byType(FrostedAppBar).last),
+          titleStyle: titleStyle,
+          bottomHeight: Grid.xxs,
+        ),
+        0.01,
+      ),
+    );
   });
 
   testWidgets('keeps footer clearance inside the scrollable content', (
@@ -200,8 +251,48 @@ void main() {
     expect(safeArea.top, isFalse);
     expect(safeArea.bottom, isFalse);
 
-    final list = tester.widget<ListView>(find.byType(ListView));
-    expect(list.padding, const EdgeInsets.fromLTRB(0, Grid.xxs, 0, 96));
+    final padding = tester.widget<SliverPadding>(
+      find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(SliverPadding),
+      ),
+    );
+    expect(padding.padding, const EdgeInsets.fromLTRB(0, Grid.xxs, 0, 96));
+  });
+
+  testWidgets('scrolls Activity to the top when its tab is selected again', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 180);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final tabReselection = ValueNotifier(0);
+    addTearDown(tabReselection.dispose);
+    await tester.pumpWidget(
+      await buildTestable(tabReselection: tabReselection),
+    );
+    await tester.pumpAndSettle();
+
+    final scrollable = tester.state<ScrollableState>(
+      find
+          .descendant(
+            of: find.byType(CustomScrollView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(scrollable.position.maxScrollExtent, greaterThan(0));
+    scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+    tabReselection.value++;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 130));
+
+    expect(
+      scrollable.position.pixels,
+      lessThan(scrollable.position.maxScrollExtent),
+    );
+    await tester.pumpAndSettle();
+    expect(scrollable.position.pixels, scrollable.position.minScrollExtent);
   });
 
   testWidgets('shows error view with retry button', (tester) async {
@@ -285,7 +376,13 @@ void main() {
 
     await tester.tap(find.descendant(of: surface, matching: find.text('All')));
     await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('activity-options-menu')));
+    final optionsTrigger = find.byKey(const ValueKey('activity-options-menu'));
+    expect(
+      tester.getSize(optionsTrigger),
+      const Size(Grid.xl, Grid.xl),
+      reason: 'Activity options must retain a 48dp touch target.',
+    );
+    await tester.tap(optionsTrigger);
     await tester.pump();
 
     final optionsSurface = find.byKey(
@@ -304,6 +401,66 @@ void main() {
           .alignment,
       Alignment.topRight,
     );
+  });
+
+  testWidgets('filter stays indicator-free when drafts and reminders exist', (
+    tester,
+  ) async {
+    final dueReminder = Reminder(
+      id: 'reminder-1',
+      notBefore: now - 1,
+      status: 'pending',
+      target: const ReminderTarget(
+        eventId: 'm1',
+        channelId: 'ch1',
+        preview: 'Follow up',
+        authorPubkey:
+            'a11ce00000000000000000000000000000000000000000000000000000000000',
+      ),
+      note: null,
+      createdAt: now - 60,
+      eventId: 'reminder-event-1',
+    );
+    final draft = ComposeDraft(
+      key: 'ch1',
+      channelId: 'ch1',
+      threadHeadId: null,
+      text: 'Unsent review note',
+      updatedAt: now,
+    );
+
+    await tester.pumpWidget(
+      await buildTestable(drafts: [draft], reminders: [dueReminder]),
+    );
+    await tester.pumpAndSettle();
+
+    final filterTrigger = find.byKey(const ValueKey('activity-filter-menu'));
+    expect(
+      find.descendant(
+        of: filterTrigger,
+        matching: find.byWidgetPredicate((widget) {
+          if (widget is! Container) return false;
+          final constraints = widget.constraints;
+          return constraints?.minWidth == 6 && constraints?.minHeight == 6;
+        }),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(filterTrigger);
+    await tester.pumpAndSettle();
+    final filterPopover = find.byKey(const ValueKey('activity-filter-popover'));
+    expect(
+      find.descendant(of: filterPopover, matching: find.text('1')),
+      findsNothing,
+    );
+
+    await tester.tap(
+      find.descendant(of: filterPopover, matching: find.text('Drafts')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('draft-row-ch1')), findsOneWidget);
+    expect(find.text('Unsent review note'), findsOneWidget);
   });
 
   testWidgets('rows lead with sender, contextual label, and preview', (
@@ -354,8 +511,12 @@ void main() {
     expect(usernameText.style?.fontSize, messageMetadataTextStyle.fontSize);
     expect(usernameText.style?.fontWeight, FontWeight.w400);
     expect(usernameText.style?.height, messageMetadataTextStyle.height);
-    expect(timestampText.style?.fontSize, messageMetadataTextStyle.fontSize);
+    expect(timestampText.style?.fontSize, activityTimestampTextStyle.fontSize);
     expect(timestampText.style?.fontWeight, FontWeight.w400);
+    expect(
+      timestampText.style?.fontSize,
+      lessThan(usernameText.style!.fontSize!),
+    );
 
     final avatars = tester.widgetList<AvatarImage>(find.byType(AvatarImage));
     expect(avatars, isNotEmpty);
@@ -383,6 +544,105 @@ void main() {
     );
   });
 
+  testWidgets('blank cached sender names fall back to the compact npub', (
+    tester,
+  ) async {
+    // Relay profiles can cache blank display names (empty and
+    // whitespace-only) unchanged, so the sender must resolve through the
+    // shared nonblank-name label contract: the row shows the compact npub
+    // of the a11ce key instead of a blank author label. Binds the production
+    // seam — the sender resolves through the user cache exactly as the live
+    // page does. Keyed remounts keep each ProviderScope (and its user-cache
+    // override) fresh between scenarios, so each iteration actually
+    // consumes its own blank-name fixture.
+    const sender =
+        'a11ce00000000000000000000000000000000000000000000000000000000000';
+    for (final blankName in const ['', '   ']) {
+      await tester.pumpWidget(
+        KeyedSubtree(
+          key: ValueKey('blank-sender-${blankName.length}'),
+          child: await buildTestable(
+            users: {
+              ...testUsers,
+              sender: UserProfile(pubkey: sender, displayName: blankName),
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(blankName), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('inbox-row-m1')),
+          matching: find.text('npub15yw…ccpw'),
+        ),
+        findsOneWidget,
+      );
+    }
+  });
+
+  testWidgets('same-name senders get their channel\'s contextual label', (
+    tester,
+  ) async {
+    // Another ch1 member shares the sender's name, so the row must use the
+    // channel's disambiguated label rather than the bare profile name.
+    const sender =
+        'a11ce00000000000000000000000000000000000000000000000000000000000';
+    const twin =
+        'b0b0000000000000000000000000000000000000000000000000000000000000';
+    final members = [
+      for (final pubkey in const [sender, twin])
+        ChannelMember(pubkey: pubkey, role: 'member', joinedAt: DateTime(2025)),
+    ];
+    final users = {
+      ...testUsers,
+      sender: const UserProfile(pubkey: sender, displayName: 'Scout'),
+      twin: const UserProfile(pubkey: twin, displayName: 'Scout'),
+    };
+    await tester.pumpWidget(
+      await buildTestable(
+        users: users,
+        overrides: [
+          channelMembersProvider('ch1').overrideWith((ref) async => members),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final expected = IdentityNameSources(
+      profiles: users,
+    ).scope(const [sender, twin]).labelFor(sender);
+    expect(expected, isNot('Scout'));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('inbox-row-m1')),
+        matching: find.textContaining(expected),
+      ),
+      findsWidgets,
+    );
+  });
+
+  testWidgets('directory-known Activity authors use agent avatars', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      await buildTestable(knownAgentPubkeys: const {'agent_pk'}),
+    );
+    await tester.pumpAndSettle();
+
+    final agentRow = find.byKey(const ValueKey('inbox-row-ag1'));
+    final agentAvatar = tester.widget<AvatarImage>(
+      find.descendant(of: agentRow, matching: find.byType(AvatarImage)),
+    );
+    final humanRow = find.byKey(const ValueKey('inbox-row-m1'));
+    final humanAvatar = tester.widget<AvatarImage>(
+      find.descendant(of: humanRow, matching: find.byType(AvatarImage)),
+    );
+    expect(agentAvatar.isAgent, isTrue);
+    expect(humanAvatar.isAgent, isFalse);
+  });
+
   testWidgets('multiple top-level messages in one DM render one row', (
     tester,
   ) async {
@@ -401,7 +661,8 @@ void main() {
     FeedItem dmMessage(String id, int age) => FeedItem(
       id: id,
       kind: 9,
-      pubkey: 'alice_pk',
+      pubkey:
+          'a11ce00000000000000000000000000000000000000000000000000000000000',
       content: 'dm body $id',
       createdAt: now - age,
       channelId: 'dm1',
@@ -505,7 +766,8 @@ void main() {
     final threadMention = FeedItem(
       id: 'reply-event',
       kind: 9,
-      pubkey: 'alice_pk',
+      pubkey:
+          'a11ce00000000000000000000000000000000000000000000000000000000000',
       content: 'Reply in a thread',
       createdAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       channelId: 'ch1',
@@ -535,6 +797,10 @@ void main() {
     expect(page.channel.id, 'ch1');
     expect(page.initialThreadRootId, 'parent-reply');
     expect(page.initialMessageId, 'reply-event');
+    expect(
+      page.initialThreadRouteBehavior,
+      InitialThreadRouteBehavior.replaceCurrentRoute,
+    );
   });
 
   testWidgets('thread filter matches grouped thread replies', (tester) async {
@@ -700,7 +966,7 @@ void main() {
     final action = find.byKey(const ValueKey('inbox-swipe-read-m1'));
     expect(action, findsOneWidget);
     expect(
-      find.descendant(of: action, matching: find.byIcon(LucideIcons.mail)),
+      find.descendant(of: action, matching: find.byIcon(BuzzIcons.mail)),
       findsOneWidget,
     );
     expect(find.text('Mark unread'), findsNothing);
@@ -754,14 +1020,20 @@ void main() {
     );
   });
 
-  testWidgets('falls back to short pubkey when user not cached', (
+  testWidgets('falls back to a compact npub when user is not cached', (
     tester,
   ) async {
     await tester.pumpWidget(await buildTestable(users: const {}));
     await tester.pumpAndSettle();
 
-    // Sender label falls back to the (short) pubkey.
-    expect(find.text('alice_pk'), findsOneWidget);
+    // Sender label falls back to the compact npub of the author's key.
+    expect(
+      find.text(
+        'a11ce00000000000000000000000000000000000000000000000000000000000',
+      ),
+      findsNothing,
+    );
+    expect(find.text('npub15yw\u2026ccpw'), findsOneWidget);
     expect(find.text('Alice'), findsNothing);
   });
 }
@@ -828,4 +1100,12 @@ class _FakeRemindersNotifier extends RemindersNotifier {
 
   @override
   Future<List<Reminder>> build() async => _reminders;
+}
+
+class _FakeComposeDraftsNotifier extends ComposeDraftsNotifier {
+  final List<ComposeDraft> _drafts;
+  _FakeComposeDraftsNotifier(this._drafts);
+
+  @override
+  List<ComposeDraft> build() => _drafts;
 }

@@ -1,5 +1,23 @@
 /// NIP-42 authentication handler.
+pub mod admin_action_worker;
+pub mod admin_outbox_worker;
+/// Agent accounts say so on their profile, with the signature of who runs them.
+pub mod agent_label;
+#[cfg(test)]
+mod agent_label_postgres_tests;
 pub mod auth;
+#[cfg(test)]
+mod board_limit_postgres_tests;
+/// Board moderation (kinds 9045–9053): lock, pin, rules, board mutes, board moderators.
+pub mod board_moderation;
+#[cfg(test)]
+mod board_moderation_postgres_tests;
+#[cfg(test)]
+mod board_report_postgres_tests;
+/// NIP-ORG budget enforcement — relay-side ingest gate.
+pub mod budget_enforcement;
+/// Pure NIP-29 channel membership-authority decisions (kinds 9000/9001/9022).
+pub mod channel_authz;
 /// Subscription close (CLOSE) handler.
 pub mod close;
 /// Command executor — transactional processing for command kinds.
@@ -10,30 +28,53 @@ pub mod community_provisioning;
 pub mod count;
 /// EVENT handler — WS dispatcher → ingest pipeline → fan-out.
 pub mod event;
+/// Removing a Home post as a community moderator (kind:9005 with no `h` tag).
+pub mod home_moderation;
+#[cfg(test)]
+mod home_moderation_postgres_tests;
 /// NIP-IA identity archive request handler (kinds 9035–9036).
 pub mod identity_archive;
 /// imeta tag validation helpers.
 pub mod imeta;
 /// Transport-neutral event ingestion pipeline.
 pub mod ingest;
+/// Who may sign a project's update records (kind 47003): founder, team, a task's helper.
+pub mod launch_update_authority;
+#[cfg(test)]
+mod launch_update_authority_postgres_tests;
 /// Community moderation authorization seam (capability helper).
 pub mod moderation_authz;
 /// Community moderation command handler (kinds 9040–9044).
 pub mod moderation_commands;
 /// Relay-signed moderation notice DMs.
 pub mod moderation_notices;
+#[cfg(test)]
+#[path = "new_account_limit_tests.rs"]
+mod new_account_limit_postgres_tests;
+/// NIP-ORG grant-chain enforcement — opt-in relay-side ingest gate.
+pub mod org_grant_enforcement;
 /// Product-feedback validation + deployment sidecar persistence.
 pub mod product_feedback;
+/// Work taken on (kind 37019) and project focus (kind 37020): envelope checks.
+pub mod project_structure;
 #[allow(dead_code, missing_docs)]
 pub mod push_lease;
+#[cfg(test)]
+#[path = "read_gate_tests.rs"]
+mod read_gate_postgres_tests;
 /// NIP-43 relay membership admin command handler (kinds 9030–9032).
 pub mod relay_admin;
 /// NIP-56 report (kind:1984) validation + moderation queue persistence.
 pub mod report;
+/// HTTP report-resolution orchestrations for the deployment admin API (Phase 2).
+pub mod report_resolution;
 /// REQ handler — subscribe, deliver historical events, then EOSE.
 pub mod req;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
+#[cfg(test)]
+#[path = "wiki_enforcement_tests.rs"]
+mod wiki_enforcement_postgres_tests;
 
 /// Extract an optional TTL (in seconds) from a Nostr event's `ttl` tag,
 /// applying the server-side override when configured.
@@ -60,3 +101,6 @@ pub fn resolve_ttl(event: &nostr::Event, ephemeral_ttl_override: Option<i32>) ->
         (ttl, _) => ttl,
     }
 }
+
+/// NIP-AR artifact lifecycle.
+pub mod artifact;

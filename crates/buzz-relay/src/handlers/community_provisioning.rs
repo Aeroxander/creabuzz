@@ -21,9 +21,9 @@
 //! { "host": "acme.communities.buzz.xyz", "initial_owner_pubkey": "<hex>" }
 //! ```
 //!
-//! `initial_owner_pubkey` is optional. When present for an existing community,
-//! it rotates that community owner through the same bootstrap path used by
-//! `RELAY_OWNER_PUBKEY`; relay operators are deployment-root authorities.
+//! `initial_owner_pubkey` is optional. Existing-community convergence may
+//! rotate ownership only while the community is active and has no durable
+//! deletion intent. Archive freezes ownership.
 
 use std::sync::Arc;
 
@@ -201,6 +201,175 @@ pub(crate) fn normalize_candidate_host(host: &str) -> Result<String, String> {
     Ok(normalized)
 }
 
+// ---------------------------------------------------------------------------------------------------------------------
+// Self-serve names
+// ---------------------------------------------------------------------------------------------------------------------
+
+/// Shortest and longest name (the part before the domain) a person may pick for their own community.
+pub(crate) const MIN_SLUG_LEN: usize = 3;
+pub(crate) const MAX_SLUG_LEN: usize = 32;
+
+/// Names nobody may take. They read as the service itself (or as a place a person would trust it to be), so a community
+/// called `login` or `support` is a phishing page waiting to happen.
+const RESERVED_SLUGS: &[&str] = &[
+    "about",
+    "account",
+    "accounts",
+    "admin",
+    "administrator",
+    "api",
+    "app",
+    "apps",
+    "assets",
+    "auth",
+    "billing",
+    "blog",
+    "buzz",
+    "cdn",
+    "chat",
+    "communities",
+    "community",
+    "creaton",
+    "dashboard",
+    "demo",
+    "dev",
+    "dns",
+    "docs",
+    "download",
+    "downloads",
+    "email",
+    "files",
+    "ftp",
+    "git",
+    "help",
+    "home",
+    "imap",
+    "internal",
+    "localhost",
+    "login",
+    "logout",
+    "mail",
+    "media",
+    "mx",
+    "news",
+    "ns",
+    "ns1",
+    "ns2",
+    "operator",
+    "pop",
+    "pricing",
+    "register",
+    "relay",
+    "relays",
+    "root",
+    "security",
+    "server",
+    "signin",
+    "signup",
+    "smtp",
+    "staging",
+    "static",
+    "status",
+    "support",
+    "system",
+    "terms",
+    "test",
+    "wiki",
+    "www",
+];
+
+/// Why a self-serve name was refused. Each says, in plain words, what to change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SlugProblem {
+    TooShort,
+    TooLong,
+    BadCharacters,
+    EdgeHyphen,
+    /// `xx--` in the third and fourth places is how internationalised (punycode) names start; allowing it would let a name
+    /// look like another one.
+    LookalikePrefix,
+    Reserved,
+}
+
+impl SlugProblem {
+    /// A stable code the client can switch on.
+    pub(crate) fn code(self) -> &'static str {
+        match self {
+            Self::TooShort => "name_too_short",
+            Self::TooLong => "name_too_long",
+            Self::BadCharacters => "name_bad_characters",
+            Self::EdgeHyphen => "name_edge_hyphen",
+            Self::LookalikePrefix => "name_lookalike",
+            Self::Reserved => "name_reserved",
+        }
+    }
+
+    /// What to tell the person.
+    pub(crate) fn message(self) -> &'static str {
+        match self {
+            Self::TooShort => "Names need at least 3 letters or numbers.",
+            Self::TooLong => "Names can be at most 32 letters or numbers.",
+            Self::BadCharacters => "Use only lower-case letters, numbers and hyphens.",
+            Self::EdgeHyphen => "A name cannot start or end with a hyphen.",
+            Self::LookalikePrefix => {
+                "Pick a name that does not have hyphens as its third and fourth characters."
+            }
+            Self::Reserved => "That name is kept for the service itself. Pick another.",
+        }
+    }
+}
+
+/// Trim and lower-case what a person typed, so `Acme ` and `acme` are the same name.
+pub(crate) fn normalize_slug(raw: &str) -> String {
+    raw.trim().to_ascii_lowercase()
+}
+
+/// Check a normalized name: letters, numbers and single hyphens inside, a sensible length, and not a reserved word.
+pub(crate) fn validate_slug(slug: &str) -> Result<(), SlugProblem> {
+    if slug.len() < MIN_SLUG_LEN {
+        return Err(SlugProblem::TooShort);
+    }
+    if slug.len() > MAX_SLUG_LEN {
+        return Err(SlugProblem::TooLong);
+    }
+    if !slug
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return Err(SlugProblem::BadCharacters);
+    }
+    if slug.starts_with('-') || slug.ends_with('-') {
+        return Err(SlugProblem::EdgeHyphen);
+    }
+    if slug.as_bytes().get(2) == Some(&b'-') && slug.as_bytes().get(3) == Some(&b'-') {
+        return Err(SlugProblem::LookalikePrefix);
+    }
+    if RESERVED_SLUGS.contains(&slug) {
+        return Err(SlugProblem::Reserved);
+    }
+    Ok(())
+}
+
+/// The domain communities are created under (`BUZZ_SELF_SERVE_COMMUNITY_DOMAIN`), normalized, or why it is not usable.
+/// A bare authority: `creaton.example`, or `localhost:3000` for a local run.
+pub(crate) fn normalize_self_serve_domain(raw: &str) -> Result<String, String> {
+    let domain = normalize_host(raw.trim());
+    if domain.starts_with('.') {
+        return Err("the self-serve domain must not start with a dot".to_string());
+    }
+    // Check it the way a created host is checked, with a name in front.
+    validate_host(&format!("probe.{domain}"))
+        .map_err(|e| format!("the self-serve domain is not a usable host: {e}"))?;
+    Ok(domain)
+}
+
+/// The host a self-serve name becomes under `domain`: `acme` + `creaton.example` → `acme.creaton.example`.
+pub(crate) fn community_host_for_slug(slug: &str, domain: &str) -> Result<String, String> {
+    let host = format!("{slug}.{domain}");
+    validate_host(&host)?;
+    Ok(host)
+}
+
 /// Publish the event-backed membership view after owner persistence.
 ///
 /// Provisioning is already committed when this runs. Publication therefore
@@ -212,10 +381,27 @@ async fn publish_membership_snapshot_if_required(
     community: buzz_core::CommunityId,
     host: &str,
 ) {
-    if !state.config.require_relay_membership {
+    if !state
+        .membership_required(community, true)
+        .await
+        .unwrap_or(true)
+    {
         return;
     }
+    publish_membership_snapshot(state, community, host).await;
+}
 
+/// Publish the membership view whether or not membership is required.
+///
+/// A client learns who may do what in a community (who is its owner, who an admin) from this list, so a community whose
+/// server does not require membership still needs it: without it the person who just created a community cannot be
+/// recognised as its owner, and owner-only actions such as setting up a team refuse them. Best-effort, like
+/// [`publish_membership_snapshot_if_required`].
+async fn publish_membership_snapshot(
+    state: &Arc<AppState>,
+    community: buzz_core::CommunityId,
+    host: &str,
+) {
     let tenant = TenantContext::resolved(community, host);
     if let Err(error) =
         crate::handlers::side_effects::publish_nip43_membership_list(&tenant, state).await
@@ -229,6 +415,52 @@ async fn publish_membership_snapshot_if_required(
     }
 }
 
+/// Atomically create a community host and make `owner_hex` its owner, refusing an existing host.
+///
+/// This is the one create path both the operator endpoint (`create_only`) and the self-serve endpoint use: the host row,
+/// the owner row and the per-owner limit are one database transaction, so a create race can never rotate an existing
+/// owner. The caller is responsible for authorizing the request and for validating `host` and `owner_hex`.
+///
+/// `invite_only` makes the community members-only from its first moment, so there is no window in which strangers can
+/// walk into a community that was meant to be private.
+pub(crate) async fn create_community_for_owner(
+    state: &Arc<AppState>,
+    host: &str,
+    owner_hex: &str,
+    invite_only: bool,
+) -> Result<ProvisionCommunityResponse, String> {
+    let record = match state
+        .db
+        .create_community_with_owner_and_access(host, owner_hex, invite_only)
+        .await
+        .map_err(|e| format!("failed to create community: {e}"))?
+    {
+        buzz_db::CreateCommunityWithOwnerResult::Created(record) => record,
+        buzz_db::CreateCommunityWithOwnerResult::HostExists => {
+            return Err("community already exists".to_string());
+        }
+        buzz_db::CreateCommunityWithOwnerResult::LimitReached => {
+            return Err("limit_reached: owner has reached the community limit".to_string());
+        }
+    };
+
+    info!(
+        community = %record.id,
+        host = %record.host,
+        owner = %owner_hex,
+        invite_only,
+        "community created"
+    );
+    // Always: the owner's role must be readable by their own client (see `publish_membership_snapshot`).
+    publish_membership_snapshot(state, record.id, &record.host).await;
+    Ok(ProvisionCommunityResponse {
+        community_id: record.id.to_string(),
+        host: record.host,
+        status: "created",
+        owner_pubkey: Some(owner_hex.to_string()),
+    })
+}
+
 /// Validate and execute a relay-operator community provisioning request.
 ///
 /// The caller is an HTTP operator endpoint, not the Nostr event ingest path.
@@ -238,14 +470,9 @@ async fn publish_membership_snapshot_if_required(
 /// signer here for the deployment-level `RELAY_OPERATOR_PUBKEYS` allowlist.
 ///
 /// Idempotency and owner semantics: the request is idempotent on the host row
-/// (re-sending it never duplicates a community). When `initial_owner_pubkey` is
-/// present, the owner is (re)bootstrapped via [`buzz_db::Db::bootstrap_owner`]
-/// even if the community already existed — any previous owner is demoted to
-/// admin, exactly like rotating `RELAY_OWNER_PUBKEY` for the deployment
-/// community. This makes a retry after a partial failure (row created, owner
-/// bootstrap crashed) converge, at the cost that an operator-signed request can
-/// rotate an existing community's owner. The operator allowlist is therefore
-/// documented as deployment-root authority, not create-only authority.
+/// (re-sending it never duplicates a community). Initial owner bootstrap still
+/// converges after a partial create, but rotating an existing owner requires an
+/// active, non-archived community with no non-aborted deletion request.
 pub async fn provision_community(
     state: &Arc<AppState>,
     operator_pubkey: &nostr::PublicKey,
@@ -281,38 +508,8 @@ pub async fn provision_community(
         let owner_hex = initial_owner.as_deref().ok_or_else(|| {
             "initial_owner_pubkey is required when create_only is true".to_string()
         })?;
-        let record = match state
-            .db
-            .create_community_with_owner(&request.host, owner_hex)
-            .await
-            .map_err(|e| format!("failed to create community: {e}"))?
-        {
-            buzz_db::CreateCommunityWithOwnerResult::Created(record) => record,
-            buzz_db::CreateCommunityWithOwnerResult::HostExists => {
-                return Err("community already exists".to_string());
-            }
-            buzz_db::CreateCommunityWithOwnerResult::LimitReached => {
-                return Err(
-                    "limit_reached: owner already owns the maximum number of communities"
-                        .to_string(),
-                );
-            }
-        };
-
-        info!(
-            operator = %operator_hex,
-            community = %record.id,
-            host = %record.host,
-            owner = %owner_hex,
-            "community created via operator endpoint"
-        );
-        publish_membership_snapshot_if_required(state, record.id, &record.host).await;
-        return Ok(ProvisionCommunityResponse {
-            community_id: record.id.to_string(),
-            host: record.host,
-            status: "created",
-            owner_pubkey: initial_owner,
-        });
+        info!(operator = %operator_hex, "creating community via operator endpoint");
+        return create_community_for_owner(state, &request.host, owner_hex, false).await;
     }
 
     // Legacy convergence mode remains available to deployment operators and
@@ -325,11 +522,22 @@ pub async fn provision_community(
         .map_err(|e| format!("failed to create community: {e}"))?;
 
     if let Some(owner_hex) = &initial_owner {
-        state
+        match state
             .db
-            .bootstrap_owner(record.id, owner_hex)
+            .provision_owner(record.id, owner_hex)
             .await
-            .map_err(|e| format!("community provisioned but owner bootstrap failed: {e}"))?;
+            .map_err(|e| format!("community provisioned but owner bootstrap failed: {e}"))?
+        {
+            buzz_db::relay_members::ProvisionOwnerResult::Applied => {}
+            buzz_db::relay_members::ProvisionOwnerResult::LifecycleConflict => {
+                return Err(
+                    "owner_conflict: community must be active to rotate ownership".to_string(),
+                );
+            }
+            buzz_db::relay_members::ProvisionOwnerResult::DeletionPending => {
+                return Err("owner_conflict: community deletion is pending".to_string());
+            }
+        }
         publish_membership_snapshot_if_required(state, record.id, &record.host).await;
     }
 
@@ -433,6 +641,103 @@ mod tests {
         assert_eq!(
             normalize_candidate_host("acme.example.").unwrap(),
             "acme.example"
+        );
+    }
+
+    #[test]
+    fn slug_accepts_ordinary_names() {
+        for slug in ["acme", "my-film", "a1b", "night-sky-2026", "abc"] {
+            assert_eq!(validate_slug(slug), Ok(()), "{slug}");
+        }
+        assert_eq!(validate_slug(&"a".repeat(32)), Ok(()));
+    }
+
+    #[test]
+    fn slug_rejects_by_reason() {
+        assert_eq!(validate_slug("ab"), Err(SlugProblem::TooShort));
+        assert_eq!(validate_slug(""), Err(SlugProblem::TooShort));
+        assert_eq!(validate_slug(&"a".repeat(33)), Err(SlugProblem::TooLong));
+        assert_eq!(validate_slug("Acme"), Err(SlugProblem::BadCharacters));
+        assert_eq!(validate_slug("my_film"), Err(SlugProblem::BadCharacters));
+        assert_eq!(validate_slug("my film"), Err(SlugProblem::BadCharacters));
+        assert_eq!(validate_slug("a.b.c"), Err(SlugProblem::BadCharacters));
+        assert_eq!(validate_slug("caf\u{e9}"), Err(SlugProblem::BadCharacters));
+        assert_eq!(validate_slug("-acme"), Err(SlugProblem::EdgeHyphen));
+        assert_eq!(validate_slug("acme-"), Err(SlugProblem::EdgeHyphen));
+        assert_eq!(validate_slug("xn--abc"), Err(SlugProblem::LookalikePrefix));
+        assert_eq!(validate_slug("www"), Err(SlugProblem::Reserved));
+        assert_eq!(validate_slug("login"), Err(SlugProblem::Reserved));
+    }
+
+    #[test]
+    fn slug_is_trimmed_and_lowercased_before_it_is_checked() {
+        assert_eq!(normalize_slug("  Acme "), "acme");
+        assert_eq!(validate_slug(&normalize_slug("  Acme ")), Ok(()));
+        // ...but a name that is only reserved after normalizing is still reserved.
+        assert_eq!(
+            validate_slug(&normalize_slug("WWW")),
+            Err(SlugProblem::Reserved)
+        );
+    }
+
+    #[test]
+    fn every_slug_problem_has_a_distinct_code_and_a_plain_message() {
+        let all = [
+            SlugProblem::TooShort,
+            SlugProblem::TooLong,
+            SlugProblem::BadCharacters,
+            SlugProblem::EdgeHyphen,
+            SlugProblem::LookalikePrefix,
+            SlugProblem::Reserved,
+        ];
+        let codes: std::collections::HashSet<_> = all.iter().map(|p| p.code()).collect();
+        assert_eq!(codes.len(), all.len());
+        for problem in all {
+            assert!(!problem.message().is_empty());
+            assert!(!problem.message().to_lowercase().contains("slug"));
+        }
+    }
+
+    #[test]
+    fn reserved_names_are_themselves_valid_shapes_and_sorted_without_duplicates() {
+        let mut sorted = RESERVED_SLUGS.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(
+            sorted.as_slice(),
+            RESERVED_SLUGS,
+            "keep the list sorted, no duplicates"
+        );
+        for word in RESERVED_SLUGS {
+            assert_eq!(normalize_slug(word), *word);
+        }
+    }
+
+    #[test]
+    fn self_serve_domain_is_normalized_and_checked() {
+        assert_eq!(
+            normalize_self_serve_domain("Creaton.Example").unwrap(),
+            "creaton.example"
+        );
+        assert_eq!(
+            normalize_self_serve_domain("localhost:3000").unwrap(),
+            "localhost:3000"
+        );
+        assert!(normalize_self_serve_domain(".creaton.example").is_err());
+        assert!(normalize_self_serve_domain("https://creaton.example").is_err());
+        assert!(normalize_self_serve_domain("creaton.example/path").is_err());
+        assert!(normalize_self_serve_domain("").is_err());
+    }
+
+    #[test]
+    fn a_name_becomes_a_host_under_the_domain() {
+        assert_eq!(
+            community_host_for_slug("acme", "creaton.example").unwrap(),
+            "acme.creaton.example"
+        );
+        assert_eq!(
+            community_host_for_slug("acme", "localhost:3000").unwrap(),
+            "acme.localhost:3000"
         );
     }
 

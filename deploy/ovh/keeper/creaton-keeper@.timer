@@ -1,0 +1,13 @@
+# Starts creaton-keeper@%i.service (one pass for the market whose address is %i) every 30 minutes, on the hour and the half
+# hour. The settle window is two days, so a pass every half hour leaves a wide margin. Persistent: a pass missed while the
+# machine was off runs as soon as it is back. Enable it for one market with `install.sh enable <market>`.
+[Unit]
+Description=Run the Creaton settlement keeper for market %i every 30 minutes
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

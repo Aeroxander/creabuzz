@@ -1,0 +1,12 @@
+{
+  "earnedShares": 10,
+  "engine": "Foundry local EVM; actors and time simulated; deployed contracts enforce every action",
+  "initialTreasury": 100000,
+  "investment": 1000,
+  "mandateLifetimeBudget": 10000,
+  "paidDelivery": 1400,
+  "perProjectCap": 2000,
+  "rejectedSelfPayment": 2000,
+  "unrestrictedMinorityDrainBlocked": true,
+  "workflowHours": 384
+}

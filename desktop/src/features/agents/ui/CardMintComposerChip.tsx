@@ -48,7 +48,7 @@ export function CardMintComposerChip() {
             >
               <Sparkles className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate">
-                {`${job.input.agentName}’s card is ready — view it`}
+                {`${job.input.agentName}’s card is ready. View it`}
               </span>
             </button>
           );

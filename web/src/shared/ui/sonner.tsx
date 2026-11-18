@@ -9,6 +9,11 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={isDark ? "dark" : "light"}
+      // Top and centred, below the navigation bar: in a corner at the bottom a toast sits on top of a dialog's
+      // Continue button, and while the pointer is over a toast it never leaves, so the button cannot be pressed.
+      position="top-center"
+      offset={{ top: 72 }}
+      mobileOffset={{ top: 16 }}
       className="toaster group"
       toastOptions={{
         classNames: {

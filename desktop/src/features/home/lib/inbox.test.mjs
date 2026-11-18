@@ -594,3 +594,106 @@ test("nested-anchor: old selected event stays resolvable by conversationId after
   // The new representative is the latest reply.
   assert.equal(inboxItem.id, LATEST_EVENT_ID);
 });
+
+// ── Needs-me approval rows (kind:46010) ─────────────────────────────────────
+
+const AGENT_PUBKEY = "c".repeat(64);
+const RELAY_PUBKEY = "d".repeat(64);
+const BUDGET_TOKEN_HASH = "a".repeat(64);
+
+function budgetOverrunFeedItem(overrides = {}) {
+  return item({
+    id: overrides.id ?? "budget-req-1",
+    kind: 46010,
+    pubkey: RELAY_PUBKEY,
+    content: JSON.stringify({
+      type: "budget-exceeded",
+      subject: AGENT_PUBKEY,
+      counterType: "runs",
+      window: "week",
+      limit: 10,
+    }),
+    createdAt: overrides.createdAt ?? 1_200,
+    channelId: overrides.channelId ?? null,
+    tags: [
+      ["d", BUDGET_TOKEN_HASH],
+      ["p", AGENT_PUBKEY],
+    ],
+    category: "needs_action",
+  });
+}
+
+test("budget overrun rows render the kind-aware summary, not raw JSON", () => {
+  const [inboxItem] = buildInboxItems({
+    channels,
+    feed: feedWith({
+      needsAction: [budgetOverrunFeedItem()],
+    }),
+  });
+
+  assert.equal(inboxItem.subject, "Budget approval needed");
+  assert.match(inboxItem.preview, /hit its runs budget/);
+  assert.match(inboxItem.preview, /limit 10 per week/);
+  assert.doesNotMatch(inboxItem.preview, /budget-exceeded/);
+  assert.equal(inboxItem.isActionRequired, true);
+});
+
+test("budget overrun rows label the org community scope instead of a channel", () => {
+  const [inboxItem] = buildInboxItems({
+    channels,
+    feed: feedWith({
+      needsAction: [budgetOverrunFeedItem()],
+    }),
+  });
+
+  assert.deepEqual(getInboxTypeLabel(inboxItem), {
+    text: "Org budget",
+    channelLabel: null,
+  });
+});
+
+test("workflow approval requests keep their existing headline and text", () => {
+  const [inboxItem] = buildInboxItems({
+    channels,
+    feed: feedWith({
+      needsAction: [
+        item({
+          id: "workflow-req-1",
+          kind: 46010,
+          pubkey: RELAY_PUBKEY,
+          content: "Approval requested (from owner)",
+          createdAt: 1_300,
+          channelId: CHANNEL_ID,
+          tags: [
+            ["h", CHANNEL_ID],
+            ["d", "b".repeat(64)],
+            ["p", RELAY_PUBKEY],
+            ["buzz:workflow", "true"],
+          ],
+          category: "needs_action",
+        }),
+      ],
+    }),
+  });
+
+  assert.equal(inboxItem.subject, "Approval requested");
+  assert.equal(inboxItem.preview, "Approval requested (from owner)");
+});
+
+test("duplicate needs-me and backend copies of one request collapse into one row", () => {
+  const duplicate = budgetOverrunFeedItem();
+  const items = buildInboxItems({
+    channels,
+    feed: feedWith({
+      needsAction: [duplicate, budgetOverrunFeedItem({ createdAt: 1_250 })],
+    }),
+  });
+
+  // One visible row; grouped copies share the representative event id.
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, "budget-req-1");
+  assert.equal(
+    new Set(items[0].groupItems.map((groupItem) => groupItem.id)).size,
+    1,
+  );
+});

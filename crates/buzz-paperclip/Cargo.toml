@@ -1,0 +1,43 @@
+[package]
+name = "buzz-paperclip"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "One-way projection of Paperclip issues into Buzz kind:44011 task rows."
+
+[lib]
+name = "buzz_paperclip"
+path = "src/lib.rs"
+
+[[bin]]
+name = "buzz-paperclip"
+path = "src/main.rs"
+
+[dependencies]
+buzz-core = { workspace = true }
+buzz-sdk = { workspace = true }
+nostr = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+uuid = { workspace = true }
+hex = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+url = { workspace = true }
+clap = { version = "4", features = ["derive", "env"] }
+# Ephemeral event publish over the relay WebSocket.
+buzz-ws-client = { path = "../buzz-ws-client" }
+# Explicit rustls dep with the ring provider: required so the process-level
+# CryptoProvider can be installed at startup. See crates/buzz-cli/Cargo.toml
+# for why a unified multi-package release build otherwise leaves rustls unable
+# to auto-select a provider.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
+[dev-dependencies]
+tempfile = "3"

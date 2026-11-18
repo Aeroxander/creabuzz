@@ -56,11 +56,13 @@ type PersonaLlmProviderId = (typeof KNOWN_LLM_PROVIDER_IDS)[number];
 export type PersonaModelOption = {
   id: string;
   label: string;
+  description?: string;
 };
 
 export type PersonaDropdownOption = {
   disabled?: boolean;
   label: string;
+  description?: string;
   value: string;
 };
 
@@ -147,7 +149,7 @@ export const PERSONA_LLM_PROVIDER_OPTIONS: readonly PersonaModelOption[] = [
   { id: "openai", label: "OpenAI" },
   { id: "openai-compat", label: "OpenAI-compatible" },
   { id: "openrouter", label: "OpenRouter" },
-  { id: "relay-mesh", label: "Buzz shared compute" },
+  { id: "relay-mesh", label: "Creaton shared compute" },
   { id: "databricks", label: "Databricks" },
   { id: "databricks_v2", label: "Databricks v2" },
 ];
@@ -314,7 +316,7 @@ export function providerRequiresExplicitModel(
 export function providerDisplayLabel(providerId: string) {
   const trimmedProvider = providerId.trim();
   return trimmedProvider === "relay-mesh"
-    ? "Buzz shared compute"
+    ? "Creaton shared compute"
     : trimmedProvider;
 }
 
@@ -367,7 +369,11 @@ export function buildTemplateModelDropdownOptions(
       ? [{ id: "", label: inheritedModelLabel }, ...modelOptions]
       : modelOptions;
   return base.map((option) => ({
-    label: option.id === "" ? inheritedModelLabel : option.label,
+    label:
+      option.id === "" && trimmedInheritedModel.length > 0
+        ? inheritedModelLabel
+        : option.label,
+    description: option.description,
     value: option.id || AUTO_MODEL_DROPDOWN_VALUE,
   }));
 }

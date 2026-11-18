@@ -12,9 +12,9 @@
  */
 const RELAY_UNREACHABLE_PREFIX = "relay unreachable:";
 
-export const RELAY_UNREACHABLE_SHORT = "Can't reach the relay.";
+export const RELAY_UNREACHABLE_SHORT = "Can't reach the server.";
 export const RELAY_UNREACHABLE_MESSAGE =
-  "Can't reach the relay — check your VPN or network connection.";
+  "Can't reach the server. Check your VPN or network connection.";
 
 /**
  * Returns true when `error` carries the stable Rust-layer prefix indicating
@@ -31,4 +31,15 @@ export function isRelayUnreachableError(error: unknown): boolean {
     return error.startsWith(RELAY_UNREACHABLE_PREFIX);
   }
   return false;
+}
+
+/**
+ * Returns true only for the relay's own statement-deadline answer: HTTP 503
+ * `query timed out` or WS CLOSED `error: query timed out`. Retrying re-runs
+ * the same expensive query, so callers should not. Client-side timeouts
+ * (`request timed out`) are network stalls and stay retryable.
+ */
+export function isQueryDeadlineError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("query timed out");
 }

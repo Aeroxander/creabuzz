@@ -15,6 +15,32 @@ ignore = [
     # remove these when upstream catches up.
     { id = "RUSTSEC-2026-0194", reason = "transitive via rust-s3 and mesh-llm→plist; trusted-input XML only; no upstream fix available yet" },
     { id = "RUSTSEC-2026-0195", reason = "transitive via rust-s3 and mesh-llm→plist; trusted-input XML only; no upstream fix available yet" },
+    # The ignores below match upstream block/buzz main (same mesh-llm v0.76.2 pin).
+    # unsafe-libyaml 0.2.11 — unmaintained (repository archived 2024-03-25), not a
+    # vulnerability report. Transitive dep: serde_yaml → unsafe-libyaml (also via
+    # kube-client). The serde_yaml_ng fork uses the same crate, so removing it means
+    # migrating YAML parsing in buzz-agent, buzz-persona, buzz-relay, buzz-workflow,
+    # buzz-cli and desktop, and waiting for kube to drop serde_yaml.
+    { id = "RUSTSEC-2024-0449", reason = "transitive via serde_yaml and kube-client; unmaintained, not vulnerable; removal needs a YAML parser migration" },
+    # zip 8.6.0 < 9: extraction keeps setuid/setgid bits (0367), creates
+    # symlinks that escape the destination (0368) and applies permissions through
+    # symlinks (0369). Only path: buzz-mesh-smoke (dev) → mesh-llm v0.76.2 →
+    # mesh-llm-host-runtime / mesh-llm-plugin-manager / mesh-llm-system → zip 8.
+    # mesh-llm's zip readers copy entries manually and never call
+    # ZipArchive::extract or ZipStreamReader (checked at the pinned commit);
+    # recheck if that changes. Remove on the mesh-llm bump that ships
+    # Mesh-LLM/mesh-llm#2471.
+    { id = "RUSTSEC-2026-0367", reason = "zip 8.6.0 via buzz-mesh-smoke → mesh-llm v0.76.2; manual entry copy, never extracts; fix in unreleased mesh-llm#2471" },
+    { id = "RUSTSEC-2026-0368", reason = "zip 8.6.0 via buzz-mesh-smoke → mesh-llm v0.76.2; manual entry copy, never extracts; fix in unreleased mesh-llm#2471" },
+    { id = "RUSTSEC-2026-0369", reason = "zip 8.6.0 via buzz-mesh-smoke → mesh-llm v0.76.2; manual entry copy, never extracts; fix in unreleased mesh-llm#2471" },
+    { id = "RUSTSEC-2026-0429", reason = "zip 8.6.0 via buzz-mesh-smoke → mesh-llm v0.76.2; the bug is in ZipArchive::extract, which mesh-llm never calls (no extract or ZipStreamReader call at the pinned commit a0c1e66, checked 2026-11-04); recheck on the mesh-llm bump" },
+    # zbus 5 D-Bus crates (zvariant, zbus_names, zvariant_derive) — unmaintained,
+    # not vulnerable. Only path: buzz-mesh-smoke → mesh-llm → keyring 4 →
+    # zbus-secret-service-keyring-store / secret-service 5 → zbus 5.
+    # Remove when mesh-llm's keyring stack moves off zbus 5.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant via buzz-mesh-smoke → mesh-llm → keyring 4 → secret-service 5 → zbus 5; unmaintained, not vulnerable" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names via buzz-mesh-smoke → mesh-llm → keyring 4 → secret-service 5 → zbus 5; unmaintained, not vulnerable" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via buzz-mesh-smoke → mesh-llm → keyring 4 → secret-service 5 → zbus 5; unmaintained, not vulnerable" },
 ]
 
 [licenses]

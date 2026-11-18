@@ -1,0 +1,67 @@
+# The settlement keeper for one weekly-sale market: %i is the market's address. One pass of scripts/secondary-keeper.sh
+# (--once), started every 30 minutes by creaton-keeper@.timer. It settles a closed round inside its window and sends
+# nothing else: opening each week's round stays a deliberate act (KEEPER_OPEN=0; a per-market drop-in turns it on, see
+# README.md). install.sh copies this file to /etc/systemd/system/; read README.md before changing it.
+#
+# Written for systemd 255 (Ubuntu 24.04): LoadCredentialEncrypted= and the %d specifier need 250 or newer. The options were
+# run through `systemd-analyze verify` (deploy/ovh/keeper/test.sh); the unit has not run on the server yet, so the dry run
+# there (install.sh dry-run) is what proves the sandbox. Lines that most likely need a change if it does not are marked
+# UNVERIFIED.
+[Unit]
+Description=Creaton settlement keeper for market %i (one pass)
+Documentation=file:///srv/creaton/deploy/ovh/keeper/README.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# A pass reads the market and sends at most one settle. Ten minutes is far more than it needs: a hung node ends the pass
+# and the unit shows as failed, instead of waiting for ever.
+TimeoutStartSec=10min
+
+# No account of its own to manage, and nothing it can write outside its state folder.
+DynamicUser=yes
+StateDirectory=creaton-keeper
+UMask=0077
+
+# The node (RPC_URL=...) and anything else the owner sets for every market (root 0600). It is read by systemd as root, so
+# the service needs no access to it.
+EnvironmentFile=/etc/creaton-keeper/keeper.env
+# The key and its password reach the service only as credentials: files in a private in-memory folder (%d) that only this
+# service can read, gone when the pass ends. The keystore is cast's own encrypted JSON.
+LoadCredential=keystore:/etc/creaton-keeper/keystore.json
+# The password is sealed with systemd-creds (README.md, step 4). install.sh --plain-password swaps this one line for
+# LoadCredential=password:/etc/creaton-keeper/password (a root-only file) on a machine where sealing is not wanted.
+LoadCredentialEncrypted=password:/etc/creaton-keeper/password.cred
+# HOME is set because the script puts it on PATH; cast writes nothing there that matters. FOUNDRY_BIN is where install.sh
+# puts cast. KEEPER_OPEN=0 is settle only. (Settings in keeper.env win over these.)
+Environment=MARKET=%i KEEPER_KEYSTORE=%d/keystore KEEPER_PASSWORD_FILE=%d/password KEEPER_OPEN=0 KEEPER_DRY_RUN=0
+Environment=FOUNDRY_BIN=/usr/local/bin HOME=/var/lib/creaton-keeper
+ExecStart=/usr/local/lib/creaton-keeper/secondary-keeper.sh --once
+
+# Sandbox. The key holds a few cents of gas money, so this is belt and braces.
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+# The node is reached over the network; AF_UNIX is for local name lookups. UNVERIFIED on the server: if the dry run cannot
+# resolve the node's name, this and SystemCallFilter are the first two lines to look at.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM

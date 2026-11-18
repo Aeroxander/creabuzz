@@ -6,21 +6,30 @@
 
 import { Route as rootRouteImport } from "./routes/root";
 import { Route as workflowsRouteImport } from "./routes/workflows";
+import { Route as wikiRouteImport } from "./routes/wiki";
 import { Route as settingsRouteImport } from "./routes/settings";
 import { Route as remindersRouteImport } from "./routes/reminders";
 import { Route as pulseRouteImport } from "./routes/pulse";
 import { Route as projectsRouteImport } from "./routes/projects";
+import { Route as orgRouteImport } from "./routes/org";
+import { Route as launchpadRouteImport } from "./routes/launchpad";
 import { Route as agentsRouteImport } from "./routes/agents";
 import { Route as indexRouteImport } from "./routes/index";
 import { Route as workflowsDotworkflowIdRouteImport } from "./routes/workflows.$workflowId";
 import { Route as projectsDotprojectIdRouteImport } from "./routes/projects.$projectId";
 import { Route as messagesDotnewRouteImport } from "./routes/messages.new";
+import { Route as launchpadDotlaunchIdRouteImport } from "./routes/launchpad.$launchId";
 import { Route as channelsDotchannelIdRouteImport } from "./routes/channels.$channelId";
 import { Route as channelsDotchannelIdDotpostsDotpostIdRouteImport } from "./routes/channels.$channelId.posts.$postId";
 
 const workflowsRoute = workflowsRouteImport.update({
   id: "/workflows",
   path: "/workflows",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const wikiRoute = wikiRouteImport.update({
+  id: "/wiki",
+  path: "/wiki",
   getParentRoute: () => rootRouteImport,
 } as any);
 const settingsRoute = settingsRouteImport.update({
@@ -41,6 +50,16 @@ const pulseRoute = pulseRouteImport.update({
 const projectsRoute = projectsRouteImport.update({
   id: "/projects",
   path: "/projects",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const orgRoute = orgRouteImport.update({
+  id: "/org",
+  path: "/org",
+  getParentRoute: () => rootRouteImport,
+} as any);
+const launchpadRoute = launchpadRouteImport.update({
+  id: "/launchpad",
+  path: "/launchpad",
   getParentRoute: () => rootRouteImport,
 } as any);
 const agentsRoute = agentsRouteImport.update({
@@ -68,6 +87,11 @@ const messagesDotnewRoute = messagesDotnewRouteImport.update({
   path: "/messages/new",
   getParentRoute: () => rootRouteImport,
 } as any);
+const launchpadDotlaunchIdRoute = launchpadDotlaunchIdRouteImport.update({
+  id: "/launchpad/$launchId",
+  path: "/launchpad/$launchId",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const channelsDotchannelIdRoute = channelsDotchannelIdRouteImport.update({
   id: "/channels/$channelId",
   path: "/channels/$channelId",
@@ -83,12 +107,16 @@ const channelsDotchannelIdDotpostsDotpostIdRoute =
 export interface FileRoutesByFullPath {
   "/": typeof indexRoute;
   "/agents": typeof agentsRoute;
+  "/launchpad": typeof launchpadRoute;
+  "/org": typeof orgRoute;
   "/projects": typeof projectsRoute;
   "/pulse": typeof pulseRoute;
   "/reminders": typeof remindersRoute;
   "/settings": typeof settingsRoute;
+  "/wiki": typeof wikiRoute;
   "/workflows": typeof workflowsRoute;
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
@@ -97,12 +125,16 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   "/": typeof indexRoute;
   "/agents": typeof agentsRoute;
+  "/launchpad": typeof launchpadRoute;
+  "/org": typeof orgRoute;
   "/projects": typeof projectsRoute;
   "/pulse": typeof pulseRoute;
   "/reminders": typeof remindersRoute;
   "/settings": typeof settingsRoute;
+  "/wiki": typeof wikiRoute;
   "/workflows": typeof workflowsRoute;
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
@@ -112,12 +144,16 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport;
   "/": typeof indexRoute;
   "/agents": typeof agentsRoute;
+  "/launchpad": typeof launchpadRoute;
+  "/org": typeof orgRoute;
   "/projects": typeof projectsRoute;
   "/pulse": typeof pulseRoute;
   "/reminders": typeof remindersRoute;
   "/settings": typeof settingsRoute;
+  "/wiki": typeof wikiRoute;
   "/workflows": typeof workflowsRoute;
   "/channels/$channelId": typeof channelsDotchannelIdRoute;
+  "/launchpad/$launchId": typeof launchpadDotlaunchIdRoute;
   "/messages/new": typeof messagesDotnewRoute;
   "/projects/$projectId": typeof projectsDotprojectIdRoute;
   "/workflows/$workflowId": typeof workflowsDotworkflowIdRoute;
@@ -128,12 +164,16 @@ export interface FileRouteTypes {
   fullPaths:
     | "/"
     | "/agents"
+    | "/launchpad"
+    | "/org"
     | "/projects"
     | "/pulse"
     | "/reminders"
     | "/settings"
+    | "/wiki"
     | "/workflows"
     | "/channels/$channelId"
+    | "/launchpad/$launchId"
     | "/messages/new"
     | "/projects/$projectId"
     | "/workflows/$workflowId"
@@ -142,12 +182,16 @@ export interface FileRouteTypes {
   to:
     | "/"
     | "/agents"
+    | "/launchpad"
+    | "/org"
     | "/projects"
     | "/pulse"
     | "/reminders"
     | "/settings"
+    | "/wiki"
     | "/workflows"
     | "/channels/$channelId"
+    | "/launchpad/$launchId"
     | "/messages/new"
     | "/projects/$projectId"
     | "/workflows/$workflowId"
@@ -156,12 +200,16 @@ export interface FileRouteTypes {
     | "__root__"
     | "/"
     | "/agents"
+    | "/launchpad"
+    | "/org"
     | "/projects"
     | "/pulse"
     | "/reminders"
     | "/settings"
+    | "/wiki"
     | "/workflows"
     | "/channels/$channelId"
+    | "/launchpad/$launchId"
     | "/messages/new"
     | "/projects/$projectId"
     | "/workflows/$workflowId"
@@ -171,12 +219,16 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   indexRoute: typeof indexRoute;
   agentsRoute: typeof agentsRoute;
+  launchpadRoute: typeof launchpadRoute;
+  orgRoute: typeof orgRoute;
   projectsRoute: typeof projectsRoute;
   pulseRoute: typeof pulseRoute;
   remindersRoute: typeof remindersRoute;
   settingsRoute: typeof settingsRoute;
+  wikiRoute: typeof wikiRoute;
   workflowsRoute: typeof workflowsRoute;
   channelsDotchannelIdRoute: typeof channelsDotchannelIdRoute;
+  launchpadDotlaunchIdRoute: typeof launchpadDotlaunchIdRoute;
   messagesDotnewRoute: typeof messagesDotnewRoute;
   projectsDotprojectIdRoute: typeof projectsDotprojectIdRoute;
   workflowsDotworkflowIdRoute: typeof workflowsDotworkflowIdRoute;
@@ -190,6 +242,13 @@ declare module "@tanstack/react-router" {
       path: "/workflows";
       fullPath: "/workflows";
       preLoaderRoute: typeof workflowsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/wiki": {
+      id: "/wiki";
+      path: "/wiki";
+      fullPath: "/wiki";
+      preLoaderRoute: typeof wikiRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/settings": {
@@ -218,6 +277,20 @@ declare module "@tanstack/react-router" {
       path: "/projects";
       fullPath: "/projects";
       preLoaderRoute: typeof projectsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/org": {
+      id: "/org";
+      path: "/org";
+      fullPath: "/org";
+      preLoaderRoute: typeof orgRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/launchpad": {
+      id: "/launchpad";
+      path: "/launchpad";
+      fullPath: "/launchpad";
+      preLoaderRoute: typeof launchpadRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     "/agents": {
@@ -255,6 +328,13 @@ declare module "@tanstack/react-router" {
       preLoaderRoute: typeof messagesDotnewRouteImport;
       parentRoute: typeof rootRouteImport;
     };
+    "/launchpad/$launchId": {
+      id: "/launchpad/$launchId";
+      path: "/launchpad/$launchId";
+      fullPath: "/launchpad/$launchId";
+      preLoaderRoute: typeof launchpadDotlaunchIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
     "/channels/$channelId": {
       id: "/channels/$channelId";
       path: "/channels/$channelId";
@@ -275,12 +355,16 @@ declare module "@tanstack/react-router" {
 const rootRouteChildren: RootRouteChildren = {
   indexRoute: indexRoute,
   agentsRoute: agentsRoute,
+  launchpadRoute: launchpadRoute,
+  orgRoute: orgRoute,
   projectsRoute: projectsRoute,
   pulseRoute: pulseRoute,
   remindersRoute: remindersRoute,
   settingsRoute: settingsRoute,
+  wikiRoute: wikiRoute,
   workflowsRoute: workflowsRoute,
   channelsDotchannelIdRoute: channelsDotchannelIdRoute,
+  launchpadDotlaunchIdRoute: launchpadDotlaunchIdRoute,
   messagesDotnewRoute: messagesDotnewRoute,
   projectsDotprojectIdRoute: projectsDotprojectIdRoute,
   workflowsDotworkflowIdRoute: workflowsDotworkflowIdRoute,

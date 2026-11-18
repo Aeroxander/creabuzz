@@ -2,9 +2,10 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
+import { e2eOrigin, e2eUrl } from "../helpers/origin";
 
 const IMAGE_SHA = "c".repeat(64);
-const IMAGE_URL = "http://127.0.0.1:4173/buzz.svg";
+const IMAGE_URL = e2eUrl("/buzz.svg");
 const IMAGE_DESCRIPTOR = {
   url: IMAGE_URL,
   sha256: IMAGE_SHA,
@@ -49,7 +50,7 @@ test("no-selection spoiler applies to every composer paragraph", async ({
 }) => {
   await installSpoilerBridge(page);
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: "http://127.0.0.1:4173",
+    origin: e2eOrigin(),
   });
 
   await page.goto("/");
@@ -96,13 +97,16 @@ test("image attachments can be marked and sent as hidden spoilers", async ({
   await page.getByTestId("channel-general").click();
   await expect(page.getByTestId("chat-title")).toHaveText("general");
 
-  await page.getByRole("button", { name: "Attach image" }).click();
+  await page.getByRole("button", { name: "Attach file" }).click();
 
   const composer = page.getByTestId("message-composer");
-  await expect(composer.getByAltText("Attachment cccc")).toBeVisible();
+  await expect(
+    composer.getByRole("button", { name: "Attachment cccc", exact: true }),
+  ).toBeVisible();
 
   // Media spoilers are toggled per-attachment from the lightbox.
-  await composer.getByAltText("Attachment cccc").click();
+  await composer.getByTestId("composer-media-attachment").hover();
+  await page.getByTestId("composer-attachment-annotate").click();
   await page.getByTestId("composer-attachment-spoiler").click();
   await page.keyboard.press("Escape");
   await expect(composer.locator("[data-composer-media-spoiler]")).toBeVisible();
@@ -137,7 +141,7 @@ test("text spoiler stays usable while attachment upload is pending", async ({
 
   // Kick off the (delayed) upload first — the attach button lives in the
   // passive toolbar, which is replaced while formatting is expanded.
-  await page.getByRole("button", { name: "Attach image" }).click();
+  await page.getByRole("button", { name: "Attach file" }).click();
 
   await page.getByRole("button", { name: "Toggle formatting" }).click();
   const spoilerButton = page.getByRole("button", {
@@ -154,7 +158,9 @@ test("text spoiler stays usable while attachment upload is pending", async ({
   );
 
   await expect(
-    page.getByTestId("message-composer").getByAltText("Attachment cccc"),
+    page
+      .getByTestId("message-composer")
+      .getByRole("button", { name: "Attachment cccc", exact: true }),
   ).toBeVisible();
 });
 

@@ -58,14 +58,14 @@ export function RunOnSummarySection({
             </dl>
           ) : (
             <p className="text-xs text-muted-foreground">
-              No saved settings — the provider applies its defaults.
+              No saved settings. The provider applies its defaults.
             </p>
           )}
         </div>
       )}
       <p className="text-xs text-muted-foreground">
         These are the settings saved when the agent was created. Where an agent
-        runs can&apos;t be changed afterwards — create a new agent to run
+        runs can&apos;t be changed afterwards. Create a new agent to run
         somewhere else.
       </p>
     </div>

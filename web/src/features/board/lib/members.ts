@@ -1,0 +1,112 @@
+/**
+ * Who can read a private board, and how to name someone to add.
+ *
+ * The server keeps a board's members as a record (kind 39002) with one
+ * `["p", <pubkey>, "", <role>]` tag each. A person to add can be given as the
+ * public key the app shows (64 hex characters) or as an `npub…` address.
+ *
+ * Alias-free; `members.test.mjs` drives it under `node --test`.
+ */
+
+import { nip19 } from "nostr-tools";
+
+export interface BoardMember {
+  pubkey: string;
+  /** `owner`, `admin`, `member`, `guest` or `bot`. */
+  role: string;
+}
+
+/** The members a membership record lists, in the order the server wrote them. */
+export function parseMembers(tags: readonly string[][]): BoardMember[] {
+  const seen = new Set<string>();
+  const members: BoardMember[] = [];
+  for (const tag of tags) {
+    if (tag[0] !== "p" || !/^[0-9a-f]{64}$/.test(tag[1] ?? "")) continue;
+    if (seen.has(tag[1])) continue;
+    seen.add(tag[1]);
+    members.push({ pubkey: tag[1], role: tag[3] || "member" });
+  }
+  return members;
+}
+
+/** The people the server lets remove other people's posts and replies on a board: its owners and admins. */
+export function boardRemovers(
+  members: readonly BoardMember[],
+): ReadonlySet<string> {
+  return new Set(
+    members
+      .filter((member) => member.role === "owner" || member.role === "admin")
+      .map((member) => member.pubkey),
+  );
+}
+
+/**
+ * Whether `me` may take `target` off a board, as the server decides it: the board's owners may remove anyone else; its
+ * admins anyone below admin; nobody else, and nobody removes themself here (that is leaving).
+ */
+export function canRemoveMember(
+  members: readonly BoardMember[],
+  me: string | null,
+  target: string,
+): boolean {
+  if (me === null || me === target) return false;
+  const mine = members.find((member) => member.pubkey === me)?.role;
+  const theirs = members.find((member) => member.pubkey === target)?.role;
+  if (mine === "owner") return true;
+  if (mine === "admin") return theirs !== "owner" && theirs !== "admin";
+  return false;
+}
+
+/** The people who can add others to a board. */
+export function canAddMembers(
+  members: readonly BoardMember[],
+  me: string | null,
+): boolean {
+  if (me === null) return false;
+  const mine = members.find((member) => member.pubkey === me);
+  return mine?.role === "owner" || mine?.role === "admin";
+}
+
+/**
+ * The public key a person typed or pasted, or null when it is not one. Accepts
+ * 64 hex characters (any case) or an `npub…` address, with spaces around it.
+ */
+export function parsePersonInput(text: string): string | null {
+  const value = text.trim();
+  if (/^[0-9a-fA-F]{64}$/.test(value)) return value.toLowerCase();
+  if (value.startsWith("npub1")) {
+    try {
+      const decoded = nip19.decode(value);
+      return decoded.type === "npub" ? decoded.data : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * The boards a person is a member of, with their role on each, from the membership records (kind 39002) the server
+ * returned. Only the newest record for a board counts: an older one that still lists them is out of date.
+ */
+export function joinedBoards(
+  records: readonly {
+    created_at: number;
+    tags: string[][];
+  }[],
+  me: string,
+): Map<string, string> {
+  const newest = new Map<string, { created_at: number; tags: string[][] }>();
+  for (const record of records) {
+    const d = record.tags.find((tag) => tag[0] === "d")?.[1];
+    if (!d) continue;
+    const seen = newest.get(d);
+    if (!seen || record.created_at > seen.created_at) newest.set(d, record);
+  }
+  const joined = new Map<string, string>();
+  for (const [board, record] of newest) {
+    const mine = parseMembers(record.tags).find((m) => m.pubkey === me);
+    if (mine) joined.set(board, mine.role);
+  }
+  return joined;
+}

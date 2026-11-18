@@ -1,6 +1,18 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { RepoDetailPage } from "@/features/repos/ui/RepoDetailPage";
+import {
+  createFileRoute,
+  lazyRouteComponent,
+  redirect,
+} from "@tanstack/react-router";
+
+import { notContributorOnlyBuild } from "../lib/build-gates";
 
 export const Route = createFileRoute("/repos/$repoId")({
-  component: RepoDetailPage,
+  // Code browsing is not part of a contributor-only build: the address leads to the communities.
+  beforeLoad: () => {
+    if (!notContributorOnlyBuild()) throw redirect({ to: "/c", replace: true });
+  },
+  component: lazyRouteComponent(
+    () => import("@/features/repos/ui/RepoDetailPage"),
+    "RepoDetailPage",
+  ),
 });

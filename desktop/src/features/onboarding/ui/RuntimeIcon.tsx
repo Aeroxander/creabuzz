@@ -1,4 +1,5 @@
 import * as React from "react";
+import { APP_NAME } from "@/shared/constants/brand";
 import { TerminalSquare } from "lucide-react";
 
 import type { AcpRuntimeCatalogEntry } from "@/shared/api/types";
@@ -19,6 +20,7 @@ const RUNTIME_LOGOS: Record<string, string> = {
 export const PRESET_LOGOS: Record<string, string> = {
   devin: "/harness-logos/devin.svg",
   omp: "/harness-logos/omp.svg",
+  pi: "/harness-logos/pi.svg",
   grok: "/harness-logos/grok.svg",
   opencode: "/harness-logos/opencode.svg",
   kimi: "/harness-logos/kimi.png",
@@ -34,7 +36,7 @@ function isBuzzRuntime(runtime: AcpRuntimeCatalogEntry): boolean {
 export function getRuntimeDisplayLabel(
   runtime: AcpRuntimeCatalogEntry,
 ): string {
-  return isBuzzRuntime(runtime) ? "Buzz" : runtime.label;
+  return isBuzzRuntime(runtime) ? APP_NAME : runtime.label;
 }
 
 function getRuntimeLogoUrl(runtime: AcpRuntimeCatalogEntry): string | null {

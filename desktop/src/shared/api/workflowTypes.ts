@@ -2,6 +2,7 @@ export type WorkflowStatus = "active" | "disabled" | "archived";
 
 export type Workflow = {
   id: string;
+  revision: string;
   name: string;
   ownerPubkey: string;
   channelId: string | null;
@@ -41,6 +42,7 @@ export type WorkflowRun = {
   executionTrace: TraceEntry[];
   startedAt: number | null;
   completedAt: number | null;
+  errorCode: string | null;
   errorMessage: string | null;
   createdAt: number;
 };
@@ -52,7 +54,9 @@ export type WorkflowApprovalStatus =
   | "expired";
 
 export type WorkflowApproval = {
-  token: string;
+  /** Hex-encoded approval token hash. Pass as the `token` to the grant/deny
+   * mutation — it becomes the kind:46030/46031 `d` tag the relay resolves. */
+  approvalRef: string;
   workflowId: string;
   runId: string;
   stepId: string;

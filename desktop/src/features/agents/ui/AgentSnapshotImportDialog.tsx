@@ -170,7 +170,7 @@ export function PreviewBody({
         >
           <Lock className="mt-0.5 h-4 w-4 shrink-0" />
           <p>
-            This card is <strong>locked</strong> — its agent is encrypted to the
+            This card is <strong>locked</strong>. Its agent is encrypted to the
             original owner and agent keys. Your keys unlocked it; the full
             decrypted payload is shown below.
           </p>
@@ -204,7 +204,7 @@ export function PreviewBody({
 
       <p className="text-sm text-muted-foreground">
         A new agent will be created with a fresh keypair. The imported agent is
-        independent of the source — identity never travels.
+        independent of the source. Identity never travels.
       </p>
 
       {/* Memory section */}
@@ -226,7 +226,7 @@ export function PreviewBody({
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          No memory included — config only.
+          No memory included (config only).
         </p>
       )}
 
@@ -264,7 +264,7 @@ export function PreviewBody({
                 type="radio"
               />
               <span className="text-sm">
-                <strong>Clear</strong> — start with an empty allowlist (safer)
+                <strong>Clear</strong>: start with an empty allowlist (safer)
               </span>
             </label>
             <label className="flex cursor-pointer items-center gap-2">
@@ -276,7 +276,7 @@ export function PreviewBody({
                 type="radio"
               />
               <span className="text-sm">
-                <strong>Keep</strong> — copy source allowlist to the new agent
+                <strong>Keep</strong>: copy source allowlist to the new agent
               </span>
             </label>
           </div>

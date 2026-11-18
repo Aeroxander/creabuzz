@@ -1,6 +1,25 @@
 import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
+
+const sqliteWasmUrlPlugin = {
+  // op-sqlite web imports the sqlite wasm without ?url; rolldown's wasm
+  // fallback cannot load it inside the worker bundle. Rewrite the import
+  // to an explicit asset URL so Vite emits and serves the file normally.
+  name: "sqlite-wasm-url",
+  transform(code: string, id: string) {
+    if (
+      id.includes("@op-engineering/op-sqlite") &&
+      code.includes('"@sqlite.org/sqlite-wasm/sqlite3.wasm"')
+    ) {
+      return code.replace(
+        '"@sqlite.org/sqlite-wasm/sqlite3.wasm"',
+        '"@sqlite.org/sqlite-wasm/sqlite3.wasm?url"',
+      );
+    }
+  },
+};
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -17,14 +36,22 @@ export default defineConfig({
       ],
     }),
     react(),
+    sqliteWasmUrlPlugin,
   ],
   resolve: {
     alias: {
       "@": "/src",
+      // op-sqlite (web) imports the sqlite wasm through its peer's exports;
+      // under pnpm's virtual store that path is unreadable by rolldown, so
+      // resolve it to a checked-in copy of the same binary.
+      "@sqlite.org/sqlite-wasm/sqlite3.wasm": fileURLToPath(
+        new URL("./src/assets/sqlite3.wasm", import.meta.url),
+      ),
     },
   },
   server: {
     port: parseInt(process.env.VITE_PORT || "5173", 10),
     strictPort: true,
   },
+  worker: { format: "es", plugins: () => [sqliteWasmUrlPlugin] },
 });

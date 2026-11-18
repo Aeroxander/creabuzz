@@ -1,4 +1,5 @@
 import * as React from "react";
+import { APP_NAME } from "@/shared/constants/brand";
 import { invoke } from "@tauri-apps/api/core";
 import {
   AlertCircle,
@@ -15,10 +16,13 @@ import {
 
 import { useIdentityQuery } from "@/shared/api/hooks";
 import {
-  HOSTED_COMMUNITY_LIMIT as MAX_COMMUNITIES,
   HOSTED_COMMUNITY_SUFFIX as HOST_SUFFIX,
   hostedCommunityErrorMessage as errorMessage,
+  hostedCommunityQuotaLimit,
+  hostedCommunityQuotaUsed,
   hostedCommunityRelayUrl as relayUrl,
+  normalizedBoundKeyHex,
+  usableBoundIdentityNpub,
   type BuilderlabAuth,
   type HostedCommunityAvailabilityResponse as AvailabilityResponse,
   type HostedCommunitiesResponse as CommunitiesResponse,
@@ -30,8 +34,9 @@ import {
 } from "@/features/communities/hostedCommunityApi";
 import { CommunityIconSettingsCard } from "@/features/communities/ui/CommunityIconSettingsCard";
 import { useCommunities } from "@/features/communities/useCommunities";
-import { safeNpub } from "@/shared/lib/nostrUtils";
 import { useCommunityOnboarding } from "@/features/onboarding/communityOnboarding";
+import { safeNpub } from "@/shared/lib/nostrUtils";
+import { UNAVAILABLE_KEY_LABEL } from "@/shared/lib/pubkey";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -69,6 +74,9 @@ export function HostedCommunitiesSettingsCard() {
   const localPubkey = useIdentityQuery().data?.pubkey ?? null;
   const [auth, setAuth] = React.useState<BuilderlabAuth | null>(null);
   const [communities, setCommunities] = React.useState<HostedCommunity[]>([]);
+  const [quotaUsed, setQuotaUsed] = React.useState<number | null>(null);
+  const [quotaLimit, setQuotaLimit] = React.useState<number | null>(null);
+  const [canCreate, setCanCreate] = React.useState(true);
   const [identity, setIdentity] = React.useState<NostrIdentity | null>(null);
   const [name, setName] = React.useState("");
   const [availability, setAvailability] = React.useState<boolean | null>(null);
@@ -95,7 +103,7 @@ export function HostedCommunitiesSettingsCard() {
         errorMessage(
           identityResponse.error,
           identityResponse.correlation_id,
-          "Could not load the connected Buzz identity.",
+          "Could not load the connected identity.",
         ),
       );
     }
@@ -110,6 +118,9 @@ export function HostedCommunitiesSettingsCard() {
     }
     setIdentity(identityResponse.identity ?? null);
     setCommunities(communitiesResponse.communities ?? []);
+    setQuotaUsed(hostedCommunityQuotaUsed(communitiesResponse.quota_used));
+    setQuotaLimit(hostedCommunityQuotaLimit(communitiesResponse.quota_limit));
+    setCanCreate(communitiesResponse.can_create !== false);
   }, []);
 
   React.useEffect(() => {
@@ -160,12 +171,15 @@ export function HostedCommunitiesSettingsCard() {
       setAuth(null);
       setIdentity(null);
       setCommunities([]);
+      setQuotaUsed(null);
+      setQuotaLimit(null);
+      setCanCreate(true);
       setName("");
       setAvailability(null);
     });
 
   const connectIdentity = () =>
-    run("Connecting Buzz identity…", async () => {
+    run("Connecting your identity…", async () => {
       const response = await invoke<IdentityResponse>(
         "bind_builderlab_nostr_identity",
       );
@@ -174,7 +188,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             response.error,
             response.correlation_id,
-            "Could not connect the Buzz identity.",
+            "Could not connect the identity.",
           ),
         );
       }
@@ -192,7 +206,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             response.error,
             response.correlation_id,
-            "Could not unpair the Buzz identity.",
+            "Could not unpair the identity.",
           ),
         );
       }
@@ -205,15 +219,33 @@ export function HostedCommunitiesSettingsCard() {
   // to a different test identity). When that happens the community list and
   // Connect buttons operate on the *bound* npub's communities, so "Connect"
   // would drop you into a relay your local key isn't a member of. Detect it and
-  // block Connect + Create until the identities match.
-  const boundPubkey = identity?.pubkey_hex ?? null;
+  // block Connect + Create until the identities match. Both keys are compared
+  // in the one normalized hex form, so a padded or mixed-case spelling of
+  // the same key never reads as a mismatch, and an npub stored in the hex
+  // field is not a key at all.
+  // Identity rows display npubs; an unencodable or non-identity-length key
+  // renders the neutral label instead of leaking raw hex. The account's
+  // `pubkey_hex` is the authoritative binding key — the mismatch gate and
+  // every hosted-community operation act on it — so the displayed account
+  // npub is derived from it, not from the server-provided `npub` spelling.
+  // Nothing on this path proves the two fields encode the same key, and two
+  // individually valid but contradictory values must never make the screen
+  // show one identity while binding decisions act on another.
+  const boundHex = normalizedBoundKeyHex(identity?.pubkey_hex);
+  const localHex = normalizedBoundKeyHex(localPubkey);
+  const localNpub = localHex === null ? null : safeNpub(localHex);
+  const boundNpub = usableBoundIdentityNpub(identity);
+  // The account is only usable here when its authoritative `pubkey_hex`
+  // normalizes to a hex key: without that key this card cannot establish
+  // which identity the connected claim, Connect, and Create actions affect.
+  // An identity payload without a usable authoritative key therefore counts
+  // as a mismatch that requires recovery — never as a connected account.
+  const usableBoundIdentity = boundHex !== null;
   const identityMismatch = Boolean(
     identity &&
-      boundPubkey &&
-      localPubkey &&
-      boundPubkey.toLowerCase() !== localPubkey.toLowerCase(),
+      (!usableBoundIdentity ||
+        (boundHex !== null && localHex !== null && boundHex !== localHex)),
   );
-  const localNpub = localPubkey ? safeNpub(localPubkey) : null;
 
   const switchToDeviceIdentity = () =>
     run("Switching identity…", async () => {
@@ -230,7 +262,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             released.error,
             released.correlation_id,
-            "Could not release the previously connected Buzz identity.",
+            "Could not release the previously connected identity.",
           ),
         );
       }
@@ -243,11 +275,11 @@ export function HostedCommunitiesSettingsCard() {
         await loadAccount();
         throw new Error(
           bound.error.code === "pubkey_already_bound"
-            ? "This device's Buzz identity is already reserved by another Builderlab account, so it can't be connected here. Sign in with that account, or transfer the identity there first."
+            ? "This device's identity is already reserved by another Builderlab account, so it can't be connected here. Sign in with that account, or transfer the identity there first."
             : errorMessage(
                 bound.error,
                 bound.correlation_id,
-                "Could not connect this device's Buzz identity.",
+                "Could not connect this device's identity.",
               ),
         );
       }
@@ -324,7 +356,12 @@ export function HostedCommunitiesSettingsCard() {
   // Create (no separate "check" click). onChange clears the previous result, so
   // the indicator reflects the current input while typing.
   React.useEffect(() => {
-    if (!identity || identityMismatch || !normalizedName || !validName) {
+    if (
+      !usableBoundIdentity ||
+      identityMismatch ||
+      !normalizedName ||
+      !validName
+    ) {
       setCheckingName(false);
       return;
     }
@@ -352,16 +389,11 @@ export function HostedCommunitiesSettingsCard() {
       cancelled = true;
       window.clearTimeout(handle);
     };
-  }, [normalizedName, validName, identity, identityMismatch]);
+  }, [normalizedName, validName, usableBoundIdentity, identityMismatch]);
 
   const createCommunity = (event: React.FormEvent) => {
     event.preventDefault();
-    if (
-      !validName ||
-      !identity ||
-      identityMismatch ||
-      communities.length >= MAX_COMMUNITIES
-    )
+    if (!validName || !usableBoundIdentity || identityMismatch || !canCreate)
       return;
     void run("Creating community…", async () => {
       const availabilityResponse = await invoke<AvailabilityResponse>(
@@ -374,7 +406,7 @@ export function HostedCommunitiesSettingsCard() {
           errorMessage(
             availabilityResponse.error,
             availabilityResponse.correlation_id,
-            "That Buzz address is already taken.",
+            "That address is already taken.",
           ),
         );
       }
@@ -412,13 +444,13 @@ export function HostedCommunitiesSettingsCard() {
   };
 
   const busy = action != null;
-  const atCommunityLimit = communities.length >= MAX_COMMUNITIES;
+  const atCommunityLimit = !canCreate;
 
   return (
     <section className="space-y-6" data-testid="hosted-communities-settings">
       <SettingsSectionHeader
         title="Hosted communities"
-        description="Buzz works with any relay. This page is only for relay hosting provided by Block — sign in with a Builderlab account to create and manage Block-hosted communities. Builderlab sign-in is used on this page alone."
+        description="Creaton works with any relay. This page is only for relay hosting provided by Block. Sign in with a Builderlab account to create and manage Block-hosted communities. Builderlab sign-in is used on this page alone."
       />
 
       {error ? (
@@ -435,9 +467,12 @@ export function HostedCommunitiesSettingsCard() {
       ) : !auth ? (
         <div className="rounded-xl border border-border/70 p-5">
           <h3 className="font-medium">Sign in to manage hosted communities</h3>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Authentication opens in your browser and returns securely to Buzz.
-            You can use every other part of the app without signing in.
+          <p
+            className="mt-2 max-w-2xl text-sm text-muted-foreground/70"
+            data-settings-subcopy
+          >
+            Authentication opens in your browser and returns securely to
+            Creaton. You can use every other part of the app without signing in.
           </p>
           <Button
             className="mt-4"
@@ -476,13 +511,16 @@ export function HostedCommunitiesSettingsCard() {
           {!identity ? (
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/5 p-5">
               <h3 className="font-medium">
-                Link this account to your Buzz identity
+                Link this account to your identity
               </h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                This Builderlab account isn&apos;t linked to a Buzz identity
-                yet. Connect this device&apos;s key to create and own
-                communities under it — Buzz signs a one-time challenge locally,
-                so your private key never leaves Desktop.
+              <p
+                className="mt-2 text-sm text-muted-foreground/70"
+                data-settings-subcopy
+              >
+                This Builderlab account isn&apos;t linked to an identity yet.
+                Connect this device&apos;s key to create and own communities
+                under it. Creaton signs a one-time challenge locally, so your
+                private key never leaves Desktop.
               </p>
               <Button
                 className="mt-4"
@@ -492,7 +530,7 @@ export function HostedCommunitiesSettingsCard() {
                 {action ? (
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                 ) : null}
-                {action ?? "Connect Buzz identity"}
+                {action ?? "Connect your identity"}
               </Button>
             </div>
           ) : identityMismatch ? (
@@ -501,11 +539,14 @@ export function HostedCommunitiesSettingsCard() {
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
                 <div>
                   <h3 className="font-medium">
-                    This account is connected to a different Buzz identity
+                    This account is connected to a different identity
                   </h3>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Your Builderlab account owns communities under another Buzz
-                    key, so connecting them here would join a relay this device
+                  <p
+                    className="mt-2 text-sm text-muted-foreground/70"
+                    data-settings-subcopy
+                  >
+                    Your Builderlab account owns communities under another key,
+                    so connecting them here would join a relay this device
                     isn&apos;t a member of. Creating and connecting are paused
                     until the identities match.
                   </p>
@@ -513,12 +554,14 @@ export function HostedCommunitiesSettingsCard() {
                     <div className="flex flex-wrap gap-x-2">
                       <dt className="text-muted-foreground">Account uses</dt>
                       <dd className="font-mono">
-                        {identity.npub ?? boundPubkey}
+                        {boundNpub ?? UNAVAILABLE_KEY_LABEL}
                       </dd>
                     </div>
                     <div className="flex flex-wrap gap-x-2">
                       <dt className="text-muted-foreground">This device</dt>
-                      <dd className="font-mono">{localNpub ?? localPubkey}</dd>
+                      <dd className="font-mono">
+                        {localNpub ?? UNAVAILABLE_KEY_LABEL}
+                      </dd>
                     </div>
                   </dl>
                 </div>
@@ -537,10 +580,10 @@ export function HostedCommunitiesSettingsCard() {
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 p-4">
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Buzz
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" /> Your
                 identity connected
-                {identity.npub ? (
-                  <span className="font-mono text-xs">{identity.npub}</span>
+                {boundNpub ? (
+                  <span className="font-mono text-xs">{boundNpub}</span>
                 ) : null}
               </div>
               <UnpairIdentityButton
@@ -555,7 +598,8 @@ export function HostedCommunitiesSettingsCard() {
               <h3 className="font-medium">
                 Your communities
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
-                  {communities.length} of {MAX_COMMUNITIES} used
+                  {quotaUsed ?? communities.length}
+                  {quotaLimit === null ? " used" : ` of ${quotaLimit} used`}
                 </span>
               </h3>
               <Button
@@ -584,12 +628,20 @@ export function HostedCommunitiesSettingsCard() {
                       key={community.id ?? community.normalized_host ?? index}
                       community={community}
                       busy={busy}
-                      canConnect={!identityMismatch}
+                      canConnect={usableBoundIdentity && !identityMismatch}
                       showIconPicker={
                         relayHost(relayUrl(community)) ===
                         relayHost(activeCommunity?.relayUrl)
                       }
                       onConnect={() => {
+                        // Invocation guard: the Connect affordance only
+                        // renders for a usable, matching binding, but this
+                        // callback is the last gate — a click that lands after
+                        // a refresh returned an absent or unusable identity
+                        // must not start onboarding either.
+                        if (!usableBoundIdentity || identityMismatch) {
+                          return;
+                        }
                         const url = relayUrl(community);
                         if (url)
                           onboarding.start({
@@ -613,15 +665,18 @@ export function HostedCommunitiesSettingsCard() {
           >
             <div>
               <h3 className="font-medium">Create a community</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <p
+                className="mt-1 text-sm text-muted-foreground/70"
+                data-settings-subcopy
+              >
                 Choose the address your team will use to connect.
               </p>
             </div>
             {atCommunityLimit ? (
               <p className="text-sm text-muted-foreground">
-                You&apos;ve reached the limit of {MAX_COMMUNITIES} hosted
-                communities. Transfer one to free up a slot before creating
-                another.
+                You&apos;ve reached your hosted community creation limit.
+                Transferring a community may free an active slot; deleted
+                community addresses remain reserved.
               </p>
             ) : null}
             <div className="flex max-w-xl items-center gap-2">
@@ -629,7 +684,10 @@ export function HostedCommunitiesSettingsCard() {
                 aria-label="Community address"
                 autoComplete="off"
                 disabled={
-                  !identity || identityMismatch || busy || atCommunityLimit
+                  !usableBoundIdentity ||
+                  identityMismatch ||
+                  busy ||
+                  atCommunityLimit
                 }
                 maxLength={63}
                 onChange={(event) => {
@@ -663,7 +721,7 @@ export function HostedCommunitiesSettingsCard() {
             ) : null}
             <Button
               disabled={
-                !identity ||
+                !usableBoundIdentity ||
                 identityMismatch ||
                 !validName ||
                 availability === false ||
@@ -706,11 +764,11 @@ function UnpairIdentityButton({
       </Button>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Unpair this Buzz identity?</AlertDialogTitle>
+          <AlertDialogTitle>Unpair this {APP_NAME} identity?</AlertDialogTitle>
           <AlertDialogDescription>
-            Your Builderlab account will no longer be connected to this Buzz
-            key. You can reconnect any key later, but community actions stay
-            unavailable until you do.
+            Your Builderlab account will no longer be connected to this key. You
+            can reconnect any key later, but community actions stay unavailable
+            until you do.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -764,7 +822,10 @@ function CommunityRow({
         {showIconPicker ? <CommunityIconSettingsCard compact /> : null}
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{displayName}</p>
-          <p className="truncate text-xs text-muted-foreground">
+          <p
+            className="truncate text-xs text-muted-foreground/70"
+            data-settings-subcopy
+          >
             {community.normalized_host}
             {archived ? " · Archived" : ""}
           </p>
@@ -840,7 +901,7 @@ function CommunityRow({
                   New and existing connections stop and the address stays
                   reserved. Archiving can&apos;t be undone from here without
                   unarchiving, and the community keeps counting toward your
-                  quota — it isn&apos;t deleted.
+                  quota. It isn&apos;t deleted.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -901,8 +962,8 @@ function TransferOwnershipDialog({
           <DialogTitle>Transfer ownership</DialogTitle>
           <DialogDescription>
             Transfer {communityName} to another person. You become a regular
-            member. The recipient needs a connected Buzz identity first, and
-            this can&apos;t be undone.
+            member. The recipient needs a connected identity first, and this
+            can&apos;t be undone.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">

@@ -1,5 +1,7 @@
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
-import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { relayHttpUrl } from "@/shared/lib/relay-url";
+
+import { InviteRequestError } from "./invite-errors";
 
 const INVITE_REQUEST_TIMEOUT_MS = 15_000;
 
@@ -10,18 +12,23 @@ export type BrowserInviteClaim = {
   role: string;
 };
 
+/** Claim `code` on the server at `relayWsUrl`: the one the invite link was served from. */
 export async function claimInviteInBrowser(
   code: string,
+  relayWsUrl: string,
   policyReceipt?: string,
 ): Promise<BrowserInviteClaim> {
-  const url = `${relayHttpBaseUrl().replace(/\/+$/, "")}/api/invites/claim`;
+  const url = `${relayHttpUrl(relayWsUrl).replace(/\/+$/, "")}/api/invites/claim`;
   const body = JSON.stringify({
     code,
     policy_receipt: policyReceipt,
   });
   const authorization = await makeNip98AuthHeader(url, "POST", {
     body,
-    requireNip07: true,
+    // Membership is bound to the signing key, so it has to survive a reload —
+    // but that is the whole requirement. Demanding a browser extension locked
+    // out everyone using the identity this app creates for them.
+    requireDurable: true,
   });
   const response = await fetch(url, {
     method: "POST",
@@ -39,7 +46,7 @@ export async function claimInviteInBrowser(
   if (!response.ok) {
     const message =
       typeof json.error === "string" ? json.error : `HTTP ${response.status}`;
-    throw new Error(message);
+    throw new InviteRequestError(message, response.status);
   }
 
   return {

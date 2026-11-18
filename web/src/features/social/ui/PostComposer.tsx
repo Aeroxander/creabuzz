@@ -1,0 +1,591 @@
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
+import { ImagePlus, Megaphone } from "lucide-react";
+import { toast } from "sonner";
+
+import { useCommunityAccess } from "@/features/communities/use-access";
+import { OnboardingDialog } from "@/features/identity/ui/OnboardingDialog";
+import {
+  profileDisplayName,
+  resolveUserName,
+} from "@/features/profiles/use-profiles";
+import { cn } from "@/shared/lib/cn";
+import { existingUserPubkey } from "@/shared/lib/identity";
+import { uploadFailureWords } from "@/shared/lib/media-refusal";
+import { type FailureWords, failureWords } from "@/shared/lib/readable-error";
+import { uploadBlob } from "@/shared/lib/upload-blob";
+import { Button } from "@/shared/ui/button";
+import { TechnicalDetails } from "@/shared/ui/technical-details";
+import { UserAvatar } from "@/shared/ui/UserAvatar";
+
+import {
+  MAX_POST_CHARS,
+  type SignedEventLike,
+} from "../../feed/lib/feed-events";
+import { usePostToBoard } from "../../board/use-post-to-board";
+import { forgetOldMirrorSetting, mirrorOffered } from "../../feed/lib/mirror";
+import { raisesOffered } from "@/features/launchpad/lib/raises-offered";
+import { mentionUri } from "../lib/entity";
+import { buildLaunchUpdate } from "../lib/launch-update";
+import {
+  buildQuote,
+  buildSocialPost,
+  buildSocialReply,
+} from "../lib/post-events";
+import { useMyTeamLaunches } from "../use-launch-updates";
+import { usePeople } from "../use-people";
+import { useSocialPublish } from "../use-social-actions";
+import { useFollowing } from "../use-social-data";
+import { CREATE_ACCOUNT } from "@/features/identity/lib/account-copy";
+
+/** Grow the box to fit what is written in it. */
+function resize(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+}
+
+const MENTION_QUERY = /(?:^|\s)@([\p{L}\p{N}_]{0,32})$/u;
+
+/** People you follow whose name matches the `@query` being typed. */
+function useMentionSuggestions(query: string | null) {
+  const me = existingUserPubkey();
+  const following = useFollowing(me).data;
+  const people = usePeople(following?.slice(0, 200) ?? []);
+  return useMemo(() => {
+    if (query === null) return [];
+    const q = query.toLowerCase();
+    return Object.entries(people)
+      .filter(([, p]) =>
+        [p.name, p.display_name].some((n) => n?.toLowerCase().includes(q)),
+      )
+      .slice(0, 5);
+  }, [people, query]);
+}
+
+/**
+ * Write a post, a reply or a quote post. Mentions autocomplete from the people
+ * you follow; without an identity it offers to create one.
+ *
+ * With `postTo` (Home's composer), "Post to" chooses where a new post goes: General, the short-post timeline everyone
+ * sees, or a board, where a post has a title and can be longer.
+ */
+export function PostComposer({
+  replyTo,
+  quote,
+  placeholder = "What's happening?",
+  autoFocus = false,
+  onPosted,
+  postTo = false,
+  initialText = "",
+  teamUpdateFor = null,
+  testId = "social-composer",
+}: {
+  replyTo?: { root: SignedEventLike; parent: SignedEventLike } | null;
+  quote?: SignedEventLike | null;
+  placeholder?: string;
+  autoFocus?: boolean;
+  onPosted?: () => void;
+  /** Offer "Post to: General or a board". */
+  postTo?: boolean;
+  /** What the box starts with. */
+  initialText?: string;
+  /** Always a team update for this project (its announcement), with no choice to make. */
+  teamUpdateFor?: { author: string; id: string; name: string } | null;
+  testId?: string;
+}) {
+  const me = existingUserPubkey();
+  const [text, setText] = useState(initialText);
+  const [caret, setCaret] = useState(0);
+  const [active, setActive] = useState(0);
+  // "Also share with other apps" is for the post being written only: it starts unticked and is never saved.
+  const [mirror, setMirror] = useState(false);
+  const [onboarding, setOnboarding] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [problem, setProblem] = useState<FailureWords | null>(null);
+  const fileInput = useRef<HTMLInputElement | null>(null);
+  // Signed out, "reading needs no account" is said only where it is true: not on an invite-only server, and not
+  // before the server has said which it is.
+  const access = useCommunityAccess();
+  const readingIsOpen = !me && access.data === "open";
+  const shareOffered = mirrorOffered({
+    raisesOffered: raisesOffered(),
+    access: access.data,
+  });
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const publish = useSocialPublish();
+  const myProfile = usePeople(me ? [me] : [])[me ?? ""];
+  // Launch mode: a post that is an official update for one of your launches.
+  const teamLaunches = useMyTeamLaunches();
+  const [launchMode, setLaunchMode] = useState(false);
+  const [launchKey, setLaunchKey] = useState("");
+  const toBoard = usePostToBoard();
+  const [boardId, setBoardId] = useState("");
+  const [title, setTitle] = useState("");
+  const [boardBusy, setBoardBusy] = useState(false);
+  const onBoard = postTo && !quote && !replyTo && boardId !== "";
+  const canLaunchMode =
+    !quote && !replyTo && !onBoard && teamLaunches.length > 0;
+  const chosenLaunch =
+    teamLaunches.find((l) => `${l.author}:${l.id}` === launchKey) ??
+    teamLaunches[0];
+
+  const mention = MENTION_QUERY.exec(text.slice(0, caret));
+  const suggestions = useMentionSuggestions(mention ? mention[1] : null);
+
+  useEffect(() => {
+    if (autoFocus) ref.current?.focus();
+  }, [autoFocus]);
+
+  // An older build kept the box ticked for good; drop that so nothing reads it as a standing yes.
+  useEffect(() => forgetOldMirrorSetting(), []);
+
+  // Where the caret goes once a chosen mention has been written into the box. It is set in the same commit that writes the
+  // text, not a frame later: a key typed straight after choosing someone would otherwise land at the end and then have the
+  // caret put back in front of it.
+  const pendingCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const pos = pendingCaret.current;
+    const el = ref.current;
+    if (pos === null || !el) return;
+    pendingCaret.current = null;
+    el.focus();
+    el.setSelectionRange(pos, pos);
+    resize(el);
+  });
+
+  const listBase = useId();
+  if (!me) {
+    return (
+      <div className="border-b border-black/10 px-4 py-4 text-sm text-black/70 dark:border-white/10 dark:text-white/70">
+        <button
+          className="font-semibold underline underline-offset-2"
+          data-testid={`${testId}-sign-in`}
+          onClick={() => setOnboarding(true)}
+          type="button"
+        >
+          {CREATE_ACCOUNT}
+        </button>{" "}
+        to post, reply, vote and follow.
+        {readingIsOpen ? " Reading needs no account." : null}
+        {onboarding ? (
+          <OnboardingDialog
+            onDone={() => window.location.reload()}
+            onPasskeyDone={() => window.location.reload()}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
+  // A board post can be long (its title is the headline); the short-post limit is for General.
+  const remaining = onBoard
+    ? Number.POSITIVE_INFINITY
+    : MAX_POST_CHARS - [...text].length;
+
+  /**
+   * Upload a picture to the server and add its address to the text on a line of its own, where the post shows it as
+   * a picture. On a board, where the text is Markdown, it goes in as a Markdown picture, as the board's own form does.
+   */
+  const addPicture = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    setProblem(null);
+    try {
+      const uploaded = await uploadBlob(file);
+      const picture = onBoard ? `![](${uploaded.url})` : uploaded.url;
+      setText((current) => {
+        const before = current.trimEnd();
+        return `${before}${before ? "\n\n" : ""}${picture}\n`;
+      });
+      requestAnimationFrame(() => {
+        if (ref.current) resize(ref.current);
+      });
+    } catch (error) {
+      setProblem(
+        uploadFailureWords(
+          error,
+          "That picture didn't upload. Try again, or paste a link to a picture.",
+        ),
+      );
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
+  };
+
+  const insertMention = (pubkey: string) => {
+    if (!mention) return;
+    const start = caret - mention[1].length - 1;
+    const uri = `${mentionUri(pubkey)} `;
+    const next = text.slice(0, start) + uri + text.slice(caret);
+    const pos = start + uri.length;
+    pendingCaret.current = pos;
+    setText(next);
+    setCaret(pos);
+    setActive(0);
+  };
+
+  const submit = (event?: FormEvent) => {
+    event?.preventDefault();
+    if (onBoard) {
+      if (boardBusy) return;
+      setBoardBusy(true);
+      toBoard
+        .post(boardId, title, text)
+        .then(() => {
+          setText("");
+          setTitle("");
+          setProblem(null);
+          if (ref.current) ref.current.style.height = "auto";
+          toast.success("Posted to the board");
+          onPosted?.();
+        })
+        .catch((error) =>
+          setProblem(
+            failureWords(
+              error,
+              "Your post did not reach the board. Your words are still here. Try again.",
+            ),
+          ),
+        )
+        .finally(() => setBoardBusy(false));
+      return;
+    }
+    let template: ReturnType<typeof buildSocialPost>;
+    try {
+      template = quote
+        ? buildQuote({ text, quoted: quote })
+        : replyTo
+          ? buildSocialReply({
+              text,
+              root: replyTo.root,
+              parent: replyTo.parent,
+            })
+          : teamUpdateFor
+            ? buildLaunchUpdate({
+                text,
+                launch: { pubkey: teamUpdateFor.author, id: teamUpdateFor.id },
+              })
+            : launchMode && canLaunchMode && chosenLaunch
+              ? buildLaunchUpdate({
+                  text,
+                  launch: { pubkey: chosenLaunch.author, id: chosenLaunch.id },
+                })
+              : buildSocialPost(text);
+    } catch (error) {
+      // The draft's own problem (empty, too long) in the app's words.
+      setProblem(
+        failureWords(
+          error,
+          "This post can't be sent yet. Check it and try again.",
+        ),
+      );
+      return;
+    }
+    publish.mutate(
+      { ...template, mirror: mirror && shareOffered },
+      {
+        onSuccess: () => {
+          setText("");
+          setMirror(false);
+          setProblem(null);
+          setLaunchMode(false);
+          if (ref.current) ref.current.style.height = "auto";
+          onPosted?.();
+        },
+        onError: (error) =>
+          setProblem(
+            failureWords(
+              error,
+              "Your post was not sent. Your words are still here. Try again.",
+            ),
+          ),
+      },
+    );
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // An Enter that confirms an input method's conversion is the input method's (Safari: keyCode 229).
+    if (e.nativeEvent.isComposing || e.nativeEvent.keyCode === 229) return;
+    if (suggestions.length > 0) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        setActive((i) => (i + step + suggestions.length) % suggestions.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertMention((suggestions[active] ?? suggestions[0])[0]);
+        return;
+      }
+      if (e.key === "Escape") {
+        setCaret(0);
+        return;
+      }
+    }
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
+  };
+
+  const inputId = `${testId}-input`;
+  const listId = `${listBase}-mentions`;
+  const activeOption = Math.min(active, suggestions.length - 1);
+  return (
+    <form
+      className="flex gap-3 border-b border-black/10 px-4 pb-2 pt-3 dark:border-white/10"
+      data-testid={testId}
+      onSubmit={submit}
+    >
+      <UserAvatar
+        avatarUrl={myProfile?.picture ?? null}
+        className="h-10 w-10"
+        // No name yet: the account menu's "Your account", not initials from the key.
+        displayName={
+          myProfile?.display_name || myProfile?.name || "Your account"
+        }
+      />
+      <div className="relative min-w-0 flex-1">
+        {postTo && !quote && !replyTo && toBoard.boards.length > 0 ? (
+          <label className="mb-1.5 flex w-fit items-center gap-1.5 text-xs font-medium text-black/70 dark:text-white/70">
+            Post to
+            <select
+              className="rounded-full border border-black/15 bg-transparent px-2 py-0.5 text-xs font-semibold text-sky-700 dark:border-white/20 dark:text-sky-400"
+              data-testid={`${testId}-post-to`}
+              onChange={(e) => setBoardId(e.target.value)}
+              value={boardId}
+            >
+              <option value="">General</option>
+              {toBoard.boards.map((board) => (
+                <option key={board.id} value={board.id}>
+                  {board.name}
+                  {board.joined ? " (joined)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+        {onBoard ? (
+          <>
+            <label className="sr-only" htmlFor={`${inputId}-title`}>
+              Title
+            </label>
+            <input
+              className="mt-1 w-full bg-transparent pt-1 text-lg font-bold text-black outline-none placeholder:text-black/50 dark:text-white dark:placeholder:text-white/40"
+              data-testid={`${testId}-title`}
+              id={`${inputId}-title`}
+              maxLength={180}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Title"
+              value={title}
+            />
+          </>
+        ) : null}
+        <label className="sr-only" htmlFor={inputId}>
+          {quote
+            ? "Your comment"
+            : replyTo
+              ? "Your reply"
+              : onBoard
+                ? "Text (optional)"
+                : "Your post"}
+        </label>
+        <textarea
+          className="min-h-12 w-full resize-none bg-transparent pt-2 text-lg text-black outline-none placeholder:text-black/50 dark:text-white dark:placeholder:text-white/40"
+          data-testid={inputId}
+          id={inputId}
+          onChange={(e) => {
+            setText(e.target.value);
+            setCaret(e.target.selectionStart);
+            resize(e.target);
+          }}
+          aria-activedescendant={
+            suggestions.length > 0
+              ? `${listId}-option-${activeOption}`
+              : undefined
+          }
+          aria-autocomplete="list"
+          aria-controls={suggestions.length > 0 ? listId : undefined}
+          onKeyDown={onKeyDown}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+          placeholder={onBoard ? "Add details (optional)" : placeholder}
+          ref={ref}
+          rows={1}
+          value={text}
+        />
+        {suggestions.length > 0 ? (
+          <div
+            aria-label="Mention suggestions"
+            className="absolute left-0 top-14 z-30 w-72 overflow-hidden rounded-xl border border-black/10 bg-white py-1 shadow-lg dark:border-white/15 dark:bg-neutral-900"
+            id={listId}
+            role="listbox"
+          >
+            {suggestions.map(([pubkey, profile], i) => (
+              <button
+                aria-selected={i === active}
+                id={`${listId}-option-${i}`}
+                className={cn(
+                  "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-black/5 dark:hover:bg-white/10",
+                  i === active && "bg-black/5 dark:bg-white/10",
+                )}
+                key={pubkey}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  insertMention(pubkey);
+                }}
+                role="option"
+                type="button"
+              >
+                <UserAvatar
+                  avatarUrl={profile.picture ?? null}
+                  displayName={resolveUserName(profile, pubkey)}
+                  size="sm"
+                />
+                <span className="truncate font-semibold text-black dark:text-white">
+                  {profileDisplayName(profile, pubkey)}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+        {problem ? (
+          <>
+            <p
+              className="pb-1 text-xs text-red-600 dark:text-red-400"
+              data-testid={`${testId}-problem`}
+              role="alert"
+            >
+              {problem.text}
+            </p>
+            <TechnicalDetails
+              className="pb-1"
+              detail={problem.detail}
+              testId={`${testId}-problem-details`}
+            />
+          </>
+        ) : null}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-black/10 py-2 dark:border-white/10">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <input
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              aria-hidden
+              className="sr-only"
+              data-testid={`${testId}-file`}
+              onChange={(e) => void addPicture(e.target.files?.[0])}
+              ref={fileInput}
+              tabIndex={-1}
+              type="file"
+            />
+            <button
+              className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:text-sky-400 dark:hover:bg-white/10"
+              data-testid={`${testId}-picture`}
+              disabled={uploading || publish.isPending || boardBusy}
+              onClick={() => fileInput.current?.click()}
+              type="button"
+            >
+              <ImagePlus aria-hidden className="h-4 w-4" />
+              {uploading ? "Uploading…" : "Add a picture"}
+            </button>
+            {teamUpdateFor ? (
+              <span
+                className="flex items-center gap-1.5 text-xs font-semibold text-primary-ink"
+                data-testid={`${testId}-team-update`}
+              >
+                <Megaphone aria-hidden className="h-3.5 w-3.5" />
+                Team update for {teamUpdateFor.name}
+              </span>
+            ) : canLaunchMode ? (
+              <span className="flex items-center gap-2 text-xs">
+                <label className="flex items-center gap-2 font-semibold text-primary-ink">
+                  <input
+                    checked={launchMode}
+                    data-testid={`${testId}-launch-mode`}
+                    onChange={(e) => setLaunchMode(e.target.checked)}
+                    type="checkbox"
+                  />
+                  <Megaphone aria-hidden className="h-3.5 w-3.5" />
+                  Team update
+                </label>
+                {launchMode && teamLaunches.length > 1 ? (
+                  <select
+                    aria-label="Which project"
+                    className="rounded-md border border-border bg-transparent px-1.5 py-0.5 text-xs"
+                    data-testid={`${testId}-launch-pick`}
+                    onChange={(e) => setLaunchKey(e.target.value)}
+                    value={`${chosenLaunch?.author}:${chosenLaunch?.id}`}
+                  >
+                    {teamLaunches.map((l) => (
+                      <option
+                        key={`${l.author}:${l.id}`}
+                        value={`${l.author}:${l.id}`}
+                      >
+                        {l.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : launchMode && chosenLaunch ? (
+                  <span className="text-muted-foreground">
+                    for {chosenLaunch.name}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
+            {onBoard || !shareOffered ? null : (
+              <label className="flex items-center gap-2 text-xs text-black/60 dark:text-white/60">
+                <input
+                  checked={mirror}
+                  data-testid={`${testId}-mirror`}
+                  onChange={(e) => setMirror(e.target.checked)}
+                  type="checkbox"
+                />
+                Also share this post with other apps (copies there can&apos;t be
+                deleted)
+              </label>
+            )}
+          </div>
+          <span className="flex items-center gap-3">
+            {remaining < 200 ? (
+              <span
+                className={cn(
+                  "text-xs tabular-nums",
+                  remaining < 0
+                    ? "text-red-600 dark:text-red-400"
+                    : "text-black/60 dark:text-white/60",
+                )}
+              >
+                {remaining}
+              </span>
+            ) : null}
+            <Button
+              className="rounded-full px-5 font-semibold"
+              data-testid={`${testId}-submit`}
+              disabled={
+                uploading ||
+                (onBoard
+                  ? boardBusy || title.trim() === ""
+                  : publish.isPending || text.trim() === "" || remaining < 0)
+              }
+              size="sm"
+              type="submit"
+            >
+              {publish.isPending || boardBusy
+                ? "Posting…"
+                : quote
+                  ? "Post"
+                  : replyTo
+                    ? "Reply"
+                    : "Post"}
+            </Button>
+          </span>
+        </div>
+      </div>
+    </form>
+  );
+}

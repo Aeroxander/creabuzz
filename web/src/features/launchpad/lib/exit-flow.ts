@@ -1,0 +1,177 @@
+/**
+ * The exit/claim step orchestrator: a pure reducer plus a dependency-injected
+ * runner. Port of desktop `exitHooks.ts`' flow section (lines 900-1105), which
+ * mirrors `bidHooks.ts`' bidFlowReducer/runBidFlow. Web's money-action flows
+ * share this machine's contract:
+ *
+ * - every failure names its step (Review-Proven Rule 1) — the step vocabulary
+ *   is the closed set {checkpoint, exit, claim} here;
+ * - a mined revert resolves as `status: "reverted"` receipt data and is a
+ *   failed step, never a silent success;
+ * - retry re-sends only the remaining steps — completed steps are never
+ *   re-sent (Review-Proven Rule 5 prefix-consistency), so a mirror/link-only
+ *   failure can never re-send the money action.
+ *
+ * Send strategy (documented per the launchpad money-action contract): the
+ * composer in `my-bids.ts` emits the same `UnsignedTx` list for every sender.
+ * Both `identity/lib/sponsoredSender.ts` (one batched UserOp per `sendCalls`,
+ * atomic) and `lib/wallet-sender.ts` (one `eth_sendTransaction` per call,
+ * sequential) receive those bytes unmodified. This runner sends ONE step per
+ * `sendCalls` invocation because `checkpointThenExit` must re-derive the exit
+ * hints after the checkpoint lands (Review-Proven Rule 2) — the calls of the
+ * two-step plan are never composed ahead of the checkpoint.
+ */
+import type {
+  SendCallsResult,
+  SenderCall,
+} from "../../identity/lib/sponsoredSender.ts";
+import {
+  createStepFlow,
+  type StepFlowAction,
+  type StepFlowState,
+} from "@creaton/core/launchpad/step-flow.ts";
+import type { UnsignedTx } from "./bid-tx.ts";
+import type { ExitStepCall, ExitStepId } from "./my-bids.ts";
+import { EXIT_STEP_LABELS } from "./my-bids.ts";
+
+/**
+ * The receipt contract of one sent step. `status: "reverted"` is a mined
+ * revert (failed step, data not exception); a thrown send error is reported as
+ * `unknown` at the send layer and as a named failure here.
+ */
+export interface FlowReceipt {
+  txHash: string;
+  status: "success" | "reverted" | "unknown";
+}
+
+/**
+ * What a non-success receipt means, said honestly: a mined revert failed
+ * onchain, while an unknown outcome may never have been broadcast at all, so
+ * the reader is told to check before retrying. The same distinction the
+ * summon flow makes (its `summonOutcomeMessage`).
+ */
+export function flowOutcomeMessage(receipt: FlowReceipt): string {
+  if (receipt.status === "reverted") {
+    return `the step failed on the network (confirmation ID ${receipt.txHash})`;
+  }
+  return `the outcome of the step with confirmation ID ${receipt.txHash} is still unknown. Check whether it went through before trying again`;
+}
+
+/** The full observable state of one exit/claim attempt. */
+export type ExitFlowState = StepFlowState<ExitStepId, FlowReceipt>;
+
+/** State transition events, emitted by {@link runExitFlow}. */
+export type ExitFlowAction = StepFlowAction<ExitStepId, FlowReceipt>;
+
+const exitFlow = createStepFlow<ExitStepId, FlowReceipt>(
+  ["checkpoint", "exit", "claim"],
+  EXIT_STEP_LABELS,
+);
+
+/** The state before any attempt: nothing planned, nothing sent. */
+export const initialExitFlowState = exitFlow.initial;
+
+/** Pure step-orchestrator reducer (port of exitHooks.ts:963-1011). */
+export const exitFlowReducer = exitFlow.reducer;
+
+/** Steps not yet confirmed done — exactly what a retry will (re-)send. */
+export const remainingExitSteps = exitFlow.remaining;
+
+/** Steps already confirmed done — never re-sent on retry. */
+export const completedExitSteps = exitFlow.completed;
+
+/** Where a retry picks up. */
+export interface ExitResume {
+  completed: ReadonlySet<ExitStepId>;
+}
+
+/** Derive the {@link ExitResume} for {@link runExitFlow} from the state. */
+export function resumeExitFromState(state: ExitFlowState): ExitResume {
+  return { completed: completedExitSteps(state) };
+}
+
+/** Injected I/O for {@link runExitFlow}; tests script fakes here. */
+export interface ExitFlowDeps {
+  send: (call: UnsignedTx) => Promise<FlowReceipt>;
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : "the request failed";
+}
+
+/**
+ * Run (or resume) one exit/claim attempt: build + send each remaining step in
+ * order. Dispatches every transition through `dispatch`; stops at the first
+ * failure and names it. `resume.completed` steps are never re-sent.
+ */
+export async function runExitFlow(
+  execution: { calls: readonly ExitStepCall[] },
+  deps: ExitFlowDeps,
+  dispatch: (action: ExitFlowAction) => void,
+  resume: ExitResume = { completed: new Set() },
+): Promise<void> {
+  for (const entry of execution.calls) {
+    if (resume.completed.has(entry.step)) continue;
+    dispatch({ type: "step-start", step: entry.step });
+    let call: UnsignedTx;
+    try {
+      call = await entry.build();
+    } catch (err) {
+      dispatch({
+        type: "step-failed",
+        step: entry.step,
+        message: errorMessage(err),
+      });
+      return;
+    }
+    let receipt: FlowReceipt;
+    try {
+      receipt = await deps.send(call);
+    } catch (err) {
+      // Rule 1: the failure names its step; nothing downstream is attempted.
+      dispatch({
+        type: "step-failed",
+        step: entry.step,
+        message: errorMessage(err),
+      });
+      return;
+    }
+    if (receipt.status !== "success") {
+      // A mined revert (or unknown outcome) is a failed step — data, not an
+      // exception, and never a silent success.
+      dispatch({
+        type: "step-failed",
+        step: entry.step,
+        message: flowOutcomeMessage(receipt),
+      });
+      return;
+    }
+    dispatch({ type: "step-done", step: entry.step, receipt });
+  }
+}
+
+/**
+ * Bind a {@link CallSender} to {@link ExitFlowDeps}' one-call send. One
+ * `sendCalls` per step keeps the re-derivation window of `checkpointThenExit`
+ * and gives per-step receipts; the call bytes reach the sender unmodified.
+ */
+export function senderFlowDeps(sender: {
+  sendCalls(calls: SenderCall[]): Promise<SendCallsResult>;
+}): ExitFlowDeps {
+  return {
+    async send(call) {
+      const result = await sender.sendCalls([toSenderCall(call)]);
+      // Both adapters resolve only on an accepted send ("confirmed" when the
+      // sponsored path saw the receipt, "submitted" for a wallet hash). A
+      // mined revert surfaces as a thrown send error on the sponsored path or
+      // as state that does not move after refetch — the reducer's
+      // `status: "reverted"` contract stays for adapters that surface it.
+      return { txHash: result.txHash, status: "success" };
+    },
+  };
+}
+
+/** `UnsignedTx` → the sender seam's `SenderCall`, byte-preserving. */
+function toSenderCall(call: UnsignedTx): SenderCall {
+  return { to: call.to, data: call.data, value: call.value };
+}

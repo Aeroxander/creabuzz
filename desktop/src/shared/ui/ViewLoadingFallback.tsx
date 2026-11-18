@@ -1,4 +1,5 @@
 import { Card } from "@/shared/ui/card";
+import { BuzzLoadingState } from "@/shared/ui/BuzzLoadingState";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { cn } from "@/shared/lib/cn";
 import { channelChrome } from "@/shared/layout/chromeLayout";
@@ -8,8 +9,11 @@ type ViewLoadingFallbackKind =
   | "agents"
   | "channel"
   | "forum"
+  | "launchpad"
+  | "org"
   | "projects"
   | "pulse"
+  | "wiki"
   | "workflows";
 
 type ViewLoadingFallbackProps = {
@@ -402,7 +406,12 @@ export function ViewLoadingFallback({
       {shouldShowChannelHeader ? <LoadingHeaderSkeleton /> : null}
       {kind === "agents" ? <AgentsLoadingBody /> : null}
       {kind === "workflows" ? <CardListLoadingBody /> : null}
-      {kind === "projects" ? <CardListLoadingBody /> : null}
+      {kind === "projects" ? (
+        <BuzzLoadingState fill label="Loading projects" />
+      ) : null}
+      {kind === "launchpad" ? (
+        <BuzzLoadingState fill label="Loading launchpad" />
+      ) : null}
       {kind === "channel" ? (
         <ChannelLoadingBody hasHeader={shouldShowChannelHeader} />
       ) : null}
@@ -412,6 +421,10 @@ export function ViewLoadingFallback({
       {kind === "pulse" ? (
         <ChannelLoadingBody hasHeader={shouldShowChannelHeader} />
       ) : null}
+      {kind === "org" ? (
+        <BuzzLoadingState fill label="Loading Org Chart" />
+      ) : null}
+      {kind === "wiki" ? <BuzzLoadingState fill label="Loading wiki" /> : null}
     </div>
   );
 }

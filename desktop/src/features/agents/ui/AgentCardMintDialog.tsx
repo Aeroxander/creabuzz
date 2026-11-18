@@ -73,7 +73,7 @@ function FreeSharePathRow({
     >
       <p className="text-xs text-muted-foreground">
         Don’t want to spend money? Ordinary export shares the same importable
-        agent — free, just without the card art.
+        agent. It’s free, just without the card art.
       </p>
       {onExportInstead ? (
         <Button
@@ -225,20 +225,20 @@ export function AgentCardMintDialog({
                   data-testid="agent-card-key-readonly"
                 >
                   {keyLayer === "agent"
-                    ? "This agent's OpenAI key is set in its own agent settings — update it there."
+                    ? "This agent's OpenAI key is set in its own agent settings. Update it there."
                     : keyLayer === "persona"
-                      ? "This agent's OpenAI key comes from its linked persona settings — update it there."
-                      : "This agent's OpenAI key is set in the process environment — update it in your shell or launch config."}
+                      ? "This agent's OpenAI key comes from its linked persona settings. Update it there."
+                      : "This agent's OpenAI key is set in the process environment. Update it in your shell or launch config."}
                 </p>
               ) : (
                 <>
                   <p className="text-xs text-muted-foreground">
-                    Minting a card costs money — it generates the art and card
+                    Minting a card costs money. It generates the art and card
                     text through the OpenAI API with your key (typically well
                     under a dollar per mint, billed by OpenAI). The key is saved
                     as <code className="font-mono">OPENAI_API_KEY</code> in your
-                    agent defaults env — that's the row to update in Settings if
-                    you ever need to change it there.
+                    agent defaults env. That's the row to update in Settings if
+                    you ever need to change it.
                   </p>
                   <Button
                     className="w-fit px-0 text-xs"
@@ -310,7 +310,7 @@ export function AgentCardMintDialog({
                 value={styleNotes}
               />
               <p className="text-xs text-muted-foreground">
-                E.g. art “stormy night, lightning motif” or ability “Verify —
+                E.g. art “stormy night, lightning motif” or ability “Verify,
                 scry 2”. Your directions take priority; anything you leave open
                 is designed for you.
               </p>
@@ -324,7 +324,7 @@ export function AgentCardMintDialog({
                 <span className="text-xs text-muted-foreground">
                   {canLock
                     ? "Choose how much memory the embedded agent carries."
-                    : "Including memory needs a linked agent instance — start this agent once to enable it."}
+                    : "Including memory needs a linked agent instance. Start this agent once to enable it."}
                 </span>
               </div>
               {canLock ? (
@@ -354,8 +354,8 @@ export function AgentCardMintDialog({
               >
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <p>
-                  Memory is stored as <strong>plaintext</strong> in the card,
-                  readable by anyone who has the PNG — and cards are made for
+                  Memory is stored as <strong>plaintext</strong> in the card.
+                  Anyone who has the PNG can read it, and cards are made for
                   sharing. Lock the card or only share it with people you trust.
                 </p>
               </div>
@@ -369,7 +369,7 @@ export function AgentCardMintDialog({
                 <span className="text-xs text-muted-foreground">
                   {canLock
                     ? "Encrypt the embedded agent so only you and this agent can import it. Anyone else sees just the image."
-                    : "Locking needs a linked agent instance — start this agent once to enable it."}
+                    : "Locking needs a linked agent instance. Start this agent once to enable it."}
                 </span>
               </div>
               <Switch
@@ -427,10 +427,10 @@ export function AgentCardMintDialog({
               className="text-xs text-muted-foreground"
               data-testid="agent-card-cost-note"
             >
-              Minting calls the OpenAI API with your key and costs money —
+              Minting calls the OpenAI API with your key. It costs money:
               typically well under a dollar per mint, billed by OpenAI. It runs
-              in the background (takes a few minutes); you can keep using Buzz
-              while it works.
+              in the background and takes a few minutes. You can keep using
+              Creaton while it works.
             </p>
             <FreeSharePathRow
               disabled={false}

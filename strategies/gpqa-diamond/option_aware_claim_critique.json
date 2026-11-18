@@ -1,0 +1,67 @@
+{
+  "v": 1,
+  "name": "Option aware claim critique",
+  "description": "GPQA-Diamond bank strategy from arXiv 2609.22682 Appendix A: agents challenge one another’s scientific claims, document unresolved disagreements, and justify the final answer against the available options.",
+  "teamworkPrompt": "The team should engage in structured, adversarial critique, focusing on scientific claims and their implications within the problem’s context. Be mindful of practical selection constraints, such as the available options, when evaluating alternative interpretations or weaknesses. The final answer must be scientifically sound and pragmatically justified.",
+  "roles": {
+    "agent-0": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-1": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem.",
+    "agent-2": "Independent solver. Work out your own answer and key scientific claims before comparing them with the other agents, and evaluate every claim against the evidence given in the problem."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent independently analyzes the problem, proposes a solution, and identifies at least one key scientific claim or assumption in their own reasoning. Agents also propose specific checks or questions for at least one claim or assumption made by another agent, highlighting potential weaknesses or alternative interpretations."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Agents engage in a structured debate. Each agent defends their own claim(s) with scientific evidence and addresses the proposed checks or critiques from others. Critiques should not only address scientific accuracy but also consider whether an alternative interpretation or weakness significantly impacts the choice of answer, given the available options and any other problem-specific selection constraints."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "The team synthesizes a final reasoning chain. If there are unresolved scientific disagreements, they must be explicitly stated, along with the evidence for each side. If a pragmatic decision was made to select an answer due to practical selection constraints despite scientific ambiguities, this must also be explicitly documented with justification."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.2",
+    "bank": "gpqa-diamond",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper leaves Roles unset (shown when set); kind:44020 requires a prompt per roster slot, so all three slots carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

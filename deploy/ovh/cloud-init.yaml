@@ -1,0 +1,73 @@
+#cloud-config
+# First-boot setup for a single Creaton server on Ubuntu 24.04 (OVHcloud Public Cloud, or any provider that runs
+# cloud-init). Holds no secret. It prepares the machine; deploying Creaton on it is deploy/ovh/README.md, step 3.
+#
+# Before using it, replace GITHUB_USER with the GitHub account whose published SSH keys (https://github.com/<name>.keys)
+# may sign in. Or delete the ssh_import_id line and pass a key to the provider instead.
+users:
+  - default
+  - name: ubuntu
+    groups: [sudo, docker]
+    shell: /bin/bash
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_import_id: [gh:GITHUB_USER]
+
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - curl
+  - git
+  - jq
+  - openssl
+  - rsync
+  - ufw
+  - age
+  - fail2ban
+  - unattended-upgrades
+
+write_files:
+  - path: /etc/ssh/sshd_config.d/10-creaton.conf
+    permissions: "0644"
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      { "log-driver": "local", "log-opts": { "max-size": "20m", "max-file": "5" }, "live-restore": true }
+  - path: /etc/apt/apt.conf.d/20auto-upgrades
+    permissions: "0644"
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+
+runcmd:
+  # Docker Engine and the Compose plugin from Docker's own repository (the bundle needs Compose 2.24.4 or newer).
+  - install -m 0755 -d /etc/apt/keyrings
+  - curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+  - chmod a+r /etc/apt/keyrings/docker.asc
+  - echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" > /etc/apt/sources.list.d/docker.list
+  - apt-get update
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  - systemctl enable --now docker
+  - usermod -aG docker ubuntu
+  # A firewall that lets in SSH, HTTP and HTTPS and nothing else. The stack publishes only Caddy's 80 and 443.
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw allow 80/tcp
+  - ufw allow 443/tcp
+  - ufw --force enable
+  - systemctl enable --now fail2ban
+  - systemctl restart ssh
+  # Four GB of swap: the Rust release build is the one heavy step.
+  - fallocate -l 4G /swapfile
+  - chmod 600 /swapfile
+  - mkswap /swapfile
+  - swapon /swapfile
+  - echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  - install -d -o ubuntu -g ubuntu /srv/creaton
+  - install -d -m 0755 /var/lib/creaton-bootstrap
+  - echo "ok $(date -u +%FT%TZ) docker $(docker --version | cut -d' ' -f3 | tr -d ,) compose $(docker compose version --short)" > /var/lib/creaton-bootstrap/done

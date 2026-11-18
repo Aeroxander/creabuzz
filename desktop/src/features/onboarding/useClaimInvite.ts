@@ -39,7 +39,7 @@ export function useClaimInvite() {
         update(
           {
             error: isInviteExpiredError(error)
-              ? "This invite code has expired — ask for a new one."
+              ? "This invite code has expired. Ask for a new one."
               : isInviteExhaustedError(error)
                 ? "This invite has reached its use limit. Ask for a new invite."
                 : inviteErrorMessage(error),

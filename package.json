@@ -6,7 +6,9 @@
     "check": "pnpm -r check"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.6"
+    "@biomejs/biome": "^2.4.6",
+    "knip": "6.41.0",
+    "yaml": "2.9.0"
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19"

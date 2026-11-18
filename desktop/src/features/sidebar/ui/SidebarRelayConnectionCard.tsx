@@ -10,6 +10,7 @@ type SidebarRelayConnectionCardProps = {
   isActionDisabled?: boolean;
   actionTestId?: string;
   className?: string;
+  dismissClassName?: string;
   isConnected?: boolean;
   isReconnectPending: boolean;
   isWaitingOnReconnectHook?: boolean;
@@ -49,6 +50,7 @@ export function SidebarRelayConnectionCard({
 export function SidebarRelayConnectionCompactCard({
   actionTestId,
   className,
+  dismissClassName,
   isActionDisabled = false,
   isConnected = false,
   isReconnectPending,
@@ -67,7 +69,7 @@ export function SidebarRelayConnectionCompactCard({
 
   return (
     <SidebarCompactActionCard
-      actionAriaLabel={isConnected ? "Connected" : "Connect to relay"}
+      actionAriaLabel={isConnected ? "Connected" : "Connect to the server"}
       actionDisabled={isActionDisabled || isReconnectPending || isConnected}
       actionTestId={actionTestId}
       description={
@@ -77,7 +79,8 @@ export function SidebarRelayConnectionCompactCard({
             ? reconnectDescription
             : "Click to connect"
       }
-      dismissLabel="Dismiss relay notification"
+      dismissClassName={dismissClassName}
+      dismissLabel="Dismiss connection notification"
       iconKey={
         isConnected ? "connected" : isReconnectPending ? "pending" : "idle"
       }
@@ -101,7 +104,7 @@ export function SidebarRelayConnectionCompactCard({
           ? "Connected"
           : isReconnectPending
             ? reconnectTitle
-            : "Can't reach the relay"
+            : "Can't reach the server"
       }
       tone={isConnected ? "success" : "neutral"}
     />

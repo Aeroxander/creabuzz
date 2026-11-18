@@ -10,6 +10,8 @@
 const PURE_CACHE_KEY_PREFIXES = [
   "buzz-channel-messages.v1:",
   "buzz-channels.v1:",
+  "buzz-observed-unread.v1:",
+  "buzz-projects.v1:",
   "buzz-sidebar-skeleton-shape.v1:",
   "buzz-timeline-skeleton-shape.v1:",
   "buzz-user-labels.v1:",
@@ -131,7 +133,7 @@ function notifyStorageFull(): void {
     .then(({ toast }) => {
       toast.error("Local storage is full", {
         description:
-          "Buzz could not save some local data — read positions may not persist across restarts.",
+          "Creaton couldn't save some local data. Read positions may not persist across restarts. Free up space on this device, then try again.",
       });
     })
     .catch(() => {});

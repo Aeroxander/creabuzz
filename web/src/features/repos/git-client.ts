@@ -22,17 +22,17 @@ import {
   readTree,
   resolveRef,
 } from "isomorphic-git";
-import http from "isomorphic-git/http/web";
 import { makeNip98AuthHeader } from "@/shared/lib/nip98";
 import { relayHttpBaseUrl } from "@/shared/lib/relay-url";
+import { withGitDeadline } from "./lib/git-http";
 
 /** Get a repo-specific LightningFS instance backed by IndexedDB. */
-export function getFs(owner: string, repoName: string): LightningFS {
+function getFs(owner: string, repoName: string): LightningFS {
   return new LightningFS(`buzz-git-${owner}-${repoName}`);
 }
 
 /** Working directory inside the virtual FS. */
-export function getDir(owner: string, repoName: string): string {
+function getDir(owner: string, repoName: string): string {
   return `/${owner}/${repoName}`;
 }
 
@@ -85,7 +85,26 @@ export async function ensureClone(
 
   if (exists) {
     try {
-      await fetch({
+      // Bounded: a server that never finishes leaves the copy already here, instead of loading forever.
+      await withGitDeadline((http) =>
+        fetch({
+          fs,
+          http,
+          dir,
+          url,
+          ref,
+          depth: 1,
+          singleBranch: true,
+          headers,
+        }),
+      );
+    } catch {
+      // fetch may fail if ref hasn't changed — that's fine
+    }
+  } else {
+    // Bounded: a server that never finishes ends as "did not answer in time", not an endless load.
+    await withGitDeadline((http) =>
+      clone({
         fs,
         http,
         dir,
@@ -93,23 +112,10 @@ export async function ensureClone(
         ref,
         depth: 1,
         singleBranch: true,
+        noTags: true,
         headers,
-      });
-    } catch {
-      // fetch may fail if ref hasn't changed — that's fine
-    }
-  } else {
-    await clone({
-      fs,
-      http,
-      dir,
-      url,
-      ref,
-      depth: 1,
-      singleBranch: true,
-      noTags: true,
-      headers,
-    });
+      }),
+    );
   }
 
   return { fs, dir };
@@ -138,13 +144,13 @@ export async function readTreeEntries(
   }));
 }
 
-export interface FileContent {
+interface FileContent {
   content: string;
   isBinary: boolean;
 }
 
 /** Read a blob and decode as text. Detects binary by checking for NUL bytes. */
-export async function readFileContent(
+async function readFileContent(
   fs: LightningFS,
   dir: string,
   oid: string,
@@ -172,8 +178,8 @@ export async function readFileContent(
  *
  * The clone in IndexedDB always holds full bytes; these are display caps only.
  */
-export const TEXT_PREVIEW_LIMIT_BYTES = 1 * 1024 * 1024;
-export const IMAGE_PREVIEW_LIMIT_BYTES = 10 * 1024 * 1024;
+const TEXT_PREVIEW_LIMIT_BYTES = 1 * 1024 * 1024;
+const IMAGE_PREVIEW_LIMIT_BYTES = 10 * 1024 * 1024;
 
 /**
  * Discriminated view of a blob, suitable for rendering. The viewer component

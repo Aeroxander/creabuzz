@@ -1,0 +1,75 @@
+# Terms of use and privacy note (drafts)
+
+`TERMS-DRAFT.md` and `PRIVACY-DRAFT.md` are plain-language drafts for the operator and a lawyer. They are not legal
+advice. The lawyer's two reviews are answered in `LAWYER-FEEDBACK-RESPONSE.md`: the first point by point, the second in
+its section "Counsel's second round" (counsel's leans and preliminary views are recorded there as counsel's, not as
+final text). Hand that file back with the drafts. It also lists what is still open, who owns each item, and the order to
+settle things in.
+
+Two kinds of bracket are left on purpose. The guard that refuses to start while a bracket is left is in the compose
+start script only (see below); a direct run of the server serves brackets as they are. Deal with both kinds before
+launch:
+
+- A fill-in or a choice: the operator fills it in (name, address, emails, periods, hosting) or counsel chooses (legal
+  basis, controller, transfer safeguards, liability cap, governing law, copyright agent, EU dispute body).
+- A promise the software cannot keep yet, such as telling people before a change takes effect. Build the feature,
+  then remove the brackets, only once it exists and has been tested. If it will not be built before launch, delete the
+  sentence. Built and no longer in brackets: the web app asks signed-in people to agree again when the served text
+  changes (it compares the served version with the one agreed to in the browser), and the age box is on by default on
+  the compose stack.
+
+Before a public launch:
+
+1. Fill in every `[bracket]` in both files. The compose start guard reads the whole file, so a bracket that runs over
+   two lines, a lone `[` or a lone `]` is caught too and listed by line; brackets inside code fences, code spans and
+   Markdown links are skipped. Keeping each bracket on one line is still the easiest to read.
+2. Check the drafts against how the server is really hosted and configured (logs, backups, error reports, the chain
+   nodes, ZeroDev for passkey accounts, whether the AI service is on).
+3. Have a lawyer review them for the countries your users are in.
+4. Check the age box. The age is 18 everywhere (terms, sign-up box, privacy note, and the age text in the desktop and mobile apps). On a Creaton compose server the box
+   is on by default: the Creaton part of the env has `BUZZ_AGE_ATTESTATION_REQUIRED=true` and the compose file turns it
+   on even if `.env` leaves it out. On any other way of running the server the box only appears when
+   `BUZZ_AGE_ATTESTATION_REQUIRED=true` is set (see below). The sentences in the drafts that describe the box are no longer in brackets;
+   they are true only where the box shows, so check it on the live server.
+5. Change `Last updated` in both files whenever the text changes. `./run.sh policy-stamp` records the text, and the compose stack refuses to start when the text changed under the same date (deploy/compose/README.md, "First start", step 4).
+
+Backups are encrypted to a public key, and the compose stack refuses a backup without one (`deploy/compose/README.md`,
+"Backups"). Make the key before the first backup; the private key must not live on the server.
+
+Two operator guides were extended in the second round. `../operator-takedown-and-data-requests.md` now has sections for
+requests from the police, a court or another authority, for a copyright counter-notice and putting content back, and
+for what deleting does not reach (with a log template, `../operator-takedown-log-template.md`): read them before the
+pilot, because the terms promise a put-back and an appeals route that these sections turn into steps. The weekly sales
+brief has new sections: where the market may be offered (7.0), counsel's preliminary views (7.1), EU crypto-asset and
+anti-money-laundering rules (7.2), money transmission (7.3), the platform as a payer (7.4), and four more open items
+for the owner (section 8, items 17 to 20). None of them is needed for the testnet pilot, and all of them are needed
+before any real money.
+
+A separate real-money terms document is required before the pilot pays anyone money or any Shares can be sold. The
+current terms say the service does not do either. Employment status, tax, consumer rules for sales and the
+real-money age rules are left for that document. The weekly-sales legal track is in
+[the weekly sales brief for counsel](../v3-review/LAWYER-BRIEF-WEEKLY-SALES.md). Keep the two tracks in step: when
+one changes an answer (age, liability cap, governing law, copyright agent), change the other.
+
+The server shows the drafts at sign-up when they are set as environment values (the whole Markdown text, not a path):
+
+```bash
+export BUZZ_TERMS_OF_SERVICE_MARKDOWN="$(cat docs/policies/TERMS-DRAFT.md)"
+export BUZZ_PRIVACY_POLICY_MARKDOWN="$(cat docs/policies/PRIVACY-DRAFT.md)"
+export BUZZ_AGE_ATTESTATION_REQUIRED=true   # adds the "I am 18 years of age or older" box
+```
+
+The server itself does not check for brackets when it is started this way, so a direct run serves them as they are.
+Use the compose deployment for any real launch.
+
+On the compose deployment (`deploy/compose`, Creaton), name the finished files in `.env` instead
+(`BUZZ_TERMS_FILE=policies/terms.md`, `BUZZ_PRIVACY_FILE=policies/privacy.md`): `run.sh` reads them and refuses to start
+while a file still has a `[bracket]` left. The age box needs nothing more there: `.env.creaton.example` sets `BUZZ_AGE_ATTESTATION_REQUIRED=true`, and only
+`BUZZ_AGE_ATTESTATION_REQUIRED=false` in `.env` turns it off. The number 18 is written in three places: the web app
+(`web/src/features/identity/lib/account-copy.ts`), the desktop app (`desktop/src/shared/constants/age.ts`) and the mobile
+app (`mobile/lib/features/age_gate/age_restriction_page.dart`). Only the web app has the box and the terms screens; the
+mobile app has neither, and the owner decides how it is offered (N1 in the response file).
+
+It then serves them at `/api/join-policy/terms` and `/api/join-policy/privacy`, and sign-up asks people to agree before
+an account is made (D83). When neither is set, sign-up shows no terms at all, so set them before inviting anyone. The
+pages are plain Markdown without tables, so keep the drafts to headings, lists and paragraphs.

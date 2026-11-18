@@ -1,0 +1,67 @@
+/**
+ * The decision-routing view model (`docs/agentic-governance-design.md`
+ * sections 0 and 2) — what a proposal card must make legible: WHICH
+ * MECHANISM decided this, WHO held what authority, WHERE the receipts are.
+ * Pure routing/copy assembly here. Vote mechanics are `vote-tx.ts`.
+ */
+
+// Extension included on purpose: this module is driven by
+// `governance-view.test.mjs`, which does not resolve extensionless specifiers.
+import { PROPOSAL_STATES } from "./vote-tx.ts";
+
+export type ProposalKind = "plain" | "futarchy-budget" | "signal";
+
+export interface GovernanceRoute {
+  /** The D6-style mechanism chip — the first litmus fact. */
+  mechanism: string;
+  /** Whether a ballot belongs on this card at all (D1: signals never get one). */
+  ballot: boolean;
+  /** The plain-language why-this-mechanism line. */
+  rationale: string;
+}
+
+/**
+ * Every executable proposal uses the same Shares allocation ballot. Signals remain
+ * discussion records without execution authority.
+ */
+export function governanceRoute(kind: ProposalKind): GovernanceRoute {
+  switch (kind) {
+    case "signal":
+      return {
+        mechanism: "Deliberation",
+        ballot: false,
+        rationale:
+          "Sentiment aggregates through discussion, not a vote. Discuss in the channel or the linked issue.",
+      };
+    case "futarchy-budget":
+    case "plain":
+      return {
+        mechanism: "Shares vote",
+        ballot: true,
+        rationale:
+          "Shares back priorities and opposition is free. A proposal needs enough Shares taking part and enough of the votes in favour, and that support has to hold before it can take effect. Support stays movable until it does. Non-voting shares have no vote.",
+      };
+  }
+}
+
+/** D8: the record-only fallback — no onchain binding, no invented actions. */
+export const RECORD_ONLY_COPY =
+  "Record-only: this proposal is tracked here, but its actions are carried out by the treasury, following the recorded decision.";
+
+/** The second litmus fact: who acted, and under what authority (D5). */
+export function authorityLine(author: string, grant?: string | null): string {
+  const who = `Proposed by ${author}`;
+  return grant
+    ? `${who} · under grant ${grant}`
+    : `${who} · no recorded delegation`;
+}
+
+/** The third litmus fact: where the receipts are (D4). */
+export const RECEIPTS_COPY =
+  "Receipts: the proposal, each vote and the execution are recorded here, each linked to its transaction.";
+
+/** Decode `state(id)`'s uint256 word into majeur's label. */
+export function decodeProposalState(word: bigint | number): string {
+  const index = Number(word);
+  return PROPOSAL_STATES[index] ?? `Unknown(${index})`;
+}

@@ -1,0 +1,67 @@
+{
+  "v": 1,
+  "name": "Minority reasoning challenge",
+  "description": "AIME-2024 bank strategy from arXiv 2609.22682 Appendix A: a designated dissenter challenges synthesis steps that may suppress correct minority reasoning before the team revises its answer.",
+  "teamworkPrompt": "Integrate explicit adversarial challenge steps to preserve correct minority reasoning during synthesis.",
+  "roles": {
+    "agent-0": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem.",
+    "agent-1": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem.",
+    "agent-2": "Independent solver. Derive your own complete solution before comparing it with the other agents, and evaluate every claim against the mathematics of the problem."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Each agent presents their independent reasoning, explicitly outlining their key load-bearing values and one potential source of error or dissent in the consensus derivation."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "A designated dissenting agent then challenges any step where minority correct reasoning might be suppressed, citing specific evidence from their chain."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "After addressing the challenge, the team revises and finalizes the synthesis to robustly support the final answer."
+    }
+  ],
+  "finalWriter": "agent-0",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.1",
+    "bank": "aime-2024",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "paper leaves Roles unset (shown when set); kind:44020 requires a prompt per roster slot, so all three slots carry a derived independent-solver prompt.",
+      "paper names no final-writer field; finalWriter=agent-0 (default roster slot)."
+    ]
+  }
+}

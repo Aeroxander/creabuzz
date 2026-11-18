@@ -3,8 +3,10 @@ import { listen } from "@tauri-apps/api/event";
 import * as React from "react";
 
 import { useProfileQuery, useSelfProfileCache } from "@/features/profile/hooks";
+import { beginChannelMembershipWrite } from "@/shared/api/channelMembershipWrites";
 import { useIdentityQuery } from "@/shared/api/hooks";
-import { useHuddle } from "../HuddleContext";
+import { useHuddle, useHuddleLevels } from "../HuddleContext";
+import { useHuddleParticipantRoster } from "../hooks/useHuddleParticipantRoster";
 import type { HuddleAgentVoiceSettings } from "./AgentVoiceMenu";
 import { HuddleParticipantsControl } from "./ParticipantList";
 
@@ -19,7 +21,9 @@ type HuddleRosterState = {
   participants: string[];
   agent_pubkeys: string[];
   agent_voice_settings: Record<string, HuddleAgentVoiceSettings>;
+  parent_channel_id: string | null;
   ephemeral_channel_id: string | null;
+  huddle_thread_event_id: string | null;
 };
 
 function isVisible(state: HuddleRosterState | null) {
@@ -28,13 +32,20 @@ function isVisible(state: HuddleRosterState | null) {
 
 /** Larger, persistent roster for the companion huddle room window. */
 export function HuddleRoomHeader() {
-  const { activeSpeakers, isMuted, micConnected, micLevel, speakerLevels } =
-    useHuddle();
+  const { interruptAgentSpeech, isMuted, micConnected } = useHuddle();
+  const { activeSpeakers, micLevel, speakerLevels } = useHuddleLevels();
   const identityQuery = useIdentityQuery();
   const profileQuery = useProfileQuery();
   const selfProfileCache = useSelfProfileCache();
   const [state, setState] = React.useState<HuddleRosterState | null>(null);
   const currentPubkey = identityQuery.data?.pubkey ?? null;
+  const lifecycleParticipants = useHuddleParticipantRoster({
+    parentChannelId: state?.parent_channel_id ?? null,
+    ephemeralChannelId: state?.ephemeral_channel_id ?? null,
+    fallbackParticipants: state?.participants ?? [],
+    preservedParticipants: state?.agent_pubkeys ?? [],
+    huddleThreadEventId: state?.huddle_thread_event_id ?? null,
+  });
   const participantSpeakerLevels = React.useMemo(() => {
     const levels = { ...speakerLevels };
     if (currentPubkey) {
@@ -45,13 +56,15 @@ export function HuddleRoomHeader() {
   }, [currentPubkey, isMuted, micConnected, micLevel, speakerLevels]);
   const handleRemoveAgent = React.useCallback(
     async (pubkey: string) => {
-      if (!state?.ephemeral_channel_id) return;
       if (!window.confirm("Remove this agent from the huddle?")) return;
+      const record = beginChannelMembershipWrite();
       try {
-        await invoke("remove_channel_member", {
-          channelId: state.ephemeral_channel_id,
-          pubkey,
+        await invoke("remove_agent_from_huddle", {
+          agentPubkey: pubkey,
         });
+        if (state?.ephemeral_channel_id) {
+          record(state.ephemeral_channel_id);
+        }
         setState((current) =>
           current
             ? {
@@ -107,8 +120,11 @@ export function HuddleRoomHeader() {
         agentPubkeys={state.agent_pubkeys}
         agentVoiceSettings={state.agent_voice_settings}
         appearance="room"
+        onInterruptAgentSpeech={(agentPubkey) =>
+          void interruptAgentSpeech(agentPubkey)
+        }
         onRemoveAgent={handleRemoveAgent}
-        participants={state.participants}
+        participants={lifecycleParticipants}
         selfProfile={{
           avatarUrl:
             profileQuery.data?.avatarUrl ??

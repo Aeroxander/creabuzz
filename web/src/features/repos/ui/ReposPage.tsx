@@ -1,9 +1,19 @@
 import { BookMarked, GitBranch } from "lucide-react";
-import { toast } from "sonner";
-import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { useMemo, useState, type FormEvent } from "react";
 
-import buzzAppIcon from "@/assets/app-icon@3x.png";
+import { CreatonMark } from "@/shared/ui/CreatonMark";
+import {
+  normalizeRelayWsUrl,
+  relayWsUrl,
+  setStoredRelayWsUrl,
+} from "@/shared/lib/relay-url";
+import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { QueryError, errorMessage } from "@/shared/ui/query-error";
+import { SignRecovery } from "@/features/identity/ui/SignRecovery";
+import { useUserNames } from "@/features/profiles/use-profiles";
 import { mockRepos } from "../mock-repos";
 import { useRepos } from "../use-repos";
 import { ConnectButton } from "./ConnectButton";
@@ -33,7 +43,7 @@ function SearchEmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-black/5 dark:bg-white/10">
-        <GitBranch className="h-7 w-7 text-black/50 dark:text-white/50" />
+        <GitBranch className="h-7 w-7 text-black/60 dark:text-white/60" />
       </div>
       <h2 className="mt-4 text-lg font-semibold text-black dark:text-white">
         No matching repositories
@@ -47,22 +57,123 @@ function SearchEmptyState() {
 
 function CommunityEmptyState() {
   return (
-    <div className="flex flex-1 items-center justify-center bg-[#F3F3F3] px-4 py-16 text-center dark:bg-[#171717]">
+    <div className="flex flex-1 items-center justify-center bg-background px-4 py-16 text-center">
       <div className="flex w-full max-w-xl flex-col items-center px-6 py-10 sm:px-12 sm:py-12">
         <div
           className="h-16 w-16 overflow-hidden bg-black"
           style={{ borderRadius: "22.37%" }}
         >
-          <img alt="Buzz" className="h-full w-full" src={buzzAppIcon} />
+          <CreatonMark className="h-full w-full" label="Creaton" />
         </div>
         <h1 className="mt-6 text-2xl font-semibold tracking-tight text-black dark:text-white">
-          This community is empty
+          No code yet
         </h1>
         <p className="mt-2 max-w-md text-sm leading-relaxed text-black/60 dark:text-white/60">
-          Repositories pushed to this community will show up here. Open this
-          community in the Buzz desktop app to start pushing code.
+          Code pushed to this community shows up here.
         </p>
-        <ConnectButton className="mt-6" />
+        <Button asChild className="mt-6" variant="outline">
+          <Link
+            data-testid="repos-back-to-community"
+            params={{ host: new URL(relayWsUrl()).host }}
+            to="/c/$host"
+          >
+            Back to the community
+          </Link>
+        </Button>
+        <ConnectButton className="mt-3" />
+      </div>
+    </div>
+  );
+}
+
+function CommunityConnectionError({ error }: { error: Error }) {
+  const queryClient = useQueryClient();
+  const currentServer = relayWsUrl();
+  const [serverInput, setServerInput] = useState("");
+  const [connectError, setConnectError] = useState<string | null>(null);
+
+  const retry = () => {
+    setConnectError(null);
+    void queryClient.invalidateQueries({ queryKey: ["repos"] });
+  };
+
+  const connect = (event: FormEvent) => {
+    event.preventDefault();
+    if (!serverInput.trim()) {
+      setConnectError("Enter your community's server address to connect.");
+      return;
+    }
+    try {
+      const normalized = normalizeRelayWsUrl(serverInput);
+      setStoredRelayWsUrl(normalized);
+      window.location.reload();
+    } catch {
+      setConnectError(
+        "That doesn't look like a server address. It should look like community.example.com.",
+      );
+    }
+  };
+
+  return (
+    <div className="flex flex-1 items-center justify-center bg-background px-4 py-16 text-center">
+      <div className="flex w-full max-w-xl flex-col items-center px-6 py-10 sm:px-12 sm:py-12">
+        <div
+          className="h-16 w-16 overflow-hidden bg-black"
+          style={{ borderRadius: "22.37%" }}
+        >
+          <CreatonMark className="h-full w-full" label="Creaton" />
+        </div>
+        <QueryError
+          description="The server didn't answer, so this community's code can't be shown."
+          error={error}
+          message={errorMessage(error)}
+          onRetry={retry}
+          recovery={(onUnlocked) => (
+            <SignRecovery
+              autoResume
+              onUnlocked={onUnlocked}
+              showHeadline={false}
+            />
+          )}
+          relayUrl={currentServer}
+          testId="repos-load-error"
+          title="Couldn't load this community's code"
+        />
+        <p className="mt-2 max-w-md text-xs leading-relaxed text-black/60 dark:text-white/60">
+          The app is asking{" "}
+          <code className="rounded bg-black/10 px-1 py-0.5 dark:bg-white/10">
+            {currentServer}
+          </code>
+          . If that isn't your community's server, enter its address to connect.
+        </p>
+        <form
+          onSubmit={connect}
+          className="mt-4 flex w-full max-w-sm flex-col items-stretch gap-2"
+        >
+          <label className="sr-only" htmlFor="server-address">
+            Server address
+          </label>
+          <Input
+            id="server-address"
+            type="text"
+            placeholder="community.example.com"
+            value={serverInput}
+            onChange={(e) => setServerInput(e.target.value)}
+            aria-invalid={connectError ? true : undefined}
+            aria-describedby={connectError ? "server-address-error" : undefined}
+            className="border-black/10 bg-white text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+          />
+          <Button type="submit">Connect</Button>
+          {connectError && (
+            <p
+              id="server-address-error"
+              role="alert"
+              className="text-xs text-destructive"
+            >
+              {connectError}
+            </p>
+          )}
+        </form>
       </div>
     </div>
   );
@@ -88,13 +199,13 @@ export function ReposPage() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortOrder>("newest");
 
-  useEffect(() => {
-    if (error) {
-      toast.error("Failed to load repositories", {
-        description: error.message,
-      });
-    }
-  }, [error]);
+  // Every owner label in the list comes from one batched lookup; a hook per row
+  // would be one profile query per repository.
+  const ownerPubkeys = useMemo(
+    () => [...new Set((repos ?? []).map((repo) => repo.owner))],
+    [repos],
+  );
+  const ownerNames = useUserNames(ownerPubkeys);
 
   const filteredRepos = useMemo(() => {
     if (!repos) return [];
@@ -125,7 +236,7 @@ export function ReposPage() {
 
   if (isLoading) {
     return (
-      <div className="flex w-full flex-1 gap-8 bg-[#F3F3F3] px-4 py-8 dark:bg-[#171717]">
+      <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8">
         <div className="min-w-0 flex-1">
           <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-black dark:text-white">
             <BookMarked className="h-4 w-4" /> Repositories
@@ -141,12 +252,16 @@ export function ReposPage() {
     );
   }
 
+  if (error) {
+    return <CommunityConnectionError error={error} />;
+  }
+
   if (!repos || repos.length === 0) {
     return <CommunityEmptyState />;
   }
 
   return (
-    <div className="flex w-full flex-1 gap-8 bg-[#F3F3F3] px-4 py-8 dark:bg-[#171717]">
+    <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8">
       {/* Main content */}
       <div className="min-w-0 flex-1">
         {/* Mobile-only connect button */}
@@ -164,7 +279,7 @@ export function ReposPage() {
             placeholder="Find a repository..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 border-black/10 bg-white text-black placeholder:text-black/40 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
+            className="flex-1 border-black/10 bg-white text-black placeholder:text-black/60 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-white/40"
           />
           <select
             value={sort}
@@ -182,7 +297,12 @@ export function ReposPage() {
         {filteredRepos.length > 0 ? (
           <div className="divide-y divide-black/10 dark:divide-white/10">
             {filteredRepos.map((repo) => (
-              <RepoListItem key={repo.id} repo={repo} preview={showMockRepos} />
+              <RepoListItem
+                key={repo.id}
+                repo={repo}
+                ownerName={ownerNames(repo.owner)}
+                preview={showMockRepos}
+              />
             ))}
           </div>
         ) : (

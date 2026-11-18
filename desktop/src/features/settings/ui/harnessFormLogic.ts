@@ -154,5 +154,5 @@ export function definitionFromFormValues(
 export function commaArgError(args: ReadonlyArray<string>): string | null {
   const offender = args.find((a) => a.includes(","));
   if (offender === undefined) return null;
-  return `Argument "${offender}" contains a comma — arguments are passed via a comma-delimited transport and would be split at spawn time. Use separate argument entries instead.`;
+  return `Argument "${offender}" contains a comma. Commas split arguments when the agent starts, so use separate argument entries instead.`;
 }

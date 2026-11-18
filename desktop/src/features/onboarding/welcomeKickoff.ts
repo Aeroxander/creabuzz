@@ -5,6 +5,7 @@ import {
   useAcpRuntimesQuery,
   useManagedAgentsQuery,
 } from "@/features/agents/hooks";
+import { useAgentAccessOwnerOnlyQuery } from "@/features/agents/useAgentAccessOwnerOnly";
 import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
 import { clearActiveTurnsForAgentOnStop } from "@/features/agents/managedAgentRuntimeHooks";
 import { useCommunities } from "@/features/communities/useCommunities";
@@ -15,6 +16,7 @@ import {
   pickWelcomeTeamStarterAgentForRelay,
   WELCOME_TEAM_STARTERS,
   type WelcomeTeamStarterDefinition,
+  welcomeTeammateHasExpectedAccess,
 } from "@/features/onboarding/welcomeGuide";
 import { isWelcomeChannel } from "@/features/onboarding/welcome";
 import { getThreadReference } from "@/features/messages/lib/threading";
@@ -177,10 +179,10 @@ export function buildWelcomeKickoffOpener(
   if (introTeammates.length === 0) {
     const teammateNames = formatAgentNames(allTeammates);
     const teammatePhrase = teammateNames ? ` with ${teammateNames}` : "";
-    return `${greeting} Welcome to Buzz. This is your private home base, and I'm here${teammatePhrase} to help you get oriented or work through something you're building.\n\n${WELCOME_KICKOFF_CTA}`;
+    return `${greeting} Welcome to Creaton. This is your private home base, and I'm here${teammatePhrase} to help you get oriented or work through something you're building.\n\n${WELCOME_KICKOFF_CTA}`;
   }
 
-  return `${greeting} Welcome to Buzz. This is your private home base, and we're here to help you get oriented or work through something you're building.\n\n${introNames}, introduce ${introTeammates.length === 1 ? "yourself" : "yourselves"} in a sentence or two — share what you're good at and when to bring you in. Don't start any work yet.`;
+  return `${greeting} Welcome to Creaton. This is your private home base, and we're here to help you get oriented or work through something you're building.\n\n${introNames}, introduce ${introTeammates.length === 1 ? "yourself" : "yourselves"} in a sentence or two. Share what you're good at and when to bring you in. Don't start any work yet.`;
 }
 
 export function onlineWelcomeTeammates(
@@ -262,13 +264,13 @@ export function buildWelcomeKickoffCloser(
     return WELCOME_KICKOFF_CTA;
   }
   if (failedNames.length === 1 && delayedNames.length === 0) {
-    return `${failedNames[0]} is having trouble starting — you can check on them in Agents.\n\n${WELCOME_KICKOFF_CTA}`;
+    return `${failedNames[0]} is having trouble starting. You can check on them in Agents.\n\n${WELCOME_KICKOFF_CTA}`;
   }
   if (failedNames.length > 1 && delayedNames.length === 0) {
     return `${failedNames.join(" and ")} couldn't start. You can check on them in Agents; I'm still here to help.\n\n${WELCOME_KICKOFF_CTA}`;
   }
   if (failedNames.length === 0 && delayedNames.length === 1) {
-    return `${delayedNames[0]} is taking longer to reply — I'm still here to help.\n\n${WELCOME_KICKOFF_CTA}`;
+    return `${delayedNames[0]} is taking longer to reply. I'm still here to help.\n\n${WELCOME_KICKOFF_CTA}`;
   }
   const names = [...failedNames, ...delayedNames].join(" and ");
   return `${names} are taking longer than expected. I'm still here to help.\n\n${WELCOME_KICKOFF_CTA}`;
@@ -358,13 +360,15 @@ async function markerExists(channelId: string, marker: string) {
 export function welcomeTeammateNeedsRestart(
   agent: ManagedAgent,
   leadPubkey: string,
+  agentAccessOwnerOnly = false,
 ) {
   return (
     agent.status === "running" &&
     (agent.needsRestart ||
-      agent.respondTo !== "allowlist" ||
-      !agent.respondToAllowlist.some(
-        (pubkey) => normalizePubkey(pubkey) === normalizePubkey(leadPubkey),
+      !welcomeTeammateHasExpectedAccess(
+        agent,
+        leadPubkey,
+        agentAccessOwnerOnly,
       ))
   );
 }
@@ -496,6 +500,8 @@ export function useWelcomeKickoff(
   const { activeCommunity } = useCommunities();
   const runtimesQuery = useAcpRuntimesQuery();
   const managedAgentsQuery = useManagedAgentsQuery();
+  const agentAccessOwnerOnlyQuery = useAgentAccessOwnerOnlyQuery();
+  const agentAccessOwnerOnly = agentAccessOwnerOnlyQuery.data;
   const { globalConfig, isLoading: configLoading } = useGlobalAgentConfig();
   const channelId = activeChannel?.id ?? null;
   const isActiveWelcome = isWelcomeChannel(activeChannel);
@@ -556,7 +562,8 @@ export function useWelcomeKickoff(
       !channelId ||
       !isActiveWelcome ||
       configLoading ||
-      runtimesQuery.isPending
+      runtimesQuery.isPending ||
+      agentAccessOwnerOnly === undefined
     ) {
       return;
     }
@@ -610,7 +617,11 @@ export function useWelcomeKickoff(
             );
             if (
               isTeammate &&
-              welcomeTeammateNeedsRestart(agent, resolvedAgentSet.lead.pubkey)
+              welcomeTeammateNeedsRestart(
+                agent,
+                resolvedAgentSet.lead.pubkey,
+                agentAccessOwnerOnly,
+              )
             ) {
               return restartWelcomeTeammate(agent, {
                 onStopped: () => clearActiveTurnsForAgentOnStop(agent.pubkey),
@@ -687,6 +698,7 @@ export function useWelcomeKickoff(
     })();
   }, [
     activeCommunity?.relayUrl,
+    agentAccessOwnerOnly,
     channelId,
     configLoading,
     isActiveWelcome,

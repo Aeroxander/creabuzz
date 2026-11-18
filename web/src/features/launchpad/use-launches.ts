@@ -1,0 +1,939 @@
+import {
+  type InfiniteData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
+
+import { getAgentPubkey } from "@/shared/lib/agent-identity";
+import { signAsUser, existingUserPubkey } from "@/shared/lib/identity";
+import { signLaunchpadEventAsAgent } from "./lib/agent-launchpad";
+import type { SignedNostrEvent } from "@/shared/lib/nostr-signer";
+import type { SupplyAllocation } from "./lib/allocation";
+import type { UnlockPlan } from "./lib/unlock-plans";
+import type { VestingConfig } from "./models";
+import { queryEvents, type NostrEvent } from "@/shared/lib/nostr-client";
+import { publishEvent } from "@/shared/lib/publish-event";
+import { relayWsUrl } from "@/shared/lib/relay-url";
+import {
+  KIND_BUDGET_SPEND_RECEIPT,
+  KIND_CONTRIBUTION_RECORD,
+  KIND_LAUNCH_BID,
+  type KIND_LAUNCH_PROPOSAL,
+  type KIND_LAUNCH_RECEIPT,
+  KIND_LAUNCH_RECORD,
+  LAUNCHPAD_EVENT_KINDS,
+  KIND_ORG_BUDGET,
+  KIND_ORG_NODE,
+  KIND_SCORE_ROOT as LAUNCHPAD_SCORE_ROOT_KIND,
+  type KIND_LAUNCH_UPDATE,
+} from "@/shared/constants/kinds";
+import { boundChannelIds, hasChat } from "./lib/launch-chat";
+import { fundingContent, type FundingStatus } from "./lib/funding";
+import { type IpRecord, ipRecordContent } from "./lib/ip-record";
+import { type BuiltOn, builtOnCoordinate, type RemixTerms } from "./lib/remix";
+import { type RevenuePledge, revenuePledgeContent } from "./lib/revenue-pledge";
+import { carriedTags } from "./lib/record-input";
+import { supersedingTime } from "./lib/record-time";
+import { type FormerMember, type TeamMember, teamTags } from "./lib/team";
+import {
+  joinProjectPages,
+  LAUNCH_QUERY_LIMIT,
+  launchReportsFilter,
+  launchUpdatesFilter,
+  nextProjectPage,
+  projectListCut,
+  projectPageFilter,
+} from "./lib/launch-query";
+import {
+  ownRecordOrThrow,
+  pickById,
+  readOwnLaunchIds,
+  recordByIdFilter,
+} from "./lib/own-records";
+import {
+  acceptedPublisherPolicy,
+  collectScoreRoots,
+  scoreRootsQueryScope,
+  type ScorePublisherPolicy,
+} from "./lib/score-root-policy";
+import { viteEnv } from "./chain-config";
+import { evidenceQueryKey } from "./use-evidence";
+import {
+  KIND_APPROVAL_DENY,
+  KIND_APPROVAL_GRANT,
+  summarizeCommunityTrustSignals,
+  type CommunityTrustRecord,
+} from "./lib/trust-signals";
+import {
+  parseOrgBinding,
+  parseOrgBudget,
+  parseSpendReceipt,
+  type OrgBinding,
+  type OrgBudget,
+  type SpendReceipt,
+} from "./lib/org-money";
+import { readRemovedLaunchIds } from "./lib/launch-removals";
+import {
+  buildLaunches,
+  launchCoordinate,
+  launchRemovals,
+  type Launch,
+  type LaunchChat,
+  type LaunchRecord,
+  type LaunchStage,
+  parseLaunchRecord,
+  type ScoreRoot,
+} from "./models";
+
+export const launchesQueryKey = ["launchpad", "launches"];
+
+async function fetchTombstones(
+  coords: string[],
+  ids: string[] = [],
+): Promise<{
+  coordinates: Map<string, number>;
+  deletedIds: Set<string>;
+  /** One of the reads came back full: there may be removals it did not return. */
+  cut: boolean;
+}> {
+  let cut = false;
+  const removals: NostrEvent[] = [];
+  for (let i = 0; i < coords.length; i += 100) {
+    const group = coords.slice(i, i + 100);
+    if (group.length === 0) continue;
+    const page = await queryEvents(relayWsUrl(), {
+      kinds: [5],
+      "#a": group,
+      limit: TOMBSTONE_LIMIT,
+    });
+    if (page.length >= TOMBSTONE_LIMIT) cut = true;
+    removals.push(...page);
+  }
+  // By coordinate and time, the author's own only: a record published again after its removal shows again.
+  const out = {
+    coordinates: launchRemovals(removals),
+    deletedIds: new Set<string>(),
+    cut: false,
+  };
+  // NIP-09 `e`-tag tombstones hide individual mirrors — an agent-draft's
+  // Reject disposal (persona-drafting-loop D5).
+  for (let i = 0; i < ids.length; i += 100) {
+    const group = ids.slice(i, i + 100);
+    if (group.length === 0) continue;
+    const events = await queryEvents(relayWsUrl(), {
+      kinds: [5],
+      "#e": group,
+      limit: TOMBSTONE_LIMIT,
+    });
+    if (events.length >= TOMBSTONE_LIMIT) cut = true;
+    for (const event of events) {
+      for (const tag of event.tags) {
+        if (tag[0] === "e" && tag[1]) out.deletedIds.add(tag[1]);
+      }
+    }
+  }
+  out.cut = cut;
+  return out;
+}
+
+const NO_TOMBSTONES = {
+  coordinates: new Map<string, number>(),
+  deletedIds: new Set<string>(),
+  cut: false,
+};
+
+/** One page of project records, with the removals of the projects in it. */
+export interface ProjectPage {
+  events: NostrEvent[];
+  /** Coordinate and time of the latest removal, for each project in this page its author took off the list. */
+  removals: [string, number][];
+  /** The read of those removals came back full: a removed project may still be in the page. */
+  removalsCut: boolean;
+}
+
+/** One page of project records (kind 37001 alone), newest first from `until`, and which of them were removed. */
+export async function fetchProjectPage(
+  until: number | null,
+): Promise<ProjectPage> {
+  const events = await queryEvents(
+    relayWsUrl(),
+    projectPageFilter(until ?? undefined),
+  );
+  const coords = events
+    .map((e) => {
+      const d = e.tags.find((t) => t[0] === "d")?.[1];
+      return d ? launchCoordinate(e.pubkey, d) : null;
+    })
+    .filter((c): c is string => c !== null);
+  const tombstones =
+    coords.length > 0 ? await fetchTombstones(coords) : NO_TOMBSTONES;
+  return {
+    events,
+    removals: [...tombstones.coordinates],
+    removalsCut: tombstones.cut,
+  };
+}
+
+/** What is recorded against the projects: their news, and what their sales and DAOs reported. */
+interface LaunchMirrors {
+  events: NostrEvent[];
+  deletedIds: string[];
+  /** A read came back full: older news or reports were not read, so a list may show a project without them. */
+  cut: boolean;
+}
+
+/** The newest news and reports of every project, each in a bounded read of its own, apart from the projects. */
+export async function fetchLaunchMirrors(): Promise<LaunchMirrors> {
+  const [updates, reports] = await Promise.all([
+    queryEvents(relayWsUrl(), launchUpdatesFilter()),
+    queryEvents(relayWsUrl(), launchReportsFilter()),
+  ]);
+  const events = [...updates, ...reports];
+  const tombstones =
+    events.length > 0
+      ? await fetchTombstones(
+          [],
+          events.map((e) => e.id),
+        )
+      : NO_TOMBSTONES;
+  return {
+    events,
+    deletedIds: [...tombstones.deletedIds],
+    cut:
+      updates.length >= LAUNCH_QUERY_LIMIT ||
+      reports.length >= LAUNCH_QUERY_LIMIT ||
+      tombstones.cut,
+  };
+}
+
+/**
+ * The projects in the pages read so far, with what is recorded against them. Kept for the last pair of inputs only:
+ * every screen that lists projects asks with the same two cached reads, and would otherwise each build the list again.
+ * Keyed by the reads themselves, so another server's reads never answer with this one's projects.
+ */
+let composed: {
+  pages: readonly ProjectPage[];
+  mirrors: LaunchMirrors;
+  launches: Launch[];
+} | null = null;
+
+function composeLaunches(
+  pages: readonly ProjectPage[],
+  mirrors: LaunchMirrors,
+): Launch[] {
+  if (composed && composed.pages === pages && composed.mirrors === mirrors)
+    return composed.launches;
+  const removals = new Map<string, number>();
+  for (const page of pages)
+    for (const [coordinate, at] of page.removals)
+      removals.set(coordinate, Math.max(removals.get(coordinate) ?? 0, at));
+  const launches = buildLaunches(
+    [...joinProjectPages(pages), ...mirrors.events],
+    removals,
+    new Set(mirrors.deletedIds),
+  );
+  composed = { pages, mirrors, launches };
+  return launches;
+}
+
+const projectPagesKey = (relay: string) => [
+  ...launchesQueryKey,
+  "records",
+  relay,
+];
+
+/**
+ * The ids of `author`'s launch records that were ever taken off the list. `useLaunches` drops them, so a new project
+ * named like a removed one would otherwise get the removed one's id, and with it the removed project's DAO address.
+ * Read in pages (`readRemovedLaunchIds`), so the author's other deletions never hide an old removal.
+ */
+export async function fetchRemovedLaunchIds(author: string): Promise<string[]> {
+  return readRemovedLaunchIds(author, (filter) =>
+    queryEvents(relayWsUrl(), { ...filter }),
+  );
+}
+
+export function useRemovedLaunchIds(author: string | null) {
+  return useQuery({
+    queryKey: [...launchesQueryKey, "removed", author],
+    queryFn: () => fetchRemovedLaunchIds(author as string),
+    enabled: author !== null,
+    staleTime: 30_000,
+    // A project removed in another tab or on another device is seen when this one comes back into view.
+    refetchOnWindowFocus: true,
+  });
+}
+
+/**
+ * Every project on the server, a page at a time.
+ *
+ * The first page is read at once; `loadMore` reads the next ("Show more projects") while `hasMore`. A later page that
+ * fails keeps every project already read: `moreError` holds the failure and `loadMore` is the retry. `data`, `error`
+ * and the `is…` flags describe the list as a whole, as they did when it was one read, so a screen that only looks a
+ * project up needs no change.
+ */
+export function useLaunches() {
+  const relay = relayWsUrl();
+  const records = useInfiniteQuery({
+    queryKey: projectPagesKey(relay),
+    queryFn: ({ pageParam }) => fetchProjectPage(pageParam),
+    initialPageParam: null as number | null,
+    getNextPageParam: (_last, pages) => nextProjectPage(pages),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const mirrors = useQuery({
+    queryKey: [...launchesQueryKey, "mirrors", relay],
+    queryFn: fetchLaunchMirrors,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const pages = records.data?.pages;
+  const data = useMemo(
+    () =>
+      pages && mirrors.data ? composeLaunches(pages, mirrors.data) : undefined,
+    [pages, mirrors.data],
+  );
+  // A later page that failed is its own failure (`moreError`): the projects already read are still the list.
+  const error =
+    (records.isFetchNextPageError ? null : records.error) ?? mirrors.error;
+  const { refetch: refetchRecords, fetchNextPage } = records;
+  const { refetch: refetchMirrors } = mirrors;
+  const refetch = useCallback(
+    () => Promise.all([refetchRecords(), refetchMirrors()]),
+    [refetchRecords, refetchMirrors],
+  );
+  const loadMore = useCallback(() => void fetchNextPage(), [fetchNextPage]);
+  return {
+    data,
+    error,
+    isError: error !== null,
+    isSuccess: data !== undefined && error === null,
+    isLoading: records.isLoading || mirrors.isLoading,
+    isPending: records.isPending || mirrors.isPending,
+    isFetching: records.isFetching || mirrors.isFetching,
+    refetch,
+    /** There are older projects to read. */
+    hasMore: records.hasNextPage,
+    loadMore,
+    loadingMore: records.isFetchingNextPage,
+    moreError: records.isFetchNextPageError ? records.error : null,
+    /**
+     * The server may hold projects this list cannot reach (the page bound, or removals that could not all be read), so
+     * "that is every project" must not be said.
+     */
+    cut: pages
+      ? projectListCut(pages) || pages.some((page) => page.removalsCut)
+      : false,
+    /** Older news or reports were not read: a project in the list may be shown without some of them. */
+    newsCut: mirrors.data?.cut ?? false,
+  };
+}
+
+const scoreRootsQueryKey = ["launchpad", "score-roots"];
+
+/**
+ * The community's trustgraph score roots (kind 37006).
+ *
+ * A scoring operator publishes the proven Merkle root per epoch; clients
+ * verify individual score claims against it (`lib/trust-score.ts`). Reading
+ * them trusts nothing by itself — the query surface does not check
+ * signatures, so `collectScoreRoots` (`lib/score-root-policy.ts`) verifies
+ * every answer's id hash and signature before its `pubkey` means anything,
+ * then applies the community's accepted-publisher policy (an `authors` filter
+ * on the query *and* on the returned records) and returns the roots sorted
+ * newest-signed first.
+ *
+ * The relay URL and the policy are captured **once per query**: the query key
+ * (`scoreRootsQueryScope`) and the `queryFn` read the same captured values,
+ * so what was keyed cannot drift from what was fetched when either changes
+ * while the read is in flight.
+ */
+export async function fetchScoreRoots(
+  relayUrl: string = relayWsUrl(),
+  policy: ScorePublisherPolicy | null = acceptedPublisherPolicy({
+    relayUrl,
+    env: viteEnv(),
+  }),
+): Promise<ScoreRoot[]> {
+  return collectScoreRoots({
+    relayUrl,
+    policy,
+    kind: LAUNCHPAD_SCORE_ROOT_KIND,
+    query: (filter) => queryEvents(relayUrl, filter),
+  });
+}
+
+export function useScoreRoots() {
+  // One read, one policy: captured here so the key and the fetch agree.
+  const relay = relayWsUrl();
+  const policy = acceptedPublisherPolicy({ relayUrl: relay, env: viteEnv() });
+  return useQuery({
+    queryKey: [...scoreRootsQueryKey, scoreRootsQueryScope(relay, policy)],
+    queryFn: () => fetchScoreRoots(relay, policy),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+const orgMoneyQueryKey = ["launchpad", "org-money"];
+
+/** What `fetchOrgMoney` reads off the relay in one pass. */
+export interface OrgMoney {
+  bindings: OrgBinding[];
+  budgets: OrgBudget[];
+  spends: SpendReceipt[];
+}
+
+/**
+ * The community's org money plane — bound DAO roots (37010 carrying
+ * `content.onchain`), budgets (37012), and spend receipts (37014) — read
+ * through the same relay query surface as `fetchScoreRoots`. Parsing and the
+ * binding/allowance semantics live in `lib/org-money.ts` (cited there).
+ */
+export async function fetchOrgMoney(): Promise<OrgMoney> {
+  const events = await queryEvents(relayWsUrl(), {
+    kinds: [KIND_ORG_NODE, KIND_ORG_BUDGET, KIND_BUDGET_SPEND_RECEIPT],
+    limit: 500,
+  });
+  const bindings: OrgBinding[] = [];
+  const budgets: OrgBudget[] = [];
+  const spends: SpendReceipt[] = [];
+  for (const event of events) {
+    const binding = parseOrgBinding(event);
+    if (binding) {
+      bindings.push(binding);
+      continue;
+    }
+    const budget = parseOrgBudget(event);
+    if (budget) {
+      budgets.push(budget);
+      continue;
+    }
+    const spend = parseSpendReceipt(event);
+    if (spend) spends.push(spend);
+  }
+  budgets.sort((a, b) => b.createdAt - a.createdAt);
+  spends.sort((a, b) => b.createdAt - a.createdAt);
+  return { bindings, budgets, spends };
+}
+
+export function useOrgMoney() {
+  return useQuery({
+    queryKey: orgMoneyQueryKey,
+    queryFn: fetchOrgMoney,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+const trustSignalsQueryKey = ["launchpad", "trust-signals"];
+
+/**
+ * The community's contribution reviews (kind 37013) and workflow approval
+ * outcomes (kinds 46030/46031) — the community half of the trust surface.
+ *
+ * Bounded and explicitly kinded (the relay's p-gate) exactly like
+ * `fetchOrgMoney`/`fetchScoreRoots`; the parsing, NIP-ORG canonical
+ * resolution and approval linking live in `lib/trust-signals.ts`. A failed
+ * read rejects here so the card can say "unavailable" instead of rendering an
+ * empty ledger (Review-Proven Rule 1).
+ */
+export async function fetchTrustSignals(): Promise<CommunityTrustRecord> {
+  const events = await queryEvents(relayWsUrl(), {
+    kinds: [KIND_CONTRIBUTION_RECORD, KIND_APPROVAL_GRANT, KIND_APPROVAL_DENY],
+    limit: 300,
+  });
+  return summarizeCommunityTrustSignals(events);
+}
+
+export function useTrustSignals() {
+  return useQuery({
+    queryKey: trustSignalsQueryKey,
+    queryFn: fetchTrustSignals,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** What reading one project by id answered. */
+export interface LaunchById {
+  /** The project, or null when the server has none (or the link could mean several: see `several`). */
+  launch: Launch | null;
+  /**
+   * Set when the link names no author and more than one author has a project with this id: their public keys. None
+   * is picked for the reader.
+   */
+  several: string[] | null;
+  /**
+   * What is recorded against the project (updates, removals of them) filled a whole read, so there may be more than
+   * was read. The project itself is not in doubt.
+   */
+  cut: boolean;
+}
+
+/** How many removals one read of them asks for (`fetchTombstones`). */
+const TOMBSTONE_LIMIT = 200;
+
+/**
+ * One project read on its own, by id (and author, when known), with what is recorded against it. The list of every
+ * project is cut at its newest records, so an older project is not in it while it is still on the server: its page
+ * reads it this way instead of saying it was not found.
+ */
+export async function fetchLaunchById(
+  launchId: string,
+  author: string | undefined,
+): Promise<LaunchById> {
+  const relay = relayWsUrl();
+  const filter = recordByIdFilter(launchId, author);
+  const answered = await queryEvents(relay, { ...filter });
+  const pick = pickById(answered, launchId, author);
+  if (pick.kind === "none") return { launch: null, several: null, cut: false };
+  if (pick.kind === "several")
+    return { launch: null, several: pick.authors, cut: false };
+  const records = answered.filter(
+    (event) =>
+      event.kind === KIND_LAUNCH_RECORD &&
+      event.pubkey === pick.author &&
+      event.tags.some((tag) => tag[0] === "d" && tag[1] === launchId),
+  );
+  const coords = [launchCoordinate(pick.author, launchId)];
+  const mirrors = await queryEvents(relay, {
+    kinds: LAUNCHPAD_EVENT_KINDS.filter((kind) => kind !== KIND_LAUNCH_RECORD),
+    "#a": coords,
+    limit: LAUNCH_QUERY_LIMIT,
+  });
+  const tombstones = await fetchTombstones(
+    coords,
+    mirrors.map((e) => e.id),
+  );
+  return {
+    launch:
+      buildLaunches(
+        [...records, ...mirrors],
+        tombstones.coordinates,
+        tombstones.deletedIds,
+      ).find((launch) => launch.record.id === launchId) ?? null,
+    several: null,
+    cut: mirrors.length >= LAUNCH_QUERY_LIMIT || tombstones.cut,
+  };
+}
+
+/**
+ * `author`'s own project record with this id as the server has it now, or null when it has none. Read directly, not
+ * from the list of every project: what is published over a record starts from this.
+ */
+export async function fetchOwnRecord(
+  author: string,
+  launchId: string,
+): Promise<LaunchRecord | null> {
+  const events = await queryEvents(relayWsUrl(), {
+    ...recordByIdFilter(launchId, author),
+  });
+  // A record that is there but cannot be read is an error, never "no record".
+  return ownRecordOrThrow(events, author, launchId, parseLaunchRecord);
+}
+
+/**
+ * The id of every project record `author` has on the server, read page by page to the end (`readOwnLaunchIds`). A new
+ * project's id is checked against these, never against the list of every project: an older project missing from that
+ * list would otherwise be replaced by a new one with the same name.
+ */
+export function useOwnLaunchIds(author: string | null) {
+  const relay = relayWsUrl();
+  return useQuery({
+    queryKey: [...launchesQueryKey, "own-ids", relay, author],
+    queryFn: () =>
+      readOwnLaunchIds(author as string, (filter) =>
+        queryEvents(relay, { ...filter }),
+      ),
+    enabled: author !== null,
+    staleTime: 30_000,
+    // A project made in another tab or on another device is seen when this one comes back into view.
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useLaunch(
+  launchId: string | undefined,
+  author: string | undefined,
+) {
+  const query = useLaunches();
+  const listed = useMemo(() => {
+    if (launchId === undefined) return undefined;
+    const matches = (query.data ?? []).filter(
+      (l) =>
+        l.record.id === launchId &&
+        (author === undefined || l.record.author === author),
+    );
+    // A link with no author that several listed projects answer to is not settled by the list: the project's own read
+    // below says which authors hold the id, and none is picked for the reader.
+    return matches.length === 1 ? matches[0] : undefined;
+  }, [query.data, launchId, author]);
+  // Not in the list (which is cut at its newest records), or the list could not be read: the project itself is read.
+  const relay = relayWsUrl();
+  const direct = useQuery({
+    queryKey: [...launchesQueryKey, "one", relay, launchId, author ?? null],
+    queryFn: () => fetchLaunchById(launchId as string, author),
+    enabled: launchId !== undefined && !listed && !query.isLoading,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+  const launch = listed ?? direct.data?.launch ?? undefined;
+  const { refetch: refetchList } = query;
+  const { refetch: refetchOne } = direct;
+  return {
+    ...query,
+    launch,
+    /** The link names no author and these authors each have a project with this id: the reader chooses. */
+    several: launch ? null : (direct.data?.several ?? null),
+    /** The project was read on its own and what is recorded against it may not all have been read. */
+    cut: !listed && Boolean(direct.data?.launch && direct.data.cut),
+    isLoading:
+      query.isLoading ||
+      (!listed && launchId !== undefined && direct.isLoading),
+    // A project that was read is shown, whatever else failed; "not found" is said only when its own read answered.
+    error: launch ? null : (direct.error ?? (direct.data ? null : query.error)),
+    refetch: () => {
+      void refetchOne();
+      return refetchList();
+    },
+  };
+}
+
+export function useIsFounder(launch: Launch | undefined): boolean {
+  const pubkey = existingUserPubkey();
+  return Boolean(launch && pubkey && launch.record.author === pubkey);
+}
+
+export async function publishMirror(
+  input: {
+    kind: number;
+    tags: string[][];
+    content: Record<string, unknown> | string;
+    /** Overrides "now" (user-signed records only), to supersede a record. */
+    createdAt?: number;
+  },
+  auth?: {
+    signEvent: (template: {
+      kind: number;
+      tags: string[][];
+      content: string;
+    }) => Promise<SignedNostrEvent | null>;
+    pubkey: string;
+  },
+): Promise<NostrEvent> {
+  const content =
+    typeof input.content === "string"
+      ? input.content
+      : JSON.stringify(input.content);
+  const signed = auth
+    ? await auth.signEvent({
+        kind: input.kind,
+        tags: input.tags,
+        content,
+      })
+    : await signAsUser({
+        kind: input.kind,
+        tags: input.tags,
+        content,
+        ...(input.createdAt === undefined
+          ? {}
+          : { created_at: input.createdAt }),
+      });
+  if (!signed) throw new Error("signing failed");
+  const result = await publishEvent(relayWsUrl(), signed, {
+    signAuth: signAsUser,
+  });
+  if (!result.accepted) {
+    throw new Error(result.message ?? "Server rejected the event");
+  }
+  return signed;
+}
+
+export interface TokenPlan {
+  mode: "mint" | "dao";
+  name: string;
+  symbol: string;
+  supply: string;
+}
+
+export interface CreateLaunchInput {
+  /** Publish as the browser agent (NIP-OA attested when possible). */
+  asAgent?: boolean;
+  id: string;
+  name: string;
+  pitch: string;
+  longPitch?: string;
+  ipList?: string[];
+  updateCadence?: string;
+  /** How the team's reviewers will work, in the founder's words (see `LaunchRecord.reviewerTerms`). */
+  reviewerTerms?: string;
+  /** Cover image URL (optional). */
+  image?: string;
+  /** A topic; published as a lowercase `t` tag, which Discover browses by. */
+  category?: string;
+  stage: LaunchStage;
+  /** "unlisted" keeps the project out of every list of projects (`lib/listing.ts`); left out, it is listed. */
+  listing?: "unlisted";
+  /**
+   * When the project was first published (seconds). Left out for a new project, which is stamped now; every later
+   * save carries the first one's, so lists that order by it never move a project for being saved again.
+   */
+  startedAt?: number;
+  /**
+   * Tags the record carries that no form here owns, carried through every save so none is erased: the agent the
+   * record says wrote it, the projects it links to (`a` tags other than the one it is built on), and the bid gates.
+   */
+  agent?: string;
+  projects?: readonly string[];
+  hooks?: readonly { address: string; bucket: string }[];
+  /** The team the founder added, and who left it (`lib/team.ts`): tags on the record, which the server reads. */
+  team?: readonly TeamMember[];
+  formerTeam?: readonly FormerMember[];
+  /**
+   * The project's funding stance and who it wants to hear from
+   * (`lib/funding.ts`, plan §2). Optional: a record written before this
+   * existed simply declares nothing.
+   */
+  funding?: FundingStatus;
+  chainId: string;
+  currency: string;
+  floorPrice: string;
+  tickSpacing: string;
+  requiredRaised: string;
+  budget?: string;
+  auction: string;
+  token: string;
+  treasury: string;
+  /** Tranche enforcer wiring, post-deploy (`distributor`: pre-v3 tag, kept on edits). */
+  distributor?: string;
+  claimStake?: string;
+  verifierSet?: string;
+  admission: "curated" | "community";
+  channels: string[];
+  /** The launch's chat rooms; their ids are published as bound channels too. */
+  chat?: LaunchChat;
+  tokenPlan?: TokenPlan;
+  allocation?: SupplyAllocation;
+  vesting?: VestingConfig;
+  /**
+   * The sale window, derived from the founder's dates at publish time
+   * (`lib/time-blocks.ts`). Optional: the legacy form never wrote one, and a
+   * chain that could not be read leaves it unset rather than guessed.
+   */
+  startBlock?: number;
+  endBlock?: number;
+  claimBlock?: number;
+  /** What the project's allocation unlocks against (`lib/unlock-plans.ts`). */
+  unlocks?: UnlockPlan;
+  /** Whether a DAO is to be formed at graduation. */
+  daoAtGraduation?: boolean;
+  /** Legal wrapper decision (OAv2 §4.8): "none" | "dao-llc" | "own-entity". */
+  legalWrapper?: string;
+  /** Who holds the project's IP and the documents that say so. */
+  ipRecord?: IpRecord;
+  /** The team's revenue pledge (D78). */
+  revenuePledge?: RevenuePledge;
+  /** The first work areas' words, exactly as hashed, so people can see what finished work looks like. */
+  workAreas?: { name: string; check: string }[];
+  /** How the founder knows each reviewer, in their words (see `LaunchRecord.reviewerTies`). */
+  reviewerTies?: string;
+  /** The project this one is built on (N11). */
+  builtOn?: BuiltOn;
+  /** Whether others may build on this project, and on what terms (N11). */
+  remixTerms?: RemixTerms;
+  /**
+   * When the record this one replaces was signed, if it was just read from the server (`useChangeOwnRecord`): the new
+   * one is signed later than it. Left out, the copy in the list of projects is used.
+   */
+  supersedes?: number;
+}
+
+export function useCreateLaunch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: CreateLaunchInput) => {
+      const tags: string[][] = [
+        ["d", input.id],
+        ["name", input.name],
+        ["t", "dao-launchpad"],
+        ["admission", input.admission],
+      ];
+      if (input.category?.trim()) {
+        tags.push(["t", input.category.trim().toLowerCase()]);
+      }
+      if (input.chainId) tags.push(["chain", input.chainId]);
+      if (input.auction) tags.push(["auction", input.auction]);
+      if (input.token) tags.push(["token", input.token]);
+      if (input.treasury) tags.push(["treasury", input.treasury]);
+      if (input.distributor) tags.push(["distributor", input.distributor]);
+      if (input.claimStake) tags.push(["claim-stake", input.claimStake]);
+      if (input.verifierSet) tags.push(["verifier-set", input.verifierSet]);
+      for (const channel of boundChannelIds(input))
+        tags.push(["buzz-channel", channel]);
+      tags.push(...teamTags(input.team ?? [], input.formerTeam ?? []));
+      tags.push(...carriedTags(input));
+      // The parent's record, so a parent finds the projects built on it with one query (N11).
+      if (input.builtOn)
+        tags.push(["a", builtOnCoordinate(input.builtOn), "", "built-on"]);
+      const content: Record<string, unknown> = {
+        pitch: input.pitch,
+        stage: input.stage,
+        started: input.startedAt ?? Math.floor(Date.now() / 1000),
+      };
+      if (input.listing === "unlisted") content.listing = "unlisted";
+      if (input.funding) content.funding = fundingContent(input.funding);
+      if (input.longPitch) content.longPitch = input.longPitch;
+      if (input.ipList && input.ipList.length > 0)
+        content.ipList = input.ipList;
+      if (input.updateCadence) content.updateCadence = input.updateCadence;
+      if (input.reviewerTerms) content.reviewerTerms = input.reviewerTerms;
+      if (input.image) content.image = input.image;
+      if (input.chat && (hasChat(input.chat) || input.chat.board)) {
+        // Only the rooms that exist: a null would read as a promise.
+        content.chat = Object.fromEntries(
+          Object.entries(input.chat).filter(([, id]) => id !== null),
+        );
+      }
+      if (input.currency) content.currency = input.currency;
+      if (input.floorPrice) content.floorPrice = input.floorPrice;
+      if (input.tickSpacing) content.tickSpacing = input.tickSpacing;
+      if (input.requiredRaised) content.requiredRaised = input.requiredRaised;
+      if (input.budget) content.budget = input.budget;
+      if (input.tokenPlan) content.tokenPlan = input.tokenPlan;
+      if (input.allocation) content.allocation = input.allocation;
+      if (input.vesting) content.vesting = input.vesting;
+      if (input.startBlock !== undefined) content.startBlock = input.startBlock;
+      if (input.endBlock !== undefined) content.endBlock = input.endBlock;
+      if (input.claimBlock !== undefined) content.claimBlock = input.claimBlock;
+      if (input.unlocks) content.unlocks = input.unlocks;
+      if (input.daoAtGraduation !== undefined)
+        content.daoAtGraduation = input.daoAtGraduation;
+      if (input.legalWrapper) content.legalWrapper = input.legalWrapper;
+      if (input.ipRecord) content.ipRecord = ipRecordContent(input.ipRecord);
+      if (input.revenuePledge)
+        content.revenuePledge = revenuePledgeContent(input.revenuePledge);
+      if (input.workAreas && input.workAreas.length > 0)
+        content.workAreas = input.workAreas.map((area) => ({
+          name: area.name,
+          check: area.check,
+        }));
+      if (input.reviewerTies) content.reviewerTies = input.reviewerTies;
+      if (input.builtOn) content.builtOn = input.builtOn;
+      if (input.remixTerms) content.remixTerms = input.remixTerms;
+      if (input.asAgent) {
+        return publishMirror(
+          { kind: KIND_LAUNCH_RECORD, tags, content },
+          {
+            signEvent: (t) =>
+              signLaunchpadEventAsAgent(t, {
+                conditions: `kind=${KIND_LAUNCH_RECORD}`,
+              }),
+            pubkey: getAgentPubkey(),
+          },
+        );
+      }
+      // A record replaces the one with the same id only if it is newer. Two
+      // saves in the same second (a link, then a click) would tie, and the
+      // relay may keep the older one, silently dropping the later save.
+      const me = existingUserPubkey();
+      const listed = (
+        queryClient.getQueryData<InfiniteData<ProjectPage>>(
+          projectPagesKey(relayWsUrl()),
+        )?.pages ?? []
+      )
+        .flatMap((page) => page.events)
+        .filter(
+          (event) =>
+            event.pubkey === me &&
+            event.tags.some((tag) => tag[0] === "d" && tag[1] === input.id),
+        );
+      const listedAt = Math.max(0, ...listed.map((e) => e.created_at));
+      // A form that builds the record from scratch does not know when the project was first published: the record
+      // already in the list does, and saving over it must not make the project look new.
+      if (input.startedAt === undefined && listed.length > 0)
+        content.started = Math.min(
+          ...listed.map((e) => parseLaunchRecord(e)?.startedAt ?? e.created_at),
+        );
+      return publishMirror({
+        kind: KIND_LAUNCH_RECORD,
+        tags,
+        content,
+        createdAt: supersedingTime(
+          Math.floor(Date.now() / 1000),
+          Math.max(input.supersedes ?? 0, listedAt),
+        ),
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: launchesQueryKey });
+    },
+  });
+}
+
+export function usePublishMirror() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      kind:
+        | typeof KIND_LAUNCH_BID
+        | typeof KIND_LAUNCH_UPDATE
+        | typeof KIND_LAUNCH_PROPOSAL
+        | typeof KIND_LAUNCH_RECEIPT;
+      author: string;
+      launchId: string;
+      bucket?: string;
+      extraTags?: string[][];
+      asAgent?: boolean;
+      content: Record<string, unknown>;
+    }) => {
+      const tags: string[][] = [
+        ["a", launchCoordinate(input.author, input.launchId)],
+      ];
+      if (input.kind === KIND_LAUNCH_BID && input.bucket) {
+        tags.push(["m", input.bucket]);
+      }
+      if (input.extraTags) tags.push(...input.extraTags);
+      if (input.asAgent) {
+        return publishMirror(
+          { kind: input.kind, tags, content: input.content },
+          {
+            signEvent: (t) =>
+              signLaunchpadEventAsAgent(t, {
+                conditions: `kind=${input.kind}`,
+              }),
+            pubkey: getAgentPubkey(),
+          },
+        );
+      }
+      return publishMirror({ kind: input.kind, tags, content: input.content });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: launchesQueryKey });
+      void queryClient.invalidateQueries({ queryKey: evidenceQueryKey });
+    },
+  });
+}
+
+export function useDeleteLaunch() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (launch: Launch) =>
+      publishMirror({
+        kind: 5,
+        // NIP-09's `k` names the kind removed. The list is not read by it (removals made before it existed lack it).
+        tags: [
+          ["a", launchCoordinate(launch.record.author, launch.record.id)],
+          ["k", String(KIND_LAUNCH_RECORD)],
+        ],
+        content: {},
+      }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: launchesQueryKey });
+    },
+  });
+}

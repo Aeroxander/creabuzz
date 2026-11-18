@@ -1,0 +1,70 @@
+{
+  "v": 1,
+  "name": "Suspicious consensus challenger",
+  "description": "AIME-2024 bank strategy from arXiv 2609.22682 Appendix A: if the team converges early, one agent must look for a failure mode.",
+  "teamworkPrompt": "Consensus is not sufficient. If the team appears to agree, actively test whether the shared answer could still be wrong.",
+  "roles": {
+    "agent-0": "Independent solver. If there is a consensus, identify the weakest link in the shared reasoning.",
+    "agent-1": "Independent solver. If there is a consensus, identify the weakest link in the shared reasoning.",
+    "agent-2": "You are the consensus challenger. Look for concrete failure modes before accepting the answer."
+  },
+  "steps": [
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "State the current consensus or disagreement. If there is a consensus, identify the weakest link in the shared reasoning."
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Agent 2 acts as consensus challenger. Try to find an alternative derivation, missing case, arithmetic error, or constraint violation. Agents 0 and 1 respond only with mathematical evidence.",
+      "perAgentPrompts": {
+        "agent-2": "You are the consensus challenger. Look for concrete failure modes before accepting the answer."
+      }
+    },
+    {
+      "participants": [
+        "agent-0",
+        "agent-1",
+        "agent-2"
+      ],
+      "rounds": 1,
+      "flow": "local",
+      "prompt": "Decide whether the challenged answer survives. If it does, state why; if not, revise using the discovered issue."
+    }
+  ],
+  "finalWriter": "agent-1",
+  "_source": {
+    "paper": "Self-Organizing Agent Teams Learn to Reason Together",
+    "arxiv": "2609.22682",
+    "url": "https://arxiv.org/html/2609.22682v1",
+    "section": "Appendix A.1",
+    "bank": "aime-2024",
+    "authors": [
+      "Aneesh Pappu",
+      "Mirac Suzgun",
+      "Yongchan Kwon",
+      "Federico Bianchi",
+      "Batu El",
+      "Mykel J. Kochenderfer",
+      "Hancheng Cao",
+      "James Zou"
+    ],
+    "license": "arXiv.org perpetual non-exclusive license",
+    "retrieved": "2026-09-25",
+    "conversions": [
+      "roles + finalWriter preserved from Buzz's shipped seed-examples transcription of this strategy.",
+      "description phrasing matches the shipped seed-examples transcription."
+    ]
+  }
+}

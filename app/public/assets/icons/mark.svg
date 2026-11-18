@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="13 23 140 154" width="140" height="154">
+	<title>Creaton</title>
+	<defs>
+		<linearGradient id="grd1" gradientUnits="userSpaceOnUse" x1="166.696" y1="153.348" x2="79.279" y2="196.092">
+			<stop offset="0" stop-color="#63c88e"/>
+			<stop offset="1" stop-color="#26359c"/>
+		</linearGradient>
+		<linearGradient id="grd2" gradientUnits="userSpaceOnUse" x1="15" y1="72.359" x2="91.248" y2="72.359">
+			<stop offset="0" stop-color="#63c88e"/>
+			<stop offset="1" stop-color="#26359c"/>
+		</linearGradient>
+	</defs>
+	<path fill="#43e296" d="M98.52 58.38L65.14 24.84L117.33 24.91L150.97 58.44C136.47 72.93 112.97 72.91 98.52 58.38Z"/>
+	<path fill="url(#grd1)" d="M91.25 148.93L42.4 100.09L117.33 24.91L65.14 24.84L15.52 74.46L15.52 125.7L65.02 175.16L117.53 175.16L149.53 143.16C135.03 128.66 111.52 128.66 97.02 143.16L91.25 148.93Z"/>
+	<path fill="#42389d" d="M97.08 143.1L65.02 175.16L117.53 175.16L149.53 143.16L149.47 143.1C135 128.64 111.55 128.64 97.08 143.1Z"/>
+	<path fill="url(#grd2)" d="M42.4 100.09L15.52 74.36L15 125.35L65.02 175.16L91.25 148.94L42.4 100.09Z"/>
+	<path fill="#43e296" d="M116.55 99.81L91.49 124.87L66.42 99.81L91.49 74.75L116.55 99.81Z"/>
+</svg>

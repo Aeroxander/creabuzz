@@ -1,0 +1,13 @@
+forge-std/=lib/forge-std/src/
+solady/=lib/continuous-clearing-auction/lib/solady/src/
+@openzeppelin/contracts/=lib/continuous-clearing-auction/lib/openzeppelin-contracts/contracts/
+blocknumberish/=lib/continuous-clearing-auction/lib/blocknumberish/
+@uniswap/blocknumberish/=lib/continuous-clearing-auction/lib/blocknumberish/
+liquidity-launcher/=lib/continuous-clearing-auction/lib/liquidity-launcher/
+continuous-clearing-auction/=lib/continuous-clearing-auction/
+v4-periphery/=lib/continuous-clearing-auction/lib/liquidity-launcher/lib/v4-periphery/
+@uniswap/v4-core/=lib/continuous-clearing-auction/lib/liquidity-launcher/lib/v4-core/
+@uniswap/v4-periphery/=lib/continuous-clearing-auction/lib/liquidity-launcher/lib/v4-periphery/
+solmate/=lib/continuous-clearing-auction/lib/liquidity-launcher/lib/v4-core/lib/solmate/
+permit2/=lib/continuous-clearing-auction/lib/permit2/
+oz5/=lib/openzeppelin-contracts/contracts/

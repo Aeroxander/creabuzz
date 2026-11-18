@@ -7,7 +7,7 @@ import {
   MessageSquare,
   Users,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { toast } from "sonner";
 
@@ -16,6 +16,7 @@ import { Button } from "@/shared/ui/button";
 import { relativeTime } from "@/shared/lib/relative-time";
 import { useRepoRefs } from "../use-repo-refs";
 import { useRepo } from "../use-repos";
+import { COPY_FAILED_TEXT, repoPageState } from "../lib/repo-page-state";
 import {
   getMockRepo,
   mockRepoCommits,
@@ -25,7 +26,7 @@ import {
 import type { CommitInfo, ReadmeResult, TreeEntry } from "../git-client";
 import { useGitTree, useGitLog, useGitReadme } from "../use-git-browse";
 import { ConnectButton } from "./ConnectButton";
-import { PubkeyAvatar } from "./PubkeyAvatar";
+import { PeopleAvatars } from "./PeopleAvatars";
 import { RepoRefsSection } from "./RepoRefsSection";
 import { RepoTreeSection } from "./RepoTreeSection";
 import { RepoCommitsSection } from "./RepoCommitsSection";
@@ -41,7 +42,7 @@ function CopyableUrl({ url }: { url: string }) {
       toast.success("Copied to clipboard");
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      toast.error("Failed to copy to clipboard");
+      toast.error(COPY_FAILED_TEXT);
     }
   }
 
@@ -53,8 +54,8 @@ function CopyableUrl({ url }: { url: string }) {
       <button
         type="button"
         onClick={handleCopy}
-        className="shrink-0 text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
-        aria-label="Copy clone URL"
+        className="shrink-0 text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
+        aria-label="Copy download address"
       >
         {copied ? (
           <Check className="h-4 w-4 text-green-500" />
@@ -68,7 +69,7 @@ function CopyableUrl({ url }: { url: string }) {
 
 function DetailSkeleton() {
   return (
-    <div className="flex w-full flex-1 gap-8 bg-[#F3F3F3] px-4 py-8 dark:bg-[#171717]">
+    <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8">
       <div className="min-w-0 flex-1">
         <div className="h-5 w-24 animate-pulse rounded bg-black/10 dark:bg-white/10" />
         <div className="mt-6 h-8 w-64 animate-pulse rounded bg-black/10 dark:bg-white/10" />
@@ -98,11 +99,11 @@ function BackToRepositories({
   );
 
   return mockPreview ? (
-    <a href="/?preview=repositories" className={className}>
+    <a href="/c?preview=repositories" className={className}>
       {content}
     </a>
   ) : (
-    <Link to="/" className={className}>
+    <Link to="/c" className={className}>
       {content}
     </Link>
   );
@@ -141,7 +142,7 @@ function RepoTabs({
           className={`px-4 py-2 text-sm font-medium transition-colors ${
             tab === "code"
               ? "border-b-2 border-black text-black dark:border-white dark:text-white"
-              : "text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
+              : "text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
           }`}
         >
           Code
@@ -152,7 +153,7 @@ function RepoTabs({
           className={`px-4 py-2 text-sm font-medium transition-colors ${
             tab === "commits"
               ? "border-b-2 border-black text-black dark:border-white dark:text-white"
-              : "text-black/50 hover:text-black dark:text-white/50 dark:hover:text-white"
+              : "text-black/60 hover:text-black dark:text-white/60 dark:hover:text-white"
           }`}
         >
           Commits
@@ -190,10 +191,16 @@ export function RepoDetailPage() {
     data: repo,
     isLoading,
     error,
+    refetch: refetchRepo,
   } = useRepo(repoId, {
     preview: showMockRepo,
   });
-  const { data: refs, isLoading: refsLoading } = useRepoRefs(repoId, {
+  const {
+    data: refs,
+    isLoading: refsLoading,
+    error: refsError,
+    refetch: refetchRefs,
+  } = useRepoRefs(repoId, {
     preview: showMockRepo,
   });
 
@@ -212,11 +219,11 @@ export function RepoDetailPage() {
     isLoading: areCommitsLoading,
     error: commitsError,
   } = useGitLog(browseOwner, repoName, defaultRef);
-  const { data: fetchedReadme, isLoading: isReadmeLoading } = useGitReadme(
-    browseOwner,
-    repoName,
-    defaultRef,
-  );
+  const {
+    data: fetchedReadme,
+    isLoading: isReadmeLoading,
+    error: readmeError,
+  } = useGitReadme(browseOwner, repoName, defaultRef);
   const treeEntries = showMockRepo ? mockRepoTree : fetchedTreeEntries;
   const commits = showMockRepo ? mockRepoCommits : fetchedCommits;
   const readme = showMockRepo ? mockRepoReadme : fetchedReadme;
@@ -224,37 +231,70 @@ export function RepoDetailPage() {
   const commitsLoading = showMockRepo ? false : areCommitsLoading;
   const readmeLoading = showMockRepo ? false : isReadmeLoading;
 
-  // Surface clone/browse errors — these are otherwise silent
-  const browseError = treeError || commitsError;
+  // Surface clone/browse errors. The git read queries are chained off the
+  // clone query (`enabled: !!cloneQuery.data`), so a failed clone leaves them
+  // permanently disabled and their own `error` is never set — the hooks now
+  // propagate the clone error, which is what makes this banner reachable.
+  const browseError = treeError || commitsError || readmeError;
   useEffect(() => {
     if (browseError) {
       console.error("[git-browse]", browseError);
     }
   }, [browseError]);
 
-  useEffect(() => {
-    if (error) {
-      toast.error("Failed to load repository", {
-        description: error.message,
-      });
-    }
-  }, [error]);
+  // The people row: the owner first, then the contributors, as one list — the
+  // row resolves every name in a single batched profile query.
+  const people = useMemo(
+    () => (repo ? [...new Set([repo.owner, ...repo.contributors])] : []),
+    [repo],
+  );
 
-  if (isLoading) return <DetailSkeleton />;
+  const pageState = repoPageState({ isLoading, error, found: Boolean(repo) });
+  if (pageState === "loading") return <DetailSkeleton />;
+
+  if (pageState === "error") {
+    return (
+      <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8 text-black dark:text-white">
+        <div className="min-w-0 flex-1">
+          <BackToRepositories />
+          <div role="alert" className="mt-12 text-center">
+            <h1 className="text-xl font-semibold text-black dark:text-white">
+              Couldn't load this repository
+            </h1>
+            <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+              {error?.message}
+            </p>
+            <p className="mt-1 text-sm text-black/60 dark:text-white/60">
+              Check your connection and try again.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={() => void refetchRepo()}
+            >
+              Try again
+            </Button>
+          </div>
+        </div>
+        <aside className="hidden w-72 shrink-0 lg:block" />
+      </div>
+    );
+  }
 
   if (!repo) {
     return (
-      <div className="flex w-full flex-1 gap-8 bg-[#F3F3F3] px-4 py-8 text-black dark:bg-[#171717] dark:text-white">
+      <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8 text-black dark:text-white">
         <div className="min-w-0 flex-1">
           <BackToRepositories />
           <div className="mt-12 text-center">
-            <BookMarked className="mx-auto h-10 w-10 text-black/50 dark:text-white/50" />
+            <BookMarked className="mx-auto h-10 w-10 text-black/60 dark:text-white/60" />
             <h1 className="mt-4 text-xl font-semibold text-black dark:text-white">
               Repository not found
             </h1>
             <p className="mt-1 text-sm text-black/60 dark:text-white/60">
               This repository may have been removed or doesn't exist on this
-              relay.
+              server.
             </p>
           </div>
         </div>
@@ -264,7 +304,7 @@ export function RepoDetailPage() {
   }
 
   return (
-    <div className="flex w-full flex-1 gap-8 bg-[#F3F3F3] px-4 py-8 text-black dark:bg-[#171717] dark:text-white">
+    <div className="flex w-full flex-1 gap-8 bg-background px-4 py-8 text-black dark:text-white">
       {/* Main content */}
       <div className="min-w-0 flex-1">
         {/* Back link */}
@@ -278,7 +318,7 @@ export function RepoDetailPage() {
         {/* Header */}
         <div className="mt-6">
           <div className="flex items-center gap-3">
-            <BookMarked className="h-6 w-6 shrink-0 text-black/50 dark:text-white/50" />
+            <BookMarked className="h-6 w-6 shrink-0 text-black/60 dark:text-white/60" />
             <h1 className="text-2xl font-semibold tracking-tight text-black dark:text-white">
               {repo.name}
             </h1>
@@ -294,21 +334,35 @@ export function RepoDetailPage() {
               {repo.description}
             </p>
           )}
-          <p className="mt-2 text-xs text-black/50 dark:text-white/50">
+          <p className="mt-2 text-xs text-black/60 dark:text-white/60">
             Updated {relativeTime(repo.createdAt)}
           </p>
         </div>
 
         {/* Refs & HEAD */}
-        <RepoRefsSection refs={refs} isLoading={refsLoading} />
+        <RepoRefsSection
+          refs={refs}
+          isLoading={refsLoading}
+          error={refsError}
+          onRetry={() => void refetchRefs()}
+        />
 
         {/* Clone/browse error banner */}
-        {browseError && (
-          <div className="mt-6 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            Failed to load repository contents:{" "}
-            {browseError instanceof Error
-              ? browseError.message
-              : String(browseError)}
+        {browseError && !isLoading && (
+          <div
+            role="alert"
+            className="mt-6 rounded-md border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            <p className="font-semibold">Couldn't load repository contents</p>
+            <p className="mt-1 opacity-90">
+              {browseError instanceof Error
+                ? browseError.message
+                : String(browseError)}
+            </p>
+            <p className="mt-2 text-xs opacity-80">
+              Only signed-in members of this community can read its code. Check
+              that you're signed in, then reload the page.
+            </p>
           </div>
         )}
 
@@ -376,7 +430,7 @@ export function RepoDetailPage() {
             >
               <a href={`/channels/${repo.channelId}`}>
                 <MessageSquare className="h-4 w-4" />
-                View channel
+                View room
               </a>
             </Button>
           </div>
@@ -386,7 +440,7 @@ export function RepoDetailPage() {
       {/* Sidebar */}
       <aside className="hidden w-72 shrink-0 border-l border-black/10 pl-8 dark:border-white/10 lg:block">
         <div className="space-y-6">
-          {/* Open in Buzz */}
+          {/* Open in Creaton */}
           <ConnectButton className="w-full" />
 
           {/* People */}
@@ -396,12 +450,7 @@ export function RepoDetailPage() {
               People
             </h3>
             <div className="flex flex-wrap gap-2">
-              <PubkeyAvatar pubkey={repo.owner} />
-              {repo.contributors
-                .filter((c) => c !== repo.owner)
-                .map((c) => (
-                  <PubkeyAvatar key={c} pubkey={c} />
-                ))}
+              <PeopleAvatars pubkeys={people} />
             </div>
           </div>
         </div>

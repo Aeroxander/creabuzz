@@ -1,0 +1,343 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  duePromises,
+  orphanAnswers,
+  marksSection,
+  markTags,
+  parseMarks,
+  parsePromises,
+  promiseLines,
+  promiseRecord,
+  promiseTags,
+  promiseTotals,
+  promiseTotalsLine,
+  recordFacts,
+} from "./promises.ts";
+import {
+  isWeeklyUpdateTags,
+  partsFromTags,
+  updateEvent,
+  updateLayout,
+} from "./weekly-update.ts";
+
+const FOUNDER = "f".repeat(64);
+const OTHER = "e".repeat(64);
+const idOf = (n) => n.toString(16).padStart(64, "0");
+
+/** An update as read back from what the dialog publishes. */
+function update(n, at, draft, author = FOUNDER) {
+  const { tags } = updateEvent({
+    title: `Week ${n}`,
+    done: "",
+    next: "",
+    body: "",
+    help: "",
+    helpSize: "small",
+    helpTime: "",
+    ...draft,
+  });
+  return {
+    id: idOf(n),
+    author,
+    createdAt: at,
+    weekly: isWeeklyUpdateTags(tags),
+    promises: parsePromises(tags),
+    marks: parseMarks(tags),
+  };
+}
+const mark = (n, index, state, note = "", text = "x") => ({
+  promiseId: `${idOf(n)}:${index}`,
+  text,
+  state,
+  note,
+});
+
+test("each line of What's next is one promise, without the list marks people type", () => {
+  assert.deepEqual(
+    promiseLines(
+      "- Invite ten people\n\n* Fix the email\n2. Write the guide\n  \nPlain line",
+    ),
+    ["Invite ten people", "Fix the email", "Write the guide", "Plain line"],
+  );
+  assert.deepEqual(promiseTags("A\nB"), [
+    ["promise", "0", "A"],
+    ["promise", "1", "B"],
+  ]);
+  assert.equal(promiseLines(Array(30).fill("x").join("\n")).length, 10);
+  assert.equal(promiseLines("y".repeat(500))[0].length, 200);
+});
+
+test("an update carries its promises and its answers as tags, and the answers as words", () => {
+  const { content, tags } = updateEvent({
+    title: "Week 2",
+    done: "Shipped sign-up.",
+    next: "Invite ten people\nFix the email",
+    body: "",
+    help: "",
+    helpSize: "small",
+    helpTime: "",
+    marks: [
+      mark(1, 0, "done", "", "Ship sign-up"),
+      mark(1, 1, "not-done", "ran out of time", "Write the guide"),
+    ],
+  });
+  assert.deepEqual(
+    tags.filter((t) => t[0] === "promise"),
+    [
+      ["promise", "0", "Invite ten people"],
+      ["promise", "1", "Fix the email"],
+    ],
+  );
+  assert.deepEqual(
+    tags.filter((t) => t[0] === "promise-mark"),
+    [
+      ["promise-mark", `${idOf(1)}:0`, "done", ""],
+      ["promise-mark", `${idOf(1)}:1`, "not-done", "ran out of time"],
+    ],
+  );
+  assert.match(
+    content.body,
+    /^What we said last time\nDone: Ship sign-up\nNot done: Write the guide \(ran out of time\)\n\nWhat happened this week\n/,
+  );
+  // The prompts still lay out: the answers are the words before them.
+  const layout = updateLayout(content.body, partsFromTags(tags));
+  assert.equal(layout.showParts, true);
+  assert.match(layout.free, /^What we said last time/);
+});
+
+test("answers that name no promise, or give no known answer, are not written or read", () => {
+  assert.deepEqual(
+    markTags([
+      { promiseId: "nope", text: "x", state: "done", note: "" },
+      { promiseId: `${idOf(1)}:0`, text: "x", state: "erased", note: "" },
+    ]),
+    [],
+  );
+  assert.deepEqual(
+    parseMarks([
+      ["promise-mark", `${idOf(1)}:0`, "erased", ""],
+      ["promise-mark", "short:0", "done", ""],
+      ["promise-mark", `${idOf(1)}:1`, "changed"],
+    ]),
+    [{ promiseId: `${idOf(1)}:1`, state: "changed", note: "" }],
+  );
+  assert.equal(marksSection([]), "");
+});
+
+test("the record: kept, missed and changed with dates, newest first, and totals", () => {
+  const updates = [
+    update(1, 100, { next: "Ship sign-up\nWrite the guide\nFind a designer" }),
+    update(2, 200, {
+      next: "Invite ten people",
+      marks: [
+        mark(1, 0, "done"),
+        mark(1, 1, "not-done", "ran out of time"),
+        mark(1, 2, "changed", "doing it ourselves"),
+      ],
+    }),
+  ];
+  const record = promiseRecord(updates, FOUNDER);
+  assert.deepEqual(
+    record.map((e) => [e.text, e.state, e.promisedAt, e.answeredAt, e.note]),
+    [
+      ["Ship sign-up", "kept", 100, 200, ""],
+      ["Write the guide", "missed", 100, 200, "ran out of time"],
+      ["Find a designer", "changed", 100, 200, "doing it ourselves"],
+      ["Invite ten people", "waiting", 200, null, ""],
+    ],
+  );
+  const totals = promiseTotals(record);
+  assert.deepEqual(totals, { kept: 1, missed: 1, changed: 1, unanswered: 0 });
+  assert.equal(promiseTotalsLine(totals), "1 kept, 1 missed, 1 changed");
+  assert.deepEqual(
+    duePromises(record).map((e) => e.text),
+    ["Invite ten people"],
+  );
+});
+
+test("a promise the next update did not answer shows as not answered, and is asked about again", () => {
+  const record = promiseRecord(
+    [
+      update(1, 100, { next: "Ship sign-up" }),
+      update(2, 200, { done: "A quiet week." }),
+    ],
+    FOUNDER,
+  );
+  assert.equal(record[0].state, "unanswered");
+  assert.equal(
+    promiseTotalsLine(promiseTotals(record)),
+    "0 kept, 0 missed, 0 changed, 1 not answered",
+  );
+  assert.equal(duePromises(record).length, 1);
+  assert.equal(promiseTotalsLine(promiseTotals([])), null);
+});
+
+test("answers that disagree are not ranked by date: the promise shows both, and the worse one is counted", () => {
+  // Whichever of the two is dated first, the outcome is the same: dates are the author's to choose.
+  for (const [missAt, doneAt] of [
+    [200, 300],
+    [300, 200],
+  ]) {
+    const record = promiseRecord(
+      [
+        update(1, 100, { next: "Ship sign-up" }),
+        update(2, missAt, { marks: [mark(1, 0, "not-done", "late")] }),
+        update(3, doneAt, { marks: [mark(1, 0, "done")] }),
+      ],
+      FOUNDER,
+    );
+    const entry = record.find((e) => e.text === "Ship sign-up");
+    assert.equal(entry.state, "missed");
+    assert.equal(entry.note, "late");
+    assert.equal(entry.conflict, true);
+    assert.deepEqual(entry.answers.map((a) => a.state).sort(), [
+      "done",
+      "not-done",
+    ]);
+    assert.deepEqual(promiseTotals(record), {
+      kept: 0,
+      missed: 1,
+      changed: 0,
+      unanswered: 0,
+    });
+  }
+  // The same answer given twice is one answer, not a disagreement.
+  const twice = promiseRecord(
+    [
+      update(1, 100, { next: "Ship sign-up" }),
+      update(2, 200, { marks: [mark(1, 0, "done")] }),
+      update(3, 300, { marks: [mark(1, 0, "done")] }),
+    ],
+    FOUNDER,
+  );
+  assert.equal(twice[0].state, "kept");
+  assert.equal(twice[0].conflict, false);
+  // Changed against done: changed is the worse of the two.
+  const mixed = promiseRecord(
+    [
+      update(1, 100, { next: "Ship sign-up" }),
+      update(2, 200, { marks: [mark(1, 0, "done")] }),
+      update(3, 300, { marks: [mark(1, 0, "changed")] }),
+    ],
+    FOUNDER,
+  );
+  assert.equal(mixed[0].state, "changed");
+});
+
+test("an answer dated before its promise still answers it: its id proves it came after", () => {
+  const record = promiseRecord(
+    [
+      update(1, 100, { next: "Ship sign-up" }),
+      update(2, 50, { marks: [mark(1, 0, "not-done", "late")] }),
+    ],
+    FOUNDER,
+  );
+  assert.equal(record.find((e) => e.text === "Ship sign-up").state, "missed");
+});
+
+test("only a weekly update is the next update: a review note does not turn a promise into not answered", () => {
+  const promised = update(1, 100, { next: "Ship sign-up" });
+  // A record of the same kind the founder signs for another reason: no prompts, promises or answers.
+  const note = {
+    id: idOf(2),
+    author: FOUNDER,
+    createdAt: 200,
+    weekly: isWeeklyUpdateTags([
+      ["a", "x"],
+      ["review-note", "y"],
+    ]),
+  };
+  assert.equal(note.weekly, false);
+  assert.equal(promiseRecord([promised, note], FOUNDER)[0].state, "waiting");
+  // A weekly update written freely still counts: the dialog marks it.
+  const free = update(3, 300, { body: "A quiet week." });
+  assert.equal(free.weekly, true);
+  assert.equal(
+    promiseRecord([promised, note, free], FOUNDER).find(
+      (e) => e.text === "Ship sign-up",
+    ).state,
+    "unanswered",
+  );
+});
+
+test("only the founder's updates promise and answer", () => {
+  const record = promiseRecord(
+    [
+      update(1, 100, { next: "Ship sign-up" }),
+      update(2, 200, { marks: [mark(1, 0, "done")] }, OTHER),
+      update(3, 150, { next: "A stranger's promise" }, OTHER),
+    ],
+    FOUNDER,
+  );
+  assert.deepEqual(
+    record.map((e) => [e.text, e.state]),
+    [["Ship sign-up", "waiting"]],
+  );
+});
+
+test("an update cannot answer its own promises", () => {
+  const own = update(1, 100, { next: "Ship sign-up" });
+  own.marks = [{ promiseId: `${idOf(1)}:0`, state: "done", note: "" }];
+  assert.equal(promiseRecord([own], FOUNDER)[0].state, "waiting");
+});
+
+test("deleting the update that answered puts the promise back to not answered; an answer left without its promise is flagged", () => {
+  const first = update(1, 100, { next: "Ship sign-up" });
+  const second = update(2, 200, { marks: [mark(1, 0, "not-done", "late")] });
+  const third = update(3, 300, { done: "More." });
+  assert.equal(promiseRecord([first, third], FOUNDER)[0].state, "unanswered");
+  assert.deepEqual(orphanAnswers([first, second, third], FOUNDER), []);
+  // The promise's own update is gone: the promise is no longer listed, and its answer says something was removed.
+  assert.deepEqual(promiseRecord([second, third], FOUNDER), []);
+  assert.deepEqual(orphanAnswers([second, third], FOUNDER), [
+    { promiseId: `${idOf(1)}:0`, state: "not-done", note: "late", at: 200 },
+  ]);
+  // Someone else's answer is nobody's orphan.
+  assert.deepEqual(
+    orphanAnswers(
+      [update(4, 400, { marks: [mark(9, 0, "done")] }, OTHER)],
+      FOUNDER,
+    ),
+    [],
+  );
+});
+
+test("a cut read states no totals and never says no goal was set", () => {
+  assert.deepEqual(recordFacts({ complete: true }), {
+    totals: true,
+    noGoal: true,
+  });
+  assert.deepEqual(recordFacts({ complete: false }), {
+    totals: false,
+    noGoal: false,
+  });
+});
+
+test("two updates signed in the same second: the one that answers the other is the later one, whatever their ids", () => {
+  // The answering update has the smaller id, so a tie settled by id would put it first and call its own promise
+  // "not answered" by an update that is in fact the older of the two.
+  const updates = [
+    update(1, 100, {
+      next: "Invite ten people",
+      marks: [mark(2, 0, "done")],
+    }),
+    update(2, 100, { next: "Ship sign-up" }),
+  ];
+  const record = promiseRecord(updates, FOUNDER);
+  assert.deepEqual(record.map((e) => [e.text, e.state]).sort(), [
+    ["Invite ten people", "waiting"],
+    ["Ship sign-up", "kept"],
+  ]);
+  assert.equal(
+    promiseTotalsLine(promiseTotals(record)),
+    "1 kept, 0 missed, 0 changed",
+  );
+  // Different seconds are still ordered by time alone.
+  const apart = promiseRecord(
+    [update(1, 100, { next: "A" }), update(2, 200, { done: "Quiet." })],
+    FOUNDER,
+  );
+  assert.equal(apart[0].state, "unanswered");
+});

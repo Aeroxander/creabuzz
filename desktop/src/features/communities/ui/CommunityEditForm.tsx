@@ -6,6 +6,7 @@ import {
   isJoinPolicyDiscoveryCandidate,
   type JoinPolicy,
 } from "@/shared/api/invites";
+import { AGE_CONFIRMATION_NEEDED } from "@/shared/constants/age";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
@@ -122,7 +123,7 @@ export function CommunityEditForm({
             return;
           }
           if (policy.ageAttestationRequired && !ageConfirmed) {
-            setError("Confirm that you are at least 18 years old.");
+            setError(AGE_CONFIRMATION_NEEDED);
             return;
           }
           if (
@@ -159,7 +160,7 @@ export function CommunityEditForm({
       }
 
       if (!reachable) {
-        setProbeWarning("Can't reach this relay — check the URL");
+        setProbeWarning("Can't reach this relay. Check the URL.");
         return;
       }
 

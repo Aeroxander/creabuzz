@@ -1,4 +1,4 @@
-import { MoreHorizontal, X } from "lucide-react";
+import { X } from "lucide-react";
 import * as React from "react";
 
 import {
@@ -11,8 +11,9 @@ import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import type { VoiceRegistryEntry } from "@/features/settings/ui/voiceSettingsLogic";
 import { invokeTauri } from "@/shared/api/tauri";
 import { cn } from "@/shared/lib/cn";
-import { truncatePubkey } from "@/shared/lib/pubkey";
+import { truncateNpub } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
+import { ROUNDED_SQUIRCLE_PATH } from "@/shared/ui/AvatarClipPaths";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
 import {
@@ -32,6 +33,8 @@ type ParticipantListProps = {
   agentVoiceSettings?: Record<string, HuddleAgentVoiceSettings>;
   /** Called when the user clicks the remove button on an agent avatar. */
   onRemoveAgent?: (pubkey: string) => void;
+  /** Interrupts local TTS playback while this agent is speaking. */
+  onInterruptAgentSpeech?: (pubkey: string) => void;
   /** The locally loaded profile is authoritative for the current participant. */
   selfProfile?: {
     avatarUrl: string | null;
@@ -47,6 +50,13 @@ const MAX_VISIBLE_PARTICIPANTS = 9;
 type ParticipantIdentity = {
   avatarUrl: string | null;
   displayName: string;
+  /**
+   * Label the avatar derives initials from: the authored name when one
+   * exists, otherwise the unprefixed compact key. `displayName` is the
+   * visible "Participant npub1…" fallback, whose word initials would
+   * collapse every unnamed participant onto "PN"/"AN".
+   */
+  initialsLabel: string;
   isActive: boolean;
   isAgent: boolean;
   pubkey: string;
@@ -108,10 +118,10 @@ function buildParticipantIdentities({
     const profile = profiles[normalizedPubkey];
     const isAgent = agentSet.has(normalizedPubkey);
     const agent = agentNames.get(normalizedPubkey);
+    const authoredName = profile?.displayName?.trim() || agent?.name?.trim();
+    const keyLabel = truncateNpub(pubkey);
     const displayName =
-      profile?.displayName?.trim() ||
-      agent?.name?.trim() ||
-      `${isAgent ? "Agent" : "Participant"} ${truncatePubkey(pubkey)}`;
+      authoredName || `${isAgent ? "Agent" : "Participant"} ${keyLabel}`;
     const speakerLevel =
       normalizedSpeakerLevels.get(normalizedPubkey) ??
       (activeSpeakerSet.has(normalizedPubkey) ? 0.55 : 0);
@@ -119,6 +129,7 @@ function buildParticipantIdentities({
     return {
       avatarUrl: profile?.avatarUrl ?? agent?.avatarUrl ?? null,
       displayName,
+      initialsLabel: authoredName || keyLabel,
       isActive: activeSpeakerSet.has(normalizedPubkey) || speakerLevel > 0.04,
       isAgent,
       pubkey,
@@ -134,6 +145,7 @@ export function HuddleParticipantsControl({
   agentPubkeys,
   agentVoiceSettings,
   onRemoveAgent,
+  onInterruptAgentSpeech,
   selfProfile,
   appearance = "bar",
   className,
@@ -306,6 +318,11 @@ export function HuddleParticipantsControl({
               <AgentVoiceMenu
                 agentPubkey={participant.pubkey}
                 displayName={participant.displayName}
+                onRemoveAgent={
+                  onRemoveAgent
+                    ? () => void onRemoveAgent(participant.pubkey)
+                    : undefined
+                }
                 onSettingsChange={(settings) => {
                   setResolvedAgentVoiceSettings((current) => ({
                     ...current,
@@ -317,10 +334,62 @@ export function HuddleParticipantsControl({
               />
             ) : null}
             <ParticipantAvatar participant={participant} size="room" />
-            <span className="w-full truncate text-center text-xs font-medium text-foreground/80">
-              {participant.displayName}
-            </span>
+            <div
+              className="-mb-2 mt-1 flex h-5 w-full shrink-0 items-center justify-center"
+              data-testid="huddle-participant-label-slot"
+            >
+              {participant.isAgent &&
+              participant.isActive &&
+              onInterruptAgentSpeech ? (
+                <Button
+                  aria-label={`Stop ${participant.displayName} speaking`}
+                  className="h-5 min-h-0 w-full rounded-sm bg-destructive/15 px-0 py-0 text-xs font-medium leading-none text-destructive hover:bg-destructive/20 hover:text-destructive"
+                  onClick={() => onInterruptAgentSpeech(participant.pubkey)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  Stop
+                </Button>
+              ) : (
+                <span className="w-full truncate text-center text-xs font-medium leading-none text-foreground/80">
+                  {participant.displayName}
+                </span>
+              )}
+            </div>
           </div>
+        ) : participant.isAgent ? (
+          <AgentVoiceMenu
+            agentPubkey={participant.pubkey}
+            contentAlign="start"
+            contentClassName="buzz-huddle-drawer buzz-huddle-popover text-foreground"
+            contentSide="top"
+            displayName={participant.displayName}
+            key={participant.pubkey}
+            onRemoveAgent={
+              onRemoveAgent
+                ? () => void onRemoveAgent(participant.pubkey)
+                : undefined
+            }
+            onSettingsChange={(settings) => {
+              setResolvedAgentVoiceSettings((current) => ({
+                ...current,
+                [participant.pubkey]: settings,
+              }));
+            }}
+            registry={voiceRegistry}
+            settings={resolvedAgentVoiceSettings[participant.pubkey]}
+            trigger={
+              <button
+                aria-label={`Voice settings for ${participant.displayName}`}
+                className="inline-flex shrink-0 cursor-pointer rounded-[30%] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+                data-testid="huddle-agent-voice-menu-trigger"
+                type="button"
+              >
+                <ParticipantAvatar participant={participant} size="bar" />
+              </button>
+            }
+          />
         ) : (
           <Tooltip key={participant.pubkey}>
             <TooltipTrigger asChild>
@@ -350,26 +419,6 @@ export function HuddleParticipantsControl({
             +{hiddenParticipantCount}
           </Button>
         </PopoverTrigger>
-      ) : onRemoveAgent ? (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              aria-label="Manage huddle participants"
-              className={cn(
-                "relative z-10 shrink-0 px-1 shadow-none",
-                appearance === "room"
-                  ? "buzz-huddle-participant-tile min-h-[6.375rem] min-w-28 rounded-xl border border-border/70 bg-muted/45 text-foreground/70 hover:bg-muted/65 hover:text-foreground"
-                  : "h-9 min-w-9 rounded-full border-2 border-black bg-white/15 text-white hover:bg-white/25 hover:text-white",
-              )}
-              size="icon"
-              type="button"
-              variant="ghost"
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </PopoverTrigger>
-          {participantDetails}
-        </Popover>
       ) : null}
     </div>
   );
@@ -403,16 +452,38 @@ function ParticipantAvatar({
   return (
     <span
       className={cn(
-        "buzz-huddle-speaking-avatar relative z-0 inline-flex shrink-0 rounded-full",
+        "buzz-huddle-speaking-avatar relative z-0 inline-flex shrink-0",
+        participant.isAgent
+          ? "buzz-huddle-speaking-avatar-agent"
+          : "rounded-full",
         sizeClass,
       )}
       data-testid="huddle-participant-avatar"
       style={speakerStyle}
     >
+      {participant.isAgent ? (
+        <svg
+          aria-hidden="true"
+          className="buzz-huddle-speaking-squircle pointer-events-none absolute inset-0 h-full w-full overflow-visible text-[hsl(142_71%_45%)]"
+          data-testid="huddle-agent-speaking-ring"
+          focusable="false"
+          viewBox="0 0 1 1"
+        >
+          <path
+            d={ROUNDED_SQUIRCLE_PATH}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+      ) : null}
       <ProfileAvatar
         avatarUrl={participant.avatarUrl}
         label={participant.displayName}
-        className="h-full w-full rounded-full border-2 border-black text-2xs"
+        initialsLabel={participant.initialsLabel}
+        className="h-full w-full border-2 border-black text-2xs"
+        shape={participant.isAgent ? "squircle" : "circle"}
       />
     </span>
   );

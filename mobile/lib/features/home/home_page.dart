@@ -1,13 +1,15 @@
 import 'dart:async';
 import 'dart:ui';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:buzz/shared/theme/buzz_icons.dart';
 
 import '../../shared/theme/theme.dart';
+import '../../shared/widgets/concentric_sheet_surface.dart';
 import '../../shared/widgets/directional_transition_scope.dart';
 import '../../shared/widgets/mobile_tab_footer_backdrop.dart';
 import '../activity/activity_page.dart';
@@ -17,11 +19,19 @@ import '../search/search_page.dart';
 class HomePage extends HookConsumerWidget {
   const HomePage({
     required this.settingsPageBuilder,
+    this.communityInvitePageBuilder,
+    this.communityAppearancePageBuilder,
     required this.hasUnreadInbox,
     super.key,
   });
 
   final WidgetBuilder settingsPageBuilder;
+
+  /// Builds the invite destination opened from the community sheet.
+  final WidgetBuilder? communityInvitePageBuilder;
+
+  /// Builds the appearance destination opened from the community sheet.
+  final WidgetBuilder? communityAppearancePageBuilder;
   final bool hasUnreadInbox;
 
   static const double _tabBarHeight = mobileTabBarHeight;
@@ -36,6 +46,7 @@ class HomePage extends HookConsumerWidget {
   static const double _fabClearance = _tabBarHeight + _tabBarBottomGap;
   static const Duration _tabIconWeightDuration = Duration(milliseconds: 120);
   static const Duration _tabUnreadBadgeDuration = Duration(milliseconds: 220);
+  static const double _settingsBackgroundScale = 0.97;
   static const Duration _tabContentTransitionDuration = Duration(
     milliseconds: 240,
   );
@@ -44,18 +55,18 @@ class HomePage extends HookConsumerWidget {
 
   static const _destinations = [
     _HomeDestination(
-      icon: LucideIcons.house300,
-      selectedIcon: LucideIcons.house500,
+      icon: BuzzIcons.house300,
+      selectedIcon: BuzzIcons.house500,
       label: 'Home',
     ),
     _HomeDestination(
-      icon: LucideIcons.inbox300,
-      selectedIcon: LucideIcons.inbox500,
+      icon: BuzzIcons.inbox300,
+      selectedIcon: BuzzIcons.inbox500,
       label: 'Activity',
     ),
     _HomeDestination(
-      icon: LucideIcons.search300,
-      selectedIcon: LucideIcons.search500,
+      icon: BuzzIcons.search300,
+      selectedIcon: BuzzIcons.search500,
       label: 'Search',
     ),
   ];
@@ -63,6 +74,7 @@ class HomePage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tabIndex = useState(0);
+    final visitedTabs = useRef(<int>{0});
     final tabContentTransitionDirection = useRef(1.0);
     final tabContentTransitionController = useAnimationController(
       duration: _tabContentTransitionDuration,
@@ -71,6 +83,10 @@ class HomePage extends HookConsumerWidget {
     final tabContentTransitionValue = useAnimation(
       tabContentTransitionController,
     );
+    final homeReselection = useValueNotifier(0);
+    final activityReselection = useValueNotifier(0);
+    final searchReselection = useValueNotifier(0);
+    final settingsTransitionProgress = useValueNotifier(0.0);
     final reducedMotion = MediaQuery.of(context).disableAnimations;
     final tabContentTransitionProgress = reducedMotion
         ? 1.0
@@ -82,77 +98,157 @@ class HomePage extends HookConsumerWidget {
     );
 
     final pages = [
-      ChannelsPage(settingsPageBuilder: settingsPageBuilder),
-      const ActivityPage(),
-      const SearchPage(),
-    ];
-
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      // Keep the floating navigation and Home quick actions anchored while the
-      // keyboard is visible on any tab.
-      resizeToAvoidBottomInset: false,
-      extendBody: true,
-      body: SizedBox.expand(
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Positioned.fill(child: ColoredBox(color: context.colors.surface)),
-            Positioned.fill(
-              child: MediaQuery(
-                data: _mediaQueryWithFloatingTabBarClearance(
-                  context,
-                  HomePage._fabClearance,
-                ),
-                child: DirectionalTransitionScope(
-                  horizontalOffset:
-                      tabContentTransitionDirection.value *
-                      _tabContentTransitionDistance *
-                      (1 - tabContentTransitionProgress),
-                  opacity: tabContentTransitionProgress,
-                  child: ClipRect(
-                    child: IndexedStack(index: tabIndex.value, children: pages),
-                  ),
-                ),
-              ),
-            ),
-            Align(
-              alignment: Alignment.bottomCenter,
-              child: IgnorePointer(
-                child: MobileTabFooterBackdrop(
-                  height: mobileTabFooterBackdropHeight(context),
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: ChannelQuickActionsLauncher(
-                visible: tabIndex.value == 0,
-                navigationBarHeight: HomePage._tabBarHeight,
-                navigationBarBottomGap: HomePage._tabBarBottomGap,
-                navigationBarWidth: navigationBarWidth,
-                systemBottomInset: systemBottomInset,
-                rightInset: Grid.sm,
-              ),
-            ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: _FloatingTabBar(
-        selectedIndex: tabIndex.value,
-        hasUnreadInbox: hasUnreadInbox,
-        onDestinationSelected: (i) {
-          if (i == tabIndex.value) return;
-          tabContentTransitionDirection.value = i > tabIndex.value ? 1 : -1;
-          unawaited(HapticFeedback.selectionClick());
-          tabIndex.value = i;
-          if (reducedMotion) {
-            tabContentTransitionController.value = 1;
-          } else {
-            unawaited(tabContentTransitionController.forward(from: 0));
+      ChannelsPage(
+        settingsPageBuilder: settingsPageBuilder,
+        communityInvitePageBuilder: communityInvitePageBuilder,
+        communityAppearancePageBuilder: communityAppearancePageBuilder,
+        tabReselection: homeReselection,
+        onSettingsTransitionProgress: (progress) {
+          if (settingsTransitionProgress.value != progress) {
+            settingsTransitionProgress.value = progress;
           }
         },
-        destinations: _destinations,
       ),
+      if (visitedTabs.value.contains(1))
+        ActivityPage(tabReselection: activityReselection)
+      else
+        const SizedBox.shrink(),
+      if (visitedTabs.value.contains(2))
+        SearchPage(tabReselection: searchReselection)
+      else
+        const SizedBox.shrink(),
+    ];
+
+    final settingsTransitionGradient = tabIndex.value == 0
+        ? context.appColors.topSectionGradient
+        : null;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Positioned.fill(
+          child: DecoratedBox(
+            key: const ValueKey('home-settings-transition-backdrop'),
+            decoration: BoxDecoration(
+              color: settingsTransitionGradient == null
+                  ? context.colors.surface
+                  : null,
+              gradient: settingsTransitionGradient,
+            ),
+          ),
+        ),
+        ValueListenableBuilder<double>(
+          key: const ValueKey('home-settings-transition-progress'),
+          // Keep one stable listenable for Home. Swapping in the route's
+          // animation can briefly rebuild with its completed value before the
+          // new controller starts, which makes the background scale twice.
+          valueListenable: settingsTransitionProgress,
+          child: Scaffold(
+            backgroundColor: Colors.transparent,
+            // Keep the floating navigation and Home quick actions anchored while the
+            // keyboard is visible on any tab.
+            resizeToAvoidBottomInset: false,
+            extendBody: true,
+            body: SizedBox.expand(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Positioned.fill(
+                    child: ColoredBox(color: context.colors.surface),
+                  ),
+                  Positioned.fill(
+                    child: MediaQuery(
+                      data: _mediaQueryWithFloatingTabBarClearance(
+                        context,
+                        HomePage._fabClearance,
+                      ),
+                      child: DirectionalTransitionScope(
+                        horizontalOffset:
+                            tabContentTransitionDirection.value *
+                            _tabContentTransitionDistance *
+                            (1 - tabContentTransitionProgress),
+                        opacity: tabContentTransitionProgress,
+                        child: ClipRect(
+                          child: IndexedStack(
+                            index: tabIndex.value,
+                            children: pages,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: IgnorePointer(
+                      child: MobileTabFooterBackdrop(
+                        height: mobileTabFooterBackdropHeight(context),
+                        tint: context.colors.primaryContainer,
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: ChannelQuickActionsLauncher(
+                      visible: tabIndex.value == 0,
+                      navigationBarHeight: HomePage._tabBarHeight,
+                      navigationBarBottomGap: HomePage._tabBarBottomGap,
+                      navigationBarWidth: navigationBarWidth,
+                      systemBottomInset: systemBottomInset,
+                      rightInset: Grid.sm,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            bottomNavigationBar: _FloatingTabBar(
+              selectedIndex: tabIndex.value,
+              hasUnreadInbox: hasUnreadInbox,
+              onDestinationSelected: (i) {
+                if (i == tabIndex.value) {
+                  switch (i) {
+                    case 0:
+                      homeReselection.value++;
+                    case 1:
+                      activityReselection.value++;
+                    case 2:
+                      searchReselection.value++;
+                  }
+                  return;
+                }
+                tabContentTransitionDirection.value = i > tabIndex.value
+                    ? 1
+                    : -1;
+                unawaited(HapticFeedback.selectionClick());
+                visitedTabs.value.add(i);
+                tabIndex.value = i;
+                if (reducedMotion) {
+                  tabContentTransitionController.value = 1;
+                } else {
+                  unawaited(tabContentTransitionController.forward(from: 0));
+                }
+              },
+              destinations: _destinations,
+            ),
+          ),
+          builder: (context, progress, child) {
+            final curvedProgress = reducedMotion
+                ? 0.0
+                : Curves.easeOutCubic.transform(progress);
+            return Opacity(
+              key: const ValueKey('home-settings-transition-opacity'),
+              // Settings supplies the crossfade. Keeping Home opaque beneath
+              // it prevents the bare backdrop showing through two partially
+              // transparent layers.
+              opacity: 1,
+              child: Transform.scale(
+                key: const ValueKey('home-settings-transition-scale'),
+                scale: lerpDouble(1, _settingsBackgroundScale, curvedProgress),
+                alignment: Alignment.center,
+                child: child,
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -237,6 +333,91 @@ class _FloatingTabBar extends StatelessWidget {
       destinationCount,
     );
 
+    final content = Padding(
+      padding: const EdgeInsets.all(HomePage._tabBarInnerInset),
+      child: SizedBox(
+        height: HomePage._tabBarHeight - (HomePage._tabBarInnerInset * 2),
+        width: destinationWidth * destinationCount,
+        child: Stack(
+          children: [
+            AnimatedAlign(
+              alignment: selectedAlignment,
+              duration: reducedMotion
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              child: SizedBox(
+                width: destinationWidth,
+                height: double.infinity,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: defaultTargetPlatform == TargetPlatform.iOS
+                        ? Color.alphaBlend(
+                            colorScheme.primary.withValues(alpha: 0.06),
+                            colorScheme.primaryContainer,
+                          )
+                        : colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(
+                      HomePage._selectedTabRadius,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var i = 0; i < destinations.length; i++)
+                  SizedBox(
+                    width: destinationWidth,
+                    child: _FloatingTabDestination(
+                      destination: destinations[i],
+                      selected: i == safeSelectedIndex,
+                      showUnreadBadge: i == 1 && hasUnreadInbox,
+                      onTap: () => onDestinationSelected(i),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+
+    final surface = defaultTargetPlatform == TargetPlatform.iOS
+        ? ConcentricSheetSurface(
+            key: const ValueKey('home-ios-glass-tabs'),
+            enabled: true,
+            usesGlass: true,
+            providesSheetSurface: false,
+            padding: EdgeInsets.zero,
+            minimumRadius: HomePage._tabBarRadius,
+            contentClipRadius: HomePage._tabBarRadius,
+            child: content,
+          )
+        : ClipRRect(
+            borderRadius: BorderRadius.circular(HomePage._tabBarRadius),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(HomePage._tabBarRadius),
+                  color: isDark
+                      ? colorScheme.surfaceContainerHighest.withValues(
+                          alpha: 0.72,
+                        )
+                      : colorScheme.surface,
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withValues(
+                      alpha: isDark ? 0.20 : 0.38,
+                    ),
+                  ),
+                ),
+                child: content,
+              ),
+            ),
+          );
+
     return SafeArea(
       minimum: const EdgeInsets.fromLTRB(
         HomePage._tabBarHorizontalMargin,
@@ -258,74 +439,7 @@ class _FloatingTabBar extends StatelessWidget {
               ),
             ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(HomePage._tabBarRadius),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(HomePage._tabBarRadius),
-                  color: isDark
-                      ? colorScheme.surfaceContainerHighest.withValues(
-                          alpha: 0.72,
-                        )
-                      : colorScheme.surface,
-                  border: Border.all(
-                    color: colorScheme.outlineVariant.withValues(
-                      alpha: isDark ? 0.20 : 0.38,
-                    ),
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.all(HomePage._tabBarInnerInset),
-                  child: SizedBox(
-                    height:
-                        HomePage._tabBarHeight -
-                        (HomePage._tabBarInnerInset * 2),
-                    width: destinationWidth * destinationCount,
-                    child: Stack(
-                      children: [
-                        AnimatedAlign(
-                          alignment: selectedAlignment,
-                          duration: reducedMotion
-                              ? Duration.zero
-                              : const Duration(milliseconds: 180),
-                          curve: Curves.easeOutCubic,
-                          child: SizedBox(
-                            width: destinationWidth,
-                            height: double.infinity,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: colorScheme.primaryContainer,
-                                borderRadius: BorderRadius.circular(
-                                  HomePage._selectedTabRadius,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            for (var i = 0; i < destinations.length; i++)
-                              SizedBox(
-                                width: destinationWidth,
-                                child: _FloatingTabDestination(
-                                  destination: destinations[i],
-                                  selected: i == safeSelectedIndex,
-                                  showUnreadBadge: i == 1 && hasUnreadInbox,
-                                  onTap: () => onDestinationSelected(i),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
+          child: surface,
         ),
       ),
     );

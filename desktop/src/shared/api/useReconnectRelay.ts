@@ -70,7 +70,7 @@ export function useReconnectRelay(): {
   }, [queryClient]);
 
   onBackstopRef.current = React.useCallback(() => {
-    toast("Still trying to reconnect — check your network.");
+    toast("Still trying to reconnect. Check your network.");
   }, []);
 
   const reconnect = React.useCallback(async () => {

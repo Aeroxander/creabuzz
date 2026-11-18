@@ -1,0 +1,30 @@
+[submodule "contracts/lib/forge-std"]
+	path = contracts/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std
+[submodule "contracts/lib/continuous-clearing-auction"]
+	path = contracts/lib/continuous-clearing-auction
+	url = https://github.com/Uniswap/continuous-clearing-auction
+[submodule "contracts/lib/majeur"]
+	path = contracts/lib/majeur
+	url = https://github.com/z0r0z/majeur
+[submodule "contracts/lib/openzeppelin-contracts"]
+	path = contracts/lib/openzeppelin-contracts
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "contracts/lib/tm-tokenmaster"]
+	path = contracts/lib/tm-tokenmaster
+	url = https://github.com/limitbreakinc/tm-tokenmaster
+[submodule "contracts/lib/creator-token-transfer-validator"]
+	path = contracts/lib/creator-token-transfer-validator
+	url = https://github.com/limitbreakinc/creator-token-transfer-validator
+[submodule "contracts/lib/creator-token-standards"]
+	path = contracts/lib/creator-token-standards
+	url = https://github.com/limitbreakinc/creator-token-standards
+[submodule "apptoken-dev"]
+	path = apptoken-dev
+	url = https://github.com/limitbreakinc/apptoken-dev.git
+[submodule "contracts/lib/zerodev-kernel"]
+	path = contracts/lib/zerodev-kernel
+	url = https://github.com/zerodevapp/kernel
+[submodule "contracts/lib/zerodev-kernel-7579-plugins"]
+	path = contracts/lib/zerodev-kernel-7579-plugins
+	url = https://github.com/zerodevapp/kernel-7579-plugins

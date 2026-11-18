@@ -164,7 +164,7 @@ function PreviewBody({
 
       <p className="text-sm text-muted-foreground">
         A new team will be created with fresh keypairs for all members. The
-        imported team is independent of the source — identity never travels.
+        imported team is independent of the source. Identity never travels.
       </p>
 
       {/* Member list */}
@@ -198,7 +198,7 @@ function PreviewBody({
           <p className="text-sm font-medium">Respond-to allowlist</p>
           <p className="text-xs text-muted-foreground">
             This snapshot includes source-environment pubkey allowlists for one
-            or more members. Those identities are not meaningful on your relay.
+            or more members. Those identities are not meaningful on your server.
           </p>
           <div className="flex flex-col gap-1.5">
             <label className="flex cursor-pointer items-center gap-2">
@@ -210,7 +210,7 @@ function PreviewBody({
                 type="radio"
               />
               <span className="text-sm">
-                <strong>Clear</strong> — start with empty allowlists (safer)
+                <strong>Clear</strong>: start with empty allowlists (safer)
               </span>
             </label>
             <label className="flex cursor-pointer items-center gap-2">
@@ -222,7 +222,7 @@ function PreviewBody({
                 type="radio"
               />
               <span className="text-sm">
-                <strong>Keep</strong> — copy source allowlists to new members
+                <strong>Keep</strong>: copy source allowlists to new members
               </span>
             </label>
           </div>

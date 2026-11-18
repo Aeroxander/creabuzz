@@ -1,16 +1,17 @@
 use chrono::{DateTime, Utc};
 use futures_util::FutureExt as _;
 use sqlx::{Acquire, PgPool, Row};
-use tracing::{debug, instrument, warn};
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 use buzz_core::CommunityId;
+use buzz_datastore_tracing::datastore_span;
 
 use crate::{
     action::AuditAction,
     entry::{AuditEntry, NewAuditEntry},
     error::AuditError,
-    hash::{compute_hash, to_storage_precision},
+    hash::{compute_hash, to_storage_precision, CURRENT_HASH_VERSION},
 };
 
 /// The `created_at` stamped on a new entry.
@@ -49,7 +50,11 @@ impl AuditService {
     /// Serialized per-community via `pg_advisory_lock`. Postgres advisory locks
     /// are session-scoped, so we acquire before the transaction and release
     /// after commit (or on any error path).
-    #[instrument(skip(self, entry), fields(action = %entry.action))]
+    #[datastore_span(
+        name = "audit_log",
+        system = "postgresql",
+        fields(action = %entry.action)
+    )]
     pub async fn log(&self, entry: NewAuditEntry) -> Result<AuditEntry, AuditError> {
         let mut conn = self.pool.acquire().await?;
 
@@ -114,6 +119,7 @@ impl AuditService {
         let mut audit_entry = AuditEntry {
             community_id,
             seq,
+            hash_version: CURRENT_HASH_VERSION,
             hash: Vec::new(),
             prev_hash,
             action: entry.action,
@@ -130,8 +136,8 @@ impl AuditService {
         sqlx::query(
             r#"
             INSERT INTO audit_log
-                (community_id, seq, hash, prev_hash, action, actor_pubkey, object_id, detail, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                (community_id, seq, hash, prev_hash, action, actor_pubkey, object_id, detail, created_at, hash_version)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             "#,
         )
         .bind(audit_entry.community_id)
@@ -143,6 +149,7 @@ impl AuditService {
         .bind(audit_entry.object_id.as_deref())
         .bind(&audit_entry.detail)
         .bind(audit_entry.created_at)
+        .bind(audit_entry.hash_version)
         .execute(&mut *tx)
         .await?;
 
@@ -156,7 +163,11 @@ impl AuditService {
     /// Reads exactly that community's chain — it can never observe another
     /// community's entries or head. Returns `Ok(false)` if the range is empty,
     /// `Ok(true)` if the segment is internally consistent.
-    #[instrument(skip(self))]
+    #[datastore_span(
+        name = "audit_verify_chain",
+        system = "postgresql",
+        fields(from_seq = from_seq, to_seq = to_seq)
+    )]
     pub async fn verify_chain(
         &self,
         community: CommunityId,
@@ -166,7 +177,7 @@ impl AuditService {
         let rows = sqlx::query(
             r#"
             SELECT community_id, seq, hash, prev_hash, action, actor_pubkey,
-                   object_id, detail, created_at
+                   object_id, detail, created_at, hash_version
             FROM audit_log
             WHERE community_id = $1 AND seq BETWEEN $2 AND $3
             ORDER BY seq ASC
@@ -208,7 +219,11 @@ impl AuditService {
     /// Returns up to `limit` entries from one community's chain starting at
     /// `from_seq`, ordered by sequence number. Scoped to `community` — never
     /// returns another community's rows.
-    #[instrument(skip(self))]
+    #[datastore_span(
+        name = "audit_get_entries",
+        system = "postgresql",
+        fields(from_seq = from_seq, limit = limit)
+    )]
     pub async fn get_entries(
         &self,
         community: CommunityId,
@@ -218,7 +233,7 @@ impl AuditService {
         let rows = sqlx::query(
             r#"
             SELECT community_id, seq, hash, prev_hash, action, actor_pubkey,
-                   object_id, detail, created_at
+                   object_id, detail, created_at, hash_version
             FROM audit_log
             WHERE community_id = $1 AND seq >= $2
             ORDER BY seq ASC
@@ -245,6 +260,7 @@ fn row_to_audit_entry(row: &sqlx::postgres::PgRow) -> Result<AuditEntry, AuditEr
     Ok(AuditEntry {
         community_id: row.get::<Uuid, _>("community_id"),
         seq: row.get("seq"),
+        hash_version: row.get("hash_version"),
         hash: row.get("hash"),
         prev_hash: row.get("prev_hash"),
         action,
@@ -256,7 +272,7 @@ fn row_to_audit_entry(row: &sqlx::postgres::PgRow) -> Result<AuditEntry, AuditEr
 }
 
 #[cfg(test)]
-mod tests {
+mod postgres_tests {
     use super::*;
     use crate::action::AuditAction;
     use crate::entry::NewAuditEntry;
@@ -274,7 +290,7 @@ mod tests {
 
     async fn test_pool() -> Option<PgPool> {
         let url = std::env::var("DATABASE_URL")
-            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".into());
+            .unwrap_or_else(|_| "postgres://buzz:buzz_dev@localhost:5432/buzz".into()); // sadscan:disable np.postgres.1 -- local test fixture
         PgPool::connect(&url).await.ok()
     }
 
@@ -330,6 +346,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(e.seq, 1, "first entry in a community starts at seq 1");
+        assert_eq!(e.hash_version, CURRENT_HASH_VERSION);
         assert!(e.prev_hash.is_none(), "genesis entry has NULL prev_hash");
         assert_eq!(e.hash.len(), 32);
         assert_eq!(e.community_id, c);
@@ -345,8 +362,18 @@ mod tests {
         let svc = AuditService::new(pool.clone());
         let c = make_community(&pool).await;
 
-        let e1 = svc
+        let mut e1 = svc
             .log(new_entry(c, AuditAction::EventCreated))
+            .await
+            .unwrap();
+        // Model a historical row, including the migration's version default.
+        e1.hash_version = 1;
+        e1.hash = compute_hash(&e1).unwrap().to_vec();
+        sqlx::query("UPDATE audit_log SET hash_version = DEFAULT, hash = $1 WHERE community_id = $2 AND seq = $3")
+            .bind(&e1.hash)
+            .bind(c)
+            .bind(e1.seq)
+            .execute(&pool)
             .await
             .unwrap();
         let e2 = svc
@@ -361,6 +388,8 @@ mod tests {
         assert_eq!(e1.seq, 1);
         assert_eq!(e2.seq, 2);
         assert_eq!(e3.seq, 3);
+        assert_eq!(e2.hash_version, CURRENT_HASH_VERSION);
+        assert_eq!(e3.hash_version, CURRENT_HASH_VERSION);
         assert!(e1.prev_hash.is_none());
         assert_eq!(e2.prev_hash.as_deref(), Some(e1.hash.as_slice()));
         assert_eq!(e3.prev_hash.as_deref(), Some(e2.hash.as_slice()));
@@ -368,6 +397,13 @@ mod tests {
             .verify_chain(CommunityId::from_uuid(c), 1, 3)
             .await
             .unwrap());
+        let rows = svc
+            .get_entries(CommunityId::from_uuid(c), 1, 3)
+            .await
+            .unwrap();
+        assert_eq!(rows[0].hash_version, 1);
+        assert_eq!(rows[0].hash, e1.hash);
+        assert_eq!(rows[1].hash_version, CURRENT_HASH_VERSION);
     }
 
     /// THE isolation property: two communities keep independent chains. Each
@@ -447,20 +483,19 @@ mod tests {
         svc.log(new_entry(c, AuditAction::EventCreated))
             .await
             .unwrap();
-        let e2 = svc
-            .log(new_entry(c, AuditAction::EventDeleted))
-            .await
-            .unwrap();
+        let mut input = new_entry(c, AuditAction::EventDeleted);
+        input.actor_pubkey = Some(vec![1; 32]);
+        let e2 = svc.log(input).await.unwrap();
         svc.log(new_entry(c, AuditAction::ChannelDeleted))
             .await
             .unwrap();
 
-        // Tamper with e2's stored actor_pubkey.
-        let tampered: Vec<u8> = vec![0xff; 32];
-        sqlx::query("UPDATE audit_log SET actor_pubkey = $1 WHERE community_id = $2 AND seq = $3")
-            .bind(tampered)
+        // This shift preserved the old concatenated bytes, but changes TLV.
+        sqlx::query("UPDATE audit_log SET actor_pubkey = $1, object_id = $4 WHERE community_id = $2 AND seq = $3")
+            .bind(vec![1_u8; 31])
             .bind(c)
             .bind(e2.seq)
+            .bind(format!("\u{1}{}", e2.object_id.as_deref().unwrap()))
             .execute(&pool)
             .await
             .unwrap();
@@ -490,8 +525,8 @@ mod tests {
 
         // Forge: copy A's seq-1 row's hash into B's chain at seq 1.
         sqlx::query(
-            "INSERT INTO audit_log (community_id, seq, hash, prev_hash, action, actor_pubkey, object_id, detail, created_at)
-             VALUES ($1, 1, $2, NULL, $3, $4, $5, $6, NOW())",
+            "INSERT INTO audit_log (community_id, seq, hash, prev_hash, action, actor_pubkey, object_id, detail, created_at, hash_version)
+             VALUES ($1, 1, $2, NULL, $3, $4, $5, $6, $7, $8)",
         )
         .bind(b)
         .bind(&a1.hash) // A's hash, which was computed over community_id = A
@@ -499,6 +534,8 @@ mod tests {
         .bind(a1.actor_pubkey.as_deref())
         .bind(a1.object_id.as_deref())
         .bind(&a1.detail)
+        .bind(a1.created_at)
+        .bind(a1.hash_version)
         .execute(&pool)
         .await
         .unwrap();
@@ -523,5 +560,71 @@ mod tests {
             .verify_chain(CommunityId::from_uuid(c), 1, 100)
             .await
             .unwrap());
+    }
+
+    /// Chain integrity under concurrent writers: N tasks racing [`AuditService::log`]
+    /// for the *same* community must land as a contiguous `1..=N` seq run whose
+    /// `prev_hash` links all verify.
+    ///
+    /// The per-community advisory lock is the serialization seam — this test is
+    /// the falsifiable proof that the lock actually orders the assignment of
+    /// `seq`/`prev_hash` (without it, two writers would read the same chain head
+    /// and produce two rows at the same seq, or a `prev_hash` that skips an
+    /// entry — both of which `verify_chain` must reject).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[ignore = "requires Postgres"]
+    async fn concurrent_appends_serialize_into_one_verifiable_chain() {
+        use std::sync::Arc;
+
+        let _g = db_lock().lock().await;
+        let Some(pool) = test_pool().await else {
+            return;
+        };
+        let svc = Arc::new(AuditService::new(pool.clone()));
+        let c = make_community(&pool).await;
+
+        const WRITERS: usize = 16;
+        let mut handles = Vec::with_capacity(WRITERS);
+        for i in 0..WRITERS {
+            let svc = Arc::clone(&svc);
+            handles.push(tokio::spawn(async move {
+                let mut entry = new_entry(c, AuditAction::EventCreated);
+                entry.object_id = Some(format!("concurrent_writer_{i}"));
+                svc.log(entry).await.expect("concurrent append")
+            }));
+        }
+        let mut entries = Vec::with_capacity(WRITERS);
+        for handle in handles {
+            entries.push(handle.await.expect("writer task"));
+        }
+        entries.sort_by_key(|e| e.seq);
+
+        let seqs: Vec<i64> = entries.iter().map(|e| e.seq).collect();
+        assert_eq!(
+            seqs,
+            (1..=WRITERS as i64).collect::<Vec<_>>(),
+            "concurrent appends must produce a contiguous seq run with no gaps \
+             or duplicates"
+        );
+        for pair in entries.windows(2) {
+            assert_eq!(
+                pair[1].prev_hash.as_deref(),
+                Some(pair[0].hash.as_slice()),
+                "every entry must chain to the entry one seq below it"
+            );
+        }
+
+        let community = CommunityId::from_uuid(c);
+        assert!(
+            svc.verify_chain(community, 1, WRITERS as i64)
+                .await
+                .unwrap(),
+            "the concurrently-built chain must verify end to end"
+        );
+        // Reading it back through the bounded read seam must return exactly the
+        // entries that were appended — this is the shape the desktop's REQ
+        // (kinds:[48001], limit:200) replays after publication.
+        let read_back = svc.get_entries(community, 1, WRITERS as i64).await.unwrap();
+        assert_eq!(read_back, entries);
     }
 }

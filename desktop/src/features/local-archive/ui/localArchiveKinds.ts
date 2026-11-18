@@ -31,7 +31,10 @@ export const KIND_GROUPS: ReadonlyArray<KindGroup> = [
         kind: k,
         label: kindLabel(k),
       })),
-      { kind: KIND_STREAM_MESSAGE_DIFF, label: "Message diffs (kind 40008)" },
+      {
+        kind: KIND_STREAM_MESSAGE_DIFF,
+        label: "Code diffs shared in messages",
+      },
     ],
   },
   {
@@ -52,9 +55,7 @@ export const KIND_GROUPS: ReadonlyArray<KindGroup> = [
   },
   {
     label: "System messages",
-    items: [
-      { kind: KIND_SYSTEM_MESSAGE, label: "System messages (kind 40099)" },
-    ],
+    items: [{ kind: KIND_SYSTEM_MESSAGE, label: "System messages" }],
   },
 ] as const;
 
@@ -62,21 +63,21 @@ export const KIND_GROUPS: ReadonlyArray<KindGroup> = [
 function kindLabel(kind: number): string {
   switch (kind) {
     case 5:
-      return "Event deletions (kind 5)";
+      return "Deletions";
     case 7:
-      return "Reactions (kind 7)";
+      return "Reactions";
     case 9:
-      return "Stream messages (kind 9)";
+      return "Messages (older format)";
     case 9005:
-      return "Buzz-native deletions (kind 9005)";
+      return "Channel moderator deletions";
     case 40002:
-      return "Stream messages v2 (kind 40002)";
+      return "Messages";
     case 40003:
-      return "Message edits (kind 40003)";
+      return "Message edits";
     case 45001:
-      return "Forum posts (kind 45001)";
+      return "Forum posts";
     case 45003:
-      return "Forum comments (kind 45003)";
+      return "Forum comments";
     default:
       return `Kind ${kind}`;
   }

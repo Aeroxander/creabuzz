@@ -51,8 +51,8 @@ export function ArchiveConfirmDialog({
           </li>
           <li>
             This only affects{" "}
-            <span className="font-medium text-foreground">this space</span> —
-            not their account anywhere else
+            <span className="font-medium text-foreground">this space</span>, not
+            their account anywhere else
           </li>
           <li>You can unarchive them at any time to restore them</li>
         </ul>

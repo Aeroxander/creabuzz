@@ -239,6 +239,212 @@ fn migrate_personas_supersedes_future_dated_head() {
     assert!(row.pending_sync, "superseding row must be pending_sync");
 }
 
+fn tag_shape(event: &nostr::Event) -> Vec<Vec<&str>> {
+    event
+        .tags
+        .iter()
+        .map(|t| t.as_slice().iter().map(String::as_str).collect())
+        .collect()
+}
+
+/// Seed a retained kind:30175 head at `base/retention.db` carrying exactly
+/// `tags` and `content`, built by HAND (never through the production builder)
+/// so a carry-forward regression cannot make the seed agree with an assertion.
+fn seed_migration_head(
+    base: &Path,
+    keys: &nostr::Keys,
+    tags: Vec<nostr::Tag>,
+    content: &str,
+) -> nostr::Event {
+    use crate::managed_agents::retention::{open_retention_db, retain_event, RetainedEvent};
+    use buzz_core_pkg::kind::KIND_PERSONA;
+    use nostr::{EventBuilder, JsonUtil, Kind};
+
+    let event = EventBuilder::new(Kind::Custom(KIND_PERSONA as u16), content)
+        .tags(tags)
+        .sign_with_keys(keys)
+        .expect("signed seed head");
+    let conn = open_retention_db(&base.join("retention.db")).unwrap();
+    retain_event(
+        &conn,
+        &RetainedEvent {
+            kind: KIND_PERSONA,
+            pubkey: keys.public_key().to_hex(),
+            d_tag: "code-reviewer".to_string(),
+            content: content.to_string(),
+            created_at: event.created_at.as_secs() as i64,
+            raw_event: event.as_json(),
+            pending_sync: false,
+        },
+    )
+    .expect("seed head retained");
+    event
+}
+
+/// Boot-reconcile seam (`migrate_personas_in_dir_at` → `build_persona_event`):
+/// the disk record cannot re-derive the retained head's
+/// `["skill", <id>, <scope>]` bindings or the template `["marker", …]` tag —
+/// `skill_bindings` reads them off this head at spawn — so a content edit on
+/// disk must carry both forward byte-identically while content updates and
+/// `d` is recomputed exactly once.
+#[test]
+fn migrate_republish_carries_binding_tags_and_marker_forward() {
+    use crate::managed_agents::retention::{get_retained_event, open_retention_db};
+    use buzz_core_pkg::kind::KIND_PERSONA;
+    use nostr::{JsonUtil, Tag};
+
+    let base = tempfile::tempdir().unwrap();
+    let keys = nostr::Keys::generate();
+    let pubkey = keys.public_key().to_hex();
+
+    const HEAD_CONTENT: &str =
+        r#"{"display_name":"Code Reviewer","system_prompt":"You review code."}"#;
+    let head = seed_migration_head(
+        base.path(),
+        &keys,
+        vec![
+            Tag::parse(["d", "code-reviewer"]).expect("d tag"),
+            Tag::parse(["skill", "ethereum-dev", "developers"]).expect("skill tag"),
+            Tag::parse(["marker", "template"]).expect("marker tag"),
+        ],
+        HEAD_CONTENT,
+    );
+
+    // Desktop edit to the template-applied persona: content changes, and the
+    // record still knows nothing about the bindings it never carried.
+    let mut edited = one_persona();
+    edited.as_array_mut().unwrap()[0]["system_prompt"] =
+        serde_json::json!("You review code carefully.");
+    write_base_personas(base.path(), &edited);
+
+    assert_eq!(
+        migrate_personas_in_dir(base.path(), &keys).unwrap(),
+        1,
+        "changed content over the binding head must re-retain"
+    );
+
+    let conn = open_retention_db(&base.path().join("retention.db")).unwrap();
+    let row = get_retained_event(&conn, KIND_PERSONA, &pubkey, "code-reviewer")
+        .unwrap()
+        .expect("head retained");
+    assert!(
+        row.content.contains("carefully"),
+        "content must update on the rebuild"
+    );
+    assert_ne!(row.content, HEAD_CONTENT, "content must change");
+    assert!(row.pending_sync, "rebuilt head is queued for publish");
+
+    let event: nostr::Event = JsonUtil::from_json(&row.raw_event).unwrap();
+    assert_eq!(
+        tag_shape(&event),
+        vec![
+            vec!["d", "code-reviewer"],
+            vec!["skill", "ethereum-dev", "developers"],
+            vec!["marker", "template"],
+        ],
+        "binding + marker carried verbatim; d recomputed exactly once"
+    );
+    // Byte-identity against the seeded head's own tags, not just shape.
+    assert_eq!(event.tags.as_slice()[1], head.tags.as_slice()[1]);
+    assert_eq!(event.tags.as_slice()[2], head.tags.as_slice()[2]);
+}
+
+/// Inverse at the boot-reconcile seam: a head with no binding tags stays
+/// exactly `d` on a content edit — carry-forward must neither invent tags nor
+/// duplicate the recomputed ones.
+#[test]
+fn migrate_republish_of_a_tag_free_head_stays_tag_free() {
+    use crate::managed_agents::retention::{get_retained_event, open_retention_db};
+    use buzz_core_pkg::kind::KIND_PERSONA;
+    use nostr::JsonUtil;
+
+    let base = tempfile::tempdir().unwrap();
+    write_base_personas(base.path(), &one_persona());
+    let keys = nostr::Keys::generate();
+    let pubkey = keys.public_key().to_hex();
+
+    // First reconcile writes the natural tag-free head (`d` only).
+    assert_eq!(migrate_personas_in_dir(base.path(), &keys).unwrap(), 1);
+
+    let mut edited = one_persona();
+    edited.as_array_mut().unwrap()[0]["system_prompt"] =
+        serde_json::json!("You review code carefully.");
+    write_base_personas(base.path(), &edited);
+    assert_eq!(migrate_personas_in_dir(base.path(), &keys).unwrap(), 1);
+
+    let conn = open_retention_db(&base.path().join("retention.db")).unwrap();
+    let row = get_retained_event(&conn, KIND_PERSONA, &pubkey, "code-reviewer")
+        .unwrap()
+        .expect("head retained");
+    let event: nostr::Event = JsonUtil::from_json(&row.raw_event).unwrap();
+    assert_eq!(
+        tag_shape(&event),
+        vec![vec!["d", "code-reviewer"]],
+        "a tag-free head must not gain tags on republish"
+    );
+}
+
+/// Review-Proven Rules 1+2 at the boot-reconcile seam: the retained head is
+/// the only source of its bindings, so a head that no longer parses must fail
+/// the reconcile LOUD and leave the row byte-for-byte untouched — never be
+/// overwritten by a tag-stripped rebuild.
+#[test]
+fn migrate_fails_loud_on_unparsable_head_and_leaves_it_intact() {
+    use crate::managed_agents::retention::{get_retained_event, open_retention_db};
+    use buzz_core_pkg::kind::KIND_PERSONA;
+    use nostr::Tag;
+
+    let base = tempfile::tempdir().unwrap();
+    let keys = nostr::Keys::generate();
+    let pubkey = keys.public_key().to_hex();
+
+    const HEAD_CONTENT: &str =
+        r#"{"display_name":"Code Reviewer","system_prompt":"You review code."}"#;
+    seed_migration_head(
+        base.path(),
+        &keys,
+        vec![
+            Tag::parse(["d", "code-reviewer"]).expect("d tag"),
+            Tag::parse(["skill", "ethereum-dev", "developers"]).expect("skill tag"),
+        ],
+        HEAD_CONTENT,
+    );
+
+    // Corrupt the stored head AFTER seeding: the row exists but no longer
+    // parses.
+    let conn = open_retention_db(&base.path().join("retention.db")).unwrap();
+    conn.execute(
+        "UPDATE persona_events SET raw_event = 'not-a-json-event'
+         WHERE kind = ?1 AND pubkey = ?2 AND d_tag = ?3",
+        (KIND_PERSONA, pubkey.clone(), "code-reviewer".to_string()),
+    )
+    .expect("corrupt head");
+    drop(conn);
+
+    // Changed content would normally re-retain; the unparsable head must stop it.
+    let mut edited = one_persona();
+    edited.as_array_mut().unwrap()[0]["system_prompt"] =
+        serde_json::json!("You review code carefully.");
+    write_base_personas(base.path(), &edited);
+
+    let err = migrate_personas_in_dir(base.path(), &keys)
+        .expect_err("an unparsable head must block the rebuild");
+    assert!(
+        err.contains("failed to parse retained persona head"),
+        "error must name the head parse failure; got: {err}"
+    );
+
+    let conn = open_retention_db(&base.path().join("retention.db")).unwrap();
+    let row = get_retained_event(&conn, KIND_PERSONA, &pubkey, "code-reviewer")
+        .unwrap()
+        .expect("head row survives");
+    assert_eq!(row.raw_event, "not-a-json-event");
+    assert_eq!(
+        row.content, HEAD_CONTENT,
+        "bindings stay for the next attempt"
+    );
+}
+
 fn write_base_teams(base_dir: &Path, records: &serde_json::Value) {
     std::fs::write(
         base_dir.join("teams.json"),
@@ -298,4 +504,202 @@ fn migrate_teams_supersedes_future_dated_head() {
     assert!(row.content.contains("second"));
     assert_eq!(row.created_at, future + 1);
     assert!(row.pending_sync);
+}
+
+/// A retained persona head whose disk record was deleted (a tombstone whose
+/// atomic purge+enqueue rolled back) is an orphan: boot's positive legs
+/// enumerate disk records and never revisit it, so only the deletion sweep can
+/// retract it. The sweep must enqueue a kind:5 tombstone and purge the head.
+#[test]
+fn deletion_reconcile_tombstones_orphan_persona_head() {
+    use crate::managed_agents::retention::{get_retained_event, open_retention_db};
+    use buzz_core_pkg::kind::{KIND_DELETION, KIND_PERSONA};
+
+    let base = tempfile::tempdir().unwrap();
+    write_base_personas(base.path(), &one_persona());
+    let keys = nostr::Keys::generate();
+    let pubkey = keys.public_key().to_hex();
+    let db_path = base.path().join("retention.db");
+
+    // Positive leg retains the head, then the disk record is deleted.
+    assert_eq!(migrate_personas_in_dir(base.path(), &keys).unwrap(), 1);
+    write_base_personas(base.path(), &serde_json::json!([]));
+
+    assert_eq!(
+        reconcile_deleted_heads_at(base.path(), &keys, &db_path).unwrap(),
+        1
+    );
+
+    let conn = open_retention_db(&db_path).unwrap();
+    // The 30175 head is purged and a kind:5 tombstone is enqueued for it.
+    assert!(
+        get_retained_event(&conn, KIND_PERSONA, &pubkey, "code-reviewer")
+            .unwrap()
+            .is_none(),
+        "the orphan head must be purged"
+    );
+    let tombstone_d_tag =
+        crate::managed_agents::retention::tombstone_retention_d_tag(KIND_PERSONA, "code-reviewer");
+    let tombstone = get_retained_event(&conn, KIND_DELETION, &pubkey, &tombstone_d_tag)
+        .unwrap()
+        .expect("a kind:5 tombstone is enqueued for the orphan");
+    assert!(
+        tombstone.pending_sync,
+        "the tombstone is queued for publish"
+    );
+}
+
+/// A head whose disk record still exists is NOT an orphan: the sweep must leave
+/// it alone. This is the guard that keeps the negative leg from retracting live
+/// state right after the positive leg retained it.
+#[test]
+fn deletion_reconcile_leaves_live_head_untouched() {
+    use crate::managed_agents::retention::{get_retained_event, open_retention_db};
+    use buzz_core_pkg::kind::{KIND_DELETION, KIND_PERSONA};
+
+    let base = tempfile::tempdir().unwrap();
+    write_base_personas(base.path(), &one_persona());
+    let keys = nostr::Keys::generate();
+    let pubkey = keys.public_key().to_hex();
+    let db_path = base.path().join("retention.db");
+
+    assert_eq!(migrate_personas_in_dir(base.path(), &keys).unwrap(), 1);
+
+    // The disk record is still present, so nothing is orphaned.
+    assert_eq!(
+        reconcile_deleted_heads_at(base.path(), &keys, &db_path).unwrap(),
+        0
+    );
+
+    let conn = open_retention_db(&db_path).unwrap();
+    assert!(
+        get_retained_event(&conn, KIND_PERSONA, &pubkey, "code-reviewer")
+            .unwrap()
+            .is_some(),
+        "a live head must survive the deletion sweep"
+    );
+    let tombstone_d_tag =
+        crate::managed_agents::retention::tombstone_retention_d_tag(KIND_PERSONA, "code-reviewer");
+    assert!(
+        get_retained_event(&conn, KIND_DELETION, &pubkey, &tombstone_d_tag)
+            .unwrap()
+            .is_none(),
+        "no tombstone may be enqueued for a live head"
+    );
+}
+
+/// A malformed `managed-agents.json` must fail loud (and be preserved as
+/// `.invalid`) — never read as empty and orphan every persona and agent head.
+/// This is the hard rider: a truncated file must never trigger tombstones.
+#[test]
+fn deletion_reconcile_malformed_store_fails_loud_without_tombstoning() {
+    use crate::managed_agents::retention::{get_retained_event, open_retention_db};
+    use buzz_core_pkg::kind::{KIND_DELETION, KIND_PERSONA};
+
+    let base = tempfile::tempdir().unwrap();
+    write_base_personas(base.path(), &one_persona());
+    let keys = nostr::Keys::generate();
+    let pubkey = keys.public_key().to_hex();
+    let db_path = base.path().join("retention.db");
+
+    assert_eq!(migrate_personas_in_dir(base.path(), &keys).unwrap(), 1);
+    // Truncate managed-agents.json to invalid JSON AFTER the head is retained.
+    std::fs::write(base.path().join("managed-agents.json"), b"{ truncated").unwrap();
+
+    let err = reconcile_deleted_heads_at(base.path(), &keys, &db_path)
+        .expect_err("a malformed store must fail loud");
+    assert!(
+        err.contains("managed-agents.json"),
+        "error names the store: {err}"
+    );
+    assert!(
+        base.path().join("managed-agents.json.invalid").exists(),
+        "the malformed store is preserved as .invalid"
+    );
+
+    let conn = open_retention_db(&db_path).unwrap();
+    assert!(
+        get_retained_event(&conn, KIND_PERSONA, &pubkey, "code-reviewer")
+            .unwrap()
+            .is_some(),
+        "a malformed store must NOT orphan a live head"
+    );
+    let tombstone_d_tag =
+        crate::managed_agents::retention::tombstone_retention_d_tag(KIND_PERSONA, "code-reviewer");
+    assert!(
+        get_retained_event(&conn, KIND_DELETION, &pubkey, &tombstone_d_tag)
+            .unwrap()
+            .is_none(),
+        "a fail-loud abort must enqueue no tombstones"
+    );
+}
+
+/// A retained 30177 managed-agent head with NO local disk record is the NORMAL
+/// cross-device state — inbound sync retains an agent's head on device B
+/// without minting a local record, because agents carry device-local secrets
+/// that can't come from a relay event. The deletion sweep must therefore leave
+/// it untouched: no kind:5 tombstone, no kind:9035 archive, and the head
+/// survives. Sweeping it would delete every device-A agent at device B's boot.
+#[test]
+fn deletion_reconcile_leaves_managed_agent_head_untouched() {
+    use crate::managed_agents::retention::{
+        get_retained_event, open_retention_db, retain_event, RetainedEvent,
+    };
+    use buzz_core_pkg::kind::{KIND_DELETION, KIND_IA_ARCHIVE_REQUEST, KIND_MANAGED_AGENT};
+
+    // A valid 32-byte x-only pubkey hex — the 30177 d_tag is the agent pubkey.
+    const AGENT_PUBKEY: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+
+    let base = tempfile::tempdir().unwrap();
+    let keys = nostr::Keys::generate();
+    let pubkey = keys.public_key().to_hex();
+    let db_path = base.path().join("retention.db");
+
+    // Device B: a 30177 head retained via inbound sync, with no disk record and
+    // no managed-agents.json at all (the store is absent on a fresh device).
+    let conn = open_retention_db(&db_path).unwrap();
+    retain_event(
+        &conn,
+        &RetainedEvent {
+            kind: KIND_MANAGED_AGENT,
+            pubkey: pubkey.clone(),
+            d_tag: AGENT_PUBKEY.to_string(),
+            content: r#"{"name":"Agent"}"#.to_string(),
+            created_at: 1_700_000_000,
+            raw_event: r#"{"id":"seed"}"#.to_string(),
+            pending_sync: false,
+        },
+    )
+    .unwrap();
+    drop(conn);
+
+    // No persona/team records either, so the sweep tombstones nothing.
+    assert_eq!(
+        reconcile_deleted_heads_at(base.path(), &keys, &db_path).unwrap(),
+        0
+    );
+
+    let conn = open_retention_db(&db_path).unwrap();
+    assert!(
+        get_retained_event(&conn, KIND_MANAGED_AGENT, &pubkey, AGENT_PUBKEY)
+            .unwrap()
+            .is_some(),
+        "the device-A agent head must survive device B's boot sweep"
+    );
+    let tombstone_d_tag = crate::managed_agents::retention::tombstone_retention_d_tag(
+        KIND_MANAGED_AGENT,
+        AGENT_PUBKEY,
+    );
+    assert!(
+        get_retained_event(&conn, KIND_DELETION, &pubkey, &tombstone_d_tag)
+            .unwrap()
+            .is_none(),
+        "no kind:5 tombstone may be enqueued for a device-local-absent agent"
+    );
+    assert!(
+        get_retained_event(&conn, KIND_IA_ARCHIVE_REQUEST, &pubkey, AGENT_PUBKEY)
+            .unwrap()
+            .is_none(),
+        "no kind:9035 archive may be enqueued for a device-local-absent agent"
+    );
 }

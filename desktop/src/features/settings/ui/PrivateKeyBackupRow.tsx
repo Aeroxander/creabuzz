@@ -205,8 +205,8 @@ export function PrivateKeyBackupRow() {
             progress={testProgress}
           />
           <p className="text-xs leading-5 text-muted-foreground">
-            Backups use the standard NIP-49 format, so this works for backups
-            from compatible Nostr apps too.
+            Backups use a standard format, so this also works for backups made
+            by other apps.
           </p>
         </DialogContent>
       </Dialog>

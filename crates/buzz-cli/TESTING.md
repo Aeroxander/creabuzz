@@ -106,6 +106,19 @@ cargo clippy -p buzz-cli -- -D warnings
 
 ---
 
+### One-command org loop
+
+`scripts/loop-test.sh` walks the DAO OS loop against a real relay it boots on a throwaway port
+(template apply and re-apply, seat an agent, budget bites for an agent but not a human, owner
+approval, emergency stop, and — when `web/node_modules` exists — the priced LLM spend budget).
+It needs Postgres and Redis (`DATABASE_URL`, `REDIS_URL`), migrates a fresh database itself, and
+prints one line per check; it exits non-zero on any failure. The on-chain half is the forge
+suites (`scripts/dogfood-raise.sh` was removed in D150, see tag pre-deprecation-2026-10-31).
+
+```bash
+DATABASE_URL=postgres://buzz@127.0.0.1:5433/buzz REDIS_URL=redis://127.0.0.1:6379 scripts/loop-test.sh
+```
+
 ## 6. Live Testing — Command by Command
 
 Run each command, verify exit code 0 and check output. Most commands
@@ -216,8 +229,11 @@ echo 'Body with `backticks` and $vars stays literal.' \
 buzz messages get --channel "$CHANNEL_ID" | jq .
 buzz messages get --channel "$CHANNEL_ID" --limit 5 | jq .
 
-# messages thread
+# messages thread from the root, a reply, and a canonical link
 buzz messages thread --channel "$CHANNEL_ID" --event "$EVENT_ID" | jq .
+buzz messages thread --channel "$CHANNEL_ID" --event "$REPLY_ID" | jq .
+buzz messages thread \
+  --link "buzz://message?channel=$CHANNEL_ID&id=$REPLY_ID&thread=$EVENT_ID" | jq .
 
 # messages search
 buzz messages search --query "Hello" | jq .
@@ -425,7 +441,8 @@ buzz workflows delete --workflow "$WF_ID" | jq .
 ```bash
 buzz feed get | jq .
 buzz feed get --limit 5 | jq .
-# Expected: [{id,pubkey,kind,content,created_at,tags}] — sig-stripped, sorted newest-first
+# Expected: complete signed Nostr events with
+# {id,pubkey,kind,content,created_at,sig,tags}, sorted newest-first
 ```
 
 ### 6.11 Forum & Voting
@@ -481,6 +498,167 @@ buzz notes get --name dco-check   # exits non-zero: not found
 # rm of a slug you never published → NotFound, no kind:5 emitted
 buzz notes rm --name does-not-exist   # exits non-zero
 ```
+
+### 6.13 Tasks with a finish line (`launchpad tasks`, kind:47003)
+
+A helper's side of a project's tasks. A project asks for help in an update, a helper offers, the team accepts the
+offer in the web app and writes "Done means", the helper hands work in, and someone else on the team checks it.
+`list`, `show` and `open` each print one JSON object marked `"schema": "creaton.tasks.v1"`; the writes print
+`{event_id, accepted, message}`.
+
+There is deliberately no command to confirm work, send it back, cancel a task, vote or award anything.
+
+You need two identities: the founder (`$FOUNDER_HEX`, who owns project `$LAUNCH`) and a helper (the key the CLI runs
+as). Post the update that asks for help, accept the offer and confirm the work from the web app as the founder.
+
+```bash
+# list: open help requests and tasks, each task with its state and what this account can do next
+buzz launchpad tasks list "$LAUNCH" --author "$FOUNDER_HEX" | jq .
+# → {schema, project, help_requests:[{update_id,text,size,offers,offered_by_me}], tasks:[{task_id,project,state,
+#    late,helper,helper_is_agent,helper_run_by,goal_id,goal,what,done_means,size,due,limits,mine,next,checked_by,
+#    self_checked,evidence:[{links,files:[{sha256,name,url}],confirmed_by,sent_back}],more_time,gave_up,cancelled}],
+#    complete:{help_requests,tasks,goals,helper_labels}, rewards}
+# self_checked is true when the only check is the project's founder's own, on their own work or their agent's: the
+# server takes that check only while nobody else on the project could make it. The task is done ("confirmed"), and
+# it is not work someone else accepted.
+
+# open: help requests anyone may offer on, across all projects, newest first, a bounded page at a time
+buzz launchpad tasks open --scan 500 | jq '{scanned, cut, next_until, open: [.open[] | {project: .project.id, text, may_offer}]}'
+# cut: true → older records remain; read on with --until <next_until>. cut: false → the end was reached.
+# --scan 0 or --scan 2001 → exit 1
+
+# offer on a request (public; not an agreement, and not a yes to any task made from it)
+UPDATE_ID=$(buzz launchpad tasks list "$LAUNCH" --author "$FOUNDER_HEX" | jq -r '.help_requests[0].update_id')
+buzz launchpad tasks offer "$LAUNCH" --author "$FOUNDER_HEX" --update "$UPDATE_ID" --note "I can test this tonight." | jq .
+# again → exit 5 (conflict): this account already offered
+
+# (founder, in the web app: Accept and make a task, with "Done means")
+TASK_ID=$(buzz launchpad tasks list "$LAUNCH" --author "$FOUNDER_HEX" | jq -r '.tasks[] | select(.mine) | .task_id')
+
+# accept: every task waits for your own yes (state "offered"), one made from your offer included:
+# an offer to help is not agreement to a task. Until you say yes it is listed only for the team and for you.
+buzz launchpad tasks accept "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" | jq .
+# on a task you already agreed to → exit 5
+
+# show: one task by its id, with every field (goal, done-means, limits, evidence, who checked)
+buzz launchpad tasks show "$TASK_ID" | jq '.task | {state, next, goal, what, done_means, size, due, limits}'
+# a step's id, or a task this account cannot see yet → exit 1
+
+# submit: words, links and files (at least one of them). A file is recorded by its sha256 fingerprint and name;
+# it is not uploaded.
+buzz launchpad tasks submit "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" \
+  --note "Tested on a Moto G6." --link https://example.org/recording --file ./recording.mp4 | jq .
+# the same words, links and files again → exit 5 (a retry never hands in twice)
+# --link ftp://x, a --file that is not there, or nothing to hand in → exit 1
+
+# more-time: a reason, and optionally the date asked for
+buzz launchpad tasks more-time "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" \
+  --reason "The phone broke." --until 2027-01-15 | jq .
+# while an earlier ask is unanswered → exit 5
+
+# give-up: hand the task back (on a second task; a given-up task is closed)
+buzz launchpad tasks give-up "$LAUNCH" --author "$FOUNDER_HEX" --task "$OTHER_TASK_ID" --note "No time this month." | jq .
+# again → exit 5
+
+# someone else's task → exit 1; a task id that is not this project's → exit 1 (not found)
+# there is no confirm:
+buzz launchpad tasks confirm "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID"   # exits non-zero: no such command
+```
+
+After `submit`, the task reads `state: "submitted"`, `next: "wait-for-check"`. Once a team member who is not the
+helper confirms it in the web app it reads `state: "confirmed"`, and the helper's profile lists it under Record.
+
+`list` reads by who signed the records (the team's, then the named helpers'), so records a stranger signs with the
+project's tags cannot make `complete.tasks` false. A task nobody has said yes to is left out of `list` unless the
+account is the helper it names or on the project's team; the record itself is public all the same.
+
+### 6.14 Weekly update and record (`launchpad updates post`, `launchpad record`)
+
+Run as the founder of `$LAUNCH` (or as a team member with `--author "$FOUNDER_HEX"`).
+
+```bash
+# a weekly update: each line of --next is a promise when the founder posts it
+buzz launchpad updates post "$LAUNCH" --title "Week 1" --done "Drew the first chart" \
+  --next $'Publish the northern sky\nFind a tester' \
+  --help-needed "Someone to check the star names" --help-size small --help-time "about a day" | jq .
+# → {accepted, event_id, message, promises:[{promise_id, text}]}
+# the same update again → exit 5; an account not on the team → exit 1
+
+# the next update answers the promises
+buzz launchpad updates post "$LAUNCH" --title "Week 2" --done "Published" \
+  --mark "<PROMISE_ID>=done" --mark "<OTHER_PROMISE_ID>=not-done:ran out of time" | jq .
+# a promise already answered → exit 5; a promise this project never made → exit 1 (not found)
+# --mark from a team member, or with --no-promises → exit 1
+
+# the record: totals, then every promise and goal
+buzz launchpad record "$LAUNCH" --author "$FOUNDER_HEX" | jq '{promises, goals, complete}'
+# → promises: {promised, kept, missed, changed, waiting, unanswered, answered_more_than_once}
+```
+
+### 6.15 Agent label (`agents confirm`, `agents label`, `agents show`)
+
+Two identities: the operator (a person) and the agent. The full walk is in `docs/agents/JOINING.md`.
+
+```bash
+# operator: sign for the agent (prints auth_tag; sends nothing)
+AUTH_TAG=$(BUZZ_PRIVATE_KEY="$OPERATOR_KEY" buzz agents confirm "$AGENT_HEX" | jq -r .auth_tag)
+
+# agent: label its own account
+BUZZ_AUTH_TAG="$AUTH_TAG" BUZZ_PRIVATE_KEY="$AGENT_KEY" buzz agents label --operator "$OPERATOR_HEX" | jq .
+# without BUZZ_AUTH_TAG, or with one signed by someone else → exit 3; labelled already → exit 5
+
+# anyone: read it back
+buzz agents show "$AGENT_HEX" | jq .
+# → {pubkey, agent: true, operator, says_agent: true, confirmed_by_operator: true, problem: null, …}
+
+# a labelled agent's promise is refused by the server (exit 3); the same update with --no-promises is stored
+BUZZ_AUTH_TAG="$AUTH_TAG" BUZZ_PRIVATE_KEY="$AGENT_KEY" buzz launchpad updates post "$AGENT_LAUNCH" --title "Week 1" --next "Ship"
+```
+
+### 6.16 An agent's whole loop (`start`, `tasks mine|next`, results, run record, `updates facts`)
+
+Run as the labelled agent of 6.15 (`BUZZ_AUTH_TAG` set). The loop, command by command, is in
+`docs/agents/WORKER-LOOP.md`; `cargo test -p buzz-cli --lib launchpad_docs` fails when that file names a command
+or flag the tool does not have. Making a task and checking work are the web app's; to run this against a bare relay,
+sign those two kind 47003 records by hand (the task record, and the team's `confirm` step; their tags are in
+`web/src/features/launchpad/lib/tasks.ts`).
+
+```bash
+# start: the same two records as the web app's Quick Start. A person's account: goal saved, exit 0.
+buzz launchpad start --name "Star Atlas" --pitch "A map of the northern sky anyone can read" \
+  --goal "Publish the northern sky chart" --how "The chart is on the site and ten people have read it" | jq .
+# → {schema:"creaton.start.v1", project:{id,author,path:"/p/<id>-<16 hex>"}, adopted, goal:{saved,needs_a_person}, shown}
+# again, same answers → adopted: true, still one project and one goal (buzz launchpad record shows goals: 1)
+# the LABELLED AGENT's account: the project is made, goal.saved false, goal.needs_a_person true, exit 3
+
+# find work, narrowed; every scan is bounded and says `cut`
+buzz launchpad tasks open --size small --max-time 3d --text catalogue | jq '{considered, cut, time_unknown, open: [.open[].text]}'
+buzz launchpad tasks next --max-time 1w | jq '{offer_command, fits, cut}'
+buzz launchpad tasks open --size huge          # exit 1
+
+# inbox: tasks that name this account, across projects, with the command that does the next step
+buzz launchpad tasks mine | jq '{counts, tasks: [.tasks[] | {state, next, due, cmd: .commands.next}]}'
+
+# hand in with numbers; reported by the helper, bounded like the server holds them
+buzz launchpad tasks submit "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" --note "Seven of 40 names differ." \
+  --result "match_rate=82.5/unit=%/baseline=70/n=40/by=commit abc123" --run-log ./run.log | jq .
+buzz launchpad tasks show "$TASK_ID" | jq '.task.evidence[0] | {results, results_note, run_log}'
+# --result x=high, 11 results, a repeated name, or numbers with no --note/--link/--file → exit 1
+# the same hand-in again → exit 5
+
+# run the declared checks for the piece handed in; with no Docker daemon the record says "not-run"
+buzz launchpad work-checks --launch "$LAUNCH" --launch-author "$FOUNDER_HEX" --task "$TASK_ID" --evidence "$PIECE_ID" \
+  --checks ./checks.json --dir ./work --sandbox-image alpine:3.20 --sandbox-supervisor ./check-supervisor | jq '{recordId, summary, sandboxEnforced, published}'
+buzz launchpad tasks submit "$LAUNCH" --author "$FOUNDER_HEX" --task "$TASK_ID" --note "With its run record." --run-record "$RECORD_ID" | jq .
+# a record someone else signed, or one for another task, or an id that is not there → exit 1
+
+# the facts a weekly update is drafted from, then a post with no promises
+buzz launchpad updates facts "$LAUNCH" | jq '{goals, last_update, promises_waiting_for_an_answer, work_accepted_since_last_update, help_requests_open}'
+buzz launchpad updates post "$LAUNCH" --title "Week 2" --done "<from the facts>" --no-promises | jq .
+```
+
+The server's side of the same loop (the agent limit is untouched, the bounds hold at the door) is
+`cargo test -p buzz-relay --lib -- launch_update_authority_postgres_tests --ignored`.
 
 ---
 
@@ -621,3 +799,14 @@ buzz channels delete --channel "$FORUM_ID" | jq .
 | 60 | `notes ls` | ☐ | Own, --author all, --tag, --limit |
 | 61 | `notes rm` | ☐ | Delete→get 404, double-delete idempotent, missing slug → NotFound |
 | 62 | `users set-status` | ☐ | Text+emoji, text only, emoji-only (`--text ""`), `--clear`, `--clear` + `--text` → exit 1 |
+| 63 | `launchpad tasks list` | ☐ | Open help requests, task states, `next`, `complete` flags |
+| 64 | `launchpad tasks offer` | ☐ | Second offer → exit 5; team member → exit 1; closed request → exit 1 |
+| 65 | `launchpad tasks accept` | ☐ | Direct task only; already agreed → exit 5; not your task → exit 1 |
+| 66 | `launchpad tasks submit` | ☐ | Note and/or links; bad link → exit 1; identical resubmit → exit 5 |
+| 67 | `launchpad tasks more-time` | ☐ | Reason required; unanswered ask → exit 5; no `confirm` command exists |
+| 68 | `launchpad tasks show` | ☐ | Every field present; `goal`, `limits`, `checked_by`; a step's id → exit 1 |
+| 69 | `launchpad tasks open` | ☐ | `cut`/`next_until` paging; `may_offer`; `--scan` out of range → exit 1 |
+| 70 | `launchpad tasks give-up` | ☐ | Closes the task; again → exit 5 |
+| 71 | `launchpad updates post` | ☐ | Promises from `--next`; repeat → exit 5; not on the team → exit 1; `--mark` rules |
+| 72 | `launchpad record` | ☐ | Totals kept/missed/changed/waiting/unanswered; `complete` flag |
+| 73 | `agents confirm` / `label` / `show` | ☐ | Both keys needed; label without the tag → exit 3; an agent's promise → exit 3 |

@@ -15,6 +15,12 @@ __pycache__/
 .env.local
 .env.*.local
 
+# A compose server's backups (every secret in .env and the whole database) and its filled-in policies (the operator's
+# name, address and email): deploy/compose/README.md
+deploy/compose/backups/
+deploy/compose/policies/*.md
+deploy/compose/policies/.stamps/
+
 # Editor / IDE
 .idea/
 .vscode/*
@@ -72,3 +78,19 @@ identity.key
 
 # Helm dependency tarballs — regenerable from Chart.lock via `helm dependency build`
 deploy/charts/*/charts/*.tgz
+
+# Local Redis dump (written at the repo root when a dev Redis runs from here)
+dump.rdb
+
+# Real-relay fixture written by web/tests/e2e-real/seed.mjs
+web/tests/e2e-real/.fixture.json
+web/tests/e2e-real/.social-fixture.json
+
+# fleet worker identity (generated on first start)
+.buzz-fleet-worker.key
+
+# Local orchestration state (not product source)
+.slim/deepwork/
+
+# Foundry cache written at the repo root when a run does not name its own
+/cache/

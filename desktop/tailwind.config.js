@@ -3,18 +3,53 @@ export default {
   theme: {
     extend: {
       // Sub-`text-xs` ramp for meta text (timestamps, count badges, tracking
-      // labels) and tiny glyphs. Defined in rem so Cmd +/- zoom — which scales
-      // the root <html> font-size — keeps scaling them. Do NOT reintroduce
-      // arbitrary `text-[…rem]` / `text-[…px]` literals; the px-text guard
-      // rejects them. Stock scale picks up from here: xs (12px), sm (14px)…
+      // labels) and tiny glyphs. These follow the virtual typography rem
+      // (`--buzz-type-rem` in styles/globals/typography.css), which is
+      // rem-relative: Cmd +/- zooms it with the rest of the layout, and the
+      // Font size preference nudges it alone. Do NOT reintroduce arbitrary `text-[…rem]` / `text-[…px]` literals;
+      // the px-text guard rejects them. Stock scale picks up from xs.
       fontSize: {
-        "2xs": "0.6875rem", // 11px — meta-text workhorse (timestamps, badges)
-        "3xs": "0.5rem", // 8px — tiny glyphs / micro labels
-        badge: "0.625rem", // 10px — compact status badges
-        // 40px — onboarding page titles (tightened tracking for large display type)
-        title: ["2.5rem", { lineHeight: "1.15", letterSpacing: "-0.02em" }],
-        // 36px — the backup-step private key, shown large in monospace
-        "nsec-key": ["2.25rem", { lineHeight: "1.3" }],
+        "2xs": "calc(var(--buzz-type-rem) * 0.6875)", // 11px at 16px type rem
+        "3xs": "calc(var(--buzz-type-rem) * 0.5)", // 8px at 16px type rem
+        badge: "calc(var(--buzz-type-rem) * 0.625)", // 10px at 16px type rem
+        "status-indicator": "0.9375rem", // 15px at the default root size
+        // Shared channel, DM, thread, and composer type. Variables keep app-wide
+        // font size and keyboard zoom consistent without branching components.
+        message: [
+          "var(--conversation-message-font-size)",
+          { lineHeight: "var(--conversation-message-line-height)" },
+        ],
+        "message-timestamp": [
+          "var(--conversation-timestamp-font-size)",
+          { lineHeight: "var(--conversation-timestamp-line-height)" },
+        ],
+        // 40px at the 16px type rem — onboarding page titles.
+        title: [
+          "calc(var(--buzz-type-rem) * 2.5)",
+          { lineHeight: "1.15", letterSpacing: "-0.02em" },
+        ],
+        // 36px at the 16px type rem — backup-step private key.
+        "nsec-key": [
+          "calc(var(--buzz-type-rem) * 2.25)",
+          { lineHeight: "1.3" },
+        ],
+        // 22px at the 16px type rem — compact onboarding-card private key.
+        "nsec-key-card": [
+          "calc(var(--buzz-type-rem) * 1.375)",
+          { lineHeight: "1.3" },
+        ],
+      },
+      lineHeight: {
+        // Keep fixed Tailwind line-height utilities in the typography scale so
+        // Cmd +/- cannot enlarge glyphs inside an unchanged line box. Single-
+        // line surfaces keep their existing truncate/overflow behavior.
+        3: "calc(var(--buzz-type-rem) * 0.75)",
+        4: "var(--buzz-type-rem)",
+        5: "calc(var(--buzz-type-rem) * 1.25)",
+        6: "calc(var(--buzz-type-rem) * 1.5)",
+        7: "calc(var(--buzz-type-rem) * 1.75)",
+        8: "calc(var(--buzz-type-rem) * 2)",
+        "message-author": "var(--conversation-author-line-height)",
       },
       boxShadow: {
         "content-edge": "-1px -1px 0 0 hsl(var(--sidebar-border) / 0.45)",
@@ -36,11 +71,16 @@ export default {
       },
       spacing: {
         4.5: "1.125rem",
+        "status-indicator": "0.9375rem", // 15px at the default root size
+        "conversation-body": "var(--conversation-body-gap)",
+        "conversation-list": "var(--conversation-list-item-gap)",
+        "conversation-paragraph": "var(--conversation-paragraph-gap)",
+        "conversation-row": "var(--conversation-row-padding-block)",
       },
       fontFamily: {
         sans: [
-          '"Inter Variable"',
-          "Inter",
+          '"Figtree Variable"',
+          "Figtree",
           '"Avenir Next"',
           '"Segoe UI"',
           "sans-serif",
@@ -96,6 +136,42 @@ export default {
           added: "var(--status-added)",
           deleted: "var(--status-deleted)",
           modified: "var(--status-modified)",
+          // Semantic status tier (docs/paperclip-ux-reference.md §5): one hue
+          // per meaning — blue=liveness, amber=waiting/attention, red=
+          // blocking/fail, green=ok, violet=in-review, gray=neutral. Values
+          // live in globals/theme.css (`:root` + `.dark`, WCAG-tuned per
+          // theme). Consume via `text-status-<tone>`, `bg-status-<tone>-bg`,
+          // `border-status-<tone>-border`; no hardcoded status colors.
+          live: {
+            DEFAULT: "var(--status-live)",
+            bg: "var(--status-live-bg)",
+            border: "var(--status-live-border)",
+          },
+          waiting: {
+            DEFAULT: "var(--status-waiting)",
+            bg: "var(--status-waiting-bg)",
+            border: "var(--status-waiting-border)",
+          },
+          blocking: {
+            DEFAULT: "var(--status-blocking)",
+            bg: "var(--status-blocking-bg)",
+            border: "var(--status-blocking-border)",
+          },
+          ok: {
+            DEFAULT: "var(--status-ok)",
+            bg: "var(--status-ok-bg)",
+            border: "var(--status-ok-border)",
+          },
+          review: {
+            DEFAULT: "var(--status-review)",
+            bg: "var(--status-review-bg)",
+            border: "var(--status-review-border)",
+          },
+          neutral: {
+            DEFAULT: "var(--status-neutral)",
+            bg: "var(--status-neutral-bg)",
+            border: "var(--status-neutral-border)",
+          },
         },
         warning: {
           DEFAULT: "var(--ui-warning)",

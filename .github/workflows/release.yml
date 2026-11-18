@@ -198,30 +198,30 @@ jobs:
           EXTRACT_DIR="${RUNNER_TEMP}/signed-app-extract"
           rm -rf "$EXTRACT_DIR" && mkdir -p "$EXTRACT_DIR"
           ditto -x -k "$SIGNED_APP_ZIP" "$EXTRACT_DIR"
-          rm -rf "${APP_DIR}/Buzz.app"
-          cp -R "${EXTRACT_DIR}/Buzz.app" "${APP_DIR}/Buzz.app"
+          rm -rf "${APP_DIR}/Creaton.app"
+          cp -R "${EXTRACT_DIR}/Creaton.app" "${APP_DIR}/Creaton.app"
 
           # Rebuild the updater archive from the signed .app and re-sign it with the Tauri updater key.
-          rm -f "${APP_DIR}/Buzz.app.tar.gz" "${APP_DIR}/Buzz.app.tar.gz.sig"
-          (cd "$APP_DIR" && tar -czf Buzz.app.tar.gz Buzz.app)
-          TARBALL_ABS="$(pwd)/${APP_DIR}/Buzz.app.tar.gz"
+          rm -f "${APP_DIR}/Creaton.app.tar.gz" "${APP_DIR}/Creaton.app.tar.gz.sig"
+          (cd "$APP_DIR" && tar -czf Creaton.app.tar.gz Creaton.app)
+          TARBALL_ABS="$(pwd)/${APP_DIR}/Creaton.app.tar.gz"
           (cd desktop && pnpm tauri signer sign "$TARBALL_ABS")
 
       - name: Verify code signature
         run: |
           codesign --verify --deep --strict --verbose=2 \
-            desktop/src-tauri/target/release/bundle/macos/Buzz.app
+            desktop/src-tauri/target/release/bundle/macos/Creaton.app
           spctl --assess --type execute --verbose=4 \
-            desktop/src-tauri/target/release/bundle/macos/Buzz.app
+            desktop/src-tauri/target/release/bundle/macos/Creaton.app
           desktop/scripts/verify-macos-entitlements.sh \
-            desktop/src-tauri/target/release/bundle/macos/Buzz.app
+            desktop/src-tauri/target/release/bundle/macos/Creaton.app
 
       - name: Locate build artifacts
         id: artifacts
         run: |
           BUNDLE_DIR="desktop/src-tauri/target/release/bundle"
 
-          # Find the DMG (Tauri names it Buzz_<version>_<arch>.dmg)
+          # Find the DMG (Tauri names it Creaton_<version>_<arch>.dmg)
           DMG=$(find "$BUNDLE_DIR/dmg" -name '*.dmg' -type f | head -1)
           if [[ -z "$DMG" ]]; then
             echo "::error::No DMG found in $BUNDLE_DIR/dmg"
@@ -237,7 +237,7 @@ jobs:
             echo "::error::Updater archive or signature not found in $BUNDLE_DIR/macos"
             exit 1
           fi
-          RENAMED="$(dirname "$ARCHIVE")/Buzz_${VERSION}_aarch64.app.tar.gz"
+          RENAMED="$(dirname "$ARCHIVE")/Creaton_${VERSION}_aarch64.app.tar.gz"
           mv "$ARCHIVE" "$RENAMED"
           mv "$SIG" "${RENAMED}.sig"
           ARCHIVE="$RENAMED"
@@ -371,18 +371,18 @@ jobs:
           EXTRACT_DIR="${RUNNER_TEMP}/signed-app-extract-x64"
           rm -rf "$EXTRACT_DIR" && mkdir -p "$EXTRACT_DIR"
           ditto -x -k "$SIGNED_APP_ZIP" "$EXTRACT_DIR"
-          rm -rf "${APP_DIR}/Buzz.app"
-          cp -R "${EXTRACT_DIR}/Buzz.app" "${APP_DIR}/Buzz.app"
+          rm -rf "${APP_DIR}/Creaton.app"
+          cp -R "${EXTRACT_DIR}/Creaton.app" "${APP_DIR}/Creaton.app"
 
           # Rebuild the updater archive from the signed .app and re-sign with the Tauri updater key.
-          rm -f "${APP_DIR}/Buzz.app.tar.gz" "${APP_DIR}/Buzz.app.tar.gz.sig"
-          (cd "$APP_DIR" && tar -czf Buzz.app.tar.gz Buzz.app)
-          TARBALL_ABS="$(pwd)/${APP_DIR}/Buzz.app.tar.gz"
+          rm -f "${APP_DIR}/Creaton.app.tar.gz" "${APP_DIR}/Creaton.app.tar.gz.sig"
+          (cd "$APP_DIR" && tar -czf Creaton.app.tar.gz Creaton.app)
+          TARBALL_ABS="$(pwd)/${APP_DIR}/Creaton.app.tar.gz"
           (cd desktop && pnpm tauri signer sign "$TARBALL_ABS")
 
       - name: Verify code signature
         run: |
-          APP_DIR="desktop/src-tauri/target/${TARGET}/release/bundle/macos/Buzz.app"
+          APP_DIR="desktop/src-tauri/target/${TARGET}/release/bundle/macos/Creaton.app"
           codesign --verify --deep --strict --verbose=2 "$APP_DIR"
           spctl --assess --type execute --verbose=4 "$APP_DIR"
           desktop/scripts/verify-macos-entitlements.sh "$APP_DIR"
@@ -398,7 +398,7 @@ jobs:
             echo "::error::Updater archive or signature not found in $BUNDLE_DIR/macos"
             exit 1
           fi
-          RENAMED="$(dirname "$ARCHIVE")/Buzz_${VERSION}_x64.app.tar.gz"
+          RENAMED="$(dirname "$ARCHIVE")/Creaton_${VERSION}_x64.app.tar.gz"
           mv "$ARCHIVE" "$RENAMED"
           mv "$SIG" "${RENAMED}.sig"
           ARCHIVE="$RENAMED"
@@ -428,7 +428,7 @@ jobs:
     if: github.repository == 'block/buzz'
     runs-on: ubuntu-latest
     # Digest-pinned like the SHA-pinned actions below; Renovate keeps it fresh.
-    container: ubuntu:24.04@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
+    container: ubuntu:24.04@sha256:33ceb71981b602c1a7443a53469e4dba065f7503eab3078a2d7a57a2ab987517
     needs: setup
     timeout-minutes: 60
     permissions:
@@ -511,7 +511,7 @@ jobs:
 
       - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
 
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
         with:
           workspaces: desktop/src-tauri
           lookup-only: true
@@ -907,6 +907,7 @@ jobs:
           [ "${#TRIPLES[@]}" -ge 3 ] || { echo "::error::too few platforms (${#TRIPLES[@]})"; exit 1; }
           bash desktop/scripts/generate-oss-latest-json.sh "$VERSION" "${TRIPLES[@]}" > latest.json
           cat latest.json
+          cp latest.json staged/updater-manifest.json
 
       - name: Create or verify versioned draft
         run: |
@@ -946,7 +947,3 @@ jobs:
       - name: Publish complete versioned release
         if: env.already_published != 'true'
         run: gh release edit "desktop-v${VERSION}" --draft=false
-
-      - name: Upload latest.json to rolling release last
-        if: ${{ !contains(needs.setup.outputs.version, '-') }}
-        run: gh release upload buzz-desktop-latest latest.json --clobber

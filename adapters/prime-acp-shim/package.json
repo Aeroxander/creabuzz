@@ -1,0 +1,13 @@
+{
+  "name": "@buzz/prime-acp-shim",
+  "version": "0.1.0",
+  "description": "ACP stdio shim that drives Prime Agent (prime-agent --mode rpc) from buzz-acp or any ACP client. Zero dependencies.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test ./*.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "Apache-2.0"
+}

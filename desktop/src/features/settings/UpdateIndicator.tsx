@@ -46,7 +46,7 @@ const variants: Record<
   "manual-required": {
     Icon: ExternalLink,
     label:
-      "Update available — download from GitHub (use AppImage for auto-updates)",
+      "Update available. Download from GitHub (use AppImage for auto-updates)",
     badgeColor: "bg-primary",
   },
   ready: {

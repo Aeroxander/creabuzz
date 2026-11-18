@@ -11,17 +11,44 @@ use crate::{
     relay::{self, relay_api_base_url_with_override, relay_ws_url_with_override},
 };
 
-/// Encode `pubkey` as npub bech32 and truncate it for display: first 10 chars
-/// + "…" + last 4 chars. Returns the full bech32 when it is 16 chars or fewer.
+/// Encode `pubkey` as npub bech32 and truncate it for display: first 8
+/// chars, an ellipsis, then the last 4 chars, mirroring the frontend
+/// `truncateNpub` compact policy (`first8…last4` of the whole npub string).
+/// Returns the full bech32 when it is 12 chars or fewer, mirroring
+/// `truncatePubkey`'s short-string threshold.
 fn truncated_display_name(pubkey: &PublicKey) -> Result<String, String> {
     let bech32 = pubkey
         .to_bech32()
         .map_err(|error| format!("bech32 encode failed: {error}"))?;
-    Ok(if bech32.len() > 16 {
-        format!("{}…{}", &bech32[..10], &bech32[bech32.len() - 4..])
+    Ok(if bech32.len() > 12 {
+        format!("{}…{}", &bech32[..8], &bech32[bech32.len() - 4..])
     } else {
         bech32
     })
+}
+
+#[cfg(test)]
+mod truncated_display_name_tests {
+    use super::truncated_display_name;
+    use nostr::{PublicKey, ToBech32};
+
+    #[test]
+    fn compacts_to_first_8_and_last_4_of_the_npub() {
+        // Vector shared with the frontend `truncateNpub` tests; the expected
+        // form is derived from the encoded npub, not hardcoded, so the test
+        // asserts the compaction policy rather than one key's string.
+        let hex = "ea9b4d7a7a78a3e3729e5568b14d764d4962be0e1f20f749bcf8d9dbbf9a9328";
+        let pubkey = PublicKey::from_hex(hex).unwrap();
+        let npub = pubkey.to_bech32().unwrap();
+        let expected = format!("{}…{}", &npub[..8], &npub[npub.len() - 4..]);
+        assert_eq!(truncated_display_name(&pubkey).unwrap(), expected);
+        // 13 characters, matching the frontend compact form (the ellipsis is
+        // one char but three UTF-8 bytes, so count chars, not bytes).
+        assert_eq!(expected.chars().count(), 13);
+        assert!(expected.starts_with("npub1"));
+        // The compact form must not carry the raw hex key.
+        assert!(!expected.contains(hex));
+    }
 }
 
 #[tauri::command]
@@ -110,29 +137,53 @@ pub async fn sign_event(
     content: String,
     created_at: Option<u64>,
     tags: Vec<Vec<String>>,
+    allow_self_tagging: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let keys = state.signing_keys()?;
 
     tauri::async_runtime::spawn_blocking(move || {
-        let nostr_tags = tags
-            .into_iter()
-            .map(|tag| Tag::parse(tag).map_err(|error| format!("invalid tag: {error}")))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut builder = EventBuilder::new(Kind::Custom(kind), content).tags(nostr_tags);
-        if let Some(created_at) = created_at {
-            builder = builder.custom_created_at(Timestamp::from(created_at));
-        }
-
-        let event = builder
-            .sign_with_keys(&keys)
-            .map_err(|error| format!("sign failed: {error}"))?;
-
-        Ok(event.as_json())
+        sign_event_json(
+            &keys,
+            kind,
+            content,
+            created_at,
+            tags,
+            allow_self_tagging == Some(true),
+        )
     })
     .await
     .map_err(|e| format!("spawn_blocking failed: {e}"))?
+}
+
+/// Build and sign the event behind [`sign_event`]. nostr strips a `p` tag that
+/// names the author unless `allow_self_tagging` is set, so only callers that
+/// need a self-tag (self-reports) opt in.
+fn sign_event_json(
+    keys: &Keys,
+    kind: u16,
+    content: String,
+    created_at: Option<u64>,
+    tags: Vec<Vec<String>>,
+    allow_self_tagging: bool,
+) -> Result<String, String> {
+    let nostr_tags = tags
+        .into_iter()
+        .map(|tag| Tag::parse(tag).map_err(|error| format!("invalid tag: {error}")))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut builder = EventBuilder::new(Kind::Custom(kind), content).tags(nostr_tags);
+    if let Some(created_at) = created_at {
+        builder = builder.custom_created_at(Timestamp::from(created_at));
+    }
+    if allow_self_tagging {
+        builder = builder.allow_self_tagging();
+    }
+
+    builder
+        .sign_with_keys(keys)
+        .map(|event| event.as_json())
+        .map_err(|error| format!("sign failed: {error}"))
 }
 
 #[tauri::command]
@@ -333,42 +384,158 @@ pub async fn save_ncryptsec_copy(
     Ok(Some(dest.display().to_string()))
 }
 
+/// Public-only preview of an identity import: what the device would switch to,
+/// without switching anything.
+///
+/// Parses the pasted key through the same router `import_identity` uses
+/// ([`crate::key_backup::recover_keys_from_input`] — bech32 `nsec1…`, raw hex,
+/// or passphrase-protected `ncryptsec1…`), derives the candidate pubkey/npub,
+/// and reports the identity currently live on this device plus whether the
+/// candidate matches it. Deliberately read-only: nothing is persisted, no
+/// state is swapped, so the replace-confirmation UI can show both identities
+/// before any mutation can happen.
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IdentityImportPreview {
+    /// Candidate identity derived from the pasted key (hex).
+    pub pubkey: String,
+    /// Candidate identity as npub bech32 — what the device would sign as.
+    pub npub: String,
+    /// The identity live on this device now (npub bech32), for the
+    /// "this replaces <npub>" confirmation and the import fence.
+    pub current_npub: String,
+    pub matches_current_identity: bool,
+}
+
+/// Core of [`preview_identity_import`], factored so tests can drive it with a
+/// bare `AppState` (and an `ncryptsec` input without a KDF) — the same
+/// seam-splitting pattern as [`create_backup_with_log_n`].
+pub(crate) fn preview_identity_import_inner(
+    state: &AppState,
+    nsec: &str,
+    password: Option<&str>,
+) -> Result<IdentityImportPreview, String> {
+    let keys = crate::key_backup::recover_keys_from_input(nsec, password)?;
+    let pubkey = keys.public_key();
+    let current = state.keys.lock().map_err(|e| e.to_string())?.public_key();
+    Ok(IdentityImportPreview {
+        pubkey: pubkey.to_hex(),
+        npub: pubkey
+            .to_bech32()
+            .map_err(|e| format!("encode npub: {e}"))?,
+        current_npub: current
+            .to_bech32()
+            .map_err(|e| format!("encode npub: {e}"))?,
+        matches_current_identity: pubkey == current,
+    })
+}
+
+/// Validate a pasted recovery key and show what an import would switch this
+/// device to — without importing it. Never mutates the stored identity.
+#[tauri::command]
+pub async fn preview_identity_import(
+    nsec: String,
+    password: Option<String>,
+    app_handle: tauri::AppHandle,
+) -> Result<IdentityImportPreview, String> {
+    tokio::task::spawn_blocking(move || {
+        // NIP-49 backups require a passphrase and decrypt entirely in Rust,
+        // exactly as `import_identity` would — preview and import must parse
+        // identically or the confirmed identity is not the committed one.
+        let password = password.map(zeroize::Zeroizing::new);
+        let state = app_handle.state::<AppState>();
+        preview_identity_import_inner(&state, &nsec, password.as_ref().map(|value| value.as_str()))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking failed: {e}"))?
+}
+
+/// Core of [`import_identity`], factored so tests can drive the full
+/// parse → fence → persist → swap path against a bare `AppState`, a temp dir,
+/// and an injected persist backend (the same pattern as
+/// [`create_backup_with_log_n`]).
+///
+/// `expected_current_npub`, when present, is the compare-and-swap fence: the
+/// identity the caller was shown at preview time. If the device identity has
+/// changed since (a racing import, a pairing adoption), the import is refused
+/// instead of silently clobbering an identity the user never confirmed. The
+/// check runs under `identity_mutation`, so nothing can change between the
+/// check and the swap.
+///
+/// Persist ordering is [`commit_imported_identity`]'s contract: a failing
+/// `persist` leaves the previous identity live in memory and on disk.
+pub(crate) fn import_identity_inner(
+    state: &AppState,
+    data_dir: &std::path::Path,
+    nsec: &str,
+    password: Option<&str>,
+    expected_current_npub: Option<&str>,
+    persist: impl FnOnce(&nostr::Keys) -> Result<crate::app_state::IdentityStorage, String>,
+) -> Result<(nostr::PublicKey, crate::app_state::IdentityStorage), String> {
+    // NIP-49 backups require a passphrase and decrypt entirely in Rust.
+    // Raw nsec/hex input follows the existing parser path unchanged.
+    let keys = crate::key_backup::recover_keys_from_input(nsec, password)?;
+
+    // Serialize against persist_current_identity: hold this guard for the
+    // full function body so a concurrent stale persist can't overwrite
+    // this import.
+    let _mutation_guard = state.identity_mutation.lock().map_err(|e| e.to_string())?;
+
+    if let Some(expected) = expected_current_npub {
+        let expected = expected.trim();
+        let current = state
+            .keys
+            .lock()
+            .map_err(|e| e.to_string())?
+            .public_key()
+            .to_bech32()
+            .map_err(|e| format!("encode npub: {e}"))?;
+        if !current.eq_ignore_ascii_case(expected) {
+            return Err(
+                "The identity on this device changed since you reviewed this replacement. \
+                 Check the current identity, then try again."
+                    .to_string(),
+            );
+        }
+    }
+
+    std::fs::create_dir_all(data_dir).map_err(|e| format!("create app data dir: {e}"))?;
+
+    commit_imported_identity(state, data_dir, keys, persist)
+}
+
 #[tauri::command]
 pub async fn import_identity(
     nsec: String,
     password: Option<String>,
+    expected_current_npub: Option<String>,
     app_handle: tauri::AppHandle,
 ) -> Result<IdentityInfo, String> {
     tokio::task::spawn_blocking(move || {
-        // NIP-49 backups require a passphrase and decrypt entirely in Rust.
-        // Raw nsec/hex input follows the existing parser path unchanged.
         let password = password.map(zeroize::Zeroizing::new);
-        let keys = crate::key_backup::recover_keys_from_input(
-            &nsec,
-            password.as_ref().map(|value| value.as_str()),
-        )?;
 
-        // Serialize against persist_current_identity: hold this guard for the
-        // full function body so a concurrent stale persist can't overwrite
-        // this import.
         let state = app_handle.state::<AppState>();
-        let _mutation_guard = state.identity_mutation.lock().map_err(|e| e.to_string())?;
-
         let data_dir = app_handle
             .path()
             .app_data_dir()
             .map_err(|e| format!("app data dir: {e}"))?;
-        std::fs::create_dir_all(&data_dir).map_err(|e| format!("create app data dir: {e}"))?;
         let key_path = data_dir.join("identity.key");
 
-        let (pubkey, storage) = commit_imported_identity(&state, &data_dir, keys, |keys| {
-            // Persist into the OS keyring first (store → read-back verify →
-            // marker → delete file). Falls back to the 0o600 file when the
-            // keyring is unavailable; returns Err only when both backends fail.
-            let store =
-                crate::secret_store::SecretStore::shared(crate::app_state::keyring_service());
-            crate::app_state::persist_imported_identity(store, keys, &key_path, &data_dir)
-        })?;
+        let (pubkey, storage) = import_identity_inner(
+            &state,
+            &data_dir,
+            &nsec,
+            password.as_ref().map(|value| value.as_str()),
+            expected_current_npub.as_deref(),
+            |keys| {
+                // Persist into the OS keyring first (store → read-back verify →
+                // marker → delete file). Falls back to the 0o600 file when the
+                // keyring is unavailable; returns Err only when both backends fail.
+                let store =
+                    crate::secret_store::SecretStore::shared(crate::app_state::keyring_service());
+                crate::app_state::persist_imported_identity(store, keys, &key_path, &data_dir)
+            },
+        )?;
 
         let pubkey_hex = pubkey.to_hex();
         let display_name = truncated_display_name(&pubkey)?;
@@ -404,7 +571,7 @@ pub async fn import_identity(
 ///    as a command `Err` would claim a half-applied import that actually
 ///    succeeded. The leftover blob is still passphrase-encrypted and is
 ///    replaced by the next backup creation; we log and move on.
-fn commit_imported_identity(
+pub(crate) fn commit_imported_identity(
     state: &AppState,
     data_dir: &std::path::Path,
     keys: nostr::Keys,
@@ -788,3 +955,76 @@ mod nostr_identity_binding_tests {
 #[cfg(test)]
 #[path = "identity_key_backup_tests.rs"]
 mod identity_key_backup_tests;
+
+#[cfg(test)]
+mod sign_event_self_tagging_tests {
+    use super::sign_event_json;
+    use nostr::{Event, JsonUtil, Keys};
+
+    fn build_event(keys: &Keys, kind: u16, p: &str, allow_self_tagging: bool) -> Event {
+        let json = sign_event_json(
+            keys,
+            kind,
+            String::new(),
+            None,
+            vec![vec!["p".to_owned(), p.to_owned()]],
+            allow_self_tagging,
+        )
+        .expect("sign must succeed");
+        Event::from_json(json).expect("valid event json")
+    }
+
+    fn p_tag_values(event: &nostr::Event) -> Vec<String> {
+        event
+            .tags
+            .iter()
+            .filter(|t| t.kind() == nostr::TagKind::p())
+            .filter_map(|t| t.content().map(str::to_owned))
+            .collect()
+    }
+
+    #[test]
+    fn self_p_tag_is_stripped_without_flag() {
+        let keys = Keys::generate();
+        let pubkey_hex = keys.public_key().to_hex();
+        let event = build_event(&keys, 1984, &pubkey_hex, false);
+        assert!(
+            p_tag_values(&event).is_empty(),
+            "self p-tag must be stripped when allow_self_tagging is false"
+        );
+    }
+
+    #[test]
+    fn self_p_tag_survives_with_flag() {
+        let keys = Keys::generate();
+        let pubkey_hex = keys.public_key().to_hex();
+        let event = build_event(&keys, 1984, &pubkey_hex, true);
+        assert_eq!(
+            p_tag_values(&event),
+            vec![pubkey_hex],
+            "self p-tag must be preserved when allow_self_tagging is true"
+        );
+    }
+
+    #[test]
+    fn third_party_p_tag_always_survives() {
+        // A p-tag that does NOT match the signing key must always survive
+        // regardless of the flag — verify both branches.
+        let keys = Keys::generate();
+        let other_keys = Keys::generate();
+        let other_hex = other_keys.public_key().to_hex();
+
+        for flag in [false, true] {
+            let event = build_event(&keys, 1984, &other_hex, flag);
+            assert_eq!(
+                p_tag_values(&event),
+                vec![other_hex.clone()],
+                "third-party p-tag must survive with allow_self_tagging={flag}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "identity_import_tests.rs"]
+mod identity_import_tests;

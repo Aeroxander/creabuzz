@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   migrateMachineOnboardingCompletion,
   readMachineOnboardingCompletion,
+  resolveMachineStage,
 } from "./machineOnboarding.ts";
 
 // machineOnboarding.ts reads/writes window.localStorage directly, so we inject
@@ -171,4 +172,81 @@ test("migrate_already_completed_pubkey_returns_true_immediately", () => {
     // (but a redundant write is also acceptable — just verify it's still true).
     assert.equal(storage.getItem(V2_KEY), "true");
   });
+});
+
+// ── cold-boot stage ──────────────────────────────────────────────────────────
+
+/** A settled query that resolved no identity: the FIRST-RUN state. */
+const firstRun = {
+  identityStatus: "success",
+  identityIsFetching: false,
+  currentPubkey: null,
+  identityLost: false,
+  identityLocked: false,
+  identityResetFailed: false,
+  relaunchRequired: false,
+  hasCompletedCurrentPubkey: false,
+  evaluatedPubkey: null,
+  continuingPubkey: null,
+};
+
+test("first run reaches onboarding, never the loading gate", () => {
+  // Regression: `!currentPubkey` used to force "blocking" before the onboarding
+  // branch, so a fresh install (no identity yet) hung on the splash forever.
+  assert.equal(resolveMachineStage(firstRun), "onboarding");
+});
+
+test("an identity that is still resolving holds the gate", () => {
+  assert.equal(
+    resolveMachineStage({ ...firstRun, identityIsFetching: true }),
+    "blocking",
+  );
+  assert.equal(
+    resolveMachineStage({ ...firstRun, identityStatus: "pending" }),
+    "blocking",
+  );
+});
+
+test("a settled identity with a pubkey that has not onboarded yet still runs onboarding", () => {
+  assert.equal(
+    resolveMachineStage({
+      ...firstRun,
+      currentPubkey: "aa".repeat(32),
+      evaluatedPubkey: "aa".repeat(32),
+    }),
+    "onboarding",
+  );
+});
+
+test("a completed identity is ready; a lost one goes back to onboarding", () => {
+  const done = {
+    ...firstRun,
+    currentPubkey: "aa".repeat(32),
+    evaluatedPubkey: "aa".repeat(32),
+    hasCompletedCurrentPubkey: true,
+  };
+  assert.equal(resolveMachineStage(done), "ready");
+  assert.equal(
+    resolveMachineStage({ ...done, identityLost: true }),
+    "onboarding",
+  );
+});
+
+test("terminal identity states still win over the first-run path", () => {
+  assert.equal(
+    resolveMachineStage({ ...firstRun, identityLocked: true }),
+    "keyring-locked",
+  );
+  assert.equal(
+    resolveMachineStage({ ...firstRun, identityResetFailed: true }),
+    "reset-failed",
+  );
+  assert.equal(
+    resolveMachineStage({ ...firstRun, relaunchRequired: true }),
+    "relaunch-required",
+  );
+  assert.equal(
+    resolveMachineStage({ ...firstRun, identityStatus: "error" }),
+    "ready",
+  );
 });
