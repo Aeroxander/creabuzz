@@ -16,7 +16,7 @@ single backer's amount. The working sheet with names and addresses is private an
   entries at 0.046 = 22,879,500 old tokens. Total 1,229,957 dollars, 31,754,500 old tokens = 28.868% of the old supply.
 - Price for the whole supply: seed 2.2M, private 5.06M, blended 4.26M. The "6M valuation" was the price of a third
   tranche ("Private 2", 0.055) that shows no sales. So "Creaton raised at 6M" in FOUNDER-PRICE.md is not right.
-- The owner bought some seed tokens himself and will put them back ("into the DAO/team treasury").
+- The owner bought some seed tokens themselves and will put them back ("into the DAO/team treasury").
 - The sheet's list: 2 entries share one address; 1 address has a line break inside it (invalid as typed); 6 entries
   have no address (all 3 seed among them); 2 private entries (320,100 dollars) are marked DONE. So 10 entries are clean
   as typed. Sheet formulas: the circulating total skips one row (its value was 0); one listing cell points at an empty
@@ -194,7 +194,7 @@ about 95k gas (EOA) plus 25k to 40k for 1271; delivery 70k to 90k.
   records, and its fingerprint is published. Then the leaves are fixed. Owner-only confirmation and empty-holder
   entries are not allowed for real money.
 - **The link** is `/earlier#<token>`: the fragment carries a one-use token and the display name, so the server never sees
-  the name; it stores a hash of the token. The owner sends links and reminders from his own email; the status page marks
+  the name; it stores a hash of the token. The owner sends links and reminders from their own email; the status page marks
   reminders due on days 7, 21 and 45, at most 4.
 - **The page** (loaded separately; the entry bundle is untouched): a plain card (what you paid, what replaces it, N
   Shares of 1,000,000,000, held and released over 365 days from market open, who gives them); the full text on the
@@ -254,7 +254,7 @@ more; no published series price.
 
 | Finding | Handling |
 |---|---|
-| Owner (or a keeper he controls) decides who receives entries with no address: 64.9% of the S1 Shares (simulated on the sheet) | Counsel verifies those entries and each backer signs from a wallet before the list is fixed; counsel attests count and total; at most one keeper signer is the owner or his employee; no empty-holder or account-only entries |
+| Owner (or a keeper they control) decides who receives entries with no address: 64.9% of the S1 Shares (simulated on the sheet) | Counsel verifies those entries and each backer signs from a wallet before the list is fixed; counsel attests count and total; at most one keeper signer is the owner or the owner's employee; no empty-holder or account-only entries |
 | Three different signed messages, one chain-less | One typed-data schema with chainId and contract address, used by the app, the text and the contract |
 | Shares could move while the replacement had lapsed | The old LLC and the New Issuer sign first; the backer's signature completes it; no lapse clause |
 | No uniqueness or sum guard on the list | One stored leaf per entry; EB24 consented total <= total; EB25 consent only when fully funded; LZ3 funding equals total |

@@ -399,6 +399,7 @@ network before the Council runner exists; reserve sales; the stake; sponsored fe
    use Give Shares" cannot carry it. Recommended instead: a claim contract funded at project zero's launch from unused
    backing first, then the founder's grant (founder keeps 5.30%), each backer signing a SAFT replacement drafted for
    counsel. Full design, options and owner questions: `docs/next-version/EARLIER-BACKERS.md`. Not built.
+   **Team pay (18 November 2026):** "Shares owed later" instead of held gifts; `docs/next-version/TEAM-PAY.md`. Not built.
 
 ## What I verified for this plan
 
