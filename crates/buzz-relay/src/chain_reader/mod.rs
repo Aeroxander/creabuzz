@@ -5,10 +5,16 @@
 //! events) into tables that survive a chain rollback (`scan`, `store`), works
 //! out the numbers the chain cannot give (`numbers`), and signs one "project
 //! numbers" record per project, kind 39009 (`publish`), again whenever they
-//! change. It never sends a transaction. Off unless `BUZZ_CHAIN_RPC_URL` is set
-//! (`settings`).
+//! change. Off unless `BUZZ_CHAIN_RPC_URL` is set (`settings`).
+//!
+//! With `BUZZ_CHAIN_HELPER_KEY` set, the helper job (`helper`) also sends the
+//! calls anyone may make (closing rounds, settling, releasing, finishing
+//! sales) from a relay-held key. Signing records and sending calls are done by
+//! one replica only: the one holding the writer lock, a session advisory lock
+//! on a connection of its own, checked on every pass.
 
 pub mod events;
+pub mod helper;
 pub mod numbers;
 pub mod publish;
 pub mod scan;
@@ -59,6 +65,23 @@ pub struct ChainReader {
     /// big, grown back after ranges that pass (review I2 / F1).
     span: AtomicU64,
     host: String,
+    /// The helper, when its key is configured and a writer was given.
+    helper: Option<helper::Helper>,
+    /// The connection holding the writer lock, while this replica holds it.
+    leader: tokio::sync::Mutex<Option<sqlx::PgConnection>>,
+}
+
+/// What one full pass did.
+#[derive(Debug, Default)]
+pub struct PassReport {
+    /// The scan.
+    pub scanned: ScanReport,
+    /// Records signed (only by the writer).
+    pub published: PublishReport,
+    /// The helper's pass (only by the writer, when the helper is on).
+    pub helper: Option<helper::HelperReport>,
+    /// Whether this replica held the writer lock.
+    pub writer: bool,
 }
 
 /// What one publishing pass did.
@@ -105,7 +128,42 @@ impl ChainReader {
             scan,
             span,
             host,
+            helper: None,
+            leader: tokio::sync::Mutex::new(None),
         }
+    }
+
+    /// Send the helper's calls through `writer` (only when the helper is
+    /// configured).
+    pub fn with_writer(mut self, writer: Arc<dyn helper::writer::ChainWriter>) -> Self {
+        if let Some(cfg) = self.config.helper.clone() {
+            self.helper = Some(helper::Helper::new(writer, cfg));
+        }
+        self
+    }
+
+    /// Whether this replica holds the writer lock: a session advisory lock
+    /// taken on a connection detached from the pool (dropping it closes the
+    /// session, which frees the lock). Checked on every pass; a connection
+    /// that stopped answering took the lock with it, so it is taken again.
+    pub async fn is_writer(&self) -> anyhow::Result<bool> {
+        let mut held = self.leader.lock().await;
+        if let Some(conn) = held.as_mut() {
+            if sqlx::query("SELECT 1").execute(&mut *conn).await.is_ok() {
+                return Ok(true);
+            }
+            *held = None;
+            tracing::warn!(reader = %self.reader_id(), "chain reader: the writer lock's connection was lost");
+        }
+        let mut conn = self.state.db.pool().acquire().await?.detach();
+        let got: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock(hashtextextended($1, 0))")
+            .bind(format!("chain_writer:{}", self.reader_id()))
+            .fetch_one(&mut conn)
+            .await?;
+        if got {
+            *held = Some(conn);
+        }
+        Ok(got)
     }
 
     /// The tables' name for this reader.
@@ -113,13 +171,64 @@ impl ChainReader {
         &self.scan.reader
     }
 
-    /// One pass: scan, then sign what changed.
+    /// One pass: scan, then sign what changed (the writer only).
     pub async fn pass(&self) -> anyhow::Result<(ScanReport, PublishReport)> {
+        let report = self.pass_all().await?;
+        Ok((report.scanned, report.published))
+    }
+
+    /// One pass: scan; then, on the replica holding the writer lock, sign what
+    /// changed and run the helper.
+    pub async fn pass_all(&self) -> anyhow::Result<PassReport> {
         let pool = self.state.db.pool();
         let scanned =
             scan::scan_with_span(pool, self.source.as_ref(), &self.scan, &self.span).await?;
-        let published = self.publish_pass(scanned.head).await?;
-        Ok((scanned, published))
+        let mut report = PassReport {
+            writer: self.is_writer().await?,
+            ..PassReport::default()
+        };
+        if report.writer {
+            report.published = self.publish_pass(scanned.head).await?;
+            if let Some(helper) = &self.helper {
+                report.helper = Some(self.helper_pass(helper, scanned.head).await?);
+            }
+        }
+        report.scanned = scanned;
+        Ok(report)
+    }
+
+    async fn helper_pass(
+        &self,
+        helper: &helper::Helper,
+        head: u64,
+    ) -> anyhow::Result<helper::HelperReport> {
+        let pool = self.state.db.pool();
+        let reader = self.scan.reader.as_str();
+        let head_header = self
+            .source
+            .header(head)
+            .await?
+            .with_context(|| format!("block {head} is not on the chain"))?;
+        // Jobs are built only from final rows the reader has stored.
+        let final_block = match head.checked_sub(self.scan.lag) {
+            Some(f) if f >= self.config.start_block && store::cursor(pool, reader).await? > f => {
+                let time = match store::block(pool, reader, f).await? {
+                    Some(h) => h.time,
+                    None => {
+                        self.source
+                            .header(f)
+                            .await?
+                            .with_context(|| format!("block {f} is not on the chain"))?
+                            .time
+                    }
+                };
+                Some((f, time))
+            }
+            _ => None,
+        };
+        helper
+            .pass(pool, reader, (head, head_header.time), final_block, &[])
+            .await
     }
 
     async fn tenant(&self) -> anyhow::Result<Option<TenantContext>> {
@@ -297,6 +406,10 @@ impl ChainReader {
     }
 }
 
+fn writer_address(w: &dyn helper::writer::ChainWriter) -> [u8; 20] {
+    w.address()
+}
+
 /// Start the reader from the relay's configuration, if it is on. It checks the
 /// node serves the configured chain before its first pass; a failed pass is
 /// logged and retried with a growing pause (at most ten minutes), never ended.
@@ -318,7 +431,22 @@ pub fn spawn(state: Arc<AppState>) -> anyhow::Result<Option<tokio::task::JoinHan
     let source: Arc<dyn ChainSource> = Arc::new(RpcChainSource::new(Arc::new(rpc), RPC_TIMEOUT));
     let poll = Duration::from_secs(config.poll_secs);
     let expected_chain = config.chain_id;
-    let reader = ChainReader::new(state, Arc::clone(&source), config, host);
+    let helper_key = config.helper.as_ref().map(|h| h.key.0.clone());
+    let chain_id = config.chain_id;
+    let mut reader = ChainReader::new(state, Arc::clone(&source), config, host);
+    if let Some(wallet) = helper_key {
+        let writer = helper::writer::RpcChainWriter::new(
+            Arc::new(
+                HttpEvmRpc::new(reader.config.rpc_url.clone())
+                    .map_err(|e| anyhow::anyhow!("chain helper RPC: {e}"))?,
+            ),
+            wallet,
+            chain_id,
+            RPC_TIMEOUT,
+        );
+        tracing::info!(address = %hex0x(&writer_address(&writer)), "chain helper on");
+        reader = reader.with_writer(Arc::new(writer));
+    }
     Ok(Some(tokio::spawn(async move {
         tracing::info!(reader = %reader.reader_id(), "chain reader started");
         let mut failures: u32 = 0;
@@ -328,15 +456,23 @@ pub fn spawn(state: Arc<AppState>) -> anyhow::Result<Option<tokio::task::JoinHan
                 if served != expected_chain {
                     anyhow::bail!("the node serves chain {served}, not {expected_chain}");
                 }
-                reader.pass().await
+                reader.pass_all().await
             }
             .await;
             match result {
-                Ok((scanned, published)) => {
+                Ok(PassReport {
+                    scanned,
+                    published,
+                    helper,
+                    ..
+                }) => {
                     failures = 0;
                     if scanned.logs > 0 || published.signed > 0 || scanned.rolled_back_to.is_some()
                     {
                         tracing::info!(?scanned, ?published, "chain reader pass");
+                    }
+                    if let Some(h) = helper.filter(|h| *h != helper::HelperReport::default()) {
+                        tracing::info!(helper = ?h, "chain helper pass");
                     }
                 }
                 Err(e) => {

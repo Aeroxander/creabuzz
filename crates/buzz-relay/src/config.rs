@@ -2398,6 +2398,87 @@ mod tests {
     }
 
     #[test]
+    fn the_chain_helper_is_off_unless_its_key_is_set_and_never_echoes_it() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        const KNOBS: [&str; 7] = [
+            "BUZZ_CHAIN_RPC_URL",
+            "BUZZ_CHAIN_ID",
+            "BUZZ_CHAIN_LAUNCHER",
+            "BUZZ_CHAIN_HELPER_KEY",
+            "BUZZ_CHAIN_HELPER_DAILY_GAS",
+            "BUZZ_CHAIN_HELPER_BATCH",
+            "BUZZ_CHAIN_HELPER_CALL_GAS_CAP",
+        ];
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+        // The helper key without the reader is half a configuration.
+        // (anvil's account 4: a public development key.)
+        let dev_key = "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a";
+        std::env::set_var("BUZZ_CHAIN_HELPER_KEY", dev_key);
+        let err = Config::from_env().expect_err("helper key without the reader");
+        assert!(err.to_string().contains("BUZZ_CHAIN_RPC_URL"), "{err}");
+
+        std::env::set_var("BUZZ_CHAIN_RPC_URL", "http://127.0.0.1:8545");
+        std::env::set_var("BUZZ_CHAIN_ID", "31337");
+        std::env::set_var(
+            "BUZZ_CHAIN_LAUNCHER",
+            "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+        );
+        std::env::remove_var("BUZZ_CHAIN_HELPER_KEY");
+        let reader = Config::from_env()
+            .expect("reader alone")
+            .chain_reader
+            .expect("reader on");
+        assert_eq!(reader.helper, None, "the helper is off by default");
+
+        // A helper setting without the key stops startup.
+        std::env::set_var("BUZZ_CHAIN_HELPER_DAILY_GAS", "1000000");
+        let err = Config::from_env().expect_err("cap without the key");
+        assert!(err.to_string().contains("BUZZ_CHAIN_HELPER_KEY"), "{err}");
+
+        std::env::set_var("BUZZ_CHAIN_HELPER_KEY", dev_key);
+        let helper = Config::from_env()
+            .expect("helper on")
+            .chain_reader
+            .expect("reader on")
+            .helper
+            .expect("helper on");
+        assert_eq!(
+            helper.key.0.address_hex(),
+            "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65"
+        );
+        assert_eq!(
+            (helper.daily_gas, helper.max_attempts, helper.batch),
+            (1_000_000, 8, 40)
+        );
+        let shown = format!("{helper:?}");
+        assert!(
+            !shown.contains("47e179ec"),
+            "the key is never printed: {shown}"
+        );
+
+        for (name, bad) in [
+            ("BUZZ_CHAIN_HELPER_KEY", "0x1234"),
+            ("BUZZ_CHAIN_HELPER_BATCH", "0"),
+            ("BUZZ_CHAIN_HELPER_CALL_GAS_CAP", "9000000"),
+        ] {
+            let keep = std::env::var(name).ok();
+            std::env::set_var(name, bad);
+            let err = Config::from_env().expect_err("a bad value must fail startup");
+            assert!(err.to_string().contains(name), "{err}");
+            assert!(!err.to_string().contains("47e179ec"), "{err}");
+            match keep {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+    }
+
+    #[test]
     fn llm_prices_are_optional_decimal_cents_and_strict() {
         let _guard = ENV_MUTEX.lock().unwrap();
         const KNOBS: [&str; 3] = [

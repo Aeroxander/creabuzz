@@ -35,6 +35,8 @@ pub struct ChainReaderConfig {
     /// The community whose events receive the records
     /// (`BUZZ_CHAIN_COMMUNITY_HOST`); defaults to the host of `BUZZ_RELAY_URL`.
     pub community_host: Option<String>,
+    /// The helper job (`BUZZ_CHAIN_HELPER_*`): off unless its key is set.
+    pub helper: Option<super::helper::HelperConfig>,
 }
 
 const VARS: [&str; 8] = [
@@ -71,7 +73,10 @@ impl ChainReaderConfig {
     /// Read the settings; `Ok(None)` when the reader is off.
     pub fn from_env() -> Result<Option<Self>, String> {
         let Some(rpc_url) = var("BUZZ_CHAIN_RPC_URL") else {
-            if let Some(set) = VARS.iter().find(|v| var(v).is_some()) {
+            let helper_vars = super::helper::settings::OTHER_VARS
+                .iter()
+                .chain(std::iter::once(&"BUZZ_CHAIN_HELPER_KEY"));
+            if let Some(set) = VARS.iter().chain(helper_vars).find(|v| var(v).is_some()) {
                 return Err(format!(
                     "{set} is set but BUZZ_CHAIN_RPC_URL is not; set both to read the chain, or neither"
                 ));
@@ -102,16 +107,23 @@ impl ChainReaderConfig {
                     format!("BUZZ_CHAIN_LAUNCHER must be a 0x address (got \"{raw}\")")
                 })?,
         };
+        let poll_secs = number("BUZZ_CHAIN_POLL_SECS", 12, 1, 86_400)?;
+        let mut helper = super::helper::HelperConfig::from_env()?;
+        if let Some(h) = helper.as_mut() {
+            // Jobs are built at most every five passes (5 s to a minute).
+            h.build_every_secs = (poll_secs * 5).clamp(5, 60);
+        }
         Ok(Some(Self {
             rpc_url,
             chain_id,
             launcher,
             start_block: number("BUZZ_CHAIN_START_BLOCK", 0, 0, i64::MAX as u64 / 2)?,
             confirmations: number("BUZZ_CHAIN_CONFIRMATIONS", 12, 0, 10_000)?,
-            poll_secs: number("BUZZ_CHAIN_POLL_SECS", 12, 1, 86_400)?,
+            poll_secs,
             refresh_secs: number("BUZZ_CHAIN_REFRESH_SECS", 3_600, 60, 7 * 86_400)?,
             log_range: number("BUZZ_CHAIN_LOG_RANGE", 2_000, 1, 10_000)?,
             community_host: var("BUZZ_CHAIN_COMMUNITY_HOST").map(|h| h.to_ascii_lowercase()),
+            helper,
         }))
     }
 

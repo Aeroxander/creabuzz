@@ -338,6 +338,17 @@ pub async fn rollback(
     .bind(fork_i)
     .execute(&mut *tx)
     .await?;
+    // A helper job made due by a row that is gone is dropped with it. A job
+    // whose transaction is in flight stays: its receipt (or its vanishing)
+    // settles it, and a done job is history.
+    sqlx::query(
+        "DELETE FROM chain_helper_jobs WHERE reader = $1 AND due_block > $2 \
+         AND state IN ('pending', 'dropped', 'failed')",
+    )
+    .bind(reader)
+    .bind(fork_i)
+    .execute(&mut *tx)
+    .await?;
     // The numbers signed from rows that are gone must be worked out again,
     // even when the new rows end at the same block number.
     sqlx::query(

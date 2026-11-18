@@ -91,7 +91,7 @@ impl FakeChain {
         blocks.push((header, raw));
     }
 
-    fn truncate(&self, len: usize) {
+    pub(super) fn truncate(&self, len: usize) {
         self.blocks.lock().expect("lock").truncate(len);
     }
 }
@@ -262,6 +262,7 @@ fn config(confirmations: u64) -> ChainReaderConfig {
         refresh_secs: 3_600,
         log_range: 3,
         community_host: None,
+        helper: None,
     }
 }
 
