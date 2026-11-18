@@ -34,6 +34,9 @@ import { projectPeople, useProject, useProjectActivity } from "./use-project";
 const TeamMoney = lazy(() =>
   import("../team/TeamMoney").then((m) => ({ default: m.TeamMoney })),
 );
+const TeamTop = lazy(() =>
+  import("../team/TeamTop").then((m) => ({ default: m.TeamTop })),
+);
 const LaunchProject = lazy(() =>
   import("../team/LaunchProject").then((m) => ({ default: m.LaunchProject })),
 );
@@ -173,6 +176,16 @@ function ProjectView({ project }: { project: Project }) {
       {numbers && canOpen ? (
         <OpenBacking address={walletAddress} numbers={numbers} />
       ) : null}
+      {numbers ? (
+        <Suspense fallback={null}>
+          <TeamTop
+            founder={project.author}
+            numbers={numbers}
+            profiles={profiles}
+            team={[project.author, ...accepted.map((m) => m.pubkey)]}
+          />
+        </Suspense>
+      ) : null}
 
       <JoinBox
         activity={activity.data}
@@ -253,7 +266,6 @@ function ProjectView({ project }: { project: Project }) {
                       {numbers ? (
                         <Suspense fallback={null}>
                           <TeamMoney
-                            founder={project.author}
                             numbers={numbers}
                             profiles={profiles}
                             team={[

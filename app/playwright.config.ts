@@ -30,6 +30,8 @@ export default defineConfig({
         "**/money-review.spec.ts",
         "**/a11y.spec.ts",
         "**/passkey.spec.ts",
+        "**/team.spec.ts",
+        "**/a11y-team.spec.ts",
       ],
     },
     { name: "screens", testMatch: ["**/screens.spec.ts"] },

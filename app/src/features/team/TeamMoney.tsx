@@ -7,69 +7,35 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import type { ProjectNumbers } from "../money/numbers";
 import { useWalletAddress } from "../money/use-money";
-import { PairCard } from "./PairCard";
 import { SendSheet } from "./SendSheet";
-import {
-  asRunner,
-  handOverData,
-  makePairCall,
-  takeSeatCall,
-  windDownData,
-} from "./team-calls";
-import { type PairState, usePair, useSeatOffer } from "./use-team";
+import { asRunner, handOverData, windDownData } from "./team-calls";
+import { type PairState, usePair } from "./use-team";
 import { useTeamWallets } from "./use-wallets";
 
 /**
- * Team on the Money tab, loaded only where the server turns investing on and the project has numbers: the second seat
- * or the runner seat offered to this wallet, the Pair's card for its two signers, handing the seat on, and winding down.
+ * Team on the Money tab, loaded only where the server turns investing on and the project has numbers: handing the
+ * runner seat on, and winding down. The next step (a seat offered, the second seat, the Pair's waiting calls) sits above
+ * the tabs, in `TeamTop`.
  */
 export function TeamMoney({
   numbers,
-  founder,
   team,
   profiles,
 }: {
   numbers: ProjectNumbers;
-  /** The founder's account key. */
-  founder: string;
   /** Every teammate's account key (the founder first). */
   team: readonly string[];
   profiles: Record<string, ProfileMetadata> | undefined;
 }) {
   const me = useWalletAddress().data ?? null;
   const pair = usePair(numbers).data ?? null;
-  const offer = useSeatOffer(numbers, me).data ?? null;
   const wallets = useTeamWallets(team).data;
-  const byAddress = new Map<string, string>();
-  for (const [pubkey, w] of Object.entries(wallets ?? {}))
-    if (w.state === "linked") byAddress.set(w.address, pubkey);
-  const nameOf = (address: string) => {
-    const pubkey =
-      byAddress.get(address) ?? (address === numbers.founder ? founder : null);
-    return pubkey
-      ? profileName(profiles, pubkey)
-      : `the wallet ending ${address.slice(-4)}`;
-  };
-  const linked = team
-    .map((pubkey) => ({ pubkey, wallet: wallets?.[pubkey] }))
-    .flatMap((t) =>
-      t.wallet?.state === "linked"
-        ? [{ pubkey: t.pubkey, address: t.wallet.address }]
-        : [],
-    );
+  const linked = team.flatMap((pubkey) => {
+    const w = wallets?.[pubkey];
+    return w?.state === "linked" ? [{ pubkey, address: w.address }] : [];
+  });
   return (
     <div className="flex flex-col gap-3" data-testid="team-money">
-      {offer && me ? (
-        <SeatOfferCard
-          kind={offer.kind}
-          first={offer.kind === "second" ? offer.first : null}
-          nameOf={nameOf}
-          numbers={numbers}
-        />
-      ) : null}
-      {pair && me ? (
-        <PairCard me={me} nameOf={nameOf} numbers={numbers} pair={pair} />
-      ) : null}
       <RunnerCard
         candidates={linked.filter((c) => c.address !== me)}
         founderWallet={numbers.founder}
@@ -82,95 +48,6 @@ export function TeamMoney({
   );
 }
 
-function SeatOfferCard({
-  numbers,
-  kind,
-  first,
-  nameOf,
-}: {
-  numbers: ProjectNumbers;
-  kind: "seat" | "second";
-  first: string | null;
-  nameOf: (address: string) => string;
-}) {
-  const [open, setOpen] = useState(false);
-  const titleId = useId();
-  const treasury = numbers.contracts.treasury;
-  if (!treasury) return null;
-  const second = kind === "second" && first;
-  return (
-    <Card
-      aria-labelledby={titleId}
-      className="flex flex-col gap-3"
-      data-testid="seat-offer"
-      role="region"
-    >
-      <h2 className="headline text-xl" id={titleId}>
-        {second
-          ? "You are asked to be the second signer"
-          : "You are offered the runner seat"}
-      </h2>
-      <p className="text-sm text-muted">
-        {second
-          ? `${nameOf(first)} asked you to run this project with them.`
-          : "The person who runs this project offered you their seat."}
-      </p>
-      <Button block data-testid="seat-accept" onClick={() => setOpen(true)}>
-        {second ? "Accept second seat" : "Take the seat"}
-      </Button>
-      <SendSheet
-        action={`${second ? "accept-seat" : "take-seat"}:${numbers.chainId}:${treasury}`}
-        build={() => [
-          second
-            ? makePairCall(numbers.launcher, numbers.key, first)
-            : takeSeatCall(treasury),
-        ]}
-        chainId={numbers.chainId}
-        confirmLabel={second ? "Accept" : "Take the seat"}
-        copy={second ? "accept-seat" : "take-seat"}
-        done={
-          second ? "You are the second signer." : "You run the project now."
-        }
-        onOpenChange={setOpen}
-        open={open}
-        testId="seat-sheet"
-        title={second ? "Become the second signer?" : "Take the runner seat?"}
-      >
-        <ul className="flex list-disc flex-col gap-1.5 pl-5">
-          {second ? (
-            <>
-              <li>
-                You and {nameOf(first)} run the project together. Either of you
-                can check in and spend up to 500 dollars in any 7 days alone.
-              </li>
-              <li>
-                Raises, Shares given, larger payments, handing the seat on and
-                winding down need both of you: one asks, the other confirms.
-              </li>
-              <li>
-                You check in every 14 days between you; payments pause if nobody
-                does.
-              </li>
-            </>
-          ) : (
-            <>
-              <li>
-                You check in every 14 days, spend the project's money and decide
-                its raises.
-              </li>
-              <li>Agents set by the last runner stop working.</li>
-            </>
-          )}
-        </ul>
-      </SendSheet>
-    </Card>
-  );
-}
-
-/**
- * For whoever runs the project (alone, or a signer of its Pair): hand the runner seat to a teammate with a linked wallet,
- * and wind the project down. Both go through the Pair (one asks, the other confirms) when two run it.
- */
 function RunnerCard({
   numbers,
   me,

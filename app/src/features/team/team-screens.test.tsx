@@ -5,6 +5,10 @@ import { chainKeyFromTags } from "@creaton/core/launchpad/project-chain.ts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  accountOf,
+  linkedWalletRecord,
+} from "../../../tests/helpers/linked-wallet";
+import {
   COORDINATE,
   NOW,
   numbersOf,
@@ -42,7 +46,7 @@ import {
   pairConfirmCall,
   pairProposeCall,
 } from "./team-calls";
-import { TeamMoney } from "./TeamMoney";
+import { TeamTop } from "./TeamTop";
 import { checkInTarget } from "./use-team";
 
 vi.mock(
@@ -82,7 +86,12 @@ const team = () => {
 const pair = { address: PAIR, first: FOUNDER_EVM, second: BACKER_EVM };
 
 describe("the second seat", () => {
+  const MATE_KEY = "b7".repeat(32);
+  const MATE = accountOf(MATE_KEY);
+  const founderKey = COORDINATE.split(":")[1];
+
   it("lets the founder who runs it offer the seat to the Pair of the two of them, once per press", async () => {
+    serve([linkedWalletRecord(MATE_KEY, BACKER_EVM)]);
     const stub = installChainStub({
       account: FOUNDER_EVM,
       reads: {
@@ -90,15 +99,14 @@ describe("the second seat", () => {
       },
     });
     wrap(
-      <PersonTeamActions
-        me={FOUNDER_EVM}
-        name="Sam"
+      <TeamTop
+        founder={founderKey}
         numbers={solo()}
-        pair={null}
-        wallet={{ state: "linked", address: BACKER_EVM }}
+        profiles={{}}
+        team={[founderKey, MATE]}
       />,
     );
-    fireEvent.click(screen.getByTestId("offer-seat"));
+    fireEvent.click(await screen.findByTestId("offer-seat"));
     const confirm = await screen.findByTestId("offer-seat-sheet-confirm");
     fireEvent.click(confirm);
     fireEvent.click(confirm);
@@ -111,31 +119,33 @@ describe("the second seat", () => {
     });
   });
 
-  it("offers nothing to a wallet that does not run the project, and says when a teammate has no wallet", () => {
+  it("offers the seat only from the wallet that runs the project, and only to a linked wallet", async () => {
+    serve([]);
     installChainStub({ account: STRANGER });
-    const { container } = wrap(
-      <PersonTeamActions
-        me={STRANGER}
-        name="Sam"
-        numbers={solo()}
-        pair={null}
-        wallet={{ state: "linked", address: BACKER_EVM }}
-      />,
-    );
-    expect(container.textContent).toBe("");
-    cleanup();
     wrap(
-      <PersonTeamActions
-        me={FOUNDER_EVM}
-        name="Sam"
+      <TeamTop
+        founder={founderKey}
         numbers={solo()}
-        pair={null}
-        wallet={{ state: "none" }}
+        profiles={{}}
+        team={[founderKey, MATE]}
       />,
     );
-    expect(screen.getByTestId("no-wallet").textContent).toMatch(
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByTestId("second-seat")).toBeNull();
+    cleanup();
+    installChainStub({ account: FOUNDER_EVM });
+    wrap(
+      <TeamTop
+        founder={founderKey}
+        numbers={solo()}
+        profiles={{}}
+        team={[founderKey, MATE]}
+      />,
+    );
+    expect((await screen.findByTestId("no-wallet")).textContent).toMatch(
       /not linked a wallet/,
     );
+    expect(screen.queryByTestId("offer-seat")).toBeNull();
   });
 
   it("lets the second person accept the seat offered to the Pair of them and the runner", async () => {
@@ -147,7 +157,7 @@ describe("the second seat", () => {
       },
     });
     wrap(
-      <TeamMoney
+      <TeamTop
         founder={"a".repeat(64)}
         numbers={solo()}
         profiles={{}}
@@ -172,14 +182,14 @@ describe("the second seat", () => {
       },
     });
     wrap(
-      <TeamMoney
+      <TeamTop
         founder={"a".repeat(64)}
         numbers={solo()}
         profiles={{}}
         team={[]}
       />,
     );
-    await screen.findByTestId("team-money");
+    await new Promise((r) => setTimeout(r, 20));
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByTestId("seat-accept")).toBeNull();
   });

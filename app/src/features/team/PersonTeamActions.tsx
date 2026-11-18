@@ -3,14 +3,8 @@ import { Button } from "../../ui/button";
 import type { ProjectNumbers } from "../money/numbers";
 import { sharesText } from "../money/numbers";
 import { SendSheet } from "./SendSheet";
-import {
-  asRunner,
-  directCall,
-  giveSharesData,
-  handOverData,
-  LAUNCHER_READS,
-} from "./team-calls";
-import { type PairState, readAddress } from "./use-team";
+import { asRunner, giveSharesData } from "./team-calls";
+import type { PairState } from "./use-team";
 import type { TeamWallet } from "./use-wallets";
 
 const SHARE = 10n ** 18n;
@@ -28,9 +22,9 @@ function afterMarket(numbers: ProjectNumbers): boolean {
 }
 
 /**
- * What the runner can do with one teammate, on that teammate's row of People: offer them the second seat (before Team,
- * founder alone) and give them Shares (the runner, or either signer of the Pair through a proposal). A teammate who has
- * not linked a wallet is told so, since both need an address only they can prove.
+ * What the runner can do with one teammate, on that teammate's row of People: give them Shares (the runner, or either
+ * signer of the Pair through a proposal). A teammate who has not linked a wallet is told so, since a gift needs an
+ * address only they can prove.
  */
 export function PersonTeamActions({
   numbers,
@@ -45,7 +39,7 @@ export function PersonTeamActions({
   me: string | null;
   pair: PairState | null;
 }) {
-  const [sheet, setSheet] = useState<"seat" | "give" | null>(null);
+  const [open, setOpen] = useState(false);
   const treasury = numbers.contracts.treasury;
   if (!treasury || numbers.clock.woundDown) return null;
   if (!wallet) return null;
@@ -59,11 +53,6 @@ export function PersonTeamActions({
       </p>
     );
   const teammate = wallet.address;
-  const runsAlone = Boolean(me && numbers.runner === me.toLowerCase());
-  const canOffer =
-    runsAlone &&
-    teammate !== me?.toLowerCase() &&
-    (numbers.stage.name === "solo" || numbers.stage.name === "backed");
   const gift = (amount: bigint) =>
     asRunner({
       runner: numbers.runner,
@@ -72,77 +61,28 @@ export function PersonTeamActions({
       target: treasury,
       data: giveSharesData(teammate, amount),
     });
-  const canGive = gift(1n) !== null;
-  if (!canOffer && !canGive) return null;
+  // Never on one's own row: Shares for oneself are asked for by someone else.
+  const canGive = teammate !== me?.toLowerCase() && gift(1n) !== null;
+  if (!canGive) return null;
   return (
     <div className="flex flex-col items-end gap-1.5">
-      {canOffer ? (
-        <Button
-          data-testid="offer-seat"
-          onClick={() => setSheet("seat")}
-          size="sm"
-          variant="secondary"
-        >
-          Make second signer
-        </Button>
-      ) : null}
       {canGive ? (
         <Button
           data-testid="give-shares"
-          onClick={() => setSheet("give")}
+          onClick={() => setOpen(true)}
           size="sm"
           variant="secondary"
         >
           Give Shares
         </Button>
       ) : null}
-      {canOffer && me ? (
-        <SendSheet
-          action={`offer-seat:${numbers.chainId}:${treasury}`}
-          build={async (w) => {
-            const next = await readAddress(
-              w,
-              numbers.launcher,
-              LAUNCHER_READS.pairAddress(numbers.key, me, teammate),
-            );
-            return [directCall(treasury, handOverData(next, false))];
-          }}
-          chainId={numbers.chainId}
-          confirmLabel="Offer the second seat"
-          copy="offer-seat"
-          done={`Offered. ${name} becomes the second signer when they accept.`}
-          onOpenChange={(open) => setSheet(open ? "seat" : null)}
-          open={sheet === "seat"}
-          testId="offer-seat-sheet"
-          title={`Make ${name} the second signer?`}
-        >
-          <p>
-            {name} accepts on the project's Money tab. From then on the project
-            is run by the two of you:
-          </p>
-          <ul className="flex list-disc flex-col gap-1.5 pl-5">
-            <li>
-              Either of you can check in, and spend up to 500 dollars in any 7
-              days alone.
-            </li>
-            <li>
-              Everything else needs both of you: one asks, the other confirms.
-            </li>
-            <li>The limit on backing rises from 10,000 to 50,000 dollars.</li>
-            <li>
-              You stay the founder and keep your Shares. A second signer can be
-              one person with two accounts; the page says so.
-            </li>
-          </ul>
-        </SendSheet>
-      ) : null}
       {canGive ? (
         <GiveSheet
           gift={gift}
           name={name}
           numbers={numbers}
-          onOpenChange={(open) => setSheet(open ? "give" : null)}
-          open={sheet === "give"}
+          onOpenChange={setOpen}
+          open={open}
           teammate={teammate}
           treasury={treasury}
         />
