@@ -485,7 +485,10 @@ pub async fn project_logs(
 /// The Shares moves a stored log makes: its project and, for a Shares
 /// `Transfer`, the sender's and the receiver's changes as decimal text (the
 /// zero address, mint and burn, is not an account).
-fn balance_moves(l: &StoredLog) -> Option<(Word, Vec<([u8; 20], String)>)> {
+/// A project and the balance changes (account, signed decimal) of one log.
+type BalanceMoves = (Word, Vec<([u8; 20], String)>);
+
+fn balance_moves(l: &StoredLog) -> Option<BalanceMoves> {
     if l.role != Role::Shares || l.event != "Transfer" {
         return None;
     }

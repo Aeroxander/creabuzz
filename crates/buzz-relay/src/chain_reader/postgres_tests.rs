@@ -61,8 +61,11 @@ pub(super) struct FakeChain {
     pub(super) behind: Mutex<Option<u64>>,
     /// `eth_call` answers by (contract, calldata); none set: the source makes
     /// no calls.
-    pub(super) calls: Mutex<std::collections::HashMap<([u8; 20], Vec<u8>), Vec<u8>>>,
+    pub(super) calls: Mutex<CallAnswers>,
 }
+
+/// `eth_call` answers by (contract, calldata).
+pub(super) type CallAnswers = std::collections::HashMap<([u8; 20], Vec<u8>), Vec<u8>>;
 
 impl FakeChain {
     /// Append a block at `time` holding `logs` (address, topics, data);
