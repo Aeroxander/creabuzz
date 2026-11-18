@@ -522,6 +522,7 @@ Q=[
 ('Q75','Launcher LZ2: a claim made for another Launcher',L,'IEarlierBackers(claim).launcher() != address(this)','false',False,QL),
 ('Q76','Launcher LZ2: a claim made for another project',L,'|| IEarlierBackers(claim).key() != key','|| false',False,QL),
 ('Q77','Launcher: anyone may name the earlier raise',L,'    function nameEarlierBackers(address claim, uint256 keepBacking) external {\n        if (msg.sender != admin) revert NotAdmin();','    function nameEarlierBackers(address claim, uint256 keepBacking) external {',False,QL),
+('Q87','Launcher: the earlier raise may be renamed after the launch (or before project zero is named)',L,'if (key == bytes32(0)) revert BadCut();','',False,QL),
 ('Q78','Launcher LZ4: the launch hash leaves out the cut',L,'if (key == projectZeroKey && claim != address(0)) h = keccak256(abi.encode(h, claim, earlierKeep));','',False,QL),
 ('Q79','Launcher: naming project zero again keeps the old claim',L,'(projectZeroKey, earlierClaim) = (key, address(0));','projectZeroKey = key;',False,QL),
 ('Q80','Launcher: the launch does not bind the claim',L,'if (claim != address(0)) IEarlierBackers(claim).bind();','',False,QL),

@@ -96,6 +96,19 @@ contract EarlierLaunchTest is EarlierBase {
         assertEq(rd.roundOf(id).size, 50_000e6, "the whole 50,000 Team cap");
     }
 
+    /// After the launch the earlier raise is fixed: nothing can be named, not even a claim made for key zero.
+    function test_name_notAfterTheLaunch() public {
+        EarlierBackers keyZero = _deployClaimWith(address(launcher), bytes32(0), leaves, S1_TOTAL, 0);
+        vm.startPrank(admin);
+        vm.expectRevert(Launcher.BadCut.selector);
+        launcher.nameEarlierBackers(address(keyZero), KEEP);
+        vm.expectRevert(Launcher.BadCut.selector);
+        launcher.nameEarlierBackers(address(0), 0);
+        vm.stopPrank();
+        assertEq(launcher.earlierClaim(), address(eb), "still the one project zero launched with");
+        assertEq(launcher.earlierKeep(), KEEP);
+    }
+
     /// Project zero launched: no second one can be named, so no other launch can take an earlier raise or a team budget.
     function test_noSecondProjectZero() public {
         bytes32 k = launcher.keyOf(alice, keccak256("another creaton"));
@@ -278,10 +291,11 @@ contract EarlierNamingTest is EarlierBase {
         assertEq(eb.undelivered(), 0);
     }
 
-    /// @dev Deploy the built `EarlierBackers` (the artifact the Launcher's code hash is read from) with these settings.
+    /// @dev Deploy the built `EarlierBackers` (the artifact the Launcher's code hash is read from) with these settings; on a
+    /// refused setup, `a` is zero and `err` is the constructor's revert data.
     function _make(address l, bytes32[] memory lv, uint256 total, uint256 ls, uint256 hold, address k)
         internal
-        returns (address a)
+        returns (address a, bytes memory err)
     {
         bytes memory code = abi.encodePacked(
             vm.getCode("EarlierBackers.sol:EarlierBackers"),
@@ -290,6 +304,22 @@ contract EarlierNamingTest is EarlierBase {
         assembly ("memory-safe") {
             a := create(0, add(code, 0x20), mload(code))
         }
+        if (a == address(0)) {
+            assembly ("memory-safe") {
+                err := mload(0x40)
+                mstore(err, returndatasize())
+                returndatacopy(add(err, 0x20), 0, returndatasize())
+                mstore(0x40, add(add(err, 0x20), returndatasize()))
+            }
+        }
+    }
+
+    /// @dev The setup is refused with `BadSetup` (checked on the result: `vm.expectRevert` does not notice a creation that
+    /// succeeds from inline assembly, measured).
+    function _refused(address l, bytes32[] memory lv, uint256 total, uint256 ls, uint256 hold, address k) internal {
+        (address a, bytes memory err) = _make(l, lv, total, ls, hold, k);
+        assertEq(a, address(0), "refused");
+        assertEq(err, abi.encodeWithSelector(EarlierBackers.BadSetup.selector));
     }
 
     /// The Vester's second grant: never to nobody or to the founder, and a zero founder grant makes no founder grant.
@@ -320,21 +350,15 @@ contract EarlierNamingTest is EarlierBase {
         bytes32[] memory many = new bytes32[](65);
         uint256 ls = _now() + 730 days;
         address l = address(launcher);
-        vm.expectRevert(EarlierBackers.BadSetup.selector);
-        _make(l, leaves, S1_TOTAL, ls, 0, address(0));
-        vm.expectRevert(EarlierBackers.BadSetup.selector);
-        _make(l, none, S1_TOTAL, ls, 0, keeper);
-        vm.expectRevert(EarlierBackers.BadSetup.selector);
-        _make(l, many, S1_TOTAL, ls, 0, keeper);
-        vm.expectRevert(EarlierBackers.BadSetup.selector);
-        _make(l, leaves, 0, ls, 0, keeper);
-        vm.expectRevert(EarlierBackers.BadSetup.selector);
-        _make(l, leaves, S1_TOTAL, ls - 1, 0, keeper);
-        vm.expectRevert(EarlierBackers.BadSetup.selector);
-        _make(l, leaves, S1_TOTAL, ls, 730 days + 1, keeper);
-        vm.expectRevert(EarlierBackers.BadSetup.selector);
-        _make(address(0), leaves, S1_TOTAL, ls, 0, keeper);
-        EarlierBackers ok = EarlierBackers(_make(l, leaves, S1_TOTAL, ls, 730 days, keeper));
+        _refused(l, leaves, S1_TOTAL, ls, 0, address(0));
+        _refused(l, none, S1_TOTAL, ls, 0, keeper);
+        _refused(l, many, S1_TOTAL, ls, 0, keeper);
+        _refused(l, leaves, 0, ls, 0, keeper);
+        _refused(l, leaves, S1_TOTAL, ls - 1, 0, keeper);
+        _refused(l, leaves, S1_TOTAL, ls, 730 days + 1, keeper);
+        _refused(address(0), leaves, S1_TOTAL, ls, 0, keeper);
+        (address made,) = _make(l, leaves, S1_TOTAL, ls, 730 days, keeper);
+        EarlierBackers ok = EarlierBackers(made);
         assertEq(ok.entryCount(), 21);
         assertEq(ok.minHoldFromConsent(), 730 days);
         assertEq(ok.textVersion(), 1);

@@ -833,7 +833,8 @@ contract Launcher {
     /// named and has not launched; zero `claim` takes it back. Naming project zero again clears it.
     function nameEarlierBackers(address claim, uint256 keepBacking) external {
         if (msg.sender != admin) revert NotAdmin();
-        bytes32 key = projectZeroKey; // zero when none is named: no claim is made for key zero's project, and none launches
+        bytes32 key = projectZeroKey;
+        if (key == bytes32(0)) revert BadCut(); // none named, or project zero launched: its earlier raise is fixed
         if (claim != address(0)) {
             if (
                 claim.codehash != earlierCodeHash || IEarlierBackers(claim).launcher() != address(this)
