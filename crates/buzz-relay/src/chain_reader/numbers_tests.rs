@@ -13,6 +13,7 @@ const BOB: &str = "0x00000000000000000000000000000000000000b0";
 const FOUNDER: &str = "0x00000000000000000000000000000000000000f0";
 const ROUNDS: &str = "0x0000000000000000000000000000000000000005";
 const KEY: Word = [0xab; 32];
+const AUCTION: &str = "0x00000000000000000000000000000000000000ac";
 
 struct Chain {
     logs: Vec<LogRow>,
@@ -319,6 +320,21 @@ fn stages_follow_the_launcher_rules() {
         team["eligible"],
         json!({"for": "council", "since": close + DAY})
     );
+    // The sale's settle opens the pool (Treasury.PoolOpened) and starts the
+    // Vester's clock; Council waits for the sweep, which sets the Finisher's
+    // stage to Done (review O1).
+    c.push(
+        close + 2 * DAY,
+        Role::Finisher,
+        "SaleOpenedBy",
+        json!({"auction": AUCTION, "endBlock": "1", "attempt": "0"}),
+    );
+    let running = c.numbers(close + 2 * DAY);
+    assert_eq!(
+        running["noMarketFrom"],
+        Value::Null,
+        "not while a sale runs (O2)"
+    );
     c.push(
         close + 3 * DAY,
         Role::Treasury,
@@ -330,6 +346,17 @@ fn stages_follow_the_launcher_rules() {
         Role::Vester,
         "Started",
         json!({"time": "0"}),
+    );
+    assert_eq!(
+        c.numbers(close + 3 * DAY)["stage"]["name"],
+        "team",
+        "Council waits for the sweep"
+    );
+    c.push(
+        close + 3 * DAY,
+        Role::Finisher,
+        "Swept",
+        json!({"auction": AUCTION, "sharesToTreasury": "0"}),
     );
     let council = c.numbers(close + 4 * DAY);
     assert_eq!(council["stage"]["name"], "council");
@@ -597,4 +624,85 @@ fn a_long_list_is_cut_and_says_so() {
     assert_eq!(n["holders"].as_array().map(Vec::len), Some(MAX_LISTED));
     assert_eq!(n["truncated"], true);
     assert!(n.to_string().len() < 200 * 1024);
+}
+
+/// Review O1: an abandoned sale emits `Swept` too, but leaves the Finisher at
+/// Abandoned, not Done, so the stage stays with the runner (Team here); a
+/// failed sale never sweeps to Done either.
+#[test]
+fn an_abandoned_sale_is_not_council_and_shows_no_no_market_date() {
+    let (mut c, close) = worked_2500();
+    c.push(
+        close + DAY,
+        Role::Treasury,
+        "RunnerChanged",
+        json!({"from": FOUNDER, "to": "0x00000000000000000000000000000000000000aa", "cut": "0"}),
+    );
+    c.push(close + DAY, Role::Launcher, "PairMade", json!({"key": hex0x(&KEY), "pair": "0x00000000000000000000000000000000000000aa", "first": FOUNDER, "second": ALICE}));
+    c.push(
+        close + 2 * DAY,
+        Role::Finisher,
+        "SaleOpenedBy",
+        json!({"auction": AUCTION, "endBlock": "1", "attempt": "0"}),
+    );
+    // Abandon: the Treasury's pool flag is set without PoolOpened, then the
+    // Finisher emits Abandoned and Swept in the same transaction.
+    c.push(
+        close + 9 * DAY,
+        Role::Treasury,
+        "SaleAbandoned",
+        json!({"time": "0"}),
+    );
+    c.push(
+        close + 9 * DAY,
+        Role::Vester,
+        "Started",
+        json!({"time": "0"}),
+    );
+    c.push(
+        close + 9 * DAY,
+        Role::Finisher,
+        "Abandoned",
+        json!({"auction": AUCTION, "toFloorOnly": "0", "split": "0"}),
+    );
+    c.push(
+        close + 9 * DAY,
+        Role::Finisher,
+        "Swept",
+        json!({"auction": AUCTION, "sharesToTreasury": "0"}),
+    );
+    let n = c.numbers(close + 10 * DAY);
+    assert_eq!(n["stage"]["name"], "team");
+    assert_eq!(n["stage"]["openAt"], Value::Null);
+    assert_eq!(
+        n["noMarketFrom"],
+        Value::Null,
+        "no market cannot be declared after an abandon (O2)"
+    );
+    assert_eq!(n["sale"]["abandonedAt"], close + 9 * DAY);
+}
+
+/// Review O2: a failed sale ends the running sale; "no market" may be
+/// declared again (its date comes back).
+#[test]
+fn a_failed_sale_brings_the_no_market_date_back() {
+    let (mut c, close) = worked_2500();
+    let before = c.numbers(close + DAY)["noMarketFrom"].clone();
+    assert!(before.is_u64());
+    c.push(
+        close + 2 * DAY,
+        Role::Finisher,
+        "SaleOpenedBy",
+        json!({"auction": AUCTION, "endBlock": "1", "attempt": "0"}),
+    );
+    assert_eq!(c.numbers(close + 3 * DAY)["noMarketFrom"], Value::Null);
+    c.push(
+        close + 4 * DAY,
+        Role::Finisher,
+        "SaleFailed",
+        json!({"auction": AUCTION, "retryBlock": "2"}),
+    );
+    let after = c.numbers(close + 5 * DAY);
+    assert_eq!(after["noMarketFrom"], before);
+    assert_eq!(after["stage"]["name"], "backed");
 }

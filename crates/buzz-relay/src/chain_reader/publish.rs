@@ -21,8 +21,19 @@ pub fn tags(key_hex: &str, chain_id: u64, launcher_hex: &str) -> anyhow::Result<
     ])
 }
 
+/// What happened to a signed record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// It is the project's stored record now (its id).
+    Stored([u8; 32]),
+    /// A newer record for the project is stored (another writer's, or one
+    /// signed with a clock ahead of this one): this one was not kept. Holds
+    /// the stored record's `created_at` (review F6).
+    Superseded(u64),
+}
+
 /// Sign `content` as the relay, replace the project's earlier record, and send
-/// it to live subscribers when it was stored. Returns the event id.
+/// it to live subscribers when it was stored.
 pub async fn publish(
     state: &Arc<AppState>,
     tenant: &TenantContext,
@@ -30,7 +41,7 @@ pub async fn publish(
     d_tag: &str,
     content: &Value,
     created_at: u64,
-) -> anyhow::Result<[u8; 32]> {
+) -> anyhow::Result<Outcome> {
     let event = EventBuilder::new(
         Kind::Custom(KIND_PROJECT_NUMBERS as u16),
         content.to_string(),
@@ -44,17 +55,42 @@ pub async fn publish(
         .replace_parameterized_event(tenant.community(), &event, d_tag, None)
         .await
         .context("store the project numbers record")?;
-    if inserted {
-        let relay_pubkey = state.relay_keypair.public_key().to_hex();
-        dispatch_persistent_event(
-            tenant,
-            state,
-            &stored,
-            event_kind_u32(&stored.event),
-            &relay_pubkey,
-            None,
+    if !inserted {
+        // Not stored: either this very record is already the live one (a
+        // repeat), or a newer one is. The store answers both with the
+        // incoming event, so look at the live record itself.
+        let live: Option<(chrono::DateTime<chrono::Utc>, Vec<u8>)> = sqlx::query_as(
+            "SELECT created_at, id FROM events \
+             WHERE community_id = $1 AND kind = $2 AND pubkey = $3 AND d_tag = $4 \
+               AND deleted_at IS NULL \
+             ORDER BY created_at DESC, id ASC LIMIT 1",
         )
-        .await;
+        .bind(tenant.community().as_uuid())
+        .bind(KIND_PROJECT_NUMBERS as i32)
+        .bind(event.pubkey.to_bytes().as_slice())
+        .bind(d_tag)
+        .fetch_optional(state.db.pool())
+        .await
+        .context("read the stored project numbers record")?;
+        return match live {
+            Some((_, id)) if id.as_slice() == event.id.as_bytes().as_slice() => {
+                Ok(Outcome::Stored(event.id.to_bytes()))
+            }
+            Some((at, _)) => Ok(Outcome::Superseded(
+                u64::try_from(at.timestamp()).context("stored record before 1970")?,
+            )),
+            None => anyhow::bail!("the project numbers record was refused"),
+        };
     }
-    Ok(event.id.to_bytes())
+    let relay_pubkey = state.relay_keypair.public_key().to_hex();
+    dispatch_persistent_event(
+        tenant,
+        state,
+        &stored,
+        event_kind_u32(&stored.event),
+        &relay_pubkey,
+        None,
+    )
+    .await;
+    Ok(Outcome::Stored(event.id.to_bytes()))
 }

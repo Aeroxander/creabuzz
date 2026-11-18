@@ -52,6 +52,10 @@ pub struct ScanReport {
     pub rolled_back_to: Option<u64>,
     /// Logs deleted by the rollback.
     pub logs_removed: u64,
+    /// The node is behind the stored blocks (its head is lower than the
+    /// newest stored block, or it does not have that block yet): nothing was
+    /// read, undone or signed this pass (review F7).
+    pub behind: bool,
 }
 
 /// Find the newest stored block that is still on the chain, walking stored
@@ -78,7 +82,17 @@ async fn check_rollback(
     let Some(tip) = stored.first() else {
         return Ok(next);
     };
-    if source.header(tip.number).await?.map(|h| h.hash) == Some(tip.hash) {
+    // A node behind the stored blocks (a lagging replica behind a load
+    // balancer, a restarted node) is not a rollback: wait for it (review F7).
+    if report.head < tip.number {
+        report.behind = true;
+        return Ok(next);
+    }
+    let Some(chain_tip) = source.header(tip.number).await? else {
+        report.behind = true;
+        return Ok(next);
+    };
+    if chain_tip.hash == tip.hash {
         return Ok(next);
     }
     let fork = match find_fork(source, &stored).await? {
@@ -349,6 +363,10 @@ pub async fn scan_with_span(
     };
     let mut next = store::cursor(pool, &s.reader).await?;
     next = check_rollback(pool, source, s, next, &mut report).await?;
+    if report.behind {
+        tracing::warn!(reader = %s.reader, head = report.head, "chain reader: the node is behind the stored blocks; waiting for it");
+        return Ok(report);
+    }
     let Some(last) = report.head.checked_sub(s.lag) else {
         return Ok(report);
     };

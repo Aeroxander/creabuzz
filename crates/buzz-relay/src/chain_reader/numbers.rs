@@ -289,6 +289,16 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     let mut team_since: Option<u64> = None;
     let mut first_money_at: Option<u64> = None;
     let mut pool_opened_at: Option<u64> = None;
+    // The sale (review O1, O2): `Launcher.stageOf` says Council only once the
+    // Finisher's stage is Done, which `sweep` sets after a sale that sold. An
+    // abandoned sale emits `Swept` too (after `Abandoned`), and a failed one
+    // emits `SaleFailed` instead. "No market" cannot be declared while a sale
+    // runs, nor after an abandoned sale (the Treasury's pool flag is set
+    // without `PoolOpened`).
+    let mut sale_running: Option<String> = None;
+    let mut abandoned: HashSet<String> = HashSet::new();
+    let mut done_at: Option<u64> = None;
+    let mut sale_abandoned_at: Option<u64> = None;
     let mut vester_started: Option<u64> = None;
     let mut no_market_at: Option<u64> = None;
     let mut wound_down_at: Option<u64> = None;
@@ -509,6 +519,23 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
                 );
             }
             (Role::Treasury, "PoolOpened") => pool_opened_at = Some(t),
+            (Role::Treasury, "SaleAbandoned") => sale_abandoned_at = Some(t),
+            (Role::Finisher, "SaleOpenedBy") => sale_running = Some(text(row, "auction")?),
+            (Role::Finisher, "SaleFailed") => {
+                let auction = text(row, "auction")?;
+                if sale_running.as_deref() == Some(auction.as_str()) {
+                    sale_running = None;
+                }
+            }
+            (Role::Finisher, "Swept") => {
+                let auction = text(row, "auction")?;
+                if sale_running.as_deref() == Some(auction.as_str()) {
+                    sale_running = None;
+                }
+                if !abandoned.contains(&auction) {
+                    done_at = done_at.or(Some(t));
+                }
+            }
             (Role::Treasury, "NoMarketDeclared") => no_market_at = Some(t),
             (Role::Treasury, "RunnerChanged") => {
                 runner = text(row, "to")?;
@@ -549,6 +576,11 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
                 );
             }
             (Role::Finisher, "Abandoned") => {
+                let auction = text(row, "auction")?;
+                if sale_running.as_deref() == Some(auction.as_str()) {
+                    sale_running = None;
+                }
+                abandoned.insert(auction);
                 sale.insert("abandonedAt".into(), json!(t));
             }
             _ => {}
@@ -603,7 +635,7 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     };
 
     // ── stage and eligibility (Launcher.stageOf) ─────────────────────────────
-    let (stage, stage_since) = if let Some(t) = pool_opened_at {
+    let (stage, stage_since) = if let Some(t) = done_at {
         ("council", t)
     } else if let Some(t) = team_since {
         ("team", t)
@@ -612,7 +644,7 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
     } else {
         ("solo", launched_at)
     };
-    let open_at = match (pool_opened_at, vester_started) {
+    let open_at = match (done_at, vester_started) {
         (Some(_), Some(start)) => Some(start + YEAR),
         _ => None,
     };
@@ -625,7 +657,11 @@ pub fn derive(key: &Word, logs: &[LogRow], as_of: &AsOf) -> anyhow::Result<Optio
         "council" => json!({"for": "open", "since": open_at}),
         _ => Value::Null,
     };
-    let no_market_from = if pool_opened_at.is_none() && !finished {
+    let no_market_from = if pool_opened_at.is_none()
+        && sale_abandoned_at.is_none()
+        && sale_running.is_none()
+        && !finished
+    {
         Some(first_money_at.unwrap_or(launched_at) + YEAR)
     } else {
         None

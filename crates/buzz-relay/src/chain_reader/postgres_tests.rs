@@ -57,6 +57,8 @@ pub(super) struct FakeChain {
     blocks: Mutex<Vec<(Header, Vec<RawLog>)>>,
     pub(super) limit: Mutex<Option<usize>>,
     pub(super) lagging: AtomicBool,
+    /// A node behind: its head and headers stop at this block.
+    pub(super) behind: Mutex<Option<u64>>,
 }
 
 impl FakeChain {
@@ -102,9 +104,22 @@ impl ChainSource for FakeChain {
         Ok(31337)
     }
     async fn head(&self) -> anyhow::Result<u64> {
-        Ok(self.blocks.lock().expect("lock").len() as u64 - 1)
+        let top = self.blocks.lock().expect("lock").len() as u64 - 1;
+        Ok(self
+            .behind
+            .lock()
+            .expect("lock")
+            .map_or(top, |b| b.min(top)))
     }
     async fn header(&self, number: u64) -> anyhow::Result<Option<Header>> {
+        if self
+            .behind
+            .lock()
+            .expect("lock")
+            .is_some_and(|b| number > b)
+        {
+            return Ok(None);
+        }
         Ok(self
             .blocks
             .lock()

@@ -24,7 +24,7 @@ pub mod store;
 pub mod word;
 
 use std::collections::HashSet;
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -187,7 +187,8 @@ impl ChainReader {
             writer: self.is_writer().await?,
             ..PassReport::default()
         };
-        if report.writer {
+        // Nothing is signed or sent from a node behind the stored blocks.
+        if report.writer && !scanned.behind {
             report.published = self.publish_pass(scanned.head).await?;
             if let Some(helper) = &self.helper {
                 report.helper = Some(self.helper_pass(helper, scanned.head).await?);
@@ -338,21 +339,37 @@ impl ChainReader {
         Ok(report)
     }
 
+    /// Sign and store a record. A newer stored record (another writer's, a
+    /// clock ahead) would hide it: then it is signed once more one second
+    /// after the stored one, and if that is refused too the error leaves the
+    /// project's row as it was, so the next pass tries again (review F6).
+    /// Returns the event id and the `created_at` kept.
     async fn sign(
         &self,
         tenant: &TenantContext,
         key: &Word,
         content: &Value,
         created_at: i64,
-    ) -> anyhow::Result<[u8; 32]> {
+    ) -> anyhow::Result<([u8; 32], i64)> {
         let key_hex = hex0x(key);
-        let tags = publish::tags(
-            &key_hex,
-            self.config.chain_id,
-            &hex0x(&self.config.launcher),
-        )?;
-        let created = u64::try_from(created_at).context("time before 1970")?;
-        publish::publish(&self.state, tenant, tags, &key_hex, content, created).await
+        let mut created = u64::try_from(created_at).context("time before 1970")?;
+        for _ in 0..2 {
+            let tags = publish::tags(
+                &key_hex,
+                self.config.chain_id,
+                &hex0x(&self.config.launcher),
+            )?;
+            match publish::publish(&self.state, tenant, tags, &key_hex, content, created).await? {
+                publish::Outcome::Stored(id) => {
+                    return Ok((id, i64::try_from(created).context("time too large")?))
+                }
+                publish::Outcome::Superseded(at) => {
+                    tracing::warn!(project = %key_hex, stored_at = at, "chain reader: a newer record is stored; signing after it");
+                    created = at.saturating_add(1).max(created);
+                }
+            }
+        }
+        anyhow::bail!("a newer record for the project is stored; the numbers were not kept")
     }
 
     /// Work out and, when they changed, sign one project's numbers. Returns
@@ -388,7 +405,7 @@ impl ChainReader {
             }
         }
         let created_at = prev.map_or(now, |p| now.max(p.published_at + 1));
-        let event_id = self.sign(tenant, key, &content, created_at).await?;
+        let (event_id, created_at) = self.sign(tenant, key, &content, created_at).await?;
         store::record_published(
             pool,
             reader,
@@ -447,50 +464,166 @@ pub fn spawn(state: Arc<AppState>) -> anyhow::Result<Option<tokio::task::JoinHan
         tracing::info!(address = %hex0x(&writer_address(&writer)), "chain helper on");
         reader = reader.with_writer(Arc::new(writer));
     }
-    Ok(Some(tokio::spawn(async move {
-        tracing::info!(reader = %reader.reader_id(), "chain reader started");
-        let mut failures: u32 = 0;
-        loop {
-            let result = async {
-                let served = source.chain_id().await?;
-                if served != expected_chain {
-                    anyhow::bail!("the node serves chain {served}, not {expected_chain}");
-                }
-                reader.pass_all().await
-            }
-            .await;
-            match result {
-                Ok(PassReport {
-                    scanned,
-                    published,
-                    helper,
-                    ..
-                }) => {
-                    failures = 0;
-                    if scanned.logs > 0 || published.signed > 0 || scanned.rolled_back_to.is_some()
-                    {
-                        tracing::info!(?scanned, ?published, "chain reader pass");
-                    }
-                    if let Some(h) = helper.filter(|h| *h != helper::HelperReport::default()) {
-                        tracing::info!(helper = ?h, "chain helper pass");
-                    }
-                }
-                Err(e) => {
-                    failures = failures.saturating_add(1);
-                    tracing::error!(failures, "chain reader pass failed: {e:#}");
-                }
-            }
-            let pause = if failures == 0 {
-                poll
-            } else {
-                poll.saturating_mul(1u32 << failures.min(10))
-                    .min(MAX_BACKOFF)
-            };
-            tokio::time::sleep(pause).await;
-        }
-    })))
+    let reader = Arc::new(reader);
+    Ok(Some(tokio::spawn(supervise(
+        move || {
+            run(
+                Arc::clone(&reader),
+                Arc::clone(&source),
+                expected_chain,
+                poll,
+            )
+        },
+        poll,
+        MAX_BACKOFF,
+    ))))
 }
 
+/// Unix seconds of the last pass that worked (0: none yet).
+static LAST_GOOD_PASS: AtomicI64 = AtomicI64::new(0);
+
+/// When the reader last finished a pass without an error (unix seconds), if
+/// ever: a health number (also the `buzz_chain_reader_last_good_pass_seconds`
+/// gauge). A number that stops moving while the relay serves means the
+/// records shown are getting old.
+pub fn last_good_pass() -> Option<i64> {
+    Some(LAST_GOOD_PASS.load(Ordering::Relaxed)).filter(|t| *t > 0)
+}
+
+fn record_good_pass() {
+    let now = chrono::Utc::now().timestamp();
+    LAST_GOOD_PASS.store(now, Ordering::Relaxed);
+    metrics::gauge!("buzz_chain_reader_last_good_pass_seconds").set(now as f64);
+}
+
+/// The reader's loop: a pass, then a pause (doubling after failed passes, at
+/// most ten minutes). It ends only by a panic, which [`supervise`] catches.
+async fn run(
+    reader: Arc<ChainReader>,
+    source: Arc<dyn ChainSource>,
+    expected_chain: u64,
+    poll: Duration,
+) {
+    tracing::info!(reader = %reader.reader_id(), "chain reader started");
+    let mut failures: u32 = 0;
+    loop {
+        let result = async {
+            let served = source.chain_id().await?;
+            if served != expected_chain {
+                anyhow::bail!("the node serves chain {served}, not {expected_chain}");
+            }
+            reader.pass_all().await
+        }
+        .await;
+        match result {
+            Ok(PassReport {
+                scanned,
+                published,
+                helper,
+                ..
+            }) => {
+                failures = 0;
+                record_good_pass();
+                if scanned.logs > 0 || published.signed > 0 || scanned.rolled_back_to.is_some() {
+                    tracing::info!(?scanned, ?published, "chain reader pass");
+                }
+                if let Some(h) = helper.filter(|h| *h != helper::HelperReport::default()) {
+                    tracing::info!(helper = ?h, "chain helper pass");
+                }
+            }
+            Err(e) => {
+                failures = failures.saturating_add(1);
+                tracing::error!(failures, "chain reader pass failed: {e:#}");
+            }
+        }
+        let pause = if failures == 0 {
+            poll
+        } else {
+            poll.saturating_mul(1u32 << failures.min(10))
+                .min(MAX_BACKOFF)
+        };
+        tokio::time::sleep(pause).await;
+    }
+}
+
+/// Run the task `start` makes, and start it again whenever it ends or panics
+/// (review F9: before this, a panic ended the reader while the relay kept
+/// serving the last records). The pause before a restart doubles from
+/// `first_pause` up to `max_pause`, and starts over after a task that ran
+/// longer than twice `max_pause`.
+pub async fn supervise<F, Fut>(mut start: F, first_pause: Duration, max_pause: Duration)
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = ()> + Send + 'static,
+{
+    let mut restarts: u32 = 0;
+    loop {
+        let began = tokio::time::Instant::now();
+        match tokio::spawn(start()).await {
+            Ok(()) => tracing::error!("chain reader task ended; starting it again"),
+            Err(e) if e.is_panic() => {
+                tracing::error!("chain reader task panicked; starting it again")
+            }
+            Err(e) => tracing::error!("chain reader task stopped ({e}); starting it again"),
+        }
+        metrics::counter!("buzz_chain_reader_restarts_total").increment(1);
+        if began.elapsed() > max_pause.saturating_mul(2) {
+            restarts = 0;
+        }
+        restarts = restarts.saturating_add(1);
+        let pause = first_pause
+            .saturating_mul(1u32 << restarts.min(10))
+            .min(max_pause);
+        tokio::time::sleep(pause).await;
+    }
+}
+
+#[cfg(test)]
+mod supervise_tests {
+    use std::sync::atomic::AtomicU32;
+
+    use super::*;
+
+    /// Review F9: a reader task that panics is started again, and the good
+    /// pass number moves once a pass works.
+    #[tokio::test]
+    async fn a_panicking_reader_is_started_again_and_the_good_pass_moves() {
+        let starts = Arc::new(AtomicU32::new(0));
+        let began = chrono::Utc::now().timestamp();
+        let counted = Arc::clone(&starts);
+        let supervisor = tokio::spawn(supervise(
+            move || {
+                let n = counted.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if n == 0 {
+                        panic!("a bug in a pass");
+                    }
+                    record_good_pass();
+                    std::future::pending::<()>().await;
+                }
+            },
+            Duration::from_millis(5),
+            Duration::from_millis(50),
+        ));
+        let mut restarted = false;
+        for _ in 0..200 {
+            if starts.load(Ordering::SeqCst) >= 2 && last_good_pass().is_some_and(|t| t >= began) {
+                restarted = true;
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        supervisor.abort();
+        assert!(
+            restarted,
+            "started {} time(s)",
+            starts.load(Ordering::SeqCst)
+        );
+    }
+}
+
+#[cfg(test)]
+mod hardening_postgres_tests;
 #[cfg(test)]
 mod postgres_tests;
 #[cfg(test)]
