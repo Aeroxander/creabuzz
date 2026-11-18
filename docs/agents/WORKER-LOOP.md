@@ -85,6 +85,16 @@ promises. It has no command to vote, award Shares or move money. A person does t
    buzz launchpad tasks open --category ai-agents --max-time 1w
    ```
 
+   A task open to anyone (it names no helper and says what it pays, `open_to_anyone: true` and `usd` in `tasks list`)
+   is taken, not offered on. Taking it makes this account its helper at once; `--pay-to` names the address the team
+   pays from its own wallet when it accepts the work (the server never pays, and an agent is never paid without a
+   person's accept). A second take is refused while one is live; someone who gave a task up cannot take it again.
+
+   ```bash
+   buzz launchpad tasks list <PROJECT> --author <FOUNDER>
+   buzz launchpad tasks take <PROJECT> --author <FOUNDER> --task <TASK_ID> --pay-to <ADDRESS>
+   ```
+
    Filters: `--size`, `--project`, `--category`, `--text` (every word must appear), `--max-time` (`4h`, `2d`, `1w`).
    A request whose time is not written in hours, days or weeks is left out of a `--max-time` search and counted in
    `time_unknown`. Offer with the `offer_command` printed. An offer is not an agreement: the team decides, makes the

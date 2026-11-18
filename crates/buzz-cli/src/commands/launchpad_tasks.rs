@@ -161,6 +161,21 @@ agreement; the team decides. When nothing in the page fits and `cut` is true, pa
         #[arg(long)]
         task: String,
     },
+    /// Take a task open to anyone (one that names no helper and says what it pays). You become its helper; the team
+    /// checks the work and pays from its own wallet on accept, never the server.
+    Take {
+        /// Project id (slug)
+        id: String,
+        /// Founder pubkey (64-char hex)
+        #[arg(long)]
+        author: String,
+        /// Task id (64-char hex)
+        #[arg(long)]
+        task: String,
+        /// The address the money goes to (0x and 40 hex digits), signed by you. Without it the team has nowhere to pay.
+        #[arg(long = "pay-to")]
+        pay_to: Option<String>,
+    },
     /// Hand in work on your task: a few words and links. Someone else on the team checks it.
     Submit {
         /// Project id (slug)
@@ -363,6 +378,30 @@ pub(crate) struct TaskRecord {
     agent: bool,
     /// The owner its `auth` tag proves, when the signature holds.
     owner: Option<String>,
+    /// What a task open to anyone pays, in whole dollars (`task-usd`).
+    usd: Option<u64>,
+    /// The address a take names for the money (`task-pay-to`).
+    pay_to: Option<String>,
+    /// The payment's transaction a confirmation names (`task-paid`).
+    paid: Option<String>,
+}
+
+/// Whether `value` is `0x` and `digits` hex digits.
+fn is_0x_hex(value: &str, digits: usize) -> bool {
+    value.len() == digits + 2
+        && value.starts_with("0x")
+        && value[2..].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Whole dollars from 1 to 100,000, as the relay holds `task-usd`.
+fn valid_usd(value: &str) -> Option<u64> {
+    if value.starts_with('0') || !value.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    value
+        .parse::<u64>()
+        .ok()
+        .filter(|usd| (1..=100_000).contains(usd))
 }
 
 impl TaskRecord {
@@ -394,8 +433,9 @@ pub(crate) struct HandInExtras<'a> {
     pub(crate) run_record: Option<&'a str>,
 }
 
-const PARTS: [&str; 9] = [
+const PARTS: [&str; 10] = [
     "task",
+    "take",
     "accept",
     "evidence",
     "send-back",
@@ -469,9 +509,20 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
         run_record: None,
         agent,
         owner: None,
+        usd: None,
+        pay_to: None,
+        paid: None,
     };
     if part == "task" {
-        let helper = first_tag(event, "task-helper").filter(|h| is_hex64(h))?;
+        record.usd = first_tag(event, "task-usd").and_then(|v| valid_usd(&v));
+        // A task names its helper, or is open to anyone and says what it pays.
+        let helper = match first_tag(event, "task-helper") {
+            Some(helper) => Some(helper).filter(|h| is_hex64(h))?,
+            None => {
+                record.usd?;
+                String::new()
+            }
+        };
         let what = first_tag(event, "task-what")?.trim().to_string();
         let done = first_tag(event, "task-done")?.trim().to_string();
         let size = first_tag(event, "task-size")
@@ -540,7 +591,12 @@ fn parse_task_record(event: &Event) -> Option<TaskRecord> {
             }
             record.owner = proven_owner(event);
         }
+        "take" => {
+            record.pay_to = first_tag(event, "task-pay-to").filter(|v| is_0x_hex(v, 40));
+            record.owner = proven_owner(event);
+        }
         "send-back" | "confirm" => {
+            record.paid = first_tag(event, "task-paid").filter(|v| is_0x_hex(v, 64));
             record.evidence_id = Some(first_tag(event, "task-evidence").filter(|v| is_hex64(v))?);
             if part == "send-back" && record.note.is_empty() {
                 return None;
@@ -604,8 +660,12 @@ pub(crate) fn project_tasks(
         if task.part != "task" || !team.contains(&task.author) {
             continue;
         }
-        let helper = task.helper.as_str();
         let mine: &[&TaskRecord] = steps.get(task.id.as_str()).map_or(&[], Vec::as_slice);
+        // A task open to anyone: its helper is its taker, the first take (by the time it carries, then id) from
+        // someone outside the team who has not given it up, the rule the relay holds when the take is written.
+        let open_to_anyone = task.helper.is_empty();
+        let take = open_to_anyone.then(|| first_take(mine, team)).flatten();
+        let helper = take.map_or(task.helper.as_str(), |t| t.author.as_str());
         let from_helper = |part: &str| {
             let mut found: Vec<&TaskRecord> = mine
                 .iter()
@@ -728,7 +788,9 @@ pub(crate) fn project_tasks(
         let cancelled = from_team("cancel").first().copied();
         // Agreement is a record the helper signed for THIS task. An offer to help is never one: any project could
         // name any offer a person ever made.
-        let agreed = if task.author == helper {
+        let agreed = if take.is_some() {
+            Some("take")
+        } else if task.author == helper {
             Some("self")
         } else if !from_helper("accept").is_empty() {
             Some("accept")
@@ -740,7 +802,7 @@ pub(crate) fn project_tasks(
             None
         };
         // Until the helper agrees, a task is the team's proposal to one person: listed for the team and for them.
-        if agreed.is_none() && helper != me && !team.contains(me) {
+        if agreed.is_none() && !open_to_anyone && helper != me && !team.contains(me) {
             continue;
         }
         let state = if accepted.is_some() {
@@ -749,6 +811,8 @@ pub(crate) fn project_tasks(
             "given-up"
         } else if cancelled.is_some() {
             "cancelled"
+        } else if open_to_anyone && take.is_none() {
+            "open"
         } else if agreed.is_none() {
             "offered"
         } else if !waiting.is_empty() {
@@ -763,6 +827,7 @@ pub(crate) fn project_tasks(
         let is_mine = helper == me;
         // What this account can do next on the task, with this tool.
         let next = match (is_mine, state) {
+            (false, "open") if !team.contains(me) => "take",
             (true, "offered") => "accept",
             (true, "in-progress" | "sent-back") => "submit",
             (true, "submitted") => "wait-for-check",
@@ -842,6 +907,17 @@ pub(crate) fn project_tasks(
         // The only check is the founder's own, on their own work or their agent's: done, not accepted by someone
         // else. Set here because the object above is as large as one `json!` can be.
         entry["self_checked"] = json!(self_checked);
+        // A task open to anyone: what it pays, where the taker asked to be paid, and the payment the team recorded with
+        // its confirmation. The money moves from the team's own wallet; nothing here says it arrived.
+        entry["open_to_anyone"] = json!(open_to_anyone);
+        entry["usd"] = json!(task.usd);
+        entry["pay_to"] = json!(take.and_then(|t| t.pay_to.as_deref()));
+        entry["paid_tx"] = json!(accepted.and_then(|piece| {
+            mine.iter()
+                .filter(|s| s.part == "confirm" && team.contains(&s.author) && !s.agent)
+                .filter(|s| s.evidence_id.as_deref() == Some(piece.id.as_str()))
+                .find_map(|s| s.paid.as_deref())
+        }));
         out.push(entry);
     }
     // Late first, then soonest due, then by id: never by a signer's own date.
@@ -862,6 +938,24 @@ pub(crate) fn project_tasks(
         key(a).cmp(&key(b))
     });
     out
+}
+
+/// The take that makes someone the helper of a task open to anyone: from someone outside the team who has not given the
+/// task up, the earliest by the time it carries and then by id. The relay refuses a second take while one is live, so
+/// this is the one it stored first, unless two were written at the same moment.
+fn first_take<'a>(steps: &[&'a TaskRecord], team: &HashSet<String>) -> Option<&'a TaskRecord> {
+    let left: HashSet<&str> = steps
+        .iter()
+        .filter(|s| s.part == "give-up")
+        .map(|s| s.author.as_str())
+        .collect();
+    steps
+        .iter()
+        .copied()
+        .filter(|s| {
+            s.part == "take" && !team.contains(&s.author) && !left.contains(s.author.as_str())
+        })
+        .min_by(|a, b| (a.at, &a.id).cmp(&(b.at, &b.id)))
 }
 
 /// The project's open help requests as JSON: team updates that ask for help and that no team member has marked
@@ -1509,6 +1603,91 @@ async fn cmd_accept(
     publish(client, &project.coordinate, tags, content).await
 }
 
+/// The tags and body of a take, as the app writes them: the step, the task, the team told, and where to pay.
+fn take_parts(
+    task_id: &str,
+    tell: &[String],
+    pay_to: Option<&str>,
+) -> Result<(Vec<Tag>, Value), CliError> {
+    let mut tags = vec![
+        tag(&["l", TASK_LABEL])?,
+        tag(&["task-part", "take"])?,
+        tag(&["e", task_id])?,
+        tag(&["task", task_id])?,
+    ];
+    let mut told = HashSet::new();
+    for who in tell.iter().filter(|who| is_hex64(who)).take(TEAM_TOLD) {
+        if told.insert(who.as_str()) {
+            tags.push(tag(&["p", who])?);
+        }
+    }
+    if let Some(address) = pay_to {
+        tags.push(tag(&["task-pay-to", address])?);
+    }
+    Ok((tags, json!({ "title": "Task taken", "body": "" })))
+}
+
+async fn cmd_take(
+    client: &BuzzClient,
+    id: &str,
+    author: &str,
+    task: &str,
+    pay_to: Option<&str>,
+) -> Result<(), CliError> {
+    require_hex64(task, "--task")?;
+    if let Some(address) = pay_to {
+        if !is_0x_hex(address, 40) {
+            return Err(CliError::Usage(
+                "--pay-to must be an address: 0x and 40 hex digits".into(),
+            ));
+        }
+    }
+    let me = client.keys().public_key().to_hex();
+    let project = read_project(client, id, author).await?;
+    if project.team_set().contains(&me) {
+        return Err(CliError::Usage(
+            "this account is on the project's team: a task open to anyone is for someone outside it".into(),
+        ));
+    }
+    let (records, complete) = read_task_records(client, &project).await?;
+    if !complete {
+        return Err(CliError::Other(
+            "this project has more task records than could be read, so the task's state is not known".into(),
+        ));
+    }
+    let view = project_tasks(
+        &records,
+        &project.coordinate,
+        &project.team_set(),
+        &today(),
+        &me,
+    )
+    .into_iter()
+    .find(|t| t["task_id"].as_str() == Some(task))
+    .ok_or_else(|| {
+        CliError::NotFound(format!(
+            "task {task} is not a task of this project made by its team"
+        ))
+    })?;
+    if view["open_to_anyone"] != json!(true) {
+        return Err(CliError::Usage(
+            "that task names its helper; only a task open to anyone can be taken".into(),
+        ));
+    }
+    if view["helper"].as_str() == Some(me.as_str()) {
+        return Err(CliError::Conflict(
+            "this account already took that task".into(),
+        ));
+    }
+    if view["state"].as_str() != Some("open") {
+        return Err(CliError::Conflict(
+            "that task is taken or closed; it can't be taken now".into(),
+        ));
+    }
+    let (tags, content) = take_parts(task, &tell(&project, &view), pay_to)?;
+    publish(client, &project.coordinate, tags, content).await
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn cmd_submit(
     client: &BuzzClient,
@@ -2005,6 +2184,12 @@ pub async fn dispatch(cmd: TasksCmd, client: &BuzzClient) -> Result<(), CliError
             note,
         } => cmd_offer(client, &id, &author, &update, note.as_deref()).await,
         TasksCmd::Accept { id, author, task } => cmd_accept(client, &id, &author, &task).await,
+        TasksCmd::Take {
+            id,
+            author,
+            task,
+            pay_to,
+        } => cmd_take(client, &id, &author, &task, pay_to.as_deref()).await,
         TasksCmd::Submit {
             id,
             author,
@@ -2228,6 +2413,107 @@ mod tests {
             "https://example.org/a",
             "--link",
             "https://example.org/b",
+        ])
+        .is_ok());
+    }
+
+    #[test]
+    fn a_task_open_to_anyone_is_taken_once_handed_in_and_paid_on_the_teams_accept() {
+        let mut w = World::new();
+        let (founder, stranger, helper) = (w.founder.clone(), w.stranger.clone(), w.helper.clone());
+        let tags = vec![
+            vec!["l".to_string(), TASK_LABEL.to_string()],
+            vec!["task-part".into(), "task".into()],
+            vec!["task-what".into(), "Translate the guide.".into()],
+            vec!["task-done".into(), "The guide in Spanish.".into()],
+            vec!["task-size".into(), "small".into()],
+            vec!["task-usd".into(), "40".into()],
+        ];
+        let task = w.sign(
+            &founder,
+            tags.clone(),
+            json!({ "title": "Task", "body": "x" }),
+        );
+        let me = stranger.public_key().to_hex();
+        // Listed for anyone, open, with what it pays and the command's next step.
+        let view = w.view_as(&[&task], &me);
+        assert_eq!(view.len(), 1);
+        assert_eq!(view[0]["state"], "open");
+        assert_eq!(view[0]["usd"], 40);
+        assert_eq!(view[0]["open_to_anyone"], true);
+        assert_eq!(view[0]["next"], "take");
+        // No dollars and no helper is not a task; neither are dollars out of bounds.
+        let mut bad = tags.clone();
+        bad[5][1] = "0".into();
+        assert!(parse_task_record(&w.sign(&founder, bad, json!({}))).is_none());
+
+        let pay_to = "0x00000000000000000000000000000000000000cd";
+        let take = w.step(&stranger, &task, "take", &[("task-pay-to", pay_to)], "");
+        // A later take by someone else, and a take from the team, do not move the task.
+        let late = w.step(&helper, &task, "take", &[], "");
+        let mate = w.mate.clone();
+        let team_take = w.step(&mate, &task, "take", &[], "");
+        let view = w.view_as(&[&task, &late, &team_take, &take], &me);
+        assert_eq!(view[0]["helper"], me.as_str());
+        assert_eq!(view[0]["agreed"], "take");
+        assert_eq!(view[0]["state"], "in-progress");
+        assert_eq!(view[0]["pay_to"], pay_to);
+        assert_eq!(view[0]["next"], "submit");
+
+        let piece = w.step(
+            &stranger,
+            &task,
+            "evidence",
+            &[("task-link", "https://example.org/es")],
+            "done",
+        );
+        let paid = format!("0x{}", "ab".repeat(32));
+        let piece_id = piece.id.to_hex();
+        let confirm = w.step(
+            &founder,
+            &task,
+            "confirm",
+            &[("task-evidence", &piece_id), ("task-paid", &paid)],
+            "",
+        );
+        let view = w.view_as(&[&task, &take, &piece, &confirm], &me);
+        assert_eq!(view[0]["state"], "confirmed");
+        assert_eq!(view[0]["paid_tx"], paid.as_str());
+        // The taker's own confirmation counts for nothing.
+        let own = w.step(
+            &stranger,
+            &task,
+            "confirm",
+            &[("task-evidence", &piece_id)],
+            "",
+        );
+        let view = w.view_as(&[&task, &take, &piece, &own], &me);
+        assert_eq!(view[0]["state"], "submitted");
+
+        // Given up: open again, and the next take is the helper.
+        let gave_up = w.step(&stranger, &task, "give-up", &[], "no time");
+        let view = w.view_as(&[&task, &take, &gave_up], &me);
+        assert_eq!(view[0]["state"], "open");
+        let view = w.view_as(&[&task, &take, &gave_up, &late], &me);
+        assert_eq!(view[0]["helper"], helper.public_key().to_hex().as_str());
+        // The take's tags are the ones the relay reads.
+        let (tags, _) = take_parts(&task.id.to_hex(), &[], Some(pay_to)).expect("tags");
+        let tags = pairs(&tags);
+        assert!(tags.contains(&vec!["task-part".to_string(), "take".to_string()]));
+        assert!(tags.contains(&vec!["task-pay-to".to_string(), pay_to.to_string()]));
+        let id = "a".repeat(64);
+        assert!(crate::Cli::try_parse_from([
+            "buzz",
+            "launchpad",
+            "tasks",
+            "take",
+            "orbit",
+            "--author",
+            &id,
+            "--task",
+            &id,
+            "--pay-to",
+            pay_to,
         ])
         .is_ok());
     }
