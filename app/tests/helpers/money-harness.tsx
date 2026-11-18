@@ -90,6 +90,29 @@ export function record(
   };
 }
 
+/** A founder's project record (kind 37001) naming the launch `chainKey`, made `at`. */
+export function projectEvent(o: {
+  author: string;
+  id: string;
+  name: string;
+  chainKey: string;
+  at?: number;
+}): Served {
+  const at = o.at ?? NOW - DAY;
+  return {
+    id: `${o.author.slice(0, 8)}${o.id}${at.toString(16)}`.padEnd(64, "0"),
+    pubkey: o.author,
+    kind: 37001,
+    created_at: at,
+    tags: [
+      ["d", o.id],
+      ["name", o.name],
+      ["chain-key", o.chainKey],
+    ],
+    content: "{}",
+  };
+}
+
 export function numbersOf(content: Record<string, unknown>): ProjectNumbers {
   const parsed = parseNumbers(record(content), SERVER, {
     coordinate: COORDINATE,
