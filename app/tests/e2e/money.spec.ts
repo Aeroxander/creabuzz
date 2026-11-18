@@ -84,7 +84,10 @@ test("a project's numbers show on its page and its open round on Home", async ({
   page,
 }) => {
   const relay = createMockRelay();
-  seed(relay, { coordinate: COORD, openRound: { openedAgo: 3600, asked: "25000000", backers: 1 } });
+  seed(relay, {
+    coordinate: COORD,
+    openRound: { openedAgo: 3600, asked: "25000000", backers: 1 },
+  });
   await openWith(page, relay, READER_KEY, null);
   await page.goto("/");
   const round = page.getByTestId("open-round");
@@ -115,9 +118,7 @@ test("a project's numbers show on its page and its open round on Home", async ({
   await expect(money.getByTestId("money-held")).toContainText(
     "200,300,000 Shares are held for 2 accounts",
   );
-  await expect(money.getByTestId("money-clock")).toContainText(
-    "Last check-in",
-  );
+  await expect(money.getByTestId("money-clock")).toContainText("Last check-in");
   await expect(money.getByTestId("ownership")).toHaveText(OWNERSHIP);
   await expectNoSidewaysScroll(page, "Project money");
 });

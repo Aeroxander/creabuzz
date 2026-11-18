@@ -23,7 +23,13 @@ export default defineConfig({
   projects: [
     {
       name: "smoke",
-      testMatch: ["**/smoke.spec.ts", "**/join.spec.ts", "**/money.spec.ts"],
+      testMatch: [
+        "**/smoke.spec.ts",
+        "**/join.spec.ts",
+        "**/money.spec.ts",
+        "**/a11y.spec.ts",
+        "**/passkey.spec.ts",
+      ],
     },
     { name: "screens", testMatch: ["**/screens.spec.ts"] },
   ],

@@ -8,7 +8,7 @@ import {
 import { event, now, pubkeyOf, type Relay } from "./world";
 
 /** The mock server's own signing key: the only key whose project numbers the app believes. */
-export const RELAY_KEY = "e1".repeat(32);
+const RELAY_KEY = "c7".repeat(32);
 export const RELAY = pubkeyOf(RELAY_KEY);
 
 /** The record tag that names a project's launch, for a project record seeded with one. */
@@ -81,8 +81,7 @@ export async function installWallet(
           if (method === "eth_chainId") return "0x7a69";
           if (method === "eth_call")
             return `0x${"0".repeat(24)}${quote.slice(2)}`;
-          if (method === "eth_getTransactionReceipt")
-            return { status: "0x1" };
+          if (method === "eth_getTransactionReceipt") return { status: "0x1" };
           if (method === "eth_sendTransaction") {
             if (w.__refuse) {
               const data = w.__refuse;
