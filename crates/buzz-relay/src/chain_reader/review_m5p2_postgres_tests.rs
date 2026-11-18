@@ -2,7 +2,9 @@
 //! the fake chain: pool trades made before the pool is named are read back
 //! (I1), contracts named by stored Launcher rows are followed with their
 //! earlier logs (I2), and migration 0068 fills the running balances from the
-//! Transfers already stored (I2). The first test is the review's failing
+//! Transfers already stored (I2). The second review added: an emptied
+//! balance is kept, so two rollbacks in a row restore it, and migration 0069
+//! puts back the zeros 0068 deleted. The first test is the review's failing
 //! test, made realistic: the pool step (`PoolStep`, the transaction that
 //! makes the pool) comes before the trade, as on chain.
 
@@ -211,4 +213,122 @@ async fn migration_0068_fills_balances_from_stored_transfers() {
     .await
     .expect("migration 0068 again");
     assert_eq!(balances(pool, &id).await, kept);
+}
+
+const ALICE: [u8; 20] = [0xa1; 20];
+const CAROL: [u8; 20] = [0xc3; 20];
+
+fn transfer(from: &[u8; 20], to: &[u8; 20], value: u128) -> ([u8; 20], Vec<[u8; 32]>, Vec<u8>) {
+    (
+        SHARES,
+        vec![topic(Role::Shares, "Transfer"), a(from), a(to)],
+        data(&[u(value)]),
+    )
+}
+
+fn free_of(n: &serde_json::Value, who: &[u8; 20]) -> Option<String> {
+    n["holders"]
+        .as_array()
+        .expect("holders")
+        .iter()
+        .find(|h| h["account"] == super::word::hex0x(who))
+        .map(|h| h["free"].as_str().unwrap_or_default().to_owned())
+}
+
+/// Mine `n` empty blocks with `salt` from `time`.
+fn empty(chain: &FakeChain, time: u64, salt: u8, n: u64) {
+    for i in 0..n {
+        chain.mine(time + i, salt, vec![]);
+    }
+}
+
+/// Second review: a rollback that brings a balance to 0 keeps its row. A
+/// second rollback past earlier changes subtracts from it again; with the row
+/// deleted, Carol's 400 was lost.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn two_rollbacks_in_a_row_restore_a_balance_that_was_emptied() {
+    let chain = Arc::new(FakeChain::default());
+    let (reader, state, host) = setup(Arc::clone(&chain), 0).await;
+    chain.mine(T0, 1, with_launcher(launch_logs(), reader.config.launcher)); // 0
+    chain.mine(T0 + 10, 1, vec![transfer(&[0; 20], &ALICE, 1_000)]); // 1
+    chain.mine(T0 + 20, 1, vec![transfer(&ALICE, &CAROL, 400)]); // 2
+    chain.mine(T0 + 30, 1, vec![transfer(&CAROL, &ALICE, 400)]); // 3
+    chain.mine(T0 + 40, 1, vec![transfer(&ALICE, &CAROL, 100)]); // 4
+    empty(&chain, T0 + 50, 1, 2); // 5, 6
+    reader.pass().await.expect("pass");
+    let n = latest_record(&state, &host).await.expect("a record");
+    assert_eq!(free_of(&n, &CAROL).as_deref(), Some("100"));
+
+    // Block 4 leaves the chain: Carol's balance is 0.
+    chain.truncate(4);
+    empty(&chain, T0 + 41, 2, 5); // 4'..8'
+    let (scanned, _) = reader.pass().await.expect("first rollback");
+    assert_eq!(scanned.rolled_back_to, Some(3));
+    let n = latest_record(&state, &host).await.expect("a record");
+    assert_eq!(free_of(&n, &CAROL), None, "a zero is not listed");
+
+    // Block 3 leaves too: Carol never sent the 400 back.
+    chain.truncate(3);
+    empty(&chain, T0 + 31, 3, 8); // 3''..10''
+    let (scanned, _) = reader.pass().await.expect("second rollback");
+    assert_eq!(scanned.rolled_back_to, Some(2));
+    let n = latest_record(&state, &host).await.expect("a record");
+    assert_eq!(
+        free_of(&n, &CAROL).as_deref(),
+        Some("400"),
+        "{}",
+        n["holders"]
+    );
+    assert_eq!(free_of(&n, &ALICE).as_deref(), Some("600"));
+}
+
+/// Second review: migration 0069 puts back the zero balances that 0068
+/// deleted, so a rollback past an emptied account's changes restores it.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn migration_0069_puts_back_emptied_balances() {
+    let chain = Arc::new(FakeChain::default());
+    let (reader, state, host) = setup(Arc::clone(&chain), 0).await;
+    chain.mine(T0, 1, with_launcher(launch_logs(), reader.config.launcher)); // 0
+    chain.mine(T0 + 10, 1, vec![transfer(&[0; 20], &ALICE, 1_000)]); // 1
+    chain.mine(T0 + 20, 1, vec![transfer(&ALICE, &CAROL, 400)]); // 2
+    chain.mine(T0 + 30, 1, vec![transfer(&CAROL, &ALICE, 400)]); // 3
+    empty(&chain, T0 + 40, 1, 2); // 4, 5
+    reader.pass().await.expect("pass");
+    let pool = state.db.pool();
+    let id = reader.reader_id().to_owned();
+    // As 0068 (or an earlier rollback) left it: the emptied balance deleted.
+    sqlx::query("DELETE FROM chain_balances WHERE reader = $1 AND balance = 0")
+        .bind(&id)
+        .execute(pool)
+        .await
+        .expect("as 0068 left it");
+    for _ in 0..2 {
+        sqlx::raw_sql(include_str!(
+            "../../../../migrations/0069_chain_balances_keep_zeros.sql"
+        ))
+        .execute(pool)
+        .await
+        .expect("migration 0069 (safe to run again)");
+    }
+    let rows = balances(pool, &id).await;
+    assert!(
+        rows.contains(&(CAROL.to_vec(), "0".to_owned())),
+        "Carol's 0 is back: {rows:?}"
+    );
+    assert!(rows.contains(&(ALICE.to_vec(), "1000".to_owned())));
+
+    // Block 3 leaves the chain: Carol keeps her 400.
+    chain.truncate(3);
+    empty(&chain, T0 + 31, 2, 5); // 3'..7'
+    let (scanned, _) = reader.pass().await.expect("rollback");
+    assert_eq!(scanned.rolled_back_to, Some(2));
+    let n = latest_record(&state, &host).await.expect("a record");
+    assert_eq!(
+        free_of(&n, &CAROL).as_deref(),
+        Some("400"),
+        "{}",
+        n["holders"]
+    );
 }

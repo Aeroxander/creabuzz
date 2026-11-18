@@ -43,6 +43,8 @@ pub(super) struct FakeWriter {
     mined_block: AtomicU64,
     /// The node does not answer calls and estimates.
     pub(super) down: AtomicBool,
+    /// The node does not answer receipt requests.
+    pub(super) receipts_down: AtomicBool,
 }
 
 impl FakeWriter {
@@ -59,6 +61,7 @@ impl FakeWriter {
             hold: AtomicBool::new(false),
             mined_block: AtomicU64::new(1_000_000),
             down: AtomicBool::new(false),
+            receipts_down: AtomicBool::new(false),
         }
     }
 
@@ -156,6 +159,9 @@ impl ChainWriter for FakeWriter {
         Ok(hash)
     }
     async fn receipt(&self, hash: &Word) -> anyhow::Result<Option<Receipt>> {
+        if self.receipts_down.load(Ordering::SeqCst) {
+            anyhow::bail!("502 Bad Gateway");
+        }
         Ok(self.receipts.lock().expect("lock").get(hash).copied())
     }
     async fn known(&self, hash: &Word) -> anyhow::Result<bool> {

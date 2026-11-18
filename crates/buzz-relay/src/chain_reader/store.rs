@@ -383,7 +383,9 @@ pub async fn rollback(
 ) -> anyhow::Result<u64> {
     let mut tx = fenced(pool, reader, expected_next).await?;
     let fork_i = i64_of(fork)?;
-    // The running balances lose the changes of the logs that are going.
+    // The running balances lose the changes of the logs that are going. A
+    // balance that reaches 0 is kept: a later rollback past earlier changes
+    // must find its row to subtract from, and `balances` leaves zeros out.
     sqlx::query(
         "UPDATE chain_balances b SET balance = b.balance - c.total \
          FROM (SELECT project_key, account, sum(delta) AS total FROM chain_balance_changes \
@@ -397,10 +399,6 @@ pub async fn rollback(
     sqlx::query("DELETE FROM chain_balance_changes WHERE reader = $1 AND block_number > $2")
         .bind(reader)
         .bind(fork_i)
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("DELETE FROM chain_balances WHERE reader = $1 AND balance = 0")
-        .bind(reader)
         .execute(&mut *tx)
         .await?;
     let removed = sqlx::query("DELETE FROM chain_logs WHERE reader = $1 AND block_number > $2")

@@ -31,6 +31,8 @@ pub struct JobRow {
     pub tx_hash: Option<Word>,
     /// Seconds since that transaction was sent.
     pub sent_secs_ago: Option<f64>,
+    /// A repeating job (its key names its period).
+    pub repeats: bool,
 }
 
 /// One transaction to remember before it is broadcast.
@@ -78,12 +80,13 @@ fn job_of(r: &sqlx::postgres::PgRow) -> anyhow::Result<JobRow> {
             })
             .transpose()?,
         sent_secs_ago: r.try_get("sent_secs_ago")?,
+        repeats: r.try_get("repeats")?,
     })
 }
 
 macro_rules! columns {
     () => {
-        "id, job_key, call, target, args, state, attempts, nonce, tx_hash, \
+        "id, job_key, call, target, args, state, attempts, nonce, tx_hash, repeats, \
          extract(epoch FROM now() - sent_at)::float8 AS sent_secs_ago"
     };
 }
@@ -259,14 +262,28 @@ pub async fn mark_failed(pool: &PgPool, id: i64, reason: &str) -> anyhow::Result
     Ok(())
 }
 
+/// The members a halved repeating batch leaves out (review of B1): a job of
+/// their own under `key`, a copy of the halved job with these arguments.
+/// Nothing else would send them: the builder makes a repeating job's key once
+/// per period, and the halved job ends `done` with the half it sent.
+pub struct Rest<'a> {
+    /// The new job's key.
+    pub key: &'a str,
+    /// Its arguments.
+    pub args: Value,
+}
+
 /// Before broadcasting: remember the transaction (its reserved gas and fee
 /// count toward the daily caps at once) and mark the job `sent`, in one
-/// transaction. The arguments stored are the ones sent (after filtering).
+/// transaction. The arguments stored are the ones sent (after filtering);
+/// `rest`, when a batch was halved, is stored as its own job in the same
+/// transaction, so the members left out are never lost.
 pub async fn record_send(
     pool: &PgPool,
     reader: &str,
     send: SendRow<'_>,
     args: &Value,
+    rest: Option<Rest<'_>>,
 ) -> anyhow::Result<()> {
     let reserved = u128::from(send.gas_limit).saturating_mul(send.max_fee_per_gas);
     let mut tx = pool.begin().await?;
@@ -297,6 +314,20 @@ pub async fn record_send(
     .bind(args)
     .execute(&mut *tx)
     .await?;
+    if let Some(rest) = rest {
+        sqlx::query(
+            "INSERT INTO chain_helper_jobs (reader, job_key, call, target, args, project_key, \
+                 due_block, repeats) \
+             SELECT reader, $2, call, target, $3, project_key, due_block, repeats \
+             FROM chain_helper_jobs WHERE id = $1 \
+             ON CONFLICT (reader, job_key) DO NOTHING",
+        )
+        .bind(send.job_id)
+        .bind(rest.key)
+        .bind(rest.args)
+        .execute(&mut *tx)
+        .await?;
+    }
     tx.commit().await?;
     Ok(())
 }
@@ -444,6 +475,34 @@ pub async fn used_last_day(pool: &PgPool, reader: &str) -> anyhow::Result<Used> 
         routine_gas: number("routine_gas")?,
         routine_wei: number("routine_wei")?,
     })
+}
+
+/// Gas and wei that the sends of one job at `nonce` still reserve in the last
+/// 24 hours (the part of [`used_last_day`] that is in flight at that nonce).
+/// Only one of them can mine, so a replacement is checked against the caps
+/// for what it adds over these, not for its whole cost again.
+pub async fn reserved_at_nonce(
+    pool: &PgPool,
+    reader: &str,
+    job_id: i64,
+    nonce: u64,
+) -> anyhow::Result<(u128, u128)> {
+    let (gas, wei): (String, String) = sqlx::query_as(
+        "SELECT coalesce(sum(coalesce(gas_used, gas_limit)), 0)::text, \
+                coalesce(sum(coalesce(spent_wei, reserved_wei)), 0)::text \
+         FROM chain_helper_sends \
+         WHERE reader = $1 AND job_id = $2 AND nonce = $3 AND settled_at IS NULL \
+           AND sent_at > now() - interval '24 hours'",
+    )
+    .bind(reader)
+    .bind(job_id)
+    .bind(i64_of(nonce)?)
+    .fetch_one(pool)
+    .await?;
+    Ok((
+        gas.parse().context("gas reserved at the nonce")?,
+        wei.parse().context("wei reserved at the nonce")?,
+    ))
 }
 
 /// Forget ended repeating jobs older than five weeks (their period is long

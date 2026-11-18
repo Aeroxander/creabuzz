@@ -35,7 +35,7 @@ pub use settings::HelperConfig;
 
 use calls::HelperCall;
 use plan::{PlanContext, Position};
-use store::{JobRow, SendRow};
+use store::{JobRow, SendRow, Used};
 use writer::{CallError, ChainWriter, Fees, Receipt, SendError, TxRequest};
 
 use super::word::{hex0x, word_to_u128, Word};
@@ -166,6 +166,16 @@ fn margin(estimate: u64) -> u64 {
 fn pause_after(attempts: i32) -> f64 {
     let n = attempts.clamp(0, 30);
     (FIRST_PAUSE_SECS * 2f64.powi(n)).min(MAX_PAUSE_SECS)
+}
+
+/// The key of the job holding the rest of a halved batch: the original job's
+/// key (never nested) and a digest of the members, so the same rest is stored
+/// once.
+fn rest_key(key: &str, rest: &HelperCall) -> String {
+    use sha2::{Digest, Sha256};
+    let base = key.split(":rest:").next().unwrap_or(key);
+    let digest = Sha256::digest(rest.args().to_string().as_bytes());
+    format!("{base}:rest:{}", hex::encode(&digest[..8]))
 }
 
 fn short(text: &str) -> String {
@@ -606,9 +616,13 @@ impl Helper {
         }
 
         // The gas, within the call's room. A batch over it is halved (review
-        // B1) and the first half sent; the rest is waiting still once that
-        // is final, so the builder makes it a job of its own. Each turn halves
-        // the batch, so this ends.
+        // B1) and the first half sent. For a one-off batch (`settleMany`) the
+        // rest is waiting still once that is final, so the builder makes it a
+        // job of its own. A repeating batch (`deliverMany`) is keyed by its
+        // period and position, so the builder would make the same first half
+        // again next period: its rest becomes a job of its own now, stored
+        // with the send. Each turn halves the batch, so this ends.
+        let whole = call.clone();
         let room = self.gas_room(&call);
         let gas_limit = loop {
             let estimate = match self
@@ -699,7 +713,12 @@ impl Helper {
             gas_limit,
             fees,
         };
-        self.broadcast(pool, reader, job, &call, tx, report).await
+        // Halving keeps the first members, so the rest are the ones after.
+        let rest = (job.repeats && call.members() < whole.members())
+            .then(|| whole.only(&(call.members()..whole.members()).collect::<Vec<_>>()))
+            .flatten();
+        self.broadcast(pool, reader, job, &call, rest, tx, report)
+            .await
     }
 
     /// `None` when `gas` at `fee` fits today's caps (for a routine call, also
@@ -714,18 +733,23 @@ impl Helper {
     ) -> anyhow::Result<Option<CapHit>> {
         let used = store::used_last_day(pool, reader).await?;
         let reserve = u128::from(gas).saturating_mul(fee);
-        let gas = u128::from(gas);
+        Ok(self.cap_hit(used, u128::from(gas), reserve, essential))
+    }
+
+    /// `None` when `gas` more and `reserve` more wei fit the caps after
+    /// `used`, else which cap they would pass.
+    fn cap_hit(&self, used: Used, gas: u128, reserve: u128, essential: bool) -> Option<CapHit> {
         if used.gas.saturating_add(gas) > self.config.daily_gas {
-            return Ok(Some(CapHit::Whole(format!(
+            return Some(CapHit::Whole(format!(
                 "the daily gas cap ({}) is reached: {} used, {gas} more needed",
                 self.config.daily_gas, used.gas
-            ))));
+            )));
         }
         if used.wei.saturating_add(reserve) > self.config.daily_spend_wei {
-            return Ok(Some(CapHit::Whole(format!(
+            return Some(CapHit::Whole(format!(
                 "the daily spend cap ({} wei) is reached: {} used, {reserve} more reserved",
                 self.config.daily_spend_wei, used.wei
-            ))));
+            )));
         }
         if !essential {
             let share = |cap: u128| cap / 100 * calls::ROUTINE_SHARE_PERCENT;
@@ -743,32 +767,37 @@ impl Helper {
                 }
             };
             if over(used.routine_gas, gas, gas_share) {
-                return Ok(Some(CapHit::Routine(format!(
+                return Some(CapHit::Routine(format!(
                     "the routine calls' share of the daily gas cap ({gas_share}) is reached: {} used",
                     used.routine_gas
-                ))));
+                )));
             }
             if over(used.routine_wei, reserve, wei_share) {
-                return Ok(Some(CapHit::Routine(format!(
+                return Some(CapHit::Routine(format!(
                     "the routine calls' share of the daily spend cap ({wei_share} wei) is reached: {} used",
                     used.routine_wei
-                ))));
+                )));
             }
         }
-        Ok(None)
+        None
     }
 
-    /// Remember, broadcast, and wait a little for the receipt.
+    /// Remember (with `rest`, the members a halved repeating batch leaves
+    /// out, as a job of their own), broadcast, and wait a little for the
+    /// receipt.
+    #[allow(clippy::too_many_arguments)]
     async fn broadcast(
         &self,
         pool: &PgPool,
         reader: &str,
         job: &JobRow,
         call: &HelperCall,
+        rest: Option<HelperCall>,
         tx: TxRequest,
         report: &mut HelperReport,
     ) -> anyhow::Result<Outcome> {
         let hash = self.writer.tx_hash(&tx)?;
+        let rest_key = rest.as_ref().map(|r| rest_key(&job.key, r));
         store::record_send(
             pool,
             reader,
@@ -781,8 +810,17 @@ impl Helper {
                 max_priority_fee_per_gas: tx.fees.max_priority_fee_per_gas,
             },
             &call.args(),
+            rest.as_ref()
+                .zip(rest_key.as_deref())
+                .map(|(r, key)| store::Rest {
+                    key,
+                    args: r.args(),
+                }),
         )
         .await?;
+        if let Some(key) = &rest_key {
+            tracing::info!(job = %job.key, rest = %key, "chain helper: the rest of the halved batch is a job of its own");
+        }
         match self.writer.send(&tx).await {
             Ok(_) => {
                 report.sent += 1;
@@ -954,15 +992,18 @@ impl Helper {
                 .max(bump(newest.max_priority_fee_per_gas)),
         };
         let call = HelperCall::parse(&job.call, job.target, &job.args)?;
-        if let Some(CapHit::Whole(reason) | CapHit::Routine(reason)) = self
-            .over_cap(
-                pool,
-                reader,
-                newest.gas_limit,
-                fees.max_fee_per_gas,
-                call.is_essential(),
-            )
-            .await?
+        // The sends at this nonce stay counted until one mines, but only one
+        // can: the replacement is checked for what it adds over them, against
+        // the whole caps only. The call was let in when it was first sent; a
+        // routine share used up since must not keep it stuck, which would
+        // hold back every other job behind the one nonce.
+        let mut used = store::used_last_day(pool, reader).await?;
+        let (gas_held, wei_held) = store::reserved_at_nonce(pool, reader, job.id, nonce).await?;
+        used.gas = used.gas.saturating_sub(gas_held);
+        used.wei = used.wei.saturating_sub(wei_held);
+        let reserve = u128::from(newest.gas_limit).saturating_mul(fees.max_fee_per_gas);
+        if let Some(CapHit::Whole(reason) | CapHit::Routine(reason)) =
+            self.cap_hit(used, u128::from(newest.gas_limit), reserve, true)
         {
             tracing::warn!(job = %job.key, "chain helper: stuck transaction not replaced: {reason}");
             report.postponed += 1;
@@ -991,6 +1032,7 @@ impl Helper {
                 max_priority_fee_per_gas: fees.max_priority_fee_per_gas,
             },
             &job.args,
+            None,
         )
         .await?;
         match self.writer.send(&tx).await {

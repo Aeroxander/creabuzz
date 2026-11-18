@@ -328,13 +328,17 @@ async fn running_balances_follow_transfers_and_a_rollback() {
         n["holders"]
     );
     assert_eq!(free_of(&n, &CAROL), None);
-    let carol: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM chain_balances WHERE reader = $1 AND account = $2",
+    let carol: Vec<String> = sqlx::query_scalar(
+        "SELECT balance::text FROM chain_balances WHERE reader = $1 AND account = $2",
     )
     .bind(reader.reader_id())
     .bind(CAROL.as_slice())
-    .fetch_one(state.db.pool())
+    .fetch_all(state.db.pool())
     .await
-    .expect("count");
-    assert_eq!(carol, 0, "an emptied balance is not kept");
+    .expect("carol");
+    assert_eq!(
+        carol,
+        vec!["0".to_owned()],
+        "an emptied balance is kept at 0 (a later rollback subtracts from it), and left out of the record"
+    );
 }

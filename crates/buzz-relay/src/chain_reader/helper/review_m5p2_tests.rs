@@ -2,13 +2,16 @@
 //! fits the caps and an oversized batch is halved (B1), one reverting backer
 //! does not hold back its batch (I1), routine calls cannot use the budget a
 //! close needs (I2), and a node that does not answer the helper does not fail
-//! the reader's pass (I3). Most drive the production `Helper::pass` with a
+//! the reader's pass (I3). The second review of those fixes added: a stuck
+//! routine call is still replaced when its share is used up, every entry of
+//! a halved repeating delivery is delivered, and a node error while settling
+//! the send in flight does not fail the reader's pass. Most drive the production `Helper::pass` with a
 //! fake writer whose gas estimates follow the measured contract costs
 //! (adopted from the review's failing tests).
 //!
 //! `cargo test -p buzz-relay --lib chain_reader -- --include-ignored --test-threads=1`
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -36,6 +39,20 @@ const POISON: [u8; 20] = [0xbb; 20];
 const SETTLE_GAS_PER_BACKER: u64 = 125_000;
 /// A plain `Vester.claim` (or any small call).
 const SMALL_CALL_GAS: u64 = 60_000;
+/// `deliverMany` gas per entry: 64 entries in one call is about 3.8M gas.
+const DELIVER_GAS_PER_ENTRY: u64 = 59_000;
+const CLAIM: [u8; 20] = [0xe1; 20];
+
+fn entries_in(data: &[u8]) -> Vec<u64> {
+    // selector | offset | length | items
+    let word_at = |at: usize| {
+        data.get(at + 24..at + 32)
+            .and_then(|b| <[u8; 8]>::try_from(b).ok())
+            .map(u64::from_be_bytes)
+    };
+    let len = word_at(4 + 32).unwrap_or(0) as usize;
+    (0..len).filter_map(|i| word_at(4 + 64 + 32 * i)).collect()
+}
 
 fn backers_in(data: &[u8]) -> Vec<[u8; 20]> {
     // selector | round | offset | length | items
@@ -60,6 +77,8 @@ struct Writer {
     address: [u8; 20],
     sent: Mutex<Vec<TxRequest>>,
     nonce: AtomicU64,
+    /// Sends mine at once; when false, they stay in flight for good.
+    mines: AtomicBool,
 }
 
 impl Writer {
@@ -70,6 +89,7 @@ impl Writer {
                 .address(),
             sent: Mutex::new(Vec::new()),
             nonce: AtomicU64::new(0),
+            mines: AtomicBool::new(true),
         }
     }
 
@@ -80,6 +100,8 @@ impl Writer {
     fn gas_of(data: &[u8]) -> u64 {
         if data[..4] == selector("settleMany(uint256,address[])") {
             21_000 + SETTLE_GAS_PER_BACKER * backers_in(data).len() as u64
+        } else if data[..4] == selector("deliverMany(uint256[])") {
+            21_000 + DELIVER_GAS_PER_ENTRY * entries_in(data).len() as u64
         } else {
             SMALL_CALL_GAS
         }
@@ -108,9 +130,16 @@ impl ChainWriter for Writer {
                     .into(),
             ));
         }
-        // positionOf: ask 1, not settled; every uint view: 1.
+        // positionOf: ask 1, not settled; the claim: 64 entries, each agreed
+        // long ago (consentAt 1); every other uint view: 1.
         let mut out = vec![0u8; 128];
-        out[31] = 1;
+        if data[..4] == selector("entryCount()") {
+            out[31] = 64;
+        } else if data[..4] == selector("entryOf(uint256)") {
+            out[95] = 1;
+        } else {
+            out[31] = 1;
+        }
         Ok(out)
     }
     async fn estimate_gas(&self, to: &[u8; 20], data: &[u8]) -> Result<u64, CallError> {
@@ -130,10 +159,15 @@ impl ChainWriter for Writer {
     }
     async fn send(&self, tx: &TxRequest) -> Result<Word, SendError> {
         self.sent.lock().expect("lock").push(tx.clone());
-        self.nonce.fetch_add(1, Ordering::SeqCst);
+        if self.mines.load(Ordering::SeqCst) {
+            self.nonce.fetch_add(1, Ordering::SeqCst);
+        }
         Ok(hash_of(tx))
     }
     async fn receipt(&self, hash: &Word) -> anyhow::Result<Option<Receipt>> {
+        if !self.mines.load(Ordering::SeqCst) {
+            return Ok(None);
+        }
         let sent = self.sent.lock().expect("lock");
         Ok(sent.iter().find(|t| hash_of(t) == *hash).map(|t| Receipt {
             success: true,
@@ -464,4 +498,187 @@ async fn a_node_that_does_not_answer_the_helper_does_not_fail_the_pass() {
         .expect("due now");
     let report = reader.pass_all().await.expect("pass");
     assert_eq!(report.helper.as_ref().map(|h| h.sent), Some(1));
+}
+
+/// Second review of I2: a routine call that gets stuck after its share of the
+/// day is used up is still replaced. It was let in when first sent, and only
+/// one transaction at its nonce can mine, so the replacement is checked for
+/// what it adds over the stuck one, against the whole caps. Before, it was
+/// checked for its whole cost again against the routine share, was never
+/// replaced, and held back every other job behind the one nonce.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_stuck_routine_call_is_replaced_when_its_share_is_used_up() {
+    let pool = pool().await;
+    let reader = reader();
+    let writer = Arc::new(Writer::new());
+    writer.mines.store(false, Ordering::SeqCst);
+    // The routine share holds exactly one claim (60,000 x 1.2 + 10,000).
+    let per_call = SMALL_CALL_GAS + SMALL_CALL_GAS / 5 + 10_000;
+    let cfg = config(|c| {
+        c.daily_gas = u128::from(per_call) * 2;
+        c.stuck_after_secs = 0;
+    });
+    store::upsert_jobs(
+        &pool,
+        &reader,
+        &[job(
+            "vester.claim:stuck",
+            HelperCall::VesterClaim {
+                vester: VESTER,
+                beneficiary: backer(7),
+            },
+            0xaa,
+            true,
+        )],
+        10,
+    )
+    .await
+    .expect("claim");
+    let helper = Helper::new(writer.clone(), cfg);
+    run(&helper, &pool, &reader, 3).await;
+    let jobs = states(&pool, &reader).await;
+    clean(&pool, &reader).await;
+    let sent = writer.sent_calls();
+    assert_eq!(
+        sent.len(),
+        3,
+        "sent once, then replaced on each pass; jobs: {jobs:?}"
+    );
+    assert!(sent.iter().all(|t| t.nonce == 0), "one nonce");
+    assert!(
+        sent.windows(2)
+            .all(|w| w[1].fees.max_fee_per_gas > w[0].fees.max_fee_per_gas),
+        "each replacement pays more"
+    );
+}
+
+/// Second review of B1: a repeating `deliverMany` batch over the gas room is
+/// halved, and the half left out is delivered too. Its key names the day and
+/// the batch's position, so the builder would make the same first half again
+/// each day and the rest would never go out. The settings are a batch of 64
+/// (`BUZZ_CHAIN_HELPER_BATCH=64`: every entry in one batch, about 3.8M gas
+/// with the margin over the 3M per-call cap), as the builder makes it.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn every_due_entry_of_a_halved_repeating_delivery_is_delivered() {
+    let pool = pool().await;
+    let reader = reader();
+    let writer = Arc::new(Writer::new());
+    let cfg = config(|c| c.batch = 64);
+    let all: Vec<u64> = (0..64).collect();
+    store::upsert_jobs(
+        &pool,
+        &reader,
+        &[job(
+            "earlier.deliverMany:claim:d1:0-64",
+            HelperCall::EarlierDeliverMany {
+                claim: CLAIM,
+                entries: all.clone(),
+            },
+            0xcc,
+            true,
+        )],
+        10,
+    )
+    .await
+    .expect("delivery");
+    let helper = Helper::new(writer.clone(), cfg.clone());
+    run(&helper, &pool, &reader, 4).await;
+    let jobs = states(&pool, &reader).await;
+    clean(&pool, &reader).await;
+    let sent = writer.sent_calls();
+    let mut delivered: Vec<u64> = sent
+        .iter()
+        .filter(|t| t.data[..4] == selector("deliverMany(uint256[])"))
+        .flat_map(|t| entries_in(&t.data))
+        .collect();
+    delivered.sort_unstable();
+    assert_eq!(
+        delivered, all,
+        "every entry with Shares due is delivered once; jobs: {jobs:?}"
+    );
+    assert!(
+        sent.len() > 1 && sent.iter().all(|t| t.gas_limit <= cfg.call_gas_cap),
+        "halved to fit the cap"
+    );
+    assert!(jobs.iter().all(|j| j.1 == "done"), "{jobs:?}");
+}
+
+/// Second review of I3: a node error while settling the transaction in
+/// flight (its receipt cannot be read) fails the helper's pass only. The
+/// reader's pass succeeds, keeps the helper's error, and signs its record.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_node_error_on_the_send_in_flight_does_not_fail_the_readers_pass() {
+    let chain = Arc::new(FakeChain::default());
+    let writer = Arc::new(FakeWriter::new());
+    let (reader, state) = setup_helper(
+        Arc::clone(&chain),
+        Arc::clone(&writer),
+        helper_config(|_| {}),
+        None,
+    )
+    .await;
+    let launcher = reader.config.launcher;
+    chain.mine(T0, 1, with_launcher(launch_logs(), launcher)); // 0
+    chain.mine(T0 + 10, 1, vec![ask(100_000_000)]); // 1
+    idle(&chain, T0 + 20, 2); // 2..3
+                              // A transaction in flight from an earlier pass.
+    let pool = state.db.pool();
+    let id = reader.reader_id().to_owned();
+    store::upsert_jobs(
+        pool,
+        &id,
+        &[job(
+            "rounds.close:in-flight",
+            HelperCall::RoundsClose {
+                rounds: ROUNDS,
+                round: 1,
+            },
+            0xdd,
+            false,
+        )],
+        10,
+    )
+    .await
+    .expect("job");
+    let job_id: i64 = sqlx::query_scalar("SELECT id FROM chain_helper_jobs WHERE reader = $1")
+        .bind(&id)
+        .fetch_one(pool)
+        .await
+        .expect("job id");
+    store::record_send(
+        pool,
+        &id,
+        store::SendRow {
+            job_id,
+            tx_hash: &[0x77; 32],
+            nonce: 0,
+            gas_limit: 100_000,
+            max_fee_per_gas: 2_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+        },
+        &serde_json::json!({ "round": 1 }),
+        None,
+    )
+    .await
+    .expect("in flight");
+    writer.receipts_down.store(true, Ordering::SeqCst);
+    let report = reader.pass_all().await.expect("the reader's pass works");
+    assert!(report.writer);
+    assert!(report.published.signed >= 1, "{report:?}");
+    assert!(report.helper.is_none(), "{report:?}");
+    assert!(
+        report
+            .helper_error
+            .as_deref()
+            .is_some_and(|e| e.contains("502")),
+        "{report:?}"
+    );
+    sqlx::query("DELETE FROM chain_helper_sends WHERE reader = $1")
+        .bind(&id)
+        .execute(pool)
+        .await
+        .expect("clean");
 }

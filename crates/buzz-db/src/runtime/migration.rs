@@ -780,7 +780,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 68);
+        assert_eq!(migrations.len(), 69);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1721,6 +1721,26 @@ mod postgres_tests {
             assert!(
                 !backfill.contains(ddl),
                 "migration 0068 must be data only ({ddl})"
+            );
+        }
+    }
+
+    /// Migration 0069 puts back the zero balances that 0068 and the reader's
+    /// rollback deleted: a rollback subtracts only from rows that exist.
+    /// Data only, insert only (rows that exist are left alone), so the
+    /// desired-state schema and the reconcile script need nothing new for it.
+    #[test]
+    fn chain_balances_keep_zeros_is_insert_only() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[68].version, 69);
+        let restore = migrations[68].sql.as_str().to_ascii_uppercase();
+        assert!(restore.contains("INSERT INTO CHAIN_BALANCES"));
+        assert!(restore.contains("DO NOTHING"));
+        for change in ["CREATE ", "ALTER ", "DROP ", "DELETE ", "UPDATE "] {
+            assert!(
+                !restore.contains(change),
+                "migration 0069 must only insert ({change})"
             );
         }
     }
