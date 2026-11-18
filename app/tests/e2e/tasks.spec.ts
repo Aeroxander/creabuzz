@@ -1,5 +1,9 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
-import { treasurySpendCall } from "../../src/features/tasks/task-calls";
+import {
+  revokeAgentCall,
+  setAgentCall,
+  treasurySpendCall,
+} from "../../src/features/tasks/task-calls";
 import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll } from "../helpers/layout";
 import { BACKER_EVM, CONTRACTS, FOUNDER_EVM } from "../helpers/numbers-fixture";
@@ -267,4 +271,50 @@ test("with money off, a task shows no dollars and nothing about money", async ({
   await expect(page.getByTestId("task-pays")).toHaveCount(0);
   await expect(page.getByText(/dollar/i)).toHaveCount(0);
   await expect(page.getByTestId("task-take")).toBeVisible();
+});
+
+test("the runner sets an agent's daily limits and switches it off", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seed(relay);
+  const agentWallet = "0x00000000000000000000000000000000000000ab";
+  await openTasks(page, relay, FOUNDER_KEY, FOUNDER_EVM);
+  const caps = page.getByTestId("agent-caps");
+  await expect(caps).toBeVisible({ timeout: 20_000 });
+  await expectAccessible(page, "Agent limits");
+  await page.getByTestId("agent-address").fill(agentWallet);
+  await page.getByTestId("agent-dollars").fill("25");
+  await page.getByTestId("agent-shares").fill("5");
+  await page.getByTestId("agent-set").click();
+  await expect(page.getByTestId("toast")).toContainText(
+    "The agent's limits are set.",
+    { timeout: 20_000 },
+  );
+  await page.getByTestId("agent-off").click();
+  await expect(
+    page.getByTestId("toast").filter({ hasText: "The agent is switched off." }),
+  ).toBeVisible({ timeout: 20_000 });
+  const sent = await sentCalls(page);
+  expect(sent.map(({ to, data }) => ({ to, data }))).toEqual([
+    {
+      to: CONTRACTS.treasury,
+      data: setAgentCall(CONTRACTS.treasury, agentWallet, 25, 5n * 10n ** 18n)
+        .data,
+    },
+    {
+      to: CONTRACTS.treasury,
+      data: revokeAgentCall(CONTRACTS.treasury, agentWallet).data,
+    },
+  ]);
+});
+
+test("a wallet that does not run the project sees no agent limits", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seed(relay);
+  await openTasks(page, relay, FOUNDER_KEY, BACKER_EVM);
+  await expect(page.getByTestId("tasks-none")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("agent-caps")).toHaveCount(0);
 });
