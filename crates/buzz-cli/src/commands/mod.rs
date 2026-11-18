@@ -11,6 +11,7 @@ pub mod feed;
 pub mod gifs;
 pub mod issues;
 pub mod launchpad;
+pub mod launchpad_brain;
 pub mod launchpad_compose;
 #[cfg(test)]
 mod launchpad_docs_tests;

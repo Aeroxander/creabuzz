@@ -1623,6 +1623,12 @@ pub enum LaunchpadCmd {
         #[command(subcommand)]
         step: commands::launchpad_tasks::TasksCmd,
     },
+    /// The project brain: five plain files (AGENTS.md, facts.md, voice.md, decisions.md, playbooks/) every agent reads
+    /// before any task. Local: writes into a repository checkout, never overwrites
+    Brain {
+        #[command(subcommand)]
+        step: commands::launchpad_brain::BrainCmd,
+    },
     /// Start a project in one command: its name, a sentence, its goal and how everyone will know it was reached.
     /// Publishes the same two records as the web app's Quick Start and prints the project's page path as JSON
     #[command(
@@ -3547,6 +3553,11 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             PackCmd::Validate { path } => commands::pack::cmd_validate(path),
             PackCmd::Inspect { path } => commands::pack::cmd_inspect(path),
         };
+    }
+
+    // The project brain is local-only: it writes and reads files in a repository checkout.
+    if let Cmd::Launchpad(LaunchpadCmd::Brain { ref step }) = cli.command {
+        return commands::launchpad_brain::dispatch(step);
     }
 
     // Template browsing is local-only — the registry is embedded at build
