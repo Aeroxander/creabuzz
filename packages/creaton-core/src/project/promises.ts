@@ -1,0 +1,411 @@
+/**
+ * The promise record: what a project said it would do next, and what came of it.
+ *
+ * Each line of an update's "What's next" is a promise for the next update. The founder's next update answers each one:
+ * done, not done, or changed, with an optional short note. Both live on the update records themselves:
+ *
+ *   promise        its number in that update, and its words          ["promise", "0", "Invite ten people"]
+ *   promise-mark   the promise answered, the answer, a short note    ["promise-mark", "<update id>:0", "done", ""]
+ *
+ * A promise's id is the id of the update that made it and its number, so an answer can only ever name one promise.
+ * Only the founder's updates count, on both sides. An answer cannot be changed: if the founder answers the same promise
+ * again and differently, it shows as answered more than once and the worse answer is the one counted. No record takes
+ * a miss away. Deleting the update that holds it does, and the page says how many records the founder has deleted.
+ *
+ * A promise the next update did not answer is not hidden. It shows as "not answered", and the next update asks again.
+ *
+ * Pure and alias-free: `promises.test.mjs` drives it under `node --test`.
+ */
+
+export const PROMISE_LIMITS = {
+  /** One promise is one line. */
+  text: 200,
+  note: 140,
+  /** The most promises one update makes, and the most answers it carries. */
+  perUpdate: 10,
+  answers: 30,
+} as const;
+
+export const MARK_STATES = ["done", "not-done", "changed"] as const;
+export type MarkState = (typeof MARK_STATES)[number];
+
+/** What the dialog's three buttons say. */
+export const MARK_LABEL: Record<MarkState, string> = {
+  done: "Done",
+  "not-done": "Not done",
+  changed: "Changed",
+};
+
+const TAG_PROMISE = "promise";
+const TAG_MARK = "promise-mark";
+
+const PROMISE_ID_RE = /^[0-9a-f]{64}:\d{1,2}$/;
+
+type Tags = readonly (readonly string[])[];
+
+function isMarkState(value: unknown): value is MarkState {
+  return (MARK_STATES as readonly string[]).includes(value as string);
+}
+
+/**
+ * The promises in a "What's next" answer: one per line, without the list marks people type ("- ", "* ", "1. "), empty
+ * lines left out, each cut to a line's length, at most {@link PROMISE_LIMITS.perUpdate}.
+ */
+export function promiseLines(next: string): string[] {
+  return next
+    .split("\n")
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^(?:[-*•]|\d{1,2}[.)])\s+/, "")
+        .slice(0, PROMISE_LIMITS.text)
+        .trim(),
+    )
+    .filter((line) => line !== "")
+    .slice(0, PROMISE_LIMITS.perUpdate);
+}
+
+/** The tags that carry an update's promises. */
+export function promiseTags(next: string): string[][] {
+  return promiseLines(next).map((text, index) => [
+    TAG_PROMISE,
+    String(index),
+    text,
+  ]);
+}
+
+/** One answer the founder gives in the dialog. `text` is the promise's words, for the update's readable body. */
+export interface MarkDraft {
+  promiseId: string;
+  text: string;
+  state: MarkState;
+  note: string;
+}
+
+/** The tags that carry an update's answers to earlier promises. */
+export function markTags(marks: readonly MarkDraft[]): string[][] {
+  return marks
+    .filter(
+      (mark) => PROMISE_ID_RE.test(mark.promiseId) && isMarkState(mark.state),
+    )
+    .slice(0, PROMISE_LIMITS.answers)
+    .map((mark) => [
+      TAG_MARK,
+      mark.promiseId,
+      mark.state,
+      mark.note.trim().slice(0, PROMISE_LIMITS.note),
+    ]);
+}
+
+/**
+ * The answers as words for the update's body, so they read in any app that shows updates:
+ * "Done: Invite ten people" / "Not done: Fix the email (ran out of time)".
+ */
+export function marksSection(marks: readonly MarkDraft[]): string {
+  const lines = marks
+    .filter((mark) => isMarkState(mark.state))
+    .slice(0, PROMISE_LIMITS.answers)
+    .map((mark) => {
+      const note = mark.note.trim().slice(0, PROMISE_LIMITS.note);
+      return `${MARK_LABEL[mark.state]}: ${mark.text}${note ? ` (${note})` : ""}`;
+    });
+  return lines.length > 0 ? `What we said last time\n${lines.join("\n")}` : "";
+}
+
+export interface UpdatePromise {
+  index: number;
+  text: string;
+}
+
+export interface PromiseMark {
+  promiseId: string;
+  state: MarkState;
+  note: string;
+}
+
+/** The promises an update's tags carry: each number once, in order. */
+export function parsePromises(tags: Tags): UpdatePromise[] {
+  const out = new Map<number, UpdatePromise>();
+  for (const tag of tags) {
+    if (tag[0] !== TAG_PROMISE || typeof tag[2] !== "string") continue;
+    if (!/^\d{1,2}$/.test(tag[1] ?? "")) continue;
+    const index = Number(tag[1]);
+    const text = tag[2].trim().slice(0, PROMISE_LIMITS.text);
+    if (text === "" || out.has(index)) continue;
+    out.set(index, { index, text });
+    if (out.size >= PROMISE_LIMITS.perUpdate) break;
+  }
+  return [...out.values()].sort((a, b) => a.index - b.index);
+}
+
+/** The answers an update's tags carry: one per promise, the first one given. */
+export function parseMarks(tags: Tags): PromiseMark[] {
+  const out = new Map<string, PromiseMark>();
+  for (const tag of tags) {
+    if (tag[0] !== TAG_MARK) continue;
+    const [, promiseId, state, note] = tag;
+    if (
+      typeof promiseId !== "string" ||
+      !PROMISE_ID_RE.test(promiseId) ||
+      !isMarkState(state) ||
+      out.has(promiseId)
+    )
+      continue;
+    out.set(promiseId, {
+      promiseId,
+      state,
+      note:
+        typeof note === "string"
+          ? note.trim().slice(0, PROMISE_LIMITS.note)
+          : "",
+    });
+    if (out.size >= PROMISE_LIMITS.answers) break;
+  }
+  return [...out.values()];
+}
+
+/** An update, as far as the record needs it. */
+export interface RecordUpdate {
+  id: string;
+  author: string;
+  createdAt: number;
+  /**
+   * Whether it is a weekly update (it carries the prompts, a promise, an answer, or the dialog's own mark). Only these
+   * are "the next update": a review note or any other record the founder signs is not, and must not turn a promise
+   * into "not answered".
+   */
+  weekly?: boolean;
+  promises?: readonly UpdatePromise[];
+  marks?: readonly PromiseMark[];
+}
+
+/**
+ * How a promise stands. `waiting`: the next update has not been posted yet. `unanswered`: a later update was posted
+ * and did not say.
+ */
+export type PromiseState =
+  | "kept"
+  | "missed"
+  | "changed"
+  | "waiting"
+  | "unanswered";
+
+const STATE_OF_MARK: Record<MarkState, PromiseState> = {
+  done: "kept",
+  "not-done": "missed",
+  changed: "changed",
+};
+
+/** When the founder's answers to one promise disagree, the worse one is the one counted. */
+const WORSE_FIRST: readonly MarkState[] = ["not-done", "changed", "done"];
+
+/** One answer the founder gave to a promise. */
+interface PromiseAnswer {
+  state: MarkState;
+  note: string;
+  /** When the update that holds it says it was posted. */
+  at: number;
+}
+
+export interface PromiseEntry {
+  id: string;
+  text: string;
+  promisedAt: number;
+  state: PromiseState;
+  /** When it was answered (the newest answer, when there are several), or null. */
+  answeredAt: number | null;
+  note: string;
+  /** Every answer the founder gave, oldest first. More than one that disagree is `conflict`. */
+  answers: PromiseAnswer[];
+  /** The founder answered more than once and the answers disagree: the worse one is counted, and all are shown. */
+  conflict: boolean;
+}
+
+/**
+ * Oldest first. Two updates signed in the same second are put in the order their answers prove: an answer names its
+ * promise by the id of the update that made it, so the update that answers came after the one it answers. Without
+ * that, a tie is settled by id, which is a coin toss, and the older of the two could be taken for "the next update".
+ */
+function updatesInOrder<U extends RecordUpdate>(updates: readonly U[]): U[] {
+  const answered = new Map<string, Set<string>>();
+  for (const update of updates)
+    for (const mark of update.marks ?? []) {
+      const cut = mark.promiseId.lastIndexOf(":");
+      if (cut <= 0) continue;
+      const set = answered.get(update.id) ?? new Set<string>();
+      set.add(mark.promiseId.slice(0, cut));
+      answered.set(update.id, set);
+    }
+  return [...updates].sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+    if (answered.get(a.id)?.has(b.id)) return 1;
+    if (answered.get(b.id)?.has(a.id)) return -1;
+    return a.id < b.id ? -1 : 1;
+  });
+}
+
+/**
+ * Every promise the founder's updates made, with how each stands, newest first (by when it was answered, or made when
+ * it has not been). `updates` are the project's update records; anyone else's are ignored.
+ *
+ * An answer names its promise by the id of the update that made it, which nobody can know before that update exists:
+ * so an answer always came after its promise, whatever dates the two carry. The dates an author writes are theirs to
+ * choose, so they decide nothing here. Answers that disagree are not ranked by date: the promise shows as answered
+ * more than once, with the worse answer counted.
+ */
+export function promiseRecord(
+  updates: readonly RecordUpdate[],
+  founder: string,
+): PromiseEntry[] {
+  const mine = updatesInOrder(
+    updates.filter((update) => update.author === founder),
+  );
+  const made = new Map<string, string>();
+  for (const update of mine)
+    for (const promise of update.promises ?? [])
+      made.set(`${update.id}:${promise.index}`, update.id);
+  const answers = new Map<string, PromiseAnswer[]>();
+  for (const update of mine)
+    for (const mark of update.marks ?? []) {
+      // An update cannot answer its own promises.
+      if (!made.has(mark.promiseId) || made.get(mark.promiseId) === update.id)
+        continue;
+      const list = answers.get(mark.promiseId) ?? [];
+      list.push({ state: mark.state, note: mark.note, at: update.createdAt });
+      answers.set(mark.promiseId, list);
+    }
+  const weekly = mine.filter((update) => update.weekly);
+  const newest = weekly[weekly.length - 1];
+  const entries: PromiseEntry[] = [];
+  for (const update of mine)
+    for (const promise of update.promises ?? []) {
+      const id = `${update.id}:${promise.index}`;
+      const given = answers.get(id) ?? [];
+      const counted = WORSE_FIRST.find((state) =>
+        given.some((answer) => answer.state === state),
+      );
+      const conflict = new Set(given.map((answer) => answer.state)).size > 1;
+      entries.push({
+        id,
+        text: promise.text,
+        promisedAt: update.createdAt,
+        state: counted
+          ? STATE_OF_MARK[counted]
+          : newest && newest.id !== update.id
+            ? "unanswered"
+            : "waiting",
+        answeredAt:
+          given.length > 0
+            ? Math.max(...given.map((answer) => answer.at))
+            : null,
+        note: given.find((answer) => answer.state === counted)?.note ?? "",
+        answers: given,
+        conflict,
+      });
+    }
+  return entries.sort(
+    (a, b) =>
+      (b.answeredAt ?? b.promisedAt) - (a.answeredAt ?? a.promisedAt) ||
+      (a.id < b.id ? -1 : 1),
+  );
+}
+
+/** An answer whose promise is not among the records read. */
+export interface OrphanAnswer {
+  promiseId: string;
+  state: MarkState;
+  note: string;
+  at: number;
+}
+
+/**
+ * The founder's answers to promises that are not there: the update that made the promise was removed. Shown beside
+ * the record so a removal leaves a trace. Only meaningful when the founder's records were read to the end; on a cut
+ * read the promise may simply be older than what was read, and the caller must not show these.
+ */
+export function orphanAnswers(
+  updates: readonly RecordUpdate[],
+  founder: string,
+): OrphanAnswer[] {
+  const mine = updates.filter((update) => update.author === founder);
+  const made = new Set<string>();
+  for (const update of mine)
+    for (const promise of update.promises ?? [])
+      made.add(`${update.id}:${promise.index}`);
+  const out: OrphanAnswer[] = [];
+  for (const update of mine)
+    for (const mark of update.marks ?? [])
+      if (!made.has(mark.promiseId))
+        out.push({
+          promiseId: mark.promiseId,
+          state: mark.state,
+          note: mark.note,
+          at: update.createdAt,
+        });
+  return out.sort(
+    (a, b) => b.at - a.at || (a.promiseId < b.promiseId ? -1 : 1),
+  );
+}
+
+/** How many promises the next update is asked about at once. */
+const DUE_SHOWN = 20;
+
+/** The promises still to answer, for the update dialog: newest first, at most twenty. */
+export function duePromises(entries: readonly PromiseEntry[]): PromiseEntry[] {
+  return entries
+    .filter(
+      (entry) => entry.state === "waiting" || entry.state === "unanswered",
+    )
+    .sort((a, b) => b.promisedAt - a.promisedAt || (a.id < b.id ? -1 : 1))
+    .slice(0, DUE_SHOWN);
+}
+
+export interface PromiseTotals {
+  kept: number;
+  missed: number;
+  changed: number;
+  unanswered: number;
+}
+
+export function promiseTotals(entries: readonly PromiseEntry[]): PromiseTotals {
+  const count = (state: PromiseState) =>
+    entries.filter((entry) => entry.state === state).length;
+  return {
+    kept: count("kept"),
+    missed: count("missed"),
+    changed: count("changed"),
+    unanswered: count("unanswered"),
+  };
+}
+
+/** "12 kept, 2 missed, 1 changed", with ", 1 not answered" when there are any. Null when nothing was answered or due. */
+export function promiseTotalsLine(totals: PromiseTotals): string | null {
+  if (totals.kept + totals.missed + totals.changed + totals.unanswered === 0)
+    return null;
+  const base = `${totals.kept} kept, ${totals.missed} missed, ${totals.changed} changed`;
+  return totals.unanswered > 0
+    ? `${base}, ${totals.unanswered} not answered`
+    : base;
+}
+
+export const PROMISE_STATE_LABEL: Record<PromiseState, string> = {
+  kept: "Kept",
+  missed: "Missed",
+  changed: "Changed",
+  waiting: "Promised",
+  unanswered: "Not answered",
+};
+
+/**
+ * What may be said as fact about a project's record, given how much of its records was read.
+ *
+ * Records are read newest first. An answer is always newer than its promise, so every promise that was read shows how
+ * it really stands. What a cut read cannot know is what lies before it: older promises, and goals set long ago. So the
+ * totals are not stated, and "this project has set no goal" is not stated either.
+ */
+export function recordFacts(input: { complete: boolean }): {
+  totals: boolean;
+  noGoal: boolean;
+} {
+  return { totals: input.complete, noGoal: input.complete };
+}
