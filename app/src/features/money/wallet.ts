@@ -193,7 +193,31 @@ export function injectedWallet(
    * Wait, bounded, for a sent call to land. A lookup that fails (a rate limit, a dropped connection, a wallet browser
    * sent to the background) is one more poll, never a failure: the call was sent, so its outcome is unknown, not "no".
    */
-  async function landed(hash: string, index: number) {
+  /**
+   * Why a call that landed reverted: the same call asked again as a read, whose refusal carries the contract's reason (a
+   * wallet that sent without asking first, or a state that changed in between, gives only "reverted"). Best effort.
+   */
+  async function whyReverted(tx: {
+    from: string;
+    to: string;
+    data: string;
+  }): Promise<unknown> {
+    try {
+      await need().request({
+        method: "eth_call",
+        params: [{ ...tx, value: "0x0" }, "latest"],
+      });
+      return undefined;
+    } catch (error) {
+      return error;
+    }
+  }
+
+  async function landed(
+    hash: string,
+    index: number,
+    tx: { from: string; to: string; data: string },
+  ) {
     for (let poll = 0; poll < polls; poll += 1) {
       let status: string | null = null;
       try {
@@ -203,7 +227,12 @@ export function injectedWallet(
       }
       if (status !== null) {
         if (status === "0x1") return;
-        throw new WalletStepError("reverted", index, undefined, hash);
+        throw new WalletStepError(
+          "reverted",
+          index,
+          await whyReverted(tx),
+          hash,
+        );
       }
       await sleep(pollMs);
     }
@@ -247,7 +276,7 @@ export function injectedWallet(
         if (typeof hash !== "string")
           throw new WalletStepError("failed", index);
         try {
-          await landed(hash, index);
+          await landed(hash, index, { from, to: call.to, data: call.data });
         } catch (error) {
           // Once a hash exists the call is out: anything but a known revert is "not landed yet", never "nothing sent".
           if (error instanceof WalletStepError && error.reason === "reverted")

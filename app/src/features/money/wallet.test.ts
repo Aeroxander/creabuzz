@@ -89,6 +89,39 @@ describe("the injected wallet", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("asks a call that landed and reverted again as a read, so the contract's reason reaches the person", async () => {
+    const asked: unknown[] = [];
+    const p: Eip1193Provider = {
+      async request({ method, params }) {
+        if (method === "eth_requestAccounts") return [FROM];
+        if (method === "eth_chainId") return "0x7a69";
+        if (method === "eth_getTransactionCount") return "0x0";
+        if (method === "eth_sendTransaction") return "0xhash0";
+        if (method === "eth_getTransactionReceipt") return { status: "0x0" };
+        if (method === "eth_call") {
+          asked.push(params?.[0]);
+          // CapReached(uint256): the Launcher refused the round
+          throw {
+            code: 3,
+            message: "execution reverted",
+            data: "0x0d16778000000000000000000000000000000000000000000000000000000002540be400",
+          };
+        }
+        throw new Error(method);
+      },
+    };
+    const error = await injectedWallet(p, { pollMs: 0 })
+      .sendCalls([calls[0]], 31337)
+      .catch((e: unknown) => e);
+    expect((error as WalletStepError).reason).toBe("reverted");
+    expect(asked).toEqual([
+      { from: FROM, to: "0x01", data: "0xaa", value: "0x0" },
+    ]);
+    expect(moneyProblem(error, "open")).toBe(
+      "The project has raised the most it can at this stage, so no round can open.",
+    );
+  });
+
   it("gives up waiting after a bounded time, as not landed yet", async () => {
     const { p } = provider({ status: () => null });
     const error = await injectedWallet(p, { pollMs: 0, polls: 3 })
