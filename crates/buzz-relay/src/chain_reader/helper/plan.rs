@@ -41,18 +41,6 @@ pub struct Job {
     pub repeats: bool,
 }
 
-/// A pool position held for a project. The contracts the reader follows hold
-/// none; the type stays so the helper's pass keeps its shape.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Position {
-    /// The holder.
-    pub holder: [u8; 20],
-    /// The position's token id.
-    pub token_id: Word,
-    /// The block it was seen in.
-    pub block: u64,
-}
-
 /// What the builder needs besides the logs.
 #[derive(Clone, Debug)]
 pub struct PlanContext {
@@ -60,8 +48,6 @@ pub struct PlanContext {
     pub block: u64,
     /// Its time.
     pub time: u64,
-    /// Members per batch call (unused: neither call is a batch).
-    pub batch: usize,
 }
 
 fn last_block(logs: &[LogRow], event: &str) -> Option<u64> {
@@ -73,12 +59,7 @@ fn last_block(logs: &[LogRow], event: &str) -> Option<u64> {
 
 /// The jobs due for one project, from its final logs (oldest first) as of
 /// `ctx`.
-pub fn plan(
-    key: &Word,
-    logs: &[LogRow],
-    _positions: &[Position],
-    ctx: &PlanContext,
-) -> anyhow::Result<Vec<Job>> {
+pub fn plan(key: &Word, logs: &[LogRow], ctx: &PlanContext) -> anyhow::Result<Vec<Job>> {
     let Some(ledger) = Ledger::from_logs(logs)? else {
         return Ok(Vec::new());
     };
@@ -122,11 +103,7 @@ mod tests {
     use crate::chain_reader::fixture::Fixture;
 
     fn ctx(block: u64, time: u64) -> PlanContext {
-        PlanContext {
-            block,
-            time,
-            batch: 1,
-        }
+        PlanContext { block, time }
     }
 
     #[test]
@@ -136,7 +113,7 @@ mod tests {
         // The live moment of project A: fees from two joins are owed.
         let block = fx.json["books"]["A_live"]["block"].as_u64().expect("block");
         let rows = fx.rows("A", block);
-        let jobs = plan(&key, &rows, &[], &ctx(block, fx.time_of(block))).expect("plans");
+        let jobs = plan(&key, &rows, &ctx(block, fx.time_of(block))).expect("plans");
         assert_eq!(jobs.len(), 1, "{jobs:?}");
         assert!(matches!(jobs[0].call, HelperCall::TreasurySweepFees { .. }));
         assert!(jobs[0].repeats);
@@ -146,15 +123,15 @@ mod tests {
         // The row that made it due is a join at or before the block.
         assert!(jobs[0].due_block <= block);
         // Another week, another job; the same week, the same key.
-        let later = plan(&key, &rows, &[], &ctx(block, fx.time_of(block) + WEEK)).expect("plans");
+        let later = plan(&key, &rows, &ctx(block, fx.time_of(block) + WEEK)).expect("plans");
         assert_ne!(later[0].key, jobs[0].key);
         // At the end of the run the fee was collected: nothing is due.
         let end = fx.head();
-        let jobs = plan(&key, &fx.rows("A", end), &[], &ctx(end, fx.time_of(end))).expect("plans");
+        let jobs = plan(&key, &fx.rows("A", end), &ctx(end, fx.time_of(end))).expect("plans");
         assert!(jobs.is_empty(), "{jobs:?}");
         // Project B still owes its fee even though it is wound down.
         let b = fx.projects["B"].key;
-        let jobs = plan(&b, &fx.rows("B", end), &[], &ctx(end, fx.time_of(end))).expect("plans");
+        let jobs = plan(&b, &fx.rows("B", end), &ctx(end, fx.time_of(end))).expect("plans");
         assert_eq!(jobs.len(), 1);
     }
 
@@ -166,11 +143,11 @@ mod tests {
         let rows = fx.rows("A", block);
         let ledger = Ledger::from_logs(&rows).expect("reads").expect("launched");
         assert!(ledger.arriving > 0 && ledger.arrival_end > fx.time_of(block));
-        let before = plan(&key, &rows, &[], &ctx(block, ledger.arrival_end - 1)).expect("plans");
+        let before = plan(&key, &rows, &ctx(block, ledger.arrival_end - 1)).expect("plans");
         assert!(before
             .iter()
             .all(|j| !matches!(j.call, HelperCall::TreasuryRelease { .. })));
-        let after = plan(&key, &rows, &[], &ctx(block, ledger.arrival_end)).expect("plans");
+        let after = plan(&key, &rows, &ctx(block, ledger.arrival_end)).expect("plans");
         let settle: Vec<_> = after
             .iter()
             .filter(|j| matches!(j.call, HelperCall::TreasuryRelease { .. }))

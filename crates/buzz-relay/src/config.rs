@@ -2521,13 +2521,12 @@ mod tests {
     #[test]
     fn the_chain_helper_is_off_unless_its_key_is_set_and_never_echoes_it() {
         let _guard = ENV_MUTEX.lock().unwrap();
-        const KNOBS: [&str; 7] = [
+        const KNOBS: [&str; 6] = [
             "BUZZ_CHAIN_RPC_URL",
             "BUZZ_CHAIN_ID",
             "BUZZ_CHAIN_LAUNCHER",
             "BUZZ_CHAIN_HELPER_KEY",
             "BUZZ_CHAIN_HELPER_DAILY_GAS",
-            "BUZZ_CHAIN_HELPER_BATCH",
             "BUZZ_CHAIN_HELPER_CALL_GAS_CAP",
         ];
         for k in KNOBS {
@@ -2571,8 +2570,8 @@ mod tests {
             "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65"
         );
         assert_eq!(
-            (helper.daily_gas, helper.max_attempts, helper.batch),
-            (40_000_000, 8, 15)
+            (helper.daily_gas, helper.max_attempts),
+            (40_000_000, 8)
         );
         let shown = format!("{helper:?}");
         assert!(
@@ -2582,7 +2581,6 @@ mod tests {
 
         for (name, bad) in [
             ("BUZZ_CHAIN_HELPER_KEY", "0x1234"),
-            ("BUZZ_CHAIN_HELPER_BATCH", "0"),
             ("BUZZ_CHAIN_HELPER_CALL_GAS_CAP", "9000000"),
             // A day that cannot hold one call of the largest size (review B1).
             ("BUZZ_CHAIN_HELPER_DAILY_GAS", "1000000"),

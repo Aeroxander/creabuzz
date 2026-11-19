@@ -34,8 +34,9 @@ pub struct HelperConfig {
     pub key: HelperKey,
     /// `BUZZ_CHAIN_HELPER_DAILY_GAS` (default 30,000,000, at least the per-call
     /// cap): gas the helper may use in any 24 hours, counting what is
-    /// reserved for transactions in flight. Half of it is kept for the calls
-    /// a round or a sale waits on (`calls::ROUTINE_SHARE_PERCENT`).
+    /// reserved for transactions in flight. The calls may use half of it
+    /// (`calls::ROUTINE_SHARE_PERCENT`); only the replacement of a stuck
+    /// transaction may pass that.
     pub daily_gas: u128,
     /// `BUZZ_CHAIN_HELPER_DAILY_SPEND_WEI` (default 10^16, 0.01 of the native
     /// coin): fees the helper may pay in any 24 hours, reserved the same way.
@@ -46,11 +47,6 @@ pub struct HelperConfig {
     /// `BUZZ_CHAIN_HELPER_CALL_GAS_CAP` (default 3,000,000, at most
     /// 8,000,000): the most gas one call may use.
     pub call_gas_cap: u64,
-    /// `BUZZ_CHAIN_HELPER_BATCH` (default 15): backers per `settleMany`,
-    /// entries per `deliverMany`. Fifteen settles (about 125,000 gas each)
-    /// fit the default per-call cap with the helper's margin; a batch over the
-    /// cap is halved before it is sent (review B1).
-    pub batch: usize,
     /// Seconds between job builds (60; tests use 0).
     pub build_every_secs: u64,
     /// Seconds a sent transaction may wait unmined before it is replaced
@@ -61,12 +57,11 @@ pub struct HelperConfig {
 }
 
 /// Every helper variable but the key: set without the key, startup stops.
-pub const OTHER_VARS: [&str; 5] = [
+pub const OTHER_VARS: [&str; 4] = [
     "BUZZ_CHAIN_HELPER_DAILY_GAS",
     "BUZZ_CHAIN_HELPER_DAILY_SPEND_WEI",
     "BUZZ_CHAIN_HELPER_MAX_ATTEMPTS",
     "BUZZ_CHAIN_HELPER_CALL_GAS_CAP",
-    "BUZZ_CHAIN_HELPER_BATCH",
 ];
 
 fn var(name: &str) -> Option<String> {
@@ -98,7 +93,6 @@ impl HelperConfig {
             daily_spend_wei: 10_000_000_000_000_000,
             max_attempts: 8,
             call_gas_cap: 3_000_000,
-            batch: 15,
             build_every_secs: 60,
             stuck_after_secs: 180,
             wait_secs: 30,
@@ -142,7 +136,6 @@ impl HelperConfig {
             21_000,
             u128::from(MAX_GAS_CEILING),
         )? as u64;
-        cfg.batch = number("BUZZ_CHAIN_HELPER_BATCH", cfg.batch as u128, 1, 200)? as usize;
         // A day must hold at least one call of the largest size, or a job of
         // that size would be put off every day without end (review B1).
         if cfg.daily_gas < u128::from(cfg.call_gas_cap) {

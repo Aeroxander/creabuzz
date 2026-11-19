@@ -35,7 +35,7 @@ use sqlx::PgPool;
 pub use settings::HelperConfig;
 
 use calls::HelperCall;
-use plan::{PlanContext, Position};
+use plan::PlanContext;
 use store::{JobRow, SendRow, Used};
 use writer::{CallError, ChainWriter, Fees, Receipt, SendError, TxRequest};
 
@@ -89,7 +89,7 @@ pub struct Helper {
 }
 
 enum Check {
-    /// Send this (the job's call, maybe with fewer backers or entries).
+    /// Send this (the job's call).
     Due(HelperCall),
     /// Nothing to do now.
     Nothing(String),
@@ -115,7 +115,8 @@ enum Failure {
 enum CapHit {
     /// The whole cap: nothing more is sent this pass.
     Whole(String),
-    /// The routine calls' share: only routine calls wait.
+    /// The calls' share of the day: only the calls wait (a stuck
+    /// transaction's replacement may pass it).
     Routine(String),
 }
 
@@ -151,16 +152,6 @@ fn pause_after(attempts: i32) -> f64 {
     (FIRST_PAUSE_SECS * 2f64.powi(n)).min(MAX_PAUSE_SECS)
 }
 
-/// The key of the job holding the rest of a halved batch: the original job's
-/// key (never nested) and a digest of the members, so the same rest is stored
-/// once.
-fn rest_key(key: &str, rest: &HelperCall) -> String {
-    use sha2::{Digest, Sha256};
-    let base = key.split(":rest:").next().unwrap_or(key);
-    let digest = Sha256::digest(rest.args().to_string().as_bytes());
-    format!("{base}:rest:{}", hex::encode(&digest[..8]))
-}
-
 fn short(text: &str) -> String {
     text.chars().take(400).collect()
 }
@@ -189,14 +180,13 @@ impl Helper {
         reader: &str,
         head: (u64, u64),
         final_block: Option<(u64, u64)>,
-        positions: &[(Word, Position)],
     ) -> anyhow::Result<HelperReport> {
         let mut report = HelperReport::default();
         let now = chrono::Utc::now().timestamp();
         if let Some((block, time)) = final_block {
             let every = i64::try_from(self.config.build_every_secs).unwrap_or(i64::MAX);
             if now.saturating_sub(self.last_build.load(Ordering::Relaxed)) >= every {
-                report.built = self.build(pool, reader, block, time, positions).await?;
+                report.built = self.build(pool, reader, block, time).await?;
                 store::prune(pool, reader).await?;
                 self.last_build.store(now, Ordering::Relaxed);
             }
@@ -210,7 +200,7 @@ impl Helper {
             }
         }
 
-        // Ordered in SQL: the calls a round or a sale waits on first.
+        // Ordered in SQL (the settle before the fee).
         let due = store::due_jobs(pool, reader, JOBS_PER_PASS as i64).await?;
         for job in due {
             if let Outcome::Stop = self.run(pool, reader, &job, head, &mut report).await? {
@@ -226,22 +216,12 @@ impl Helper {
         reader: &str,
         block: u64,
         time: u64,
-        positions: &[(Word, Position)],
     ) -> anyhow::Result<u64> {
-        let ctx = PlanContext {
-            block,
-            time,
-            batch: self.config.batch,
-        };
+        let ctx = PlanContext { block, time };
         let mut jobs = Vec::new();
         for (key, _) in super::store::final_projects(pool, reader, block).await? {
             let logs = super::store::project_logs(pool, reader, &key, block).await?;
-            let own: Vec<Position> = positions
-                .iter()
-                .filter(|(k, _)| *k == key)
-                .map(|(_, p)| p.clone())
-                .collect();
-            match plan::plan(&key, &logs, &own, &ctx) {
+            match plan::plan(&key, &logs, &ctx) {
                 Ok(mut more) => jobs.append(&mut more),
                 Err(e) => {
                     tracing::error!(project = %hex0x(&key), "chain helper: jobs not built: {e:#}")
@@ -267,8 +247,7 @@ impl Helper {
     }
 
     /// Whether the call would still do something at the head, read from the
-    /// contracts' views; batches lose the backers and entries that would make
-    /// them revert.
+    /// contracts' views.
     async fn check(&self, call: HelperCall, head_time: u64) -> Result<Check, Failure> {
         let target = call.target();
         let positive = |v: u128, what: &str| {
@@ -347,16 +326,11 @@ impl Helper {
         Ok(Outcome::Stop)
     }
 
-    /// The most gas one call of this kind may ask for: the per-call cap, and
-    /// never more than its daily budget (the whole cap for the calls a round
-    /// or a sale waits on, the routine share for the rest), so a call that is
-    /// sent can always fit an empty day.
-    fn gas_room(&self, call: &HelperCall) -> u64 {
-        let budget = if call.is_essential() {
-            self.config.daily_gas
-        } else {
-            self.config.daily_gas / 100 * calls::ROUTINE_SHARE_PERCENT
-        };
+    /// The most gas one call may ask for: the per-call cap, and never more
+    /// than its share of the day, so a call that is sent can always fit an
+    /// empty day.
+    fn gas_room(&self) -> u64 {
+        let budget = self.config.daily_gas / 100 * calls::ROUTINE_SHARE_PERCENT;
         self.config
             .call_gas_cap
             .min(u64::try_from(budget).unwrap_or(u64::MAX))
@@ -382,18 +356,16 @@ impl Helper {
                 return Ok(Outcome::Next);
             }
         };
-        // A routine call whose share of today's caps is used up waits
-        // without asking the node anything.
-        if !call.is_essential() {
-            if let Some(CapHit::Routine(reason) | CapHit::Whole(reason)) =
-                self.over_cap(pool, reader, 0, 0, false).await?
-            {
-                store::postpone(pool, job.id, &reason, CAP_PAUSE_SECS).await?;
-                report.postponed += 1;
-                return Ok(Outcome::Next);
-            }
+        // A call whose share of today's caps is used up waits without asking
+        // the node anything.
+        if let Some(CapHit::Routine(reason) | CapHit::Whole(reason)) =
+            self.over_cap(pool, reader, 0, 0).await?
+        {
+            store::postpone(pool, job.id, &reason, CAP_PAUSE_SECS).await?;
+            report.postponed += 1;
+            return Ok(Outcome::Next);
         }
-        let mut call = match self.check(call, head.1).await {
+        let call = match self.check(call, head.1).await {
             Ok(Check::Due(call)) => call,
             Ok(Check::Nothing(reason)) => {
                 store::mark_dropped(pool, job.id, &reason, head.0).await?;
@@ -436,77 +408,47 @@ impl Helper {
                 return Ok(Outcome::Next);
             }
         }
-        // The gas, within the call's room. A batch over it is halved (review
-        // B1) and the first half sent. For a one-off batch (`settleMany`) the
-        // rest is waiting still once that is final, so the builder makes it a
-        // job of its own. A repeating batch (`deliverMany`) is keyed by its
-        // period and position, so the builder would make the same first half
-        // again next period: its rest becomes a job of its own now, stored
-        // with the send. Each turn halves the batch, so this ends.
-        let whole = call.clone();
-        let room = self.gas_room(&call);
-        let gas_limit = loop {
-            let estimate = match self
-                .writer
-                .estimate_gas(&call.target(), &call.calldata())
-                .await
-            {
-                Ok(g) => g,
-                Err(CallError::Reverted(d)) => {
-                    self.retry(
-                        pool,
-                        job,
-                        &format!("gas estimate reverted: {}", short(&d)),
-                        report,
-                    )
-                    .await?;
-                    return Ok(Outcome::Next);
-                }
-                Err(CallError::Unavailable(e)) => {
-                    return self
-                        .node_failed(pool, job, "eth_estimateGas", e, report)
-                        .await
-                }
-            };
-            let gas_limit = margin(estimate);
-            if gas_limit <= room {
-                break gas_limit;
+        // The gas, within the call's room.
+        let room = self.gas_room();
+        let estimate = match self
+            .writer
+            .estimate_gas(&call.target(), &call.calldata())
+            .await
+        {
+            Ok(g) => g,
+            Err(CallError::Reverted(d)) => {
+                self.retry(
+                    pool,
+                    job,
+                    &format!("gas estimate reverted: {}", short(&d)),
+                    report,
+                )
+                .await?;
+                return Ok(Outcome::Next);
             }
-            match call.first_half() {
-                Some(half) => {
-                    tracing::info!(
-                        job = %job.key,
-                        gas_limit,
-                        room,
-                        members = half.members(),
-                        "chain helper: batch over the gas room; sending its first half"
-                    );
-                    call = half;
-                }
-                None => {
-                    self.retry(
-                        pool,
-                        job,
-                        &format!("needs {gas_limit} gas, over the room of {room}"),
-                        report,
-                    )
-                    .await?;
-                    return Ok(Outcome::Next);
-                }
+            Err(CallError::Unavailable(e)) => {
+                return self
+                    .node_failed(pool, job, "eth_estimateGas", e, report)
+                    .await
             }
         };
+        let gas_limit = margin(estimate);
+        if gas_limit > room {
+            self.retry(
+                pool,
+                job,
+                &format!("needs {gas_limit} gas, over the room of {room}"),
+                report,
+            )
+            .await?;
+            return Ok(Outcome::Next);
+        }
         let fees = match self.writer.fees().await {
             Ok(f) => f,
             Err(e) => return self.node_failed(pool, job, "fees", e, report).await,
         };
         match self
-            .over_cap(
-                pool,
-                reader,
-                gas_limit,
-                fees.max_fee_per_gas,
-                call.is_essential(),
-            )
+            .over_cap(pool, reader, gas_limit, fees.max_fee_per_gas)
             .await?
         {
             None => {}
@@ -534,32 +476,27 @@ impl Helper {
             gas_limit,
             fees,
         };
-        // Halving keeps the first members, so the rest are the ones after.
-        let rest = (job.repeats && call.members() < whole.members())
-            .then(|| whole.only(&(call.members()..whole.members()).collect::<Vec<_>>()))
-            .flatten();
-        self.broadcast(pool, reader, job, &call, rest, tx, report)
-            .await
+        self.broadcast(pool, reader, job, &call, tx, report).await
     }
 
-    /// `None` when `gas` at `fee` fits today's caps (for a routine call, also
-    /// the routine share of them), else which cap it would pass.
+    /// `None` when `gas` at `fee` fits today's caps and the calls' share of
+    /// them, else which cap it would pass.
     async fn over_cap(
         &self,
         pool: &PgPool,
         reader: &str,
         gas: u64,
         fee: u128,
-        essential: bool,
     ) -> anyhow::Result<Option<CapHit>> {
         let used = store::used_last_day(pool, reader).await?;
         let reserve = u128::from(gas).saturating_mul(fee);
-        Ok(self.cap_hit(used, u128::from(gas), reserve, essential))
+        Ok(self.cap_hit(used, u128::from(gas), reserve, false))
     }
 
     /// `None` when `gas` more and `reserve` more wei fit the caps after
-    /// `used`, else which cap they would pass.
-    fn cap_hit(&self, used: Used, gas: u128, reserve: u128, essential: bool) -> Option<CapHit> {
+    /// `used`, else which cap they would pass. `whole_only` leaves out the
+    /// calls' share (the replacement of a stuck transaction).
+    fn cap_hit(&self, used: Used, gas: u128, reserve: u128, whole_only: bool) -> Option<CapHit> {
         if used.gas.saturating_add(gas) > self.config.daily_gas {
             return Some(CapHit::Whole(format!(
                 "the daily gas cap ({}) is reached: {} used, {gas} more needed",
@@ -572,7 +509,7 @@ impl Helper {
                 self.config.daily_spend_wei, used.wei
             )));
         }
-        if !essential {
+        if !whole_only {
             let share = |cap: u128| cap / 100 * calls::ROUTINE_SHARE_PERCENT;
             let (gas_share, wei_share) = (
                 share(self.config.daily_gas),
@@ -587,38 +524,33 @@ impl Helper {
                     used.saturating_add(more) > cap
                 }
             };
-            if over(used.routine_gas, gas, gas_share) {
+            if over(used.gas, gas, gas_share) {
                 return Some(CapHit::Routine(format!(
                     "the routine calls' share of the daily gas cap ({gas_share}) is reached: {} used",
-                    used.routine_gas
+                    used.gas
                 )));
             }
-            if over(used.routine_wei, reserve, wei_share) {
+            if over(used.wei, reserve, wei_share) {
                 return Some(CapHit::Routine(format!(
                     "the routine calls' share of the daily spend cap ({wei_share} wei) is reached: {} used",
-                    used.routine_wei
+                    used.wei
                 )));
             }
         }
         None
     }
 
-    /// Remember (with `rest`, the members a halved repeating batch leaves
-    /// out, as a job of their own), broadcast, and wait a little for the
-    /// receipt.
-    #[allow(clippy::too_many_arguments)]
+    /// Remember, broadcast, and wait a little for the receipt.
     async fn broadcast(
         &self,
         pool: &PgPool,
         reader: &str,
         job: &JobRow,
         call: &HelperCall,
-        rest: Option<HelperCall>,
         tx: TxRequest,
         report: &mut HelperReport,
     ) -> anyhow::Result<Outcome> {
         let hash = self.writer.tx_hash(&tx)?;
-        let rest_key = rest.as_ref().map(|r| rest_key(&job.key, r));
         store::record_send(
             pool,
             reader,
@@ -631,17 +563,8 @@ impl Helper {
                 max_priority_fee_per_gas: tx.fees.max_priority_fee_per_gas,
             },
             &call.args(),
-            rest.as_ref()
-                .zip(rest_key.as_deref())
-                .map(|(r, key)| store::Rest {
-                    key,
-                    args: r.args(),
-                }),
         )
         .await?;
-        if let Some(key) = &rest_key {
-            tracing::info!(job = %job.key, rest = %key, "chain helper: the rest of the halved batch is a job of its own");
-        }
         match self.writer.send(&tx).await {
             Ok(_) => {
                 report.sent += 1;
@@ -853,7 +776,6 @@ impl Helper {
                 max_priority_fee_per_gas: fees.max_priority_fee_per_gas,
             },
             &job.args,
-            None,
         )
         .await?;
         match self.writer.send(&tx).await {
@@ -873,3 +795,6 @@ impl Helper {
         Ok(Outcome::Stop)
     }
 }
+
+#[cfg(test)]
+mod postgres_tests;

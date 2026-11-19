@@ -262,28 +262,14 @@ pub async fn mark_failed(pool: &PgPool, id: i64, reason: &str) -> anyhow::Result
     Ok(())
 }
 
-/// The members a halved repeating batch leaves out (review of B1): a job of
-/// their own under `key`, a copy of the halved job with these arguments.
-/// Nothing else would send them: the builder makes a repeating job's key once
-/// per period, and the halved job ends `done` with the half it sent.
-pub struct Rest<'a> {
-    /// The new job's key.
-    pub key: &'a str,
-    /// Its arguments.
-    pub args: Value,
-}
-
 /// Before broadcasting: remember the transaction (its reserved gas and fee
 /// count toward the daily caps at once) and mark the job `sent`, in one
-/// transaction. The arguments stored are the ones sent (after filtering);
-/// `rest`, when a batch was halved, is stored as its own job in the same
-/// transaction, so the members left out are never lost.
+/// transaction. The arguments stored are the ones sent.
 pub async fn record_send(
     pool: &PgPool,
     reader: &str,
     send: SendRow<'_>,
     args: &Value,
-    rest: Option<Rest<'_>>,
 ) -> anyhow::Result<()> {
     let reserved = u128::from(send.gas_limit).saturating_mul(send.max_fee_per_gas);
     let mut tx = pool.begin().await?;
@@ -314,20 +300,6 @@ pub async fn record_send(
     .bind(args)
     .execute(&mut *tx)
     .await?;
-    if let Some(rest) = rest {
-        sqlx::query(
-            "INSERT INTO chain_helper_jobs (reader, job_key, call, target, args, project_key, \
-                 due_block, repeats) \
-             SELECT reader, $2, call, target, $3, project_key, due_block, repeats \
-             FROM chain_helper_jobs WHERE id = $1 \
-             ON CONFLICT (reader, job_key) DO NOTHING",
-        )
-        .bind(send.job_id)
-        .bind(rest.key)
-        .bind(rest.args)
-        .execute(&mut *tx)
-        .await?;
-    }
     tx.commit().await?;
     Ok(())
 }
@@ -437,32 +409,18 @@ pub struct Used {
     pub gas: u128,
     /// Wei, every call.
     pub wei: u128,
-    /// Gas of the routine calls (not [`super::calls::ESSENTIAL`]).
-    pub routine_gas: u128,
-    /// Wei of the routine calls.
-    pub routine_wei: u128,
 }
 
 /// Gas and wei used in the last 24 hours: what mined at its real cost, what is
-/// in flight at what it reserved; in all, and by the routine calls (a send
-/// whose job is gone counts as routine).
+/// in flight at what it reserved.
 pub async fn used_last_day(pool: &PgPool, reader: &str) -> anyhow::Result<Used> {
-    let essential: Vec<String> = super::calls::ESSENTIAL
-        .iter()
-        .map(|n| (*n).to_owned())
-        .collect();
     let row = sqlx::query(
         "SELECT coalesce(sum(coalesce(s.gas_used, s.gas_limit)), 0)::text AS gas, \
-                coalesce(sum(coalesce(s.spent_wei, s.reserved_wei)), 0)::text AS wei, \
-                coalesce(sum(coalesce(s.gas_used, s.gas_limit)) \
-                    FILTER (WHERE j.call IS NULL OR NOT (j.call = ANY($2))), 0)::text AS routine_gas, \
-                coalesce(sum(coalesce(s.spent_wei, s.reserved_wei)) \
-                    FILTER (WHERE j.call IS NULL OR NOT (j.call = ANY($2))), 0)::text AS routine_wei \
-         FROM chain_helper_sends s LEFT JOIN chain_helper_jobs j ON j.id = s.job_id \
+                coalesce(sum(coalesce(s.spent_wei, s.reserved_wei)), 0)::text AS wei \
+         FROM chain_helper_sends s \
          WHERE s.reader = $1 AND s.sent_at > now() - interval '24 hours'",
     )
     .bind(reader)
-    .bind(&essential)
     .fetch_one(pool)
     .await?;
     let number = |name: &str| -> anyhow::Result<u128> {
@@ -472,8 +430,6 @@ pub async fn used_last_day(pool: &PgPool, reader: &str) -> anyhow::Result<Used> 
     Ok(Used {
         gas: number("gas")?,
         wei: number("wei")?,
-        routine_gas: number("routine_gas")?,
-        routine_wei: number("routine_wei")?,
     })
 }
 

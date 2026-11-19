@@ -48,18 +48,10 @@ pub const ALLOWED: [&str; 2] = ["collectFees()", "settle()"];
 /// allows these among others).
 pub const NAMES: [&str; 2] = ["treasury.sweepFees", "treasury.release"];
 
-/// The share of the daily gas and spend caps the calls nothing waits on may
-/// use (see [`HelperCall::is_essential`]).
+/// The share of the daily gas and spend caps the calls may use (nothing the
+/// helper sends blocks a person's money, which can always be taken out
+/// without it, so no call is let past this share).
 pub const ROUTINE_SHARE_PERCENT: u128 = 50;
-
-/// The calls somebody waits on: none (nothing the helper sends blocks a
-/// person's money, which can always be taken out without it).
-pub const ESSENTIAL: [&str; 0] = [];
-
-/// Whether the stored call `name` is one of [`ESSENTIAL`].
-pub fn is_essential_name(name: &str) -> bool {
-    ESSENTIAL.contains(&name)
-}
 
 /// The order of a stored call in a pass (lower first).
 pub fn priority_of(name: &str) -> u8 {
@@ -132,31 +124,15 @@ impl HelperCall {
         priority_of(self.name())
     }
 
-    /// Whether somebody waits on this call (nobody does: see [`ESSENTIAL`]).
-    pub fn is_essential(&self) -> bool {
-        is_essential_name(self.name())
-    }
-
-    /// How many members a batch call carries (1: neither call is a batch).
-    pub fn members(&self) -> usize {
-        1
-    }
-
-    /// The same batch call with only the members at the indices in `keep`;
-    /// `None`: neither call is a batch.
-    pub fn only(&self, _keep: &[usize]) -> Option<HelperCall> {
-        None
-    }
-
-    /// The first half of a batch of two or more; `None` for these calls.
-    pub fn first_half(&self) -> Option<HelperCall> {
-        None
-    }
-
     /// Custom errors (their selectors) that mean "nothing for this job to do",
     /// not "try again": the job is dropped, not counted as a failed attempt.
+    /// `collectFees()` reverts with `NothingToPay()` when another caller
+    /// collected the fee first.
     pub fn nothing_to_do_errors(&self) -> &'static [&'static str] {
-        &[]
+        match self {
+            HelperCall::TreasurySweepFees { .. } => &["NothingToPay()"],
+            HelperCall::TreasuryRelease { .. } => &[],
+        }
     }
 }
 
