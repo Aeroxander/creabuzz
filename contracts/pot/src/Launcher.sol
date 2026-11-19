@@ -76,6 +76,8 @@ contract Launcher {
 
     /// @notice Who may change the platform settings for new projects.
     address public admin;
+    /// @notice Who the admin offered the seat to, until they accept; zero when no offer is open.
+    address public pendingAdmin;
     /// @notice The platform settings new projects are born with.
     Platform public platform;
     /// @notice True on the networks where a short time unit is allowed (local chain, Sepolia).
@@ -106,6 +108,8 @@ contract Launcher {
     event SettingsChanged(Platform platform);
     /// @notice The admin changed.
     event AdminChanged(address indexed admin);
+    /// @notice The admin offered the seat to `next`.
+    event AdminOffered(address indexed next);
 
     error ProjectExists();
     error UnknownProject();
@@ -142,7 +146,7 @@ contract Launcher {
     /// @param name The Shares' name (1 to 64 bytes). The Team Shares are named after it.
     /// @param symbol The Shares' ticker (1 to 64 bytes).
     /// @param terms The founder's two numbers: the allowance rate and the Team pool.
-    /// @param expectedSettingsHash `launchHash(keyOf(founder, projectId))` as the founder saw it. If the admin changed the
+    /// @param expectedSettingsHash `settingsHash()` as the founder saw it. If the admin changed the
     /// platform settings since, the launch reverts instead of giving the founder a project built on settings they never
     /// agreed to.
     function launch(
@@ -153,7 +157,7 @@ contract Launcher {
         bytes32 expectedSettingsHash
     ) external returns (address shares, address team, address treasury, address vester) {
         bytes32 key = keyOf(msg.sender, projectId);
-        if (launchHash(key) != expectedSettingsHash) revert SettingsMoved();
+        if (settingsHash() != expectedSettingsHash) revert SettingsMoved();
         if (_projects[key].treasury != address(0)) revert ProjectExists();
         if (
             bytes(name).length == 0 || bytes(name).length > 64 || bytes(symbol).length == 0 || bytes(symbol).length > 64
@@ -251,12 +255,6 @@ contract Launcher {
         return keccak256(abi.encode(platform));
     }
 
-    /// @notice What `launch` checks for the project `key`: the settings hash (the key does not change it; it is a
-    /// parameter so the app's call stays the same for every project).
-    function launchHash(bytes32) public view returns (bytes32) {
-        return settingsHash();
-    }
-
     /// @notice The key a project is stored under.
     function keyOf(address founder, bytes32 projectId) public pure returns (bytes32) {
         return keccak256(abi.encode(founder, projectId));
@@ -271,12 +269,20 @@ contract Launcher {
         _set(next);
     }
 
-    /// @notice Hand the admin seat to `next`.
+    /// @notice Offer the admin seat to `next`. It changes hands only when `next` calls `acceptAdmin`, so a wrong address
+    /// cannot take the seat out of reach for good. A new offer replaces the old one.
     function transferAdmin(address next) external {
         if (msg.sender != admin) revert NotAdmin();
         if (next == address(0)) revert BadSettings();
-        admin = next;
-        emit AdminChanged(next);
+        pendingAdmin = next;
+        emit AdminOffered(next);
+    }
+
+    /// @notice Take the admin seat that was offered to the caller.
+    function acceptAdmin() external {
+        if (msg.sender != pendingAdmin) revert NotAdmin();
+        (admin, pendingAdmin) = (msg.sender, address(0));
+        emit AdminChanged(msg.sender);
     }
 
     // ================================================ plumbing =======================================================

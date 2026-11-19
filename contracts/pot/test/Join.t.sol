@@ -279,7 +279,7 @@ contract JoinTest is PotBase {
         uint256 before = PotMath.cash(b, t.pot(), t.paidIn(), b, g);
         _join(bob, amount);
         uint256 afterVal = PotMath.cash(b, t.pot(), t.paidIn(), shares.totalSupply(), g);
-        // 100 virtual Shares at the holders' value, less the virtual dollar; plus rounding
+        // the virtual Shares at the holders' value, less the virtual money; plus rounding
         uint256 virtualShares = PotMath.OFFSET_SHARES * before / b;
         uint256 bound_ = virtualShares > PotMath.OFFSET_USD ? virtualShares - PotMath.OFFSET_USD : 0;
         if (afterVal < before) assertLe(before - afterVal, bound_ + 20, "loss within the offset bound");
@@ -365,6 +365,8 @@ contract JoinTest is PotBase {
         pd.transferAndCall(address(tr), 100e6, "");
         vm.expectRevert();
         pd.transferAndCall(address(tr), 100e6, hex"00");
+        vm.expectRevert();
+        pd.transferAndCall(address(tr), 100e6, abi.encodePacked(abi.encode(uint256(0), address(0)), hex"00")); // 65 bytes
         vm.stopPrank();
     }
 

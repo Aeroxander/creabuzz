@@ -55,9 +55,13 @@ contract EventsTest is StackBase {
         vm.prank(admin);
         launcher.setSettings(p);
         vm.expectEmit(true, false, false, false, address(launcher));
-        emit Launcher.AdminChanged(alice);
+        emit Launcher.AdminOffered(alice);
         vm.prank(admin);
         launcher.transferAdmin(alice);
+        vm.expectEmit(true, false, false, false, address(launcher));
+        emit Launcher.AdminChanged(alice);
+        vm.prank(alice);
+        launcher.acceptAdmin();
     }
 
     function test_grantMadeAndClaimed() public {

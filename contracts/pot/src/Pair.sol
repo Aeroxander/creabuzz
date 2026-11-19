@@ -22,6 +22,11 @@ contract Pair {
     address public second;
     /// @notice Who proposed each pending call (keyed by `callId`); zero when none.
     mapping(bytes32 => address) public proposer;
+    /// @notice When each pending call was proposed (keyed by `callId`).
+    mapping(bytes32 => uint256) public proposedAt;
+    /// @notice A proposal can be confirmed for this long (two time units of a real network), then it is dead: old consent
+    /// is not consent.
+    uint256 public constant PROPOSAL_TTL = 14 days;
     /// @notice Calls proposed so far; makes each proposal's id different.
     uint256 public nonce;
 
@@ -42,6 +47,8 @@ contract Pair {
     error BadTarget();
     /// @notice No such pending call.
     error UnknownCall();
+    /// @notice The call was proposed more than `PROPOSAL_TTL` ago; propose it again.
+    error Expired();
     /// @notice A call is already executing.
     error Reentrancy();
 
@@ -81,11 +88,12 @@ contract Pair {
         uint256 n = nonce++;
         id = callId(target, data, n);
         proposer[id] = msg.sender;
+        proposedAt[id] = block.timestamp;
         emit Proposed(id, msg.sender, target, data, n);
     }
 
     /// @notice Confirm the other signer's proposed call and run it. The call must be exactly the one proposed (the id
-    /// commits to the target, the bytes and the proposal's number), and a proposal runs once. Reverts with the call's own
+    /// commits to the target, the bytes and the proposal's number), and a proposal runs once, and only within `PROPOSAL_TTL` of being proposed. Reverts with the call's own
     /// error if it fails (the proposal then stays pending).
     function confirm(address target, bytes calldata data, uint256 n) external onlySigner returns (bytes memory result) {
         if (_executing) revert Reentrancy();
@@ -93,7 +101,9 @@ contract Pair {
         address by = proposer[id];
         if (by == address(0)) revert UnknownCall();
         if (by == msg.sender) revert NotAllowed();
+        if (block.timestamp > proposedAt[id] + PROPOSAL_TTL) revert Expired();
         delete proposer[id];
+        delete proposedAt[id];
         _executing = true;
         bool ok;
         (ok, result) = target.call(data);
@@ -110,6 +120,7 @@ contract Pair {
     function cancel(bytes32 id) external {
         if (proposer[id] != msg.sender) revert NotAllowed();
         delete proposer[id];
+        delete proposedAt[id];
         emit Cancelled(id);
     }
 

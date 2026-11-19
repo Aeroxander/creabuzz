@@ -16,8 +16,9 @@ import {Launcher} from "../src/Launcher.sol";
 ///   UNIT       the time unit N in seconds; default 7 days. On a network that is not a test network it must be exactly 7 days
 ///              (the Launcher refuses anything else); on a test network any multiple of 168 seconds (1680 works).
 ///   QUOTE      the address of the dollar token (6 decimals). Default: a new PlayDollar, test networks only.
-///   PLATFORM   who receives the platform fee. Default: the sender.
-///   ADMIN      who may change the platform settings for new projects. Default: the sender.
+///   PLATFORM   who receives the platform fee. Default on a test network: the sender. Required elsewhere.
+///   ADMIN      who may change the platform settings for new projects. Default on a test network: the sender. Required
+///              elsewhere.
 ///   FEE_BPS    the platform fee on a join, in ten-thousandths. Default 200 (2%). At most 500.
 ///   AGENT_USD  an agent's default daily dollar limit, in dollar units (millionths). Default 25,000,000 (25 dollars).
 ///
@@ -43,8 +44,14 @@ contract DeployPot is Script {
 
         vm.startBroadcast();
         (, address sender,) = vm.readCallers();
-        address platform = vm.envOr("PLATFORM", sender);
-        address admin = vm.envOr("ADMIN", sender);
+        // The fee receiver and the admin are chosen for every new project: off a test network they are never the hot sender
+        // by default.
+        bool testNet = block.chainid == 31_337 || block.chainid == 11_155_111;
+        address platform = testNet ? vm.envOr("PLATFORM", sender) : vm.envAddress("PLATFORM");
+        address admin = testNet ? vm.envOr("ADMIN", sender) : vm.envAddress("ADMIN");
+        require(
+            unit <= type(uint32).max && feeBps <= type(uint16).max && agentUsd <= type(uint128).max, "setting too big"
+        );
 
         address quote = quoteIn;
         if (quote == address(0)) quote = address(new PlayDollar(sender)); // reverts off a test network, by design

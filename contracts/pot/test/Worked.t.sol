@@ -17,8 +17,8 @@ contract WorkedTest is PotBase {
         (uint256 quoted, uint256 takeOutNow,,) = t.quoteBack(100e6);
         uint256 n = _join(alice, 100e6);
         assertEq(n, quoted);
-        // the text rounds 11,501.78 to 11,502
-        assertApproxEqAbs(n, 11_501.78e18, 0.01e18, "about 11,502 Shares for 100");
+        // the text rounds 11,501.796 to 11,502 (exactly 98 / 0.0085204, the quote offset moves it by a part in 1e11)
+        assertApproxEqAbs(n, 11_501.7964e18, 0.001e18, "about 11,502 Shares for 100");
         assertEq(t.feesOwed(), 2e6, "platform 2");
         assertEq(t.pot(), 83_500e6 + 98e6, "98 into the pot");
 

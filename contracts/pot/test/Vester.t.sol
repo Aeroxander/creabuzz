@@ -28,11 +28,11 @@ contract VesterStackTest is StackBase {
     }
 
     function test_grantsNeverPassThePoolSetAtBirth() public {
-        _grant(alice, POOL - 1);
+        _grant(alice, POOL - 1e18);
         vm.prank(founder);
         vm.expectRevert(Vester.NotFunded.selector);
-        t.grantTeam(bob, 2);
-        _grant(bob, 1);
+        t.grantTeam(bob, 2e18);
+        _grant(bob, 1e18);
     }
 
     function test_vestingRunsOnActiveTime() public {

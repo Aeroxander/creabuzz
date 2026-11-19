@@ -13,10 +13,12 @@ library PotMath {
     uint256 internal constant PPM = 1e6;
     /// @dev The scale of the platform fee: ten-thousandths.
     uint256 internal constant BPS = 1e4;
-    /// @dev The virtual dollar added to the money, and to paid-in, in the quote only.
-    uint256 internal constant OFFSET_USD = 1e6;
-    /// @dev The virtual 100 Shares added to backer Shares in the quote only.
-    uint256 internal constant OFFSET_SHARES = 100e18;
+    /// @dev The virtual money, one dollar unit (a millionth of a dollar), added to the money and to paid-in in the quote only.
+    uint256 internal constant OFFSET_USD = 1;
+    /// @dev The virtual Shares added to backer Shares in the quote only: 1e14 wei, a ten-thousandth of a Share. With the
+    /// virtual money it prices a first Share at one cent (1 unit per 1e14 wei), and it is so small that a join and an
+    /// immediate take-out can gain at most about `1e14 wei x` the value of a Share, a few cents at the very most.
+    uint256 internal constant OFFSET_SHARES = 1e14;
 
     /// @notice The platform's fee on a payment of `a`: `a x feeBps / 10,000` rounded up, so the platform never loses to
     /// rounding and a payment is never charged more than one unit above the exact fee.
@@ -25,8 +27,8 @@ library PotMath {
     }
 
     /// @notice The price of a Share for a joiner, as a fraction `num / den` of dollar units per Share unit.
-    /// It is the leave-value formula on the pot plus money still arriving, with the quote offset (one dollar of money and
-    /// of paid-in, 100 Shares), and with the Team Shares announced to burn already taken out (`ge` = G - Z).
+    /// It is the leave-value formula on the pot plus money still arriving, with the quote offset (one dollar unit of money
+    /// and of paid-in, 1e14 wei of Shares), and with the Team Shares announced to burn already taken out (`ge` = G - Z).
     /// `num` is never zero (the offset), so a price always exists.
     /// @param pot The pot P.
     /// @param arriving Outside money not yet in the pot, counted at face.
@@ -52,27 +54,31 @@ library PotMath {
         return Math.mulDiv(m, den, num);
     }
 
-    /// @notice How much of `m` counts as paid-in after minting `n` Shares into `b` existing ones: at most `n x paidIn / b`
-    /// (the rest buys a slice of the surplus), rounded down.
-    /// Into an empty project (`b` = 0) there is no paid-in per Share to copy, but money may already sit there (what the
-    /// Team is left with after the last backer left, or outside money paid in before the first backer): that money is a
-    /// surplus the Team Shares own, the price already charges the joiner for a slice of it, and that charge is not paid-in.
-    /// So the credit is `m` less the price of that slice, `n x (pot + arriving) / (100 virtual Shares + ge)` rounded up. With
-    /// nothing in the project the slice costs nothing and the whole of `m` counts, so a first backer is paid back 98 of 100.
-    /// @param pot The pot P (only read when `b` is 0).
-    /// @param arriving Outside money not yet in the pot (only read when `b` is 0).
-    /// @param ge Team Shares counted for pricing (only read when `b` is 0).
+    /// @notice How much of `m` counts as paid-in after minting `n` Shares into `b` existing ones. The price of a Share is
+    /// the sum of a paid-in part (`min(money, paid-in) / Shares`) and a surplus part (`surplus / (Shares + Team Shares)`);
+    /// `credit` is `m` less what the joiner paid for the surplus part, `n x surplus / (Shares + ge)` rounded up (offsets
+    /// as in `quote`), so it always comes from the very quote that priced the join. A joiner is never credited paid-in for
+    /// a slice of the surplus the Team Shares own, whatever `b` is (a dust backer, or none). With `b > 0` it is also
+    /// capped at `n x paidIn / b`, the paid-in per Share already there. With nothing in the project the slice costs
+    /// nothing and the whole of `m` counts, so a first backer is paid back 98 of 100.
+    /// @param pot The pot P.
+    /// @param arriving Outside money not yet in the pot, counted at face.
+    /// @param ge Team Shares counted for pricing.
     function credit(uint256 m, uint256 n, uint256 paidIn, uint256 b, uint256 pot, uint256 arriving, uint256 ge)
         internal
         pure
         returns (uint256)
     {
-        if (b == 0) {
-            uint256 slice = Math.mulDiv(n, pot + arriving, OFFSET_SHARES + ge, Math.Rounding.Ceil);
-            return slice >= m ? 0 : m - slice;
+        uint256 x = pot + arriving + OFFSET_USD;
+        uint256 aq = paidIn + OFFSET_USD;
+        uint256 sur = x > aq ? x - aq : 0;
+        uint256 slice = Math.mulDiv(n, sur, b + OFFSET_SHARES + ge, Math.Rounding.Ceil);
+        uint256 c = slice >= m ? 0 : m - slice;
+        if (b != 0) {
+            uint256 cap = Math.mulDiv(n, paidIn, b);
+            if (cap < c) c = cap;
         }
-        uint256 c = Math.mulDiv(n, paidIn, b);
-        return c < m ? c : m;
+        return c;
     }
 
     /// @notice The cash `n` backer Shares are paid: paid-in first (up to `paidIn`), anything above it shared by backer and

@@ -2,7 +2,7 @@
 #
 # `v4_model.py` is the exact-decimal model of the design and is read in unchanged. This file adds, on top of it and
 # only where the contracts differ from the model (the full list is in POT-STEP1A-REPORT.md and in README.md here):
-#   - the quote offset (one virtual dollar of money AND of paid-in, 100 virtual Shares) in the join price;
+#   - the quote offset (one virtual dollar UNIT of money AND of paid-in, 1e14 wei of virtual Shares) in the join price;
 #   - a first join into a project that already holds money priced by the same formula (the model prices it flat) and credited
 #     as paid-in only what is left of the payment after the price of its slice of that money;
 #   - the allowance as a linear accrual between settles on the pot, with the box cut to seven days of accrual on pot + box;
@@ -32,8 +32,8 @@ Proj = v4.Proj
 PPM = 1_000_000
 UNIT = 7 * 86400  # N on a real network: seven days
 DAY = UNIT // 7
-OFFSET_USD = F(1_000_000)  # one dollar, in the quote only
-OFFSET_SHARES = F(100) * F(10) ** 18  # 100 Shares, in the quote only
+OFFSET_USD = F(1)  # one dollar unit (a millionth of a dollar), in the quote only
+OFFSET_SHARES = F(10) ** 14  # 1e14 wei of Shares (a ten-thousandth of a Share), in the quote only
 CHECK_IN_MULT = 2
 CLIFF_MULT = 13
 VEST_MULT = 104
@@ -118,11 +118,14 @@ class PotProj(Proj):
         a = F(a)
         m = a - a * self.fee
         n = m / self.vq()
-        if self.B == 0:
-            # no paid-in per Share to copy: the payment less the price of the slice of money already in the project
-            credit = max(F(0), m - n * (self.P + self.D) / (OFFSET_SHARES + (self.G - self.Z)))
-        else:
-            credit = min(m, n * self.A / self.B)
+        # the payment less what the joiner paid for the surplus part of the price (the same quote that priced the join), and,
+        # with backers in the project, at most the paid-in per Share already there
+        x = self.P + self.D + OFFSET_USD
+        aq = self.A + OFFSET_USD
+        sur = max(F(0), x - aq)
+        credit = max(F(0), m - n * sur / (self.B + OFFSET_SHARES + (self.G - self.Z)))
+        if self.B != 0:
+            credit = min(credit, n * self.A / self.B)
         self.P += m
         self.A += credit
         self.B += n

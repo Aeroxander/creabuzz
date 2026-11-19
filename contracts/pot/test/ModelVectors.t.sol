@@ -20,7 +20,7 @@ import {Treasury} from "../src/Treasury.sol";
 /// or the smallest join so far if that is less (a join's fee rounds by up to a unit, a part in its size of the Shares it mints).
 /// The relative term is the dollar dust of the earlier operations as a share of the money that set their prices.
 /// The test prints the worst deviation as a share of this allowance. A formula changed in a contract moves numbers by far more
-/// (one part in a thousand or more); `scripts/contracts-mutation-check.sh` in this folder proves it for a list of changes.
+/// (one part in a thousand or more); `scripts/check-mutations.py` in this folder proves it for a list of changes.
 contract ModelVectorsTest is StackBase {
     using stdStorage for StdStorage;
 
@@ -164,6 +164,9 @@ contract ModelVectorsTest is StackBase {
         if (shares.totalSupply() > 0) minX = OFFSET + t.pot() + t.arriving();
         for (uint256 j; j < n; ++j) {
             _op(j, keccak256(bytes(kinds[j])), c);
+            // A warp is not followed by a settle: the next operation acts cold, on a clock nobody has settled, so each
+            // entry point must settle first by itself (join, leave, leaveTeam, revenue, grant, the hooks).
+            if (keccak256(bytes(kinds[j])) == keccak256("warp")) continue;
             t.settle(); // the model settles once more at the same second, after every operation
             _state(j, c);
             // the money that priced the next operation: what is in the quote now, while there are backers

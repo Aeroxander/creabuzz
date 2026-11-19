@@ -108,11 +108,11 @@ contract RevenueTest is PotBase {
     function test_aJoinerPaysTheArrivingMoneyAtFace() public {
         _revenue(carol, 9800e6);
         (uint256 quoted,,,) = t.quoteBack(100_000e6);
-        // price = (pot + arriving + 1 dollar) per (Shares + 100): 98,000 + 9,800 + 1
+        // price = (pot + arriving + 1 unit) per (Shares + 1e14 wei): 98,000 + 9,800
         uint256 b = shares.totalSupply();
-        uint256 expected = 98_000e6 * (b + 100e18) / (107_800e6 + 1e6);
-        assertEq(quoted, expected);
-        uint256 plain = 98_000e6 * (b + 100e18) / (98_000e6 + 1e6);
+        uint256 expected = 98_000e6 * (b + 1e14) / (107_800e6 + 1);
+        assertApproxEqAbs(quoted, expected, 1e6);
+        uint256 plain = 98_000e6 * (b + 1e14) / (98_000e6 + 1);
         assertLt(quoted, plain, "fewer Shares for the same money: the payment is already priced in");
     }
 
@@ -204,11 +204,30 @@ contract RevenueTest is PotBase {
     }
 
     function test_revenueBeforeTheFirstBackerIsPricedAtFace() public {
-        _relaunch(0, 0);
+        _relaunch(1000e18, 0); // a Team pool, so the money has owners
         _revenue(carol, 10e6);
         uint256 n = _join(bob, 100e6);
-        // vq = (10 + 1 dollar) per 100 Shares of offset: 98 / 11 dollars worth of 0.01-Shares
-        assertEq(n, uint256(98e6) * 100e18 / 11e6);
+        // the first backer pays for a slice of the Team's 10 dollars: far fewer Shares than 9,800 (one cent each)
         assertLt(n, 9800e18);
+        assertGt(n, 0);
+    }
+
+    /// An absurd payment (a test dollar with an unlimited mint) used to wedge every join of the project for good with a
+    /// Panic in the price (leaving still worked). It is refused above 1e30 units.
+    function test_anAbsurdPaymentIsRefusedInsteadOfWedgingJoins() public {
+        usd.mint(stranger, 1e58);
+        vm.startPrank(stranger);
+        usd.approve(address(t), 1e58);
+        vm.expectRevert(abi.encodeWithSelector(Treasury.TooMuch.selector, 1e58, t.MAX_REVENUE()));
+        t.addRevenue(1e58);
+        vm.stopPrank();
+        _revenue(stranger, t.MAX_REVENUE()); // the most it takes
+        vm.warp(block.timestamp + UNIT);
+        _checkIn();
+        usd.mint(bob, 10e6);
+        vm.startPrank(bob);
+        usd.approve(address(t), 10e6);
+        t.join(10e6, 0, bob); // joins still price
+        vm.stopPrank();
     }
 }

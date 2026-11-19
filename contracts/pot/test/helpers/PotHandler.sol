@@ -119,7 +119,7 @@ contract PotHandler is Test {
         address a = _actor(who);
         uint256 b0 = shares.totalSupply();
         uint256 mixed0 = b0 == 0 ? 0 : _value(b0);
-        uint256 hundred = b0 == 0 ? 0 : _value(100e18); // what 100 Shares are worth now: the most the offset can hand a joiner
+        uint256 virtualWorth = b0 == 0 ? 0 : _value(PotMath.OFFSET_SHARES); // what the virtual Shares are worth now: the most the offset can hand a joiner
         uint256 pot0 = t.pot();
         uint256 arriving0 = t.arriving();
         (uint256 q,,,) = t.quoteBack(amount);
@@ -131,15 +131,17 @@ contract PotHandler is Test {
         if (n != q) _bad("a join gave other Shares than its quote");
         cashIn += amount;
         creditedMax += amount - t.feeFor(amount);
-        uint256 give = hundred > 1e6 ? hundred - 1e6 : 0; // 100 Shares' worth less the one virtual dollar
-        if (b0 == 0) give = Math.mulDiv(pot0 + arriving0, 100e18, 100e18 + team.totalSupply()); // the virtual Shares' slice
+        uint256 give = virtualWorth > PotMath.OFFSET_USD ? virtualWorth - PotMath.OFFSET_USD : 0; // the virtual Shares' worth less the virtual money
+        if (b0 == 0) {
+            give = Math.mulDiv(pot0 + arriving0, PotMath.OFFSET_SHARES, PotMath.OFFSET_SHARES + team.totalSupply()); // the virtual Shares' slice
+        }
         uint256 instant = PotMath.cash(n, t.pot(), t.paidIn(), shares.totalSupply(), team.totalSupply());
         if (instant > amount - t.feeFor(amount) + give + 50) {
             _bad("a joiner could leave at once with more than they paid in");
         }
         if (b0 != 0) {
             // all earlier Shares together, valued on the new state, against before: they may lose at most what the offset gives
-            // away: 100 Shares at the old value, less the one virtual dollar, plus a little rounding
+            // away: the virtual Shares at the old value, less the virtual money, plus a little rounding
             uint256 mixed1 = PotMath.cash(b0, t.pot(), t.paidIn(), shares.totalSupply(), team.totalSupply());
             if (mixed1 + give + 50 < mixed0) _bad("earlier holders lost more than the quote offset allows on a join");
         }

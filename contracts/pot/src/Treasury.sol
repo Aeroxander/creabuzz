@@ -75,6 +75,11 @@ contract Treasury {
     uint256 public constant MIN_REVENUE = 1e6;
     /// @notice Backer Shares after any join stay at or under this many wei (1e12 Shares).
     uint256 public constant MAX_SHARES = 1e30;
+    /// @notice The most one outside payment may be: 1e30 dollar units (a trillion trillion... of dollars, far above any real
+    /// dollar's supply). It keeps every price product far below 2^256, so no state can wedge a join.
+    uint256 public constant MAX_REVENUE = 1e30;
+    /// @notice A seat offer lasts this many time units.
+    uint256 public constant SEAT_OFFER_MULT = 2;
     /// @notice The check-in window is this many time units.
     uint256 public constant CHECK_IN_MULT = 2;
     /// @notice Anyone may wind a quiet project down after this many time units without a check-in.
@@ -125,6 +130,8 @@ contract Treasury {
     address public runner;
     address public pendingRunner;
     bool public pendingTrim;
+    /// @notice When the pending seat offer was made (zero when there is none).
+    uint64 public pendingSeatAt;
     uint256 public agentEpoch;
     mapping(address => uint256) public agentEpochOf;
     mapping(address => Agent) public agents;
@@ -223,6 +230,8 @@ contract Treasury {
     error TokenMisbehaved();
     error AlreadyWoundDown();
     error NotYet(uint256 readyAt);
+    error OfferExpired();
+    error NoOwner();
 
     modifier nonReentrant() {
         if (_locked) revert Reentrancy();
@@ -403,10 +412,10 @@ contract Treasury {
         return _settled().active;
     }
 
-    /// @notice True when a join would be accepted this second: the founder's switch is on, the project is not wound down,
-    /// and the last check-in is under 2 time units old.
+    /// @notice True when a join would be accepted this second: the founder's switch is on and the last check-in is under 2
+    /// time units old. A wound-down project has no active end (`activeEnd` is zero), so its door is shut too.
     function doorOpenNow() public view returns (bool) {
-        return doorFlag && windDownKind == 0 && block.timestamp < activeEnd();
+        return doorFlag && block.timestamp < activeEnd();
     }
 
     /// @notice The most the box can hold: 7 days of accrual on the money in the pot and the box together, as of the next settle.
@@ -498,9 +507,12 @@ contract Treasury {
     // ================================================ outside money, fees ============================================
 
     /// @notice Add outside money (approve first). It arrives in the pot evenly over one time unit; a joiner pays it at face,
-    /// a leaver is paid on what has arrived. Anyone, also after a wind-down.
+    /// a leaver is paid on what has arrived. Anyone, also after a wind-down. Refused while nobody holds any Share or Team
+    /// Share (the money would belong to no one and go to the first backer for one dollar), and above `MAX_REVENUE`.
     function addRevenue(uint256 amount) external nonReentrant {
         if (amount < MIN_REVENUE) revert BelowMinimum(MIN_REVENUE, amount);
+        if (amount > MAX_REVENUE) revert TooMuch(amount, MAX_REVENUE);
+        if (shares.totalSupply() == 0 && team.totalSupply() == 0) revert NoOwner();
         _settle();
         uint256 x = _pull(amount);
         uint256 t = block.timestamp;
@@ -649,22 +661,29 @@ contract Treasury {
 
     // ================================================== the seat =====================================================
 
-    /// @notice Offer the runner seat to `next`. Only the runner (with a Pair: both signers). With `founderLeaves`, taking the
-    /// seat also trims the founder's grants as an own exit; only the founder may offer that, in person or through a Pair
-    /// the Launcher made with the founder as a signer.
+    /// @notice Offer the runner seat to `next`, for 2 time units. Only the runner (with a Pair: both signers). A new offer
+    /// replaces the old one; `next` of zero withdraws it. With `founderLeaves`, taking the seat also trims the founder's
+    /// grants as an own exit; only the founder may offer that, in person or through a Pair the Launcher made with the
+    /// founder as a signer.
     function handOver(address next, bool founderLeaves) external onlyRunner {
-        if (next == address(0) || next == runner) revert BadInput();
-        if (founderLeaves && !_founderAgrees()) revert NotAllowed();
-        (pendingRunner, pendingTrim) = (next, founderLeaves);
+        if (next == runner) revert BadInput();
+        if (next == address(0)) {
+            (pendingRunner, pendingTrim, pendingSeatAt) = (address(0), false, 0);
+        } else {
+            if (founderLeaves && !_founderAgrees()) revert NotAllowed();
+            (pendingRunner, pendingTrim, pendingSeatAt) = (next, founderLeaves, uint64(block.timestamp));
+        }
         emit SeatOffered(msg.sender, next, founderLeaves);
     }
 
-    /// @notice Take the runner seat that was offered to the caller. Agents set by earlier runners stop working.
+    /// @notice Take the runner seat that was offered to the caller, within 2 time units of the offer. Agents set by earlier
+    /// runners stop working.
     function takeSeat() external {
         if (msg.sender != pendingRunner || msg.sender == address(0)) revert NotAllowed();
+        if (block.timestamp > uint256(pendingSeatAt) + SEAT_OFFER_MULT * unit) revert OfferExpired();
         bool trim = pendingTrim;
         address from = runner;
-        (runner, pendingRunner, pendingTrim) = (msg.sender, address(0), false);
+        (runner, pendingRunner, pendingTrim, pendingSeatAt) = (msg.sender, address(0), false, 0);
         ++agentEpoch;
         emit RunnerChanged(from, msg.sender);
         if (trim) IVester(vester).exitAll(founder);

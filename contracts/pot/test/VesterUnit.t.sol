@@ -93,7 +93,7 @@ contract VesterUnitTest is Test {
         _grant(bob, POOL / 2);
         assertEq(v.committed(), POOL);
         vm.expectRevert(Vester.NotFunded.selector);
-        _grant(stranger, 1);
+        _grant(stranger, 1e18);
     }
 
     function test_aClaimedShareIsNotGrantedTwice() public {
@@ -103,7 +103,13 @@ contract VesterUnitTest is Test {
         assertEq(team.balanceOf(alice), POOL);
         assertEq(v.committed(), 0);
         vm.expectRevert(Vester.NotFunded.selector);
-        _grant(bob, 1);
+        _grant(bob, 1e18);
+    }
+
+    function test_aGrantIsAtLeastOneWholeTeamShare() public {
+        vm.expectRevert(Vester.BadGrant.selector);
+        _grant(alice, 1e18 - 1);
+        _grant(alice, 1e18);
     }
 
     function test_aMemberHasAtMostEightGrants() public {

@@ -31,6 +31,8 @@ contract Vester {
     uint256 public constant PROTECTED_LENGTH = 365 days;
     /// @notice The most grants one member can ever be given (it bounds the hand-over trim).
     uint256 public constant MAX_GRANTS_PER_MEMBER = 8;
+    /// @notice The smallest grant: one whole Team Share (1e18 wei).
+    uint256 public constant MIN_GRANT = 1e18;
 
     /// @notice A grant lives (vesting), is announced to forfeit, or is closed (what stays is fixed).
     enum State {
@@ -113,11 +115,12 @@ contract Vester {
 
     /// @notice Set aside `amount` Team Shares for `member`, on a clock of its own that starts now. Only the Treasury (which
     /// has checked the runner, or an agent's daily Team Share limit). The pool can never be passed: the Shares must be
-    /// here and not already promised. A member can be given at most 8 grants.
+    /// here and not already promised. A grant is at least one whole Team Share, so dust grants cannot fill a member's 8
+    /// slots (an agent may grant inside its daily limit). A member can be given at most 8 grants.
     /// @param protected_ A protected grant (calendar time over 365 days, no cliff, never forfeited or burned).
     /// @return id The grant's id.
     function grant(address member, uint256 amount, bool protected_) external onlyTreasury returns (uint256 id) {
-        if (member == address(0) || amount == 0) revert BadGrant();
+        if (member == address(0) || amount < MIN_GRANT) revert BadGrant();
         if (_ids[member].length >= MAX_GRANTS_PER_MEMBER) revert TooManyGrants();
         if (team.balanceOf(address(this)) < committed + amount) revert NotFunded();
         committed += amount;

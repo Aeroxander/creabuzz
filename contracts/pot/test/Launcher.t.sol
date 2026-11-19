@@ -131,7 +131,7 @@ contract LauncherTest is StackBase {
         launcher.launch("late", "N", "N", _terms(1000, POOL), seen);
         // the new hash is accepted, and the project is born with the new fee
         vm.prank(alice);
-        (,, address tr,) = launcher.launch("late", "N", "N", _terms(1000, POOL), launcher.launchHash(key));
+        (,, address tr,) = launcher.launch("late", "N", "N", _terms(1000, POOL), launcher.settingsHash());
         assertEq(Treasury(tr).feeBps(), 500);
         assertEq(t.feeBps(), 200, "a project already launched keeps what it was born with");
     }
@@ -316,10 +316,33 @@ contract LauncherTest is StackBase {
         launcher.transferAdmin(address(0));
         vm.prank(admin);
         launcher.transferAdmin(alice);
+        assertEq(launcher.admin(), admin, "an offer moves nothing");
+        assertEq(launcher.pendingAdmin(), alice);
+        vm.prank(stranger);
+        vm.expectRevert(Launcher.NotAdmin.selector);
+        launcher.acceptAdmin();
+        vm.prank(alice);
+        launcher.acceptAdmin();
         assertEq(launcher.admin(), alice);
+        assertEq(launcher.pendingAdmin(), address(0));
         vm.prank(admin);
         vm.expectRevert(Launcher.NotAdmin.selector);
         launcher.setSettings(_platform(UNIT));
+    }
+
+    /// A wrong address in `transferAdmin` used to take the seat out of reach for good.
+    function test_aWrongAdminOfferCanBeReplacedBeforeItIsAccepted() public {
+        vm.startPrank(admin);
+        launcher.transferAdmin(stranger); // a typo
+        launcher.transferAdmin(alice); // replaced
+        launcher.setSettings(_platform(UNIT)); // the admin still holds the seat
+        vm.stopPrank();
+        vm.prank(stranger);
+        vm.expectRevert(Launcher.NotAdmin.selector);
+        launcher.acceptAdmin();
+        vm.prank(alice);
+        launcher.acceptAdmin();
+        assertEq(launcher.admin(), alice);
     }
 
     // ---- the Pair

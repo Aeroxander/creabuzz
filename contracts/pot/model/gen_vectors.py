@@ -22,6 +22,7 @@
 #         execute     o1 Team Shares burned
 #   P A B G box D fees Z   the state after the operation (and one more settle at the same second): pot, paid-in, Shares,
 #         Team Shares, allowance box, outside money still arriving, platform fees owed, the burn queue.
+import copy
 import importlib.util
 import json
 import os
@@ -64,9 +65,10 @@ class Scn:
         self.grant_names = []
 
     # ----- recording
-    def _rec(self, kind, who=0, x=0, y=0, o1=0, o2=0, o3=0):
+    def _rec(self, kind, who=0, x=0, y=0, o1=0, o2=0, o3=0, settle=True):
         m = self.m
-        m.settle()
+        if settle:  # a warp is not settled: the next operation acts cold, like a call on a clock nobody has settled
+            m.settle()
         row = dict(kind=kind, who=who, x=x, y=y, o1=o1, o2=o2, o3=o3, P=m.P, A=m.A, B=m.B, G=m.G, box=m.box, D=m.D,
                    fees=m.fees, Z=m.Z)
         for k, v in row.items():
@@ -103,7 +105,7 @@ class Scn:
 
     def warp(self, secs):
         self.m.advance(secs)
-        self._rec("warp", 0, secs)
+        self._rec("warp", 0, secs, settle=False)
 
     def check_in(self):
         self.m.check_in()
@@ -340,13 +342,19 @@ def random_scn(seed, nops=45):
     actors = 6
     team = [(5, pool // 10)] if rnd.random() < 0.7 else []
     s = Scn("random-%d" % seed, "seeded mixed run, 45 operations at most", pool, rate, actors, team=team)
+    def probe():
+        """A settled copy of the model, to decide what to do next: the real model must not be settled by looking at it."""
+        c = copy.deepcopy(s.m)
+        c.settle()
+        return c
+
     m = s.m
     s.join(0, usd(rnd.choice([100, 2_000, 60_000])) + rnd.randrange(1000))
     attempts = 0
     while s.n_ops() < nops and attempts < 400:
         attempts += 1
         r = rnd.random()
-        m.settle()
+        m = probe()
         try:
             if r < 0.22:
                 if not m.door_open():
@@ -357,7 +365,6 @@ def random_scn(seed, nops=45):
                 if m.back.get(w, 0) > 0:
                     num, den = rnd.choice([(1, 10), (1, 4), (1, 3), (1, 2), (1, 1), (3, 4)])
                     n = m.back[w] * F(num) / F(den)
-                    m.settle()
                     if n * m.vcash() >= 1000 and m.A > 0:
                         s.leave(w, num, den)
             elif r < 0.42:
@@ -388,10 +395,11 @@ def random_scn(seed, nops=45):
         except EdgeError:
             continue
     # everyone out at the end, the Team first
+    m = probe()
     if not m.door_open():
         s.check_in()
     for w in range(5):
-        m.settle()
+        m = probe()
         if m.back.get(w, 0) > 0 and m.back[w] * m.vcash() >= 1000:
             s.leave(w)
     return s

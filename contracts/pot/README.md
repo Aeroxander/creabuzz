@@ -41,7 +41,7 @@ forge test --match-path test/PotInvariants.t.sol       # the invariants alone
 python3 -I model/gen_vectors.py   # regenerate model/vectors.json (after a change to the model or its scenarios)
 bash scripts/check-vectors.sh     # fail if vectors.json is not what the model says
 
-python3 scripts/check-mutations.py                     # break 24 formulas and guards, one at a time, see each caught
+python3 scripts/check-mutations.py                     # break 40 formulas, guards and time rules, one at a time, see each caught
 bash ../../scripts/pot-chain-loop.sh                    # the whole loop on a local chain with cast (needs anvil, cast, forge, jq)
 ```
 

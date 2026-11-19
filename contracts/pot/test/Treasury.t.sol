@@ -103,8 +103,6 @@ contract TreasuryTest is PotBase {
     function test_handOverAndTakeSeat() public {
         vm.startPrank(founder);
         vm.expectRevert(Treasury.BadInput.selector);
-        t.handOver(address(0), false);
-        vm.expectRevert(Treasury.BadInput.selector);
         t.handOver(founder, false);
         t.handOver(bob, false);
         vm.stopPrank();

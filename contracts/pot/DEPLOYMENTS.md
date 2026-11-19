@@ -19,14 +19,14 @@ founders through `Launcher.launch`; each gets its own Treasury, Vester and two t
 |---|---|---|
 | `UNIT` | `604800` (7 days) | The time unit N in seconds. Every day-count of the design derives from it (check-in window 2N, cliff 13N, vesting 104N, notice N, arrival N, quiet wind-down 26N). **On a network that is not a test network it must be exactly 7 days**: the Launcher refuses anything else. On a test network any multiple of 168 seconds works (1680 is N = 28 minutes). |
 | `QUOTE` | a new PlayDollar | The dollar token, 6 decimals. PlayDollar can be deployed only on chain 31337 (local) or 11155111 (Sepolia); its constructor reverts elsewhere. |
-| `PLATFORM` | the sender | Who receives the platform fee (collected by anyone calling `collectFees` on a Treasury). |
-| `ADMIN` | the sender | Who may change the platform settings for projects launched after the change. |
+| `PLATFORM` | the sender on a test network; **required** elsewhere | Who receives the platform fee (collected by anyone calling `collectFees` on a Treasury). |
+| `ADMIN` | the sender on a test network; **required** elsewhere | Who may change the platform settings for projects launched after the change. |
 | `FEE_BPS` | `200` (2%) | The platform fee on a join. The contract ceiling is 500 (5%). |
 | `AGENT_USD` | `25000000` (25 dollars) | An agent's default daily dollar limit. |
 
 The founder's two numbers (the allowance rate, at most 0.20% a day, and the Team pool) are chosen at launch and are not
 settings of the platform. A founder's launch is refused if the platform settings changed since the founder saw them
-(`launchHash`), so a project is never born on terms its founder did not agree to.
+(`settingsHash`), so a project is never born on terms its founder did not agree to.
 
 ## What an operator runs
 

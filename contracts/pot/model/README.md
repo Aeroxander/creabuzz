@@ -17,8 +17,8 @@ everything with `python3 -I` (isolated mode).
 The extension implements the contract side of each point, so a vector says what the contracts must do. Each is stated again,
 with the choice, in `POT-STEP1A-REPORT.md`.
 
-- **Quote offset.** The join price adds one virtual dollar to the money *and to paid-in*, and 100 virtual Shares (the model has no offset in `join`). Without the dollar in paid-in the first join would be priced about 100,000 times too low whenever a Team pool exists.
-- **A first join into a project that already holds money** is priced by the same formula (the model prices it flat at one cent) and is credited as paid-in only what is left after paying for its slice of that money. This was found by the invariant run (see the report) and is the one place the contracts changed in pass C.
+- **Quote offset.** The join price adds one virtual dollar *unit* (a millionth of a dollar) to the money and to paid-in, and 1e14 wei of virtual Shares (a ten-thousandth of a Share); the model has no offset in `join`. The pair prices a first Share at one cent and keeps the offset's worth, at the value of a Share, to a few cents: a join and an immediate take-out cannot gain from it. (An earlier offset of one dollar and 100 Shares let a joiner buy below leave-value and take other holders' money; see "Review fixes" in `POT-STEP1A-REPORT.md`.) Without the unit in paid-in the first join would be priced about 100,000 times too low whenever a Team pool exists.
+- **The paid-in credit of a join** is computed from the same quote that priced it, for every number of backers (the model credits `n x A / B` and has no first-join case): the payment less what the joiner paid for the surplus part of the price, `n x surplus / (Shares + virtual Shares + Team Shares counted)` rounded up, and, with backers, at most `n x A / B`. A dust backer, or none, cannot be used to book a slice of the Team's surplus as paid-in.
 - **The allowance** is linear between settles on the pot, with the box cut to seven days of accrual on pot and box together; the model's `accrue` compounds daily with no cap.
 - **Outside money** arrives as one weighted-average stream over one time unit; the model's `release` takes a manual fraction.
 - **Time.** The check-in window (2N), active seconds, the door, the rate raise (propose, wait N, apply) and Team Share vesting exist only in the contracts and the extension.
@@ -37,9 +37,11 @@ Tolerance, stated in the test header: after `k` operations a dollar number may d
 size times `4k / X`, and a Share number by `8k` wei plus the same relative term. `X` is the smallest money-in-the-quote the
 project held while it had backers (or the smallest join, if less: a join's fee rounds by up to one unit). That is the rounding
 the contracts define (floors, a fee rounded up, paid-in cut down) carried through at most `k` prices. The largest deviation seen
-over the 1,805 operations and 17,201 compared numbers is 24% of its allowance (a first join of 2,000.0007 dollars whose fee
-rounds by one unit, a part in 2e9 of the Shares it mints); the mutation check shows a changed formula moves numbers by orders of
+over the 1,805 operations and 15,273 compared numbers is 24% of its allowance (`forge test --match-path test/ModelVectors.t.sol -vv`
+prints it per chunk); the mutation check shows a changed formula moves numbers by orders of
 magnitude more.
+
+A `warp` operation is not followed by a settle in the model or in the replay: the next operation acts cold, on a clock nobody has settled, so each entry point must settle first by itself (the generator's own look at the state works on a settled copy, never on the model).
 
 No vector is excluded for failing to match. One rule keeps the scenarios clear of a rounding edge: the generator drops an
 outside payment whose arrival end (the weighted average of two payments) sits within a few units of a whole second, because the
