@@ -4,7 +4,7 @@
  * the passkey sender the app builds, loaded as the app loads it.
  */
 import { appendFileSync } from "node:fs";
-import { installFakeWebAuthn } from "../../../packages/creaton-core/src/test-support/fake-webauthn.mjs";
+import { installFakeWebAuthn } from "./fake-webauthn";
 import { setupPasskey } from "../../../packages/creaton-core/src/account/passkey-identity.ts";
 import {
   createPasskeyImpl,

@@ -54,7 +54,7 @@ export type SendPhase =
   | "sending"
   | "confirming";
 
-export interface SendOptions {
+interface SendOptions {
   onPhase?: (phase: SendPhase) => void;
 }
 

@@ -220,7 +220,7 @@ export interface Kernel033ChainRpc {
 }
 
 /** A log as the chain returns it (`eth_getLogs`). */
-export interface Kernel033RpcLog {
+interface Kernel033RpcLog {
   address: string;
   topics: string[];
   data: string;

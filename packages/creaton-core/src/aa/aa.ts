@@ -176,7 +176,7 @@ export interface UserOperationReceipt {
  * `eth_getUserOperationByHash` answer: the operation as the bundler knows it. Present while the operation waits in the
  * bundler's pool as well as after it is mined (then `transactionHash` is set). Provider extras pass through.
  */
-export interface UserOperationByHash {
+interface UserOperationByHash {
   userOperation: Record<string, unknown>;
   entryPoint: string;
   blockNumber?: string | null;
