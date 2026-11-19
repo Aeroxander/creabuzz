@@ -5,7 +5,7 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { investingOn } from "../../lib/server";
-import type { ProjectNumbers } from "../money/numbers";
+import type { ProjectNumbers } from "../money/numbers-v1";
 import { useWallet, useWalletOnChain } from "../money/use-money";
 import {
   addressFromWord,

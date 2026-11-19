@@ -1,7 +1,7 @@
-import type { ProjectNumbers } from "../money/numbers";
+import type { ProjectNumbers } from "../money/numbers-v1";
 import { useWalletAddress } from "../money/use-money";
 import { PersonTeamActions } from "./PersonTeamActions";
-import { usePair } from "./use-team";
+import { usePair } from "./use-team-v1";
 import { useTeamWallets } from "./use-wallets";
 
 /**

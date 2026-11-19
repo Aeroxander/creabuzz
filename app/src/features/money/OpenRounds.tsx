@@ -2,8 +2,8 @@ import { Link } from "@tanstack/react-router";
 import { Card } from "../../ui/card";
 import { type Project, projectRef } from "../project/project-record";
 import { priceLine } from "./MoneyTab";
-import { dollarsText, openRound, timeText } from "./numbers";
-import { matchNumbers, useRecentNumbers } from "./use-money";
+import { dollarsText, openRound, timeText } from "./numbers-v1";
+import { matchNumbers, useRecentNumbers } from "./use-money-v1";
 
 /**
  * Home's open rounds: the projects whose backing round is open now, the one closing soonest first. Never ordered by

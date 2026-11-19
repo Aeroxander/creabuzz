@@ -17,8 +17,9 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { investingOn } from "../../lib/server";
 import type { EarlierCounts } from "../money/numbers-market";
-import { parseNumbers } from "../money/numbers";
-import { useRecentNumbers, useWallet } from "../money/use-money";
+import { parseNumbers } from "../money/numbers-v1";
+import { useWallet } from "../money/use-money";
+import { useRecentNumbers } from "../money/use-money-v1";
 
 /** Where the list is: the claim contract, its network and the counts the server's record tells. */
 export interface EarlierPlace {

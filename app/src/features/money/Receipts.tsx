@@ -14,8 +14,8 @@ import {
   type Project,
   projectRef,
 } from "../project/project-record";
-import { claimHeldCall, refundCall } from "./calls";
-import { OwnershipLine } from "./MoneyTab";
+import { claimHeldCall, refundCall } from "./calls-v1";
+import { OwnershipLine } from "./OwnershipLine";
 import { moneyProblem } from "./money-copy";
 import {
   dayText,
@@ -29,15 +29,15 @@ import {
   refundFor,
   sharesText,
   timeText,
-} from "./numbers";
+} from "./numbers-v1";
 import {
   chainKeyOfProject,
   useConnectWallet,
   useMoneySend,
-  useRecentNumbers,
   useWallet,
   useWalletAddress,
 } from "./use-money";
+import { useRecentNumbers } from "./use-money-v1";
 
 /** Projects to name receipts by: the newest records, matched to a launch only when the record names it. */
 function useLaunchedProjects(enabled: boolean) {

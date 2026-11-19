@@ -1,3 +1,5 @@
+import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
+import { TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { wrap } from "../../../tests/helpers/money-harness";
@@ -51,12 +53,17 @@ vi.mock("../../lib/use-require-account", () => ({
 }));
 
 const project = { coordinate: COORD, author: FOUNDER } as unknown as Project;
+const TREASURY = "0x20b6000000000000000000000000000000000906";
+/** The parts of a version 2 record a payment reads: the runner, the contracts, the box and what feeds it. */
 const numbers = {
   chainId: 31337,
-  runner: WALLET,
-  contracts: { treasury: "0x20b6000000000000000000000000000000000906" },
-  market: { pair: null },
+  runner: { address: WALLET, isPair: false, signers: null },
+  contracts: { treasury: TREASURY },
+  allowance: { box: 100_000_000n, ratePpm: 1000 },
+  money: { pot: 7_322_810_944n },
 } as unknown as ProjectNumbers;
+const withNumbers = (change: object) =>
+  ({ ...numbers, ...change }) as unknown as ProjectNumbers;
 
 function task(over: Partial<ProjectTask> = {}): ProjectTask {
   return {
@@ -106,6 +113,97 @@ describe("accept and pay", () => {
     expect(sent).toHaveLength(1);
     expect(tagOf("task-paid")).toBe(TX);
     expect(tagOf("task-evidence")).toBe(PIECE);
+  });
+
+  it("pays by a draw from the allowance box, to the taker's wallet", async () => {
+    wrap(
+      <AcceptAndPay
+        address={WALLET}
+        numbers={numbers}
+        project={project}
+        task={task()}
+      />,
+    );
+    press();
+    await waitFor(() => expect(sent).toHaveLength(1));
+    const input = sent[0] as {
+      chainId: number;
+      build: () => { to: string; data: string }[];
+    };
+    const [call] = input.build();
+    expect(call?.to).toBe(TREASURY);
+    const draw = decodeCall(TREASURY_ABI, call?.data ?? "");
+    expect(draw?.name).toBe("draw");
+    expect(draw?.args).toEqual([PAYEE, 40_000_000n]);
+  });
+
+  it("offers no press when the box holds less than the work pays, and says how much it holds and that more comes each day", async () => {
+    wrap(
+      <AcceptAndPay
+        address={WALLET}
+        numbers={withNumbers({
+          allowance: { box: 39_999_999n, ratePpm: 1000 },
+        })}
+        project={project}
+        task={task()}
+      />,
+    );
+    const words = screen.getByTestId("task-accept-problem").textContent ?? "";
+    expect(words).toContain("The allowance box holds 39.99 dollars now");
+    expect(words).toMatch(
+      /About 7,322.81 dollars more goes into it each day|About 7.32 dollars more goes into it each day/,
+    );
+    expect(screen.queryByTestId("task-accept")).toBeNull();
+    expect(sent).toHaveLength(0);
+  });
+
+  it("with the box exactly as full as the pay, offers the press", () => {
+    wrap(
+      <AcceptAndPay
+        address={WALLET}
+        numbers={withNumbers({
+          allowance: { box: 40_000_000n, ratePpm: 1000 },
+        })}
+        project={project}
+        task={task()}
+      />,
+    );
+    expect(screen.getByTestId("task-accept")).toBeTruthy();
+  });
+
+  it("says plainly that a payment from a project run by two people needs both signers", () => {
+    wrap(
+      <AcceptAndPay
+        address={WALLET}
+        numbers={withNumbers({
+          runner: {
+            address: "0x00000000000000000000000000000000000000ff",
+            isPair: true,
+            signers: [WALLET, PAYEE],
+          },
+        })}
+        project={project}
+        task={task()}
+      />,
+    );
+    expect(screen.getByTestId("task-accept-problem").textContent).toMatch(
+      /needs both of you to sign/,
+    );
+    expect(screen.queryByTestId("task-accept")).toBeNull();
+  });
+
+  it("will not pay from a wallet that does not run the project", () => {
+    wrap(
+      <AcceptAndPay
+        address={PAYEE}
+        numbers={numbers}
+        project={project}
+        task={task()}
+      />,
+    );
+    expect(screen.getByTestId("task-accept-problem").textContent).toMatch(
+      /Only the wallet that runs this project/,
+    );
   });
 
   it("looks at the task again before any money moves, and stops when it has changed", async () => {

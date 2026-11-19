@@ -13,6 +13,9 @@ import {
   withSale,
 } from "./helpers/team-world";
 import { createMockRelay } from "./mock-relay";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * axe on Team's screens and sheets (milestone 7), at 390 and 360 wide, light and dark, as `a11y.spec.ts` does for the

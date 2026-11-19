@@ -10,7 +10,7 @@ import { useCallback, useRef } from "react";
 import { read } from "../../lib/relay";
 import { investingOn } from "../../lib/server";
 import type { Project } from "../project/project-record";
-import { type MoneyCall, positionCallData, QUOTE_CALL_DATA } from "./calls";
+import type { MoneyCall } from "./calls";
 import {
   type NumbersEvent,
   type ProjectNumbers,
@@ -27,7 +27,6 @@ import {
 import { rememberSendTargets } from "./send-targets";
 import { senderWords, useSender } from "./sender";
 import {
-  addressFromWord,
   type MoneyWallet,
   type SenderKind,
   type SentCall,
@@ -36,7 +35,7 @@ import {
   WalletStepError,
 } from "./wallet";
 
-const moneyKeys = {
+export const moneyKeys = {
   all: ["money"] as const,
   // The coordinate is part of the key: two records naming one chain key are checked each on its own, never shared.
   project: (key: string, coordinate: string) =>
@@ -44,11 +43,12 @@ const moneyKeys = {
   recent: (pages: number) => ["money", "recent", pages] as const,
   // The sender is part of the key: the wallet's account and the passkey account are two accounts, never shared.
   address: (kind: SenderKind) => ["money", "address", kind] as const,
-  quote: (rounds: string) => ["money", "quote", rounds] as const,
 };
 
 /** Newest first, ties broken by id. */
-function newest<T extends { created_at: number; id: string }>(events: T[]) {
+export function newest<T extends { created_at: number; id: string }>(
+  events: T[],
+) {
   return [...events].sort(
     (a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : -1),
   );
@@ -99,7 +99,7 @@ export function useProjectNumbers(project: Project | null | undefined) {
 const NUMBERS_PAGE = 100;
 
 /** The server's newest records of numbers, `newestRecords` read at a time. */
-export interface RecentNumbers {
+interface RecentNumbers {
   /** Newest per chain key (still to be matched to a project before use). */
   events: NumbersEvent[];
   /** False when older records were left unread: then "none" is never said about what was not found. */
@@ -216,33 +216,6 @@ export function useConnectWallet() {
     onSuccess: (address) =>
       queryClient.setQueryData(moneyKeys.address(senderKind(wallet)), address),
   });
-}
-
-/** The dollar token a project's rounds take, read from the Rounds contract (the record does not carry it). */
-export async function readQuote(
-  wallet: MoneyWallet,
-  rounds: string,
-): Promise<string> {
-  const quote = addressFromWord(await wallet.readCall(rounds, QUOTE_CALL_DATA));
-  if (!quote) throw new Error("The dollar token could not be read.");
-  // A passkey send may go to the dollar token the project's rounds take.
-  rememberSendTargets([quote]);
-  return quote;
-}
-
-/** Dollars `backer` has asked for in round `round` so far (`Rounds.positionOf(round, backer).ask`). */
-export async function readAsked(
-  wallet: MoneyWallet,
-  rounds: string,
-  round: number,
-  backer: string,
-): Promise<bigint> {
-  const word = (
-    await wallet.readCall(rounds, positionCallData(round, backer))
-  ).replace(/^0x/, "");
-  if (!/^[0-9a-fA-F]{64}/.test(word))
-    throw new Error("The backing could not be read.");
-  return BigInt(`0x${word.slice(0, 64)}`);
 }
 
 export interface MoneySendInput {

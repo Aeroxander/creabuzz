@@ -1,8 +1,8 @@
 import { type Browser, expect, type Page, test } from "@playwright/test";
+import { encodeFunctionData } from "../../../packages/creaton-core/src/launchpad/evmAbi.ts";
 import {
   revokeAgentCall,
   setAgentCall,
-  treasurySpendCall,
 } from "../../src/features/tasks/task-calls";
 import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll } from "../helpers/layout";
@@ -28,6 +28,9 @@ import {
   type Relay,
 } from "./helpers/world";
 import { createMockRelay } from "./mock-relay";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * Tasks in the app (plan v2, milestone 8), at 390x844: the founder posts a task with what and what it pays (2 presses,
@@ -167,7 +170,16 @@ test(`Post a task: ${PLAN_V2_BUDGETS.postTask.presses} presses and ${PLAN_V2_BUD
   );
   const sent = await sentCalls(page);
   expect(sent.map(({ to, data, value }) => ({ to, data, value }))).toEqual([
-    treasurySpendCall(CONTRACTS.treasury, BACKER_EVM, 40),
+    // The old design paid a task with `Treasury.spend` (this spec belongs to it: it runs only in a legacy build).
+    {
+      to: CONTRACTS.treasury,
+      value: "0x0",
+      data: encodeFunctionData(
+        "spend(address,uint256)",
+        ["address", "uint256"],
+        [BACKER_EVM, 40_000_000n],
+      ),
+    },
   ]);
   expect(sent[0]?.from).toBe(FOUNDER_EVM);
   const [confirm] = tasksOf(relay, "confirm");

@@ -7,8 +7,8 @@ import {
   selectorOf,
 } from "@creaton/core/launchpad/evmAbi.ts";
 import { topicOf } from "@creaton/core/launchpad/work.ts";
-import { DEFAULT_SHARES_PER_RAW_DOLLAR } from "../money/calls";
-import { dollarsText, sharesText } from "../money/numbers";
+import { DEFAULT_SHARES_PER_RAW_DOLLAR } from "../money/calls-v1";
+import { dollarsText, sharesText } from "../money/numbers-v1";
 import { priceText, sharePriceFromQ96 } from "../market/market-math";
 import type { ChainLog } from "../money/wallet";
 

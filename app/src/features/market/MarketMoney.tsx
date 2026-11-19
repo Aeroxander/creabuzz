@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { Card } from "../../ui/card";
-import { dayText, dollarsText, type ProjectNumbers } from "../money/numbers";
+import { dayText, dollarsText, type ProjectNumbers } from "../money/numbers-v1";
 import { useWalletAddress } from "../money/use-money";
 import type { MoneyWallet } from "../money/wallet";
 import { SendButton } from "../team/SendSheet";

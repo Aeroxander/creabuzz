@@ -2,46 +2,55 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../ui/button";
 import { useToast } from "../../ui/toast";
-import type { ProjectNumbers } from "../money/numbers";
+import {
+  allowancePerDay,
+  isRunner,
+  type ProjectNumbers,
+} from "../money/numbers";
 import { useMoneySend } from "../money/use-money";
 import type { Project } from "../project/project-record";
 import { forgetPaid, paidNotRecorded, rememberPaid } from "./paid-journal";
-import {
-  PAIR_ALONE_DOLLARS,
-  pairSpendCall,
-  treasurySpendCall,
-} from "./task-calls";
+import { drawForTaskCall, rawDollars } from "./task-calls";
 import { acceptRecord, type ProjectTask } from "./task-record";
-import { dollarsWords, payProblem, TASK_PROBLEM } from "./tasks-copy";
+import {
+  boxShortWords,
+  dollarsWords,
+  payProblem,
+  TASK_PROBLEM,
+} from "./tasks-copy";
 import { freshTask, useTaskWrite } from "./use-tasks";
 
 /** How the work's payment can be sent from the wallet this site sees, or why it cannot. */
 export type PayRoute =
   | { kind: "treasury"; treasury: string; chainId: number }
-  | { kind: "pair"; pair: string; chainId: number }
   | { kind: "none"; why: string };
 
 /**
- * Who pays and how: the runner's own wallet through the Treasury, or one of a Pair's signers alone up to 500 dollars.
- * Never the server, never an agent.
+ * Who pays and how: the runner's own wallet draws the pay from the allowance box (`Treasury.draw`), and only while the
+ * box holds enough. A project run by two people needs both to sign a draw, which is not one press: it is not offered
+ * here. Never the server, never an agent.
  */
 function payRoute(
   numbers: ProjectNumbers | null,
   address: string | null,
   usd: number,
 ): PayRoute {
-  const treasury = numbers?.contracts.treasury ?? null;
-  if (!numbers || !treasury || !numbers.runner)
+  if (!numbers) return { kind: "none", why: TASK_PROBLEM.notRunner };
+  if (numbers.runner.isPair)
+    return { kind: "none", why: TASK_PROBLEM.pairNeedsBoth };
+  if (!isRunner(numbers, address))
     return { kind: "none", why: TASK_PROBLEM.notRunner };
-  const pair = numbers.market.pair;
-  if (pair && numbers.runner === pair.toLowerCase()) {
-    if (usd > PAIR_ALONE_DOLLARS)
-      return { kind: "none", why: TASK_PROBLEM.pairAboveAlone };
-    return { kind: "pair", pair, chainId: numbers.chainId };
-  }
-  if (address && numbers.runner === address.toLowerCase())
-    return { kind: "treasury", treasury, chainId: numbers.chainId };
-  return { kind: "none", why: TASK_PROBLEM.notRunner };
+  // The box can only grow between draws, so the record's box is a safe floor for offering the press; the chain decides.
+  if (rawDollars(usd) > numbers.allowance.box)
+    return {
+      kind: "none",
+      why: boxShortWords(numbers.allowance.box, allowancePerDay(numbers)),
+    };
+  return {
+    kind: "treasury",
+    treasury: numbers.contracts.treasury,
+    chainId: numbers.chainId,
+  };
 }
 
 /** Whether the task, read fresh, is no longer the one the press was about to pay for. */
@@ -61,7 +70,7 @@ function moved(
 }
 
 /**
- * Accept handed-in work and pay for it: one press. The task is read again first and the press stops if it has moved
+ * Accept handed-in work and pay for it out of the allowance box: one press. The task is read again first and the press stops if it has moved
  * (someone gave it up, handed in again, cancelled it): money sent for a record the server then refuses cannot be taken
  * back. The money goes next, from the wallet; the record that the work was accepted names its transaction and goes
  * last. A payment whose record failed is remembered (`paid-journal.ts`), so the next press writes the record, for the
@@ -138,11 +147,7 @@ export function AcceptAndPay({
       {
         chainId: route.chainId,
         detail: task.id.slice(0, 16),
-        build: () => [
-          route.kind === "pair"
-            ? pairSpendCall(route.pair, payee, usd)
-            : treasurySpendCall(route.treasury, payee, usd),
-        ],
+        build: () => [drawForTaskCall(route.treasury, payee, usd)],
       },
       {
         onSuccess: (result) => {

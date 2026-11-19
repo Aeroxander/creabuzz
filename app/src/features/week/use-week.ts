@@ -42,27 +42,33 @@ export function weeklyUpdateRecord(
   };
 }
 
-/** When each of `author`'s projects last had a weekly update by them, by project address. */
+/** The newest weekly update of a project: when it was made, and its record's id (what a check-in names). */
+export interface LastWeekly {
+  at: number;
+  id: string;
+}
+
+/** When each of `author`'s projects last had a weekly update by them, and its id, by project address. */
 export function useLastWeekly(author: string | null, projects: Project[]) {
   const coordinates = projects.map((p) => p.coordinate);
   return useQuery({
     queryKey: ["week", "last", author, coordinates],
     enabled: author !== null && coordinates.length > 0,
     staleTime: 30_000,
-    queryFn: async (): Promise<Map<string, number>> => {
+    queryFn: async (): Promise<Map<string, LastWeekly>> => {
       const events = await read({
         kinds: [KIND_LAUNCH_UPDATE],
         authors: [author as string],
         "#a": coordinates,
         limit: 200,
       });
-      const last = new Map<string, number>();
+      const last = new Map<string, LastWeekly>();
       for (const event of events) {
         if (!isWeeklyUpdateTags(event.tags)) continue;
         const a = event.tags.find((t) => t[0] === "a")?.[1];
         if (!a) continue;
-        if ((last.get(a) ?? 0) < event.created_at)
-          last.set(a, event.created_at);
+        if ((last.get(a)?.at ?? 0) < event.created_at)
+          last.set(a, { at: event.created_at, id: event.id });
       }
       return last;
     },

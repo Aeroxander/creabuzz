@@ -15,7 +15,7 @@ import {
 } from "../../src/features/money/wallet";
 import { pass, phoneWorld } from "./phone-world";
 import { accounts, RPC, word } from "./rpc";
-import { walletOf } from "./steps";
+import { walletOf } from "./pot-chain";
 
 const run = RPC ? describe : describe.skip;
 

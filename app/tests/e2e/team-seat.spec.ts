@@ -32,6 +32,9 @@ import {
   projectRecord,
 } from "./helpers/world";
 import { createMockRelay } from "./mock-relay";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * The runner seat and the launch in the app (plan v2, milestone 7) at 390x844, press-counted: handing the seat over,

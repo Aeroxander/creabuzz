@@ -2,15 +2,15 @@ import { useId, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
-import { DEFAULT_SHARES_PER_RAW_DOLLAR, openBackingCall } from "./calls";
-import { OwnershipLine } from "./MoneyTab";
+import { DEFAULT_SHARES_PER_RAW_DOLLAR, openBackingCall } from "./calls-v1";
+import { OwnershipLine } from "./OwnershipLine";
 import { moneyProblem } from "./money-copy";
 import {
   dollarsText,
   isRunner,
   type ProjectNumbers,
   sharesPerDollar,
-} from "./numbers";
+} from "./numbers-v1";
 import { useConnectWallet, useMoneySend } from "./use-money";
 
 /**

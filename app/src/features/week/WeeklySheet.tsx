@@ -4,17 +4,18 @@ import { TextArea } from "../../ui/field";
 import { Sheet } from "../../ui/sheet";
 import { useToast } from "../../ui/toast";
 import { ManagerPanel } from "../manager/ManagerPanel";
-import { checkInCall } from "../money/calls";
-import { moneyProblem } from "../money/money-copy";
 import type { ProjectNumbers } from "../money/numbers";
+import { potProblem } from "../money/pot-copy";
+import { checkInFor } from "../money/runner";
 import { useMoneySend } from "../money/use-money";
 import type { Project } from "../project/project-record";
 import { checkInAction, usePostWeekly, WEEKLY_MAX } from "./use-week";
 
 /**
  * The weekly update: one box and one press. Where this wallet runs the project on the network, the same press also
- * checks in (the wallet confirms it). The update is posted first; a check-in that then fails says so, keeps the posted
- * update, and offers only the check-in again. It never says a check-in happened when it did not.
+ * checks in (the wallet confirms it). The record is signed and posted FIRST, and the check-in carries its hash (the
+ * record's id), so the chain points at exactly what was said. A check-in that then fails says so, keeps the posted
+ * update, and offers only the check-in again with the same hash. It never says a check-in happened when it did not.
  */
 export function WeeklySheet({
   project,
@@ -25,19 +26,21 @@ export function WeeklySheet({
   project: Project;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Where the check-in goes: the Treasury for the runner, the Pair for one of its signers. */
-  checkIn: { numbers: ProjectNumbers; to: string } | null;
+  /** Where the check-in goes: the Treasury for the runner, the Pair for one of its signers (`runner.ts` picks by `address`). */
+  checkIn: { numbers: ProjectNumbers; address: string | null } | null;
 }) {
   const [text, setText] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
   /** Set once the update is posted and its check-in did not go through: only the check-in is left to do. */
   const [posted, setPosted] = useState(false);
+  /** The id of the record that was posted: the hash its check-in carries, kept for the retry. */
+  const postedId = useRef<string | null>(null);
   const post = usePostWeekly();
   const send = useMoneySend(
     checkIn
       ? checkInAction(
           checkIn.numbers.chainId,
-          checkIn.numbers.contracts.treasury ?? checkIn.to,
+          checkIn.numbers.contracts.treasury,
         )
       : "",
   );
@@ -51,21 +54,24 @@ export function WeeklySheet({
     setText("");
     setProblem(null);
     setPosted(false);
+    postedId.current = null;
     onOpenChange(false);
   };
 
-  const sendCheckIn = async () => {
+  const sendCheckIn = async (recordHash: string) => {
     if (!checkIn) return true;
+    const call = checkInFor(checkIn.numbers, checkIn.address, recordHash);
+    if (!call) return true;
     try {
       await send.sendAsync({
         chainId: checkIn.numbers.chainId,
-        build: () => [checkInCall(checkIn.to)],
+        build: () => [call],
       });
       return true;
     } catch (error) {
       setPosted(true);
       setProblem(
-        `Your update is posted; the check-in did not go through. ${moneyProblem(error, "check-in")}`,
+        `Your update is posted; the check-in did not go through. ${potProblem(error, "check-in")}`,
       );
       return false;
     }
@@ -89,7 +95,8 @@ export function WeeklySheet({
         return;
       }
       try {
-        await post.mutateAsync({ project, text: text.trim() });
+        const signed = await post.mutateAsync({ project, text: text.trim() });
+        postedId.current = signed.id;
       } catch (error) {
         setProblem(
           error instanceof Error
@@ -99,10 +106,12 @@ export function WeeklySheet({
         return;
       }
     }
-    if (await sendCheckIn()) {
+    const hash = postedId.current;
+    if (checkIn && !hash) return;
+    if (await sendCheckIn(hash ?? "")) {
       toast(
         checkIn
-          ? "Posted and checked in. Payments run for 14 more days."
+          ? "Posted and checked in. The allowance keeps running."
           : "Posted",
         "done",
       );

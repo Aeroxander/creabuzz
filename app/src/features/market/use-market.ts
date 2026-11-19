@@ -10,12 +10,12 @@ import {
 import { topicOf } from "@creaton/core/launchpad/work.ts";
 import { useQuery } from "@tanstack/react-query";
 import { investingOn } from "../../lib/server";
-import type { ProjectNumbers } from "../money/numbers";
+import type { ProjectNumbers } from "../money/numbers-v1";
 import { useWallet, useWalletOnChain } from "../money/use-money";
 import { addressFromWord, type MoneyWallet } from "../money/wallet";
 import { TREASURY_READS } from "../team/team-calls";
-import type { MoneyCall } from "../money/calls";
-import { readAddress, readWord } from "../team/use-team";
+import type { MoneyCall } from "../money/calls-v1";
+import { readAddress, readWord } from "../team/use-team-v1";
 import {
   finishCall,
   finishSteps,
@@ -155,7 +155,7 @@ export async function readFinishCalls(
 }
 
 /** Read the pool of a project's sale: its key from the Finisher, its price and liquidity from the pool manager. */
-export async function readPool(
+async function readPool(
   wallet: Pick<MoneyWallet, "readCall">,
   finisher: string,
   shares: string,
@@ -257,9 +257,7 @@ export function useSaleStage(numbers: ProjectNumbers | null) {
   });
 }
 
-export const BID_SUBMITTED = topicOf(
-  "BidSubmitted(uint256,address,uint256,uint128)",
-);
+const BID_SUBMITTED = topicOf("BidSubmitted(uint256,address,uint256,uint128)");
 
 export interface MyBid {
   id: bigint;

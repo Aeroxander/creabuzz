@@ -3,7 +3,7 @@
  * copies another project's chain-key (F2). Each failed on 3c2f6ab37.
  */
 import { expect, test } from "@playwright/test";
-import { backCalls } from "../../src/features/money/calls";
+import { backCalls } from "../../src/features/money/calls-v1";
 import { BACKER_EVM, CONTRACTS } from "../helpers/numbers-fixture";
 import { createMockRelay } from "./mock-relay";
 import {
@@ -22,6 +22,9 @@ import {
   projectRecord,
   pubkeyOf,
 } from "./helpers/world";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 const FOUNDER = pubkeyOf("a1".repeat(32));
 const SQUATTER = pubkeyOf("a3".repeat(32));

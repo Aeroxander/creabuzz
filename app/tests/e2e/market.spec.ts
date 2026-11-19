@@ -13,6 +13,9 @@ import { addressWord, word } from "./helpers/chain-wallet";
 import { sentCalls } from "./helpers/money-world";
 import { MATE_KEY, openTeam, seedTeam } from "./helpers/team-world";
 import { createMockRelay } from "./mock-relay";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * The auction and the pool in the app (plan v2, milestone 7), press-counted at 390x844: Bid in 2 presses and 1 field,

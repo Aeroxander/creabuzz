@@ -5,6 +5,7 @@ import {
   lazyRouteComponent,
 } from "@tanstack/react-router";
 import { HomePage } from "../features/home/HomePage";
+import { legacyScreensOn } from "../lib/legacy";
 import { ProjectPage } from "../features/project/ProjectPage";
 import { Shell } from "./Shell";
 
@@ -17,8 +18,9 @@ const ConversationPage = lazyRouteComponent(
   () => import("../features/messages/ConversationPage"),
   "ConversationPage",
 );
+// The earlier backers' page belongs to the old design: its route exists only with the legacy-screens flag.
 const EarlierPage = lazyRouteComponent(
-  () => import("../features/earlier/EarlierPage"),
+  () => import("../legacy/LegacyEarlier"),
   "default",
 );
 const MessagesPage = lazyRouteComponent(
@@ -142,26 +144,33 @@ const welcome = createRoute({
   },
 });
 
-const routeTree = root.addChildren([
-  home,
-  project,
-  legacyProject,
-  start,
-  week,
-  you,
-  earlier,
-  messages,
-  conversation,
-  post,
-  person,
-  welcome,
-]);
+/**
+ * The app's router. With `legacy` off (the default) the earlier backers' route is not in the tree at all, so its address
+ * shows the app's "not found" and its code is never loaded.
+ */
+export function createAppRouter(legacy: boolean = legacyScreensOn()) {
+  const routeTree = root.addChildren([
+    home,
+    project,
+    legacyProject,
+    start,
+    week,
+    you,
+    ...(legacy ? [earlier] : []),
+    messages,
+    conversation,
+    post,
+    person,
+    welcome,
+  ]);
+  return createRouter({
+    routeTree,
+    defaultPreload: false,
+    scrollRestoration: true,
+  });
+}
 
-export const router = createRouter({
-  routeTree,
-  defaultPreload: false,
-  scrollRestoration: true,
-});
+export const router = createAppRouter();
 
 declare module "@tanstack/react-router" {
   interface Register {

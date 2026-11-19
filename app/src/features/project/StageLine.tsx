@@ -1,4 +1,4 @@
-import type { StageName } from "../money/numbers";
+import type { StageName } from "../money/numbers-v1";
 import { cn } from "../../ui/cn";
 
 /** The stages of a project's life (plan section 3), in order. The money stages exist only where investing is on. */

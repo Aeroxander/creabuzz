@@ -21,6 +21,9 @@ import {
   pubkeyOf,
   type Relay,
 } from "./helpers/world";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * axe on every screen of the app, at 390 and 360 wide, in light and dark, with investing on (so the money screens and

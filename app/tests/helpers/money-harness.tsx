@@ -6,14 +6,20 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { positionCallData } from "../../src/features/money/calls";
+import { positionCallData } from "../../src/features/money/calls-v1";
 import {
   type NumbersEvent,
   parseNumbers,
   type ProjectNumbers,
+} from "../../src/features/money/numbers-v1";
+import {
+  type NumbersEvent as NumbersEventV2,
+  parseNumbers as parseNumbersV2,
+  type ProjectNumbers as ProjectNumbersV2,
 } from "../../src/features/money/numbers";
 import { ToastProvider } from "../../src/ui/toast";
 import { BACKER_EVM, CONTRACTS, chainIdentity } from "./numbers-fixture";
+import { chainIdentityV2 } from "./numbers-v2-fixture";
 
 export const SERVER = "f".repeat(64);
 export const NOW = Math.floor(Date.now() / 1000);
@@ -69,9 +75,14 @@ export const relayMock = {
     Promise.all(filters.map((f) => readServed(f))),
   readLatest: async (filter: Filter) => (await readServed(filter))[0] ?? null,
   publishAsUser: async (event: unknown) => {
-    published.push(event);
+    // The real one returns the signed record, which has its id (the hash a check-in carries).
+    const signed = {
+      ...(event as object),
+      id: (published.length + 1).toString(16).padStart(64, "a"),
+    };
+    published.push(signed);
     await new Promise((r) => setTimeout(r, 20));
-    return event;
+    return signed;
   },
 };
 
@@ -111,6 +122,34 @@ export function projectEvent(o: {
     ],
     content: "{}",
   };
+}
+
+/** A version 2 record (kind 39009) for the project at `coordinate`, signed by the mocked server. */
+export function recordV2(
+  content: Record<string, unknown>,
+  coordinate = COORDINATE,
+  at = NOW,
+): NumbersEventV2 {
+  return {
+    id: `${at.toString(16)}${coordinate.slice(-3)}`.padStart(64, "0"),
+    pubkey: SERVER,
+    kind: 39009,
+    created_at: at,
+    tags: [["d", chainIdentityV2(coordinate).key]],
+    content: JSON.stringify(content),
+  };
+}
+
+/** The parsed version 2 numbers of `content` for the default project; throws when it does not read. */
+export function numbersV2Of(
+  content: Record<string, unknown>,
+): ProjectNumbersV2 {
+  const parsed = parseNumbersV2(recordV2(content), SERVER, {
+    coordinate: COORDINATE,
+    chainKey: chainIdentityV2(COORDINATE).key,
+  });
+  if (!parsed || parsed.removed) throw new Error("not parsed");
+  return parsed;
 }
 
 export function numbersOf(content: Record<string, unknown>): ProjectNumbers {

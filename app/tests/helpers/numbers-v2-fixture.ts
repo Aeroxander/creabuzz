@@ -1,0 +1,94 @@
+/**
+ * A version 2 project-numbers record (kind 39009) for the unit tests and the Playwright specs, made from the ONE example
+ * file both the server and the app test against (`docs/next-version/record-v2-example.json`, made by running the real
+ * contracts; `docs/next-version/RECORD-V2.md` section 7). The example is never retyped here: a fixture is the example,
+ * moved to the project and the moment a test asks for, then changed by a patch.
+ */
+import {
+  chainKeyOf,
+  projectIdOf,
+} from "../../../packages/creaton-core/src/launchpad/project-chain.ts";
+import example from "../../../docs/next-version/record-v2-example.json";
+
+type Json = Record<string, unknown>;
+
+/** Anvil's second account: the founder's wallet (the example's founder and runner). */
+export const FOUNDER_EVM = "0x70997970c51812dc3a010c7d01b50e0d17dc79c8";
+/** Anvil's fourth account: a backer in the example's holders list. */
+export const BACKER_EVM = "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc";
+/** A wallet that holds nothing in the example. */
+export const STRANGER_EVM = "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc";
+
+/** The example as the file has it (a deep copy: a test may change it). */
+export function exampleRecord(): Json {
+  return structuredClone(example) as Json;
+}
+
+/** The identity a project record's coordinate gives: the id and the chain key the contracts would know it by. */
+export function chainIdentityV2(coordinate: string, founder = FOUNDER_EVM) {
+  const projectId = projectIdOf(coordinate);
+  return { projectId, key: chainKeyOf(founder, projectId) };
+}
+
+const at = (o: Json, path: string[]): Json => {
+  let cursor = o;
+  for (const step of path) cursor = cursor[step] as Json;
+  return cursor;
+};
+
+/** Move every point in time of a record by `delta` seconds (durations such as active seconds stay as they are). */
+export function shiftTimes(content: Json, delta: number): void {
+  const shift = (o: Json, name: string) => {
+    if (typeof o[name] === "number") o[name] = (o[name] as number) + delta;
+  };
+  shift(content, "launchedAt");
+  shift(content, "builtAt");
+  shift(content, "firstBackedAt");
+  shift(at(content, ["asOf"]), "time");
+  shift(at(content, ["money"]), "arrivalEnd");
+  const pending = at(content, ["allowance"]).pending as Json | null;
+  if (pending) {
+    shift(pending, "proposedAt");
+    shift(pending, "applicableAt");
+  }
+  for (const name of ["lastCheckIn", "activeUntil"])
+    shift(at(content, ["clock"]), name);
+  shift(at(content, ["door"]), "shutsAt");
+  const quiet = at(content, ["quiet"]);
+  for (const name of ["since", "quietFrom", "dormantFrom", "windableFrom"])
+    shift(quiet, name);
+  if (quiet.next) shift(quiet.next as Json, "at");
+  if (content.windDown) shift(content.windDown as Json, "at");
+  for (const grant of (at(content, ["team"]).grants as Json[]) ?? []) {
+    if (grant.cliff) shift(grant.cliff as Json, "endsAtIfActive");
+    shift(grant, "fullyVestedAtIfActive");
+    if (grant.forfeit) shift(grant.forfeit as Json, "burnAt");
+  }
+  const ledger = content.ledger as Json | undefined;
+  if (ledger) {
+    shift(ledger, "lastSettle");
+    shift(ledger, "arrivalEnd");
+  }
+}
+
+export interface NumbersV2Options {
+  /** The project's record address (`37001:<founder>:<id>`): the chain key and project id follow from it. */
+  coordinate: string;
+  /** Unix seconds "now": the record was built 100 seconds before it. */
+  now: number;
+  /** Change the record before it is returned (a field, a state, a list). */
+  patch?: (content: Json) => void;
+}
+
+/** The record's content (JSON-ready) for the project at `coordinate`, as of just before `now`. */
+export function numbersV2Content(o: NumbersV2Options): Json {
+  const content = exampleRecord();
+  const exampleBuilt = content.builtAt as number;
+  shiftTimes(content, o.now - 100 - exampleBuilt);
+  const { projectId, key } = chainIdentityV2(o.coordinate);
+  content.projectId = projectId;
+  content.key = key;
+  content.founder = FOUNDER_EVM;
+  o.patch?.(content);
+  return content;
+}

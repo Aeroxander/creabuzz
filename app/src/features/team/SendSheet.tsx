@@ -3,7 +3,7 @@ import { type ReactNode, useState } from "react";
 import { Button } from "../../ui/button";
 import { Sheet } from "../../ui/sheet";
 import { useToast } from "../../ui/toast";
-import type { MoneyCall } from "../money/calls";
+import type { MoneyCall } from "../money/calls-v1";
 import { useMoneySend } from "../money/use-money";
 import type { MoneyWallet } from "../money/wallet";
 import { type TeamAction, teamProblem } from "./team-copy";

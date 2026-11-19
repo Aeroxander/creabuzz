@@ -2,8 +2,8 @@
  * The words of the Tasks tab: what each state says, and every problem a task step can meet as a sentence that says
  * what happened and what to do next. Money problems come from `moneyProblem`; this adds the steps that are records.
  */
-import { selectorOf } from "@creaton/core/launchpad/evmAbi.ts";
-import { moneyProblem } from "../money/money-copy";
+import { dollarsText } from "../money/numbers";
+import { potProblem } from "../money/pot-copy";
 import type { TaskState } from "./task-record";
 
 export const STATE_WORDS: Record<TaskState, string> = {
@@ -34,8 +34,8 @@ export const TASK_PROBLEM = {
     "This task changed while you were looking, so nothing was paid. Look at it again.",
   ownWork:
     "This work was done by you or by an agent you run. Someone else on the team has to accept it.",
-  pairAboveAlone:
-    "Above 500 dollars at Team both signers must agree, and the second signer's step is not in this app yet. Pay it from your wallet together, then accept it here.",
+  pairNeedsBoth:
+    "This project is run by two people, and a payment from the allowance needs both of you to sign it. That step is not in this app yet. Pay it together from your wallets, then accept the work here without paying.",
   notRunner:
     "Only the wallet that runs this project can pay for a task. Switch your wallet to it.",
   agentLimits:
@@ -58,33 +58,30 @@ export function dollarsProblem(typed: string): string | null {
   return null;
 }
 
-/** The Treasury's refusal when the project has less to spend than asked (`TooMuch(amount, available)`). */
-const TOO_MUCH = selectorOf("TooMuch(uint256,uint256)").slice(2).toLowerCase();
-
-function mentions(error: unknown, needle: string, depth = 0): boolean {
-  if (depth > 4 || error === null || error === undefined) return false;
-  if (typeof error === "string") return error.toLowerCase().includes(needle);
-  if (typeof error !== "object") return false;
-  const e = error as Record<string, unknown>;
-  return ["message", "data", "error", "cause", "reason"].some((field) =>
-    mentions(e[field], needle, depth + 1),
-  );
+/**
+ * The allowance box holds less than a task pays: how much is in it and when more arrives (the box fills a little every
+ * day, a share of the project's money).
+ */
+export function boxShortWords(box: bigint, perDay: bigint): string {
+  const day =
+    perDay > 0n
+      ? ` About ${dollarsText(perDay)} dollars more goes into it each day.`
+      : " Nothing is going into it now, because the allowance is switched off or the project has no money.";
+  return `The allowance box holds ${dollarsText(box)} dollars now, which is less than this task pays.${day} Accept the work when the box holds enough.`;
 }
 
 /** What a person reads when paying for a task stops. */
 export function payProblem(error: unknown): string {
-  if (mentions(error, TOO_MUCH) || mentions(error, "toomuch"))
-    return "The project has less money to spend than this task pays, so nothing was paid.";
-  const words = moneyProblem(error, "connect");
-  return words.startsWith("Connecting your wallet")
+  const words = potProblem(error, "draw");
+  return words.startsWith("The draw did not go through")
     ? "The payment did not go through. Nothing was paid. Try again."
     : words;
 }
 
 /** What a person reads when setting an agent's limits stops. */
 export function limitsProblem(error: unknown): string {
-  const words = moneyProblem(error, "connect");
-  return words.startsWith("Connecting your wallet")
+  const words = potProblem(error, "agent");
+  return words.startsWith("Changing the helper did not go through")
     ? TASK_PROBLEM.agentLimits
     : words;
 }

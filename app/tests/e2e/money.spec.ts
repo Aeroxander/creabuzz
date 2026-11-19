@@ -5,7 +5,7 @@ import {
   checkInCall,
   openBackingCall,
   refundCall,
-} from "../../src/features/money/calls";
+} from "../../src/features/money/calls-v1";
 import { expectNoSidewaysScroll } from "../helpers/layout";
 import {
   BACKER_EVM,
@@ -33,6 +33,9 @@ import {
   pubkeyOf,
   type Relay,
 } from "./helpers/world";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * Money in the app where the server turns investing on: the project's numbers from the server's reading of the chain,

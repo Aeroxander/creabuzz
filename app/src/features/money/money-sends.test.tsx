@@ -31,7 +31,7 @@ import {
   numbersContent,
 } from "../../../tests/helpers/numbers-fixture";
 import { BackBox } from "./BackBox";
-import { openRound } from "./numbers";
+import { openRound } from "./numbers-v1";
 import { Receipts } from "./Receipts";
 import {
   forgetPending,

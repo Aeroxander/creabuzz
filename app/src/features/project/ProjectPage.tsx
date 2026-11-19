@@ -5,6 +5,7 @@ import { BackHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
 import { useFollowProject, useFollows } from "../../lib/follows";
 import { nameOf, pictureOf, useProfiles } from "../../lib/profiles";
+import { legacyScreensOn } from "../../lib/legacy";
 import { investingOn } from "../../lib/server";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Avatar } from "../../ui/avatar";
@@ -13,44 +14,25 @@ import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { Tabs } from "../../ui/tabs";
 import { useToast } from "../../ui/toast";
-import { BackBox } from "../money/BackBox";
-import { MoneyTab } from "../money/MoneyTab";
-import { anyRoundUnclosed, openRound } from "../money/numbers";
-import { OpenBacking } from "../money/OpenBacking";
-import {
-  chainKeyOfProject,
-  useProjectNumbers,
-  useWalletAddress,
-} from "../money/use-money";
+import { MoneyNow } from "../money/MoneyNow";
+import { useProjectNumbers, useWalletAddress } from "../money/use-money";
 import { TasksTab } from "../tasks/TasksTab";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
 import type { Project } from "./project-record";
-import { currentStage, StageLine } from "./StageLine";
 import { UpdatesTab } from "./UpdatesTab";
 import { projectPeople, useProject, useProjectActivity } from "./use-project";
 
-// Team and the market (milestone 7) load only when a project has numbers, so the first download stays small.
-const TeamMoney = lazy(() =>
-  import("../team/TeamMoney").then((m) => ({ default: m.TeamMoney })),
-);
-const TeamTop = lazy(() =>
-  import("../team/TeamTop").then((m) => ({ default: m.TeamTop })),
-);
-const MarketTop = lazy(() =>
-  import("../market/MarketTop").then((m) => ({ default: m.MarketTop })),
-);
-const MarketMoney = lazy(() =>
-  import("../market/MarketMoney").then((m) => ({ default: m.MarketMoney })),
-);
-const LaunchProject = lazy(() =>
-  import("../team/LaunchProject").then((m) => ({ default: m.LaunchProject })),
-);
-const MemberActions = lazy(() =>
-  import("../team/MemberActions").then((m) => ({ default: m.MemberActions })),
+// The old design's screens (stages, rounds, the auction, the market, Team's Pair): loaded only with the legacy-screens flag.
+const LegacyProjectTop = lazy(() => import("../../legacy/LegacyProjectTop"));
+const LegacyMoneyTab = lazy(() => import("../../legacy/LegacyMoneyTab"));
+const LegacyMemberActions = lazy(() =>
+  import("../../legacy/LegacyPerson").then((m) => ({
+    default: m.LegacyMemberActions,
+  })),
 );
 
-/** The project page: its record, the stage line, Ask to join, then Updates, Tasks, People and Money. */
+/** The project page: its record, Ask to join, then Updates, Tasks, People and Money. */
 export function ProjectPage({ projectRef }: { projectRef: string }) {
   const project = useProject(projectRef);
   if (project.isPending)
@@ -115,21 +97,9 @@ function ProjectView({ project }: { project: Project }) {
       ? numbersRead.data
       : null;
   const now = Math.floor(Date.now() / 1000);
-  const round = numbers ? openRound(numbers, now) : null;
-  const money = numbers
-    ? { stage: numbers.stage.name, raised: numbers.raised.total }
-    : null;
   const walletAddress = useWalletAddress().data ?? null;
-  // Offered to the founder while no round is open or waiting to be closed, at Solo and Backed; who may press is the wallet
-  // that runs it (OpenBacking says so). At Team the Pair's signers open a round from the Money tab (TeamMoney), both
-  // signing.
-  const canOpen =
-    numbers !== null &&
-    isFounder &&
-    !anyRoundUnclosed(numbers) &&
-    numbers.raised.left > 0n &&
-    !numbers.clock.woundDown &&
-    ["solo", "backed"].includes(numbers.stage.name);
+  const legacy = legacyScreensOn();
+  const team = [project.author, ...accepted.map((m) => m.pubkey)];
 
   return (
     <main
@@ -164,36 +134,14 @@ function ProjectView({ project }: { project: Project }) {
         </div>
       </header>
 
-      <StageLine
-        investing={investing}
-        money={money}
-        stage={currentStage(accepted.length, money)}
-      />
-
-      {numbers && round ? (
-        <BackBox
-          now={now}
-          numbers={numbers}
-          primary
-          projectName={project.name}
-          round={round}
-        />
-      ) : null}
-      {numbers && canOpen ? (
-        <OpenBacking address={walletAddress} numbers={numbers} />
-      ) : null}
-      {numbers ? (
+      {legacy ? (
         <Suspense fallback={null}>
-          <MarketTop numbers={numbers} />
-        </Suspense>
-      ) : null}
-      {numbers ? (
-        <Suspense fallback={null}>
-          <TeamTop
-            founder={project.author}
-            numbers={numbers}
+          <LegacyProjectTop
+            accepted={accepted.length}
+            isFounder={isFounder}
             profiles={profiles}
-            team={[project.author, ...accepted.map((m) => m.pubkey)]}
+            project={project}
+            team={team}
           />
         </Suspense>
       ) : null}
@@ -202,7 +150,7 @@ function ProjectView({ project }: { project: Project }) {
         activity={activity.data}
         onTeam={onTeam}
         project={project}
-        secondary={round !== null}
+        secondary={false}
       />
 
       <Tabs
@@ -240,12 +188,12 @@ function ProjectView({ project }: { project: Project }) {
                 isFounder={isFounder}
                 loading={activity.isPending}
                 memberAction={
-                  numbers
+                  legacy && investing
                     ? (member, name) => (
                         <Suspense fallback={null}>
-                          <MemberActions
+                          <LegacyMemberActions
                             name={name}
-                            numbers={numbers}
+                            project={project}
                             pubkey={member}
                             team={accepted.map((m) => m.pubkey)}
                           />
@@ -264,41 +212,26 @@ function ProjectView({ project }: { project: Project }) {
                 {
                   value: "money",
                   label: "Money",
-                  content: (
-                    <div className="flex flex-col gap-3">
-                      {isFounder && !chainKeyOfProject(project) ? (
-                        <Suspense fallback={null}>
-                          <LaunchProject project={project} />
-                        </Suspense>
-                      ) : null}
-                      {numbers ? (
-                        <Suspense fallback={null}>
-                          <TeamMoney
-                            numbers={numbers}
-                            profiles={profiles}
-                            team={[
-                              project.author,
-                              ...accepted.map((m) => m.pubkey),
-                            ]}
-                          />
-                        </Suspense>
-                      ) : null}
-                      {numbers ? (
-                        <Suspense fallback={null}>
-                          <MarketMoney numbers={numbers} />
-                        </Suspense>
-                      ) : null}
-                      <MoneyTab
-                        error={numbersRead.error}
-                        loading={
-                          numbersRead.isPending &&
-                          numbersRead.fetchStatus !== "idle"
-                        }
-                        now={now}
-                        numbers={numbersRead.data}
-                        onRetry={() => void numbersRead.refetch()}
+                  content: legacy ? (
+                    <Suspense fallback={null}>
+                      <LegacyMoneyTab
+                        isFounder={isFounder}
+                        profiles={profiles}
+                        project={project}
+                        team={team}
                       />
-                    </div>
+                    </Suspense>
+                  ) : (
+                    <MoneyNow
+                      error={numbersRead.error}
+                      loading={
+                        numbersRead.isPending &&
+                        numbersRead.fetchStatus !== "idle"
+                      }
+                      now={now}
+                      numbers={numbersRead.data}
+                      onRetry={() => void numbersRead.refetch()}
+                    />
                   ),
                 },
               ]

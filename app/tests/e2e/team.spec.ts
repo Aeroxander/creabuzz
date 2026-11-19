@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { encodeParameters } from "../../../packages/creaton-core/src/launchpad/evmAbi.ts";
-import { DEFAULT_SHARES_PER_RAW_DOLLAR } from "../../src/features/money/calls";
+import { DEFAULT_SHARES_PER_RAW_DOLLAR } from "../../src/features/money/calls-v1";
 import { PROPOSED_TOPIC } from "../../src/features/team/pair";
 import {
   giveSharesData,
@@ -24,6 +24,9 @@ import {
   seedTeam as seed,
 } from "./helpers/team-world";
 import { createMockRelay } from "./mock-relay";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * Team in the app (plan v2, milestone 7), press-counted against section 6's budgets at 390x844: the founder adds a

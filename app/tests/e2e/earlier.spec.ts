@@ -18,6 +18,9 @@ import { RELAY, sentCalls } from "./helpers/money-world";
 import { COORD, KEY, MATE_KEY } from "./helpers/team-world";
 import { event, install, now } from "./helpers/world";
 import { createMockRelay } from "./mock-relay";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * An earlier backer's page (plan v2 milestone 7, scope 5): a link's own line, the agreement shown when its fingerprints

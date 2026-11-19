@@ -13,6 +13,9 @@ import {
   withSale,
 } from "./helpers/team-world";
 import { createMockRelay } from "./mock-relay";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * Phone screenshots of milestone 7's screens at 390x844 for review: `pnpm screens`. They land in test-results/screens/

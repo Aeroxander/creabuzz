@@ -24,6 +24,7 @@ import {
   pubkeyOf,
   type Relay,
 } from "./helpers/world";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
 
 /**
  * Phone screenshots of the new app at 390x844 (twice the pixels), for review: `pnpm screens`. They land in
@@ -360,6 +361,7 @@ test("messages", async ({ page }) => {
 });
 
 test("money, where the server turns investing on", async ({ page }) => {
+  test.skip(!LEGACY_BUILD, LEGACY_WHY);
   const relay = createMockRelay();
   seed(relay);
   const kiln = coordOf(FAY, "kiln");

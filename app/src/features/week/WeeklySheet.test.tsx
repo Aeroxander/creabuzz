@@ -9,11 +9,13 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
+import { TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
 import {
   COORDINATE,
   installWallet,
   NOW,
-  numbersOf,
+  numbersV2Of,
   projectEvent,
   published,
   SERVER,
@@ -21,11 +23,10 @@ import {
   wrap,
 } from "../../../tests/helpers/money-harness";
 import {
-  CONTRACTS,
-  chainIdentity,
+  chainIdentityV2,
   FOUNDER_EVM,
-  numbersContent,
-} from "../../../tests/helpers/numbers-fixture";
+  numbersV2Content,
+} from "../../../tests/helpers/numbers-v2-fixture";
 import { parseProject, type RecordEvent } from "../project/project-record";
 import { WeeklySheet } from "./WeeklySheet";
 
@@ -42,7 +43,7 @@ function lantern() {
       author: FOUNDER,
       id: ID,
       name: "Lantern",
-      chainKey: chainIdentity(COORDINATE).key,
+      chainKey: chainIdentityV2(COORDINATE).key,
     }) as RecordEvent,
   );
   if (!project) throw new Error("not a project");
@@ -56,10 +57,10 @@ async function doublePress(checkIn: boolean) {
       checkIn={
         checkIn
           ? {
-              numbers: numbersOf(
-                numbersContent({ coordinate: COORDINATE, now: NOW }),
+              numbers: numbersV2Of(
+                numbersV2Content({ coordinate: COORDINATE, now: NOW }),
               ),
-              to: CONTRACTS.treasury,
+              address: FOUNDER_EVM,
             }
           : null
       }
@@ -100,6 +101,13 @@ describe("the weekly sheet sends once for a quick double press", () => {
     await doublePress(true);
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(published).toHaveLength(1);
-    expect(sent[0].to).toBe(CONTRACTS.treasury);
+    const numbers = numbersV2Of(
+      numbersV2Content({ coordinate: COORDINATE, now: NOW }),
+    );
+    expect(sent[0].to).toBe(numbers.contracts.treasury);
+    // The check-in carries the id of the record that was just signed and posted: signed first, then checked in.
+    const checkIn = decodeCall(TREASURY_ABI, sent[0].data);
+    expect(checkIn?.name).toBe("checkIn");
+    expect(checkIn?.args).toEqual([`0x${(published[0] as { id: string }).id}`]);
   });
 });

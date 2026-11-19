@@ -38,6 +38,7 @@ export type PotAction =
   | "agent"
   | "seat"
   | "launch"
+  | "link"
   | "wind-down"
   | "pair";
 
@@ -353,6 +354,7 @@ const ACTION_WORDS: Record<PotAction, string> = {
   agent: "Changing the helper",
   seat: "The seat",
   launch: "Putting the project on the network",
+  link: "Linking your wallet",
   "wind-down": "Winding down",
   pair: "The call",
 };

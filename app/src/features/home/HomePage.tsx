@@ -1,17 +1,16 @@
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { APP_NAME } from "@creaton/core/brand.ts";
 import { PenLine, Sprout } from "lucide-react";
-import { type ReactNode, useId, useState } from "react";
+import { lazy, type ReactNode, Suspense, useId, useState } from "react";
 import { Mark } from "../../app/Mark";
 import { useAccount } from "../../lib/account";
 import { useFollows } from "../../lib/follows";
 import { useProfiles } from "../../lib/profiles";
-import { investingOn } from "../../lib/server";
+import { legacyScreensOn } from "../../lib/legacy";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
-import { OpenRounds } from "../money/OpenRounds";
 import { ComposerSheet } from "../posts/Composer";
 import { PostCard } from "../posts/PostCard";
 import {
@@ -21,6 +20,13 @@ import {
 } from "../posts/use-posts";
 import { ProjectCard } from "./ProjectCard";
 import { useHomeProjects } from "./use-home";
+
+// The old design's open rounds: loaded only with the legacy-screens flag.
+const LegacyOpenRounds = lazy(() =>
+  import("../../legacy/LegacyPerson").then((m) => ({
+    default: m.LegacyOpenRounds,
+  })),
+);
 
 function Section({
   title,
@@ -50,7 +56,7 @@ function Section({
 }
 
 /**
- * Home: open rounds on top (only where investing is on, from the server's reading of the chain), the projects you follow, the projects shipping now, and recent posts. Never sorted by money.
+ * Home: the projects you follow, the projects shipping now, and recent posts. Never sorted by money. (The open backing rounds of the old design show only with the legacy-screens flag.)
  */
 export function HomePage() {
   const { pubkey } = useAccount();
@@ -112,9 +118,11 @@ export function HomePage() {
         </section>
       )}
 
-      {investingOn() ? (
+      {legacyScreensOn() ? (
         <Section testId="home-rounds" title="Open rounds">
-          <OpenRounds projects={all} />
+          <Suspense fallback={null}>
+            <LegacyOpenRounds projects={all} />
+          </Suspense>
         </Section>
       ) : null}
 

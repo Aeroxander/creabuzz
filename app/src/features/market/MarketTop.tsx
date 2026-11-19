@@ -4,18 +4,19 @@ import { tradingOn } from "../../lib/server";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
-import { parseDollars } from "../money/calls";
-import { OwnershipLine } from "../money/MoneyTab";
-import { dollarsText, type ProjectNumbers, sharesText } from "../money/numbers";
-import { auctionState } from "../money/numbers-market";
+import { parseDollars } from "../money/calls-v1";
+import { OwnershipLine } from "../money/OwnershipLine";
 import {
-  readQuote,
-  useConnectWallet,
-  useWalletAddress,
-} from "../money/use-money";
+  dollarsText,
+  type ProjectNumbers,
+  sharesText,
+} from "../money/numbers-v1";
+import { auctionState } from "../money/numbers-market";
+import { useConnectWallet, useWalletAddress } from "../money/use-money";
+import { readQuote } from "../money/use-money-v1";
 import { SendButton, SendSheet } from "../team/SendSheet";
 import { DisclosureBody } from "./AuctionDisclosure";
-import { readWord } from "../team/use-team";
+import { readWord } from "../team/use-team-v1";
 import {
   bidCalls,
   handBackCalls,

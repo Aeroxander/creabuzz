@@ -1,117 +1,136 @@
 /**
- * A Back from a passkey account, through the app's own call builders against the real platform contracts: the project
- * is launched and a round opened by wallets, then a person with no wallet backs it from their passkey account, with the
- * fee paid by a paymaster. The calls are `backCalls` (let the round take the dollars, then ask), sent as one operation
- * with one passkey prompt. Run by `scripts/phone-loop.sh`; skipped without `M7_ANVIL_RPC`.
+ * A Back from a passkey account, through the app's own call builders against the real pot contracts: a person with no
+ * wallet and no network coin takes their play dollars from the faucet and backs a project, each as ONE operation with ONE
+ * passkey prompt, the fee paid by a paymaster. The Back is one call (`transferAndCall` on the play dollar), so one
+ * signature is the whole Back. Run by `scripts/phone-loop.sh`; skipped without `M7_ANVIL_RPC`.
  */
 import { describe, expect, it } from "vitest";
 import { decodeExecuteCallData } from "../../../packages/creaton-core/src/aa/sponsoredSender.ts";
-import { encodeFunctionData } from "../../../packages/creaton-core/src/launchpad/evmAbi.ts";
+import { LAUNCHER_ABI } from "../../../packages/creaton-core/src/pot/abis.generated.ts";
 import {
-  backCalls,
-  openBackingCall,
-  positionCallData,
-} from "../../src/features/money/calls";
-import { moneyProblem } from "../../src/features/money/money-copy";
-import { readQuote } from "../../src/features/money/use-money";
-import type { WalletStepError } from "../../src/features/money/wallet";
+  decodeReturn,
+  encodeCall,
+} from "../../../packages/creaton-core/src/pot/abi-codec.ts";
+import { projectIdOf } from "../../../packages/creaton-core/src/launchpad/project-chain.ts";
+import * as pot from "../../../packages/creaton-core/src/pot/pot-calls.ts";
+import { planBack } from "../../../packages/creaton-core/src/pot/pot-plans.ts";
+import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import {
   forgetSendTargets,
   knownSendTargets,
   rememberSendTargets,
 } from "../../src/features/money/send-targets";
-import { deployPlatform, mintDollars } from "./deploy";
-import { accounts, call, RPC, word } from "./rpc";
+import { potProblem } from "../../src/features/money/pot-copy";
+import type { WalletStepError } from "../../src/features/money/wallet";
 import { pass, phoneWorld } from "./phone-world";
-import { DOLLAR, launched, openedRound, walletOf } from "./steps";
+import { deployPot, walletOf } from "./pot-chain";
+import { accounts, call, RPC } from "./rpc";
 
 const run = RPC ? describe : describe.skip;
+const DOLLAR = 1_000_000n;
 
 run("the phone path on anvil: a Back from a passkey account", () => {
-  it("backs an open round with the app's own calls, in one operation, one prompt, with no coin in the account", async () => {
-    const [admin, founder, , , , , , , stranger, stake] = await accounts();
-    const platform = await deployPlatform(admin, stake);
-    const p = await launched(
-      platform,
-      founder,
-      `37001:${"c3".repeat(32)}:phone`,
+  it("backs a project with the app's own calls: one operation, one prompt, no coin in the account", async () => {
+    const [admin, founder] = await accounts();
+    const chain = await deployPot(admin);
+    const [settingsHash] = decodeReturn(
+      LAUNCHER_ABI,
+      "settingsHash",
+      await call(chain.launcher, encodeCall(LAUNCHER_ABI, "settingsHash", [])),
     );
-    const opened = await walletOf(founder).sendCalls(
-      [openBackingCall(platform.launcher, p.key)],
+    const projectId = projectIdOf(`37001:${"c3".repeat(32)}:phone`);
+    await walletOf(founder).sendCalls(
+      [
+        pot.launchCall({
+          launcher: chain.launcher,
+          projectId,
+          name: "Phone",
+          symbol: "PHONE",
+          ratePpm: 1000,
+          teamPool: 10_000_000n * 10n ** 18n,
+          settingsHash: settingsHash as string,
+        }),
+      ],
       31337,
     );
-    const round = await openedRound(opened.txHash, platform.launcher);
+    const [project] = decodeReturn(
+      LAUNCHER_ABI,
+      "project",
+      await call(
+        chain.launcher,
+        encodeCall(LAUNCHER_ABI, "project", [founder, projectId]),
+      ),
+    );
+    const [, shares, team, treasury, vester] = project as string[];
 
     const world = await phoneWorld(admin);
     try {
       const { sender, bundler, authenticator } = world;
       forgetSendTargets();
-      // What the app learns by reading the project (`useProjectNumbers`) and the round's dollar token (`readQuote`).
-      rememberSendTargets([p.rounds, p.shares, p.treasury, p.vester]);
-      const quote = await readQuote(sender, p.rounds);
-      expect(quote).toBe(platform.quote);
-      expect(knownSendTargets().has(quote)).toBe(true);
-
+      // What the app learns by reading the project's numbers: the contracts its sends may go to.
+      rememberSendTargets([chain.dollar, shares, team, treasury, vester]);
+      expect(knownSendTargets().has(chain.dollar)).toBe(true);
       const account = await sender.getAddress();
-      await mintDollars(stranger, platform.quote, account, 60n * DOLLAR);
-      const amount = 25n * DOLLAR;
-      const calls = backCalls({
-        quote,
-        rounds: p.rounds,
-        round: Number(round),
-        amount,
-      });
-      expect(calls).toHaveLength(2);
+      const read = (to: string, data: string) => sender.readCall(to, data);
 
-      const promptsBefore = authenticator.calls.get;
-      const result = await sender.sendCalls(calls, 31337);
+      // The faucet, from the passkey account: one operation, one prompt.
+      const prompts0 = authenticator.calls.get;
+      await sender.sendCalls([pot.faucetCall(chain.dollar)], 31337);
+      expect(await reads.balanceOf(read, chain.dollar, account)).toBe(
+        1000n * DOLLAR,
+      );
+      expect(authenticator.calls.get - prompts0).toBe(1);
+
+      // Back 25 play dollars: the dollar can pay and call, so the whole Back is one call.
+      const backPlan = await planBack(read, {
+        dollar: chain.dollar,
+        treasury: treasury as string,
+        amount: 25n * DOLLAR,
+      });
+      expect(backPlan?.oneSignature).toBe(true);
+      expect(backPlan?.calls).toHaveLength(1);
+      const sentBefore = bundler.sent.length;
+      const prompts1 = authenticator.calls.get;
+      const result = await sender.sendCalls(backPlan?.calls ?? [], 31337);
       expect(result.status).toBe("confirmed");
-
-      // The round has the ask, from the passkey account.
-      const position = await call(
-        p.rounds,
-        positionCallData(Number(round), account),
+      expect(await reads.balanceOf(read, shares as string, account)).toBe(
+        backPlan?.quote.shares,
       );
-      expect(BigInt(`0x${position.slice(2, 66)}`)).toBe(amount);
+      expect(await reads.balanceOf(read, chain.dollar, account)).toBe(
+        975n * DOLLAR,
+      );
+      pass(
+        "a real Back (25 play dollars, one transferAndCall) from a passkey account minted exactly the Shares the quote said",
+      );
+
+      expect(bundler.sent.length - sentBefore).toBe(1);
+      expect(authenticator.calls.get - prompts1).toBe(1);
+      pass(
+        "a real Back is one operation and one passkey signature, with no approve step",
+      );
       expect(
-        await word(
-          platform.quote,
-          encodeFunctionData("balanceOf(address)", ["address"], [account]),
+        decodeExecuteCallData(
+          bundler.sent[bundler.sent.length - 1].op.callData,
         ),
-      ).toBe(35n * DOLLAR);
+      ).toEqual(backPlan?.calls);
       pass(
-        "a real Back (approve the round, then ask 25 dollars) from a passkey account changed the round's own record of the ask",
+        "the signed operation's call data equals the app's own Back call, in order",
       );
 
-      expect(bundler.sent.length).toBe(1);
-      expect(authenticator.calls.get - promptsBefore).toBe(1);
-      pass(
-        "a real Back is one operation and one passkey signature (the real-dollar path of two calls included)",
+      // A refusal by the real Treasury (the door is shut) lands as a revert and reads in the app's own words.
+      await walletOf(founder).sendCalls(
+        [pot.setDoorCall(treasury as string, false)],
+        31337,
       );
-
-      expect(decodeExecuteCallData(bundler.sent[0].op.callData)).toEqual(calls);
-      pass(
-        "the signed operation's call data equals the app's own backCalls, in order",
-      );
-
-      // A Back to a round that is not open lands as a revert of the real round, and reads in the app's own words.
       bundler.simulateCalls(false);
-      const tooSmall = backCalls({
-        quote,
-        rounds: p.rounds,
-        round: Number(round) + 40,
-        amount: DOLLAR,
-      });
       let caught: unknown;
-      await sender.sendCalls(tooSmall, 31337).catch((e) => {
+      await sender.sendCalls(backPlan?.calls ?? [], 31337).catch((e) => {
         caught = e;
       });
       expect((caught as WalletStepError).reason).toBe("reverted");
-      expect(moneyProblem(caught, "back")).toBe(
-        "This round is not taking asks any more, so nothing was taken.",
-      );
+      expect(potProblem(caught, "back")).toMatch(/not taking new backers/);
       pass(
-        "a refusal by the real round (a round that is not open) comes back as the app's own words, from the receipt's revert reason",
+        "a refusal by the real Treasury (the door is shut) comes back as the app's own words, from the receipt's revert reason",
       );
 
       expect(BigInt(await balance(account))).toBe(0n);

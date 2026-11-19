@@ -5,13 +5,9 @@ import { investingOn } from "../../lib/server";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
-import { OwnershipLine } from "../money/MoneyTab";
-import {
-  useMoneySend,
-  useRecentNumbers,
-  useWallet,
-  useWalletAddress,
-} from "../money/use-money";
+import { OwnershipLine } from "../money/OwnershipLine";
+import { useMoneySend, useWallet, useWalletAddress } from "../money/use-money";
+import { useRecentNumbers } from "../money/use-money-v1";
 import type { Project } from "../project/project-record";
 import {
   builtLauncher,
@@ -23,7 +19,7 @@ import {
 } from "./launch";
 import { LAUNCHER_READS, launchCall } from "./team-calls";
 import { teamProblem } from "./team-copy";
-import { readWord } from "./use-team";
+import { readWord } from "./use-team-v1";
 
 /** Where to launch: the build's Launcher, else the one the server's newest record of numbers names. */
 function useLauncher() {

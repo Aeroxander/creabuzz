@@ -4,7 +4,7 @@ import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
 import { useWallet, useWalletAddress } from "../money/use-money";
 import { senderCapabilities } from "../money/wallet";
-import { teamProblem } from "./team-copy";
+import { potProblem } from "../money/pot-copy";
 import { useLinkWallet, useTeamWallets } from "./use-wallets";
 
 /**
@@ -52,7 +52,7 @@ export function LinkWallet({ me }: { me: string }) {
             setProblem(null);
             link.mutate(undefined, {
               onSuccess: () => toast("Your wallet is linked.", "done"),
-              onError: (error) => setProblem(teamProblem(error, "link")),
+              onError: (error) => setProblem(potProblem(error, "link")),
             });
           }}
           size="sm"

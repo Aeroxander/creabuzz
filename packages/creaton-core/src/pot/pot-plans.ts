@@ -25,7 +25,7 @@ import {
 export const QUOTE_TOLERANCE_BPS = 50n;
 
 /** Team Shares have no exact quote, so the guard on their take-out is wider: 2%, in ten-thousandths. */
-export const TEAM_TOLERANCE_BPS = 200n;
+const TEAM_TOLERANCE_BPS = 200n;
 
 const BPS = 10_000n;
 
@@ -54,6 +54,10 @@ export async function planBack(
     dollar: string;
     treasury: string;
     amount: bigint;
+    /**
+     * Who gets the Shares. Default: the payer, which the one-call form reads from the zero address; the two-call form
+     * has no such shortcut, so there `to` must be given (the account that sends).
+     */
     to?: string;
     /** Skip the read of whether the dollar has `transferAndCall` when the caller already knows. */
     payAndCall?: boolean;

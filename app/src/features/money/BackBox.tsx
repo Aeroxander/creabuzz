@@ -4,8 +4,9 @@ import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
 import { Sheet } from "../../ui/sheet";
 import { useToast } from "../../ui/toast";
-import { backCalls, backingSplit, mostBack, parseDollars } from "./calls";
-import { OwnershipLine, priceLine } from "./MoneyTab";
+import { backCalls, backingSplit, mostBack, parseDollars } from "./calls-v1";
+import { priceLine } from "./MoneyTab";
+import { OwnershipLine } from "./OwnershipLine";
 import { moneyProblem } from "./money-copy";
 import {
   canLower,
@@ -16,8 +17,9 @@ import {
   sharesPerDollar,
   sharesText,
   timeText,
-} from "./numbers";
-import { readAsked, readQuote, useMoneySend } from "./use-money";
+} from "./numbers-v1";
+import { useMoneySend } from "./use-money";
+import { readAsked, readQuote } from "./use-money-v1";
 
 /** Raw dollars kept with a waiting Back, or null. */
 function amountOf(detail: string | undefined): bigint | null {

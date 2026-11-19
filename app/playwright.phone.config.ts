@@ -6,7 +6,7 @@ const PORT = process.env.E2E_PORT ?? "4174";
 
 export default defineConfig({
   testDir: "./tests/e2e",
-  testMatch: ["**/phone-back.spec.ts", "**/phone-choice.spec.ts"],
+  testMatch: ["**/phone-choice.spec.ts"],
   timeout: 180_000,
   retries: 0,
   workers: 1,

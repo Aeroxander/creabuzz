@@ -50,6 +50,7 @@ const ACTIONS: PotAction[] = [
   "agent",
   "seat",
   "launch",
+  "link",
   "wind-down",
   "pair",
 ];

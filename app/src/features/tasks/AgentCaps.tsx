@@ -3,12 +3,11 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
 import { useToast } from "../../ui/toast";
-import type { ProjectNumbers } from "../money/numbers";
+import { DOLLAR, type ProjectNumbers } from "../money/numbers";
 import { useMoneySend } from "../money/use-money";
 import {
   AGENT_DOLLARS_MAX,
   AGENT_SHARES_MAX,
-  DEFAULT_AGENT_DOLLARS,
   revokeAgentCall,
   setAgentCall,
 } from "./task-calls";
@@ -25,14 +24,18 @@ const SHARE = 10n ** 18n;
 export function AgentCaps({ numbers }: { numbers: ProjectNumbers }) {
   const titleId = useId();
   const [agent, setAgent] = useState("");
-  const [dollars, setDollars] = useState(String(DEFAULT_AGENT_DOLLARS));
-  const [shares, setShares] = useState("0");
+  // What a new helper starts with is the platform's own setting, read from the project's numbers, not typed here.
+  const [dollars, setDollars] = useState(
+    String(numbers.limits.agentUsdPerDay / DOLLAR),
+  );
+  const [shares, setShares] = useState(
+    String(numbers.limits.agentTeamPerDay / SHARE),
+  );
   const [tried, setTried] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const treasury = numbers.contracts.treasury;
-  const send = useMoneySend(`agent:${numbers.chainId}:${treasury ?? ""}`);
+  const send = useMoneySend(`agent:${numbers.chainId}:${treasury}`);
   const toast = useToast();
-  if (!treasury) return null;
   const addressProblem = ADDRESS.test(agent.trim())
     ? null
     : "The agent's wallet address: 0x and 40 letters and digits.";
@@ -72,8 +75,9 @@ export function AgentCaps({ numbers }: { numbers: ProjectNumbers }) {
           Agent limits
         </h2>
         <p className="mt-1 text-sm text-muted">
-          What a helper agent's wallet may send and give for the project in a
-          day. It can never go past them. The AI manager never gets one.
+          What a helper agent's wallet may draw from the allowance and give as
+          Team Shares for the project in a day. It can never go past them. The
+          AI manager never gets one.
         </p>
       </div>
       <Field
@@ -99,7 +103,7 @@ export function AgentCaps({ numbers }: { numbers: ProjectNumbers }) {
       <Field
         data-testid="agent-shares"
         inputMode="numeric"
-        label="Shares a day"
+        label="Team Shares a day"
         onChange={(e) => setShares(e.target.value)}
         problem={
           tried && shareCount === null

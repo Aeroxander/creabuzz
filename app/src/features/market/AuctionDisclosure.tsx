@@ -1,7 +1,11 @@
 import { useId } from "react";
 import { Card } from "../../ui/card";
 import { priceLine } from "../money/MoneyTab";
-import { dollarsText, type ProjectNumbers, sharesText } from "../money/numbers";
+import {
+  dollarsText,
+  type ProjectNumbers,
+  sharesText,
+} from "../money/numbers-v1";
 import { topPriceQ96 } from "./market-calls";
 import { priceText, sharePriceFromQ96 } from "./market-math";
 

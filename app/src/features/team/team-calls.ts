@@ -9,7 +9,7 @@ import {
   type AbiValue,
   encodeFunctionData,
 } from "@creaton/core/launchpad/evmAbi.ts";
-import type { MoneyCall } from "../money/calls";
+import type { MoneyCall } from "../money/calls-v1";
 
 /** A call's data: the signature's selector and its arguments. */
 function callData(

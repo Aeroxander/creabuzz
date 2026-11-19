@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { backCalls, type MoneyCall } from "./calls";
+import { backCalls } from "@creaton/core/pot/pot-calls.ts";
+import type { MoneyCall } from "./calls";
 import { moneyProblem } from "./money-copy";
 import {
   addressFromWord,
@@ -169,10 +170,12 @@ describe("the injected wallet", () => {
     const error = await injectedWallet(p, { polls: 2, pollMs: 0 })
       .sendCalls(
         backCalls({
-          quote: `0x${"11".repeat(20)}`,
-          rounds: `0x${"22".repeat(20)}`,
-          round: 2,
+          dollar: `0x${"11".repeat(20)}`,
+          treasury: `0x${"22".repeat(20)}`,
           amount: 25_000_000n,
+          minShares: 1n,
+          to: FROM,
+          payAndCall: false,
         }),
         31337,
       )

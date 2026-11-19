@@ -71,6 +71,20 @@ test("Back's data matches cast byte for byte", () => {
   );
 });
 
+test("a Back by approve and join must name who gets the Shares: join does not read zero as the payer", () => {
+  assert.throws(
+    () =>
+      calls.backCalls({
+        dollar: DOLLAR,
+        treasury: TREASURY,
+        amount: 1_000_000n,
+        minShares: 1n,
+        payAndCall: false,
+      }),
+    /needs the account that gets the Shares/,
+  );
+});
+
 test("Back's `to` defaults to the payer (the zero address)", () => {
   const [call] = calls.backCalls({
     dollar: DOLLAR,
@@ -306,4 +320,30 @@ test("a bad address, a negative or oversize number never becomes calldata", () =
   assert.throws(() => calls.setRateCall(TREASURY, 2 ** 32), /out of range/);
   assert.throws(() => calls.setRateCall(TREASURY, 1.5));
   assert.throws(() => calls.setRateCall(TREASURY, -1), /out of range/);
+});
+
+test("a Pair's proposal, confirmation and withdrawal carry the inner call whole", () => {
+  const inner = calls.drawCall({
+    treasury: TREASURY,
+    to: YOU,
+    amount: 25_000_000n,
+  });
+  const propose = calls.pairProposeCall(PAIR, inner.to, inner.data);
+  assert.equal(propose.to, low(PAIR));
+  const proposed = read(PAIR_ABI, propose);
+  assert.deepEqual(
+    [proposed.name, ...proposed.args],
+    ["propose", low(TREASURY), inner.data],
+  );
+  const confirm = calls.pairConfirmCall(PAIR, inner.to, inner.data, 3n);
+  const confirmed = read(PAIR_ABI, confirm);
+  assert.deepEqual(
+    [confirmed.name, ...confirmed.args],
+    ["confirm", low(TREASURY), inner.data, 3n],
+  );
+  const cancel = calls.pairCancelCall(PAIR, HASH);
+  assert.deepEqual(
+    [read(PAIR_ABI, cancel).name, ...read(PAIR_ABI, cancel).args],
+    ["cancel", HASH],
+  );
 });

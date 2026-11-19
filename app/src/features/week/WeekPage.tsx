@@ -10,9 +10,9 @@ import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { useToast } from "../../ui/toast";
-import { checkInCall } from "../money/calls";
-import { moneyProblem } from "../money/money-copy";
 import { dayText, type ProjectNumbers } from "../money/numbers";
+import { potProblem } from "../money/pot-copy";
+import { checkInFor, mayCheckIn } from "../money/runner";
 import {
   useMoneySend,
   useProjectNumbers,
@@ -20,8 +20,7 @@ import {
 } from "../money/use-money";
 import { useProjectsBy } from "../profile/use-own-projects";
 import { type Project, projectRef } from "../project/project-record";
-import { checkInTarget, usePair } from "../team/use-team";
-import { checkInAction, useLastWeekly } from "./use-week";
+import { checkInAction, type LastWeekly, useLastWeekly } from "./use-week";
 import { WeeklySheet } from "./WeeklySheet";
 
 /**
@@ -71,7 +70,7 @@ function WeekCard({
   lastKnown,
 }: {
   project: Project;
-  lastUpdate: number | null;
+  lastUpdate: LastWeekly | null;
   lastKnown: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -82,9 +81,8 @@ function WeekCard({
       ? numbersRead.data
       : null;
   const address = useWalletAddress().data ?? null;
-  const pair = usePair(numbers).data ?? null;
-  // Where this wallet's check-in goes: the Treasury when it runs the project, its Pair when it signs for it (Team).
-  const checkIn = numbers ? checkInTarget(numbers, address, pair) : null;
+  // The Treasury takes this wallet's check-in when it runs the project, its Pair when it signs for it.
+  const checkIn = numbers ? mayCheckIn(numbers, address) : false;
   const now = Math.floor(Date.now() / 1000);
   return (
     <Card className="flex flex-col gap-3" data-testid="week-project">
@@ -103,7 +101,7 @@ function WeekCard({
       <ul className="flex flex-col gap-1.5 text-sm">
         {lastKnown ? (
           <li data-testid="week-last-update">
-            {freshnessLine(lastUpdate, now)}
+            {freshnessLine(lastUpdate?.at ?? null, now)}
           </li>
         ) : null}
         {numbers ? <ClockLine numbers={numbers} /> : null}
@@ -120,10 +118,14 @@ function WeekCard({
           : "Post this week's update"}
       </Button>
       {numbers && checkIn ? (
-        <CheckInAgain numbers={numbers} to={checkIn} />
+        <CheckInAgain
+          address={address}
+          lastRecordId={lastUpdate?.id ?? null}
+          numbers={numbers}
+        />
       ) : null}
       <WeeklySheet
-        checkIn={numbers && checkIn ? { numbers, to: checkIn } : null}
+        checkIn={numbers && checkIn ? { numbers, address } : null}
         onOpenChange={setOpen}
         open={open}
         project={project}
@@ -133,23 +135,26 @@ function WeekCard({
 }
 
 function ClockLine({ numbers }: { numbers: ProjectNumbers }) {
-  if (numbers.clock.woundDown)
+  if (numbers.windDown)
     return (
-      <li className="text-muted">Wound down: payments stopped for good.</li>
+      <li className="text-muted">
+        Wound down: the allowance stopped for good.
+      </li>
     );
-  if (numbers.now.quietSince)
+  if (numbers.quiet.state !== "active")
     return (
       <li data-testid="week-clock">
-        Quiet since {dayText(numbers.now.quietSince)}: payments wait for your
+        Quiet since {dayText(numbers.quiet.since)}: the allowance waits for your
         next check-in.
       </li>
     );
-  if (numbers.clock.lastCheckIn)
+  if (numbers.clock.lastRecordHash !== null)
     return (
       <li data-testid="week-clock">
-        Last check-in {dayText(numbers.clock.lastCheckIn)}. Payments run until{" "}
-        {numbers.clock.runsUntil
-          ? dayText(numbers.clock.runsUntil)
+        Last check-in {dayText(numbers.clock.lastCheckIn)}. The allowance runs
+        until{" "}
+        {numbers.clock.activeUntil
+          ? dayText(numbers.clock.activeUntil)
           : "your next check-in"}
         .
       </li>
@@ -158,22 +163,27 @@ function ClockLine({ numbers }: { numbers: ProjectNumbers }) {
 }
 
 /**
- * Check in without posting: for the week whose update went out but whose check-in did not. The network's own record of
- * the last check-in (above) is what says whether it is still needed; nothing here pretends it happened.
+ * Check in without posting: for the week whose update went out but whose check-in did not. It carries the id of the
+ * newest weekly update (that record is what the check-in points at). The network's own record of the last check-in
+ * (above) is what says whether it is still needed; nothing here pretends it happened.
  */
 function CheckInAgain({
   numbers,
-  to,
+  address,
+  lastRecordId,
 }: {
   numbers: ProjectNumbers;
-  /** The Treasury, or the Pair for one of its signers: both take `checkIn()`. */
-  to: string;
+  address: string | null;
+  /** The id of this project's newest weekly update: the hash a check-in alone carries, or null when none is known. */
+  lastRecordId: string | null;
 }) {
   const send = useMoneySend(
-    checkInAction(numbers.chainId, numbers.contracts.treasury ?? to),
+    checkInAction(numbers.chainId, numbers.contracts.treasury),
   );
   const toast = useToast();
   const [problem, setProblem] = useState<string | null>(null);
+  // With no weekly update to point at, the check-in carries no record: 32 zero bytes, said plainly as such.
+  const hash = lastRecordId ?? NO_RECORD;
   return (
     <>
       {problem ? (
@@ -186,12 +196,14 @@ function CheckInAgain({
         disabled={send.isPending}
         onClick={() => {
           setProblem(null);
+          const call = checkInFor(numbers, address, hash);
+          if (!call) return;
           send.send(
-            { chainId: numbers.chainId, build: () => [checkInCall(to)] },
+            { chainId: numbers.chainId, build: () => [call] },
             {
               onSuccess: () =>
-                toast("Checked in. Payments run for 14 more days.", "done"),
-              onError: (error) => setProblem(moneyProblem(error, "check-in")),
+                toast("Checked in. The allowance keeps running.", "done"),
+              onError: (error) => setProblem(potProblem(error, "check-in")),
             },
           );
         }}
@@ -203,3 +215,6 @@ function CheckInAgain({
     </>
   );
 }
+
+/** What a check-in carries when there is no weekly update to point at: 32 zero bytes. */
+const NO_RECORD = `0x${"0".repeat(64)}`;

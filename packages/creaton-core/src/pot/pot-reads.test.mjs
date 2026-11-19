@@ -130,6 +130,7 @@ test("a Back on a dollar with no pay-and-call is approve, then join, with the sa
     dollar: DOLLAR,
     treasury: TREASURY,
     amount: 100n,
+    to: ME,
   });
   assert.equal(plan.oneSignature, false);
   assert.equal(plan.calls.length, 2);

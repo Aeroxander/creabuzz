@@ -13,7 +13,7 @@ import {
   encodeExitBid,
   encodeExitPartiallyFilledBid,
 } from "@creaton/core/launchpad/evmContractCalls.ts";
-import type { MoneyCall } from "../money/calls";
+import type { MoneyCall } from "../money/calls-v1";
 import type { MoneyWallet } from "../money/wallet";
 import { MARKET_READS } from "./market-calls";
 

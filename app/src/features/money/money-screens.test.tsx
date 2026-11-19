@@ -31,7 +31,7 @@ import {
 import { BackBox } from "./BackBox";
 import { MoneyTab } from "./MoneyTab";
 import { OpenRounds } from "./OpenRounds";
-import { openRound, type ProjectNumbers } from "./numbers";
+import { openRound, type ProjectNumbers } from "./numbers-v1";
 import { Receipts } from "./Receipts";
 
 vi.mock(

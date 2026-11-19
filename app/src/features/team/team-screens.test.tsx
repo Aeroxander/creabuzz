@@ -36,7 +36,7 @@ import {
   FOUNDER_EVM,
   numbersContent,
 } from "../../../tests/helpers/numbers-fixture";
-import { DEFAULT_SHARES_PER_RAW_DOLLAR } from "../money/calls";
+import { DEFAULT_SHARES_PER_RAW_DOLLAR } from "../money/calls-v1";
 import { encodeParameters } from "@creaton/core/launchpad/evmAbi.ts";
 import { LaunchProject } from "./LaunchProject";
 import { PairCard } from "./PairCard";
@@ -54,7 +54,7 @@ import {
   pairProposeCall,
 } from "./team-calls";
 import { TeamTop } from "./TeamTop";
-import { checkInTarget } from "./use-team";
+import { checkInTarget } from "./use-team-v1";
 
 vi.mock(
   "../../lib/relay",

@@ -1,13 +1,13 @@
 import { useId, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
-import { DEFAULT_SHARES_PER_RAW_DOLLAR } from "../money/calls";
-import { OwnershipLine } from "../money/MoneyTab";
+import { DEFAULT_SHARES_PER_RAW_DOLLAR } from "../money/calls-v1";
+import { OwnershipLine } from "../money/OwnershipLine";
 import {
   anyRoundUnclosed,
   dollarsText,
   type ProjectNumbers,
-} from "../money/numbers";
+} from "../money/numbers-v1";
 import { describeProposal, type Proposal } from "./pair";
 import { SendButton, SendSheet } from "./SendSheet";
 import {
@@ -19,7 +19,7 @@ import {
   pairProposeCall,
 } from "./team-calls";
 import { SALE_STAGE, useBlock, useSaleStage } from "../market/use-market";
-import { type PairState, signsFor, usePairWaiting } from "./use-team";
+import { type PairState, signsFor, usePairWaiting } from "./use-team-v1";
 
 /**
  * Team on the Money tab: who the two signers are, the calls waiting for the second signature (Confirm for the other

@@ -42,7 +42,7 @@ function build(
 // --- The dollar ---------------------------------------------------------------------------------------------------
 
 /** Let `spender` take up to `amount` dollars of the sender's. */
-export function approveCall(
+function approveCall(
   dollar: string,
   spender: string,
   amount: bigint,
@@ -63,7 +63,9 @@ export function faucetCall(dollar: string): PotCall {
  *   Treasury joins inside it, with exactly 64 bytes of data, only for the sender's own money.
  * - `payAndCall` false (a dollar with no `transferAndCall`): `approve` then `join`, in that order; the sender lets the
  *   first land before it sends the second.
- * `to` is who receives the Shares; the zero address (the default) means the payer.
+ * `to` is who receives the Shares. In the one-call form the zero address (the default) means the payer; in the two-call
+ * form `Treasury.join` does NOT read zero that way (the Shares would go nowhere and the call is refused), so `to` must
+ * be named there: the account that sends.
  */
 export function backCalls(input: {
   dollar: string;
@@ -88,6 +90,10 @@ export function backCalls(input: {
       ]),
     ];
   }
+  if (to.toLowerCase() === ZERO_ADDRESS)
+    throw new Error(
+      "A Back by approve and join needs the account that gets the Shares",
+    );
   return [
     approveCall(input.dollar, input.treasury, input.amount),
     build(TREASURY_ABI, input.treasury, "join", [
@@ -289,4 +295,30 @@ export function makePairCall(
 /** Wind the project down by choice (the runner; with a Pair, both signers through a proposal). */
 export function windDownCall(launcher: string, key: string): PotCall {
   return build(LAUNCHER_ABI, launcher, "windDown", [key]);
+}
+
+// --- A Pair (two signers) -----------------------------------------------------------------------------------------
+
+/** Propose a call to the Treasury or the Launcher through the Pair: it runs when the other signer confirms the same call. */
+export function pairProposeCall(
+  pair: string,
+  target: string,
+  data: string,
+): PotCall {
+  return build(PAIR_ABI, pair, "propose", [target, data]);
+}
+
+/** Confirm the other signer's proposal (the exact target, data and nonce it was proposed with) and run it. */
+export function pairConfirmCall(
+  pair: string,
+  target: string,
+  data: string,
+  nonce: bigint,
+): PotCall {
+  return build(PAIR_ABI, pair, "confirm", [target, data, nonce]);
+}
+
+/** Withdraw a call you proposed. */
+export function pairCancelCall(pair: string, id: string): PotCall {
+  return build(PAIR_ABI, pair, "cancel", [id]);
 }

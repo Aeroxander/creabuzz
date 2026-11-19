@@ -15,6 +15,7 @@ import {
   pubkeyOf,
   type Relay,
 } from "./helpers/world";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
 
 /**
  * The new app's smoke run at phone size (390x844, touch): the sign-up screen with the legal boxes, Home, a project,
@@ -171,6 +172,7 @@ test("Home shows projects and posts, never sorted by money, at phone width", asy
 test("the open rounds slot shows only where the server turns investing on", async ({
   page,
 }) => {
+  test.skip(!LEGACY_BUILD, LEGACY_WHY);
   const relay = createMockRelay();
   seed(relay);
   await install(page, relay, READER_KEY, { investing: true });
@@ -190,8 +192,13 @@ test("a project shows its stage, its updates and its people; Tasks is marked as 
   await expect(page.getByTestId("project-name")).toHaveText("Lantern", {
     timeout: 20_000,
   });
-  await expect(page.getByTestId("stage-line")).toContainText("Team");
-  await expect(page.locator('[aria-current="step"]')).toContainText("Team");
+  // The stage line belongs to the old design (behind the legacy-screens flag): with it off the page has none.
+  if (LEGACY_BUILD) {
+    await expect(page.getByTestId("stage-line")).toContainText("Team");
+    await expect(page.locator('[aria-current="step"]')).toContainText("Team");
+  } else {
+    await expect(page.getByTestId("stage-line")).toHaveCount(0);
+  }
   await expect(page.getByTestId("project-update").first()).toContainText(
     "Built the first lamp",
   );
@@ -217,6 +224,7 @@ test("a project shows its stage, its updates and its people; Tasks is marked as 
 test("with investing on, a team that never raised money is not shown as backed, and four tabs fit at 360", async ({
   page,
 }) => {
+  test.skip(!LEGACY_BUILD, LEGACY_WHY);
   await page.setViewportSize({ width: 360, height: 740 });
   const relay = createMockRelay();
   seed(relay);

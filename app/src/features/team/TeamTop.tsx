@@ -5,7 +5,7 @@ import {
 } from "../../lib/profiles";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
-import type { ProjectNumbers } from "../money/numbers";
+import type { ProjectNumbers } from "../money/numbers-v1";
 import { useWalletAddress } from "../money/use-money";
 import { PairCard } from "./PairCard";
 import { SendSheet } from "./SendSheet";
@@ -16,7 +16,7 @@ import {
   makePairCall,
   takeSeatCall,
 } from "./team-calls";
-import { readAddress, usePair, useSeatOffer } from "./use-team";
+import { readAddress, usePair, useSeatOffer } from "./use-team-v1";
 import { useTeamWallets } from "./use-wallets";
 
 /**

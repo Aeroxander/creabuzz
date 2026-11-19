@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { Button } from "../../ui/button";
-import type { ProjectNumbers } from "../money/numbers";
-import { sharesText } from "../money/numbers";
+import type { ProjectNumbers } from "../money/numbers-v1";
+import { sharesText } from "../money/numbers-v1";
 import { SendSheet } from "./SendSheet";
 import { asRunner, giveSharesData } from "./team-calls";
-import type { PairState } from "./use-team";
+import type { PairState } from "./use-team-v1";
 import type { TeamWallet } from "./use-wallets";
 
 const SHARE = 10n ** 18n;

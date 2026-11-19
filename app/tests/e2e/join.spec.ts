@@ -17,6 +17,7 @@ import {
   projectRecord,
   pubkeyOf,
 } from "./helpers/world";
+import { LEGACY_BUILD } from "./helpers/legacy-build";
 
 /**
  * Joining a project from its link in the new app (the milestone 0 flow): signed out on the hosted settings, Ask, the
@@ -100,7 +101,8 @@ test("a new person joins in 4 presses and 1 field, and the founder accepts in 1 
   await expect(page.getByTestId("project-people")).toContainText(
     "Nia Newcomer",
   );
-  await expect(
-    page.getByTestId("stage-line").locator('[aria-current="step"]'),
-  ).toContainText("Team");
+  if (LEGACY_BUILD)
+    await expect(
+      page.getByTestId("stage-line").locator('[aria-current="step"]'),
+    ).toContainText("Team");
 });

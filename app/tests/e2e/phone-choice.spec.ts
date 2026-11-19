@@ -4,6 +4,9 @@ import { expectAccessible } from "../helpers/a11y";
 import { installWallet } from "./helpers/money-world";
 import { COMMUNITY_HOST, createMockRelay, PREVIEW_PORT } from "./mock-relay";
 import { pubkeyOf } from "./helpers/world";
+import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
+
+test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * A browser with a wallet and a passkey account can say where it backs from, on You, by keyboard and by touch. The

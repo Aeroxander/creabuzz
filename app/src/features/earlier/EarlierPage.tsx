@@ -9,8 +9,8 @@ import { BackHeader } from "../../app/BackHeader";
 import { investingOn } from "../../lib/server";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
-import type { MoneyCall } from "../money/calls";
-import { sharesText } from "../money/numbers";
+import type { MoneyCall } from "../money/calls-v1";
+import { sharesText } from "../money/numbers-v1";
 import {
   useConnectWallet,
   useWallet,

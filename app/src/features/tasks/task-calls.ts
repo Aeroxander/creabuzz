@@ -1,22 +1,16 @@
 /**
- * The chain calls behind paying for a task and setting an agent's limits, as plain data for the person's wallet to send.
- * Pure: the calldata is pinned in `task-calls.test.ts` against `cast calldata`. The money always moves from the runner's
- * own wallet: the server and agents never send it.
+ * The chain calls behind paying for a task and setting an agent's limits, as plain data for the person's wallet to send,
+ * from the generated ABIs of `contracts/pot` (`@creaton/core/pot/pot-calls.ts`). A task is paid by a draw from the
+ * allowance box: the money comes from the box, never straight from the pot. It always moves from the runner's own
+ * account: the server and agents never send it.
  */
-import { encodeFunctionData } from "@creaton/core/launchpad/evmAbi.ts";
-import type { MoneyCall } from "../money/calls";
+import {
+  drawCall,
+  type PotCall,
+  revokeAgentCall as revokeCall,
+  setAgentCall as setCall,
+} from "@creaton/core/pot/pot-calls.ts";
 import { DOLLAR } from "../money/numbers";
-
-/** At Team one signer may spend this much alone in any 7 days (`Pair.ALONE_CAP`); above it both must agree. */
-export const PAIR_ALONE_DOLLARS = 500;
-/** The default agent limits a project starts with: 25 dollars a day (`Treasury.defaultAgentUsd`). */
-export const DEFAULT_AGENT_DOLLARS = 25;
-
-const call = (to: string, data: string): MoneyCall => ({
-  to,
-  data,
-  value: "0x0",
-});
 
 /** The most dollars a day a limit may name, and the most whole Shares a day: far under what a limit field can hold. */
 export const AGENT_DOLLARS_MAX = 1_000_000;
@@ -29,62 +23,35 @@ export function rawDollars(usd: number): bigint {
   return BigInt(usd) * DOLLAR;
 }
 
-/** Pay `usd` dollars to `to` from the project's spendable money, sent by its runner: `Treasury.spend`. */
-export function treasurySpendCall(
+/** Pay `usd` dollars to `to` out of the allowance box, sent by the project's runner: `Treasury.draw`. */
+export function drawForTaskCall(
   treasury: string,
   to: string,
   usd: number,
-): MoneyCall {
-  return call(
-    treasury,
-    encodeFunctionData(
-      "spend(address,uint256)",
-      ["address", "uint256"],
-      [to, rawDollars(usd)],
-    ),
-  );
-}
-
-/** The same payment by one of a Pair's two signers, inside their 500 dollars a week alone: `Pair.spend`. */
-export function pairSpendCall(
-  pair: string,
-  to: string,
-  usd: number,
-): MoneyCall {
-  return call(
-    pair,
-    encodeFunctionData(
-      "spend(address,uint256)",
-      ["address", "uint256"],
-      [to, rawDollars(usd)],
-    ),
-  );
+): PotCall {
+  return drawCall({ treasury, to, amount: rawDollars(usd) });
 }
 
 /**
- * Let `agent` act for the project with daily limits: `usd` whole dollars and `shares` raw Shares (18 decimals) a day.
- * Only the runner: `Treasury.setAgent`. Setting it again changes the limits; what was used still counts.
+ * Let `agent` act for the project with daily limits: `usd` whole dollars out of the box and `shares` raw Team Shares
+ * (18 decimals) a day. Only the runner: `Treasury.setAgent`. Setting it again changes the limits; what was used still
+ * counts.
  */
 export function setAgentCall(
   treasury: string,
   agent: string,
   usd: number,
   shares: bigint,
-): MoneyCall {
-  return call(
+): PotCall {
+  return setCall({
     treasury,
-    encodeFunctionData(
-      "setAgent(address,uint128,uint128)",
-      ["address", "uint128", "uint128"],
-      [agent, rawDollars(usd), shares],
-    ),
-  );
+    agent,
+    usdCap: rawDollars(usd),
+    teamCap: shares,
+  });
 }
 
 /** Switch an agent off: `Treasury.revokeAgent`. */
-export function revokeAgentCall(treasury: string, agent: string): MoneyCall {
-  return call(
-    treasury,
-    encodeFunctionData("revokeAgent(address)", ["address"], [agent]),
-  );
+export function revokeAgentCall(treasury: string, agent: string): PotCall {
+  return revokeCall(treasury, agent);
 }

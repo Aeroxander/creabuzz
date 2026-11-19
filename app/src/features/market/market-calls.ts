@@ -16,7 +16,7 @@ import {
   encodeClaimTokens,
   encodePermit2Approve,
 } from "@creaton/core/launchpad/evmContractCalls.ts";
-import type { MoneyCall } from "../money/calls";
+import type { MoneyCall } from "../money/calls-v1";
 
 const call = (to: string, data: string): MoneyCall => ({
   to: to.toLowerCase(),
