@@ -81,7 +81,7 @@ contract TaskBook is ITaskBook {
     /// @dev The last 16 takes, `time << 16 | bps`, three to a slot.
     uint80[16] internal _takes;
     mapping(uint64 => Task) internal _task;
-    /// @notice What a leaver holds against a task (the face of its exit note); pass 2 writes it, a claim clears it.
+    /// @notice What a leaver holds against a task (the face of its exit note); a leave writes it, a claim clears it.
     mapping(uint64 => mapping(address => uint256)) public noteOf;
 
     /// @notice A task was announced. `openAfter` counts the open tasks after it.
@@ -121,6 +121,21 @@ contract TaskBook is ITaskBook {
         uint256 noteFaceAfter,
         uint8 openAfter
     );
+    /// @notice A leaver was given a note: `part` dollars of the stayers' claim on task `serial` became the holder's note. The
+    /// task now stands at `stayerAfter` (stayers) and `noteFaceAfter` (all notes).
+    event NoteMinted(
+        uint64 indexed serial, address indexed holder, uint256 part, uint256 stayerAfter, uint256 noteFaceAfter
+    );
+    /// @notice A note was settled: `paid` went to the holder; `dustToPot` is the rounding left when it was the last note against
+    /// the task, which goes to the pot. The task now holds `notesLeftAfter` for the notes still to be claimed.
+    event NoteClaimed(
+        uint64 indexed serial,
+        address indexed holder,
+        uint256 paid,
+        uint256 dustToPot,
+        uint256 noteFaceAfter,
+        uint256 notesLeftAfter
+    );
 
     /// @notice A state-changing call from anyone but the Treasury, or a payee who is not the caller.
     error NotAllowed();
@@ -153,6 +168,9 @@ contract TaskBook is ITaskBook {
     error NotYet(uint256 readyAt);
     /// @notice The numbers the Treasury and the book keep do not agree (fails closed).
     error Inconsistent();
+    /// @notice No note to settle: none held for this task, or the task was paid in full (its notes are void), withdrawn or
+    /// lapsed.
+    error NothingToPay();
 
     modifier onlyTreasury() {
         if (msg.sender != treasury) revert NotAllowed();
@@ -302,7 +320,79 @@ contract TaskBook is ITaskBook {
         }
     }
 
+    // ================================================= exit notes ====================================================
+
+    /// @inheritdoc ITaskBook
+    /// @dev A leaver's note is spread over the taken tasks in proportion to each one's stayers' claim: `part = floor(note x C /
+    /// stay)`, so a part never passes its task's `C` while `note <= stay`, and the few units the floors leave stay in `C`
+    /// (the stayers' dust). For each task `C + N == L` keeps holding, since `C` falls by what `N` gains. The book adds up the
+    /// claims itself and fails closed if the Treasury's sum is another.
+    function mintNotes(address holder, uint256 note, uint256 stay) external onlyTreasury returns (uint256 minted) {
+        uint64[8] memory ids = _open;
+        uint256 n = openCount;
+        uint256 sum;
+        for (uint256 i; i < n; ++i) {
+            Task storage k = _task[ids[i]];
+            if (k.state == State.Taken) sum += k.stayer;
+        }
+        if (sum != stay || note > stay) revert Inconsistent();
+        if (note == 0) return 0;
+        for (uint256 i; i < n; ++i) {
+            Task storage k = _task[ids[i]];
+            if (k.state != State.Taken) continue;
+            uint256 part = Math.mulDiv(note, k.stayer, stay);
+            if (part == 0) continue;
+            (k.stayer, k.noteFace) = (k.stayer - uint128(part), k.noteFace + uint128(part));
+            noteOf[ids[i]][holder] += part;
+            minted += part;
+            emit NoteMinted(ids[i], holder, part, k.stayer, k.noteFace);
+        }
+    }
+
+    /// @inheritdoc ITaskBook
+    /// @dev The task ended with `returned` dollars (`rem`) of its `locked` (`L`); the notes were given `floor(N x rem / L)` to
+    /// share, and each note is paid `floor(note x rem / L)`. A sum of floors of shares of `N` cannot pass the floor of the
+    /// whole, so the notes of a task are never paid more than it returned for them. The note is cleared before anything else
+    /// is written. The last note against a task also releases what the floors left over.
+    function claim(uint64 serial, address holder) external onlyTreasury returns (uint256 paid, uint256 dust) {
+        Task storage k = _task[serial];
+        State st = k.state;
+        if (st == State.None) revert NoSuchTask();
+        if (st == State.Announced || st == State.Taken) revert NotYet(k.expiresAt);
+        uint256 rem = k.returned;
+        uint256 note = noteOf[serial][holder];
+        if (rem == 0 || note == 0) revert NothingToPay();
+        noteOf[serial][holder] = 0;
+        paid = Math.mulDiv(note, rem, k.locked);
+        uint256 face = k.noteFace - note;
+        uint256 left = k.notesLeft - paid;
+        if (face == 0) {
+            (dust, left) = (left, 0);
+        }
+        (k.noteFace, k.notesLeft) = (uint128(face), uint128(left));
+        emit NoteClaimed(serial, holder, paid, dust, face, left);
+    }
+
     // ================================================= views =========================================================
+
+    /// @inheritdoc ITaskBook
+    function spreadSum(uint256 note, uint256 stay) external view returns (uint256 minted) {
+        uint256 n = openCount;
+        for (uint256 i; i < n; ++i) {
+            Task storage k = _task[_open[i]];
+            if (k.state == State.Taken && k.expiresAt > block.timestamp && stay != 0) {
+                minted += Math.mulDiv(note, k.stayer, stay);
+            }
+        }
+    }
+
+    /// @inheritdoc ITaskBook
+    function claimableNote(uint64 serial, address holder) external view returns (uint256) {
+        Task storage k = _task[serial];
+        State st = k.state;
+        if (st == State.None || st == State.Announced || st == State.Taken || k.returned == 0) return 0;
+        return Math.mulDiv(noteOf[serial][holder], k.returned, k.locked);
+    }
 
     /// @inheritdoc ITaskBook
     function requireReturned(uint64 serial) external view {

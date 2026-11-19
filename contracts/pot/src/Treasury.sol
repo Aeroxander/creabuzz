@@ -171,8 +171,8 @@ contract Treasury {
         uint256 paidInAfter,
         uint256 sharesAfter
     );
-    /// @notice A holder took money out. `note` is what was set aside for them against taken tasks (always zero in this
-    /// build: exit notes arrive with the second pass of step 2).
+    /// @notice A holder took money out. `note` is the face of the exit note they were given against the money set aside for
+    /// taken tasks (zero when none was set aside).
     event Left(
         address indexed who,
         address indexed to,
@@ -183,7 +183,7 @@ contract Treasury {
         uint256 paidInAfter,
         uint256 sharesAfter
     );
-    /// @notice A Team Share holder took money out. `note` is zero until step 2.
+    /// @notice A Team Share holder took money out. `note` is the face of the exit note they were given, as in `Left`.
     event TeamLeft(
         address indexed who,
         address indexed to,
@@ -226,7 +226,9 @@ contract Treasury {
     /// @notice Money moved between the pot and the money set aside for tasks. `kind`: 1 a task was taken (`amount` is what
     /// was set aside, `who` the taker), 2 a task was paid (`amount` the payment, `who` the worker), 3 a task was rejected
     /// (`amount` came back to the pot), 4 tasks ran out or were returned by a wind-down (`serial` 0, `amount` back to the
-    /// pot). Always with the three buckets after the move.
+    /// pot), 5 a leaver was given exit notes (`serial` 0, `who` the leaver, `amount` moved from `locked` to `notesOwed`),
+    /// 6 a note was claimed (`who` the holder, `amount` paid to them; `potAfter` already includes any rounding that went
+    /// to the pot). Always with the three buckets after the move.
     event TaskMoney(
         uint8 kind,
         uint64 indexed serial,
@@ -374,19 +376,23 @@ contract Treasury {
         _settle();
         uint256 b = shares.totalSupply();
         if (n == 0 || n > b) revert BadInput();
-        cash = PotMath.cash(n, pot, paidIn, b, team.totalSupply());
+        uint256 g = team.totalSupply();
+        cash = PotMath.cash(n, pot, paidIn, b, g);
         if (cash == 0) revert NothingToPay();
         if (cash < minCash) revert TooLittleCash(minCash, cash);
+        uint256 note = _noteFull(false, n, cash, pot, locked, b, g);
         paidIn -= PotMath.paidInCut(paidIn, n, b);
         pot -= cash;
         shares.burnFor(msg.sender, n);
+        note = _giveNotes(msg.sender, note);
         _pay(to, cash);
-        emit Left(msg.sender, to, n, cash, 0, pot, paidIn, b - n);
+        emit Left(msg.sender, to, n, cash, note, pot, paidIn, b - n);
     }
 
-    /// @notice What taking out `n` Shares of `holder` would give right now: the cash, a note (always zero until step 2), and
-    /// how much of the outside money still arriving would be left behind for those who stay. Zeros when `holder` does not
-    /// hold `n`.
+    /// @notice What taking out `n` Shares of `holder` would give right now: the cash; the exit note, the face of what is set
+    /// aside for taken tasks that would be written down to them (to be claimed when the money comes back, never more than
+    /// comes back for it; exactly what `leave` would give); and how much of the outside money still arriving would be left
+    /// behind for those who stay. Zeros when `holder` does not hold `n`.
     function quoteTakeOut(address holder, uint256 n)
         external
         view
@@ -398,6 +404,7 @@ contract Treasury {
         uint256 g = team.totalSupply();
         cashNow = PotMath.cash(n, s.pot, paidIn, b, g);
         arrivingLeftBehind = PotMath.cash(n, s.pot + s.arriving, paidIn, b, g) - cashNow;
+        if (cashNow != 0) note = tasks.spreadSum(_noteFull(false, n, cashNow, s.pot, s.stay, b, g), s.stay);
     }
 
     /// @notice Take out `n` of your own Team Shares: only what is in the pot above what backers put in is shared with
@@ -409,13 +416,16 @@ contract Treasury {
         _settle();
         uint256 g = team.totalSupply();
         if (n == 0 || n > g) revert BadInput();
-        cash = PotMath.teamCash(n, pot, paidIn, shares.totalSupply(), g);
+        uint256 b = shares.totalSupply();
+        cash = PotMath.teamCash(n, pot, paidIn, b, g);
         if (cash == 0) revert NothingToPay();
         if (cash < minCash) revert TooLittleCash(minCash, cash);
+        uint256 note = _noteFull(true, n, cash, pot, locked, b, g);
         pot -= cash;
         team.burnFor(msg.sender, n);
+        note = _giveNotes(msg.sender, note);
         _pay(to, cash);
-        emit TeamLeft(msg.sender, to, n, cash, 0, pot, g - n);
+        emit TeamLeft(msg.sender, to, n, cash, note, pot, g - n);
     }
 
     /// @notice What `n` backer Shares would get in cash right now, per 1e18 (one whole Share), on the settled pot.
@@ -649,6 +659,21 @@ contract Treasury {
     function returnTask(uint64 serial) external nonReentrant {
         _settle();
         tasks.requireReturned(serial);
+    }
+
+    /// @notice Settle `holder`'s exit note against task `serial`, once the task has ended with money returned: the holder is
+    /// paid their share of what came back for notes, at the same ratio as the stayers' share. Anyone may call; the money goes
+    /// to `holder` only. A task that was paid in full has no claimable note (the worker was paid the notes' money). Settles
+    /// first, so a task that has run out is returned in the same call.
+    /// @return paid The dollars sent to `holder`.
+    function claimNote(uint64 serial, address holder) external nonReentrant returns (uint256 paid) {
+        _settle();
+        uint256 dust;
+        (paid, dust) = tasks.claim(serial, holder);
+        notesOwed -= paid + dust;
+        pot += dust;
+        _taskMoney(6, serial, holder, paid);
+        if (paid != 0) _pay(holder, paid);
     }
 
     /// @notice The notice a task of `shareBps` gets, the time it can then be taken, and how long after the take it is due.
@@ -949,6 +974,30 @@ contract Treasury {
         pot += r.pp;
         nextExpiry = r.next;
         _taskMoney(kind, serial, r.to, kind == 2 ? r.pay : r.pp);
+    }
+
+    /// @dev The face of the exit note a leaver of `n` Shares is owed while `lk` dollars sit set aside for taken tasks: what
+    /// they would be paid with that money back in the pot, less the cash they are paid now, never more than `lk`. `cashNow`
+    /// is their cash on `p`. All numbers are the state before the leave. Team Shares use the Team formula.
+    function _noteFull(bool isTeam, uint256 n, uint256 cashNow, uint256 p, uint256 lk, uint256 b, uint256 g)
+        private
+        view
+        returns (uint256)
+    {
+        if (lk == 0) return 0;
+        uint256 withLocked = isTeam ? PotMath.teamCash(n, p + lk, paidIn, b, g) : PotMath.cash(n, p + lk, paidIn, b, g);
+        return Math.min(withLocked - cashNow, lk);
+    }
+
+    /// @dev Write `note` dollars of the stayers' claim down as exit notes of `who` (the book spreads them over the taken tasks
+    /// and reports what it wrote; the few units its floors leave stay with the stayers). Moves the dollars from `locked` to
+    /// `notesOwed` and returns what was written.
+    function _giveNotes(address who, uint256 note) private returns (uint256 minted) {
+        if (note == 0) return 0;
+        minted = tasks.mintNotes(who, note, locked);
+        if (minted == 0) return 0;
+        (locked, notesOwed) = (locked - minted, notesOwed + minted);
+        _taskMoney(5, 0, who, minted);
     }
 
     /// @dev Say that `amount` moved between the pot and the money set aside, with the three buckets as they now stand.

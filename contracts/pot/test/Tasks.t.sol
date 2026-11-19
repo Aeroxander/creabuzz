@@ -764,7 +764,7 @@ contract TasksTest is PotBase {
         (uint256 quoted,,) = t.quoteTakeOut(bob, n);
         uint256 cash = _leave(bob, n);
         assertEq(cash, quoted);
-        // 40% of the shares, 95,000 in the pot (the note for the 5,000 comes with the second pass)
+        // 40% of the shares, 95,000 in the pot (the note for the 5,000 is bound in Notes.t.sol)
         assertApproxEqAbs(cash, 38_000e6, 1e6);
         _assertConserved();
     }

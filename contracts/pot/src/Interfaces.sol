@@ -121,6 +121,19 @@ interface ITaskBook {
     function expireDue() external returns (uint256 sumC, uint64 next);
     /// @notice End every open task now (a wind-down): announced ones are cancelled, taken ones return their money.
     function sweepAll() external returns (uint256 sumC);
+    /// @notice A leaver's exit note: spread `note` dollars over the taken tasks, each part in proportion to the task's stayers'
+    /// claim (`stay` is the Treasury's own sum of those claims; the book checks it). Returns what was minted (the parts are
+    /// rounded down, so a few units stay with the stayers).
+    function mintNotes(address holder, uint256 note, uint256 stay) external returns (uint256 minted);
+    /// @notice Settle `holder`'s note against task `serial`, which must have ended with money returned. Returns what is paid to
+    /// the holder and, when this was the last note against the task, the rounding left over (it goes to the pot).
+    function claim(uint64 serial, address holder) external returns (uint256 paid, uint256 dust);
+    /// @notice What a leave of `note` dollars would mint right now: the sum of the parts over the tasks that are still running
+    /// (a task whose time is up this second is skipped, as the leave's own settle would have returned it first).
+    function spreadSum(uint256 note, uint256 stay) external view returns (uint256 minted);
+    /// @notice What a claim of `holder`'s note against `serial` would pay now; zero while the task is open, when the task was
+    /// paid in full, or when there is no note.
+    function claimableNote(uint64 serial, address holder) external view returns (uint256);
     /// @notice Reverts unless task `serial` has ended without being paid in full (its money is back).
     function requireReturned(uint64 serial) external view;
     /// @notice The stayers' claim that comes back to the pot if the book is settled at time `at`.
