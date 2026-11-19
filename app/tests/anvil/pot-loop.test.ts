@@ -4,7 +4,7 @@
  * wallet: the faucet, a launch, Back in one signature (and in two), Take out with its minimum-cash guard, the weekly
  * check-in carrying a record hash, the door, the allowance (a draw, a raise that must wait), a Team grant claimed as it
  * vests, a member's own exit with its notice, outside money, and the refusals read in the app's own words. Run by
- * `scripts/pot-app-chain-loop.sh`; skipped without `M7_ANVIL_RPC`.
+ * `scripts/pot-app-loop.sh`; skipped without `M7_ANVIL_RPC`.
  */
 import { describe, expect, it } from "vitest";
 import { decodeReturn } from "../../../packages/creaton-core/src/pot/abi-codec.ts";

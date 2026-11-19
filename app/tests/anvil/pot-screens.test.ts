@@ -3,7 +3,7 @@
  * What the money screens read and send, against the real contracts on a local chain: the Back sheet's reader and its
  * plan, the Take out sheet's reader, the allowance state, a grant and what a member keeps on their own exit, a project's
  * parts from the Launcher, and a Pair's whole round (propose, read the waiting call from the log, say it in words,
- * confirm exactly what was proposed). Run by `scripts/pot-app-chain-loop.sh`; skipped without `M7_ANVIL_RPC`.
+ * confirm exactly what was proposed). Run by `scripts/pot-app-loop.sh`; skipped without `M7_ANVIL_RPC`.
  */
 import { describe, expect, it } from "vitest";
 import {
