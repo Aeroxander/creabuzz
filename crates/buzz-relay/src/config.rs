@@ -126,6 +126,10 @@ pub struct LlmConfig {
     /// The most the hosted AI manager may spend in 90 days, in milli-cents of real money
     /// (`BUZZ_MANAGER_MAX_CENTS_PER_90_DAYS`); `None` leaves only the share-of-fees cap.
     manager_ceiling_mc: Option<u64>,
+    /// The least the hosted AI manager may spend in 90 days whatever the fees are, in milli-cents
+    /// (`BUZZ_MANAGER_FLOOR_CENTS_PER_90_DAYS`); `None` leaves the cap at the share of fees. With play dollars the
+    /// fees count for nothing, so this is what turns the manager on.
+    manager_floor_mc: Option<u64>,
 }
 
 /// Milli-cents per US cent: LLM spend is metered in thousandths of a cent so a
@@ -161,6 +165,7 @@ impl LlmConfig {
             price_output_mc_per_mtok: 0,
             manager_calls_per_week: crate::api::manager::DEFAULT_CALLS_PER_WEEK,
             manager_ceiling_mc: None,
+            manager_floor_mc: None,
         }
     }
 
@@ -200,6 +205,19 @@ impl LlmConfig {
     pub(crate) fn with_manager_ceiling_for_test(mut self, millicents: u64) -> Self {
         self.manager_ceiling_mc = Some(millicents);
         self
+    }
+
+    /// The same, with the operator's floor on the manager's 90-day spend, in milli-cents.
+    #[cfg(test)]
+    pub(crate) fn with_manager_floor_for_test(mut self, millicents: u64) -> Self {
+        self.manager_floor_mc = Some(millicents);
+        self
+    }
+
+    /// The least the hosted AI manager may spend in 90 days whatever the fees are, in milli-cents
+    /// (`BUZZ_MANAGER_FLOOR_CENTS_PER_90_DAYS`). `None` when unset.
+    pub(crate) fn manager_floor_mc(&self) -> Option<u128> {
+        self.manager_floor_mc.map(u128::from)
     }
 
     /// The operator's ceiling on what the hosted AI manager may spend in 90 days, in milli-cents of real money
@@ -300,6 +318,7 @@ impl std::fmt::Debug for LlmConfig {
             .field("price_output_mc_per_mtok", &self.price_output_mc_per_mtok)
             .field("manager_calls_per_week", &self.manager_calls_per_week)
             .field("manager_ceiling_mc", &self.manager_ceiling_mc)
+            .field("manager_floor_mc", &self.manager_floor_mc)
             .finish()
     }
 }
@@ -1224,6 +1243,22 @@ impl Config {
                 ),
                 Err(_) => None,
             };
+            let manager_floor_mc = match std::env::var("BUZZ_MANAGER_FLOOR_CENTS_PER_90_DAYS") {
+                Ok(raw) if raw.trim().is_empty() => None,
+                Ok(raw) => Some(
+                    raw.trim()
+                        .parse::<u64>()
+                        .ok()
+                        .and_then(|cents| cents.checked_mul(MILLICENTS_PER_CENT))
+                        .ok_or_else(|| {
+                            ConfigError::InvalidValue(
+                                "BUZZ_MANAGER_FLOOR_CENTS_PER_90_DAYS must be a whole number of US cents"
+                                    .to_string(),
+                            )
+                        })?,
+                ),
+                Err(_) => None,
+            };
             proxy_url.map(|proxy_url| LlmConfig {
                 proxy_url,
                 api_key,
@@ -1236,6 +1271,7 @@ impl Config {
                 price_output_mc_per_mtok,
                 manager_calls_per_week,
                 manager_ceiling_mc,
+                manager_floor_mc,
             })
         };
 

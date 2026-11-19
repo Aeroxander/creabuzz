@@ -331,6 +331,12 @@ pub async fn draft(
     let fees = cost::platform_fees(pool, reader.as_deref(), now)
         .await
         .map_err(|e| failed("reading the platform's fees", e))?;
+    // Fees in play dollars count for nothing; the operator's floor, when set, is the least the cap allows.
+    let fees = cost::cap_base(
+        fees,
+        crate::chain_reader::play_money(),
+        llm.manager_floor_mc(),
+    );
     let ceiling = llm.manager_ceiling_mc();
     let spent = cost::platform_spent(pool, community, now)
         .await
@@ -338,20 +344,20 @@ pub async fn draft(
     if !cost::within_platform_cap(spent, fees, u128::from(worst), ceiling) {
         return Err(platform_cap());
     }
-    // The project's first round counts only when the chain's own launch log ties the record's chain key to this very
-    // record: a founder cannot name another project's key and borrow its round.
-    let round_closed = match project.chain_key {
-        Some(key) => cost::first_round_closed(
+    // The project's first backing counts only when the chain's own launch log ties the record's chain key to this very
+    // record: a founder cannot name another project's key and borrow its money.
+    let backed = match project.chain_key {
+        Some(key) => cost::first_backing(
             pool,
             reader.as_deref(),
             &key,
             &cost::project_id(&coordinate),
         )
         .await
-        .map_err(|e| failed("reading the project's rounds", e))?,
+        .map_err(|e| failed("reading the project's backing", e))?,
         None => false,
     };
-    if !round_closed {
+    if !backed {
         // A project is new for 14 days from the earlier of its record's date and the first time it asked: the record
         // is replaceable, so re-saving it must not make the project new again.
         let first_seen = cost::first_seen(pool, community, &coordinate, now)

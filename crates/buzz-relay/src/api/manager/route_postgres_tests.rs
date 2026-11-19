@@ -90,6 +90,7 @@ fn reader() -> crate::chain_reader::ChainReaderConfig {
         confirmations: 12,
         poll_secs: 12,
         refresh_secs: 3_600,
+        active_refresh_secs: 600,
         log_range: 2_000,
         community_host: None,
         helper: None,
@@ -120,6 +121,8 @@ async fn world_with(
     posted_days: u64,
     adjust: impl FnOnce(crate::config::LlmConfig) -> crate::config::LlmConfig,
 ) -> World {
+    // The dollar of these tests is real money unless a test says otherwise (play dollars count for nothing).
+    crate::chain_reader::set_play_money_for_test(Some(false));
     let state = crate::test_support::test_state_with(move |config| {
         config.llm = Some(adjust(
             crate::config::LlmConfig::for_test(url, 100, 100)
@@ -203,12 +206,12 @@ async fn seed_fees_for(state: &AppState, reader: &str, raw_dollars: u64) {
     .expect("block");
     sqlx::query(
         "INSERT INTO chain_logs (reader, block_number, log_index, block_hash, tx_hash, address, role, project_key, \
-         event, topics, data, decoded) VALUES ($1, 1, 0, $2, $2, $3, 'rounds', NULL, 'Settled', '{}', ''::bytea, $4)",
+         event, topics, data, decoded) VALUES ($1, 1, 0, $2, $2, $3, 'treasury', NULL, 'Joined', '{}', ''::bytea, $4)",
     )
     .bind(&reader)
     .bind(vec![7u8; 32])
     .bind(vec![1u8; 20])
-    .bind(serde_json::json!({ "toPlatform": raw_dollars.to_string() }))
+    .bind(serde_json::json!({ "fee": raw_dollars.to_string(), "paid": "1000000" }))
     .execute(pool)
     .await
     .expect("log");
@@ -490,6 +493,40 @@ async fn no_fees_or_another_readers_fees_or_the_operators_ceiling_all_refuse() {
 
 #[tokio::test]
 #[ignore = "requires Postgres and Redis"]
+async fn play_dollar_fees_count_for_nothing_until_the_operator_sets_a_floor() {
+    // Fees plenty, but the Launcher says the dollar is play money: the cap is zero and the manager stays off.
+    let (url, calls) = service(REPLY).await;
+    let w = world(url, 300, 5, 30, 3).await;
+    seed_fees(&w.state, 1_000_000_000_000).await;
+    crate::chain_reader::set_play_money_for_test(Some(true));
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{answer}");
+    assert_eq!(answer["code"], "ai_manager_platform_cap");
+    // Not known yet counts as play money.
+    crate::chain_reader::set_play_money_for_test(None);
+    let (status, _) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    // With the operator's floor (here 50 dollars over 90 days) the same project is served, and only up to the floor,
+    // with no fees at all.
+    let (url, calls_floor) = service(REPLY).await;
+    let w = world_with(url, 300, 5, 30, 3, |llm| {
+        llm.with_manager_floor_for_test(50 * 100 * 1_000)
+    })
+    .await;
+    crate::chain_reader::set_play_money_for_test(Some(true));
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert_eq!(calls_floor.load(Ordering::SeqCst), 1);
+    assert!(
+        spent(&w).await > 0,
+        "the draft is counted against the floor"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
 async fn a_service_that_does_not_answer_costs_nothing_and_keeps_the_weeks_draft() {
     let (url, calls) = service_answering(REPLY, "503 Service Unavailable").await;
     let w = world(url, 300, 1, 30, 3).await;
@@ -695,9 +732,9 @@ async fn seed_launch_and_round(
         ),
         (
             first_index + 1,
-            "rounds",
-            "RoundClosed",
-            serde_json::json!({ "accepted": "5000000" }),
+            "treasury",
+            "Joined",
+            serde_json::json!({ "paid": "5000000", "fee": "0" }),
         ),
     ] {
         sqlx::query(

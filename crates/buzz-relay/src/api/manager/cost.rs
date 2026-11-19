@@ -1,31 +1,35 @@
-//! What the hosted AI manager may spend (docs/PLAN-V2.md section 6 item 4 and 5), as definitions the code holds:
+//! What the hosted AI manager may spend, as definitions the code holds:
 //!
-//! - **Free while the founder posts weekly.** Before the project's first backing round closes with money in it, a
-//!   hosted draft is served only while the founder posted a weekly update in the last 14 days, or the project record is
-//!   younger than 14 days (a new project has had no week yet). Otherwise: "post this week's update first".
-//! - **The hosted allowance starts when the first round closes.** From then on the posting rule no longer gates it.
-//!   In both phases a project has at most `BUZZ_MANAGER_CALLS_PER_WEEK` hosted drafts in a week (fixed weeks from the
-//!   Unix epoch, counted per project in `budget_consumption`); past it the answer is "run it as your own agent, with your
-//!   own AI key" (`ai_manager_own_key`).
+//! - **Free while the founder posts weekly.** Before the project's first backer has put money in, a hosted draft is
+//!   served only while the founder posted a weekly update in the last 14 days, or the project record is younger than
+//!   14 days (a new project has had no week yet). Otherwise: "post this week's update first".
+//! - **The hosted allowance starts with the first money in.** The project's first `Joined` event (every join has money
+//!   in it: the contract's smallest join is one dollar) is the moment. From then on the posting rule no longer gates
+//!   it. In both phases a project has at most `BUZZ_MANAGER_CALLS_PER_WEEK` hosted drafts in a week (fixed weeks from
+//!   the Unix epoch, counted per project in `budget_consumption`); past it the answer is "run it as your own agent,
+//!   with your own AI key" (`ai_manager_own_key`).
 //! - **The platform's cap.** All hosted manager spend of the community over the last 90 days stays at or below 10% of
 //!   the platform's fees over the same 90 days, read from the chain reader's tables (`chain_logs` with its blocks'
-//!   times): every `toPlatform` of Rounds `Settled` and `Refunded`, Treasury `HandedBack` and the LiquidityHolder's
-//!   `Collected`, and the Finisher's `raised - afterFee`. `FeesSwept` only moves fees already counted and is left out.
-//!   Fees are in the dollar token's raw units (6 decimals): one raw unit is a tenth of a milli-cent. With no prices set
-//!   the spend cannot be measured, so hosted drafts are refused. Only the configured chain reader's rows are read, so
-//!   a second or re-made reader never counts a fee twice; with no chain reader there are no fees and no hosted drafts.
-//! - **The operator's ceiling.** `BUZZ_MANAGER_MAX_CENTS_PER_90_DAYS`, when set, is a second limit in real money on
-//!   the same 90 days of spend. It only ever narrows. A test network needs it: its fees are play dollars and the AI
-//!   bill is not.
+//!   times): the `fee` of every Treasury `Joined` event. Taking out is free, so nothing else is a fee. Fees are in the
+//!   dollar token's raw units (6 decimals): one raw unit is a tenth of a milli-cent. With no prices set the spend
+//!   cannot be measured, so hosted drafts are refused. Only the configured chain reader's rows are read, so a second
+//!   or re-made reader never counts a fee twice; with no chain reader there are no fees and no hosted drafts.
+//! - **Play dollars have no value, so their fees count for nothing.** The cap counts fees only when the Launcher says
+//!   the dollar is real money (`testNetwork()` is false, read by the chain reader with every record). On a test
+//!   network, or until the reader has read the Launcher, the cap is zero and the hosted manager stays off, unless the
+//!   operator sets a floor.
+//! - **The operator's floor and ceiling.** `BUZZ_MANAGER_FLOOR_CENTS_PER_90_DAYS`, when set, is the least the hosted
+//!   manager may spend over the same 90 days whatever the fees are: with play dollars it is the only way to turn the
+//!   manager on. `BUZZ_MANAGER_MAX_CENTS_PER_90_DAYS`, when set, is a limit in real money on the same spend. It only
+//!   ever narrows, and it narrows the floor too.
 //!
 //! The cap is held exactly, not checked and hoped for: a draft's worst cost is set aside under a lock before the
 //! model is called ([`reserve_platform_spend`]) and corrected to what the call cost afterwards
 //! ([`settle_platform_spend`]). If the correction is lost, the worst cost stays counted: the count can only err high.
 //!
 //! Scope, plainly: the chain reader's fees are the operator's (one set of contracts, every community), while the spend
-//! is counted per community. A server with one community, the plan's case, measures the same thing on both sides.
-//! With no fees in the last 90 days the cap is zero and every hosted draft is refused: the plan read literally. Whether
-//! a new server should have a small fixed floor is the owner's decision (see the milestone 8 report), not this code's.
+//! is counted per community. A server with one community measures the same thing on both sides. With no fees in the
+//! last 90 days and no floor the cap is zero and every hosted draft is refused.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -250,7 +254,8 @@ pub(crate) async fn settle_platform_spend(
 }
 
 /// The platform's fees over the last [`WINDOW_DAYS`], in milli-cents, from the configured chain reader's rows
-/// (`reader` is its name in the tables). No reader, no fees.
+/// (`reader` is its name in the tables): the `fee` of every Treasury `Joined`. No reader, no fees. These are fees in
+/// the chain's dollar, whatever that dollar is worth: [`cap_base`] decides whether they count.
 pub(crate) async fn platform_fees(
     pool: &PgPool,
     reader: Option<&str>,
@@ -261,15 +266,10 @@ pub(crate) async fn platform_fees(
     };
     let since = now.timestamp() - WINDOW_DAYS * DAY_SECS;
     let raw: Option<String> = sqlx::query_scalar(
-        "SELECT SUM(CASE \
-             WHEN l.role = 'rounds' AND l.event IN ('Settled', 'Refunded') THEN (l.decoded->>'toPlatform')::numeric \
-             WHEN l.role = 'treasury' AND l.event = 'HandedBack' THEN (l.decoded->>'toPlatform')::numeric \
-             WHEN l.role = 'holder' AND l.event = 'Collected' THEN (l.decoded->>'toPlatform')::numeric \
-             WHEN l.role = 'finisher' AND l.event = 'Settled' \
-                  THEN (l.decoded->>'raised')::numeric - (l.decoded->>'afterFee')::numeric \
-             ELSE 0 END)::text \
+        "SELECT SUM((l.decoded->>'fee')::numeric)::text \
          FROM chain_logs l JOIN chain_blocks b ON b.reader = l.reader AND b.number = l.block_number \
-         WHERE l.reader = $2 AND b.block_time >= $1 AND l.decoded IS NOT NULL",
+         WHERE l.reader = $2 AND b.block_time >= $1 AND l.role = 'treasury' AND l.event = 'Joined' \
+           AND l.decoded IS NOT NULL",
     )
     .bind(since)
     .bind(reader)
@@ -282,6 +282,16 @@ pub(crate) async fn platform_fees(
         .and_then(|whole| whole.parse::<u128>().ok())
         .unwrap_or(0);
     Ok(raw / 10)
+}
+
+/// The fees the cap is measured against: the platform's fees when the dollar is real money (`play_money` is
+/// `Some(false)`), nothing while it is play money or not yet known; and never less than what the operator's floor
+/// (milli-cents the manager may spend regardless) needs, since a spend of `s` is within the cap when `s * 100 <= base *
+/// 10`.
+pub(crate) fn cap_base(fees: u128, play_money: Option<bool>, floor: Option<u128>) -> u128 {
+    let real = if play_money == Some(false) { fees } else { 0 };
+    let floor_base = floor.map_or(0, |f| f.saturating_mul(100 / FEE_SHARE_PERCENT));
+    real.max(floor_base)
 }
 
 /// Whether one more draft costing at most `next` milli-cents keeps the platform's spend at or below its share of fees,
@@ -297,11 +307,11 @@ pub(crate) fn within_platform_cap(
         && ceiling.is_none_or(|most| after <= most)
 }
 
-/// Whether the project's first backing round closed with money in it, by the configured chain reader's logs for its
-/// chain key, and only when its launch log names this very project: a `ProjectLaunched` for `chain_key` whose
-/// `projectId` is `project_id` (the hash of the record's address). A record that names another project's key, or a
-/// launch made for someone else's record, shows no round. No reader, no round.
-pub(crate) async fn first_round_closed(
+/// Whether the project has had money put in, by the configured chain reader's logs for its chain key, and only when
+/// its launch log names this very project: a `ProjectLaunched` for `chain_key` whose `projectId` is `project_id` (the
+/// hash of the record's address), and a Treasury `Joined` for that key with money in it. A record that names another
+/// project's key, or a launch made for someone else's record, shows no backing. No reader, no backing.
+pub(crate) async fn first_backing(
     pool: &PgPool,
     reader: Option<&str>,
     chain_key: &[u8; 32],
@@ -313,8 +323,8 @@ pub(crate) async fn first_round_closed(
     let found = sqlx::query(
         "SELECT 1 WHERE EXISTS (SELECT 1 FROM chain_logs WHERE reader = $1 AND project_key = $2 \
              AND role = 'launcher' AND event = 'ProjectLaunched' AND lower(decoded->>'projectId') = $3) \
-         AND EXISTS (SELECT 1 FROM chain_logs WHERE reader = $1 AND project_key = $2 AND role = 'rounds' \
-             AND event = 'RoundClosed' AND (decoded->>'accepted')::numeric > 0)",
+         AND EXISTS (SELECT 1 FROM chain_logs WHERE reader = $1 AND project_key = $2 AND role = 'treasury' \
+             AND event = 'Joined' AND (decoded->>'paid')::numeric > 0)",
     )
     .bind(reader)
     .bind(chain_key.as_slice())
@@ -362,6 +372,33 @@ mod tests {
         ));
         // A ceiling never lifts the fee cap.
         assert!(!within_platform_cap(0, 0, 1, five_dollars));
+    }
+
+    #[test]
+    fn play_dollars_count_for_nothing_unless_the_operator_sets_a_floor() {
+        let fees = 100_000 * 1_000; // 1,000 dollars of fees
+                                    // Real money: the fees are the base. Play money or unknown: nothing is.
+        assert_eq!(cap_base(fees, Some(false), None), fees);
+        assert_eq!(cap_base(fees, Some(true), None), 0);
+        assert_eq!(cap_base(fees, None, None), 0);
+        // With zero cap, every draft is refused.
+        assert!(!within_platform_cap(
+            0,
+            cap_base(fees, Some(true), None),
+            1,
+            None
+        ));
+        // A floor of 5 dollars (5,000 milli-cents x 100 = 500,000) turns the manager on with play dollars...
+        let floor = Some(500 * 1_000);
+        let base = cap_base(fees, Some(true), floor);
+        assert!(within_platform_cap(0, base, 500_000, None));
+        assert!(within_platform_cap(400_000, base, 100_000, None));
+        // ...and only up to the floor.
+        assert!(!within_platform_cap(400_000, base, 100_001, None));
+        // The floor never shrinks real fees' cap, and the ceiling narrows it.
+        assert_eq!(cap_base(fees, Some(false), floor), fees);
+        assert!(!within_platform_cap(0, base, 600_000, Some(550_000)));
+        assert!(within_platform_cap(0, base, 500_000, Some(550_000)));
     }
 
     #[test]
