@@ -739,3 +739,103 @@ checks (browser); the wallet-gate invalidation, the registration notification an
   the launch, Back, check-in, draw and Take out; the task and seat screens are driven on a real chain with the server's record stood in.
 - A hard stop for a duplicate Pair proposal for the same task, and a typed wallet for a task whose worker named none (it stays "pay owed").
 - No person has tried any of it on a phone.
+
+---
+
+# Fourth round: fixes after the independent review of the finish track
+
+Two independent reviews of commits `855c585a0..e66b2c927` were checked finding by finding against the code. No blocker was found by the
+first review; the second named the editable sheet as a blocker, and it is real, so it was fixed first. Their scratch tests were turned
+into proper tests and the scratch files deleted: none is left, tracked or untracked.
+
+## Review fixes
+
+### Fixed (each with a test on the production path that fails without it, shown by removing the fix)
+
+1. **What is shown is what is signed (both reviews; the blocker of the second).** `PotSheet` wraps everything the person can change in a
+   `fieldset` that is disabled while the press checks or the wallet is asked, so the Launch rate and pool, the hand-over choice, the "I am
+   leaving" tick and a Pair's second signer cannot change under a signature already asked for. Tests: `launch/launch-press.test.tsx` (the
+   boxes are disabled; the call carries 1000 parts per million, the 0.10% the sheet said) and `seat/seat-sheets.test.tsx` (the choice is
+   shut; the offer goes to the person the sheet names). Without the fix both fail.
+2. **A task pay could go out twice when the search for an earlier payment could not be read or did not reach back far enough.**
+   `findPayment` now throws (never "nothing found") when the logs cannot be read, and throws `PaymentSearchShort` when it found nothing and
+   its window of 30,000 blocks starts after the acceptance (or the start's time is not known). `PayFromBox` then offers no bare "Pay from
+   the box": it says so and offers "Look again"; a press whose search fails after the page was drawn stops with a sentence and sends
+   nothing. A young chain whose window starts at block 0 is complete. Tests: five in `tasks/PayFromBox.test.tsx` (logs cannot be read;
+   failure at the press; window starts hours after the acceptance; window starts before it; no block time given).
+3. **A Pair's pay could be asked twice** (second review). Before proposing, `PayFromBox` reads what is waiting in the Pair (the same
+   reader the Money tab uses, now exported as `readPairWaiting`); the same draw already waiting means nothing new is asked and the task
+   says it is asked; a read that fails stops the ask. This covers a reload and the other signer asking from their own page. Tests: two
+   in `PayFromBox.test.tsx`.
+4. **A payment kept for task X was offered for task Y** (second review). The journal's transactions of other tasks are added to the ones
+   never offered. Test: `PayFromBox.test.tsx` (fails without it).
+5. **The "no record yet" poll never ended.** It now asks every 5 s for 30 s, every 15 s until 2 minutes, then stops (a reload asks again;
+   the card says so). Measured: at most about 12 reads, against 721 in a simulated hour. A launch's link to the page starts a new wait
+   (the key changes). Tests: `money/use-money-poll.test.tsx`; the card's words changed in `launch/launch-page.test.tsx`.
+6. **A Pair's second signer read "the pay for the task X" as fact.** The sentence is now the page's own record, with who accepted the task and
+   who took it: "..., the pay for the task "X" (accepted by A, taken by B), as the project's page records it." A task its proposer wrote,
+   had a throwaway account take, and accepted reads as exactly that. Tests: `tasks/owed-task-names.test.ts`, `pot/pair-terms.test.ts`,
+   `pot/pair-waiting.test.tsx`; the browser spec's substring still holds.
+7. **An earlier launch with other numbers was not named** (second review). The launch sheet now passes the two numbers as the press's
+   detail, so the sheet's own "a step you sent earlier" sentence shows and a landed earlier launch says its numbers cannot be changed.
+   Test: `launch/launch-press.test.tsx`.
+8. **"About half a year" was written on money screens for a test network.** The wait is now this project's own (26 units of its unit): "about
+   12 hours" on the test network's 28-minute unit, "about half a year" on a real one (`quietWaitWords`; the Money tab card and the state
+   words). Test: `seat/seat-sheets.test.tsx`; the browser spec's text follows.
+9. **Formatting** (first review): `app/tests/e2e-pot-full/pot-full.spec.ts` is formatted; `biome check .` is clean.
+10. Optional, taken: the passkey signer is waited for at most 3 seconds before the first draw (`main.tsx`; a late arrival is still announced
+    to the surfaces that drew); the launch sheet lists the helper's Team Shares limit (one part in 1,000 of the pool a day, read from the
+    Launcher) beside its dollars limit (test in `launch-press.test.tsx`); `REQUIRE_CHAIN=1` makes the live browser specs fail, not skip,
+    when there is no chain.
+
+### Declined, with the reason
+
+- **Any teammate can make an accepted task read "Paid" with an invented transaction (second review, I3).** Real as a trust gap, not fixed
+  here: limiting the "paid" confirmation to the person who accepted would break the intended flow, where the runner (who may be another
+  teammate, or a Pair's signer) pays a task someone else accepted, and the record the runner writes must count. The effect is a label
+  only: it moves no money (the Treasury moves money only on a signed draw), and only team members can write it, the same people who
+  can already accept. The fix that closes it is to check the recorded transaction on the network (a draw to the worker's wallet of exactly
+  the pay); that needs a receipt reader the wallet does not have today. Kept open below.
+- **Confirming a duplicate proposal that already exists (second review, I1 second half).** Not added: the press no longer makes a duplicate
+  (fix 3), and a duplicate made at the same moment from two devices is the case the Pair's own two-signer rule is for. The other signer's
+  sheet still shows the task's name only while the pay is owed.
+- **Browser build for the passkey signer timeout** has no browser test: `main.tsx` is the bootstrap and has no seam; the three-second cap
+  follows the one beside it for the settings.
+- **O3 (brand constant for "Creaton takes 2%"), O5 (a moment of "one step is left" while the link runs), second review O2 to O6**: not
+  taken; none is a few lines, and none touches money. O6 (a wind-down by the runner keeps what has accrued, no cliff) is the contract's
+  design and the sheets say it.
+
+### Still open
+
+- The recorded payment of a task is not checked on the network (above). Before real money.
+- The refresh ceiling: the settings range still ends at 86400 seconds (the lead's decision, F3). The app calls a record stale once it is
+  older than a day, so a server set to the ceiling leaves each record stale for as long as the next pass takes. The comment on
+  `MAX_REFRESH_SECS` now says to use at most half a day (43200). Not changed in behaviour.
+- A task paid more than 30,000 blocks (about 4 days on 12-second blocks, 16 hours on a 2-second chain) before the press can no longer be
+  found; the press now stops and says so instead of paying again, and the person looks at the project's money records first.
+- Launch is checked per key (wallet plus project); a launch made from another wallet of the same founder is not seen by the card.
+- Focus after the seat is taken, loading cards without status text, and a person offered the seat who has not connected a wallet (second
+  review O3 to O5).
+
+## Chosen under the owner's standing go; the owner may overrule
+
+1. The search window is not widened: a payment search that cannot rule out an earlier payment stops the press (the design's safe way
+   round), rather than reading more blocks.
+2. The poll's end is a fixed two minutes, not "after a launch the page itself made": linking the page to its launch changes the key, which
+   starts a new wait.
+3. The Pair sentence names who accepted and who took the task instead of dropping the claim.
+4. `REQUIRE_CHAIN=1` is opt-in, so a machine without a chain still skips the live specs as before.
+
+## Gates, as run after the fixes
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit` (app) | clean |
+| `biome check .` (app) | 334 files, no fixes needed |
+| `vitest run` (app, whole) | 81 files, **629 passed, 0 failed** |
+| `check:copy`, `check:px-text`, `check:file-sizes` (base `855c585a0`) | all pass |
+| `scripts/pot-app-loop.sh` (real contracts on anvil) | **13 passed, 0 failed, 0 skipped**, 7 files |
+| Playwright on a private build with the 31337 deployments (`pot-launch`, `pot-review`, `pot-seat`, `pot-week`, `pot-tasks`) | **22 passed, 0 failed** |
+| `cargo test -p buzz-relay --lib refresh` (the refresh settings; the Rust change is one comment) | 1 passed, 0 failed (the Postgres-backed one needs a database and was not run) |
+
+Everything started was stopped (checked with `ps`); the private build was deleted.
