@@ -10,11 +10,13 @@ next). This is not legal or tax advice, and no figure here is a promise of any r
 test network with play dollars: every number below is play money.
 
 **Status.** Everything in the scope of S1 to S7 is built and green: `forge fmt --check src script test` clean; `forge build` green;
-`forge test`: **50 suites, 506 tests passed, 0 failed, 0 skipped** (the 339 step 1 tests are all still there by name, and none
+`forge test`: **55 suites, 540 tests passed, 0 failed, 0 skipped** (the 339 step 1 tests are all still there by name, and none
 of their assertions was loosened; section 3 lists the step 1 files that were edited and why); the new fuzz tests at 20,000 runs
-and the invariants at 1,000 runs of 200 steps; `scripts/check-vectors.sh` current (83 scenarios); the mutation script: **118
-mutations, 117 killed, 1 equivalent mutant proved never to change behaviour** (no survivor); the chain loop on the real bytecode:
-**24 checks passed** (17 of step 1, 7 new). Commits of pass B: `cdb773c`, `fbc141f`, `430b492`, `8e6a507`, `f8aa54a` and the commit
+and the invariants at 1,000 runs of 200 steps; `scripts/check-vectors.sh` current (84 scenarios); the mutation script: **124
+mutations, 123 killed, 1 equivalent mutant proved never to change behaviour** (no survivor); the chain loop on the real bytecode:
+**24 checks passed** (17 of step 1, 7 new). The state above is after the review fixes of section 8 (the figures of sections 1 to 7 were
+measured before them unless they say otherwise; section 8 gives what changed, and the sizes, test counts and mutation count here are the
+current ones). Commits of pass B: `cdb773c`, `fbc141f`, `430b492`, `8e6a507`, `f8aa54a` and the commit
 that adds this report (the earlier pass A commits are `fbe15d2`, `db3cb71`, `0144900`, `c2da39e`).
 
 ## 1. What is built
@@ -25,7 +27,7 @@ that adds this report (the earlier pass A commits are `fbe15d2`, `db3cb71`, `014
 | Treasury | `src/Treasury.sol` | `announceTask`, `takeTask`, `acceptTask`, `rejectTask`, `cancelTask`, `returnTask`, `claimNote`, `noticeFor`; the buckets `locked` (the stayers' claims on taken tasks) and `notesOwed`; expiry inside every settle (last, after the allowance and the release); a joiner's price and credit count the set-aside money at face; `quoteBack.lockedLine`; **notes written in `leave` and `leaveTeam`** and shown by `quoteTakeOut`; wind-down returns every open task. Events `TasksReady`, `TaskMoney` (kinds 1 to 6), `Left.note`, `TeamLeft.note`. |
 | Launcher, Parts | `src/Launcher.sol`, `src/Parts.sol` | `Parts.tasksImpl`; `launch` clones and initialises a book before the Treasury (the `launch` return tuple and `ProjectLaunched` are unchanged). |
 | Pair | `src/Pair.sol` | The proposal lifetime is two time units of the project, stored at `initialize` (S5d). The Pair has no selector table: the new money calls are runner-only in the Treasury, which demands both signers when the runner is a Pair. |
-| Reference model | `model/pot_ext.py`, `model/gen_vectors.py`, `model/vectors.json` | Tasks, caps, expiry, notes and the one-ratio return in exact decimals; vectors format 2 with 83 scenarios (the 52 of step 1 unchanged). |
+| Reference model | `model/pot_ext.py`, `model/gen_vectors.py`, `model/vectors.json` | Tasks, caps, expiry, notes and the one-ratio return in exact decimals; vectors format 2 with 84 scenarios (the 52 of step 1 unchanged). |
 | Tests | `test/` | See section 3. |
 | Chain loop | `scripts/pot-chain-loop.sh` | Walks a task through announce, the early take, the notice, take, a take-out that writes a note, accept in part, a claim by a stranger, and a second task that is returned by anyone after its deadline. |
 
@@ -60,21 +62,22 @@ Pass A (commits `fbe15d2`, `db3cb71`, `0144900`, `c2da39e`) is the queue itself,
 ## 3. Measured
 
 **Runtime sizes** (`forge build --sizes`; the limit is 24,576, the creation-code limit 49,152): **Treasury 23,577 (999 to spare;
-it was 18,075 after step 1's review and 22,681 after pass A)**, TaskBook 10,057, Vester 7,355, Launcher 6,650, PlayDollar 3,497, ShareToken
-2,823, Pair 2,519, Parts 437 with a creation code of **47,356 (1,796 to spare)**. The test-only `TreasuryHarness` is 23,967 (609 to
+it was 18,075 after step 1's review and 22,681 after pass A)**, TaskBook 10,369 (10,057 before the review fix of the cap, section 8), Vester 7,355, Launcher 6,650, PlayDollar 3,497, ShareToken
+2,823, Pair 2,519, Parts 437 with a creation code of **47,707 (1,445 to spare; 47,356 and 1,796 before the review fix)**. The test-only `TreasuryHarness` is 23,967 (609 to
 spare). `test/Size.t.sol` fails if the Treasury, the book or the Parts creation code passes its limit. The note code in the Treasury
 cost 896 bytes and in the book 1,892; there is room for about one more small feature in the Treasury and none to spare in Parts: the
 next addition to either goes to a new clone (the Launcher's constructor then takes the book's implementation directly instead of
 through Parts), not into these two. The optimizer settings are untouched (solc 0.8.37, 200 runs, cancun, via IR).
 
-**Contract lines** (`src/`, counted; "code" = not blank, not a comment): Treasury 1,037 / 718, TaskBook 510 / 368, Launcher 322 / 209,
-Vester 302 / 196, Interfaces 146 / 74, Pair 133 / 79, ShareToken 122 / 76, PotMath 103 / 55, PlayDollar 53 / 29, RollingCap 46 / 25, Parts 33 / 18:
-**2,807 lines, 1,847 code lines** in `src/` (step 1 had 1,944 and 1,257); `script/DeployPot.s.sol` 99 / 71. The tests are 50 Solidity
-files plus 12 helpers and mocks, 11,881 lines; `model/pot_ext.py` 352, `model/gen_vectors.py` 803, `scripts/check-mutations.py` 277,
-`scripts/pot-chain-loop.sh` 403.
+**Contract lines** (`src/`, counted; "code" = not blank, not a comment): Treasury 1,037 / 718, TaskBook 535 / 382, Launcher 322 / 209,
+Vester 302 / 196, Interfaces 146 / 74, Pair 135 / 80, ShareToken 122 / 76, PotMath 103 / 55, PlayDollar 53 / 29, RollingCap 46 / 25, Parts 33 / 18:
+**2,834 lines, 1,862 code lines** in `src/` (step 1 had 1,944 and 1,257); `script/DeployPot.s.sol` 99 / 71. The tests are 54 Solidity
+files plus 12 helpers and mocks, 13,308 lines; `model/pot_ext.py` 362, `model/gen_vectors.py` 826, `scripts/check-mutations.py` 283,
+`scripts/pot-chain-loop.sh` 408.
 
-**Tests.** `forge test` in `contracts/pot`: **50 suites, 506 tests passed, 0 failed, 0 skipped** (fuzz tests 1,000 runs unless stated;
-invariants 256 runs of 200 steps). Pass A ended at 457; pass B adds 49: Notes 24, NotesMustBind 3, NotesFuzz 4, PairTasks 5, GasTasks +4,
+**Tests.** `forge test` in `contracts/pot`: **55 suites, 540 tests passed, 0 failed, 0 skipped** (fuzz tests 1,000 runs unless stated;
+invariants 256 runs of 200 steps; the review fixes added 34 tests and 5 suites, the per-suite list below is the one before them:
+TaskBook 34, TasksCaps 15, and the new TasksAccess 9, TasksDenial 7, TasksMoney 5, TasksWalk 2 and TasksWalkShort 2). Pass A ended at 457; pass B adds 49: Notes 24, NotesMustBind 3, NotesFuzz 4, PairTasks 5, GasTasks +4,
 PotInvariants +3, PotFuzz +1 (the handler reaches every task step), ModelVectors +5 chunks. Per suite: AccessMatrix 7, Agents 14,
 Allowance 25, Arrival 5, EmptyJoin 3, Events 7, EventsRebuild 1, Expiry 10, Fees 5, Forfeit 15, Gas 5, GasTasks 8, Join 30, KnownGaps 1,
 Launcher 21, Leave 11, LeaveTeam 7, ModelVectors 18, MustBind 3, Notes 24, NotesFuzz 4, NotesMustBind 3, OwnBurn 4, Pair 16, PairTasks 5,
@@ -111,8 +114,8 @@ another (the stale-serial attack, tried against every later user of the same slo
 38,000, note 2,000), 3,000 paid, 800 to the note and 1,200 to the stayers: 0.97 a Share each; a rule that repaid notes first would
 leave the stayers 0.95 (mutation `notes-first`). The other seven are the step 1 ones.
 
-**Vectors** (`model/vectors.json`, format 2): **83 scenarios** (the 52 of step 1, unchanged, and 31 new: 11 fixed and 20 seeded with
-task steps), **3,463 operations, 32,633 numbers compared**, worst deviation **23.9% of its allowance** (`forge test --match-path
+**Vectors** (`model/vectors.json`, format 2): **84 scenarios** (the 52 of step 1, unchanged, and 32 new: 12 fixed and 20 seeded with
+task steps), **3,492 operations, 32,827 numbers compared**, worst deviation **23.9% of its allowance** (`forge test --match-path
 test/ModelVectors.t.sol -vv`). The new fixed scenarios: the worked pro-rata case (with a take one second early), a rejected task, a task
 paid in full, two leavers over two tasks paid in part and in full, a task that runs out and a note claimed cold, a task that runs out
 under an allowance (expiry comes after the accrual), a lapse, a wind-down, a Team take-out under a lock, a join during a lock, and the
@@ -125,7 +128,7 @@ paid in full, a wind-down that sweeps, a claim afterwards, 30 days on) use one l
 events of the Treasury and the book and equals the contracts after every step: pot, `locked`, `notesOwed`, every task's state and
 money, every holder's note, open count, next serial, the 28-day sum.
 
-**Mutations** (`scripts/check-mutations.py`): 118 deliberate one-line changes, each in a scratch copy, each must make a named test
+**Mutations** (`scripts/check-mutations.py`): 124 deliberate one-line changes (118 of pass B plus the six of the review fix, section 8; the whole list was run again after it: **123 killed, 1 equivalent, 0 survived**; the paragraph that follows describes pass B's 118), each in a scratch copy, each must make a named test
 file fail. Pass A's 85 plus 33: notes keyed by slot, spread equally or rounded up, expired task counted in the quote, the book writing
 notes against a sum the Treasury got wrong, a claim not cleared / rounded up / paid at face / paid to the caller / paid before the
 buckets are final / without the settle / without the lock, the rounding sent to the last claimer or lost, a task paid in full that
@@ -140,11 +143,11 @@ still taken, the dust in the last claim's event, and re-entry through a settle w
 claim, which fails on its own); each got a test and was then killed. The step 1 mutation texts that touch the take-out were re-pointed at the new code (same changes, same tests).
 
 **Gas** (inside the call, cold, `GasTasks.t.sol`; the transaction's 21,000 and calldata are not counted): announce 219,566; take
-139,693; accept in part 143,023; reject 81,051; a settle with an open task not due 24,140; a take-out that also returns one task that
-ran out 171,784; **a take-out that writes a note against one task 186,559, against eight tasks 403,237** (the worst case: eight
-tasks announced together and taken in the same second); a Team take-out against eight tasks 387,342; a claim (the last note of its
-task: the rounding goes to the pot) 79,123. Real receipts from the chain loop (whole transaction): announce 243,498; take 199,682;
-take out with a note 195,779; accept in part 179,108; claim a note 93,870; return 131,013; and step 1's back by `transferAndCall`
+139,850; accept in part 143,376; reject 86,295 (the cap's give-back is one more write); a settle with an open task not due 24,140; a take-out that also returns one task that
+ran out 175,157; **a take-out that writes a note against one task 186,676, against eight tasks 403,355** (the worst case: eight
+tasks announced together and taken in the same second); a Team take-out against eight tasks 387,460; a claim (the last note of its
+task: the rounding goes to the pot) 79,211. Real receipts from the chain loop (whole transaction): announce 243,498; take 199,839;
+take out with a note 195,908; accept in part 179,462; claim a note 93,958; return 137,274; and step 1's back by `transferAndCall`
 228,551, back by approve and join 139,486, take out 112,276, last take out 102,664.
 
 **Step 1 files edited, and why.** No step 1 test name was removed or renamed; none of its assertions was loosened.
@@ -159,7 +162,7 @@ has a book), `Expiry.t` (+2), `PotBase`, `StackBase`, `TreasuryHarness` (the boo
 Pass A's choices (the plan's list and A's report) stand: a separate TaskBook contract (the Treasury was 18,075 of 24,576 bytes);
 events split between the book (task events) and the Treasury (`TaskMoney`); serial from 1; take window `[noticeEnd, noticeEnd +
 N)`; deadline `take + 2N`; all calendar time with half-open comparisons; the rolling cap by an exact 16-entry ring, a take that
-would pass it reverts (no partial take) and an unpaid return does not refund the cap; announce and take refused while the check-in
+would pass it reverts (no partial take) and a take that ends with nothing paid to its worker gives its share of the cap back (review fix, section 8); announce and take refused while the check-in
 window is closed or after a wind-down (accept, reject, cancel, return, claim stay open); a wind-down returns every open task; reject
 returns at once and `returnTask` is a thin anyone-call after the settle's sweep; no deadline argument on `announceTask` (the app
 reads `noticeFor`); notice rounded up per ten-thousandth, the amount down, the cap's share up; payees, takers and `takenBy` may not
@@ -193,7 +196,7 @@ be the runner or a Pair signer (an agent may be a payee or taker, never an annou
 
 | What | Why, with the number |
 |---|---|
-| A refund of the cap on an unpaid return | A stranger who takes an open task and never delivers can lock up to 10% of the pot for up to 14 days in every 28 and burn the cap room; holders lose nothing (the notes and the stayers get everything back). Per-entry bookkeeping would cost about 1 KB in the book. Use named payees for real work. |
+| A refund of the cap on an unpaid return | **Built after review (section 8).** The earlier decline said a stranger who takes an open task could burn the cap room for 28 days; two reviewers showed it with numbers (pot 98,000, two open 5% tasks taken by a stranger, the named worker's 1% take then reverts `CapReached(1000, 100, 1000)`), so the cap is now given back on reject, run-out and wind-down. A part payment keeps its take counted: see the table in section 8. |
 | One-signer cancel by a Pair signer | Not built; the Pair has no one-signer lane except check-in. |
 | A sweep of notes nobody claims | Not built; bounded by the note. A note against a task paid in full is void, not owed. |
 | A caller-chosen deadline | Not built; it could only shorten what holders were promised (the deadline is 2N after the take). |
@@ -218,7 +221,7 @@ the same tuple and `ProjectLaunched` is unchanged.
 |---|---|---|
 | book | `TaskAnnounced(serial, what, payee, maxDollars, shareBps, announcedAt, noticeEnd, expiresAt, openAfter)` | the whole announced task |
 | book | `TaskTaken(serial, takenBy, amount, takeBps, takenAt, deadline, windowSumBpsAfter, openAfter)` | the money set aside; the take's size in the cap; the cap's sum after it |
-| book | `TaskResolved(serial, state, pay, returned, notesPool, potPart, noteFaceAfter, openAfter)` | `state` 3 Paid, 4 Rejected, 5 Returned (ran out or wound down), 6 Cancelled, 7 Lapsed; zeros where they do not apply; one per task, also for tasks a settle returns or a wind-down sweeps |
+| book | `TaskResolved(serial, state, pay, returned, notesPool, potPart, noteFaceAfter, openAfter, capGivenBack)` | `state` 3 Paid, 4 Rejected, 5 Returned (ran out or wound down), 6 Cancelled, 7 Lapsed; zeros where they do not apply; one per task, also for tasks a settle returns or a wind-down sweeps; `capGivenBack` is the take's share (ten-thousandths) that stops counting in the 28-day cap (all of it when nothing was paid, else 0): subtract it from that take's `takeBps` |
 | book | `NoteMinted(serial, holder, part, stayerAfter, noteFaceAfter)` (holder indexed) | one per task a take-out is spread over |
 | book | `NoteClaimed(serial, holder, paid, dustToPot, noteFaceAfter, notesLeftAfter)` (holder indexed) | |
 | Treasury | `TaskMoney(kind, serial, who, amount, potAfter, lockedAfter, notesOwedAfter)` | kind 1 take, 2 paid, 3 rejected, 4 ran out or swept (serial 0), 5 notes written in a take-out (serial 0), 6 note claimed; always the three buckets after the move |
@@ -226,7 +229,7 @@ the same tuple and `ProjectLaunched` is unchanged.
 | Treasury | `Left.note`, `TeamLeft.note` | the face of the notes written (a sum over the tasks) |
 | Treasury | `TasksReady(book)` | once, at birth |
 
-Topic hashes: `TaskAnnounced` `0xb9d38fee...`, `TaskTaken` `0xb9daf7b3...`, `TaskResolved` `0xb81b90e7...`, `NoteMinted`
+Topic hashes: `TaskAnnounced` `0xb9d38fee...`, `TaskTaken` `0xb9daf7b3...`, `TaskResolved` `0xcbc7e418...` (it was `0xb81b90e7...` before the review fix added `capGivenBack`), `NoteMinted`
 `0xc08e1b12...`, `NoteClaimed` `0x9a8f1af3...`, `TaskMoney` `0xa8a793d4...`, `TasksReady` `0x840a1824...`.
 `test/helpers/TaskLedger.sol`, used by `TasksRebuild.t.sol` and `EventsRebuild.t.sol`, is the recipe: a ledger that reads only
 these events (and the step 1 ones) holds the pot, `locked`, `notesOwed`, every task's state and money (L, C, N, returned, held for
@@ -285,9 +288,87 @@ forge build --sizes                      # Treasury, TaskBook and Parts must sta
 forge test                               # everything
 FOUNDRY_FUZZ_RUNS=20000 forge test --match-path 'test/Notes*.t.sol'    # the new fuzz tests at 20,000 runs
 bash scripts/check-vectors.sh            # vectors.json is what the model says
-python3 scripts/check-mutations.py       # 118 deliberate changes, one at a time; add --check to see each still applies (no forge run)
+python3 scripts/check-mutations.py       # 124 deliberate changes, one at a time; add --check to see each still applies (no forge run)
 bash ../../scripts/pot-chain-loop.sh     # the loop on a local chain (needs anvil, cast, forge, jq, python3)
 ```
 
 The chain loop's gas figures are real receipts; its time-based checks use the chain's own clock (`evm_increaseTime`) and tolerate
 the allowance's accrual of a few units a second between a quote and the transaction a block later (a part in a hundred thousand).
+
+## 8. Review fixes
+
+Three independent reviews of `ecaa5e2` (the queue and the notes, the money, access and denial) found **no BLOCKER**, one
+**IMPORTANT** found twice (a stranger burns the 28-day cap), and a list of optional points. Each was checked against the code
+before anything was changed.
+
+### Fixed
+
+| Finding | What was wrong, with the number | The fix | The test that fails without it |
+|---|---|---|---|
+| **IMPORTANT: a stranger burns the 28-day cap on open tasks for free, and a reject does not give it back** (both reviews) | Pot 98,000; the runner announces two open 5% tasks and one 1% task for a named worker. A stranger with no stake takes both open tasks the second the notice ends (1,000 of 1,000 ten-thousandths of the cap, about 9,800 set aside); the runner rejects both at once and all the money is back, yet the worker's take reverts `CapReached(1000, 100, 1000)` for 28 days, and the stranger can repeat it every 28 days at the cost of gas. The design line "a task nobody takes costs nobody ... nothing to grief" was false for open tasks. | `TaskBook` stores the place of the take in the cap's ring (`Task.ringIdx`, one byte in a slot the take already writes) and, when a task ends with **nothing paid to its worker** (reject, ran out, wind-down sweep), clears that entry's share (`_giveBackCap`). The entry is cleared only if it still holds this take (same second), and a cleared slot reads as free to the ring-full check. A task paid in part or in full, even by one unit, keeps its take counted: the runner chose to pay, so the cap still limits what can leave the project (the 28-day sum of takes that count is still at most 1,000, and every dollar set aside is still inside it). `TaskResolved` gets a last field `capGivenBack`. | `TasksCaps.test_aStrangerWhoTakesOpenTasksCannotBurnTheCapOfANamedTask` (the reviewers' attack, through the Launcher stack); `test_theCapIsGivenBackByRejectAndExpiryButNotByAPayment`; `test_eachGivenBackTakeClearsOnlyItsOwnEntry`; `testFuzz_theWindowSumIsTheTakesNotGivenBack` and the reworked `_walk` against an independent count; `TaskBook` unit tests `test_aRejectedTakeGivesItsCapBack`, `test_aTakeThatRanOutOrWasSweptGivesItsCapBack`, `test_aPaidTakeKeepsItsCapEvenForAUnit`, `test_aGivenBackTakeInTheSameSecondAsAnotherClearsOnlyItsOwnEntry`, `test_aGivenBackSlotReadsAsFreeToTheRing`, `test_aGiveBackNeverClearsTheEntryOfALaterTake`; the event ledger (`helpers/TaskLedger.sol`) subtracts `capGivenBack`, so `TasksRebuild` and `EventsRebuild` rebuild the window from logs; model vectors (below); six new mutations. |
+| Unnamed literals in the book (optional 2) | `2`, `2`, `4` and `1400` stood inline in several places; the 4N of `take` and of `_windowSum` could drift apart. | Named once: `NOTICE_FLOOR_MULT`, `DUE_MULT`, `CAP_WINDOW_MULT`, `NOTICE_PER_BP_DIV` (public constants of the book); the Pair's `2 * unit` is `PROPOSAL_UNITS`. | The existing notice, deadline and cap tests; the mutation texts were re-pointed (same changes, same tests). |
+| `dueC` NatSpec named the parameter `at` (optional 6) | The parameter is `when`. | Comment fixed. | none (comment) |
+
+**Where it changes what a server reads.** `TaskResolved` has a ninth field `capGivenBack` (topic `0xcbc7e418...`); `Task` (the
+return of `taskOf`) has a new byte `ringIdx` between `shareBps` and `takenBy`, so a decoder that reads the tuple by position must be
+regenerated from the ABI; the window the server shows ("room left in the cap") is `sum(takeBps)` of the last 28 days less the
+`capGivenBack` of those takes.
+
+**Existing tests changed, with the reason.** Eight tests asserted the old rule ("a reject does not give the cap back") and now assert
+the new one, each keeping its purpose by paying its tasks a unit instead of rejecting them: `TasksCaps.test_eightTasksOfAboutOnePointTwoFivePercentPassAndTheNinthIsBlocked`,
+`test_aTakeTheCapBlocksFailsAndTheTaskLapsesWithNothingMovedAndCanBeAnnouncedAgain`, `test_mustBind4_theTwentyEightDaySumOfTakesNeverPassesTheCap`
+(A and B are paid a unit each, so their takes still count and the third is still refused until 28 days, with the same numbers),
+`test_theCapIsNotGivenBackByRejectExpiryOrAPartPayment` (renamed `test_theCapIsGivenBackByRejectAndExpiryButNotByAPayment`),
+the walk and the fuzz of `TasksCaps` (the independent count now leaves out takes given back); `TaskBook.test_theCapCountsTakesInAnyRollingWindowOfFourUnits`,
+`test_anEntryStopsCountingAtExactlyFourUnitsOld` and `test_theRingWrapsAndKeepsTheLastSixteenTakes` (paid a unit instead of rejected). `TaskBook.t`
+and `Notes.t` carry the new event field. The vector scenario `task-cap-rolling-28-days` pays A and B a dollar, and a new scenario
+`task-cap-given-back` (84 scenarios now, 3,492 operations) takes two 5% tasks, is refused a third, rejects one, takes the third at once,
+lets both run out unpaid and takes a fourth with the cap free; the model's `resolve` gives the take back when nothing was paid.
+
+**Reviewers' scratch tests, turned into tests and deleted.** None of the `Reviewstep2*` files is left, tracked or untracked.
+`TasksAccess.t.sol` (9 tests: every new call as the wrong party, the book refuses all but the Treasury, the old runner and the old
+Pair after a hand-over, a stale proposal never reaches another serial, the queue in a quiet and a wound-down project),
+`TasksDenial.t.sol` (7: slots are never held forever, taken tasks come back without the runner, a blocked worker or holder blocks
+only his own payment, gas does not grow with leavers or notes, the edges of the clock), `TasksMoney.t.sol` (5: a speculator around
+an accept or a return never gains, a Team holder who takes out early never beats the one who waits, dust loops never shrink an honest holder,
+a flood before a take costs the sleeper at most 5%, and the declined rounding band stays under 1%), `TasksWalk.t.sol` (a random walk over
+the real Launcher, clones and Pair with hand-overs, a Pair made mid-project, quiet stretches, wind-down and strangers taking open tasks; run
+at N = 7 days and at N = 168 seconds; with a coverage test that fails if the walk stops reaching paid, rejected, run-out, cancelled
+and lapsed tasks or a Pair and a handed-over runner). The two reviewer tests that failed by design (the part-payment band and the
+stream stretch) are not kept as failing tests; the first is kept as the bounded test above, the second is declined below.
+
+### Declined, with the reason and a number
+
+| Finding | Why |
+|---|---|
+| **Part payment under paid-in pays an early leaver a little less than waiting** (all three reviews; optional 1 and the money review's optional 1) | It is design 2.2(3) as written (one ratio for stayers and notes), the money stays with the stayers and the Team, and no one is paid more than their note. Numbers: pot 103,000, paid-in 98,000, a 5% task of 5,150 set aside, a 10% backer takes out (cash 9,785, note 262.47), half the task is paid: 9,916.24 against 9,920.03 by the waterfall, **3.79 less (0.038%)**. Worst case found: Team pool 100 times the backer Shares, pot 1,000,000, paid-in 975,000, a 50,000 task paid 40,000, a 40% backer: 382,001.998 against 384,000, **1,998 less (0.52%)**, bounded by about a quarter of the money set aside times the leaver's part of the backer Shares; `TasksMoney.test_aPartPaymentUnderPaidInCostsAnEarlyLeaverUnderOnePercentAgainstWaiting` pins both "never more than waiting" and "under 1%". Paying by priority needs two ratios per task, a second claim rule in the book and in the model, and the simple bound "notes never exceed the money returned for a serial" would become a bound per band. The owner may overrule. |
+| **Small outside payments merged into a running stream push the older money's arrival later** (money review, optional 2) | Step 1 behaviour (`addRevenue`), outside this fix's scope (S2: step 1 does not change). Numbers: 1,008 merges of 1 dollar every 10 minutes into a real 1,000 dollar payment leave about 137 dollars of it still held back after 7 days (the stranger spent 1,007 dollars, all of which went to holders); a 95% holder merging 5,000 dollars an hour into a 100,000 payment keeps 454,776 still arriving at day 7. No profit was found (the pusher's own money enters the stream); a leaver of genuine revenue can be paid later than the 7 days promised. The fix (keep the old stream's end for merges under 1% of it, or keep two buckets) changes the arrival rule, the step 1 vectors and `Arrival.t`; **still open for the owner**. |
+| A take-out that pays no cash still reverts even if a note would be due (optional 8) | Decided and quoted consistently in pass B (choice 4); it cannot strand money (tasks hold at most about 10% of the pot). |
+| Announce and take need an open check-in window, which the design does not say (optional 3) | A protective choice recorded in pass A. Every task needs a check-in between announce and take (the notice is at least 2N and the window is 2N from the last check-in), and a named worker cannot make it: **the app must prompt the check-in before the take date, and the design text should say it.** |
+| The Pair's confirm data carries payee, maximum and share but no deadline (optional 4) | A deadline argument would be a different contract call; the dates are derived from `noticeFor` and the time of confirmation (section 6), and move if the second signer confirms late (the proposal lives 2N). |
+| Thin size headroom: Treasury 999 bytes, TestHarness 609, Parts 1,796 (optional 5) | Known; the next addition goes to a new clone (section 3). |
+| Small simplifications (optional 6): both `expiresAt` and `deadline` in the book, `noticeFor` only forwarding, `returnTask` silent on a lapsed task, `PROPOSAL_TTL` a storage variable with a constant's name | `expiresAt` and `deadline` are two names in the event and the ABI the server reads; `noticeFor` is the app's one read; a lapsed task has nothing to return and the call is a harmless no-op; `PROPOSAL_TTL` is public ABI the app already reads. No money effect. |
+| The vector slack of 8 units per open task per take-out accumulates over a scenario (optional 7) | At most a few hundred units over a scenario; the unit tests and must-bind tests bind exactly. |
+| A taker who later becomes the runner or a Pair signer can never be paid (access review, optional 2) | A reject or the 2N deadline clears the task, so no money is stuck; being paid would let a runner pay himself. |
+| A holder whose address cannot receive dollars cannot claim (optional 3) | Only his own note and the last claim's rounding stay in `notesOwed`; nobody else is affected (tested in `TasksDenial`). |
+| Pair `announceTask` proposals carry no serial and no pot figure (optional 4) | A stale proposal confirmed on day 13.9 still announces, bounded by the 2N lifetime and by both signers' consent; a stale accept names its serial and serials are never reused, so it cannot reach another task. |
+| `takeSeat`, `handOver`, `setAgent`, `revokeAgent`, `setDoor` have no `nonReentrant` (optional 5) | Each needs its own authority and none touches money; the production dollar has no hook on a plain transfer. |
+
+### Still open
+
+1. The two owner decisions above: the part-payment band (0.038% to 0.52% of a leaver's money, to the stayers) and the stream stretch
+   of the arrival rule (a step 1 item).
+2. A stranger can still hold up to 10% of the pot set aside (not the cap) on an open task until the runner rejects it or 2N pass
+   (14 days at N = 7 days): about 9,800 of a 98,000 pot. Holders lose nothing (they hold notes), and the cap is no longer burned.
+   Named payees avoid it entirely; the app should offer only named payees.
+
+### What was run after the fixes
+
+`forge fmt --check src script test` clean. `forge test`: **55 suites, 540 tests passed, 0 failed, 0 skipped**. The eleven invariants at
+1,000 runs of 200 steps (200,000 calls each): green. `TasksCaps` fuzz at 20,000 runs (`testFuzz_theWindowSumIsTheTakesNotGivenBack`):
+green. `NotesFuzz` and the notes tests at 20,000 runs: green. `testFuzz_mb1_notesNeverExceedTheMoneyReturned` at 5,000 runs (about three
+minutes; the routine setting is 200): green. `TasksWalk` at 4,000 runs for each of N = 7 days and N = 168 seconds: green.
+`scripts/check-vectors.sh`: "vectors.json is current (84 scenarios)". The mutation script on the whole list: **124 run, 123 killed,
+`note-no-cap` survived as proved (equivalent), 0 unexplained survivors**. `scripts/pot-chain-loop.sh` on the real bytecode: **24 checks
+passed** (the second task's step now also checks that a take that came back unpaid gives its share of the cap back); anvil was
+stopped. Sizes: Treasury 23,577 (999 to spare), TaskBook 10,369, Parts creation code 47,707 (1,445 to spare).
