@@ -70,9 +70,11 @@ contract NotesMustBindTest is StackBase {
     function _someLeave() internal {
         address h = hs[_r(5)];
         uint256 bal = shares.balanceOf(h);
-        if (bal == 0 || t.pot() < 40_000e6) return; // the project is never emptied: a take must always find money
+        if (bal == 0) return;
         uint256 n = _r(3) == 0 ? bal : bal * (1 + _r(100)) / 100;
         if (n == 0) return;
+        (uint256 quoted,,) = t.quoteTakeOut(h, n);
+        if (t.pot() < quoted + 30_000e6) return; // the project is never emptied: a take must always find money
         uint256 owed0 = t.notesOwed();
         vm.prank(h);
         try t.leave(n, 0, h) returns (uint256 cash) {

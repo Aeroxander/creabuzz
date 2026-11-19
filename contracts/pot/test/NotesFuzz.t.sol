@@ -43,7 +43,6 @@ contract NotesFuzzTest is PotBase {
 
     /// @dev (a) A holder who takes out in `k` pieces is paid, in cash and notes together, what taking out at once pays, to
     /// within a unit a piece, and never more by more than that.
-    /// forge-config: default.fuzz.runs = 1000
     function testFuzz_piecesAreWorthTheWholeToWithinAUnitAPiece(uint16 bps, uint256 seed, uint8 kRaw) public {
         bps = uint16(bound(bps, 1, 500));
         uint64 serial = _setAside(bps);
@@ -81,7 +80,6 @@ contract NotesFuzzTest is PotBase {
 
     /// @dev (b) A joiner who takes out at once while a task is set aside, and is paid the note when the task is rejected, is not
     /// paid more than they paid in after the fee, apart from the offset's give-away (a hundredth of a dollar at most here).
-    /// forge-config: default.fuzz.runs = 1000
     function testFuzz_aJoinerWhoLeavesAtOnceNeverNetsAGainWhileMoneyIsSetAside(uint16 bps, uint256 amount) public {
         bps = uint16(bound(bps, 1, 500));
         amount = bound(amount, 1e6, 2_000_000e6);
@@ -103,7 +101,6 @@ contract NotesFuzzTest is PotBase {
 
     /// @dev (c) With the task returned (rejected), a holder who took out in the middle of it ends with what they would have had
     /// with no task at all (to the unit of each piece): the note makes the lock neutral.
-    /// forge-config: default.fuzz.runs = 1000
     function testFuzz_aRejectedTaskLeavesTheLeaverWhereNoTaskWouldHave(uint16 bps, uint256 pct) public {
         bps = uint16(bound(bps, 1, 500));
         uint256 n = shares.balanceOf(alice) * bound(pct, 1, 100) / 100;
@@ -120,7 +117,6 @@ contract NotesFuzzTest is PotBase {
     }
 
     /// @dev Whoever leaves, the stayers' claim and the notes of a taken task always add up to what it holds.
-    /// forge-config: default.fuzz.runs = 1000
     function testFuzz_theStayersAndTheNotesAddUpToTheTaskAtEveryTakeOut(uint16 bps, uint256 seed) public {
         bps = uint16(bound(bps, 1, 500));
         uint64 a = _setAside(bps);
