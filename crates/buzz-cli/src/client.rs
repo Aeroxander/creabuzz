@@ -952,6 +952,35 @@ impl BuzzClient {
         self.handle_response(resp).await
     }
 
+    /// POST signed JSON once and return the status with the raw body, whatever the status: for routes whose refusals
+    /// carry a stable `code` the caller reads (`/llm/manager/draft`). Never retried: a call may cost money.
+    pub(crate) async fn post_json_for_status(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+        wait: Duration,
+    ) -> Result<(u16, String), CliError> {
+        let url = format!("{}{path}", self.relay_url);
+        let body = serde_json::to_vec(body).map_err(|e| CliError::Other(e.to_string()))?;
+        let auth = sign_nip98(&self.keys, "POST", &url, Some(&body))?;
+        let http = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(wait)
+            .connect_timeout(Duration::from_secs(15))
+            .build()?;
+        let response = self
+            .with_auth_tag(
+                http.post(&url)
+                    .header("Authorization", auth)
+                    .header("Content-Type", "application/json")
+                    .body(body),
+            )
+            .send()
+            .await?;
+        let status = response.status().as_u16();
+        Ok((status, response.text().await?))
+    }
+
     /// Send a state-changing JSON command exactly once. Ambiguous delivery
     /// never invites an automatic re-run with a newly observed version.
     pub async fn post_json_once_authed(

@@ -18,6 +18,7 @@ mod launchpad_docs_tests;
 pub mod launchpad_facts;
 pub mod launchpad_gov;
 pub mod launchpad_inbox;
+pub mod launchpad_manager;
 pub mod launchpad_record;
 pub mod launchpad_result;
 pub mod launchpad_start;

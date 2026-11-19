@@ -1,6 +1,7 @@
 //! The agent docs stay true: every `buzz …` command written in them parses against the tool's own help.
 //!
-//! `docs/agents/JOINING.md` and `docs/agents/WORKER-LOOP.md` are what an agent builder copies commands from. A command
+//! `docs/agents/JOINING.md`, `docs/agents/WORKER-LOOP.md` and `docs/agents/MANAGER-LOOP.md` are what an agent builder
+//! copies commands from. A command
 //! that was renamed, or a flag that was removed, must fail here instead of staying in the docs. The commands are read
 //! out of the fenced blocks, joined across `\` line breaks, split the way a shell splits them, and handed to the real
 //! argument parser (placeholders such as `<TASK_ID>` are plain words to it). Every `tasks` subcommand must also be
@@ -10,6 +11,14 @@ use clap::CommandFactory;
 
 const JOINING: &str = include_str!("../../../../docs/agents/JOINING.md");
 const WORKER_LOOP: &str = include_str!("../../../../docs/agents/WORKER-LOOP.md");
+const MANAGER_LOOP: &str = include_str!("../../../../docs/agents/MANAGER-LOOP.md");
+
+/// The docs, by name.
+const DOCS: [(&str, &str); 3] = [
+    ("JOINING.md", JOINING),
+    ("WORKER-LOOP.md", WORKER_LOOP),
+    ("MANAGER-LOOP.md", MANAGER_LOOP),
+];
 
 /// Split one command line the way a shell would: spaces separate words; single quotes, double quotes and `$'…'` group.
 fn words(line: &str) -> Vec<String> {
@@ -143,19 +152,22 @@ fn check(doc_name: &str, command: &str) {
 #[test]
 fn every_documented_command_parses_against_the_tools_own_help() {
     let mut count = 0;
-    for (name, doc) in [("JOINING.md", JOINING), ("WORKER-LOOP.md", WORKER_LOOP)] {
+    for (name, doc) in DOCS {
+        let mut in_doc = 0;
         for command in commands(doc) {
             check(name, &command);
-            count += 1;
+            in_doc += 1;
         }
+        // Each doc really does carry its loop: a handful of commands, not an empty scan.
+        assert!(in_doc >= 8, "{name}: only {in_doc} commands were read");
+        count += in_doc;
     }
-    // The docs really do carry the loop: a handful of commands each, not an empty scan.
-    assert!(count >= 30, "only {count} documented commands were read");
+    assert!(count >= 40, "only {count} documented commands were read");
 }
 
 #[test]
 fn commands_written_inside_sentences_parse_too() {
-    for (name, doc) in [("JOINING.md", JOINING), ("WORKER-LOOP.md", WORKER_LOOP)] {
+    for (name, doc) in DOCS {
         for command in inline_commands(doc) {
             // A fragment such as `buzz launchpad tasks next` with flags left out still names a real command.
             let argv = words(&command);
@@ -207,6 +219,85 @@ fn every_tasks_subcommand_is_written_down() {
             "`{line}` is a command of the tool and is not in docs/agents"
         );
     }
+}
+
+/// The manager's playbook (docs/MANAGEMENT-LAYER.md section 5): every section says its name, version, owner, review
+/// date, what is measured and when to retire it, and every section carries the one loop version the file opens with.
+#[test]
+fn every_section_of_the_manager_loop_carries_its_six_fields_and_one_version() {
+    const FIELDS: [&str; 6] = [
+        "- Name: ",
+        "- Version: ",
+        "- Owner: ",
+        "- Review date: ",
+        "- Measure: ",
+        "- Retire if: ",
+    ];
+    let mut names = std::collections::BTreeSet::new();
+    let mut versions = std::collections::BTreeSet::new();
+    let mut sections = 0;
+    for section in MANAGER_LOOP.split("\n## ").skip(1) {
+        let title = section.lines().next().unwrap_or_default();
+        let value = |field: &str| {
+            section
+                .lines()
+                .find_map(|line| line.strip_prefix(field))
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| panic!("MANAGER-LOOP.md: section {title:?} has no `{field}`"))
+        };
+        for field in FIELDS {
+            value(field);
+        }
+        assert!(
+            names.insert(value("- Name: ").to_string()),
+            "MANAGER-LOOP.md: the name of section {title:?} is used twice"
+        );
+        versions.insert(value("- Version: ").to_string());
+        let date = value("- Review date: ");
+        assert!(
+            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok(),
+            "MANAGER-LOOP.md: section {title:?}: review date {date:?} is not a date (YYYY-MM-DD)"
+        );
+        sections += 1;
+    }
+    assert!(sections >= 6, "only {sections} sections were read");
+    assert_eq!(versions.len(), 1, "one loop, one version: {versions:?}");
+    let version = versions.into_iter().next().unwrap_or_default();
+    assert!(
+        MANAGER_LOOP.contains(&format!("Loop version: `{version}`")),
+        "the file opens with another version than its sections carry ({version})"
+    );
+}
+
+#[test]
+fn every_manager_and_brain_subcommand_is_written_down() {
+    let launchpad = crate::Cli::command()
+        .find_subcommand("launchpad")
+        .cloned()
+        .expect("`buzz launchpad` exists");
+    for group in ["manager", "brain"] {
+        let commands = launchpad
+            .find_subcommand(group)
+            .unwrap_or_else(|| panic!("`buzz launchpad {group}` exists"));
+        for sub in commands.get_subcommands().filter(|s| !s.is_hide_set()) {
+            let line = format!("buzz launchpad {group} {}", sub.get_name());
+            assert!(
+                MANAGER_LOOP.contains(&line),
+                "`{line}` is a command of the tool and is not in docs/agents/MANAGER-LOOP.md"
+            );
+        }
+    }
+    // The manager has a command that drafts and none that posts, signs or pays.
+    let manager: Vec<String> = launchpad
+        .find_subcommand("manager")
+        .map(|m| {
+            m.get_subcommands()
+                .map(|s| s.get_name().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(manager, ["draft"]);
 }
 
 #[test]

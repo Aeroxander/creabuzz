@@ -537,13 +537,19 @@ buzz agents confirm <AGENT_NPUB>"
         after_help = "The label is written on this account's own profile and checked by the server. A labelled \
 agent may offer help, accept a task, hand work in, ask for more time and give a task up. It may not check anyone's \
 work, grant more time, or sign goals and promises. The server keeps an account under one operator for good.\n\n\
+A manager agent (--role manager) drafts for the founder and signs no task step, so it is always a different \
+account from the agents that do the work. The role is set once, when the account is first labelled.\n\n\
 Examples:\n  \
-BUZZ_AUTH_TAG='<auth_tag>' buzz agents label --operator <OPERATOR_NPUB>"
+BUZZ_AUTH_TAG='<auth_tag>' buzz agents label --operator <OPERATOR_NPUB>\n  \
+BUZZ_AUTH_TAG='<auth_tag>' buzz agents label --operator <OPERATOR_NPUB> --role manager"
     )]
     Label {
         /// The pubkey (hex or npub) of the person who runs this account
         #[arg(long)]
         operator: String,
+        /// Label the account as the project's AI manager: it drafts for the founder and signs no task step
+        #[arg(long, value_parser = ["manager"])]
+        role: Option<String>,
     },
     /// Read an account's agent label and check it: is it an agent, and who runs it
     Show {
@@ -1628,6 +1634,12 @@ pub enum LaunchpadCmd {
     Brain {
         #[command(subcommand)]
         step: commands::launchpad_brain::BrainCmd,
+    },
+    /// The AI manager: a draft of this week's one thing, what to leave aside and "What happened", for the founder
+    /// to read. It never drafts "What's next" and never signs, posts or pays
+    Manager {
+        #[command(subcommand)]
+        step: commands::launchpad_manager::ManagerCmd,
     },
     /// Start a project in one command: its name, a sentence, its goal and how everyone will know it was reached.
     /// Publishes the same two records as the web app's Quick Start and prints the project's page path as JSON
@@ -4167,11 +4179,13 @@ mod tests {
         assert_eq!(
             names(&cmd, "launchpad"),
             vec![
+                "brain",
                 "compose-bid",
                 "curate",
                 "delete",
                 "deployment",
                 "list",
+                "manager",
                 "mint-token",
                 "post-update",
                 "process",
@@ -4368,7 +4382,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 24),
+            ("launchpad", 26),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),

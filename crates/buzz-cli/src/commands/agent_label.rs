@@ -136,9 +136,54 @@ pub fn cmd_confirm(client: &BuzzClient, agent: &str, conditions: &str) -> Result
     Ok(())
 }
 
-/// `buzz agents label --operator <pubkey>`: the agent labels its own account, with the operator's signature it was
-/// given as `BUZZ_AUTH_TAG`.
-pub async fn cmd_label(client: &BuzzClient, operator: &str) -> Result<(), CliError> {
+/// The label's tags for an account's profile: every tag the profile already has but the label's own, then
+/// `["agent", <me>]`, and `["agent-role", "manager"]` for a manager. Pure. (The operator's `auth` tag is added when the
+/// record is signed.)
+pub(crate) fn label_tags(
+    current: Option<&Value>,
+    me: &str,
+    role: Option<&str>,
+) -> Result<Vec<Tag>, CliError> {
+    let bad = |e: nostr::event::tag::Error| CliError::Other(format!("bad tag: {e}"));
+    let mut tags: Vec<Tag> = Vec::new();
+    if let Some(kept) = current.and_then(|event| event["tags"].as_array()) {
+        for raw in kept {
+            let Ok(fields) = serde_json::from_value::<Vec<String>>(raw.clone()) else {
+                continue;
+            };
+            if matches!(
+                fields.first().map(String::as_str),
+                Some("agent" | "auth" | "agent-role") | None
+            ) {
+                continue;
+            }
+            tags.push(Tag::parse(fields).map_err(bad)?);
+        }
+    }
+    tags.push(Tag::parse(["agent", me]).map_err(bad)?);
+    if let Some(role) = role {
+        tags.push(Tag::parse(["agent-role", role]).map_err(bad)?);
+    }
+    Ok(tags)
+}
+
+/// The role a profile says its account has (`manager`), if any.
+pub(crate) fn role_of(profile: &Value) -> Option<String> {
+    profile["tags"].as_array()?.iter().find_map(|tag| {
+        let fields: Vec<String> = serde_json::from_value(tag.clone()).ok()?;
+        (fields.first().map(String::as_str) == Some("agent-role"))
+            .then(|| fields.get(1).cloned())
+            .flatten()
+    })
+}
+
+/// `buzz agents label --operator <pubkey> [--role manager]`: the agent labels its own account, with the operator's
+/// signature it was given as `BUZZ_AUTH_TAG`.
+pub async fn cmd_label(
+    client: &BuzzClient,
+    operator: &str,
+    role: Option<&str>,
+) -> Result<(), CliError> {
     let operator = parse_pubkey(operator, "--operator")?.to_hex();
     let me = client.keys().public_key().to_hex();
     let ask = format!(
@@ -166,24 +211,7 @@ pub async fn cmd_label(client: &BuzzClient, operator: &str) -> Result<(), CliErr
         .filter(|content| serde_json::from_str::<Value>(content).is_ok())
         .unwrap_or("{}")
         .to_string();
-    let mut tags: Vec<Tag> = Vec::new();
-    if let Some(kept) = current.as_ref().and_then(|event| event["tags"].as_array()) {
-        for raw in kept {
-            let Ok(fields) = serde_json::from_value::<Vec<String>>(raw.clone()) else {
-                continue;
-            };
-            if matches!(
-                fields.first().map(String::as_str),
-                Some("agent" | "auth") | None
-            ) {
-                continue;
-            }
-            tags.push(Tag::parse(fields).map_err(|e| CliError::Other(format!("bad tag: {e}")))?);
-        }
-    }
-    tags.push(
-        Tag::parse(["agent", me.as_str()]).map_err(|e| CliError::Other(format!("bad tag: {e}")))?,
-    );
+    let tags = label_tags(current.as_ref(), &me, role)?;
     let event = client.sign_event(EventBuilder::new(Kind::Custom(0), content).tags(tags))?;
 
     // Checked here as the server will check it, so a label that cannot hold is never sent.
@@ -202,9 +230,14 @@ pub async fn cmd_label(client: &BuzzClient, operator: &str) -> Result<(), CliErr
             && now["says_agent"] == json!(true)
             && now["operator"] == label["operator"]
         {
-            return Err(CliError::Conflict(
-                "this account is already labelled as an agent run by that person".into(),
-            ));
+            // The role is set once, with the first label: the server refuses a change either way.
+            return Err(CliError::Conflict(if role_of(current).as_deref() == role {
+                "this account is already labelled as an agent run by that person".into()
+            } else {
+                "this account is already labelled, and a label's role is set once: use a new account for the \
+                     manager (a manager is never one of the agents that do the work)"
+                        .into()
+            }));
         }
     }
     let raw = client.submit_event(event).await?;
@@ -215,6 +248,7 @@ pub async fn cmd_label(client: &BuzzClient, operator: &str) -> Result<(), CliErr
     .map_err(|e| CliError::Other(format!("invalid relay response: {e}")))?;
     answer["agent"] = json!(me);
     answer["operator"] = json!(operator);
+    answer["role"] = json!(role);
     println!("{answer}");
     Ok(())
 }
@@ -271,6 +305,79 @@ mod tests {
 
     fn agent_tag(keys: &Keys) -> Vec<String> {
         vec!["agent".into(), keys.public_key().to_hex()]
+    }
+
+    #[test]
+    fn a_manager_label_adds_the_role_and_keeps_the_profiles_other_tags() {
+        let agent = Keys::generate();
+        let me = agent.public_key().to_hex();
+        let current = profile(
+            &agent,
+            vec![
+                vec!["website".into(), "https://example.org".into()],
+                vec!["agent".into(), me.clone()],
+                vec!["agent-role".into(), "manager".into()],
+                vec!["auth".into(), "old".into(), "".into(), "sig".into()],
+            ],
+        );
+        let fields = |tags: Vec<Tag>| -> Vec<Vec<String>> {
+            tags.into_iter().map(|t| t.as_slice().to_vec()).collect()
+        };
+        // A worker's label: the old label's own tags go, the rest stay, and no role is written.
+        assert_eq!(
+            fields(label_tags(Some(&current), &me, None).expect("tags")),
+            [
+                vec!["website".to_string(), "https://example.org".to_string()],
+                vec!["agent".to_string(), me.clone()],
+            ]
+        );
+        // A manager's label says so, once.
+        assert_eq!(
+            fields(label_tags(Some(&current), &me, Some("manager")).expect("tags")),
+            [
+                vec!["website".to_string(), "https://example.org".to_string()],
+                vec!["agent".to_string(), me.clone()],
+                vec!["agent-role".to_string(), "manager".to_string()],
+            ]
+        );
+        assert_eq!(
+            fields(label_tags(None, &me, Some("manager")).expect("tags")).len(),
+            2
+        );
+        assert_eq!(role_of(&current).as_deref(), Some("manager"));
+        assert_eq!(role_of(&profile(&agent, vec![])), None);
+    }
+
+    #[test]
+    fn the_tool_takes_only_the_manager_role() {
+        assert!(crate::parse_args(
+            [
+                "buzz",
+                "agents",
+                "label",
+                "--operator",
+                "x",
+                "--role",
+                "manager"
+            ]
+            .map(String::from)
+            .to_vec()
+        )
+        .is_ok());
+        assert!(crate::parse_args(
+            [
+                "buzz",
+                "agents",
+                "label",
+                "--operator",
+                "x",
+                "--role",
+                "boss"
+            ]
+            .map(String::from)
+            .to_vec()
+        )
+        .is_err());
     }
 
     #[test]

@@ -167,7 +167,9 @@ pub async fn dispatch(command: AgentsCmd, client: &BuzzClient) -> Result<(), Cli
         AgentsCmd::Confirm { agent, conditions } => {
             super::agent_label::cmd_confirm(client, &agent, &conditions)
         }
-        AgentsCmd::Label { operator } => super::agent_label::cmd_label(client, &operator).await,
+        AgentsCmd::Label { operator, role } => {
+            super::agent_label::cmd_label(client, &operator, role.as_deref()).await
+        }
         AgentsCmd::Show { pubkey } => super::agent_label::cmd_show(client, pubkey.as_deref()).await,
     }
 }
