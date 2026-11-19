@@ -28,7 +28,10 @@ trap cleanup EXIT
 PORT="$(free_port)"
 RPC="http://127.0.0.1:$PORT"
 # A higher block gas limit only so the Launcher's constructor (it makes the Finisher and the LiquidityHolder) fits one block.
-"$ANVIL" --port "$PORT" --chain-id 31337 --gas-limit 100000000 --silent >"$STATE/anvil.log" 2>&1 &
+# No history is kept and nothing is written outside $STATE: the scenarios mine tens of thousands of blocks, and anvil's
+# default writes every block's state under ~/.foundry/anvil/tmp and leaves it there when it is stopped (gigabytes a run).
+"$ANVIL" --port "$PORT" --chain-id 31337 --gas-limit 100000000 --prune-history --cache-path "$STATE/anvil-cache" \
+  --silent >"$STATE/anvil.log" 2>&1 &
 ANVIL_PID=$!
 for _ in $(seq 1 60); do
   curl -s -X POST -H 'content-type: application/json' \
@@ -37,4 +40,4 @@ for _ in $(seq 1 60); do
 done
 
 cd "$ROOT/app"
-M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts
+M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts "$@"

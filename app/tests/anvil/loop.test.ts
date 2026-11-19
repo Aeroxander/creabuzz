@@ -5,11 +5,6 @@
  * anvil and sets `M7_ANVIL_RPC`; skipped without it.
  */
 import { describe, expect, it } from "vitest";
-import { encodeFunctionData } from "../../../packages/creaton-core/src/launchpad/evmAbi.ts";
-import {
-  chainKeyOf,
-  projectIdOf,
-} from "../../../packages/creaton-core/src/launchpad/project-chain.ts";
 import {
   bidCalls,
   collectCalls,
@@ -21,147 +16,50 @@ import {
   handBackPaid,
   poolSharePrice,
 } from "../../src/features/market/market-math";
-import { BID_SUBMITTED, readPool } from "../../src/features/market/use-market";
-import { backCalls, openBackingCall } from "../../src/features/money/calls";
 import {
-  injectedWallet,
-  type MoneyWallet,
-} from "../../src/features/money/wallet";
-import { proposalOf, PROPOSED_TOPIC } from "../../src/features/team/pair";
+  BID_SUBMITTED,
+  readFinishCalls,
+  readPool,
+} from "../../src/features/market/use-market";
+import { openBackingCall } from "../../src/features/money/calls";
+import type { MoneyWallet } from "../../src/features/money/wallet";
 import {
   directCall,
   giveSharesData,
   handOverData,
   LAUNCHER_READS,
-  launchCall,
   makePairCall,
   openAuctionData,
   openRoundData,
   PAIR_READS,
-  pairConfirmCall,
-  pairProposeCall,
   pairSpendCall,
   TREASURY_READS,
   windDownData,
 } from "../../src/features/team/team-calls";
 import { teamProblem } from "../../src/features/team/team-copy";
-import { readAddress, readWord } from "../../src/features/team/use-team";
-import { deployPlatform, mintDollars, type Platform } from "./deploy";
+import { readAddress } from "../../src/features/team/use-team";
+import { deployPlatform, mintDollars } from "./deploy";
 import {
   accounts,
   blockNumber,
   call,
+  chainTime,
   mine,
-  passTime,
-  providerFor,
   RPC,
   send,
-  waitReceipt,
   word,
 } from "./rpc";
-
-const DOLLAR = 1_000_000n;
-const SHARE = 10n ** 18n;
-const DAY = 86_400;
-const data = (
-  signature: string,
-  types: Parameters<typeof encodeFunctionData>[1] = [],
-  values: Parameters<typeof encodeFunctionData>[2] = [],
-) => encodeFunctionData(signature, types, values);
-
-const walletOf = (account: string): MoneyWallet =>
-  injectedWallet(providerFor(account), { polls: 100, pollMs: 20 });
-
-/** The `round` id a Launcher's `RoundOpened` log in a call's receipt carries (topic 3). */
-async function openedRound(hash: string, launcher: string): Promise<bigint> {
-  const receipt = await waitReceipt(hash);
-  const log = receipt.logs.find(
-    (l) => l.address.toLowerCase() === launcher && l.topics.length === 4,
-  );
-  if (!log) throw new Error("no round opened");
-  return BigInt(log.topics[3]);
-}
-
-interface Project {
-  key: string;
-  shares: string;
-  treasury: string;
-  vester: string;
-  finisher: string;
-  rounds: string;
-}
-
-async function launched(
-  platform: Platform,
-  founder: string,
-  coordinate: string,
-): Promise<Project> {
-  const wallet = walletOf(founder);
-  const projectId = projectIdOf(coordinate);
-  const key = chainKeyOf(founder, projectId);
-  const hash = await readWord(
-    wallet,
-    platform.launcher,
-    LAUNCHER_READS.launchHash(key),
-  );
-  await wallet.sendCalls(
-    [
-      launchCall({
-        launcher: platform.launcher,
-        projectId,
-        name: "Lantern",
-        symbol: "LANTERN",
-        settingsHash: `0x${hash.toString(16).padStart(64, "0")}`,
-      }),
-    ],
-    31337,
-  );
-  const words = (
-    await call(platform.launcher, LAUNCHER_READS.projectByKey(key))
-  )
-    .slice(2)
-    .match(/.{64}/g) as string[];
-  const at = (i: number) => `0x${words[i].slice(24)}`;
-  return {
-    key,
-    shares: at(1),
-    treasury: at(2),
-    vester: at(3),
-    finisher: at(4),
-    rounds: at(5),
-  };
-}
-
-/** Back round `round` with `amount` from each of `backers`, close it after its 24 hours, and deliver everyone's Shares. */
-async function backAndClose(
-  platform: Platform,
-  p: Project,
-  round: bigint,
-  backers: string[],
-  amount: bigint,
-  stranger: string,
-) {
-  for (const backer of backers) {
-    await mintDollars(stranger, platform.quote, backer, amount);
-    await walletOf(backer).sendCalls(
-      backCalls({
-        quote: platform.quote,
-        rounds: p.rounds,
-        round: Number(round),
-        amount,
-      }),
-      31337,
-    );
-  }
-  await passTime(DAY + 60);
-  await send(stranger, p.rounds, data("close(uint256)", ["uint256"], [round]));
-  for (const backer of backers)
-    await send(
-      stranger,
-      p.rounds,
-      data("settle(uint256,address)", ["uint256", "address"], [round, backer]),
-    );
-}
+import {
+  backAndClose,
+  confirmThrough,
+  DAY,
+  DOLLAR,
+  data,
+  launched,
+  openedRound,
+  SHARE,
+  walletOf,
+} from "./steps";
 
 const run = RPC ? describe : describe.skip;
 
@@ -249,31 +147,12 @@ run("milestone 7 on anvil: alone, then two, then a market", () => {
     );
 
     // Both sign a round up to 50,000: one proposes, the other confirms the exact call read back from the Proposed log.
-    const confirmLatest = async (
+    const confirmLatest = (
       proposer: MoneyWallet,
       confirmer: MoneyWallet,
       target: string,
       inner: string,
-    ) => {
-      await proposer.sendCalls([pairProposeCall(pair, target, inner)], 31337);
-      const head = await blockNumber();
-      const logs = await confirmer.getLogs({
-        address: pair,
-        topics: [PROPOSED_TOPIC],
-        from: Math.max(0, head - 50),
-        to: head,
-      });
-      const proposal = logs
-        .map((l) => proposalOf(l, pair))
-        .filter((x) => x !== null)
-        .pop();
-      if (!proposal) throw new Error("no proposal");
-      expect(proposal.data).toBe(inner.toLowerCase());
-      return confirmer.sendCalls(
-        [pairConfirmCall(pair, proposal.target, proposal.data, proposal.nonce)],
-        31337,
-      );
-    };
+    ) => confirmThrough(pair, proposer, confirmer, target, inner);
     const roundTx = await confirmLatest(
       founderWallet,
       cosignerWallet,
@@ -359,7 +238,7 @@ run("milestone 7 on anvil: alone, then two, then a market", () => {
           amount: 25_000n * DOLLAR,
           floorQ96: start,
           permit2Allowance: 0n,
-          deadline: BigInt(Math.floor(Date.now() / 1000) + 10 * DAY),
+          deadline: BigInt((await chainTime()) + 10 * DAY),
         }),
         31337,
       );
@@ -367,14 +246,38 @@ run("milestone 7 on anvil: alone, then two, then a market", () => {
     await mine(endBlock - (await blockNumber()) + 2);
 
     // Anyone finishes it with the app's three steps; the market is open.
-    await walletOf(stranger).sendCalls(
-      [
-        finishCall(p.finisher, "openPool"),
-        finishCall(p.finisher, "settle"),
-        finishCall(p.finisher, "sweep"),
-      ],
-      31337,
+    // The record lags (it still says the minimum was not reached): the first press runs the pool step and is then
+    // refused, and the next press, reading the auction itself, splits the money and sweeps. Never stuck.
+    const finisherWallet = walletOf(stranger);
+    const first = await readFinishCalls(
+      finisherWallet,
+      p.finisher,
+      auction,
+      false,
     );
+    expect(first).toEqual([
+      finishCall(p.finisher, "openPool"),
+      finishCall(p.finisher, "sweep"),
+    ]);
+    try {
+      await finisherWallet.sendCalls(first, 31337);
+      throw new Error("a sale that reached its minimum closed as failed");
+    } catch (error) {
+      expect(teamProblem(error, "finish")).toBe(
+        "The sale's money has to be split first. Press the earlier finishing step.",
+      );
+    }
+    const second = await readFinishCalls(
+      finisherWallet,
+      p.finisher,
+      auction,
+      false,
+    );
+    expect(second).toEqual([
+      finishCall(p.finisher, "settle"),
+      finishCall(p.finisher, "sweep"),
+    ]);
+    await finisherWallet.sendCalls(second, 31337);
     expect(await word(p.finisher, data("stage()"))).toBe(2n);
     expect(
       await word(

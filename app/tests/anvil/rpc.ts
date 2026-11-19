@@ -117,3 +117,12 @@ export async function passTime(seconds: number) {
 export async function blockNumber(): Promise<number> {
   return Number.parseInt(await rpc<string>("eth_blockNumber"), 16);
 }
+
+/** The newest block's time, in seconds: deadlines are set from it, since the scenarios move the chain's clock. */
+export async function chainTime(): Promise<number> {
+  const block = await rpc<{ timestamp: string }>("eth_getBlockByNumber", [
+    "latest",
+    false,
+  ]);
+  return Number.parseInt(block.timestamp, 16);
+}
