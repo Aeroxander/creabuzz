@@ -284,6 +284,21 @@ describe("a press is sent once, and a failure leaves a way to try again", () => 
     expect(chain.sent).toEqual([]);
   });
 
+  it("focus returns to the Back button when the sheet closes", async () => {
+    setup();
+    wrap(<BackCard now={NOW} numbers={numbers} projectName="Lantern" />);
+    fireEvent.change(await screen.findByLabelText("How many dollars?"), {
+      target: { value: "10" },
+    });
+    const button = screen.getByTestId("backing-review");
+    button.focus();
+    fireEvent.click(button);
+    await screen.findByTestId("back-pay");
+    fireEvent.keyDown(screen.getByTestId("back-sheet"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("back-sheet")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(button));
+  });
+
   it("the sheet names its controls: the amount field has a label and the press has words", async () => {
     setup();
     await openSheet("10");

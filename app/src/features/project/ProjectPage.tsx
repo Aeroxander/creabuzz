@@ -19,8 +19,6 @@ import {
   useProjectNumbers,
   useWalletAddress,
 } from "../money/use-money";
-import { ProjectMoney } from "../pot/ProjectMoney";
-import { useTeamWallets } from "../team/use-wallets";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
 import type { Project } from "./project-record";
@@ -31,6 +29,10 @@ import { projectPeople, useProject, useProjectActivity } from "./use-project";
 // is opened, so the first download stays small.
 const TasksTab = lazy(() =>
   import("../tasks/TasksTab").then((m) => ({ default: m.TasksTab })),
+);
+// The Money tab carries the money calls and their contract ABIs: it loads when the page does not need it yet.
+const ProjectMoney = lazy(() =>
+  import("../pot/ProjectMoney").then((m) => ({ default: m.ProjectMoney })),
 );
 // The old design's screens (stages, rounds, the auction, the market, Team's Pair): loaded only with the legacy-screens flag.
 const LegacyProjectTop = lazy(() => import("../../legacy/LegacyProjectTop"));
@@ -109,20 +111,6 @@ function ProjectView({ project }: { project: Project }) {
   const walletAddress = useWalletAddress().data ?? null;
   const legacy = legacyScreensOn();
   const team = [project.author, ...accepted.map((m) => m.pubkey)];
-  const wallets = useTeamWallets(investing ? team : []).data;
-  // The team a Team Share grant can go to, each with the wallet they proved is theirs (none: they cannot be granted to yet).
-  const members = team.map((pubkey) => {
-    const wallet = wallets?.[pubkey];
-    return {
-      pubkey,
-      name: nameOf(profiles, pubkey),
-      address: wallet?.state === "linked" ? wallet.address : null,
-    };
-  });
-  const nameOfAddress = (address: string) =>
-    members.find((m) => m.address === address.toLowerCase())?.name ??
-    `${address.slice(0, 6)}…${address.slice(-4)}`;
-
   return (
     <main
       className="screen mx-auto flex max-w-lg flex-col gap-5"
@@ -246,20 +234,24 @@ function ProjectView({ project }: { project: Project }) {
                       />
                     </Suspense>
                   ) : (
-                    <ProjectMoney
-                      chainKey={chainKeyOfProject(project)}
-                      error={numbersRead.error}
-                      loading={
-                        numbersRead.isPending &&
-                        numbersRead.fetchStatus !== "idle"
-                      }
-                      members={members}
-                      nameOf={nameOfAddress}
-                      now={now}
-                      numbers={numbersRead.data}
-                      onRetry={() => void numbersRead.refetch()}
-                      projectName={project.name}
-                    />
+                    <Suspense
+                      fallback={<Card className="h-40 animate-pulse" />}
+                    >
+                      <ProjectMoney
+                        chainKey={chainKeyOfProject(project)}
+                        error={numbersRead.error}
+                        loading={
+                          numbersRead.isPending &&
+                          numbersRead.fetchStatus !== "idle"
+                        }
+                        now={now}
+                        numbers={numbersRead.data}
+                        onRetry={() => void numbersRead.refetch()}
+                        profiles={profiles}
+                        projectName={project.name}
+                        team={team}
+                      />
+                    </Suspense>
                   ),
                 },
               ]

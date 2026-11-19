@@ -1,6 +1,6 @@
 import * as RadixDialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
 import { cn } from "./cn";
 
 interface OverlayPaneProps {
@@ -11,6 +11,25 @@ interface OverlayPaneProps {
   description?: string;
   children: ReactNode;
   testId?: string;
+}
+
+/**
+ * Gives focus back to what had it when the pane opened. Radix returns focus to a `Trigger` only; these panes are opened
+ * from state (a button that sets `open`), so without this focus is lost to the page when the pane closes.
+ */
+function useReturnFocus() {
+  const from = useRef<HTMLElement | null>(null);
+  return {
+    onOpenAutoFocus: () => {
+      const active = document.activeElement;
+      from.current = active instanceof HTMLElement ? active : null;
+    },
+    onCloseAutoFocus: (event: Event) => {
+      event.preventDefault();
+      from.current?.focus();
+      from.current = null;
+    },
+  };
 }
 
 function CloseButton() {
@@ -61,11 +80,13 @@ export function Sheet({
   children,
   testId,
 }: OverlayPaneProps) {
+  const focus = useReturnFocus();
   return (
     <RadixDialog.Root onOpenChange={onOpenChange} open={open}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="overlay z-40" />
         <RadixDialog.Content
+          {...focus}
           className={cn(
             "sheet fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90dvh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-t-3xl px-4 pt-3",
           )}
@@ -93,11 +114,13 @@ export function Dialog({
   children,
   testId,
 }: OverlayPaneProps) {
+  const focus = useReturnFocus();
   return (
     <RadixDialog.Root onOpenChange={onOpenChange} open={open}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className="overlay z-40" />
         <RadixDialog.Content
+          {...focus}
           className="sheet fixed left-1/2 top-1/2 z-50 flex max-h-[85dvh] w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-3xl p-5"
           data-testid={testId}
         >

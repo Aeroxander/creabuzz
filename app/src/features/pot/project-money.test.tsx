@@ -70,8 +70,8 @@ function show(
       chainKey={options.chainKey ?? numbers.key}
       error={options.error}
       loading={options.loading ?? false}
-      members={[]}
-      nameOf={(a) => a}
+      profiles={undefined}
+      team={[]}
       now={options.now ?? numbers.builtAt + 100}
       numbers={n}
       onRetry={() => undefined}

@@ -6,6 +6,9 @@
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { mustSayPlayMoney } from "@creaton/core/pot/network.ts";
 import { Banknote } from "lucide-react";
+import { nameOf, type ProfileMetadata } from "../../lib/profiles";
+import { investingOn } from "../../lib/server";
+import { useTeamWallets } from "../team/use-wallets";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
@@ -43,8 +46,8 @@ export function ProjectMoney({
   error,
   onRetry,
   now,
-  members,
-  nameOf,
+  team,
+  profiles,
 }: {
   projectName: string;
   /** The chain key the founder's record names, or null. */
@@ -54,11 +57,25 @@ export function ProjectMoney({
   error: unknown;
   onRetry: () => void;
   now: number;
-  /** The team a grant can go to, with the wallets they linked. */
-  members: GrantMember[];
-  /** A name for an account's address, for the sentences a second signer reads. */
-  nameOf: (address: string) => string;
+  /** The people on the team (the founder first): a Team Share grant can go to them. */
+  team: readonly string[];
+  profiles: Record<string, ProfileMetadata> | undefined;
 }) {
+  const investing = investingOn();
+  const wallets = useTeamWallets(investing ? [...team] : []).data;
+  // The team a grant can go to, each with the wallet they proved is theirs (none: they cannot be granted to yet).
+  const members: GrantMember[] = team.map((pubkey) => {
+    const wallet = wallets?.[pubkey];
+    return {
+      pubkey,
+      name: nameOf(profiles, pubkey),
+      address: wallet?.state === "linked" ? wallet.address : null,
+    };
+  });
+  // A name for an account's address, for the sentences a second signer reads.
+  const nameOfAddress = (address: string) =>
+    members.find((m) => m.address === address.toLowerCase())?.name ??
+    `${address.slice(0, 6)}…${address.slice(-4)}`;
   const wallet = usePotWallet(
     numbers && !numbers.removed ? numbers.chainId : undefined,
   );
@@ -129,7 +146,11 @@ export function ProjectMoney({
         members={members}
         numbers={numbers}
       />
-      <PairWaiting address={wallet.address} nameOf={nameOf} numbers={numbers} />
+      <PairWaiting
+        address={wallet.address}
+        nameOf={nameOfAddress}
+        numbers={numbers}
+      />
       <OwnershipLine className="text-sm text-muted" />
     </div>
   );

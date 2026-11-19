@@ -35,7 +35,7 @@ export const TASK_PROBLEM = {
   ownWork:
     "This work was done by you or by an agent you run. Someone else on the team has to accept it.",
   pairNeedsBoth:
-    "This project is run by two people, and a payment from the allowance needs both of you to sign it. That step is not in this app yet. Pay it together from your wallets, then accept the work here without paying.",
+    'This project is run by two people, and a payment from the allowance needs both of you to sign it. Ask for the payment with "Draw from the box" on the Money tab: the other signer confirms it there.',
   notRunner:
     "Only the wallet that runs this project can pay for a task. Switch your wallet to it.",
   agentLimits:

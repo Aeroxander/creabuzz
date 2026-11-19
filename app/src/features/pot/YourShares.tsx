@@ -18,7 +18,7 @@ import type { MoneyTarget } from "./target";
 import { type Ready, WalletGate } from "./use-pot";
 
 /** What an account holds in a project, with what taking all of it out would give now. */
-async function readHolding(ready: Ready, target: MoneyTarget) {
+export async function readHolding(ready: Ready, target: MoneyTarget) {
   const [shares, teamShares, dollars] = await Promise.all([
     balanceOf(ready.read, target.shares, ready.address),
     balanceOf(ready.read, target.team, ready.address),
