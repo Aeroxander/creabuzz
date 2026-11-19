@@ -157,7 +157,7 @@ export interface PublishedText {
   summary: string;
 }
 
-export type TextState =
+type TextState =
   | { kind: "checking" }
   | { kind: "missing" }
   | { kind: "moved" }

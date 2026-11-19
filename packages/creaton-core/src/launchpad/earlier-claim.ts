@@ -13,7 +13,6 @@ import {
   decodeParameters,
   encodeFunctionData,
   encodeParameters,
-  selectorOf,
 } from "./evmAbi.ts";
 
 const BYTES32 = /^0x[0-9a-f]{64}$/;
@@ -333,11 +332,6 @@ export function parseBytes32(data: string): string {
   return (decodeParameters(["bytes32"], data)[0] as string).toLowerCase();
 }
 
-/** Read a single address answer. */
-export function parseAddress(data: string): string {
-  return (decodeParameters(["address"], data)[0] as string).toLowerCase();
-}
-
 /** One entry's own data, as its link carries it. */
 export interface ClaimLink {
   entry: bigint;
@@ -366,6 +360,3 @@ export function parseClaimFragment(fragment: string): ClaimLink | null {
 export function claimFragment(link: ClaimLink): string {
   return `#entry=${link.entry}&holder=${link.holder.toLowerCase()}&amount=${link.amount}&salt=${link.salt.toLowerCase()}`;
 }
-
-/** The first four bytes of `consent(...)`, so a wallet stand-in can tell it from other calls. */
-export const CONSENT_SELECTOR = selectorOf(CONSENT_SIGNATURE);
