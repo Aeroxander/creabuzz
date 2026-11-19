@@ -697,13 +697,24 @@ async fn one_project_has_one_weekly_count_however_its_founders_key_is_written() 
     assert_eq!(weekly_drafts(&w).await, 1);
 }
 
-/// A launch and a closed round in the chain reader's tables, for chain key `key`, launched for the record at
-/// `launched_for` (the launch's `projectId` is the hash of that address).
+/// A launch and a join with 5 play dollars paid in the chain reader's tables, for chain key `key`, launched for the
+/// record at `launched_for` (the launch's `projectId` is the hash of that address).
 async fn seed_launch_and_round(
     state: &AppState,
     key: [u8; 32],
     launched_for: &str,
     first_index: i32,
+) {
+    seed_launch_and_join(state, key, launched_for, first_index, "5000000").await;
+}
+
+/// A launch and a Treasury `Joined` that paid `paid` (in the dollar's smallest unit) in the chain reader's tables.
+async fn seed_launch_and_join(
+    state: &AppState,
+    key: [u8; 32],
+    launched_for: &str,
+    first_index: i32,
+    paid: &str,
 ) {
     let reader = state
         .config
@@ -734,7 +745,7 @@ async fn seed_launch_and_round(
             first_index + 1,
             "treasury",
             "Joined",
-            serde_json::json!({ "paid": "5000000", "fee": "0" }),
+            serde_json::json!({ "paid": paid, "fee": "0" }),
         ),
     ] {
         sqlx::query(
@@ -793,6 +804,49 @@ async fn only_a_launch_made_for_this_record_counts_as_its_first_round() {
     let own = [4u8; 32];
     seed_launch_and_round(&w.state, own, &w.coordinate, 20).await;
     save_record_naming(&w, &own, w.created + 2).await;
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+/// A join that put in nothing is not money in: the project's own launch plus a `Joined` with `paid` of zero must not
+/// open the "free while the founder posts weekly" gate, and the first join with money in it does.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_join_with_nothing_paid_does_not_start_the_hosted_allowance() {
+    let (url, calls) = service(REPLY).await;
+    let w = world(url, 300, 5, 30, 20).await;
+    seed_fees(&w.state, 1_000_000_000).await;
+
+    let own = [5u8; 32];
+    seed_launch_and_join(&w.state, own, &w.coordinate, 30, "0").await;
+    save_record_naming(&w, &own, w.created + 1).await;
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{answer}");
+    assert_eq!(answer["code"], "ai_manager_post_weekly");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    // The first join with money in it (the same project, a later log) opens it.
+    let reader = w
+        .state
+        .config
+        .chain_reader
+        .as_ref()
+        .expect("a reader")
+        .reader_id();
+    sqlx::query(
+        "INSERT INTO chain_logs (reader, block_number, log_index, block_hash, tx_hash, address, role, \
+         project_key, event, topics, data, decoded) VALUES ($1, 1, 40, $2, $2, $3, 'treasury', $4, 'Joined', '{}', \
+         ''::bytea, $5)",
+    )
+    .bind(&reader)
+    .bind(vec![7u8; 32])
+    .bind(vec![1u8; 20])
+    .bind(own.as_slice())
+    .bind(serde_json::json!({ "paid": "1", "fee": "0" }))
+    .execute(w.state.db.pool())
+    .await
+    .expect("a join with money in it");
     let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
     assert_eq!(status, StatusCode::OK, "{answer}");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
