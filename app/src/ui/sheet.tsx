@@ -36,7 +36,7 @@ function CloseButton() {
   return (
     <RadixDialog.Close
       aria-label="Close"
-      className="btn btn-ghost btn-sm -mr-2 text-ink"
+      className="btn btn-ghost btn-sm -mr-2 min-h-11 min-w-11 text-ink"
     >
       <X aria-hidden="true" size={20} />
     </RadixDialog.Close>
@@ -88,7 +88,7 @@ export function Sheet({
         <RadixDialog.Content
           {...focus}
           className={cn(
-            "sheet fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90dvh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-t-3xl px-4 pt-3",
+            "sheet fixed inset-x-0 bottom-0 z-50 mx-auto flex max-h-[90dvh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-t-3xl px-4 pt-3 [&>*]:shrink-0",
           )}
           data-testid={testId}
           style={{ paddingBottom: "calc(var(--safe-bottom) + 20px)" }}
@@ -121,7 +121,7 @@ export function Dialog({
         <RadixDialog.Overlay className="overlay z-40" />
         <RadixDialog.Content
           {...focus}
-          className="sheet fixed left-1/2 top-1/2 z-50 flex max-h-[85dvh] w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-3xl p-5"
+          className="sheet fixed left-1/2 top-1/2 z-50 flex max-h-[85dvh] w-[calc(100%-32px)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col gap-4 overflow-y-auto rounded-3xl p-5 [&>*]:shrink-0"
           data-testid={testId}
         >
           <Header description={description} title={title} />
