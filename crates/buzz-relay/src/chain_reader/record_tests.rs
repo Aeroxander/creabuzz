@@ -739,3 +739,70 @@ fn only_events_change_the_facts_and_time_changes_what_is_shown() {
         assert_ne!(facts(&base), facts(&changed), "{path:?} is a fact");
     }
 }
+
+/// Rows of project `name` up to `block` with the newest `event` row's `field`
+/// raised by one unit.
+fn rows_with_one_unit_more(
+    fx: &Fixture,
+    name: &str,
+    block: u64,
+    event: &str,
+    field: &str,
+) -> Option<Vec<super::ledger::LogRow>> {
+    let mut rows = fx.rows(name, block);
+    let row = rows.iter_mut().rev().find(|r| r.event == event)?;
+    let now: u128 = row.fields[field].as_str()?.parse().ok()?;
+    row.fields[field] = Value::String((now + 1).to_string());
+    Some(rows)
+}
+
+/// An event value one unit off, in a sum that no single view checks, is never
+/// signed: the totals identity and the cross-checks refuse it. The honest rows
+/// build, and each of these events is in the run (the test would otherwise
+/// check nothing).
+#[tokio::test]
+async fn an_event_value_one_unit_off_is_never_signed_into_a_record() {
+    let fx = Fixture::load();
+    let (project, chain) = BookChain::load(&fx, "A_live");
+    let as_of = AsOf {
+        chain_id: 31337,
+        launcher: fx.launcher,
+        block: chain.block,
+        time: fx.time_of(chain.block),
+    };
+    let build_rows = |rows: Vec<super::ledger::LogRow>| {
+        let (fx, chain, as_of) = (&fx, &chain, &as_of);
+        async move {
+            let ledger = Ledger::from_logs(&rows)?.expect("launched");
+            build_with(fx, &ledger, as_of, chain).await
+        }
+    };
+    build_rows(fx.rows(&project, chain.block))
+        .await
+        .expect("the honest rows build");
+    let mut tried = 0;
+    let mut accepted = Vec::new();
+    for (event, field) in [
+        ("Left", "cash"),
+        ("TeamLeft", "cash"),
+        ("AllowanceDrawn", "amount"),
+        ("Joined", "paid"),
+        ("RevenueAdded", "amount"),
+        ("GrantClaimed", "amount"),
+        ("GrantMade", "startActive"),
+        ("FeesCollected", "amount"),
+    ] {
+        let Some(rows) = rows_with_one_unit_more(&fx, &project, chain.block, event, field) else {
+            continue;
+        };
+        tried += 1;
+        if build_rows(rows).await.is_ok() {
+            accepted.push(format!("{event}.{field}"));
+        }
+    }
+    assert!(tried >= 4, "only {tried} of the events are in the run");
+    assert!(
+        accepted.is_empty(),
+        "a hostile event value one unit off was signed into a record: {accepted:?}"
+    );
+}

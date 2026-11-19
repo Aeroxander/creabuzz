@@ -29,7 +29,7 @@ pub mod store;
 pub mod views;
 pub mod word;
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicI64, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -55,6 +55,13 @@ const RPC_TIMEOUT: Duration = Duration::from_secs(20);
 /// After this many failed passes in a row the reader waits the longest pause
 /// between passes ([`MAX_BACKOFF`]) until one succeeds.
 const MAX_BACKOFF: Duration = Duration::from_secs(600);
+/// After a failed build a project waits this long before its next try, then
+/// twice as long after each further failure, up to [`FAILURE_PAUSE_MAX_SECS`]:
+/// a project whose numbers cannot be built must not take a slot of every pass
+/// and starve the others.
+const FAILURE_PAUSE_SECS: i64 = 15;
+/// The longest wait between two tries of a project that keeps failing.
+const FAILURE_PAUSE_MAX_SECS: i64 = 300;
 /// The newest blocks the reader never reads, whatever the confirmation depth:
 /// a load-balanced node can answer the newest headers before its log index has
 /// the newest blocks' logs, and a block read without its logs would be passed
@@ -75,6 +82,23 @@ pub struct ChainReader {
     helper: Option<helper::Helper>,
     /// The connection holding the writer lock, while this replica holds it.
     leader: tokio::sync::Mutex<Option<sqlx::PgConnection>>,
+    /// When each project is next worth looking at (the writer's memory only:
+    /// after a restart every project is looked at once).
+    schedule: std::sync::Mutex<Schedule>,
+}
+
+/// What the publishing pass remembers per project, so that a quiet project is
+/// not read from the node again at every poll and a failing one does not keep
+/// its place at the front of the queue.
+#[derive(Debug, Default)]
+struct Schedule {
+    /// Unchanged and not due: the project's numbers are not worked out again
+    /// before this unix second (its own promised refresh time after its last
+    /// signing).
+    quiet_until: HashMap<Word, i64>,
+    /// Failed builds in a row, and the unix second before which the project
+    /// is not tried again.
+    failing: HashMap<Word, (u32, i64)>,
 }
 
 /// What one full pass did.
@@ -104,6 +128,13 @@ pub struct PublishReport {
     /// Projects whose numbers could not be worked out or signed (tried again
     /// next pass).
     pub failed: usize,
+}
+
+/// Seconds a project waits after its `failures`-th failed build in a row.
+fn failure_pause(failures: u32) -> i64 {
+    FAILURE_PAUSE_SECS
+        .saturating_mul(1i64 << failures.saturating_sub(1).min(10))
+        .min(FAILURE_PAUSE_MAX_SECS)
 }
 
 fn digest(value: &Value) -> [u8; 32] {
@@ -140,7 +171,14 @@ impl ChainReader {
             host,
             helper: None,
             leader: tokio::sync::Mutex::new(None),
+            schedule: std::sync::Mutex::new(Schedule::default()),
         }
+    }
+
+    fn schedule(&self) -> std::sync::MutexGuard<'_, Schedule> {
+        self.schedule
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Send the helper's calls through `writer` (only when the helper is
@@ -193,6 +231,7 @@ impl ChainReader {
         let pool = self.state.db.pool();
         let scanned =
             scan::scan_with_span(pool, self.source.as_ref(), &self.scan, &self.span).await?;
+        self.note_play_money(scanned.head).await;
         let mut report = PassReport {
             writer: self.is_writer().await?,
             ..PassReport::default()
@@ -220,6 +259,26 @@ impl ChainReader {
         Ok(report)
     }
 
+    /// Read `Launcher.testNetwork()` while it is not known in this process,
+    /// on every replica (not only the writer, which learns it by building
+    /// records). A failed read leaves it unknown, which counts as play money
+    /// (the safe answer) until the next pass.
+    async fn note_play_money(&self, head: u64) {
+        if play_money().is_some() {
+            return;
+        }
+        let block = head.saturating_sub(self.scan.lag);
+        if block < self.config.start_block {
+            return;
+        }
+        match views::read_test_network(self.source.as_ref(), self.config.launcher, block).await {
+            Ok(play) => note_play_money(play),
+            Err(e) => {
+                tracing::warn!(reader = %self.reader_id(), "chain reader: the Launcher's test-network flag was not read: {e:#}")
+            }
+        }
+    }
+
     async fn helper_pass(
         &self,
         helper: &helper::Helper,
@@ -232,9 +291,11 @@ impl ChainReader {
             .header(head)
             .await?
             .with_context(|| format!("block {head} is not on the chain"))?;
-        // Jobs are built only from final rows the reader has stored.
+        // Jobs are built only from final rows the reader has stored, and never
+        // from a block below the newest one read (a head that stepped back).
+        let cursor = store::cursor(pool, reader).await?;
         let final_block = match head.checked_sub(self.scan.lag) {
-            Some(f) if f >= self.config.start_block && store::cursor(pool, reader).await? > f => {
+            Some(f) if f >= self.config.start_block && cursor > f && cursor <= f + 1 => {
                 let time = match store::block(pool, reader, f).await? {
                     Some(h) => h.time,
                     None => {
@@ -250,7 +311,7 @@ impl ChainReader {
             _ => None,
         };
         helper
-            .pass(pool, reader, (head, head_header.time), final_block, &[])
+            .pass(pool, reader, (head, head_header.time), final_block)
             .await
     }
 
@@ -280,10 +341,18 @@ impl ChainReader {
         let Some(final_block) = head.checked_sub(self.scan.lag) else {
             return Ok(report);
         };
-        if final_block < self.config.start_block
-            || store::cursor(pool, reader).await? <= final_block
-        {
+        let cursor = store::cursor(pool, reader).await?;
+        if final_block < self.config.start_block || cursor <= final_block {
             return Ok(report); // the final block is not read yet
+        }
+        if cursor > final_block + 1 {
+            // The node answers a lower head than the blocks already read (a
+            // load-balanced node a few blocks behind), and nothing rolled
+            // back. Numbers worked out at the lower block would replace newer
+            // ones, and a launch above it would look removed: wait for the
+            // head to come back (records only go forward).
+            tracing::warn!(reader = %self.reader_id(), final_block, read_to = cursor - 1, "chain reader: the node's head is below the blocks already read; nothing signed this pass");
+            return Ok(report);
         }
         let Some(tenant) = self.tenant().await? else {
             tracing::warn!(host = %self.host, "chain reader: no community for this host; numbers not signed");
@@ -308,7 +377,8 @@ impl ChainReader {
         let previous = store::published(pool, reader).await?;
         // A project is looked at again once its shortest promise has passed;
         // `publish_project` keeps the record when the project's own promise
-        // (`refreshEverySecs`) is not yet due.
+        // (`refreshEverySecs`) is not yet due, and remembers when that is, so
+        // the node is not asked about it again before.
         let refresh = i64::try_from(
             self.config
                 .active_refresh_secs
@@ -317,18 +387,27 @@ impl ChainReader {
         .unwrap_or(i64::MAX);
 
         // Changed projects first, then those due a refresh, longest unchecked
-        // first, at most a pass's worth.
-        let mut work: Vec<(Word, u64, Option<f64>)> = projects
-            .iter()
-            .filter_map(|(key, src)| match previous.get(key) {
-                None => Some((*key, *src, None)),
-                Some(p) if p.stale || p.source_block != *src => Some((*key, *src, None)),
-                Some(p) if now - p.published_at >= refresh => {
-                    Some((*key, *src, Some(p.checked_at)))
-                }
-                Some(_) => None,
-            })
-            .collect();
+        // first, at most a pass's worth. A project that failed to build waits
+        // out its pause.
+        let mut work: Vec<(Word, u64, Option<f64>)> = {
+            let schedule = self.schedule();
+            projects
+                .iter()
+                .filter(|(key, _)| schedule.failing.get(key).is_none_or(|(_, at)| now >= *at))
+                .filter_map(|(key, src)| match previous.get(key) {
+                    None => Some((*key, *src, None)),
+                    Some(p) if p.stale || p.source_block != *src => Some((*key, *src, None)),
+                    Some(p) => {
+                        let due = schedule
+                            .quiet_until
+                            .get(key)
+                            .copied()
+                            .unwrap_or_else(|| p.published_at.saturating_add(refresh));
+                        (now >= due).then_some((*key, *src, Some(p.checked_at)))
+                    }
+                })
+                .collect()
+        };
         work.sort_by(|a, b| match (a.2, b.2) {
             (None, None) => std::cmp::Ordering::Equal,
             (None, Some(_)) => std::cmp::Ordering::Less,
@@ -342,10 +421,15 @@ impl ChainReader {
                 .publish_project(&tenant, &key, source_block, &as_of, previous.get(&key), now)
                 .await
             {
-                Ok(true) => report.signed += 1,
-                Ok(false) => {}
+                Ok(signed) => {
+                    self.schedule().failing.remove(&key);
+                    if signed {
+                        report.signed += 1;
+                    }
+                }
                 Err(e) => {
                     report.failed += 1;
+                    self.note_failure(&key, now);
                     tracing::error!(project = %hex0x(&key), "chain reader: numbers not signed: {e:#}");
                 }
             }
@@ -354,6 +438,11 @@ impl ChainReader {
         // A project whose launch left the chain (a rollback deeper than the
         // confirmations): sign a removal so its old numbers are not shown.
         let live: HashSet<Word> = projects.iter().map(|(k, _)| *k).collect();
+        {
+            let mut schedule = self.schedule();
+            schedule.quiet_until.retain(|k, _| live.contains(k));
+            schedule.failing.retain(|k, _| live.contains(k));
+        }
         for (key, prev) in previous.iter().filter(|(k, _)| !live.contains(*k)) {
             let content = json!({
                 "version": 2, "key": hex0x(key), "removed": true,
@@ -372,6 +461,14 @@ impl ChainReader {
             }
         }
         Ok(report)
+    }
+
+    /// A project's build failed: it waits longer after each failure in a row.
+    fn note_failure(&self, key: &Word, now: i64) {
+        let mut schedule = self.schedule();
+        let entry = schedule.failing.entry(*key).or_insert((0, 0));
+        entry.0 = entry.0.saturating_add(1);
+        entry.1 = now.saturating_add(failure_pause(entry.0));
     }
 
     /// Sign and store a record. A newer stored record (another writer's, a
@@ -458,7 +555,10 @@ impl ChainReader {
                 // stays the time of the last signing, so a due refresh is
                 // signed even when nothing changed (the heartbeat: a quiet
                 // project must not look like a dead server).
-                store::touch_source_block(pool, reader, key, source_block, false).await?;
+                store::touch_source_block(pool, reader, key, source_block).await?;
+                self.schedule()
+                    .quiet_until
+                    .insert(*key, p.published_at.saturating_add(promised));
                 return Ok(false);
             }
         }
@@ -476,6 +576,8 @@ impl ChainReader {
             },
         )
         .await?;
+        // The next look is at the project's refresh time after this signing.
+        self.schedule().quiet_until.remove(key);
         Ok(true)
     }
 }
@@ -560,6 +662,12 @@ pub fn play_money() -> Option<bool> {
 thread_local! {
     /// A test's own answer to [`play_money`], for the thread it runs on.
     static TEST_PLAY_MONEY: std::cell::Cell<Option<Option<bool>>> = const { std::cell::Cell::new(None) };
+}
+
+/// Forget what the process knows of the dollar's kind (tests only).
+#[cfg(test)]
+pub(crate) fn forget_play_money_for_test() {
+    PLAY_MONEY.store(0, Ordering::Relaxed);
 }
 
 /// Make [`play_money`] answer `value` on this thread (tests only).
@@ -685,6 +793,19 @@ where
 }
 
 #[cfg(test)]
+mod schedule_tests {
+    use super::*;
+
+    /// A project that keeps failing waits longer each time, up to a cap.
+    #[test]
+    fn a_failing_project_waits_longer_each_time_up_to_a_cap() {
+        let pauses: Vec<i64> = (1..=7).map(failure_pause).collect();
+        assert_eq!(pauses, [15, 30, 60, 120, 240, 300, 300]);
+        assert_eq!(failure_pause(u32::MAX), FAILURE_PAUSE_MAX_SECS);
+    }
+}
+
+#[cfg(test)]
 mod supervise_tests {
     use std::sync::atomic::AtomicU32;
 
@@ -728,6 +849,8 @@ mod supervise_tests {
     }
 }
 
+#[cfg(test)]
+mod mul_div_tests;
 #[cfg(test)]
 mod record_tests;
 #[cfg(test)]

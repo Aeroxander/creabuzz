@@ -8,7 +8,7 @@
 //! `cargo test -p buzz-relay --lib chain_reader::scan_postgres_tests -- --ignored`.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -21,7 +21,7 @@ use super::ledger::{Ledger, Stored};
 use super::source::{ChainSource, Header, RawLog};
 use super::store;
 use super::word::{hex0x, Word};
-use super::{ChainReader, ChainReaderConfig};
+use super::{ChainReader, ChainReaderConfig, PublishReport};
 
 /// The run's blocks served by a fake node. `fork` replaces the tail with
 /// empty blocks of another hash, as a reorganisation does.
@@ -31,6 +31,11 @@ struct FixtureChain {
     duplicate: AtomicBool,
     /// Answer with every log of the range, whatever addresses were asked.
     ignore_filter: AtomicBool,
+    /// Answer log requests with every log from the range's start on, whatever
+    /// its end (a node that ignores `toBlock`).
+    ignore_to: AtomicBool,
+    /// `eth_call`s answered (or refused) so far.
+    calls: AtomicUsize,
     /// The real chain's answers to the record's view calls at one block (the
     /// run's `books`), by contract and calldata; the Launcher is asked for
     /// under its replaced address (`aliases`: replaced, real).
@@ -58,6 +63,8 @@ impl FixtureChain {
             blocks: Mutex::new(blocks),
             duplicate: AtomicBool::new(false),
             ignore_filter: AtomicBool::new(false),
+            ignore_to: AtomicBool::new(false),
+            calls: AtomicUsize::new(0),
             answers: Mutex::new(HashMap::new()),
             book_block: Mutex::new(None),
             aliases: Mutex::new(vec![(launcher, fx.launcher)]),
@@ -139,6 +146,7 @@ impl ChainSource for FixtureChain {
         data: &[u8],
         at: u64,
     ) -> anyhow::Result<Option<Vec<u8>>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         let served = *self.book_block.lock().expect("lock");
         if served != Some(at) {
             anyhow::bail!("the node cannot serve block {at}");
@@ -168,9 +176,10 @@ impl ChainSource for FixtureChain {
     ) -> anyhow::Result<Vec<RawLog>> {
         let blocks = self.blocks.lock().expect("lock");
         let loose = self.ignore_filter.load(Ordering::SeqCst);
+        let wide = self.ignore_to.load(Ordering::SeqCst);
         let mut found: Vec<RawLog> = blocks
             .iter()
-            .filter(|(h, _)| h.number >= from && h.number <= to)
+            .filter(|(h, _)| h.number >= from && (wide || h.number <= to))
             .flat_map(|(_, logs)| logs.iter())
             .filter(|l| loose || (addresses.contains(&l.address) && topics.contains(&l.topics[0])))
             .cloned()
@@ -200,6 +209,17 @@ fn config(launcher: [u8; 20]) -> ChainReaderConfig {
 }
 
 async fn setup(fx: &Fixture) -> (ChainReader, Arc<FixtureChain>, Arc<crate::state::AppState>) {
+    setup_deep(fx, 0, 2).await
+}
+
+/// [`setup`] with a confirmation depth: the reader's final block is the head
+/// less `max(confirmations, 2)`, and `empty_on_top` empty blocks follow the
+/// run.
+async fn setup_deep(
+    fx: &Fixture,
+    confirmations: u64,
+    empty_on_top: u64,
+) -> (ChainReader, Arc<FixtureChain>, Arc<crate::state::AppState>) {
     let state = crate::test_support::test_state().await;
     let host = format!("chain-reader-{}.example", Uuid::new_v4().simple());
     state
@@ -213,12 +233,16 @@ async fn setup(fx: &Fixture) -> (ChainReader, Arc<FixtureChain>, Arc<crate::stat
     let chain = Arc::new(FixtureChain::new(fx, launcher));
     // The newest two blocks are never read (the confirmation depth is at
     // least two), so the run's last block is final only with two on top.
-    chain.mine_empty(1);
-    chain.mine_empty(1);
+    for _ in 0..empty_on_top {
+        chain.mine_empty(1);
+    }
     let reader = ChainReader::new(
         Arc::clone(&state),
         Arc::clone(&chain) as Arc<dyn ChainSource>,
-        config(launcher),
+        ChainReaderConfig {
+            confirmations,
+            ..config(launcher)
+        },
         host,
     );
     (reader, chain, state)
@@ -226,7 +250,7 @@ async fn setup(fx: &Fixture) -> (ChainReader, Arc<FixtureChain>, Arc<crate::stat
 
 /// Passes until the reader has read to the head less its lag.
 async fn read_all(reader: &ChainReader, chain: &FixtureChain) -> super::scan::ScanReport {
-    let want = chain.head().await.expect("head") - 2;
+    let want = chain.head().await.expect("head") - reader.scan.lag;
     for _ in 0..20 {
         let report = reader.pass().await.expect("a pass").0;
         if store::cursor(reader.state.db.pool(), reader.reader_id())
@@ -617,4 +641,301 @@ async fn the_reader_signs_records_and_signs_them_again_when_the_refresh_is_due()
             "builtAt moved on"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// The publishing queue and the node's own misbehaviour (review fixes).
+// ---------------------------------------------------------------------------
+
+/// The content of the record last signed for `key`.
+async fn stored_record(reader: &ChainReader, key: &Word) -> Value {
+    let pool = reader.state.db.pool();
+    let event_id: Vec<u8> = sqlx::query_scalar(
+        "SELECT event_id FROM chain_project_numbers WHERE reader = $1 AND project_key = $2",
+    )
+    .bind(reader.reader_id())
+    .bind(key.as_slice())
+    .fetch_one(pool)
+    .await
+    .expect("a stored record id");
+    let community = reader
+        .state
+        .db
+        .lookup_community_by_host(&reader.host)
+        .await
+        .expect("lookup")
+        .expect("community");
+    let stored = reader
+        .state
+        .db
+        .get_event_by_id(community.id, &event_id)
+        .await
+        .expect("read")
+        .expect("the record is stored");
+    serde_json::from_str(&stored.event.content).expect("json")
+}
+
+/// A node that answers a lower head than the blocks the reader has read (a
+/// load-balanced node a few blocks behind), with every block it served before
+/// still on its chain, is not a rollback. The record already signed must stay:
+/// numbers worked out at the lower block must not replace newer ones (a join
+/// already shown must not disappear).
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_head_that_steps_back_does_not_replace_a_newer_record_with_an_older_one() {
+    let fx = Fixture::load();
+    // 24 confirmations: the final block is the head less 24.
+    let (reader, chain, _state) = setup_deep(&fx, 24, 24).await;
+    chain.serve_books(&fx, &["A_end", "B_end"]);
+    read_all(&reader, &chain).await;
+    let pool = reader.state.db.pool();
+    let a = fx.projects["A"].key;
+    let before = stored_record(&reader, &a).await;
+    assert_eq!(
+        before["asOf"]["block"],
+        fx.head(),
+        "signed at the run's end"
+    );
+    let published_before = store::published(pool, reader.reader_id())
+        .await
+        .expect("published");
+
+    // The node's head drops by 24 blocks; the newest stored block is still on
+    // its chain (so it is not "behind" and not a rollback). The node can still
+    // serve the views of the lower final block (the book of A at block 61).
+    chain.truncate(usize::try_from(fx.head()).expect("block") + 1);
+    chain.serve_books(&fx, &["A_live"]);
+    let (scan, publish) = reader.pass().await.expect("a pass");
+    assert!(scan.rolled_back_to.is_none() && !scan.behind, "{scan:?}");
+
+    let after = stored_record(&reader, &a).await;
+    assert_eq!(
+        after["asOf"]["block"],
+        fx.head(),
+        "an older asOf replaced a newer one ({publish:?})"
+    );
+    let published_after = store::published(pool, reader.reader_id())
+        .await
+        .expect("published");
+    assert_eq!(
+        published_after[&a].published_at, published_before[&a].published_at,
+        "nothing was signed"
+    );
+    assert_eq!(publish, PublishReport::default());
+}
+
+/// The same step back, with a project launched above the lower final block: it
+/// is on the chain, so no removal may be signed for it.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_head_that_steps_back_does_not_publish_a_removal_for_a_live_project() {
+    let fx = Fixture::load();
+    let (reader, chain, _state) = setup_deep(&fx, 20, 0).await;
+    // Project B is launched at block 19; with 20 confirmations a head of 54
+    // makes block 34 final, and B's book "B_pair" is at block 34.
+    chain.truncate(55);
+    chain.serve_books(&fx, &["B_pair"]);
+    let b = fx.projects["B"].key;
+    for _ in 0..20 {
+        reader.pass().await.expect("a pass");
+        if store::cursor(reader.state.db.pool(), reader.reader_id())
+            .await
+            .expect("cursor")
+            > 34
+        {
+            break;
+        }
+    }
+    let pool = reader.state.db.pool();
+    let before = stored_record(&reader, &b).await;
+    assert_eq!(before["asOf"]["block"], 34);
+    assert!(before.get("removed").is_none());
+
+    // The head steps back to 34: the final block is 14, below B's launch.
+    chain.truncate(35);
+    let (scan, publish) = reader.pass().await.expect("a pass");
+    assert!(scan.rolled_back_to.is_none(), "{scan:?}");
+    assert_eq!(
+        publish.removed, 0,
+        "a removal was signed for a live project"
+    );
+    let published = store::published(pool, reader.reader_id())
+        .await
+        .expect("published");
+    assert!(published.contains_key(&b), "B's row was forgotten");
+    assert!(stored_record(&reader, &b).await.get("removed").is_none());
+}
+
+/// A project that is neither changed nor due costs the node nothing: after the
+/// one look that finds its record still good, the passes that follow ask the
+/// node no view call (it is looked at again when its own promised refresh is
+/// due, or an event moves it).
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_project_that_is_not_due_and_has_not_changed_costs_no_view_calls() {
+    let fx = Fixture::load();
+    let (reader, chain, state) = setup(&fx).await;
+    chain.serve_books(&fx, &["A_end", "B_end"]);
+    read_all(&reader, &chain).await;
+    let head = chain.head().await.expect("head");
+    let id = reader.reader_id().to_owned();
+    // Age the records to 700 s: past the 600 s after which the reader looks
+    // again, inside the 3600 s a quiet project promised.
+    sqlx::query(
+        "UPDATE chain_project_numbers SET published_at = now() - interval '700 seconds' \
+         WHERE reader = $1",
+    )
+    .bind(&id)
+    .execute(state.db.pool())
+    .await
+    .expect("age the records");
+    let mut spent = Vec::new();
+    for _ in 0..3 {
+        chain.calls.store(0, Ordering::SeqCst);
+        let report = reader.publish_pass(head).await.expect("publish");
+        assert_eq!(report.signed, 0, "nothing is due: {report:?}");
+        spent.push(chain.calls.load(Ordering::SeqCst));
+    }
+    assert!(spent[0] > 0, "the first look reads the views: {spent:?}");
+    assert_eq!(
+        &spent[1..],
+        &[0, 0],
+        "passes with nothing to sign asked the node again: {spent:?}"
+    );
+}
+
+/// 100 projects whose numbers cannot be built must not keep the front of the
+/// queue: after one failed pass they wait out a pause and the others are
+/// signed.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_hundred_projects_that_cannot_be_built_do_not_starve_the_others() {
+    let fx = Fixture::load();
+    let (reader, chain, _state) = setup(&fx).await;
+    chain.serve_books(&fx, &["A_end", "B_end"]);
+    read_all(&reader, &chain).await;
+    let pool = reader.state.db.pool();
+    let id = reader.reader_id().to_owned();
+    let head = chain.head().await.expect("head");
+    let (a, b) = (fx.projects["A"].key, fx.projects["B"].key);
+
+    // 100 more launches of the Launcher, with keys that sort before the run's
+    // two and contracts the node knows nothing about: their views cannot be
+    // read, so their numbers cannot be built.
+    let launch = fx
+        .decoded()
+        .into_iter()
+        .find(|(_, p, r)| p.as_deref() == Some("A") && r.event == "ProjectLaunched")
+        .map(|(_, _, r)| r)
+        .expect("A's launch");
+    let launcher: Vec<u8> = sqlx::query_scalar(
+        "SELECT address FROM chain_logs WHERE reader = $1 AND role = 'launcher' LIMIT 1",
+    )
+    .bind(&id)
+    .fetch_one(pool)
+    .await
+    .expect("the stored Launcher");
+    for i in 0u8..100 {
+        let mut key = [0u8; 32];
+        key[31] = i + 1;
+        let mut decoded = launch.fields.clone();
+        decoded["key"] = Value::String(hex0x(&key));
+        for (n, name) in ["shares", "team", "treasury", "vester"].iter().enumerate() {
+            let mut address = [0xabu8; 20];
+            address[0] = i;
+            address[1] = u8::try_from(n).expect("small");
+            decoded["project"][name] = Value::String(hex0x(&address));
+        }
+        sqlx::query(
+            "INSERT INTO chain_logs (reader, block_number, log_index, block_hash, tx_hash, \
+                 address, role, project_key, event, topics, data, decoded) \
+             VALUES ($1, 3, $2, $3, $3, $4, 'launcher', $5, 'ProjectLaunched', $6, $7, $8)",
+        )
+        .bind(&id)
+        .bind(1_000 + i32::from(i))
+        .bind(vec![0u8; 32])
+        .bind(&launcher)
+        .bind(key.as_slice())
+        .bind(Vec::<Vec<u8>>::new())
+        .bind(Vec::<u8>::new())
+        .bind(&decoded)
+        .execute(pool)
+        .await
+        .expect("insert a launch row");
+    }
+    // The two real projects need a record again.
+    for key in [&a, &b] {
+        store::forget_published(pool, &id, key)
+            .await
+            .expect("forget");
+    }
+
+    let first = reader.publish_pass(head).await.expect("publish");
+    assert_eq!(first.failed, 100, "{first:?}");
+    assert_eq!(
+        first.signed, 0,
+        "the failing 100 take the whole pass: {first:?}"
+    );
+    // The next pass leaves them alone for their pause and signs the others.
+    let second = reader.publish_pass(head).await.expect("publish");
+    assert_eq!(
+        second.failed, 0,
+        "failed projects were tried again at once: {second:?}"
+    );
+    assert_eq!(second.signed, 2, "{second:?}");
+    let published = store::published(pool, &id).await.expect("published");
+    assert!(published.contains_key(&a) && published.contains_key(&b));
+}
+
+/// A node that ignores the end of the range sends logs of later blocks too.
+/// They are read again in their own range and stored once: the reader reaches
+/// the head and rebuilds the run's numbers (a duplicate row would fail every
+/// pass from then on).
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_node_that_ignores_the_end_of_the_range_does_not_wedge_the_reader() {
+    let fx = Fixture::load();
+    let (reader, chain, _state) = setup(&fx).await;
+    chain.ignore_to.store(true, Ordering::SeqCst);
+    read_all(&reader, &chain).await;
+    let head = chain.head().await.expect("head");
+    for name in ["A", "B"] {
+        let ledger = ledger_of(&reader, &fx.projects[name].key, head - 2).await;
+        assert_end_of_run(&fx, name, &ledger);
+    }
+}
+
+/// The dollar's kind is read by every replica, not only by the one that signs
+/// records: a replica without the writer lock learns from its own passes that
+/// the chain is play money (until then the safe answer, "play money", stands
+/// for an unknown one).
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_replica_without_the_writer_lock_reads_whether_the_dollar_is_play_money() {
+    let fx = Fixture::load();
+    let (reader, chain, state) = setup(&fx).await;
+    chain.serve_books(&fx, &["A_end", "B_end"]);
+    // Another connection holds the writer lock.
+    let mut other = state
+        .db
+        .pool()
+        .acquire()
+        .await
+        .expect("a connection")
+        .detach();
+    let got: bool = sqlx::query_scalar("SELECT pg_try_advisory_lock(hashtextextended($1, 0))")
+        .bind(format!("chain_writer:{}", reader.reader_id()))
+        .fetch_one(&mut other)
+        .await
+        .expect("lock");
+    assert!(got);
+    super::forget_play_money_for_test();
+    let report = reader.pass_all().await.expect("a pass");
+    assert!(!report.writer, "this replica must not be the writer");
+    assert_eq!(
+        super::play_money(),
+        Some(true),
+        "a local chain is a test network; the replica did not read it"
+    );
+    drop(other);
 }

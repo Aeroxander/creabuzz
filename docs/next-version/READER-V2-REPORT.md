@@ -169,6 +169,52 @@ migration). Pass B's:
 - The earlier-backers block is parked: version 2 has none.
 - The record has no tasks, notice, take or notes: step 2.
 
+## Review fixes
+
+Two independent reviews (one of the code against the spec and contracts, one of attacks) were checked item by item against the code.
+No BLOCKER was found. Every IMPORTANT item was real and is fixed; each has a test on the production path, and each test was run with
+its fix switched off and failed (7 of 7).
+
+### Fixed
+
+| Finding | Fix | Test that fails without it |
+|---|---|---|
+| Review 1 I1 and attack I4: a quiet project was derived (about 45 view calls plus its stored logs) at every poll for 600 to 3600 s after its last signing, because the "unchanged" branch no longer moved the clock | The writer remembers per project when it is next worth looking at (`Schedule.quiet_until`, the project's own promised refresh after its last signing). A project that is neither changed nor due costs no node call. `touch_source_block` lost its dead `checked` branch | `a_project_that_is_not_due_and_has_not_changed_costs_no_view_calls`: the first look reads the views, the next passes make 0 calls (before: 114 calls on each pass) |
+| Attack I1: a head that steps back (not a rollback) made the reader sign older numbers over newer ones | `publish_pass` does nothing while the newest block read is above the final block plus one (a record only goes forward); a real rollback resets the cursor, so it is not blocked. The helper builds no jobs then either | `a_head_that_steps_back_does_not_replace_a_newer_record_with_an_older_one` |
+| Attack I2: the same step back signed a removal for a project launched above the lower block | The same guard | `a_head_that_steps_back_does_not_publish_a_removal_for_a_live_project` |
+| Attack I3: projects whose numbers cannot be built kept the front of the queue (100 of them starve every other project) | A failed build puts the project off for 15 s, doubling to 300 s (`failure_pause`); a success clears it | `a_hundred_projects_that_cannot_be_built_do_not_starve_the_others` (pass 1: 100 failed; pass 2: 0 failed, both real projects signed), `a_failing_project_waits_longer_each_time_up_to_a_cap` |
+| Review 1 I2 and attack O4: the dollar's kind (play money or not) was learned only by the writer's record builds, so on other replicas it was "unknown", which the manager reads as play money (cap zero) | Every replica reads `Launcher.testNetwork()` itself (`views::read_test_network`) on its own passes until it knows | `a_replica_without_the_writer_lock_reads_whether_the_dollar_is_play_money` |
+| Review 1 I3: dead helper code (batches, positions, essential calls, rest-of-batch, `BUZZ_CHAIN_HELPER_BATCH`) | Deleted: `members`, `only`, `first_half`, `ESSENTIAL`, `is_essential*`, `rest_key`, `store::Rest`, `Position`, `PlanContext.batch`, the gas-halving loop, the routine/essential columns of `used_last_day`, the setting `BUZZ_CHAIN_HELPER_BATCH` (and its lines in the `config.rs` test of the helper's settings). The gas room, the daily share and the stuck-transaction replacement keep their behaviour | the helper's existing call-list and plan tests, the config test, and the real loop (95 checks) |
+| Review 1 optional: a collector racing another reverts with `NothingToPay` and was retried | `nothing_to_do_errors` names `NothingToPay()` for `collectFees()`: the job is dropped, no failed attempt | `a_fee_collected_by_someone_else_drops_the_job_without_a_failed_attempt` (fake node, real database) |
+| Attack O1: a node that ignores `toBlock` wedged the reader at a duplicate key | Logs outside the range asked for are dropped in `scan_range` (they are read again in their own range) | `a_node_that_ignores_the_end_of_the_range_does_not_wedge_the_reader` (and the run's numbers still rebuild) |
+| Review 1 optional: `unwrap_or(0)` on the pending rate | `?` and a width check | covered by the existing builds against the books |
+| Reviewers' scratch tests | `review-reader-attacks.rs` deleted. Kept as proper tests: hostile event values one unit off are refused (`an_event_value_one_unit_off_is_never_signed_into_a_record`, in `record_tests.rs`) and 406 big-integer vectors for `mul_div` (`mul_div_tests.rs`, checked again with Python integers: 0 wrong) | both pass |
+
+### Declined, with the reason
+
+- Attack O3 (the free-while-posting gate opens on a one dollar self-join): it is the key the lead chose (L6); a minimum paid amount or a second backer is a product setting for the owner, not a bug. On play dollars the faucet makes it free; the platform cap is zero there anyway.
+- Review 1 optional, `BUZZ_CHAIN_REFRESH_SECS` floor of 5: the load it multiplied was finding I1, now fixed; the loop needs the small value.
+- Review 1 optional, `settle()` job reuses the dropped Release name: it costs relay-key gas only; the stored name stays until the migration below (dropping it needs the same migration to be clean). Left, not widened.
+
+### Still open
+
+- Migration to schedule by the lead (crates/buzz-db migration-count test, 69): the Team token's role (`shares` told apart by a subquery over launches), Team Share balances under a derived key in `chain_balances`, and the helper's stored names `treasury.sweepFees` and `treasury.release`. Audit rows stay misleading until then.
+- The settle job could be dropped altogether (the record works forward to the block's time by itself); the Pair contracts are followed though step 1 reads none of their events.
+- Agents are read in address order (first 100) and unfinished grants by id (first 200); `truncated` is set but a live one past the cut is not listed.
+- The queue still re-derives a project on every new event of that project, and every project is heartbeat-signed; a per-project rate limit on rebuilds, an index for `launcher_reveals`, a snapshot for `project_logs`/`Ledger.draws` are scale work, untested at thousands of projects (attack O5, O7: the helper collects any non-zero fee).
+- Views are read at a block number, not a block hash (attack O2); a fork between scan and views is caught by the cross-checks except when the numbers are equal.
+- The shape test treats a null on either side as "none" (the values are covered by the real-run books and by `validate`).
+- Contract observation for the contracts track: `settle()` is permissionless and sets `lastSettle = now` each call while the released amount rounds down, so calling it every second can hold arriving money back until `arrivalEnd`; bounded, costs the caller gas.
+
+### What ran after the fixes
+
+- `cargo test -p buzz-relay --lib chain_reader -- --include-ignored --test-threads=1` (local Postgres and Redis): 61 passed, 0 failed, 0 ignored.
+- `cargo test -p buzz-relay --lib manager:: -- --include-ignored --test-threads=1`: 33 passed, 1 failed (`planted_eval_against_a_real_model`, which needs a real model proxy and key; unrelated to this track).
+- `cargo test -p buzz-relay --lib config::`: 103 passed, 0 failed.
+- `cargo clippy -p buzz-relay --lib --tests -- -D warnings`: clean. The track's files are rustfmt-clean.
+- `node scripts/chain-reader-events.mjs --check`: matches; `python3 scripts/chain-reader-fixture.py --check`: "pot-run.json is what a fresh run gives".
+- `scripts/chain-loop-pot.sh` (real anvil, contracts/pot, the real relay binary rebuilt after the fixes): 95 checks passed, exit 0.
+
 ## How to run it again
 
 ```bash

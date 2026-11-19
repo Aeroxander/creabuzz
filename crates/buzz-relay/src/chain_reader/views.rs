@@ -250,6 +250,31 @@ impl Answer<'_> {
     }
 }
 
+/// `Launcher.testNetwork()` at `block`: whether the chain's dollar is play
+/// money. It is a constant of the deployed Launcher, so every replica reads it
+/// for itself (the writer's record builds are not the only place it is
+/// known).
+pub async fn read_test_network(
+    source: &dyn ChainSource,
+    launcher: [u8; 20],
+    block: u64,
+) -> anyhow::Result<bool> {
+    let call = call(launcher, "testNetwork()", &[]);
+    let answers = source
+        .eth_call_batch(std::slice::from_ref(&call), block)
+        .await
+        .with_context(|| format!("read Launcher.testNetwork() at block {block}"))?;
+    let [bytes] = answers.as_slice() else {
+        bail!("the node answered {} of 1 calls", answers.len());
+    };
+    let answer = Answer {
+        label: "Launcher.testNetwork()",
+        bytes,
+    };
+    answer.expect_words(1)?;
+    answer.flag(0)
+}
+
 /// The calls of one record, with where each answer goes.
 struct Plan {
     calls: Vec<ViewCall>,

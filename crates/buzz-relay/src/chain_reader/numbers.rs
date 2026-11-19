@@ -489,11 +489,17 @@ pub fn build(
         .filter(|(at, _)| at.saturating_add(day) > t)
         .map(|(_, amount)| *amount)
         .sum();
-    let pending = (v.t64("pendingAt")? != 0).then(|| PendingRec {
-        rate_ppm: u32::try_from(v.t("pendingRatePpm").unwrap_or(0)).unwrap_or(0),
-        proposed_at: v.t64("pendingAt").unwrap_or(0),
-        applicable_at: v.t64("pendingAt").unwrap_or(0).saturating_add(unit),
-    });
+    let pending_at = v.t64("pendingAt")?;
+    let pending = if pending_at != 0 {
+        Some(PendingRec {
+            rate_ppm: u32::try_from(v.t("pendingRatePpm")?)
+                .context("the pending rate does not fit 32 bits")?,
+            proposed_at: pending_at,
+            applicable_at: pending_at.saturating_add(unit),
+        })
+    } else {
+        None
+    };
     let accruing = rate > 0 && settled.pot > 0 && !wound && t < active_end;
     let refresh = if accruing || settled.arriving != 0 {
         cadence.active_secs

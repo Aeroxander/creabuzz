@@ -702,25 +702,21 @@ pub async fn forget_published(pool: &PgPool, reader: &str, key: &Word) -> anyhow
 }
 
 /// Remember that the record already covers the project's logs up to
-/// `source_block`. With `checked`, the record was also found unchanged now:
-/// `published_at` moves to now, so the project is not due a refresh again for
-/// the refresh time and others get their turn (review I1 / F3).
+/// `source_block`. `published_at` stays the time of the last signing: the
+/// record's promised refresh counts from it.
 pub async fn touch_source_block(
     pool: &PgPool,
     reader: &str,
     key: &Word,
     source_block: u64,
-    checked: bool,
 ) -> anyhow::Result<()> {
     sqlx::query(
-        "UPDATE chain_project_numbers SET source_block = $3, stale = false, \
-             published_at = CASE WHEN $4 THEN greatest(published_at, now()) ELSE published_at END \
+        "UPDATE chain_project_numbers SET source_block = $3, stale = false \
          WHERE reader = $1 AND project_key = $2",
     )
     .bind(reader)
     .bind(key.as_slice())
     .bind(i64_of(source_block)?)
-    .bind(checked)
     .execute(pool)
     .await?;
     Ok(())

@@ -223,7 +223,11 @@ async fn scan_range(
         let mut at = start;
         while at < from {
             let end = at.saturating_add(width - 1).min(from - 1);
-            raw.extend(source.logs(&addrs, &topics, at, end).await?);
+            let logs = source.logs(&addrs, &topics, at, end).await?;
+            raw.extend(
+                logs.into_iter()
+                    .filter(|l| (at..=end).contains(&l.block_number)),
+            );
             at = end + 1;
         }
         tracing::warn!(reader = %s.reader, contracts = late.len(), from = start, "chain reader: following contracts named by stored rows; their earlier logs were read");
@@ -252,7 +256,12 @@ async fn scan_range(
         }
         let logs = source.logs(&asked, &topics, query_from, to).await?;
         let mut found: Vec<Contract> = Vec::new();
-        for log in logs {
+        // A node that ignores the end of the range sends logs of later blocks
+        // too; they are read again in their own range, never stored twice.
+        for log in logs
+            .into_iter()
+            .filter(|l| (query_from..=to).contains(&l.block_number))
+        {
             if log.removed {
                 bail!(
                     "the node returned a removed log in block {}; the chain moved",
