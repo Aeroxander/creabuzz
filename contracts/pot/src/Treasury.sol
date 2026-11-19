@@ -44,7 +44,7 @@ contract Treasury {
         uint128 agentTeam; // default daily Team Share limit of an agent (pool / 1000)
     }
 
-    /// @notice What an agent account may do, and its daily limits. Pass B fills the functions around it.
+    /// @notice What an agent account may do, and its daily limits.
     struct Agent {
         bool active;
         uint128 usdCap;
@@ -79,6 +79,8 @@ contract Treasury {
     uint256 public constant CHECK_IN_MULT = 2;
     /// @notice Anyone may wind a quiet project down after this many time units without a check-in.
     uint256 public constant WIND_MULT = 26;
+    /// @dev An agent's daily limit counts for 24 to 28 hours (the day is cut into six parts).
+    uint256 private constant DAY_PARTS = 6;
 
     // ---- fixed at birth
     IERC20 public quote;
@@ -201,7 +203,7 @@ contract Treasury {
     event SeatOffered(address indexed by, address indexed next, bool founderLeaves);
     /// @notice A new runner took the seat. Agents set before it are switched off.
     event RunnerChanged(address indexed from, address indexed to);
-    /// @notice An agent was set, or switched off with `active == false`. Pass B emits it.
+    /// @notice An agent was set, or switched off with `active == false`.
     event AgentSet(address indexed agent, bool active, uint256 usdCap, uint256 shareCap);
     /// @notice The Vester announced `amount` Team Shares to burn.
     event BurnAnnounced(uint256 amount, uint256 zAfter);
@@ -431,9 +433,13 @@ contract Treasury {
         emit CheckedIn(msg.sender, recordHash, uint64(block.timestamp));
     }
 
-    /// @notice Send `amount` dollars out of the box. The runner (with a Pair: both signers).
+    /// @notice Send `amount` dollars out of the box. The runner (with a Pair: both signers), or an agent inside its own daily
+    /// dollar limit. Agents draw from the same box: they never add to the allowance.
     function draw(address to, uint256 amount) external nonReentrant {
-        _authDraw();
+        bool byAgent = msg.sender != runner;
+        Agent memory a;
+        if (byAgent) a = _liveAgent(msg.sender);
+        else if (!_isRunnerBothSigned()) revert NotAllowed();
         _settle();
         if (
             to == address(0) || to == address(this) || to == address(quote) || to == address(shares)
@@ -443,6 +449,7 @@ contract Treasury {
         }
         if (amount == 0) revert BadInput();
         if (amount > box) revert TooMuch(amount, box);
+        if (byAgent) _agentUsdRing[msg.sender].consume(unit / 7, DAY_PARTS, a.usdCap, amount);
         box -= amount;
         _pay(to, amount);
         emit AllowanceDrawn(msg.sender, to, amount, box);
@@ -573,6 +580,73 @@ contract Treasury {
         team.burnFor(msg.sender, amount);
     }
 
+    // ============================================== Team Share grants ================================================
+
+    /// @notice Grant `amount` Team Shares from the pool to `member`, on a clock of their own (see the Vester). The runner
+    /// (with a Pair: both signers), or an agent inside its daily Team Share limit (1/1000 of the pool). The grants of one
+    /// project can never pass the pool set at birth. Not after a wind-down.
+    /// @return id The grant's id in the Vester.
+    function grantTeam(address member, uint256 amount) external nonReentrant returns (uint256 id) {
+        if (windDownKind != 0) revert AlreadyWoundDown();
+        if (
+            member == address(0) || member == address(this) || member == vester || member == address(team)
+                || member == address(shares) || member == address(quote)
+        ) {
+            revert BadInput();
+        }
+        if (msg.sender == runner) {
+            if (!_isRunnerBothSigned()) revert NotAllowed();
+        } else {
+            Agent memory a = _liveAgent(msg.sender);
+            _agentTeamRing[msg.sender].consume(unit / 7, DAY_PARTS, a.shareCap, amount);
+        }
+        id = IVester(vester).grant(member, amount, false);
+    }
+
+    /// @notice Announce the forfeit of grant `id` without the member's say: only both signers of a Pair runner. A single
+    /// runner, an agent or a stranger cannot (a member can always announce their own exit in the Vester). The unvested
+    /// part is announced to burn and burns after one time unit.
+    /// @dev Not `nonReentrant`: the Vester calls back into `forfeitAnnounced`. It changes no state of its own.
+    function announceForfeit(uint256 id) external {
+        if (!_isRunnerBothSigned() || !ILauncherPairs(salePath).isPair(msg.sender)) revert NotAllowed();
+        IVester(vester).announceByRunner(id);
+    }
+
+    // ===================================================== agents ====================================================
+
+    /// @notice Let an account act as an agent with chosen daily limits, or change them: `usdCap` dollar units a day out of
+    /// the box, `shareCap` Team Share wei a day granted. Only the runner (with a Pair: both signers). What the agent
+    /// already used still counts, so switching an agent off and on again does not reset its limit. An agent works only
+    /// under the runner that set it: a hand-over switches every agent off.
+    function setAgent(address agent, uint128 usdCap, uint128 shareCap) public onlyRunner {
+        if (agent == address(0)) revert BadInput();
+        agents[agent] = Agent({active: true, usdCap: usdCap, shareCap: shareCap});
+        agentEpochOf[agent] = agentEpoch;
+        emit AgentSet(agent, true, usdCap, shareCap);
+    }
+
+    /// @notice Let an account act as an agent with the default daily limits (the platform's dollars, 1/1000 of the pool).
+    function authoriseAgent(address agent) external {
+        setAgent(agent, agentUsd, agentTeam);
+    }
+
+    /// @notice Switch an agent off. Only the runner (with a Pair: both signers).
+    function revokeAgent(address agent) external onlyRunner {
+        Agent storage a = agents[agent];
+        a.active = false;
+        emit AgentSet(agent, false, a.usdCap, a.shareCap);
+    }
+
+    /// @notice Dollars an agent has drawn inside the current daily limit.
+    function agentUsdUsed(address agent) external view returns (uint256) {
+        return _agentUsdRing[agent].used(unit / 7, DAY_PARTS);
+    }
+
+    /// @notice Team Share wei an agent has granted inside the current daily limit.
+    function agentTeamUsed(address agent) external view returns (uint256) {
+        return _agentTeamRing[agent].used(unit / 7, DAY_PARTS);
+    }
+
     // ================================================== the seat =====================================================
 
     /// @notice Offer the runner seat to `next`. Only the runner (with a Pair: both signers). With `founderLeaves`, taking the
@@ -681,9 +755,10 @@ contract Treasury {
         return IPair(r).bothSigned();
     }
 
-    /// @dev Who may draw. Pass B adds the agent branch here: an agent inside its daily dollar limit.
-    function _authDraw() private view {
-        if (!_isRunnerBothSigned()) revert NotAllowed();
+    /// @dev An agent the current runner switched on and has not switched off since a hand-over.
+    function _liveAgent(address who) private view returns (Agent memory a) {
+        a = agents[who];
+        if (!a.active || agentEpochOf[who] != agentEpoch) revert NotAllowed();
     }
 
     function _founderAgrees() private view returns (bool) {
