@@ -396,3 +396,62 @@ describe("assistive semantics", () => {
     expect(await seriousViolations()).toEqual([]);
   });
 });
+
+describe("what is signed is what the sheet says", () => {
+  it("offers the seat to the person the sheet names when the wallet is asked, even if the choice is tried again meanwhile", async () => {
+    setup(FOUNDER_EVM, {});
+    // The wallet holds the signature prompt open until the test lets it go (a person reading it).
+    const eth = (
+      window as unknown as {
+        ethereum: { request: (a: unknown) => Promise<unknown> };
+      }
+    ).ethereum;
+    const real = eth.request.bind(eth);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    eth.request = async (a: unknown) => {
+      if ((a as { method: string }).method === "eth_sendTransaction")
+        await gate;
+      return real(a);
+    };
+    show();
+    fireEvent.click(await screen.findByTestId("seat-hand-over"));
+    await screen.findByTestId("offer-member");
+    choose(MEMBERS[1]?.pubkey ?? "");
+    await screen.findByTestId("offer-terms");
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("sheet-confirm") as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    const shown = screen.getByTestId("offer-terms").textContent ?? "";
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId("sheet-confirm") as HTMLButtonElement).disabled,
+      ).toBe(true),
+    );
+    // The choice is shut while the press runs.
+    expect(screen.getByTestId("offer-member").matches(":disabled")).toBe(true);
+    release();
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    const call = decodeCall(TREASURY_ABI, chain.sent[0]?.data ?? "");
+    const named = MEMBERS[1]?.address ?? "";
+    expect(shown.toLowerCase()).toContain(named.toLowerCase());
+    expect(String(call?.args[0]).toLowerCase()).toBe(named.toLowerCase());
+  });
+});
+
+describe("how long is quiet", () => {
+  it("is this project's own wait: about 12 hours on a test network's 28-minute unit, never 'half a year'", async () => {
+    const short = { ...alone, unit: 1680 };
+    setup(CARL_EVM, {}, short);
+    const late = short.quiet.windableFrom ?? 0;
+    show(short, late + 10);
+    const words = (await screen.findByTestId("seat-quiet")).textContent ?? "";
+    expect(words).toMatch(/quiet for about 12 hours, so anyone can wind/);
+    expect(words).not.toMatch(/half a year/);
+  });
+});

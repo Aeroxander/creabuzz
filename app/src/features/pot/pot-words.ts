@@ -128,8 +128,7 @@ export function stateWords(numbers: ProjectNumbers, now: number): StateWords {
     case "may_wind_down":
       return {
         label: "Can be wound down",
-        meaning:
-          "The team has been quiet for about half a year, so anyone can now wind the project down. New backing and the allowance are stopped. You can take your money out any time.",
+        meaning: `The team has been quiet for ${quietWaitWords(numbers)}, so anyone can now wind the project down. New backing and the allowance are stopped. You can take your money out any time.`,
       };
     case "wound_down":
       return {
@@ -169,4 +168,28 @@ export function whenWords(seconds: number): string {
  */
 export function boxNow(numbers: ProjectNumbers, onChain: bigint): bigint {
   return onChain > numbers.allowance.box ? onChain : numbers.allowance.box;
+}
+
+/** A span of seconds for a sentence: minutes or hours on a test network's short unit, days on a real one. */
+export function spanOf(seconds: number): string {
+  if (seconds < 3_600) {
+    const minutes = Math.max(1, Math.round(seconds / 60));
+    return `about ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  }
+  if (seconds < 86_400) {
+    const hours = Math.round(seconds / 3_600);
+    return `about ${hours} ${hours === 1 ? "hour" : "hours"}`;
+  }
+  const days = Math.round(seconds / 86_400);
+  return `about ${days} ${days === 1 ? "day" : "days"}`;
+}
+
+/**
+ * How long the team may be quiet before anyone can wind the project down: this project's own wait (its wind-down units of
+ * its time unit), "about half a year" on a real network and hours on a test network's short unit.
+ */
+export function quietWaitWords(numbers: ProjectNumbers): string {
+  const secs = numbers.limits.windDownUnits * numbers.unit;
+  const days = secs / 86_400;
+  return days >= 150 && days <= 220 ? "about half a year" : spanOf(secs);
 }

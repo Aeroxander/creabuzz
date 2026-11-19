@@ -8,6 +8,7 @@ import { useId, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { quietStateAt, type ProjectNumbers } from "../money/numbers";
+import { quietWaitWords } from "../pot/pot-words";
 import { runnerRole } from "../money/runner";
 import type { GrantMember } from "../pot/GrantSheet";
 import { recordFitsBuild, type Ready, usePotWallet } from "../pot/use-pot";
@@ -205,8 +206,8 @@ function Actions({
       {canQuietWindDown ? (
         <div className="flex flex-col gap-2" data-testid="seat-quiet">
           <p className="text-sm">
-            The team has been quiet for about half a year, so anyone can wind
-            the project down. Taking out stays open.
+            The team has been quiet for {quietWaitWords(numbers)}, so anyone can
+            wind the project down. Taking out stays open.
           </p>
           <Button
             block

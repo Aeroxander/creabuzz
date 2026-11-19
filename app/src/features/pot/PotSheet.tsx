@@ -151,7 +151,14 @@ export function PotSheet(props: PotSheetProps) {
       testId={props.testId}
       title={props.title}
     >
-      {props.children}
+      {/* The numbers and the choice cannot be edited from the press until it ends: what is shown is what is signed. */}
+      <fieldset
+        className="m-0 flex min-w-0 flex-col gap-4 border-0 p-0"
+        data-testid="sheet-inputs"
+        disabled={checking || send.isPending}
+      >
+        {props.children}
+      </fieldset>
       {mustSayPlayMoney(props.playMoney) ? (
         <p className="text-sm text-muted" data-testid="sheet-play-money">
           {PLAY_MONEY_WORDS}

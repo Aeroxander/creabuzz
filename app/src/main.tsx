@@ -26,12 +26,18 @@ const queryClient = new QueryClient({
 
 /** How long the page waits for the server's settings before it opens without them: they must not hold the page. */
 const SETTINGS_WAIT_MS = 3_000;
+/** How long the page waits for the passkey signer to load before it draws anyway: a stalled download must not leave a blank page. */
+const SIGNER_WAIT_MS = 3_000;
 
 async function start() {
   // A passkey account signs through its in-memory key once unlocked; before that, signing is refused, never faked. It is
   // waited for: until it is registered the app does not know who the person is, and a reload would draw them signed out
-  // (no unlock prompt) whenever the page was quicker than the signer's own load. A failed load must not hold the page.
-  await registerPasskeySigner().catch(() => undefined);
+  // (no unlock prompt) whenever the page was quicker than the signer's own load. A failed or stalled load must not hold the
+  // page: it draws after a few seconds, and the surfaces that drew before the signer was ready are told when it is.
+  await Promise.race([
+    registerPasskeySigner().catch(() => undefined),
+    new Promise<void>((resolve) => setTimeout(resolve, SIGNER_WAIT_MS)),
+  ]);
   // What the server says about itself (whether investing is on) is known before anything draws, so nothing flips.
   await loadServerSettings(async () => {
     const response = await timedFetchStreamed(`${relayHttpBaseUrl()}/info`, {

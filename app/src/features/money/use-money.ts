@@ -59,6 +59,13 @@ export function chainKeyOfProject(project: Project): string | null {
   return chainKeyFromTags(project.event.tags);
 }
 
+/** How long to wait before asking for a record that is not there yet, after `waited` ms of waiting; false once it is time to stop. */
+export function lookAgainEvery(waited: number): number | false {
+  if (waited < 30_000) return 5_000;
+  if (waited < 120_000) return 15_000;
+  return false;
+}
+
 /**
  * A project's numbers: the newest record the server signed for the chain key the founder's record names, believed only
  * when it is that project's launch. Null when investing is off, the project names no launch, or nothing was read.
@@ -67,14 +74,20 @@ export function useProjectNumbers(project: Project | null | undefined) {
   const chainKey = project ? chainKeyOfProject(project) : null;
   const signer = serverRelaySigner();
   const on = investingOn() && Boolean(project && chainKey && signer);
+  // When this page began waiting for this project's record: a project that is linked to its launch starts a new wait.
+  const watchKey = `${chainKey ?? ""}|${project?.coordinate ?? ""}`;
+  const watching = useRef({ key: watchKey, at: Date.now() });
+  if (watching.current.key !== watchKey)
+    watching.current = { key: watchKey, at: Date.now() };
   return useQuery({
     queryKey: moneyKeys.project(chainKey ?? "", project?.coordinate ?? ""),
     enabled: on,
     staleTime: 20_000,
-    // A project just launched has no record until the server has read it: look again every few seconds until it does.
+    // A project just launched has no record until the server has read it: look again soon, then less often, and stop after
+    // a couple of minutes (a record the server will never sign must not be asked for forever; a reload asks again).
     refetchInterval: (query) =>
       query.state.data === null || query.state.data === undefined
-        ? 5_000
+        ? lookAgainEvery(Date.now() - watching.current.at)
         : false,
     queryFn: async (): Promise<ProjectNumbers | RemovedNumbers | null> => {
       if (!project || !chainKey) return null;

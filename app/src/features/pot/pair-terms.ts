@@ -53,16 +53,28 @@ function unitDays(numbers: ProjectNumbers): string {
   return `${days} ${days === 1 ? "day" : "days"}`;
 }
 
+/** An accepted task that is owed pay, as the project's page records it: its words and the two people the record names. */
+export interface OwedTask {
+  name: string;
+  /** Who marked the work accepted. */
+  acceptedBy: string;
+  /** Who took the task and did the work. */
+  takenBy: string;
+}
+
 /**
- * "..., the pay for the task "X"" when a draw is exactly the pay an accepted task still owes (`tasksFor` gives the names of the
- * tasks owed that much, at that wallet), so the second signer reads what the money is for.
+ * "..., the pay for the task "X", as the project's page records it (accepted by A, taken by B)" when a draw is exactly the
+ * pay an accepted task still owes (`tasksFor` gives the tasks owed that much, at that wallet). It is the page's own
+ * record, shown with who wrote it: a task's author and the person who accepted it can be the one who asks for the draw.
  */
-function forTask(names: readonly string[]): string {
-  const quoted = names.map((name) => `"${name}"`);
-  if (quoted.length === 0) return "";
-  return quoted.length === 1
-    ? `, the pay for the task ${quoted[0]}`
-    : `, the pay for one of these tasks: ${quoted.join("; ")}`;
+function forTask(tasks: readonly OwedTask[]): string {
+  const said = tasks.map(
+    (t) => `"${t.name}" (accepted by ${t.acceptedBy}, taken by ${t.takenBy})`,
+  );
+  if (said.length === 0) return "";
+  return said.length === 1
+    ? `, the pay for the task ${said[0]}, as the project's page records it`
+    : `, the pay for one of these tasks, as the project's page records them: ${said.join("; ")}`;
 }
 
 export function describePotCall(
@@ -70,7 +82,7 @@ export function describePotCall(
   target: string,
   data: string,
   nameOf: (address: string) => string,
-  tasksFor: (payee: string, raw: bigint) => readonly string[] = () => [],
+  tasksFor: (payee: string, raw: bigint) => readonly OwedTask[] = () => [],
 ): Terms {
   const t = target.toLowerCase();
   const abi: Abi | null =

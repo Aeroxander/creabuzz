@@ -7,7 +7,9 @@
 import type { LaunchOffer } from "@creaton/core/pot/pot-state.ts";
 import { dollarsText } from "../money/numbers";
 import { parseRate } from "../pot/AllowanceSheets";
-import { rateWords, sharesWords } from "../pot/pot-words";
+import { rateWords, sharesWords, spanOf } from "../pot/pot-words";
+
+export { spanOf };
 
 const SHARE = 1_000_000_000_000_000_000n;
 
@@ -71,20 +73,6 @@ function plainNumber(value: number): string {
   return String(Number(value.toFixed(3)));
 }
 
-/** A span of seconds for a sentence: minutes or hours on a test network's short unit, days on a real one. */
-export function spanOf(seconds: number): string {
-  if (seconds < 3_600) {
-    const minutes = Math.max(1, Math.round(seconds / 60));
-    return `about ${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
-  }
-  if (seconds < 86_400) {
-    const hours = Math.round(seconds / 3_600);
-    return `about ${hours} ${hours === 1 ? "hour" : "hours"}`;
-  }
-  const days = Math.round(seconds / 86_400);
-  return `about ${days} ${days === 1 ? "day" : "days"}`;
-}
-
 /** For a backer: what the allowance is, in a sentence. */
 export function allowanceForBackers(ratePpm: number): string {
   if (ratePpm === 0)
@@ -111,7 +99,7 @@ export function fixedLimits(offer: LaunchOffer): string[] {
     `If the team does not check in for ${spanOf(offer.rules.checkInUnits * unit)}, new backing and the allowance stop until it does.`,
     `If it stays quiet for ${spanOf(offer.rules.windDownUnits * unit)}, anyone can wind the project down. Backers can still take their money out.`,
     `A Team Share grant starts to unlock after ${spanOf(offer.rules.cliffUnits * unit)} and has all unlocked after ${spanOf(offer.rules.vestUnits * unit)}, counted only while the team keeps checking in.`,
-    `A helper can draw at most ${dollarsText(offer.agentUsd)} dollars a day.`,
+    `A helper can draw at most ${dollarsText(offer.agentUsd)} dollars a day, and use at most one part in ${offer.agentShareDiv.toLocaleString("en-US")} of the Team pool in Team Shares a day.`,
   ];
 }
 

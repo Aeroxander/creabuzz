@@ -85,7 +85,9 @@ export function LaunchSheet({
       chainId={chainId}
       confirmLabel={`Launch ${project.name}`}
       description="Put it on the network so people can back it"
+      detail={terms?.ok ? `${terms.ratePpm}:${terms.teamPool}` : undefined}
       done="It is on the network. Tying your page to it now."
+      doneEarlier="Your earlier launch is on the network, with the numbers you chose then. They cannot be changed now. Nothing new was sent."
       landed={(wallet) =>
         isLaunched((to, data) => wallet.readCall(to, data), launcher, key)
       }

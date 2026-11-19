@@ -11,6 +11,7 @@ import {
 } from "@tanstack/react-query";
 import { publishAsUser, read } from "../../lib/relay";
 import type { Project } from "../project/project-record";
+import type { OwedTask } from "../pot/pair-terms";
 import { rawDollars } from "./task-calls";
 import {
   payOwed,
@@ -101,14 +102,16 @@ export function useProjectTasks(project: Project | null, enabled = true) {
 const NAME_MAX = 60;
 
 /**
- * The names of the accepted tasks that are owed exactly `raw` dollars (raw units) at `payee`: what a draw that pays one of
- * them is for. Names are cut short and never contain a quote, so they sit safely inside a sentence.
+ * The accepted tasks that are owed exactly `raw` dollars (raw units) at `payee`, with who accepted each and who took it: what a
+ * draw that pays one of them is for, as the page's record says. Names are cut short and never contain a quote, so they sit
+ * safely inside a sentence. `personName` turns a person's key into the name shown.
  */
 export function owedTaskNames(
   tasks: readonly ProjectTask[],
   payee: string,
   raw: bigint,
-): string[] {
+  personName: (pubkey: string) => string = (pubkey) => pubkey.slice(0, 8),
+): OwedTask[] {
   return tasks
     .filter(
       (t) =>
@@ -118,7 +121,11 @@ export function owedTaskNames(
     )
     .map((t) => {
       const words = t.what.replace(/["\u201c\u201d]/g, "'").trim();
-      return words.length > NAME_MAX ? `${words.slice(0, NAME_MAX)}…` : words;
+      return {
+        name: words.length > NAME_MAX ? `${words.slice(0, NAME_MAX)}…` : words,
+        acceptedBy: t.acceptedBy ? personName(t.acceptedBy) : "someone",
+        takenBy: t.worker ? personName(t.worker) : "someone",
+      };
     });
 }
 

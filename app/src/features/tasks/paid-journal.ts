@@ -75,3 +75,10 @@ export function forgetPaid(task: string) {
   delete all[task];
   writeAll(all);
 }
+
+/** The transactions (lower case) kept for tasks other than `task`: a payment made for one task is never offered for another. */
+export function paidElsewhere(task: string): string[] {
+  return Object.values(readAll())
+    .filter((entry) => entry.task !== task)
+    .map((entry) => entry.txHash.toLowerCase());
+}

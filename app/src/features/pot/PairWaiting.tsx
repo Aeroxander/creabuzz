@@ -12,7 +12,7 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import type { ProjectNumbers } from "../money/numbers";
 import { signsForRunner } from "../money/numbers";
-import { describePotCall, type Terms } from "./pair-terms";
+import { describePotCall, type OwedTask, type Terms } from "./pair-terms";
 import { PotSheet } from "./PotSheet";
 import { type Proposal, usePairWaiting } from "./use-pair-waiting";
 import { type Ready, WalletGate } from "./use-pot";
@@ -32,7 +32,7 @@ function Inner({
   numbers: ProjectNumbers;
   ready: Ready;
   nameOf: (address: string) => string;
-  tasksFor?: (payee: string, raw: bigint) => readonly string[];
+  tasksFor?: (payee: string, raw: bigint) => readonly OwedTask[];
 }) {
   const pair = numbers.contracts.pair;
   const waiting = usePairWaiting(pair, ready, numbers.chainId);
@@ -192,7 +192,7 @@ export function PairWaiting({
   address: string | null;
   nameOf: (address: string) => string;
   /** The names of the accepted tasks that are owed exactly this much at this wallet, for a draw that pays one. */
-  tasksFor?: (payee: string, raw: bigint) => readonly string[];
+  tasksFor?: (payee: string, raw: bigint) => readonly OwedTask[];
 }) {
   const titleId = useId();
   if (!numbers.contracts.pair || !signsForRunner(numbers, address)) return null;

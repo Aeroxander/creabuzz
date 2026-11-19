@@ -79,6 +79,52 @@ export function proposalOf(log: ChainLog, pair: string): Proposal | null {
   }
 }
 
+/** What is waiting in `pair` right now, read from the chain (see the file's header). Throws when the chain cannot be read. */
+export async function readPairWaiting(
+  ready: Ready,
+  pair: string,
+): Promise<{ waiting: Proposal[]; complete: boolean }> {
+  const wallet = ready.wallet;
+  const ttl = await proposalTtl(ready.read, pair);
+  const to = await wallet.blockNumber();
+  // The chain's own clock and pace (a browser clock can differ from a test chain's), where the sender can say them.
+  let now = Math.floor(Date.now() / 1000);
+  let sampleTime: number | null = null;
+  const sample = Math.min(to, SAMPLE_BLOCKS);
+  if (wallet.blockTime) {
+    try {
+      now = await wallet.blockTime("latest");
+      sampleTime = sample > 0 ? await wallet.blockTime(to - sample) : null;
+    } catch {
+      sampleTime = null;
+    }
+  }
+  const { span, needed } = windowOf(ttl, to, now, sampleTime, sample);
+  const found = await readLogsBack(
+    wallet,
+    { address: pair, topics: [PROPOSED_TOPIC] },
+    {
+      from: Math.max(0, to - span),
+      to,
+      chunk: CHUNK,
+      pieces: Math.ceil(MAX_WINDOW / CHUNK),
+    },
+  );
+  const proposals = found.logs
+    .map((log) => proposalOf(log, pair))
+    .filter((p): p is Proposal => p !== null);
+  const alive = await Promise.all(
+    proposals.map(async (p) => {
+      const state = await readProposal(ready.read, pair, p.id);
+      return state && state.proposedAt + ttl >= now ? p : null;
+    }),
+  );
+  return {
+    waiting: alive.filter((p): p is Proposal => p !== null),
+    complete: found.complete && (span >= needed || span >= to),
+  };
+}
+
 export function usePairWaiting(
   pair: string | null,
   ready: Ready | null,
@@ -89,47 +135,9 @@ export function usePairWaiting(
     enabled: Boolean(pair && ready),
     staleTime: 10_000,
     retry: false,
-    queryFn: async (): Promise<{ waiting: Proposal[]; complete: boolean }> => {
-      if (!pair || !ready) return { waiting: [], complete: true };
-      const wallet = ready.wallet;
-      const ttl = await proposalTtl(ready.read, pair);
-      const to = await wallet.blockNumber();
-      // The chain's own clock and pace (a browser clock can differ from a test chain's), where the sender can say them.
-      let now = Math.floor(Date.now() / 1000);
-      let sampleTime: number | null = null;
-      const sample = Math.min(to, SAMPLE_BLOCKS);
-      if (wallet.blockTime) {
-        try {
-          now = await wallet.blockTime("latest");
-          sampleTime = sample > 0 ? await wallet.blockTime(to - sample) : null;
-        } catch {
-          sampleTime = null;
-        }
-      }
-      const { span, needed } = windowOf(ttl, to, now, sampleTime, sample);
-      const found = await readLogsBack(
-        wallet,
-        { address: pair, topics: [PROPOSED_TOPIC] },
-        {
-          from: Math.max(0, to - span),
-          to,
-          chunk: CHUNK,
-          pieces: Math.ceil(MAX_WINDOW / CHUNK),
-        },
-      );
-      const proposals = found.logs
-        .map((log) => proposalOf(log, pair))
-        .filter((p): p is Proposal => p !== null);
-      const alive = await Promise.all(
-        proposals.map(async (p) => {
-          const state = await readProposal(ready.read, pair, p.id);
-          return state && state.proposedAt + ttl >= now ? p : null;
-        }),
-      );
-      return {
-        waiting: alive.filter((p): p is Proposal => p !== null),
-        complete: found.complete && (span >= needed || span >= to),
-      };
-    },
+    queryFn: async () =>
+      pair && ready
+        ? readPairWaiting(ready, pair)
+        : { waiting: [] as Proposal[], complete: true },
   });
 }

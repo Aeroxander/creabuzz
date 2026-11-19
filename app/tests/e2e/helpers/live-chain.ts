@@ -37,14 +37,22 @@ const POT_OUT = resolve(
 );
 export const ANVIL = process.env.ANVIL ?? "anvil";
 
-/** Why a spec that needs a real chain cannot run here, or null when it can. */
+/**
+ * Why a spec that needs a real chain cannot run here, or null when it can. With `REQUIRE_CHAIN=1` (a gate that must not pass
+ * on skipped specs) a missing chain is an error that fails the run instead of skipping the specs.
+ */
 export const NO_CHAIN_WHY: string | null = (() => {
-  const probe = spawnSync(ANVIL, ["--version"], { stdio: "ignore" });
-  if (probe.error || probe.status !== 0)
-    return "needs anvil on PATH (or ANVIL=/path/to/anvil)";
-  if (!existsSync(POT_OUT))
-    return "needs contracts/pot/out built (forge build in contracts/pot)";
-  return null;
+  const why = (() => {
+    const probe = spawnSync(ANVIL, ["--version"], { stdio: "ignore" });
+    if (probe.error || probe.status !== 0)
+      return "needs anvil on PATH (or ANVIL=/path/to/anvil)";
+    if (!existsSync(POT_OUT))
+      return "needs contracts/pot/out built (forge build in contracts/pot)";
+    return null;
+  })();
+  if (why && process.env.REQUIRE_CHAIN === "1")
+    throw new Error(`REQUIRE_CHAIN=1 but the browser specs ${why}`);
+  return why;
 })();
 
 const freePort = (): Promise<number> =>

@@ -17,6 +17,16 @@ const PIECES = 3;
 /** A block's time may sit this far before the acceptance's own clock and still count. */
 const SKEW_SECS = 3_600;
 
+/** The search could not rule out an earlier payment: it did not reach back to the acceptance, or the time of its start is unknown. */
+export class PaymentSearchShort extends Error {
+  constructor() {
+    super(
+      "The search for an earlier payment did not reach back to the day the work was accepted.",
+    );
+    this.name = "PaymentSearchShort";
+  }
+}
+
 export interface FoundPayment {
   txHash: string;
   /** The block's time in seconds, when the network could say it. */
@@ -36,7 +46,9 @@ function amountOf(log: ChainLog): bigint | null {
 /**
  * The newest draw from `treasury` to `payee` of exactly `raw` dollars (raw units) made at or after `since` (seconds), or null.
  * `taken` are payments already recorded for other tasks: they are never offered again. A network that cannot say a block's
- * time is trusted on amount and payee alone.
+ * time is trusted on amount and payee alone for what it finds. It throws (never "nothing found") when the logs cannot be
+ * read, and `PaymentSearchShort` when nothing was found and the window starts after the acceptance (or its start time is
+ * unknown): an earlier payment could lie before it, so the caller must not treat that as "not paid yet".
  */
 export async function findPayment(
   wallet: Pick<MoneyWallet, "getLogs" | "blockNumber" | "blockTime">,
@@ -47,6 +59,7 @@ export async function findPayment(
   taken: ReadonlySet<string> = new Set(),
 ): Promise<FoundPayment | null> {
   const head = await wallet.blockNumber();
+  const start = Math.max(0, head - CHUNK * PIECES + 1);
   const found = await readLogsBack(
     wallet,
     {
@@ -54,7 +67,7 @@ export async function findPayment(
       topics: [DRAWN_TOPIC, null, addressTopic(payee)],
     },
     {
-      from: Math.max(0, head - CHUNK * PIECES + 1),
+      from: start,
       to: head,
       chunk: CHUNK,
       pieces: PIECES,
@@ -80,5 +93,21 @@ export async function findPayment(
     if (at !== null && at + SKEW_SECS < since) continue;
     return { txHash: (log.transactionHash as string).toLowerCase(), at };
   }
+  if (!found.complete || (start > 0 && !(await reaches(wallet, start, since))))
+    throw new PaymentSearchShort();
   return null;
+}
+
+/** Whether the block the search starts at is no later than the acceptance (a start whose time is unknown does not count). */
+async function reaches(
+  wallet: Pick<MoneyWallet, "blockTime">,
+  start: number,
+  since: number,
+): Promise<boolean> {
+  if (!wallet.blockTime) return false;
+  try {
+    return (await wallet.blockTime(start)) <= since + SKEW_SECS;
+  } catch {
+    return false;
+  }
 }

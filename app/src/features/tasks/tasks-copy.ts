@@ -42,6 +42,15 @@ export const TASK_PROBLEM = {
   /** A payment of exactly this task's pay already left the box: nothing is sent until the person says what it was. */
   alreadyLeft:
     "A payment of exactly this much already left the box for this person. Nothing was sent. If it was this task's pay, save it here; if it was for something else, say so and press again.",
+  /** The same pay is already asked of the other signer (read from the chain): a second ask would pay it twice. */
+  alreadyAsked:
+    "This same pay is already waiting for the other signer to confirm it, so nothing new was asked. They confirm it on the Money tab; then come back here and save that it was paid.",
+  /** What is waiting for the other signer could not be read: nothing is asked on a guess. */
+  askedUnknown:
+    "What is already waiting for the other signer could not be read just now, so nothing was asked. Press again in a moment.",
+  /** The search for an earlier payment could not be read or did not reach far enough back: nothing is sent on a guess. */
+  searchShort:
+    "Whether this pay was already sent could not be checked just now (the network did not answer, or the work was accepted too long ago to look back that far). Nothing was sent. Look again in a moment, or check the project's money records first.",
   /** A project wound down draws nothing. */
   woundDown:
     "This project is wound down, so nothing can be drawn from the allowance box any more.",

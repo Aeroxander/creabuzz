@@ -104,7 +104,9 @@ describe("the launch card on the project page", () => {
     const none = await screen.findByTestId("money-none");
     expect(none.textContent).toMatch(/No numbers yet/);
     expect(none.textContent).toMatch(/until then no figures are shown/);
-    expect(none.textContent).toMatch(/looks again every few seconds/);
+    expect(none.textContent).toMatch(
+      /looks again every few seconds for a couple of minutes; after that, reload it/,
+    );
     expect(none.textContent).not.toMatch(/0\.00|\b0 dollars/);
   });
 

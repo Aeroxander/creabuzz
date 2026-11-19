@@ -713,7 +713,8 @@ test("a project from its start to a Take out: the page, the server and the contr
     );
     check(
       jobs.every(
-        (j) => j.call === "treasury.collectFees" || j.call === "treasury.settle",
+        (j) =>
+          j.call === "treasury.collectFees" || j.call === "treasury.settle",
       ),
       "the helper sent only the two calls it may: collect the fee and settle",
     );

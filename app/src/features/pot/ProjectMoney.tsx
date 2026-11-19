@@ -127,7 +127,7 @@ export function ProjectMoney({
               ? "This project's launch left the network, so it has no money to show."
               : chainKey === null
                 ? "Nobody can back this project yet. When its founder launches it, its money shows here."
-                : "The server has not read this project's money yet. When it has, it shows here, and until then no figures are shown. This page looks again every few seconds."}
+                : "The server has not read this project's money yet. When it has, it shows here, and until then no figures are shown. This page looks again every few seconds for a couple of minutes; after that, reload it to look again."}
           </p>
         </EmptyState>
         {numbers?.removed ? null : (
@@ -175,7 +175,9 @@ export function ProjectMoney({
         nameOf={nameOfAddress}
         numbers={numbers}
         tasksFor={(payee, raw) =>
-          owedTaskNames(tasksRead.data?.tasks ?? [], payee, raw)
+          owedTaskNames(tasksRead.data?.tasks ?? [], payee, raw, (pubkey) =>
+            nameOf(profiles, pubkey),
+          )
         }
       />
       <OwnershipLine className="text-sm text-muted" />

@@ -30,6 +30,12 @@ const name = (a: string) => (a === ANNA ? "Anna" : a);
 const words = (call: { to: string; data: string }) =>
   describePotCall(numbers, call.to, call.data, name);
 
+const GUIDE = {
+  name: "Translate the guide",
+  acceptedBy: "Sam",
+  takenBy: "Pat",
+};
+
 describe("each call a Pair can hold has a sentence naming what it does", () => {
   it("draw: to whom and how much", () => {
     const t = words(drawCall({ treasury, to: ANNA, amount: 25_500_000n }));
@@ -46,18 +52,18 @@ describe("each call a Pair can hold has a sentence naming what it does", () => {
       call.to,
       call.data,
       name,
-      (payee, raw) =>
-        payee === ANNA && raw === 40_000_000n ? ["Translate the guide"] : [],
+      (payee, raw) => (payee === ANNA && raw === 40_000_000n ? [GUIDE] : []),
     );
+    // The sentence is the page's own record, and says who accepted the task and who took it.
     expect(one.words).toBe(
-      `Draw 40 dollars from the allowance box to Anna (${ANNA}), the pay for the task "Translate the guide".`,
+      `Draw 40 dollars from the allowance box to Anna (${ANNA}), the pay for the task "Translate the guide" (accepted by Sam, taken by Pat), as the project's page records it.`,
     );
     const two = describePotCall(numbers, call.to, call.data, name, () => [
-      "Translate the guide",
-      "Fix the logo",
+      GUIDE,
+      { name: "Fix the logo", acceptedBy: "Sam", takenBy: "Lee" },
     ]);
     expect(two.words).toContain(
-      'the pay for one of these tasks: "Translate the guide"; "Fix the logo".',
+      'the pay for one of these tasks, as the project\'s page records them: "Translate the guide" (accepted by Sam, taken by Pat); "Fix the logo" (accepted by Sam, taken by Lee).',
     );
     // A draw for nothing owed reads as before.
     const none = describePotCall(numbers, call.to, call.data, name, () => []);

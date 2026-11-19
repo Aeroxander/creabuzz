@@ -13,6 +13,7 @@ import type { ProjectNumbers } from "../money/numbers";
 import type { Project } from "../project/project-record";
 import { forgetPaid, paidNotRecorded, rememberPaid } from "./paid-journal";
 import type { ProjectTask } from "./task-record";
+import { drawForTaskCall } from "./task-calls";
 import { TaskCard } from "./TaskCard";
 
 const FOUNDER = "f".repeat(64);
@@ -27,6 +28,7 @@ const PAIR = "0x00000000000000000000000000000000000000ff";
 const TX = `0x${"ab".repeat(32)}`;
 const FOUND_TX = `0x${"cd".repeat(32)}`;
 const PIECE = "1".repeat(64);
+const OTHER_TASK = "8".repeat(64);
 const TREASURY = "0x20b6000000000000000000000000000000000906";
 const DRAWN = topicOf("AllowanceDrawn(address,address,uint256,uint256)");
 
@@ -37,6 +39,9 @@ let fresh: ProjectTask | null;
 let chainBox: bigint | null = null;
 let logs: unknown[] = [];
 let recordFails = false;
+let logsFail = false;
+let head = 100;
+let startTime: number | null = null;
 
 vi.mock("../money/use-money", () => ({
   useMoneySend: () => ({
@@ -55,8 +60,15 @@ vi.mock("../money/use-money", () => ({
       if (chainBox === null) throw new Error("The node did not answer.");
       return `0x${chainBox.toString(16).padStart(64, "0")}`;
     },
-    blockNumber: async () => 100,
-    getLogs: async () => logs,
+    blockNumber: async () => head,
+    getLogs: async () => {
+      if (logsFail) throw new Error("The node refuses a range this wide.");
+      return logs;
+    },
+    blockTime: async () => {
+      if (startTime === null) throw new Error("No block time.");
+      return startTime;
+    },
   }),
 }));
 vi.mock("./use-tasks", () => ({
@@ -161,7 +173,11 @@ beforeEach(() => {
   chainBox = null;
   logs = [];
   recordFails = false;
+  logsFail = false;
+  head = 100;
+  startTime = null;
   forgetPaid(accepted().id);
+  forgetPaid(OTHER_TASK);
 });
 afterEach(cleanup);
 
@@ -374,6 +390,7 @@ describe("a payment already made", () => {
 
 describe("a project run by two", () => {
   it("asks the other signer for the pay, through the Pair, and writes nothing until it has run", async () => {
+    chainBox = 100_000_000n;
     card(accepted(), { numbers: pairNumbers });
     const button = await screen.findByTestId("task-pay");
     expect(button.textContent).toBe("Ask for the pay from the box");
@@ -418,5 +435,113 @@ describe("a journal kept from an earlier press", () => {
     await waitFor(() => expect(written).toHaveLength(1));
     expect(tagOf("task-paid")).toBe(TX);
     expect(sent).toHaveLength(0);
+  });
+});
+
+const PROPOSED = topicOf("Proposed(bytes32,address,address,bytes,uint256)");
+function proposedLog(target: string, data: string) {
+  return {
+    address: PAIR,
+    topics: [PROPOSED, `0x${"01".repeat(32)}`, addressTopic(SECOND)],
+    data: encodeParameters(["address", "bytes", "uint256"], [target, data, 1n]),
+    blockNumber: "0x10",
+    transactionHash: `0x${"ee".repeat(32)}`,
+  };
+}
+
+describe("a search for an earlier payment that cannot be relied on", () => {
+  it("offers no bare press when the logs cannot be read, only a way to look again", async () => {
+    chainBox = 100_000_000n;
+    logsFail = true;
+    card(accepted());
+    expect(
+      (await screen.findByTestId("task-pay-search-short")).textContent,
+    ).toMatch(/could not be checked/);
+    expect(screen.queryByTestId("task-pay")).toBeNull();
+    expect(sent).toHaveLength(0);
+    // Looking again once the node answers brings the press back.
+    logsFail = false;
+    fireEvent.click(screen.getByTestId("task-pay-look-again"));
+    expect(await screen.findByTestId("task-pay")).toBeTruthy();
+  });
+
+  it("stops the press, and sends nothing, when the search fails after the page was drawn", async () => {
+    chainBox = 100_000_000n;
+    card(accepted());
+    const button = await screen.findByTestId("task-pay");
+    // A Pair's other signer may already have confirmed this very pay; the node now refuses the range.
+    logsFail = true;
+    fireEvent.click(button);
+    expect((await screen.findByTestId("task-pay-problem")).textContent).toMatch(
+      /could not be checked/,
+    );
+    expect(sent).toHaveLength(0);
+    expect(written).toHaveLength(0);
+  });
+
+  it("is not enough when it starts after the acceptance and nothing was found: nothing can be sent on it", async () => {
+    chainBox = 100_000_000n;
+    head = 500_000;
+    startTime = 1_800_000_200 + 4 * 3_600; // the window begins hours after the work was accepted
+    card(accepted());
+    expect(await screen.findByTestId("task-pay-search-short")).toBeTruthy();
+    expect(screen.queryByTestId("task-pay")).toBeNull();
+  });
+
+  it("is enough when it starts before the acceptance, however long the chain is", async () => {
+    chainBox = 100_000_000n;
+    head = 500_000;
+    startTime = 1_800_000_200 - 3_600;
+    card(accepted());
+    expect(await screen.findByTestId("task-pay")).toBeTruthy();
+  });
+
+  it("cannot tell when the network gives no time for the start of the window", async () => {
+    chainBox = 100_000_000n;
+    head = 500_000;
+    startTime = null;
+    card(accepted());
+    expect(await screen.findByTestId("task-pay-search-short")).toBeTruthy();
+  });
+});
+
+describe("a pay already asked of the other signer", () => {
+  it("is not asked a second time (after a reload, or when the other signer asked from their own page)", async () => {
+    // The chain answers every read with this one number: as the proposal's time and the Pair's limit it keeps it alive.
+    chainBox = 2_000_000_000n;
+    const draw = drawForTaskCall(TREASURY, PAYEE, 40);
+    logs = [proposedLog(draw.to, draw.data)];
+    card(accepted(), { numbers: pairNumbers });
+    fireEvent.click(await screen.findByTestId("task-pay"));
+    expect((await screen.findByTestId("task-pay-problem")).textContent).toMatch(
+      /already waiting for the other signer/,
+    );
+    expect(sent).toHaveLength(0);
+    expect(screen.getByTestId("task-pay-asked")).toBeTruthy();
+  });
+
+  it("is not asked when what is waiting cannot be read", async () => {
+    chainBox = 100_000_000n;
+    card(accepted(), { numbers: pairNumbers });
+    const button = await screen.findByTestId("task-pay");
+    logsFail = true;
+    fireEvent.click(button);
+    await screen.findByTestId("task-pay-problem");
+    expect(sent).toHaveLength(0);
+  });
+});
+
+describe("a payment kept for another task", () => {
+  it("is never offered for this one", async () => {
+    chainBox = 100_000_000n;
+    // Another task of the same worker, same wallet and same pay was paid; its record has not reached the server yet.
+    rememberPaid({ task: OTHER_TASK, handIn: PIECE, txHash: FOUND_TX, at: 1 });
+    logs = [drawLog(PAYEE, 40_000_000n, FOUND_TX)];
+    card(accepted());
+    expect(await screen.findByTestId("task-pay")).toBeTruthy();
+    // The press shows at once; the search for an earlier payment answers a moment later.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.queryByTestId("task-pay-found")).toBeNull();
+    expect(screen.getByTestId("task-pay")).toBeTruthy();
   });
 });

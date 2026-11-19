@@ -144,13 +144,21 @@ describe("the calls waiting for the second signer", () => {
         nameOf={nameOf}
         numbers={numbers}
         tasksFor={(payee, raw) =>
-          payee === BACKER_EVM && raw === 12n * D ? ["Translate the guide"] : []
+          payee === BACKER_EVM && raw === 12n * D
+            ? [
+                {
+                  name: "Translate the guide",
+                  acceptedBy: "Sam",
+                  takenBy: "Pat",
+                },
+              ]
+            : []
         }
       />,
     );
     const terms = await screen.findByTestId("pair-terms");
     expect(terms.textContent).toBe(
-      `Draw 12 dollars from the allowance box to Anna (${BACKER_EVM}), the pay for the task "Translate the guide".`,
+      `Draw 12 dollars from the allowance box to Anna (${BACKER_EVM}), the pay for the task "Translate the guide" (accepted by Sam, taken by Pat), as the project's page records it.`,
     );
     fireEvent.click(screen.getByTestId("pair-review"));
     expect((await screen.findByTestId("pair-sheet-terms")).textContent).toBe(

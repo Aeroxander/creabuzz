@@ -159,7 +159,7 @@ test("the runner winds a project down: two presses, one signature, what it does 
   );
 });
 
-test("after half a year of quiet anyone may wind a project down, and the sheet says why", async ({
+test("after a long quiet (26 time units, 12 hours here) anyone may wind a project down, and the sheet says why", async ({
   page,
 }) => {
   const w = world.get();
@@ -172,7 +172,7 @@ test("after half a year of quiet anyone may wind a project down, and the sheet s
     account: w.who.stranger,
   });
   await expect(page.getByTestId("seat-quiet")).toContainText(
-    "quiet for about half a year, so anyone can wind the project down",
+    "quiet for about 12 hours, so anyone can wind the project down",
   );
   // Not the runner: no runner buttons.
   await expect(page.getByTestId("seat-runner")).toHaveCount(0);
