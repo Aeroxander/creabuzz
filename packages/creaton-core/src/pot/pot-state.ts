@@ -270,6 +270,18 @@ export interface LaunchOffer {
   maxTeamPool: bigint;
   /** A Team Share helper's daily limit is the pool divided by this. */
   agentShareDiv: bigint;
+  /** The rules every project is born with, read from the contracts a project is cloned from (no copy of them lives here). */
+  rules: {
+    /** The smallest amount that can back, in dollar units. */
+    minJoin: bigint;
+    /** Time units without a check-in before new backing and the allowance stop. */
+    checkInUnits: number;
+    /** Time units without a check-in before anyone may wind the project down. */
+    windDownUnits: number;
+    /** Time units before a Team grant starts to unlock, and in all until it has unlocked. */
+    cliffUnits: number;
+    vestUnits: number;
+  };
 }
 
 /** The Launcher's settings, hash and ceilings at the chain's latest block. */
@@ -277,12 +289,24 @@ export async function readLaunchOffer(
   read: ReadCall,
   launcher: string,
 ): Promise<LaunchOffer> {
-  const [hash, platform, maxRate, maxPool, agentDiv] = await Promise.all([
-    one(read, LAUNCHER_ABI, launcher, "settingsHash"),
-    ask(read, LAUNCHER_ABI, launcher, "platform", []),
-    one(read, LAUNCHER_ABI, launcher, "MAX_RATE_PPM"),
-    one(read, LAUNCHER_ABI, launcher, "MAX_TEAM_POOL"),
-    one(read, LAUNCHER_ABI, launcher, "AGENT_SHARE_DIV"),
+  const [hash, platform, maxRate, maxPool, agentDiv, treasuryImpl, vesterImpl] =
+    await Promise.all([
+      one(read, LAUNCHER_ABI, launcher, "settingsHash"),
+      ask(read, LAUNCHER_ABI, launcher, "platform", []),
+      one(read, LAUNCHER_ABI, launcher, "MAX_RATE_PPM"),
+      one(read, LAUNCHER_ABI, launcher, "MAX_TEAM_POOL"),
+      one(read, LAUNCHER_ABI, launcher, "AGENT_SHARE_DIV"),
+      one(read, LAUNCHER_ABI, launcher, "treasuryImpl"),
+      one(read, LAUNCHER_ABI, launcher, "vesterImpl"),
+    ]);
+  const treasuryCode = asAddress(treasuryImpl);
+  const vesterCode = asAddress(vesterImpl);
+  const [minJoin, checkIn, windDown, cliff, vest] = await Promise.all([
+    one(read, TREASURY_ABI, treasuryCode, "MIN_JOIN"),
+    one(read, TREASURY_ABI, treasuryCode, "CHECK_IN_MULT"),
+    one(read, TREASURY_ABI, treasuryCode, "WIND_MULT"),
+    one(read, VESTER_ABI, vesterCode, "CLIFF_MULT"),
+    one(read, VESTER_ABI, vesterCode, "VEST_MULT"),
   ]);
   if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(hash))
     throw new Error("A settings hash was expected.");
@@ -296,6 +320,13 @@ export async function readLaunchOffer(
     maxRatePpm: asNumber(maxRate),
     maxTeamPool: asBigint(maxPool),
     agentShareDiv: asBigint(agentDiv),
+    rules: {
+      minJoin: asBigint(minJoin),
+      checkInUnits: asNumber(checkIn),
+      windDownUnits: asNumber(windDown),
+      cliffUnits: asNumber(cliff),
+      vestUnits: asNumber(vest),
+    },
   };
 }
 

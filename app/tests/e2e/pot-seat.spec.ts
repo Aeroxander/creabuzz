@@ -93,6 +93,9 @@ test("the runner winds a project down: two presses, one signature, what it does 
     `${FOUNDER_NAME} runs the project's money`,
   );
   await expectAccessible(page, "Who runs the money, runner");
+  await page.getByTestId("seat-section").screenshot({
+    path: "test-results/pot-screens/seat-section.png",
+  });
   const path = new PressCounter();
   await path.press(page.getByTestId("seat-wind-down"), "Wind down");
   const sheet = page.getByTestId("wind-down-sheet");
@@ -113,6 +116,9 @@ test("the runner winds a project down: two presses, one signature, what it does 
     "Buyers acquire ownership only: governance and exit.",
   );
   await expectAccessible(page, "Wind down sheet");
+  await page.screenshot({
+    path: "test-results/pot-screens/wind-down-sheet.png",
+  });
   await path.read(page, "the wind-down sheet");
   expect(wallet.prompts).toBe(0);
   await path.press(

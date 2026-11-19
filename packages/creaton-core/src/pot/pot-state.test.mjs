@@ -152,6 +152,13 @@ test("the launch offer reads the settings hash, the platform's limits and the tw
     MAX_RATE_PPM: [2000n],
     MAX_TEAM_POOL: [100_000_000n * 10n ** 18n],
     AGENT_SHARE_DIV: [1000n],
+    treasuryImpl: [VESTER],
+    vesterImpl: [TREASURY],
+    MIN_JOIN: [1_000_000n],
+    CHECK_IN_MULT: [2n],
+    WIND_MULT: [26n],
+    CLIFF_MULT: [13n],
+    VEST_MULT: [104n],
   });
   // `platform` has five answers on the Launcher and one on the Treasury: the stand-in answers the Launcher's here.
   const platformWords = [
@@ -173,6 +180,13 @@ test("the launch offer reads the settings hash, the platform's limits and the tw
     maxRatePpm: 2000,
     maxTeamPool: 100_000_000n * 10n ** 18n,
     agentShareDiv: 1000n,
+    rules: {
+      minJoin: 1_000_000n,
+      checkInUnits: 2,
+      windDownUnits: 26,
+      cliffUnits: 13,
+      vestUnits: 104,
+    },
   });
   await assert.rejects(() => state.readLaunchOffer(async () => "0x", ME));
   const short = fakeChain({ settingsHash: ["0x1234"] });

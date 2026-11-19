@@ -334,6 +334,7 @@ test("the launch card and sheet are reachable by keyboard, Escape closes the she
   const opener = page.getByTestId("launch-open");
   await expect(opener).toBeVisible();
   await expectAccessible(page, "Launch card");
+  await page.screenshot({ path: "test-results/pot-screens/launch-card.png" });
   await expectNoSidewaysScroll(page, "Launch card, 360");
   await opener.focus();
   await page.keyboard.press("Enter");
@@ -341,6 +342,13 @@ test("the launch card and sheet are reachable by keyboard, Escape closes the she
   await expect(sheet).toBeVisible();
   await expect(page.getByTestId("launch-limits")).toBeVisible();
   await expectAccessible(page, "Launch sheet");
+  await page.screenshot({ path: "test-results/pot-screens/launch-sheet.png" });
+  await sheet.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  await page.screenshot({
+    path: "test-results/pot-screens/launch-sheet-end.png",
+  });
   await expectNoSidewaysScroll(page, "Launch sheet, 360");
   // Tab stays inside the sheet.
   for (let i = 0; i < 25; i += 1) {
