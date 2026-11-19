@@ -36,6 +36,7 @@ export default defineConfig({
         "**/a11y-team.spec.ts",
         "**/market.spec.ts",
         "**/tasks.spec.ts",
+        "**/manager.spec.ts",
       ],
     },
     {

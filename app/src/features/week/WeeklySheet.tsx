@@ -3,6 +3,7 @@ import { Button } from "../../ui/button";
 import { TextArea } from "../../ui/field";
 import { Sheet } from "../../ui/sheet";
 import { useToast } from "../../ui/toast";
+import { ManagerPanel } from "../manager/ManagerPanel";
 import { checkInCall } from "../money/calls";
 import { moneyProblem } from "../money/money-copy";
 import type { ProjectNumbers } from "../money/numbers";
@@ -143,6 +144,13 @@ export function WeeklySheet({
             placeholder="For example: shipped the sign-up page and talked to five people who would use it."
             rows={4}
             value={text}
+          />
+        )}
+        {posted ? null : (
+          <ManagerPanel
+            max={WEEKLY_MAX}
+            onUse={(drafted) => setText(drafted)}
+            project={project}
           />
         )}
         {problem ? (
