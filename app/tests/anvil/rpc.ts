@@ -5,6 +5,7 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { encodeParameters } from "../../../packages/creaton-core/src/launchpad/evmAbi.ts";
 import type { Eip1193Provider } from "../../src/features/money/wallet";
 
@@ -50,7 +51,10 @@ export function providerFor(account: string): Eip1193Provider {
   };
 }
 
-const OUT = resolve(__dirname, "../../../contracts/next/out");
+const OUT = resolve(
+  fileURLToPath(new URL(".", import.meta.url)),
+  "../../../contracts/next/out",
+);
 
 /** A contract's creation code from the build. */
 export function creationCode(artifact: string): string {

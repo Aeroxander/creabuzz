@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# The phone path in a real browser. Starts a throwaway anvil, builds the app with the phone settings (to
+# app/node_modules/.phone-dist, never the normal build), and runs app/tests/e2e/phone-back.spec.ts with Playwright: a
+# browser with no wallet signs up with a passkey (Chrome's virtual authenticator) and backs a project on the local chain
+# from its passkey account, through a stand-in bundler and sponsor. Prints the presses and passkey prompts of the Back.
+#
+# Needs: anvil on PATH (or ANVIL=/path/to/anvil), node and pnpm, contracts/next/out built, Playwright's Chromium.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ANVIL="${ANVIL:-anvil}"
+fail() { echo "phone-e2e: $*" >&2; exit 1; }
+command -v "$ANVIL" >/dev/null 2>&1 || fail "anvil not found (set ANVIL)"
+[[ -f "$ROOT/contracts/next/out/Launcher.sol/Launcher.json" ]] || fail "contracts/next/out is not built"
+
+free_port() { node -e 'const s=require("net").createServer();s.listen(0,()=>{console.log(s.address().port);s.close()})'; }
+
+STATE="$(mktemp -d)"
+ANVIL_PID=""
+cleanup() {
+  [[ -n "$ANVIL_PID" ]] && kill "$ANVIL_PID" 2>/dev/null || true
+  rm -rf "$STATE" "$ROOT/app/node_modules/.phone-dist"
+}
+trap cleanup EXIT
+
+PORT="$(free_port)"; BUNDLER_PORT="$(free_port)"; PREVIEW_PORT="$(free_port)"
+RPC="http://127.0.0.1:$PORT"
+"$ANVIL" --port "$PORT" --chain-id 31337 --gas-limit 100000000 --prune-history --cache-path "$STATE/anvil-cache" \
+  --silent >"$STATE/anvil.log" 2>&1 &
+ANVIL_PID=$!
+for _ in $(seq 1 60); do
+  curl -s -X POST -H 'content-type: application/json' \
+    --data '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' "$RPC" >/dev/null 2>&1 && break
+  sleep 0.5
+done
+
+cd "$ROOT/app"
+# Settings by name only; the values are this run's own local addresses.
+VITE_CREATON_PASSKEY_ACCOUNT=1 VITE_CREATON_CHAIN_ID=31337 VITE_CREATON_RPC_URL="$RPC" \
+  VITE_CREATON_BUNDLER_URL="http://127.0.0.1:$BUNDLER_PORT" \
+  pnpm exec vite build --outDir node_modules/.phone-dist --emptyOutDir >/dev/null
+M7_ANVIL_RPC="$RPC" PHONE_E2E_BUNDLER_PORT="$BUNDLER_PORT" E2E_PORT="$PREVIEW_PORT" \
+  pnpm exec playwright test --config playwright.phone.config.ts "$@"

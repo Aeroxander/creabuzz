@@ -10,10 +10,14 @@
  */
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { encodeParameters } from "../../../packages/creaton-core/src/launchpad/evmAbi.ts";
 import { deploy, rpc, send } from "./rpc";
 
-const FIXTURES = resolve(__dirname, "fixtures");
+const FIXTURES = resolve(
+  fileURLToPath(new URL(".", import.meta.url)),
+  "fixtures",
+);
 const CREATE2_DEPLOYER = "0x4e59b44847b379578588920ca78fbf26c0b4956c";
 export const ENTRY_POINT = "0x0000000071727de22e5e9d8baf0edac6f37da032";
 
