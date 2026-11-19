@@ -81,7 +81,7 @@ async fn a_fee_collected_by_someone_else_drops_the_job_without_a_failed_attempt(
     let treasury = [0x22; 20];
     let job = Job {
         key: format!("fees:{}", Uuid::new_v4().simple()),
-        call: HelperCall::TreasurySweepFees { treasury },
+        call: HelperCall::TreasuryCollectFees { treasury },
         project_key: [0x33; 32],
         due_block: 1,
         repeats: true,

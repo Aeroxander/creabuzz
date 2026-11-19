@@ -237,11 +237,11 @@ for _ in $(seq 1 120); do
   mine 1; sleep 1
 done
 [[ -n "$COLLECTED" ]] || { grep -i "helper" "$STATE/relay.log" | tail -10 >&2; psql "$DB_URL" -Atc "select call, state, last_error from chain_helper_jobs" >&2; fail "the helper did not collect the platform's fee"; }
-FEE_TX="$(psql "$DB_URL" -Atc "select '0x' || encode(tx_hash, 'hex') from chain_helper_jobs where call = 'treasury.sweepFees' and state in ('sent','done') order by id limit 1")"
+FEE_TX="$(psql "$DB_URL" -Atc "select '0x' || encode(tx_hash, 'hex') from chain_helper_jobs where call = 'treasury.collectFees' and state in ('sent','done') order by id limit 1")"
 [[ "$(cast tx --rpc-url "$RPC" "$FEE_TX" from | tr 'A-F' 'a-f')" == "$HELPER" ]] || fail "the fee was not collected from the helper's address"
 ok "the helper collected the platform's fee (3 play dollars) from its own address, with nobody pressing"
 # It never sent anything it must not: only its two allowed calls are in its jobs, and every transaction from its address is one of them.
-WRONG="$(psql "$DB_URL" -Atc "select count(*) from chain_helper_jobs where call not in ('treasury.sweepFees', 'treasury.release')")"
+WRONG="$(psql "$DB_URL" -Atc "select count(*) from chain_helper_jobs where call not in ('treasury.collectFees', 'treasury.settle')")"
 expect_eq "jobs of any other call" "$WRONG" 0
 SENT="$(psql "$DB_URL" -Atc "select count(*) from chain_helper_sends")"
 expect_eq "transactions from the helper's address" "$(cast nonce --rpc-url "$RPC" "$HELPER")" "$SENT"

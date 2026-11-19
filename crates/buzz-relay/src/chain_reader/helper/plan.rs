@@ -69,7 +69,7 @@ pub fn plan(key: &Word, logs: &[LogRow], ctx: &PlanContext) -> anyhow::Result<Ve
         if let Some(due_block) = last_block(logs, "Joined") {
             jobs.push(Job {
                 key: format!("fees:{}:{}", ledger.contracts.treasury, ctx.time / WEEK),
-                call: HelperCall::TreasurySweepFees { treasury },
+                call: HelperCall::TreasuryCollectFees { treasury },
                 project_key: *key,
                 due_block,
                 repeats: true,
@@ -87,7 +87,7 @@ pub fn plan(key: &Word, logs: &[LogRow], ctx: &PlanContext) -> anyhow::Result<Ve
                     "settle:{}:{}",
                     ledger.contracts.treasury, ledger.arrival_end
                 ),
-                call: HelperCall::TreasuryRelease { treasury },
+                call: HelperCall::TreasurySettle { treasury },
                 project_key: *key,
                 due_block,
                 repeats: false,
@@ -115,7 +115,10 @@ mod tests {
         let rows = fx.rows("A", block);
         let jobs = plan(&key, &rows, &ctx(block, fx.time_of(block))).expect("plans");
         assert_eq!(jobs.len(), 1, "{jobs:?}");
-        assert!(matches!(jobs[0].call, HelperCall::TreasurySweepFees { .. }));
+        assert!(matches!(
+            jobs[0].call,
+            HelperCall::TreasuryCollectFees { .. }
+        ));
         assert!(jobs[0].repeats);
         assert!(jobs[0]
             .key
@@ -146,11 +149,11 @@ mod tests {
         let before = plan(&key, &rows, &ctx(block, ledger.arrival_end - 1)).expect("plans");
         assert!(before
             .iter()
-            .all(|j| !matches!(j.call, HelperCall::TreasuryRelease { .. })));
+            .all(|j| !matches!(j.call, HelperCall::TreasurySettle { .. })));
         let after = plan(&key, &rows, &ctx(block, ledger.arrival_end)).expect("plans");
         let settle: Vec<_> = after
             .iter()
-            .filter(|j| matches!(j.call, HelperCall::TreasuryRelease { .. }))
+            .filter(|j| matches!(j.call, HelperCall::TreasurySettle { .. }))
             .collect();
         assert_eq!(settle.len(), 1);
         assert!(!settle[0].repeats);

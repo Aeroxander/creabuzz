@@ -9,12 +9,9 @@
 //! allowance, a claim of a member's Team Shares, a join, a grant, a rate
 //! change, a wind-down, anything a runner, a Pair or the Launcher's admin signs.
 //!
-//! The stored names are the two the database's closed list
-//! (`chain_helper_jobs.call`, migration 0066) still allows; they keep their
-//! old names and now mean: `treasury.sweepFees` is `Treasury.collectFees()`
-//! (the platform's owed fee goes to the platform) and `treasury.release` is
-//! `Treasury.settle()` (the allowance and the arriving money are worked out).
-//! A migration that widens the list would let the other calls anyone may make
+//! The stored names (`chain_helper_jobs.call`, whose list the database closes,
+//! migration 0070) are `treasury.collectFees` and `treasury.settle`. A migration
+//! that widens the list is what lets the other calls anyone may make
 //! (`applyRate()`, `Vester.execute(id)`, `Vester.burnAfterWindDown(id)`,
 //! `Treasury.windDown()` after 26 quiet units) be added here: see
 //! `docs/next-version/READER-V2-REPORT.md`.
@@ -27,14 +24,14 @@ use serde_json::{json, Value};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HelperCall {
     /// `Treasury.collectFees()`: the platform's owed fee goes to the
-    /// platform. Stored as `treasury.sweepFees`.
-    TreasurySweepFees {
+    /// platform. Stored as `treasury.collectFees`.
+    TreasuryCollectFees {
         /// The project's Treasury.
         treasury: [u8; 20],
     },
     /// `Treasury.settle()`: works out the allowance and moves outside money
-    /// that has arrived into the pot. Stored as `treasury.release`.
-    TreasuryRelease {
+    /// that has arrived into the pot. Stored as `treasury.settle`.
+    TreasurySettle {
         /// The project's Treasury.
         treasury: [u8; 20],
     },
@@ -44,9 +41,10 @@ pub enum HelperCall {
 /// compare the selectors [`HelperCall`] can produce with this list exactly.
 pub const ALLOWED: [&str; 2] = ["collectFees()", "settle()"];
 
-/// The names stored in `chain_helper_jobs.call` (the migration's CHECK list
-/// allows these among others).
-pub const NAMES: [&str; 2] = ["treasury.sweepFees", "treasury.release"];
+/// The names stored in `chain_helper_jobs.call` (the database's CHECK list,
+/// migration 0070, allows exactly these and the retired names of the old
+/// contracts' calls, which are only history).
+pub const NAMES: [&str; 2] = ["treasury.collectFees", "treasury.settle"];
 
 /// The share of the daily gas and spend caps the calls may use (nothing the
 /// helper sends blocks a person's money, which can always be taken out
@@ -56,7 +54,7 @@ pub const ROUTINE_SHARE_PERCENT: u128 = 50;
 /// The order of a stored call in a pass (lower first).
 pub fn priority_of(name: &str) -> u8 {
     match name {
-        "treasury.release" => 0,
+        "treasury.settle" => 0,
         _ => 1,
     }
 }
@@ -76,24 +74,24 @@ impl HelperCall {
     /// The stored name (`<contract>.<function>`).
     pub fn name(&self) -> &'static str {
         match self {
-            HelperCall::TreasurySweepFees { .. } => "treasury.sweepFees",
-            HelperCall::TreasuryRelease { .. } => "treasury.release",
+            HelperCall::TreasuryCollectFees { .. } => "treasury.collectFees",
+            HelperCall::TreasurySettle { .. } => "treasury.settle",
         }
     }
 
     /// The Solidity signature of the function called.
     pub fn signature(&self) -> &'static str {
         match self {
-            HelperCall::TreasurySweepFees { .. } => "collectFees()",
-            HelperCall::TreasuryRelease { .. } => "settle()",
+            HelperCall::TreasuryCollectFees { .. } => "collectFees()",
+            HelperCall::TreasurySettle { .. } => "settle()",
         }
     }
 
     /// The contract called.
     pub fn target(&self) -> [u8; 20] {
         match self {
-            HelperCall::TreasurySweepFees { treasury }
-            | HelperCall::TreasuryRelease { treasury } => *treasury,
+            HelperCall::TreasuryCollectFees { treasury }
+            | HelperCall::TreasurySettle { treasury } => *treasury,
         }
     }
 
@@ -113,8 +111,8 @@ impl HelperCall {
     /// as failed, never sent.
     pub fn parse(name: &str, target: [u8; 20], _args: &Value) -> anyhow::Result<Self> {
         Ok(match name {
-            "treasury.sweepFees" => HelperCall::TreasurySweepFees { treasury: target },
-            "treasury.release" => HelperCall::TreasuryRelease { treasury: target },
+            "treasury.collectFees" => HelperCall::TreasuryCollectFees { treasury: target },
+            "treasury.settle" => HelperCall::TreasurySettle { treasury: target },
             other => bail!("unknown helper call {other:?}"),
         })
     }
@@ -130,8 +128,8 @@ impl HelperCall {
     /// collected the fee first.
     pub fn nothing_to_do_errors(&self) -> &'static [&'static str] {
         match self {
-            HelperCall::TreasurySweepFees { .. } => &["NothingToPay()"],
-            HelperCall::TreasuryRelease { .. } => &[],
+            HelperCall::TreasuryCollectFees { .. } => &["NothingToPay()"],
+            HelperCall::TreasurySettle { .. } => &[],
         }
     }
 }

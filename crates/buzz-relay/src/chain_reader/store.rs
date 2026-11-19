@@ -15,7 +15,6 @@ use super::events::Role;
 use super::ledger::LogRow;
 use super::source::Header;
 use super::word::Word;
-use buzz_evm_allowance::abi::keccak256;
 
 /// A contract the reader follows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -175,31 +174,11 @@ pub async fn block(pool: &PgPool, reader: &str, number: u64) -> anyhow::Result<O
     .transpose()
 }
 
-/// The role text `chain_contracts` keeps for `role`. That table's role list is
-/// closed by a database constraint (migrations 0065 and 0066) that has no
-/// `team`, so both of a project's Share tokens are kept as `shares`; which one
-/// is the Team Shares token is told by the project's own `ProjectLaunched` row
-/// (`project.team`), see [`contracts`]. (Logs keep the real role: the log
-/// table's role column has no constraint.)
-fn contract_role(role: Role) -> &'static str {
-    match role {
-        Role::Team => Role::Shares.as_str(),
-        other => other.as_str(),
-    }
-}
-
 /// Every contract the reader follows.
 pub async fn contracts(pool: &PgPool, reader: &str) -> anyhow::Result<Vec<Contract>> {
     let rows = sqlx::query(
-        "SELECT c.address, \
-                CASE WHEN c.role = 'shares' AND EXISTS ( \
-                         SELECT 1 FROM chain_logs l \
-                         WHERE l.reader = c.reader AND l.project_key = c.project_key \
-                           AND l.role = 'launcher' AND l.event = 'ProjectLaunched' \
-                           AND l.decoded->'project'->>'team' = '0x' || encode(c.address, 'hex')) \
-                     THEN 'team' ELSE c.role END AS role, \
-                c.project_key, c.from_block \
-         FROM chain_contracts c WHERE c.reader = $1 ORDER BY c.from_block, c.address",
+        "SELECT address, role, project_key, from_block \
+         FROM chain_contracts WHERE reader = $1 ORDER BY from_block, address",
     )
     .bind(reader)
     .fetch_all(pool)
@@ -283,7 +262,7 @@ pub async fn commit_range(pool: &PgPool, reader: &str, w: RangeWrite<'_>) -> any
         )
         .bind(reader)
         .bind(c.address.as_slice())
-        .bind(contract_role(c.role))
+        .bind(c.role.as_str())
         .bind(c.project_key.as_ref().map(|k| k.as_slice()))
         .bind(i64_of(c.from_block)?)
         .execute(&mut *tx)
@@ -334,29 +313,31 @@ pub async fn commit_range(pool: &PgPool, reader: &str, w: RangeWrite<'_>) -> any
         if inserted == 0 {
             continue;
         }
-        if let Some((key, moves)) = balance_moves(l) {
+        if let Some((key, token, moves)) = balance_moves(l) {
             for (account, delta) in moves {
                 sqlx::query(
                     "INSERT INTO chain_balance_changes \
-                         (reader, block_number, log_index, account, project_key, delta) \
-                     VALUES ($1, $2, $3, $4, $5, $6::numeric)",
+                         (reader, block_number, log_index, account, project_key, token, delta) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7::numeric)",
                 )
                 .bind(reader)
                 .bind(i64_of(l.block_number)?)
                 .bind(i32::try_from(l.log_index).context("log index")?)
                 .bind(account.as_slice())
                 .bind(key.as_slice())
+                .bind(token)
                 .bind(&delta)
                 .execute(&mut *tx)
                 .await?;
                 sqlx::query(
-                    "INSERT INTO chain_balances (reader, project_key, account, balance) \
-                     VALUES ($1, $2, $3, $4::numeric) \
-                     ON CONFLICT (reader, project_key, account) \
+                    "INSERT INTO chain_balances (reader, project_key, token, account, balance) \
+                     VALUES ($1, $2, $3, $4, $5::numeric) \
+                     ON CONFLICT (reader, project_key, token, account) \
                      DO UPDATE SET balance = chain_balances.balance + EXCLUDED.balance",
                 )
                 .bind(reader)
                 .bind(key.as_slice())
+                .bind(token)
                 .bind(account.as_slice())
                 .bind(&delta)
                 .execute(&mut *tx)
@@ -409,9 +390,10 @@ pub async fn rollback(
     // must find its row to subtract from, and `balances` leaves zeros out.
     sqlx::query(
         "UPDATE chain_balances b SET balance = b.balance - c.total \
-         FROM (SELECT project_key, account, sum(delta) AS total FROM chain_balance_changes \
-               WHERE reader = $1 AND block_number > $2 GROUP BY project_key, account) c \
-         WHERE b.reader = $1 AND b.project_key = c.project_key AND b.account = c.account",
+         FROM (SELECT project_key, token, account, sum(delta) AS total FROM chain_balance_changes \
+               WHERE reader = $1 AND block_number > $2 GROUP BY project_key, token, account) c \
+         WHERE b.reader = $1 AND b.project_key = c.project_key AND b.token = c.token \
+           AND b.account = c.account",
     )
     .bind(reader)
     .bind(fork_i)
@@ -535,37 +517,19 @@ pub async fn project_logs(
         .collect()
 }
 
-/// The key a token's running balances are stored under in `chain_balances`
-/// and `chain_balance_changes`, whose rows have no token column: backer Shares
-/// under the project's key itself, Team Shares under a key derived from it
-/// (`keccak256("team-shares" || key)`), so the two tokens' balances of one
-/// project never meet. A column would say the same thing more plainly; the
-/// tables are shared with other tracks' migrations, so this reader keeps the
-/// distinction in the key (see the report).
-fn balance_key(role: Role, key: &Word) -> Word {
-    match role {
-        Role::Team => {
-            let mut preimage = b"team-shares".to_vec();
-            preimage.extend_from_slice(key);
-            keccak256(&preimage)
-        }
-        _ => *key,
-    }
-}
-
-/// A balance row's key and the balance changes (account, signed decimal) of
-/// one log.
-type BalanceMoves = (Word, Vec<([u8; 20], String)>);
+/// A balance row's project key, token (`shares` or `team`) and the balance
+/// changes (account, signed decimal) of one log.
+type BalanceMoves = (Word, &'static str, Vec<([u8; 20], String)>);
 
 /// The token moves a stored log makes: for a `Transfer` of backer Shares or of
 /// Team Shares, the sender's and the receiver's changes as decimal text, under
-/// that token's balance key (the zero address, mint and burn, is not an
-/// account).
+/// the project's key and that token (the zero address, mint and burn, is not
+/// an account).
 fn balance_moves(l: &StoredLog) -> Option<BalanceMoves> {
     if !matches!(l.role, Role::Shares | Role::Team) || l.event != "Transfer" {
         return None;
     }
-    let key = balance_key(l.role, &l.project_key?);
+    let key = l.project_key?;
     let addr = |name: &str| {
         l.decoded
             .get(name)
@@ -583,7 +547,7 @@ fn balance_moves(l: &StoredLog) -> Option<BalanceMoves> {
             moves.push((to, value));
         }
     }
-    Some((key, moves))
+    Some((key, l.role.as_str(), moves))
 }
 
 /// A project's token balances per account as of `final_block` (lower-case `0x`
@@ -597,16 +561,16 @@ pub async fn balances(
     role: Role,
     final_block: u64,
 ) -> anyhow::Result<HashMap<String, i128>> {
-    let key = balance_key(role, key);
     let rows: Vec<(Vec<u8>, String)> = sqlx::query_as(
         "SELECT b.account, (b.balance - COALESCE((SELECT sum(c.delta) FROM chain_balance_changes c \
                  WHERE c.reader = b.reader AND c.project_key = b.project_key \
-                   AND c.account = b.account AND c.block_number > $3), 0))::text \
-         FROM chain_balances b WHERE b.reader = $1 AND b.project_key = $2",
+                   AND c.token = b.token AND c.account = b.account AND c.block_number > $3), 0))::text \
+         FROM chain_balances b WHERE b.reader = $1 AND b.project_key = $2 AND b.token = $4",
     )
     .bind(reader)
     .bind(key.as_slice())
     .bind(i64_of(final_block)?)
+    .bind(role.as_str())
     .fetch_all(pool)
     .await?;
     let mut out = HashMap::with_capacity(rows.len());

@@ -16,14 +16,14 @@ const T: [u8; 20] = [0x22; 20];
 /// variant does not compile until it is listed here too.
 pub(crate) fn every_call() -> Vec<HelperCall> {
     vec![
-        HelperCall::TreasurySweepFees { treasury: T },
-        HelperCall::TreasuryRelease { treasury: T },
+        HelperCall::TreasuryCollectFees { treasury: T },
+        HelperCall::TreasurySettle { treasury: T },
     ]
 }
 
 fn exhaustive(call: &HelperCall) {
     match call {
-        HelperCall::TreasurySweepFees { .. } | HelperCall::TreasuryRelease { .. } => {}
+        HelperCall::TreasuryCollectFees { .. } | HelperCall::TreasurySettle { .. } => {}
     }
 }
 

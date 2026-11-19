@@ -3812,6 +3812,9 @@ async fn e_tag_any_runs_with_real_binds_on_p_join_and_count() {
 #[path = "tests/thread_window_postgres_tests.rs"]
 mod thread_window_postgres_tests;
 
+#[path = "tests/chain_team_migration_postgres_tests.rs"]
+mod chain_team_migration_postgres_tests;
+
 /// `insert_event_with_serving_write_guard` indexes mentions in the event's own
 /// transaction, and an indexing failure stays best-effort: the savepoint rolls
 /// back only the mention rows, never the event.

@@ -258,13 +258,13 @@ impl Helper {
             }
         };
         Ok(match &call {
-            HelperCall::TreasurySweepFees { .. } => positive(
+            HelperCall::TreasuryCollectFees { .. } => positive(
                 self.view_uint(&target, view("feesOwed()", &[]), 0).await?,
                 "feesOwed",
             ),
             // The allowance is worked out and arrived outside money moves in
             // when the money is all here and still stored as arriving.
-            HelperCall::TreasuryRelease { .. } => {
+            HelperCall::TreasurySettle { .. } => {
                 let arriving = self.view_uint(&target, view("arriving()", &[]), 0).await?;
                 let end = self
                     .view_uint(&target, view("arrivalEnd()", &[]), 0)

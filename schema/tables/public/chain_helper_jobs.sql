@@ -1,11 +1,14 @@
 -- Calls the chain helper sends (migration 0066): built from final chain rows,
--- each failure leaving a retry record, ending in a terminal state.
+-- each failure leaving a retry record, ending in a terminal state. Since
+-- migration 0070 the calls it builds are 'treasury.collectFees' and
+-- 'treasury.settle'; the other names are history of the old contracts' calls.
 CREATE TABLE chain_helper_jobs (
     id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     reader        TEXT NOT NULL CHECK (octet_length(reader) BETWEEN 1 AND 128),
     job_key       TEXT NOT NULL CHECK (octet_length(job_key) BETWEEN 1 AND 512),
     call          TEXT NOT NULL CHECK (call IN
-                      ('rounds.close', 'rounds.settleMany', 'rounds.release', 'rounds.returnUnsold',
+                      ('treasury.collectFees', 'treasury.settle',
+                       'rounds.close', 'rounds.settleMany', 'rounds.release', 'rounds.returnUnsold',
                        'rounds.sweepFees', 'treasury.sweepFees', 'treasury.release',
                        'finisher.openPool', 'finisher.settle', 'finisher.sweep', 'finisher.abandon',
                        'holder.collect', 'vester.claim', 'earlier.deliverMany')),
