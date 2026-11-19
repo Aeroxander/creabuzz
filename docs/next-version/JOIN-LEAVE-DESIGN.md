@@ -1,6 +1,6 @@
 # Creaton: back fast, take out any day (design and build spec)
 
-Status: a design. **Nothing in it is built, and nothing will be built until the owner says go.** First written 19 November
+Status: a design. **Nothing in it is built yet. Building starts in the order of section 8 under the owner's standing go (keep working, no questions); the owner may overrule any choice in section 11 at any time.** First written 19 November
 2026 on branch `v6`, after the owner's words of that day (join quickly, leave easily, one treasury, a daily allowance,
 tasks with a notice window, founder and team Shares that vest and can leave). Revised the same day after three
 independent reviews (an attack on the money rules, a check against the built code, a check against the owner's
