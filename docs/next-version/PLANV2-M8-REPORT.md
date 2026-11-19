@@ -88,7 +88,7 @@ through. That is why every answer says it can be wrong and why a person signs.
   asked for at once cannot pass it together (tested). With no prices set the spend cannot be measured and drafts are
   refused (`ai_manager_unmetered`).
 - An operator ceiling in real money (`BUZZ_MANAGER_MAX_CENTS_PER_90_DAYS`) only ever narrows the cap.
-- No new Anthropic API call was written: the manager goes through the existing AI route's gateway client and the operator's
+- No new call to an AI provider was written: the manager goes through the existing AI route's gateway client and the operator's
   OpenAI-compatible service, so the shared pool and its limits apply, and keys come from the environment only.
 
 ## The channel-binding question (MANAGEMENT-LAYER section 9)

@@ -476,7 +476,6 @@ const NEEDS_A_PERSON: &[(&str, &str)] = &[
     ("taxes", "tax"),
     ("irs", "tax"),
     ("accountant", "tax"),
-    ("83(b)", "tax"),
     ("securities", "sale terms"),
     ("security token", "sale terms"),
     ("token sale", "sale terms"),
