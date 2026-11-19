@@ -7,6 +7,8 @@ Pair, Launcher, wind-down, agents) and C (invariants, fuzz, vectors, deploy scri
 `scripts/pot-chain-loop.sh`. Nothing is pushed, and no network has these contracts. This is not legal or tax advice, and no figure
 here is a promise of any result for anyone.
 
+**After review (section 7, "Review fixes"):** three independent reviews found two money defects, access gaps and unbound guards; all are fixed or declined with a number in section 7. Numbers below that differ from the current tree (310 tests, 24 mutations, the offset of one dollar and 100 Shares) are the figures of the first build; section 7 has the current ones (339 tests in 36 suites, 40 mutations, an offset of one dollar unit and 1e14 wei).
+
 **Status.** Everything in the scope of step 1 is built and green: `forge build`, `forge test` (310 tests in 30 suites passed, 0 failed), the vector test, the
 mutation check (24 deliberate changes, 24 caught) and the chain loop (17 checks, run on the real bytecode). Pass C found and fixed one defect in the
 contracts (section 4). Commits (pass C): `00382c01a` (the credit fix), `a5e9ea231` (invariants, fuzz, must-bind, rebuild, gas), `5b0b09873` (vectors and the mutation check), `1df69799f` (deploy script, loop, README), and the commit that adds this report; passes A and B are `13dafac86`, `a39354ff9`, `4c20f5089`, `7e3722f22`, `d11d039e4`, `166ad745e`.
@@ -273,3 +275,99 @@ bash scripts/check-vectors.sh                          # the vector file is what
 python3 scripts/check-mutations.py                     # 24 deliberate breaks, each caught
 bash ../../scripts/pot-chain-loop.sh                   # the loop on a local chain (anvil, cast, forge, jq)
 ```
+
+## 7. Review fixes
+
+Three independent reviews read the contracts after pass C (a design review, a money attack review, an access and denial review).
+Each finding that was a concrete defect was first reproduced (every reviewer proof test passed against the unchanged tree, which
+means the exploit worked), then fixed in the contract, then bound by a test that fails without the fix (checked by a deliberate
+change of that line in a scratch copy: `scripts/check-mutations.py`, now 40 changes, 40 caught). No `Review*.t.sol` file is left:
+each proof was turned into a real test or deleted. The reference model and the vectors were changed the same way as the contract.
+
+**Current figures** (tree after the fixes): `forge test` **36 suites, 339 tests passed, 0 failed, 0 skipped**; the round-trip fuzz
+also run at 40,000 runs, passed; `scripts/check-vectors.sh` current (52 scenarios, 1,805 operations, 15,273 numbers compared, worst
+deviation 24% of its allowance); `scripts/check-mutations.py` **40 run, 40 killed, 0 survived**; `scripts/pot-chain-loop.sh` **17 checks
+passed** on the real bytecode; `forge fmt --check src script test` clean.
+
+### 7.1 Fixed
+
+| # | Finding (reviewer) | What changed | Test that binds it (fails without the fix) |
+|---|---|---|---|
+| 1 | **BLOCKER, the quote offset lets a joiner buy below leave-value** (design 1, money 2): with a small project and a small or zero Team pool, one dollar and 100 virtual Shares gave a join-then-take-out +3,632.10 dollars on a 20,000 join (the first backer lost 4,032.10 of 10,000.98), and about 18 dollars over 20 round trips with fee 0 | `PotMath`: the offset is now one dollar *unit* (a millionth of a dollar) and 1e14 wei of Shares (a ten-thousandth of a Share). The first price is still one cent (1 unit per 1e14 wei) and the zero-mint refusal stays; what a round trip can gain is at most the offset's worth at the value of one Share, a few cents even at 100 dollars a Share. **Chosen between the two fixes offered** (design reviewer: real dead Shares funded by the first backer; money reviewer: a smaller offset): the smaller offset, because the first backer then funds nothing extra and every price formula in the design stays as written. The model (`pot_ext.py`) uses the same constants and the vectors were regenerated | `QuoteOffset.t.sol` (six tests: pool 0 tiny project, default pool repeated, fee 0 over 20 round trips of a million, small pools into money already there); `RoundTripFuzz.t.sol` (random states, a dust backer first in a third of the runs, bound `2 + value of a Share / 1e4` units; 40,000 runs); mutations `offset-dollar`, `offset-shares` |
+| 2 | **BLOCKER, a dust backer (1 wei of Shares) makes a whole join count as paid-in** (money 1): +79,803 dollars on a 100,000 join into 1,000,000 of the Team's surplus | `PotMath.credit` is now computed from the same quote that priced the join, for every number of backers: the payment less `n x surplus / (Shares + virtual Shares + Team Shares counted)` rounded up, and with backers also at most `n x paid-in / B` (the cap that was there). The b = 0 special case is the same formula. Model: `credit` in `pot_ext.py` changed the same way | `QuoteOffset.test_aDustBackerCannotTakeTheTeamsSurplus`; `RoundTripFuzz`; mutations `dust-credit`, `empty-credit`, `credit` |
+| 3 | **IMPORTANT, "settle first" unbound on four entry points** (design 2): `leave`, `leaveTeam`, `onTransferReceived`, `addRevenue` | The code was right; the tests are new. `SettleFirst.t.sol` (the reviewer's five proofs, renamed): each acts cold after the clock moved and must equal settle-then-act and equal its quote. The vector replay no longer settles after a `warp`, so every vector join, leave, Team leave, revenue and grant after a warp acts cold; the generator's model does not settle at a warp and the random scenarios decide on a settled copy | `SettleFirst.t.sol`; `ModelVectors`; mutations `settle-leave`, `settle-leave-team`, `settle-pay-and-call`, `settle-revenue` |
+| 4 | **IMPORTANT (small), the vectors bind money formulas, not time rules** (design 3) | Time rules are bound by unit tests, and the mutation script now proves it: cliff 13 to 14, a rate raise waiting half a unit, the rate ceiling 2000 to 2001 are each killed by `Vester.t.sol` / `Allowance.t.sol`. The vectors still do not carry them (stated here and in `model/README.md`) | mutations `cliff`, `raise-wait`, `rate-ceiling` |
+| 5 | **IMPORTANT, Pair proposals never expire** (auth 1): a 500 dollar draw proposed and never cancelled was confirmed by the other signer 52 weeks later | `Pair` stores the proposal time; `confirm` reverts `Expired` after `PROPOSAL_TTL` = 14 days (two time units of a real network, a constant: a Pair does not read the unit). A new proposal of the same call is needed | `Expiry.t.sol` (dies after the window, works at the last second, refused one second later and works again once proposed afresh); mutation `pair-ttl` |
+| 6 | **IMPORTANT, a seat offer can never be withdrawn and never expires** (auth 2) | `handOver(address(0), false)` withdraws the offer; an offer is stamped (`pendingSeatAt`) and `takeSeat` reverts `OfferExpired` after 2 time units. The Launcher's Pair path takes the seat in the acceptance transaction, so it only needs the founder's offer to be at most 2 units old | `Expiry.t.sol` (withdraw, expiry, last second, a new offer restarts the clock, only the runner withdraws); mutations `seat-expiry`, `seat-withdraw` |
+| 7 | **IMPORTANT (money 3), outside money in a project with no Shares and no Team Shares goes to the first backer for one dollar** (+49,999.98 on 50,000) | `addRevenue` reverts `NoOwner` while no backer Share and no Team Share exists | `QuoteOffset.test_outsideMoneyIsRefusedWhileNobodyOwnsAnyShare`; `Revenue.test_revenueBeforeTheFirstBackerIsPricedAtFace` (now with a Team pool); mutation `no-owner` |
+| 8 | OPTIONAL (auth 3), an agent fills a member's 8 grant slots with dust | A grant is at least one whole Team Share (`MIN_GRANT` = 1e18) | `Expiry.test_anAgentCannotFillAMembersGrantSlotsWithDust`, `VesterUnit.test_aGrantIsAtLeastOneWholeTeamShare`; mutation `min-grant` |
+| 9 | OPTIONAL (auth 4), absurd outside money wedges every join of that project (leaving still works) | `addRevenue` reverts `TooMuch` above `MAX_REVENUE` = 1e30 units | `Revenue.test_anAbsurdPaymentIsRefusedInsteadOfWedgingJoins`; mutation `revenue-cap` |
+| 10 | OPTIONAL (auth 5; design 5), the deploy script cast silently and defaulted to the hot sender | `DeployPot.s.sol` requires `UNIT`, `FEE_BPS`, `AGENT_USD` to fit their types, and off chain 31337 and Sepolia requires `PLATFORM` and `ADMIN` to be set (`vm.envAddress` reverts when unset) | the chain loop (test chain: defaults still work); not unit-tested (a script) |
+| 11 | OPTIONAL (auth 6), a wrong `transferAdmin` address bricked the Launcher settings | Two steps: `transferAdmin` offers, `acceptAdmin` by the offered address takes; a new offer replaces the old (event `AdminOffered`) | `Launcher.t.sol` (two tests), `Events.t.sol`; mutation `admin-accept` |
+| 12 | OPTIONAL (design 4), `data.length != 64` unbound | A 65-byte payload is refused in the Join tests | `Join.test_payAndCallNeedsExactlyTheEncodedData`; mutation `data-length` |
+| 13 | OPTIONAL (design 5): `Launcher.launchHash(bytes32)` ignored its argument; redundant `windKind == 0` in `doorOpenNow`; the vector test header named a script that does not exist | `launchHash` removed (`launch` checks `settingsHash()`); `doorOpenNow` relies on `activeEnd()` being zero after a wind-down (a comment says so); the header names `scripts/check-mutations.py` | existing Launcher and WindDown tests |
+| 14 | The invariant handler and the join fuzz bound the holders' loss by "100 Shares' worth" (the reason the suite stayed green under finding 1) | The handler uses `PotMath.OFFSET_SHARES` and `OFFSET_USD`, so its bound is now the real, tiny one | `PotInvariants`, `Join.testFuzz_aJoinMovesHoldersByAtMostTheOffsetBound` |
+
+Other test files made real: `AccessMatrix.t.sol` (the access reviewer's matrix: a stranger, an agent, a lone Pair signer, the runner,
+the Launcher and the Vester reach nothing outside their rights, and no part can be initialised twice; it passed before and after).
+Changed expectations: `Worked.test_worked_2_1_quote` now expects 11,501.7964 Shares (the exact value, 98 / 0.0085204; the old
+11,501.78 carried the large offset); the grant tests use whole Team Shares.
+
+### 7.2 Declined, with a reason and a number
+
+- **Money 4: a bot joins one transaction before a forfeit announce, stays until the burn runs, and takes out** (net +53,483 dollars
+  on a 1,000,000 join, 5.3%, with 9,000,000 of the 10,000,000 Team pool unvested and burning; a join after the announce loses the
+  2% fee, 20,000). Declined: there is no complete fix (the reviewer says so). The price counts a burn from its announcement; any
+  earlier count would price in burns that may never be announced, and a tax on a take-out soon after a join contradicts "no fee,
+  no wait" (design 2.2). It is the same open gap the design admits for outside payments (2.5), larger here because the burn is the
+  whole unvested pool, and it needs a member or both signers to announce while the bot can see it coming. It is written down as
+  `KnownGaps.t.sol`, which asserts the gap is positive and stays under 60,000 on that join, so it cannot grow unseen. A wind-down by
+  choice has the same shape. For the owner and counsel: the options are an announce delay for a choice wind-down with Z set, or
+  accepting it.
+- **Money 3, second form (found again by the 40,000-run fuzz): money nobody owns.** In a project with no Team pool, if the last
+  backer takes out while an outside payment is still arriving, the rest arrives in a project with no holder and goes to the next
+  backer (55,122 dollars to a 100 dollar join in the found run; the money was left behind by the leaver, by the rule that a take-out
+  is paid on what has arrived). No holder loses (there is none), so it is outside "existing holders never lose to a join"; the direct
+  case (a payment into an empty pool-0 project) is refused (7 above). The fuzz skips the state where nobody holds any Share and
+  money is in the pot or arriving, and says so in a comment. A fix (pay the last leaver the arriving part) changes the take-out rule
+  "paid on the pot only"; left to the owner.
+- **Money 5: calling `settle()` every block floors the allowance to zero on a small pot** (a pot under about 43 dollars at 0.1% a
+  day accrues nothing; the loss is under 0.04 dollars a day and costs the caller gas). Declined: not worth a rule.
+- **Money 6, 7, 8 and auth 8 (not bugs):** the faucet is per account (test network only); a first join above about 1.02e10 dollars
+  reverts `TooManyShares` (a design limit); Shares or dollars sent straight to the Treasury are stuck (the sender loses, nobody
+  gains); `draw` and agents are not gated by the check-in window (within the design: the box is at most 7 days).
+- **Auth 7, `leave` will become a reserved keyword** (warning 6335 on solc 0.8.37). The ABI name is the design's name; renaming is an
+  ABI break for the app and server that read these contracts and is decided with the compiler bump, not now.
+- **Design 5, partly:** `Setup.salePath` keeps its old name (renaming it touches every file that builds a `Setup`, with no behaviour
+  change); the Vester's protected grants stay (the step 4 seam, documented, no step 1 call makes one); `PlayDollar.mint` by an admin
+  stays (test network only; the Launcher refuses PlayDollar off chains 31337 and Sepolia); a Team holder still needs two presses
+  (`Vester.claim`, then `leaveTeam`); a pending rate raise is not in `quoteBack` (the app reads `pendingRatePpm`); the model folder
+  holds the outputs of `v4_attacks`, `v4_team` and `v4_fuzz` but not the scripts (copied only, as in D4 for the attack outputs).
+- **Design 4, rounding directions of the allowance accrual, the outside-money release and the first-backer slice** (each at most
+  one unit): not bound by a test of its own; the vectors' 4-units tolerance does not bind them. Left open.
+- **Design 4, `_pull` guards (`got == 0`, `got > amount`) and `onlyVester` on `burnAfterWindDown`:** kept as defence in depth with no
+  test of their own; the first needs a token that delivers more than asked (the mocks cannot), the second is harmless without it.
+
+### 7.3 Still open
+
+- The two declined money points above (the pre-announce join, the orphaned arriving stream in a pool-0 project), for the owner.
+- Suspicions the reviewers left as suspicions: a later outside payment merging into an older stream pushes the older money's arrival
+  later (costs the payer; no profit found); a Pair signer's junk check-ins keep a frozen project active and the door open (the chosen
+  design); a founder can split grants over several addresses so the hand-over trim (which trims only the founder's own address) does not
+  reach them (the design does not say which is meant); a dollar that pauses or blacklists the Treasury would block leaving for
+  everyone (inherent to a single-asset payout).
+- `docs/next-version/JOIN-LEAVE-DESIGN.md` (not in this track's folders) still says "1 dollar and 100 Shares" in 2.1.4 and in the
+  limits table (line 420), and the table label "24 + 3 months" for vesting can be read as 27 months, while the cliff sits inside the
+  104 units (13 units of the 104, as in `model/v4_team.py`). The design text should say "one dollar unit and 1e14 wei".
+- The Launcher's Pair path now needs the founder's offer to the predicted Pair to be at most 2 units old when the second signer accepts.
+
+### 7.4 Chosen under the owner's standing go; the owner may overrule
+
+1. The offset is made small (one dollar unit, 1e14 wei), not replaced by dead Shares (7.1 row 1).
+2. A Pair proposal lives 14 days; a seat offer 2 time units; both are constants, not settings.
+3. A grant is at least one whole Team Share; an outside payment is at most 1e30 units; outside money is refused while nobody owns a
+   Share.
+4. A seat offer is withdrawn with `handOver(address(0), false)` (no new function).
+5. The admin seat changes in two steps.
+6. Off a test network the deploy script demands `PLATFORM` and `ADMIN`.
+7. The two money points in 7.2 are left as known gaps rather than given a new rule.
