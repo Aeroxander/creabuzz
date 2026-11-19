@@ -10,47 +10,9 @@ import {
   PAIR,
   PAIR_READS,
   seedTeam,
+  withSale,
 } from "./helpers/team-world";
 import { createMockRelay } from "./mock-relay";
-
-const AUCTION = "0xa11c000000000000000000000000000000000a11";
-const FLOOR = 31_691_265_005_800n;
-
-/** The one auction, running or settled with its pool open. */
-const withSale = (settled: boolean) => (content: Record<string, unknown>) => ({
-  sale: {
-    auction: AUCTION,
-    minimum: "100000000000",
-    startBlock: "1000",
-    endBlock: "8200",
-    floorPriceQ96: FLOOR.toString(),
-    tickSpacingQ96: (FLOOR / 100n).toString(),
-    openedAt: (content.asOf as { time: number }).time - 3600,
-    ...(settled
-      ? {
-          settled: {
-            raised: "120000000000",
-            afterFee: "116400000000",
-            toTreasury: "90000000000",
-          },
-          pool: {
-            poolId: `0x${"22".repeat(32)}`,
-            sqrtPriceX96: "1584563250285286751870879006720",
-            poolDollars: "26400000000",
-            poolShares: "66000000000000000000000000",
-          },
-        }
-      : {}),
-  },
-  bids: [
-    {
-      auction: AUCTION,
-      count: 5,
-      amount: "120000000000",
-      clearingPriceQ96: (FLOOR * 2n).toString(),
-    },
-  ],
-});
 
 /**
  * axe on Team's screens and sheets (milestone 7), at 390 and 360 wide, light and dark, as `a11y.spec.ts` does for the

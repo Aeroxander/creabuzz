@@ -38,7 +38,10 @@ export default defineConfig({
         "**/tasks.spec.ts",
       ],
     },
-    { name: "screens", testMatch: ["**/screens.spec.ts"] },
+    {
+      name: "screens",
+      testMatch: ["**/screens.spec.ts", "**/screens-team.spec.ts"],
+    },
   ],
   webServer: {
     command: `pnpm exec vite preview --host 127.0.0.1 --port ${PORT} --strictPort`,
