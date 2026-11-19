@@ -11,12 +11,16 @@ Library code is not copied: `lib` is a symlink to `../lib` (forge-std and OpenZe
 | `src/ShareToken.sol` | One token code, two instances: backer Shares and Team Shares. Only the Treasury mints and burns. |
 | `src/PlayDollar.sol` | The dollar of the test network: faucet (1,000 once per account), `transferAndCall`. Test chains only. |
 | `src/Treasury.sol` | The pot: join (Back), leave (Take out), quotes, settle, the daily allowance, check-in, rate, outside money, door, fees. |
+| `src/Vester.sol` | Holds the whole Team pool. Grants with a clock each (active time, cliff 13 units inside 104), claim, forfeit with a notice of one unit, protected grants, the burns after a wind-down. |
+| `src/Pair.sol` | The two-signer runner: every money call needs both, either signer alone may check in, `bothSigned()` is true only while a confirmed proposal runs. |
+| `src/Launcher.sol` | Birth (two tokens, Treasury, Vester as clones), the platform settings and their hash, Pairs, `windDown(key)`. |
+| `src/Parts.sol` | Makes the four implementations the Launcher clones. |
 | `src/PotMath.sol` | The integer formulas the Treasury uses for quotes and actions alike. |
 | `src/RollingCap.sol` | Copied unchanged from `contracts/next`: a limit on use in any stretch of time. |
 | `model/` | The exact-decimal reference model the contracts are tied to by vectors. |
 
-Parked for later passes and steps: Vester, Pair, Launcher, Parts and agents (pass B), invariants, fuzz, vectors and the deploy
-script (pass C), and the task queue, notice, take, accept, return and exit notes (step 2).
+Parked for later passes and steps: invariants, fuzz, vectors and the deploy script (pass C), and the task queue, notice,
+take, accept, return and exit notes (step 2).
 
 ## Run
 
