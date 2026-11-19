@@ -9,13 +9,19 @@ import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
-import { dollarsText, type ProjectNumbers } from "../money/numbers";
+import type { ProjectNumbers } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { type BackRead, readBack } from "./back-read";
 import { rememberStep } from "./own-history";
+import { senderKind } from "../money/wallet";
 import { PotSheet } from "./PotSheet";
 import type { Ready } from "./use-pot";
-import { NOT_A_RETURN, rateWords, sharesWords } from "./pot-words";
+import {
+  NOT_A_RETURN,
+  rateWords,
+  sharesWords,
+  smallDollarsText,
+} from "./pot-words";
 
 /** What a typed amount's fee is as a percent: "2%". */
 function percentWords(bps: number): string {
@@ -84,6 +90,10 @@ export function BackSheet({
   const short = good !== null && good.dollars < (amount ?? 0n);
   const calls = good && !short ? good.plan.calls : null;
   const guard = good?.plan.minShares ?? 0n;
+  const detail =
+    good && amount !== null
+      ? `${amount}:${good.sharesBefore}`.slice(0, 80)
+      : undefined;
 
   let body: React.ReactNode;
   if (reading.isPending)
@@ -115,12 +125,12 @@ export function BackSheet({
           <Line
             label="You pay"
             testId="back-pay"
-            value={`${dollarsText(amount)} dollars`}
+            value={`${smallDollarsText(amount)} dollars`}
           />
           <Line
             label="Fee to the platform, part of that"
             testId="back-fee"
-            value={`${dollarsText(good.fee)} dollars (${percentWords(numbers.feeBps)})`}
+            value={`${smallDollarsText(good.fee)} dollars (${percentWords(numbers.feeBps)})`}
           />
           <Line
             label="You get"
@@ -131,7 +141,7 @@ export function BackSheet({
           <Line
             label="Taking out right now would give you"
             testId="back-now"
-            value={`${dollarsText(good.plan.quote.takeOutNow)} dollars`}
+            value={`${smallDollarsText(good.plan.quote.takeOutNow)} dollars`}
           />
         </dl>
         <p className="text-sm text-muted">{NOT_A_RETURN}</p>
@@ -141,9 +151,9 @@ export function BackSheet({
             data-testid="back-short"
             role="alert"
           >
-            You hold {dollarsText(good.dollars)} play dollars, which is less
-            than the {dollarsText(amount)} this needs. Nothing was taken. Get
-            more play dollars on the project page, or enter less.
+            You hold {smallDollarsText(good.dollars)} play dollars, which is
+            less than the {smallDollarsText(amount)} this needs. Nothing was
+            taken. Get more play dollars on the project page, or enter less.
           </p>
         ) : null}
         <details className="text-sm">
@@ -159,14 +169,14 @@ export function BackSheet({
               Money set aside for tasks:{" "}
               {good.plan.quote.locked === 0n
                 ? "none"
-                : `${dollarsText(good.plan.quote.locked)} dollars`}
+                : `${smallDollarsText(good.plan.quote.locked)} dollars`}
               .
             </li>
             <li data-testid="back-arriving">
               Money from outside still arriving:{" "}
               {good.plan.quote.arriving === 0n
                 ? "none"
-                : `${dollarsText(good.plan.quote.arriving)} dollars`}
+                : `${smallDollarsText(good.plan.quote.arriving)} dollars`}
               .
             </li>
             <li data-testid="back-guard">
@@ -178,7 +188,9 @@ export function BackSheet({
             <li>
               {good.plan.oneSignature
                 ? "This is one signature."
-                : "This is two signatures: one to let the project take the dollars, one to back."}
+                : senderKind(ready.wallet) === "passkey"
+                  ? "Your passkey is asked once, for both steps: letting the project take the dollars, and backing. The server pays the network fee."
+                  : "This is two signatures: one to let the project take the dollars, one to back."}
             </li>
           </ul>
         </details>
@@ -188,19 +200,18 @@ export function BackSheet({
 
   return (
     <PotSheet
+      account={ready.address}
       action={`back:${numbers.chainId}:${treasury}`}
       blocked={short}
       calls={calls}
       chainId={numbers.chainId}
       confirmLabel={
-        amount === null ? "Back" : `Back with ${dollarsText(amount)} dollars`
+        amount === null
+          ? "Back"
+          : `Back with ${smallDollarsText(amount)} dollars`
       }
       description={`Backing ${projectName}`}
-      detail={
-        good && amount !== null
-          ? `${amount}:${good.sharesBefore}`.slice(0, 80)
-          : undefined
-      }
+      detail={detail}
       done="Backed. Your new Shares show on this page."
       landed={async (wallet, from, earlier) => {
         // A call replaced in the wallet may have landed under another hash: the Shares this account holds now say.
@@ -214,8 +225,9 @@ export function BackSheet({
         return now > BigInt(before);
       }}
       lookLabel="Look for your backing"
-      onLanded={(txHash) => {
-        if (good && amount !== null)
+      onLanded={(txHash, landed) => {
+        // An earlier press that was looked up is not this amount: it is not written down as if it were.
+        if (good && amount !== null && landed === detail)
           rememberStep(ready.address, {
             kind: "back",
             project: numbers.key,

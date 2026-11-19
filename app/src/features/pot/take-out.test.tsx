@@ -211,7 +211,9 @@ describe("Team Shares held", () => {
       (await screen.findByTestId("takeout-team-words")).textContent,
     ).toMatch(/estimate/);
     // 2,000 Team Shares at 61 millionths of a dollar each.
-    expect(screen.getByTestId("takeout-cash").textContent).toBe("0.12 dollars");
+    expect(screen.getByTestId("takeout-cash").textContent).toBe(
+      "0.122 dollars",
+    );
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
     const decoded = decodeCall(TREASURY_ABI, chain.sent[0].data);

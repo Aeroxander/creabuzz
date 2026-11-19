@@ -140,3 +140,12 @@ export function doorShutWords(
 export function whenWords(seconds: number): string {
   return timeText(seconds);
 }
+
+/**
+ * What the allowance box holds now, as well as it can be known: the Treasury keeps the box as of its last settle (a draw settles
+ * first, so it can then hold more), and the server's record works it forward to its own time. The larger of the two is what
+ * the screens say; the chain decides when a draw is sent.
+ */
+export function boxNow(numbers: ProjectNumbers, onChain: bigint): bigint {
+  return onChain > numbers.allowance.box ? onChain : numbers.allowance.box;
+}

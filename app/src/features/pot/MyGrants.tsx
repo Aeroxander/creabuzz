@@ -202,6 +202,7 @@ export function MyGrants({
         there is none, they are worth nothing.
       </p>
       <PotSheet
+        account={ready.address}
         action={`grant-${step?.kind ?? "claim"}:${numbers.chainId}:${vester}:${grant?.id ?? ""}`}
         calls={call ? [call] : null}
         chainId={numbers.chainId}

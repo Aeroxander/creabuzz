@@ -5,7 +5,6 @@
  */
 import {
   dayText,
-  dollarsText,
   freshnessOf,
   type ProjectNumbers,
   timeText,
@@ -69,7 +68,7 @@ export function MoneyFacts({
         <Row
           label="The project's money"
           testId="money-pot"
-          value={dollarsText(numbers.money.pot)}
+          value={smallDollarsText(numbers.money.pot)}
         />
         <Row
           label="What one Share gives if taken out now"

@@ -8,9 +8,9 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
 import { parseDollarAmount } from "../money/calls";
-import { dollarsText, type ProjectNumbers } from "../money/numbers";
+import type { ProjectNumbers } from "../money/numbers";
 import { BackSheet } from "./BackSheet";
-import { doorShutWords } from "./pot-words";
+import { doorShutWords, smallDollarsText } from "./pot-words";
 import { type Ready, WalletGate } from "./use-pot";
 
 function amountWords(
@@ -20,7 +20,7 @@ function amountWords(
   if (reason === "empty") return "Say how many dollars.";
   if (reason === "format")
     return "Write a number of dollars, like 25 or 25.50.";
-  return `The smallest amount is ${dollarsText(min)} ${min === 1_000_000n ? "dollar" : "dollars"}.`;
+  return `The smallest amount is ${smallDollarsText(min)} ${min === 1_000_000n ? "dollar" : "dollars"}.`;
 }
 
 function BackForm({
@@ -52,7 +52,7 @@ function BackForm({
         <Field
           autoComplete="off"
           data-testid="backing-amount"
-          hint={`From ${dollarsText(min)} ${min === 1_000_000n ? "dollar" : "dollars"}. There is no most.`}
+          hint={`From ${smallDollarsText(min)} ${min === 1_000_000n ? "dollar" : "dollars"}. There is no most.`}
           inputMode="decimal"
           label="How many dollars?"
           onChange={(event) => setText(event.target.value)}

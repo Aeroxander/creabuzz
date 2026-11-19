@@ -7,6 +7,7 @@ import { type BackPlan, planBack } from "@creaton/core/pot/pot-plans.ts";
 import {
   balanceOf,
   doorOpenNow,
+  dollarHasPayAndCall,
   feeFor,
   type ReadCall,
 } from "@creaton/core/pot/pot-reads.ts";
@@ -36,10 +37,18 @@ export async function readBack(
   account: string,
 ): Promise<BackRead> {
   const { treasury, dollar, shares } = numbers.contracts;
+  const payAndCall = await dollarHasPayAndCall(read, dollar);
   const [open, plan, fee, ratePpm, dollars, sharesBefore] = await Promise.all([
     doorOpenNow(read, treasury),
-    // Two-call Back (a dollar with no pay-and-call) names the account that gets the Shares: this one.
-    planBack(read, { dollar, treasury, amount, to: account }),
+    // In one call the Shares go to whoever pays (the zero address says so). In two, `join` has no such shortcut, so it
+    // names the account that sends: the press refuses to send if the wallet shows another by then.
+    planBack(read, {
+      dollar,
+      treasury,
+      amount,
+      payAndCall,
+      ...(payAndCall ? {} : { to: account }),
+    }),
     feeFor(read, treasury, amount),
     ratePpmNow(read, treasury),
     balanceOf(read, dollar, account),

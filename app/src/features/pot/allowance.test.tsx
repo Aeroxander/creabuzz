@@ -92,6 +92,31 @@ describe("who sees the allowance screen", () => {
     expect(screen.getByTestId("allowance-ceiling").textContent).toBe("0.20%");
   });
 
+  it("the box is what the larger of the Treasury's last settle and the server's reading says, so a quiet project can still be drawn from", async () => {
+    // The Treasury's stored box is as of its last settle (0 here); the record's box is worked forward to its own time.
+    setup(FOUNDER_EVM, { box: [0n] });
+    show();
+    expect((await screen.findByTestId("allowance-box")).textContent).toBe(
+      "43.97 dollars",
+    );
+    expect(
+      (screen.getByTestId("allowance-draw") as HTMLButtonElement).disabled,
+    ).toBe(false);
+    fireEvent.click(screen.getByTestId("allowance-draw"));
+    expect((await screen.findByTestId("draw-box")).textContent).toMatch(
+      /holds about 43\.97 dollars/,
+    );
+  });
+
+  it("an empty box in both readings offers no draw", async () => {
+    setup(FOUNDER_EVM, { box: [0n] });
+    show({ ...numbers, allowance: { ...numbers.allowance, box: 0n } });
+    await screen.findByTestId("allowance-box");
+    expect(
+      (screen.getByTestId("allowance-draw") as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
   it("someone who does not run the project sees nothing of it", () => {
     setup(BACKER_EVM);
     show(numbers, BACKER_EVM);
@@ -173,7 +198,7 @@ describe("draw to an address", () => {
       target: { value: "701" },
     });
     expect(
-      screen.getByText(/The box holds 700 dollars now/, {
+      screen.getByText(/The box holds about 700 dollars now/, {
         selector: "p[role=alert]",
       }),
     ).not.toBeNull();

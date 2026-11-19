@@ -30,7 +30,9 @@ import {
   numbersFor,
   S,
 } from "../../../tests/helpers/pot-harness";
+import { forgetPending, sendKey } from "../money/pending-sends";
 import { BackCard } from "./BackCard";
+import { ownSteps } from "./own-history";
 
 vi.mock(
   "../../lib/relay",
@@ -71,6 +73,12 @@ beforeEach(() => {
   nameTheNetwork(numbers);
 });
 afterEach(() => {
+  forgetPending(
+    sendKey(
+      `back:${numbers.chainId}:${numbers.contracts.treasury}`,
+      BACKER_EVM,
+    ),
+  );
   cleanup();
   vi.useRealTimers();
   vi.unstubAllEnvs();
@@ -108,7 +116,8 @@ describe("the Back sheet shows what is put into the call", () => {
       decoded?.args[2] as string,
     );
     expect(minShares).toBe((1_000n * S * 9_950n) / 10_000n);
-    expect(String(to).toLowerCase()).toBe(BACKER_EVM);
+    // In one call the Shares go to whoever pays: the zero address says so, and no account is named that could differ.
+    expect(String(to)).toBe(`0x${"0".repeat(40)}`);
     await waitFor(() => expect(screen.queryByTestId("back-sheet")).toBeNull());
   });
 
@@ -283,6 +292,51 @@ describe("a press is sent once, and a failure leaves a way to try again", () => 
     await waitFor(() => expect(screen.queryByTestId("back-sheet")).toBeNull());
     expect(chain.sent).toEqual([]);
   });
+
+  it("refuses to send when the wallet now shows another account than the one the numbers were read for", async () => {
+    setup();
+    await openSheet("10");
+    await screen.findByTestId("back-pay");
+    chain.account = "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc";
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    const problem = await screen.findByTestId("sheet-problem");
+    expect(problem.textContent).toMatch(
+      /different account than the one these numbers were read for/,
+    );
+    expect(problem.textContent).toMatch(/Nothing was sent/);
+    expect(chain.sent).toEqual([]);
+  });
+
+  it("says so when an earlier press of this step has not been found yet, and looks for it instead of sending", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    setup();
+    chain.holdReceipts = true;
+    await openSheet("10");
+    await screen.findByTestId("back-pay");
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200_000);
+    });
+    await screen.findByTestId("sheet-problem");
+    // The person closes the sheet and asks for another amount: the earlier one is looked up first.
+    fireEvent.keyDown(screen.getByTestId("back-sheet"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("back-sheet")).toBeNull());
+    chain.holdReceipts = false;
+    fireEvent.change(screen.getByLabelText("How many dollars?"), {
+      target: { value: "25" },
+    });
+    fireEvent.click(screen.getByTestId("backing-review"));
+    await screen.findByTestId("back-pay");
+    expect(
+      (await screen.findByTestId("sheet-earlier-waiting")).textContent,
+    ).toMatch(/nothing new is sent while it may still land/);
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() => expect(screen.queryByTestId("back-sheet")).toBeNull());
+    expect(chain.sent.length).toBe(1);
+    // The earlier press was not written down as the 25 dollars on this sheet.
+    expect(ownSteps(BACKER_EVM)).toEqual([]);
+  }, 20_000);
 
   it("focus returns to the Back button when the sheet closes", async () => {
     setup();

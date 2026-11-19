@@ -42,4 +42,4 @@ for _ in $(seq 1 60); do
 done
 
 cd "$ROOT/app"
-M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts tests/anvil/pot-loop.test.ts "$@"
+M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts "$@"

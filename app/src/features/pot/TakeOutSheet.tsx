@@ -8,11 +8,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
-import { dollarsText } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { rememberStep } from "./own-history";
 import { PotSheet } from "./PotSheet";
-import { NOT_A_RETURN, sharesWords } from "./pot-words";
+import { NOT_A_RETURN, sharesWords, smallDollarsText } from "./pot-words";
 import {
   PORTION_WORDS,
   type Portion,
@@ -85,6 +84,7 @@ export function TakeOutSheet({
   const data: TakeOutRead | undefined = reading.data;
   const good = data?.ok ? data : null;
   const word = team ? "Team Shares" : "Shares";
+  const detail = good ? `${good.shares}:${good.held}`.slice(0, 80) : undefined;
 
   let body: React.ReactNode;
   if (reading.isPending)
@@ -156,7 +156,7 @@ export function TakeOutSheet({
             label={team ? "Taking out now gives about" : "Taking out now gives"}
             strong
             testId="takeout-cash"
-            value={`${dollarsText(good.cash)} dollars`}
+            value={`${smallDollarsText(good.cash)} dollars`}
           />
           <Line
             label="You keep"
@@ -173,15 +173,16 @@ export function TakeOutSheet({
         ) : null}
         {good.arrivingLeftBehind > 0n ? (
           <p className="text-sm" data-testid="takeout-arriving">
-            {dollarsText(good.arrivingLeftBehind)} dollars of outside money is
-            still arriving. It is not paid out now: taking out now leaves it for
-            the people who stay.
+            {smallDollarsText(good.arrivingLeftBehind)} dollars of outside money
+            is still arriving. It is not paid out now: taking out now leaves it
+            for the people who stay.
           </p>
         ) : null}
         {good.note > 0n ? (
           <p className="text-sm" data-testid="takeout-note">
             Part of the project's money is set aside for a task. You will be
-            owed up to {dollarsText(good.note)} dollars more if it is not paid.
+            owed up to {smallDollarsText(good.note)} dollars more if it is not
+            paid.
           </p>
         ) : null}
         <details className="text-sm">
@@ -189,9 +190,9 @@ export function TakeOutSheet({
             Details
           </summary>
           <p className="mt-1 text-muted" data-testid="takeout-guard">
-            If what you are paid would be less than {dollarsText(good.minCash)}{" "}
-            dollars when this lands, nothing is taken. There is no fee for
-            taking out.
+            If what you are paid would be less than{" "}
+            {smallDollarsText(good.minCash)} dollars when this lands, nothing is
+            taken. There is no fee for taking out.
           </p>
         </details>
       </>
@@ -200,6 +201,7 @@ export function TakeOutSheet({
 
   return (
     <PotSheet
+      account={ready.address}
       action={`${team ? "take-out-team" : "take-out"}:${target.chainId}:${target.treasury}`}
       calls={good ? [good.call] : null}
       chainId={target.chainId}
@@ -207,7 +209,7 @@ export function TakeOutSheet({
         good ? `Take out ${sharesWords(good.shares)} ${word}` : "Take out"
       }
       description={`Taking out of ${projectName}`}
-      detail={good ? `${good.shares}:${good.held}`.slice(0, 80) : undefined}
+      detail={detail}
       done="Taken out. The money is in your wallet."
       landed={async (wallet, from, earlier) => {
         // A call replaced in the wallet may have landed under another hash: fewer Shares held now say so.
@@ -221,8 +223,9 @@ export function TakeOutSheet({
         return now < BigInt(before);
       }}
       lookLabel="Look for your take-out"
-      onLanded={(txHash) => {
-        if (good)
+      onLanded={(txHash, landed) => {
+        // An earlier press that was looked up is not this amount: it is not written down as if it were.
+        if (good && landed === detail)
           rememberStep(ready.address, {
             kind: team ? "take-out-team" : "take-out",
             project: target.key,

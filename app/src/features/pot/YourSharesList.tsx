@@ -7,12 +7,7 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { PiggyBank } from "lucide-react";
 import { Card } from "../../ui/card";
-import {
-  dayText,
-  dollarsText,
-  holdingHint,
-  type ProjectNumbers,
-} from "../money/numbers";
+import { dayText, holdingHint, type ProjectNumbers } from "../money/numbers";
 import {
   chainKeyOfProject,
   matchNumbers,
@@ -22,7 +17,12 @@ import {
 import { useHomeProjects } from "../home/use-home";
 import { type Project, projectRef } from "../project/project-record";
 import { ownSteps } from "./own-history";
-import { NOT_A_RETURN, PLAY_MONEY_WORDS, sharesWords } from "./pot-words";
+import {
+  NOT_A_RETURN,
+  PLAY_MONEY_WORDS,
+  sharesWords,
+  smallDollarsText,
+} from "./pot-words";
 import { targetOf } from "./target";
 import { type Ready, WalletGate } from "./use-pot";
 import { readHolding } from "./YourShares";
@@ -74,7 +74,7 @@ function Row({
               {" "}
               · taking out now gives{" "}
               <span className="num" data-testid="your-shares-cash">
-                {dollarsText(held.quote.cashNow)} dollars
+                {smallDollarsText(held.quote.cashNow)} dollars
               </span>
             </>
           ) : null}
@@ -138,8 +138,8 @@ function Inner({ address }: { address: string }) {
               <li key={step.txHash}>
                 {dayText(step.at)}:{" "}
                 {step.kind === "back"
-                  ? `backed ${names.get(step.project) ?? "a project"} with ${dollarsText(BigInt(step.dollars))} dollars and got ${sharesWords(BigInt(step.shares))} Shares`
-                  : `took ${sharesWords(BigInt(step.shares))} ${step.kind === "take-out-team" ? "Team Shares" : "Shares"} out of ${names.get(step.project) ?? "a project"} and got ${dollarsText(BigInt(step.dollars))} dollars`}
+                  ? `backed ${names.get(step.project) ?? "a project"} with ${smallDollarsText(BigInt(step.dollars))} dollars and got ${sharesWords(BigInt(step.shares))} Shares`
+                  : `took ${sharesWords(BigInt(step.shares))} ${step.kind === "take-out-team" ? "Team Shares" : "Shares"} out of ${names.get(step.project) ?? "a project"} and got ${smallDollarsText(BigInt(step.dollars))} dollars`}
               </li>
             ))}
           </ul>

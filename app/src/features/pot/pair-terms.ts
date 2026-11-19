@@ -10,8 +10,8 @@ import {
   VESTER_ABI,
 } from "@creaton/core/pot/abis.generated.ts";
 import type { DecodedValue } from "@creaton/core/launchpad/evmAbi.ts";
-import { dollarsText, type ProjectNumbers } from "../money/numbers";
-import { rateWords, sharesWords } from "./pot-words";
+import type { ProjectNumbers } from "../money/numbers";
+import { rateWords, sharesWords, smallDollarsText } from "./pot-words";
 
 type PairCallKind =
   | "draw"
@@ -86,7 +86,7 @@ export function describePotCall(
           const to = address(args[0]);
           return {
             kind: "draw",
-            words: `Draw ${dollarsText(big(args[1]))} dollars from the allowance box to ${who(to)}.`,
+            words: `Draw ${smallDollarsText(big(args[1]))} dollars from the allowance box to ${who(to)}.`,
             names: [to],
           };
         }
@@ -146,7 +146,7 @@ export function describePotCall(
           const agent = address(args[0]);
           return {
             kind: "agent",
-            words: `Set the daily limits of the helper ${who(agent)}: up to ${dollarsText(big(args[1]))} dollars from the allowance box and ${sharesWords(big(args[2]))} Team Shares a day.`,
+            words: `Set the daily limits of the helper ${who(agent)}: up to ${smallDollarsText(big(args[1]))} dollars from the allowance box and ${sharesWords(big(args[2]))} Team Shares a day.`,
             names: [agent],
           };
         }

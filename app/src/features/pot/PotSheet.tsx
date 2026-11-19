@@ -7,6 +7,7 @@
 import type { PotCall } from "@creaton/core/pot/pot-calls.ts";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
+import { useWallet } from "../money/use-money";
 import { Button } from "../../ui/button";
 import { Sheet } from "../../ui/sheet";
 import { useToast } from "../../ui/toast";
@@ -43,8 +44,12 @@ export interface PotSheetProps {
   problemAction: PotAction;
   /** The note shown when it landed. */
   done: string;
-  /** Runs once it landed, with the hash. */
-  onLanded?: (txHash: string) => void;
+  /** Runs once it landed, with the hash and the `detail` of the press that landed (an earlier press's when it was looked up). */
+  onLanded?: (txHash: string, detail: string | undefined) => void;
+  /** The account the sheet's numbers were read for: the press is refused if the wallet shows another by then. */
+  account: string;
+  /** The note shown when what landed was an earlier press of the same step (looked up, not sent again). */
+  doneEarlier?: string;
   /** Say play money under the numbers (a test network). */
   playMoney: boolean;
   /** Something on the sheet makes the press wrong now (a refusal read before sending). */
@@ -55,12 +60,27 @@ export interface PotSheetProps {
 export function PotSheet(props: PotSheetProps) {
   const { open, onOpenChange, calls } = props;
   const send = useMoneySend(props.action);
+  const wallet = useWallet();
+  const [checking, setChecking] = useState(false);
   const toast = useToast();
   const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | null>(null);
-  const press = () => {
-    if (!calls || calls.length === 0) return;
+  const press = async () => {
+    if (!calls || calls.length === 0 || checking) return;
     setProblem(null);
+    // The numbers were read for one account; money must not move for another one that the wallet shows now.
+    setChecking(true);
+    let shown: string | null = null;
+    try {
+      shown = await wallet.connectedAddress();
+    } catch {
+      shown = null;
+    }
+    setChecking(false);
+    if (shown !== props.account.toLowerCase())
+      return setProblem(
+        "Your wallet now shows a different account than the one these numbers were read for. Nothing was sent. Close this and open it again.",
+      );
     const input: MoneySendInput = {
       chainId: props.chainId,
       // What the sheet showed is what is sent: the calls were made from the same read as the numbers.
@@ -70,19 +90,29 @@ export function PotSheet(props: PotSheetProps) {
     };
     send.send(input, {
       onSuccess: (result) => {
-        toast(props.done, "done");
+        toast(
+          result.detail !== props.detail
+            ? (props.doneEarlier ??
+                "Your earlier step landed. Nothing new was sent.")
+            : props.done,
+          "done",
+        );
         void queryClient.invalidateQueries({ queryKey: ["pot"] });
-        props.onLanded?.(result.txHash);
+        props.onLanded?.(result.txHash, result.detail);
         onOpenChange(false);
       },
       onError: (error) => setProblem(potProblem(error, props.problemAction)),
     });
   };
-  const label = send.isPending
-    ? send.words.waiting
-    : send.waiting
-      ? props.lookLabel
-      : props.confirmLabel;
+  // A step sent earlier and not found yet may be for something else than what is on this sheet: say so.
+  const earlierWaiting =
+    send.waiting !== null && send.waiting.detail !== props.detail;
+  const label =
+    send.isPending || checking
+      ? send.words.waiting
+      : send.waiting
+        ? props.lookLabel
+        : props.confirmLabel;
   return (
     <Sheet
       description={`${props.description ? `${props.description}. ` : ""}Nothing is sent until you press the button below and say yes ${send.words.where}.`}
@@ -104,6 +134,13 @@ export function PotSheet(props: PotSheetProps) {
       ) : null}
       <p className="text-sm text-muted">{CAN_TAKE_OUT}</p>
       <OwnershipLine />
+      {earlierWaiting ? (
+        <p className="text-sm" data-testid="sheet-earlier-waiting">
+          A step you sent earlier has not been found on the network yet.
+          Pressing looks for it first; nothing new is sent while it may still
+          land.
+        </p>
+      ) : null}
       {problem ? (
         <p
           className="rounded-xl bg-white/8 px-3 py-2 text-sm text-danger"
@@ -117,9 +154,13 @@ export function PotSheet(props: PotSheetProps) {
         block
         data-testid="sheet-confirm"
         disabled={
-          send.isPending || props.blocked || !calls || calls.length === 0
+          send.isPending ||
+          checking ||
+          props.blocked ||
+          !calls ||
+          calls.length === 0
         }
-        onClick={press}
+        onClick={() => void press()}
       >
         {label}
       </Button>

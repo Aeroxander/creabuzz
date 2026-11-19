@@ -77,6 +77,7 @@ export function GrantSheet({
   const send = inner ? runnerSend(numbers, ready.address, inner) : null;
   return (
     <PotSheet
+      account={ready.address}
       action={`grant:${numbers.chainId}:${numbers.contracts.treasury}`}
       blocked={!send}
       calls={send?.calls ?? null}

@@ -21,15 +21,10 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
 import { parseDollarAmount } from "../money/calls";
-import {
-  dayText,
-  dollarsText,
-  type ProjectNumbers,
-  timeText,
-} from "../money/numbers";
+import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
 import { PotSheet } from "./PotSheet";
 import { PAIR_WORDS, doneWords, runnerSend } from "./runner-calls";
-import { rateWords } from "./pot-words";
+import { boxNow, rateWords, smallDollarsText } from "./pot-words";
 import type { Ready } from "./use-pot";
 
 /** The allowance as the chain has it now, read when a sheet opens. */
@@ -82,7 +77,7 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
   const state = useAllowanceState(numbers, ready, open);
   const parsed = parseDollarAmount(text, 1n);
   const target = to.trim().toLowerCase();
-  const box = state.data?.box ?? 0n;
+  const box = state.data ? boxNow(numbers, state.data.box) : 0n;
   const toProblem =
     to.trim() === ""
       ? null
@@ -95,7 +90,7 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
       : !parsed.ok
         ? "Write a number of dollars, like 25 or 25.50."
         : state.data && parsed.raw > box
-          ? `The box holds ${dollarsText(box)} dollars now. Draw that or less.`
+          ? `The box holds about ${smallDollarsText(box)} dollars now. Draw that or less.`
           : null;
   const ok =
     ADDRESS.test(target) &&
@@ -117,12 +112,15 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
       : null;
   return (
     <PotSheet
+      account={ready.address}
       action={`draw:${numbers.chainId}:${numbers.contracts.treasury}`}
       blocked={!send}
       calls={send?.calls ?? null}
       chainId={numbers.chainId}
       confirmLabel={
-        send && parsed.ok ? `Draw ${dollarsText(parsed.raw)} dollars` : "Draw"
+        send && parsed.ok
+          ? `Draw ${smallDollarsText(parsed.raw)} dollars`
+          : "Draw"
       }
       description="Take money from the allowance box"
       done={doneWords(
@@ -150,8 +148,8 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
       ) : (
         <>
           <p className="text-sm" data-testid="draw-box">
-            The box holds {dollarsText(box)} dollars now. You can draw up to
-            that, to an account of your choice.
+            The box holds about {smallDollarsText(box)} dollars now. You can
+            draw up to that, to an account of your choice.
           </p>
           <Field
             autoComplete="off"
@@ -175,7 +173,8 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
           />
           {send && parsed.ok ? (
             <p className="text-sm" data-testid="draw-terms">
-              {dollarsText(parsed.raw)} dollars go from the box to {target}.
+              {smallDollarsText(parsed.raw)} dollars go from the box to {target}
+              .
             </p>
           ) : null}
           {send?.through === "pair" ? (
@@ -221,6 +220,7 @@ function RateSheet({ numbers, ready, sheet, onClose }: Props) {
   const send = inner ? runnerSend(numbers, ready.address, inner) : null;
   return (
     <PotSheet
+      account={ready.address}
       action={`rate:${numbers.chainId}:${numbers.contracts.treasury}`}
       blocked={!send}
       calls={send?.calls ?? null}
@@ -309,6 +309,7 @@ function ApplySheet({ numbers, ready, sheet, onClose, now }: Props) {
     : null;
   return (
     <PotSheet
+      account={ready.address}
       action={`apply-rate:${numbers.chainId}:${numbers.contracts.treasury}`}
       blocked={!send}
       calls={send?.calls ?? null}
@@ -364,6 +365,7 @@ function DoorSheet({ numbers, ready, sheet, onClose }: Props) {
   );
   return (
     <PotSheet
+      account={ready.address}
       action={`door:${numbers.chainId}:${numbers.contracts.treasury}`}
       calls={send?.calls ?? null}
       chainId={numbers.chainId}

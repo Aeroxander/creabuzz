@@ -8,11 +8,11 @@ import { useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
-import { dayText, dollarsText } from "../money/numbers";
+import { dayText } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { FaucetCard } from "./FaucetCard";
 import { ownSteps, paidInFromHere } from "./own-history";
-import { NOT_A_RETURN, sharesWords } from "./pot-words";
+import { NOT_A_RETURN, sharesWords, smallDollarsText } from "./pot-words";
 import { TakeOutSheet } from "./TakeOutSheet";
 import type { MoneyTarget } from "./target";
 import { type Ready, WalletGate } from "./use-pot";
@@ -115,7 +115,7 @@ export function Holding({
               What you would get if you took out now
             </dt>
             <dd className="num text-right" data-testid="holding-cash">
-              {dollarsText(quote.cashNow)} dollars
+              {smallDollarsText(quote.cashNow)} dollars
             </dd>
           </div>
         ) : null}
@@ -125,7 +125,7 @@ export function Holding({
               You paid in, from this browser
             </dt>
             <dd className="num text-right" data-testid="holding-paid-in">
-              {dollarsText(paidIn)} dollars
+              {smallDollarsText(paidIn)} dollars
             </dd>
           </div>
         ) : null}
@@ -133,7 +133,7 @@ export function Holding({
           <div className="flex items-baseline justify-between gap-3 py-1.5">
             <dt className="text-sm text-muted">Play dollars you hold</dt>
             <dd className="num text-right" data-testid="holding-dollars">
-              {dollarsText(dollars)}
+              {smallDollarsText(dollars)}
             </dd>
           </div>
         ) : null}
@@ -187,8 +187,8 @@ export function Holding({
               <li data-testid="history-step" key={step.txHash}>
                 {dayText(step.at)}:{" "}
                 {step.kind === "back"
-                  ? `backed with ${dollarsText(BigInt(step.dollars))} dollars and got ${sharesWords(BigInt(step.shares))} Shares`
-                  : `took out ${sharesWords(BigInt(step.shares))} ${step.kind === "take-out-team" ? "Team Shares" : "Shares"} and got ${dollarsText(BigInt(step.dollars))} dollars`}
+                  ? `backed with ${smallDollarsText(BigInt(step.dollars))} dollars and got ${sharesWords(BigInt(step.shares))} Shares`
+                  : `took out ${sharesWords(BigInt(step.shares))} ${step.kind === "take-out-team" ? "Team Shares" : "Shares"} and got ${smallDollarsText(BigInt(step.dollars))} dollars`}
               </li>
             ))}
           </ul>

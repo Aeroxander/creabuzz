@@ -2,7 +2,7 @@
 // quiet, dormant, open to wind down, wound down, with a record that cannot be read or does not exist yet, and for a person
 // who holds nothing. Taking out is reachable in every one of them; the play-money line and the legal line are on all.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SERVER, wrap } from "../../../tests/helpers/money-harness";
@@ -13,6 +13,7 @@ import {
 import {
   BACKER_EVM,
   backerAnswers,
+  D,
   nameTheNetwork,
   numbersFor,
   S,
@@ -146,6 +147,43 @@ describe("the project's money", () => {
     );
     expect(screen.queryByTestId("holding-take-out")).toBeNull();
     expect(screen.getByTestId("backing-box")).not.toBeNull();
+  });
+});
+
+describe("after a Back lands", () => {
+  it("the page shows the new Shares, and the play dollars that were spent", async () => {
+    setup({ shares: 0n });
+    let held = 0n;
+    chain.answers.balanceOf = (_args, to) =>
+      to === numbers.contracts.dollar
+        ? [1_000n * D - (held > 0n ? 10n * D : 0n)]
+        : to === numbers.contracts.shares
+          ? [held]
+          : [0n];
+    chain.onSend = () => {
+      held = 1_000n * S;
+    };
+    show(numbers);
+    expect((await screen.findByTestId("holding-shares")).textContent).toBe(
+      "0 Shares",
+    );
+    fireEvent.change(screen.getByLabelText("How many dollars?"), {
+      target: { value: "10" },
+    });
+    fireEvent.click(screen.getByTestId("backing-review"));
+    await screen.findByTestId("back-pay");
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() =>
+      expect(screen.getByTestId("holding-shares").textContent).toBe(
+        "1,000 Shares",
+      ),
+    );
+    expect(screen.getByTestId("holding-dollars").textContent).toBe("990");
+    expect(screen.getByTestId("holding-take-out")).not.toBeNull();
+    // It is in this account's own history.
+    expect(screen.getByTestId("history").textContent).toMatch(
+      /backed with 10 dollars and got 1,000 Shares/,
+    );
   });
 });
 

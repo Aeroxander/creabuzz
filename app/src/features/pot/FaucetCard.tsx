@@ -2,12 +2,12 @@
  * Get play dollars: the test network's faucet, once per account. It says what it gives and that it is play money, and an
  * account that already took its dollars is told so instead of being offered a press that would be refused.
  */
+import { smallDollarsText } from "./pot-words";
 import { faucetCall } from "@creaton/core/pot/pot-calls.ts";
 import { faucetAmount, faucetUsedBy } from "@creaton/core/pot/pot-state.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../ui/button";
-import { dollarsText } from "../money/numbers";
 import { PotSheet } from "./PotSheet";
 import type { MoneyTarget } from "./target";
 import type { Ready } from "./use-pot";
@@ -46,13 +46,14 @@ export function FaucetCard({
         Get play dollars
       </Button>
       <PotSheet
+        account={ready.address}
         action={`faucet:${target.chainId}:${dollar}`}
         blocked={!data || data.used}
         calls={data && !data.used ? [faucetCall(dollar)] : null}
         chainId={target.chainId}
         confirmLabel={
           data
-            ? `Get ${dollarsText(data.amount)} play dollars`
+            ? `Get ${smallDollarsText(data.amount)} play dollars`
             : "Get play dollars"
         }
         done="You have your play dollars."
@@ -83,7 +84,7 @@ export function FaucetCard({
           </p>
         ) : (
           <p className="text-sm" data-testid="faucet-words">
-            You get {dollarsText(data.amount)} play dollars, once for this
+            You get {smallDollarsText(data.amount)} play dollars, once for this
             account. Play dollars are for trying the app: they have no value
             outside it.
           </p>

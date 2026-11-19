@@ -131,6 +131,7 @@ function Inner({
         </ul>
       )}
       <PotSheet
+        account={ready.address}
         action={`pair-${step?.kind ?? "confirm"}:${numbers.chainId}:${pair}:${step?.proposal.id ?? ""}`}
         blocked={step?.kind === "confirm" && step.terms.kind === "unknown"}
         calls={call ? [call] : null}

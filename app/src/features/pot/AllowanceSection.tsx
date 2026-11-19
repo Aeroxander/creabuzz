@@ -8,15 +8,10 @@ import { Link } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
-import {
-  dayText,
-  dollarsText,
-  type ProjectNumbers,
-  timeText,
-} from "../money/numbers";
+import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
 import { runnerRole } from "../money/runner";
 import { AllowanceSheets, useAllowanceState } from "./AllowanceSheets";
-import { rateWords, whenWords } from "./pot-words";
+import { boxNow, rateWords, smallDollarsText, whenWords } from "./pot-words";
 import { type Ready, WalletGate } from "./use-pot";
 
 type Sheet = "draw" | "rate" | "door" | "apply";
@@ -75,6 +70,7 @@ function Inner({
       </div>
     );
   const a = state.data;
+  const box = boxNow(numbers, a.box);
   const wound = numbers.windDown !== null;
   const due = a.pending !== null && a.pending.applicableAt <= now;
   const lapseAt = a.activeEnd > 0 ? a.activeEnd : null;
@@ -88,14 +84,14 @@ function Inner({
       ) : null}
       <dl className="divide-y divide-white/10">
         <Row
-          label="In the allowance box"
+          label="In the allowance box, about"
           testId="allowance-box"
-          value={`${dollarsText(a.box)} dollars`}
+          value={`${smallDollarsText(box)} dollars`}
         />
         <Row
           label="The box holds at most"
           testId="allowance-cap"
-          value={`${dollarsText(a.boxCap)} dollars`}
+          value={`${smallDollarsText(a.boxCap)} dollars`}
         />
         <Row
           label="The rate, of the project's money a day"
@@ -141,7 +137,7 @@ function Inner({
           <Button
             block
             data-testid="allowance-draw"
-            disabled={a.box === 0n}
+            disabled={box === 0n}
             onClick={() => setSheet("draw")}
           >
             Draw from the box
