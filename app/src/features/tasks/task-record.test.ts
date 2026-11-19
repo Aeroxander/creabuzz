@@ -3,6 +3,8 @@ import {
   acceptRecord,
   checksOwnWork,
   nextFor,
+  payOwed,
+  payRecord,
   postTaskRecord,
   type ProjectTask,
   projectTasks,
@@ -133,6 +135,73 @@ describe("a project's tasks", () => {
       acceptedBy: FOUNDER,
       paidTx: TX,
     });
+  });
+
+  it("reads accepted work with no payment as owing its pay, and a later confirmation naming the payment as paying it", () => {
+    const task = openTask();
+    const take = step(STRANGER, task, "take", [["task-pay-to", PAY_TO]]);
+    const piece = step(STRANGER, task, "evidence");
+    const accept = step(
+      FOUNDER,
+      task,
+      "confirm",
+      [["task-evidence", piece.id]],
+      1_800_000_200,
+    );
+    let [t] = read([task, take, piece, accept]);
+    expect(t).toMatchObject({
+      state: "accepted",
+      paidTx: null,
+      acceptedAt: 1_800_000_200,
+    });
+    expect(payOwed(t)).toBe(40);
+    // The team may pay it; the worker and strangers may not.
+    expect(nextFor(t, FOUNDER, TEAM)).toBe("pay");
+    expect(nextFor(t, MATE, TEAM)).toBe("pay");
+    expect(nextFor(t, STRANGER, TEAM)).toBeNull();
+    expect(nextFor(t, null, TEAM)).toBeNull();
+    // The payment's record is a second confirmation of the same piece.
+    const pay = {
+      ...record(
+        FOUNDER,
+        payRecord(COORD, t, piece.id, TX).tags.filter(
+          (tag) => tag[0] !== "a" && tag[0] !== "l",
+        ),
+        "{}",
+        1_800_000_900,
+      ),
+    };
+    [t] = read([task, take, piece, accept, pay]);
+    expect(t).toMatchObject({
+      state: "accepted",
+      paidTx: TX,
+      acceptedBy: FOUNDER,
+      acceptedAt: 1_800_000_200,
+    });
+    expect(payOwed(t)).toBeNull();
+    expect(nextFor(t, FOUNDER, TEAM)).toBeNull();
+    // A payment named for another piece, or by the worker, never makes the accepted piece paid.
+    const other = step(FOUNDER, task, "confirm", [
+      ["task-evidence", "9".repeat(64)],
+      ["task-paid", TX],
+    ]);
+    const byWorker = step(STRANGER, task, "confirm", [
+      ["task-evidence", piece.id],
+      ["task-paid", TX],
+    ]);
+    [t] = read([task, take, piece, accept, other, byWorker]);
+    expect(t.paidTx).toBeNull();
+    // Money off the record (no task-usd, a named helper) owes nothing.
+    const free = record(FOUNDER, [
+      ["task-part", "task"],
+      ["task-what", "Tidy the notes"],
+      ["task-helper", MATE],
+    ]);
+    const done = step(MATE, free, "evidence");
+    const ok = step(FOUNDER, free, "confirm", [["task-evidence", done.id]]);
+    const [f] = read([free, done, ok]);
+    expect(f.state).toBe("accepted");
+    expect(payOwed(f)).toBeNull();
   });
 
   it("writes the tags the server and the command line read", () => {

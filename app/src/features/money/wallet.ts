@@ -17,6 +17,8 @@ export interface ChainLog {
   topics: string[];
   data: string;
   blockNumber: string;
+  /** The transaction the log came from (the network gives it with every log). */
+  transactionHash?: string;
 }
 
 export interface Eip1193Provider {

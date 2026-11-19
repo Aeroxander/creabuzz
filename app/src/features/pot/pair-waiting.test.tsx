@@ -136,6 +136,28 @@ describe("the calls waiting for the second signer", () => {
     expect(decoded?.args).toEqual([DRAW.to, DRAW.data, 7n]);
   });
 
+  it("a draw that pays an accepted task names the task in the list and on the sheet the second signer confirms", async () => {
+    setup(BACKER_EVM, [proposed(1, FOUNDER_EVM, DRAW.to, DRAW.data, 7n)]);
+    wrap(
+      <PairWaiting
+        address={BACKER_EVM}
+        nameOf={nameOf}
+        numbers={numbers}
+        tasksFor={(payee, raw) =>
+          payee === BACKER_EVM && raw === 12n * D ? ["Translate the guide"] : []
+        }
+      />,
+    );
+    const terms = await screen.findByTestId("pair-terms");
+    expect(terms.textContent).toBe(
+      `Draw 12 dollars from the allowance box to Anna (${BACKER_EVM}), the pay for the task "Translate the guide".`,
+    );
+    fireEvent.click(screen.getByTestId("pair-review"));
+    expect((await screen.findByTestId("pair-sheet-terms")).textContent).toBe(
+      terms.textContent,
+    );
+  });
+
   it("the one who asked sees it as theirs and can withdraw it", async () => {
     setup(FOUNDER_EVM, [proposed(2, FOUNDER_EVM, DRAW.to, DRAW.data, 8n)]);
     show(FOUNDER_EVM);

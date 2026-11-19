@@ -8,6 +8,8 @@ import { mustSayPlayMoney } from "@creaton/core/pot/network.ts";
 import { Banknote } from "lucide-react";
 import { nameOf, type ProfileMetadata } from "../../lib/profiles";
 import { investingOn } from "../../lib/server";
+import type { Project } from "../project/project-record";
+import { owedTaskNames, useProjectTasks } from "../tasks/use-tasks";
 import { useTeamWallets } from "../team/use-wallets";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
@@ -49,7 +51,10 @@ export function ProjectMoney({
   now,
   team,
   profiles,
+  project,
 }: {
+  /** The project, so a draw that pays an accepted task can name the task to the second signer. */
+  project?: Project;
   projectName: string;
   /** The chain key the founder's record names, or null. */
   chainKey: string | null;
@@ -79,6 +84,11 @@ export function ProjectMoney({
     `${address.slice(0, 6)}…${address.slice(-4)}`;
   const wallet = usePotWallet(
     numbers && !numbers.removed ? numbers.chainId : undefined,
+  );
+  // Only a Pair's two signers read waiting calls: only then are the tasks read, to name what a draw pays for.
+  const tasksRead = useProjectTasks(
+    project ?? null,
+    Boolean(numbers && !numbers.removed && numbers.runner.isPair),
   );
   if (loading) return <Card className="h-40 animate-pulse" />;
   if (error)
@@ -164,6 +174,9 @@ export function ProjectMoney({
         address={wallet.address}
         nameOf={nameOfAddress}
         numbers={numbers}
+        tasksFor={(payee, raw) =>
+          owedTaskNames(tasksRead.data?.tasks ?? [], payee, raw)
+        }
       />
       <OwnershipLine className="text-sm text-muted" />
     </div>

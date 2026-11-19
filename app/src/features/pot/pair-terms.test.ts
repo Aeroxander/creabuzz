@@ -39,6 +39,32 @@ describe("each call a Pair can hold has a sentence naming what it does", () => {
     );
     expect(t.names).toEqual([ANNA]);
   });
+  it("draw that pays an accepted task names the task, so the second signer reads what it is for", () => {
+    const call = drawCall({ treasury, to: ANNA, amount: 40_000_000n });
+    const one = describePotCall(
+      numbers,
+      call.to,
+      call.data,
+      name,
+      (payee, raw) =>
+        payee === ANNA && raw === 40_000_000n ? ["Translate the guide"] : [],
+    );
+    expect(one.words).toBe(
+      `Draw 40 dollars from the allowance box to Anna (${ANNA}), the pay for the task "Translate the guide".`,
+    );
+    const two = describePotCall(numbers, call.to, call.data, name, () => [
+      "Translate the guide",
+      "Fix the logo",
+    ]);
+    expect(two.words).toContain(
+      'the pay for one of these tasks: "Translate the guide"; "Fix the logo".',
+    );
+    // A draw for nothing owed reads as before.
+    const none = describePotCall(numbers, call.to, call.data, name, () => []);
+    expect(none.words).toBe(
+      `Draw 40 dollars from the allowance box to Anna (${ANNA}).`,
+    );
+  });
   it("the rate, lowered at once and raised after the wait", () => {
     expect(words(setRateCall(treasury, 500)).words).toBe(
       "Lower the daily allowance to 0.05% of the project's money a day, at once.",

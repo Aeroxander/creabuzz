@@ -53,11 +53,24 @@ function unitDays(numbers: ProjectNumbers): string {
   return `${days} ${days === 1 ? "day" : "days"}`;
 }
 
+/**
+ * "..., the pay for the task "X"" when a draw is exactly the pay an accepted task still owes (`tasksFor` gives the names of the
+ * tasks owed that much, at that wallet), so the second signer reads what the money is for.
+ */
+function forTask(names: readonly string[]): string {
+  const quoted = names.map((name) => `"${name}"`);
+  if (quoted.length === 0) return "";
+  return quoted.length === 1
+    ? `, the pay for the task ${quoted[0]}`
+    : `, the pay for one of these tasks: ${quoted.join("; ")}`;
+}
+
 export function describePotCall(
   numbers: ProjectNumbers,
   target: string,
   data: string,
   nameOf: (address: string) => string,
+  tasksFor: (payee: string, raw: bigint) => readonly string[] = () => [],
 ): Terms {
   const t = target.toLowerCase();
   const abi: Abi | null =
@@ -83,7 +96,7 @@ export function describePotCall(
           const to = address(args[0]);
           return {
             kind: "draw",
-            words: `Draw ${smallDollarsText(big(args[1]))} dollars from the allowance box to ${who(to)}.`,
+            words: `Draw ${smallDollarsText(big(args[1]))} dollars from the allowance box to ${who(to)}${forTask(tasksFor(to, big(args[1])))}.`,
             names: [to],
           };
         }

@@ -78,6 +78,9 @@ export function TasksTab({
       </EmptyState>
     );
   const tasks = read.data.tasks;
+  const taken = new Set(
+    tasks.flatMap((t) => (t.paidTx ? [t.paidTx.toLowerCase()] : [])),
+  );
   return (
     <div className="flex flex-col gap-3" data-testid="project-tasks">
       {numbers && mustSayPlayMoney(numbers.playMoney) ? (
@@ -106,6 +109,7 @@ export function TasksTab({
             operators={operators}
             profiles={profiles}
             project={project}
+            taken={taken}
             task={task}
             team={team}
           />

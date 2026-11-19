@@ -80,7 +80,8 @@ function moved(
  * last. A payment whose record failed is remembered (`paid-journal.ts`), so the next press writes the record, for the
  * piece that was paid for, and never pays again. With money off the press only accepts the work. A task that pays but
  * whose taker named no wallet cannot be paid: accepting it is a second, plainly worded choice (two presses), never the
- * ordinary button.
+ * ordinary button. Work accepted without its pay shows to everyone as "accepted, pay owed", and the task then offers
+ * "Pay from the box" (`PayFromBox`) as soon as the box holds enough, which links the payment to the task.
  */
 export function AcceptAndPay({
   project,
@@ -147,7 +148,9 @@ export function AcceptAndPay({
           toast(
             txHash
               ? `Accepted and paid ${dollarsWords(usd)}.`
-              : "Work accepted.",
+              : paying
+                ? `Work accepted. The pay is still owed: ${dollarsWords(usd)}.`
+                : "Work accepted.",
             "done",
           );
         },
@@ -203,8 +206,8 @@ export function AcceptAndPay({
     ? "Save that it was paid"
     : unpaid
       ? sure
-        ? "Yes, accept it without paying"
-        : `Accept without paying ${dollarsWords(usd)}`
+        ? "Yes, accept it and pay later"
+        : `Accept now, pay ${dollarsWords(usd)} later`
       : paying
         ? `Accept and pay ${dollarsWords(usd)}`
         : "Accept the work";

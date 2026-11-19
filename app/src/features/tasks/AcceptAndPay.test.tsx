@@ -86,6 +86,7 @@ function task(over: Partial<ProjectTask> = {}): ProjectTask {
     state: "submitted",
     handIn: { id: PIECE, at: 1_800_000_100, note: "done" },
     acceptedBy: null,
+    acceptedAt: null,
     paidTx: null,
     ...over,
   };
@@ -164,11 +165,11 @@ describe("accept and pay", () => {
     );
     // Not paying from here is still a way forward, as a second, plainly worded choice: nothing is sent.
     expect(screen.getByTestId("task-accept").textContent).toBe(
-      "Accept without paying 40 dollars",
+      "Accept now, pay 40 dollars later",
     );
     press();
     expect(screen.getByTestId("task-pay-later").textContent).toMatch(
-      /Draw from the box/,
+      /accepted, pay owed.*Pay from the box/,
     );
     press();
     await waitFor(() => expect(written).toHaveLength(1));
@@ -240,7 +241,7 @@ describe("accept and pay", () => {
     expect(screen.getByTestId("task-accept")).toBeTruthy();
   });
 
-  it("says plainly that a payment from a project run by two people needs both signers, and still lets the work be accepted without paying here", async () => {
+  it("says plainly that a payment from a project run by two people needs both signers, and still lets the work be accepted now and paid later", async () => {
     wrap(
       <AcceptAndPay
         address={WALLET}
@@ -259,11 +260,11 @@ describe("accept and pay", () => {
       /needs both of you to sign/,
     );
     expect(screen.getByTestId("task-accept").textContent).toBe(
-      "Accept without paying 40 dollars",
+      "Accept now, pay 40 dollars later",
     );
     press();
     expect(screen.getByTestId("task-pay-later").textContent).toMatch(
-      /signed by both of you/,
+      /Ask for the pay from the box/,
     );
     expect(written).toHaveLength(0);
     press();
@@ -377,7 +378,7 @@ describe("accept and pay", () => {
       />,
     );
     const button = screen.getByTestId("task-accept");
-    expect(button.textContent).toBe("Accept without paying 40 dollars");
+    expect(button.textContent).toBe("Accept now, pay 40 dollars later");
     expect(screen.getByTestId("task-no-payee").textContent).toMatch(
       /nothing is paid and this app has no way to pay it later/,
     );
@@ -385,7 +386,7 @@ describe("accept and pay", () => {
     // The first press only asks again: nothing is written, nothing is sent.
     expect(written).toHaveLength(0);
     expect(screen.getByTestId("task-accept").textContent).toBe(
-      "Yes, accept it without paying",
+      "Yes, accept it and pay later",
     );
     press();
     await waitFor(() => expect(written).toHaveLength(1));

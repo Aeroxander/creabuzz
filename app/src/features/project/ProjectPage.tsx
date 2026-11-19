@@ -258,6 +258,7 @@ function ProjectView({ project }: { project: Project }) {
                         numbers={numbersRead.data}
                         onRetry={() => void numbersRead.refetch()}
                         profiles={profiles}
+                        project={project}
                         projectName={project.name}
                         team={team}
                       />

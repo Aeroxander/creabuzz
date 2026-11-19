@@ -28,11 +28,23 @@ export const TASK_PROBLEM = {
   noPayee:
     "The person who took this named no wallet to be paid at, so nothing can be sent. If you accept it now, nothing is paid and this app has no way to pay it later.",
   noPayeeSure:
-    "Press again to accept it without paying. It will be closed, unpaid.",
+    "Press again to accept it. It will show as accepted, pay owed, and nothing can be sent from here.",
   pairSure:
-    'Press again to accept it without paying here. Pay for it with "Draw from the box" on the Money tab, signed by both of you: this app does not link that payment to the task.',
+    'Press again to accept it now. It will show as accepted, pay owed. Then press "Ask for the pay from the box" on the task: the other signer confirms it, and the payment is linked to this task.',
   boxShortSure:
-    'Press again to accept it without paying now. It will be closed, unpaid: pay for it later with "Draw from the box" on the Money tab.',
+    'Press again to accept it now. It will show as accepted, pay owed, and the task offers "Pay from the box" as soon as the box holds enough.',
+  /** On an accepted task whose worker named no wallet. */
+  owedNoPayee:
+    "The person who did this named no wallet to be paid at, so the pay cannot be sent from here.",
+  /** After a Pair's signer asked for the pay: nothing moved yet. */
+  asked:
+    "Asked. The pay goes out when the other signer confirms it on the Money tab. Then come back here and save that it was paid.",
+  /** A payment of exactly this task's pay already left the box: nothing is sent until the person says what it was. */
+  alreadyLeft:
+    "A payment of exactly this much already left the box for this person. Nothing was sent. If it was this task's pay, save it here; if it was for something else, say so and press again.",
+  /** A project wound down draws nothing. */
+  woundDown:
+    "This project is wound down, so nothing can be drawn from the allowance box any more.",
   /** Sent money cannot be taken back, so the app looks again first and stops when the task has moved. */
   changed:
     "This task changed while you were looking, so nothing was paid. Look at it again.",
@@ -62,16 +74,48 @@ export function dollarsProblem(typed: string): string | null {
   return null;
 }
 
+/** What every reader of an accepted task with money on sees while its pay has not been recorded: never "paid". */
+export function owedWords(usd: number): string {
+  return `Accepted, pay owed: ${dollarsWords(usd)}.`;
+}
+
+/** What every reader sees once the payment's transaction is on the task's record. */
+export function paidWords(usd: number): string {
+  return `Paid ${dollarsWords(usd)}.`;
+}
+
 /**
  * The allowance box holds less than a task pays: how much is in it and when more arrives (the box fills a little every
- * day, a share of the project's money).
+ * day, a share of the project's money). `then` is what a person can do about it.
  */
-export function boxShortWords(box: bigint, perDay: bigint): string {
+export function boxShortWords(
+  box: bigint,
+  perDay: bigint,
+  then = "You can accept the work now and pay it from the box once it holds enough.",
+): string {
   const day =
     perDay > 0n
       ? ` About ${dollarsText(perDay)} dollars more goes into it each day.`
       : " Nothing is going into it now, because the allowance is switched off or the project has no money.";
-  return `The allowance box holds ${dollarsText(box)} dollars now, which is less than this task pays.${day} Accept the work when the box holds enough.`;
+  return `The allowance box holds ${dollarsText(box)} dollars now, which is less than this task pays.${day} ${then}`;
+}
+
+/** The sentence beside "Pay from the box": what goes where. */
+export function payTermsWords(usd: number, payee: string): string {
+  return `${dollarsWords(usd)} go from the allowance box to ${payee}, the wallet the worker named.`;
+}
+
+/** The payment found on the chain, in words. */
+export function foundWords(
+  usd: number,
+  payee: string,
+  at: number | null,
+): string {
+  const when =
+    at === null
+      ? ""
+      : ` on ${new Date(at * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" })}`;
+  return `A payment of ${dollarsWords(usd)} to ${payee} left the box${when}. If it was this task's pay, save it here: nothing is paid twice.`;
 }
 
 /** What a person reads when paying for a task stops. */

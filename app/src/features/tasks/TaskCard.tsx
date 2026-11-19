@@ -10,19 +10,25 @@ import type { ProjectNumbers } from "../money/numbers";
 import { useConnectWallet } from "../money/use-money";
 import type { Project } from "../project/project-record";
 import { AcceptAndPay } from "./AcceptAndPay";
+import { PayFromBox } from "./PayFromBox";
 import {
   handInRecord,
   nextFor,
   type ProjectTask,
+  payOwed,
   takeRecord,
 } from "./task-record";
 import {
   dollarsWords,
+  owedWords,
+  paidWords,
   payProblem,
   STATE_WORDS,
   TASK_PROBLEM,
 } from "./tasks-copy";
 import { useTaskWrite } from "./use-tasks";
+
+const NO_PAYMENTS: ReadonlySet<string> = new Set();
 
 /** One task: what it is, what it pays, who has it, and the one thing this person can do on it. */
 export function TaskCard({
@@ -35,6 +41,7 @@ export function TaskCard({
   profiles,
   numbers,
   address,
+  taken = NO_PAYMENTS,
 }: {
   project: Project;
   task: ProjectTask;
@@ -47,6 +54,8 @@ export function TaskCard({
   /** The project's numbers where the server turns money on; null where it does not (nothing about money shows). */
   numbers: ProjectNumbers | null;
   address: string | null;
+  /** Payments already recorded on the project's tasks (lowercase): a payment search never offers one of them again. */
+  taken?: ReadonlySet<string>;
 }) {
   const money = numbers !== null;
   const next = nextFor(task, me, team, {
@@ -56,6 +65,8 @@ export function TaskCard({
   });
   // An agent account checks no work: it is never offered the press.
   const mayAccept = next === "accept" && !(me && agents.has(me));
+  const mayPay = next === "pay" && !(me && agents.has(me));
+  const owes = payOwed(task);
   return (
     <article
       className="plain flex flex-col gap-2 rounded-2xl p-4"
@@ -67,9 +78,26 @@ export function TaskCard({
         <span>{relativeTime(task.at)}</span>
       </div>
       <h3 className="font-semibold">{task.what}</h3>
-      {money && task.usd !== null ? (
+      {money && task.usd !== null && task.state !== "accepted" ? (
         <p className="num text-sm font-semibold" data-testid="task-pays">
           Pays {dollarsWords(task.usd)} on accept
+        </p>
+      ) : null}
+      {/* Accepted work is paid only when a payment is on its record: until then everyone reads that the pay is owed. */}
+      {money && owes !== null ? (
+        <p
+          className="num text-sm font-semibold text-danger"
+          data-testid="task-pay-owed"
+        >
+          {owedWords(owes)}
+        </p>
+      ) : null}
+      {money &&
+      task.state === "accepted" &&
+      task.usd !== null &&
+      task.paidTx ? (
+        <p className="num text-sm font-semibold" data-testid="task-paid">
+          {paidWords(task.usd)}
         </p>
       ) : null}
       {task.worker ? (
@@ -105,6 +133,15 @@ export function TaskCard({
           address={address}
           numbers={numbers}
           project={project}
+          task={task}
+        />
+      ) : null}
+      {mayPay && numbers ? (
+        <PayFromBox
+          address={address}
+          numbers={numbers}
+          project={project}
+          taken={taken}
           task={task}
         />
       ) : null}

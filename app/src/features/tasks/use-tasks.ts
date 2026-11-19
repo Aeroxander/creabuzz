@@ -11,7 +11,9 @@ import {
 } from "@tanstack/react-query";
 import { publishAsUser, read } from "../../lib/relay";
 import type { Project } from "../project/project-record";
+import { rawDollars } from "./task-calls";
 import {
+  payOwed,
   type ProjectTask,
   projectTasks,
   type RecordTemplate,
@@ -82,13 +84,42 @@ async function fetchProjectTasks(project: Project) {
   };
 }
 
-/** The project's tasks, newest first. */
-export function useProjectTasks(project: Project) {
+/** The project's tasks, newest first. `enabled` false (or no project) reads nothing. */
+export function useProjectTasks(project: Project | null, enabled = true) {
   return useQuery({
-    queryKey: taskKeys.project(project.coordinate),
+    queryKey: taskKeys.project(project?.coordinate ?? ""),
+    enabled: enabled && project !== null,
     staleTime: 15_000,
-    queryFn: () => fetchProjectTasks(project),
+    queryFn: () => {
+      if (!project) throw new Error("No project.");
+      return fetchProjectTasks(project);
+    },
   });
+}
+
+/** How much of a task's words a sentence about its pay shows. */
+const NAME_MAX = 60;
+
+/**
+ * The names of the accepted tasks that are owed exactly `raw` dollars (raw units) at `payee`: what a draw that pays one of
+ * them is for. Names are cut short and never contain a quote, so they sit safely inside a sentence.
+ */
+export function owedTaskNames(
+  tasks: readonly ProjectTask[],
+  payee: string,
+  raw: bigint,
+): string[] {
+  return tasks
+    .filter(
+      (t) =>
+        payOwed(t) !== null &&
+        t.payTo?.toLowerCase() === payee.toLowerCase() &&
+        rawDollars(t.usd ?? 0) === raw,
+    )
+    .map((t) => {
+      const words = t.what.replace(/["\u201c\u201d]/g, "'").trim();
+      return words.length > NAME_MAX ? `${words.slice(0, NAME_MAX)}…` : words;
+    });
 }
 
 /**

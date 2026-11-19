@@ -61,8 +61,14 @@ export interface ProjectTask {
   state: TaskState;
   /** The newest work handed in that nobody on the team has answered, or the piece that was accepted. */
   handIn: HandIn | null;
-  /** Who accepted the work, and the payment they recorded with it. */
+  /** Who accepted the work, and when (the time their record carries). */
   acceptedBy: string | null;
+  acceptedAt: number | null;
+  /**
+   * The payment's transaction, from any confirmation of the piece that was accepted: paying can come after accepting (the
+   * box was short, a Pair has to agree), and its record is a second confirmation naming the same piece. Null while the
+   * pay is owed.
+   */
   paidTx: string | null;
 }
 
@@ -229,7 +235,20 @@ function readTask(
             : agreed
               ? "working"
               : "offered";
-  const paid = accepted ? first(accepted, "task-paid") : null;
+  // The first confirmation of the accepted piece that names a payment, which may be a later one than the acceptance.
+  const acceptedPieceId = accepted ? first(accepted, "task-evidence") : null;
+  const paying = earliest(
+    confirms.filter((c) => {
+      const tx = first(c, "task-paid");
+      return (
+        accepted !== undefined &&
+        first(c, "task-evidence") === acceptedPieceId &&
+        tx !== null &&
+        TX.test(tx)
+      );
+    }),
+  );
+  const paid = paying ? first(paying, "task-paid") : null;
   const payTo = take ? first(take, "task-pay-to") : null;
   return {
     id: task.id,
@@ -243,7 +262,8 @@ function readTask(
     state,
     handIn: handInOf(acceptedPiece ?? waiting),
     acceptedBy: accepted?.pubkey ?? null,
-    paidTx: paid && TX.test(paid) ? paid : null,
+    acceptedAt: accepted?.created_at ?? null,
+    paidTx: paid,
   };
 }
 
@@ -354,6 +374,22 @@ export function acceptRecord(
   return stepRecord(coordinate, task, "confirm", "Work accepted", extra);
 }
 
+/**
+ * The record of a payment made after the work was accepted: a second confirmation of the same piece, naming the payment's
+ * transaction. The reader takes the first payment recorded for the accepted piece, so the task then reads as paid.
+ */
+export function payRecord(
+  coordinate: string,
+  task: ProjectTask,
+  handIn: string,
+  paidTx: string,
+): RecordTemplate {
+  return stepRecord(coordinate, task, "confirm", "Pay recorded", [
+    ["task-evidence", handIn],
+    ["task-paid", paidTx],
+  ]);
+}
+
 /** What the app knows about who runs whom, so it can tell when accepting would be checking one's own work. */
 export interface WorkerLinks {
   /** The project's founder. */
@@ -393,7 +429,7 @@ export function nextFor(
   me: string | null,
   team: ReadonlySet<string>,
   links?: WorkerLinks,
-): "take" | "hand-in" | "accept" | "own-work" | null {
+): "take" | "hand-in" | "accept" | "own-work" | "pay" | null {
   if (!me) return task.state === "open" ? "take" : null;
   if (task.state === "open" && !team.has(me)) return "take";
   if (
@@ -405,5 +441,18 @@ export function nextFor(
     return links && checksOwnWork(task, me, team, links)
       ? "own-work"
       : "accept";
+  // Accepted work whose pay is still owed: the team may pay it (the same people who may accept it).
+  if (payOwed(task) !== null && team.has(me) && task.worker !== me)
+    return links && checksOwnWork(task, me, team, links) ? null : "pay";
   return null;
+}
+
+/**
+ * What an accepted task still owes its worker, in whole dollars, or null: the work is accepted, it names a pay, and no payment
+ * is recorded for it. A task is never shown as paid unless its payment's transaction is on record.
+ */
+export function payOwed(task: ProjectTask): number | null {
+  return task.state === "accepted" && task.usd !== null && task.paidTx === null
+    ? task.usd
+    : null;
 }

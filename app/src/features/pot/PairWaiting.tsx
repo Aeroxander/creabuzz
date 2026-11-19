@@ -27,10 +27,12 @@ function Inner({
   numbers,
   ready,
   nameOf,
+  tasksFor,
 }: {
   numbers: ProjectNumbers;
   ready: Ready;
   nameOf: (address: string) => string;
+  tasksFor?: (payee: string, raw: bigint) => readonly string[];
 }) {
   const pair = numbers.contracts.pair;
   const waiting = usePairWaiting(pair, ready, numbers.chainId);
@@ -77,6 +79,7 @@ function Inner({
               proposal.target,
               proposal.data,
               nameOf,
+              tasksFor,
             );
             const mine = proposal.by === me.toLowerCase();
             return (
@@ -183,10 +186,13 @@ export function PairWaiting({
   numbers,
   address,
   nameOf,
+  tasksFor,
 }: {
   numbers: ProjectNumbers;
   address: string | null;
   nameOf: (address: string) => string;
+  /** The names of the accepted tasks that are owed exactly this much at this wallet, for a draw that pays one. */
+  tasksFor?: (payee: string, raw: bigint) => readonly string[];
 }) {
   const titleId = useId();
   if (!numbers.contracts.pair || !signsForRunner(numbers, address)) return null;
@@ -204,7 +210,14 @@ export function PairWaiting({
         chainId={numbers.chainId}
         what="see the calls waiting for you"
       >
-        {(ready) => <Inner nameOf={nameOf} numbers={numbers} ready={ready} />}
+        {(ready) => (
+          <Inner
+            nameOf={nameOf}
+            numbers={numbers}
+            ready={ready}
+            tasksFor={tasksFor}
+          />
+        )}
       </WalletGate>
     </Card>
   );
