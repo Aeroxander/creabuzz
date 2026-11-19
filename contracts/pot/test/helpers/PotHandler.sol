@@ -6,12 +6,15 @@ import {Math} from "oz5/utils/math/Math.sol";
 import {Treasury} from "../../src/Treasury.sol";
 import {ShareToken} from "../../src/ShareToken.sol";
 import {Vester} from "../../src/Vester.sol";
+import {TaskBook} from "../../src/TaskBook.sol";
 import {PotMath} from "../../src/PotMath.sol";
 import {QuoteToken} from "../mocks/QuoteToken.sol";
 
 /// @notice Drives one project through the real stack from many actors: joins, leaves, Team leaves, outside payments, forfeits
 /// and grants (vesting is active time, so check-ins and warps move it), draws by the runner and by an agent, rate changes,
-/// check-ins, lapses, a wind-down, fee collection and a full-exit probe. It keeps ghost sums of the dollars that went in and
+/// check-ins, lapses, a wind-down, fee collection and a full-exit probe; and the task queue: announce, wait for the notice,
+/// take, accept in full or in part, reject, cancel, a task running out, and the claim of exit notes (a take-out while money
+/// is set aside writes a note). It keeps ghost sums of the dollars that went in and
 /// out and records the FIRST rule a step broke in `violation`, so the invariant file can state each rule once.
 ///
 /// Rules checked inside the steps (they need the state before and after one step):
@@ -19,8 +22,9 @@ import {QuoteToken} from "../mocks/QuoteToken.sol";
 ///    join by at most the quote offset allows (100 Shares priced at the old value less one dollar), plus rounding. (The price
 ///    a joiner is quoted is NOT monotone: the offset is virtual paid-in and Shares in the price but the credit uses the real
 ///    paid-in per Share, so the price can dip by a part in 1e13 at 76 million Shares and by more with few Shares.);
-///  - no leave, Team leave, outside payment, grant, claim, forfeit, check-in, rate change, fee collection or draw lowers
-///    what a backer Share is worth (to within one unit): only the allowance accruing with time and the platform fee may;
+///  - no leave, Team leave, outside payment, grant, claim, forfeit, check-in, rate change, fee collection, draw, take, reject,
+///    cancel or note claim lowers what a backer Share is worth, counting the money set aside for tasks at face (to within one
+///    unit): only the allowance accruing with time, the platform fee and a payment to a worker may;
 ///  - a Team leave never reaches into the backers' paid-in money;
 ///  - the full-exit probe: every backer leaving in a shuffled order is paid what the first would have been, to within the
 ///    rounding of the run, and all backers and then the Team together are never paid more than the pot held.
@@ -34,6 +38,7 @@ contract PotHandler is Test {
     Vester internal v;
     address internal founder;
     address internal agent;
+    address internal worker;
     address internal sink = address(0x51F);
 
     address[] internal actors;
@@ -42,9 +47,18 @@ contract PotHandler is Test {
     uint256 public cashIn; // dollars sent into the Treasury by joins and outside payments
     uint256 public cashOut; // dollars it sent out: leaves, Team leaves, draws, fees collected
     uint256 public creditedMax; // sum of what joins could add to paid-in (their net amounts)
+    uint256 public workerPaid; // dollars paid to workers by accepts (part of `cashOut`)
+    uint256 public notesPaid; // dollars paid to holders by note claims (part of `cashOut`)
     uint256 public lastTeam; // Team supply after the last step: it must never rise
     uint256 public pool;
     string public violation;
+
+    // the task queue: every serial announced, the ones that may still hold money, and the ones whose end has not been seen
+    uint64[] internal serials;
+    uint64[] internal live;
+    uint64[] internal unseen;
+    mapping(uint64 => uint256) public claimedOf; // dollars paid to the notes of a serial
+    mapping(uint64 => uint256) public poolAtEnd; // what was held for the notes of a serial when it ended
 
     // step counters, to see that the run reached every kind of step
     mapping(bytes32 => uint256) public count;
@@ -65,6 +79,7 @@ contract PotHandler is Test {
             actors.push(makeAddr(string.concat("handler-actor-", vm.toString(i))));
         }
         agent = makeAddr("handler-agent");
+        worker = makeAddr("handler-worker");
         vm.prank(founder_);
         t_.authoriseAgent(agent);
     }
@@ -95,9 +110,48 @@ contract PotHandler is Test {
         return PotMath.cash(n, t.pot(), t.paidIn(), b, team.totalSupply());
     }
 
+    /// @dev What a backer Share is worth counting the money set aside for tasks at face (the leave formula on the pot plus
+    /// `locked`), on the settled state. A take, a return and an exit note move money between the two and leave this alone.
+    function _face() internal returns (uint256) {
+        _sync();
+        uint256 b = shares.totalSupply();
+        if (b == 0) return 0;
+        return PotMath.cash(1e18, t.pot() + t.locked(), t.paidIn(), b, team.totalSupply());
+    }
+
+    /// @dev Settle at this second and note the end of any task that ran out in it.
+    function _sync() internal {
+        t.settle();
+        TaskBook b = TaskBook(address(t.tasks()));
+        uint256 i;
+        while (i < unseen.length) {
+            uint64 sr = unseen[i];
+            TaskBook.State st = b.taskOf(sr).state;
+            if (st == TaskBook.State.Announced || st == TaskBook.State.Taken) {
+                ++i;
+                continue;
+            }
+            poolAtEnd[sr] = b.taskOf(sr).notesLeft;
+            unseen[i] = unseen[unseen.length - 1];
+            unseen.pop();
+        }
+        i = 0;
+        while (i < live.length) {
+            TaskBook.Task memory k = b.taskOf(live[i]);
+            bool done = k.state != TaskBook.State.Announced && k.state != TaskBook.State.Taken && k.noteFace == 0
+                && k.notesLeft == 0;
+            if (!done) {
+                ++i;
+                continue;
+            }
+            live[i] = live[live.length - 1];
+            live.pop();
+        }
+    }
+
     /// @dev Called at the end of a step: settle at this second (so the box is cut to its cap), and check what no step may break.
     function _after() internal {
-        t.settle();
+        _sync();
         uint256 g = team.totalSupply();
         if (g > lastTeam) _bad("Team Shares were created after birth");
         lastTeam = g;
@@ -105,14 +159,14 @@ contract PotHandler is Test {
 
     /// @dev What a backer Share is worth, after a step that is not a spend, must not be lower than before (one unit of rounding).
     function _notLower(uint256 before_, string memory step) internal {
-        uint256 after_ = t.leaveValue();
+        uint256 after_ = _face();
         if (after_ + 1 < before_) _bad(string.concat("a backer Share lost value on ", step));
     }
 
     // ================================================= steps =========================================================
 
     function join(uint256 who, uint256 amountSeed) public {
-        t.settle();
+        _sync();
         if (!t.doorOpenNow()) return;
         uint256 span = [uint256(1e8), 1e9, 1e10, 1e11, 1e12][amountSeed % 5];
         uint256 amount = bound(amountSeed >> 8, 1e6, span);
@@ -150,12 +204,12 @@ contract PotHandler is Test {
     }
 
     function leave(uint256 who, uint256 pct) public {
-        t.settle();
+        _sync();
         address a = _actor(who);
         uint256 bal = shares.balanceOf(a);
         if (bal == 0) return;
         uint256 n = Math.max(1, bal * bound(pct, 1, 100) / 100);
-        uint256 lv0 = t.leaveValue();
+        uint256 lv0 = _face();
         vm.prank(a);
         uint256 cash = t.leave(n, 0, a);
         cashOut += cash;
@@ -165,12 +219,12 @@ contract PotHandler is Test {
     }
 
     function leaveTeam(uint256 who, uint256 pct) public {
-        t.settle();
+        _sync();
         address a = _actor(who);
         uint256 bal = team.balanceOf(a);
         if (bal == 0) return;
         uint256 n = Math.max(1, bal * bound(pct, 1, 100) / 100);
-        uint256 lv0 = t.leaveValue();
+        uint256 lv0 = _face();
         uint256 pot0 = t.pot();
         uint256 a0 = t.paidIn();
         vm.prank(a);
@@ -185,10 +239,10 @@ contract PotHandler is Test {
     }
 
     function revenue(uint256 who, uint256 amountSeed) public {
-        t.settle();
+        _sync();
         uint256 amount = bound(amountSeed, 1e6, [uint256(1e8), 1e9, 1e11][amountSeed % 3]);
         address a = _actor(who);
-        uint256 lv0 = t.leaveValue();
+        uint256 lv0 = _face();
         usd.mint(a, amount);
         vm.startPrank(a);
         usd.approve(address(t), amount);
@@ -211,8 +265,8 @@ contract PotHandler is Test {
     }
 
     function checkIn(uint256 seed) public {
-        t.settle();
-        uint256 lv0 = t.leaveValue();
+        _sync();
+        uint256 lv0 = _face();
         vm.prank(founder);
         t.checkIn(keccak256(abi.encode(seed)));
         _notLower(lv0, "a check-in");
@@ -221,11 +275,11 @@ contract PotHandler is Test {
     }
 
     function draw(uint256 pct, bool byAgent) public {
-        t.settle();
+        _sync();
         uint256 box = t.box();
         if (box == 0) return;
         uint256 x = Math.max(1, box * bound(pct, 1, 100) / 100);
-        uint256 lv0 = t.leaveValue();
+        uint256 lv0 = _face();
         vm.prank(byAgent ? agent : founder);
         t.draw(sink, x);
         cashOut += x;
@@ -235,10 +289,10 @@ contract PotHandler is Test {
     }
 
     function lowerRate(uint256 seed) public {
-        t.settle();
+        _sync();
         uint32 r = t.ratePpm();
         if (r == 0) return;
-        uint256 lv0 = t.leaveValue();
+        uint256 lv0 = _face();
         vm.prank(founder);
         t.setRate(uint32(bound(seed, 0, r - 1)));
         _notLower(lv0, "a lower rate");
@@ -247,7 +301,7 @@ contract PotHandler is Test {
     }
 
     function proposeRate(uint256 seed) public {
-        t.settle();
+        _sync();
         uint32 r = t.ratePpm();
         if (r >= 2000) return;
         vm.prank(founder);
@@ -257,8 +311,8 @@ contract PotHandler is Test {
     }
 
     function applyRate() public {
-        t.settle();
-        uint256 lv0 = t.leaveValue();
+        _sync();
+        uint256 lv0 = _face();
         t.applyRate();
         _notLower(lv0, "a rate change");
         _hit("applyRate");
@@ -266,8 +320,8 @@ contract PotHandler is Test {
     }
 
     function grant(uint256 who, uint256 seed) public {
-        t.settle();
-        uint256 lv0 = t.leaveValue();
+        _sync();
+        uint256 lv0 = _face();
         vm.prank(founder);
         t.grantTeam(_actor(who), bound(seed, 1, pool / 40));
         _notLower(lv0, "a grant");
@@ -278,7 +332,7 @@ contract PotHandler is Test {
     /// @dev The whole path to Team Shares in hands, in one step: grant to `who`, let 14 time units of active time pass with a
     /// check-in each (the cliff is 13), and claim what vested. This is what makes Team leaves reachable in a run.
     function teamPath(uint256 who, uint256 seed) public {
-        t.settle();
+        _sync();
         address a = _actor(who);
         vm.prank(founder);
         uint256 id = t.grantTeam(a, bound(seed, 1, pool / 40));
@@ -296,8 +350,8 @@ contract PotHandler is Test {
     function claim(uint256 seed) public {
         uint256 n = v.grantCount();
         if (n == 0) return;
-        t.settle();
-        uint256 lv0 = t.leaveValue();
+        _sync();
+        uint256 lv0 = _face();
         v.claim(seed % n);
         _notLower(lv0, "a claim");
         _hit("claim");
@@ -308,8 +362,8 @@ contract PotHandler is Test {
         uint256 n = v.grantCount();
         if (n == 0) return;
         uint256 id = seed % n;
-        t.settle();
-        uint256 lv0 = t.leaveValue();
+        _sync();
+        uint256 lv0 = _face();
         vm.prank(v.grantOf(id).member);
         v.announceForfeit(id);
         _notLower(lv0, "a forfeit notice");
@@ -320,8 +374,8 @@ contract PotHandler is Test {
     function executeForfeit(uint256 seed) public {
         uint256 n = v.grantCount();
         if (n == 0) return;
-        t.settle();
-        uint256 lv0 = t.leaveValue();
+        _sync();
+        uint256 lv0 = _face();
         v.execute(seed % n);
         _notLower(lv0, "a burn");
         _hit("executeForfeit");
@@ -329,10 +383,10 @@ contract PotHandler is Test {
     }
 
     function collectFees() public {
-        t.settle();
+        _sync();
         uint256 owed = t.feesOwed();
         if (owed == 0) return;
-        uint256 lv0 = t.leaveValue();
+        uint256 lv0 = _face();
         t.collectFees();
         cashOut += owed;
         _notLower(lv0, "collecting fees");
@@ -350,8 +404,8 @@ contract PotHandler is Test {
     /// @dev Rare: the runner winds the project down; after it the run goes on with leaves, outside money and fee collection.
     function windDown(uint256 seed) public {
         if (seed % 40 != 0) return;
-        t.settle();
-        uint256 lv0 = t.leaveValue();
+        _sync();
+        uint256 lv0 = _face();
         vm.prank(founder);
         t.windDown();
         _notLower(lv0, "a wind-down");
@@ -359,10 +413,174 @@ contract PotHandler is Test {
         _after();
     }
 
+    // ================================================= the task queue ================================================
+
+    function _book() internal view returns (TaskBook) {
+        return TaskBook(address(t.tasks()));
+    }
+
+    /// @dev A serial that may still hold money and is in `state`, chosen by `seed`; zero if there is none.
+    function _pick(uint256 seed, TaskBook.State state) internal view returns (uint64) {
+        uint256 n = live.length;
+        for (uint256 i; i < n; ++i) {
+            uint64 sr = live[(seed + i) % n];
+            if (_book().taskOf(sr).state == state) return sr;
+        }
+        return 0;
+    }
+
+    /// @dev Move the clock to `ts` with a check-in every 6 days, so the window of the runner never closes on the way.
+    function _warpAlive(uint256 ts) internal {
+        if (ts <= block.timestamp) return;
+        bool alive = t.windDownKind() == 0;
+        uint256 at = block.timestamp;
+        if (alive) {
+            vm.prank(founder);
+            t.checkIn(keccak256(abi.encode("alive", at)));
+        }
+        while (alive && at + 10 days < ts) {
+            at += 6 days;
+            vm.warp(at);
+            vm.prank(founder);
+            t.checkIn(keccak256(abi.encode("alive", at)));
+        }
+        vm.warp(ts);
+    }
+
+    function announceTask(uint256 seed) public {
+        _sync();
+        if (t.windDownKind() != 0 || block.timestamp >= t.activeEnd() || _book().openCount() >= 8) return;
+        address payee = seed % 3 == 0 ? address(0) : worker;
+        vm.prank(founder);
+        uint64 sr = t.announceTask(
+            keccak256(abi.encode(seed)), payee, bound(seed >> 8, 1e6, 1e12), uint16(bound(seed >> 24, 1, 500))
+        );
+        serials.push(sr);
+        live.push(sr);
+        unseen.push(sr);
+        _hit("announce");
+        _after();
+    }
+
+    function takeTask(uint256 seed) public {
+        _sync();
+        uint64 sr = _pick(seed, TaskBook.State.Announced);
+        if (sr == 0) return;
+        TaskBook.Task memory k = _book().taskOf(sr);
+        if (block.timestamp < k.noticeEnd || block.timestamp >= k.expiresAt) return;
+        uint256 f0 = _face();
+        vm.prank(worker);
+        try t.takeTask(sr, 0) {
+            _notLower(f0, "a take");
+            _hit("take");
+        } catch {
+            _hit("takeBlocked");
+        }
+        _after();
+    }
+
+    function acceptTask(uint256 seed, bool full) public {
+        _sync();
+        uint64 sr = _pick(seed, TaskBook.State.Taken);
+        if (sr == 0) return;
+        TaskBook.Task memory k = _book().taskOf(sr);
+        if (block.timestamp >= k.deadline) return;
+        uint256 pay = full ? k.locked : bound(seed >> 8, 1, k.locked);
+        vm.prank(founder);
+        t.acceptTask(sr, pay);
+        cashOut += pay;
+        workerPaid += pay;
+        _hit(full ? bytes32("acceptFull") : bytes32("acceptPart")); // a payment to a worker is a spend: no value rule
+        _after();
+    }
+
+    function rejectTask(uint256 seed) public {
+        _sync();
+        uint64 sr = _pick(seed, TaskBook.State.Taken);
+        if (sr == 0) return;
+        uint256 f0 = _face();
+        vm.prank(founder);
+        t.rejectTask(sr);
+        _notLower(f0, "a reject");
+        _hit("reject");
+        _after();
+    }
+
+    function cancelTask(uint256 seed) public {
+        _sync();
+        uint64 sr = _pick(seed, TaskBook.State.Announced);
+        if (sr == 0) return;
+        uint256 f0 = _face();
+        vm.prank(founder);
+        t.cancelTask(sr);
+        _notLower(f0, "a cancel");
+        _hit("cancel");
+        _after();
+    }
+
+    /// @dev Settle the note of some holder against some ended serial (anyone may call; the holder is paid).
+    function claimNote(uint256 seed) public {
+        _sync();
+        uint256 n = live.length;
+        for (uint256 i; i < n; ++i) {
+            uint64 sr = live[(seed + i) % n];
+            TaskBook.Task memory k = _book().taskOf(sr);
+            if (k.returned == 0 || k.state == TaskBook.State.Taken || k.state == TaskBook.State.Announced) continue;
+            for (uint256 j; j < N_ACTORS; ++j) {
+                address a = actors[(seed / 7 + j) % N_ACTORS];
+                if (_book().noteOf(sr, a) == 0) continue;
+                uint256 f0 = _face();
+                uint256 paid = t.claimNote(sr, a);
+                cashOut += paid;
+                notesPaid += paid;
+                claimedOf[sr] += paid;
+                _notLower(f0, "a note claim");
+                _hit("claimNote");
+                _after();
+                return;
+            }
+        }
+    }
+
+    /// @dev Move the clock to a moment that matters to some open task: into its take window, or near its deadline.
+    function advanceToTask(uint256 seed) public {
+        _sync();
+        uint256 n = live.length;
+        if (n == 0) return;
+        TaskBook.Task memory k = _book().taskOf(live[seed % n]);
+        uint256 unit = t.unit();
+        uint256 target;
+        if (k.state == TaskBook.State.Announced) {
+            target = k.noticeEnd + (seed >> 8) % unit;
+        } else if (k.state == TaskBook.State.Taken) {
+            target = (seed >> 8) % 2 == 0 ? uint256(k.deadline) + 1 : uint256(k.deadline) - 1 - (seed >> 9) % unit;
+        } else {
+            return;
+        }
+        if (target <= block.timestamp) return;
+        _warpAlive(target);
+        _hit("advanceToTask");
+        _after();
+    }
+
+    function serialCount() external view returns (uint256) {
+        return serials.length;
+    }
+
+    /// @dev The serials that may still hold money: open ones and ones with notes still held.
+    function liveSerials() external view returns (uint64[] memory) {
+        return live;
+    }
+
+    /// @dev Every serial announced so far.
+    function allSerials() external view returns (uint64[] memory) {
+        return serials;
+    }
+
     /// @dev Everyone out, in a shuffled order, on a snapshot that is thrown away: each backer is paid what their Shares were
     /// worth before the run, to within the rounding of the run; then the Team leaves; nobody is paid more than the pot held.
     function probeFullExit(uint256 seed) public {
-        t.settle();
+        _sync();
         if (shares.totalSupply() == 0) return;
         uint256 snap = vm.snapshotState();
         // The allowance box above its cap flows back into the pot at the next settle, and every leave shrinks the cap; that
@@ -371,7 +589,7 @@ contract PotHandler is Test {
             vm.prank(founder);
             try t.setRate(0) {} catch {}
         }
-        t.settle();
+        _sync();
         uint256 b0 = shares.totalSupply();
         uint256 pot0 = t.pot();
         uint256 a0 = t.paidIn();
@@ -425,7 +643,7 @@ contract PotHandler is Test {
     function step(uint256 seed, bool withProbe) external {
         uint256 a = seed >> 8;
         uint256 b = uint256(keccak256(abi.encode(seed, "b")));
-        uint256 k = seed % 21;
+        uint256 k = seed % 34;
         if (k < 6) return join(a, b);
         if (k < 8) return warp(a);
         if (k == 8) return leave(a, b);
@@ -440,8 +658,18 @@ contract PotHandler is Test {
         if (k == 17) return collectFees();
         if (k == 18) return lowerRate(a);
         if (k == 19) return proposeRate(a);
-        if (withProbe) return probeFullExit(a);
-        applyRate();
+        if (k == 20) {
+            if (withProbe) return probeFullExit(a);
+            return applyRate();
+        }
+        if (k < 23) return announceTask(b);
+        if (k < 26) return advanceToTask(b);
+        if (k < 28) return takeTask(b);
+        if (k == 28) return acceptTask(b, a % 2 == 0);
+        if (k == 29) return acceptTask(b, a % 3 == 0);
+        if (k == 30) return rejectTask(b);
+        if (k < 33) return claimNote(b);
+        cancelTask(b);
     }
 
     // ================================================= reporting =====================================================

@@ -2,17 +2,21 @@
 pragma solidity ^0.8.30;
 
 import {Vm} from "forge-std/Vm.sol";
-import {StackBase} from "./helpers/StackBase.sol";
+import {TaskLedger} from "./helpers/TaskLedger.sol";
 import {PotHandler} from "./helpers/PotHandler.sol";
 import {Treasury} from "../src/Treasury.sol";
 import {Vester} from "../src/Vester.sol";
+import {TaskBook} from "../src/TaskBook.sol";
 
 /// @notice The recipe a server follows to rebuild a project from its logs alone, run as a test: a ledger reads only the events
-/// of the Treasury and the Vester, in order, and after every step of a long mixed run (joins, take-outs, Team take-outs,
-/// outside payments, grants, forfeits, vesting, draws, rate changes, check-ins, lapses, a wind-down) it must hold the very
-/// numbers the contracts hold: pot, paid-in, Shares, Team Shares, the burn queue, the allowance box, outside money arriving,
-/// active seconds and fees owed.
-contract EventsRebuildTest is StackBase {
+/// of the Treasury, the Vester and the TaskBook, in order, and after every step of a long mixed run (joins, take-outs, Team
+/// take-outs, outside payments, grants, forfeits, vesting, draws, rate changes, check-ins, lapses, a wind-down, and the task
+/// queue: announce, take, accept in full and in part, reject, cancel, tasks that run out, exit notes and their claims) it must
+/// hold the very numbers the contracts hold: pot, paid-in, Shares, Team Shares, the burn queue, the allowance box, outside
+/// money arriving, active seconds and fees owed; the money set aside for tasks and the money held for notes; every task's
+/// state and money (set aside, stayers' claim, note face, returned, held for notes); every holder's note against every
+/// serial; the open count, the next serial and the 28-day sum of takes.
+contract EventsRebuildTest is TaskLedger {
     // ---- the ledger: what a server rebuilds from logs
     uint256 internal lPot;
     uint256 internal lPaidIn;
@@ -24,12 +28,7 @@ contract EventsRebuildTest is StackBase {
     uint256 internal lActive;
     uint256 internal lFees;
     uint256 internal eventsRead;
-
-    function _word(bytes memory d, uint256 i) internal pure returns (uint256 r) {
-        assembly {
-            r := mload(add(d, add(32, mul(32, i))))
-        }
-    }
+    PotHandler internal h;
 
     function _apply(Vm.Log[] memory logs) internal {
         for (uint256 i; i < logs.length; ++i) {
@@ -56,10 +55,15 @@ contract EventsRebuildTest is StackBase {
                     lFees -= _word(d, 0);
                 } else if (sig == Treasury.BurnAnnounced.selector) {
                     lZ = _word(d, 1);
+                } else if (sig == Treasury.TaskMoney.selector) {
+                    lPot = _word(d, 3);
+                    _applyTaskMoney(d);
                 } else {
                     continue;
                 }
                 ++eventsRead;
+            } else if (logs[i].emitter == address(_book())) {
+                _applyBook(logs[i]);
             } else if (logs[i].emitter == address(v)) {
                 if (sig == Vester.ForfeitAnnounced.selector) {
                     lZ = _word(d, 3);
@@ -85,6 +89,7 @@ contract EventsRebuildTest is StackBase {
         assertEq(lArriving, t.arriving(), string.concat(step, ": arriving"));
         assertEq(lActive, t.activeSeconds(), string.concat(step, ": active seconds"));
         assertEq(lFees, t.feesOwed(), string.concat(step, ": fees owed"));
+        _sameTasks(step, h.actorsList(), h.liveSerials());
     }
 
     function _check(string memory step) internal {
@@ -97,15 +102,17 @@ contract EventsRebuildTest is StackBase {
         // the Team pool was minted at birth: a server reads it from ProjectLaunched
         lTeam = POOL;
         vm.recordLogs();
-        PotHandler h = new PotHandler(usd, t, shares, team, v, founder, POOL);
+        h = new PotHandler(usd, t, shares, team, v, founder, POOL);
         vm.getRecordedLogs(); // the handler's agent set-up is not part of the run
         uint256 seed = 0xC0FFEE;
-        for (uint256 i; i < 400; ++i) {
+        for (uint256 i; i < 500; ++i) {
             seed = uint256(keccak256(abi.encode(seed, i)));
             try h.step(seed, false) {} catch {}
             _check(string.concat("step ", vm.toString(i)));
         }
         assertGt(eventsRead, 300, "the run produced events");
+        assertGt(lNext, 10, "tasks were announced");
+        assertGt(takeAt.length, 0, "tasks were taken");
         assertGt(lShares, 0, "there were backers");
         // the end of the project: a wind-down by choice, a notice of one time unit, the rest of the Team pool burns
         vm.prank(founder);
@@ -115,6 +122,9 @@ contract EventsRebuildTest is StackBase {
         try v.burnUngrantedAfterWindDown() {} catch {}
         _check("burn after wind-down");
         assertEq(lBox, 0, "the box went back to the pot");
-        emit log_named_uint("events read by the ledger", eventsRead);
+        emit log_named_uint("events read by the ledger", eventsRead + bookEvents);
+        emit log_named_uint("tasks announced", lNext - 1);
+        emit log_named_uint("tasks taken", takeAt.length);
+        emit log_named_uint("dollars of notes claimed", h.notesPaid());
     }
 }
