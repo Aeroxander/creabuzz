@@ -740,6 +740,13 @@ Chosen under the owner's standing go; the owner may overrule any.
 9. Which countries or buyers should the door stay shut to, and what may the platform host or moderate?
 10. Earlier backers: may their signed terms (365 days from a market opening, ordinary Shares) be replaced by a Team grant
     that claims only above what backers put in, with a new text, a new fingerprint and a new consent?
+11. **Could a project's Shares be offered in the United States under the SEC's proposed Regulation Crypto Assets?**
+    (Proposed 18 August 2026, not final; as reported: a one-time startup exemption of up to 5 million dollars over four
+    years with a notice filing and public disclosure, open to the general public, and a larger tier with financial
+    statements.) Is a Share with a cash claim on a shared pot a "covered" asset under it at all; is the project or the
+    platform the issuer; does "no set fundraising amount" need a per-project ceiling on money in; what does the platform
+    need for its own role, which an offering exemption does not cover? The separate "innovation exemption" order of 17
+    September 2026 is for venues trading tokenized listed stocks, secondary sales only, and does not appear to fit.
 
 ## 13. Objections considered
 
