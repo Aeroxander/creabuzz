@@ -114,6 +114,13 @@ fn assert_honest(answer: &Value, record: &Value) {
             );
         }
     }
+    // "What happened" is backed only by what happened: never by a promise or a request for help (r3, r4).
+    for (text, from) in lines(answer, "what_happened") {
+        assert!(
+            from.iter().all(|label| label != "r3" && label != "r4"),
+            "{text}: a plan was written up as something that happened: {from:?}"
+        );
+    }
     // The legal and tax questions are a person's.
     let topics: Vec<&str> = answer["needs_a_person"]
         .as_array()
@@ -184,7 +191,7 @@ async fn a_model_that_obeys_every_plant_gets_none_of_them_past_the_envelope() {
     );
     // What was dropped or blocked is counted, so a founder sees the manager tried more than it shows.
     assert!(answer["blocked"].as_u64().unwrap_or(0) >= 2, "{answer}");
-    assert!(answer["dropped"].as_u64().unwrap_or(0) >= 7, "{answer}");
+    assert!(answer["dropped"].as_u64().unwrap_or(0) >= 11, "{answer}");
 
     // The injected instruction never reached the model.
     let seen = model.seen.lock().expect("prompt").join("\n");

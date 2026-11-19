@@ -1,6 +1,6 @@
 # The manager loop: what the AI manager does, in commands
 
-Status: what works today, 2026-11-19. Loop version: `manager-loop 1` (every draft prints it as `loop_version`).
+Status: what works today, 2026-11-19 (rules tightened after review, same day). Loop version: `manager-loop 2` (every draft prints it as `loop_version`).
 
 The AI manager drafts for a project's founder and does nothing else. It reads the project's record, the founder's
 answers and three files of the project's brain, and drafts three things: the one thing to do this week, what to leave
@@ -20,7 +20,7 @@ codes: 0 done, 1 bad input or not found, 2 network or the AI service did not ans
 ## 1. Set up the manager account
 
 - Name: manager-account
-- Version: manager-loop 1
+- Version: manager-loop 2
 - Owner: the server operator
 - Review date: 2027-02-19
 - Measure: projects with a labelled manager account, and how many of them are also one of the project's worker agents
@@ -50,7 +50,7 @@ account a wallet with limits.
 ## 2. The weekly draft
 
 - Name: weekly-draft
-- Version: manager-loop 1
+- Version: manager-loop 2
 - Owner: the server operator
 - Review date: 2027-02-19
 - Measure: of the drafts asked for, how many lines the founder kept, edited or threw away, counted by section and never
@@ -93,7 +93,7 @@ account a wallet with limits.
 ## 3. What to leave aside
 
 - Name: not-doing
-- Version: manager-loop 1
+- Version: manager-loop 2
 - Owner: the server operator
 - Review date: 2027-02-19
 - Measure: how often the "not doing" line is kept, and how often the thing left aside shows up as a missed promise four
@@ -114,7 +114,7 @@ buzz launchpad manager draft <PROJECT> --author <FOUNDER> \
 ## 4. This needs a person
 
 - Name: needs-a-person
-- Version: manager-loop 1
+- Version: manager-loop 2
 - Owner: the server operator, with counsel for the wording of the ask
 - Review date: 2027-02-19
 - Measure: how many drafts carried `needs_a_person`, by topic (legal, tax, sale terms), and how many asks were posted.
@@ -132,7 +132,7 @@ buzz launchpad updates post <PROJECT> --title "A question for someone qualified"
 ## 5. The project brain
 
 - Name: project-brain
-- Version: manager-loop 1
+- Version: manager-loop 2
 - Owner: the founder of each project (the templates: the server operator)
 - Review date: 2027-02-19
 - Measure: projects with a brain, the age of the newest dated line in `facts.md`, and drafts whose lines cite a facts
@@ -161,7 +161,7 @@ Nothing in these files is private if the repository is public.
 ## 6. What a draft costs
 
 - Name: draft-costs
-- Version: manager-loop 1
+- Version: manager-loop 2
 - Owner: the server operator
 - Review date: 2027-02-19
 - Measure: hosted drafts a week, what they cost, the share of the last 90 days' fees that is, and how many drafts each
@@ -169,7 +169,9 @@ Nothing in these files is private if the repository is public.
 - Retire if: hosted spend stays under 1% of fees for two quarters (then the weekly limit can go).
 
 Hosted drafts go through the server's AI service and the pool every AI feature shares (2,000 calls a day for the
-community, 500 an account). The rules, in the order the server checks them:
+community, 500 an account). The rules, in the order the server checks them (a refusal for the project's week or the
+platform's cap never uses up a call of the shared pool: the pool is counted last, and a refusal there gives back the
+week's draft and the money set aside):
 
 | The server says (`code`) | Why | What to do |
 |---|---|---|
@@ -181,6 +183,11 @@ community, 500 an account). The rules, in the order the server checks them:
 | `ai_manager_own_key` | The project has had this week's hosted drafts (10 unless the operator set another number) | Run your own agent on your own AI key |
 | `ai_unavailable` | The AI service did not answer; nothing was counted against the week | Try again later |
 
+A project is new for 14 days from the earlier of its record's date and the first time it asked for a draft, so saving
+the record again does not make it new again. A project's first round counts as closed only when the chain reader's
+launch log for the record's chain key names this very record; a record that names another project's key gets nothing
+from it. The project is counted under one address however the founder's key is written (upper or lower case).
+
 Operator settings, read from the environment only and never from a file in the repository:
 `BUZZ_MANAGER_CALLS_PER_WEEK` (default 10), `BUZZ_MANAGER_MAX_CENTS_PER_90_DAYS` (a ceiling in real money on hosted
 spend; set it on a test network, where fees are play dollars and the AI bill is not), and the AI service's own
@@ -191,7 +198,7 @@ refused; whether a new server should have a small fixed floor is the owner's dec
 ## 7. The honesty rules, and their limit
 
 - Name: honesty-envelope
-- Version: manager-loop 1
+- Version: manager-loop 2
 - Owner: the server operator
 - Review date: 2027-02-19
 - Measure: the planted-record eval passes (in every build with a stand-in model; against the real model before each
@@ -201,15 +208,26 @@ refused; whether a new server should have a small fixed floor is the owner's dec
 The server applies these to every reply before the founder sees it; no client can skip them.
 
 1. A line stays only if it cites something that was read. Inputs that read like instructions to an AI are set aside
-   first and can never be cited.
-2. Returns, price, what Shares are worth, guarantees and moving money are removed, whatever they cite.
-3. Legal, tax and sale questions become "this needs a person" (section 4).
-4. Every number, link, name, date and "no" in a line must be in what it cites, and at least half of its other words
-   must be the cited item's own words.
-5. Every answer says what was read, that it can be wrong, and that the record was sent to the server's AI service.
+   first and can never be cited; so is a line that closes one of the tags the prompt wraps its data in.
+2. "What happened" is backed only by what happened: an update's "What happened" and one-line parts, a promise marked,
+   accepted work, the founder's answers, and lines of `facts.md` and `decisions.md`. A goal, a promise, what was next
+   then, a task or a help request says what was meant, so it can back "this week" and "not doing" and never "What
+   happened". Each part of a record is its own source, so a part that happened is never confused with a plan beside it.
+3. Returns, price, what Shares are worth, guarantees and moving money are removed, whatever they cite. So is any line
+   that tells someone to pay, send, give or buy money, dollars or Shares, any multiplier such as "5x", and a list of
+   words for gain, upside, bonus, rising value and money back.
+4. Legal, tax and sale questions become "this needs a person" (section 4): law, licences, copyright, privacy, KYC,
+   valuation, equity and dilution, and selling, issuing or minting Shares.
+5. Every number, link (with or without `https://`), name (a capitalised word, the first word of a sentence included
+   unless it is an ordinary opener), date and "no" in a line must be in what it cites, and at least half of its other
+   words must be the cited item's own words.
+6. Every answer says what was read, that it can be wrong, and that the record was sent to the server's AI service.
 
-The limit, plainly: one invented plain word among real ones gets through ("the lamps passed", where the record says
-"tested"). The rules check words, not meaning. That is why a person signs.
+The limits, plainly. Rules 3 and 4 are lists of words and phrases, not understanding: a claim of gain or a legal
+question put in words that are on no list gets through, and the lists grow when a review finds a gap. Rule 5 checks
+words, not meaning, so one invented plain word among real ones gets through ("the lamps passed", where the record says
+"tested"), and a name written in lower case is not seen as a name. That is why every answer says it can be wrong and
+why a person signs.
 
 The eval runs in every build with a stand-in model that obeys every plant. To run it against the real model, with the
 key in the environment and nowhere else:

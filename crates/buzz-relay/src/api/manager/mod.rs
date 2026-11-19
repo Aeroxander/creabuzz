@@ -21,6 +21,8 @@ pub(crate) mod model;
 #[cfg(test)]
 mod planted_eval_tests;
 #[cfg(test)]
+mod review_tests;
+#[cfg(test)]
 mod route_postgres_tests;
 
 use std::collections::HashSet;
@@ -123,7 +125,8 @@ fn project_facts(record: &Event) -> ProjectFacts {
 }
 
 /// One record of the project as the manager is shown it: its goals, promises, answers, update parts, help asked and
-/// tasks, in words. `None` when it says nothing the manager reads.
+/// tasks, in words, one part to a line (the envelope reads each line as a source of its own and tells what happened
+/// from what was planned by how it opens). `None` when it says nothing the manager reads.
 pub(crate) fn item_text(event: &Event) -> Option<String> {
     let mut parts: Vec<String> = Vec::new();
     let mut confirm = false;
@@ -174,7 +177,7 @@ pub(crate) fn item_text(event: &Event) -> Option<String> {
         .into_iter()
         .filter(|p| !p.trim().is_empty())
         .collect::<Vec<_>>()
-        .join(" ");
+        .join("\n");
     (!text.is_empty()).then_some(text)
 }
 
@@ -258,6 +261,9 @@ pub async fn draft(
             "`project` must be 37001:<founder>:<id>",
         ));
     };
+    // The project's one address, whatever the case the caller typed the founder's key in: the weekly count, the
+    // record's own `a` tags and the founder's updates are all found by it.
+    let coordinate = format!("{KIND_LAUNCH_RECORD}:{}:{d}", hex::encode(&author_bytes));
     let record = state
         .db
         .query_events(&buzz_db::EventQuery {
@@ -332,15 +338,29 @@ pub async fn draft(
     if !cost::within_platform_cap(spent, fees, u128::from(worst), ceiling) {
         return Err(platform_cap());
     }
+    // The project's first round counts only when the chain's own launch log ties the record's chain key to this very
+    // record: a founder cannot name another project's key and borrow its round.
     let round_closed = match project.chain_key {
-        Some(key) => cost::first_round_closed(pool, &key)
-            .await
-            .map_err(|e| failed("reading the project's rounds", e))?,
+        Some(key) => cost::first_round_closed(
+            pool,
+            reader.as_deref(),
+            &key,
+            &cost::project_id(&coordinate),
+        )
+        .await
+        .map_err(|e| failed("reading the project's rounds", e))?,
         None => false,
     };
     if !round_closed {
-        let young = now.timestamp() - i64::try_from(project.started_at).unwrap_or(0)
-            < cost::POSTED_WITHIN_DAYS * 86_400;
+        // A project is new for 14 days from the earlier of its record's date and the first time it asked: the record
+        // is replaceable, so re-saving it must not make the project new again.
+        let first_seen = cost::first_seen(pool, community, &coordinate, now)
+            .await
+            .map_err(|e| failed("noting when the project first asked", e))?;
+        let began = i64::try_from(project.started_at)
+            .unwrap_or(i64::MAX)
+            .min(first_seen);
+        let young = now.timestamp() - began < cost::POSTED_WITHIN_DAYS * 86_400;
         if !young && !posted_weekly(&state, community, &record.event, now).await? {
             return Err(refuse(
                 StatusCode::FORBIDDEN,
@@ -370,7 +390,7 @@ pub async fn draft(
                 && project.team.contains(&event.pubkey.to_hex())
                 && event.tags.iter().any(|t| {
                     t.as_slice().first().map(String::as_str) == Some("a")
-                        && t.as_slice().get(1) == Some(&request.project)
+                        && t.as_slice().get(1) == Some(&coordinate)
                 });
             own.then(|| item_text(event)).flatten()
         });
@@ -399,18 +419,11 @@ pub async fn draft(
         ));
     };
 
-    // The shared counts, taken only now: the daily pool, the project's week, and the platform's money set aside at
-    // this draft's worst cost. Each later refusal gives back what an earlier step took for this draft.
-    enforce_daily_caps(
-        &state,
-        &tenant,
-        &caller,
-        llm.max_calls_per_day(),
-        llm.max_calls_per_day_total(),
-    )
-    .await?;
+    // The shared counts, taken only now, and the shared daily pool last: a refusal for the project's week or the
+    // platform's cap must never use up the account's or the community's AI calls. Each later refusal gives back what
+    // an earlier step took for this draft.
     let per_week = llm.manager_calls_per_week();
-    if !cost::take_weekly_call(pool, community, &request.project, per_week, now)
+    if !cost::take_weekly_call(pool, community, &coordinate, per_week, now)
         .await
         .map_err(|e| failed("counting the project's drafts", e))?
     {
@@ -425,7 +438,7 @@ pub async fn draft(
     }
     let give_back_the_call = || async {
         // Best effort on purpose: if this fails the project is one draft short this week, never one over.
-        if let Err(error) = cost::return_weekly_call(pool, community, &request.project, now).await {
+        if let Err(error) = cost::return_weekly_call(pool, community, &coordinate, now).await {
             tracing::warn!("manager: a weekly draft could not be given back: {error}");
         }
     };
@@ -439,6 +452,22 @@ pub async fn draft(
             give_back_the_call().await;
             return Err(failed("setting aside the manager's spend", error));
         }
+    }
+    if let Err(refused) = enforce_daily_caps(
+        &state,
+        &tenant,
+        &caller,
+        llm.max_calls_per_day(),
+        llm.max_calls_per_day_total(),
+    )
+    .await
+    {
+        give_back_the_call().await;
+        // Nothing was called: the set-aside spend goes back too. If this is lost the count only errs high.
+        if let Err(error) = cost::settle_platform_spend(pool, community, worst, 0, now).await {
+            tracing::warn!("manager: the spend set aside could not be given back: {error}");
+        }
+        return Err(refused);
     }
 
     let hosted = HostedModel {

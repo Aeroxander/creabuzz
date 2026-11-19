@@ -56,13 +56,63 @@ fn day_start(now: DateTime<Utc>) -> DateTime<Utc> {
     DateTime::from_timestamp(t - t.rem_euclid(DAY_SECS), 0).unwrap_or(now)
 }
 
-/// The counter row a project's weekly drafts are kept under: short and fixed-size whatever the project's address.
+/// The counter row a project's weekly drafts are kept under: short and fixed-size whatever the project's address, and
+/// one row whatever the case its founder's key was typed in (`37001:<key>:<id>`: the key is hex, the id is exact).
 pub(crate) fn project_subject(coordinate: &str) -> String {
     use sha2::{Digest, Sha256};
+    let mut parts = coordinate.splitn(3, ':');
+    let normal = match (parts.next(), parts.next(), parts.next()) {
+        (Some(kind), Some(author), Some(id)) => format!("{kind}:{}:{id}", author.to_lowercase()),
+        _ => coordinate.to_string(),
+    };
     format!(
         "manager:{}",
-        hex::encode(&Sha256::digest(coordinate.as_bytes())[..20])
+        hex::encode(&Sha256::digest(normal.as_bytes())[..20])
     )
+}
+
+/// The id the chain knows a project by: the hash of its record's address (`Launcher.launch`'s `projectId`), as the
+/// reader's logs write it.
+pub(crate) fn project_id(coordinate: &str) -> String {
+    format!(
+        "0x{}",
+        hex::encode(buzz_evm_allowance::abi::keccak256(coordinate.as_bytes()))
+    )
+}
+
+const FIRST_SEEN_COUNTER: &str = "manager_first_seen";
+
+/// When this project first asked the manager, in Unix seconds: noted on the first call and never moved. The project's
+/// record is replaceable, so its own date can be reset by saving it again; this cannot.
+pub(crate) async fn first_seen(
+    pool: &PgPool,
+    community: CommunityId,
+    coordinate: &str,
+    now: DateTime<Utc>,
+) -> Result<i64, sqlx::Error> {
+    let epoch = DateTime::from_timestamp(0, 0).unwrap_or(now);
+    sqlx::query(
+        "INSERT INTO budget_consumption (community_id, subject, counter_type, window_start, consumed) \
+         VALUES ($1, $2, $3, $4, $5) ON CONFLICT (community_id, subject, counter_type, window_start) DO NOTHING",
+    )
+    .bind(community.as_uuid())
+    .bind(project_subject(coordinate))
+    .bind(FIRST_SEEN_COUNTER)
+    .bind(epoch)
+    .bind(now.timestamp().max(0))
+    .execute(pool)
+    .await?;
+    let seen: Option<i64> = sqlx::query_scalar(
+        "SELECT consumed FROM budget_consumption \
+         WHERE community_id = $1 AND subject = $2 AND counter_type = $3 AND window_start = $4",
+    )
+    .bind(community.as_uuid())
+    .bind(project_subject(coordinate))
+    .bind(FIRST_SEEN_COUNTER)
+    .bind(epoch)
+    .fetch_optional(pool)
+    .await?;
+    Ok(seen.unwrap_or_else(|| now.timestamp()))
 }
 
 /// Count one hosted draft for the project this week, unless it already had `limit`. Atomic: two drafts at once never
@@ -247,16 +297,28 @@ pub(crate) fn within_platform_cap(
         && ceiling.is_none_or(|most| after <= most)
 }
 
-/// Whether the project's first backing round closed with money in it, by the chain reader's logs for its chain key.
+/// Whether the project's first backing round closed with money in it, by the configured chain reader's logs for its
+/// chain key, and only when its launch log names this very project: a `ProjectLaunched` for `chain_key` whose
+/// `projectId` is `project_id` (the hash of the record's address). A record that names another project's key, or a
+/// launch made for someone else's record, shows no round. No reader, no round.
 pub(crate) async fn first_round_closed(
     pool: &PgPool,
+    reader: Option<&str>,
     chain_key: &[u8; 32],
+    project_id: &str,
 ) -> Result<bool, sqlx::Error> {
+    let Some(reader) = reader else {
+        return Ok(false);
+    };
     let found = sqlx::query(
-        "SELECT 1 FROM chain_logs WHERE project_key = $1 AND role = 'rounds' AND event = 'RoundClosed' \
-         AND (decoded->>'accepted')::numeric > 0 LIMIT 1",
+        "SELECT 1 WHERE EXISTS (SELECT 1 FROM chain_logs WHERE reader = $1 AND project_key = $2 \
+             AND role = 'launcher' AND event = 'ProjectLaunched' AND lower(decoded->>'projectId') = $3) \
+         AND EXISTS (SELECT 1 FROM chain_logs WHERE reader = $1 AND project_key = $2 AND role = 'rounds' \
+             AND event = 'RoundClosed' AND (decoded->>'accepted')::numeric > 0)",
     )
+    .bind(reader)
     .bind(chain_key.as_slice())
+    .bind(project_id.to_lowercase())
     .fetch_optional(pool)
     .await?;
     Ok(found.is_some())

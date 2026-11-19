@@ -539,3 +539,56 @@ async fn agents_never_check_their_own_their_runners_or_a_siblings_work_and_a_man
         .await;
     }
 }
+
+/// Crowding the task with takes and give-ups from throwaway accounts cannot push a cancel, or the signer's own
+/// give-up, out of what the server reads: both are read apart from the newest 200 steps.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_crowd_of_takes_cannot_hide_a_cancel_or_the_signers_own_give_up() {
+    let (state, tenant, p, coord) = world().await;
+    let task = open_task(&p.founder, &coord, "Crowded", "5");
+    accept(&state, &tenant, task.clone(), "a task").await;
+    accept(
+        &state,
+        &tenant,
+        step(&p.stranger, &coord, "take", &task, &[]),
+        "the stranger takes it",
+    )
+    .await;
+    accept(
+        &state,
+        &tenant,
+        step(&p.stranger, &coord, "give-up", &task, &[]),
+        "and gives it up",
+    )
+    .await;
+    accept(
+        &state,
+        &tenant,
+        step(&p.mate, &coord, "cancel", &task, &[&["note", "not needed"]]),
+        "a teammate cancels it",
+    )
+    .await;
+    let id: [u8; 32] = task.id.to_bytes();
+    // 210 later steps, stored as the door would after enough throwaway accounts: newer than both.
+    for _ in 0..210 {
+        let crowd = Keys::generate();
+        let take = step(&crowd, &coord, "take", &task, &[]);
+        let later = EventBuilder::new(take.kind, take.content.clone())
+            .tags(take.tags.iter().cloned())
+            .allow_self_tagging()
+            .custom_created_at(Timestamp::from(Timestamp::now().as_secs() + 3_600))
+            .sign_with_keys(&crowd)
+            .expect("sign");
+        state
+            .db
+            .insert_event(tenant.community(), &later, None)
+            .await
+            .expect("a crowd step");
+    }
+    let facts = super::task_takes::stored_takes(&state, tenant.community(), &id, &hex(&p.stranger))
+        .await
+        .expect("facts");
+    assert!(facts.cancelled, "the cancel was pushed out of the window");
+    assert!(facts.signer_left, "the signer's own give-up was pushed out");
+}

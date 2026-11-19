@@ -187,6 +187,14 @@ impl LlmConfig {
         self
     }
 
+    /// The same, with the daily call caps of an account and of the whole community.
+    #[cfg(test)]
+    pub(crate) fn with_daily_caps_for_test(mut self, per_account: u32, community: u32) -> Self {
+        self.max_calls_per_day = per_account;
+        self.max_calls_per_day_total = community;
+        self
+    }
+
     /// The same, with the operator's ceiling on the manager's 90-day spend, in milli-cents.
     #[cfg(test)]
     pub(crate) fn with_manager_ceiling_for_test(mut self, millicents: u64) -> Self {

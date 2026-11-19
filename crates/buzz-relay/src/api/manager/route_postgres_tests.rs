@@ -103,6 +103,8 @@ struct World {
     founder: Keys,
     coordinate: String,
     item: String,
+    /// The record's date, as stored.
+    created: u64,
 }
 
 /// A community with a project whose record is `age_days` old and one update of the founder's, `posted_days` ago.
@@ -181,6 +183,7 @@ async fn world_with(
         founder,
         coordinate,
         item: update.id.to_hex(),
+        created: now - age_days * 86_400,
     }
 }
 
@@ -554,4 +557,249 @@ async fn drafts_asked_for_at_once_cannot_pass_the_week_or_the_cap_together() {
             .await
             .expect("reserve")
     );
+}
+
+/// What the shared daily AI pool has counted for this community: the accounts' calls and the community's total.
+async fn pool_calls(w: &World) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COALESCE(SUM(consumed), 0)::bigint FROM budget_consumption \
+         WHERE community_id = $1 AND counter_type IN ('llm_calls', 'llm_calls_total')",
+    )
+    .bind(w.community.as_uuid())
+    .fetch_one(w.state.db.pool())
+    .await
+    .expect("pool count")
+}
+
+/// The project's hosted drafts counted this week.
+async fn weekly_drafts(w: &World) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COALESCE(SUM(consumed), 0)::bigint FROM budget_consumption \
+         WHERE community_id = $1 AND counter_type = 'manager_calls' AND subject = $2",
+    )
+    .bind(w.community.as_uuid())
+    .bind(super::cost::project_subject(&w.coordinate))
+    .fetch_one(w.state.db.pool())
+    .await
+    .expect("weekly count")
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_refusal_for_the_week_or_the_cap_never_uses_up_the_shared_ai_calls() {
+    // The project's week is used up: every further ask is refused and counts nothing in the shared daily pool.
+    let (url, calls) = service(REPLY).await;
+    let w = world(url, 300, 1, 30, 3).await;
+    seed_fees(&w.state, 1_000_000_000).await;
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    let used = pool_calls(&w).await;
+    assert_eq!(
+        used, 2,
+        "one served draft is one account call and one community call"
+    );
+    for _ in 0..3 {
+        let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+        assert_eq!(answer["code"], "ai_manager_own_key", "{answer}");
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    }
+    assert_eq!(
+        pool_calls(&w).await,
+        used,
+        "a refused draft used up nothing"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // The platform has no fees to spend from: refused, and nothing counted anywhere.
+    let (url, _) = service(REPLY).await;
+    let w = world(url, 300, 5, 30, 3).await;
+    for _ in 0..3 {
+        let (_, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+        assert_eq!(answer["code"], "ai_manager_platform_cap", "{answer}");
+    }
+    assert_eq!(pool_calls(&w).await, 0);
+    assert_eq!(weekly_drafts(&w).await, 0);
+    assert_eq!(spent(&w).await, 0);
+
+    // The account's own daily allowance is gone: the refusal gives back the week's draft and the money set aside.
+    let (url, calls) = service(REPLY).await;
+    let w = world_with(url, 300, 5, 30, 3, |llm| {
+        llm.with_daily_caps_for_test(1, 100)
+    })
+    .await;
+    seed_fees(&w.state, 1_000_000_000).await;
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    let (week, money) = (weekly_drafts(&w).await, spent(&w).await);
+    assert_eq!(week, 1);
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{answer}");
+    assert_eq!(answer["code"], "ai_limit_account");
+    assert_eq!(weekly_drafts(&w).await, week, "the draft was given back");
+    assert_eq!(spent(&w).await, money, "the money set aside was given back");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn one_project_has_one_weekly_count_however_its_founders_key_is_written() {
+    let (url, calls) = service(REPLY).await;
+    let w = world(url, 300, 1, 30, 3).await;
+    seed_fees(&w.state, 1_000_000_000).await;
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    // The same project with the founder's key in capitals is the same project: it has had its week.
+    let mut shouted = draft_body(&w);
+    let key = w.founder.public_key().to_hex();
+    shouted["project"] = w.coordinate.replace(&key, &key.to_uppercase()).into();
+    assert_ne!(shouted["project"], w.coordinate.as_str());
+    let (status, answer) = ask(&w, &w.founder, shouted).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "{answer}");
+    assert_eq!(answer["code"], "ai_manager_own_key");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert_eq!(weekly_drafts(&w).await, 1);
+}
+
+/// A launch and a closed round in the chain reader's tables, for chain key `key`, launched for the record at
+/// `launched_for` (the launch's `projectId` is the hash of that address).
+async fn seed_launch_and_round(
+    state: &AppState,
+    key: [u8; 32],
+    launched_for: &str,
+    first_index: i32,
+) {
+    let reader = state
+        .config
+        .chain_reader
+        .as_ref()
+        .expect("a reader")
+        .reader_id();
+    let pool = state.db.pool();
+    let now = i64::try_from(Timestamp::now().as_secs()).unwrap_or(0);
+    sqlx::query(
+        "INSERT INTO chain_blocks (reader, number, hash, parent_hash, block_time) VALUES ($1, 1, $2, $2, $3) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(&reader)
+    .bind(vec![7u8; 32])
+    .bind(now - 3600)
+    .execute(pool)
+    .await
+    .expect("block");
+    for (index, role, event, decoded) in [
+        (
+            first_index,
+            "launcher",
+            "ProjectLaunched",
+            serde_json::json!({ "projectId": super::cost::project_id(launched_for) }),
+        ),
+        (
+            first_index + 1,
+            "rounds",
+            "RoundClosed",
+            serde_json::json!({ "accepted": "5000000" }),
+        ),
+    ] {
+        sqlx::query(
+            "INSERT INTO chain_logs (reader, block_number, log_index, block_hash, tx_hash, address, role, \
+             project_key, event, topics, data, decoded) VALUES ($1, 1, $2, $3, $3, $4, $5, $6, $7, '{}', ''::bytea, $8)",
+        )
+        .bind(&reader)
+        .bind(index)
+        .bind(vec![7u8; 32])
+        .bind(vec![1u8; 20])
+        .bind(role)
+        .bind(key.as_slice())
+        .bind(event)
+        .bind(decoded)
+        .execute(pool)
+        .await
+        .expect("log");
+    }
+}
+
+/// The founder saves the project's record again, naming `chain_key` as its launch, dated `at`.
+async fn save_record_naming(w: &World, chain_key: &[u8; 32], at: u64) {
+    let d = w.coordinate.rsplit(':').next().expect("d").to_string();
+    let named = format!("0x{}", hex::encode(chain_key));
+    let record = signed(
+        &w.founder,
+        KIND_LAUNCH_RECORD,
+        &[&["d", &d], &["name", "Lantern"], &["chain-key", &named]],
+        at,
+    );
+    w.state
+        .db
+        .insert_event(w.community, &record, None)
+        .await
+        .expect("record");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn only_a_launch_made_for_this_record_counts_as_its_first_round() {
+    // Quiet for 20 days on a 30-day-old project: post weekly first, unless its first round closed.
+    let (url, calls) = service(REPLY).await;
+    let w = world(url, 300, 5, 30, 20).await;
+    seed_fees(&w.state, 1_000_000_000).await;
+
+    // The record names a key whose launch and round are SOMEONE ELSE's project: borrowing it earns nothing.
+    let borrowed = [3u8; 32];
+    seed_launch_and_round(&w.state, borrowed, "37001:someone-else:their-project", 10).await;
+    save_record_naming(&w, &borrowed, w.created + 1).await;
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{answer}");
+    assert_eq!(answer["code"], "ai_manager_post_weekly");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+
+    // The record names the key of a launch made for this very record, and its round closed: the allowance has begun.
+    let own = [4u8; 32];
+    seed_launch_and_round(&w.state, own, &w.coordinate, 20).await;
+    save_record_naming(&w, &own, w.created + 2).await;
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn saving_the_record_again_does_not_make_a_project_new_again() {
+    // A record made yesterday is a new project: a draft is free before any weekly update.
+    let (url, calls) = service(REPLY).await;
+    let w = world(url, 300, 5, 1, 20).await;
+    seed_fees(&w.state, 1_000_000_000).await;
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::OK, "{answer}");
+    // That was its first ask. Say it was 20 days ago, then save the record again so its own date is fresh: the
+    // project asked first 20 days ago, so it is not new, and with no weekly update it is told to post one.
+    let pool = w.state.db.pool();
+    sqlx::query(
+        "UPDATE budget_consumption SET consumed = consumed - 20 * 86400 \
+         WHERE community_id = $1 AND subject = $2 AND counter_type = 'manager_first_seen'",
+    )
+    .bind(w.community.as_uuid())
+    .bind(super::cost::project_subject(&w.coordinate))
+    .execute(pool)
+    .await
+    .expect("first seen");
+    let d = w.coordinate.rsplit(':').next().expect("d").to_string();
+    let record = signed(
+        &w.founder,
+        KIND_LAUNCH_RECORD,
+        &[
+            &["d", &d],
+            &["name", "Lantern"],
+            &["team", &"a".repeat(64), "helper"],
+        ],
+        Timestamp::now().as_secs(),
+    );
+    w.state
+        .db
+        .insert_event(w.community, &record, None)
+        .await
+        .expect("record");
+    let (status, answer) = ask(&w, &w.founder, draft_body(&w)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{answer}");
+    assert_eq!(answer["code"], "ai_manager_post_weekly");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
 }

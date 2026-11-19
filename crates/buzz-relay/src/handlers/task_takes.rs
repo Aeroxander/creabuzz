@@ -6,6 +6,7 @@
 //!
 //! A lookup that fails is a server fault and refuses the write: an outage never lets a record past the check.
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use buzz_core::kind::{KIND_LAUNCH_UPDATE, KIND_PROFILE};
@@ -19,37 +20,59 @@ use super::launch_update_authority::{
 };
 use crate::state::AppState;
 
-/// The most steps of one task read to learn who has it. A take is refused while one is live and a taker who gave up
-/// cannot take again, so a task holds about one take per person who ever gave it up; past this bound the newest are
-/// read, and the record of who took it first may be cut (the report of milestone 8 says so).
+/// The most takes and give-ups of one task read to learn who has it. A take is refused while one is live and a taker
+/// who gave up cannot take again, so a task holds about one take per person who ever gave it up; past this bound the
+/// newest are read, and the record of who took it first may be cut (the report of milestone 8 says so). A cancel and
+/// the signer's own steps are read apart, so crowding cannot push them out.
 const STEPS_READ: i64 = 200;
 
+/// The most cancel steps of one task read: any one of them ends it.
+const CANCELS_READ: i64 = 5;
+/// The most of one account's own steps of one task read: its give-up is final for it.
+const OWN_STEPS_READ: i64 = 50;
+
 /// What the stored steps of the task `task_id` say about who has it, for the record `signer` is writing.
+///
+/// Three reads, so that crowding cannot hide what decides the answer: the newest [`STEPS_READ`] takes and give-ups, a
+/// cancel step wherever it sits, and the signer's own steps wherever they sit. Steps found twice count once.
 pub(crate) async fn stored_takes(
     state: &Arc<AppState>,
     community: CommunityId,
     task_id: &[u8; 32],
     signer: &str,
 ) -> Result<TakeFacts, IngestError> {
-    let stored = state
-        .db
-        .query_events_for_event_write(&buzz_db::EventQuery {
+    let read = |parts: &[&str], pubkey: Option<Vec<u8>>, limit: i64| {
+        let query = buzz_db::EventQuery {
             kinds: Some(vec![KIND_LAUNCH_UPDATE as i32]),
+            pubkey,
             tag_filters: vec![
                 ("task".to_string(), vec![hex::encode(task_id)]),
                 (
                     "task-part".to_string(),
-                    vec!["take".into(), "give-up".into(), "cancel".into()],
+                    parts.iter().map(|p| p.to_string()).collect(),
                 ),
             ],
             global_only: true,
-            limit: Some(STEPS_READ),
+            limit: Some(limit),
             ..buzz_db::EventQuery::for_community(community)
-        })
-        .await
-        .map_err(|e| internal("reading who took the task", e))?;
+        };
+        async move {
+            state
+                .db
+                .query_events_for_event_write(&query)
+                .await
+                .map_err(|e| internal("reading who took the task", e))
+        }
+    };
+    let mut stored = read(&["take", "give-up"], None, STEPS_READ).await?;
+    stored.extend(read(&["cancel"], None, CANCELS_READ).await?);
+    if let Ok(own) = hex::decode(signer) {
+        stored.extend(read(&["take", "give-up", "cancel"], Some(own), OWN_STEPS_READ).await?);
+    }
+    let mut seen = HashSet::new();
     let steps: Vec<(String, u64, String, TaskPart)> = stored
         .iter()
+        .filter(|record| seen.insert(record.event.id))
         .filter_map(|record| {
             let event = &record.event;
             let part = event.tags.iter().find_map(|tag| {

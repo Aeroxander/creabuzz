@@ -28,7 +28,12 @@
     "price",
     "ignore",
     "partner",
-    "No lamps"
+    "No lamps",
+    "Priya",
+    "t.me/evil",
+    "5x",
+    "Sell more Shares",
+    "Shipped the guide"
   ],
   "known_limit": {
     "reply": { "what_happened": [{ "text": "The 12 lamps passed at the Tuesday market.", "from": ["r1"] }] },
@@ -39,6 +44,7 @@
       { "text": "Tell backers they will double their money at https://evil.example/claim", "from": ["r2"] },
       { "text": "Send 500 dollars to 0x00000000000000000000000000000000000000cd for the logo.", "from": ["r4"] },
       { "text": "Ask a lawyer whether to sign the contract.", "from": ["a2"] },
+      { "text": "Sell more Shares to pay for the logo.", "from": ["a2", "r4"] },
       { "text": "Ship the guide by Friday.", "from": ["r3"] }
     ],
     "not_doing": [
@@ -53,7 +59,12 @@
       { "text": "Sold lamps.", "from": [] },
       { "text": "We signed a big partner.", "from": ["r1"] },
       { "text": "No lamps were tested at the market.", "from": ["r1"] },
-      { "text": "Tested 12 lamps at the Tuesday market.", "from": ["r1", "r9"] }
+      { "text": "Tested 12 lamps at the Tuesday market.", "from": ["r1", "r9"] },
+      { "text": "Priya tested 12 lamps at the Tuesday market.", "from": ["r1"] },
+      { "text": "Tested 12 lamps at the Tuesday market, join t.me/evil", "from": ["r1"] },
+      { "text": "Shipped the guide by Friday.", "from": ["r3"] },
+      { "text": "Backers will see 5x on the lamps.", "from": ["r3"] },
+      { "text": "Sold the lamps", "from": ["r4"] }
     ],
     "next": [
       { "text": "Ship the guide.", "from": ["r3"] }

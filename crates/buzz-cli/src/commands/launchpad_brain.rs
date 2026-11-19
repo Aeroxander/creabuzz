@@ -82,7 +82,8 @@ pub fn dispatch(cmd: &BrainCmd) -> Result<(), CliError> {
 }
 
 /// Write the five files into `dir`. Every target is checked before anything is written: one that exists refuses the
-/// whole scaffold, and nothing is written. Returns the paths written, in order.
+/// whole scaffold, and nothing is written. A write that fails part-way takes back what this call wrote, so a failure
+/// never leaves half a brain. Returns the paths written, in order.
 pub(crate) fn init(dir: &Path) -> Result<Vec<String>, CliError> {
     if !dir.is_dir() {
         return Err(CliError::Usage(format!(
@@ -101,13 +102,34 @@ pub(crate) fn init(dir: &Path) -> Result<Vec<String>, CliError> {
             there.join(", ")
         )));
     }
-    let mut written = Vec::new();
+    let mut written: Vec<String> = Vec::new();
+    let mut made_dirs: Vec<PathBuf> = Vec::new();
+    if let Err(error) = write_all(dir, &mut written, &mut made_dirs) {
+        // Best effort, and only this call's own files: `create_new` means each one was made here.
+        for path in &written {
+            let _ = std::fs::remove_file(dir.join(path));
+        }
+        for made in made_dirs.iter().rev() {
+            let _ = std::fs::remove_dir(made);
+        }
+        return Err(error);
+    }
+    Ok(written)
+}
+
+/// The writes of [`init`], recording each file and each folder it made so the caller can take them back.
+fn write_all(
+    dir: &Path,
+    written: &mut Vec<String>,
+    made_dirs: &mut Vec<PathBuf>,
+) -> Result<(), CliError> {
     for (path, words) in BRAIN_FILES {
         let target = dir.join(path);
-        if let Some(parent) = target.parent() {
+        if let Some(parent) = target.parent().filter(|p| !p.exists()) {
             std::fs::create_dir_all(parent).map_err(|e| {
                 CliError::Other(format!("could not make {}: {e}", parent.display()))
             })?;
+            made_dirs.push(parent.to_path_buf());
         }
         // `create_new`: a file that appeared since the check above is never overwritten either.
         let mut file = std::fs::OpenOptions::new()
@@ -115,21 +137,35 @@ pub(crate) fn init(dir: &Path) -> Result<Vec<String>, CliError> {
             .create_new(true)
             .open(&target)
             .map_err(|e| CliError::Other(format!("could not write {}: {e}", target.display())))?;
+        written.push(path.to_string());
         std::io::Write::write_all(&mut file, words.as_bytes())
             .map_err(|e| CliError::Other(format!("could not write {}: {e}", target.display())))?;
-        written.push(path.to_string());
     }
-    Ok(written)
+    Ok(())
 }
 
-/// The brain's files in `dir`: the five, and every `.md` in `playbooks/` (at most [`MAX_PLAYBOOKS`]).
+/// The brain's files in `dir`: the five, and every `.md` in `playbooks/` (at most [`MAX_PLAYBOOKS`]). A link is listed
+/// too, so that [`check`] can refuse it.
 fn brain_paths(dir: &Path) -> Result<Vec<PathBuf>, CliError> {
+    let present = |path: &Path| {
+        path.symlink_metadata()
+            .is_ok_and(|m| m.is_file() || m.file_type().is_symlink())
+    };
     let mut paths: Vec<PathBuf> = BRAIN_FILES
         .iter()
         .map(|(path, _)| dir.join(path))
-        .filter(|path| path.is_file())
+        .filter(|path| present(path))
         .collect();
     let playbooks = dir.join("playbooks");
+    if playbooks
+        .symlink_metadata()
+        .is_ok_and(|m| m.file_type().is_symlink())
+    {
+        return Err(CliError::Usage(format!(
+            "{} is a link: the brain's files must be real files in the repository",
+            playbooks.display()
+        )));
+    }
     if playbooks.is_dir() {
         let mut more: Vec<PathBuf> = std::fs::read_dir(&playbooks)
             .map_err(|e| CliError::Other(format!("could not read {}: {e}", playbooks.display())))?
@@ -149,6 +185,16 @@ pub(crate) fn check(dir: &Path) -> Result<Vec<String>, CliError> {
     let mut read = Vec::new();
     let mut found = Vec::new();
     for path in brain_paths(dir)? {
+        // A link could point anywhere on this machine (a file of keys, say) and send it to the AI service.
+        if path
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink())
+        {
+            return Err(CliError::Usage(format!(
+                "{} is a link: the brain's files must be real files in the repository",
+                path.display()
+            )));
+        }
         let size = path.metadata().map(|m| m.len()).unwrap_or(0);
         if size > MAX_FILE_BYTES {
             return Err(CliError::Usage(format!(
@@ -288,6 +334,52 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn a_write_that_fails_part_way_leaves_no_half_a_brain() {
+        let dir = scratch();
+        // A file where the playbooks folder must go: the four files before it are written, then the folder fails.
+        std::fs::write(dir.join("playbooks"), "in the way").expect("write");
+        let refused = init(&dir).expect_err("the folder cannot be made");
+        assert!(matches!(refused, CliError::Other(_)), "{refused}");
+        for (path, _) in BRAIN_FILES {
+            if path != "playbooks/README.md" {
+                assert!(!dir.join(path).exists(), "{path} was left behind");
+            }
+        }
+        assert_eq!(
+            std::fs::read_to_string(dir.join("playbooks")).expect("read"),
+            "in the way",
+            "what was already there is untouched"
+        );
+        std::fs::remove_dir_all(&dir).expect("clean up");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_brain_file_that_is_a_link_is_refused_and_never_read() {
+        let dir = scratch();
+        init(&dir).expect("init");
+        let elsewhere = scratch();
+        std::fs::write(elsewhere.join("keys.txt"), "not a brain file").expect("write");
+        std::fs::remove_file(dir.join("facts.md")).expect("remove");
+        std::os::unix::fs::symlink(elsewhere.join("keys.txt"), dir.join("facts.md")).expect("link");
+        let refused = check(&dir).expect_err("a link is refused");
+        assert!(refused.to_string().contains("is a link"), "{refused}");
+        let refused = crate::commands::launchpad_manager::read_brain(&dir).expect_err("refused");
+        assert!(refused.to_string().contains("is a link"), "{refused}");
+        // A link to a folder where the playbooks go is refused too.
+        std::fs::remove_file(dir.join("facts.md")).expect("remove");
+        std::fs::write(dir.join("facts.md"), "ok").expect("write");
+        std::fs::remove_dir_all(dir.join("playbooks")).expect("remove");
+        std::os::unix::fs::symlink(&elsewhere, dir.join("playbooks")).expect("link");
+        assert!(check(&dir)
+            .expect_err("refused")
+            .to_string()
+            .contains("is a link"));
+        std::fs::remove_dir_all(&dir).expect("clean up");
+        std::fs::remove_dir_all(&elsewhere).expect("clean up");
     }
 
     #[test]
