@@ -50,7 +50,10 @@ export const TASK_PROBLEM = {
     "What is already waiting for the other signer could not be read just now, so nothing was asked. Press again in a moment.",
   /** The search for an earlier payment could not be read or did not reach far enough back: nothing is sent on a guess. */
   searchShort:
-    "Whether this pay was already sent could not be checked just now (the network did not answer, or the work was accepted too long ago to look back that far). Nothing was sent. Look again in a moment, or check the project's money records first.",
+    "Whether this pay was already sent could not be checked just now (the network did not answer). Nothing was sent. Look again in a moment, or check the project's money records first.",
+  /** The search went back as far as it goes without reaching the day of the acceptance: a person may say nothing was paid. */
+  searchTooOld:
+    "This work was accepted so long ago that the search could not reach back to that day, and it found no payment. If you know this pay was never sent, say so here and pay it from the box. Otherwise check the project's money records first.",
   /** A project wound down draws nothing. */
   woundDown:
     "This project is wound down, so nothing can be drawn from the allowance box any more.",

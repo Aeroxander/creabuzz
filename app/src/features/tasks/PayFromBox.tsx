@@ -17,7 +17,7 @@ import {
   paidNotRecorded,
   rememberPaid,
 } from "./paid-journal";
-import { findPayment } from "./pay-lookup";
+import { findPayment, PaymentSearchShort } from "./pay-lookup";
 import { drawForTaskCall, rawDollars } from "./task-calls";
 import { type ProjectTask, payRecord } from "./task-record";
 import {
@@ -79,6 +79,8 @@ export function PayFromBox({
   const [looking, setLooking] = useState(false);
   const [asked, setAsked] = useState(false);
   const [elsewhere, setElsewhere] = useState(false);
+  // A person's word that no payment was ever sent, for a task accepted further back than the search reaches.
+  const [nonePaid, setNonePaid] = useState(false);
   const piece = task.handIn?.id ?? null;
   const usd = task.usd ?? 0;
   const payee = task.payTo;
@@ -117,6 +119,7 @@ export function PayFromBox({
   const box = boxNow(numbers, onChain.data ?? 0n);
   const perDay = allowancePerDay(numbers);
   const offered = found.data && !elsewhere ? found.data : null;
+  const tooOld = found.error instanceof PaymentSearchShort;
 
   const record = (txHash: string, forPiece: string) =>
     write.mutate(
@@ -156,8 +159,10 @@ export function PayFromBox({
     if (!elsewhere) {
       try {
         hit = await lookFor();
-      } catch {
-        searched = false;
+      } catch (error) {
+        // A search that stopped short of the acceptance is let through only when a person said nothing was paid.
+        if (!(nonePaid && error instanceof PaymentSearchShort))
+          searched = false;
       }
     }
     setLooking(false);
@@ -296,13 +301,24 @@ export function PayFromBox({
         </Button>
       </>
     );
-  } else if (found.isError && !elsewhere) {
-    // Whether it was paid before cannot be told: no bare "Pay from the box" is offered until a search can be read.
+  } else if (found.isError && !elsewhere && !(nonePaid && tooOld)) {
+    // Whether it was paid before cannot be told: no bare "Pay from the box" is offered until a search can be read, or a
+    // person says that nothing was paid for work accepted further back than the search reaches.
     body = (
       <>
         <p className="text-sm" data-testid="task-pay-search-short">
-          {TASK_PROBLEM.searchShort}
+          {tooOld ? TASK_PROBLEM.searchTooOld : TASK_PROBLEM.searchShort}
         </p>
+        {tooOld ? (
+          <Button
+            data-testid="task-pay-none-paid"
+            onClick={() => setNonePaid(true)}
+            size="sm"
+            variant="secondary"
+          >
+            Nothing was paid for this
+          </Button>
+        ) : null}
         <Button
           block
           data-testid="task-pay-look-again"

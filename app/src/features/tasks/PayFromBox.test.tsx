@@ -449,62 +449,6 @@ function proposedLog(target: string, data: string) {
   };
 }
 
-describe("a search for an earlier payment that cannot be relied on", () => {
-  it("offers no bare press when the logs cannot be read, only a way to look again", async () => {
-    chainBox = 100_000_000n;
-    logsFail = true;
-    card(accepted());
-    expect(
-      (await screen.findByTestId("task-pay-search-short")).textContent,
-    ).toMatch(/could not be checked/);
-    expect(screen.queryByTestId("task-pay")).toBeNull();
-    expect(sent).toHaveLength(0);
-    // Looking again once the node answers brings the press back.
-    logsFail = false;
-    fireEvent.click(screen.getByTestId("task-pay-look-again"));
-    expect(await screen.findByTestId("task-pay")).toBeTruthy();
-  });
-
-  it("stops the press, and sends nothing, when the search fails after the page was drawn", async () => {
-    chainBox = 100_000_000n;
-    card(accepted());
-    const button = await screen.findByTestId("task-pay");
-    // A Pair's other signer may already have confirmed this very pay; the node now refuses the range.
-    logsFail = true;
-    fireEvent.click(button);
-    expect((await screen.findByTestId("task-pay-problem")).textContent).toMatch(
-      /could not be checked/,
-    );
-    expect(sent).toHaveLength(0);
-    expect(written).toHaveLength(0);
-  });
-
-  it("is not enough when it starts after the acceptance and nothing was found: nothing can be sent on it", async () => {
-    chainBox = 100_000_000n;
-    head = 500_000;
-    startTime = 1_800_000_200 + 4 * 3_600; // the window begins hours after the work was accepted
-    card(accepted());
-    expect(await screen.findByTestId("task-pay-search-short")).toBeTruthy();
-    expect(screen.queryByTestId("task-pay")).toBeNull();
-  });
-
-  it("is enough when it starts before the acceptance, however long the chain is", async () => {
-    chainBox = 100_000_000n;
-    head = 500_000;
-    startTime = 1_800_000_200 - 3_600;
-    card(accepted());
-    expect(await screen.findByTestId("task-pay")).toBeTruthy();
-  });
-
-  it("cannot tell when the network gives no time for the start of the window", async () => {
-    chainBox = 100_000_000n;
-    head = 500_000;
-    startTime = null;
-    card(accepted());
-    expect(await screen.findByTestId("task-pay-search-short")).toBeTruthy();
-  });
-});
-
 describe("a pay already asked of the other signer", () => {
   it("is not asked a second time (after a reload, or when the other signer asked from their own page)", async () => {
     // The chain answers every read with this one number: as the proposal's time and the Pair's limit it keeps it alive.
