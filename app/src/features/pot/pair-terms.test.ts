@@ -83,6 +83,19 @@ describe("each call a Pair can hold has a sentence naming what it does", () => {
       /The founder leaves and gives up what has not unlocked of their own Team Shares/,
     );
   });
+  it("handing over to nobody withdraws the offer, and says so", () => {
+    const t = words(
+      handOverCall({
+        treasury,
+        next: "0x0000000000000000000000000000000000000000",
+        founderLeaves: false,
+      }),
+    );
+    expect(t.kind).toBe("hand-over");
+    expect(t.words).toMatch(/^Withdraw the offer of the seat/);
+    expect(t.words).not.toMatch(/0x0000/);
+    expect(t.names).toEqual([]);
+  });
   it("wind down names what it does for good, for this project only", () => {
     const t = words(windDownCall(numbers.launcher, numbers.key));
     expect(t.kind).toBe("wind-down");

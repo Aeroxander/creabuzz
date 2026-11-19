@@ -23,6 +23,7 @@ import { BackCard } from "./BackCard";
 import { ChainOnlyShares } from "./ChainOnlyShares";
 import type { GrantMember } from "./GrantSheet";
 import { MoneyFacts, StaleMoney } from "./MoneyFacts";
+import { SeatSection } from "../seat/SeatSection";
 import { PairWaiting } from "./PairWaiting";
 import { PLAY_MONEY_WORDS } from "./pot-words";
 import { targetOf } from "./target";
@@ -151,6 +152,13 @@ export function ProjectMoney({
         address={wallet.address}
         members={members}
         numbers={numbers}
+      />
+      <SeatSection
+        members={members}
+        nameOf={nameOfAddress}
+        now={now}
+        numbers={numbers}
+        projectName={projectName}
       />
       <PairWaiting
         address={wallet.address}

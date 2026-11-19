@@ -125,6 +125,14 @@ export function describePotCall(
           };
         case "handOver(address,bool)": {
           const next = address(args[0]);
+          // The zero address withdraws an offer of the seat.
+          if (/^0x0{40}$/.test(next))
+            return {
+              kind: "hand-over",
+              words:
+                "Withdraw the offer of the seat that runs the project. Whoever it was offered to can no longer take it; nothing else changes.",
+              names: [],
+            };
           return {
             kind: "hand-over",
             words: `Offer the seat that runs the project to ${who(next)}${args[1] === true ? ". The founder leaves and gives up what has not unlocked of their own Team Shares" : ""}.`,
@@ -172,7 +180,7 @@ export function describePotCall(
       return {
         kind: "wind-down",
         words:
-          "Wind the project down, for good. The allowance box goes back to the project's money, nobody can back it any more, and Team Shares that have not unlocked are removed after a notice. People who hold Shares can still take their money out.",
+          "Wind the project down, for good. The allowance box goes back to the project's money, nobody can back it any more, and the Team Shares that nobody has built up yet are removed after a notice. People who hold Shares can still take their money out.",
         names: [],
       };
     }
