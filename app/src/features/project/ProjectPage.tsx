@@ -16,13 +16,17 @@ import { Tabs } from "../../ui/tabs";
 import { useToast } from "../../ui/toast";
 import { MoneyNow } from "../money/MoneyNow";
 import { useProjectNumbers, useWalletAddress } from "../money/use-money";
-import { TasksTab } from "../tasks/TasksTab";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
 import type { Project } from "./project-record";
 import { UpdatesTab } from "./UpdatesTab";
 import { projectPeople, useProject, useProjectActivity } from "./use-project";
 
+// The Tasks tab carries the money calls (paying a task, an agent's limits) and their contract ABIs: it loads when the tab
+// is opened, so the first download stays small.
+const TasksTab = lazy(() =>
+  import("../tasks/TasksTab").then((m) => ({ default: m.TasksTab })),
+);
 // The old design's screens (stages, rounds, the auction, the market, Team's Pair): loaded only with the legacy-screens flag.
 const LegacyProjectTop = lazy(() => import("../../legacy/LegacyProjectTop"));
 const LegacyMoneyTab = lazy(() => import("../../legacy/LegacyMoneyTab"));
@@ -171,12 +175,14 @@ function ProjectView({ project }: { project: Project }) {
             value: "tasks",
             label: "Tasks",
             content: (
-              <TasksTab
-                address={walletAddress}
-                numbers={numbers}
-                profiles={profiles}
-                project={project}
-              />
+              <Suspense fallback={<Card className="h-24 animate-pulse" />}>
+                <TasksTab
+                  address={walletAddress}
+                  numbers={numbers}
+                  profiles={profiles}
+                  project={project}
+                />
+              </Suspense>
             ),
           },
           {

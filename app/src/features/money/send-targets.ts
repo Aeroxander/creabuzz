@@ -19,9 +19,13 @@ export function rememberSendTargets(
       known.add(address.toLowerCase());
 }
 
-/** The build's own contracts (`VITE_CREATON_LAUNCHER`, `VITE_CREATON_ROUTER`). */
+/** The build's own contracts (`VITE_CREATON_LAUNCHER`, `VITE_CREATON_DOLLAR` for the faucet, `VITE_CREATON_ROUTER`). */
 function builtTargets(env: Record<string, unknown>): string[] {
-  return [env.VITE_CREATON_LAUNCHER, env.VITE_CREATON_ROUTER].filter(
+  return [
+    env.VITE_CREATON_LAUNCHER,
+    env.VITE_CREATON_DOLLAR,
+    env.VITE_CREATON_ROUTER,
+  ].filter(
     (value): value is string =>
       typeof value === "string" && ADDRESS.test(value),
   );
