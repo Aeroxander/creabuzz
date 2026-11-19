@@ -43,7 +43,7 @@ contract PotMathTest is Test {
         assertGt(PotMath.sharesFor(1e16, num, den), 0);
         assertGt(PotMath.cash(1e29, 1e16, 1e16, 1e30, 1e26), 0);
         assertGt(PotMath.teamCash(1e25, 2e16, 1e16, 1e30, 1e26), 0);
-        assertEq(PotMath.credit(1e16, 1e29, 1e16, 1e30), 1e15);
+        assertEq(PotMath.credit(1e16, 1e29, 1e16, 1e30, 0, 0, 0), 1e15);
     }
 
     function testFuzz_payoutsNeverExceedThePot(uint256 pot, uint256 paid, uint256 b, uint256 g, uint256 nb, uint256 ng)
@@ -68,8 +68,8 @@ contract PotMathTest is Test {
         b = bound(b, 1, 1e30);
         n = bound(n, 1, 1e30);
         a = bound(a, 0, 1e16);
-        assertLe(PotMath.credit(m, n, a, b), m);
-        assertEq(PotMath.credit(m, n, a, 0), m);
+        assertLe(PotMath.credit(m, n, a, b, 0, 0, 0), m);
+        assertEq(PotMath.credit(m, n, a, 0, 0, 0, 0), m);
     }
 
     function testFuzz_paidInCutRoundsDownSoPaidInRoundsUp(uint256 a, uint256 n, uint256 b) public pure {

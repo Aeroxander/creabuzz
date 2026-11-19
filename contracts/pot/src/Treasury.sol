@@ -683,9 +683,10 @@ contract Treasury {
         if (fee >= a) return (fee, 0, 0, 0);
         m = a - fee;
         uint256 b = shares.totalSupply();
-        (uint256 num, uint256 den) = PotMath.quote(s.pot, s.arriving, paidIn, b, team.totalSupply() - Z);
+        uint256 ge = team.totalSupply() - Z;
+        (uint256 num, uint256 den) = PotMath.quote(s.pot, s.arriving, paidIn, b, ge);
         n = PotMath.sharesFor(m, num, den);
-        credit = PotMath.credit(m, n, paidIn, b);
+        credit = PotMath.credit(m, n, paidIn, b, s.pot, s.arriving, ge);
     }
 
     function _join(address payer, uint256 a, uint256 minShares, address to) private returns (uint256 n) {

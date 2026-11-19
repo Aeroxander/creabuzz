@@ -178,7 +178,7 @@ contract JoinTest is PotBase {
         _force(60e6, 98e6, 0, 0, 0); // spent down to 60 of 98
         uint256 beforeA = t.paidIn();
         uint256 n = _join(bob, 10e6);
-        assertEq(t.paidIn() - beforeA, PotMath.credit(9_800_000, n, beforeA, shares.totalSupply() - n));
+        assertEq(t.paidIn() - beforeA, PotMath.credit(9_800_000, n, beforeA, shares.totalSupply() - n, 0, 0, 0));
         // pot under paid-in: new money is credited in full only if n x A / B is not smaller
         assertLe(t.paidIn() - beforeA, 9_800_000);
     }
@@ -199,7 +199,7 @@ contract JoinTest is PotBase {
         uint256 b = shares.totalSupply();
         uint256 aBefore = t.paidIn();
         uint256 n = _join(bob, 10e6);
-        assertEq(t.paidIn() - aBefore, PotMath.credit(9_800_000, n, aBefore, b));
+        assertEq(t.paidIn() - aBefore, PotMath.credit(9_800_000, n, aBefore, b, 0, 0, 0));
     }
 
     // ---- zero mint and the donation trick

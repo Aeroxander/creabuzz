@@ -52,10 +52,25 @@ library PotMath {
         return Math.mulDiv(m, den, num);
     }
 
-    /// @notice How much of `m` counts as paid-in after minting `n` Shares into `b` existing ones: the whole of it for the
-    /// first backer, otherwise at most `n x paidIn / b` (the rest buys a slice of the surplus), rounded down.
-    function credit(uint256 m, uint256 n, uint256 paidIn, uint256 b) internal pure returns (uint256) {
-        if (b == 0) return m;
+    /// @notice How much of `m` counts as paid-in after minting `n` Shares into `b` existing ones: at most `n x paidIn / b`
+    /// (the rest buys a slice of the surplus), rounded down.
+    /// Into an empty project (`b` = 0) there is no paid-in per Share to copy, but money may already sit there (what the
+    /// Team is left with after the last backer left, or outside money paid in before the first backer): that money is a
+    /// surplus the Team Shares own, the price already charges the joiner for a slice of it, and that charge is not paid-in.
+    /// So the credit is `m` less the price of that slice, `n x (pot + arriving) / (100 virtual Shares + ge)` rounded up. With
+    /// nothing in the project the slice costs nothing and the whole of `m` counts, so a first backer is paid back 98 of 100.
+    /// @param pot The pot P (only read when `b` is 0).
+    /// @param arriving Outside money not yet in the pot (only read when `b` is 0).
+    /// @param ge Team Shares counted for pricing (only read when `b` is 0).
+    function credit(uint256 m, uint256 n, uint256 paidIn, uint256 b, uint256 pot, uint256 arriving, uint256 ge)
+        internal
+        pure
+        returns (uint256)
+    {
+        if (b == 0) {
+            uint256 slice = Math.mulDiv(n, pot + arriving, OFFSET_SHARES + ge, Math.Rounding.Ceil);
+            return slice >= m ? 0 : m - slice;
+        }
         uint256 c = Math.mulDiv(n, paidIn, b);
         return c < m ? c : m;
     }
