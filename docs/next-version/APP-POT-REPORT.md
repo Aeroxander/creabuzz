@@ -490,3 +490,157 @@ the tests named in the table; the rounding draft asserted the bug and is gone.
 | `scripts/pot-app-loop.sh` (real anvil, real `contracts/pot` bytecode) | 7 tests passed, 0 failed, 0 skipped, in 5 files |
 | Playwright `--project=smoke --trace off` on the six `pot-*.spec.ts` files (a build made with `CREATON_DEPLOYMENTS_FILE`) | 30 passed, 0 failed |
 | `tsc --noEmit`, `biome check .`, `check:copy`, `check:px-text`, `check:file-sizes` (base 68309b077), `pnpm build` and the bundle check | clean; entry chunk 390 KiB against the 450 KB budget |
+
+---
+
+# Second round, app engineer A: launching a project and who runs the money
+
+Written 19 November 2026 on branch `v6` by app engineer A of the second round. Nothing is pushed. The contracts (`contracts/pot`), the
+record specification and `crates/**` are not touched. This is not legal or tax advice, and no figure here is a promise of any result for
+anyone. **No person has tested any of this: every run below was made by an agent.** Every amount is play money on a local test chain.
+
+This round closes the largest gap of step 1: a founder could not launch from the new app, and the runner's seat (hand over, take the
+seat, a second signer, wind down) had call builders and no screens.
+
+## What was built
+
+| # | Part | Where |
+|---|---|---|
+| 1 | **Launch.** A card on the page of a project that is not on the network ("Open Lantern to backers", for its founder only, where investing is on and the build names a network). It opens the launch sheet: the two numbers (daily allowance, start 0.10% and at most 0.20%; Team pool, start 10,000,000 and at most 100,000,000) each with one plain sentence of what it means for a backer, the limits every project has, what cannot be changed later and what can, a sentence that says what pressing will send, and "Technical details" with the settings fingerprint. One call, one signature with either sender | `app/src/features/launch/` (`LaunchCard`, `LaunchSheet`, `launch-terms`, `launch-plan`, `launch-read`, `launch-ids`) |
+| 2 | **The settings fingerprint.** Read from the Launcher when the sheet opens and again right before the press; if it moved, nothing is sent, the sheet shows the new settings and says so in words. The contract's own refusal (settings moved after the check) is said in words too | `PotSheet.recheck` (new optional prop), `launch-terms.SETTINGS_MOVED_WORDS` |
+| 3 | **A launch that landed is never repeated.** The card asks the Launcher (not the server) whether this wallet already launched the page's project: if so only "Finish linking" is offered. A read that fails offers nothing and says so. The sheet's own pending-send memory and a chain look-up cover a call that went out and was replaced in the wallet | `launch-read.isLaunched`, `LaunchCard` |
+| 4 | **After the launch.** The page is tied to the launch (the founder's record names it), the page moves to the Money tab, and until the server's record arrives the tab says "No numbers yet ... until then no figures are shown. This page looks again every few seconds" and shows no zero. The record query now looks again every 5 seconds while it has none. A page with no launch at all says "Not open to backers yet" | `ProjectMoney`, `use-money.ts` |
+| 5 | **Who runs the money** (a section on the Money tab). For anyone: who runs it, and what running it together means in one sentence. For the person the seat is offered to: take it (two presses). For the person asked to run it together: accept the second seat. For the runner (or one of a Pair): offer the seat to one team member (the founder may say they are leaving), ask one team member to run it together (a Pair), withdraw an offer, wind down. For anyone, once the team has been quiet half a year: wind down | `app/src/features/seat/` (`SeatSection`, `OfferSheet`, `SeatSheets`, `WindDownSheet`, `use-seat`, `seat-words`) |
+| 6 | **The offer's lifetime** is read from the Treasury (2 time units) and said on the offer sheet and on the sheet of the person offered; an ended offer says so and nobody is offered a press for it | `seat-words`, `use-seat` |
+| 7 | **Wind down says first what it does to backers**: taking out stays open (the first line), it is for good, the door and the allowance stop and the box goes back to the project's money, and what happens to Team Shares (by choice: what each member has built up stays; after a long quiet: only what has unlocked). Two presses | `WindDownSheet`, `seat-words.windDownWords` |
+| 8 | **With a Pair as runner** every runner step is a proposal and the sheet says "This project is run by two. Pressing asks the other signer: nothing happens until they confirm the same step." The other signer's sentence for withdrawing an offer is new (before it read "offer the seat to 0x000..."), and for a wind-down it no longer says Team Shares "that have not unlocked" (a wind-down by choice keeps what has built up) | `pair-terms.ts` |
+| 9 | Core reads: `readLaunchOffer` (the settings hash, the platform's limits and the rules every project is born with, read from the contracts a project is cloned from, so no limit is copied into the app), `readSeatState`, `pairAddressOf`; `treasuryWindDownCall` | `packages/creaton-core/src/pot/pot-state.ts`, `pot-calls.ts` |
+| 10 | The old Team browser specs (hand over, take the seat, wind down, the second person, the Pair's shares, their accessibility and screenshots) are deleted; they only ran with the old-screens build. `team/launch.ts` (old) now re-exports the live `launch/launch-ids.ts` | `app/tests/e2e` |
+
+## How it held to the rules
+
+- **The numbers on each sheet are the numbers in the call.** The launch sheet's call is `launchCallFor(...)`, the one function the sheet and the
+  chain loop both call; the vitest decodes the call and compares every argument with what the sheet showed (defaults, typed numbers, zero,
+  the hash it read, a changed hash). The offer sheet names the person with their address in its sentence and sends the address the Launcher
+  gave for a pair; the loop and the browser spec decode every call.
+- **One owner per actionable label, no duplicate screen-reader stops.** Each button has a name of its own; fields are labelled; sheets are
+  labelled dialogs; Escape closes and focus returns to the opener. axe: no serious or critical finding in jsdom on every sheet and in a real
+  browser (colour contrast included) on the launch card and sheet, the runner's section and the wind-down sheet; layout at 360 px has no
+  sideways scroll and the sheet's press is at least 44 px.
+- **A double press cannot send twice; a failed send says what happened and leaves the press; a send that may have landed is checked on the
+  chain.** All of this is the shared `PotSheet` (a wallet that says no, a refusal in words, a call that went out and is looked up, never
+  sent again), tested once more for the new sheets (double press on the launch sheet in a browser: one wallet prompt, one call).
+- **Words.** `check:copy` passes; sizes are rem tokens; no event, contract or error name reaches a person (the fingerprint is under
+  "Technical details"); the play-money line and the legal line are on every one of these sheets (PotSheet), word for word.
+
+## Presses and signatures, measured (real browser, real local chain)
+
+| Step | Presses | Fields | Wallet signatures |
+|---|---|---|---|
+| Launch from the project's page, the defaults | 2 (Launch, then the sheet's press) | 0 | 1 |
+| Launch, both numbers typed | 2 | 2 | 1 |
+| Wind down (runner alone) | 2 | 0 | 1 |
+| Offer the seat to a teammate | 2 | 1 (chosen from a list) | 1 |
+| Take the seat (the teammate's page) | 2 | 0 | 1 |
+| Ask a teammate to run it together | 2 | 1 (chosen from a list) | 1 |
+| Accept the second seat | 2 | 0 | 1 |
+| A wind-down through a Pair: one proposes / the other confirms | 2 / 2 | 0 / 0 | 1 / 1 |
+
+## Gates, as run
+
+| Gate | Result |
+|---|---|
+| `tsc --noEmit` (app, including `tests/`) | clean |
+| vitest (app) | 75 files, 588 tests passed, 0 failed (the round began at 66 files, 472 tests in pass B; 72 files, 552 tests after the launch screens) |
+| biome (app, core `src/pot`), `check:copy`, `check:px-text`, `check:file-sizes` (`CHECK_FILE_SIZES_BASE=855c585a0`), repository `knip` | clean |
+| core tests (`pnpm test` in `packages/creaton-core`, forge on PATH, including the fresh-ABI test) | 1,211 passed, 0 failed, 0 skipped |
+| `pnpm build` with `CREATON_DEPLOYMENTS_FILE`, then the bundle check | builds; entry chunk 390 KiB against the 450 KB budget; the launch and seat screens load with the Money tab and the launch card (lazy), not in the first download |
+| `scripts/pot-app-loop.sh` (real anvil, real `contracts/pot` bytecode) | 12 tests passed, 0 failed, 0 skipped, in 6 files (the new `pot-team.test.ts` has 5) |
+| Playwright `--project=smoke --trace off` (the build made with the deployments file; each spec starts its own anvil) | 54 passed, 0 failed, 42 skipped. The 9 new tests: `pot-launch.spec.ts` (5), `pot-seat.spec.ts` (4). Before this round the same project gave 45 passed, 59 skipped; the 17 deleted skipped tests were the old Team specs |
+
+`pot-team.test.ts` drives the real contracts only through the app's own launch reader, terms and call, its seat reader and its call builders:
+the defaults and typed numbers launch what they say (the rate and the Team pool are read back from the chain); the ceiling is refused by the
+sheet and by the contract; the same project twice is refused in words; a platform setting changed by the admin between the sheet and the
+signature is refused with "settings changed" and nothing is created, and read again the same press launches under the new settings; an
+offer of the seat is read as the person's own, as another person's, or as a pair with them; it is taken, withdrawn, left to run out (after
+two time units it cannot be taken, in words, and a new offer replaces it) and made with the founder leaving; a Pair is made from an offer
+to the address the Launcher gives for the two, a call from the proposer alone is refused in words, the other signer reads the wind-down in
+words and confirms exactly it, a second wind-down is refused, and the backer still takes everything out; a wind-down by a stranger is refused
+before 26 time units of quiet and works after.
+
+The browser specs: `pot-launch.spec.ts` goes through the real Start screen, the launch card, the sheet, one wallet prompt, the call on the
+chain, and the wait for the server's record (a record is then seeded and the page, looking again on its own, shows the project's money); also
+the settings change, a wallet that says no, a double press, a launch whose page was never tied to it, and the keyboard, axe and 360 px.
+`pot-seat.spec.ts` winds a project down as its runner and then lets a backer take everything out in the same browser; winds a quiet project
+down as a stranger; hands the seat to a teammate (offer, withdraw, offer again, the teammate takes it from their own page) and makes a Pair
+(ask, accept, two run it together, one proposes the wind-down, the other reads it in words and confirms it). Screenshots are written to
+`app/test-results/pot-screens/` (ignored by git) and were looked at.
+
+## Chosen under the owner's standing go; the owner may overrule
+
+1. **Where the screens are.** The launch card is on the project page above the tabs (a founder who just pressed Start lands on it). The seat,
+   Pair and wind-down controls are one section of the **Money tab** ("Who runs the money"), not a new fifth tab: four tabs already fit at 360 px,
+   and the Money tab holds the allowance, the grants and a Pair's waiting calls. A separate "Team" tab is a small move if the owner wants one.
+2. **The seat and a second signer go only to a team member who linked a wallet**, chosen from a list (as grants do); there is no typed address.
+   The person is shown with their full address in the sentence before the press.
+3. **"I am leaving" is a tick box shown only to the founder, off by default,** on a hand-over (not on a Pair offer: the founder stays).
+4. **Typed numbers.** The allowance is a percent a day with up to four decimals ("0" switches it off); the Team pool is a whole number of Team
+   Shares ("0" for none), commas allowed. Anything else, or above the Launcher's ceiling, is refused in words and nothing can be sent.
+5. **The limits on the launch sheet are read from the contracts** (`readLaunchOffer`: the Launcher's own constants, its platform settings and
+   the constants of the contracts a project is cloned from), never typed into the app. A project does not exist yet at that moment, so
+   the implementations are asked.
+6. **The fingerprint is checked twice** (when the sheet opens and right before the press) and then by the contract; a change refuses with
+   words and shows the new settings.
+7. **A pair is offered by naming the person:** the offer goes to the address `Launcher.pairAddress(key, runner, person)`; the person's page and
+   the runner's page recognise it by working that address out for each teammate with a linked wallet (a few reads when the section opens).
+8. **A wind-down by anyone** (after 26 time units of quiet) is the Treasury's own call; its words keep only what has unlocked. By choice it
+   goes through the Launcher and its words keep what each member has built up (what `Vester.burnAfterWindDown` does).
+9. **The record query looks again every 5 seconds while the server has no record of a launched project** (and stops when it has one).
+10. **The four old Team browser specs were deleted, not rewritten**, because pot-launch and pot-seat cover the same journeys on the new
+    contracts (hand over, take the seat, wind down, launch, the Pair) in the default build. Their old-design helpers (`team-world.ts`,
+    `chain-wallet.ts`) stay: `earlier.spec.ts` and `market.spec.ts` still use them.
+
+## Found while building
+
+- **The new Launcher refuses an unknown key** (`UnknownProject`) instead of returning an empty project, which the old launch card's check
+  assumed. `isLaunched` reads a refusal as "not launched" and any other failure as "could not tell" (no launch is offered on a guess).
+- **`platform()` is on the Launcher (five answers) and on the Treasury (one).** The test wallet answers by function name, so
+  `installPotChain` takes a `launcher` address to answer the Launcher's own first. The wallet harness for the chain loop needed nothing.
+- **The contract's refusal for changed settings says "press again",** which on a sheet built from one read would send the old fingerprint
+  again. The sheet's recheck makes "press again" read the new settings first.
+- **The live record reads a Pair from the chain** (`isPair`, the Pair's two signers), so a browser spec shows what the server will.
+- **History note:** the launch commit (`09b570d44`) uses `readLaunchOffer`'s `rules`, which landed in `4d98a6b9f` (the core commit
+  `2b4210776` before it had the reads without `rules`). Those commits build together, not each alone.
+- Two `vite preview` processes of other engineers (ports 47312 and 47313) were running during this work; mine used port 4391 and left nothing.
+
+## Not done
+
+- **A passkey account launching in a real browser or on the stand-in bundler** (the phone path). A jsdom test sends the launch as one
+  operation with one call through the passkey sender, and the seat sheets use the same `PotSheet` as Back and Take out, which the phone
+  script already proves; `scripts/pot-app-phone-e2e.sh` was not extended or run.
+- **The launch is not yet in `scripts/pot-full-loop.sh`** (the joined-up run with the real server): it still launches with the call builder
+  outside the browser. That script is not on this agent's paths. The browser launch against a real server and reader has not been run.
+- **A hand-over or a Pair with someone who is not on the team list** (no typed address), and a Pair's own hand-over to a new Pair.
+- **No person has tried any of it on a phone.**
+- **Stale browser specs that remain skipped** (not mine, for the lead and app engineer B under F5): `a11y.spec.ts` (12), `money.spec.ts` (11),
+  `earlier.spec.ts` (6), `tasks.spec.ts` (5), `market.spec.ts` (3), `money-review.spec.ts` (2), two in `smoke.spec.ts`, and `pot-phone.spec.ts`
+  (1, which the phone script runs).
+
+## What app engineer B must know
+
+- **`PotSheet`** has a new optional `recheck` (an async read right before the send that can stop the press with a sentence). Use it where a
+  sheet stands on numbers that can move (a sheet for paying a task from the box could re-read the box).
+- **New shared reads** in `@creaton/core/pot/pot-state.ts`: `readLaunchOffer`, `readSeatState`, `pairAddressOf`; `readSeatView` in
+  `app/src/features/seat/use-seat.ts` (who the seat is offered to, whether as a Pair with this account). `treasuryWindDownCall` in `pot-calls.ts`.
+- **`ProjectMoney` now renders `SeatSection`** between Team Shares and the waiting Pair calls; it needs only the wallet's account, never asks
+  anyone to connect, and reads the chain when it shows. `pair-terms.ts` has the withdraw-offer sentence.
+- **`useProjectNumbers` polls every 5 s while it has no record.** A test that renders a page with a chain key and no record sees "No numbers
+  yet" and a refetch every 5 s; tests with fake timers should expect that.
+- **Test helpers:** `tests/helpers/seat-harness.ts` (the example project run alone or by a pair, a team with linked wallets, the chain's
+  answers about the seat); `installPotChain({ launcher })`; `tests/e2e/helpers/live-team.ts` (`seedTeamServer`: a project with a teammate who
+  linked an anvil account, for browser specs with two people); `live-record.ts` reads a Pair.
+- **The browser specs share `app/dist`.** Build it with `CREATON_DEPLOYMENTS_FILE=../contracts/pot/deployments/pot-31337.json pnpm build`
+  and run with your own `E2E_PORT`; a spec checks the build names the chain's Launcher. Each spec file starts its own anvil.
+- **Deleted:** `team-seat.spec.ts`, `team.spec.ts`, `a11y-team.spec.ts`, `screens-team.spec.ts` and their entries in `playwright.config.ts`.
+  The remaining skipped specs are listed above.
+- `features/team/launch.ts` (old, legacy list) re-exports from `features/launch/launch-ids.ts`; live code must import the latter.
