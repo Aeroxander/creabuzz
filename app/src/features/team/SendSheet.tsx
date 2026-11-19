@@ -115,6 +115,7 @@ export function SendButton({
   done,
   variant = "primary",
   block,
+  disabled,
 }: {
   label: string;
   testId: string;
@@ -125,6 +126,8 @@ export function SendButton({
   done: string;
   variant?: "primary" | "secondary" | "ghost";
   block?: boolean;
+  /** Held back until the card's own condition holds (a box ticked, a wallet typed). */
+  disabled?: boolean;
 }) {
   const send = useMoneySend(action);
   const toast = useToast();
@@ -135,7 +138,7 @@ export function SendButton({
       <Button
         block={block}
         data-testid={testId}
-        disabled={send.isPending}
+        disabled={send.isPending || disabled}
         onClick={() => {
           setProblem(null);
           send.send(

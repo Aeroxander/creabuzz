@@ -81,6 +81,26 @@ const ABI_ERRORS: Record<string, string[]> = {
     "TooEarly(uint256)",
     "WrongStage()",
   ],
+  "EarlierBackers.sol/EarlierBackers.json": [
+    "BadHolder()",
+    "BadReceiver()",
+    "BadSetup()",
+    "BadSignature()",
+    "Barred()",
+    "BindState()",
+    "ClosedState()",
+    "EntryState()",
+    "Expired()",
+    "NoReplacement()",
+    "NotFunded()",
+    "NotKeeper()",
+    "NotOnList()",
+    "OverTotal()",
+    "TextMoved()",
+    "TooEarly(uint256)",
+    "UnknownEntry()",
+    "WindowOver()",
+  ],
   "MinBid.sol/MinBid.json": [
     "BidTooLate(uint256,uint256)",
     "BidTooSmall(uint128,uint128)",
@@ -107,6 +127,9 @@ const ACTIONS: TeamAction[] = [
   "collect",
   "hand-back",
   "trade",
+  "consent",
+  "veto",
+  "deliver",
 ];
 
 /** A provider's refusal carrying `data`, wrapped the way the wallet reports a send that failed. */

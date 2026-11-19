@@ -252,6 +252,7 @@ export const CLAIM_READS = {
   closed: read("closed()"),
   closeAt: read("closeAt()"),
   total: read("total()"),
+  entryCount: read("entryCount()"),
   funding: read("funding()"),
   minHoldFromConsent: read("minHoldFromConsent()"),
   entryOf: (entry: bigint) => read("entryOf(uint256)", ["uint256"], [entry]),

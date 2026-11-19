@@ -17,6 +17,10 @@ const ConversationPage = lazyRouteComponent(
   () => import("../features/messages/ConversationPage"),
   "ConversationPage",
 );
+const EarlierPage = lazyRouteComponent(
+  () => import("../features/earlier/EarlierPage"),
+  "default",
+);
 const MessagesPage = lazyRouteComponent(
   () => import("../features/messages/MessagesPage"),
   "MessagesPage",
@@ -89,6 +93,11 @@ const you = createRoute({
   path: "/you",
   component: YouPage,
 });
+const earlier = createRoute({
+  getParentRoute: () => root,
+  path: "/earlier",
+  component: EarlierPage,
+});
 const messages = createRoute({
   getParentRoute: () => root,
   path: "/you/messages",
@@ -140,6 +149,7 @@ const routeTree = root.addChildren([
   start,
   week,
   you,
+  earlier,
   messages,
   conversation,
   post,

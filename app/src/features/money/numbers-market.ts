@@ -39,8 +39,22 @@ export interface MarketNumbers {
   bids: BidTotals[];
   pool: { trades: number; sqrtPriceX96: bigint | null };
   woundDownAt: number | null;
-  /** Project zero's earlier backers' claim contract, when the record names one. */
-  earlierClaim: string | null;
+  /** Project zero's earlier backers' claim contract and its counts, when the record names one. */
+  earlier: EarlierCounts | null;
+}
+
+/** The earlier backers' counts and totals as the record tells them: never an entry, a holder or one person's amount. */
+export interface EarlierCounts {
+  claim: string;
+  bound: boolean;
+  textVersion: number;
+  consented: { count: number; total: bigint };
+  voidedCount: number;
+  delivered: { count: number; total: bigint };
+  replacements: { pending: number; done: number; cancelled: number };
+  /** When the list was closed and the Shares of entries still open then; null while it is open. */
+  listClosed: { at: number; open: bigint } | null;
+  sentToReserve: bigint;
 }
 
 type Json = Record<string, unknown>;
@@ -137,7 +151,42 @@ export function parseMarket(body: Json): MarketNumbers {
       sqrtPriceX96: big(pool.sqrtPriceX96),
     },
     woundDownAt: int(body.woundDownAt),
-    earlierClaim: earlier ? address(earlier.claim) : null,
+    earlier: earlier ? parseEarlier(earlier) : null,
+  };
+}
+
+function parseEarlier(e: Json): EarlierCounts | null {
+  const claim = address(e.claim);
+  if (!claim) return null;
+  const pair = (v: unknown) => (isObject(v) ? v : {});
+  const consented = pair(e.consented);
+  const delivered = pair(e.delivered);
+  const replacements = pair(e.replacements);
+  const closed = isObject(e.listClosed) ? e.listClosed : null;
+  const closedAt = closed ? int(closed.at) : null;
+  return {
+    claim,
+    bound: e.bound === true,
+    textVersion: int(e.textVersion) ?? 1,
+    consented: {
+      count: int(consented.count) ?? 0,
+      total: big(consented.total) ?? 0n,
+    },
+    voidedCount: int(e.voidedCount) ?? 0,
+    delivered: {
+      count: int(delivered.count) ?? 0,
+      total: big(delivered.total) ?? 0n,
+    },
+    replacements: {
+      pending: int(replacements.pending) ?? 0,
+      done: int(replacements.done) ?? 0,
+      cancelled: int(replacements.cancelled) ?? 0,
+    },
+    listClosed:
+      closed && closedAt !== null
+        ? { at: closedAt, open: big(closed.open) ?? 0n }
+        : null,
+    sentToReserve: big(e.sentToReserve) ?? 0n,
   };
 }
 

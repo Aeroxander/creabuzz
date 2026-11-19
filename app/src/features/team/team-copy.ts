@@ -27,7 +27,10 @@ export type TeamAction =
   | "finish"
   | "collect"
   | "hand-back"
-  | "trade";
+  | "trade"
+  | "consent"
+  | "veto"
+  | "deliver";
 
 /** Refusals by error name, with the sentence for any action and, where it reads better, for one action. */
 const WORDS: Record<
@@ -96,6 +99,8 @@ const WORDS: Record<
   },
   TooEarly: {
     finish: "This finishing step is not due yet. Try again later.",
+    deliver:
+      "Shares are sent 21 days after you agree, and only as they are released. Try again then. Nothing changed.",
     any: "It is too early for this. Nothing changed.",
   },
   BadStart: {
@@ -172,6 +177,60 @@ const WORDS: Record<
   CannotExitBid: {
     any: "This bid cannot be settled yet. Try again after the auction ends.",
   },
+  // The earlier backers' list
+  NotFunded: {
+    any: "The Shares for this list are not in place yet, so nothing can be agreed. Nothing changed. Try again later.",
+  },
+  UnknownEntry: {
+    any: "This link does not match a line on the list. Ask for a new one. Nothing changed.",
+  },
+  NotOnList: {
+    any: "What this link carries does not match the list. Ask for a new link. Nothing changed.",
+  },
+  BadHolder: {
+    any: "This line has no wallet to agree with yet. Nothing changed.",
+  },
+  Barred: {
+    any: "This wallet can no longer agree to this line, because a replacement is waiting. Nothing changed.",
+  },
+  EntryState: {
+    consent: "This line was already agreed to. Nothing changed.",
+    deliver: "This line has not been agreed to yet. Nothing was sent.",
+    any: "This line is not in the state this step needs. Nothing changed.",
+  },
+  Expired: {
+    any: "Your signed message ran out of time. Sign it again. Nothing changed.",
+  },
+  BadSignature: {
+    consent:
+      "Only the wallet this line was made for can agree to it. Nothing changed.",
+    any: "That signature does not match the wallet this line was made for. Nothing changed.",
+  },
+  TextMoved: {
+    any: "The agreement was updated while you were reading. Read it again, then agree. Nothing changed.",
+  },
+  BadReceiver: {
+    any: "Shares can go to your own wallet or to a wallet that already exists on this network, not to a project's own account. Choose another. Nothing changed.",
+  },
+  OverTotal: {
+    any: "Agreeing to this would pass the total the list is owed. Nothing changed. Ask the team to look.",
+  },
+  WindowOver: {
+    any: "The days for checking this agreement are over. Nothing changed.",
+  },
+  NoReplacement: {
+    veto: "There is no replacement waiting for this line, or you already used your one veto. Nothing changed.",
+    any: "There is no replacement waiting for this line. Nothing changed.",
+  },
+  ClosedState: {
+    any: "The list is closed, so nothing more can be agreed. Nothing changed.",
+  },
+  NotKeeper: {
+    any: "Only the list's keeper can do this. Nothing changed.",
+  },
+  BindState: {
+    any: "The list is not ready yet. Nothing changed. Try again later.",
+  },
 };
 
 /** Names in WORDS that end in "(...)": matched by selector from the ABIs' own signatures. */
@@ -212,6 +271,22 @@ const SIGNATURES = [
   "NotClaimable()",
   "BidAlreadyExited()",
   "CannotExitBid()",
+  "NotFunded()",
+  "UnknownEntry()",
+  "NotOnList()",
+  "BadHolder()",
+  "Barred()",
+  "EntryState()",
+  "Expired()",
+  "BadSignature()",
+  "TextMoved()",
+  "BadReceiver()",
+  "OverTotal()",
+  "WindowOver()",
+  "NoReplacement()",
+  "ClosedState()",
+  "NotKeeper()",
+  "BindState()",
 ] as const;
 
 const BY_SELECTOR = new Map<string, string>(
@@ -268,6 +343,9 @@ const ACTION_WORDS: Record<TeamAction, string> = {
   collect: "Collecting your bid",
   "hand-back": "Handing back",
   trade: "The trade",
+  consent: "Agreeing",
+  veto: "Keeping this line",
+  deliver: "Sending the Shares",
 };
 
 /** What a person reads when a Team or market step stops. */
