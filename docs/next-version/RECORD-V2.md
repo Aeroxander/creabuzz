@@ -407,11 +407,11 @@ Take out, `cashNow` sets `minCash`. If the chain read fails the sheet says so an
   zero, a new record at least every **600 seconds** (R = 600);
 - otherwise at least every **3600 seconds** (R = 3600): a heartbeat, so a quiet project is not mistaken for a dead server.
 
-**The app measures `age = now - builtAt`** (an app clock behind the server counts as age 0) and acts on it:
 The two numbers are the server's settings (`BUZZ_CHAIN_ACTIVE_REFRESH_SECS`, `BUZZ_CHAIN_REFRESH_SECS`). Each may be set from 5 to
 86400 seconds, which is the range the app accepts for `refreshEverySecs`: a server cannot be set to promise a refresh the app would
 throw away.
 
+**The app measures `age = now - builtAt`** (an app clock behind the server counts as age 0) and acts on it:
 
 | Age | What the app shows |
 |---|---|
