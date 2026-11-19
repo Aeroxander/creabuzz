@@ -121,6 +121,11 @@ pub struct LlmConfig {
     price_input_mc_per_mtok: u64,
     /// Price of output tokens in milli-cents per million tokens (0 = unpriced).
     price_output_mc_per_mtok: u64,
+    /// Hosted AI manager drafts per project per week (`BUZZ_MANAGER_CALLS_PER_WEEK`).
+    manager_calls_per_week: u32,
+    /// The most the hosted AI manager may spend in 90 days, in milli-cents of real money
+    /// (`BUZZ_MANAGER_MAX_CENTS_PER_90_DAYS`); `None` leaves only the share-of-fees cap.
+    manager_ceiling_mc: Option<u64>,
 }
 
 /// Milli-cents per US cent: LLM spend is metered in thousandths of a cent so a
@@ -154,7 +159,50 @@ impl LlmConfig {
             model: None,
             price_input_mc_per_mtok: 0,
             price_output_mc_per_mtok: 0,
+            manager_calls_per_week: crate::api::manager::DEFAULT_CALLS_PER_WEEK,
+            manager_ceiling_mc: None,
         }
+    }
+
+    /// The same, with prices set (milli-cents per million tokens) and a weekly manager allowance, for the manager's
+    /// route tests.
+    #[cfg(test)]
+    pub(crate) fn priced_for_test(mut self, price_in: u64, price_out: u64, per_week: u32) -> Self {
+        self.price_input_mc_per_mtok = price_in;
+        self.price_output_mc_per_mtok = price_out;
+        self.manager_calls_per_week = per_week;
+        self
+    }
+
+    /// The same, with a bearer key and a pinned model, for the planted eval against a real model (the key comes from
+    /// the environment only).
+    #[cfg(test)]
+    pub(crate) fn with_key_and_model_for_test(
+        mut self,
+        key: String,
+        model: Option<String>,
+    ) -> Self {
+        self.api_key = Some(key);
+        self.model = model;
+        self
+    }
+
+    /// The same, with the operator's ceiling on the manager's 90-day spend, in milli-cents.
+    #[cfg(test)]
+    pub(crate) fn with_manager_ceiling_for_test(mut self, millicents: u64) -> Self {
+        self.manager_ceiling_mc = Some(millicents);
+        self
+    }
+
+    /// The operator's ceiling on what the hosted AI manager may spend in 90 days, in milli-cents of real money
+    /// (`BUZZ_MANAGER_MAX_CENTS_PER_90_DAYS`). `None` when unset: then only the share of fees limits it.
+    pub(crate) fn manager_ceiling_mc(&self) -> Option<u128> {
+        self.manager_ceiling_mc.map(u128::from)
+    }
+
+    /// Hosted AI manager drafts one project may have in a week (`BUZZ_MANAGER_CALLS_PER_WEEK`, default 10).
+    pub(crate) fn manager_calls_per_week(&self) -> u32 {
+        self.manager_calls_per_week
     }
 
     /// Upstream OpenAI-compatible `/chat/completions` URL.
@@ -242,6 +290,8 @@ impl std::fmt::Debug for LlmConfig {
             .field("model", &self.model)
             .field("price_input_mc_per_mtok", &self.price_input_mc_per_mtok)
             .field("price_output_mc_per_mtok", &self.price_output_mc_per_mtok)
+            .field("manager_calls_per_week", &self.manager_calls_per_week)
+            .field("manager_ceiling_mc", &self.manager_ceiling_mc)
             .finish()
     }
 }
@@ -1141,6 +1191,31 @@ impl Config {
                 price_mc_per_mtok_from_env("BUZZ_LLM_PRICE_INPUT_CENTS_PER_MTOK")?;
             let price_output_mc_per_mtok =
                 price_mc_per_mtok_from_env("BUZZ_LLM_PRICE_OUTPUT_CENTS_PER_MTOK")?;
+            let manager_calls_per_week = u32::try_from(positive_u64_from_env(
+                "BUZZ_MANAGER_CALLS_PER_WEEK",
+                u64::from(crate::api::manager::DEFAULT_CALLS_PER_WEEK),
+            )?)
+            .map_err(|_| {
+                ConfigError::InvalidValue(
+                    "BUZZ_MANAGER_CALLS_PER_WEEK must fit in 32 bits".to_string(),
+                )
+            })?;
+            let manager_ceiling_mc = match std::env::var("BUZZ_MANAGER_MAX_CENTS_PER_90_DAYS") {
+                Ok(raw) if raw.trim().is_empty() => None,
+                Ok(raw) => Some(
+                    raw.trim()
+                        .parse::<u64>()
+                        .ok()
+                        .and_then(|cents| cents.checked_mul(MILLICENTS_PER_CENT))
+                        .ok_or_else(|| {
+                            ConfigError::InvalidValue(
+                                "BUZZ_MANAGER_MAX_CENTS_PER_90_DAYS must be a whole number of US cents"
+                                    .to_string(),
+                            )
+                        })?,
+                ),
+                Err(_) => None,
+            };
             proxy_url.map(|proxy_url| LlmConfig {
                 proxy_url,
                 api_key,
@@ -1151,6 +1226,8 @@ impl Config {
                 model,
                 price_input_mc_per_mtok,
                 price_output_mc_per_mtok,
+                manager_calls_per_week,
+                manager_ceiling_mc,
             })
         };
 

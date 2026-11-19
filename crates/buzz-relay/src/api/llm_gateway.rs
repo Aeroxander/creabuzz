@@ -248,7 +248,7 @@ pub(crate) fn llm_cost_millicents(
 }
 
 /// Per-caller per-minute rate limit (`BUZZ_LLM_RATE_PER_MIN`).
-async fn enforce_llm_rate_limit(
+pub(crate) async fn enforce_llm_rate_limit(
     state: &AppState,
     tenant: &buzz_core::TenantContext,
     pubkey: &nostr::PublicKey,
@@ -376,7 +376,7 @@ fn community_cap_words(retry_after_secs: u64) -> String {
 
 /// A 429 (or other refusal) with a plain-words `error`, a stable `code` and
 /// the seconds until a retry can work.
-fn refusal(
+pub(crate) fn refusal(
     status: StatusCode,
     code: &str,
     message: String,

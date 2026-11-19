@@ -354,6 +354,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
             api::llm_gateway::LLM_CHAT_PATH,
             post(api::llm_gateway::chat_completions),
         )
+        // The AI manager's draft for a project's founder (NIP-98 auth, behind the same gateway setting).
+        .route(api::manager::MANAGER_DRAFT_PATH, post(api::manager::draft))
         .route(api::gifs::SHARE_PATH, post(api::gifs::share))
         .route(
             "/workflows/{workflow_id}/runs",
