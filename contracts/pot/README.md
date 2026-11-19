@@ -26,18 +26,19 @@ deployment: 7 days on a real network, and on a test network any multiple of 168 
 | `model/` | The exact-decimal reference model, its extension to what the contracts define, the vector generator and `vectors.json`. See `model/README.md`. |
 | `scripts/check-mutations.py`, `scripts/check-vectors.sh` | Break the contracts on purpose and see the tests notice; check the vector file is current. |
 
-Step 2, first pass (this tree): the task queue (`announceTask`, `takeTask`, `acceptTask`, `rejectTask`, `cancelTask`, `returnTask`) with
-its notice, caps and deadline, the money set aside for taken tasks (`locked`), and the return of a task that ran out inside every
-`settle()`. Not yet: exit notes. A leaver is paid cash on the pot without the money set aside and gets no note for it, so **this tree
-must not be deployed with real holders until the second pass adds the notes** (design 2.3c: the stayers would get a windfall). A task
-can still be paid by `draw()` from the box, the other door.
+Step 2 (this tree): the task queue (`announceTask`, `takeTask`, `acceptTask`, `rejectTask`, `cancelTask`, `returnTask`) with its
+notice, caps and deadline, the money set aside for taken tasks (`locked`), the return of a task that ran out inside every `settle()`,
+and the **exit notes**: a holder who takes out while money is set aside is paid cash on the pot without it and written a note for the
+rest, keyed by the task's serial; when the task ends the worker is paid first and what is left comes back at one ratio to the stayers
+and to every note (`claimNote`); a task paid in full has no claimable note. A task can still be paid by `draw()` from the box, the
+other door. What was built, measured, chosen and declined is in `docs/next-version/POT-STEP2-REPORT.md`.
 
 ## Run it
 
 All from `contracts/pot` unless noted. Put the Foundry binaries (`forge`, `anvil`, `cast`) on `PATH`.
 
 ```bash
-forge build --sizes               # Treasury must stay under 24,576 bytes
+forge build --sizes               # Treasury and TaskBook under 24,576 bytes, Parts' creation code under 49,152 (test/Size.t.sol binds them)
 forge test                        # everything: unit, fuzz (1,000 runs), invariants (256 runs x 200 steps), vectors, event rebuild
 forge test --match-path test/ModelVectors.t.sol -vv    # the vectors alone, with the worst deviation printed
 forge test --match-path test/PotInvariants.t.sol       # the invariants alone
@@ -45,7 +46,7 @@ forge test --match-path test/PotInvariants.t.sol       # the invariants alone
 python3 -I model/gen_vectors.py   # regenerate model/vectors.json (after a change to the model or its scenarios)
 bash scripts/check-vectors.sh     # fail if vectors.json is not what the model says
 
-python3 scripts/check-mutations.py                     # break 40 formulas, guards and time rules, one at a time, see each caught
+python3 scripts/check-mutations.py                     # break 118 formulas, guards, rules and orders, one at a time, see each caught
 bash ../../scripts/pot-chain-loop.sh                    # the whole loop on a local chain with cast (needs anvil, cast, forge, jq)
 ```
 
@@ -59,6 +60,8 @@ per check and exits non-zero on the first failure. It stops anvil when it ends.
 |---|---|
 | Units and edge cases | `Join`, `Leave`, `LeaveTeam`, `Allowance`, `Revenue`, `Fees`, `Quiet`, `Treasury`, `Reentrancy`, `PotMath`, `ShareToken`, `PlayDollar`, `EmptyJoin`, `Worked` (the design's worked numbers) |
 | Team, vesting, forfeit, agents, Pair, Launcher | `Vester`, `VesterUnit`, `VesterFuzz`, `Team`, `Forfeit`, `WindDown`, `Agents`, `Pair`, `Launcher` |
-| Events | `Events` (each event's fields), `EventsRebuild` (a ledger of events alone rebuilds the project step by step) |
+| The task queue | `TaskBook` (the book alone), `Tasks`, `TasksCaps` (5%, 10% in 28 days, 8 open, must-bind 4), `TasksExpiry` (a task that ran out is returned inside every action), `Size`, `GasTasks`, `Arrival` (settle every second equals settle once), `OwnBurn`, `Pragma` |
+| Exit notes | `Notes` (the worked case through a real leave, claims, dust, reentrancy, Team take-outs), `NotesMustBind` (the eight slots cycled twenty times with random take-outs, joins, paths and claims), `NotesFuzz`, `PairTasks` (a real Pair through the queue and a note) |
+| Events | `Events` (each event's fields), `EventsRebuild` (a ledger of events alone rebuilds the project step by step, tasks and notes included), `TasksRebuild` (the same on a scripted run that walks every path); the ledger is `helpers/TaskLedger.sol` |
 | Invariants and fuzz | `PotInvariants` with `helpers/PotHandler.sol` (many actors, every kind of step, ghost sums), `MustBind` |
-| Model vectors | `ModelVectors` replays `model/vectors.json`: 52 scenarios, every number compared |
+| Model vectors | `ModelVectors` replays `model/vectors.json`: 83 scenarios (tasks and notes included), every number compared |
