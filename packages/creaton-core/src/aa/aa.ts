@@ -60,6 +60,13 @@ export class BundlerRpcError extends Error {
   /** Whether the request may be retried (HTTP-layer failures only). */
   readonly retryable: boolean;
 
+  /**
+   * Whether an earlier try of the same request, or this one, may have reached the bundler without its answer coming back
+   * (a timeout, a dropped connection, a gateway failure). Then a refusal on a later try says nothing about whether the
+   * first one was taken.
+   */
+  maybeDelivered = false;
+
   constructor(
     message: string,
     options?: { code?: number; retryable?: boolean },
@@ -73,6 +80,9 @@ export class BundlerRpcError extends Error {
 
 /** The bundler did not answer within the per-attempt timeout. */
 export class BundlerTimeoutError extends Error {
+  /** A request that timed out may have been taken all the same. */
+  readonly maybeDelivered = true;
+
   constructor(timeoutMs: number) {
     super(`bundler: request timed out after ${timeoutMs}ms`);
     this.name = "BundlerTimeoutError";
@@ -293,6 +303,12 @@ async function fetchWithTimeout(
   }
 }
 
+/** An error the loop ends on after tries without a proper answer: the request may have been taken. */
+function markMaybeDelivered(error: Error): Error {
+  if (error instanceof BundlerRpcError) error.maybeDelivered = true;
+  return error;
+}
+
 /**
  * Create the standard bundler RPC transport. Methods reject with
  * `BundlerNotConfiguredError` when no URL is available.
@@ -314,6 +330,8 @@ export function createBundlerTransport(
     }
     const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params });
     let lastError: Error = new BundlerRpcError(`bundler: ${method} failed`);
+    // An attempt ended without an answer from the bundler's own logic (timeout, network, 429/5xx).
+    let uncertain = false;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
       // The wait a 429/503 asked for (`Retry-After`), so the next attempt is never sooner than the bundler said.
       let serverAskedMs: number | null = null;
@@ -326,6 +344,7 @@ export function createBundlerTransport(
         );
         if (response.status === 429 || response.status >= 500) {
           serverAskedMs = retryAfterOf(response);
+          uncertain = true;
           lastError = new BundlerRpcError(
             `bundler: ${method} HTTP ${response.status}${await boundedBodyText(response)}`,
             { retryable: true },
@@ -349,8 +368,10 @@ export function createBundlerTransport(
         }
       } catch (error) {
         if (error instanceof BundlerRpcError && !error.retryable) {
+          error.maybeDelivered = uncertain;
           throw error;
         }
+        uncertain = true;
         if (!(error instanceof BundlerRpcError)) {
           const timedOut =
             (error as { name?: string }).name === "AbortError" ||
@@ -369,11 +390,11 @@ export function createBundlerTransport(
           serverAskedMs,
         );
         // The bundler asked for a longer wait than this loop makes: stop now with the failure it gave.
-        if (pause === null) throw lastError;
+        if (pause === null) throw markMaybeDelivered(lastError);
         await sleep(pause);
       }
     }
-    throw lastError;
+    throw markMaybeDelivered(lastError);
   }
 
   return {

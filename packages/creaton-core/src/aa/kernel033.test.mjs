@@ -216,7 +216,8 @@ function mockTransport({ events = [], sponsorship = SPONSORSHIP, receipt }) {
         hash,
         hashUserOpV07(state.sentOp, ENTRY_POINT_V0_7, BigInt(CHAIN_ID)),
       );
-      return receipt ?? RECEIPT_OK;
+      // A real bundler's receipt names the operation it is for.
+      return receipt ?? { ...RECEIPT_OK, userOpHash: hash };
     },
   };
 }

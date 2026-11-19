@@ -449,6 +449,22 @@ export function assertSponsorshipKeepsCall(
   ) {
     throw new SponsorshipRefusedError("it asked for an absurd gas limit");
   }
+  // The paymaster fields: when the sponsor names one it must be a real address, with sane gas limits for its own steps.
+  const pm = after.paymasterAndData.replace(/^0x/, "");
+  if (pm.length > 0) {
+    const paymaster = pm.slice(0, 40);
+    if (pm.length < 104 || /^0{40}$/.test(paymaster)) {
+      throw new SponsorshipRefusedError("it named no usable paymaster");
+    }
+    if (
+      BigInt(`0x${pm.slice(40, 72)}`) > MAX_SPONSORED_GAS_FIELD ||
+      BigInt(`0x${pm.slice(72, 104)}`) > MAX_SPONSORED_GAS_FIELD
+    ) {
+      throw new SponsorshipRefusedError(
+        "it asked for an absurd paymaster gas limit",
+      );
+    }
+  }
   const askedFees = unpackUints(before.gasFees);
   const gotFees = unpackUints(after.gasFees);
   if (
@@ -567,6 +583,12 @@ export interface SponsoredUserOpRequest {
    */
   beforeSign?: ((op: PackedUserOperation) => void | Promise<void>) | undefined;
   /**
+   * Called with the operation's hash, account and sequence after it is signed and just before it is sent to the
+   * bundler. From here on a lost answer may still mean the bundler holds the operation, so a caller that must never
+   * send a second one records it here.
+   */
+  onSigned?: ((signed: SubmittedUserOp) => void) | undefined;
+  /**
    * Called as soon as the bundler has accepted the operation, before the wait for its receipt. A caller that must
    * survive a reload writes its pending record here.
    */
@@ -683,10 +705,10 @@ export async function sendSponsoredUserOp(
     delete sponsorOp.verificationGasLimit;
     delete sponsorOp.callGasLimit;
   }
+  // The operator's sponsor address is used whenever one is set, even when the caller passes its own bundler
+  // transport: the sponsor is where the per-account limits live, so a request for it never goes to the bundler.
   const sponsorTransport =
-    request.transport === undefined &&
-    config.sponsorUrl !== undefined &&
-    config.sponsorUrl !== ""
+    config.sponsorUrl !== undefined && config.sponsorUrl !== ""
       ? createBundlerTransport({
           url: config.sponsorUrl,
           timeoutMs: config.timeoutMs,
@@ -723,6 +745,11 @@ export async function sendSponsoredUserOp(
   await request.beforeSign?.(sponsored);
   const signature = await request.signUserOpHash(opHash);
   const finalOp: PackedUserOperation = { ...sponsored, signature };
+  request.onSigned?.({
+    userOpHash: opHash,
+    sender: request.sender,
+    nonce: unpackNonce(request.nonce).sequence64,
+  });
   const submittedHash = await transport.sendUserOperation(
     finalOp,
     request.entryPointAddress,
@@ -747,6 +774,15 @@ export async function sendSponsoredUserOp(
   for (let poll = 0; poll < maxPolls; poll += 1) {
     receipt = await transport.getUserOperationReceipt(opHash);
     if (receipt !== null) {
+      // A receipt for another operation is not an answer about this one: never taken as landed or as failed.
+      if (
+        typeof receipt.userOpHash !== "string" ||
+        receipt.userOpHash.toLowerCase() !== opHash.toLowerCase()
+      ) {
+        throw new Error(
+          `zerodev: the bundler answered with a receipt for ${String(receipt.userOpHash)}, not for ${opHash}`,
+        );
+      }
       break;
     }
     await sleep(pollIntervalMs);

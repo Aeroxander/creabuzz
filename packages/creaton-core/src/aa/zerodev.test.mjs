@@ -357,6 +357,7 @@ test("sendSponsoredUserOp: sponsor → sign final hash → submit → receipt (p
     11155111n,
   );
 
+  receipt.userOpHash = expectedHash; // a real receipt names the operation it is for
   const { fetchImpl, calls } = mockFetch([
     { result: sponsorship },
     { result: expectedHash },

@@ -295,6 +295,8 @@ export interface Kernel033SendRequest {
    * send with nothing signed. The app uses it to require that the call data is exactly the calls the person saw.
    */
   beforeSign?: ((op: PackedUserOperation) => void | Promise<void>) | undefined;
+  /** Called after signing, just before the send: the operation may be held by the bundler from here (see `SponsoredUserOpRequest`). */
+  onSigned?: ((signed: SubmittedUserOp) => void) | undefined;
   /** Called when the bundler has accepted the operation, before the wait for its receipt (see `SponsoredUserOpRequest`). */
   onSubmitted?: ((submitted: SubmittedUserOp) => void) | undefined;
   /** Injection seam for tests (mirrors `SponsoredUserOpRequest.transport`). */
@@ -469,9 +471,13 @@ export async function getKernel033Sender(
   params: Kernel033AccountParams & { rpc: Pick<Kernel033ChainRpc, "ethCall"> },
 ): Promise<string> {
   const { factory, getAddressData } = kernel033AccountData(params);
-  return decodeAddressWord(
+  const sender = decodeAddressWord(
     await params.rpc.ethCall({ to: factory, data: getAddressData }),
   );
+  // An all-zero answer is a node or factory that knows no account: never an address to send from or to show.
+  if (/^0x0{40}$/i.test(sender))
+    throw new Error("kernel033: the factory returned the zero address");
+  return sender;
 }
 
 // --------------------------------------------------- v0.7 hash (8-word) -----
@@ -946,6 +952,7 @@ export async function sendKernel033UserOp(
       });
     },
     beforeSign: request.beforeSign,
+    onSigned: request.onSigned,
     onSubmitted: request.onSubmitted,
     receipt: request.receipt,
     transport,
