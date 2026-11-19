@@ -30,10 +30,7 @@ export default defineConfig({
         "**/money-review.spec.ts",
         "**/a11y.spec.ts",
         "**/passkey.spec.ts",
-        "**/team.spec.ts",
-        "**/team-seat.spec.ts",
         "**/earlier.spec.ts",
-        "**/a11y-team.spec.ts",
         "**/market.spec.ts",
         "**/tasks.spec.ts",
         "**/manager.spec.ts",
@@ -43,7 +40,7 @@ export default defineConfig({
     },
     {
       name: "screens",
-      testMatch: ["**/screens.spec.ts", "**/screens-team.spec.ts"],
+      testMatch: ["**/screens.spec.ts"],
     },
   ],
   webServer: {

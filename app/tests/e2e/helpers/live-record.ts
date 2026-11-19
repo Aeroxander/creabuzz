@@ -226,9 +226,8 @@ export async function liveRecord(
   const runnerAddress = String(await T("runner")).toLowerCase();
   // A Pair runs it when the Launcher made the runner: its two signers are the Pair's own.
   const runnerIsPair =
-    (await view(LAUNCHER_ABI, project.launcher, "isPair", [
-      runnerAddress,
-    ])) === true;
+    (await view(LAUNCHER_ABI, project.launcher, "isPair", [runnerAddress])) ===
+    true;
   const signers = runnerIsPair
     ? [
         String(await view(PAIR_ABI, runnerAddress, "first")).toLowerCase(),
