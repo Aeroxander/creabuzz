@@ -417,9 +417,14 @@ export function exportPasskeyNsec(): string | null {
   }
 }
 
-/** Register our signer override (keeps identity.ts dependency-free). */
-export function registerPasskeySigner(): void {
-  void import("../client/nostr-signer.ts").then(
+/**
+ * Register our signer override (keeps identity.ts dependency-free). It loads the signer lazily, so it is asynchronous:
+ * until it has finished, `existingUserPubkey()` does not know the passkey account (it reads as nobody). A caller that
+ * draws who the person is must wait for the returned promise first, or a reload shows a signed-out page instead of the
+ * unlock prompt. Listeners are told when it is done, for a surface that drew before it.
+ */
+export function registerPasskeySigner(): Promise<void> {
+  return import("../client/nostr-signer.ts").then(
     ({
       setUserNip44Override,
       setUserPubkeyOverride,
@@ -462,6 +467,7 @@ export function registerPasskeySigner(): void {
           return nip44.decrypt(ciphertext, nip44.getConversationKey(sk, peer));
         },
       });
+      notifyPasskeySessionChange();
     },
   );
 }
