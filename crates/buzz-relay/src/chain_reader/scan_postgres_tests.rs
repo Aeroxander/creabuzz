@@ -702,7 +702,7 @@ async fn a_head_that_steps_back_does_not_replace_a_newer_record_with_an_older_on
 
     // The node's head drops by 24 blocks; the newest stored block is still on
     // its chain (so it is not "behind" and not a rollback). The node can still
-    // serve the views of the lower final block (the book of A at block 61).
+    // serve the views of the lower final block (the book "A_live").
     chain.truncate(usize::try_from(fx.head()).expect("block") + 1);
     chain.serve_books(&fx, &["A_live"]);
     let (scan, publish) = reader.pass().await.expect("a pass");
@@ -731,9 +731,16 @@ async fn a_head_that_steps_back_does_not_replace_a_newer_record_with_an_older_on
 async fn a_head_that_steps_back_does_not_publish_a_removal_for_a_live_project() {
     let fx = Fixture::load();
     let (reader, chain, _state) = setup_deep(&fx, 20, 0).await;
-    // Project B is launched at block 19; with 20 confirmations a head of 54
-    // makes block 34 final, and B's book "B_pair" is at block 34.
-    chain.truncate(55);
+    // Project B's book "B_pair" is taken at `pair` and B was launched at
+    // `launched`, both read from the run. With 20 confirmations a head of
+    // `pair + 20` makes block `pair` final.
+    let launched = fx.launch_block("B");
+    let pair = fx.book_block("B_pair");
+    assert!(
+        pair > launched && pair - 20 < launched,
+        "the run must put B's launch ({launched}) above the block 20 under its book ({pair}), or this test shows nothing"
+    );
+    chain.truncate(usize::try_from(pair + 21).expect("block"));
     chain.serve_books(&fx, &["B_pair"]);
     let b = fx.projects["B"].key;
     for _ in 0..20 {
@@ -741,18 +748,19 @@ async fn a_head_that_steps_back_does_not_publish_a_removal_for_a_live_project() 
         if store::cursor(reader.state.db.pool(), reader.reader_id())
             .await
             .expect("cursor")
-            > 34
+            > pair
         {
             break;
         }
     }
     let pool = reader.state.db.pool();
     let before = stored_record(&reader, &b).await;
-    assert_eq!(before["asOf"]["block"], 34);
+    assert_eq!(before["asOf"]["block"], pair);
     assert!(before.get("removed").is_none());
 
-    // The head steps back to 34: the final block is 14, below B's launch.
-    chain.truncate(35);
+    // The head steps back to `pair`: the final block is `pair - 20`, below B's
+    // launch.
+    chain.truncate(usize::try_from(pair + 1).expect("block"));
     let (scan, publish) = reader.pass().await.expect("a pass");
     assert!(scan.rolled_back_to.is_none(), "{scan:?}");
     assert_eq!(

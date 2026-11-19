@@ -273,10 +273,19 @@ def main():
 def play(tmp):
     # ---- deploy (the real deploy script)
     env = dict(os.environ, UNIT=str(UNIT))
+    # `--slow` makes forge wait for each deploy transaction's receipt before it sends the next, so anvil mines each one
+    # in a block of its own. Without it forge sends them together and anvil puts two or three into one block, depending
+    # on timing: the run then has a different number of blocks and `--check` fails most runs.
     subprocess.run(
-        ["forge", "script", "script/DeployPot.s.sol", "--rpc-url", RPC, "--broadcast", "--private-key", KEYS[DEPLOYER]],
+        ["forge", "script", "script/DeployPot.s.sol", "--rpc-url", RPC, "--broadcast", "--slow", "--private-key",
+         KEYS[DEPLOYER]],
         cwd=POT, env=env, check=True, capture_output=True,
     )
+    # Do not rely on the flag alone: the three deploy transactions (the dollar, the parts, the Launcher) must sit in
+    # blocks 1, 2 and 3, one each, or the run is not the run the tests were written against.
+    deploy_blocks = [len(rpc("eth_getBlockByNumber", hex(n), False)["transactions"]) for n in (1, 2, 3)]
+    if int(rpc("eth_blockNumber"), 16) != 3 or deploy_blocks != [1, 1, 1]:
+        sys.exit(f"chain-reader-fixture: the deploy did not make three blocks of one transaction each: {deploy_blocks}")
     with open(os.path.join(POT, "deployments", "pot-31337.json")) as f:
         dep = json.load(f)
     launcher, dollar = dep["launcher"].lower(), dep["quote"].lower()
@@ -290,10 +299,12 @@ def play(tmp):
         out = run(["cast", "call", "--rpc-url", RPC, launcher, "project(address,bytes32)((address,address,address,address,address,uint64))", ADDR[who], pid])
         f, shares, team, treasury, vester, _ = [x.split()[0].lower() for x in out.strip("()").split(",")]
         key = run(["cast", "call", "--rpc-url", RPC, launcher, "keyOf(address,bytes32)(bytes32)", ADDR[who], pid])
+        launch_block = int(rpc("eth_blockNumber"), 16)
         proj[name_of(project_id)] = dict(
-            founder=f, shares=shares, team=team, treasury=treasury, vester=vester, key=key.lower(), projectId=pid.lower()
+            founder=f, shares=shares, team=team, treasury=treasury, vester=vester, key=key.lower(), projectId=pid.lower(),
+            launchBlock=launch_block,
         )
-        snap_all(int(rpc("eth_blockNumber"), 16))
+        snap_all(launch_block)
 
     def name_of(project_id):
         return "A" if project_id == "alpha" else "B"

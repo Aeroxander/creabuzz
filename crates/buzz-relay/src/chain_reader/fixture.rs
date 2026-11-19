@@ -127,6 +127,20 @@ impl Fixture {
         self.blocks.last().map_or(0, |b| b.number)
     }
 
+    /// The block in which project `name` was launched, as the run recorded it.
+    pub fn launch_block(&self, name: &str) -> u64 {
+        self.json["projects"][name]["launchBlock"]
+            .as_u64()
+            .expect("the run records each project's launch block")
+    }
+
+    /// The block the named book of view answers was taken at.
+    pub fn book_block(&self, book: &str) -> u64 {
+        self.json["books"][book]["block"]
+            .as_u64()
+            .expect("the run records each book's block")
+    }
+
     /// The time of block `number`.
     pub fn time_of(&self, number: u64) -> u64 {
         self.blocks[usize::try_from(number).expect("block")].time
