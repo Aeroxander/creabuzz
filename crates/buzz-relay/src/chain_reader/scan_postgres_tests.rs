@@ -31,6 +31,12 @@ struct FixtureChain {
     duplicate: AtomicBool,
     /// Answer with every log of the range, whatever addresses were asked.
     ignore_filter: AtomicBool,
+    /// The real chain's answers to the record's view calls at one block (the
+    /// run's `books`), by contract and calldata; the Launcher is asked for
+    /// under its replaced address (`aliases`: replaced, real).
+    answers: Mutex<super::fixture::Answers>,
+    book_block: Mutex<Option<u64>>,
+    aliases: Mutex<Vec<([u8; 20], [u8; 20])>>,
 }
 
 impl FixtureChain {
@@ -52,6 +58,19 @@ impl FixtureChain {
             blocks: Mutex::new(blocks),
             duplicate: AtomicBool::new(false),
             ignore_filter: AtomicBool::new(false),
+            answers: Mutex::new(HashMap::new()),
+            book_block: Mutex::new(None),
+            aliases: Mutex::new(vec![(launcher, fx.launcher)]),
+        }
+    }
+
+    /// Serve the views of the books `names` (all taken at one block).
+    fn serve_books(&self, fx: &Fixture, names: &[&str]) {
+        let mut answers = self.answers.lock().expect("lock");
+        for name in names {
+            let (_, book) = super::fixture::BookChain::load(fx, name);
+            *self.book_block.lock().expect("lock") = Some(book.block);
+            answers.extend(book.answers);
         }
     }
 
@@ -114,6 +133,32 @@ impl ChainSource for FixtureChain {
             .get(usize::try_from(number)?)
             .map(|(h, _)| h.clone()))
     }
+    async fn eth_call(
+        &self,
+        to: &[u8; 20],
+        data: &[u8],
+        at: u64,
+    ) -> anyhow::Result<Option<Vec<u8>>> {
+        let served = *self.book_block.lock().expect("lock");
+        if served != Some(at) {
+            anyhow::bail!("the node cannot serve block {at}");
+        }
+        let real = self
+            .aliases
+            .lock()
+            .expect("lock")
+            .iter()
+            .find(|(fake, _)| fake == to)
+            .map_or(*to, |(_, real)| *real);
+        self.answers
+            .lock()
+            .expect("lock")
+            .get(&(real, data.to_vec()))
+            .cloned()
+            .map(Some)
+            .ok_or_else(|| anyhow::anyhow!("no captured answer for 0x{}", hex::encode(to)))
+    }
+
     async fn logs(
         &self,
         addresses: &[[u8; 20]],
@@ -496,4 +541,80 @@ async fn a_reorg_that_drops_a_joined_rolls_the_numbers_back() {
     // is as it was where the chain still agrees.
     let b = ledger_of(&reader, &fx.projects["B"].key, new_head - 2).await;
     assert!(b.shares > 0 || b.pot > 0 || b.totals.joined > 0 || !b.grants.is_empty());
+}
+
+/// The whole reader on the run's last block: it signs each project's record
+/// from the stored rows and the real chain's answers to the view calls, the
+/// stored record is the one the typed record writes, an unchanged project is
+/// not signed again before its promised refresh, and it is signed again, with
+/// a later `builtAt`, when the refresh is due even though nothing changed.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_reader_signs_records_and_signs_them_again_when_the_refresh_is_due() {
+    let fx = Fixture::load();
+    let (reader, chain, state) = setup(&fx).await;
+    chain.serve_books(&fx, &["A_end", "B_end"]);
+    // A promised refresh of three seconds, so the heartbeat can be seen.
+    let mut config = config(reader.config.launcher);
+    config.refresh_secs = 3;
+    config.active_refresh_secs = 3;
+    let reader = ChainReader::new(
+        Arc::clone(&state),
+        Arc::clone(&chain) as Arc<dyn ChainSource>,
+        config,
+        reader.host.clone(),
+    );
+    read_all(&reader, &chain).await;
+    let pool = state.db.pool();
+    let id = reader.reader_id().to_owned();
+    let head = chain.head().await.expect("head");
+    let first = store::published(pool, &id).await.expect("published");
+    assert_eq!(first.len(), 2, "both projects were signed: {first:?}");
+    // The record kept is the typed record, true for the run's last block.
+    let community = state
+        .db
+        .lookup_community_by_host(&reader.host)
+        .await
+        .expect("lookup")
+        .expect("community");
+    for (key, p) in &first {
+        let event_id: Vec<u8> = sqlx::query_scalar(
+            "SELECT event_id FROM chain_project_numbers WHERE reader = $1 AND project_key = $2",
+        )
+        .bind(&id)
+        .bind(key.as_slice())
+        .fetch_one(pool)
+        .await
+        .expect("the stored event id");
+        let stored = state
+            .db
+            .get_event_by_id(community.id, &event_id)
+            .await
+            .expect("read")
+            .expect("the record is stored");
+        let record: super::record::Record =
+            serde_json::from_str(&stored.event.content).expect("the typed record reads it back");
+        assert_eq!(record.version, 2);
+        assert_eq!(record.as_of.block, head - 2);
+        assert_eq!(super::word::hex0x(key), record.key);
+        assert_eq!(
+            record.built_at,
+            u64::try_from(p.published_at).expect("time")
+        );
+        assert!(super::record::validate(&record).is_empty());
+    }
+    // Nothing moved and the refresh is not due: nothing is signed.
+    let report = reader.publish_pass(head).await.expect("publish");
+    assert_eq!(report.signed, 0, "{report:?}");
+    // The refresh is due: a record is signed with nothing changed.
+    tokio::time::sleep(std::time::Duration::from_millis(3_200)).await;
+    let report = reader.publish_pass(head).await.expect("publish");
+    assert_eq!(report.signed, 2, "{report:?}");
+    let second = store::published(pool, &id).await.expect("published");
+    for (key, p) in &first {
+        assert!(
+            second[key].published_at > p.published_at,
+            "builtAt moved on"
+        );
+    }
 }

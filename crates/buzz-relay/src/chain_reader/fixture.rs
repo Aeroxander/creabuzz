@@ -212,6 +212,9 @@ impl Fixture {
     }
 }
 
+/// The raw answers of a book: `(contract, calldata)` to the answer.
+pub type Answers = std::collections::HashMap<([u8; 20], Vec<u8>), Vec<u8>>;
+
 /// A node that answers the record builder's view calls from a book of the
 /// real chain's answers (`books` in the run), at the one block the book was
 /// taken at. A call with no captured answer, or at another block, fails, like
@@ -220,7 +223,7 @@ pub struct BookChain {
     /// The block the book was taken at.
     pub block: u64,
     /// `(contract, calldata)` to the raw answer.
-    pub answers: std::collections::HashMap<([u8; 20], Vec<u8>), Vec<u8>>,
+    pub answers: Answers,
 }
 
 impl BookChain {

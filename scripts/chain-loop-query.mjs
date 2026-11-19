@@ -1,15 +1,15 @@
-// chain-loop-query.mjs — the HTTP half of scripts/chain-loop-e2e.sh.
+// chain-loop-query.mjs — the HTTP half of scripts/chain-loop-pot.sh.
 //
 // Reads the relay's "project numbers" record (kind 39009) for one project with
 // a NIP-98 signed POST /query, as any account on an open server would, and
 // checks that a posted copy of the kind is refused by POST /events. The key is
 // made for the run and never written down.
 //
-//   node scripts/chain-loop-query.mjs read   <relay http url> <project key> [wait-for jq-ish path=value]
+//   node scripts/chain-loop-query.mjs read   <relay http url> <project key> [wait-for dotted.path=value]
 //   node scripts/chain-loop-query.mjs forge  <relay http url> <project key>
 //
 // `read` prints the record's content (JSON) on stdout. With a condition such as
-// raised.total=2500000000 it polls (up to CHAIN_LOOP_WAIT_SECS, default 60)
+// totals.tookOut=2500000000 it polls (up to CHAIN_LOOP_WAIT_SECS, default 60)
 // until the record's content has that value.
 
 import { createRequire } from "node:module";
@@ -84,7 +84,7 @@ async function forge(base, key) {
   const forged = finalizeEvent(
     {
       kind: KIND_PROJECT_NUMBERS,
-      content: JSON.stringify({ version: 1, raised: { total: "999999999999" } }),
+      content: JSON.stringify({ version: 2, money: { pot: "999999999999" } }),
       created_at: Math.floor(Date.now() / 1000),
       tags: [["d", key]],
     },

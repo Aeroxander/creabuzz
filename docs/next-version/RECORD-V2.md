@@ -374,7 +374,7 @@ later block).
 2. **A number with no view comes from the events:** the lists, the histories, the sums in `totals`, `firstBackedAt`,
    `lastRecordHash`, `byMember`, `granted`, the agent addresses, the holders' balances.
 3. **Cross-checks, on every build.** The ledger rebuilt from the events must equal the stored views at `asOf.block`: `pot`, `paidIn`,
-   `box`, `arriving`, `feesOwed`, `Z`, `activeSeconds`, `lastSettle`, B (`shares.totalSupply()`) and G (`team.totalSupply()`). The two
+   `box`, `arriving`, `feesOwed`, `Z`, `activeSeconds`, B (`shares.totalSupply()`) and G (`team.totalSupply()`), and the ledger's `lastSettle` must not be later than the view's (a settle that moves nothing emits no `Settled`, so the events can only lag it; the record carries the view's `lastSettle`). The two
    tokens' summed balances must equal their `totalSupply()`. The Vester's Team balance from `Transfer`s must equal
    `team.balanceOf(vester)`. And the settled snapshot must match `boxCap()` and `activeNow()` (section 3).
 4. **If any cross-check fails, the views are right and the record is not published.** The previous record stays, the server logs an

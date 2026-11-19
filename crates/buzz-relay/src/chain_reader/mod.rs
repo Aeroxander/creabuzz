@@ -446,18 +446,19 @@ impl ChainReader {
         let shown = digest(&numbers::without_as_of(&content));
         if let Some(p) = prev {
             let same_facts = p.facts_digest.as_slice() == facts.as_slice();
-            let same_shown = p.content_digest.as_slice() == shown.as_slice();
             // The record promises a fresh one every `refreshEverySecs`.
             let promised = content
                 .get("refreshEverySecs")
                 .and_then(Value::as_i64)
                 .unwrap_or(i64::try_from(self.config.refresh_secs).unwrap_or(i64::MAX));
             let refresh_due = now - p.published_at >= promised;
-            if same_facts && !p.stale && (same_shown || !refresh_due) {
-                // Nothing a reader would see changed (or only the clock, and not
-                // for long): keep the record, remember the block it covers, and
-                // when nothing at all changed, that it was checked now.
-                store::touch_source_block(pool, reader, key, source_block, same_shown).await?;
+            if same_facts && !p.stale && !refresh_due {
+                // No event moved and the promised refresh is not due yet: keep
+                // the record and remember the block it covers. `published_at`
+                // stays the time of the last signing, so a due refresh is
+                // signed even when nothing changed (the heartbeat: a quiet
+                // project must not look like a dead server).
+                store::touch_source_block(pool, reader, key, source_block, false).await?;
                 return Ok(false);
             }
         }
