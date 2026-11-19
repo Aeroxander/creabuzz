@@ -159,6 +159,12 @@ export function moneyProblem(error: unknown, action: MoneyAction): string {
   if (error instanceof WalletStepError) {
     if (error.reason === "no-wallet")
       return "There is no wallet in this browser. Open this page in a browser with a wallet to go on.";
+    if (error.reason === "not-set-up")
+      return "Backing from this phone is not switched on for this server yet. Open this page in a browser with a wallet to back now.";
+    if (error.reason === "no-passkey")
+      return "To back from this phone you need to be signed in with a passkey. Or open this page in a browser with a wallet.";
+    if (error.reason === "not-known")
+      return "This app will not send that from your passkey account: it is not one of this project's contracts. Nothing was sent.";
     if (error.reason === "wrong-network")
       return "Your wallet is on another network. Switch it to the project's network and try again.";
     if (error.reason === "pending")
@@ -170,6 +176,10 @@ export function moneyProblem(error: unknown, action: MoneyAction): string {
       const words = REFUSAL_WORDS[refusal];
       return words[action] ?? words.any;
     }
+    if (errorNamed(error.cause, "PaymasterDeniedError"))
+      return "The free network fee was refused for this account, for example because today's free sends are used up. Nothing was sent. Try again tomorrow, or use a browser with a wallet.";
+    if (isPasskeyClosed(error.cause))
+      return "You closed the passkey prompt. Nothing was sent.";
     if (error.cause && isUserRejection(textsOf(error.cause).join(" ")))
       return rejected(action, error.landed);
     if (isRejectionCode(error.cause)) return rejected(action, error.landed);
@@ -185,6 +195,25 @@ export function moneyProblem(error: unknown, action: MoneyAction): string {
     return words[action] ?? words.any;
   }
   return `${ACTION_WORDS[action]} did not go through. Nothing changed. Try again.`;
+}
+
+/** The passkey prompt was closed or timed out (the browser's `NotAllowedError` or `AbortError`). */
+function isPasskeyClosed(error: unknown): boolean {
+  return (
+    errorNamed(error, "NotAllowedError") || errorNamed(error, "AbortError")
+  );
+}
+
+/**
+ * Whether `error` is named `name`. By name, not by class: the sending code that throws the sponsor's refusal loads only on
+ * a passkey send, and importing it here would put it in the first download.
+ */
+function errorNamed(error: unknown, name: string): boolean {
+  return (
+    error !== null &&
+    typeof error === "object" &&
+    (error as { name?: unknown }).name === name
+  );
 }
 
 function isRejectionCode(error: unknown): boolean {

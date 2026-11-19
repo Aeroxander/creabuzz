@@ -22,6 +22,7 @@ import { useToast } from "../../ui/toast";
 import { BACKED_UP_KEY, RecoveryKeyPanel } from "../account/RecoveryKeySheet";
 import { ProjectCard } from "../home/ProjectCard";
 import { Receipts } from "../money/Receipts";
+import { SenderChoice } from "../money/SenderChoice";
 import { NotificationsList } from "../notifications/NotificationsList";
 import { ProfileHead } from "../profile/ProfilePage";
 import { useProjectsBy } from "../profile/use-own-projects";
@@ -101,6 +102,7 @@ function SignedIn({ me }: { me: string }) {
         <ChevronRight aria-hidden="true" className="text-muted" size={20} />
       </Link>
       {investingOn() ? <Receipts /> : null}
+      {investingOn() ? <SenderChoice /> : null}
       {investingOn() ? (
         <Suspense fallback={null}>
           <LinkWallet me={me} />

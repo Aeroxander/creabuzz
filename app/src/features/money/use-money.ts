@@ -6,7 +6,7 @@ import { serverRelaySigner } from "@creaton/core/client/server-settings.ts";
 import { KIND_PROJECT_NUMBERS } from "@creaton/core/kinds.ts";
 import { chainKeyFromTags } from "@creaton/core/launchpad/project-chain.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useRef } from "react";
 import { read } from "../../lib/relay";
 import { investingOn } from "../../lib/server";
 import type { Project } from "../project/project-record";
@@ -24,12 +24,9 @@ import {
   rememberPending,
   sendKey,
 } from "./pending-sends";
-import {
-  addressFromWord,
-  injectedWallet,
-  type MoneyWallet,
-  WalletStepError,
-} from "./wallet";
+import { rememberSendTargets } from "./send-targets";
+import { useSender } from "./sender";
+import { addressFromWord, type MoneyWallet, WalletStepError } from "./wallet";
 
 const moneyKeys = {
   all: ["money"] as const,
@@ -77,7 +74,12 @@ export function useProjectNumbers(project: Project | null | undefined) {
           coordinate: project.coordinate,
           chainKey,
         });
-        if (numbers) return numbers;
+        if (numbers) {
+          // The contracts a passkey send may go to: the ones this project's numbers name.
+          if (!numbers.removed)
+            rememberSendTargets(Object.values(numbers.contracts));
+          return numbers;
+        }
       }
       return null;
     },
@@ -166,9 +168,9 @@ export function matchNumbers(
   return out;
 }
 
-/** The wallet in this browser (one per page). */
+/** What sends this person's steps: the wallet in this browser, or their passkey account (`sender.ts` picks). */
 export function useWallet(): MoneyWallet {
-  return useMemo(() => injectedWallet(), []);
+  return useSender();
 }
 
 /** The wallet account this site may already see (no prompt), or null. Off with investing off. */
@@ -214,6 +216,8 @@ export async function readQuote(
 ): Promise<string> {
   const quote = addressFromWord(await wallet.readCall(rounds, QUOTE_CALL_DATA));
   if (!quote) throw new Error("The dollar token could not be read.");
+  // A passkey send may go to the dollar token the project's rounds take.
+  rememberSendTargets([quote]);
   return quote;
 }
 

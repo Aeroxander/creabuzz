@@ -6,7 +6,7 @@
  * approval before it allowed. Waiting is bounded; a call that has not landed in time is reported as such, never as done
  * and never as failed.
  *
- * The phone path (a passkey account with sponsored gas, web/'s Kernel sender) is not in this app yet: the report lists it.
+ * The phone path (a passkey account with sponsored fees) is the other sender, in `passkey-sender.ts`; `sender.ts` picks.
  */
 import { walletError } from "@creaton/core/launchpad/wallet-errors.ts";
 import type { MoneyCall } from "./calls";
@@ -34,11 +34,48 @@ export interface SentCall {
   nonce: number | null;
 }
 
+/** The two ways a step can be sent: the wallet in this browser, or the person's own passkey account (`sender.ts`). */
+export type SenderKind = "wallet" | "passkey";
+
+/**
+ * Whether a sender can send now, and when it cannot, why: nothing injected in this browser (`no-wallet`), the server
+ * has not switched passkey sending on (`not-set-up`), or this browser holds no passkey that can own an account
+ * (`no-passkey`).
+ */
+export type SenderAvailability =
+  | { ok: true }
+  | { ok: false; reason: "no-wallet" | "not-set-up" | "no-passkey" };
+
+/** What a send is doing now, for a sender that has more than one stage to show. */
+export type SendPhase =
+  | "preparing"
+  | "checking"
+  | "signing"
+  | "sending"
+  | "confirming";
+
+export interface SendOptions {
+  onPhase?: (phase: SendPhase) => void;
+}
+
+/** What a sender can and cannot do, so a screen asks before it offers a press. */
+export interface SenderCapabilities {
+  /** Can sign a message (typed data) for the account. */
+  signsMessages: boolean;
+  /** Sends all calls of a step as one all-or-nothing operation. */
+  atomicBatch: boolean;
+  /** The network fee is paid by the server, not the account. */
+  feeSponsored: boolean;
+}
+
 /** Why a wallet step stopped. `landed` counts the calls of the batch that did land before it. */
 export class WalletStepError extends Error {
   constructor(
     readonly reason:
       | "no-wallet"
+      | "not-set-up"
+      | "no-passkey"
+      | "not-known"
       | "wrong-network"
       | "reverted"
       | "pending"
@@ -56,7 +93,15 @@ export class WalletStepError extends Error {
   }
 }
 
+/**
+ * What sends a person's money steps: the injected wallet or the passkey account (`sender.ts` picks). The three members
+ * marked optional are always given by the two real senders and may be left out by a stand-in in a test; read them with
+ * `senderKind`, `senderAvailability` and `senderCapabilities`.
+ */
 export interface MoneyWallet {
+  readonly kind?: SenderKind;
+  availability?(): SenderAvailability;
+  readonly capabilities?: SenderCapabilities;
   isAvailable(): boolean;
   /** The account the wallet already shares with this site, without asking; null when it shares none. */
   connectedAddress(): Promise<string | null>;
@@ -66,7 +111,8 @@ export interface MoneyWallet {
   sendCalls(
     calls: readonly MoneyCall[],
     chainId: number,
-  ): Promise<{ txHash: string; status: "confirmed" }>;
+    options?: SendOptions,
+  ): Promise<{ txHash: string; status: "confirmed"; userOpHash?: string }>;
   /** A read-only call's raw answer. */
   readCall(to: string, data: string): Promise<string>;
   /** The network's newest block number. */
@@ -240,6 +286,16 @@ export function injectedWallet(
   }
 
   return {
+    kind: "wallet",
+    availability: () =>
+      provider !== undefined
+        ? { ok: true }
+        : { ok: false, reason: "no-wallet" },
+    capabilities: {
+      signsMessages: true,
+      atomicBatch: false,
+      feeSponsored: false,
+    },
     isAvailable: () => provider !== undefined,
     async connectedAddress() {
       if (!provider) return null;
@@ -346,6 +402,30 @@ export function injectedWallet(
       return "unknown";
     },
   };
+}
+
+/** Which kind of sender this is (a stand-in without one is a wallet). */
+export function senderKind(sender: MoneyWallet): SenderKind {
+  return sender.kind ?? "wallet";
+}
+
+/** Whether `sender` can send now, and why not. */
+export function senderAvailability(sender: MoneyWallet): SenderAvailability {
+  return (
+    sender.availability?.() ??
+    (sender.isAvailable() ? { ok: true } : { ok: false, reason: "no-wallet" })
+  );
+}
+
+/** What `sender` can do (a stand-in without a list is a plain wallet). */
+export function senderCapabilities(sender: MoneyWallet): SenderCapabilities {
+  return (
+    sender.capabilities ?? {
+      signsMessages: true,
+      atomicBatch: false,
+      feeSponsored: false,
+    }
+  );
 }
 
 function isLog(value: unknown): value is ChainLog {
