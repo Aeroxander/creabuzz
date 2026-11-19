@@ -88,7 +88,7 @@ contract LeaveTeamTest is PotBase {
     function test_teamSupplyNeverRises() public {
         _join(alice, 100e6);
         _giveTeam(bob, 5e18);
-        _revenue(carol, 1_000e6);
+        _revenue(carol, 1000e6);
         vm.warp(block.timestamp + 5 days);
         _join(bob, 500e6);
         _leave(alice, shares.balanceOf(alice) / 2);

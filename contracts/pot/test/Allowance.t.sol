@@ -51,7 +51,7 @@ contract AllowanceTest is PotBase {
         _join(alice, 100_000e6);
         vm.warp(T0 + 14 days - 1);
         t.settle();
-        assertEq(t.box(), 1_372e6, "1.40% of 98,000");
+        assertEq(t.box(), 1372e6, "1.40% of 98,000");
     }
 
     function test_theBoxStaysUnderItsCapAfterAnySettle() public {
@@ -300,5 +300,21 @@ contract AllowanceTest is PotBase {
         vm.warp(T0 + idle);
         _checkIn();
         assertLe(t.box(), _accrual(p1, 1000, 14 days - drawAt) + 1);
+    }
+
+    function test_rateEventsCarryTheNumbers() public {
+        vm.expectEmit(false, false, false, true, address(t));
+        emit Treasury.RateProposed(2000, uint64(T0 + UNIT));
+        vm.prank(founder);
+        t.proposeRate(2000);
+        vm.warp(T0 + UNIT);
+        vm.expectEmit(false, false, false, true, address(t));
+        emit Treasury.RateSet(2000, 1000, true);
+        t.applyRate();
+        _checkIn();
+        vm.expectEmit(false, false, false, true, address(t));
+        emit Treasury.RateSet(300, 2000, false);
+        vm.prank(founder);
+        t.setRate(300);
     }
 }

@@ -37,7 +37,7 @@ contract FeesTest is PotBase {
 
     function test_noFeeOnLeaveOnRevenueOrOnDraw() public {
         uint256 n = _join(alice, 100_000e6);
-        _revenue(carol, 5_000e6);
+        _revenue(carol, 5000e6);
         vm.warp(T0 + 1 days);
         uint256 owed = t.feesOwed();
         _leave(alice, n / 2);
@@ -52,5 +52,23 @@ contract FeesTest is PotBase {
         _join(alice, 50e6);
         assertEq(t.feeFor(50e6), 1e6);
         assertEq(t.feesOwed(), 1e6);
+    }
+
+    /// @dev A dollar that charges the sender a fee on top would make the buckets add up to more than the balance; every
+    /// payout insists that exactly the amount left.
+    function test_aDollarThatChargesTheSenderOnTopIsRefusedOnEveryPayout() public {
+        uint256 n = _join(alice, 100e6);
+        vm.warp(T0 + 1 days);
+        usd.setFees(0, 100); // the sender pays 1% more than the amount
+        vm.prank(alice);
+        vm.expectRevert(Treasury.TokenMisbehaved.selector);
+        t.leave(n, 0, alice);
+        vm.prank(founder);
+        vm.expectRevert(Treasury.TokenMisbehaved.selector);
+        t.draw(bob, 50_000);
+        vm.expectRevert(Treasury.TokenMisbehaved.selector);
+        t.collectFees();
+        usd.setFees(0, 0);
+        assertGt(_leave(alice, n), 0);
     }
 }

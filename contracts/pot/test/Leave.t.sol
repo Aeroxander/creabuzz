@@ -81,7 +81,7 @@ contract LeaveTest is PotBase {
         _assertConserved();
         // the next first joiner still pays about one cent a Share
         uint256 n = _join(alice, 100e6);
-        assertApproxEqRel(n, 9_800e18, 1e13);
+        assertApproxEqRel(n, 9800e18, 1e13);
     }
 
     function test_leaveDoesNotTouchTheBoxTheArrivingMoneyOrTheFees() public {
@@ -130,7 +130,7 @@ contract LeaveTest is PotBase {
             _join(holders[i], 100e6);
         }
         uint256 each = shares.balanceOf(holders[0]);
-        assertEq(each, 9_800e18);
+        assertEq(each, 9800e18);
         _force(t.paidIn() * 60 / 100, t.paidIn(), 0, 0, 0);
         for (uint256 i = count - 1; i > 0; --i) {
             uint256 j = uint256(keccak256(abi.encode(seed, i))) % (i + 1);

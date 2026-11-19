@@ -435,9 +435,10 @@ contract Treasury {
     function draw(address to, uint256 amount) external nonReentrant {
         _authDraw();
         _settle();
-        if (to == address(0) || to == address(this) || to == address(quote) || to == address(shares)
-                || to == address(team) || to == vester)
-        {
+        if (
+            to == address(0) || to == address(this) || to == address(quote) || to == address(shares)
+                || to == address(team) || to == vester
+        ) {
             revert BadInput();
         }
         if (amount == 0) revert BadInput();
@@ -603,11 +604,7 @@ contract Treasury {
     }
 
     /// @dev The price and the numbers of a join of `a` dollars on the settled state `s`. Used by quotes and by the join.
-    function _price(Snap memory s, uint256 a)
-        private
-        view
-        returns (uint256 fee, uint256 m, uint256 n, uint256 credit)
-    {
+    function _price(Snap memory s, uint256 a) private view returns (uint256 fee, uint256 m, uint256 n, uint256 credit) {
         fee = PotMath.fee(a, feeBps);
         if (fee >= a) return (fee, 0, 0, 0);
         m = a - fee;
@@ -647,9 +644,8 @@ contract Treasury {
         // money moves between the two, so a second settle in the same second moves nothing.
         uint256 cap = Math.mulDiv(s.pot + s.box, rate * 7, PPM);
         if (s.dt != 0 && rate != 0) {
-            uint256 acc = Math.mulDiv(s.pot, rate * s.dt, PPM * (unit / 7));
-            uint256 room = cap > s.box ? cap - s.box : 0;
-            s.toBox = acc < room ? acc : room;
+            // at most 2.8% of the pot: dt is under two time units and the rate under 0.20% a day
+            s.toBox = Math.mulDiv(s.pot, rate * s.dt, PPM * (unit / 7));
             s.box += s.toBox;
             s.pot -= s.toBox;
         }

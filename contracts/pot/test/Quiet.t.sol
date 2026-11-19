@@ -127,7 +127,7 @@ contract QuietTest is PotBase {
         vm.expectRevert(abi.encodeWithSelector(Treasury.TooMuch.selector, 1, 0));
         t.draw(founder, 1);
         // open
-        assertEq(_leave(bob, n), 9_800e6);
+        assertEq(_leave(bob, n), 9800e6);
         _revenue(carol, 100e6);
         t.collectFees();
         assertEq(t.activeNow(), 0, "no active time ever counted after the wind-down");

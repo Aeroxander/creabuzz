@@ -31,7 +31,11 @@ contract ReentrancyTest is PotBase {
         usd.mint(carol, 50e6);
         vm.prank(carol);
         usd.transfer(address(t), 50e6); // unaccounted dollars a re-entrant join could claim
-        usd.armCallback(alice, address(t), abi.encodeCall(Treasury.onTransferReceived, (alice, alice, 50e6, abi.encode(uint256(0), alice))));
+        usd.armCallback(
+            alice,
+            address(t),
+            abi.encodeCall(Treasury.onTransferReceived, (alice, alice, 50e6, abi.encode(uint256(0), alice)))
+        );
         _leave(alice, n);
         assertTrue(usd.callbackFired(), "the token did call back during the payout");
         assertFalse(usd.callbackOk(), "and the Treasury refused it");

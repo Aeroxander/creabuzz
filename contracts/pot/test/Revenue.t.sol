@@ -14,19 +14,19 @@ contract RevenueTest is PotBase {
     }
 
     function test_oneStreamIsLinearOverOneUnit() public {
-        usd.mint(carol, 9_800e6);
+        usd.mint(carol, 9800e6);
         vm.startPrank(carol);
-        usd.approve(address(t), 9_800e6);
+        usd.approve(address(t), 9800e6);
         vm.expectEmit(true, false, false, true, address(t));
-        emit Treasury.RevenueAdded(carol, 9_800e6, 9_800e6, uint64(T0 + UNIT));
-        t.addRevenue(9_800e6);
+        emit Treasury.RevenueAdded(carol, 9800e6, 9800e6, uint64(T0 + UNIT));
+        t.addRevenue(9800e6);
         vm.stopPrank();
-        assertEq(t.arriving(), 9_800e6);
+        assertEq(t.arriving(), 9800e6);
         assertEq(t.pot(), 98_000e6, "none of it is in the pot yet");
         vm.warp(T0 + UNIT / 2);
         t.settle();
-        assertEq(t.pot(), 98_000e6 + 4_900e6);
-        assertEq(t.arriving(), 4_900e6);
+        assertEq(t.pot(), 98_000e6 + 4900e6);
+        assertEq(t.arriving(), 4900e6);
         vm.warp(T0 + UNIT - 1);
         t.settle();
         assertGt(t.arriving(), 0);
@@ -51,11 +51,11 @@ contract RevenueTest is PotBase {
     }
 
     function test_aSecondPaymentMergesIntoOneStreamByWeightedAverage() public {
-        _revenue(carol, 9_800e6); // ends T0 + 7d
+        _revenue(carol, 9800e6); // ends T0 + 7d
         vm.warp(T0 + 3.5 days);
         _checkIn();
-        _revenue(carol, 4_900e6); // 4,900 left of the first, 3.5 days to run; 4,900 new over 7
-        assertEq(t.arriving(), 9_800e6);
+        _revenue(carol, 4900e6); // 4,900 left of the first, 3.5 days to run; 4,900 new over 7
+        assertEq(t.arriving(), 9800e6);
         assertEq(t.arrivalEnd(), T0 + 3.5 days + 5.25 days, "the average of 3.5 and 7 days, weighted equally");
         vm.warp(T0 + 8.75 days);
         t.settle();
@@ -83,30 +83,30 @@ contract RevenueTest is PotBase {
     // ---- a leaver is paid on what has arrived
 
     function test_honestLeaverGetsLessThanFaceWhileMoneyIsArriving() public {
-        _revenue(carol, 9_800e6); // 10% of the pot, face 107,800
+        _revenue(carol, 9800e6); // 10% of the pot, face 107,800
         uint256 n = shares.balanceOf(alice);
-        (uint256 now0, , uint256 left0) = t.quoteTakeOut(alice, n);
+        (uint256 now0,, uint256 left0) = t.quoteTakeOut(alice, n);
         assertEq(now0, 98_000e6);
-        assertEq(left0, 9_800e6, "the part still arriving stays for those who stay");
+        assertEq(left0, 9800e6, "the part still arriving stays for those who stay");
         // day 0: 90.9 per 100 of face
         assertApproxEqRel(now0 * 1e18 / 107_800e6, 0.909e18, 1e15);
         // day 3: 94.8 per 100
         vm.warp(T0 + 3 days);
         (uint256 now3,,) = t.quoteTakeOut(alice, n);
-        assertEq(now3, 98_000e6 + 9_800e6 * 3 / 7);
+        assertEq(now3, 98_000e6 + 9800e6 * 3 / 7);
         assertApproxEqRel(now3 * 1e18 / 107_800e6, 0.948e18, 1e15);
     }
 
     function test_leaveExcludesTheArrivingMoney() public {
-        _revenue(carol, 9_800e6);
+        _revenue(carol, 9800e6);
         uint256 n = shares.balanceOf(alice);
         assertEq(_leave(alice, n), 98_000e6);
-        assertEq(t.arriving(), 9_800e6, "still arriving, now for whoever joins");
+        assertEq(t.arriving(), 9800e6, "still arriving, now for whoever joins");
         _assertConserved();
     }
 
     function test_aJoinerPaysTheArrivingMoneyAtFace() public {
-        _revenue(carol, 9_800e6);
+        _revenue(carol, 9800e6);
         (uint256 quoted,,,) = t.quoteBack(100_000e6);
         // price = (pot + arriving + 1 dollar) per (Shares + 100): 98,000 + 9,800 + 1
         uint256 b = shares.totalSupply();
@@ -117,7 +117,7 @@ contract RevenueTest is PotBase {
     }
 
     function test_someoneWhoJoinsAfterThePaymentIsVisibleCapturesNoneOfIt() public {
-        _revenue(carol, 9_800e6);
+        _revenue(carol, 9800e6);
         uint256 n = _join(bob, 100_000e6);
         vm.warp(T0 + UNIT);
         t.settle();
@@ -128,7 +128,7 @@ contract RevenueTest is PotBase {
 
     function test_anInsiderWhoJoinsBeforeAKnownPaymentAndStaysSharesIt() public {
         uint256 n = _join(bob, 100_000e6); // as much as the pot, before the payment
-        _revenue(carol, 9_800e6);
+        _revenue(carol, 9800e6);
         vm.warp(T0 + UNIT);
         t.settle();
         uint256 got = _leave(bob, n);
@@ -136,7 +136,9 @@ contract RevenueTest is PotBase {
         assertGt(got, 102_800e6);
         assertLt(got, 103_000e6);
         uint256 aliceGot = _leave(alice, shares.balanceOf(alice));
-        assertApproxEqAbs(aliceGot, 102_900e6, 50e6, "Alice ends about 4,900 below the 107,800 she would have had alone");
+        assertApproxEqAbs(
+            aliceGot, 102_900e6, 50e6, "Alice ends about 4,900 below the 107,800 she would have had alone"
+        );
     }
 
     // ---- must-bind 5: join, payment and take-out in one block net the 2% fee and nothing else
@@ -151,8 +153,8 @@ contract RevenueTest is PotBase {
         _revenue(carol, payment);
         uint256 got = _leave(bob, n);
         uint256 afterFee = joinAmt - joinAmt * 2 / 100;
-        assertApproxEqAbs(got, afterFee, joinAmt / 5_000 + 10, "-2.00 per 100 paid");
-        assertLe(got, afterFee + joinAmt / 5_000 + 10, "and no more than that");
+        assertApproxEqAbs(got, afterFee, joinAmt / 5000 + 10, "-2.00 per 100 paid");
+        assertLe(got, afterFee + joinAmt / 5000 + 10, "and no more than that");
         _assertConserved();
     }
 
@@ -177,7 +179,7 @@ contract RevenueTest is PotBase {
     }
 
     function test_aPaymentFirstThenJoinAndLeaveLosesMoreThanTheFee() public {
-        _revenue(carol, 9_800e6);
+        _revenue(carol, 9800e6);
         uint256 n = _join(bob, 98_000e6);
         uint256 got = _leave(bob, n);
         uint256 afterFee = 98_000e6 - 98_000e6 * 2 / 100;
@@ -187,14 +189,14 @@ contract RevenueTest is PotBase {
     // ---- other states
 
     function test_arrivingMoneyKeepsReleasingWhenQuietAndAfterAWindDown() public {
-        _revenue(carol, 9_800e6);
+        _revenue(carol, 9800e6);
         vm.warp(T0 + 3 * UNIT); // no check-in: quiet
         t.settle();
         assertEq(t.arriving(), 0, "released on calendar time");
         assertEq(t.pot(), 107_800e6);
         vm.prank(founder);
         t.windDown();
-        _revenue(carol, 1_000e6);
+        _revenue(carol, 1000e6);
         vm.warp(block.timestamp + UNIT);
         t.settle();
         assertEq(t.arriving(), 0);
@@ -207,6 +209,6 @@ contract RevenueTest is PotBase {
         uint256 n = _join(bob, 100e6);
         // vq = (10 + 1 dollar) per 100 Shares of offset: 98 / 11 dollars worth of 0.01-Shares
         assertEq(n, uint256(98e6) * 100e18 / 11e6);
-        assertLt(n, 9_800e18);
+        assertLt(n, 9800e18);
     }
 }

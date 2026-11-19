@@ -20,8 +20,8 @@ contract JoinTest is PotBase {
             usd.approve(address(tr), 100e6);
             uint256 n = tr.join(100e6, 0, alice);
             vm.stopPrank();
-            assertEq(n, 9_800e18, "98 dollars at 0.01 a Share");
-            assertEq(sh.balanceOf(alice), 9_800e18);
+            assertEq(n, 9800e18, "98 dollars at 0.01 a Share");
+            assertEq(sh.balanceOf(alice), 9800e18);
             assertEq(tr.pot(), 98e6);
             assertEq(tr.paidIn(), 98e6);
             assertEq(tr.feesOwed(), 2e6);
@@ -31,7 +31,7 @@ contract JoinTest is PotBase {
     function test_secondJoinAtParIsAlsoOneCent() public {
         _join(alice, 100e6);
         uint256 n = _join(bob, 100e6);
-        assertEq(n, 9_800e18);
+        assertEq(n, 9800e18);
         assertEq(t.pot(), 196e6);
         assertEq(t.paidIn(), 196e6);
     }
@@ -58,9 +58,9 @@ contract JoinTest is PotBase {
         usd.mint(alice, 100e6);
         vm.startPrank(alice);
         usd.approve(address(t), 100e6);
-        vm.expectRevert(abi.encodeWithSelector(Treasury.TooFewShares.selector, 9_800e18 + 1, 9_800e18));
-        t.join(100e6, 9_800e18 + 1, alice);
-        t.join(100e6, 9_800e18, alice);
+        vm.expectRevert(abi.encodeWithSelector(Treasury.TooFewShares.selector, 9800e18 + 1, 9800e18));
+        t.join(100e6, 9800e18 + 1, alice);
+        t.join(100e6, 9800e18, alice);
         vm.stopPrank();
     }
 
@@ -70,7 +70,7 @@ contract JoinTest is PotBase {
         usd.approve(address(t), 100e6);
         t.join(100e6, 0, bob);
         vm.stopPrank();
-        assertEq(shares.balanceOf(bob), 9_800e18);
+        assertEq(shares.balanceOf(bob), 9800e18);
         assertEq(shares.balanceOf(alice), 0);
     }
 
@@ -123,9 +123,9 @@ contract JoinTest is PotBase {
     }
 
     function test_quoteBackEqualsTheRealJoinExactly() public {
-        uint256[6] memory amounts = [uint256(1e6), 7e6 + 3, 100e6, 5_000e6, 80_000e6, 400_000e6];
+        uint256[6] memory amounts = [uint256(1e6), 7e6 + 3, 100e6, 5000e6, 80_000e6, 400_000e6];
         _join(alice, 50_000e6);
-        _revenue(carol, 3_000e6); // money still arriving
+        _revenue(carol, 3000e6); // money still arriving
         vm.warp(block.timestamp + 2 days);
         _checkIn();
         for (uint256 i; i < amounts.length; ++i) {
@@ -140,8 +140,8 @@ contract JoinTest is PotBase {
 
     function test_quoteBackTakeOutNowIsWhatAnInstantLeaveGives() public {
         _join(alice, 50_000e6);
-        (uint256 sharesOut, uint256 takeOutNow,,) = t.quoteBack(1_000e6);
-        uint256 n = _join(bob, 1_000e6);
+        (uint256 sharesOut, uint256 takeOutNow,,) = t.quoteBack(1000e6);
+        uint256 n = _join(bob, 1000e6);
         assertEq(n, sharesOut);
         assertEq(_leave(bob, n), takeOutNow, "the sheet's 'take out now' is exact");
     }
@@ -162,7 +162,7 @@ contract JoinTest is PotBase {
 
     function test_sharesCap() public {
         _join(alice, 100e6);
-        t.forceShares(bob, 1e30 - 9_800e18 - 5e18);
+        t.forceShares(bob, 1e30 - 9800e18 - 5e18);
         vm.expectRevert(Treasury.TooManyShares.selector);
         this.joinAs(carol, 100e6);
     }
@@ -262,7 +262,7 @@ contract JoinTest is PotBase {
         uint256 got = _leave(bob, n);
         assertApproxEqAbs(got, 882_000e6, 100e6);
         assertLe(got, 882_000e6 + 100e6);
-        assertEq(t.feesOwed(), 2_000e6 + 18_000e6);
+        assertEq(t.feesOwed(), 2000e6 + 18_000e6);
     }
 
     // ---- mediant, within the offset bound
@@ -292,7 +292,7 @@ contract JoinTest is PotBase {
         vm.startPrank(alice);
         usd.approve(address(t), 100e6);
         vm.expectEmit(true, true, false, true, address(t));
-        emit Treasury.Joined(alice, bob, 100e6, 2e6, 9_800e18, 98e6, 98e6, 98e6, 9_800e18);
+        emit Treasury.Joined(alice, bob, 100e6, 2e6, 9800e18, 98e6, 98e6, 98e6, 9800e18);
         t.join(100e6, 0, bob);
         vm.stopPrank();
     }
@@ -308,7 +308,7 @@ contract JoinTest is PotBase {
         (TreasuryHarness tr, ShareToken sh, PlayDollar pd) = _playProject();
         pd.mint(alice, 100e6);
         vm.prank(alice);
-        pd.transferAndCall(address(tr), 100e6, abi.encode(uint256(9_800e18), address(0)));
+        pd.transferAndCall(address(tr), 100e6, abi.encode(uint256(9800e18), address(0)));
         // the same payment through approve and join, in the ordinary project
         uint256 viaApprove = _join(bob, 100e6);
         assertEq(sh.balanceOf(alice), viaApprove);
@@ -324,9 +324,9 @@ contract JoinTest is PotBase {
         pd.mint(alice, 200e6);
         vm.startPrank(alice);
         pd.transferAndCall(address(tr), 100e6, abi.encode(uint256(0), bob));
-        assertEq(sh.balanceOf(bob), 9_800e18);
+        assertEq(sh.balanceOf(bob), 9800e18);
         vm.expectRevert(); // TooFewShares bubbles through the token
-        pd.transferAndCall(address(tr), 100e6, abi.encode(uint256(9_800e18 + 1), address(0)));
+        pd.transferAndCall(address(tr), 100e6, abi.encode(uint256(9800e18 + 1), address(0)));
         vm.stopPrank();
     }
 

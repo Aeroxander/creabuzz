@@ -58,7 +58,9 @@ contract ShareToken {
         address recipient,
         uint256 amount
     ) external {
-        if (_born || controller_ == address(0) || (amount != 0 && recipient == address(0))) revert BadBirth();
+        if (_born || controller_ == address(0) || (amount != 0 && recipient == address(0))) {
+            revert BadBirth();
+        }
         _born = true;
         (name, symbol, controller) = (name_, symbol_, controller_);
         if (amount != 0) _mint(recipient, amount);

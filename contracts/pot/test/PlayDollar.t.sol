@@ -43,19 +43,19 @@ contract PlayDollarTest is Test {
     function test_faucetOncePerAccountOfOneThousand() public {
         vm.prank(alice);
         pd.faucet();
-        assertEq(pd.balanceOf(alice), 1_000e6);
+        assertEq(pd.balanceOf(alice), 1000e6);
         vm.prank(alice);
         vm.expectRevert(PlayDollar.FaucetUsed.selector);
         pd.faucet();
         vm.prank(bob);
         pd.faucet();
-        assertEq(pd.balanceOf(bob), 1_000e6);
-        assertEq(pd.totalSupply(), 2_000e6);
+        assertEq(pd.balanceOf(bob), 1000e6);
+        assertEq(pd.totalSupply(), 2000e6);
     }
 
     function test_faucetEmitsEvent() public {
         vm.expectEmit(true, false, false, true);
-        emit PlayDollar.Faucet(alice, 1_000e6);
+        emit PlayDollar.Faucet(alice, 1000e6);
         vm.prank(alice);
         pd.faucet();
     }
@@ -94,7 +94,7 @@ contract PlayDollarTest is Test {
         vm.expectRevert(); // a call-back that answers with the wrong selector
         pd.transferAndCall(wrong, 1e6, "");
         vm.stopPrank();
-        assertEq(pd.balanceOf(alice), 1_000e6);
+        assertEq(pd.balanceOf(alice), 1000e6);
     }
 
     function test_onlyOnATestChain() public {

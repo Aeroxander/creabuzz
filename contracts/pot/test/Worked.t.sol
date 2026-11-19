@@ -11,7 +11,7 @@ contract WorkedTest is PotBase {
         t.forceShares(carol, 9_800_000e18);
         _force(83_500e6, 98_000e6, 0, 0, 0);
         assertEq(team.totalSupply(), 10_000_000e18);
-        assertEq(t.leaveValue(), 8_520, "0.008520 a Share");
+        assertEq(t.leaveValue(), 8520, "0.008520 a Share");
         uint256 holdersBefore = PotMath.cash(9_800_000e18, t.pot(), t.paidIn(), shares.totalSupply(), POOL);
 
         (uint256 quoted, uint256 takeOutNow,,) = t.quoteBack(100e6);
@@ -24,11 +24,11 @@ contract WorkedTest is PotBase {
 
         uint256 got = _leave(alice, n);
         assertEq(got, takeOutNow);
-        assertApproxEqAbs(got, 98e6, 2_000, "taking out at once gives 98.00 (97.9998)");
-        assertLe(got, 98e6 + 2_000);
+        assertApproxEqAbs(got, 98e6, 2000, "taking out at once gives 98.00 (97.9998)");
+        assertLe(got, 98e6 + 2000);
 
         uint256 holdersAfter = PotMath.cash(9_800_000e18, t.pot(), t.paidIn(), shares.totalSupply(), POOL);
-        assertApproxEqAbs(holdersAfter, holdersBefore, 2_000, "earlier holders change by 0.0000");
+        assertApproxEqAbs(holdersAfter, holdersBefore, 2000, "earlier holders change by 0.0000");
         assertGe(holdersAfter + 2, holdersBefore, "and not for the worse");
     }
 

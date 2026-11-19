@@ -10,7 +10,7 @@ import {ERC1363} from "oz5/token/ERC20/extensions/ERC1363.sol";
 /// same call. It exists only on a test chain; the constructor refuses to deploy anywhere else.
 contract PlayDollar is ERC20, ERC1363 {
     /// @notice What the faucet gives an account, once: 1,000 dollars.
-    uint256 public constant FAUCET_AMOUNT = 1_000e6;
+    uint256 public constant FAUCET_AMOUNT = 1000e6;
 
     /// @notice The address that may mint for test harnesses.
     address public immutable admin;

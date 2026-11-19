@@ -240,7 +240,7 @@ contract TreasuryTest is PotBase {
 
     function test_burnAfterWindDownNeedsAWindDownAndLeavesZAlone() public {
         vm.startPrank(address(vester));
-        t.forfeitAnnounced(1_000e18);
+        t.forfeitAnnounced(1000e18);
         vm.expectRevert(Treasury.NotAllowed.selector);
         t.burnAfterWindDown(5e18);
         vm.stopPrank();
@@ -249,7 +249,7 @@ contract TreasuryTest is PotBase {
         vm.prank(address(vester));
         t.burnAfterWindDown(5e18);
         assertEq(team.totalSupply(), POOL - 5e18);
-        assertEq(t.Z(), 1_000e18);
+        assertEq(t.Z(), 1000e18);
     }
 
     /// @dev Must-bind 6: after an announce, a join is priced as if the burn had already happened. A project with the
@@ -356,8 +356,8 @@ contract TreasuryTest is PotBase {
         uint256 b = _join(bob, 7_777_777);
         inflow += 7_777_777;
         _assertExact();
-        _revenue(carol, 3_000e6);
-        inflow += 3_000e6;
+        _revenue(carol, 3000e6);
+        inflow += 3000e6;
         vm.warp(T0 + 2 days);
         _checkIn();
         _assertExact();
