@@ -1,0 +1,37 @@
+# The money contracts of the join-and-leave design (docs/next-version/JOIN-LEAVE-DESIGN.md, section 8, step 1).
+# A separate Foundry project: contracts/next is not touched. Every first-party file here is pinned to one compiler
+# (0.8.37) with the optimizer at 200 runs, like contracts/next does for its own files; no vendored code needs another.
+[profile.default]
+src = "src"
+test = "test"
+script = "script"
+out = "out"
+cache_path = "cache"
+libs = ["lib"]
+auto_detect_remappings = false
+solc = "0.8.37"
+evm_version = "cancun"
+optimizer = true
+optimizer_runs = 200
+via_ir = true
+bytecode_hash = "none"
+fs_permissions = [{ access = "read", path = "./model" }, { access = "read", path = "./out" }, { access = "read-write", path = "./deployments" }]
+
+[fuzz]
+runs = 1000
+
+[invariant]
+runs = 256
+depth = 200
+fail_on_revert = false
+show_metrics = false
+
+[fmt]
+line_length = 120
+tab_width = 4
+quote_style = "double"
+number_underscore = "thousands"
+
+[rpc_endpoints]
+anvil = "http://127.0.0.1:8545"
+sepolia = "${SEPOLIA_RPC_URL}"
