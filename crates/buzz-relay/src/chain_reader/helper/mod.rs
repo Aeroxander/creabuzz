@@ -1052,10 +1052,3 @@ impl Helper {
         Ok(Outcome::Stop)
     }
 }
-
-#[cfg(test)]
-#[path = "helper_postgres_tests.rs"]
-mod helper_postgres_tests;
-#[cfg(test)]
-#[path = "review_m5p2_tests.rs"]
-mod review_m5p2_tests;

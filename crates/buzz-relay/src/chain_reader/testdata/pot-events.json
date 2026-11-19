@@ -1,0 +1,970 @@
+{
+  "source": "contracts/pot",
+  "contracts": {
+    "Launcher": {
+      "roles": [
+        "Launcher"
+      ],
+      "events": [
+        {
+          "name": "AdminChanged",
+          "signature": "AdminChanged(address)",
+          "topic": "0x7ce7ec0b50378fb6c0186ffb5f48325f6593fcb4ca4386f21861af3129188f5c",
+          "inputs": [
+            {
+              "name": "admin",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "name": "AdminOffered",
+          "signature": "AdminOffered(address)",
+          "topic": "0x1d7ce155877b21be2f798988053b4902830d264227b400ee75c214de001bde29",
+          "inputs": [
+            {
+              "name": "next",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "name": "PairMade",
+          "signature": "PairMade(bytes32,address,address,address)",
+          "topic": "0xf4054ab4627b2a70f20619d603381659a88dd1b5164a61d82e14a70b8ad22f78",
+          "inputs": [
+            {
+              "name": "key",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "pair",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "first",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "second",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "ProjectLaunched",
+          "signature": "ProjectLaunched(bytes32,bytes32,address,(address,address,address,address,address,uint64),(uint32,uint256),(address,address,uint16,uint32,uint128))",
+          "topic": "0xe97a1fa0f012be422e8933585be37d533a884869e3fda6cc204c3a616d15ca4f",
+          "inputs": [
+            {
+              "name": "key",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "projectId",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "founder",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "project",
+              "type": "(address,address,address,address,address,uint64)",
+              "indexed": false,
+              "struct": "Project",
+              "components": [
+                {
+                  "name": "founder",
+                  "type": "address"
+                },
+                {
+                  "name": "shares",
+                  "type": "address"
+                },
+                {
+                  "name": "team",
+                  "type": "address"
+                },
+                {
+                  "name": "treasury",
+                  "type": "address"
+                },
+                {
+                  "name": "vester",
+                  "type": "address"
+                },
+                {
+                  "name": "launchedAt",
+                  "type": "uint64"
+                }
+              ]
+            },
+            {
+              "name": "terms",
+              "type": "(uint32,uint256)",
+              "indexed": false,
+              "struct": "Terms",
+              "components": [
+                {
+                  "name": "ratePpm",
+                  "type": "uint32"
+                },
+                {
+                  "name": "teamPool",
+                  "type": "uint256"
+                }
+              ]
+            },
+            {
+              "name": "platform",
+              "type": "(address,address,uint16,uint32,uint128)",
+              "indexed": false,
+              "struct": "Platform",
+              "components": [
+                {
+                  "name": "quote",
+                  "type": "address"
+                },
+                {
+                  "name": "platform",
+                  "type": "address"
+                },
+                {
+                  "name": "feeBps",
+                  "type": "uint16"
+                },
+                {
+                  "name": "unit",
+                  "type": "uint32"
+                },
+                {
+                  "name": "agentUsd",
+                  "type": "uint128"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "SettingsChanged",
+          "signature": "SettingsChanged((address,address,uint16,uint32,uint128))",
+          "topic": "0x979c8c74e1abc090cc8fc464763e681106737b35a1b2417b57f7dc0868119313",
+          "inputs": [
+            {
+              "name": "platform",
+              "type": "(address,address,uint16,uint32,uint128)",
+              "indexed": false,
+              "struct": "Platform",
+              "components": [
+                {
+                  "name": "quote",
+                  "type": "address"
+                },
+                {
+                  "name": "platform",
+                  "type": "address"
+                },
+                {
+                  "name": "feeBps",
+                  "type": "uint16"
+                },
+                {
+                  "name": "unit",
+                  "type": "uint32"
+                },
+                {
+                  "name": "agentUsd",
+                  "type": "uint128"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "WoundDown",
+          "signature": "WoundDown(bytes32,address)",
+          "topic": "0x70432bcfd40a271a257d103dd77bf0d5dcbb0ea1e4301da59d4d7fd8c7d79303",
+          "inputs": [
+            {
+              "name": "key",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "runner",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        }
+      ]
+    },
+    "Treasury": {
+      "roles": [
+        "Treasury"
+      ],
+      "events": [
+        {
+          "name": "AgentSet",
+          "signature": "AgentSet(address,bool,uint256,uint256)",
+          "topic": "0xa9a48f4932057f5e6b21a053dc17347b6b0b78c8b59f963736a47a500d0f3399",
+          "inputs": [
+            {
+              "name": "agent",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "active",
+              "type": "bool",
+              "indexed": false
+            },
+            {
+              "name": "usdCap",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "shareCap",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "AllowanceDrawn",
+          "signature": "AllowanceDrawn(address,address,uint256,uint256)",
+          "topic": "0xa5d819d6ffce12e3b3b8dcd2f961d4c61c56d774542fceca97798cc26a6a92ac",
+          "inputs": [
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "to",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "boxAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "BurnAnnounced",
+          "signature": "BurnAnnounced(uint256,uint256)",
+          "topic": "0x1a4c8e93b0454957f426dbdb7afc6ebe30e7474abedb2f06471c0cc68eb328c6",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "zAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "CheckedIn",
+          "signature": "CheckedIn(address,bytes32,uint64)",
+          "topic": "0xf1e30dce1d1c086ac415fc8c8307356d2352cecbf408b81b332c3980eb5a7cea",
+          "inputs": [
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "recordHash",
+              "type": "bytes32",
+              "indexed": false
+            },
+            {
+              "name": "time",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "DoorSet",
+          "signature": "DoorSet(bool)",
+          "topic": "0x684f6fad5a8741c18bbd61b23f6acf51e28d15404c8fe767c75eea2f4936171c",
+          "inputs": [
+            {
+              "name": "open",
+              "type": "bool",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "FeesCollected",
+          "signature": "FeesCollected(address,uint256)",
+          "topic": "0x9dc46f23cfb5ddcad0ae7ea2be38d47fec07bb9382ec7e564efc69e036dd66ce",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Joined",
+          "signature": "Joined(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256)",
+          "topic": "0xa6151d7755e344f44b5b40269d1766228a3923bda179c6728f25b759d5c07389",
+          "inputs": [
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "to",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "paid",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "fee",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "shares",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "credit",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "potAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "paidInAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "sharesAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Left",
+          "signature": "Left(address,address,uint256,uint256,uint256,uint256,uint256,uint256)",
+          "topic": "0x538a058604cf1e13ee31eb7b67028132b218cc709262d8802fb72c1e3e97723c",
+          "inputs": [
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "to",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "shares",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "cash",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "note",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "potAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "paidInAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "sharesAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "RateProposed",
+          "signature": "RateProposed(uint32,uint64)",
+          "topic": "0x3396197a5b5fb675a622f7a68dccb440717f105e9a3fa9cd01a382fb7e45abac",
+          "inputs": [
+            {
+              "name": "ppm",
+              "type": "uint32",
+              "indexed": false
+            },
+            {
+              "name": "applicableAt",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "RateSet",
+          "signature": "RateSet(uint32,uint32,bool)",
+          "topic": "0x4cd623f405dc8496ccd94c0397873bf1c7065bcd7307b1c99db739cdedca4a13",
+          "inputs": [
+            {
+              "name": "ppm",
+              "type": "uint32",
+              "indexed": false
+            },
+            {
+              "name": "previousPpm",
+              "type": "uint32",
+              "indexed": false
+            },
+            {
+              "name": "raised",
+              "type": "bool",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "RevenueAdded",
+          "signature": "RevenueAdded(address,uint256,uint256,uint64)",
+          "topic": "0x56d308359ea20d69318bbbdb6e166c1c47b887b72a646494a69a7934e26990f8",
+          "inputs": [
+            {
+              "name": "from",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "arrivingAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "arrivalEnd",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "RevenueReleased",
+          "signature": "RevenueReleased(uint256,uint256)",
+          "topic": "0x29cdc3e9c5e42aef95378766dcc7ae6f86be5512de1ff733710ff2a882c3721b",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "arrivingAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "RunnerChanged",
+          "signature": "RunnerChanged(address,address)",
+          "topic": "0x9ea1acd64bcec00684558bdc6d1862427fe70ead5dba08a56a3713652c3e798e",
+          "inputs": [
+            {
+              "name": "from",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "to",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "name": "SeatOffered",
+          "signature": "SeatOffered(address,address,bool)",
+          "topic": "0xb39ea8a2b8fb797d8ac6c56ecffc534a570723de244f2199a17f4449f3e8e3d4",
+          "inputs": [
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "next",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "founderLeaves",
+              "type": "bool",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Settled",
+          "signature": "Settled(uint256,uint256,uint256,uint256,uint256,uint256,uint256,uint64)",
+          "topic": "0xb7025a0a47f5c281fc96db27e47ae98795e23a2b947e5247933518d63f43a3f7",
+          "inputs": [
+            {
+              "name": "toBox",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "backToPot",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "released",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "potAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "boxAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "arrivingAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "activeSecondsAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "time",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "TeamLeft",
+          "signature": "TeamLeft(address,address,uint256,uint256,uint256,uint256,uint256)",
+          "topic": "0x46ed339907d93b5bc483f784a3a474e74e055793b2fecbe5ae3aed4ae00f33a9",
+          "inputs": [
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "to",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "shares",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "cash",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "note",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "potAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "teamAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "WoundDown",
+          "signature": "WoundDown(uint8,address,uint64,uint256)",
+          "topic": "0x7e38b7a4de6b342ee19460ed3eff440f0074efaca76f00fbd116c65a5c35cce0",
+          "inputs": [
+            {
+              "name": "kind",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "time",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "boxReturned",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    "Vester": {
+      "roles": [
+        "Vester"
+      ],
+      "events": [
+        {
+          "name": "ForfeitAnnounced",
+          "signature": "ForfeitAnnounced(uint256,address,uint256,bool,uint64,uint256)",
+          "topic": "0xc433d3c1c6cce71642aa2305b7d484209a7c035bd3aac4fcd2b4804c34e804ae",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint256",
+              "indexed": true
+            },
+            {
+              "name": "member",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "byMember",
+              "type": "bool",
+              "indexed": false
+            },
+            {
+              "name": "burnAt",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "zAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Forfeited",
+          "signature": "Forfeited(uint256,address,uint256,uint256,uint256)",
+          "topic": "0x5f6c682fc0eeacaa069fefd28179a745c8a8bc1b85d6ef4a93a3c56d329e03f5",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint256",
+              "indexed": true
+            },
+            {
+              "name": "member",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "burned",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "zAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "teamAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "GrantClaimed",
+          "signature": "GrantClaimed(uint256,address,uint256)",
+          "topic": "0x617847aec64ffd2e4a19d71c3e0062f744212a6f13486fec81d004b3a5c8fb2e",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint256",
+              "indexed": true
+            },
+            {
+              "name": "member",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "GrantMade",
+          "signature": "GrantMade(uint256,address,uint256,uint256,uint8)",
+          "topic": "0x0819a1c3f1ddd63f99c77ed4fa6b2a42976f88cce3f19c42e03f85d3ad6eb51e",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint256",
+              "indexed": true
+            },
+            {
+              "name": "member",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "startActive",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "kind",
+              "type": "uint8",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "UngrantedBurned",
+          "signature": "UngrantedBurned(uint256,uint256)",
+          "topic": "0x0421df8ee650378c6d9337355e07863075222ada4b6bf0475e83e4592217d247",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "teamAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    "Pair": {
+      "roles": [
+        "Pair"
+      ],
+      "events": [
+        {
+          "name": "Cancelled",
+          "signature": "Cancelled(bytes32)",
+          "topic": "0xbaa1eb22f2a492ba1a5fea61b8df4d27c6c8b5f3971e63bb58fa14ff72eedb70",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "name": "Executed",
+          "signature": "Executed(bytes32,address)",
+          "topic": "0x59c3746e635078efc737fb3f37dd8188203b8df10bbad35878a7d156f4f51c41",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "confirmedBy",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "name": "Proposed",
+          "signature": "Proposed(bytes32,address,address,bytes,uint256)",
+          "topic": "0x5568b45f763e17d849e666220afd5ee274e77f848c0044257a0fba3d64397fef",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "target",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "data",
+              "type": "bytes",
+              "indexed": false
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    "ShareToken": {
+      "roles": [
+        "Shares",
+        "Team"
+      ],
+      "events": [
+        {
+          "name": "Transfer",
+          "signature": "Transfer(address,address,uint256)",
+          "topic": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "inputs": [
+            {
+              "name": "from",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "to",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "value",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    "PlayDollar": {
+      "roles": [
+        "Dollar"
+      ],
+      "events": [
+        {
+          "name": "Faucet",
+          "signature": "Faucet(address,uint256)",
+          "topic": "0x1c5347d1e37925b93058518c26d7daabe45f0a3227e8d058aaf3682960eb2b94",
+          "inputs": [
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Transfer",
+          "signature": "Transfer(address,address,uint256)",
+          "topic": "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          "inputs": [
+            {
+              "name": "from",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "to",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "value",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

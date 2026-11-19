@@ -12,9 +12,10 @@ use serde_json::Value;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 
 use super::events::Role;
-use super::numbers::{LogRow, Runners};
+use super::ledger::LogRow;
 use super::source::Header;
 use super::word::Word;
+use buzz_evm_allowance::abi::keccak256;
 
 /// A contract the reader follows.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -174,11 +175,31 @@ pub async fn block(pool: &PgPool, reader: &str, number: u64) -> anyhow::Result<O
     .transpose()
 }
 
+/// The role text `chain_contracts` keeps for `role`. That table's role list is
+/// closed by a database constraint (migrations 0065 and 0066) that has no
+/// `team`, so both of a project's Share tokens are kept as `shares`; which one
+/// is the Team Shares token is told by the project's own `ProjectLaunched` row
+/// (`project.team`), see [`contracts`]. (Logs keep the real role: the log
+/// table's role column has no constraint.)
+fn contract_role(role: Role) -> &'static str {
+    match role {
+        Role::Team => Role::Shares.as_str(),
+        other => other.as_str(),
+    }
+}
+
 /// Every contract the reader follows.
 pub async fn contracts(pool: &PgPool, reader: &str) -> anyhow::Result<Vec<Contract>> {
     let rows = sqlx::query(
-        "SELECT address, role, project_key, from_block FROM chain_contracts WHERE reader = $1 \
-         ORDER BY from_block, address",
+        "SELECT c.address, \
+                CASE WHEN c.role = 'shares' AND EXISTS ( \
+                         SELECT 1 FROM chain_logs l \
+                         WHERE l.reader = c.reader AND l.project_key = c.project_key \
+                           AND l.role = 'launcher' AND l.event = 'ProjectLaunched' \
+                           AND l.decoded->'project'->>'team' = '0x' || encode(c.address, 'hex')) \
+                     THEN 'team' ELSE c.role END AS role, \
+                c.project_key, c.from_block \
+         FROM chain_contracts c WHERE c.reader = $1 ORDER BY c.from_block, c.address",
     )
     .bind(reader)
     .fetch_all(pool)
@@ -262,7 +283,7 @@ pub async fn commit_range(pool: &PgPool, reader: &str, w: RangeWrite<'_>) -> any
         )
         .bind(reader)
         .bind(c.address.as_slice())
-        .bind(c.role.as_str())
+        .bind(contract_role(c.role))
         .bind(c.project_key.as_ref().map(|k| k.as_slice()))
         .bind(i64_of(c.from_block)?)
         .execute(&mut *tx)
@@ -489,7 +510,7 @@ pub async fn project_logs(
         "SELECT l.block_number, l.log_index, b.block_time, l.role, l.address, l.event, l.decoded \
          FROM chain_logs l JOIN chain_blocks b ON b.reader = l.reader AND b.number = l.block_number \
          WHERE l.reader = $1 AND l.project_key = $2 AND l.block_number <= $3 AND l.decoded IS NOT NULL \
-           AND NOT (l.role = 'shares' AND l.event = 'Transfer') \
+           AND NOT (l.role IN ('shares', 'team') AND l.event = 'Transfer') \
          ORDER BY l.block_number, l.log_index",
     )
     .bind(reader)
@@ -514,17 +535,37 @@ pub async fn project_logs(
         .collect()
 }
 
-/// The Shares moves a stored log makes: its project and, for a Shares
-/// `Transfer`, the sender's and the receiver's changes as decimal text (the
-/// zero address, mint and burn, is not an account).
-/// A project and the balance changes (account, signed decimal) of one log.
+/// The key a token's running balances are stored under in `chain_balances`
+/// and `chain_balance_changes`, whose rows have no token column: backer Shares
+/// under the project's key itself, Team Shares under a key derived from it
+/// (`keccak256("team-shares" || key)`), so the two tokens' balances of one
+/// project never meet. A column would say the same thing more plainly; the
+/// tables are shared with other tracks' migrations, so this reader keeps the
+/// distinction in the key (see the report).
+fn balance_key(role: Role, key: &Word) -> Word {
+    match role {
+        Role::Team => {
+            let mut preimage = b"team-shares".to_vec();
+            preimage.extend_from_slice(key);
+            keccak256(&preimage)
+        }
+        _ => *key,
+    }
+}
+
+/// A balance row's key and the balance changes (account, signed decimal) of
+/// one log.
 type BalanceMoves = (Word, Vec<([u8; 20], String)>);
 
+/// The token moves a stored log makes: for a `Transfer` of backer Shares or of
+/// Team Shares, the sender's and the receiver's changes as decimal text, under
+/// that token's balance key (the zero address, mint and burn, is not an
+/// account).
 fn balance_moves(l: &StoredLog) -> Option<BalanceMoves> {
-    if l.role != Role::Shares || l.event != "Transfer" {
+    if !matches!(l.role, Role::Shares | Role::Team) || l.event != "Transfer" {
         return None;
     }
-    let key = l.project_key?;
+    let key = balance_key(l.role, &l.project_key?);
     let addr = |name: &str| {
         l.decoded
             .get(name)
@@ -545,15 +586,18 @@ fn balance_moves(l: &StoredLog) -> Option<BalanceMoves> {
     Some((key, moves))
 }
 
-/// A project's free Shares per account as of `final_block` (lower-case `0x`
-/// text): the running balances, less any change stored past that block
-/// (review F5: Transfers are no longer loaded with the project's logs).
+/// A project's token balances per account as of `final_block` (lower-case `0x`
+/// text), for the backer Shares (`Role::Shares`) or the Team Shares
+/// (`Role::Team`): the running balances, less any change stored past that
+/// block (review F5: Transfers are not loaded with the project's logs).
 pub async fn balances(
     pool: &PgPool,
     reader: &str,
     key: &Word,
+    role: Role,
     final_block: u64,
 ) -> anyhow::Result<HashMap<String, i128>> {
+    let key = balance_key(role, key);
     let rows: Vec<(Vec<u8>, String)> = sqlx::query_as(
         "SELECT b.account, (b.balance - COALESCE((SELECT sum(c.delta) FROM chain_balance_changes c \
                  WHERE c.reader = b.reader AND c.project_key = b.project_key \
@@ -682,66 +726,8 @@ pub async fn touch_source_block(
     Ok(())
 }
 
-/// The Launcher's Pair and Council runners made in final blocks (`Launcher.runnerKind`).
-pub async fn runners(pool: &PgPool, reader: &str, final_block: u64) -> anyhow::Result<Runners> {
-    let rows = sqlx::query(
-        "SELECT decoded->>'pair' AS pair, decoded->>'council' AS council FROM chain_logs \
-         WHERE reader = $1 AND role = 'launcher' AND event IN ('PairMade', 'CouncilRegistered') \
-           AND block_number <= $2",
-    )
-    .bind(reader)
-    .bind(i64_of(final_block)?)
-    .fetch_all(pool)
-    .await?;
-    let mut out = Runners::default();
-    for r in rows {
-        let pair: Option<String> = r.try_get("pair")?;
-        let council: Option<String> = r.try_get("council")?;
-        out.pairs.extend(pair);
-        out.councils.extend(council);
-    }
-    let shared: Vec<Vec<u8>> = sqlx::query_scalar(
-        "SELECT address FROM chain_contracts \
-         WHERE reader = $1 AND role IN ('holder', 'pool_manager') AND from_block <= $2",
-    )
-    .bind(reader)
-    .bind(i64_of(final_block)?)
-    .fetch_all(pool)
-    .await?;
-    out.shared
-        .extend(shared.iter().map(|a| super::word::hex0x(a)));
-    Ok(out)
-}
-
-/// The pools the projects' Finishers opened (`Finisher.PoolOpened.poolId`),
-/// each with its project: the pool manager's `Swap` logs are read for these.
-pub async fn pool_ids(pool: &PgPool, reader: &str) -> anyhow::Result<HashMap<Word, Word>> {
-    let rows: Vec<(Option<String>, Vec<u8>)> = sqlx::query_as(
-        "SELECT decoded->>'poolId', project_key FROM chain_logs \
-         WHERE reader = $1 AND role = 'finisher' AND event = 'PoolOpened' \
-           AND project_key IS NOT NULL",
-    )
-    .bind(reader)
-    .fetch_all(pool)
-    .await?;
-    let mut out = HashMap::new();
-    for (id, key) in rows {
-        let id = id
-            .as_deref()
-            .and_then(super::word::parse_fixed::<32>)
-            .context("a stored PoolOpened without a pool id")?;
-        let key: Word = key
-            .as_slice()
-            .try_into()
-            .context("a stored project key is not 32 bytes")?;
-        out.insert(id, key);
-    }
-    Ok(out)
-}
-
-/// The stored Launcher rows that name contracts (`ProjectLaunched`, a sale's
-/// auction, project zero's claim, a Pair) in blocks before `before`: project
-/// key, block, event and decoded fields. A reader that ran before a contract
+/// The stored Launcher rows that name contracts (`ProjectLaunched`, a Pair) in
+/// blocks before `before`: project key, block, event and decoded fields. A reader that ran before a contract
 /// kind was followed finds those contracts here (review I2).
 pub async fn launcher_reveals(
     pool: &PgPool,
@@ -752,8 +738,7 @@ pub async fn launcher_reveals(
         "SELECT project_key, block_number, event, decoded FROM chain_logs \
          WHERE reader = $1 AND role = 'launcher' AND block_number < $2 \
            AND project_key IS NOT NULL AND decoded IS NOT NULL \
-           AND event IN ('ProjectLaunched', 'SaleOpened', 'ReserveSaleOpened', 'ProjectZeroSplit', \
-                         'PairMade') \
+           AND event IN ('ProjectLaunched', 'PairMade') \
          ORDER BY block_number, log_index",
     )
     .bind(reader)
@@ -763,30 +748,4 @@ pub async fn launcher_reveals(
     rows.into_iter()
         .map(|(key, block, event, decoded)| Ok((word_of(key)?, u64_of(block)?, event, decoded)))
         .collect()
-}
-
-/// Where a sale's pool can first trade, from the stored Finisher rows of
-/// project `key` for `auction` (lower-case `0x` text): the block of its pool
-/// step (`PoolStep`, the transaction that makes the pool), else the sale's
-/// last block (`SaleOpenedBy.endBlock`; no pool step runs before it).
-pub async fn pool_start(
-    pool: &PgPool,
-    reader: &str,
-    key: &Word,
-    auction: &str,
-) -> anyhow::Result<Option<u64>> {
-    let start: Option<i64> = sqlx::query_scalar(
-        "SELECT coalesce( \
-             (SELECT min(block_number) FROM chain_logs WHERE reader = $1 AND project_key = $2 \
-                AND role = 'finisher' AND event = 'PoolStep' AND decoded->>'auction' = $3), \
-             (SELECT max((decoded->>'endBlock')::bigint) FROM chain_logs WHERE reader = $1 \
-                AND project_key = $2 AND role = 'finisher' AND event = 'SaleOpenedBy' \
-                AND decoded->>'auction' = $3))",
-    )
-    .bind(reader)
-    .bind(key.as_slice())
-    .bind(auction)
-    .fetch_one(pool)
-    .await?;
-    start.map(u64_of).transpose()
 }

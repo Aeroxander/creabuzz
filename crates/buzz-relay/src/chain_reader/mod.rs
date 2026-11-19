@@ -1,20 +1,24 @@
-//! The chain reader (plan v2, milestone 5, part 1).
+//! The chain reader.
 //!
-//! It reads the contracts/next events (the Launcher, and each project's
-//! Rounds, Vester, Treasury, Finisher, Pair and Shares found in the Launcher's
-//! events) into tables that survive a chain rollback (`scan`, `store`), works
-//! out the numbers the chain cannot give (`numbers`), and signs one "project
+//! It reads the contracts/pot events (the Launcher, and each project's
+//! Treasury, Vester, Shares, Team Shares and Pair found in the Launcher's
+//! events) into tables that survive a chain rollback (`scan`, `store`),
+//! rebuilds each project's state from its events alone (`ledger`), works out
+//! the numbers the chain cannot give (`numbers`), and signs one "project
 //! numbers" record per project, kind 39009 (`publish`), again whenever they
-//! change. Off unless `BUZZ_CHAIN_RPC_URL` is set (`settings`).
+//! change. Off unless `BUZZ_CHAIN_RPC_URL` is set (`settings`). The events are
+//! decoded by a table generated from the contracts build (`events`).
 //!
 //! With `BUZZ_CHAIN_HELPER_KEY` set, the helper job (`helper`) also sends the
-//! calls anyone may make (closing rounds, settling, releasing, finishing
-//! sales) from a relay-held key. Signing records and sending calls are done by
-//! one replica only: the one holding the writer lock, a session advisory lock
-//! on a connection of its own, checked on every pass.
+//! calls anyone may make from a relay-held key. Signing records and sending
+//! calls are done by one replica only: the one holding the writer lock, a
+//! session advisory lock on a connection of its own, checked on every pass.
 
 pub mod events;
+#[cfg(test)]
+mod fixture;
 pub mod helper;
+pub mod ledger;
 pub mod numbers;
 pub mod publish;
 pub mod scan;
@@ -289,7 +293,6 @@ impl ChainReader {
             launcher: self.config.launcher,
             block: final_block,
             time: as_of_header.time,
-            runners: store::runners(pool, reader, final_block).await?,
         };
         let now = chrono::Utc::now().timestamp();
         let projects = store::final_projects(pool, reader, final_block).await?;
@@ -336,8 +339,7 @@ impl ChainReader {
         let live: HashSet<Word> = projects.iter().map(|(k, _)| *k).collect();
         for (key, prev) in previous.iter().filter(|(k, _)| !live.contains(*k)) {
             let content = json!({
-                "version": 1, "chainId": self.config.chain_id, "launcher": hex0x(&self.config.launcher),
-                "key": hex0x(key), "removed": true,
+                "version": 2, "key": hex0x(key), "removed": true,
                 "asOf": {"block": as_of.block, "time": as_of.time},
             });
             let created_at = now.max(prev.published_at + 1);
@@ -402,8 +404,14 @@ impl ChainReader {
         let pool = self.state.db.pool();
         let reader = self.scan.reader.as_str();
         let logs = store::project_logs(pool, reader, key, as_of.block).await?;
-        let balances = store::balances(pool, reader, key, as_of.block).await?;
-        let Some(content) = numbers::derive(key, &logs, &balances, as_of)? else {
+        let Some(mut ledger) = ledger::Ledger::from_logs(&logs)? else {
+            return Ok(false);
+        };
+        ledger.set_balances(
+            &store::balances(pool, reader, key, events::Role::Shares, as_of.block).await?,
+            &store::balances(pool, reader, key, events::Role::Team, as_of.block).await?,
+        )?;
+        let Some(content) = numbers::derive(key, &ledger, as_of)? else {
             return Ok(false);
         };
         let facts = digest(&numbers::facts_of(&content));
@@ -653,10 +661,4 @@ mod supervise_tests {
 }
 
 #[cfg(test)]
-mod hardening_postgres_tests;
-#[cfg(test)]
-mod postgres_tests;
-#[cfg(test)]
-mod review_m5p2_postgres_tests;
-#[cfg(test)]
-mod review_postgres_tests;
+mod scan_postgres_tests;
