@@ -42,11 +42,7 @@ function build(
 // --- The dollar ---------------------------------------------------------------------------------------------------
 
 /** Let `spender` take up to `amount` dollars of the sender's. */
-function approveCall(
-  dollar: string,
-  spender: string,
-  amount: bigint,
-): PotCall {
+function approveCall(dollar: string, spender: string, amount: bigint): PotCall {
   return build(PLAY_DOLLAR_ABI, dollar, "approve", [spender, amount]);
 }
 
@@ -329,4 +325,9 @@ export function pairConfirmCall(
 /** Withdraw a call you proposed. */
 export function pairCancelCall(pair: string, id: string): PotCall {
   return build(PAIR_ABI, pair, "cancel", [id]);
+}
+
+/** Wind the project down on the Treasury itself: the runner by choice, or anyone after a long quiet (`Treasury.windDown`). */
+export function treasuryWindDownCall(treasury: string): PotCall {
+  return build(TREASURY_ABI, treasury, "windDown", []);
 }

@@ -311,6 +311,13 @@ test("makePair and windDown go to the Launcher with the project's key", () => {
   );
 });
 
+test("winding down on the Treasury itself is a call with no arguments", () => {
+  const call = calls.treasuryWindDownCall(TREASURY);
+  assert.equal(call.to, low(TREASURY));
+  const found = read(TREASURY_ABI, call);
+  assert.deepEqual([found.name, ...found.args], ["windDown"]);
+});
+
 test("a bad address, a negative or oversize number never becomes calldata", () => {
   assert.throws(
     () => calls.drawCall({ treasury: TREASURY, to: "0x12", amount: 1n }),

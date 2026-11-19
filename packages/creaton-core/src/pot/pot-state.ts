@@ -92,7 +92,10 @@ export async function readAllowanceState(
     pending:
       pendingTime > 0
         ? // `pendingAt` is when the raise was announced; it can be applied one time unit later (`applyRate` reverts `NotYet`).
-          { ratePpm: asNumber(pendingPpm), applicableAt: pendingTime + asNumber(unit) }
+          {
+            ratePpm: asNumber(pendingPpm),
+            applicableAt: pendingTime + asNumber(unit),
+          }
         : null,
     lastCheckIn: asNumber(lastCheckIn),
     activeEnd: asNumber(activeEnd),
@@ -226,7 +229,10 @@ export async function readPlatformDollar(
 }
 
 /** How long a call waits in a Pair before it is out of time, in seconds (`Pair.PROPOSAL_TTL`: read, never copied). */
-export async function proposalTtl(read: ReadCall, pair: string): Promise<number> {
+export async function proposalTtl(
+  read: ReadCall,
+  pair: string,
+): Promise<number> {
   return asNumber(await one(read, PAIR_ABI, pair, "PROPOSAL_TTL"));
 }
 
@@ -241,4 +247,118 @@ export async function readProposal(
   if (/^0x0{40}$/.test(proposer)) return null;
   const [at] = await ask(read, PAIR_ABI, pair, "proposedAt", [id]);
   return { proposer, proposedAt: asNumber(at) };
+}
+
+/**
+ * What the Launcher would give a project launched now: the hash of its settings (the founder passes it to `launch`, which
+ * refuses if the settings changed since), the platform's own limits, and the two ceilings a founder's numbers must stay under.
+ */
+export interface LaunchOffer {
+  /** `settingsHash()`: 32 bytes as 0x hex. */
+  settingsHash: string;
+  /** The dollar the project is in. */
+  dollar: string;
+  /** The platform's part of money going in, in ten-thousandths (200 is 2%). */
+  feeBps: number;
+  /** The time unit in seconds (7 days on a real network). */
+  unit: number;
+  /** The daily dollar limit a helper (an agent) gets by default, in dollar units. */
+  agentUsd: bigint;
+  /** The most the allowance rate may be, in parts per million of the project's money a day. */
+  maxRatePpm: number;
+  /** The most Team Shares a founder may ask for at birth, in raw units (18 decimals). */
+  maxTeamPool: bigint;
+  /** A Team Share helper's daily limit is the pool divided by this. */
+  agentShareDiv: bigint;
+}
+
+/** The Launcher's settings, hash and ceilings at the chain's latest block. */
+export async function readLaunchOffer(
+  read: ReadCall,
+  launcher: string,
+): Promise<LaunchOffer> {
+  const [hash, platform, maxRate, maxPool, agentDiv] = await Promise.all([
+    one(read, LAUNCHER_ABI, launcher, "settingsHash"),
+    ask(read, LAUNCHER_ABI, launcher, "platform", []),
+    one(read, LAUNCHER_ABI, launcher, "MAX_RATE_PPM"),
+    one(read, LAUNCHER_ABI, launcher, "MAX_TEAM_POOL"),
+    one(read, LAUNCHER_ABI, launcher, "AGENT_SHARE_DIV"),
+  ]);
+  if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(hash))
+    throw new Error("A settings hash was expected.");
+  const [quote, , feeBps, unit, agentUsd] = platform;
+  return {
+    settingsHash: hash.toLowerCase(),
+    dollar: asAddress(quote),
+    feeBps: asNumber(feeBps),
+    unit: asNumber(unit),
+    agentUsd: asBigint(agentUsd),
+    maxRatePpm: asNumber(maxRate),
+    maxTeamPool: asBigint(maxPool),
+    agentShareDiv: asBigint(agentDiv),
+  };
+}
+
+/** The address the Pair of (`first`, `second`) will have for project `key` (`Launcher.pairAddress`). */
+export async function pairAddressOf(
+  read: ReadCall,
+  launcher: string,
+  key: string,
+  first: string,
+  second: string,
+): Promise<string> {
+  const [pair] = await ask(read, LAUNCHER_ABI, launcher, "pairAddress", [
+    key,
+    first,
+    second,
+  ]);
+  return asAddress(pair);
+}
+
+/** Who runs a project's money and what is being offered to whom, as the Treasury has it now. */
+export interface SeatState {
+  /** The account that runs the money: the founder, whoever took the seat, or the Pair. */
+  runner: string;
+  founder: string;
+  /** Who the seat is offered to, or null when no offer is open. */
+  offeredTo: string | null;
+  /** When the offer was made (0 when none). */
+  offeredAt: number;
+  /** The offer ends this many seconds after it was made (`SEAT_OFFER_MULT` time units). */
+  offerLasts: number;
+  /** Taking the seat also trims the founder's own Team Shares that have not unlocked. */
+  founderLeaves: boolean;
+  /** 0 not wound down, 1 by the runner, 2 after a long quiet. */
+  windDownKind: number;
+}
+
+/** The seat, any offer for it, and the wind-down state at the chain's latest block. */
+export async function readSeatState(
+  read: ReadCall,
+  treasury: string,
+): Promise<SeatState> {
+  const [runner, founder, pending, pendingAt, trim, mult, unit, kind] =
+    await Promise.all(
+      [
+        "runner",
+        "founder",
+        "pendingRunner",
+        "pendingSeatAt",
+        "pendingTrim",
+        "SEAT_OFFER_MULT",
+        "unit",
+        "windDownKind",
+      ].map((name) => one(read, TREASURY_ABI, treasury, name)),
+    );
+  const offered = asAddress(pending);
+  if (typeof trim !== "boolean") throw new Error("A yes or no was expected.");
+  return {
+    runner: asAddress(runner),
+    founder: asAddress(founder),
+    offeredTo: /^0x0{40}$/.test(offered) ? null : offered,
+    offeredAt: asNumber(pendingAt),
+    offerLasts: asNumber(mult) * asNumber(unit),
+    founderLeaves: trim,
+    windDownKind: asNumber(kind),
+  };
 }
