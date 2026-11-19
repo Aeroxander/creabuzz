@@ -142,6 +142,6 @@ export function passkeyUnavailableSentence(sender: MoneyWallet): string | null {
   if (now.reason === "not-set-up")
     return "Backing from this phone is not switched on for this server yet. Open this page in a browser with a wallet to back now.";
   if (now.reason === "no-passkey")
-    return "To back from this phone you need to be signed in with a passkey. Or open this page in a browser with a wallet.";
+    return "This browser does not hold the passkey for an account here, so it cannot back from one. Sign in with your passkey on the phone where you made it, or open this page in a browser with a wallet.";
   return null;
 }

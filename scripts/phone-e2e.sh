@@ -2,7 +2,7 @@
 # The phone path in a real browser. Starts a throwaway anvil, builds the app with the phone settings (to
 # app/node_modules/.phone-dist, never the normal build), and runs app/tests/e2e/phone-back.spec.ts with Playwright: a
 # browser with no wallet signs up with a passkey (Chrome's virtual authenticator) and backs a project on the local chain
-# from its passkey account, through a stand-in bundler and sponsor. Prints the presses and passkey prompts of the Back.
+# from its passkey account, through a stand-in bundler and sponsor at two addresses (the bundler refuses a request for the fee, so the run only passes when the page asks the sponsor's own address). Prints the presses and passkey prompts of the Back.
 #
 # Needs: anvil on PATH (or ANVIL=/path/to/anvil), node and pnpm, contracts/next/out built, Playwright's Chromium.
 set -euo pipefail
@@ -23,7 +23,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-PORT="$(free_port)"; BUNDLER_PORT="$(free_port)"; PREVIEW_PORT="$(free_port)"
+PORT="$(free_port)"; BUNDLER_PORT="$(free_port)"; SPONSOR_PORT="$(free_port)"; PREVIEW_PORT="$(free_port)"
 RPC="http://127.0.0.1:$PORT"
 "$ANVIL" --port "$PORT" --chain-id 31337 --gas-limit 100000000 --prune-history --cache-path "$STATE/anvil-cache" \
   --silent >"$STATE/anvil.log" 2>&1 &
@@ -38,6 +38,7 @@ cd "$ROOT/app"
 # Settings by name only; the values are this run's own local addresses.
 VITE_CREATON_PASSKEY_ACCOUNT=1 VITE_CREATON_CHAIN_ID=31337 VITE_CREATON_RPC_URL="$RPC" \
   VITE_CREATON_BUNDLER_URL="http://127.0.0.1:$BUNDLER_PORT" \
+  VITE_CREATON_SPONSOR_URL="http://127.0.0.1:$SPONSOR_PORT" \
   pnpm exec vite build --outDir node_modules/.phone-dist --emptyOutDir >/dev/null
-M7_ANVIL_RPC="$RPC" PHONE_E2E_BUNDLER_PORT="$BUNDLER_PORT" E2E_PORT="$PREVIEW_PORT" \
+M7_ANVIL_RPC="$RPC" PHONE_E2E_BUNDLER_PORT="$BUNDLER_PORT" PHONE_E2E_SPONSOR_PORT="$SPONSOR_PORT" E2E_PORT="$PREVIEW_PORT" \
   pnpm exec playwright test --config playwright.phone.config.ts "$@"

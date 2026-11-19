@@ -21,6 +21,7 @@ import {
 } from "../../src/features/money/send-targets";
 import type { MoneyWallet } from "../../src/features/money/wallet";
 import { type PhoneChain, setUpPhoneChain } from "./phone-chain";
+import { startFront } from "./fronts";
 import { RPC } from "./rpc";
 import { type StandInBundler, startStandInBundler } from "./stand-in-bundler";
 
@@ -55,7 +56,12 @@ function installStorage(): void {
 
 export interface PhoneWorld {
   chain: PhoneChain;
+  /** The stand-in itself (bundler and sponsor in one); the sender reaches it only through the two fronts below. */
   bundler: StandInBundler;
+  /** The address the app is given for the bundler: it refuses every `zd_` method. */
+  bundlerFront: { url: string; served: string[]; refused: string[] };
+  /** The address the app is given for the sponsor: it answers only `zd_sponsorUserOperation`. */
+  sponsorFront: { url: string; served: string[]; refused: string[] };
   settings: PasskeySettings;
   /** The software passkey's counters: `get` is the number of passkey prompts so far. */
   authenticator: { calls: { create: number; get: number } };
@@ -86,10 +92,20 @@ export async function phoneWorld(
   await setupPasskey("Tester");
   forgetSendTargets();
   rememberSendTargets([chain.token]);
+  // The two services sit at two addresses, as an operator sets them: a request for the fee that reaches the bundler is refused.
+  const bundlerFront = await startFront(
+    bundler.url,
+    (m) => !m.startsWith("zd_"),
+  );
+  const sponsorFront = await startFront(
+    bundler.url,
+    (m) => m === "zd_sponsorUserOperation",
+  );
   const settings: PasskeySettings = {
     chainId: 31337,
     rpcUrl: RPC,
-    bundlerUrl: bundler.url,
+    bundlerUrl: bundlerFront.url,
+    sponsorUrl: sponsorFront.url,
   };
   const senderWith = (deps: PasskeyImplDeps = {}) =>
     createPasskeySender(settings, {
@@ -103,10 +119,16 @@ export async function phoneWorld(
   return {
     chain,
     bundler,
+    bundlerFront,
+    sponsorFront,
     settings,
     authenticator,
     senderWith,
     sender: senderWith(),
-    close: () => bundler.close(),
+    close: async () => {
+      await bundlerFront.close();
+      await sponsorFront.close();
+      await bundler.close();
+    },
   };
 }

@@ -1,8 +1,9 @@
 /**
  * The contracts this app knows a send may go to: the ones a project's numbers name, the dollar token its rounds take,
- * and the build's own Launcher and Router. The passkey account only sends to these. It is the one check a page can make
- * on what it asks a sponsor to pay for; the server's own allow-list (see `docs/next-version/PHONE-PATH-REPORT.md`) is
- * the one that holds.
+ * and the build's own Launcher and Router. The passkey account only sends to these. It catches this app's own mistakes and
+ * keeps a person from signing a call to a contract the app never read; it does not stop an attacker, who builds
+ * operations in their own code, and the dollar token comes from the configured node, so it is only as honest as that node.
+ * The server's own allow-list (see `docs/next-version/PHONE-PATH-REPORT.md`) is the one that holds.
  */
 
 const known = new Set<string>();

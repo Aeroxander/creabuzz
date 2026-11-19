@@ -13,6 +13,7 @@ import { encodeFunctionData } from "../../../packages/creaton-core/src/launchpad
 import type { MoneyCall } from "../../src/features/money/calls";
 import { moneyProblem } from "../../src/features/money/money-copy";
 import { WalletStepError } from "../../src/features/money/wallet";
+import { getPasskeyAssertion } from "../../../packages/creaton-core/src/account/passkey.ts";
 import { call, RPC, word } from "./rpc";
 import { accounts } from "./rpc";
 import { pass, phoneWorld } from "./phone-world";
@@ -263,6 +264,65 @@ run(
         expect(words).not.toMatch(/gas policy|paymaster|sponsor|bundler/i);
         pass(
           "a sponsor refusal is shown in plain words, before any passkey prompt, with nothing sent",
+        );
+      } finally {
+        await world.close();
+      }
+    });
+
+    it("asks for the fee at the sponsor's own address and sends at the bundler's, each only its own", async () => {
+      const [admin] = await accounts();
+      const world = await phoneWorld(admin);
+      try {
+        const { sender, chain, bundlerFront, sponsorFront } = world;
+        const account = await sender.getAddress();
+        await sender.sendCalls([mint(chain.token, account, 3n)], 31337);
+        // A bundler that is not the sponsor knows no `zd_` method: the send only works if the fee was asked elsewhere.
+        expect(sponsorFront.served).toEqual(["zd_sponsorUserOperation"]);
+        expect(bundlerFront.refused).toEqual([]);
+        expect(bundlerFront.served).toContain("eth_sendUserOperation");
+        expect(sponsorFront.refused).toEqual([]);
+        pass(
+          "the fee is asked for at the sponsor's own address and the operation is sent to the bundler's, never the other way",
+        );
+      } finally {
+        await world.close();
+      }
+    });
+
+    it("lands nothing when the operation is signed by another key, and says it did not go through", async () => {
+      const [admin] = await accounts();
+      const world = await phoneWorld(admin);
+      try {
+        const { sender: _first, chain } = world;
+        // A second credential the account does not know, signing in the production way.
+        const created = (await navigator.credentials.create({
+          publicKey: {
+            challenge: new Uint8Array(32),
+            rp: { id: "localhost", name: "t" },
+            user: { id: new Uint8Array(4), name: "x", displayName: "x" },
+            pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+          },
+        })) as unknown as { rawId: ArrayBuffer };
+        const otherId = Buffer.from(created.rawId).toString("base64url");
+        const wrongKey = world.senderWith({
+          getAssertion: (options) =>
+            getPasskeyAssertion({ ...options, credentialId: otherId }),
+        });
+        const account = await wrongKey.getAddress();
+        const before = await balanceOf(chain.token, account);
+        let caught: unknown;
+        await wrongKey
+          .sendCalls([mint(chain.token, account, 5n)], 31337)
+          .catch((e) => {
+            caught = e;
+          });
+        expect(caught).toBeInstanceOf(WalletStepError);
+        expect((caught as WalletStepError).reason).toBe("failed");
+        expect(await balanceOf(chain.token, account)).toBe(before);
+        expect(moneyProblem(caught, "back")).toMatch(/did not go through/);
+        pass(
+          "an operation signed by a key the account does not know is refused by the validator and nothing changes",
         );
       } finally {
         await world.close();

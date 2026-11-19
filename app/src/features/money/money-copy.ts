@@ -145,6 +145,20 @@ const REFUSAL_WORDS: Record<
   },
 };
 
+/** What an error says of the passkey account sending: the lines that name a wallet, said for a passkey account. */
+const PASSKEY_WORDS = {
+  "wrong-network":
+    "This phone's account is set up for another network than this project's. Nothing was sent.",
+  pending:
+    "It was sent, but it has not landed yet. Press again in a few minutes to look for it: it is not sent a second time while it may still land.",
+  replaced:
+    "Another step from your account took its place, so this cannot be looked up here. If it went through, the numbers here show it soon. If they do not change, press again to send it.",
+  NotEnoughDollars:
+    "Your account does not hold enough dollars for this. Nothing was taken.",
+  NoGas:
+    "The server could not pay the network fee for this. Nothing was sent. Try again later.",
+} as const;
+
 const ACTION_WORDS: Record<MoneyAction, string> = {
   back: "Your backing",
   refund: "Taking your money back",
@@ -162,9 +176,14 @@ export function moneyProblem(error: unknown, action: MoneyAction): string {
     if (error.reason === "not-set-up")
       return "Backing from this phone is not switched on for this server yet. Open this page in a browser with a wallet to back now.";
     if (error.reason === "no-passkey")
-      return "To back from this phone you need to be signed in with a passkey. Or open this page in a browser with a wallet.";
+      return "This browser does not hold the passkey for an account here, so it cannot back from one. Sign in with your passkey on the phone where you made it, or open this page in a browser with a wallet.";
     if (error.reason === "not-known")
       return "This app will not send that from your passkey account: it is not one of this project's contracts. Nothing was sent.";
+    const passkey = error.sender === "passkey";
+    if (passkey && error.reason === "wrong-network")
+      return PASSKEY_WORDS["wrong-network"];
+    if (passkey && error.reason === "pending") return PASSKEY_WORDS.pending;
+    if (passkey && error.reason === "replaced") return PASSKEY_WORDS.replaced;
     if (error.reason === "wrong-network")
       return "Your wallet is on another network. Switch it to the project's network and try again.";
     if (error.reason === "pending")
@@ -173,6 +192,8 @@ export function moneyProblem(error: unknown, action: MoneyAction): string {
       return "Your wallet sent this again as another call (sped up or cancelled), so it cannot be looked up here. Look in your wallet's activity: if it went through, the numbers here show it soon. If it did not, press again to send it.";
     const refusal = refusalOf(error.cause);
     if (refusal) {
+      if (passkey && (refusal === "NotEnoughDollars" || refusal === "NoGas"))
+        return PASSKEY_WORDS[refusal];
       const words = REFUSAL_WORDS[refusal];
       return words[action] ?? words.any;
     }

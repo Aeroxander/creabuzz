@@ -13,6 +13,7 @@ import {
 import { deployPlatform, mintDollars } from "../anvil/deploy";
 import { setUpPhoneChain } from "../anvil/phone-chain";
 import { accounts, call, RPC, word } from "../anvil/rpc";
+import { startFront } from "../anvil/fronts";
 import { startStandInBundler } from "../anvil/stand-in-bundler";
 import { DOLLAR, launched, openedRound, walletOf } from "../anvil/steps";
 import { numbersContent } from "../helpers/numbers-fixture";
@@ -27,7 +28,12 @@ import { event, now, profile, projectRecord, pubkeyOf } from "./helpers/world";
  * anvil and the preview; skipped without them. Counts the presses and the passkey prompts of a Back.
  */
 
-const run = RPC && process.env.PHONE_E2E_BUNDLER_PORT ? test : test.skip;
+const run =
+  RPC &&
+  process.env.PHONE_E2E_BUNDLER_PORT &&
+  process.env.PHONE_E2E_SPONSOR_PORT
+    ? test
+    : test.skip;
 
 const RELAY_KEY = "c7".repeat(32);
 const RELAY = pubkeyOf(RELAY_KEY);
@@ -73,8 +79,18 @@ run(
       rpcUrl: RPC,
       paymaster: chain.paymaster,
       submitter: chain.submitter,
-      port: Number(process.env.PHONE_E2E_BUNDLER_PORT),
     });
+    // The page is given two addresses, as an operator sets them: a bundler that knows no `zd_` method, and the sponsor.
+    const bundlerFront = await startFront(
+      bundler.url,
+      (m) => !m.startsWith("zd_"),
+      Number(process.env.PHONE_E2E_BUNDLER_PORT),
+    );
+    const sponsorFront = await startFront(
+      bundler.url,
+      (m) => m === "zd_sponsorUserOperation",
+      Number(process.env.PHONE_E2E_SPONSOR_PORT),
+    );
 
     try {
       // The server's reading of that project, naming the real contracts.
@@ -234,6 +250,10 @@ run(
           encodeFunctionData("balanceOf(address)", ["address"], [account]),
         ),
       ).toBe(35n * DOLLAR);
+      // The fee was asked at the sponsor's address and the operation sent to the bundler's: neither saw the other's.
+      expect(sponsorFront.served).toContain("zd_sponsorUserOperation");
+      expect(sponsorFront.refused).toEqual([]);
+      expect(bundlerFront.refused).toEqual([]);
       const backs = bundler.sent.filter((s) => s.sender === account);
       expect(backs).toHaveLength(1);
       expect(decodeExecuteCallData(backs[0].op.callData)).toEqual(
@@ -248,6 +268,8 @@ run(
       expect(path.presses).toBeLessThanOrEqual(PLAN_V2_BUDGETS.back.presses);
       expect(path.fields).toBeLessThanOrEqual(PLAN_V2_BUDGETS.back.fields);
     } finally {
+      await bundlerFront.close();
+      await sponsorFront.close();
       await bundler.close();
     }
   },

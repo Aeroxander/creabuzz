@@ -26,7 +26,15 @@ import {
 } from "./pending-sends";
 import { rememberSendTargets } from "./send-targets";
 import { senderWords, useSender } from "./sender";
-import { addressFromWord, type MoneyWallet, WalletStepError } from "./wallet";
+import {
+  addressFromWord,
+  type MoneyWallet,
+  type SenderKind,
+  type SentCall,
+  senderCapabilities,
+  senderKind,
+  WalletStepError,
+} from "./wallet";
 
 const moneyKeys = {
   all: ["money"] as const,
@@ -34,7 +42,8 @@ const moneyKeys = {
   project: (key: string, coordinate: string) =>
     ["money", "numbers", key, coordinate] as const,
   recent: (pages: number) => ["money", "recent", pages] as const,
-  address: ["money", "address"] as const,
+  // The sender is part of the key: the wallet's account and the passkey account are two accounts, never shared.
+  address: (kind: SenderKind) => ["money", "address", kind] as const,
   quote: (rounds: string) => ["money", "quote", rounds] as const,
 };
 
@@ -177,7 +186,7 @@ export function useWallet(): MoneyWallet {
 export function useWalletAddress() {
   const wallet = useWallet();
   return useQuery({
-    queryKey: moneyKeys.address,
+    queryKey: moneyKeys.address(senderKind(wallet)),
     enabled: investingOn() && wallet.isAvailable(),
     staleTime: 60_000,
     queryFn: () => wallet.connectedAddress(),
@@ -191,7 +200,7 @@ export function useWalletAddress() {
 export function useWalletOnChain(chainId: number | undefined) {
   const wallet = useWallet();
   return useQuery({
-    queryKey: ["money", "wallet-chain", chainId ?? 0],
+    queryKey: ["money", "wallet-chain", senderKind(wallet), chainId ?? 0],
     enabled: investingOn() && wallet.isAvailable() && chainId !== undefined,
     staleTime: 5_000,
     queryFn: async () => (await wallet.chainId()) === chainId,
@@ -205,7 +214,7 @@ export function useConnectWallet() {
   return useMutation({
     mutationFn: () => wallet.getAddress(),
     onSuccess: (address) =>
-      queryClient.setQueryData(moneyKeys.address, address),
+      queryClient.setQueryData(moneyKeys.address(senderKind(wallet)), address),
   });
 }
 
@@ -278,6 +287,10 @@ export function useMoneySend(action: string) {
     mutationFn: async (input: MoneySendInput): Promise<SendResult> => {
       try {
         return await sendStep(wallet, action, input);
+      } catch (error) {
+        // Which sender stopped, so the words say "your wallet" or "your passkey" rightly.
+        if (error instanceof WalletStepError) error.sender = senderKind(wallet);
+        throw error;
       } finally {
         running.current = false;
       }
@@ -383,11 +396,41 @@ async function sendStep(
   // On the project's network before anything is read for the calls: a read on another network answers nothing.
   await wallet.ensureChain(input.chainId);
   const calls = await input.build(wallet);
+  // A sender that sends the whole step as one operation has no "calls that landed first": what is waiting is the whole
+  // step, so it is remembered as the last of its calls, and a later look at it never sends the later calls alone.
+  const atomic = senderCapabilities(wallet).atomicBatch;
+  const remember = (
+    hash: string,
+    index: number,
+    sent?: Omit<SentCall, "hash">,
+  ) =>
+    rememberPending(key, {
+      hash,
+      index: atomic ? calls.length - 1 : index,
+      total: calls.length,
+      chainId: input.chainId,
+      at: Math.floor(Date.now() / 1000),
+      from: sent?.from ?? from,
+      nonce: sent?.nonce ?? null,
+      ...(input.detail === undefined ? {} : { detail: input.detail }),
+    });
+  let recorded = false;
   try {
-    const result = await wallet.sendCalls(calls.slice(skip), input.chainId);
+    const result = await wallet.sendCalls(calls.slice(skip), input.chainId, {
+      // Written the moment the operation is signed: a tab closed or a page reloaded while it is out forgets nothing.
+      onSent: (sent) => {
+        remember(sent.hash, skip, sent);
+        recorded = true;
+      },
+    });
+    if (recorded) forgetPending(key);
     return { ...result, detail: input.detail };
   } catch (error) {
-    if (!(error instanceof WalletStepError)) throw error;
+    if (!(error instanceof WalletStepError)) {
+      // An unexpected failure after it went out leaves the record: its outcome is looked up on the next press.
+      throw error;
+    }
+    if (recorded && error.reason !== "pending") forgetPending(key);
     const shifted =
       skip === 0
         ? error
@@ -399,16 +442,7 @@ async function sendStep(
             error.sent,
           );
     if (shifted.reason === "pending" && shifted.hash)
-      rememberPending(key, {
-        hash: shifted.hash,
-        index: shifted.landed,
-        total: calls.length,
-        chainId: input.chainId,
-        at: Math.floor(Date.now() / 1000),
-        from: shifted.sent?.from ?? from,
-        nonce: shifted.sent?.nonce ?? null,
-        ...(input.detail === undefined ? {} : { detail: input.detail }),
-      });
+      remember(shifted.hash, shifted.landed, shifted.sent);
     throw shifted;
   }
 }

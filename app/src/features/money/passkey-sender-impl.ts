@@ -7,6 +7,7 @@
  * before the passkey is asked it is read back and must be exactly those calls.
  */
 import {
+  BundlerRpcError,
   createBundlerTransport,
   type UserOperationReceipt,
 } from "@creaton/core/aa/aa.ts";
@@ -68,6 +69,15 @@ const PHASES: Record<string, SendPhase> = {
 
 /** The account's accounts being sent from now: a second send from the same account waits for the first, never overlaps. */
 const sending = new Set<string>();
+
+/**
+ * Whether an error from sending a signed operation leaves open that the bundler holds it: anything but the bundler's
+ * own refusal as the first and only try ("already known" is its way of saying it holds it).
+ */
+function mayHaveBeenTaken(error: unknown): boolean {
+  if (!(error instanceof BundlerRpcError)) return true;
+  return error.maybeDelivered || /already known/i.test(error.message);
+}
 
 /** The revert bytes the account's call gave, from the receipt's logs, or undefined. */
 function revertReasonOf(receipt: UserOperationReceipt): unknown {
@@ -207,9 +217,11 @@ export function createPasskeyImpl(
           new Error("Another send from this account is still running."),
         );
       sending.add(from);
-      const submitted: { now: { userOpHash: string; nonce: bigint } | null } = {
-        now: null,
-      };
+      // `signed`: signed, maybe not yet taken; `submitted`: the bundler took it.
+      const progress: {
+        signed: { userOpHash: string; nonce: bigint } | null;
+        submitted: boolean;
+      } = { signed: null, submitted: false };
       try {
         const result = await (deps.sendUserOp ?? sendKernel033UserOp)({
           credentialId,
@@ -228,8 +240,17 @@ export function createPasskeyImpl(
             if (!callDataCarries(op.callData, shown))
               throw new WalletStepError("failed", 0);
           },
-          onSubmitted: (s) => {
-            submitted.now = { userOpHash: s.userOpHash, nonce: s.nonce };
+          onSigned: (s) => {
+            progress.signed = { userOpHash: s.userOpHash, nonce: s.nonce };
+            // Remembered by the caller now: a tab closed while the bundler works must not forget a step that may land.
+            options?.onSent?.({
+              hash: s.userOpHash,
+              from,
+              nonce: Number(s.nonce),
+            });
+          },
+          onSubmitted: () => {
+            progress.submitted = true;
           },
           onPhase: (phase) => {
             const mapped = PHASES[phase];
@@ -259,14 +280,15 @@ export function createPasskeyImpl(
           });
         if (error instanceof BundlerNotConfiguredError)
           throw new WalletStepError("not-set-up", 0, error);
-        // Once the bundler took it, the operation may still land: never "nothing was sent".
-        if (submitted.now)
+        // Once the bundler took it, or may have taken it without saying so, the operation may still land: never
+        // "nothing was sent". Only an answer that says no (and no earlier try that may have got through) is "failed".
+        if (progress.signed && (progress.submitted || mayHaveBeenTaken(error)))
           throw new WalletStepError(
             "pending",
             0,
             error,
-            submitted.now.userOpHash,
-            { from, nonce: Number(submitted.now.nonce) },
+            progress.signed.userOpHash,
+            { from, nonce: Number(progress.signed.nonce) },
           );
         throw new WalletStepError("failed", 0, error);
       } finally {
@@ -287,15 +309,16 @@ export function createPasskeyImpl(
 
     async outcomeOf(sent: SentCall) {
       const receipt = await bundler.getUserOperationReceipt(sent.hash);
-      if (receipt !== null)
+      if (receipt !== null) {
+        // A receipt for another operation answers nothing about this one.
+        if (
+          String(receipt.userOpHash).toLowerCase() !== sent.hash.toLowerCase()
+        )
+          throw new Error("The bundler answered about another operation.");
         return receipt.success === true ? "landed" : "reverted";
-      let known: unknown;
-      try {
-        known = await bundler.getUserOperationByHash(sent.hash);
-      } catch {
-        // A bundler that cannot say is not a "landed" and not a "gone": the person is told it is unknown.
-        return "unknown";
       }
+      // A bundler that cannot say throws: that is neither "landed" nor "gone", so the caller says "still waiting".
+      const known = await bundler.getUserOperationByHash(sent.hash);
       if (known !== null) return "waiting";
       if (sent.nonce === null) return "unknown";
       // Gone from the bundler: another operation in its slot means it was replaced; the same slot means it was dropped.

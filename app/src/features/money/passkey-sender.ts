@@ -36,10 +36,23 @@ export function passkeySendingOn(
   return env.VITE_CREATON_PASSKEY_ACCOUNT === "1";
 }
 
-const url = (value: unknown): string | null =>
-  typeof value === "string" && /^https?:\/\/\S+$/.test(value.trim())
-    ? value.trim()
-    : null;
+/**
+ * A setting that is an address, or null. An address that carries a name and password, or a key in its query, is refused:
+ * every setting ends up in the page each visitor downloads, so a key must sit in a proxy, never in the address.
+ */
+const url = (value: unknown): string | null => {
+  if (typeof value !== "string" || !/^https?:\/\/\S+$/.test(value.trim()))
+    return null;
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.username || parsed.password) return null;
+    for (const name of parsed.searchParams.keys())
+      if (/key|token|secret|auth|password/i.test(name)) return null;
+  } catch {
+    return null;
+  }
+  return value.trim();
+};
 
 /** The build's settings, or null when any of the three is missing (so nothing is half-set). */
 export function passkeySettings(
@@ -49,7 +62,17 @@ export function passkeySettings(
   const rpcUrl = url(env.VITE_CREATON_RPC_URL);
   const bundlerUrl = url(env.VITE_CREATON_BUNDLER_URL);
   const sponsorUrl = url(env.VITE_CREATON_SPONSOR_URL);
-  if (!Number.isSafeInteger(chainId) || chainId <= 0 || !rpcUrl || !bundlerUrl)
+  // A sponsor address that was set but is not usable is never quietly dropped: the fee would then be asked at the bundler.
+  const sponsorSet =
+    typeof env.VITE_CREATON_SPONSOR_URL === "string" &&
+    env.VITE_CREATON_SPONSOR_URL.trim() !== "";
+  if (
+    !Number.isSafeInteger(chainId) ||
+    chainId <= 0 ||
+    !rpcUrl ||
+    !bundlerUrl ||
+    (sponsorSet && !sponsorUrl)
+  )
     return null;
   return { chainId, rpcUrl, bundlerUrl, ...(sponsorUrl ? { sponsorUrl } : {}) };
 }

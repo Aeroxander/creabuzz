@@ -95,6 +95,28 @@ describe("the build's settings", () => {
     ).toBeNull();
     expect(passkeySettings({})).toBeNull();
   });
+  it("refuse an address that carries a key or a password, and never drop a sponsor address that was set", () => {
+    const sponsor = (value: string) =>
+      passkeySettings({ ...full, VITE_CREATON_SPONSOR_URL: value });
+    for (const bad of [
+      "http://user:pass@s.invalid",
+      "http://s.invalid/rpc?apikey=abc",
+      "http://s.invalid/rpc?token=abc",
+      "not an address",
+    ])
+      expect(sponsor(bad)).toBeNull();
+    expect(
+      passkeySettings({
+        ...full,
+        VITE_CREATON_BUNDLER_URL: "http://b.invalid/rpc?apikey=abc",
+      }),
+    ).toBeNull();
+    // Set to nothing is the same as not set.
+    expect(sponsor("")?.sponsorUrl).toBeUndefined();
+    expect(sponsor("http://s.invalid/rpc?chain=1")?.sponsorUrl).toBe(
+      "http://s.invalid/rpc?chain=1",
+    );
+  });
   it("turn passkey sending on only with the switch set to 1", () => {
     expect(passkeySendingOn({})).toBe(false);
     expect(passkeySendingOn({ VITE_CREATON_PASSKEY_ACCOUNT: "0" })).toBe(false);
@@ -318,7 +340,7 @@ describe("the words for a phone that cannot send", () => {
     expect(words(null, READY)).toBe(
       "Backing from this phone is not switched on for this server yet. Open this page in a browser with a wallet to back now.",
     );
-    expect(words(SETTINGS, NO_PASSKEY)).toMatch(/signed in with a passkey/);
+    expect(words(SETTINGS, NO_PASSKEY)).toMatch(/does not hold the passkey/);
     expect(words(SETTINGS, NO_PASSKEY)).toMatch(/browser with a wallet/);
     expect(words(SETTINGS, READY)).toBeNull();
   });

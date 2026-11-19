@@ -56,6 +56,12 @@ export type SendPhase =
 
 interface SendOptions {
   onPhase?: (phase: SendPhase) => void;
+  /**
+   * Called as soon as the sender has signed what it is about to send, before it knows whether the network took it: from
+   * here the step may land without the sender ever hearing, so a caller that must not send it twice records it here.
+   * Only a sender that sends the whole step as one operation (`capabilities.atomicBatch`) calls it.
+   */
+  onSent?: (sent: SentCall) => void;
 }
 
 /** What a sender can and cannot do, so a screen asks before it offers a press. */
@@ -91,6 +97,9 @@ export class WalletStepError extends Error {
     super(reason);
     this.name = "WalletStepError";
   }
+
+  /** Which sender stopped the step, set by the money send so the words fit it; absent from a sender's own error. */
+  sender?: SenderKind;
 }
 
 /**

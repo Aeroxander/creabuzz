@@ -3,6 +3,7 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
 import { useWallet, useWalletAddress } from "../money/use-money";
+import { senderCapabilities } from "../money/wallet";
 import { teamProblem } from "./team-copy";
 import { useLinkWallet, useTeamWallets } from "./use-wallets";
 
@@ -18,7 +19,9 @@ export function LinkWallet({ me }: { me: string }) {
   const toast = useToast();
   const titleId = useId();
   const [problem, setProblem] = useState<string | null>(null);
-  if (!wallet.isAvailable()) return null;
+  // A passkey account cannot sign the proof this links with: there is nothing to link, so nothing is offered.
+  if (!wallet.isAvailable() || !senderCapabilities(wallet).signsMessages)
+    return null;
   const current = linked?.state === "linked" ? linked.address : null;
   const same = Boolean(current && address && current === address);
   return (
