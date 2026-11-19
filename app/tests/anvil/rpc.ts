@@ -9,7 +9,12 @@ import { fileURLToPath } from "node:url";
 import { encodeParameters } from "../../../packages/creaton-core/src/launchpad/evmAbi.ts";
 import type { Eip1193Provider } from "../../src/features/money/wallet";
 
-export const RPC = process.env.M7_ANVIL_RPC ?? "";
+export let RPC = process.env.M7_ANVIL_RPC ?? "";
+
+/** Point the harness at another anvil (a spec that starts its own chain names it here before it sends anything). */
+export function pointAtRpc(url: string): void {
+  RPC = url;
+}
 
 let id = 0;
 export async function rpc<T = unknown>(

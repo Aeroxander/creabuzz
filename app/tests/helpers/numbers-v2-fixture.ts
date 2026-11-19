@@ -8,7 +8,19 @@ import {
   chainKeyOf,
   projectIdOf,
 } from "../../../packages/creaton-core/src/launchpad/project-chain.ts";
-import example from "../../../docs/next-version/record-v2-example.json";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+/**
+ * The example, read from disk where it lives (a JSON import needs an attribute under Playwright's loader and none under
+ * vitest). Both run from the app's folder, so the path is from there.
+ */
+const example: unknown = JSON.parse(
+  readFileSync(
+    resolve(process.cwd(), "../docs/next-version/record-v2-example.json"),
+    "utf8",
+  ),
+);
 
 type Json = Record<string, unknown>;
 

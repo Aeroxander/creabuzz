@@ -37,6 +37,8 @@ export default defineConfig({
         "**/market.spec.ts",
         "**/tasks.spec.ts",
         "**/manager.spec.ts",
+        // The pot contracts on a real local chain (they start their own anvil; skipped without one).
+        "**/pot-*.spec.ts",
       ],
     },
     {
