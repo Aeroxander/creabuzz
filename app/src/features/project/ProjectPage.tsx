@@ -35,6 +35,10 @@ const ProjectMoney = lazy(() =>
   import("../pot/ProjectMoney").then((m) => ({ default: m.ProjectMoney })),
 );
 // The old design's screens (stages, rounds, the auction, the market, Team's Pair): loaded only with the legacy-screens flag.
+// Opening a project to backers carries the launch call and the contract ABIs: it loads only for a founder who has not launched.
+const LaunchCard = lazy(() =>
+  import("../launch/LaunchCard").then((m) => ({ default: m.LaunchCard })),
+);
 const LegacyProjectTop = lazy(() => import("../../legacy/LegacyProjectTop"));
 const LegacyMoneyTab = lazy(() => import("../../legacy/LegacyMoneyTab"));
 const LegacyMemberActions = lazy(() =>
@@ -153,6 +157,12 @@ function ProjectView({ project }: { project: Project }) {
             project={project}
             team={team}
           />
+        </Suspense>
+      ) : null}
+
+      {investing && isFounder && !legacy && !chainKeyOfProject(project) ? (
+        <Suspense fallback={<Card className="h-24 animate-pulse" />}>
+          <LaunchCard onLaunched={() => setTab("money")} project={project} />
         </Suspense>
       ) : null}
 

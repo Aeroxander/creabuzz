@@ -71,6 +71,8 @@ export function installPotChain(options: {
   payAndCall?: boolean;
   chain?: string;
   logs?: unknown[];
+  /** The Launcher's address: reads sent to it use its ABI first (its `platform` has five answers, the Treasury's one). */
+  launcher?: string;
 }): PotChain {
   const chain: PotChain = {
     sent: [],
@@ -108,7 +110,11 @@ export function installPotChain(options: {
             return encodeParameters(["bool"], [false]);
           return encodeParameters(["bool"], [true]);
         }
-        for (const abi of ABIS) {
+        const order =
+          options.launcher && to.toLowerCase() === options.launcher
+            ? [LAUNCHER_ABI, ...ABIS]
+            : ABIS;
+        for (const abi of order) {
           const call = decodeCall(abi, data);
           if (!call) continue;
           chain.reads.push({ name: call.name, args: call.args });

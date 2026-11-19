@@ -71,6 +71,11 @@ export function useProjectNumbers(project: Project | null | undefined) {
     queryKey: moneyKeys.project(chainKey ?? "", project?.coordinate ?? ""),
     enabled: on,
     staleTime: 20_000,
+    // A project just launched has no record until the server has read it: look again every few seconds until it does.
+    refetchInterval: (query) =>
+      query.state.data === null || query.state.data === undefined
+        ? 5_000
+        : false,
     queryFn: async (): Promise<ProjectNumbers | RemovedNumbers | null> => {
       if (!project || !chainKey) return null;
       const events = await read({

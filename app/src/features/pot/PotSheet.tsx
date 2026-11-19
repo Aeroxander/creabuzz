@@ -58,6 +58,12 @@ export interface PotSheetProps {
   playMoney: boolean;
   /** Something on the sheet makes the press wrong now (a refusal read before sending). */
   blocked?: boolean;
+  /**
+   * Run once more right before the send, after the account check: it reads what the sheet's numbers stand on again and
+   * says, in a sentence, if that moved (then nothing is sent and the sentence is shown); null means go on. A read that
+   * fails stops the press too, with words: a step is never sent on numbers that could not be checked.
+   */
+  recheck?: () => Promise<string | null>;
   children: ReactNode;
 }
 
@@ -80,11 +86,26 @@ export function PotSheet(props: PotSheetProps) {
     } catch {
       shown = null;
     }
-    setChecking(false);
-    if (shown !== props.account.toLowerCase())
+    if (shown !== props.account.toLowerCase()) {
+      setChecking(false);
       return setProblem(
         "Your wallet now shows a different account than the one these numbers were read for. Nothing was sent. Close this and open it again.",
       );
+    }
+    if (props.recheck) {
+      let moved: string | null;
+      try {
+        moved = await props.recheck();
+      } catch {
+        moved =
+          "The network could not be asked to check these numbers again, so nothing was sent. Press again in a moment.";
+      }
+      if (moved) {
+        setChecking(false);
+        return setProblem(moved);
+      }
+    }
+    setChecking(false);
     const input: MoneySendInput = {
       chainId: props.chainId,
       // What the sheet showed is what is sent: the calls were made from the same read as the numbers.

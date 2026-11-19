@@ -104,13 +104,19 @@ export function ProjectMoney({
           icon={<Banknote size={28} />}
           testId="money-none"
           title={
-            numbers?.removed ? "Not on the network any more" : "No numbers yet"
+            numbers?.removed
+              ? "Not on the network any more"
+              : chainKey === null
+                ? "Not open to backers yet"
+                : "No numbers yet"
           }
         >
           <p>
             {numbers?.removed
               ? "This project's launch left the network, so it has no money to show."
-              : "The server has not read this project's money yet. When it has, it shows here."}
+              : chainKey === null
+                ? "Nobody can back this project yet. When its founder launches it, its money shows here."
+                : "The server has not read this project's money yet. When it has, it shows here, and until then no figures are shown. This page looks again every few seconds."}
           </p>
         </EmptyState>
         {numbers?.removed ? null : (
