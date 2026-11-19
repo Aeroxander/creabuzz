@@ -113,15 +113,30 @@ pub struct WindDown {
 }
 
 /// What an agent's last `AgentSet` said. A hand-over switches every agent off
-/// without an event, so whether an agent is live is read from the chain.
+/// without an event, so whether an agent is live is read from the chain; the
+/// events only say which agents are *probably* live ([`AgentSeen::probably_live`]),
+/// which is all the cut of a long list needs.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AgentSeen {
     /// Switched on by that event.
     pub active: bool,
+    /// Whether that event came after the last change of runner (a change of
+    /// runner switches every earlier agent off without an event).
+    pub under_runner: bool,
     /// Daily dollar limit it named.
     pub usd_cap: u128,
     /// Daily Team Share limit it named.
     pub share_cap: u128,
+}
+
+impl AgentSeen {
+    /// Whether the events say the agent can act now: switched on, and set
+    /// under the current runner. The contract's own views decide in the end
+    /// (`agents(addr).active` and the epoch); this only orders accounts when
+    /// there are more than the record reads.
+    pub fn probably_live(&self) -> bool {
+        self.active && self.under_runner
+    }
 }
 
 /// Sums of events, for the record's totals.
@@ -516,7 +531,12 @@ impl Ledger {
             (Role::Treasury, "FeesCollected") => {
                 self.fees_owed = sub(self.fees_owed, num(row, "amount")?, "fees owed")?;
             }
-            (Role::Treasury, "RunnerChanged") => self.runner = address(row, "to")?,
+            (Role::Treasury, "RunnerChanged") => {
+                self.runner = address(row, "to")?;
+                for agent in self.agents.values_mut() {
+                    agent.under_runner = false;
+                }
+            }
             (Role::Treasury, "SeatOffered") => {
                 // An offer is read from the chain when it is shown.
             }
@@ -525,6 +545,7 @@ impl Ledger {
                     address(row, "agent")?,
                     AgentSeen {
                         active: flag(row, "active")?,
+                        under_runner: true,
                         usd_cap: num(row, "usdCap")?,
                         share_cap: num(row, "shareCap")?,
                     },

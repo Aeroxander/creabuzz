@@ -289,6 +289,40 @@ impl Plan {
     }
 }
 
+/// The grants whose views are read: those not finished (closed with all it
+/// keeps claimed), by id, the first [`MAX_GRANT_READS`] of them. Finished
+/// grants never take a place from one that is not. The cut is by id, so the
+/// same ledger always gives the same list (RECORD-V2 section 2.9).
+pub fn grants_to_read(ledger: &Ledger) -> Vec<u64> {
+    ledger
+        .grants
+        .values()
+        .filter(|g| !(g.state == super::ledger::GrantState::Closed && g.claimed == g.total))
+        .map(|g| g.id)
+        .take(MAX_GRANT_READS)
+        .collect()
+}
+
+/// The agent accounts whose views are read: the first [`MAX_AGENT_READS`] of
+/// all the accounts an `AgentSet` named, those the events say are live (on, and
+/// set under the current runner) before the rest, each group by address. A
+/// switched-off or handed-over account never takes a place from a live one, and
+/// the same ledger always gives the same list (RECORD-V2 section 2.10).
+pub fn agents_to_read(ledger: &Ledger) -> Vec<&String> {
+    let mut accounts: Vec<(&String, bool)> = ledger
+        .agents
+        .iter()
+        .map(|(account, seen)| (account, seen.probably_live()))
+        .collect();
+    // The map is in address order already, and the sort is stable.
+    accounts.sort_by_key(|(_, live)| !*live);
+    accounts
+        .into_iter()
+        .take(MAX_AGENT_READS)
+        .map(|(account, _)| account)
+        .collect()
+}
+
 fn address_of(text: &str, what: &str) -> anyhow::Result<[u8; 20]> {
     parse_fixed::<20>(text).ok_or_else(|| anyhow!("{what} is not an address: {text}"))
 }
@@ -370,13 +404,7 @@ pub async fn read(
         &[address_word(&runner)],
     );
 
-    let grant_ids: Vec<u64> = ledger
-        .grants
-        .values()
-        .filter(|g| !(g.state == super::ledger::GrantState::Closed && g.claimed == g.total))
-        .map(|g| g.id)
-        .take(MAX_GRANT_READS)
-        .collect();
+    let grant_ids = grants_to_read(ledger);
     let mut grants_at = Vec::new();
     for id in &grant_ids {
         let arg = [uint_word(u128::from(*id))];
@@ -402,7 +430,7 @@ pub async fn read(
             ),
         ));
     }
-    let agent_list: Vec<&String> = ledger.agents.keys().take(MAX_AGENT_READS).collect();
+    let agent_list = agents_to_read(ledger);
     let mut agents_at = Vec::new();
     for agent in &agent_list {
         let a = address_of(agent, "an agent")?;
@@ -554,3 +582,7 @@ pub async fn read(
         agents,
     })
 }
+
+#[cfg(test)]
+#[path = "views_tests.rs"]
+mod tests;

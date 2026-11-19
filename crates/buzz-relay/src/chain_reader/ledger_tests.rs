@@ -589,3 +589,41 @@ fn holders_list_people_only_biggest_first() {
     let skipped: BTreeSet<String> = holders.iter().map(|h| h.account.clone()).take(1).collect();
     assert_eq!(l.holders(&skipped).len(), holders.len() - 1);
 }
+
+/// An agent set on is "probably live" only until the runner changes: a
+/// hand-over switches every agent off with no event of its own, so the ledger
+/// must stop counting it (the views decide in the end, the ledger only orders
+/// accounts when there are more than the record reads).
+#[test]
+fn an_agent_is_probably_live_only_until_the_runner_changes() {
+    let fx = fx();
+    let rows = fx.rows("A", fx.head());
+    let set_on = rows
+        .iter()
+        .find(|r| r.event == "AgentSet" && r.fields["active"] == true)
+        .expect("the run switches an agent on");
+    let handed_over = rows
+        .iter()
+        .find(|r| r.event == "RunnerChanged")
+        .expect("the run changes the runner")
+        .clone();
+    let mut ledger = ledger_at(&fx, "A", set_on.block);
+    let (agent, seen) = ledger.agents.iter().next().expect("the agent");
+    let agent = agent.clone();
+    assert!(seen.active && seen.under_runner && seen.probably_live());
+
+    // The same event later: the runner changes, the agent's last event still says "on".
+    let mut later = handed_over;
+    later.block = set_on.block + 1_000;
+    later.log_index = 0;
+    ledger.apply(&later).expect("a change of runner");
+    let seen = &ledger.agents[&agent];
+    assert!(seen.active, "the last AgentSet still says on");
+    assert!(!seen.under_runner && !seen.probably_live());
+
+    // Set again under the new runner: live again.
+    let mut again = set_on.clone();
+    again.block = later.block + 1;
+    ledger.apply(&again).expect("set again");
+    assert!(ledger.agents[&agent].probably_live());
+}

@@ -172,7 +172,8 @@ A seat offer, a Pair's waiting calls and the agent screen's form stay chain read
 
 A grant is **finished** when it is closed and everything it keeps has been claimed; finished grants are left out of the list (they
 still count in `grantCount`). If more than 200 are not finished, the first 200 by id are listed and the top-level `truncated` is
-true.
+true. The cut is deterministic and never favours a finished grant: finished grants are not candidates at all, so one that is not
+finished is never left out for one that is.
 
 | Grant field | Type | Meaning | From |
 |---|---|---|---|
@@ -202,7 +203,7 @@ Remaining active seconds for the cliff are `max(0, startActive + cliffUnits x un
 
 | Field | Type | Meaning | From |
 |---|---|---|---|
-| `agents` | array | Accounts the runner set as helpers with daily limits, live ones first, at most 50. | events `AgentSet` (the addresses), then views |
+| `agents` | array | Accounts the runner set as helpers with daily limits, live ones first, at most 50. The cut is deterministic: the server reads at most 100 accounts, taking first those the events show as switched on under the current runner and then the rest, each group by address; the list is those read, live (by the views) first, then by address. `truncated` is true when an account was left out. | events `AgentSet` (the addresses), then views |
 | `agents[].agent` | address | The helper's account. | `AgentSet.agent` |
 | `agents[].live` | bool | Whether it can act now: switched on **and** set under the current runner. A hand-over switches every agent off without an event. | views `agents(addr).active` and `agentEpochOf(addr) == agentEpoch()` |
 | `agents[].usdCap`, `teamCap` | amount | Its daily limits: dollars out of the box, Team Share wei granted. | view `agents(addr)` |
