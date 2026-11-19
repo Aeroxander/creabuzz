@@ -13,6 +13,7 @@ deployment: 7 days on a real network, and on a test network any multiple of 168 
 | File | What it does |
 |---|---|
 | `src/Treasury.sol` | One project's pot. **Back** (`join`): pay dollars, get Shares at the price the money in the project sets this second; the platform keeps 2%. **Take out** (`leave`): burn your own Shares for your slice of the pot, any day, no vote, even when the door is shut or the project is quiet. Quotes (`quoteBack`, `quoteTakeOut`) run the very code the actions run. The team reaches the money only through the daily allowance: a small share of the pot each day moves into a box (never more than seven days' worth) and the runner, or an agent inside its own daily limit, draws from the box. A check-in every week keeps the project "active"; two units without one shuts the door and stops the allowance and vesting; 26 units lets anyone wind it down. Outside money arrives in the pot over one time unit. Team Shares (a second token) can take out only what the pot holds above what backers paid in. |
+| `src/TaskBook.sol` | One project's task queue, one clone per project, holding no dollars: a task is announced (a payee or open to anyone, a dollar maximum, a share of the pot up to 5%), waits out a notice of 14 days plus 12 hours for every 1%, is taken (only then does money move, the smaller of the dollars and the share, out of the pot), and is then paid in full, paid in part, rejected, or returned when its deadline (2 units after the take) passes. At most 10% of the pot may be taken in any 28 days, at most 8 tasks are open, and a task's serial is never reused. The Treasury is its only caller. |
 | `src/Vester.sol` | Holds the whole Team pool. A grant has its own clock in active time, a cliff of 13 units inside 104 units of vesting, and can be forfeited with a notice of one unit (the announced burn is priced into every join from the announcement). |
 | `src/ShareToken.sol` | One token code, two instances (backer Shares and Team Shares). Only the Treasury mints; the only burn is the Treasury burning a holder's own tokens in their take-out. |
 | `src/Pair.sol` | The two-signer runner: every money call needs both signers; either signer alone may check in; there is no one-signer way to spend. |
@@ -25,8 +26,11 @@ deployment: 7 days on a real network, and on a test network any multiple of 168 
 | `model/` | The exact-decimal reference model, its extension to what the contracts define, the vector generator and `vectors.json`. See `model/README.md`. |
 | `scripts/check-mutations.py`, `scripts/check-vectors.sh` | Break the contracts on purpose and see the tests notice; check the vector file is current. |
 
-Not here yet (step 2): the task queue (announce, take, accept, return) and exit notes. A task is paid today by `draw()` from the box.
-The storage leaves room for it: new fields are appended after the step 1 fields, `locked` and `notesOwed` are declared and always zero.
+Step 2, first pass (this tree): the task queue (`announceTask`, `takeTask`, `acceptTask`, `rejectTask`, `cancelTask`, `returnTask`) with
+its notice, caps and deadline, the money set aside for taken tasks (`locked`), and the return of a task that ran out inside every
+`settle()`. Not yet: exit notes. A leaver is paid cash on the pot without the money set aside and gets no note for it, so **this tree
+must not be deployed with real holders until the second pass adds the notes** (design 2.3c: the stayers would get a windfall). A task
+can still be paid by `draw()` from the box, the other door.
 
 ## Run it
 

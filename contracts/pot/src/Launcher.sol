@@ -7,8 +7,9 @@ import {ShareToken} from "./ShareToken.sol";
 import {Treasury} from "./Treasury.sol";
 import {Vester} from "./Vester.sol";
 import {Pair} from "./Pair.sol";
+import {TaskBook} from "./TaskBook.sol";
 import {Parts} from "./Parts.sol";
-import {IShares, ITreasuryClock, ITreasuryRunner, IPair} from "./Interfaces.sol";
+import {IShares, ITreasuryClock, ITreasuryRunner, IPair, ITaskBook} from "./Interfaces.sol";
 
 /// @notice What the Launcher reads of the dollar token: the number of decimals (every amount in the Treasury is in raw
 /// units of a 6-decimal token).
@@ -19,7 +20,7 @@ interface IDecimals {
 
 /// @title Launcher
 /// @notice One per network. In one transaction `launch` creates a project's two ShareTokens (backer Shares and Team Shares),
-/// Treasury and Vester as small clones, mints the whole Team pool to the Vester and ties them to a project id the founder
+/// Treasury, Vester and TaskBook as small clones, mints the whole Team pool to the Vester and ties them to a project id the founder
 /// chose. The caller is the founder and the first runner. Everything else about a project (the pot, joining and leaving, the
 /// allowance, grants, forfeits, the quiet rules) lives in those contracts; this one only keeps:
 ///  - the platform settings new projects are born with (the dollar, who gets the fee, the fee, the time unit, the agents'
@@ -86,6 +87,7 @@ contract Launcher {
     address public immutable treasuryImpl;
     address public immutable vesterImpl;
     address public immutable pairImpl;
+    address public immutable tasksImpl;
 
     /// @notice True for a Pair this Launcher made. The Treasury asks it.
     mapping(address => bool) public isPair;
@@ -126,10 +128,10 @@ contract Launcher {
     /// @param parts_ The contract that made the ShareToken, Treasury, Vester and Pair implementations.
     constructor(address admin_, Platform memory initial, Parts parts_) {
         (shareImpl, treasuryImpl) = (parts_.shareImpl(), parts_.treasuryImpl());
-        (vesterImpl, pairImpl) = (parts_.vesterImpl(), parts_.pairImpl());
+        (vesterImpl, pairImpl, tasksImpl) = (parts_.vesterImpl(), parts_.pairImpl(), parts_.tasksImpl());
         if (
             shareImpl.code.length == 0 || treasuryImpl.code.length == 0 || vesterImpl.code.length == 0
-                || pairImpl.code.length == 0
+                || pairImpl.code.length == 0 || tasksImpl.code.length == 0
         ) revert BadStack();
         testNetwork = block.chainid == 31_337 || block.chainid == 11_155_111;
         admin = admin_;
@@ -170,6 +172,8 @@ contract Launcher {
         shares = shareImpl.clone();
         team = shareImpl.clone();
         vester = vesterImpl.clone();
+        address tasks = tasksImpl.clone();
+        TaskBook(tasks).initialize(treasury, s.unit);
         ShareToken(shares).initialize(name, symbol, treasury, address(0), 0);
         ShareToken(team)
             .initialize(string.concat(name, " Team"), string.concat(symbol, "-T"), treasury, vester, terms.teamPool);
@@ -188,7 +192,8 @@ contract Launcher {
                     ratePpm: terms.ratePpm,
                     feeBps: s.feeBps,
                     agentUsd: s.agentUsd,
-                    agentTeam: uint128(terms.teamPool / AGENT_SHARE_DIV)
+                    agentTeam: uint128(terms.teamPool / AGENT_SHARE_DIV),
+                    tasks: ITaskBook(tasks)
                 })
             );
         Project memory p = Project({

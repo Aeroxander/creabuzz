@@ -4,8 +4,7 @@
   vectors     a changed FORMULA makes `test/ModelVectors.t.sol` fail (the contracts are bound to the reference model);
   invariants  a removed or changed GUARD makes `test/PotInvariants.t.sol` or `test/MustBind.t.sol` fail (the invariant run
               and the handler would catch it);
-  leftovers   a changed rule of the step 1 leftovers (outside money released by one formula, a Pair that lives two time units of
-              its project, a take-out that burns only the caller's own Shares) makes the test file that binds it fail.
+  tasks       a changed rule or removed guard of the task queue (step 2) makes the test file that binds it fail.
 
 Each mutation is an exact one-line text replacement that must occur exactly once. A mutation that leaves its tests green is a
 hole in the tests: the script prints it and exits 1. The real project is never touched: a minimal copy goes to a temporary folder
@@ -35,8 +34,13 @@ SF = "test/SettleFirst.t.sol"
 EX = "test/Expiry.t.sol"
 INV = "test/PotInvariants.t.sol"
 MB = "test/MustBind.t.sol"
+TB = "test/TaskBook.t.sol"
+TK = "test/Tasks.t.sol"
+TC = "test/TasksCaps.t.sol"
+TE = "test/TasksExpiry.t.sol"
 AR = "test/Arrival.t.sol"
 OB = "test/OwnBurn.t.sol"
+AM = "test/AccessMatrix.t.sol"
 MUTATIONS = [
     # ---- formulas: the vectors must notice
     ("offset-dollar", "src/PotMath.sol", "OFFSET_USD = 1;", "OFFSET_USD = 1e6;", QO, "the virtual money in the quote grows to a dollar"),
@@ -80,7 +84,47 @@ MUTATIONS = [
     ("raise-wait", "src/Treasury.sol", "if (block.timestamp < uint256(proposedAt) + unit) revert NotYet(uint256(proposedAt) + unit);", "if (block.timestamp < uint256(proposedAt) + unit / 2) revert NotYet(uint256(proposedAt) + unit);", "test/Allowance.t.sol", "a rate raise waits half a time unit instead of one"),
     ("rate-ceiling", "src/Treasury.sol", "MAX_RATE_PPM = 2000;", "MAX_RATE_PPM = 2001;", "test/Allowance.t.sol", "the 0.20% a day ceiling"),
     ("burn-anyone", "src/ShareToken.sol", "function burnFor(address from, uint256 value) external {\n        if (msg.sender != controller) revert NotController();", "function burnFor(address from, uint256 value) external {", "test/ShareToken.t.sol", "anyone can burn another's Shares (the burn authority)"),
-    # ---- step 2, the step 1 leftovers: the unit tests of each must notice
+    # ---- step 2, the task queue: the unit tests of each rule and guard must notice
+    ("notice-base", "src/TaskBook.sol", "return (2 * n + Math.ceilDiv(uint256(shareBps) * n, 1400), n, 2 * n);", "return (n + Math.ceilDiv(uint256(shareBps) * n, 1400), n, 2 * n);", TB, "the notice floor of two units drops to one"),
+    ("notice-per-share", "src/TaskBook.sol", "return (2 * n + Math.ceilDiv(uint256(shareBps) * n, 1400), n, 2 * n);", "return (2 * n, n, 2 * n);", TB, "the 12 hours per 1% of the notice are gone"),
+    ("notice-rounds-down", "src/TaskBook.sol", "Math.ceilDiv(uint256(shareBps) * n, 1400)", "((uint256(shareBps) * n) / 1400)", TB, "the notice per ten-thousandth rounds down (for holders' worse)"),
+    ("take-window", "src/TaskBook.sol", "return (2 * n + Math.ceilDiv(uint256(shareBps) * n, 1400), n, 2 * n);", "return (2 * n + Math.ceilDiv(uint256(shareBps) * n, 1400), 2 * n, 2 * n);", TB, "the take window is two units, not one"),
+    ("deadline", "src/TaskBook.sol", "uint64 due = uint64(t + 2 * uint256(unit));", "uint64 due = uint64(t + 3 * uint256(unit));", TB, "a taken task is due three units after the take, not two"),
+    ("cap-window", "src/TaskBook.sol", "uint256 span = 4 * uint256(unit);", "uint256 span = 3 * uint256(unit);", TB, "the rolling cap counts 21 days, not 28"),
+    ("cap-1001", "src/TaskBook.sol", "CAP_BPS = 1000;", "CAP_BPS = 1001;", TC, "the 10% cap becomes 10.01%"),
+    ("cap-check", "src/TaskBook.sol", "if (used + bps > CAP_BPS) revert CapReached(used, bps, CAP_BPS);", "", TC, "no cap on money taken"),
+    ("cap-rounds-down", "src/TaskBook.sol", "uint256 bps = Math.ceilDiv(amount * BPS, pot);", "uint256 bps = (amount * BPS) / pot;", TC, "a take counts against the cap rounded down, not up"),
+    ("per-task-501", "src/TaskBook.sol", "MAX_SHARE_BPS = 500;", "MAX_SHARE_BPS = 501;", TB, "a task may ask for 5.01% of the pot"),
+    ("slots-nine", "src/TaskBook.sol", "MAX_OPEN = 8;", "MAX_OPEN = 9;", TB, "nine open tasks"),
+    ("ring-guard", "src/TaskBook.sol", "if (old & 0xffff != 0 && (old >> 16) + 4 * uint256(unit) > t) revert TakesFull();", "", TB, "a take may overwrite one still inside the window"),
+    ("serial-reuse", "src/TaskBook.sol", "serial = nextSerial++;", "serial = nextSerial;", TB, "a serial is used again"),
+    ("larger-of", "src/TaskBook.sol", "amount = Math.min(k.maxDollars, Math.mulDiv(pot, k.shareBps, BPS));", "amount = Math.max(k.maxDollars, Math.mulDiv(pot, k.shareBps, BPS));", TB, "a take sets aside the larger of the dollars and the share"),
+    ("notice-guard", "src/TaskBook.sol", "if (t < k.noticeEnd) revert NoticeRunning(k.noticeEnd);", "", TB, "a task is taken before its notice is over"),
+    ("window-guard", "src/TaskBook.sol", "if (t >= k.expiresAt) revert TakeWindowOver();", "", TB, "a task is taken after its take window"),
+    ("accept-deadline", "src/TaskBook.sol", "if (block.timestamp >= k.deadline) revert WrongTaskState();", "", TB, "a task is accepted after its deadline"),
+    ("accept-zero", "src/TaskBook.sol", "if (pay == 0) revert BadInput();", "", TB, "an accept that pays nothing"),
+    ("cancel-after-take", "src/TaskBook.sol", "if (k.state != State.Announced) revert WrongTaskState();\n        _end(serial, k, State.Cancelled);", "_end(serial, k, State.Cancelled);", TB, "a taken task can be cancelled"),
+    ("payee-check", "src/TaskBook.sol", "if (k.payee != address(0) && k.payee != who) revert NotAllowed();", "", TB, "anyone takes a named task"),
+    ("pay-to-payee", "src/TaskBook.sol", "(r.to, r.pay, r.c, r.n) = (k.takenBy, pay, k.stayer, k.noteFace);", "(r.to, r.pay, r.c, r.n) = (k.payee, pay, k.stayer, k.noteFace);", TK, "payment goes to the named payee, not to who took the task"),
+    ("notes-first", "src/TaskBook.sol", "r.np = Math.mulDiv(r.n, rem, l);", "r.np = Math.min(r.n, rem);", TB, "on a part payment the notes are repaid first, not pro rata"),
+    ("notes-pool-whole", "src/TaskBook.sol", "r.np = Math.mulDiv(r.n, rem, l);", "r.np = r.n;", TB, "the notes' pool is not scaled by what is left"),
+    ("stayers-floor", "src/TaskBook.sol", "r.pp = rem - r.np;", "r.pp = Math.mulDiv(r.c, rem, l);", TB, "the stayers' share rounds down too, so a unit is left over"),
+    ("open-list", "src/TaskBook.sol", "_open[i] = _open[n];", "", TB, "an ended task stays in the open list"),
+    ("book-treasury-only", "src/TaskBook.sol", "if (msg.sender != treasury) revert NotAllowed();", "", AM, "anyone changes the task book"),
+    ("quiet-check", "src/Treasury.sol", "if (block.timestamp >= activeEnd()) revert ProjectQuiet();", "", TK, "a task is announced or taken while the check-in window is closed"),
+    ("payee-seat", "src/Treasury.sol", "if (payee != address(0) && _isTeamSeat(payee)) revert NotAllowed();", "", TK, "the runner or a signer may be the payee"),
+    ("taker-seat", "src/Treasury.sol", "        if (_isTeamSeat(msg.sender)) revert NotAllowed();\n        uint64 next;", "        uint64 next;", TK, "the runner or a signer may take an open task"),
+    ("accept-seat", "src/Treasury.sol", "if (_isTeamSeat(r.to)) revert NotAllowed();", "", TK, "a taker who became the runner is paid by themselves"),
+    ("accept-anyone", "src/Treasury.sol", "function acceptTask(uint64 serial, uint256 payDollars) external nonReentrant onlyRunner {", "function acceptTask(uint64 serial, uint256 payDollars) external nonReentrant {", TK, "anyone accepts a task"),
+    ("accept-no-lock", "src/Treasury.sol", "function acceptTask(uint64 serial, uint256 payDollars) external nonReentrant onlyRunner {", "function acceptTask(uint64 serial, uint256 payDollars) external onlyRunner {", TK, "the payee can re-enter while it is paid"),
+    ("pay-before-book", "src/Treasury.sol", "        _book(2, serial, r);\n        _pay(r.to, r.pay);", "        _pay(r.to, r.pay);\n        _book(2, serial, r);", TK, "the worker is paid before the buckets are final"),
+    ("expiry-skipped", "src/Treasury.sol", "if (nextExpiry != 0 && block.timestamp >= nextExpiry) {", "if (false) {", TE, "a task that ran out is not returned in the settle"),
+    ("expiry-first", "src/Treasury.sol", ["        s.arriving = arriving;\n        uint256 end = activeEnd();", "        s.stay = locked;\n        uint256 nx = nextExpiry;\n        if (nx != 0 && t >= nx) {\n            s.expC = tasks.dueC(t);\n            s.stay -= s.expC;\n            s.pot += s.expC;\n        }"], ["        s.arriving = arriving;\n        s.stay = locked;\n        if (nextExpiry != 0 && t >= nextExpiry) {\n            s.expC = tasks.dueC(t);\n            s.stay -= s.expC;\n            s.pot += s.expC;\n        }\n        uint256 end = activeEnd();", "        s.stay = locked;\n        uint256 nx = nextExpiry;\n        if (nx == 0 && t >= nx) {\n            s.expC = tasks.dueC(t);\n            s.stay -= s.expC;\n            s.pot += s.expC;\n        }"], TE, "returned money is charged allowance for time it was not in the pot (expiry before accrual)"),
+    ("quote-no-stay", "src/Treasury.sol", "PotMath.quote(s.pot, s.arriving + s.stay, paidIn, b, ge)", "PotMath.quote(s.pot, s.arriving, paidIn, b, ge)", TK, "a joiner is priced without the money set aside for tasks"),
+    ("credit-no-stay", "src/Treasury.sol", "PotMath.credit(m, n, paidIn, b, s.pot, s.arriving + s.stay, ge)", "PotMath.credit(m, n, paidIn, b, s.pot, s.arriving, ge)", TK, "a joiner is credited on other money than it was priced on"),
+    ("locked-line", "src/Treasury.sol", "lockedLine = s.stay;", "lockedLine = locked;", TE, "the quote's locked line ignores a task that has already run out"),
+    ("wind-sweep", "src/Treasury.sol", "uint256 back = tasks.sweepAll();", "uint256 back = 0;", TK, "a wind-down leaves taken tasks open"),
+    ("settled-event", "src/Treasury.sol", "|| s.released != 0 || s.expC != 0) {", "|| s.released != 0) {", TE, "a return that moved only money emits no Settled"),
     ("release-per-call", "src/Treasury.sol", "uint256 target = t >= until ? total : Math.mulDiv(total, t - arrivalStart, until - arrivalStart);", "uint256 target = (total - s.arriving) + (t >= until ? s.arriving : Math.mulDiv(s.arriving, t - last, until - last));", AR, "the outside money released depends on how often settle is called"),
     ("stream-start", "src/Treasury.sol", "(arrivalStart, arrivalTotal) = (uint64(t), old + x);", "(arrivalStart, arrivalTotal) = (uint64(t), x);", AR, "a merged stream forgets what had not arrived"),
     ("pair-ttl-fixed", "src/Pair.sol", "PROPOSAL_TTL = 2 * uint256(treasury_.unit());", "PROPOSAL_TTL = 14 days;", EX, "a Pair's proposal lives 14 days whatever the time unit"),

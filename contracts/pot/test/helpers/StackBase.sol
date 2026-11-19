@@ -9,6 +9,7 @@ import {Vester} from "../../src/Vester.sol";
 import {Pair} from "../../src/Pair.sol";
 import {Parts} from "../../src/Parts.sol";
 import {Launcher} from "../../src/Launcher.sol";
+import {TaskBook} from "../../src/TaskBook.sol";
 import {QuoteToken} from "../mocks/QuoteToken.sol";
 
 /// @notice The handles of one launched project.
@@ -136,6 +137,11 @@ abstract contract StackBase is Test {
         vm.prank(second);
         pair = Pair(launcher.makePair(key, founder));
         assertEq(address(pair), predicted);
+    }
+
+    /// @dev The default project's task book.
+    function _book() internal view returns (TaskBook) {
+        return TaskBook(address(t.tasks()));
     }
 
     /// @dev Propose a call to the Treasury from `a` and confirm it from `b`.

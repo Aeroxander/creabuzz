@@ -2,6 +2,8 @@
 pragma solidity ^0.8.30;
 
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
+import {Vm} from "forge-std/Vm.sol";
+import {TaskBook} from "../src/TaskBook.sol";
 import {StackBase, Proj} from "./helpers/StackBase.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {Treasury} from "../src/Treasury.sol";
@@ -9,7 +11,7 @@ import {Vester} from "../src/Vester.sol";
 import {Pair} from "../src/Pair.sol";
 import {ShareToken} from "../src/ShareToken.sol";
 import {Parts} from "../src/Parts.sol";
-import {ITreasuryRunner, ITreasuryClock, IShares} from "../src/Interfaces.sol";
+import {ITreasuryRunner, ITreasuryClock, IShares, ITaskBook} from "../src/Interfaces.sol";
 
 /// @notice A dollar with the wrong number of decimals.
 contract Dollar18 {
@@ -70,7 +72,40 @@ contract LauncherTest is StackBase {
         assertEq(key, launcher.keyOf(founder, "p1"));
     }
 
+    function test_aProjectIsBornWithItsTaskBookTiedToItsTreasury() public view {
+        assertEq(address(_book()), address(t.tasks()));
+        assertGt(address(_book()).code.length, 0);
+        assertEq(_book().treasury(), address(t));
+        assertEq(_book().unit(), UNIT);
+        assertEq(_book().nextSerial(), 1);
+        assertEq(launcher.tasksImpl(), parts.tasksImpl(), "the Launcher copies what Parts made");
+        assertEq(t.nextExpiry(), 0);
+    }
+
+    function test_everyProjectGetsABookOfItsOwn() public {
+        Proj memory p = _launch(alice, "second", 1000, POOL);
+        assertTrue(address(p.t.tasks()) != address(t.tasks()));
+        assertEq(TaskBook(address(p.t.tasks())).treasury(), address(p.t));
+    }
+
+    function test_theBookReadyEventComesInTheLaunchTransaction() public {
+        bytes32 h = launcher.settingsHash();
+        vm.recordLogs();
+        vm.prank(alice);
+        launcher.launch("ev", "P", "P", Launcher.Terms({ratePpm: 1000, teamPool: POOL}), h);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bool seen;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].topics[0] == Treasury.TasksReady.selector) {
+                seen = true;
+                assertTrue(abi.decode(logs[i].data, (address)) != address(0));
+            }
+        }
+        assertTrue(seen, "TasksReady was emitted by the new Treasury");
+    }
+
     function test_theCloneAndItsPiecesCannotBeSetUpAgain() public {
+        ITaskBook book = t.tasks();
         vm.expectRevert(Treasury.BadSetup.selector);
         t.initialize(
             Treasury.Setup({
@@ -85,7 +120,8 @@ contract LauncherTest is StackBase {
                 ratePpm: 1,
                 feeBps: 1,
                 agentUsd: 1,
-                agentTeam: 1
+                agentTeam: 1,
+                tasks: book
             })
         );
         vm.expectRevert(ShareToken.BadBirth.selector);
@@ -94,6 +130,8 @@ contract LauncherTest is StackBase {
         team.initialize("x", "x", address(t), address(v), 1);
         vm.expectRevert(Vester.AlreadyInitialized.selector);
         v.initialize(ITreasuryClock(address(t)), IShares(address(team)), POOL);
+        vm.expectRevert(TaskBook.BadSetup.selector);
+        TaskBook(address(book)).initialize(stranger, UNIT);
     }
 
     function test_theImplementationsAreLocked() public {
@@ -101,6 +139,10 @@ contract LauncherTest is StackBase {
         Vester vesterImpl = Vester(launcher.vesterImpl());
         Pair pairImpl = Pair(launcher.pairImpl());
         Treasury treasuryImpl = Treasury(launcher.treasuryImpl());
+        TaskBook bookImpl = TaskBook(launcher.tasksImpl());
+        vm.expectRevert(TaskBook.BadSetup.selector);
+        bookImpl.initialize(address(t), UNIT);
+        assertEq(bookImpl.treasury(), address(1), "the TaskBook implementation is locked");
         vm.expectRevert(ShareToken.BadBirth.selector);
         tokenImpl.initialize("x", "x", address(t), address(0), 0);
         vm.expectRevert(Vester.AlreadyInitialized.selector);

@@ -8,10 +8,10 @@ git-ignored.
 ## What gets deployed
 
 `script/DeployPot.s.sol` deploys, in this order: the dollar (PlayDollar on a test network, or an existing 6-decimal token
-you name), `Parts` (the four implementations the Launcher clones: Treasury, Vester, Pair and the share token), and the
+you name), `Parts` (the five implementations the Launcher clones: Treasury, Vester, Pair, the share token and the TaskBook), and the
 `Launcher` with the platform settings (the dollar, who receives the platform fee, the fee, the time unit, the default daily
 dollar limit of an agent). It writes `deployments/pot-<chainid>.json` with the addresses. Projects are then launched by
-founders through `Launcher.launch`; each gets its own Treasury, Vester and two tokens.
+founders through `Launcher.launch`; each gets its own Treasury, Vester, TaskBook (the task queue; its address is `Treasury.tasks()`) and two tokens.
 
 ## Settings (environment variables, all optional)
 

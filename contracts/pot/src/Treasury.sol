@@ -5,7 +5,7 @@ import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {IERC1363Receiver} from "oz5/interfaces/IERC1363Receiver.sol";
 import {SafeERC20} from "oz5/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "oz5/utils/math/Math.sol";
-import {IShares, IVester, ILauncherPairs, IPairSigners, IPair} from "./Interfaces.sol";
+import {IShares, IVester, ILauncherPairs, IPairSigners, IPair, ITaskBook} from "./Interfaces.sol";
 import {PotMath} from "./PotMath.sol";
 import {RollingCap} from "./RollingCap.sol";
 
@@ -18,7 +18,9 @@ import {RollingCap} from "./RollingCap.sol";
 ///  - `box`: the allowance the team may draw, at most 7 days of accrual;
 ///  - `arriving`: outside money released into the pot evenly over one time unit N;
 ///  - `feesOwed`: the platform's 2% waiting to be collected (so a blocked platform address cannot block join or leave);
-///  - `locked` and `notesOwed`: reserved for step 2 (tasks), always zero now.
+///  - `locked` and `notesOwed`: money set aside for tasks that were taken. `locked` is the sum of the stayers' claims on
+///    those tasks (what a joiner's price counts at face); `notesOwed` is what is held for exit notes against them, and, once
+///    a task has ended, for the notes still to be claimed. Dollars sit in exactly one of the buckets.
 /// Backer Shares (B) and Team Shares (G) are the supplies of the two ShareTokens; nothing else stores them.
 ///
 /// `_settled()` is the one internal view that works out the allowance, the box cap and the arriving release up to now.
@@ -42,6 +44,7 @@ contract Treasury {
         uint16 feeBps; // the platform fee on joins, ten-thousandths; at most 500
         uint128 agentUsd; // default daily dollar limit of an agent
         uint128 agentTeam; // default daily Team Share limit of an agent (pool / 1000)
+        ITaskBook tasks; // the project's task queue; its Treasury is this one
     }
 
     /// @notice What an agent account may do, and its daily limits.
@@ -61,6 +64,8 @@ contract Treasury {
         uint256 back; // moved from the box back into the pot (above the cap)
         uint256 released; // moved from arriving into the pot
         uint256 dt; // active seconds since the last settle
+        uint256 stay; // the stayers' claim on taken tasks, after any task that has run out came back
+        uint256 expC; // moved from locked into the pot because a task ran out
     }
 
     uint256 public constant PPM = 1e6;
@@ -107,9 +112,11 @@ contract Treasury {
     uint256 public arriving;
     uint64 public arrivalEnd;
     uint256 public feesOwed;
-    /// @notice Reserved for step 2 (money locked for a taken task). Always zero now; counted in `unaccounted()`.
+    /// @notice The sum of the stayers' claims on taken tasks: the money set aside that a joiner's price counts at face. Counted
+    /// in `unaccounted()`.
     uint256 public locked;
-    /// @notice Reserved for step 2 (exit notes owed). Always zero now; counted in `unaccounted()`.
+    /// @notice Dollars held for exit notes: the face of the notes against open tasks, and what is left to claim on tasks that
+    /// ended. Counted in `unaccounted()`.
     uint256 public notesOwed;
 
     // ---- clock and rate
@@ -138,7 +145,11 @@ contract Treasury {
     mapping(address => RollingCap.Ring) private _agentUsdRing;
     mapping(address => RollingCap.Ring) private _agentTeamRing;
 
-    // ---- step 2: the arriving stream (appended after the step 1 fields; none of those moved)
+    // ---- step 2: tasks and the arriving stream (appended after the step 1 fields; none of those moved)
+    /// @notice The project's task queue (see TaskBook).
+    ITaskBook public tasks;
+    /// @notice The earliest second a task runs out (the end of a take window or a deadline); zero when none is open.
+    uint64 public nextExpiry;
     /// @notice When the current stream of outside money started arriving; with `arrivalTotal` it makes what has been
     /// released by now one rounding of one formula, however often `settle` is called.
     uint64 public arrivalStart;
@@ -160,7 +171,8 @@ contract Treasury {
         uint256 paidInAfter,
         uint256 sharesAfter
     );
-    /// @notice A holder took money out. `note` is zero until step 2.
+    /// @notice A holder took money out. `note` is what was set aside for them against taken tasks (always zero in this
+    /// build: exit notes arrive with the second pass of step 2).
     event Left(
         address indexed who,
         address indexed to,
@@ -209,6 +221,21 @@ contract Treasury {
         uint256 activeSecondsAfter,
         uint64 time
     );
+    /// @notice The project's task queue, once, at birth.
+    event TasksReady(address book);
+    /// @notice Money moved between the pot and the money set aside for tasks. `kind`: 1 a task was taken (`amount` is what
+    /// was set aside, `who` the taker), 2 a task was paid (`amount` the payment, `who` the worker), 3 a task was rejected
+    /// (`amount` came back to the pot), 4 tasks ran out or were returned by a wind-down (`serial` 0, `amount` back to the
+    /// pot). Always with the three buckets after the move.
+    event TaskMoney(
+        uint8 kind,
+        uint64 indexed serial,
+        address who,
+        uint256 amount,
+        uint256 potAfter,
+        uint256 lockedAfter,
+        uint256 notesOwedAfter
+    );
     /// @notice The platform's owed fees were sent.
     event FeesCollected(address indexed to, uint256 amount);
     /// @notice The runner offered the seat to `next`.
@@ -237,6 +264,10 @@ contract Treasury {
     error NotYet(uint256 readyAt);
     error OfferExpired();
     error NoOwner();
+    /// @notice The check-in window is closed (or the project is wound down): no new task can be announced or taken.
+    error ProjectQuiet();
+    /// @notice The book returned something that does not add up (fails closed).
+    error Inconsistent();
 
     modifier nonReentrant() {
         if (_locked) revert Reentrancy();
@@ -270,11 +301,14 @@ contract Treasury {
                 || address(s.quote) == address(0) || address(s.shares) == address(0) || address(s.team) == address(0)
                 || s.unit == 0 || s.unit % 168 != 0 || s.ratePpm > MAX_RATE_PPM || s.feeBps > MAX_FEE_BPS
                 || s.shares.controller() != address(this) || s.team.controller() != address(this)
+                || address(s.tasks) == address(0) || s.tasks.treasury() != address(this) || s.tasks.unit() != s.unit
         ) revert BadSetup();
         (quote, shares, team, vester) = (s.quote, s.shares, s.team, s.vester);
         (founder, platform, salePath, runner) = (s.founder, s.platform, s.salePath, s.founder);
         (unit, feeBps, ratePpm, agentUsd, agentTeam) = (s.unit, s.feeBps, s.ratePpm, s.agentUsd, s.agentTeam);
         (lastSettle, lastCheckIn, doorFlag) = (uint64(block.timestamp), uint64(block.timestamp), true);
+        tasks = s.tasks;
+        emit TasksReady(address(s.tasks));
     }
 
     // ================================================= join and leave ================================================
@@ -309,7 +343,7 @@ contract Treasury {
     }
 
     /// @notice What backing with `amount` would do right now, exactly as `join` would: the Shares you get, what taking
-    /// them out at once would give, money set aside for tasks (always zero until step 2), and outside money still arriving.
+    /// them out at once would give, money set aside for tasks (counted at face in the price), and outside money still arriving.
     function quoteBack(uint256 amount)
         external
         view
@@ -323,7 +357,7 @@ contract Treasury {
             uint256 b = shares.totalSupply();
             takeOutNow = PotMath.cash(n, s.pot + m, paidIn + credit, b + n, team.totalSupply());
         }
-        lockedLine = locked;
+        lockedLine = s.stay;
     }
 
     /// @notice The platform fee on a payment of `amount`.
@@ -544,6 +578,88 @@ contract Treasury {
         emit FeesCollected(platform, owed);
     }
 
+    // ===================================================== tasks =====================================================
+
+    /// @notice Announce a task: `what` (the hash of the signed task record), who is paid (`payee`, or zero for whoever takes it
+    /// first), the most it may cost in dollars and the share of the pot it may ask for, 1 to 500 ten-thousandths (5% a task).
+    /// Nothing moves: holders get a notice of 14 days plus 12 hours for every 1% asked (`noticeFor`), then the task can be
+    /// taken for one more time unit. Only the runner (with a Pair: both signers); not once the check-in window is closed or
+    /// after a wind-down. The payee may not be a signer, a contract of the project or the runner.
+    /// @return serial The task's number, never reused.
+    function announceTask(bytes32 what, address payee, uint256 maxDollars, uint16 shareBps)
+        external
+        nonReentrant
+        onlyRunner
+        returns (uint64 serial)
+    {
+        _settle();
+        _openWindow();
+        if (
+            payee == address(this) || payee == address(quote) || payee == address(shares) || payee == address(team)
+                || payee == vester || payee == address(tasks)
+        ) {
+            revert BadInput();
+        }
+        if (payee != address(0) && _isTeamSeat(payee)) revert NotAllowed();
+        (serial, nextExpiry) = tasks.announce(what, payee, maxDollars, shareBps);
+    }
+
+    /// @notice Take a task whose notice is over. Only the named payee, or anyone when the task is open (the first taker is
+    /// then the one paid); never the runner or a Pair signer. Only now does money move: the smaller of the stated dollars
+    /// and the stated share of the pot as it is this second, out of the pot into the task. A take that would pass 10% of
+    /// the pot in any 28 days reverts.
+    /// @param serial The task.
+    /// @param minAmount The least you accept to have set aside.
+    /// @return amount The dollars set aside.
+    function takeTask(uint64 serial, uint256 minAmount) external nonReentrant returns (uint256 amount) {
+        _settle();
+        _openWindow();
+        if (_isTeamSeat(msg.sender)) revert NotAllowed();
+        uint64 next;
+        (amount, next) = tasks.take(serial, msg.sender, pot, minAmount);
+        (pot, locked, nextExpiry) = (pot - amount, locked + amount, next);
+        _taskMoney(1, serial, msg.sender, amount);
+    }
+
+    /// @notice Pay `payDollars` of a taken task's money to whoever took it, and nobody else. A part payment pays the worker
+    /// first and what is left comes back at one ratio to the pot and to the exit notes. Only the runner (with a Pair: both
+    /// signers), and not when the taker has since become a signer.
+    function acceptTask(uint64 serial, uint256 payDollars) external nonReentrant onlyRunner {
+        _settle();
+        ITaskBook.Resolved memory r = tasks.accept(serial, payDollars);
+        if (_isTeamSeat(r.to)) revert NotAllowed();
+        _book(2, serial, r);
+        _pay(r.to, r.pay);
+    }
+
+    /// @notice Send a taken task's money back at once: nothing is paid. Only the runner (with a Pair: both signers).
+    function rejectTask(uint64 serial) external nonReentrant onlyRunner {
+        _settle();
+        _book(3, serial, tasks.reject(serial));
+    }
+
+    /// @notice Withdraw a task nobody has taken. Only the runner (with a Pair: both signers).
+    function cancelTask(uint64 serial) external nonReentrant onlyRunner {
+        _settle();
+        nextExpiry = tasks.cancel(serial);
+    }
+
+    /// @notice Make sure a task that ran out is back. Anyone. Every action settles first and that already returns a task
+    /// whose time is up, so this is only a named call for a keeper and the app; it reverts while the task is still open.
+    function returnTask(uint64 serial) external nonReentrant {
+        _settle();
+        tasks.requireReturned(serial);
+    }
+
+    /// @notice The notice a task of `shareBps` gets, the time it can then be taken, and how long after the take it is due.
+    function noticeFor(uint16 shareBps)
+        external
+        view
+        returns (uint256 noticeSecs, uint256 takeWindowSecs, uint256 dueSecs)
+    {
+        return tasks.noticeFor(shareBps);
+    }
+
     // ================================================== wind-down ====================================================
 
     /// @notice Wind the project down, for good. The runner by choice (with a Pair: both signers), or anyone after 26 time
@@ -571,6 +687,13 @@ contract Treasury {
         box = 0;
         (windDownKind, windDownAt) = (kind, uint64(block.timestamp));
         emit WoundDown(kind, msg.sender, uint64(block.timestamp), returned);
+        // open tasks are ended: announced ones cancelled, taken ones return their money (design 2.6)
+        uint256 back = tasks.sweepAll();
+        nextExpiry = 0;
+        if (back != 0) {
+            (locked, pot) = (locked - back, pot + back);
+            _taskMoney(4, 0, address(0), back);
+        }
     }
 
     // ============================================== Team Share burn hooks ============================================
@@ -711,13 +834,15 @@ contract Treasury {
         m = a - fee;
         uint256 b = shares.totalSupply();
         uint256 ge = team.totalSupply() - Z;
-        (uint256 num, uint256 den) = PotMath.quote(s.pot, s.arriving, paidIn, b, ge);
+        // outside money still arriving and money set aside for taken tasks both count at face, so a joiner pays for work
+        // already funded and what comes back is no windfall to them
+        (uint256 num, uint256 den) = PotMath.quote(s.pot, s.arriving + s.stay, paidIn, b, ge);
         n = PotMath.sharesFor(m, num, den);
-        credit = PotMath.credit(m, n, paidIn, b, s.pot, s.arriving, ge);
+        credit = PotMath.credit(m, n, paidIn, b, s.pot, s.arriving + s.stay, ge);
     }
 
     function _join(address payer, uint256 a, uint256 minShares, address to) private returns (uint256 n) {
-        Snap memory s = Snap(pot, box, arriving, 0, 0, 0, 0, 0); // settled just before by the caller
+        Snap memory s = Snap(pot, box, arriving, 0, 0, 0, 0, 0, locked, 0); // settled just before by the caller
         (uint256 fee, uint256 m, uint256 n_, uint256 credit) = _price(s, a);
         n = n_;
         if (m == 0 || n == 0) revert ZeroMint();
@@ -768,14 +893,28 @@ contract Treasury {
             s.pot += s.released;
         }
         s.active = activeSeconds + s.dt;
+        // tasks that have run out come back LAST: the returned money is not charged allowance for time it was not in the pot
+        s.stay = locked;
+        uint256 nx = nextExpiry;
+        if (nx != 0 && t >= nx) {
+            s.expC = tasks.dueC(t);
+            s.stay -= s.expC;
+            s.pot += s.expC;
+        }
     }
 
     function _settle() private {
         Snap memory s = _settled();
         (pot, box, arriving, activeSeconds, lastSettle) = (s.pot, s.box, s.arriving, s.active, uint64(block.timestamp));
-        if (s.dt != 0 || s.toBox != 0 || s.back != 0 || s.released != 0) {
+        if (s.dt != 0 || s.toBox != 0 || s.back != 0 || s.released != 0 || s.expC != 0) {
             emit Settled(s.toBox, s.back, s.released, s.pot, s.box, s.arriving, s.active, uint64(block.timestamp));
             if (s.released != 0) emit RevenueReleased(s.released, s.arriving);
+        }
+        if (nextExpiry != 0 && block.timestamp >= nextExpiry) {
+            (uint256 sumC, uint64 next) = tasks.expireDue();
+            if (sumC != s.expC) revert Inconsistent();
+            (locked, nextExpiry) = (s.stay, next);
+            if (sumC != 0) _taskMoney(4, 0, address(0), sumC);
         }
     }
 
@@ -786,6 +925,35 @@ contract Treasury {
         if (msg.sender != r) return false;
         if (!ILauncherPairs(salePath).isPair(r)) return true;
         return IPair(r).bothSigned();
+    }
+
+    /// @dev New tasks need an open check-in window and a project that is not wound down.
+    function _openWindow() private view {
+        if (windDownKind != 0) revert AlreadyWoundDown();
+        if (block.timestamp >= activeEnd()) revert ProjectQuiet();
+    }
+
+    /// @dev The runner or, when the runner is a Pair the Launcher made, one of its two signers.
+    function _isTeamSeat(address a) private view returns (bool) {
+        address r = runner;
+        if (a == r) return true;
+        if (!ILauncherPairs(salePath).isPair(r)) return false;
+        return IPairSigners(r).first() == a || IPairSigners(r).second() == a;
+    }
+
+    /// @dev Book the end of a task: its stayers' claim leaves `locked`, its notes' face leaves `notesOwed` and what is still
+    /// owed to them stays there, and the rest of what came back goes to the pot. The payment, if any, is made by the caller.
+    function _book(uint8 kind, uint64 serial, ITaskBook.Resolved memory r) private {
+        locked -= r.c;
+        notesOwed = notesOwed - r.n + r.np;
+        pot += r.pp;
+        nextExpiry = r.next;
+        _taskMoney(kind, serial, r.to, kind == 2 ? r.pay : r.pp);
+    }
+
+    /// @dev Say that `amount` moved between the pot and the money set aside, with the three buckets as they now stand.
+    function _taskMoney(uint8 kind, uint64 serial, address who, uint256 amount) private {
+        emit TaskMoney(kind, serial, who, amount, pot, locked, notesOwed);
     }
 
     /// @dev An agent the current runner switched on and has not switched off since a hand-over.

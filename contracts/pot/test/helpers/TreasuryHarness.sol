@@ -17,6 +17,12 @@ contract TreasuryHarness is Treasury {
         shares.mint(to, n);
     }
 
+    /// @dev Move `minted` dollars from the stayers' claim to the notes held against taken tasks, as a leave will (pair with
+    /// `TaskBookHarness.forceNote`).
+    function forceNote(uint256 minted) external {
+        (locked, notesOwed) = (locked - minted, notesOwed + minted);
+    }
+
     function forceZ(uint256 z) external {
         Z = z;
     }

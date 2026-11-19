@@ -5,7 +5,9 @@ import {Test} from "forge-std/Test.sol";
 import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {Clones} from "oz5/proxy/Clones.sol";
 import {Treasury} from "../../src/Treasury.sol";
-import {IShares} from "../../src/Interfaces.sol";
+import {IShares, ITaskBook} from "../../src/Interfaces.sol";
+import {TaskBook} from "../../src/TaskBook.sol";
+import {TaskBookHarness} from "./TaskBookHarness.sol";
 import {ShareToken} from "../../src/ShareToken.sol";
 import {QuoteToken} from "../mocks/QuoteToken.sol";
 import {TreasuryHarness} from "./TreasuryHarness.sol";
@@ -29,6 +31,7 @@ abstract contract PotBase is Test {
     MockSalePath internal sale;
     ShareToken internal tokenImpl;
     TreasuryHarness internal treasuryImpl;
+    TaskBookHarness internal bookImpl;
 
     address internal founder = makeAddr("founder");
     address internal platform = makeAddr("platform");
@@ -43,6 +46,7 @@ abstract contract PotBase is Test {
         sale = new MockSalePath();
         tokenImpl = new ShareToken();
         treasuryImpl = new TreasuryHarness();
+        bookImpl = new TaskBookHarness();
         (t, shares, team, vester) = _launch(IERC20(address(usd)), POOL, 1000, 200, UNIT);
     }
 
@@ -54,6 +58,8 @@ abstract contract PotBase is Test {
         sh = ShareToken(Clones.clone(address(tokenImpl)));
         tm = ShareToken(Clones.clone(address(tokenImpl)));
         v = new MockVester();
+        TaskBookHarness tb = TaskBookHarness(Clones.clone(address(bookImpl)));
+        tb.initialize(address(tr), unit_);
         sh.initialize("Shares", "SHR", address(tr), address(0), 0);
         tm.initialize("Team Shares", "TEAM", address(tr), address(v), pool);
         tr.initialize(
@@ -69,9 +75,15 @@ abstract contract PotBase is Test {
                 ratePpm: rate,
                 feeBps: feeBps,
                 agentUsd: 25e6,
-                agentTeam: uint128(pool / 1000)
+                agentTeam: uint128(pool / 1000),
+                tasks: ITaskBook(address(tb))
             })
         );
+    }
+
+    /// @dev The project's task book.
+    function _book() internal view returns (TaskBookHarness) {
+        return TaskBookHarness(address(t.tasks()));
     }
 
     /// @dev Replace the project with a fresh one with another Team pool and allowance rate.
@@ -93,8 +105,9 @@ abstract contract PotBase is Test {
         cash = t.leave(n, 0, who);
     }
 
+    /// @dev The runner checks in (a person, or a Pair standing in for the runner).
     function _checkIn() internal {
-        vm.prank(founder);
+        vm.prank(t.runner());
         t.checkIn(bytes32(0));
     }
 

@@ -6,6 +6,7 @@ import {Treasury} from "../src/Treasury.sol";
 import {Pair} from "../src/Pair.sol";
 import {Vester} from "../src/Vester.sol";
 import {Launcher} from "../src/Launcher.sol";
+import {TaskBook} from "../src/TaskBook.sol";
 import {ITreasuryClock, IShares} from "../src/Interfaces.sol";
 
 /// @notice Who can reach which gated call: a stranger, an agent, a lone Pair signer, the runner, the Launcher and the Vester
@@ -22,7 +23,7 @@ contract AccessMatrixTest is StackBase {
     }
 
     function _treasuryGated() internal view returns (bytes[] memory c) {
-        c = new bytes[](20);
+        c = new bytes[](24);
         c[0] = abi.encodeCall(Treasury.draw, (stranger, 1));
         c[1] = abi.encodeCall(Treasury.proposeRate, (1500));
         c[2] = abi.encodeCall(Treasury.setRate, (1));
@@ -43,6 +44,44 @@ contract AccessMatrixTest is StackBase {
         c[17] = abi.encodeCall(Treasury.onTransferReceived, (stranger, stranger, 1e6, abi.encode(uint256(0), stranger)));
         c[18] = abi.encodeCall(Treasury.leave, (1e18, 0, stranger)); // no shares
         c[19] = abi.encodeCall(Treasury.leaveTeam, (1e18, 0, stranger)); // no team shares
+        c[20] = abi.encodeCall(Treasury.announceTask, (bytes32(uint256(1)), stranger, 1000e6, 100));
+        c[21] = abi.encodeCall(Treasury.acceptTask, (1, 1));
+        c[22] = abi.encodeCall(Treasury.rejectTask, (1));
+        c[23] = abi.encodeCall(Treasury.cancelTask, (1));
+    }
+
+    /// @dev Everything that changes the task book. Only the Treasury may call any of it.
+    function _bookGated() internal pure returns (bytes[] memory c) {
+        c = new bytes[](8);
+        c[0] = abi.encodeCall(TaskBook.announce, (bytes32(uint256(1)), address(0), 1000e6, 100));
+        c[1] = abi.encodeCall(TaskBook.take, (1, address(0xBEEF), 1e12, 0));
+        c[2] = abi.encodeCall(TaskBook.accept, (1, 1));
+        c[3] = abi.encodeCall(TaskBook.reject, (1));
+        c[4] = abi.encodeCall(TaskBook.cancel, (1));
+        c[5] = abi.encodeCall(TaskBook.expireDue, ());
+        c[6] = abi.encodeCall(TaskBook.sweepAll, ());
+        c[7] = abi.encodeCall(TaskBook.initialize, (address(0xBEEF), 1));
+    }
+
+    function test_nobodyButTheTreasuryReachesTheTaskBook() public {
+        _join(alice, 10_000e6);
+        address book = address(t.tasks());
+        _expectAllRevert(stranger, book, _bookGated(), "stranger");
+        _expectAllRevert(founder, book, _bookGated(), "the runner");
+        _expectAllRevert(address(launcher), book, _bookGated(), "the Launcher");
+        _expectAllRevert(address(v), book, _bookGated(), "the Vester");
+        _expectAllRevert(address(shares), book, _bookGated(), "the Shares");
+        _expectAllRevert(admin, book, _bookGated(), "the admin");
+        // the implementation too: set up once, by nobody
+        _expectAllRevert(address(t), launcher.tasksImpl(), _bookGated(), "the Treasury on the implementation");
+    }
+
+    function test_theMatrixCallsWorkFromTheTreasuryAddress_soTheyFailForTheRightReason() public {
+        // the positive control: the same kind of call from the Treasury address goes through
+        TaskBook book = _book();
+        vm.prank(address(t));
+        (uint64 serial,) = book.announce(bytes32(uint256(1)), stranger, 1000e6, 100);
+        assertEq(serial, 1);
     }
 
     function test_strangerReachesNothingGated() public {
@@ -134,7 +173,8 @@ contract AccessMatrixTest is StackBase {
             ratePpm: 1,
             feeBps: 0,
             agentUsd: 0,
-            agentTeam: 0
+            agentTeam: 0,
+            tasks: t.tasks()
         });
         vm.expectRevert(Treasury.BadSetup.selector);
         t.initialize(su);

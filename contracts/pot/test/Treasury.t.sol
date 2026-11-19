@@ -5,7 +5,8 @@ import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {Clones} from "oz5/proxy/Clones.sol";
 import {PotBase} from "./helpers/PotBase.sol";
 import {Treasury} from "../src/Treasury.sol";
-import {IShares} from "../src/Interfaces.sol";
+import {IShares, ITaskBook} from "../src/Interfaces.sol";
+import {TaskBook} from "../src/TaskBook.sol";
 import {ShareToken} from "../src/ShareToken.sol";
 import {TreasuryHarness} from "./helpers/TreasuryHarness.sol";
 import {MockPair, MockVester} from "./helpers/Mocks.sol";
@@ -27,7 +28,8 @@ contract TreasuryTest is PotBase {
             ratePpm: 1000,
             feeBps: 200,
             agentUsd: 25e6,
-            agentTeam: 1
+            agentTeam: 1,
+            tasks: ITaskBook(address(_book()))
         });
     }
 
@@ -40,17 +42,21 @@ contract TreasuryTest is PotBase {
         s = _setup();
         s.shares = IShares(address(sh));
         s.team = IShares(address(tm));
+        TaskBook tb = TaskBook(Clones.clone(address(bookImpl)));
+        tb.initialize(address(tr), UNIT);
+        s.tasks = ITaskBook(address(tb));
     }
 
     function test_initializeOnceAndTheImplementationIsLocked() public {
+        Treasury.Setup memory su = _setup();
         vm.expectRevert(Treasury.BadSetup.selector);
-        t.initialize(_setup());
+        t.initialize(su);
         vm.expectRevert(Treasury.BadSetup.selector);
-        treasuryImpl.initialize(_setup());
+        treasuryImpl.initialize(su);
     }
 
     function test_initializeRefusesBadInput() public {
-        for (uint256 i; i < 10; ++i) {
+        for (uint256 i; i < 12; ++i) {
             (Treasury tr, Treasury.Setup memory s) = _fresh();
             if (i == 0) s.founder = address(0);
             if (i == 1) s.platform = address(0);
@@ -62,6 +68,8 @@ contract TreasuryTest is PotBase {
             if (i == 7) s.feeBps = 501;
             if (i == 8) s.shares = IShares(address(shares)); // controlled by another Treasury
             if (i == 9) s.team = IShares(address(team));
+            if (i == 10) s.tasks = ITaskBook(address(0)); // no book
+            if (i == 11) s.tasks = ITaskBook(address(_book())); // a book that serves another Treasury
             vm.expectRevert(Treasury.BadSetup.selector);
             tr.initialize(s);
         }
@@ -70,7 +78,15 @@ contract TreasuryTest is PotBase {
         s2.ratePpm = 2000;
         s2.feeBps = 500;
         s2.unit = 168;
+        vm.expectRevert(Treasury.BadSetup.selector);
+        ok.initialize(s2); // the book keeps another unit
+        TaskBook tb2 = TaskBook(Clones.clone(address(bookImpl)));
+        tb2.initialize(address(ok), 168);
+        s2.tasks = ITaskBook(address(tb2));
+        vm.expectEmit(false, false, false, true, address(ok));
+        emit Treasury.TasksReady(address(s2.tasks));
         ok.initialize(s2);
+        assertEq(address(ok.tasks()), address(s2.tasks));
         assertEq(ok.unit(), 168);
         assertEq(ok.runner(), founder);
         assertTrue(ok.doorFlag());
