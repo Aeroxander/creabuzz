@@ -644,3 +644,98 @@ down as a stranger; hands the seat to a teammate (offer, withdraw, offer again, 
 - **Deleted:** `team-seat.spec.ts`, `team.spec.ts`, `a11y-team.spec.ts`, `screens-team.spec.ts` and their entries in `playwright.config.ts`.
   The remaining skipped specs are listed above.
 - `features/team/launch.ts` (old, legacy list) re-exports from `features/launch/launch-ids.ts`; live code must import the latter.
+
+---
+
+# Third round, app engineer B: accept now and pay later, the stale browser specs, the passkey flake, the joined-up run
+
+Written 19 November 2026 on branch `v6`. Nothing is pushed. `contracts/pot`, `crates/**` and the record specification are not touched. This
+is not legal or tax advice, and no figure here is a promise of any result for anyone. **No person has tested any of this: every run below
+was made by an agent.** Every amount is play money on a local test chain.
+
+## What was built
+
+| # | Part | Where |
+|---|---|---|
+| 1 | **Accepted now, paid later (F2).** An accepted task with a pay and no payment on its record reads "Accepted, pay owed: 40 dollars." to every reader and is never shown as paid; "Paid 40 dollars." shows only when a payment's transaction is on the record. The reader takes the first confirmation of the accepted piece that names a payment, so a payment recorded after the acceptance counts. The runner's task offers **Pay from the box** (a draw to the wallet the worker named, then a second confirmation naming the transaction; a payment whose record failed is kept and the next press only writes the record). Before anything moves the task and the box are read again and the chain is searched for a draw of exactly this pay to this wallet made after the acceptance: such a payment is offered as the task's pay ("Save that it was paid"), never paid twice, and a payment another task already carries is never offered. With a Pair as runner the press is **Ask for the pay from the box** (a proposal); the other signer's list on the Money tab names the task in the sentence ("..., the pay for the task "Translate the guide""), and once confirmed the payment is found and saved on the task. The secondary press on Accept now reads "Accept now, pay 40 dollars later" and says what will show | `app/src/features/tasks/` (`PayFromBox`, `pay-lookup`, `task-record`, `TaskCard`, `tasks-copy`, `AcceptAndPay`), `pot/pair-terms.ts`, `PairWaiting`, `ProjectMoney` |
+| 2 | **No browser spec stays skipped.** New in the default build: `pot-week` (3), `pot-tasks` (6), `pot-review` (4); rewritten: `a11y` (12 run), `smoke` (the four tabs at 360), `join`, `screens`; deleted: `earlier`, `market`, `money`, `money-review`, `tasks` (lists below) | `app/tests/e2e` |
+| 3 | The seam the verifier found uncovered: a record with `playMoney` false on a network this build knows is play money still shows the play-money line, the faucet and the sheet's line. Fails when `mustSayPlayMoney`'s rule is removed | `pot/project-money.test.tsx` |
+| 4 | **The passkey flake, at its cause.** After a reload the app drew before the passkey signer had been registered (it loads lazily and `registerPasskeySigner` was fire-and-forget); until then the stored passkey account reads as nobody, nothing told the page when the signer arrived, so on some reloads the unlock bar never appeared (about 1 run in 4 here: 7 failures in 25). `registerPasskeySigner` now returns its promise, the app waits for it before the first draw, and it tells listeners when it is done. A vitest fails without the notification | `packages/creaton-core/src/account/passkey-identity.ts`, `app/src/main.tsx`, `app/src/lib/account.test.tsx` |
+| 5 | `scripts/phone-e2e.sh` retired (it ran one spec that needed the old-screens flag; that spec, the You page's wallet-or-passkey choice, runs without the flag under `scripts/pot-app-phone-e2e.sh`); `scripts/phone-loop.sh` and the sender tests take their test dollar from `contracts/pot/out` (the same source file as under `contracts/next`) | `scripts/`, `app/tests/anvil/rpc.ts` |
+| 6 | **A defect found by the rewrite:** after "Switch network" the money screens went on saying "Your wallet is on another network" (nothing asked the wallet again, and the page does not refetch on focus). Fixed, with a vitest that fails without it | `pot/use-pot.tsx`, `pot/wallet-gate.test.tsx` |
+| 7 | **The joined-up run launches from the app** and `STEP1-REPORT.md` is true again (launch exists; the exact steps for a person to try it, the helper's call names, the refresh range) | `app/tests/e2e-pot-full`, `docs/next-version/STEP1-REPORT.md` |
+
+## Specs: what was rewritten and what was deleted, and why
+
+| Spec (tests) | What happened | Why |
+|---|---|---|
+| `money.spec` weekly update with check-in, its failure, and without a launch (3) | rewritten as `pot-week.spec` on a real chain: the update is signed first, the check-in carries its id (checked against the Treasury's own `CheckedIn` log); a refused check-in keeps the update and offers only the check-in again with the same hash; a project not on the network posts alone | the journey exists in the default build |
+| `tasks.spec` post, take, hand in, accept and pay (1) | rewritten in `pot-tasks.spec`: the draw and the record name the same transaction (read back from the chain) | the old test checked `Treasury.spend` of the old design |
+| `tasks.spec` agent limits (2), agent never offered Accept, money off (2) | rewritten in `pot-tasks.spec`; the limits are read back from the Treasury | live screens |
+| new in `pot-tasks.spec` | accepted now with the box short, "pay owed" to everyone, "Pay from the box" once the box holds enough and the payment written on the same task; a Pair's ask, the other signer's sentence naming the task, the payment found and saved | F2 |
+| `money-review.spec` F1 (wallet starts on another network) and `money.spec` "wallet shares no account" | rewritten in `pot-review.spec` (and found the switch defect above) | live screens |
+| `money-review.spec` F2 (a record copying a chain key) and `money.spec` "numbers signed by another key" | rewritten in `pot-review.spec`; each fails when its guard (`numbersBelongTo`, the signer check) is removed | security properties that must stay covered |
+| `a11y.spec` (12) | rewritten for the default build (Home, the project's four tabs, You, Start, Messages, Post, Profile, This week and its sheet, signed out, at 390 and 360, light and dark) | the money parts of the old sweep are in `pot-a11y.spec` |
+| `smoke.spec` four tabs at 360 (1), `join.spec`, `screens.spec` | rewritten or trimmed (their stage-line branches and the old money screenshots removed) | the stage line is not in the default build. `smoke.spec`'s "Home shows projects and posts" (line 141) is not skipped and passes in the default build |
+| `smoke.spec` open rounds slot (1) | deleted | Home's open round does not exist in the default build |
+| `earlier.spec` (6), `market.spec` (3) | deleted | the earlier backers' page and the auction are not in the default build; their code stays under the legacy flag with its vitest |
+| `money.spec` numbers on the page and an open round (1), investing off (1), Back (2), take money back (1), open backing (1) | deleted | the screens they drove (rounds, receipts, refund, open backing) are gone; `pot-back`, `pot-takeout`, `pot-stranger`, `pot-states` cover Back, Take out and the numbers on the page on the new contracts, `smoke.spec` covers investing off |
+| helpers `legacy-build`, `team-world`, `chain-wallet` | deleted; `money-world` cut to what is used | only the deleted specs used them |
+
+The smoke project now has one skipped test: `pot-phone.spec`, which `scripts/pot-app-phone-e2e.sh` runs (it needs the phone build).
+
+## Gates, as run
+
+| Gate | Result |
+|---|---|
+| `tsc --noEmit` (app including `tests/`) | clean |
+| vitest (app) | 78 files, 614 tests passed, 0 failed (before this round: 75 files, 588) |
+| biome (app), `check:copy`, `check:px-text`, `check:file-sizes` (`CHECK_FILE_SIZES_BASE=855c585a0`), repository `knip` | clean |
+| core tests (`pnpm test` in `packages/creaton-core`, forge on PATH, the fresh-ABI test included) | 1,211 passed, 0 failed, 0 skipped |
+| `pnpm build` with `CREATON_DEPLOYMENTS_FILE`, then the bundle check | builds; entry chunk 390 KiB against 450 |
+| `scripts/pot-app-loop.sh` | 13 tests passed, 0 failed, 0 skipped, in 7 files (the new `pot-task-pay.test.ts`: real `AllowanceDrawn` logs found by payee and amount after the acceptance, not another amount, wallet or task's payment, not one made before the acceptance, and the draw a Pair's second signer made by confirming) |
+| `scripts/phone-loop.sh` | 3 files, 13 tests, 33 claims |
+| `scripts/pot-app-phone-e2e.sh` | 2 passed (the You page's choice, and faucet, Back and Take out from a passkey account: 2, 2 and 2 presses, 1 prompt each) |
+| Playwright `--project=smoke --trace off`, full run | see the final line of the report that carried this section (the run after the last commit) |
+| `scripts/pot-full-loop.sh` (chain, real server, real app build, Chromium) | **213 checks passed**, 1 journey passed, 0 failed; everything it started was stopped (checked with `ps`) |
+| `passkey.spec.ts` | 7 failures in 25 runs before the fix; 30 passes in a row, then 20 in a row, after |
+
+Falsifiability, each by removing the guard and watching the test fail: the payment journal, the fresh task check, the "payment found" stop,
+"never shown as paid" (vitest); the payment record's `task-paid` and the weekly check-in's hash (browser); the chain-key and signer
+checks (browser); the wallet-gate invalidation, the registration notification and `mustSayPlayMoney` (vitest).
+
+## Chosen under the owner's standing go; the owner may overrule
+
+1. **The pay is a second confirmation of the same piece**, titled "Pay recorded", not a new kind of record: the server accepts any number of
+   confirmations and the reader takes the first one that names a payment. Another reader that takes only the first confirmation sees the
+   task as accepted without a payment (the safe way round).
+2. **A Pair's pay is linked after the fact, from the chain.** A proposal carries only the call, so the other signer's page cannot name a
+   transaction at the proposal; once confirmed, anyone on the team who is not the worker finds the payment (payee, exact amount, after the
+   acceptance) and presses "Save that it was paid". Nothing is saved on its own.
+3. **The search reads the last 30,000 blocks** (three pieces of 10,000). A payment older than that is not found, and the task goes on
+   reading "pay owed" (never "paid"). If the search cannot be read the press goes on (the task and the box are still read again).
+4. **A second ask for a Pair's pay from another device or by the other signer** is not blocked (the proposal is only a proposal); the other
+   signer reads two sentences naming the same task. Not built: a hard stop for a duplicate proposal.
+5. **The founder alone checking their own work** keeps the same limits for paying as for accepting.
+6. **The task's words in a Pair sentence** are cut at 60 characters and quotes in them are replaced, so they sit inside the sentence.
+7. **The passkey fix waits for the signer before the first draw** (a few milliseconds for a chunk already on the page) rather than redrawing
+   after it; the notification stays for a page that drew earlier.
+8. **`phone-choice.spec` joins the pot phone script** rather than being deleted: the You page's choice is a live screen.
+
+## Found while doing it
+
+- The wrong-network gate bug (above) and the passkey race (above): both real defects, not test mistakes.
+- `STEP1-REPORT.md` said the helper's stored call names were the old ones; migration 0070 renamed them, and the joined-up run's last check
+  had to follow (`treasury.collectFees`, `treasury.settle`).
+- `packages/creaton-core/src/pot` was already formatted; the one unformatted file in the package was a test under `launchpad`, now formatted.
+  `abis.generated.ts` is excluded from the package's biome by its own config.
+- Playwright restarts its worker after a failed test, and the live specs start a chain per worker: a spec that shares one chain between its
+  tests must not assume the play dollars of an earlier test (the faucet gives each account 1,000 once).
+
+## Not done
+
+- A passkey account launching, accepting or paying in a real browser (the phone script covers faucet, Back and Take out).
+- The task, pay-from-the-box, seat and launch screens against the **real server and reader** in one browser run: the joined-up run covers
+  the launch, Back, check-in, draw and Take out; the task and seat screens are driven on a real chain with the server's record stood in.
+- A hard stop for a duplicate Pair proposal for the same task, and a typed wallet for a task whose worker named none (it stays "pay owed").
+- No person has tried any of it on a phone.

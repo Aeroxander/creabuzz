@@ -26,10 +26,13 @@ use (`RECORD-V2.md` and `record-v2-example.json`), the server's report (`READER-
 - Takes out: presses Take out, reads the cash the sheet shows, presses once more. **Two presses and one wallet prompt.** It is open
   whatever the door, the allowance or the state of the project, and it still works when the server's numbers cannot be read.
 
-**A founder:** starts a project in three answers; posts the week's update and checks in on the network with one press from This week;
+**A founder:** starts a project in three answers; opens it to backers from its page (a card, a sheet with two numbers, the daily
+allowance and the Team pool, each with a plain sentence for backers, and one signature); posts the week's update and checks in on the network with one press from This week;
 draws from the allowance box to an address of their choice (the sheet says how much the box holds); lowers the rate at once or
-announces a raise and applies it after the wait; opens or closes the door; grants Team Shares to a member who linked a wallet. A task
-accepted and paid draws its money from the box, and is offered only when the box holds enough.
+announces a raise and applies it after the wait; opens or closes the door; grants Team Shares to a member who linked a wallet; hands the seat to a teammate, asks one to run it together (a Pair) and winds the
+project down. A task accepted and paid draws its money from the box in the same press when the box holds enough; when it does not (or a
+Pair runs the project) the work is accepted now and every reader sees "Accepted, pay owed: X", never "paid", until the payment's
+transaction is on the task's record; the task then offers "Pay from the box", and for a Pair the other signer reads which task the draw is for.
 
 **A team member** sees their grants, claims what has unlocked, and can give up the rest; **a second signer** of a project run by two
 reads each waiting call in a sentence before confirming it.
@@ -39,9 +42,7 @@ cadence, collects the platform's fee once a week and settles outside money that 
 new fee events (zero on play dollars unless the operator sets a floor).
 
 **Not in step 1:** the task queue, notice, take, return and exit notes (step 2); alerts; the holder room and social parts (step 3).
-**A founder cannot yet put a project on the chain from the app: there is no launch screen** (the launch call is built and the old
-launch screen sits behind the old-design flag). Today an operator or a script launches; this run does it with the app's own call
-builder. See section 6.
+A founder can launch from the app. This run does it in the browser (section 2, step 2).
 
 ## 2. What the joined-up run did, and the exact result
 
@@ -50,17 +51,18 @@ builder. See section 6.
 
 | Result | |
 |---|---|
-| Checks | **211 checks passed**, 1 journey passed, 0 failed (the browser part 37 s; the whole script about 3 minutes with the build) |
+| Checks | **213 checks passed**, 1 journey passed, 0 failed (the browser part 42 s; the whole script about a minute with the relay already built) |
 | Of those | 65 field-by-field comparisons of the record with the contracts, made twice (at the last block of the journey and a week later), by the existing checker `scripts/chain-loop-pot-check.py`, which calls every contract view at the record's own block and works the settled money forward on its own |
-| Earlier runs | 6 full passes in all (194, 209, 210, 210, 211 and 211 checks; the count grew as checks were added; the last is the one reported above); the five runs before the first pass failed, in order, at: a signed request repeated within one second (the test's own), a node that keeps only the latest state (section 3, item 2), the refresh promise below 60 seconds twice (section 3, item 1), and a wrong expectation of the helper's weekly fee (section 3, item 3) |
+| Earlier runs | 6 full passes before the launch moved into the browser (194, 209, 210, 210, 211 and 211 checks); then, with the app's own launch, one run that failed at its last check (the helper's stored call names had changed to `treasury.collectFees` and `treasury.settle` with the server's migration 0070; the expectation followed) and the pass reported above |
 | Left behind | nothing: the script stops anvil, the relay and the miner, drops its scratch database, removes its temporary folder and the app build (checked after each run: no process, no `/tmp` folder, no database) |
 
 What the journey does, in order (each line is checked; the output has one `ok` line each):
 
 1. The server says it offers investing and names its own signing key.
 2. A **founder** signs up in the app (hosted sign-up with the age box and terms, as every real-server run does), starts "Lantern" in
-   its three answers, and the project's link opens. The founder's account on the chain (a public anvil development account) launches
-   it with the app's own launch call, and the founder's record is signed again naming the launch (the `chain-key` tag).
+   its three answers, and the project's link opens. The founder (a public anvil development account in the page's wallet) **opens it to
+   backers from the project's page**: the launch card, the sheet with its defaults (0.10% a day, 10,000,000 Team Shares), **2 presses,
+   1 wallet prompt**. The app then signs the founder's record naming the launch itself (the `chain-key` tag).
 3. The server's record appears: version 2, play money, the project's Treasury, the founder's account, signed by the server's own key.
 4. A first backer (outside the browser, through the app's own Back plan) puts in 50 play dollars. The server reads it: 49 paid in.
 5. A **stranger**, signed out, opens the project page. The page's "project's money" and "what one Share gives if taken out now" are
@@ -102,13 +104,11 @@ cash, the sheet's button sends) and one signature. This is the budget the plan a
 The record specification was followed exactly in every field the run reads: the same example file is parsed by the server's types and by
 the app's parser (their own tests), and in this run the app read the server's real records at every step. One point disagreed:
 
-1. **`refreshEverySecs` (timing).** The app refused a record that promises a refresh faster than 60 seconds; the server's setting allows
+1. **`refreshEverySecs` (timing).** *(Closed: the server's range now ends at 86,400 seconds, the range the app accepts.)* The app refused a record that promises a refresh faster than 60 seconds; the server's setting allows
    5 (its report's choice 6, so a loop can show the cadence). The specification says 600 or 3600 and names no floor, so the app's
    floor was the departure: a record signed with a 30-second promise read as "No numbers yet". **Fixed in the app** (`numbers-read.ts`:
    the floor is 5, the server's own); the test `numbers-hostile.test.ts` accepts 5 and refuses 4 (and 0 and a week as before).
-   **Not fixed, for the lead:** the server's setting allows up to 7 days while the app reads at most 24 hours, so an operator who set
-   2 days would be unreadable. The specification says 600/3600; the server's range should end at 24 hours, a one-line change in the
-   server track's `settings.rs` with its test (I did not touch `crates/`).
+   The server's setting allowed up to 7 days while the app reads at most 24 hours; the server track has since ended its range at 86,400.
 
 Other things the joined-up run showed that are not disagreements:
 
@@ -146,12 +146,14 @@ Other things the joined-up run showed that are not disagreements:
   end to end (the server's own tests cover reorganisations and a stepping-back head).
 - **The passkey path against the real server.** It was proven on the pot contracts with stand-ins for the bundler and the sponsor
   (`scripts/pot-app-phone-e2e.sh`, `scripts/pot-app-loop.sh`), not in this joined-up run; here the wallet is the injected one.
-- **The founder's and team's other screens on the real server, and in a browser at all:** Team Shares grant and claim, a member's own
-  exit, a Pair's second signer, the rate and door sheets (beyond opening them) and the task payment from the box. Their contract side
-  was proven on the real contracts by the app's chain harness (`scripts/pot-app-loop.sh`) and their screens by the app's unit tests;
-  none was driven in a browser, with or without this server. This run uses the check-in, the draw and the Money tab's founder view.
-- **Launching from the app** (no screen), **more than a handful of projects**, **two relays at once**, **the hosted manager** against a
-  real model, and **a launch on Sepolia** were not run.
+- **The founder's and team's other screens on the real server:** Team Shares grant and claim, a member's own exit, the rate and door
+  sheets, the seat (hand over, a Pair, wind down), the task payment from the box (alone, owed and later, through a Pair) and agent
+  limits. Each is driven in a real browser on a real local chain with the server's record stood in by the spec
+  (`app/tests/e2e/pot-seat.spec.ts`, `pot-tasks.spec.ts`, `pot-week.spec.ts`), not with the real server and reader. This run uses the
+  launch, the check-in, the draw and the Money tab's founder view.
+- **A passkey account launching** (the phone path) was proven for the contracts and as one operation in a unit test, not in a browser;
+  **more than a handful of projects**, **two relays at once**, **the hosted manager** against a real model, and **a launch on Sepolia**
+  were not run.
 - **The `--serve` mode on a network address other than the computer's own**: the sandbox this ran in routes the browser's connection to
   its own network address through a proxy that answers 502, so the phone path was tried with `SERVE_HOST=127.0.0.1` (the page, the
   wallet, the faucet and a Back of 25 play dollars worked: 2 wallet prompts in all, 2,450 Shares). Whether the phone reaches the
@@ -187,6 +189,12 @@ sponsor, so it cannot be tried this way.
 8. Optional: with a second wallet account, Back the same project and see that the first account's Shares do not change; stop the
    script's server (not the chain) and reload: the page says the numbers could not be read and still lets you take your Shares out.
 
+9. Optional, as a founder: sign up on the phone's browser, press **Start** and answer the three questions, then on the project's page
+   press **Open <name> to backers**, read the sheet (two numbers, the limits, what cannot be changed later) and press its button. The
+   wallet asks **once**. The page then moves to the Money tab and says "No numbers yet" until the server has read the block (a few
+   seconds on this chain, about half a minute with 12-second blocks); no figure shows until then. The account must be one the wallet
+   holds with play dollars on this network; the sheet says plainly that the dollars are play money.
+
 If something differs from what is written here, that is a finding: write down the step and what the screen said.
 
 ## 6. What a test-network launch still needs that no engineer here can do
@@ -202,13 +210,7 @@ If something differs from what is written here, that is a finding: write down th
    two calls); the settings for its daily gas and spend caps. None of these exists in this repository, by rule.
 5. **An operator's bundler and sponsor,** if the passkey phone path is to be on: their two addresses and a funded sponsor, and the
    build switch `VITE_CREATON_PASSKEY_ACCOUNT=1`, over `https`. Without them a phone needs a browser with a wallet.
-6. **A launch screen** (engineering work, not operator work): a founder cannot yet put their project on the chain from the app. Until
-   then an operator launches projects with the app's call builder or `cast`.
-7. **A migration the lead has to schedule** (the server's report, "Still open"): the Team token's role and Team Share balances have
-   workaround keys, and the helper's two call names are the old ones (`treasury.sweepFees`, `treasury.release`), so its audit rows read
-   oddly. The migration count asserted by `crates/buzz-db` changes with it.
-8. **The server's refresh range** (section 3, item 1) trimmed to 24 hours, a one-line change with its test.
-9. **Hosting and the legal parts:** a public address with `https`, the hosted terms of use, privacy note and the age box (already
+6. **Hosting and the legal parts:** a public address with `https`, the hosted terms of use, privacy note and the age box (already
    supported and used by the run), the operator's own monitoring of the reader's lag, and counsel's answers to the questions in
    `JOIN-LEAVE-DESIGN.md` section 12 before any real money is ever offered. The test network avoids them; real money must not start
    until they are answered.
@@ -230,9 +232,7 @@ Files: `scripts/pot-full-loop.sh` (the world and the cleanup), `app/playwright.p
 kinds of spec share it. The journey reads the server with signed HTTP requests, keeps no key anywhere (the founder's account key
 is read from the browser's own storage and used in memory to sign one record), and uses only anvil's public development accounts.
 
-Gates, as run after the changes: app `tsc --noEmit` clean; app vitest 70 files, 524 tests passed, 0 failed; app `biome check .` clean
-(313 files); `check:copy`, `check:px-text`, `check:file-sizes` pass; `knip` clean. No file under `crates/` or `contracts/` was
-touched, so the server's and contracts' own suites were not re-run.
+Gates, as run: see the end of `APP-POT-REPORT.md` ("Third round, app engineer B"). No file under `crates/` or `contracts/` was touched.
 
 ## 8. Chosen under the owner's standing go; the owner may overrule
 
@@ -245,8 +245,9 @@ touched, so the server's and contracts' own suites were not re-run.
 4. **The field-by-field comparison uses the server track's checker unchanged** (`chain-loop-pot-check.py`), on the record the page
    showed: the page is first shown to equal that very record (read before and after the page is read; it tries again when the server
    signed a new one meanwhile), then the record to equal the contracts.
-5. **`--serve` leaves a project for a phone; it launches it for the person** (a throwaway founder key made in memory and never
-   printed or stored), because there is no launch screen to do it from the phone.
+5. **`--serve` still launches the project for the person** (a throwaway founder key made in memory and never printed or stored) so a
+   phone starts with a project to look at; the browser journey itself launches from the app. A person can also start and launch a
+   project of their own from the phone (section 5, step 9).
 6. **The app's refresh floor moved to the server's** (section 3, item 1) rather than the server's floor up to the app's, because the
    specification names no floor and the server's setting is what the owner's operator sees.
 7. **The one `Chosen` item I did not decide:** whether the platform's fee should be collected per join instead of per week
