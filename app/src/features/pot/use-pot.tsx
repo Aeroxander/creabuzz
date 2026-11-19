@@ -4,6 +4,7 @@
  * that needs them and says, in plain words and with the one press that fixes it, which one is missing.
  */
 import type { ReadCall } from "@creaton/core/pot/pot-reads.ts";
+import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useState } from "react";
 import { potNetwork } from "../../lib/pot-network";
 import { Button } from "../../ui/button";
@@ -98,6 +99,7 @@ export function WalletGate({
 }) {
   const pot = usePotWallet(chainId);
   const connect = useConnectWallet();
+  const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
   const fits = buildFits(chainId);
@@ -156,6 +158,12 @@ export function WalletGate({
             setProblem(null);
             pot.wallet
               .ensureChain(chainId)
+              // The page asks the wallet which network it is on again: without this it would go on saying "another network".
+              .then(() =>
+                queryClient.invalidateQueries({
+                  queryKey: ["money", "wallet-chain"],
+                }),
+              )
               .catch((error) => setProblem(moneyProblem(error, "connect")))
               .finally(() => setSwitching(false));
           }}

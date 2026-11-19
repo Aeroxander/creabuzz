@@ -20,7 +20,13 @@ export interface WalletLog {
   delayMs: number;
   /** The wallet shows no account until the page asks to connect. */
   connected: boolean;
+  /** The network the wallet is on now, as a hex chain id: 0x7a69 (the test chain) unless the spec started it elsewhere. */
+  chain: string;
+  /** Times the page asked the wallet to switch network. */
+  switches: number;
 }
+
+const TEST_CHAIN = "0x7a69";
 
 /**
  * A wallet for `account` on the page. `account` null puts no wallet in the page at all (a browser without one). The returned log
@@ -29,7 +35,7 @@ export interface WalletLog {
 export async function installAnvilWallet(
   page: Page,
   account: string | null,
-  options: { connected?: boolean } = {},
+  options: { connected?: boolean; startOnChain?: string } = {},
 ): Promise<WalletLog> {
   const log: WalletLog = {
     sent: [],
@@ -38,6 +44,8 @@ export async function installAnvilWallet(
     rejectNext: 0,
     delayMs: 0,
     connected: options.connected ?? true,
+    chain: options.startOnChain ?? TEST_CHAIN,
+    switches: 0,
   };
   if (account === null) return log;
   const provider = providerFor(account);
@@ -52,6 +60,15 @@ export async function installAnvilWallet(
           log.connects += 1;
           return { result: [account] };
         }
+        if (method === "eth_chainId") return { result: log.chain };
+        if (method === "wallet_switchEthereumChain") {
+          log.chain = String((params[0] as { chainId: string }).chainId);
+          log.switches += 1;
+          return { result: null };
+        }
+        // On another network the project's contracts have no code: a read answers nothing, as a real wallet's would.
+        if (method === "eth_call" && log.chain !== TEST_CHAIN)
+          return { result: "0x" };
         if (method === "eth_sendTransaction") {
           const tx = (params[0] ?? {}) as { to: string; data: string };
           log.prompts += 1;

@@ -140,6 +140,8 @@ export interface OpenOptions extends RecordOptions {
   key?: string | null;
   /** The wallet shows its account without being asked (default true). */
   connected?: boolean;
+  /** The network the wallet starts on, as a hex chain id (default: the test chain). */
+  startOnChain?: string;
   /** The server has no reading of this project. */
   skipRecord?: boolean;
   /** The server's reads of project numbers fail (it cannot be reached for them). */
@@ -168,6 +170,7 @@ export async function openMoney(
   );
   const wallet = await installAnvilWallet(page, options.account, {
     connected: options.connected ?? true,
+    startOnChain: options.startOnChain,
   });
   await syncClock(page);
   await page.goto(pageOf(project.label));
