@@ -122,6 +122,29 @@ contract NotesTest is PotBase {
         assertEq(usd.balanceOf(address(t)), t.pot(), "every dollar is in the pot");
     }
 
+    /// @dev Every state change says what it left: the note's part and the task's two claims, the buckets after a claim and the
+    /// task's held money after it, and the buckets after notes are written (so a server can rebuild them from logs alone).
+    function test_theEventsCarryTheStateTheyLeave() public {
+        uint64 a = _locked(500, 10_000e6);
+        vm.expectEmit(true, true, false, true, address(_book()));
+        emit TaskBook.NoteMinted(a, alice, 2000e6, 3000e6, 2000e6);
+        vm.expectEmit(true, false, false, true, address(t));
+        emit Treasury.TaskMoney(5, 0, alice, 2000e6, 57_000e6, 3000e6, 2000e6);
+        vm.expectEmit(true, true, false, true, address(t));
+        emit Treasury.Left(alice, alice, 40_000e18, 38_000e6, 2000e6, 57_000e6, 60_000e6, 60_000e18);
+        _leave(alice, 40_000e18);
+        vm.expectEmit(true, false, false, true, address(_book()));
+        emit TaskBook.TaskResolved(a, uint8(TaskBook.State.Paid), 3000e6, 2000e6, 800e6, 1200e6, 2000e6, 0);
+        vm.expectEmit(true, false, false, true, address(t));
+        emit Treasury.TaskMoney(2, a, worker, 3000e6, 58_200e6, 0, 800e6);
+        _accept(a, 3000e6);
+        vm.expectEmit(true, true, false, true, address(_book()));
+        emit TaskBook.NoteClaimed(a, alice, 800e6, 0, 0, 0);
+        vm.expectEmit(true, false, false, true, address(t));
+        emit Treasury.TaskMoney(6, a, alice, 800e6, 58_200e6, 0, 0);
+        _claim(a, alice);
+    }
+
     function test_aFullPaymentVoidsTheNote() public {
         uint64 a = _locked(500, 10_000e6);
         _leave(alice, 40_000e18);
@@ -288,6 +311,81 @@ contract NotesTest is PotBase {
         assertEq(t.notesOwed(), 0);
     }
 
+    function test_theSpreadRoundsEachPartDownAndTheRemainderStaysWithTheStayers() public {
+        _force(100_001_777_000 / 1000 * 1000 + 333, 100_000e6, 0, 0, 0); // a pot that makes every share an odd number
+        uint64 a = _announce(137, 1e15);
+        uint64 b = _announce(211, 1e15);
+        uint64 c = _announce(333, 1e15);
+        _warpAlive(_book().taskOf(c).noticeEnd);
+        vm.startPrank(worker);
+        t.takeTask(a, 0);
+        t.takeTask(b, 0);
+        t.takeTask(c, 0);
+        vm.stopPrank();
+        uint256 lk = t.locked();
+        uint256 n = 13_579e18 + 7;
+        uint256 expected = PotMath.cash(n, t.pot() + lk, t.paidIn(), shares.totalSupply(), team.totalSupply())
+            - PotMath.cash(n, t.pot(), t.paidIn(), shares.totalSupply(), team.totalSupply());
+        (, uint256 quoted,) = t.quoteTakeOut(alice, n);
+        _leave(alice, n);
+        uint256 minted = _book().noteOf(a, alice) + _book().noteOf(b, alice) + _book().noteOf(c, alice);
+        assertEq(minted, quoted, "the quote shows what was written");
+        assertLe(minted, expected, "parts are rounded down: never more than the note");
+        assertGe(minted + 2, expected, "and at most one unit a task less");
+        assertEq(lk - t.locked(), minted);
+        assertEq(t.notesOwed(), minted);
+        uint64[3] memory ids = [a, b, c];
+        for (uint256 i; i < 3; ++i) {
+            TaskBook.Task memory k = _book().taskOf(ids[i]);
+            assertEq(uint256(k.stayer) + k.noteFace, k.locked, "C + N == L");
+            assertEq(k.noteFace, _book().noteOf(ids[i], alice));
+        }
+    }
+
+    function test_theQuoteSkipsOneTaskThatHasRunOutWhileAnotherIsStillTaken() public {
+        // two tasks announced together; `a` is taken at the end of the notice, `b` three days later, so `a` runs out first
+        uint64 a = _announce(500, 10_000e6);
+        uint64 b = _announce(200, 10_000e6);
+        _warpAlive(_book().taskOf(a).noticeEnd);
+        vm.prank(worker);
+        t.takeTask(a, 0);
+        _warpAlive(vm.getBlockTimestamp() + 3 days);
+        vm.prank(worker);
+        t.takeTask(b, 0);
+        _warpAlive(_book().taskOf(a).deadline); // the second `a` runs out; `b` has three days left
+        assertEq(uint8(_book().taskOf(a).state), uint8(TaskBook.State.Taken), "nobody has settled yet");
+        (uint256 cashQ, uint256 noteQ,) = t.quoteTakeOut(alice, 40_000e18);
+        assertGt(noteQ, 0, "`b` is still set aside");
+        uint256 cash = _leave(alice, 40_000e18);
+        assertEq(cash, cashQ, "the cash is the quote");
+        assertEq(_book().noteOf(a, alice), 0, "no note against the task that had run out");
+        assertEq(_book().noteOf(b, alice), noteQ, "the whole note is against the task still taken: the quote said so");
+        assertEq(t.notesOwed(), noteQ);
+    }
+
+    function test_theQuoteSkipsATaskThatHasRunOutAndStillMatchesTheLeave() public {
+        uint64 a = _locked(500, 10_000e6);
+        _leave(bob, 1000e18); // a note against `a`, so the pot and the claims are not round
+        _warpAlive(_book().taskOf(a).deadline);
+        // `a` ran out this second but nobody has settled: the quote must already count it as back, the leave does
+        assertEq(uint8(_book().taskOf(a).state), uint8(TaskBook.State.Taken));
+        (uint256 cashQ, uint256 noteQ,) = t.quoteTakeOut(alice, 40_000e18);
+        assertEq(noteQ, 0, "nothing is set aside any more");
+        uint256 cash = _leave(alice, 40_000e18);
+        assertEq(cash, cashQ);
+        assertEq(_book().noteOf(a, alice), 0);
+        assertEq(uint8(_book().taskOf(a).state), uint8(TaskBook.State.Returned));
+    }
+
+    function test_theBookRefusesANumberTheTreasuryGotWrongInsteadOfWritingNotes() public {
+        uint64 a = _locked(500, 10_000e6);
+        t.forceNote(1); // the Treasury believes 1 unit less is the stayers' claim than the book holds
+        vm.prank(alice);
+        vm.expectRevert(TaskBook.Inconsistent.selector);
+        t.leave(1000e18, 0, alice);
+        assertEq(_book().noteOf(a, alice), 0, "nothing was written");
+    }
+
     // ---- claims
 
     function test_aNoteIsClaimedOnceAndAnyoneMayCallItForTheHolder() public {
@@ -361,6 +459,11 @@ contract NotesTest is PotBase {
         assertEq(t.notesOwed(), 999_998);
         uint256 total;
         for (uint256 i; i < 3; ++i) {
+            if (i == 2) {
+                // the last note: the two units of rounding go to the pot, and the event says so
+                vm.expectEmit(true, true, false, true, address(_book()));
+                emit TaskBook.NoteClaimed(a, h[i], 333_332, 2, 0, 0);
+            }
             uint256 got = _claim(a, h[i]);
             assertEq(got, 333_332);
             total += got;
@@ -395,12 +498,24 @@ contract NotesTest is PotBase {
         _leave(alice, 40_000e18);
         vm.prank(founder);
         t.rejectTask(a);
-        usd.armCallback(alice, address(t), abi.encodeCall(Treasury.claimNote, (a, alice)));
-        assertEq(_claim(a, alice), 2000e6);
-        assertTrue(usd.callbackFired(), "the dollar called back during the payment");
-        assertFalse(usd.callbackOk(), "and the Treasury refused the second claim");
-        assertEq(t.notesOwed(), 0);
-        _assertConserved();
+        // while the holder is paid, the dollar calls back: another claim, a settle, a take-out and a return all find the lock
+        bytes[4] memory calls = [
+            abi.encodeCall(Treasury.claimNote, (a, alice)),
+            abi.encodeCall(Treasury.settle, ()),
+            abi.encodeCall(Treasury.leave, (1e18, 0, alice)),
+            abi.encodeCall(Treasury.returnTask, (a))
+        ];
+        for (uint256 i; i < calls.length; ++i) {
+            uint256 id = vm.snapshotState();
+            usd.armCallback(alice, address(t), calls[i]);
+            assertEq(_claim(a, alice), 2000e6);
+            assertTrue(usd.callbackFired(), "the dollar called back during the payment");
+            assertFalse(usd.callbackOk(), string.concat("the Treasury refused re-entry #", vm.toString(i)));
+            assertEq(bytes4(usd.callbackRet()), Treasury.Reentrancy.selector, "for that reason");
+            assertEq(t.notesOwed(), 0);
+            _assertConserved();
+            vm.revertToState(id);
+        }
     }
 
     function test_theHolderIsPaidAfterEveryBucketIsFinal() public {

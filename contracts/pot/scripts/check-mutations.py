@@ -4,7 +4,12 @@
   vectors     a changed FORMULA makes `test/ModelVectors.t.sol` fail (the contracts are bound to the reference model);
   invariants  a removed or changed GUARD makes `test/PotInvariants.t.sol` or `test/MustBind.t.sol` fail (the invariant run
               and the handler would catch it);
-  tasks       a changed rule or removed guard of the task queue (step 2) makes the test file that binds it fail.
+  tasks       a changed rule or removed guard of the task queue (step 2) makes the test file that binds it fail;
+  notes       the same for exit notes and their claims; a changed number moves the model vectors, a changed rule or order
+              moves the unit tests, the cycled must-bind run or the ledger of events.
+
+A mutation with a seventh entry (a sentence) is an EQUIVALENT mutant: the change cannot alter what the contract does, the
+sentence says why, and the script requires that it survive (a mutant that was killed would mean the proof is wrong).
 
 Each mutation is an exact one-line text replacement that must occur exactly once. A mutation that leaves its tests green is a
 hole in the tests: the script prints it and exits 1. The real project is never touched: a minimal copy goes to a temporary folder
@@ -41,6 +46,10 @@ TE = "test/TasksExpiry.t.sol"
 AR = "test/Arrival.t.sol"
 OB = "test/OwnBurn.t.sol"
 AM = "test/AccessMatrix.t.sol"
+NT = "test/Notes.t.sol"
+NM = "test/NotesMustBind.t.sol"
+NF = "test/NotesFuzz.t.sol"
+TR = "test/TasksRebuild.t.sol"
 MUTATIONS = [
     # ---- formulas: the vectors must notice
     ("offset-dollar", "src/PotMath.sol", "OFFSET_USD = 1;", "OFFSET_USD = 1e6;", QO, "the virtual money in the quote grows to a dollar"),
@@ -62,7 +71,7 @@ MUTATIONS = [
     ("vesting", "src/Vester.sol", "VEST_MULT = 104;", "VEST_MULT = 52;", V, "the 104-unit vesting length"),
     # ---- guards: the invariant run and the must-bind tests must notice
     ("leave-cut", "src/Treasury.sol", "paidIn -= PotMath.paidInCut(paidIn, n, b);", "", INV, "paid-in is not cut on a take-out"),
-    ("team-takes-paid-in", "src/Treasury.sol", "cash = PotMath.teamCash(n, pot, paidIn, shares.totalSupply(), g);", "cash = PotMath.cash(n, pot, paidIn, shares.totalSupply(), g);", INV, "Team Shares reach backers' paid-in money"),
+    ("team-takes-paid-in", "src/Treasury.sol", "cash = PotMath.teamCash(n, pot, paidIn, b, g);", "cash = PotMath.cash(n, pot, paidIn, b, g);", INV, "Team Shares reach backers' paid-in money"),
     ("box-over-cap", "src/Treasury.sol", "if (s.box > cap) {", "if (s.box > cap && false) {", INV, "the box is not cut back to its cap"),
     ("fee-not-owed", "src/Treasury.sol", "feesOwed += fee;", "", INV, "the platform fee is not booked"),
     ("draw-keeps-box", "src/Treasury.sol", "        box -= amount;\n        _pay(to, amount);", "        _pay(to, amount);", INV, "a draw does not empty the box"),
@@ -128,8 +137,43 @@ MUTATIONS = [
     ("release-per-call", "src/Treasury.sol", "uint256 target = t >= until ? total : Math.mulDiv(total, t - arrivalStart, until - arrivalStart);", "uint256 target = (total - s.arriving) + (t >= until ? s.arriving : Math.mulDiv(s.arriving, t - last, until - last));", AR, "the outside money released depends on how often settle is called"),
     ("stream-start", "src/Treasury.sol", "(arrivalStart, arrivalTotal) = (uint64(t), old + x);", "(arrivalStart, arrivalTotal) = (uint64(t), x);", AR, "a merged stream forgets what had not arrived"),
     ("pair-ttl-fixed", "src/Pair.sol", "PROPOSAL_TTL = 2 * uint256(treasury_.unit());", "PROPOSAL_TTL = 14 days;", EX, "a Pair's proposal lives 14 days whatever the time unit"),
-    ("leave-burns-to", "src/Treasury.sol", "        shares.burnFor(msg.sender, n);\n        _pay(to, cash);\n        emit Left(", "        shares.burnFor(to, n);\n        _pay(to, cash);\n        emit Left(", OB, "a take-out burns the Shares of whoever is named, not the caller's"),
-    ("leave-team-burns-to", "src/Treasury.sol", "        team.burnFor(msg.sender, n);\n        _pay(to, cash);\n        emit TeamLeft(", "        team.burnFor(to, n);\n        _pay(to, cash);\n        emit TeamLeft(", OB, "a Team take-out burns the Team Shares of whoever is named"),
+    ("leave-burns-to", "src/Treasury.sol", "        shares.burnFor(msg.sender, n);\n        note = _giveNotes(msg.sender, note);", "        shares.burnFor(to, n);\n        note = _giveNotes(msg.sender, note);", OB, "a take-out burns the Shares of whoever is named, not the caller's"),
+    ("leave-team-burns-to", "src/Treasury.sol", "        team.burnFor(msg.sender, n);\n        note = _giveNotes(msg.sender, note);", "        team.burnFor(to, n);\n        note = _giveNotes(msg.sender, note);", OB, "a Team take-out burns the Team Shares of whoever is named"),
+    # ---- step 2, exit notes and their claims
+    ("notes-by-slot", "src/TaskBook.sol", "noteOf[ids[i]][holder] += part;", "noteOf[uint64(i)][holder] += part;", NT, "a note is kept by the slot of the task, not by its serial"),
+    ("spread-equal", "src/TaskBook.sol", "uint256 part = Math.mulDiv(note, k.stayer, stay);", "uint256 part = note / n;", NT, "a note is spread equally over the open tasks, not by their claims"),
+    ("spread-up", "src/TaskBook.sol", "uint256 part = Math.mulDiv(note, k.stayer, stay);", "uint256 part = Math.mulDiv(note, k.stayer, stay, Math.Rounding.Ceil);", NT, "the parts of a note round up, so a leaver is given more than the note"),
+    ("spread-sum-expired", "src/TaskBook.sol", "k.state == State.Taken && k.expiresAt > block.timestamp && stay != 0", "k.state == State.Taken && stay != 0", NT, "the quote counts a task that has run out as still taken"),
+    ("mint-sum-check", "src/TaskBook.sol", "if (sum != stay || note > stay) revert Inconsistent();", "", NT, "the book writes notes against a sum the Treasury got wrong"),
+    ("claim-not-zeroed", "src/TaskBook.sol", "        noteOf[serial][holder] = 0;\n        paid = Math.mulDiv(note, rem, k.locked);", "        paid = Math.mulDiv(note, rem, k.locked);", NT, "a note is not cleared when it is claimed"),
+    ("claim-dust-to-claimer", "src/TaskBook.sol", "(dust, left) = (left, 0);", "(paid, left) = (paid + left, 0);", NT, "the rounding left at the last claim goes to the last claimer, not to the pot"),
+    ("claim-rounds-up", "src/TaskBook.sol", "paid = Math.mulDiv(note, rem, k.locked);", "paid = Math.mulDiv(note, rem, k.locked, Math.Rounding.Ceil);", NT, "a claim rounds up, so the notes can be paid more than was held for them"),
+    ("claim-face", "src/TaskBook.sol", "paid = Math.mulDiv(note, rem, k.locked);", "paid = note;", NT, "a note is paid its face, not its share of what came back"),
+    ("claim-ratio", "src/TaskBook.sol", "paid = Math.mulDiv(note, rem, k.locked);", "paid = Math.mulDiv(note, rem, k.locked * 101 / 100);", V, "a claim is paid at a ratio one part in a hundred off"),
+    ("claim-void-kept", "src/TaskBook.sol", "        } else {\n            k.noteFace = 0;\n        }", "        } else {\n        }", NM, "a task paid in full keeps the face of its void notes"),
+    ("claim-event-state", "src/TaskBook.sol", "emit NoteClaimed(serial, holder, paid, dust, face, left);", "emit NoteClaimed(serial, holder, paid, dust, face, left + dust);", NT, "the claim event does not carry the state after it (the last claim: the rounding is in `dustToPot`, nothing is left)"),
+    ("mint-event-state", "src/TaskBook.sol", "emit NoteMinted(ids[i], holder, part, k.stayer, k.noteFace);", "emit NoteMinted(ids[i], holder, part, k.stayer, 0);", TR, "the note event does not carry the state after it"),
+    ("mint-keeps-claim", "src/Treasury.sol", "(locked, notesOwed) = (locked - minted, notesOwed + minted);", "(locked, notesOwed) = (locked, notesOwed + minted);", NT, "a note is written but the stayers' claim is not lowered by it"),
+    ("mint-no-owed", "src/Treasury.sol", "(locked, notesOwed) = (locked - minted, notesOwed + minted);", "(locked, notesOwed) = (locked - minted, notesOwed);", NT, "a note is written but no money is held for it"),
+    ("mint-no-event", "src/Treasury.sol", "        _taskMoney(5, 0, who, minted);\n", "", NT, "a note moves money between buckets and says nothing"),
+    ("note-half", "src/Treasury.sol", "return Math.min(withLocked - cashNow, lk);", "return Math.min((withLocked - cashNow) / 2, lk);", V, "a leaver is given half the note they are owed"),
+    ("note-team-formula", "src/Treasury.sol", "isTeam ? PotMath.teamCash(n, p + lk, paidIn, b, g) : PotMath.cash(n, p + lk, paidIn, b, g);", "PotMath.cash(n, p + lk, paidIn, b, g);", NT, "a Team take-out is given a note by the backers' formula"),
+    ("note-after-cut", "src/Treasury.sol", "        uint256 note = _noteFull(false, n, cash, pot, locked, b, g);\n        paidIn -= PotMath.paidInCut(paidIn, n, b);\n        pot -= cash;", "        paidIn -= PotMath.paidInCut(paidIn, n, b);\n        pot -= cash;\n        uint256 note = _noteFull(false, n, cash, pot, locked, b, g);", NT, "the note is worked out after the pot was cut, not before"),
+    ("quote-no-note", "src/Treasury.sol", "        if (cashNow != 0) note = tasks.spreadSum(_noteFull(false, n, cashNow, s.pot, s.stay, b, g), s.stay);\n", "", NT, "the take-out quote shows no note"),
+    ("leave-zero-cash", "src/Treasury.sol", "cash = PotMath.cash(n, pot, paidIn, b, g);\n        if (cash == 0) revert NothingToPay();", "cash = PotMath.cash(n, pot, paidIn, b, g);", NT, "a take-out that pays no cash goes through"),
+    ("claim-pays-sender", "src/Treasury.sol", "if (paid != 0) _pay(holder, paid);", "if (paid != 0) _pay(msg.sender, paid);", NT, "a claim pays whoever calls it, not the holder"),
+    ("claim-no-settle", "src/Treasury.sol", "        _settle();\n        uint256 dust;", "        uint256 dust;", NT, "a claim does not settle first, so a task that ran out is not yet returned"),
+    ("claim-no-lock", "src/Treasury.sol", "function claimNote(uint64 serial, address holder) external nonReentrant returns (uint256 paid) {", "function claimNote(uint64 serial, address holder) external returns (uint256 paid) {", NT, "the holder can re-enter while it is paid"),
+    ("claim-pay-first", "src/Treasury.sol", "        notesOwed -= paid + dust;\n        pot += dust;\n        _taskMoney(6, serial, holder, paid);\n        if (paid != 0) _pay(holder, paid);", "        if (paid != 0) _pay(holder, paid);\n        notesOwed -= paid + dust;\n        pot += dust;\n        _taskMoney(6, serial, holder, paid);", NT, "the holder is paid before the buckets are final"),
+    ("claim-dust-lost", "src/Treasury.sol", "        pot += dust;\n        _taskMoney(6", "        _taskMoney(6", NT, "the rounding left at the last claim is booked out of the notes but never reaches the pot"),
+    ("note-no-cap", "src/Treasury.sol", "return Math.min(withLocked - cashNow, lk);", "return withLocked - cashNow;", NT, "the note is not capped at the money set aside", "never binding: each term of the cash formula rises by at most the money added to its part (ceil(n x d / b) <= d for n <= b), so the note is already at most the money set aside; the cap is defence in depth"),
+    # the vectors bind the rules of the queue to the model (a rule changed in the contract moves a number the model does not move)
+    ("vec-notice-base", "src/TaskBook.sol", "return (2 * n + Math.ceilDiv(uint256(shareBps) * n, 1400), n, 2 * n);", "return (n + Math.ceilDiv(uint256(shareBps) * n, 1400), n, 2 * n);", V, "the notice floor of two units drops to one (the vectors check it to the second)"),
+    ("vec-deadline", "src/TaskBook.sol", "uint64 due = uint64(t + 2 * uint256(unit));", "uint64 due = uint64(t + 3 * uint256(unit));", V, "a taken task is due three units after the take"),
+    ("vec-cap-window", "src/TaskBook.sol", "uint256 span = 4 * uint256(unit);", "uint256 span = 3 * uint256(unit);", V, "the rolling cap counts 21 days (the vectors take at exactly 28 days after)"),
+    ("vec-larger-of", "src/TaskBook.sol", "amount = Math.min(k.maxDollars, Math.mulDiv(pot, k.shareBps, BPS));", "amount = Math.max(k.maxDollars, Math.mulDiv(pot, k.shareBps, BPS));", V, "a take sets aside the larger of the dollars and the share"),
+    ("vec-quote-no-stay", "src/Treasury.sol", "PotMath.quote(s.pot, s.arriving + s.stay, paidIn, b, ge)", "PotMath.quote(s.pot, s.arriving, paidIn, b, ge)", V, "a joiner is priced without the money set aside (the vectors join during a lock)"),
+    ("vec-notes-first", "src/TaskBook.sol", "r.np = Math.mulDiv(r.n, rem, l);", "r.np = Math.min(r.n, rem);", V, "on a part payment the notes are repaid first, not pro rata"),
 ]
 
 
@@ -182,7 +226,9 @@ def main():
             return 2
         survivors = []
         ran = 0
-        for name, rel, old, new, tests, what in MUTATIONS:
+        for entry in MUTATIONS:
+            name, rel, old, new, tests, what = entry[:6]
+            equivalent = entry[6] if len(entry) > 6 else None
             if only and name not in only:
                 continue
             path = os.path.join(work, rel)
@@ -207,6 +253,12 @@ def main():
             ran += 1
             compiled = "Compiler run failed" not in (r.stdout + r.stderr)
             killed = r.returncode != 0 and compiled
+            if equivalent:
+                print("%-22s %s  (%s: %s)" % (name, "SURVIVED as proved: equivalent" if not killed else "KILLED, SO THE PROOF IS WRONG", os.path.basename(tests), what))
+                print("%-22s   proof: %s" % ("", equivalent))
+                if killed:
+                    survivors.append(name)
+                continue
             print("%-22s %s  (%s: %s)" % (name, "KILLED" if killed else "SURVIVED", os.path.basename(tests), what))
             if not killed:
                 survivors.append(name)

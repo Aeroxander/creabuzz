@@ -329,8 +329,7 @@ contract ModelVectorsTest is StackBase {
             _near(j, "burned", z0 - t.Z(), o1[j], SHARE_BASE);
         } else if (kind == keccak256("announce")) {
             vm.prank(founder);
-            uint64 serial =
-                t.announceTask(keccak256(abi.encode("vector task", si, o2[j])), me, y, uint16(x));
+            uint64 serial = t.announceTask(keccak256(abi.encode("vector task", si, o2[j])), me, y, uint16(x));
             assertEq(serial, o2[j], _w(j, "serials are numbered from 1, in order, never reused"));
             TaskBook.Task memory k = _book().taskOf(serial);
             assertEq(k.noticeEnd - k.announcedAt, o1[j], _w(j, "the notice is the model's, to the second"));

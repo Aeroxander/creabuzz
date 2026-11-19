@@ -111,4 +111,84 @@ contract GasTasksTest is StackBase {
         emit log_named_uint("settle with an open task not yet due, gas", used);
         assertLt(used, 120_000);
     }
+
+    /// @dev Eight tasks announced together and taken in the same second: the worst case for every loop of the book.
+    function _eightTaken() internal returns (uint64[8] memory ids) {
+        for (uint256 i; i < 8; ++i) {
+            vm.prank(founder);
+            ids[i] = t.announceTask(WHAT, worker, 1e15, 125);
+        }
+        _keepAlive(_book().taskOf(ids[0]).noticeEnd);
+        vm.startPrank(worker);
+        for (uint256 i; i < 8; ++i) {
+            t.takeTask(ids[i], 0);
+        }
+        vm.stopPrank();
+    }
+
+    function test_gas_aTakeOutThatWritesANote() public {
+        uint64 a = _takenTask();
+        uint256 n = shares.balanceOf(bob) / 2;
+        vm.startPrank(bob);
+        _cold();
+        uint256 g = gasleft();
+        t.leave(n, 0, bob);
+        uint256 used = g - gasleft();
+        vm.stopPrank();
+        assertGt(_book().noteOf(a, bob), 0);
+        emit log_named_uint("a take-out that writes a note against one task, gas", used);
+        assertLt(used, 260_000);
+    }
+
+    function test_gas_aTakeOutThatWritesNotesAgainstEightTasks() public {
+        uint64[8] memory ids = _eightTaken();
+        uint256 n = shares.balanceOf(bob) / 2;
+        vm.startPrank(bob);
+        _cold();
+        uint256 g = gasleft();
+        t.leave(n, 0, bob);
+        uint256 used = g - gasleft();
+        vm.stopPrank();
+        for (uint256 i; i < 8; ++i) {
+            assertGt(_book().noteOf(ids[i], bob), 0);
+        }
+        emit log_named_uint("a take-out that writes notes against eight tasks (the worst case), gas", used);
+        assertLt(used, 700_000);
+    }
+
+    function test_gas_aTeamTakeOutThatWritesNotesAgainstEightTasks() public {
+        _revenue(carol, 40_000e6);
+        vm.warp(vm.getBlockTimestamp() + 8 days);
+        _checkIn();
+        uint256 id = _grant(dave, 1_000_000e18);
+        _active(110 * uint256(UNIT));
+        v.claim(id);
+        _eightTaken();
+        uint256 n = team.balanceOf(dave) / 3;
+        vm.startPrank(dave);
+        _cold();
+        uint256 g = gasleft();
+        t.leaveTeam(n, 0, dave);
+        uint256 used = g - gasleft();
+        vm.stopPrank();
+        emit log_named_uint("a Team take-out that writes notes against eight tasks, gas", used);
+        assertLt(used, 700_000);
+    }
+
+    function test_gas_claimANote() public {
+        uint64 a = _takenTask();
+        uint256 half = shares.balanceOf(bob) / 2;
+        vm.prank(bob);
+        t.leave(half, 0, bob);
+        vm.prank(founder);
+        t.rejectTask(a);
+        vm.startPrank(carol);
+        _cold();
+        uint256 g = gasleft();
+        t.claimNote(a, bob);
+        uint256 used = g - gasleft();
+        vm.stopPrank();
+        emit log_named_uint("claim a note (the last note of its task: the rounding goes to the pot), gas", used);
+        assertLt(used, 150_000);
+    }
 }
