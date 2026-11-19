@@ -4,7 +4,6 @@
  * Launcher's settings hash is read when the sheet opens and again just before the press; if it moved, nothing is sent and the
  * sheet says so and shows the new settings. The call is made from exactly the two numbers and the hash on the sheet.
  */
-import { launchCall } from "@creaton/core/pot/pot-calls.ts";
 import { readLaunchOffer } from "@creaton/core/pot/pot-state.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -16,6 +15,7 @@ import { PotSheet } from "../pot/PotSheet";
 import type { Ready } from "../pot/use-pot";
 import { isLaunched } from "./launch-read";
 import { launchIdentity, sharesName, sharesSymbol } from "./launch-ids";
+import { launchCallFor } from "./launch-plan";
 import {
   afterLaunch,
   allowanceForBackers,
@@ -62,17 +62,15 @@ export function LaunchSheet({
   });
   const terms = offer.data ? readLaunchTerms(draft, offer.data) : null;
   const name = sharesName(project.name);
-  const { projectId, key } = launchIdentity(project, ready.address);
+  const { key } = launchIdentity(project, ready.address);
   const call =
     offer.data && terms?.ok
-      ? launchCall({
+      ? launchCallFor({
           launcher,
-          projectId,
-          name,
-          symbol: sharesSymbol(project.name),
-          ratePpm: terms.ratePpm,
-          teamPool: terms.teamPool,
-          settingsHash: offer.data.settingsHash,
+          project,
+          founder: ready.address,
+          terms,
+          offer: offer.data,
         })
       : null;
   const shown = offer.data;

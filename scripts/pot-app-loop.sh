@@ -9,6 +9,10 @@
 #   pot-screens.test.ts   what the money screens read and send, and a Pair's whole round for a draw and for a forfeit of a member's grant, with both signers;
 #   pot-allowance.test.ts an announced raise: the date the app reads is the date the Treasury's own RateProposed log announces
 #                         (announced at + one time unit), applying before it is refused and after it works;
+#   pot-team.test.ts      launching through the launch sheet's own reader, terms and call (the defaults, other numbers, the ceiling, a platform
+#                         setting that changed between the sheet and the signature, the same project twice); an offer of the seat taken,
+#                         withdrawn, left to run out, and made with the founder leaving; a Pair made from an offer to its address and a
+#                         wind-down through it (both signers, in words, taking out stays open); a wind-down by anyone after a long quiet;
 #   pot-states.test.ts    Take out with the door shut, after the team stopped checking in, with outside money arriving, after a
 #                         wind-down by anyone and by the runner; a Pair's call refused for its own proposer;
 #   passkey-back.test.ts  a Back from a passkey account: one operation, one passkey prompt, the Shares equal the quote.
@@ -53,7 +57,7 @@ cd "$ROOT/app"
 REPORT="$STATE/vitest.json"
 status=0
 M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts \
-  tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts tests/anvil/pot-states.test.ts tests/anvil/pot-allowance.test.ts tests/anvil/passkey-back.test.ts \
+  tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts tests/anvil/pot-team.test.ts tests/anvil/pot-states.test.ts tests/anvil/pot-allowance.test.ts tests/anvil/passkey-back.test.ts \
   --reporter=default --reporter=json --outputFile.json="$REPORT" "$@" || status=$?
 node -e '
 const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
