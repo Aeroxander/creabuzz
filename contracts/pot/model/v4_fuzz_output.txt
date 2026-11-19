@@ -1,0 +1,1 @@
+FUZZ 1000 seeds x 400 ops: lowest per-Share face ratio backer 1.000000000000000 team 1.000000000000000; max conservation error 1.2e-62; notes<=returned True; most tasks in one run 47 (8 open at a time, serials never reused)

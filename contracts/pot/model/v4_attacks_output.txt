@@ -1,0 +1,91 @@
+== A. note keyed by a never-reused serial: the slot-reuse attack of the review
+   never-reused serial      x left with cash 54000 and a note of 6000; later claims 0 from a returned task of 7200; honest holder's Shares then worth 36000
+   slot-keyed (the hole)    x left with cash 54000 and a note of 6000; later claims 6000 from a returned task of 7200; honest holder's Shares then worth 30000
+
+== B. a bot joins just before an outside payment R (pot 98,000), the payment lands, the bot leaves at once or stays
+   reference: with no bot the honest holder ends with 98,000 + R.  Bot net is per 100 it paid.
+   old rule (payment lands at once, 2% extra)              R=10%  W=0.1/1/3 x pot:  +5.00 (honest -  700) |  +1.88 (honest - 3881) |  -0.05 (honest - 5851)
+   old rule (payment lands at once, 2% extra)              R=25%  W=0.1/1/3 x pot: +18.12 (honest - 2012) |  +9.16 (honest -11158) |  +3.61 (honest -16821)
+   old rule (payment lands at once, 2% extra)              R=50%  W=0.1/1/3 x pot: +40.00 (honest - 4200) | +21.29 (honest -23287) |  +9.70 (honest -35104)
+   revised: payment drips over 7 days, bot leaves at once  R=10%  W=0.1/1/3 x pot:  -2.00 (honest -    0) |  -2.00 (honest -    0) |  -2.00 (honest -    0)
+   revised: payment drips over 7 days, bot leaves at once  R=25%  W=0.1/1/3 x pot:  -2.00 (honest -    0) |  -2.00 (honest -    0) |  -2.00 (honest -    0)
+   revised: payment drips over 7 days, bot leaves at once  R=50%  W=0.1/1/3 x pot:  -2.00 (honest -    0) |  -2.00 (honest -    0) |  -2.00 (honest -    0)
+   review's fix: leaver gets a note on the unreleased part R=10%  W=0.1/1/3 x pot:  +6.91 (honest -  891) |  +2.90 (honest - 4900) |  +0.45 (honest - 7350)
+   review's fix: leaver gets a note on the unreleased part R=25%  W=0.1/1/3 x pot: +20.27 (honest - 2227) | +10.25 (honest -12250) |  +4.12 (honest -18375)
+   review's fix: leaver gets a note on the unreleased part R=50%  W=0.1/1/3 x pot: +42.55 (honest - 4455) | +22.50 (honest -24500) | +10.25 (honest -36750)
+   revised: bot stays the 7 days                           R=10%  W=0.1/1/3 x pot:  +6.91 (honest -  891) |  +2.90 (honest - 4900) |  +0.45 (honest - 7350)
+   revised: bot stays the 7 days                           R=25%  W=0.1/1/3 x pot: +20.27 (honest - 2227) | +10.25 (honest -12250) |  +4.12 (honest -18375)
+   revised: bot stays the 7 days                           R=50%  W=0.1/1/3 x pot: +42.55 (honest - 4455) | +22.50 (honest -24500) | +10.25 (honest -36750)
+
+== B2. an honest holder who leaves while outside money is still arriving (pot 98,000)
+   payment 10% of pot, 0 of 7 days released: leaving pays 98000 against a face value of 107800 (90.9 per 100 of face)
+   payment 10% of pot, 1 of 7 days released: leaving pays 99400 against a face value of 107800 (92.2 per 100 of face)
+   payment 10% of pot, 3 of 7 days released: leaving pays 102200 against a face value of 107800 (94.8 per 100 of face)
+   payment 10% of pot, 6 of 7 days released: leaving pays 106400 against a face value of 107800 (98.7 per 100 of face)
+   payment 25% of pot, 0 of 7 days released: leaving pays 98000 against a face value of 122500 (80.0 per 100 of face)
+   payment 25% of pot, 1 of 7 days released: leaving pays 101500 against a face value of 122500 (82.9 per 100 of face)
+   payment 25% of pot, 3 of 7 days released: leaving pays 108500 against a face value of 122500 (88.6 per 100 of face)
+   payment 25% of pot, 6 of 7 days released: leaving pays 119000 against a face value of 122500 (97.1 per 100 of face)
+
+== B3. a forfeit announced 7 days ahead (pool 10M all unvested, outside money 60,000 already in), bot 100,000
+   bot joins before the notice, leaves once it starts             bot net -2000 on 100,000 paid (-2.00 per 100)
+   bot joins during the notice (priced as burned), leaves at once bot net -16381 on 100,000 paid (-16.38 per 100)
+   bot joins before and stays until the burn has happened: net +11158 on 100,000 (an ordinary holder's gain, not stopped)
+
+== C. does the Team take from later joiners? 10,000 first, then 200 joins of 500, no outside money, whole pool vests and leaves
+   old rule (2% extra kept in the pot)    pool    10000000: Team takes  1256.6 of 110000 joined; backers get 96.86 per 100 paid
+   old rule (2% extra kept in the pot)    pool   100000000: Team takes  1817.4 of 110000 joined; backers get 96.35 per 100 paid
+   revised (no extra)                     pool    10000000: Team takes     0.0 of 110000 joined; backers get 98.00 per 100 paid
+   revised (no extra)                     pool   100000000: Team takes     0.0 of 110000 joined; backers get 98.00 per 100 paid
+
+== D. early joiners: equal joins of 100 into an empty project, nobody leaves, value per 100 paid
+   revised,   100 joins: first 98.00  middle 98.00  last 98.00
+   revised,  1000 joins: first 98.00  middle 98.00  last 98.00
+   old rule with the 2% extra,   100 joins: first 106.4  last 96.1
+   old rule with the 2% extra,  1000 joins: first 111.3  last 96.1
+   old rule with the 2% extra, 10000 joins: first 116.4  last 96.1
+
+== E. round trips
+   join 100 then leave at once returns 98.00
+   whale 900,000 into 100,000 and out at once: gets 882000 (98.0 per 100); earlier holders' gain 0.0000
+   cycler      1000 into a 98,000 pot: gets back 98.00 per 100
+   cycler    100000 into a 98,000 pot: gets back 98.00 per 100
+   cycler   1000000 into a 98,000 pot: gets back 98.00 per 100
+   cycler  10000000 into a 98,000 pot: gets back 98.00 per 100
+
+== F. money locked for a task, exit notes (no extra)
+   exit note False: founder holds 30%, the other 70% leave during a 10% lock, task returned: founder's Shares end 37000 (fair 30,000); leavers get 63000 in all (fair 70,000)
+   exit note True : founder holds 30%, the other 70% leave during a 10% lock, task returned: founder's Shares end 30000 (fair 30,000); leavers get 70000 in all (fair 70,000)
+   joiner 50,000 into a pot with 10% locked, leaves at once, task returned: joiner gets 49000 (98.0 per 100 paid); earlier holders' Shares worth 98000 (no joiner: 98000)
+   joiner 50,000 into a pot with 10% locked, leaves at once, task accepted: joiner gets 45733 (91.5 per 100 paid); earlier holders' Shares worth 91467 (no joiner: 88200)
+   part-paid accept: 9,800 locked, one holder of half the Shares leaves (note 4,900), worker paid 60%: the rest comes back pro rata
+      locked 9800 = stayers' claim 4900 + notes 4900; worker 60%; back 3920: stayers 1960, notes 1960
+
+== G. a backer who never looks (allowance exponential, rolling 28-day cap on money TAKEN, 5% per task)
+   check, old rules (10% per 30 days, notice 12 days):  [15.2, 39.1, 62.9] (design said 15.2 / 39.1 / 62.9)
+   revised, allowance 0.10%/day: lost after 30 / 90 / 180 days: [12.4, 32.8, 54.9]
+   revised, allowance 0.20%/day: lost after 30 / 90 / 180 days: [15.0, 38.6, 62.3]
+   revised, tasks only (allowance 0): [9.8, 26.5, 46.0] ; allowance only at 0.20%: [5.8, 16.5, 30.3]
+   weekly looker, worst phase: time left to act after the next look = notice - 7 days; notice = 14 days + 12 hours per 1%
+      task  0.10%: notice 14.05 days; left after the next look 7.05 days (169 hours)
+      task  1.00%: notice 14.50 days; left after the next look 7.50 days (180 hours)
+      task  1.25%: notice 14.62 days; left after the next look 7.62 days (183 hours)
+      task  5.00%: notice 16.50 days; left after the next look 9.50 days (228 hours)
+   old notice (7 days + 12 hours per 1%): a task of 1.25% left a weekly looker 15 hours; a 5% task 60 hours
+   miss chance for a looker every T days = max(0, 1 - notice/T), revised notice:
+      T= 7: a 0.1% task (14.05 days)  0%, a 5% task (16.5 days)  0%
+      T=14: a 0.1% task (14.05 days)  0%, a 5% task (16.5 days)  0%
+      T=21: a 0.1% task (14.05 days) 33%, a 5% task (16.5 days) 21%
+      T=30: a 0.1% task (14.05 days) 53%, a 5% task (16.5 days) 45%
+   old notice, T=14: 5% task (9.5 days) 32%, 10% task (12 days) 14%
+
+== H. what happens to the old claim 'two batches in 23 days' once the cap counts money taken
+   batch 1 taken day 23.5 at the latest allowed; the next 10% can only be taken from day 51.5; so 10% (not 19%) moves in any 28 days
+
+== I. mint-side offset only (1 dollar and 100 Shares in the QUOTE), leavers paid from stored numbers: 200 equal holders, pot spent to 60%
+   leaver 1 gets 0.006000000, leaver 200 gets 0.006000000 per Share; the stored pot per Share at each turn is paid exactly, so the run does not change what the others get (the first and last differ only because they hold different numbers of Shares per 500)
+   no offset, equal holders: first 0.006000000000000 last 0.006000000000000 per Share (spread 0.00e+00)
+
+== J. worked quote and leave (no extra)
+   pot 83,500, paid-in 98,000, 9.8M backer + 10M Team Shares: a Share is worth 0.008520 if you leave; 100 paid -> 98 into the pot -> 11502 Shares; leaving at once pays 98.00
+   pot 120,000: backer Share 0.011111 (1,000,000 -> 11111), Team Share 0.001111 (1,000,000 -> 1111)
