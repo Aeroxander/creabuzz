@@ -90,7 +90,35 @@ pub trait ChainSource: Send + Sync {
     ) -> anyhow::Result<Option<Vec<u8>>> {
         Ok(None)
     }
+
+    /// Every call of `calls` at block `at`, answers in the same order. All the
+    /// answers are of the one block: a call that fails (a revert, a node that
+    /// cannot serve the block, a source that makes no calls) fails the whole
+    /// batch, so a record is never built from a part of its numbers.
+    async fn eth_call_batch(&self, calls: &[ViewCall], at: u64) -> anyhow::Result<Vec<Vec<u8>>> {
+        let mut out = Vec::with_capacity(calls.len());
+        for call in calls {
+            let answer = self
+                .eth_call(&call.to, &call.data, at)
+                .await?
+                .ok_or_else(|| anyhow!("this chain source makes no calls"))?;
+            out.push(answer);
+        }
+        Ok(out)
+    }
 }
+
+/// One read-only call of a batch: the contract and its calldata.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ViewCall {
+    /// The contract.
+    pub to: [u8; 20],
+    /// The selector and the ABI-encoded arguments.
+    pub data: Vec<u8>,
+}
+
+/// At most this many `eth_call`s of a batch are in flight at once.
+pub const CALLS_IN_FLIGHT: usize = 16;
 
 /// Logs from at most this many addresses go into one `eth_getLogs` call.
 pub const ADDRESSES_PER_CALL: usize = 100;
@@ -335,6 +363,25 @@ impl ChainSource for RpcChainSource {
         super::word::parse_bytes(text)
             .map(Some)
             .ok_or_else(|| anyhow!("eth_call answer is not hex"))
+    }
+
+    async fn eth_call_batch(&self, calls: &[ViewCall], at: u64) -> anyhow::Result<Vec<Vec<u8>>> {
+        use futures_util::future::try_join_all;
+        // Each call names the block number, so the answers are of one block
+        // however they are interleaved; `try_join_all` keeps their order.
+        let mut out = Vec::with_capacity(calls.len());
+        for chunk in calls.chunks(CALLS_IN_FLIGHT) {
+            let mut pending = Vec::with_capacity(chunk.len());
+            for call in chunk {
+                pending.push(async move {
+                    self.eth_call(&call.to, &call.data, at)
+                        .await?
+                        .ok_or_else(|| anyhow!("eth_call answer is missing"))
+                });
+            }
+            out.extend(try_join_all(pending).await?);
+        }
+        Ok(out)
     }
 }
 

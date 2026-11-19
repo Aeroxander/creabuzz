@@ -147,6 +147,7 @@ fn config(launcher: [u8; 20]) -> ChainReaderConfig {
         confirmations: 0,
         poll_secs: 1,
         refresh_secs: 3_600,
+        active_refresh_secs: 600,
         log_range: 9,
         community_host: None,
         helper: None,

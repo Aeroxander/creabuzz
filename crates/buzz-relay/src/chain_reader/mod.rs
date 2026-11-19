@@ -21,14 +21,16 @@ pub mod helper;
 pub mod ledger;
 pub mod numbers;
 pub mod publish;
+pub mod record;
 pub mod scan;
 mod settings;
 pub mod source;
 pub mod store;
+pub mod views;
 pub mod word;
 
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicI64, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -41,7 +43,7 @@ use sha2::{Digest, Sha256};
 pub use settings::ChainReaderConfig;
 
 use crate::state::AppState;
-use numbers::AsOf;
+use numbers::{AsOf, Cadence};
 use scan::{ScanReport, ScanSettings};
 use source::{ChainSource, RpcChainSource};
 use word::{hex0x, Word};
@@ -252,6 +254,13 @@ impl ChainReader {
             .await
     }
 
+    fn cadence(&self) -> Cadence {
+        Cadence {
+            active_secs: self.config.active_refresh_secs,
+            idle_secs: self.config.refresh_secs,
+        }
+    }
+
     async fn tenant(&self) -> anyhow::Result<Option<TenantContext>> {
         let record = self
             .state
@@ -297,7 +306,15 @@ impl ChainReader {
         let now = chrono::Utc::now().timestamp();
         let projects = store::final_projects(pool, reader, final_block).await?;
         let previous = store::published(pool, reader).await?;
-        let refresh = i64::try_from(self.config.refresh_secs).unwrap_or(i64::MAX);
+        // A project is looked at again once its shortest promise has passed;
+        // `publish_project` keeps the record when the project's own promise
+        // (`refreshEverySecs`) is not yet due.
+        let refresh = i64::try_from(
+            self.config
+                .active_refresh_secs
+                .min(self.config.refresh_secs),
+        )
+        .unwrap_or(i64::MAX);
 
         // Changed projects first, then those due a refresh, longest unchecked
         // first, at most a pass's worth.
@@ -371,13 +388,18 @@ impl ChainReader {
     ) -> anyhow::Result<([u8; 32], i64)> {
         let key_hex = hex0x(key);
         let mut created = u64::try_from(created_at).context("time before 1970")?;
+        let mut content = content.clone();
         for _ in 0..2 {
+            // `builtAt` is the event's own `created_at`.
+            if let Some(built) = content.get_mut("builtAt") {
+                *built = json!(created);
+            }
             let tags = publish::tags(
                 &key_hex,
                 self.config.chain_id,
                 &hex0x(&self.config.launcher),
             )?;
-            match publish::publish(&self.state, tenant, tags, &key_hex, content, created).await? {
+            match publish::publish(&self.state, tenant, tags, &key_hex, &content, created).await? {
                 publish::Outcome::Stored(id) => {
                     return Ok((id, i64::try_from(created).context("time too large")?))
                 }
@@ -411,16 +433,26 @@ impl ChainReader {
             &store::balances(pool, reader, key, events::Role::Shares, as_of.block).await?,
             &store::balances(pool, reader, key, events::Role::Team, as_of.block).await?,
         )?;
-        let Some(content) = numbers::derive(key, &ledger, as_of)? else {
-            return Ok(false);
-        };
+        let created_at = prev.map_or(now, |p| now.max(p.published_at + 1));
+        let content = numbers::derive(
+            self.source.as_ref(),
+            &ledger,
+            as_of,
+            &self.cadence(),
+            u64::try_from(created_at).context("time before 1970")?,
+        )
+        .await?;
         let facts = digest(&numbers::facts_of(&content));
         let shown = digest(&numbers::without_as_of(&content));
         if let Some(p) = prev {
             let same_facts = p.facts_digest.as_slice() == facts.as_slice();
             let same_shown = p.content_digest.as_slice() == shown.as_slice();
-            let refresh_due =
-                now - p.published_at >= i64::try_from(self.config.refresh_secs).unwrap_or(i64::MAX);
+            // The record promises a fresh one every `refreshEverySecs`.
+            let promised = content
+                .get("refreshEverySecs")
+                .and_then(Value::as_i64)
+                .unwrap_or(i64::try_from(self.config.refresh_secs).unwrap_or(i64::MAX));
+            let refresh_due = now - p.published_at >= promised;
             if same_facts && !p.stale && (same_shown || !refresh_due) {
                 // Nothing a reader would see changed (or only the clock, and not
                 // for long): keep the record, remember the block it covers, and
@@ -429,7 +461,6 @@ impl ChainReader {
                 return Ok(false);
             }
         }
-        let created_at = prev.map_or(now, |p| now.max(p.published_at + 1));
         let (event_id, created_at) = self.sign(tenant, key, &content, created_at).await?;
         store::record_published(
             pool,
@@ -498,6 +529,42 @@ pub fn spawn(state: Arc<AppState>) -> anyhow::Result<Option<tokio::task::JoinHan
         poll,
         MAX_BACKOFF,
     ))))
+}
+
+/// Whether the chain's dollar is play money, as the Launcher last said
+/// (`testNetwork()`): 0 not known yet, 1 play money, 2 real money.
+static PLAY_MONEY: AtomicU8 = AtomicU8::new(0);
+
+/// Note what the Launcher said about the dollar (every record build reads it).
+pub(crate) fn note_play_money(play: bool) {
+    PLAY_MONEY.store(if play { 1 } else { 2 }, Ordering::Relaxed);
+}
+
+/// Whether the dollar of the chain this server reads is play money. `None`
+/// until the reader has read the Launcher: callers treat that as play money,
+/// the safe answer.
+pub fn play_money() -> Option<bool> {
+    #[cfg(test)]
+    if let Some(forced) = TEST_PLAY_MONEY.with(std::cell::Cell::get) {
+        return forced;
+    }
+    match PLAY_MONEY.load(Ordering::Relaxed) {
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// A test's own answer to [`play_money`], for the thread it runs on.
+    static TEST_PLAY_MONEY: std::cell::Cell<Option<Option<bool>>> = const { std::cell::Cell::new(None) };
+}
+
+/// Make [`play_money`] answer `value` on this thread (tests only).
+#[cfg(test)]
+pub(crate) fn set_play_money_for_test(value: Option<bool>) {
+    TEST_PLAY_MONEY.with(|c| c.set(Some(value)));
 }
 
 /// Unix seconds of the last pass that worked (0: none yet).
@@ -660,5 +727,7 @@ mod supervise_tests {
     }
 }
 
+#[cfg(test)]
+mod record_tests;
 #[cfg(test)]
 mod scan_postgres_tests;

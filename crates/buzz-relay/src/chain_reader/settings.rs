@@ -25,10 +25,14 @@ pub struct ChainReaderConfig {
     pub confirmations: u64,
     /// Seconds between passes (`BUZZ_CHAIN_POLL_SECS`, default 12).
     pub poll_secs: u64,
-    /// Seconds after which a record whose time-dependent numbers moved (the
-    /// refund, the active clock) is signed again even with no new event
+    /// Seconds after which a record whose time-dependent numbers moved is
+    /// signed again even with no new event, for a project whose allowance is
+    /// idle and that has no money arriving: the heartbeat
     /// (`BUZZ_CHAIN_REFRESH_SECS`, default 3600).
     pub refresh_secs: u64,
+    /// The same while the allowance is accruing or outside money is arriving
+    /// (`BUZZ_CHAIN_ACTIVE_REFRESH_SECS`, default 600).
+    pub active_refresh_secs: u64,
     /// Blocks per log request (`BUZZ_CHAIN_LOG_RANGE`, default 2000, at most
     /// 10000).
     pub log_range: u64,
@@ -39,13 +43,14 @@ pub struct ChainReaderConfig {
     pub helper: Option<super::helper::HelperConfig>,
 }
 
-const VARS: [&str; 8] = [
+const VARS: [&str; 9] = [
     "BUZZ_CHAIN_ID",
     "BUZZ_CHAIN_LAUNCHER",
     "BUZZ_CHAIN_START_BLOCK",
     "BUZZ_CHAIN_CONFIRMATIONS",
     "BUZZ_CHAIN_POLL_SECS",
     "BUZZ_CHAIN_REFRESH_SECS",
+    "BUZZ_CHAIN_ACTIVE_REFRESH_SECS",
     "BUZZ_CHAIN_LOG_RANGE",
     "BUZZ_CHAIN_COMMUNITY_HOST",
 ];
@@ -120,7 +125,8 @@ impl ChainReaderConfig {
             start_block: number("BUZZ_CHAIN_START_BLOCK", 0, 0, i64::MAX as u64 / 2)?,
             confirmations: number("BUZZ_CHAIN_CONFIRMATIONS", 12, 0, 10_000)?,
             poll_secs,
-            refresh_secs: number("BUZZ_CHAIN_REFRESH_SECS", 3_600, 60, 7 * 86_400)?,
+            refresh_secs: number("BUZZ_CHAIN_REFRESH_SECS", 3_600, 5, 7 * 86_400)?,
+            active_refresh_secs: number("BUZZ_CHAIN_ACTIVE_REFRESH_SECS", 600, 5, 7 * 86_400)?,
             log_range: number("BUZZ_CHAIN_LOG_RANGE", 2_000, 1, 10_000)?,
             community_host: var("BUZZ_CHAIN_COMMUNITY_HOST").map(|h| h.to_ascii_lowercase()),
             helper,

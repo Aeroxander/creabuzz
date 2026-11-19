@@ -13,7 +13,7 @@ use serde_json::Value;
 
 use super::events::{self, Role};
 use super::ledger::LogRow;
-use super::source::{Header, RawLog};
+use super::source::{ChainSource, Header, RawLog};
 use super::word::{parse_bytes, parse_fixed, Word};
 
 const RUN: &str = include_str!("testdata/pot-run.json");
@@ -209,5 +209,88 @@ impl Fixture {
             .filter(|(_, p, r)| p.as_deref() == Some(name) && r.block <= up_to)
             .map(|(_, _, r)| r)
             .collect()
+    }
+}
+
+/// A node that answers the record builder's view calls from a book of the
+/// real chain's answers (`books` in the run), at the one block the book was
+/// taken at. A call with no captured answer, or at another block, fails, like
+/// a node that cannot serve it.
+pub struct BookChain {
+    /// The block the book was taken at.
+    pub block: u64,
+    /// `(contract, calldata)` to the raw answer.
+    pub answers: std::collections::HashMap<([u8; 20], Vec<u8>), Vec<u8>>,
+}
+
+impl BookChain {
+    /// Load the book `name` of the run, and the project it is of.
+    pub fn load(fx: &Fixture, name: &str) -> (String, Self) {
+        let book = &fx.json["books"][name];
+        let answers = book["calls"]
+            .as_object()
+            .expect("a book of calls")
+            .iter()
+            .map(|(key, answer)| {
+                let (to, data) = key.split_once(':').expect("to:data");
+                (
+                    (
+                        parse_fixed::<20>(to).expect("address"),
+                        parse_bytes(data).expect("calldata"),
+                    ),
+                    parse_bytes(answer.as_str().expect("an answer")).expect("hex answer"),
+                )
+            })
+            .collect();
+        (
+            book["project"].as_str().expect("project").to_owned(),
+            Self {
+                block: book["block"].as_u64().expect("block"),
+                answers,
+            },
+        )
+    }
+}
+
+#[async_trait::async_trait]
+impl ChainSource for BookChain {
+    async fn chain_id(&self) -> anyhow::Result<u64> {
+        Ok(31337)
+    }
+    async fn head(&self) -> anyhow::Result<u64> {
+        Ok(self.block)
+    }
+    async fn header(&self, _number: u64) -> anyhow::Result<Option<Header>> {
+        Ok(None)
+    }
+    async fn logs(
+        &self,
+        _addresses: &[[u8; 20]],
+        _topics: &[Word],
+        _from: u64,
+        _to: u64,
+    ) -> anyhow::Result<Vec<RawLog>> {
+        Ok(Vec::new())
+    }
+    async fn eth_call(
+        &self,
+        to: &[u8; 20],
+        data: &[u8],
+        at: u64,
+    ) -> anyhow::Result<Option<Vec<u8>>> {
+        if at != self.block {
+            anyhow::bail!("the node cannot serve block {at}");
+        }
+        self.answers
+            .get(&(*to, data.to_vec()))
+            .cloned()
+            .map(Some)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no captured answer for 0x{} {}",
+                    hex::encode(to),
+                    hex::encode(data)
+                )
+            })
     }
 }

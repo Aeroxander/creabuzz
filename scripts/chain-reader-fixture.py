@@ -23,6 +23,7 @@ Output: crates/buzz-relay/src/chain_reader/testdata/pot-run.json with
   - logs       every log of the chain, as the node returned them
   - projects   the addresses each project's Launcher event names (what the reader must find on its own)
   - snapshots  per project, the stored numbers the contract views gave right after each block that changed them
+  - books      per named block, the raw answers of every view the record builder calls (replayed by the record tests)
   - final      the views at the last block: the settled views, every holder's balances, every grant, the agents
 The Rust tests replay `logs` through the reader's own code and compare with `snapshots` and `final`.
 """
@@ -188,6 +189,54 @@ def day(n):
     return GENESIS + 1000 + int(n * DAY)
 
 
+# The views a record is built from (RECORD-V2 section 4.2), as the server asks for them. The server's list is
+# `chain_reader/views.rs`; this one is its mirror, taken as raw calldata and answer so that a test can replay
+# the server's calls against the real chain's answers. A call the server makes that is not here fails its test.
+TREASURY_UINTS = [
+    "pot", "paidIn", "box", "arriving", "arrivalEnd", "feesOwed", "locked", "notesOwed", "ratePpm", "pendingRatePpm",
+    "pendingAt", "lastSettle", "lastCheckIn", "activeSeconds", "activeEnd", "activeNow", "windDownKind", "windDownAt",
+    "Z", "unit", "feeBps", "boxCap", "leaveValue", "teamValue", "agentUsd", "agentTeam", "agentEpoch", "MIN_JOIN",
+    "MIN_REVENUE", "MAX_RATE_PPM", "CHECK_IN_MULT", "WIND_MULT", "doorFlag", "doorOpenNow", "runner",
+]
+VESTER_UINTS = [
+    "grantCount", "committed", "CLIFF_MULT", "VEST_MULT", "MIN_GRANT", "MAX_GRANTS_PER_MEMBER", "PROTECTED_LENGTH",
+]
+
+
+def record_book(p, launcher, dollar, block):
+    """Every view the record builder calls, for project `p` at `block`: {"<to>:<calldata>": "<answer>"}."""
+    at_b = hex(block)
+    book = {}
+
+    def get(to, sig, *args):
+        data = selector(sig) + "".join(word(a) for a in args)
+        book[f"{to}:{data}"] = eth_call(to, sig, *args, block=at_b)
+        return book[f"{to}:{data}"]
+
+    t, v = p["treasury"], p["vester"]
+    for name in TREASURY_UINTS:
+        get(t, f"{name}()")
+    for name in VESTER_UINTS:
+        get(v, f"{name}()")
+    get(p["shares"], "totalSupply()")
+    get(p["team"], "totalSupply()")
+    get(p["team"], "balanceOf(address)", v)
+    get(dollar, "balanceOf(address)", t)
+    get(launcher, "testNetwork()")
+    runner = addr_of(eth_call(t, "runner()", block=at_b))
+    is_pair = uint(get(launcher, "isPair(address)", runner)) != 0
+    if is_pair:
+        get(runner, "first()")
+        get(runner, "second()")
+    for i in range(uint(eth_call(v, "grantCount()", block=at_b))):
+        for sig in ("grantOf(uint256)", "vestedOf(uint256)", "claimable(uint256)"):
+            get(v, sig, i)
+    for a in ADDR:
+        for sig in ("agents(address)", "agentEpochOf(address)", "agentUsdUsed(address)", "agentTeamUsed(address)"):
+            get(t, sig, a)
+    return book
+
+
 def main():
     check = "--check" in sys.argv
     tmp = tempfile.mkdtemp(prefix="chain-reader-fixture-")
@@ -274,6 +323,7 @@ def play(tmp):
         return lambda: tx(runner_of(), T, "checkIn(bytes32)", run(["cast", "keccak", f"record {i}"]), at=day(7 * i))
 
     state = {"runner": FOUNDER_A, "b": {}}
+    marks = {}  # blocks the record books are taken at, by name
 
     def runner_of():
         return state["runner"]
@@ -306,7 +356,7 @@ def play(tmp):
     at(101.5, lambda: tx(runner_of(), T, "setDoor(bool)", "true", at=day(101.5)))
     at(102, lambda: tx(runner_of(), T, "authoriseAgent(address)", ADDR[AGENT], at=day(102)))
     at(102.2, lambda: tx(runner_of(), T, "setAgent(address,uint128,uint128)", ADDR[AGENT], 40_000_000, 100 * 10**18, at=day(102.2)))
-    at(103, lambda: tx(AGENT, T, "draw(address,uint256)", ADDR[AGENT], 5_000_000, at=day(103)))
+    at(103, lambda: marks.__setitem__("A_live", tx(AGENT, T, "draw(address,uint256)", ADDR[AGENT], 5_000_000, at=day(103))))
     at(104, lambda: tx(runner_of(), T, "revokeAgent(address)", ADDR[AGENT], at=day(104)))
     at(106.5, lambda: tx(PAYER, V, "execute(uint256)", 1, at=day(106.5)))
     at(107.5, lambda: tx(PAYER, T, "applyRate()", at=day(107.5)))
@@ -376,7 +426,7 @@ def play(tmp):
     at(42, lambda: tx(PAYER, proj["B"]["vester"], "execute(uint256)", 0, at=day(42)))
     at(32, lambda: pair_call(proj["B"]["treasury"], "setDoor(bool)", "false", when=32))
     at(33, lambda: pair_call(proj["B"]["treasury"], "setDoor(bool)", "true", cancel=True, when=33))
-    at(35, lambda: tx(SECOND_B, proj["B"]["pair"], "checkIn(bytes32)", run(["cast", "keccak", "record b2"]), at=day(35)))
+    at(35, lambda: marks.__setitem__("B_pair", tx(SECOND_B, proj["B"]["pair"], "checkIn(bytes32)", run(["cast", "keccak", "record b2"]), at=day(35))))
     at(40, lambda: pair_call(launcher, "windDown(bytes32)", proj["B"]["key"], when=40))
 
     def admin():
@@ -457,6 +507,14 @@ def play(tmp):
             "agents": agents, "agentEpoch": str(uint(eth_call(t, "agentEpoch()", block=at_b))),
             "dollarHeld": str(uint(eth_call(dollar, "balanceOf(address)", t, block=at_b))),
         }
+    books = {}
+    for name, project, block in (
+        ("A_live", "A", marks["A_live"]),
+        ("B_pair", "B", marks["B_pair"]),
+        ("A_end", "A", head),
+        ("B_end", "B", head),
+    ):
+        books[name] = {"project": project, "block": block, "calls": record_book(proj[project], launcher, dollar, block)}
     return {
         "about": "A real run of contracts/pot on anvil, played by scripts/chain-reader-fixture.py. Do not edit by hand.",
         "chainId": 31337,
@@ -468,6 +526,7 @@ def play(tmp):
         "blocks": blocks,
         "logs": logs,
         "snapshots": snapshots,
+        "books": books,
         "final": final,
     }
 
