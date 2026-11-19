@@ -1,11 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  decodeParameters,
-  encodeParameters,
-  keccak256Hex,
-} from "./evmAbi.ts";
+import { decodeParameters, encodeParameters, keccak256Hex } from "./evmAbi.ts";
 
 const ADDRESS = "0x00000000000000000000000000000000000000aa";
 const WORD = `0x${"22".repeat(32)}`;

@@ -4,14 +4,11 @@ import { expectAccessible } from "../helpers/a11y";
 import { installWallet } from "./helpers/money-world";
 import { COMMUNITY_HOST, createMockRelay, PREVIEW_PORT } from "./mock-relay";
 import { pubkeyOf } from "./helpers/world";
-import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
-
-test.skip(!LEGACY_BUILD, LEGACY_WHY);
 
 /**
  * A browser with a wallet and a passkey account can say where it backs from, on You, by keyboard and by touch. The
  * choice is a labelled group of two radios; the arrow keys move between them and a tap picks one; the choice is
- * remembered. Run with the phone settings by `scripts/phone-e2e.sh`; skipped without them.
+ * remembered. Run with the phone settings by `scripts/pot-app-phone-e2e.sh`; skipped without them.
  */
 
 const run = process.env.PHONE_E2E_BUNDLER_PORT ? test : test.skip;

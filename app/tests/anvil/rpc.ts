@@ -58,7 +58,7 @@ export function providerFor(account: string): Eip1193Provider {
 
 const OUT = resolve(
   fileURLToPath(new URL(".", import.meta.url)),
-  "../../../contracts/next/out",
+  "../../../contracts/pot/out",
 );
 
 /** A contract's creation code from the build. */

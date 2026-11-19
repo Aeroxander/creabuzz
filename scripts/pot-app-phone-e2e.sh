@@ -4,8 +4,9 @@
 # app/tests/e2e/pot-phone.spec.ts with Playwright: a browser with no wallet signs up with a passkey (Chrome's virtual
 # authenticator), gets play dollars, Backs a project and Takes out from its passkey account on the real contracts, through a
 # stand-in bundler and sponsor at two addresses (the bundler refuses a request for the fee, so the run only passes when the page
-# asks the sponsor's own address). Prints the presses and passkey prompts of each step. Replaces scripts/phone-e2e.sh's run of
-# the retired phone-back.spec.ts.
+# asks the sponsor's own address). Prints the presses and passkey prompts of each step. It also runs
+# app/tests/e2e/phone-choice.spec.ts, the You page's choice between the wallet and the passkey account by keyboard and by touch,
+# which needs the same phone build. It replaces the retired scripts/phone-e2e.sh.
 #
 # Needs: anvil and cast on PATH (or ANVIL=/path/to/anvil, CAST=/path/to/cast), node and pnpm, contracts/pot/out built,
 # Playwright's Chromium.

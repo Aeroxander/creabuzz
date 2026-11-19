@@ -8,7 +8,8 @@
 # What this cannot prove (it needs an operator's real bundler and sponsor, and real devices): see
 # docs/next-version/PHONE-PATH-REPORT.md, "What is not proven".
 #
-# Needs: anvil on PATH (or ANVIL=/path/to/anvil), node and pnpm, contracts/next/out built (the dollar token it sends).
+# Needs: anvil on PATH (or ANVIL=/path/to/anvil), node and pnpm, contracts/pot/out built (the test dollar the sender tests send,
+# and the pot contracts the Back test runs on).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,7 +17,8 @@ ANVIL="${ANVIL:-anvil}"
 
 fail() { echo "phone-loop: $*" >&2; exit 1; }
 command -v "$ANVIL" >/dev/null 2>&1 || fail "anvil not found (set ANVIL)"
-[[ -f "$ROOT/contracts/next/out/QuoteToken.sol/QuoteToken.json" ]] || fail "contracts/next/out is not built"
+[[ -f "$ROOT/contracts/pot/out/QuoteToken.sol/QuoteToken.json" ]] || fail "contracts/pot/out is not built"
+[[ -f "$ROOT/contracts/pot/out/Launcher.sol/Launcher.json" ]] || fail "contracts/pot/out is not built"
 
 free_port() { node -e 'const s=require("net").createServer();s.listen(0,()=>{console.log(s.address().port);s.close()})'; }
 
@@ -30,7 +32,7 @@ trap cleanup EXIT
 
 PORT="$(free_port)"
 RPC="http://127.0.0.1:$PORT"
-# Same anvil flags as scripts/m7-chain-loop.sh: no history kept and nothing written outside $STATE.
+# No history kept and nothing written outside $STATE.
 "$ANVIL" --port "$PORT" --chain-id 31337 --gas-limit 100000000 --prune-history --cache-path "$STATE/anvil-cache" \
   --silent >"$STATE/anvil.log" 2>&1 &
 ANVIL_PID=$!
