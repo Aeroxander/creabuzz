@@ -53,6 +53,9 @@ What it does not do, in order of how much it matters:
 
 ### The honesty envelope (`api/manager/envelope.rs`)
 
+The rules below were tightened after review (a plan is never a result, names and links are checked more strictly, the
+lists are wider): see "Review fixes" at the end, which is newer than this section.
+
 Every line the model writes cites what it came from (`r1` a record, `a1` an answer, `f1` a line of `facts.md`, `d1` of
 `decisions.md`) or it is dropped. A kept line names the ids of the records it cites. Then, in order:
 
@@ -228,6 +231,72 @@ refusal wording, the panel's founder-only rule and its copy of "What happened" o
    pay together, then accept here). Pair.spend alone is capped at 500 dollars in any 7 days.
 8. **Test fixes outside this milestone's files**, seen and not touched: the mesh demo test, the one flaky passkey run, and
    milestone 7's untracked `review-bid-noaccount.test.tsx`.
+
+## Review fixes
+
+Two reviews of the finished milestone read the code. This section says what was fixed, with the test that holds each fix,
+what was declined and why, and what the gates now say. The mutation check is stated where it was made: the envelope's plan
+rule and sentence-opener rule, and the route's pool order, were each switched off once and the named tests failed; the
+others were not switched off one by one.
+
+### Fixed
+
+| Finding | What was wrong | Fix | Test that holds it |
+|---|---|---|---|
+| Blocker: a plan written up as a result | A goal, promise, "what was next then", task or help request could back a line in "What happened", so "Ship the importer" became "Shipped the importer" | Each part of a record is its own source, marked a plan unless it opens like something that happened. "What happened" is backed only by what happened (plus the founder's answers, `facts.md`, `decisions.md`). The prompt marks plans too. `item_text` writes one part to a line | `review_tests::what_happened_is_never_backed_only_by_a_goal_a_plan_a_task_or_a_request`, `..._beside_a_plan_in_the_same_item`, and the planted eval (a plan cited for "What happened" fails it) |
+| An invented name opening a sentence | `names()` skipped the first word of every sentence | The first word counts unless it is an ordinary opener (articles, pronouns, the plain verbs of a short plan or report) | `review_tests::an_invented_name_at_the_start_of_a_sentence_is_dropped` |
+| Links without `https://` | `evil.io`, `t.me/x`, `bit.ly/x` passed | A word shaped like an address is a detail that must be in the cited item | `review_tests::a_link_without_a_scheme_is_dropped` (a version number and a real cited link still pass) |
+| Suggesting to sell Shares or move money | Only a few exact phrases were blocked | A paying, sending, giving or buying word with money, dollars or Shares in one line is blocked; selling, issuing, minting or raising with Shares, tokens, equity or a stake is "sale terms" and needs a person. "Share" alone (the verb) is left out | `review_tests::the_manager_never_suggests_selling_shares_or_raising_money` |
+| Return, price and legal claims in other words | Short word lists | The lists are wider (gain, upside, bonus, money back, rising value; licence, copyright, patent, privacy, KYC, valuation, equity, dilution), and a multiplier such as `5x` is blocked. `MANAGER-LOOP.md` now says plainly that these are lists | `review_tests::return_claims_in_other_words_are_blocked_too`, `..._legal_and_sale_questions_in_other_words_need_a_person` |
+| Closing a prompt tag from inside a line | Only `</record>` was screened | Every tag the prompt uses is screened in every input | `review_tests::a_line_that_closes_a_tag_of_the_prompt_is_set_aside` |
+| The weak planted eval | Its fixed reply tried only the plants the envelope was built around | New plants: a plan written as a result, an invented leading name, `t.me/evil`, `5x`, selling Shares | `planted_eval_tests::a_model_that_obeys_every_plant_gets_none_of_them_past_the_envelope` |
+| A refusal used up the shared AI pool | `enforce_daily_caps` ran before the week and the platform cap; only the week was given back | The week and the platform money are taken first and the pool last; a refusal at the pool gives back the week's draft and the money set aside | `route_postgres_tests::a_refusal_for_the_week_or_the_cap_never_uses_up_the_shared_ai_calls` (reads the pool's counters after an own-key refusal, a platform-cap refusal, and an account-limit refusal) |
+| One project, many weekly counters | The count was keyed on the project string as typed | The route builds the address from the parsed founder key (lower case); the counter also lower-cases the key section | `route_postgres_tests::one_project_has_one_weekly_count_however_its_founders_key_is_written`, `cost::tests::weeks_are_fixed_and_a_project_has_one_row` |
+| Borrowing another project's round | The record's own `chain-key` tag was trusted | The first round counts only when the configured reader has a `ProjectLaunched` for that key whose `projectId` is the hash of this record's address, and a closed round under the same reader | `route_postgres_tests::only_a_launch_made_for_this_record_counts_as_its_first_round` |
+| Saving the record made a project new again | "Younger than 14 days" read the replaceable record's date | A project is new for 14 days from the earlier of its record's date and the first time it asked (noted once, never moved) | `route_postgres_tests::saving_the_record_again_does_not_make_a_project_new_again` |
+| A cancel pushed out of the take window | Only the newest 200 takes and give-ups were read | A cancel, and the signer's own steps, are read apart from that window | `task_takes_postgres_tests::a_crowd_of_takes_cannot_hide_a_cancel_or_the_signers_own_give_up` (210 later steps) |
+| Accept and pay sent money the server then refused | The app did not know the signer ran the worker agent, and did not look again before paying | The app reads each agent's operator from its profile and offers no press (and says why) when accepting would be checking one's own work, mirroring the server's `founder_alone` rule. It reads the task again right before the spend and stops, with nothing sent, if the hand-in, worker, wallet or state moved | `task-record.test.ts` (own work, founder alone), `AcceptAndPay.test.tsx` (stale read sends nothing, own-work card) |
+| A paying task closed unpaid by the ordinary button | The taker named no wallet; the only button read "Accept the work" | The button reads "Accept without paying 40 dollars", secondary, and needs a second press that says so. The ordinary path stays one press | `AcceptAndPay.test.tsx` (two presses, nothing sent) |
+| The retry could pay for the wrong piece | "Save that it was paid" used the newest hand-in | The record names the piece that was paid for | `AcceptAndPay.test.tsx` (journal retry) |
+| Agent limit field | No bound; a 40-digit number built bad calldata | 0 to 1,000,000 dollars, 0 to 10^12 Shares, and `rawDollars` refuses a fraction, a negative or an unsafe number | `task-calls.test.ts` |
+| The brain command line | `read_brain` followed links; a failed `init` left part of a brain | A linked brain file or `playbooks/` is refused; a failed `init` removes what it wrote | `launchpad_brain::tests::a_brain_file_that_is_a_link_is_refused_and_never_read`, `..::a_write_that_fails_part_way_leaves_no_half_a_brain` |
+
+The loop version is now `manager-loop 2` in the server, `MANAGER-LOOP.md` (sections 6 and 7 changed) and the app's mocked
+replies. The reviewers' untracked failing test file was replaced by the in-tree tests above and deleted.
+
+### Declined, with the reason
+
+- **Agents posting open tasks of up to 100,000 dollars.** Posting is not a payment. Accepting is, it is a person's single
+  press, and the card shows what it pays. A cap tied to the agent's Treasury limit needs the chain's limit and the Nostr
+  label tied together, which is open item 4. Not built.
+- **`task-paid` is not checked against the chain, and two browsers can each pay.** The chain check and a task id in the
+  spend belong to escrow (milestone 9) and to the contracts, which are not this milestone's files. The fresh read before
+  the spend narrows the window; the journal still lives in one browser.
+- **A team key that is an agent but has no label.** The server cannot see it. Recorded as a known limit; the runner is told
+  to label every agent.
+- **The earliest take cut from a window of 200.** Still possible with enough spam accounts; each can take 20 a day. The
+  cancel and the signer's own give-up, which decided who could act, are now safe.
+- **A lower-case invented name, and one invented plain word among real ones.** Not catchable by rules; now written in
+  `MANAGER-LOOP.md` section 7 as limits.
+
+### What the gates say now
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --all -- --check` | clean |
+| `cargo clippy -p buzz-relay -p buzz-cli --all-targets -- -D warnings` | clean |
+| `cargo test -p buzz-cli` | 838 passed |
+| `cargo test -p buzz-relay --lib` (no infrastructure) | 1,751 passed, 1 failed: `api::mesh_demo` as before. It opens two local mesh endpoints and forwards between them, in a file and crates no commit of this milestone touched (its last change is the unrelated deprecation pass). It needs real network paths, so it is most likely this sandbox; not shown on a clean tree |
+| Postgres lane, `--ignored`, `manager::`, `task_takes`, `agent_label`, `launch_update_authority` | 31 passed. The one failure is `planted_eval_against_a_real_model`, which refuses to run without a key by design |
+| `node scripts/regen-kinds.mjs --check` | up to date |
+| `scripts/m8-agent-week.sh`, with fresh debug builds of the relay and command line | 49 checks passed |
+| app `biome check .`, `tsc --noEmit`, `check:copy`, `check:px-text`, `check:file-sizes` | clean |
+| `knip` | clean |
+| app `vitest` | 242 passed, 0 failed (the earlier failing file is gone from the tree) |
+| app `vite build` and bundle size | built; main script 419 KiB, all scripts 766 KiB |
+| Playwright `smoke` at 390x844 with axe | 72 of 73 in the full run; `passkey.spec.ts` failed again under load (the same unlock bar) and passed alone together with `tasks.spec.ts` and `manager.spec.ts` (10 of 10). Accept and pay is still 1 press and Post a task 2 presses with 2 fields |
+
+Not run: the real-model eval (no key), and nothing that needs a public network.
 
 ## A note for the direction review
 
