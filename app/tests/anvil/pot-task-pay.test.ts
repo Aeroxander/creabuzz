@@ -26,7 +26,7 @@ import { findPayment } from "../../src/features/tasks/pay-lookup";
 import { drawForTaskCall } from "../../src/features/tasks/task-calls";
 import { topicOf } from "../../../packages/creaton-core/src/launchpad/work.ts";
 import { deployPot, walletOf } from "./pot-chain";
-import { accounts, call, passTime, RPC } from "./rpc";
+import { accounts, call, passTime, rpc, RPC } from "./rpc";
 
 const run = RPC ? describe : describe.skip;
 const DOLLAR = 1_000_000n;
@@ -205,5 +205,22 @@ run("paying an accepted task from the box, against the real contracts", () => {
     );
     expect(viaPair?.txHash).toBe(confirmed.txHash.toLowerCase());
     expect(await reads.balanceOf(read, chain.dollar, stranger)).toBe(DOLLAR);
+
+    // A task accepted long ago: more than the first three pieces of ten thousand blocks lie between the acceptance and the
+    // newest block. The search goes on back to the acceptance: it still finds the first payment, and for a wallet that was
+    // never paid it says "nothing found" (not "could not look back"), so the press can be offered.
+    await rpc("anvil_mine", ["0x88b8"]);
+    expect((await finder.blockNumber()) > 35_000).toBe(true);
+    const old = await findPayment(
+      finder,
+      parts.treasury,
+      second,
+      DOLLAR,
+      accepted,
+    );
+    expect(old?.txHash).toBe(paid.txHash.toLowerCase());
+    expect(
+      await findPayment(finder, parts.treasury, backer, DOLLAR, accepted),
+    ).toBeNull();
   });
 });

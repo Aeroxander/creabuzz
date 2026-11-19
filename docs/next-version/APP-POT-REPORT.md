@@ -787,6 +787,22 @@ into proper tests and the scratch files deleted: none is left, tracked or untrac
     to the surfaces that drew); the launch sheet lists the helper's Team Shares limit (one part in 1,000 of the pool a day, read from the
     Launcher) beside its dollars limit (test in `launch-press.test.tsx`); `REQUIRE_CHAIN=1` makes the live browser specs fail, not skip,
     when there is no chain.
+11. **Paying an old accepted task from the box was a dead end (verifier's blocker, third round).** `findPayment` read only the newest
+    30,000 blocks, threw `PaymentSearchShort` when it found nothing and the window began after the acceptance, and `PayFromBox`
+    then showed a sentence and "Look again" for ever: any unpaid task accepted more than about 16 hours earlier on a 2-second chain
+    could not be paid from its card. Now (a) the search goes back in pieces of 10,000 blocks until a piece begins at or before the
+    acceptance (an hour of skew allowed), up to 40 pieces, and finds an old payment in an older piece; (b) when the bound is reached
+    first, or the network gives no block times, the card says the work was accepted too long ago for the search and offers "Nothing
+    was paid for this"; pressing it brings back the bare "Pay from the box", and the press still searches (a payment that has
+    appeared meanwhile stops it with the usual sentence); (c) a read that fails (node refuses) is not "too old": it offers only
+    "Look again". Tests: `tasks/PayFromBoxSearch.test.tsx` (new file, the search tests moved out of `PayFromBox.test.tsx` to keep
+    files under 600 lines): goes back 30 pieces to an acceptance 300,000 blocks old and pays; finds a payment in an older piece;
+    the way out beyond the bound, and the press then sends once and writes the paid record; the way out with no block times; no way
+    out for an unreadable node; a payment appearing after the person's word still stops the press. Without the fix the first
+    fails (shown by putting the old `findPayment` back); on the real chain `tests/anvil/pot-task-pay.test.ts` now mines 35,000
+    blocks and finds the first payment still, and says "nothing" (not "short") for a wallet never paid.
+12. **knip: unused export (verifier).** `PaymentSearchShort` is now imported by `PayFromBox` (it tells "too old" from a failed read),
+    so `cd web && pnpm check:unused` passes (exit 0).
 
 ### Declined, with the reason
 
@@ -811,16 +827,19 @@ into proper tests and the scratch files deleted: none is left, tracked or untrac
 - The refresh ceiling: the settings range still ends at 86400 seconds (the lead's decision, F3). The app calls a record stale once it is
   older than a day, so a server set to the ceiling leaves each record stale for as long as the next pass takes. The comment on
   `MAX_REFRESH_SECS` now says to use at most half a day (43200). Not changed in behaviour.
-- A task paid more than 30,000 blocks (about 4 days on 12-second blocks, 16 hours on a 2-second chain) before the press can no longer be
-  found; the press now stops and says so instead of paying again, and the person looks at the project's money records first.
+- A task accepted so long ago that the search (40 pieces of 10,000 blocks, about 9 days on a 2-second chain) cannot reach back to its
+  acceptance: no payment is offered on a guess; the person is shown the sentence and may say "Nothing was paid for this" (see fix 11).
+  That word is theirs, and a payment that appears afterwards still stops the press.
 - Launch is checked per key (wallet plus project); a launch made from another wallet of the same founder is not seen by the card.
 - Focus after the seat is taken, loading cards without status text, and a person offered the seat who has not connected a wallet (second
   review O3 to O5).
 
 ## Chosen under the owner's standing go; the owner may overrule
 
-1. The search window is not widened: a payment search that cannot rule out an earlier payment stops the press (the design's safe way
-   round), rather than reading more blocks.
+1. The search window is widened, not fixed: it goes back piece by piece (10,000 blocks each) until a piece begins at or before the
+   acceptance, at most 40 pieces (an upper bound on node requests). Past that, or on a network that gives no block times, a person's
+   own word "Nothing was paid for this" brings the bare press back (the second option the verifier gave; chosen so a guard never removes
+   the only way to pay, rule 6). The word is not stored; it holds for this open card only.
 2. The poll's end is a fixed two minutes, not "after a launch the page itself made": linking the page to its launch changes the key, which
    starts a new wait.
 3. The Pair sentence names who accepted and who took the task instead of dropping the claim.
@@ -839,3 +858,18 @@ into proper tests and the scratch files deleted: none is left, tracked or untrac
 | `cargo test -p buzz-relay --lib refresh` (the refresh settings; the Rust change is one comment) | 1 passed, 0 failed (the Postgres-backed one needs a database and was not run) |
 
 Everything started was stopped (checked with `ps`); the private build was deleted.
+
+## Gates, third fix round (the paid-later dead end)
+
+| Check | Result |
+|---|---|
+| `tsc --noEmit`, `biome check .`, `check:copy`, `check:px-text` (app) | clean |
+| `check:file-sizes` (app; no `origin/main` in this tree, so `CHECK_FILE_SIZES_BASE` was set to an earlier commit) | pass |
+| `vitest run` (app, whole) | 82 files, **632 passed, 0 failed** |
+| `scripts/pot-app-loop.sh` (real contracts on anvil, with the new 35,000-block look-back case) | **13 passed, 0 failed, 0 skipped**, 7 files |
+| `cd web && pnpm check:unused` (knip) | exit 0 |
+| `pot-full-loop.sh`, the phone scripts, the Postgres-backed reader tests | not re-run in this round: none of their code changed (the changes are in `app/src/features/tasks`, one anvil test and this report). The verifier ran all three on the earlier commit and they passed. |
+
+Not changed, as the verifier noted: the two edits outside the track's list (`JOIN-LEAVE-DESIGN.md` question for counsel, `PLANV2-M5P2-REPORT.md` helper
+settings) stay as committed; the recorded payment of a task is still not checked on the network (before real money); the refresh ceiling stays at
+86400 seconds (F3).
