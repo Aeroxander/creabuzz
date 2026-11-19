@@ -2518,6 +2518,64 @@ mod tests {
         }
     }
 
+    /// The server's refresh settings end where the app's accepted range ends
+    /// (86400 seconds, RECORD-V2 section 6): a longer promise would be a record
+    /// the app throws away.
+    #[test]
+    fn the_chain_refresh_settings_end_at_one_day() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        const KNOBS: [&str; 5] = [
+            "BUZZ_CHAIN_RPC_URL",
+            "BUZZ_CHAIN_ID",
+            "BUZZ_CHAIN_LAUNCHER",
+            "BUZZ_CHAIN_REFRESH_SECS",
+            "BUZZ_CHAIN_ACTIVE_REFRESH_SECS",
+        ];
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+        std::env::set_var("BUZZ_CHAIN_RPC_URL", "http://127.0.0.1:8545");
+        std::env::set_var("BUZZ_CHAIN_ID", "31337");
+        std::env::set_var(
+            "BUZZ_CHAIN_LAUNCHER",
+            "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+        );
+        let read = || {
+            Config::from_env().map(|c| {
+                let r = c.chain_reader.expect("chain reader on");
+                (r.refresh_secs, r.active_refresh_secs)
+            })
+        };
+        assert_eq!(read().expect("defaults"), (3_600, 600));
+        for name in ["BUZZ_CHAIN_REFRESH_SECS", "BUZZ_CHAIN_ACTIVE_REFRESH_SECS"] {
+            for ok in ["5", "86400"] {
+                std::env::set_var(name, ok);
+                let (long, active) = read().expect("inside the range");
+                let got = if name == "BUZZ_CHAIN_REFRESH_SECS" {
+                    long
+                } else {
+                    active
+                };
+                assert_eq!(got, ok.parse::<u64>().unwrap(), "{name}={ok}");
+            }
+            // One second too short, one second past a day, and a week (the
+            // old ceiling) are all refused, naming the setting and its range.
+            for bad in ["4", "86401", "604800"] {
+                std::env::set_var(name, bad);
+                let err = read().expect_err("outside the range");
+                let text = err.to_string();
+                assert!(
+                    text.contains(name) && text.contains("5 to 86400"),
+                    "{name}={bad}: {text}"
+                );
+            }
+            std::env::remove_var(name);
+        }
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+    }
+
     #[test]
     fn the_chain_helper_is_off_unless_its_key_is_set_and_never_echoes_it() {
         let _guard = ENV_MUTEX.lock().unwrap();

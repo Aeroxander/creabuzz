@@ -43,6 +43,15 @@ pub struct ChainReaderConfig {
     pub helper: Option<super::helper::HelperConfig>,
 }
 
+/// The least a record may promise as its refresh, in seconds (a test network showing the cadence). The app believes no
+/// promise below this.
+pub const MIN_REFRESH_SECS: u64 = 5;
+
+/// The most a record may promise as its refresh: one day. The record's `refreshEverySecs` is what the app reads, and
+/// the app accepts no promise above 86400 seconds (RECORD-V2 section 6: older than a day is "not refreshed"), so the
+/// settings end where the app's range ends.
+pub const MAX_REFRESH_SECS: u64 = 86_400;
+
 const VARS: [&str; 9] = [
     "BUZZ_CHAIN_ID",
     "BUZZ_CHAIN_LAUNCHER",
@@ -125,8 +134,18 @@ impl ChainReaderConfig {
             start_block: number("BUZZ_CHAIN_START_BLOCK", 0, 0, i64::MAX as u64 / 2)?,
             confirmations: number("BUZZ_CHAIN_CONFIRMATIONS", 12, 0, 10_000)?,
             poll_secs,
-            refresh_secs: number("BUZZ_CHAIN_REFRESH_SECS", 3_600, 5, 7 * 86_400)?,
-            active_refresh_secs: number("BUZZ_CHAIN_ACTIVE_REFRESH_SECS", 600, 5, 7 * 86_400)?,
+            refresh_secs: number(
+                "BUZZ_CHAIN_REFRESH_SECS",
+                3_600,
+                MIN_REFRESH_SECS,
+                MAX_REFRESH_SECS,
+            )?,
+            active_refresh_secs: number(
+                "BUZZ_CHAIN_ACTIVE_REFRESH_SECS",
+                600,
+                MIN_REFRESH_SECS,
+                MAX_REFRESH_SECS,
+            )?,
             log_range: number("BUZZ_CHAIN_LOG_RANGE", 2_000, 1, 10_000)?,
             community_host: var("BUZZ_CHAIN_COMMUNITY_HOST").map(|h| h.to_ascii_lowercase()),
             helper,
