@@ -27,6 +27,10 @@ contract TasksTest is PotBase {
 
     // ---- helpers
 
+    function _announce(uint16 bps, uint256 max) internal returns (uint64 serial) {
+        return _announce(bps, max, worker);
+    }
+
     function _announce(uint16 bps, uint256 max, address payee) internal returns (uint64 serial) {
         vm.prank(founder);
         serial = t.announceTask(WHAT, payee, max, bps);
@@ -716,6 +720,41 @@ contract TasksTest is PotBase {
         uint256 withLock = _join(carol, 10_000e6);
         assertEq(withLock, plain);
         assertEq(t.paidIn(), paidInPlain, "the credit counts the money set aside too");
+    }
+
+    function test_withASurplusAboveWhatBackersPaidInTheCreditCountsTheSetAsideMoneyToo() public {
+        // 20,000 above paid-in, shared with the Team Shares: the slice a joiner pays for it is part of the credit, and it must be
+        // worked out on the very money that priced the join, the money set aside included
+        _force(100_000e6, 80_000e6, 0, 0, 0);
+        uint256 id = vm.snapshotState();
+        uint256 plain = _join(carol, 10_000e6);
+        uint256 paidInPlain = t.paidIn();
+        vm.revertToState(id);
+        uint64 a = _announce(500, 5000e6);
+        _take(a, worker);
+        assertEq(t.pot(), 95_000e6);
+        uint256 withLock = _join(carol, 10_000e6);
+        assertEq(withLock, plain, "the price counts the money set aside");
+        assertEq(t.paidIn(), paidInPlain, "so does the credit");
+    }
+
+    function test_withNoBackersAtAllTheFirstJoinersCreditStillCountsTheSetAsideMoney() public {
+        // only the Team pool owns the project, and the money in it is outside payments: without backers there is no cap on the
+        // credit but the slice of the surplus the joiner pays for, which must be worked out on the money set aside too
+        _relaunch(POOL, 0);
+        _revenue(carol, 100_000e6);
+        uint64 a = _announce(500, 5000e6);
+        _warpAlive(_noticeEnd(a));
+        assertEq(t.pot(), 100_000e6, "all of it has arrived");
+        uint256 id = vm.snapshotState();
+        uint256 plain = _join(alice, 10_000e6);
+        uint256 paidInPlain = t.paidIn();
+        vm.revertToState(id);
+        _take(a, worker);
+        assertEq(t.pot(), 95_000e6);
+        uint256 withLock = _join(alice, 10_000e6);
+        assertEq(withLock, plain, "the price counts the money set aside");
+        assertEq(t.paidIn(), paidInPlain, "and so does the credit");
     }
 
     function test_aLeaverIsPaidOnThePotWithoutTheSetAsideMoney() public {
