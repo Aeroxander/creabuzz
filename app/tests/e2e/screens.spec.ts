@@ -2,14 +2,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import { waitForAnimations } from "../helpers/animations";
-import { BACKER_EVM, FOUNDER_EVM } from "../helpers/numbers-fixture";
 import { createMockRelay } from "./mock-relay";
-import {
-  chainKeyTag,
-  installWallet,
-  RELAY,
-  seedNumbers,
-} from "./helpers/money-world";
 import {
   coordOf,
   DAY,
@@ -24,7 +17,6 @@ import {
   pubkeyOf,
   type Relay,
 } from "./helpers/world";
-import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
 
 /**
  * Phone screenshots of the new app at 390x844 (twice the pixels), for review: `pnpm screens`. They land in
@@ -358,67 +350,4 @@ test("messages", async ({ page }) => {
     timeout: 20_000,
   });
   await shoot(page, "10-messages-list");
-});
-
-test("money, where the server turns investing on", async ({ page }) => {
-  test.skip(!LEGACY_BUILD, LEGACY_WHY);
-  const relay = createMockRelay();
-  seed(relay);
-  const kiln = coordOf(FAY, "kiln");
-  relay.seed(
-    projectRecord(
-      FAY,
-      "kiln",
-      "Kiln",
-      "A shared pottery kiln for the street.",
-      now() - 50 * DAY,
-      [chainKeyTag(kiln)],
-    ),
-  );
-  seedNumbers(relay, {
-    coordinate: kiln,
-    openRound: { openedAgo: 3 * 3600, asked: "450000000", backers: 6 },
-  });
-  await install(page, relay, RAE_KEY, { investing: true, relaySelf: RELAY });
-  await installWallet(page, { account: BACKER_EVM });
-  await page.goto("/");
-  await expect(page.getByTestId("open-round")).toBeVisible({
-    timeout: 20_000,
-  });
-  await shoot(page, "11-home-investing-on");
-  await page.goto(projectLink(FAY, "kiln"));
-  await expect(page.getByTestId("back-box")).toBeVisible({ timeout: 20_000 });
-  await shoot(page, "15-project-back-box");
-  await page.getByTestId("tab-money").click();
-  await expect(page.getByTestId("money-tab")).toBeVisible();
-  await page.getByTestId("money-tab").scrollIntoViewIfNeeded();
-  await shoot(page, "16-project-money");
-  await page.getByTestId("back-amount").fill("25");
-  await page.getByTestId("back-review").click();
-  await expect(page.getByTestId("back-sheet")).toBeVisible();
-  await shoot(page, "17-back-sheet");
-  await page.keyboard.press("Escape");
-  await page.goto("/you");
-  await expect(page.getByTestId("receipt")).toBeVisible({ timeout: 20_000 });
-  await page.getByTestId("receipts").scrollIntoViewIfNeeded();
-  await shoot(page, "18-you-receipts");
-  await page.getByTestId("receipt-take-back").click();
-  await expect(page.getByTestId("refund-sheet")).toBeVisible();
-  await shoot(page, "19-refund-sheet");
-  await page.keyboard.press("Escape");
-  await installWallet(page, { account: FOUNDER_EVM });
-  await openAs(page, FAY_KEY, "/week");
-  await expect(page.getByTestId("week-clock").first()).toBeVisible({
-    timeout: 20_000,
-  });
-  await shoot(page, "20-week");
-  await page
-    .getByTestId("week-project")
-    .filter({ hasText: "Kiln" })
-    .getByTestId("week-open")
-    .click();
-  await page
-    .getByTestId("weekly-text")
-    .fill("Fired the first batch of mugs and fixed the door seal.");
-  await shoot(page, "21-weekly-sheet");
 });

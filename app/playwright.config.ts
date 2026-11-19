@@ -26,13 +26,8 @@ export default defineConfig({
       testMatch: [
         "**/smoke.spec.ts",
         "**/join.spec.ts",
-        "**/money.spec.ts",
-        "**/money-review.spec.ts",
         "**/a11y.spec.ts",
         "**/passkey.spec.ts",
-        "**/earlier.spec.ts",
-        "**/market.spec.ts",
-        "**/tasks.spec.ts",
         "**/manager.spec.ts",
         // The pot contracts on a real local chain (they start their own anvil; skipped without one).
         "**/pot-*.spec.ts",

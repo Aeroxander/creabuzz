@@ -15,7 +15,6 @@ import {
   pubkeyOf,
   type Relay,
 } from "./helpers/world";
-import { LEGACY_BUILD, LEGACY_WHY } from "./helpers/legacy-build";
 
 /**
  * The new app's smoke run at phone size (390x844, touch): the sign-up screen with the legal boxes, Home, a project,
@@ -169,19 +168,6 @@ test("Home shows projects and posts, never sorted by money, at phone width", asy
   expect(font).toContain("Geist");
 });
 
-test("the open rounds slot shows only where the server turns investing on", async ({
-  page,
-}) => {
-  test.skip(!LEGACY_BUILD, LEGACY_WHY);
-  const relay = createMockRelay();
-  seed(relay);
-  await install(page, relay, READER_KEY, { investing: true });
-  await page.goto("/");
-  await expect(page.getByTestId("rounds-none")).toBeVisible({
-    timeout: 20_000,
-  });
-});
-
 test("a project shows its stage, its updates and its people; Tasks is marked as coming and Money is absent without investing", async ({
   page,
 }) => {
@@ -192,13 +178,8 @@ test("a project shows its stage, its updates and its people; Tasks is marked as 
   await expect(page.getByTestId("project-name")).toHaveText("Lantern", {
     timeout: 20_000,
   });
-  // The stage line belongs to the old design (behind the legacy-screens flag): with it off the page has none.
-  if (LEGACY_BUILD) {
-    await expect(page.getByTestId("stage-line")).toContainText("Team");
-    await expect(page.locator('[aria-current="step"]')).toContainText("Team");
-  } else {
-    await expect(page.getByTestId("stage-line")).toHaveCount(0);
-  }
+  // The old design's stage line is gone: a project page has none.
+  await expect(page.getByTestId("stage-line")).toHaveCount(0);
   await expect(page.getByTestId("project-update").first()).toContainText(
     "Built the first lamp",
   );
@@ -221,10 +202,9 @@ test("a project shows its stage, its updates and its people; Tasks is marked as 
   await expectNoSidewaysScroll(page, "Project");
 });
 
-test("with investing on, a team that never raised money is not shown as backed, and four tabs fit at 360", async ({
+test("with investing on, the four tabs fit at 360, and a project that is not on the network says so and carries the legal line", async ({
   page,
 }) => {
-  test.skip(!LEGACY_BUILD, LEGACY_WHY);
   await page.setViewportSize({ width: 360, height: 740 });
   const relay = createMockRelay();
   seed(relay);
@@ -233,23 +213,16 @@ test("with investing on, a team that never raised money is not shown as backed, 
   await expect(page.getByTestId("project-name")).toHaveText("Lantern", {
     timeout: 20_000,
   });
-  await expect(page.getByTestId("stage-team")).toHaveAttribute(
-    "data-reached",
-    "now",
-  );
-  await expect(page.getByTestId("stage-solo")).toHaveAttribute(
-    "data-reached",
-    "done",
-  );
-  await expect(page.getByTestId("stage-backed")).toHaveAttribute(
-    "data-reached",
-    "no",
-  );
+  // Nothing says the team raised or holds money: the page has no stage line, only the four tabs.
+  await expect(page.getByTestId("stage-line")).toHaveCount(0);
   const rail = page.getByRole("tablist");
   const fits = await rail.evaluate((el) => el.scrollWidth <= el.clientWidth);
   expect(fits, "the four tabs fit without scrolling at 360").toBe(true);
   await page.getByTestId("tab-money").click();
   await expect(page.getByTestId("money-none")).toContainText(
+    "Not open to backers yet",
+  );
+  await expect(page.getByTestId("ownership")).toHaveText(
     "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one.",
   );
   await expectNoSidewaysScroll(page, "Project, investing on, 360");
