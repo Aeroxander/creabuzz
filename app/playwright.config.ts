@@ -31,6 +31,7 @@ export default defineConfig({
         "**/a11y.spec.ts",
         "**/passkey.spec.ts",
         "**/team.spec.ts",
+        "**/team-seat.spec.ts",
         "**/a11y-team.spec.ts",
         "**/market.spec.ts",
         "**/tasks.spec.ts",

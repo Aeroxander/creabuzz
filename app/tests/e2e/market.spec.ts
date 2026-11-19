@@ -118,7 +118,16 @@ test("a backer bids in 2 presses and 1 field, at the most the auction allows", a
 test("anyone finishes an ended sale in 1 press", async ({ page }) => {
   const relay = createMockRelay();
   seedTeam(relay, "team", sale({}));
-  await openTeam(page, relay, MATE_KEY, { account: BACKER_EVM, block: 8_300 });
+  // The pool step has not run: the pool strategy still keeps the pool's id for this auction.
+  await openTeam(page, relay, MATE_KEY, {
+    account: BACKER_EVM,
+    block: 8_300,
+    reads: {
+      "poolKey()": `0x${addressWord(CONTRACTS.quote)}${addressWord(CONTRACTS.shares)}${word(10_000)}${word(200)}${addressWord(HOOK)}`,
+      "strategy()": `0x${addressWord(MANAGER)}`,
+      "registeredPoolIds(bytes32)": `0x${addressWord(AUCTION)}`,
+    },
+  });
   const press = page.getByTestId("finish-press");
   await expect(press).toBeVisible({ timeout: 20_000 });
   const path = new PressCounter();

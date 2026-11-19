@@ -22,6 +22,8 @@ export async function installChainWallet(
     exact?: Record<string, string>;
     logs?: unknown[];
     block?: number;
+    /** Answers by function signature that replace `reads` once this wallet has sent anything (the chain moved on). */
+    afterSend?: Record<string, string>;
   },
 ) {
   const reads: Record<string, string> = {};
@@ -29,8 +31,11 @@ export async function installChainWallet(
     reads[selectorOf(signature)] = answer;
   for (const [data, answer] of Object.entries(options.exact ?? {}))
     reads[data.toLowerCase()] = answer;
+  const later: Record<string, string> = {};
+  for (const [signature, answer] of Object.entries(options.afterSend ?? {}))
+    later[selectorOf(signature)] = answer;
   await page.addInitScript(
-    ([account, readsIn, logs, block]) => {
+    ([account, readsIn, logs, block, laterIn]) => {
       const w = window as unknown as {
         ethereum: unknown;
         __sent: unknown[];
@@ -58,8 +63,15 @@ export async function installChainWallet(
               (params?.[0] as { data: string }).data,
             ).toLowerCase();
             const table = readsIn as Record<string, string>;
+            const moved =
+              w.__sent.length > 0
+                ? (laterIn as Record<string, string>)[data.slice(0, 10)]
+                : undefined;
             return (
-              table[data] ?? table[data.slice(0, 10)] ?? `0x${"0".repeat(64)}`
+              moved ??
+              table[data] ??
+              table[data.slice(0, 10)] ??
+              `0x${"0".repeat(64)}`
             );
           }
           if (method === "eth_getTransactionReceipt") return { status: "0x1" };
@@ -76,6 +88,7 @@ export async function installChainWallet(
       reads,
       options.logs ?? [],
       options.block ?? 5_000,
+      later,
     ] as const,
   );
 }
