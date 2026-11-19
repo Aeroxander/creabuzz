@@ -41,6 +41,8 @@ export interface PasskeyImplDeps {
   receipt?: { pollIntervalMs?: number; maxPolls?: number };
   /** Where the account address is remembered (default: this browser's storage). */
   storage?: Pick<Storage, "getItem" | "setItem"> | null;
+  /** The send itself (default: core's). A test reads the request the sender builds and tries to change it. */
+  sendUserOp?: typeof sendKernel033UserOp;
 }
 
 const ACCOUNT_KEY = "creaton.money.passkey-account";
@@ -81,9 +83,29 @@ function revertReasonOf(receipt: UserOperationReceipt): unknown {
     const body = entry.data.slice(2);
     const length = Number.parseInt(body.slice(128, 192), 16);
     if (!Number.isSafeInteger(length) || length === 0) return undefined;
-    return { data: `0x${body.slice(192, 192 + length * 2)}` };
+    const revert = body.slice(192, 192 + length * 2);
+    return { data: `0x${revert}`, ...errorText(revert) };
   }
   return undefined;
+}
+
+/** The words of a plain `Error(string)` revert (selector 08c379a0), when that is what it is; contract errors keep their selector. */
+function errorText(revert: string): { message?: string } {
+  if (!revert.startsWith("08c379a0") || revert.length < 8 + 128) return {};
+  const length = Number.parseInt(revert.slice(8 + 64, 8 + 128), 16);
+  if (!Number.isSafeInteger(length) || revert.length < 8 + 128 + length * 2)
+    return {};
+  const bytes =
+    revert.slice(8 + 128, 8 + 128 + length * 2).match(/.{2}/g) ?? [];
+  try {
+    return {
+      message: new TextDecoder("utf-8", { fatal: true }).decode(
+        Uint8Array.from(bytes.map((b) => Number.parseInt(b, 16))),
+      ),
+    };
+  } catch {
+    return {};
+  }
 }
 
 export function createPasskeyImpl(
@@ -189,7 +211,7 @@ export function createPasskeyImpl(
         now: null,
       };
       try {
-        const result = await sendKernel033UserOp({
+        const result = await (deps.sendUserOp ?? sendKernel033UserOp)({
           credentialId,
           pubKeyX: x,
           pubKeyY: y,
