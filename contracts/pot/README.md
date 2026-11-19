@@ -57,4 +57,4 @@ per check and exits non-zero on the first failure. It stops anvil when it ends.
 | Team, vesting, forfeit, agents, Pair, Launcher | `Vester`, `VesterUnit`, `VesterFuzz`, `Team`, `Forfeit`, `WindDown`, `Agents`, `Pair`, `Launcher` |
 | Events | `Events` (each event's fields), `EventsRebuild` (a ledger of events alone rebuilds the project step by step) |
 | Invariants and fuzz | `PotInvariants` with `helpers/PotHandler.sol` (many actors, every kind of step, ghost sums), `MustBind` |
-| Model vectors | `ModelVectors` replays `model/vectors.json`: 50 scenarios, every number compared |
+| Model vectors | `ModelVectors` replays `model/vectors.json`: 52 scenarios, every number compared |

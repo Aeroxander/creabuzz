@@ -9,7 +9,7 @@ everything with `python3 -I` (isolated mode).
 | `v4_model.py` | The model, copied byte for byte. sha256 `a1388285675c649b4f8951dc942928d5449cb2856eb3993d3ce1dfb858944649`. 70-digit decimals, no integer rounding. Self-test: `python3 -I v4_model.py` (a 300-seed random run of 400 operations; about three seconds). |
 | `pot_ext.py` | The extension, on top of the unchanged model: the contracts' rules in exact arithmetic (below). All amounts in base units (dollars in millionths, Shares in wei). |
 | `gen_vectors.py` | Fixed and seeded scenarios run through the extension. `python3 -I gen_vectors.py` writes `vectors.json`; `--check` fails if the committed file differs. |
-| `vectors.json` | 50 scenarios (30 fixed, 20 seeded), 1,789 operations, every expected number as a decimal string. Read by `test/ModelVectors.t.sol`. |
+| `vectors.json` | 52 scenarios (32 fixed, 20 seeded), 1,805 operations, every expected number as a decimal string. Read by `test/ModelVectors.t.sol`. |
 | `v4_attacks_output.txt`, `v4_team_output.txt`, `v4_fuzz_output.txt` | Outputs of the model's attack, Team and fuzz runs. Copied only. |
 
 ## Where the contracts differ from the model, and who wins
@@ -37,7 +37,7 @@ Tolerance, stated in the test header: after `k` operations a dollar number may d
 size times `4k / X`, and a Share number by `8k` wei plus the same relative term. `X` is the smallest money-in-the-quote the
 project held while it had backers (or the smallest join, if less: a join's fee rounds by up to one unit). That is the rounding
 the contracts define (floors, a fee rounded up, paid-in cut down) carried through at most `k` prices. The largest deviation seen
-over the 1,789 operations and about 17,000 compared numbers is 24% of its allowance (a first join of 2,000.0007 dollars whose fee
+over the 1,805 operations and 17,201 compared numbers is 24% of its allowance (a first join of 2,000.0007 dollars whose fee
 rounds by one unit, a part in 2e9 of the Shares it mints); the mutation check shows a changed formula moves numbers by orders of
 magnitude more.
 
