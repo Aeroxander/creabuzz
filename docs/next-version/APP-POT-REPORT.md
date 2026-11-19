@@ -131,3 +131,107 @@ the old design's test ids is on the project page (flag off) and that Home has no
 - **a11y of the new screens** is for the screens' builders; the old a11y spec is skipped without the legacy build.
 - **Step 2** (task queue, notice, take, return, exit notes) is not started, as decided (L3).
 - The server side (`crates/**`) is not touched.
+
+---
+
+# Pass B: the screens
+
+Written 19 November 2026 on branch `v6` by builder B of three on the app track. Pass A (above) built the layer under the screens; this
+pass builds the screens on it. Nothing is pushed. The contracts (`contracts/pot`), the record specification and `crates/**` are not
+touched. This is not legal or tax advice, and no figure here is a promise of any result for anyone.
+
+## What was built
+
+All new screens live in `app/src/features/pot/`. Every one is phone-first, says the dollars are play money, and carries the legal line word for word
+where money moves.
+
+| # | Screen | Files | What it does |
+|---|---|---|---|
+| 1 | Project page (the Money tab) | `ProjectMoney.tsx`, `MoneyFacts.tsx` | The project's money; what one Share gives if taken out now with "This can go up or down. It is not a return."; the daily allowance in words; the Team's part; where it stands (open, quiet, dormant, can be wound down, wound down) and what that means for a person; the record's age ("Numbers as of", or a stale card that pauses Back and leaves Take out open). Replaces the placeholder `MoneyNow.tsx` (deleted). |
+| 2 | Back sheet | `BackCard.tsx`, `BackSheet.tsx`, `back-read.ts` | An amount and one button (two presses in all). The sheet reads the chain when it opens and shows what you pay, the fee to the platform, the Shares you get and what taking out right now would give; the minimum-Shares guard comes from that same quote; the calls sent are the ones the sheet was made from. One signature when the dollar can pay and call, two when it cannot (said in words, passkey wording too). A shut door (record or chain), an amount under the smallest, an amount that buys nothing, too few play dollars and an unreadable price each say what to do. After it lands the page shows the new Shares. |
+| 3 | Take out sheet | `TakeOutSheet.tsx`, `takeout-read.ts` | One press, one signature: all, half or a quarter of what is held. Shows the cash now, what is kept, outside money still arriving (not paid now) and any note; the minimum-cash guard comes from the chain's quote. Open whatever the door, the allowance or the project's state. Team Shares have their own sheet that says it is an estimate and that they pay only money above what backers put in. |
+| 4 | Your Shares | `YourShares.tsx`, `YourSharesList.tsx`, `FaucetCard.tsx`, `own-history.ts` | On the project: Shares held, what taking out gives now (chain), what this browser paid in, play dollars held, a Take out button while Shares are held, a "Get play dollars" sheet (faucet, once per account) and the account's own Backs and Take outs. On You (replaces the old receipts): every project whose record lists the account, with the chain's figures, and the history across projects. |
+| 5 | Allowance (runner and a Pair's signers) | `AllowanceSection.tsx`, `AllowanceSheets.tsx` | The box, its limit, the rate, the ceiling, an announced raise with its date, the weekly check-in's state and what happens if it lapses (dated). Sheets: draw to an address, change the rate (lower at once, or announce a raise), apply an announced raise (only after the wait), open or close the door. |
+| 6 | Team Shares | `TeamSharesSection.tsx`, `GrantSheet.tsx`, `MyGrants.tsx` | The runner grants from the pool to a team member who linked a wallet (each grant on its own clock, said in words with the dates); a member sees their grants (granted, unlocked, claimable, dates), claims, and can give up what has not unlocked (says what is kept and what is removed after the notice), and finishes it after the notice. Says everywhere that Team Shares claim only the project's money above what backers put in. |
+| 7 | Pair confirm sheet | `pair-terms.ts`, `use-pair-waiting.ts`, `PairWaiting.tsx` | The waiting calls are read from the Pair's own log and chain state. Each is said in a sentence naming what happens, to whom (name and full address) and how much: draw, rate (lower, raise, apply), grant (with its clock), door, hand over, wind down, forfeit, and the helper calls. Confirming sends exactly the target, data and number proposed. A call to anywhere but this project's contracts, or one with no sentence, is shown as unknown, cannot be confirmed from here, and can be withdrawn by whoever asked. |
+| 8 | Tasks | `app/src/features/tasks/*` (pass A) | Accept and pay draws from the box and is offered only when the box holds enough; otherwise it says how much the box holds and how much goes in each day. The paid journal and its recovery are unchanged. For a project run by two it now points to the Money tab's draw (which the second signer confirms). |
+
+The shared pieces: `PotSheet.tsx` (the one sheet every press goes through), `use-pot.tsx` (`WalletGate`: no wallet, connect, wrong network, build
+without a network), `pot-words.ts` (every figure and sentence that is a function of numbers), `runner-calls.ts`, `target.ts`,
+`ChainOnlyShares.tsx` (Take out when the record cannot be read: the contracts are read from the Launcher by the chain key).
+
+## How the rules held
+
+- **The numbers on a sheet are the numbers in the call.** Each sheet's read returns the displayed figures and the calls together; the press sends those calls. Tests decode the calldata of each press and compare it with what the sheet showed (Back one-call and two-call, Take out all and half, Team take-out, draw, rate, door, grant, claim, exit, Pair propose and confirm).
+- **Numbers come from the chain at that moment, never from the record** on a sheet that moves money. The page itself shows the record, with its age. One exception, said plainly below: the allowance box.
+- **A double press sends once.** The press is off while a step runs, and a second press while it runs does nothing; a step that went out and has not landed is looked up (not sent again) and the sheet says so.
+- **A failed send** shows what happened in plain words, sends nothing, and leaves the same press to try again. Every refusal text is pass A's `potProblem`.
+- **A send that may have landed** is checked on the chain first: a call replaced in the wallet is checked by the Shares held now (Back, Take out).
+- **The account the numbers were read for is the account that sends.** A press is refused if the wallet now shows another account. In one call the Shares go to whoever pays.
+- **Accessibility.** One owner per label, labelled fields and buttons, regions with headings, radio groups with legends, native `details` for "Details", sheets are labelled dialogs; Escape closes and focus returns (see the shared-sheet fix below). axe runs on every screen and every open sheet with no serious or critical finding (colour contrast and layout are for a real browser); a deliberately nameless button proves the check can fail.
+- **Words.** `check:copy` passes; sizes are rem tokens; no protocol word, event name or contract name reaches a person.
+
+## Gates, as run
+
+| Gate | Result |
+|---|---|
+| `tsc --noEmit` (app, including `tests/`) | clean |
+| vitest (app) | 66 files, 472 tests passed, 0 failed (pass A left it at 54 files, 346) |
+| biome (app `src`, `tests`), `check:copy`, `check:px-text`, `check:file-sizes` (base `68309b077`), knip | clean |
+| core tests (`node --test`, forge on PATH, including the fresh-ABI test) | 1,204 passed, 0 failed, 0 skipped (pass A left 1,195) |
+| `vite build` with `CREATON_DEPLOYMENTS_FILE=contracts/pot/deployments/pot-31337.json`, then `check-bundle-size` | builds; entry chunk 389 KiB against the 450 KB budget. The Money tab is a lazy chunk (41 KB) so the contract ABIs stay out of the first download |
+| `scripts/pot-app-chain-loop.sh` (real anvil, real `contracts/pot` bytecode) | 2 files, 2 tests passed: pass A's 20-step loop and the new `pot-screens.test.ts` (below) |
+| Playwright | not run: no browser is installed on this machine |
+
+`app/tests/anvil/pot-screens.test.ts` runs, on the real contracts, the Back sheet's own reader and plan (fee, door, quote, one signature, Shares equal to the
+quote), the Take out sheet's reader (half, cash at least the guard), the allowance state against the Treasury's own views, a grant and what a member
+keeps on an exit, a project's parts from the Launcher (and an unknown key refused), the faucet's use and amount, and a Pair's whole round: the founder
+offers the seat, the second signer makes the Pair, the founder proposes a draw, the waiting call is read from the Pair's log and said in words, the second signer
+confirms exactly it, and it is no longer waiting after it ran.
+
+## Chosen under the owner's standing go; the owner may overrule
+
+1. **Take out is all, half or a quarter** of what is held (three choices), not a typed amount. The press stays one tap.
+2. **"What was paid in" and the history are kept in this browser**, per account, for the account's own steps only (nothing about anyone else). They are labelled "from this browser" / "Kept in this browser". A reading of the chain's own logs (which would also show steps made elsewhere) is not built: it needs the project's launch block, which neither the record nor the Launcher gives.
+3. **The allowance box is said as the larger of the Treasury's stored box and the record's**, with "about". The Treasury keeps the box as of its last settle and has no view that returns the settled value (RECORD-V2 section 9, item 1), so on a quiet project its `box()` reads 0 while a draw would settle first and pay. The record works the box forward to its own time. The chain still decides when a draw is sent.
+4. **A grant goes to a team member who linked a wallet** (the existing wallet link), chosen from a list; there is no free address field for a grant. A draw goes to a typed address.
+5. **A member's own exit says what the contract does**: they keep everything built up so far (no first-unlock wait), and the rest is removed after the notice. (The design draft said "vested part plus a pro-rata part"; the built Vester's own-exit keeps the accrued amount.)
+6. **The Back form is hidden when the record says the door is shut**, with the reason; the chain is asked at the sheet when the record says open. A project whose record is stale shows no Back (it says why) and leaves Take out open.
+7. **The runner's allowance screen is gone for a wound-down project** (it has nothing to run; the box went back to the pot).
+8. **The Money tab and You's Shares list load when opened** (lazy), to keep the first download under budget.
+9. **The shared sheet gives focus back** to what opened it (`app/src/ui/sheet.tsx`). Radix returns focus only to its own trigger, and these sheets are opened from state, so focus was lost to the page. This also fixes every older sheet.
+10. **A rate is typed as a percent a day** ("0.10"); a lower rate is set at once, a higher one announced (the sheet says which it will be).
+11. **Test ids** of the new Back box are `backing-box`, `backing-amount`, `backing-review` so the old design's ids stay unique to it.
+
+## Found while building (for the lead)
+
+- **Contract/record limitation, not a bug in either:** `Treasury.box()` (and `pot()`, `arriving()`, `activeSeconds()`) are as of the last settle. Pass A's draw check and the allowance screen would have read an empty box on a quiet project. The screens now say the larger of the chain's and the record's figure (choice 3). A `snapshot()` view would remove the need (RECORD-V2 section 9, item 1).
+- **Radix does not return focus for a sheet with no trigger.** Fixed in the shared sheet (choice 9).
+- **History note:** the first commit of this pass (`a4988fa99`) also carries the deletion of `MoneyNow.tsx`, which the project page still imported until the second commit (`f003e5aab`). That one commit does not build alone; the pair does.
+- **A pending step leaks between tests** through `pending-sends.ts`'s page memory, which `localStorage.clear()` does not reach; a test that leaves a step pending forgets it by its key.
+- **Passkey sender and sheets.** The sheets use the same `useMoneySend` as every other money press, so the passkey sender is reached through it; the Back details say "Your passkey is asked once" for it. This is covered by pass A's phone loop for the calls, not by a browser run of these screens.
+
+## Not done
+
+- **Playwright was not run** (no browser here), and no new Playwright spec was written for the new screens. Their states are covered by the vitest files above, which render the real components against a stand-in wallet that decodes every call with the generated ABIs.
+- **Screens that propose or take the other money calls:** hand over, take the seat, wind down (by the runner or by anyone after a long quiet) and launching a project on the new Launcher have no screen. The second signer's sheet already says every one of them in words, and `launchCall`, `handOverCall`, `takeSeatCall`, `windDownCall` and `makePairCall` are built and tested.
+- **A task payment from a project run by two** is not one press (a draw needs both signers). The Tasks screen points to the Money tab's draw; accepting such a task without paying is not offered when it has a payee.
+- **The "you back this" hint on Home** is not built.
+- **Chain-log history** of an account's steps (choice 2).
+- Step 2 (task queue, notice, take, return, exit notes) and `crates/**` are untouched.
+
+## What builder C must exercise
+
+On a local relay and a local chain, in a real browser, with the injected wallet and with the passkey account:
+
+1. **The 30-second stranger test** from the design (section 2.8): open a project page signed out, find Back, read the sheet, press. Then Take out on a second visit. Read both sheets aloud: every figure on them should be explainable from the page.
+2. **Back, both senders.** Wallet: one signature on play dollars; with a dollar that cannot pay and call, two. Passkey account: one prompt, no approve step, Shares equal to the quote. Press twice quickly: one call. Reject in the wallet: the words, then press again. Close the wallet's window mid-send, reopen the sheet: "Look for your backing".
+3. **Take out in every state**: door shut (founder closed it), quiet (let the check-in lapse on a short time unit), dormant, can be wound down, wound down, and a stale record (stop the server). Zero Shares. Outside money still arriving (add outside money, then Take out): the sheet says that part stays.
+4. **The record cannot be read**: stop the server, open a project you hold Shares in: Take out must still work from the Launcher.
+5. **Allowance**: draw (more than the box is refused in words), lower the rate, announce a raise and try to apply it early (refused with its date), apply after the wait, close and open the door, and let the check-in lapse: the dates on the screen should match. Note the box on a project nobody has touched for a while (choice 3).
+6. **Team Shares**: grant to a member who linked a wallet and to one who did not; as the member see the grant, claim after the first unlock, announce the exit and finish it after the notice; as a stranger see none of it. Team Shares take-out of an estimate that is nothing.
+7. **A Pair**: a signer asks for a draw, a grant, a rate change, the door; the other signer sees each sentence with the right names and numbers and confirms; withdraw one; a call from a stranger's contract must show as unknown with no confirm.
+8. **Focus and keyboard**: open each sheet from the keyboard, Escape closes it and focus is back on the button that opened it; Tab stays inside the sheet.
+9. **You** lists the held project with the chain's figures and shows the history after a Back and a Take out; reload and check the history is still there (and gone in a private window, said as "kept in this browser").
+10. **Phone width** (360 px) and large text: nothing is cut off or has to be scrolled sideways.
+11. Specs to re-base: `scripts/phone-e2e.sh` (runs the retired `phone-back.spec.ts`) and `scripts/phone-loop.sh` (checks `contracts/next/out` only), as pass A noted.
