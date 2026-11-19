@@ -1,0 +1,164 @@
+/**
+ * What every money screen of a project needs from the person's side: the sender (wallet or passkey account), the account
+ * it shows, whether it is on the project's network, and a `read` for the chain. `WalletGate` stands in front of a screen
+ * that needs them and says, in plain words and with the one press that fixes it, which one is missing.
+ */
+import type { ReadCall } from "@creaton/core/pot/pot-reads.ts";
+import { type ReactNode, useCallback, useState } from "react";
+import { potNetwork } from "../../lib/pot-network";
+import { Button } from "../../ui/button";
+import { moneyProblem } from "../money/money-copy";
+import { passkeyUnavailableSentence } from "../money/sender";
+import {
+  useConnectWallet,
+  useWallet,
+  useWalletAddress,
+  useWalletOnChain,
+} from "../money/use-money";
+import type { MoneyWallet } from "../money/wallet";
+
+/** The sender, its account and network, and a chain read, for one project's chain. */
+export interface PotWallet {
+  wallet: MoneyWallet;
+  /** The account the sender shows without asking, or null until the person connects. */
+  address: string | null;
+  /** True on the project's network, false on another, undefined while not known. */
+  onChain: boolean | undefined;
+  /** A read-only call through the sender. */
+  read: ReadCall;
+}
+
+export function usePotWallet(chainId: number | undefined): PotWallet {
+  const wallet = useWallet();
+  const address = useWalletAddress().data ?? null;
+  const onChain = useWalletOnChain(chainId);
+  const read = useCallback<ReadCall>(
+    (to, data) => wallet.readCall(to, data),
+    [wallet],
+  );
+  return { wallet, address, onChain, read };
+}
+
+/**
+ * Whether this build can take part in a project on `chainId`: it names a test network and the project lives on it.
+ * A build that names none offers no money step; one for another network says so.
+ */
+function buildFits(chainId: number): "yes" | "no-network" | "other" {
+  const network = potNetwork();
+  if (!network) return "no-network";
+  return network.chainId === chainId ? "yes" : "other";
+}
+
+const BUILD_WORDS = {
+  "no-network":
+    "Money steps are not switched on in this version of the app, so nothing can be sent from here.",
+  other:
+    "This version of the app is for a different test network than this project, so nothing can be sent from here.",
+} as const;
+
+/** What the gate hands its children once the sender is ready. */
+export interface Ready {
+  address: string;
+  read: ReadCall;
+  wallet: MoneyWallet;
+}
+
+/**
+ * Children when the sender is ready (a sender that can send, an account it shows, on the project's network); otherwise the
+ * one thing missing and the press that fixes it.
+ */
+export function WalletGate({
+  chainId,
+  what,
+  children,
+}: {
+  chainId: number;
+  /** What it is needed for, said after "to": "back this project". */
+  what: string;
+  children: (ready: Ready) => ReactNode;
+}) {
+  const pot = usePotWallet(chainId);
+  const connect = useConnectWallet();
+  const [problem, setProblem] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const fits = buildFits(chainId);
+  if (fits !== "yes")
+    return (
+      <p className="text-sm text-muted" data-testid="pot-build-words">
+        {BUILD_WORDS[fits]}
+      </p>
+    );
+  if (!pot.wallet.isAvailable())
+    return (
+      <p className="text-sm text-muted" data-testid="pot-no-wallet">
+        {passkeyUnavailableSentence(pot.wallet) ??
+          `Open this page in a browser with a wallet to ${what}.`}
+      </p>
+    );
+  const note = problem ? (
+    <p className="text-sm text-danger" role="alert">
+      {problem}
+    </p>
+  ) : null;
+  if (!pot.address)
+    return (
+      <div className="flex flex-col gap-2" data-testid="pot-connect">
+        <p className="text-sm text-muted">Connect your wallet to {what}.</p>
+        {note}
+        <Button
+          block
+          disabled={connect.isPending}
+          onClick={() =>
+            connect.mutate(undefined, {
+              onError: (error) => setProblem(moneyProblem(error, "connect")),
+            })
+          }
+          variant="secondary"
+        >
+          {connect.isPending
+            ? "Waiting for your wallet…"
+            : "Connect your wallet"}
+        </Button>
+      </div>
+    );
+  if (pot.onChain === false)
+    return (
+      <div className="flex flex-col gap-2" data-testid="pot-wrong-network">
+        <p className="text-sm text-muted">
+          Your wallet is on another network. Switch it to this project's test
+          network to {what}.
+        </p>
+        {note}
+        <Button
+          block
+          disabled={switching}
+          onClick={() => {
+            setSwitching(true);
+            setProblem(null);
+            pot.wallet
+              .ensureChain(chainId)
+              .catch((error) => setProblem(moneyProblem(error, "connect")))
+              .finally(() => setSwitching(false));
+          }}
+          variant="secondary"
+        >
+          {switching ? "Waiting for your wallet…" : "Switch network"}
+        </Button>
+      </div>
+    );
+  if (pot.onChain === undefined)
+    return (
+      <p className="text-sm text-muted" data-testid="pot-checking-network">
+        Checking your wallet's network…
+      </p>
+    );
+  return (
+    <>
+      {children({
+        address: pot.address,
+        read: pot.read,
+        wallet: pot.wallet,
+      })}
+    </>
+  );
+}

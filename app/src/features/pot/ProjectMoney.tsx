@@ -1,0 +1,136 @@
+/**
+ * The Money tab of a project: what the project holds and means for a person, the Back box, what you hold and its Take out,
+ * and, for the people who run it, the allowance, Team Shares and the calls waiting for a second signer. Every money screen
+ * of the test network says it is play money. Figures here are the server's record with its age; each sheet reads the chain.
+ */
+import { readFailureWords } from "@creaton/core/client/readable-error.ts";
+import { mustSayPlayMoney } from "@creaton/core/pot/network.ts";
+import { Banknote } from "lucide-react";
+import { Button } from "../../ui/button";
+import { Card } from "../../ui/card";
+import { EmptyState } from "../../ui/empty-state";
+import {
+  freshnessOf,
+  type ProjectNumbers,
+  type RemovedNumbers,
+} from "../money/numbers";
+import { OwnershipLine } from "../money/OwnershipLine";
+import { AllowanceSection } from "./AllowanceSection";
+import { BackCard } from "./BackCard";
+import { ChainOnlyShares } from "./ChainOnlyShares";
+import type { GrantMember } from "./GrantSheet";
+import { MoneyFacts, StaleMoney } from "./MoneyFacts";
+import { PairWaiting } from "./PairWaiting";
+import { PLAY_MONEY_WORDS } from "./pot-words";
+import { targetOf } from "./target";
+import { TeamSharesSection } from "./TeamSharesSection";
+import { usePotWallet } from "./use-pot";
+import { YourShares } from "./YourShares";
+
+function PlayMoneyLine() {
+  return (
+    <p className="text-sm text-muted" data-testid="play-money">
+      {PLAY_MONEY_WORDS}
+    </p>
+  );
+}
+
+export function ProjectMoney({
+  projectName,
+  chainKey,
+  numbers,
+  loading,
+  error,
+  onRetry,
+  now,
+  members,
+  nameOf,
+}: {
+  projectName: string;
+  /** The chain key the founder's record names, or null. */
+  chainKey: string | null;
+  numbers: ProjectNumbers | RemovedNumbers | null | undefined;
+  loading: boolean;
+  error: unknown;
+  onRetry: () => void;
+  now: number;
+  /** The team a grant can go to, with the wallets they linked. */
+  members: GrantMember[];
+  /** A name for an account's address, for the sentences a second signer reads. */
+  nameOf: (address: string) => string;
+}) {
+  const wallet = usePotWallet(
+    numbers && !numbers.removed ? numbers.chainId : undefined,
+  );
+  if (loading) return <Card className="h-40 animate-pulse" />;
+  if (error)
+    return (
+      <div className="flex flex-col gap-3">
+        <EmptyState
+          action={
+            <Button onClick={onRetry} variant="secondary">
+              Try again
+            </Button>
+          }
+          title="The numbers could not be read"
+        >
+          {readFailureWords(error).text}
+        </EmptyState>
+        <ChainOnlyShares chainKey={chainKey} projectName={projectName} />
+        <OwnershipLine className="text-sm text-muted" />
+      </div>
+    );
+  if (!numbers || numbers.removed)
+    return (
+      <div className="flex flex-col gap-3">
+        <EmptyState
+          icon={<Banknote size={28} />}
+          testId="money-none"
+          title={
+            numbers?.removed ? "Not on the network any more" : "No numbers yet"
+          }
+        >
+          <p>
+            {numbers?.removed
+              ? "This project's launch left the network, so it has no money to show."
+              : "The server has not read this project's money yet. When it has, it shows here."}
+          </p>
+        </EmptyState>
+        {numbers?.removed ? null : (
+          <ChainOnlyShares chainKey={chainKey} projectName={projectName} />
+        )}
+        <OwnershipLine className="text-sm text-muted" />
+      </div>
+    );
+  const stale = freshnessOf(numbers, now).level === "stale";
+  const target = targetOf(numbers);
+  return (
+    <div className="flex flex-col gap-3" data-testid="project-money">
+      {mustSayPlayMoney(numbers.playMoney) ? <PlayMoneyLine /> : null}
+      {stale ? (
+        <StaleMoney numbers={numbers} />
+      ) : (
+        <MoneyFacts now={now} numbers={numbers} />
+      )}
+      {stale ? (
+        <Card data-testid="back-paused">
+          <p className="text-sm">
+            Backing waits until the numbers are fresh again. Taking your money
+            out does not wait.
+          </p>
+        </Card>
+      ) : (
+        <BackCard now={now} numbers={numbers} projectName={projectName} />
+      )}
+      <YourShares projectName={projectName} target={target} />
+      <AllowanceSection address={wallet.address} now={now} numbers={numbers} />
+      <TeamSharesSection
+        address={wallet.address}
+        members={members}
+        numbers={numbers}
+      />
+      <PairWaiting address={wallet.address} nameOf={nameOf} numbers={numbers} />
+      <OwnershipLine className="text-sm text-muted" />
+    </div>
+  );
+}

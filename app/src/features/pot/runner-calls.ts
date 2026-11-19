@@ -1,0 +1,33 @@
+/**
+ * A runner-only call (draw, rate, door, grant) as this account sends it, with the words for who has to say yes: straight
+ * to the Treasury for the runner, a proposal through the Pair for one of its two signers (the other signs next), or
+ * nothing for anyone else.
+ */
+import type { PotCall } from "@creaton/core/pot/pot-calls.ts";
+import type { ProjectNumbers } from "../money/numbers";
+import { asRunner } from "../money/runner";
+
+export interface RunnerSend {
+  calls: PotCall[];
+  through: "alone" | "pair";
+}
+
+export function runnerSend(
+  numbers: ProjectNumbers,
+  me: string,
+  inner: PotCall,
+): RunnerSend | null {
+  const sent = asRunner(numbers, me, inner);
+  return sent ? { calls: [sent.call], through: sent.through } : null;
+}
+
+/** What a runner sheet says when a Pair runs the project: nothing happens until the other signer confirms. */
+export const PAIR_WORDS =
+  "This project is run by two. Pressing asks the other signer: nothing happens until they confirm the same step.";
+
+/** The note shown when it landed. */
+export function doneWords(through: "alone" | "pair", done: string): string {
+  return through === "pair"
+    ? "Asked. It happens when the other signer confirms."
+    : done;
+}

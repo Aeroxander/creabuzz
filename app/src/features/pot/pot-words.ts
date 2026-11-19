@@ -1,0 +1,142 @@
+/**
+ * The words of the money screens that are a function of numbers: how a rate, a count of Shares and a small amount of
+ * dollars read, where a project stands (open, quiet, wound down) and what that means for a person, why the door is shut,
+ * and the two lines every money sheet carries. Pure: no screen logic, so one test holds the sentences.
+ */
+import {
+  dayText,
+  dollarsText,
+  type ProjectNumbers,
+  quietStateAt,
+  timeText,
+} from "../money/numbers";
+
+/** Under every live number. */
+export const NOT_A_RETURN = "This can go up or down. It is not a return.";
+/** On every sheet that moves money. */
+export const CAN_TAKE_OUT = "You can take your money out any time.";
+/** On every money screen of the test network. */
+export const PLAY_MONEY_WORDS =
+  "This is a test network. The dollars are play money, not real money.";
+
+const SHARE = 1_000_000_000_000_000_000n;
+const DOLLAR = 1_000_000n;
+
+/** A count of Shares: whole above 10 or when it is whole, otherwise two decimals (so a part of a Share is never read as none). */
+export function sharesWords(raw: bigint): string {
+  const whole = raw / SHARE;
+  const hundredths = ((raw % SHARE) * 100n) / SHARE;
+  const grouped = whole.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  if (whole >= 10n || raw % SHARE === 0n) return grouped;
+  return `${grouped}.${hundredths.toString().padStart(2, "0")}`;
+}
+
+/**
+ * Dollars for one Share and other small amounts: cents above 1 dollar; below it up to six decimals (trailing zeros dropped,
+ * never fewer than two decimals), rounded down, so a Share worth 0.010058 does not read as 0.01.
+ */
+export function smallDollarsText(raw: bigint): string {
+  if (raw >= DOLLAR) return dollarsText(raw);
+  // Six decimals, trailing zeros dropped, never fewer than two.
+  const decimals = raw.toString().padStart(6, "0").replace(/0+$/, "");
+  return `0.${decimals.padEnd(2, "0")}`;
+}
+
+/** A daily rate in parts per million of the project's money, as a percent: 1000 reads "0.10%". */
+export function rateWords(ppm: number): string {
+  return `${(ppm / 10_000).toFixed(2)}%`;
+}
+
+/** "about 3 days", "about 1 day", "less than a day": a span of seconds for people. */
+export function spanWords(seconds: number): string {
+  const days = Math.round(seconds / 86_400);
+  if (seconds < 43_200) return "less than a day";
+  return `about ${days} ${days === 1 ? "day" : "days"}`;
+}
+
+/** The share of anything above what backers put in that the Team's side gets, as a whole percent, or null with no Shares. */
+export function teamPartPercent(numbers: ProjectNumbers): number | null {
+  const total = numbers.shares.backers + numbers.shares.teamCounted;
+  if (total === 0n || numbers.shares.teamCounted === 0n) return null;
+  return Number((numbers.shares.teamCounted * 100n) / total);
+}
+
+/** What the allowance lets the team take in a day, and what it holds now, in one sentence. */
+export function allowanceWords(numbers: ProjectNumbers): string {
+  const { ratePpm, box } = numbers.allowance;
+  if (ratePpm === 0)
+    return "The team's daily allowance is switched off, so nothing goes into the allowance box.";
+  const perDay = (numbers.money.pot * BigInt(ratePpm)) / 1_000_000n;
+  return `The team can take up to ${rateWords(ratePpm)} of the project's money a day (about ${dollarsText(perDay)} dollars today). It holds ${dollarsText(box)} dollars now.`;
+}
+
+export interface StateWords {
+  /** One word for a label: "Open", "Quiet", "Dormant", "Can be wound down", "Wound down". */
+  label: string;
+  /** What it means for a person, in a sentence or two. */
+  meaning: string;
+}
+
+/**
+ * Where the project stands at `now` and what that means for a person. The state's word is the record's three fixed
+ * times read at `now`; what the chain does is decided by the chain.
+ */
+export function stateWords(numbers: ProjectNumbers, now: number): StateWords {
+  const state = quietStateAt(numbers, now);
+  const since = numbers.quiet.quietFrom;
+  switch (state) {
+    case "active":
+      return {
+        label: "Open",
+        meaning: `The team checked in on ${dayText(numbers.clock.lastCheckIn)}. ${
+          numbers.clock.activeUntil
+            ? `If it has not checked in again by ${dayText(numbers.clock.activeUntil)}, it goes quiet: new backing and the allowance stop. `
+            : ""
+        }You can take your money out any time.`,
+      };
+    case "quiet":
+      return {
+        label: "Quiet",
+        meaning: `The team has not checked in since ${dayText(numbers.clock.lastCheckIn)}${since ? ` (quiet from ${dayText(since)})` : ""}. New backing and the allowance are stopped until it does. You can take your money out any time.`,
+      };
+    case "dormant":
+      return {
+        label: "Dormant",
+        meaning: `The team has been quiet for months. New backing and the allowance are stopped. If it stays quiet${numbers.quiet.windableFrom ? ` until ${dayText(numbers.quiet.windableFrom)}` : ""}, anyone can wind the project down. You can take your money out any time.`,
+      };
+    case "may_wind_down":
+      return {
+        label: "Can be wound down",
+        meaning:
+          "The team has been quiet for about half a year, so anyone can now wind the project down. New backing and the allowance are stopped. You can take your money out any time.",
+      };
+    case "wound_down":
+      return {
+        label: "Wound down",
+        meaning:
+          "This project has wound down for good. No one can back it or draw an allowance. What is left is for the people who hold Shares: take yours out.",
+      };
+  }
+}
+
+/** Why the door is shut, in words, or null while it is open. */
+export function doorShutWords(
+  numbers: ProjectNumbers,
+  now: number,
+): string | null {
+  const state = quietStateAt(numbers, now);
+  if (state === "wound_down")
+    return "This project has wound down, so nobody can back it any more.";
+  if (state !== "active")
+    return `The team has not checked in since ${dayText(numbers.clock.lastCheckIn)}, so new backing is paused until it does.`;
+  if (!numbers.door.switchOn)
+    return "The team has closed the door to new backing for now.";
+  if (!numbers.door.openNow)
+    return "The door to new backing is shut right now. Look again in a moment.";
+  return null;
+}
+
+/** A time for a sentence about when something becomes possible. */
+export function whenWords(seconds: number): string {
+  return timeText(seconds);
+}

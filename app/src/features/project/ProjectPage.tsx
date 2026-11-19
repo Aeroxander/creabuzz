@@ -14,8 +14,13 @@ import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { Tabs } from "../../ui/tabs";
 import { useToast } from "../../ui/toast";
-import { MoneyNow } from "../money/MoneyNow";
-import { useProjectNumbers, useWalletAddress } from "../money/use-money";
+import {
+  chainKeyOfProject,
+  useProjectNumbers,
+  useWalletAddress,
+} from "../money/use-money";
+import { ProjectMoney } from "../pot/ProjectMoney";
+import { useTeamWallets } from "../team/use-wallets";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
 import type { Project } from "./project-record";
@@ -104,6 +109,19 @@ function ProjectView({ project }: { project: Project }) {
   const walletAddress = useWalletAddress().data ?? null;
   const legacy = legacyScreensOn();
   const team = [project.author, ...accepted.map((m) => m.pubkey)];
+  const wallets = useTeamWallets(investing ? team : []).data;
+  // The team a Team Share grant can go to, each with the wallet they proved is theirs (none: they cannot be granted to yet).
+  const members = team.map((pubkey) => {
+    const wallet = wallets?.[pubkey];
+    return {
+      pubkey,
+      name: nameOf(profiles, pubkey),
+      address: wallet?.state === "linked" ? wallet.address : null,
+    };
+  });
+  const nameOfAddress = (address: string) =>
+    members.find((m) => m.address === address.toLowerCase())?.name ??
+    `${address.slice(0, 6)}…${address.slice(-4)}`;
 
   return (
     <main
@@ -228,15 +246,19 @@ function ProjectView({ project }: { project: Project }) {
                       />
                     </Suspense>
                   ) : (
-                    <MoneyNow
+                    <ProjectMoney
+                      chainKey={chainKeyOfProject(project)}
                       error={numbersRead.error}
                       loading={
                         numbersRead.isPending &&
                         numbersRead.fetchStatus !== "idle"
                       }
+                      members={members}
+                      nameOf={nameOfAddress}
                       now={now}
                       numbers={numbersRead.data}
                       onRetry={() => void numbersRead.refetch()}
+                      projectName={project.name}
                     />
                   ),
                 },
