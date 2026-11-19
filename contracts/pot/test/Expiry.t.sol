@@ -47,6 +47,35 @@ contract ExpiryTest is StackBase {
         assertEq(usd.balanceOf(carol), 500e6);
     }
 
+    /// @dev A Pair lives by the time unit of its project: a test network with a 168-second unit has 336-second proposals.
+    function test_aPairProposalLivesTwoTimeUnitsOfItsProject() public {
+        vm.prank(admin);
+        launcher.setSettings(_platform(168));
+        _use(_launch(founder, "short", 1000, POOL));
+        _join(alice, 10_000e6);
+        Pair pair = _makePair(bob);
+        assertEq(pair.PROPOSAL_TTL(), 336, "two units of 168 seconds");
+        bytes memory data = abi.encodeCall(Treasury.checkIn, (bytes32(0)));
+        uint256 n = pair.nonce();
+        uint256 at = vm.getBlockTimestamp();
+        vm.prank(founder);
+        pair.propose(address(t), data);
+        vm.warp(at + 336);
+        uint256 id = vm.snapshotState();
+        vm.prank(bob);
+        pair.confirm(address(t), data, n); // the last second works
+        vm.revertToState(id);
+        vm.warp(at + 337);
+        vm.prank(bob);
+        vm.expectRevert(Pair.Expired.selector); // one second later it is dead
+        pair.confirm(address(t), data, n);
+    }
+
+    function test_aPairOnARealNetworkLivesFourteenDays() public {
+        Pair pair = _makePair(bob);
+        assertEq(pair.PROPOSAL_TTL(), 14 days);
+    }
+
     function test_aProposalOneSecondTooOldIsRefusedAndCanBeProposedAgain() public {
         (Pair pair, bytes memory data, uint256 n) = _proposeDraw();
         bytes32 id = pair.callId(address(t), data, n);

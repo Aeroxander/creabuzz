@@ -138,7 +138,12 @@ contract Treasury {
     mapping(address => RollingCap.Ring) private _agentUsdRing;
     mapping(address => RollingCap.Ring) private _agentTeamRing;
 
-    // Step 2 appends its fields (task counter, open count, takes, the task mapping, the note mapping) after this line.
+    // ---- step 2: the arriving stream (appended after the step 1 fields; none of those moved)
+    /// @notice When the current stream of outside money started arriving; with `arrivalTotal` it makes what has been
+    /// released by now one rounding of one formula, however often `settle` is called.
+    uint64 public arrivalStart;
+    /// @notice The size of the current stream; released so far is `arrivalTotal - arriving`.
+    uint256 public arrivalTotal;
 
     bool private transient _locked;
 
@@ -523,6 +528,9 @@ contract Treasury {
             uint256 rem = uint256(arrivalEnd) - t;
             arrivalEnd = uint64(t + Math.ceilDiv(old * rem + x * unit, old + x));
         }
+        // a new stream starts now with what has not arrived yet and `x`; what arrives by any later second is one rounding of one
+        // formula, however often `settle` is called in between
+        (arrivalStart, arrivalTotal) = (uint64(t), old + x);
         arriving = old + x;
         emit RevenueAdded(msg.sender, x, arriving, arrivalEnd);
     }
@@ -749,8 +757,13 @@ contract Treasury {
             s.pot += s.back;
         }
         if (s.arriving != 0) {
+            // what has arrived by now is one rounding of one formula on the stream's own start, so calling settle often cannot
+            // hold money back
             uint256 until = arrivalEnd;
-            s.released = t >= until ? s.arriving : Math.mulDiv(s.arriving, t - last, until - last);
+            uint256 total = arrivalTotal;
+            uint256 target = t >= until ? total : Math.mulDiv(total, t - arrivalStart, until - arrivalStart);
+            uint256 done = total - s.arriving;
+            s.released = target > done ? target - done : 0;
             s.arriving -= s.released;
             s.pot += s.released;
         }

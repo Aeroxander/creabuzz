@@ -9,6 +9,8 @@ import {Treasury} from "../../src/Treasury.sol";
 contract TreasuryHarness is Treasury {
     function force(uint256 pot_, uint256 paidIn_, uint256 box_, uint256 arriving_, uint64 arrivalEnd_) external {
         (pot, paidIn, box, arriving, arrivalEnd) = (pot_, paidIn_, box_, arriving_, arrivalEnd_);
+        // a forced stream is taken to have started at the last settle with the whole of `arriving_` still to come
+        (arrivalStart, arrivalTotal) = (lastSettle, arriving_);
     }
 
     function forceShares(address to, uint256 n) external {

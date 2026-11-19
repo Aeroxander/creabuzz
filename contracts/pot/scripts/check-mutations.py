@@ -3,7 +3,9 @@
 
   vectors     a changed FORMULA makes `test/ModelVectors.t.sol` fail (the contracts are bound to the reference model);
   invariants  a removed or changed GUARD makes `test/PotInvariants.t.sol` or `test/MustBind.t.sol` fail (the invariant run
-              and the handler would catch it).
+              and the handler would catch it);
+  leftovers   a changed rule of the step 1 leftovers (outside money released by one formula, a Pair that lives two time units of
+              its project, a take-out that burns only the caller's own Shares) makes the test file that binds it fail.
 
 Each mutation is an exact one-line text replacement that must occur exactly once. A mutation that leaves its tests green is a
 hole in the tests: the script prints it and exits 1. The real project is never touched: a minimal copy goes to a temporary folder
@@ -13,6 +15,7 @@ Run from anywhere:   python3 contracts/pot/scripts/check-mutations.py [--only NA
   --only NAME   run one mutation (or several, comma separated)
   --wait CMD    a shell command to run before every forge call (for machines shared with other builds)
   --keep        keep the scratch folder and print its path
+  --check       only check that every mutation's text occurs exactly once (no forge run)
 
 Needs forge on PATH and about 30 seconds per mutation (the first compile is the slowest).
 """
@@ -32,6 +35,8 @@ SF = "test/SettleFirst.t.sol"
 EX = "test/Expiry.t.sol"
 INV = "test/PotInvariants.t.sol"
 MB = "test/MustBind.t.sol"
+AR = "test/Arrival.t.sol"
+OB = "test/OwnBurn.t.sol"
 MUTATIONS = [
     # ---- formulas: the vectors must notice
     ("offset-dollar", "src/PotMath.sol", "OFFSET_USD = 1;", "OFFSET_USD = 1e6;", QO, "the virtual money in the quote grows to a dollar"),
@@ -44,7 +49,7 @@ MUTATIONS = [
     ("credit", "src/PotMath.sol", "uint256 cap = Math.mulDiv(n, paidIn, b);", "uint256 cap = Math.mulDiv(n, paidIn, b) / 2;", V, "paid-in credited on a join"),
     ("accrual", "src/Treasury.sol", "Math.mulDiv(s.pot, rate * s.dt, PPM * (unit / 7))", "Math.mulDiv(s.pot, rate * s.dt, PPM * (unit / 8))", V, "the allowance accrual"),
     ("box-cap", "src/Treasury.sol", "uint256 cap = Math.mulDiv(s.pot + s.box, rate * 7, PPM);\n        if (s.dt", "uint256 cap = Math.mulDiv(s.pot + s.box, rate * 8, PPM);\n        if (s.dt", V, "the seven-day box cap"),
-    ("release", "src/Treasury.sol", "Math.mulDiv(s.arriving, t - last, until - last)", "Math.mulDiv(s.arriving, t - last, until - last + 1000)", V, "the outside money release"),
+    ("release", "src/Treasury.sol", "Math.mulDiv(total, t - arrivalStart, until - arrivalStart)", "Math.mulDiv(total, t - arrivalStart, until - arrivalStart + 1000)", V, "the outside money release"),
     ("merge", "src/Treasury.sol", "Math.ceilDiv(old * rem + x * unit, old + x)", "Math.ceilDiv(x * unit, x)", V, "the weighted-average arrival of two payments"),
     ("window", "src/Treasury.sol", "CHECK_IN_MULT = 2;", "CHECK_IN_MULT = 3;", V, "the two-unit check-in window"),
     ("z-in-quote", "src/Treasury.sol", "uint256 ge = team.totalSupply() - Z;", "uint256 ge = team.totalSupply();", V, "the announced burn in the join price"),
@@ -75,6 +80,12 @@ MUTATIONS = [
     ("raise-wait", "src/Treasury.sol", "if (block.timestamp < uint256(proposedAt) + unit) revert NotYet(uint256(proposedAt) + unit);", "if (block.timestamp < uint256(proposedAt) + unit / 2) revert NotYet(uint256(proposedAt) + unit);", "test/Allowance.t.sol", "a rate raise waits half a time unit instead of one"),
     ("rate-ceiling", "src/Treasury.sol", "MAX_RATE_PPM = 2000;", "MAX_RATE_PPM = 2001;", "test/Allowance.t.sol", "the 0.20% a day ceiling"),
     ("burn-anyone", "src/ShareToken.sol", "function burnFor(address from, uint256 value) external {\n        if (msg.sender != controller) revert NotController();", "function burnFor(address from, uint256 value) external {", "test/ShareToken.t.sol", "anyone can burn another's Shares (the burn authority)"),
+    # ---- step 2, the step 1 leftovers: the unit tests of each must notice
+    ("release-per-call", "src/Treasury.sol", "uint256 target = t >= until ? total : Math.mulDiv(total, t - arrivalStart, until - arrivalStart);", "uint256 target = (total - s.arriving) + (t >= until ? s.arriving : Math.mulDiv(s.arriving, t - last, until - last));", AR, "the outside money released depends on how often settle is called"),
+    ("stream-start", "src/Treasury.sol", "(arrivalStart, arrivalTotal) = (uint64(t), old + x);", "(arrivalStart, arrivalTotal) = (uint64(t), x);", AR, "a merged stream forgets what had not arrived"),
+    ("pair-ttl-fixed", "src/Pair.sol", "PROPOSAL_TTL = 2 * uint256(treasury_.unit());", "PROPOSAL_TTL = 14 days;", EX, "a Pair's proposal lives 14 days whatever the time unit"),
+    ("leave-burns-to", "src/Treasury.sol", "        shares.burnFor(msg.sender, n);\n        _pay(to, cash);\n        emit Left(", "        shares.burnFor(to, n);\n        _pay(to, cash);\n        emit Left(", OB, "a take-out burns the Shares of whoever is named, not the caller's"),
+    ("leave-team-burns-to", "src/Treasury.sol", "        team.burnFor(msg.sender, n);\n        _pay(to, cash);\n        emit TeamLeft(", "        team.burnFor(to, n);\n        _pay(to, cash);\n        emit TeamLeft(", OB, "a Team take-out burns the Team Shares of whoever is named"),
 ]
 
 
@@ -89,6 +100,7 @@ def main():
     only = set()
     wait = None
     keep = False
+    check_only = False
     i = 0
     while i < len(args):
         if args[i] == "--only":
@@ -99,6 +111,9 @@ def main():
             i += 2
         elif args[i] == "--keep":
             keep = True
+            i += 1
+        elif args[i] == "--check":
+            check_only = True
             i += 1
         else:
             print(__doc__)
@@ -117,8 +132,8 @@ def main():
         for name in keep_tests:
             shutil.copy(os.path.join(POT, "test", name), os.path.join(work, "test", name))
         env = dict(os.environ, FOUNDRY_INVARIANT_RUNS="64")
-        first = run(["forge", "test", "--match-path", "test/ModelVectors.t.sol"], work, env, wait)
-        if first.returncode != 0:
+        first = None if check_only else run(["forge", "test", "--match-path", "test/ModelVectors.t.sol"], work, env, wait)
+        if first is not None and first.returncode != 0:
             print("the unchanged copy does not pass its own vector test:\n" + first.stdout[-3000:] + first.stderr[-2000:])
             return 2
         survivors = []
@@ -128,11 +143,19 @@ def main():
                 continue
             path = os.path.join(work, rel)
             text = open(path).read()
-            if text.count(old) != 1:
-                print("%-22s MUTATION DOES NOT APPLY (%d matches in %s)" % (name, text.count(old), rel))
+            pairs = list(zip(old, new)) if isinstance(old, list) else [(old, new)]
+            bad = [o for o, _ in pairs if text.count(o) != 1]
+            if bad:
+                print("%-22s MUTATION DOES NOT APPLY (%d matches in %s)" % (name, text.count(bad[0]), rel))
                 survivors.append(name)
                 continue
-            open(path, "w").write(text.replace(old, new))
+            if check_only:
+                print("%-22s applies" % name)
+                continue
+            mutated = text
+            for o, n in pairs:
+                mutated = mutated.replace(o, n)
+            open(path, "w").write(mutated)
             try:
                 r = run(["forge", "test", "--match-path", tests], work, env, wait)
             finally:

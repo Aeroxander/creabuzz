@@ -24,9 +24,10 @@ contract Pair {
     mapping(bytes32 => address) public proposer;
     /// @notice When each pending call was proposed (keyed by `callId`).
     mapping(bytes32 => uint256) public proposedAt;
-    /// @notice A proposal can be confirmed for this long (two time units of a real network), then it is dead: old consent
-    /// is not consent.
-    uint256 public constant PROPOSAL_TTL = 14 days;
+    /// @notice A proposal can be confirmed for this long, then it is dead: old consent is not consent. Two time units of the
+    /// project (14 days on a real network), read from the Treasury when the Pair is set up, so a test network with a short
+    /// unit has short-lived proposals too.
+    uint256 public PROPOSAL_TTL;
     /// @notice Calls proposed so far; makes each proposal's id different.
     uint256 public nonce;
 
@@ -68,6 +69,7 @@ contract Pair {
         if (launcher != address(0)) revert BadSetup();
         if (first_ == address(0) || second_ == address(0) || first_ == second_) revert BadSetup();
         (treasury, launcher, first, second) = (treasury_, launcher_, first_, second_);
+        PROPOSAL_TTL = 2 * uint256(treasury_.unit());
         treasury_.takeSeat();
     }
 
