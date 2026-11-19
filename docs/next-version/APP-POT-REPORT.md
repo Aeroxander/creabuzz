@@ -16,7 +16,7 @@ This is not legal or tax advice, and no figure here is a promise of any result f
 | 4 | Call builders and quote readers for both senders, and plans that set the guard from the chain's own quote | `packages/creaton-core/src/pot/pot-calls.ts`, `pot-reads.ts`, `pot-plans.ts`, `abi-codec.ts`; `app/src/features/money/runner.ts` |
 | 5 | A sentence for every custom error of the six ABIs, with a test that walks them all | `app/src/features/money/pot-copy.ts`, `pot-copy.test.ts` |
 | 6 | The test-network config, from the build's environment or a deployments file | `packages/creaton-core/src/pot/network.ts`, `app/src/lib/pot-network.ts`, `app/src/lib/deployments-env.ts`, `app/vite.config.ts` |
-| 7 | The old chain loop retired; a new one that drives the app's own builders on the real contracts | `scripts/pot-app-chain-loop.sh`, `app/tests/anvil/pot-loop.test.ts`, `pot-chain.ts`, `passkey-back.test.ts` |
+| 7 | The old chain loop retired; a new one that drives the app's own builders on the real contracts | `scripts/pot-app-loop.sh`, `app/tests/anvil/pot-loop.test.ts`, `pot-chain.ts`, `passkey-back.test.ts` |
 
 Commits (all signed off, on `v6`): `73521d0fa` (ABIs, builders, quotes, network), `f89eb78cc` (the words), `5c3a02c70` (record
 version 2, the flag, the pages, the weekly flow, tasks, the chain loops), `d21ad2571` (deployments file, Tasks tab loads late).
@@ -34,7 +34,7 @@ version 2, the flag, the pages, the weekly flow, tasks, the chain loops), `d21ad
 | fresh-ABI test is falsifiable | one function renamed in the generated file: the test failed with "differs from a fresh build"; the file was restored |
 | knip (unused exports) | clean |
 | `vite build` with `CREATON_DEPLOYMENTS_FILE` | builds; the launcher address from the file is in the built code; entry chunk 398 KB against the 450 KB budget (before: 427 KB) |
-| `scripts/pot-app-chain-loop.sh` (real anvil, real `contracts/pot` bytecode) | 1 test passed: faucet, launch, Back in one signature and in two, Take out with its guard, check-in with a hash, door, raise that must wait, a draw, a Team grant claimed as it vests, a member's own exit with its notice, outside money, a Team take-out, each refusal read in the app's words |
+| `scripts/pot-app-loop.sh` (real anvil, real `contracts/pot` bytecode) | 1 test passed: faucet, launch, Back in one signature and in two, Take out with its guard, check-in with a hash, door, raise that must wait, a draw, a Team grant claimed as it vests, a member's own exit with its notice, outside money, a Team take-out, each refusal read in the app's words |
 | `scripts/phone-loop.sh` | 33 claims proven, including a Back from a passkey account on the real Treasury: one operation, one prompt, no approve step, minted exactly the quoted Shares, refusal read in the app's words, no network coin held |
 | Playwright | not run: no browser is installed on this machine (see "Not done") |
 
@@ -180,7 +180,7 @@ without a network), `pot-words.ts` (every figure and sentence that is a function
 | biome (app `src`, `tests`), `check:copy`, `check:px-text`, `check:file-sizes` (base `68309b077`), knip | clean |
 | core tests (`node --test`, forge on PATH, including the fresh-ABI test) | 1,204 passed, 0 failed, 0 skipped (pass A left 1,195) |
 | `vite build` with `CREATON_DEPLOYMENTS_FILE=contracts/pot/deployments/pot-31337.json`, then `check-bundle-size` | builds; entry chunk 389 KiB against the 450 KB budget. The Money tab is a lazy chunk (41 KB) so the contract ABIs stay out of the first download |
-| `scripts/pot-app-chain-loop.sh` (real anvil, real `contracts/pot` bytecode) | 2 files, 2 tests passed: pass A's 20-step loop and the new `pot-screens.test.ts` (below) |
+| `scripts/pot-app-loop.sh` (real anvil, real `contracts/pot` bytecode) | 2 files, 2 tests passed: pass A's 20-step loop and the new `pot-screens.test.ts` (below) |
 | Playwright | not run: no browser is installed on this machine |
 
 `app/tests/anvil/pot-screens.test.ts` runs, on the real contracts, the Back sheet's own reader and plan (fee, door, quote, one signature, Shares equal to the
@@ -235,3 +235,177 @@ On a local relay and a local chain, in a real browser, with the injected wallet 
 9. **You** lists the held project with the chain's figures and shows the history after a Back and a Take out; reload and check the history is still there (and gone in a private window, said as "kept in this browser").
 10. **Phone width** (360 px) and large text: nothing is cut off or has to be scrolled sideways.
 11. Specs to re-base: `scripts/phone-e2e.sh` (runs the retired `phone-back.spec.ts`) and `scripts/phone-loop.sh` (checks `contracts/next/out` only), as pass A noted.
+
+---
+
+# Pass C: the proof (a real chain, a real browser)
+
+Written 19 November 2026 on branch `v6`, by builder C of three on the app track. Nothing is pushed. This pass adds no screen. It
+proves passes A and B on a real local chain and in a real browser, fixes what the browser showed, and measures the presses and
+signatures. **No person has tested this**: every run below was made by an agent. A person's own test is still to be done (the
+steps are at the end). This is not legal or tax advice, and no figure is a promise of any result for anyone.
+
+A browser was available this time (Playwright's Chromium 153 at `/opt/pw-browsers`), so the Playwright specs of passes A and B
+that were never run, and the new ones, were run.
+
+## What was built (commits `dff0ce257`, `3eda658d2`, `683522672`)
+
+| # | Part | Where |
+|---|---|---|
+| 1 | The chain harness is now `scripts/pot-app-loop.sh` (renamed from `pot-app-chain-loop.sh`; `m7-chain-loop.sh` was already gone). It runs four harness files on a throwaway anvil and prints one count line | `scripts/pot-app-loop.sh` |
+| 2 | New harness file: Take out with the door shut by the team, after the team stopped checking in (2 units), with outside money arriving, after a wind-down by anyone (26 quiet units) and by the runner; a Back refused in words in each; a second wind-down and a check-in after a wind-down refused; a Pair call refused for its own proposer and for a second confirm | `app/tests/anvil/pot-states.test.ts` |
+| 3 | Browser specs that start their own anvil, deploy the pot contracts in the deploy script's order (same addresses every time, so the one build works) and launch a project with the app's own call builders | `app/tests/e2e/helpers/live-chain.ts`, `live-browser.ts`, `pot-*.spec.ts` |
+| 4 | A wallet in the page that forwards every call to the real anvil through the harness provider (no key in any file), counts each prompt, can say no, can be slow | `app/tests/e2e/helpers/live-browser.ts` |
+| 5 | The server's record for a project, made from the real chain: every figure read from the Treasury, Vester and token views, the settled money worked forward by RECORD-V2 section 3, the totals summed from the Treasury's events, the quiet times from the check-in | `app/tests/e2e/helpers/live-record.ts` |
+| 6 | The passkey path in a real browser (virtual authenticator, EntryPoint v0.7, the Kernel stack, a stand-in bundler and sponsor at two addresses) re-based on the pot contracts | `scripts/pot-app-phone-e2e.sh`, `app/playwright.pot-phone.config.ts`, `app/tests/e2e/pot-phone.spec.ts` |
+| 7 | One fix the browser found: a sheet's parts shrank under long text (the press was 32 px high at 360 px with larger text) and its close button was 40 px | `app/src/ui/sheet.tsx` |
+
+The record in item 5 stands in for the server's chain reader (the server track proves that reader on its own with
+`scripts/chain-loop-pot.sh`). The page under test sees a record signed by the "server" key and cannot tell the difference, but the
+reader itself is not exercised by these specs. The record example file is unchanged; `RECORD-V2.md` was not touched by this pass
+(it shows as modified in the tree: that is another engineer's change).
+
+## How it was proven
+
+| Run | Result |
+|---|---|
+| `scripts/pot-app-loop.sh` (real anvil, real `contracts/pot` bytecode) | **6 tests passed, 0 failed, 0 skipped, in 4 files**: `pot-loop` (1), `pot-screens` (1), `pot-states` (3), `passkey-back` (1) |
+| Playwright `--project=smoke --trace off` (the build made with `CREATON_DEPLOYMENTS_FILE=../contracts/pot/deployments/pot-31337.json`) | **45 passed, 0 failed, 59 skipped** (the skipped are the old design's specs, which need the legacy flag, and the passkey spec of the phone script). Before this pass the same project gave 14 passed, 58 skipped. Of the 45, 30 are new `pot-*.spec.ts` tests |
+| `scripts/pot-app-phone-e2e.sh` (passkey, real browser) | **1 passed** (faucet, Back and Take out from a passkey account) |
+| app `tsc --noEmit` (including `tests/`) | clean |
+| app vitest | **66 files, 472 tests passed, 0 failed** (the same as pass B) |
+| biome (app `src`, `tests`, configs), `check:copy`, `check:px-text` | clean |
+| `check:file-sizes` (`CHECK_FILE_SIZES_BASE=68309b077`, there is no `origin/main` here) | clean |
+| `pnpm build` with the deployments file, then the bundle-size check | ok; entry chunk 389 KiB against the 450 KB budget |
+| repository `knip` | clean |
+
+The new browser tests, by file (each starts its own anvil; a project per test):
+
+- `pot-back.spec.ts` (5): Back with the wallet; a second backer; a wallet that says no and then yes; a double press; an amount under the
+  smallest and more than the person holds.
+- `pot-takeout.spec.ts` (11): Take out all; half then a quarter; the project open, the door closed by the team, quiet, dormant, open to
+  a wind-down, wound down (the page's word for the state is checked each time, and what the Back box says instead of a form); outside
+  money arriving; no Shares; the server's numbers unreadable (Take out from the Launcher).
+- `pot-states.spec.ts` (5): a record two days old (figures gone, Back paused, Take out works), one a few hours old ("Numbers as of"), a
+  server that cannot be read then comes back ("Try again"), a project the server has not read yet, and the play-money notice on the
+  Money tab, the faucet, Back, draw, rate and door sheets, the Take out sheet and You.
+- `pot-stranger.spec.ts` (3): a browser with no wallet reads the money, the risk line and the legal line; a wallet with no play dollars
+  reads the faucet sheet and the Back sheet and sends nothing; the whole first visit.
+- `pot-a11y.spec.ts` (3): axe, colour contrast included, on the Money tab (holder and runner), the Back sheet (also with Details
+  open), the Take out sheet, the faucet, the draw, rate and door sheets, and a quiet project with an old record: no serious or critical
+  violation. Tab and Shift+Tab stay inside the Take out and Back sheets, Escape closes them, focus returns to the button that opened
+  them (opened with the keyboard).
+- `pot-layout.spec.ts` (3): at 390 wide, at 360 wide with text 125% larger, and at 1280 wide: the Money tab, the Back, Take out, draw, rate
+  and door sheets and You do not scroll sideways, every press inside them is at least 44 px, and each sheet's press is on the screen.
+  Screenshots are written to `app/test-results/pot-screens/` (ignored by git) and were looked at.
+- `pot-phone.spec.ts` (1, run by the phone script): sign up with a passkey, faucet, Back, Take out.
+
+What a quote means on a live chain (a note for anyone reading the tests): the price moves a little every second because the allowance
+flows out of the pot, so what lands is the quote read a moment before to within the guard the sheet sends (0.5%), never below it. The
+tests say exactly that (`>= 99.5%` and `<= 100.5%` of the quote); for the first backer, whose price cannot move, they say `equal`.
+
+## Presses and signatures, measured
+
+"Press" is a tap on a button, "field" a box typed in, "signature" one prompt to the person (a wallet prompt, or a passkey prompt). Counted by
+the repo's `PressCounter` on the real screens, from the project's Money tab, with the wallet already connected.
+
+| Step | Presses | Fields | Wallet: signatures | Passkey account: signatures | The plan's budget |
+|---|---|---|---|---|---|
+| Back (a play-dollar Back is one call) | 2 (Back, then the sheet's press) | 1 (the amount) | 1 | 1 | 2 presses, 1 field |
+| Back where the dollar cannot pay and call (approve, then join) | 2 | 1 | 2 (not run in a browser: the play dollar always can; the two calls are proven in the harness) | 1 (both calls in one operation; not run) | |
+| Take out (all, the sheet's default) | 2 (Take out, then the sheet's press) | 0 | 1 | 1 | 2 presses |
+| Get play dollars (the test network's faucet, once) | 2 | 0 | 1 | 1 | none |
+| Back then Take out, the "30-second stranger" path | 4 | 1 | 2 | 2 | about 28 s by the repo's reading estimate (85 words read) |
+| The whole first visit of a wallet with no play dollars | 6 | 1 | 3 | 3 | about 39 s by the same estimate |
+
+The design says "Take out is one press and one signature". The measured press is one signature, but two presses: the button on the page
+opens the sheet (which shows the cash and the guard) and the sheet's press sends. That is the same count the plan's budget
+(`takeMoneyBack`: 2 presses) allows, and the sheet is where the person reads what they will get, so I did not remove it. If the owner
+wants a literal one press, the sheet would have to go.
+
+A wallet that is not yet connected adds one press (Connect your wallet) and one wallet prompt to the first step; that was not measured
+in a browser here (the unit tests of the gate cover it).
+
+## Found while proving it (fixed or for the lead)
+
+1. **Fixed:** a sheet is a scrolling column, so its children were squeezed when the text was long: at 360 px with 125% text the sheet's
+   press was 32 px high (under a 44 px target) and its close button was 40 px. `app/src/ui/sheet.tsx` now keeps the parts at their size
+   and makes the close button 44 px. This also fixes the older sheets.
+2. **Not fixed (not on a money screen):** the pages' own chrome is 40 px high: the project page's Back, Follow and tab strip, You's Edit,
+   Link this wallet and tab strip. The layout spec leaves them out and says so. A small global change to the small button would fix them.
+3. On a test chain the time unit is 28 minutes, so the sentences "If it has not checked in again by 19 Nov 2026" and "The team checked in on
+   19 Nov 2026" show the same day. On the real network a unit is a week. Not a defect; a person trying this on a local chain will see it.
+4. The Back sheet says "You hold 0.00 play dollars" for an account with none (other places say "0"). Harmless.
+5. `passkey.spec.ts` (old, in the smoke project) failed once in the first full run, with the machine busy (the unlock bar did not show
+   after a reload), and passed alone and in the last full run. I take it for a timing flake; I did not change it.
+6. No defect found in `contracts/pot`. The Treasury's stored `box()`, `pot()` and `arriving()` are as of the last settle (pass B found
+   this); the live-record helper works them forward by the document's formula, and the live specs show the screens agree with the chain.
+7. `scripts/phone-e2e.sh` and `scripts/phone-loop.sh` are not on this track. `phone-e2e.sh` runs `phone-choice.spec.ts`, which is skipped
+   without the legacy flag and needs the old contracts; `phone-loop.sh` checks only `contracts/next/out`, while
+   `passkey-back.test.ts` needs `contracts/pot/out`. `scripts/pot-app-phone-e2e.sh` and `scripts/pot-app-loop.sh` replace what they proved on
+   the new contracts. The lead should retire or re-point the two old scripts.
+
+## Chosen under the owner's standing go; the owner may overrule
+
+1. "The stranger reads the two sheets" is taken as the Back sheet and the faucet sheet (a stranger holds nothing, so has no Take out
+   sheet); a holder's Take out sheet is read in the Take out specs.
+2. The browser specs use the mock server of the existing set-up with a record made from the chain, not the real relay and reader (they need
+   a database, a cache and a long Rust build; the server track proves its reader with `scripts/chain-loop-pot.sh`).
+3. The specs start their own anvil per file and skip, with a stated reason, when `anvil` or `contracts/pot/out` is missing. They need the app
+   built with the Launcher and dollar of a fresh anvil (`CREATON_DEPLOYMENTS_FILE=../contracts/pot/deployments/pot-31337.json pnpm build`
+   gives them); a spec checks the build names the chain's Launcher and fails with that sentence when it does not.
+4. When a spec moves the chain's clock (a project that goes quiet), the page's clock is moved to the chain's (Playwright's clock), so the
+   browser and the chain agree what day it is.
+5. The passkey path lives in its own script and config (a build with the passkey settings and a port-specific bundler address cannot share
+   the normal build), not in the smoke project.
+6. "Where the dollar cannot pay and call" is proven in the harness only: the play dollar always can, and a second token would be a test
+   token, not the network's.
+7. The layout check judges a press by its own box, or its label for a radio or a tick box, at 44 px, and leaves the pages' chrome out
+   (finding 2).
+
+## Not done
+
+- Not exercised in a browser: the allowance screens beyond opening their sheets (an over-draw refused in words, lowering the rate,
+  announcing a raise and applying it early and after the wait, the door, a lapsed check-in), Team Shares (a grant, a claim, a member's
+  exit, what a stranger sees), a Pair's waiting call confirmed or withdrawn, and a wallet closed mid-send then the sheet opened again
+  ("Look for your backing"). Their contract side is proven in the harness (`pot-loop`, `pot-screens`, `pot-states`) and their screens by
+  the unit tests of pass B; a refused prompt and a double press are proven in the browser.
+- Keyboard and focus were checked on the Take out and Back sheets only, not on every sheet.
+- Take out with the wallet on another network, and the passkey path for a Back where the dollar cannot pay and call, were not run in a browser.
+- Not run: a real relay with the real chain reader under a browser; a real phone; a real wallet app.
+- Step 2 and `crates/**` are untouched.
+
+## Steps for a person to try it on their own phone against a local chain
+
+I have not done these on a phone, and I have not run the relay part on this machine, so they may need small changes. Nothing here uses a
+real key or real money: the chain is a local test chain and the dollars are play money.
+
+What you need on the computer: Foundry (`anvil`, `forge`, `cast`), Node and pnpm, Postgres and Redis for the server, and a phone on the
+same network. A passkey needs a secure address (https, or `localhost`), so a phone on a plain `http://<computer>:port` address cannot make
+a passkey account: use a phone browser that has a wallet (its own wallet browser) and, in that wallet, add a custom network (chain 31337,
+the computer's address and port as its RPC) and import one of anvil's public development accounts. The wallet shows that account's
+secret key only on the computer; do not type a real account's key anywhere.
+
+1. On the computer, in `contracts/pot`: `forge build`. Start the chain so the phone can reach it:
+   `anvil --host 0.0.0.0 --port 8545 --chain-id 31337`.
+2. In another terminal, in `contracts/pot`, deploy with the deploy script from anvil's first account (see `contracts/pot/DEPLOYMENTS.md`
+   for the flags): `UNIT=1680 forge script script/DeployPot.s.sol --rpc-url http://127.0.0.1:8545 --broadcast --unlocked --sender
+   <anvil's first account>`. It writes `contracts/pot/deployments/pot-31337.json`. `UNIT=1680` makes a time unit 28 minutes, so you
+   can see a check-in lapse in an afternoon; leave it out for the real week.
+3. Start the server (relay) with the chain reader reading that chain and that Launcher. The settings it needs are the server track's:
+   see `scripts/chain-loop-pot.sh` for how it starts the relay and the reader against this same chain. Note the server's address.
+4. Build and serve the app for the phone, from `app/`:
+   `CREATON_DEPLOYMENTS_FILE=../contracts/pot/deployments/pot-31337.json pnpm build` then `pnpm exec vite preview --host 0.0.0.0 --port 4174`.
+   Open `http://<the computer's address>:4174` on the phone and point it at your server.
+5. On the phone: create a project (or open one the founder account launched with `cast`), open its Money tab.
+   - **What working looks like:** the page says in its first line that this is a test network and the dollars are play money. It shows
+     "The project's money", "What one Share gives if taken out now", "This can go up or down. It is not a return.", and the legal line word for word.
+   - Press **Get play dollars**, then the sheet's button: your wallet asks once, and you hold 1,000 play dollars.
+   - Type an amount (for example 25), press **Back**: the sheet shows what you pay, the fee, the Shares you get and what taking out now
+     would give. Press its button: the wallet asks **once**, the sheet closes, and "Your Shares" shows the new Shares.
+   - Press **Take out**, then the sheet's button: the wallet asks **once**, the dollars come back (a little less than you paid, because of the
+     fee), and "Your Shares" says you hold none.
+   - With a second account, Back the same project and see that the first backer's Shares do not change.
+   - Stop checking in for two time units (56 minutes on a 28-minute unit): the page says the project is quiet, Back says why it is paused
+     and that you can still take your money out, and Take out still works. After 26 units anyone can wind it down, and Take out still works.
+   - Stop the server and reload: the page says the numbers could not be read and still lets you take your Shares out.
