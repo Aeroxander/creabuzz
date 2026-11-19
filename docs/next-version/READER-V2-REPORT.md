@@ -180,15 +180,21 @@ its fix switched off and failed (7 of 7).
 | Finding | Fix | Test that fails without it |
 |---|---|---|
 | Review 1 I1 and attack I4: a quiet project was derived (about 45 view calls plus its stored logs) at every poll for 600 to 3600 s after its last signing, because the "unchanged" branch no longer moved the clock | The writer remembers per project when it is next worth looking at (`Schedule.quiet_until`, the project's own promised refresh after its last signing). A project that is neither changed nor due costs no node call. `touch_source_block` lost its dead `checked` branch | `a_project_that_is_not_due_and_has_not_changed_costs_no_view_calls`: the first look reads the views, the next passes make 0 calls (before: 114 calls on each pass) |
-| Attack I1: a head that steps back (not a rollback) made the reader sign older numbers over newer ones | `publish_pass` does nothing while the newest block read is above the final block plus one (a record only goes forward); a real rollback resets the cursor, so it is not blocked. The helper builds no jobs then either | `a_head_that_steps_back_does_not_replace_a_newer_record_with_an_older_one` |
+| Attack I1: a head that steps back (not a rollback) made the reader sign older numbers over newer ones | `publish_pass` does nothing while the newest block read is above the final block plus one (a record only goes forward); a real rollback resets the cursor, so it is not blocked. The helper builds no jobs then either (its rule is `helper_final_block`) | `a_head_that_steps_back_does_not_replace_a_newer_record_with_an_older_one`; for the helper, `jobs_are_built_only_at_the_newest_block_read` (fails when `cursor <= f + 1` is dropped) |
 | Attack I2: the same step back signed a removal for a project launched above the lower block | The same guard | `a_head_that_steps_back_does_not_publish_a_removal_for_a_live_project` |
 | Attack I3: projects whose numbers cannot be built kept the front of the queue (100 of them starve every other project) | A failed build puts the project off for 15 s, doubling to 300 s (`failure_pause`); a success clears it | `a_hundred_projects_that_cannot_be_built_do_not_starve_the_others` (pass 1: 100 failed; pass 2: 0 failed, both real projects signed), `a_failing_project_waits_longer_each_time_up_to_a_cap` |
 | Review 1 I2 and attack O4: the dollar's kind (play money or not) was learned only by the writer's record builds, so on other replicas it was "unknown", which the manager reads as play money (cap zero) | Every replica reads `Launcher.testNetwork()` itself (`views::read_test_network`) on its own passes until it knows | `a_replica_without_the_writer_lock_reads_whether_the_dollar_is_play_money` |
 | Review 1 I3: dead helper code (batches, positions, essential calls, rest-of-batch, `BUZZ_CHAIN_HELPER_BATCH`) | Deleted: `members`, `only`, `first_half`, `ESSENTIAL`, `is_essential*`, `rest_key`, `store::Rest`, `Position`, `PlanContext.batch`, the gas-halving loop, the routine/essential columns of `used_last_day`, the setting `BUZZ_CHAIN_HELPER_BATCH` (and its lines in the `config.rs` test of the helper's settings). The gas room, the daily share and the stuck-transaction replacement keep their behaviour | the helper's existing call-list and plan tests, the config test, and the real loop (95 checks) |
 | Review 1 optional: a collector racing another reverts with `NothingToPay` and was retried | `nothing_to_do_errors` names `NothingToPay()` for `collectFees()`: the job is dropped, no failed attempt | `a_fee_collected_by_someone_else_drops_the_job_without_a_failed_attempt` (fake node, real database) |
 | Attack O1: a node that ignores `toBlock` wedged the reader at a duplicate key | Logs outside the range asked for are dropped in `scan_range` (they are read again in their own range) | `a_node_that_ignores_the_end_of_the_range_does_not_wedge_the_reader` (and the run's numbers still rebuild) |
-| Review 1 optional: `unwrap_or(0)` on the pending rate | `?` and a width check | covered by the existing builds against the books |
+| Review 1 optional: `unwrap_or(0)` on the pending rate (second review: the width check that replaced it could never fail, because the cross-check had already made the Treasury's number equal the events' 32-bit one) | The dead conversion is gone: the raise waiting is taken from the events, and the cross-check in `numbers.rs` is the one place that compares the Treasury's pending rate and time with them | `a_pending_rate_that_is_oversized_or_different_publishes_nothing` (a rate above 32 bits, one unit off, and zero are each refused with "nothing is published ... pending rate"); fails when the rate comparison in the cross-check is removed |
 | Reviewers' scratch tests | `review-reader-attacks.rs` deleted. Kept as proper tests: hostile event values one unit off are refused (`an_event_value_one_unit_off_is_never_signed_into_a_record`, in `record_tests.rs`) and 406 big-integer vectors for `mul_div` (`mul_div_tests.rs`, checked again with Python integers: 0 wrong) | both pass |
+
+### Second review (fixer 2)
+
+- `cargo fmt --check` failed on one line of `config.rs` (the helper-settings assertion, from the batch-setting removal). Formatted; the whole workspace is now clean, so the line in the table above and the run step below are true.
+- The helper's step-back clause was not covered: the rule is now the plain function `helper_final_block`, which `helper_pass` calls; its test fails when `cursor <= f + 1` is replaced by `cursor > f`.
+- The pending-rate fix was not falsifiable (see the table): the unreachable check was removed and the cross-check is tested with an oversized, a different and a zero rate.
 
 ### Declined, with the reason
 
@@ -208,10 +214,10 @@ its fix switched off and failed (7 of 7).
 
 ### What ran after the fixes
 
-- `cargo test -p buzz-relay --lib chain_reader -- --include-ignored --test-threads=1` (local Postgres and Redis): 61 passed, 0 failed, 0 ignored.
+- `cargo test -p buzz-relay --lib chain_reader -- --include-ignored --test-threads=1` (local Postgres and Redis): 63 passed, 0 failed, 0 ignored (after the second review).
 - `cargo test -p buzz-relay --lib manager:: -- --include-ignored --test-threads=1`: 33 passed, 1 failed (`planted_eval_against_a_real_model`, which needs a real model proxy and key; unrelated to this track).
 - `cargo test -p buzz-relay --lib config::`: 103 passed, 0 failed.
-- `cargo clippy -p buzz-relay --lib --tests -- -D warnings`: clean. The track's files are rustfmt-clean.
+- `cargo clippy -p buzz-relay --lib --tests -- -D warnings`: clean. `cargo fmt --check` over the workspace is clean (after the second review).
 - `node scripts/chain-reader-events.mjs --check`: matches; `python3 scripts/chain-reader-fixture.py --check`: "pot-run.json is what a fresh run gives".
 - `scripts/chain-loop-pot.sh` (real anvil, contracts/pot, the real relay binary rebuilt after the fixes): 95 checks passed, exit 0.
 

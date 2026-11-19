@@ -489,17 +489,14 @@ pub fn build(
         .filter(|(at, _)| at.saturating_add(day) > t)
         .map(|(_, amount)| *amount)
         .sum();
-    let pending_at = v.t64("pendingAt")?;
-    let pending = if pending_at != 0 {
-        Some(PendingRec {
-            rate_ppm: u32::try_from(v.t("pendingRatePpm")?)
-                .context("the pending rate does not fit 32 bits")?,
-            proposed_at: pending_at,
-            applicable_at: pending_at.saturating_add(unit),
-        })
-    } else {
-        None
-    };
+    // The raise waiting is the one the events gave; the cross-check above has
+    // already proved the Treasury's own pending rate and time are the same
+    // (a different or oversized number there refuses the build).
+    let pending = ledger.pending_rate.map(|p| PendingRec {
+        rate_ppm: p.ppm,
+        proposed_at: p.proposed_at,
+        applicable_at: p.proposed_at.saturating_add(unit),
+    });
     let accruing = rate > 0 && settled.pot > 0 && !wound && t < active_end;
     let refresh = if accruing || settled.arriving != 0 {
         cadence.active_secs

@@ -294,22 +294,23 @@ impl ChainReader {
         // Jobs are built only from final rows the reader has stored, and never
         // from a block below the newest one read (a head that stepped back).
         let cursor = store::cursor(pool, reader).await?;
-        let final_block = match head.checked_sub(self.scan.lag) {
-            Some(f) if f >= self.config.start_block && cursor > f && cursor <= f + 1 => {
-                let time = match store::block(pool, reader, f).await? {
-                    Some(h) => h.time,
-                    None => {
-                        self.source
-                            .header(f)
-                            .await?
-                            .with_context(|| format!("block {f} is not on the chain"))?
-                            .time
-                    }
-                };
-                Some((f, time))
-            }
-            _ => None,
-        };
+        let final_block =
+            match helper_final_block(head, self.scan.lag, self.config.start_block, cursor) {
+                Some(f) => {
+                    let time = match store::block(pool, reader, f).await? {
+                        Some(h) => h.time,
+                        None => {
+                            self.source
+                                .header(f)
+                                .await?
+                                .with_context(|| format!("block {f} is not on the chain"))?
+                                .time
+                        }
+                    };
+                    Some((f, time))
+                }
+                _ => None,
+            };
         helper
             .pass(pool, reader, (head, head_header.time), final_block)
             .await
@@ -582,6 +583,16 @@ impl ChainReader {
     }
 }
 
+/// The final block the helper may build jobs from: the newest final block
+/// (`head` less `lag`) when the reader has read exactly up to it and no
+/// further (`cursor` is the next block to read). A head that stepped back
+/// below the blocks already read gives none, so jobs are never built from a
+/// block lower than the newest one read.
+fn helper_final_block(head: u64, lag: u64, start_block: u64, cursor: u64) -> Option<u64> {
+    let f = head.checked_sub(lag)?;
+    (f >= start_block && cursor > f && cursor <= f + 1).then_some(f)
+}
+
 /// Start the reader from the relay's configuration, if it is on. It checks the
 /// node serves the configured chain before its first pass; a failed pass is
 /// logged and retried with a growing pause (at most ten minutes), never ended.
@@ -846,6 +857,27 @@ mod supervise_tests {
             "started {} time(s)",
             starts.load(Ordering::SeqCst)
         );
+    }
+}
+
+#[cfg(test)]
+mod helper_block_tests {
+    use super::helper_final_block;
+
+    /// The helper builds jobs only at the final block the reader has just
+    /// read; a head that stepped back builds none (the clause that stops it
+    /// is `cursor <= f + 1`).
+    #[test]
+    fn jobs_are_built_only_at_the_newest_block_read() {
+        // Read exactly up to the final block (next to read is f + 1).
+        assert_eq!(helper_final_block(110, 10, 50, 101), Some(100));
+        // The final block is not read yet.
+        assert_eq!(helper_final_block(110, 10, 50, 100), None);
+        // The head stepped back two blocks below what is already read.
+        assert_eq!(helper_final_block(108, 10, 50, 101), None);
+        // Below the launcher's first block, or a head younger than the lag.
+        assert_eq!(helper_final_block(40, 10, 50, 31), None);
+        assert_eq!(helper_final_block(5, 10, 0, 1), None);
     }
 }
 

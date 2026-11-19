@@ -2569,10 +2569,7 @@ mod tests {
             helper.key.0.address_hex(),
             "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65"
         );
-        assert_eq!(
-            (helper.daily_gas, helper.max_attempts),
-            (40_000_000, 8)
-        );
+        assert_eq!((helper.daily_gas, helper.max_attempts), (40_000_000, 8));
         let shown = format!("{helper:?}");
         assert!(
             !shown.contains("47e179ec"),

@@ -573,6 +573,35 @@ fn address_of(text: &str) -> [u8; 20] {
     super::word::parse_fixed::<20>(text).expect("address")
 }
 
+/// The raise waiting is read from the Treasury and checked against the events:
+/// a rate that does not fit 32 bits, or a different one, publishes nothing
+/// (it never becomes zero or a wrapped number).
+#[tokio::test]
+async fn a_pending_rate_that_is_oversized_or_different_publishes_nothing() {
+    let (fx, ledger, as_of, chain) = load("A_live");
+    let waiting = ledger.pending_rate.expect("the book has a raise waiting");
+    let treasury = address_of(&ledger.contracts.treasury);
+    for wrong in [
+        u128::from(waiting.ppm) + (1u128 << 32), // does not fit 32 bits
+        u128::from(waiting.ppm) + 1,
+        0,
+    ] {
+        let mut tampered = BookChain {
+            block: chain.block,
+            answers: chain.answers.clone(),
+        };
+        set_answer(&mut tampered, &treasury, "pendingRatePpm()", &[], wrong);
+        let err = build_with(&fx, &ledger, &as_of, &tampered)
+            .await
+            .expect_err("refused");
+        let text = format!("{err:#}");
+        assert!(
+            text.contains("nothing is published") && text.contains("pending rate"),
+            "{wrong}: {text}"
+        );
+    }
+}
+
 #[tokio::test]
 async fn a_view_that_disagrees_with_the_events_publishes_nothing_and_names_both_numbers() {
     let (fx, ledger, as_of, chain) = load("A_live");
