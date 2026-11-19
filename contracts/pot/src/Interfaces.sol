@@ -136,7 +136,7 @@ interface ITaskBook {
     function claimableNote(uint64 serial, address holder) external view returns (uint256);
     /// @notice Reverts unless task `serial` has ended without being paid in full (its money is back).
     function requireReturned(uint64 serial) external view;
-    /// @notice The stayers' claim that comes back to the pot if the book is settled at time `at`.
+    /// @notice The stayers' claim that comes back to the pot if the book is settled at time `when`.
     function dueC(uint256 when) external view returns (uint256 sumC);
     /// @notice The notice, the take window and the time a taken task is due, for a task of `shareBps`.
     function noticeFor(uint16 shareBps)

@@ -92,7 +92,7 @@ class PotProj(Proj):
         self.burn_at = {}
         self.ann = {}  # announced tasks by serial: dict(bps, max, payee, notice_end, expires)
         self.nserial = 1  # serials start at 1 and are never reused
-        self.takes = []  # (time, ten-thousandths of the pot) of every take, for the rolling cap
+        self.takes = []  # [time, ten-thousandths of the pot, serial] of every take, for the rolling cap (bps 0 once given back)
         self.wound = False
 
     # ---------- the clock
@@ -235,7 +235,17 @@ class PotProj(Proj):
         del self.ann[serial]
 
     def window_sum(self):
-        return sum(b for at, b in self.takes if at + 4 * self.unit > self.t)
+        return sum(b for at, b, _ in self.takes if at + 4 * self.unit > self.t)
+
+    def resolve(self, serial, pay):
+        """A task that ended with nothing paid to its worker (rejected, ran out, wound down) gives its take back to the 28-day cap:
+        it moved no money out of the project. A task paid in part or in full keeps its take counted."""
+        paid = super().resolve(serial, pay)
+        if pay == 0:
+            for e in self.takes:
+                if e[2] == serial:
+                    e[1] = 0
+        return paid
 
     def take_task(self, serial, who):
         """The smaller of the stated dollars and the stated share of the settled pot, taken out of the pot into the task. The
@@ -255,7 +265,7 @@ class PotProj(Proj):
             bps = a["bps"]
         if self.window_sum() + bps > 1000:
             raise Blocked()
-        self.takes.append((self.t, bps))
+        self.takes.append([self.t, bps, serial])
         self.P -= amount
         task = v4.Task(serial, who, amount)
         task.deadline = self.t + 2 * self.unit

@@ -105,9 +105,15 @@ contract TasksCapsTest is PotBase {
             _take(ids[i]);
         }
         assertEq(_window(), 1000, "eight takes of 125 ten-thousandths fill the cap exactly");
+        // each is paid a unit of work, so each keeps its take counted (a task that ends unpaid gives it back)
+        vm.startPrank(founder);
+        for (uint256 i = 1; i < 8; ++i) {
+            t.acceptTask(ids[i], 1);
+        }
+        vm.stopPrank();
         // a slot and a ninth task: its take is refused while those eight are inside 28 days
         vm.prank(founder);
-        t.rejectTask(ids[0]); // frees a slot; the cap is not given back
+        t.acceptTask(ids[0], 1); // frees a slot; a task that was paid keeps its take counted (a rejected one would give it back)
         assertEq(_window(), 1000);
         uint64 ninth = _announce(125, 1_000_000e6);
         _warpAlive(_book().taskOf(ninth).noticeEnd);
@@ -129,8 +135,11 @@ contract TasksCapsTest is PotBase {
         // the eighth would be the last 1.25% (the sum is 8 x 125): fine; a ninth is what is blocked, so use up the room first
         _take(ids[7]);
         assertEq(_window(), 1000);
-        vm.prank(founder);
-        t.rejectTask(ids[0]);
+        vm.startPrank(founder);
+        for (uint256 i; i < 8; ++i) {
+            t.acceptTask(ids[i], 1); // paid a unit each, so every take stays counted
+        }
+        vm.stopPrank();
         uint64 ninth = _announce(125, 1_000_000e6);
         _warpAlive(_book().taskOf(ninth).noticeEnd);
         uint256 potBefore = t.pot();
@@ -159,7 +168,9 @@ contract TasksCapsTest is PotBase {
         assertEq(_take(b), pot * 500 / 10_000);
     }
 
-    function test_theCapIsNotGivenBackByRejectExpiryOrAPartPayment() public {
+    /// @dev Review fix (a stranger could burn the cap for nothing): a take that ended with nothing paid to its worker moved no
+    /// money out of the project, so it stops counting; a take that was paid, even by a dollar, keeps counting.
+    function test_theCapIsGivenBackByRejectAndExpiryButNotByAPayment() public {
         uint64 a = _announce(300, 1_000_000e6);
         uint64 b = _announce(300, 1_000_000e6);
         uint64 c = _announce(300, 1_000_000e6);
@@ -170,15 +181,109 @@ contract TasksCapsTest is PotBase {
         assertEq(_window(), 900);
         vm.prank(founder);
         t.rejectTask(a);
-        assertEq(_window(), 900, "rejected: still counted");
+        assertEq(_window(), 600, "rejected: its 300 is given back");
         vm.prank(founder);
         t.acceptTask(b, 1);
-        assertEq(_window(), 900, "paid a dollar: still counted");
+        assertEq(_window(), 600, "paid a dollar: still counted");
         vm.warp(_book().taskOf(c).deadline);
         t.settle();
         assertEq(uint8(_book().taskOf(c).state), uint8(TaskBook.State.Returned));
-        assertEq(_window(), 900, "ran out: still counted");
-        assertEq(_book().takeRoomBps(), 100);
+        assertEq(_window(), 300, "ran out unpaid: its 300 is given back");
+        assertEq(_book().takeRoomBps(), 700);
+    }
+
+    /// @dev The attack of the two attack reviews, on the production path: a stranger takes two open 5% tasks the second the
+    /// notice ends and uses the whole cap; the runner rejects both; the named worker's 1% task can then be taken.
+    function test_aStrangerWhoTakesOpenTasksCannotBurnTheCapOfANamedTask() public {
+        address bot = makeAddr("bot");
+        vm.startPrank(founder);
+        uint64 a = t.announceTask(WHAT, address(0), type(uint128).max, 500);
+        uint64 b = t.announceTask(WHAT, address(0), type(uint128).max, 500);
+        uint64 legit = t.announceTask(WHAT, worker, 1_000_000e6, 100);
+        vm.stopPrank();
+        _warpAlive(_book().taskOf(b).noticeEnd);
+        vm.startPrank(bot);
+        t.takeTask(a, 0);
+        t.takeTask(b, 0);
+        vm.stopPrank();
+        assertEq(_window(), 1000, "the bot used the whole cap");
+        vm.startPrank(founder);
+        t.rejectTask(a);
+        t.rejectTask(b);
+        vm.stopPrank();
+        assertEq(t.locked(), 0);
+        assertEq(_window(), 0, "nothing was paid, so nothing counts");
+        _warpAlive(_book().taskOf(legit).noticeEnd);
+        assertGt(_take(legit), 0, "the named worker can take the task");
+    }
+
+    /// @dev Only the take's own entry is cleared, whatever the order: eight takes at once fill the ring and the cap; they are
+    /// rejected one by one in a scrambled order, and after each the window falls by exactly that take's share.
+    function test_eachGivenBackTakeClearsOnlyItsOwnEntry() public {
+        uint64[8] memory ids;
+        for (uint256 i; i < 8; ++i) {
+            ids[i] = _announce(125, 1_000_000e6);
+        }
+        _warpAlive(_book().taskOf(ids[0]).noticeEnd);
+        for (uint256 i; i < 8; ++i) {
+            _take(ids[i]);
+        }
+        assertEq(_window(), 1000);
+        uint256[8] memory order = [uint256(5), 2, 7, 0, 3, 6, 1, 4];
+        for (uint256 i; i < 8; ++i) {
+            vm.prank(founder);
+            t.rejectTask(ids[order[i]]);
+            assertEq(_window(), 1000 - 125 * (i + 1), "the window falls by that take's share only");
+        }
+        assertEq(t.locked(), 0);
+    }
+
+    /// @dev A model of the cap: every take is (time, bps, given back?); the window sum read from the book is the sum of the
+    /// takes of the last 28 days that were not given back, over random rounds of announce, take, and one of reject / pay in
+    /// part / run out.
+    function testFuzz_theWindowSumIsTheTakesNotGivenBack(uint256 seed) public {
+        uint256[] memory takenAt = new uint256[](24);
+        uint256[] memory kept = new uint256[](24);
+        uint256 n;
+        for (uint256 round; round < 24; ++round) {
+            seed = uint256(keccak256(abi.encode(seed, round)));
+            uint16 bps = uint16(1 + (seed % 120));
+            uint64 s = _announce(bps, 1_000_000e6);
+            _warpAlive(_book().taskOf(s).noticeEnd);
+            uint256 room = _book().takeRoomBps();
+            if (room < uint256(bps)) {
+                // the take counts exactly `bps` here (the pot is whole thousands of ten-thousandths), so the cap refuses it
+                vm.prank(worker);
+                vm.expectRevert();
+                t.takeTask(s, 0);
+                continue;
+            }
+            uint256 before_ = _window();
+            _take(s);
+            uint256 counted = _window() - before_;
+            uint256 how = (seed >> 8) % 3;
+            if (how == 0) {
+                vm.prank(founder);
+                t.rejectTask(s);
+                counted = 0;
+            } else if (how == 1) {
+                vm.prank(founder);
+                t.acceptTask(s, 1);
+            } else {
+                _warpAlive(_book().taskOf(s).deadline);
+                t.settle();
+                counted = 0;
+            }
+            takenAt[n] = _book().taskOf(s).takenAt;
+            kept[n] = counted;
+            ++n;
+            uint256 sum;
+            for (uint256 i; i < n; ++i) {
+                if (takenAt[i] + 4 * uint256(UNIT) > vm.getBlockTimestamp()) sum += kept[i];
+            }
+            assertEq(_window(), sum, "the book's sum is the sum of the takes not given back");
+            assertLe(_window(), 1000);
+        }
     }
 
     function test_announcingAndCancellingInLoopsMovesNoCap() public {
@@ -217,6 +322,11 @@ contract TasksCapsTest is PotBase {
         _take(a);
         _take(b);
         assertEq(_window(), 1000, "10% taken");
+        // both are paid a unit of work, so their takes stay counted (a task that ends with nothing paid gives its take back)
+        vm.startPrank(founder);
+        t.acceptTask(a, 1);
+        t.acceptTask(b, 1);
+        vm.stopPrank();
         // announce C at day 30; its notice ends at day 46.5 and its window runs to day 53.5
         _warpAlive(T0 + 30 * day);
         uint64 c = _announce(500, 1_000_000e6);
@@ -234,7 +344,7 @@ contract TasksCapsTest is PotBase {
         vm.expectRevert(abi.encodeWithSelector(TaskBook.CapReached.selector, 1000, 500, 1000));
         t.takeTask(c, 0);
         vm.warp(free);
-        assertEq(_take(c), 5000e6, "A and B ran out and came back: the pot is whole again");
+        assertApproxEqAbs(_take(c), 5000e6, 2, "A and B were paid a unit each: the pot is whole to within it");
         assertEq(_window(), 500);
         // what a fixed 28-day window would have done: A and B fall in days 0-27, C in days 28-55: all three would pass (15%)
         assertLt(lastSecond, T0 + 28 * day);
@@ -266,9 +376,16 @@ contract TasksCapsTest is PotBase {
         assertGt(blockedSum, 0, "and the cap said no at least once");
     }
 
+    /// @dev A take that ended with nothing paid (rejected, or run out and returned) no longer counts in the cap.
+    function _givenBack(uint64 serial) internal view returns (bool) {
+        TaskBook.State st = _book().taskOf(serial).state;
+        return st == TaskBook.State.Rejected || st == TaskBook.State.Returned;
+    }
+
     function _walk(uint256 seed) internal returns (uint256 takes, uint256 blocked) {
         uint256[] memory atList = new uint256[](64);
         uint256[] memory bpsList = new uint256[](64);
+        uint64[] memory serialList = new uint64[](64);
         uint256 clock = vm.getBlockTimestamp();
         for (uint256 step; step < 60; ++step) {
             seed = uint256(keccak256(abi.encode(seed, step)));
@@ -294,6 +411,7 @@ contract TasksCapsTest is PotBase {
                 try t.takeTask(s, 0) returns (uint256 amount) {
                     atList[takes] = clock;
                     bpsList[takes] = Math.ceilDiv(amount * 10_000, potBefore);
+                    serialList[takes] = s;
                     ++takes;
                 } catch (bytes memory err) {
                     if (bytes4(err) == TaskBook.CapReached.selector) ++blocked;
@@ -301,21 +419,26 @@ contract TasksCapsTest is PotBase {
             } else {
                 uint64 s = uint64(1 + (seed >> 8) % (_book().nextSerial()));
                 vm.prank(founder);
-                try t.rejectTask(s) {} catch {}
+                if ((seed >> 40) % 2 == 0) {
+                    try t.rejectTask(s) {} catch {}
+                } else {
+                    // one unit paid: the take stays counted
+                    try t.acceptTask(s, 1) {} catch {}
+                }
             }
             // the book against the independent count
             uint256 counted;
             for (uint256 i; i < takes; ++i) {
-                if (atList[i] + 28 days > clock) counted += bpsList[i];
+                if (atList[i] + 28 days > clock && !_givenBack(serialList[i])) counted += bpsList[i];
             }
-            assertEq(_book().windowSumBps(), counted, "the ring counts exactly the takes inside 28 days");
+            assertEq(_book().windowSumBps(), counted, "the ring counts exactly the takes inside 28 days not given back");
             assertLe(counted, 1000, "never more than 10% in the window");
         }
         // every take's own trailing 28 days
         for (uint256 i; i < takes; ++i) {
             uint256 sum;
             for (uint256 j; j <= i; ++j) {
-                if (atList[j] + 28 days > atList[i]) sum += bpsList[j];
+                if (atList[j] + 28 days > atList[i] && !_givenBack(serialList[j])) sum += bpsList[j];
             }
             assertLe(sum, 1000, "no rolling window of 28 days ever held more than 10%");
         }

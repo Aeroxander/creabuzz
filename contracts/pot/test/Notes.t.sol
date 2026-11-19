@@ -134,7 +134,7 @@ contract NotesTest is PotBase {
         emit Treasury.Left(alice, alice, 40_000e18, 38_000e6, 2000e6, 57_000e6, 60_000e6, 60_000e18);
         _leave(alice, 40_000e18);
         vm.expectEmit(true, false, false, true, address(_book()));
-        emit TaskBook.TaskResolved(a, uint8(TaskBook.State.Paid), 3000e6, 2000e6, 800e6, 1200e6, 2000e6, 0);
+        emit TaskBook.TaskResolved(a, uint8(TaskBook.State.Paid), 3000e6, 2000e6, 800e6, 1200e6, 2000e6, 0, 0);
         vm.expectEmit(true, false, false, true, address(t));
         emit Treasury.TaskMoney(2, a, worker, 3000e6, 58_200e6, 0, 800e6);
         _accept(a, 3000e6);

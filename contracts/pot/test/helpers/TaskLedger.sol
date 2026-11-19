@@ -30,6 +30,7 @@ abstract contract TaskLedger is StackBase {
     mapping(uint256 => mapping(address => uint256)) internal lNote;
     uint256[] internal takeAt;
     uint256[] internal takeBps;
+    mapping(uint256 => uint256) internal takeOfSerial; // 1 + the place of the serial's take in the two lists
 
     function _word(bytes memory d, uint256 i) internal pure returns (uint256 r) {
         assembly {
@@ -56,12 +57,15 @@ abstract contract TaskLedger is StackBase {
             (k.setAside, k.stayer, k.noteFace) = (_word(d, 1), _word(d, 1), 0);
             takeBps.push(_word(d, 2));
             takeAt.push(_word(d, 3));
+            takeOfSerial[serial] = takeBps.length;
             lOpen = _word(d, 6);
         } else if (sig == TaskBook.TaskResolved.selector) {
             // the stayers' claim ends with the task; the notes keep what was held for them
             (k.state, k.stayer, k.returned, k.held, k.noteFace) =
                 (uint8(_word(d, 0)), 0, _word(d, 2), _word(d, 3), _word(d, 5));
             lOpen = _word(d, 6);
+            // a task that ended with nothing paid gives its take back to the 28-day cap
+            if (_word(d, 7) != 0) takeBps[takeOfSerial[serial] - 1] -= _word(d, 7);
         } else if (sig == TaskBook.NoteMinted.selector) {
             address holder = address(uint160(uint256(l.topics[2])));
             lNote[serial][holder] += _word(d, 0);

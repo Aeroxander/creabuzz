@@ -50,7 +50,8 @@ contract TaskBookTest is Test {
         uint256 notesPool,
         uint256 potPart,
         uint256 noteFaceAfter,
-        uint8 openAfter
+        uint8 openAfter,
+        uint256 capGivenBack
     );
 
     function setUp() public {
@@ -320,7 +321,7 @@ contract TaskBookTest is Test {
         (uint64 s,) = _taken(500, 5000e6, worker);
         book.forceNote(s, other, 2000e6);
         vm.expectEmit(true, false, false, true, address(book));
-        emit TaskResolved(s, uint8(TaskBook.State.Paid), 3000e6, 2000e6, 800e6, 1200e6, 2000e6, 0);
+        emit TaskResolved(s, uint8(TaskBook.State.Paid), 3000e6, 2000e6, 800e6, 1200e6, 2000e6, 0, 0);
         ITaskBook.Resolved memory r = book.accept(s, 3000e6);
         assertEq(r.pay, 3000e6);
         assertEq(r.c, 3000e6);
@@ -388,7 +389,7 @@ contract TaskBookTest is Test {
         book.cancel(1);
         uint64 a = _announce(100, 1000e6, worker);
         vm.expectEmit(true, false, false, true, address(book));
-        emit TaskResolved(a, uint8(TaskBook.State.Cancelled), 0, 0, 0, 0, 0, 0);
+        emit TaskResolved(a, uint8(TaskBook.State.Cancelled), 0, 0, 0, 0, 0, 0, 0);
         uint64 next = book.cancel(a);
         assertEq(next, 0);
         assertEq(uint8(book.taskOf(a).state), uint8(TaskBook.State.Cancelled));
@@ -511,8 +512,8 @@ contract TaskBookTest is Test {
         assertLt(vm.getBlockTimestamp(), book.taskOf(c).expiresAt, "c is still inside its own take window");
         vm.expectRevert(abi.encodeWithSelector(TaskBook.CapReached.selector, 1000, 100, 1000));
         book.take(c, worker, POT, 0);
-        // rejecting does not give the cap back
-        book.reject(a);
+        // a take that was paid keeps counting (a rejected one gives it back, see below)
+        book.accept(a, 1);
         vm.expectRevert(abi.encodeWithSelector(TaskBook.CapReached.selector, 1000, 100, 1000));
         book.take(c, worker, POT, 0);
         assertLt(vm.getBlockTimestamp(), firstAt + 4 * uint256(UNIT));
@@ -523,13 +524,108 @@ contract TaskBookTest is Test {
         vm.warp(book.taskOf(a).noticeEnd);
         uint256 at = vm.getBlockTimestamp();
         book.take(a, worker, POT, 0);
-        book.reject(a);
+        book.accept(a, 1);
         assertEq(book.windowSumBps(), 500);
         vm.warp(at + 4 * uint256(UNIT) - 1);
         assertEq(book.windowSumBps(), 500, "still counted one second before");
         vm.warp(at + 4 * uint256(UNIT));
         assertEq(book.windowSumBps(), 0, "gone at exactly four units");
         assertEq(book.takeRoomBps(), 1000);
+    }
+
+    function test_aRejectedTakeGivesItsCapBack() public {
+        uint64 a = _announce(500, 1_000_000e6, worker);
+        uint64 b = _announce(500, 1_000_000e6, worker);
+        uint64 c = _announce(100, 1000e6, worker);
+        vm.warp(book.taskOf(a).noticeEnd);
+        book.take(a, worker, POT, 0);
+        book.take(b, worker, POT, 0);
+        assertEq(book.windowSumBps(), 1000);
+        vm.expectEmit(true, false, false, true, address(book));
+        emit TaskResolved(a, uint8(TaskBook.State.Rejected), 0, 5000e6, 0, 5000e6, 0, 2, 500);
+        book.reject(a);
+        assertEq(book.windowSumBps(), 500, "a's 500 is given back, b's stays");
+        book.take(c, worker, POT, 0);
+        assertEq(book.windowSumBps(), 600);
+    }
+
+    function test_aTakeThatRanOutOrWasSweptGivesItsCapBack() public {
+        uint64 a = _announce(300, 1_000_000e6, worker);
+        uint64 b = _announce(200, 1_000_000e6, worker);
+        vm.warp(book.taskOf(a).noticeEnd);
+        book.take(a, worker, POT, 0);
+        vm.warp(block.timestamp + 1 hours);
+        book.take(b, worker, POT, 0);
+        assertEq(book.windowSumBps(), 500);
+        vm.warp(book.taskOf(a).deadline);
+        vm.expectEmit(true, false, false, true, address(book));
+        emit TaskResolved(a, uint8(TaskBook.State.Returned), 0, 3000e6, 0, 3000e6, 0, 1, 300);
+        book.expireDue();
+        assertEq(book.windowSumBps(), 200, "ran out unpaid: a's 300 is given back");
+        book.sweepAll();
+        assertEq(uint8(book.taskOf(b).state), uint8(TaskBook.State.Returned));
+        assertEq(book.windowSumBps(), 0, "swept unpaid: b's 200 is given back");
+    }
+
+    function test_aPaidTakeKeepsItsCapEvenForAUnit() public {
+        uint64 a = _announce(300, 1_000_000e6, worker);
+        uint64 b = _announce(200, 1_000_000e6, worker);
+        vm.warp(book.taskOf(a).noticeEnd);
+        book.take(a, worker, POT, 0);
+        book.take(b, worker, POT, 0);
+        vm.expectEmit(true, false, false, true, address(book));
+        emit TaskResolved(a, uint8(TaskBook.State.Paid), 1, 3000e6 - 1, 0, 3000e6 - 1, 0, 1, 0);
+        book.accept(a, 1);
+        book.accept(b, 2000e6);
+        assertEq(book.windowSumBps(), 500);
+    }
+
+    function test_aGivenBackTakeInTheSameSecondAsAnotherClearsOnlyItsOwnEntry() public {
+        uint64 a = _announce(100, 1_000_000e6, worker);
+        uint64 b = _announce(100, 1_000_000e6, worker);
+        vm.warp(book.taskOf(a).noticeEnd);
+        book.take(a, worker, POT, 0);
+        book.take(b, worker, POT, 0);
+        book.reject(b);
+        assertEq(book.windowSumBps(), 100, "a stays counted");
+        book.reject(a);
+        assertEq(book.windowSumBps(), 0);
+    }
+
+    function test_aGivenBackSlotReadsAsFreeToTheRing() public {
+        uint64 a = _announce(100, 1000e6, worker);
+        uint64 b = _announce(100, 1000e6, worker);
+        vm.warp(book.taskOf(a).noticeEnd);
+        book.take(a, worker, POT, 0);
+        uint8 slot = book.taskOf(a).ringIdx;
+        // every other slot holds a take from this very second and the next take lands on a's slot
+        for (uint256 i; i < 16; ++i) {
+            if (i != slot) book.forceRing(i, vm.getBlockTimestamp(), 1, slot);
+        }
+        vm.expectRevert(TaskBook.TakesFull.selector);
+        book.take(b, worker, POT, 0);
+        book.reject(a);
+        book.take(b, worker, POT, 0);
+        assertEq(book.windowSumBps(), 15 + 100, "the given-back slot took the new take");
+    }
+
+    function test_aGiveBackNeverClearsTheEntryOfALaterTake() public {
+        // a take is still open in the book when four units have passed (the Treasury would have returned it at two); a later
+        // take then reuses its ring slot, and ending the old one must not clear the new one's share
+        uint64 a = _announce(100, 1000e6, worker);
+        vm.warp(book.taskOf(a).noticeEnd);
+        book.take(a, worker, POT, 0);
+        uint8 slot = book.taskOf(a).ringIdx;
+        vm.warp(block.timestamp + 2 * uint256(UNIT));
+        uint64 b = _announce(200, 2000e6, worker);
+        vm.warp(book.taskOf(b).noticeEnd);
+        assertGe(block.timestamp, book.taskOf(a).takenAt + 4 * uint256(UNIT), "a's take is out of the window");
+        book.forceRing((slot + 1) % 16, 0, 0, slot); // the next take lands on a's slot
+        book.take(b, worker, POT, 0);
+        assertEq(book.taskOf(b).ringIdx, slot);
+        assertEq(book.windowSumBps(), 200);
+        book.reject(a);
+        assertEq(book.windowSumBps(), 200, "b's entry is not a's to give back");
     }
 
     function test_aTakeIsCountedRoundedUpAgainstTheTaker() public {
@@ -566,7 +662,7 @@ contract TaskBookTest is Test {
             uint64 s = _announce(100, 1e6, worker);
             vm.warp(book.taskOf(s).noticeEnd);
             book.take(s, worker, POT, 0);
-            book.reject(s);
+            book.accept(s, 1);
             at[i] = vm.getBlockTimestamp();
             uint256 expected;
             for (uint256 j; j <= i; ++j) {

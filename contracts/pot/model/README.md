@@ -9,7 +9,7 @@ everything with `python3 -I` (isolated mode).
 | `v4_model.py` | The model, copied byte for byte. sha256 `a1388285675c649b4f8951dc942928d5449cb2856eb3993d3ce1dfb858944649`. 70-digit decimals, no integer rounding. Self-test: `python3 -I v4_model.py` (a 300-seed random run of 400 operations; about three seconds). |
 | `pot_ext.py` | The extension, on top of the unchanged model: the contracts' rules in exact arithmetic (below). All amounts in base units (dollars in millionths, Shares in wei). |
 | `gen_vectors.py` | Fixed and seeded scenarios run through the extension. `python3 -I gen_vectors.py` writes `vectors.json`; `--check` fails if the committed file differs. |
-| `vectors.json` | Format 2: 83 scenarios (32 fixed and 20 seeded for step 1, 11 fixed and 20 seeded with task steps for step 2), 3,463 operations, every expected number as a decimal string. Read by `test/ModelVectors.t.sol`. |
+| `vectors.json` | Format 2: 84 scenarios (32 fixed and 20 seeded for step 1, 12 fixed and 20 seeded with task steps for step 2), 3,492 operations, every expected number as a decimal string. Read by `test/ModelVectors.t.sol`. |
 | `v4_attacks_output.txt`, `v4_team_output.txt`, `v4_fuzz_output.txt` | Outputs of the model's attack, Team and fuzz runs. Copied only. |
 
 ## Where the contracts differ from the model, and who wins
@@ -26,7 +26,8 @@ with the choice, in `POT-STEP1A-REPORT.md`.
 - **Tasks, locked money and exit notes** (step 2). The extension implements the contracts' rules in exact arithmetic: the notice is
   `2N + ceil(bps x N / 1400)` seconds (the one integer in the model: a time); a take can happen from the end of the notice for N
   seconds; the money set aside is the smaller of the stated dollars and `bps` of the settled pot; the cap counts
-  `ceil(amount x 10,000 / pot)` ten-thousandths in any rolling 4N and refuses a take that passes 1,000; a joiner's price and credit count
+  `ceil(amount x 10,000 / pot)` ten-thousandths in any rolling 4N and refuses a take that passes 1,000 (a take that ends with nothing
+  paid to its worker, by reject, by running out or by a wind-down, gives its share back to the cap; a take that was paid, even by one unit, keeps it); a joiner's price and credit count
   the stayers' claim of every taken task at face (`x = P + D + C + offset`; the model's own `join` did, `pot_ext` did not); a leaver is
   paid cash on the pot without the set-aside money and written a note for the rest, spread over the taken tasks by their claims; a
   task that ends returns what is not paid to the worker at one ratio to the stayers and to the notes; a task that runs out returns

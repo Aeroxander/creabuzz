@@ -42,6 +42,7 @@ contract TaskBook is ITaskBook {
         address payee; // zero when open to anyone
         State state;
         uint16 shareBps; // the stated share of the pot, in ten-thousandths (1 to 500)
+        uint8 ringIdx; // the place of its take in the cap's ring (set at the take, so a take that moved nothing can be given back)
         address takenBy; // who took it, and the only address a payment goes to
         uint64 announcedAt;
         uint64 noticeEnd; // the first second it can be taken
@@ -66,6 +67,14 @@ contract TaskBook is ITaskBook {
     uint256 public constant MIN_TASK = 1e6;
     /// @notice The takes the cap remembers (see `take` for why 16 is enough).
     uint256 public constant RING = 16;
+    /// @notice The shortest notice, in time units.
+    uint256 public constant NOTICE_FLOOR_MULT = 2;
+    /// @notice A taken task is due this many time units after the take.
+    uint256 public constant DUE_MULT = 2;
+    /// @notice The rolling window of the cap, in time units (4 x 7 days = 28 days).
+    uint256 public constant CAP_WINDOW_MULT = 4;
+    /// @notice The notice grows by N / 1400 per ten-thousandth of the pot asked (14 days 12 hours per 1% at N = 7 days).
+    uint256 public constant NOTICE_PER_BP_DIV = 1400;
     uint256 private constant BPS = 1e4;
 
     /// @notice The Treasury, the only caller of every state-changing function.
@@ -110,7 +119,8 @@ contract TaskBook is ITaskBook {
     );
     /// @notice A task ended in `state` (Paid, Rejected, Returned, Cancelled or Lapsed). `pay` went to the worker, `returned`
     /// came back, of which `notesPool` stays owed to notes and `potPart` went to the pot; `noteFaceAfter` is the face of the
-    /// notes left against it.
+    /// notes left against it. `capGivenBack` is what the task's take no longer counts in the 28-day cap (all of it when
+    /// nothing was paid to the worker, zero otherwise).
     event TaskResolved(
         uint64 indexed serial,
         uint8 state,
@@ -119,7 +129,8 @@ contract TaskBook is ITaskBook {
         uint256 notesPool,
         uint256 potPart,
         uint256 noteFaceAfter,
-        uint8 openAfter
+        uint8 openAfter,
+        uint256 capGivenBack
     );
     /// @notice A leaver was given a note: `part` dollars of the stayers' claim on task `serial` became the holder's note. The
     /// task now stands at `stayerAfter` (stayers) and `noteFaceAfter` (all notes).
@@ -248,11 +259,11 @@ contract TaskBook is ITaskBook {
         if (used + bps > CAP_BPS) revert CapReached(used, bps, CAP_BPS);
         uint256 i = _takeIdx;
         uint256 old = _takes[i];
-        if (old & 0xffff != 0 && (old >> 16) + 4 * uint256(unit) > t) revert TakesFull();
+        if (old & 0xffff != 0 && (old >> 16) + CAP_WINDOW_MULT * uint256(unit) > t) revert TakesFull();
         _takes[i] = uint80((t << 16) | bps);
         _takeIdx = uint8((i + 1) % RING);
-        uint64 due = uint64(t + 2 * uint256(unit));
-        k.state = State.Taken;
+        uint64 due = uint64(t + DUE_MULT * uint256(unit));
+        (k.state, k.ringIdx) = (State.Taken, uint8(i));
         (k.takenBy, k.takenAt, k.deadline, k.expiresAt) = (who, uint64(t), due, due);
         (k.locked, k.stayer) = (uint128(amount), uint128(amount));
         emit TaskTaken(serial, who, amount, bps, uint64(t), due, used + bps, openCount);
@@ -284,7 +295,7 @@ contract TaskBook is ITaskBook {
         if (k.state == State.None) revert NoSuchTask();
         if (k.state != State.Announced) revert WrongTaskState();
         _end(serial, k, State.Cancelled);
-        emit TaskResolved(serial, uint8(State.Cancelled), 0, 0, 0, 0, 0, openCount);
+        emit TaskResolved(serial, uint8(State.Cancelled), 0, 0, 0, 0, 0, openCount, 0);
         next = _minExpiry();
     }
 
@@ -299,7 +310,7 @@ contract TaskBook is ITaskBook {
                 sumC += _resolve(ids[i], k, 0, State.Returned).pp;
             } else {
                 _end(ids[i], k, State.Lapsed);
-                emit TaskResolved(ids[i], uint8(State.Lapsed), 0, 0, 0, 0, 0, openCount);
+                emit TaskResolved(ids[i], uint8(State.Lapsed), 0, 0, 0, 0, 0, openCount, 0);
             }
         }
         next = _minExpiry();
@@ -315,7 +326,7 @@ contract TaskBook is ITaskBook {
                 sumC += _resolve(ids[i], k, 0, State.Returned).pp;
             } else {
                 _end(ids[i], k, State.Cancelled);
-                emit TaskResolved(ids[i], uint8(State.Cancelled), 0, 0, 0, 0, 0, openCount);
+                emit TaskResolved(ids[i], uint8(State.Cancelled), 0, 0, 0, 0, 0, openCount, 0);
             }
         }
     }
@@ -422,7 +433,7 @@ contract TaskBook is ITaskBook {
         returns (uint256 noticeSecs, uint256 takeWindowSecs, uint256 dueSecs)
     {
         uint256 n = unit;
-        return (2 * n + Math.ceilDiv(uint256(shareBps) * n, 1400), n, 2 * n);
+        return (NOTICE_FLOOR_MULT * n + Math.ceilDiv(uint256(shareBps) * n, NOTICE_PER_BP_DIV), n, DUE_MULT * n);
     }
 
     /// @notice Everything stored about task `serial`.
@@ -458,7 +469,7 @@ contract TaskBook is ITaskBook {
 
     /// @dev The takes still inside 28 days (4N) of `t`, in ten-thousandths of the pot.
     function _windowSum(uint256 t) private view returns (uint256 sum) {
-        uint256 span = 4 * uint256(unit);
+        uint256 span = CAP_WINDOW_MULT * uint256(unit);
         for (uint256 i; i < RING; ++i) {
             uint256 e = _takes[i];
             if ((e >> 16) + span > t) sum += e & 0xffff;
@@ -505,6 +516,20 @@ contract TaskBook is ITaskBook {
         }
         k.stayer = 0;
         _end(serial, k, st);
-        emit TaskResolved(serial, uint8(st), pay, rem, r.np, r.pp, k.noteFace, openCount);
+        uint256 given = pay == 0 ? _giveBackCap(k) : 0;
+        emit TaskResolved(serial, uint8(st), pay, rem, r.np, r.pp, k.noteFace, openCount, given);
+    }
+
+    /// @dev A task that ended with nothing paid to its worker moved no money out of the project, so its take stops counting in
+    /// the 28-day cap: otherwise a stranger who takes an open task (and has it rejected, or lets it run out) would use up the
+    /// cap of everyone else's tasks for 28 days at no cost. The ring entry is found by its stored place and cleared only if
+    /// it still holds this take (the same second); the slot then reads as free to the ring-full check. A task paid in part or
+    /// in full keeps its take counted: the runner chose to pay.
+    function _giveBackCap(Task storage k) private returns (uint256 bps) {
+        uint256 i = k.ringIdx;
+        uint256 e = _takes[i];
+        if ((e >> 16) != k.takenAt) return 0;
+        bps = e & 0xffff;
+        _takes[i] = uint80(e & ~uint256(0xffff));
     }
 }

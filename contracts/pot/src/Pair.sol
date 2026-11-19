@@ -28,6 +28,8 @@ contract Pair {
     /// project (14 days on a real network), read from the Treasury when the Pair is set up, so a test network with a short
     /// unit has short-lived proposals too.
     uint256 public PROPOSAL_TTL;
+    /// @notice A proposal lives this many time units of the project.
+    uint256 public constant PROPOSAL_UNITS = 2;
     /// @notice Calls proposed so far; makes each proposal's id different.
     uint256 public nonce;
 
@@ -69,7 +71,7 @@ contract Pair {
         if (launcher != address(0)) revert BadSetup();
         if (first_ == address(0) || second_ == address(0) || first_ == second_) revert BadSetup();
         (treasury, launcher, first, second) = (treasury_, launcher_, first_, second_);
-        PROPOSAL_TTL = 2 * uint256(treasury_.unit());
+        PROPOSAL_TTL = PROPOSAL_UNITS * uint256(treasury_.unit());
         treasury_.takeSeat();
     }
 

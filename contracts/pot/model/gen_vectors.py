@@ -622,6 +622,8 @@ def fixed_tasks():
     s.wait_to_take(a, UNIT - 1)  # the last second of the window
     s.take(2, a)
     s.take(2, b)
+    s.accept(a, usd(1))  # both are paid a dollar, so their takes stay counted (a task that ends with nothing paid gives its take back)
+    s.accept(b, usd(1))
     s.wait_until(30 * DAY)
     s.check_in()
     c = s.announce(2, 500, usd(100_000))
@@ -629,6 +631,27 @@ def fixed_tasks():
     assert not s.take(2, c)  # refused: 1,000 + 500 passes the cap
     s.wait_until(s.m.takes[0][0] + 4 * UNIT)
     assert s.take(2, c)  # at exactly 28 days after the first take
+    out.append(s)
+
+    # review fix: a take that ended with nothing paid gives its cap back. Three 5% tasks are announced together; two are taken
+    # (1,000, the whole cap) and the third is refused; one is rejected, which gives back 500, so the third can be taken at once;
+    # both of those run out unpaid, and a later 5% task takes with the whole cap free
+    s = Scn("task-cap-given-back", "a rejected or expired take gives its share of the cap back; a paid take keeps it",
+            0, 0, 3, force=_held(40_000, 60_000))
+    a = s.announce(2, 500, usd(100_000))
+    b = s.announce(2, 500, usd(100_000))
+    c = s.announce(2, 500, usd(100_000))
+    s.wait_to_take(a)
+    assert s.take(2, a)
+    assert s.take(2, b)
+    assert not s.take(2, c)  # 1,000 + 500 passes the cap
+    s.reject(a)
+    assert s.take(2, c)  # 500 + 500 is exactly the cap
+    s.wait_until(s.m.tasks[b].deadline)
+    s.check_in()  # b and c ran out unpaid: nothing counts any more
+    d = s.announce(2, 500, usd(100_000))
+    s.wait_to_take(d)
+    assert s.take(2, d)
     out.append(s)
     return out
 
