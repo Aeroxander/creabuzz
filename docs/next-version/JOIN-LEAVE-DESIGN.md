@@ -112,7 +112,7 @@ pot, "what you would get if you took out now" for leave-value.
    is booked wrongly: 200 later joins of 500 into a first join of 10,000 with the whole Team pool vested and leaving leaves
    the Team with 0.0 and backers with 98.00 per 100 paid (simulated, section C; with the old 2% extra the Team took 1,257
    to 1,817 of 110,000, all of it from later joiners).
-4. **First join** is at 0.01 a Share (100 a dollar). A small fixed virtual offset (1 dollar and 100 Shares) sits in the
+4. **First join** is at 0.01 a Share (100 a dollar). A tiny fixed virtual offset (a millionth of a dollar and a ten-thousandth of a Share; first drafted as 1 dollar and 100 Shares, which review showed let a joiner buy below leave-value) sits in the
    **quote only**, never in what a leaver is paid, and a mint that rounds to zero Shares is refused (the vault donation
    trick; reported defence, not simulated against contracts). Leavers are paid exactly from the stored numbers, so the
    offset cannot pay early leavers more than the last one (a run with the offset on: first and last leaver the same to
@@ -283,7 +283,7 @@ Backer leave-value per 100 paid (2 already off to the platform) at months 0, 6, 
 | Rule | Backer leave-value | Team took of 98,000 paid in |
 |---|---|---|
 | Plain: Team Shares claim pro rata, 36 months, team side 80% | 98.0 / 42.1 / 18.1 / 3.3 / 0.6 | 76,529 |
-| **Chosen: claim above paid-in, 24 + 3 months** (either pool size) | 98.0 / 81.8 / 68.4 / 47.7 / 33.3 | 0 |
+| **Chosen: claim above paid-in, 24 months with the 3 month cliff inside them** (either pool size) | 98.0 / 81.8 / 68.4 / 47.7 / 33.3 | 0 |
 | No team Shares at all | 98.0 / 81.8 / 68.4 / 47.7 / 33.3 | 0 |
 
 With no outside money the chosen rule costs backers nothing: the fall is the allowance, identical to a project with no
@@ -417,7 +417,7 @@ action is "Back" (the box was already called the Back box) and the exit "Take ou
 | Allowance ceiling | fixed money limit | 0.20% a day | worst year 51.8 of 100 (simulated) |
 | Task caps | fixed money limit | 5% a task; 10% of the pot taken per 28 days; 8 open; the same for everyone | the table in 2.3 |
 | Platform fee | fixed money limit | 2% of money joining (contract ceiling 5%); nothing on leaving | the only fee |
-| Opening price, minimum join, quote offset | fixed money limit | 0.01 a Share first join only; 1 dollar; 1 dollar and 100 Shares, quote only | dust and donation control |
+| Opening price, minimum join, quote offset | fixed money limit | 0.01 a Share first join only; 1 dollar; a millionth of a dollar and a ten-thousandth of a Share, quote only | dust and donation control |
 | Vest length | fixed money limit | 24 months of active time (no longer a founder choice) | the owner's 2 to 3 years or shorter |
 | Agent limits | fixed money limit | 25 dollars a day (built) and 1/1000 of the Team pool, drawn from the box | agents never add to the allowance |
 | Price, allowance in dollars, notice for a task, locked amount, team side %, badge | emerges | from the pot and the rules | no person sets them |
