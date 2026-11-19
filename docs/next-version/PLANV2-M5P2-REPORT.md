@@ -7,6 +7,10 @@ Server only (`crates/buzz-relay/src/chain_reader` and neighbours), on branch `v6
 
 ### 1. The helper job (`chain_reader/helper/`, migration 0066)
 
+> **Removed since:** the call list below, the batch halving and the setting `BUZZ_CHAIN_HELPER_BATCH` belong to the old contracts and
+> are gone (`READER-V2-REPORT.md`, "What is gone"). The helper now sends `Treasury.collectFees()` and `Treasury.settle()`, stored as
+> `treasury.collectFees` and `treasury.settle` (migration 0070).
+
 Built as the part 1 design note says. Commits `6a376bddf` (tables) and `fee8ef2fd` (the job).
 
 - **Calls** are a closed enum (`helper/calls.rs`) that writes its own calldata; no job carries raw calldata. Stored jobs
@@ -34,7 +38,9 @@ Built as the part 1 design note says. Commits `6a376bddf` (tables) and `fee8ef2f
 - **One writer:** a session advisory lock on a connection detached from the pool, checked every pass. Only the replica
   holding it signs records and sends (review O3).
 
-Configuration (all need `BUZZ_CHAIN_RPC_URL`; any `BUZZ_CHAIN_HELPER_*` without the key stops startup):
+Configuration (all need `BUZZ_CHAIN_RPC_URL`; any `BUZZ_CHAIN_HELPER_*` without the key stops startup). The helper described in this
+part served the old contracts: on `contracts/pot` it sends two calls only (`collectFees()` and `settle()`), the settings that
+only the old calls needed are gone, and the table says which (see `READER-V2-REPORT.md`):
 
 | Variable | Default |
 |---|---|
@@ -43,7 +49,7 @@ Configuration (all need `BUZZ_CHAIN_RPC_URL`; any `BUZZ_CHAIN_HELPER_*` without 
 | `BUZZ_CHAIN_HELPER_DAILY_SPEND_WEI` | 10^16 |
 | `BUZZ_CHAIN_HELPER_MAX_ATTEMPTS` | 8 |
 | `BUZZ_CHAIN_HELPER_CALL_GAS_CAP` | 3,000,000 (at most the transaction ceiling) |
-| `BUZZ_CHAIN_HELPER_BATCH` | 15 backers or entries per batch (a batch over the cap is halved) |
+| `BUZZ_CHAIN_HELPER_BATCH` | **Removed** (the batches went with the old contracts' calls; the setting is no longer read, see `READER-V2-REPORT.md`, "What is gone"). Was: 15 backers or entries per batch |
 
 **The spend cap and fees.** A batch is halved to fit the gas room only. The spend cap is checked whole: a call whose
 reserve (its gas limit times the max fee per gas) is over what is left of the day's spend is put off an hour at a time,
