@@ -234,8 +234,11 @@ describe("a record that cannot be read is null, never a crash and never a defaul
     const n = structuredClone(base);
     n.quiet.state = "wound_down";
     expect(parse(n)).toBeNull();
-    // A refresh promise of nothing, or of a week: unbelievable.
-    for (const r of [0, 59, 86_401]) {
+    // A refresh promise of nothing, or of a week: unbelievable. The least the server's settings allow, 5 seconds, is not.
+    expect(
+      parse({ ...structuredClone(base), refreshEverySecs: 5 }),
+    ).not.toBeNull();
+    for (const r of [0, 4, 86_401]) {
       const o = structuredClone(base);
       o.refreshEverySecs = r;
       expect(parse(o)).toBeNull();

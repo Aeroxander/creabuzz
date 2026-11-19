@@ -261,7 +261,9 @@ export function readBody(body: Json, key: string): ProjectNumbers {
     "refreshEverySecs",
     86_400,
   );
-  if (refreshEverySecs < 60) fail("refreshEverySecs");
+  // The server promises 600 or 3600; its operator may set it as low as 5 seconds (a test network showing the cadence), so
+  // 5 is the least believed: a record that promises less is nonsense, one that promises more than a day is too (above).
+  if (refreshEverySecs < 5) fail("refreshEverySecs");
   const unit = whole(body.unit, "unit", 365 * 86_400);
   if (unit === 0) fail("unit");
 
