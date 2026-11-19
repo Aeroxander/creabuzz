@@ -63,7 +63,10 @@ import {
   type Kernel033SendResult,
   type PasskeyAssertionSource,
 } from "./kernel033.ts";
-import { passkeyIdentity } from "../account/passkey-identity.ts";
+import {
+  passkeyCredentialId,
+  passkeyIdentity,
+} from "../account/passkey-identity.ts";
 import type { AbiField } from "./userop-abi.ts";
 import { abiEncode, abiEncodeCall } from "./userop-abi.ts";
 import { zerodevConfigFromEnv, type ZerodevConfig } from "./zerodev.ts";
@@ -242,22 +245,12 @@ export function createSponsoredSender(
   const batching = config.batching ?? "batch";
   let senderCache: Promise<string> | undefined;
 
-  function storedCredentialId(): string | null {
-    try {
-      return (
-        globalThis.localStorage?.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY) ?? null
-      );
-    } catch {
-      return null;
-    }
-  }
-
   function gather(): {
     credentialId: string | null;
     r1OwnerKey: string | null;
   } {
     return {
-      credentialId: config.credentialId ?? storedCredentialId(),
+      credentialId: config.credentialId ?? passkeyCredentialId(),
       r1OwnerKey:
         config.r1OwnerKey ??
         passkeyIdentity()?.evmOwner.r1UncompressedHex ??
@@ -412,6 +405,105 @@ export function encodeExecuteCallData(calls: SenderCall[]): string {
   return calls.length === 1
     ? encodeExecuteSingleCallData(calls[0])
     : encodeExecuteBatchCallData(calls);
+}
+
+/**
+ * The calls inside account call data: the inverse of {@link encodeExecuteCallData}. It reads only the two shapes this
+ * module writes (single and batch execute) and refuses anything else, including call data that decodes but is not
+ * byte-for-byte what encoding the decoded calls gives (padding or extra bytes a signer would not have been shown).
+ * The values come back normalised: lower-case address and data, value as a `0x` quantity.
+ */
+export function decodeExecuteCallData(callData: string): SenderCall[] {
+  const bad = (why: string): never => {
+    throw new SenderCallsError(
+      `account call data is not a plain execute: ${why}`,
+    );
+  };
+  const hex = callData.toLowerCase();
+  if (!/^0x([0-9a-f]{2})*$/.test(hex)) bad("not hex");
+  const body = hex.slice(2);
+  const selector = abiEncodeCall(KERNEL_EXECUTE_SIGNATURE, [
+    { kind: "bytes32", value: KERNEL_EXECUTE_MODE_SINGLE },
+    { kind: "bytes", value: "0x" },
+  ]).slice(2, 10);
+  if (!body.startsWith(selector)) bad("wrong function");
+  const args = body.slice(8);
+  const word = (source: string, index: number): string => {
+    const w = source.slice(index * 64, index * 64 + 64);
+    if (w.length !== 64) bad("cut short");
+    return w;
+  };
+  const mode = word(args, 0);
+  if (BigInt(`0x${word(args, 1)}`) !== 64n) bad("unexpected layout");
+  const length = Number(BigInt(`0x${word(args, 2)}`));
+  if (!Number.isSafeInteger(length) || args.length < 192 + length * 2) {
+    bad("cut short");
+  }
+  const executionData = args.slice(192, 192 + length * 2);
+  let calls: SenderCall[];
+  if (`0x${mode}` === KERNEL_EXECUTE_MODE_SINGLE) {
+    if (executionData.length < 104) bad("cut short");
+    calls = [
+      {
+        to: `0x${executionData.slice(0, 40)}`,
+        value: `0x${BigInt(`0x${executionData.slice(40, 104)}`).toString(16)}`,
+        data: `0x${executionData.slice(104)}`,
+      },
+    ];
+  } else if (`0x${mode}` === KERNEL_EXECUTE_MODE_BATCH) {
+    // abi.encode(Execution[]): [0x20][count][count offsets][each: target, value, 0x60, length, data padded]
+    if (BigInt(`0x${word(executionData, 0)}`) !== 32n) bad("unexpected layout");
+    const count = Number(BigInt(`0x${word(executionData, 1)}`));
+    if (!Number.isSafeInteger(count) || count < 1 || count > 64)
+      bad("bad count");
+    const area = executionData.slice(128); // the offsets are relative to the end of the count word
+    calls = [];
+    for (let i = 0; i < count; i += 1) {
+      const start = Number(BigInt(`0x${word(area, i)}`)) * 2;
+      if (!Number.isSafeInteger(start) || start + 256 > area.length) {
+        bad("cut short");
+      }
+      const item = area.slice(start);
+      const dataLength = Number(BigInt(`0x${word(item, 3)}`));
+      if (
+        !Number.isSafeInteger(dataLength) ||
+        item.length < 256 + dataLength * 2
+      ) {
+        bad("cut short");
+      }
+      if (word(item, 0).slice(0, 24) !== "0".repeat(24)) bad("bad address");
+      calls.push({
+        to: `0x${word(item, 0).slice(24)}`,
+        value: `0x${BigInt(`0x${word(item, 1)}`).toString(16)}`,
+        data: `0x${item.slice(256, 256 + dataLength * 2)}`,
+      });
+    }
+  } else {
+    return bad("unknown mode");
+  }
+  if (encodeExecuteCallData(calls).toLowerCase() !== hex) {
+    bad("it is not the canonical encoding of its calls");
+  }
+  return calls;
+}
+
+/**
+ * Whether account call data carries exactly `calls`, in order and nothing else. The one check between what the person
+ * was shown and what the passkey is asked to sign.
+ */
+export function callDataCarries(
+  callData: string,
+  calls: readonly SenderCall[],
+): boolean {
+  try {
+    return (
+      encodeExecuteCallData([...calls]).toLowerCase() ===
+        callData.toLowerCase() &&
+      decodeExecuteCallData(callData).length === calls.length
+    );
+  } catch {
+    return false;
+  }
 }
 
 function normalizeCall(call: SenderCall): {

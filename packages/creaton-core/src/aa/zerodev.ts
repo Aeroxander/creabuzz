@@ -99,6 +99,7 @@ import {
   getUserOpHash,
   packAccountGasLimits,
   packGasFees,
+  unpackNonce,
   unpackUints,
 } from "./userop.ts";
 
@@ -158,6 +159,13 @@ export interface ZerodevConfig {
   apiKey?: string | undefined;
   /** Chain id the RPC URL targets (e.g. 11155111 for Sepolia). */
   chainId?: number | undefined;
+  /**
+   * An explicit bundler URL, set by whoever runs the site. When given it is used as is and the project id and API key
+   * are not needed. Any key an operator needs must live behind this URL (a proxy), never in the page.
+   */
+  bundlerUrl?: string | undefined;
+  /** An explicit sponsor URL, when the sponsor is a different service from the bundler. Defaults to the bundler URL. */
+  sponsorUrl?: string | undefined;
   /** Per-attempt timeout. Default 15000 ms. */
   timeoutMs?: number;
   /** Total attempts (first try + retries). Default 3; always ≥ 1. */
@@ -186,6 +194,9 @@ export function zerodevConfigFromEnv(): ZerodevConfig {
 
 /** `https://rpc.zerodev.app/api/v3/<projectId>/chain/<chainId>?apikey=…` */
 export function zerodevRpcUrl(config: ZerodevConfig): string {
+  if (config.bundlerUrl !== undefined && config.bundlerUrl !== "") {
+    return config.bundlerUrl;
+  }
   const projectId = config.projectId ?? zerodevConfigFromEnv().projectId;
   const chainId = config.chainId ?? zerodevConfigFromEnv().chainId;
   if (projectId === undefined || projectId === "") {
@@ -199,6 +210,13 @@ export function zerodevRpcUrl(config: ZerodevConfig): string {
   return apiKey === undefined || apiKey === ""
     ? base
     : `${base}?apikey=${encodeURIComponent(apiKey)}`;
+}
+
+/** The URL `zd_sponsorUserOperation` goes to: the configured sponsor URL, else the bundler URL. */
+export function zerodevSponsorUrl(config: ZerodevConfig): string {
+  return config.sponsorUrl !== undefined && config.sponsorUrl !== ""
+    ? config.sponsorUrl
+    : zerodevRpcUrl(config);
 }
 
 /** `X-API-Key` header when an API key is configured (see ledger item 2). */
@@ -388,6 +406,59 @@ export function applySponsorship(
   };
 }
 
+/** The sponsor's answer changed something the person signs for, or asks for more than any real operation needs. */
+export class SponsorshipRefusedError extends Error {
+  constructor(message: string) {
+    super(`zerodev: the sponsor's answer was refused: ${message}`);
+    this.name = "SponsorshipRefusedError";
+  }
+}
+
+/** Upper bounds for what a sponsor may ask a signature to cover (a real operation needs far less). */
+const MAX_SPONSORED_GAS_FIELD = 10_000_000n;
+/** A sponsor may not raise a fee ceiling above this multiple of the one the client asked for. */
+const MAX_SPONSORED_FEE_MULTIPLE = 10n;
+
+/**
+ * The sponsor may add its own gas limits and paymaster fields and nothing else. Checked on the op after
+ * `applySponsorship`: the sender, nonce, init code and call data are exactly what the client built, and the gas and
+ * fee fields stay inside sane bounds. A sponsor that changed the call data would otherwise get a signature over
+ * something the person was never shown.
+ */
+export function assertSponsorshipKeepsCall(
+  before: PackedUserOperation,
+  after: PackedUserOperation,
+): void {
+  const same = (a: string, b: string): boolean =>
+    a.toLowerCase() === b.toLowerCase();
+  if (
+    !same(before.sender, after.sender) ||
+    !same(before.nonce, after.nonce) ||
+    !same(before.initCode, after.initCode) ||
+    !same(before.callData, after.callData)
+  ) {
+    throw new SponsorshipRefusedError(
+      "it changed the sender, nonce, init code or call data",
+    );
+  }
+  const gas = unpackUints(after.accountGasLimits);
+  if (
+    gas.high128 > MAX_SPONSORED_GAS_FIELD ||
+    gas.low128 > MAX_SPONSORED_GAS_FIELD ||
+    BigInt(after.preVerificationGas) > MAX_SPONSORED_GAS_FIELD
+  ) {
+    throw new SponsorshipRefusedError("it asked for an absurd gas limit");
+  }
+  const askedFees = unpackUints(before.gasFees);
+  const gotFees = unpackUints(after.gasFees);
+  if (
+    gotFees.high128 > askedFees.high128 * MAX_SPONSORED_FEE_MULTIPLE ||
+    gotFees.low128 > askedFees.low128 * MAX_SPONSORED_FEE_MULTIPLE
+  ) {
+    throw new SponsorshipRefusedError("it asked for a much higher fee ceiling");
+  }
+}
+
 /**
  * Policy-denial classifier — scans the SERVER TEXT only (never the method
  * name). Exact denial strings are dashboard-version dependent (none is
@@ -413,7 +484,7 @@ export async function sponsorUserOperation(
   const client =
     transport ??
     createBundlerTransport({
-      url: zerodevRpcUrl(config),
+      url: zerodevSponsorUrl(config),
       timeoutMs: config.timeoutMs,
       maxAttempts: config.maxAttempts,
       backoffMs: config.backoffMs,
@@ -490,8 +561,51 @@ export interface SponsoredUserOpRequest {
   hashUserOp?: HashUserOp | undefined;
   /** Receipt polling bounds (Rule 4). Defaults: 2000 ms × 90 polls. */
   receipt?: { pollIntervalMs?: number; maxPolls?: number } | undefined;
+  /**
+   * Called with the final, sponsored but still unsigned operation, after the sponsor's answer has been checked and
+   * before anything is signed. Throwing here stops the send with nothing signed.
+   */
+  beforeSign?: ((op: PackedUserOperation) => void | Promise<void>) | undefined;
+  /**
+   * Called as soon as the bundler has accepted the operation, before the wait for its receipt. A caller that must
+   * survive a reload writes its pending record here.
+   */
+  onSubmitted?: ((submitted: SubmittedUserOp) => void) | undefined;
   /** Injection seam for tests. */
   transport?: BundlerTransport | undefined;
+}
+
+/** What is known of an operation the bundler accepted. */
+export interface SubmittedUserOp {
+  userOpHash: string;
+  sender: string;
+  /** The account's sequence number the operation uses (nonce key 0). */
+  nonce: bigint;
+}
+
+/**
+ * The bundler accepted the operation but no receipt arrived in time. The operation may still land, so this carries
+ * what a later look needs; it is not a failure of the operation.
+ */
+export class UserOpPendingError extends Error {
+  readonly userOpHash: string;
+  readonly sender: string;
+  readonly nonce: bigint;
+
+  constructor(
+    submitted: SubmittedUserOp,
+    polls: number,
+    pollIntervalMs: number,
+  ) {
+    super(
+      `zerodev: no receipt for ${submitted.userOpHash} after ${polls} polls ` +
+        `(${pollIntervalMs} ms apart)`,
+    );
+    this.name = "UserOpPendingError";
+    this.userOpHash = submitted.userOpHash;
+    this.sender = submitted.sender;
+    this.nonce = submitted.nonce;
+  }
 }
 
 export interface SponsoredUserOpResult {
@@ -569,6 +683,18 @@ export async function sendSponsoredUserOp(
     delete sponsorOp.verificationGasLimit;
     delete sponsorOp.callGasLimit;
   }
+  const sponsorTransport =
+    request.transport === undefined &&
+    config.sponsorUrl !== undefined &&
+    config.sponsorUrl !== ""
+      ? createBundlerTransport({
+          url: config.sponsorUrl,
+          timeoutMs: config.timeoutMs,
+          maxAttempts: config.maxAttempts,
+          backoffMs: config.backoffMs,
+          fetchImpl: config.fetchImpl,
+        })
+      : transport;
   const sponsorship = await sponsorUserOperation(
     config,
     {
@@ -577,9 +703,10 @@ export async function sendSponsoredUserOp(
       entryPointAddress: request.entryPointAddress,
       manualGasEstimation: request.gas !== undefined,
     },
-    transport,
+    sponsorTransport,
   );
   const sponsored = applySponsorship(skeleton, sponsorship);
+  assertSponsorshipKeepsCall(skeleton, sponsored);
   const gas: UserOperationGasEstimate = {
     preVerificationGas: sponsored.preVerificationGas,
     verificationGasLimit: `0x${unpackUints(sponsored.accountGasLimits).high128.toString(16)}`,
@@ -593,6 +720,7 @@ export async function sendSponsoredUserOp(
     request.entryPointAddress,
     BigInt(chainId),
   );
+  await request.beforeSign?.(sponsored);
   const signature = await request.signUserOpHash(opHash);
   const finalOp: PackedUserOperation = { ...sponsored, signature };
   const submittedHash = await transport.sendUserOperation(
@@ -604,6 +732,13 @@ export async function sendSponsoredUserOp(
       `zerodev: bundler returned userOpHash ${submittedHash}, expected ${opHash}`,
     );
   }
+
+  const submitted: SubmittedUserOp = {
+    userOpHash: opHash,
+    sender: request.sender,
+    nonce: unpackNonce(request.nonce).sequence64,
+  };
+  request.onSubmitted?.(submitted);
 
   const pollIntervalMs =
     request.receipt?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
@@ -617,10 +752,7 @@ export async function sendSponsoredUserOp(
     await sleep(pollIntervalMs);
   }
   if (receipt === null) {
-    throw new Error(
-      `zerodev: no receipt for ${opHash} after ${maxPolls} polls ` +
-        `(${pollIntervalMs} ms apart)`,
-    );
+    throw new UserOpPendingError(submitted, maxPolls, pollIntervalMs);
   }
 
   return {

@@ -81,7 +81,7 @@ import type { BundlerTransport } from "./aa.ts";
 import { getPasskeyAssertion } from "../account/passkey.ts";
 import type { PasskeyAssertion } from "../account/passkey.ts";
 import type { PackedUserOperation } from "./userop.ts";
-import { keccak256 } from "./userop.ts";
+import { keccak256, unpackNonce } from "./userop.ts";
 import {
   abiEncode,
   abiEncodeCall,
@@ -98,7 +98,11 @@ import {
   wrapPasskeyAssertionForZeroDevValidator,
   encodeZeroDevWebAuthnSignature,
 } from "./webauthn-auth.ts";
-import type { SponsorshipResult, ZerodevConfig } from "./zerodev.ts";
+import type {
+  SponsorshipResult,
+  SubmittedUserOp,
+  ZerodevConfig,
+} from "./zerodev.ts";
 import {
   ENTRY_POINT_V0_7,
   sendSponsoredUserOp,
@@ -215,6 +219,32 @@ export interface Kernel033ChainRpc {
   latestBaseFeePerGas(): Promise<bigint>;
 }
 
+/** A log as the chain returns it (`eth_getLogs`). */
+export interface Kernel033RpcLog {
+  address: string;
+  topics: string[];
+  data: string;
+  blockNumber: string;
+}
+
+/**
+ * The chain RPC with the reads an app needs beyond the send flow: the newest block, the chain's id and logs. It is
+ * what `createKernel033ChainRpc` returns; the send flow itself needs only the {@link Kernel033ChainRpc} part.
+ */
+export interface Kernel033ChainReadRpc extends Kernel033ChainRpc {
+  /** `eth_blockNumber`. */
+  blockNumber(): Promise<bigint>;
+  /** `eth_chainId`. */
+  chainId(): Promise<number>;
+  /** `eth_getLogs` over `[from, to]` (both included). */
+  getLogs(filter: {
+    address: string;
+    topics: (string | null)[];
+    from: bigint;
+    to: bigint;
+  }): Promise<Kernel033RpcLog[]>;
+}
+
 /**
  * WebAuthn ceremony seam: same shape as `getPasskeyAssertion`. Defaults to
  * the REAL passkey (Touch ID); injectable only because node has no
@@ -260,6 +290,13 @@ export interface Kernel033SendRequest {
   onPhase?: ((phase: Kernel033SendPhase) => void) | undefined;
   /** Ceremony seam (node tests / live check only — see `PasskeyAssertionSource`). */
   getAssertion?: PasskeyAssertionSource | undefined;
+  /**
+   * Called with the final unsigned operation (sponsor's fields in) before the passkey is asked; throwing stops the
+   * send with nothing signed. The app uses it to require that the call data is exactly the calls the person saw.
+   */
+  beforeSign?: ((op: PackedUserOperation) => void | Promise<void>) | undefined;
+  /** Called when the bundler has accepted the operation, before the wait for its receipt (see `SponsoredUserOpRequest`). */
+  onSubmitted?: ((submitted: SubmittedUserOp) => void) | undefined;
   /** Injection seam for tests (mirrors `SponsoredUserOpRequest.transport`). */
   transport?: BundlerTransport | undefined;
 }
@@ -622,7 +659,7 @@ export function createKernel033ChainRpc(options: {
   maxAttempts?: number | undefined;
   backoffMs?: number | undefined;
   fetchImpl?: typeof fetch | undefined;
-}): Kernel033ChainRpc {
+}): Kernel033ChainReadRpc {
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
   const backoffMs = Math.max(0, options.backoffMs ?? DEFAULT_BACKOFF_MS);
@@ -714,7 +751,68 @@ export function createKernel033ChainRpc(options: {
       );
       return BigInt(block?.baseFeePerGas ?? "0x0");
     },
+    blockNumber: async () =>
+      rpcQuantity(
+        "eth_blockNumber",
+        await request<unknown>("eth_blockNumber", []),
+      ),
+    chainId: async () =>
+      Number(
+        rpcQuantity("eth_chainId", await request<unknown>("eth_chainId", [])),
+      ),
+    getLogs: async (filter) => {
+      const logs = await request<unknown>("eth_getLogs", [
+        {
+          address: filter.address,
+          topics: filter.topics,
+          fromBlock: `0x${filter.from.toString(16)}`,
+          toBlock: `0x${filter.to.toString(16)}`,
+        },
+      ]);
+      if (!Array.isArray(logs)) {
+        throw new Kernel033ChainRpcError("eth_getLogs", "no list of logs");
+      }
+      return logs.filter(isRpcLog);
+    },
   };
+}
+
+/** A hex quantity from an RPC answer, or a typed error naming the method. */
+function rpcQuantity(method: string, value: unknown): bigint {
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]{1,64}$/.test(value)) {
+    throw new Kernel033ChainRpcError(
+      method,
+      `not a quantity: ${String(value)}`,
+    );
+  }
+  return BigInt(value);
+}
+
+function isRpcLog(value: unknown): value is Kernel033RpcLog {
+  if (value === null || typeof value !== "object") return false;
+  const v = value as Record<string, unknown>;
+  return (
+    typeof v.address === "string" &&
+    typeof v.data === "string" &&
+    typeof v.blockNumber === "string" &&
+    Array.isArray(v.topics) &&
+    v.topics.every((topic) => typeof topic === "string")
+  );
+}
+
+/**
+ * The account's next sequence number at EntryPoint v0.7 (`getNonce(sender, 0)`: key 0, the key every send here uses).
+ * The sequence is what tells a dropped operation from one another operation replaced.
+ */
+export async function readEntryPointSequence(
+  rpc: Pick<Kernel033ChainRpc, "ethCall">,
+  sender: string,
+): Promise<bigint> {
+  const word = await rpc.ethCall({
+    to: ENTRY_POINT_V0_7,
+    data: nonceCalldata(sender),
+  });
+  return unpackNonce(word32(BigInt(word))).sequence64;
 }
 
 // ----------------------------------------------------------- send flow ------
@@ -816,6 +914,8 @@ export async function sendKernel033UserOp(
       onPhase("confirming");
       return baseTransport.getUserOperationReceipt(hash);
     },
+    getUserOperationByHash: (hash) =>
+      baseTransport.getUserOperationByHash(hash),
   };
 
   onPhase("sponsoring");
@@ -845,6 +945,8 @@ export async function sendKernel033UserOp(
         getAssertion: request.getAssertion,
       });
     },
+    beforeSign: request.beforeSign,
+    onSubmitted: request.onSubmitted,
     receipt: request.receipt,
     transport,
   });

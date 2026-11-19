@@ -172,6 +172,19 @@ export interface UserOperationReceipt {
   [key: string]: unknown;
 }
 
+/**
+ * `eth_getUserOperationByHash` answer: the operation as the bundler knows it. Present while the operation waits in the
+ * bundler's pool as well as after it is mined (then `transactionHash` is set). Provider extras pass through.
+ */
+export interface UserOperationByHash {
+  userOperation: Record<string, unknown>;
+  entryPoint: string;
+  blockNumber?: string | null;
+  blockHash?: string | null;
+  transactionHash?: string | null;
+  [key: string]: unknown;
+}
+
 export interface BundlerConfig {
   /** Bundler endpoint; falls back to `bundlerUrlFromEnv()`. */
   url?: string | undefined;
@@ -210,6 +223,10 @@ export interface BundlerTransport {
   getUserOperationReceipt(
     userOpHash: string,
   ): Promise<UserOperationReceipt | null>;
+  /** `eth_getUserOperationByHash` — resolves `null` when the bundler does not know the operation. */
+  getUserOperationByHash(
+    userOpHash: string,
+  ): Promise<UserOperationByHash | null>;
   /**
    * Escape hatch for provider-specific JSON-RPC methods (e.g. ZeroDev's
    * `zd_sponsorUserOperation`) under the same bounded retry policy as the
@@ -378,6 +395,11 @@ export function createBundlerTransport(
     },
     async getUserOperationReceipt(userOpHash) {
       return rpc<UserOperationReceipt | null>("eth_getUserOperationReceipt", [
+        userOpHash,
+      ]);
+    },
+    async getUserOperationByHash(userOpHash) {
+      return rpc<UserOperationByHash | null>("eth_getUserOperationByHash", [
         userOpHash,
       ]);
     },

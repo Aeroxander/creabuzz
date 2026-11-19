@@ -156,6 +156,19 @@ export function passkeyStoredPubkey(): string | null {
 }
 
 /**
+ * The registered passkey's credential id as stored on this browser, or null. Read straight from storage with no
+ * checks, so a payment sender can ask for it without the rest of the registration being valid.
+ */
+export function passkeyCredentialId(): string | null {
+  try {
+    const id = localStorage.getItem(CRED_KEY);
+    return id === null || id === "" ? null : id;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Both public roots of the registered passkey, straight from storage.
  *
  * Null when nothing is registered — or when the stored registration predates
