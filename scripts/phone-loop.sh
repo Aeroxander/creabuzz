@@ -44,7 +44,7 @@ export PHONE_LOOP_REPORT="$STATE/pass.txt"
 : >"$PHONE_LOOP_REPORT"
 cd "$ROOT/app"
 status=0
-M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts tests/anvil/passkey-sender.test.ts tests/anvil/passkey-back.test.ts "$@" || status=$?
+M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts tests/anvil/passkey-sender.test.ts tests/anvil/passkey-back.test.ts tests/anvil/sender-contract.test.ts "$@" || status=$?
 echo
 cat "$PHONE_LOOP_REPORT"
 echo "phone-loop: $(grep -c '^PASS' "$PHONE_LOOP_REPORT") claims proven"
