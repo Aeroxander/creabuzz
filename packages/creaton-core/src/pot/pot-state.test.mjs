@@ -21,15 +21,32 @@ test("the allowance state reads the box, the rate, an announced raise and the cl
     lastCheckIn: [1_799_000_000n],
     activeEnd: [1_800_500_000n],
     MAX_RATE_PPM: [2000n],
+    unit: [1680n],
   });
   const got = await state.readAllowanceState(read, TREASURY);
   assert.equal(got.box, 700n);
   assert.equal(got.boxCap, 7_000n);
   assert.equal(got.ratePpm, 1000);
-  assert.deepEqual(got.pending, { ratePpm: 2000, applicableAt: 1_800_000_000 });
+  // `pendingAt` is when the raise was announced; the Treasury lets it be applied one time unit later (applyRate reverts
+  // NotYet before that), so that is the date read, not the announcement.
+  assert.deepEqual(got.pending, {
+    ratePpm: 2000,
+    applicableAt: 1_800_000_000 + 1680,
+  });
   assert.equal(got.lastCheckIn, 1_799_000_000);
   assert.equal(got.activeEnd, 1_800_500_000);
   assert.equal(got.maxRatePpm, 2000);
+});
+
+test("the allowance box reads alone, and a short answer throws", async () => {
+  const { read } = fakeChain({ box: [700n] });
+  assert.equal(await state.boxOf(read, TREASURY), 700n);
+  await assert.rejects(() => state.boxOf(async () => "0x", TREASURY));
+});
+
+test("a Pair's proposal time limit is read from the Pair", async () => {
+  const { read } = fakeChain({ PROPOSAL_TTL: [1_209_600n] });
+  assert.equal(await state.proposalTtl(read, ME), 1_209_600);
 });
 
 test("the daily rate reads alone", async () => {
@@ -47,6 +64,7 @@ test("no announced raise reads as none", async () => {
     lastCheckIn: [1n],
     activeEnd: [2n],
     MAX_RATE_PPM: [2000n],
+    unit: [1680n],
   });
   assert.equal((await state.readAllowanceState(read, TREASURY)).pending, null);
 });

@@ -10,26 +10,45 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { dayText } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
+import { rememberSendTargets } from "../money/send-targets";
 import { FaucetCard } from "./FaucetCard";
 import { ownSteps, paidInFromHere } from "./own-history";
-import { NOT_A_RETURN, sharesWords, smallDollarsText } from "./pot-words";
+import {
+  exactDollarsText,
+  NOT_A_RETURN,
+  sharesWords,
+  smallDollarsText,
+} from "./pot-words";
 import { TakeOutSheet } from "./TakeOutSheet";
 import type { MoneyTarget } from "./target";
 import { type Ready, WalletGate } from "./use-pot";
 
-/** What an account holds in a project, with what taking all of it out would give now. */
+/**
+ * What an account holds in a project, with what taking all of it out would give now. Only the Shares balance is needed to
+ * offer Take out: the Team Shares, the play dollars and the quote are extras, so one that cannot be read comes back as null
+ * and never removes the way out. The contracts are remembered as send targets here (every Take out goes through this read,
+ * whether the numbers came from the server's record or from the Launcher), so a passkey account can send to them.
+ */
 export async function readHolding(ready: Ready, target: MoneyTarget) {
-  const [shares, teamShares, dollars] = await Promise.all([
-    balanceOf(ready.read, target.shares, ready.address),
-    balanceOf(ready.read, target.team, ready.address),
+  rememberSendTargets([
+    target.treasury,
+    target.shares,
+    target.team,
+    target.vester,
+    target.dollar,
+  ]);
+  const shares = await balanceOf(ready.read, target.shares, ready.address);
+  const [teamShares, dollars, quote] = await Promise.all([
+    balanceOf(ready.read, target.team, ready.address).catch(() => null),
     target.dollar
-      ? balanceOf(ready.read, target.dollar, ready.address)
+      ? balanceOf(ready.read, target.dollar, ready.address).catch(() => null)
+      : Promise.resolve(null),
+    shares > 0n
+      ? quoteTakeOut(ready.read, target.treasury, ready.address, shares).catch(
+          () => null,
+        )
       : Promise.resolve(null),
   ]);
-  const quote =
-    shares > 0n
-      ? await quoteTakeOut(ready.read, target.treasury, ready.address, shares)
-      : null;
   return { shares, teamShares, dollars, quote };
 }
 
@@ -137,7 +156,7 @@ export function Holding({
             </dd>
           </div>
         ) : null}
-        {teamShares > 0n ? (
+        {teamShares !== null && teamShares > 0n ? (
           <div className="flex items-baseline justify-between gap-3 py-1.5">
             <dt className="text-sm text-muted">Team Shares you hold</dt>
             <dd className="num text-right" data-testid="holding-team">
@@ -162,7 +181,7 @@ export function Holding({
           You hold no Shares in this project yet. Back it to get some.
         </p>
       )}
-      {teamShares > 0n ? (
+      {teamShares !== null && teamShares > 0n ? (
         <div className="flex flex-col gap-2" data-testid="holding-team-words">
           <p className="text-sm text-muted">
             Team Shares pay only the project's money above what backers put in,
@@ -187,8 +206,8 @@ export function Holding({
               <li data-testid="history-step" key={step.txHash}>
                 {dayText(step.at)}:{" "}
                 {step.kind === "back"
-                  ? `backed with ${smallDollarsText(BigInt(step.dollars))} dollars and got ${sharesWords(BigInt(step.shares))} Shares`
-                  : `took out ${sharesWords(BigInt(step.shares))} ${step.kind === "take-out-team" ? "Team Shares" : "Shares"} and got ${smallDollarsText(BigInt(step.dollars))} dollars`}
+                  ? `backed with ${exactDollarsText(BigInt(step.dollars))} dollars and got about ${sharesWords(BigInt(step.shares))} Shares`
+                  : `took out ${sharesWords(BigInt(step.shares))} ${step.kind === "take-out-team" ? "Team Shares" : "Shares"} and got about ${smallDollarsText(BigInt(step.dollars))} dollars`}
               </li>
             ))}
           </ul>

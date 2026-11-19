@@ -51,6 +51,7 @@ const allowance = (over: Record<string, unknown> = {}) => ({
   lastCheckIn: [BigInt(NOW - 3 * 86_400)],
   activeEnd: [BigInt(NOW + 11 * 86_400)],
   MAX_RATE_PPM: [2_000n],
+  unit: [BigInt(numbers.unit)],
   ...over,
 });
 
@@ -274,7 +275,8 @@ describe("the rate", () => {
   it("an announced raise waits for its date, with the date, and applies after it", async () => {
     setup(FOUNDER_EVM, {
       pendingRatePpm: [1_500n],
-      pendingAt: [BigInt(NOW + 86_400)],
+      // Announced a day short of one time unit ago: it can be applied (announced at + one unit) a day from now.
+      pendingAt: [BigInt(NOW + 86_400 - numbers.unit)],
     });
     show();
     expect(
@@ -292,7 +294,7 @@ describe("the rate", () => {
   it("once the wait is over the raise is applied", async () => {
     setup(FOUNDER_EVM, {
       pendingRatePpm: [1_500n],
-      pendingAt: [BigInt(NOW - 60)],
+      pendingAt: [BigInt(NOW - 60 - numbers.unit)],
     });
     show();
     fireEvent.click(await screen.findByTestId("allowance-apply"));

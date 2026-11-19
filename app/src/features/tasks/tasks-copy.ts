@@ -29,6 +29,10 @@ export const TASK_PROBLEM = {
     "The person who took this named no wallet to be paid at, so nothing can be sent. If you accept it now, nothing is paid and this app has no way to pay it later.",
   noPayeeSure:
     "Press again to accept it without paying. It will be closed, unpaid.",
+  pairSure:
+    'Press again to accept it without paying here. Pay for it with "Draw from the box" on the Money tab, signed by both of you: this app does not link that payment to the task.',
+  boxShortSure:
+    'Press again to accept it without paying now. It will be closed, unpaid: pay for it later with "Draw from the box" on the Money tab.',
   /** Sent money cannot be taken back, so the app looks again first and stops when the task has moved. */
   changed:
     "This task changed while you were looking, so nothing was paid. Look at it again.",

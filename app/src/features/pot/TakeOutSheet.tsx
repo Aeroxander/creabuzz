@@ -5,7 +5,7 @@
  */
 import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { potProblem } from "../money/pot-copy";
@@ -86,10 +86,42 @@ export function TakeOutSheet({
   const word = team ? "Team Shares" : "Shares";
   const detail = good ? `${good.shares}:${good.held}`.slice(0, 80) : undefined;
 
+  // Once something was seen to be held, the choice stays on the sheet even while a new part is read (focus stays on it).
+  const sawHeld = useRef(false);
+  if (data && !(!data.ok && data.why === "none")) sawHeld.current = true;
+  // The choice stays on the sheet whenever something is held, so a part that gives nothing can be changed without closing it.
+  const portions = (
+    <fieldset className="flex flex-col gap-1">
+      <legend className="text-sm font-semibold">How much to take out</legend>
+      <div className="flex flex-wrap gap-2">
+        {PORTIONS.map((p) => (
+          <label
+            className="flex min-h-11 cursor-pointer items-center gap-2 text-sm"
+            key={p}
+          >
+            <input
+              checked={portion === p}
+              className="size-5 accent-current"
+              data-testid={`takeout-portion-${p}`}
+              name={`portion-${kind}`}
+              onChange={() => setPortion(p)}
+              type="radio"
+              value={p}
+            />
+            {PORTION_WORDS[p]}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+
   let body: React.ReactNode;
   if (reading.isPending)
     body = (
-      <Card className="h-32 animate-pulse" data-testid="takeout-reading" />
+      <>
+        {sawHeld.current ? portions : null}
+        <Card className="h-32 animate-pulse" data-testid="takeout-reading" />
+      </>
     );
   else if (reading.isError)
     body = (
@@ -106,41 +138,23 @@ export function TakeOutSheet({
     );
   else if (data && !data.ok)
     body = (
-      <p className="text-sm" data-testid={`takeout-${data.why}`}>
-        {data.why === "none"
-          ? `You hold no ${word} in this project, so there is nothing to take out.`
-          : team
-            ? "Team Shares pay only what the project's money holds above what backers put in, and that is nothing now. Nothing was taken."
-            : "Taking these out would give nothing right now, so nothing was taken."}
-      </p>
+      <>
+        {data.why === "none" ? null : portions}
+        <p className="text-sm" data-testid={`takeout-${data.why}`}>
+          {data.why === "none"
+            ? `You hold no ${word} in this project, so there is nothing to take out.`
+            : data.why === "tiny"
+              ? "That part is too small to take out. Choose a bigger part."
+              : team
+                ? "Team Shares pay only what the project's money holds above what backers put in, and that is nothing now. Nothing was taken."
+                : "Taking these out would give nothing right now, so nothing was taken."}
+        </p>
+      </>
     );
   else if (good)
     body = (
       <>
-        <fieldset className="flex flex-col gap-1">
-          <legend className="text-sm font-semibold">
-            How much to take out
-          </legend>
-          <div className="flex flex-wrap gap-2">
-            {PORTIONS.map((p) => (
-              <label
-                className="flex min-h-11 cursor-pointer items-center gap-2 text-sm"
-                key={p}
-              >
-                <input
-                  checked={portion === p}
-                  className="size-5 accent-current"
-                  data-testid={`takeout-portion-${p}`}
-                  name={`portion-${kind}`}
-                  onChange={() => setPortion(p)}
-                  type="radio"
-                  value={p}
-                />
-                {PORTION_WORDS[p]}
-              </label>
-            ))}
-          </div>
-        </fieldset>
+        {portions}
         <dl className="divide-y divide-white/10">
           <Line
             label={`You hold`}
@@ -237,6 +251,7 @@ export function TakeOutSheet({
       }}
       onOpenChange={(next) => {
         if (!next) {
+          sawHeld.current = false;
           setPortion("all");
           onClose();
         }
@@ -247,7 +262,10 @@ export function TakeOutSheet({
       testId={team ? "takeout-team-sheet" : "takeout-sheet"}
       title={`Take out of ${projectName}`}
     >
-      {body}
+      {/* What arrives after the sheet opened (the quote, a refusal) is read out. */}
+      <div aria-live="polite" className="flex flex-col gap-4">
+        {body}
+      </div>
     </PotSheet>
   );
 }

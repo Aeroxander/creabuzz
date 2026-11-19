@@ -18,6 +18,7 @@ import { PotSheet } from "./PotSheet";
 import type { Ready } from "./use-pot";
 import {
   NOT_A_RETURN,
+  exactDollarsText,
   rateWords,
   sharesWords,
   smallDollarsText,
@@ -90,6 +91,11 @@ export function BackSheet({
   const short = good !== null && good.dollars < (amount ?? 0n);
   const calls = good && !short ? good.plan.calls : null;
   const guard = good?.plan.minShares ?? 0n;
+  // The fee as the chain charged it on this amount (the record's percent is hours old), to the nearest hundredth of a percent.
+  const feeBps =
+    good && amount !== null && amount > 0n
+      ? Number(((good.fee * 20_000n) / amount + 1n) / 2n)
+      : numbers.feeBps;
   const detail =
     good && amount !== null
       ? `${amount}:${good.sharesBefore}`.slice(0, 80)
@@ -125,12 +131,12 @@ export function BackSheet({
           <Line
             label="You pay"
             testId="back-pay"
-            value={`${smallDollarsText(amount)} dollars`}
+            value={`${exactDollarsText(amount)} dollars`}
           />
           <Line
             label="Fee to the platform, part of that"
             testId="back-fee"
-            value={`${smallDollarsText(good.fee)} dollars (${percentWords(numbers.feeBps)})`}
+            value={`${exactDollarsText(good.fee)} dollars (${percentWords(feeBps)})`}
           />
           <Line
             label="You get"
@@ -152,7 +158,7 @@ export function BackSheet({
             role="alert"
           >
             You hold {smallDollarsText(good.dollars)} play dollars, which is
-            less than the {smallDollarsText(amount)} this needs. Nothing was
+            less than the {exactDollarsText(amount)} this needs. Nothing was
             taken. Get more play dollars on the project page, or enter less.
           </p>
         ) : null}
@@ -208,7 +214,7 @@ export function BackSheet({
       confirmLabel={
         amount === null
           ? "Back"
-          : `Back with ${smallDollarsText(amount)} dollars`
+          : `Back with ${exactDollarsText(amount)} dollars`
       }
       description={`Backing ${projectName}`}
       detail={detail}
@@ -246,7 +252,10 @@ export function BackSheet({
       testId="back-sheet"
       title={`Back ${projectName}`}
     >
-      {body}
+      {/* What arrives after the sheet opened (the quote, a refusal) is read out. */}
+      <div aria-live="polite" className="flex flex-col gap-4">
+        {body}
+      </div>
     </PotSheet>
   );
 }

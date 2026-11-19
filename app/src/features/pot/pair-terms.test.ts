@@ -1,6 +1,7 @@
 // The sentence a second signer reads for every call that can wait in a Pair: it names what happens, to whom and how much, and
 // a call the app cannot read is "unknown" rather than guessed at.
 import {
+  announceForfeitCall,
   applyRateCall,
   authoriseAgentCall,
   checkInCall,
@@ -10,6 +11,7 @@ import {
   handOverCall,
   proposeRateCall,
   revokeAgentCall,
+  runnerForfeitCall,
   setAgentCall,
   setDoorCall,
   setRateCall,
@@ -91,15 +93,22 @@ describe("each call a Pair can hold has a sentence naming what it does", () => {
       words(windDownCall(numbers.launcher, `0x${"ab".repeat(32)}`)).kind,
     ).toBe("unknown");
   });
-  it("forfeit, announced by the runner", () => {
-    const t = words({
-      to: vester,
-      data: encodeCall(VESTER_ABI, "announceByRunner", [3n]),
-    });
+  it("forfeit, announced by both signers of a Pair: the Treasury's own call, the one a Pair can hold", () => {
+    const t = words(runnerForfeitCall(treasury, 3n));
     expect(t.kind).toBe("forfeit");
     expect(t.words).toMatch(
       /grant number 3.*removed after a public notice of 7 days.*keeps what has unlocked/,
     );
+  });
+  it("a call on the Vester is never one a Pair holds, so it reads as unknown", () => {
+    // The Vester's own calls (a member's exit, the Treasury's hand-down) cannot be proposed in a Pair: not confirmed from here.
+    expect(words(announceForfeitCall(vester, 3n)).kind).toBe("unknown");
+    expect(
+      words({
+        to: vester,
+        data: encodeCall(VESTER_ABI, "announceByRunner", [3n]),
+      }).kind,
+    ).toBe("unknown");
   });
   it("the helpers: authorise, set limits, switch off", () => {
     expect(words(authoriseAgentCall(treasury, ANNA)).words).toMatch(

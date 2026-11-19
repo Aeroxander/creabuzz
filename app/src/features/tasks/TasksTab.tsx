@@ -6,7 +6,9 @@ import type { ProfileMetadata } from "../../lib/profiles";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
+import { mustSayPlayMoney } from "@creaton/core/pot/network.ts";
 import { isRunner, type ProjectNumbers } from "../money/numbers";
+import { PLAY_MONEY_WORDS } from "../pot/pot-words";
 import type { Project } from "../project/project-record";
 import { AgentCaps } from "./AgentCaps";
 import { PostTaskSheet } from "./PostTaskSheet";
@@ -78,6 +80,11 @@ export function TasksTab({
   const tasks = read.data.tasks;
   return (
     <div className="flex flex-col gap-3" data-testid="project-tasks">
+      {numbers && mustSayPlayMoney(numbers.playMoney) ? (
+        <p className="text-sm text-muted" data-testid="tasks-play-money">
+          {PLAY_MONEY_WORDS}
+        </p>
+      ) : null}
       {post}
       {tasks.length === 0 ? (
         <EmptyState

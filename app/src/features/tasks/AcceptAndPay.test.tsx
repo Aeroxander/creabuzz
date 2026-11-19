@@ -24,6 +24,8 @@ const NEWER = "2".repeat(64);
 const sent: unknown[] = [];
 const written: { record: { tags: string[][] } }[] = [];
 let fresh: ProjectTask | null;
+/** What the chain answers for the allowance box (null: the node does not answer). */
+let chainBox: bigint | null = null;
 
 vi.mock("../money/use-money", () => ({
   useMoneySend: () => ({
@@ -34,6 +36,12 @@ vi.mock("../money/use-money", () => ({
     },
   }),
   useConnectWallet: () => ({ isPending: false, mutateAsync: async () => null }),
+  useWallet: () => ({
+    readCall: async () => {
+      if (chainBox === null) throw new Error("The node did not answer.");
+      return `0x${chainBox.toString(16).padStart(64, "0")}`;
+    },
+  }),
 }));
 vi.mock("./use-tasks", () => ({
   freshTask: async () => fresh,
@@ -91,6 +99,7 @@ beforeEach(() => {
   sent.length = 0;
   written.length = 0;
   fresh = task();
+  chainBox = null;
   forgetPaid(task().id);
 });
 afterEach(cleanup);
@@ -137,7 +146,7 @@ describe("accept and pay", () => {
     expect(draw?.args).toEqual([PAYEE, 40_000_000n]);
   });
 
-  it("offers no press when the box holds less than the work pays, and says how much it holds and that more comes each day", async () => {
+  it("when the box holds less than the work pays, says how much it holds and that more comes each day, and pays nothing", async () => {
     wrap(
       <AcceptAndPay
         address={WALLET}
@@ -153,8 +162,68 @@ describe("accept and pay", () => {
     expect(words).toMatch(
       /About 7,322.81 dollars more goes into it each day|About 7.32 dollars more goes into it each day/,
     );
-    expect(screen.queryByTestId("task-accept")).toBeNull();
+    // Not paying from here is still a way forward, as a second, plainly worded choice: nothing is sent.
+    expect(screen.getByTestId("task-accept").textContent).toBe(
+      "Accept without paying 40 dollars",
+    );
+    press();
+    expect(screen.getByTestId("task-pay-later").textContent).toMatch(
+      /Draw from the box/,
+    );
+    press();
+    await waitFor(() => expect(written).toHaveLength(1));
+    expect(tagOf("task-paid")).toBeUndefined();
     expect(sent).toHaveLength(0);
+  });
+
+  it("offers the press when the record's box is short but the chain already holds enough", async () => {
+    // The record is hours old; the chain's own box is what counts.
+    chainBox = 45_000_000n;
+    wrap(
+      <AcceptAndPay
+        address={WALLET}
+        numbers={withNumbers({
+          allowance: { box: 10_000_000n, ratePpm: 1000 },
+        })}
+        project={project}
+        task={task()}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("task-accept").textContent).toBe(
+        "Accept and pay 40 dollars",
+      ),
+    );
+    expect(screen.queryByTestId("task-accept-problem")).toBeNull();
+    press();
+    await waitFor(() => expect(sent).toHaveLength(1));
+  });
+
+  it("stops before sending when the chain's box, read again at the press, is short", async () => {
+    chainBox = 45_000_000n;
+    wrap(
+      <AcceptAndPay
+        address={WALLET}
+        numbers={withNumbers({
+          allowance: { box: 10_000_000n, ratePpm: 1000 },
+        })}
+        project={project}
+        task={task()}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("task-accept").textContent).toBe(
+        "Accept and pay 40 dollars",
+      ),
+    );
+    // Someone drew from the box after the page was drawn.
+    chainBox = 20_000_000n;
+    press();
+    expect(
+      (await screen.findByTestId("task-accept-problem")).textContent,
+    ).toMatch(/box holds 20 dollars now/);
+    expect(sent).toHaveLength(0);
+    expect(written).toHaveLength(0);
   });
 
   it("with the box exactly as full as the pay, offers the press", () => {
@@ -171,7 +240,7 @@ describe("accept and pay", () => {
     expect(screen.getByTestId("task-accept")).toBeTruthy();
   });
 
-  it("says plainly that a payment from a project run by two people needs both signers", () => {
+  it("says plainly that a payment from a project run by two people needs both signers, and still lets the work be accepted without paying here", async () => {
     wrap(
       <AcceptAndPay
         address={WALLET}
@@ -189,7 +258,46 @@ describe("accept and pay", () => {
     expect(screen.getByTestId("task-accept-problem").textContent).toMatch(
       /needs both of you to sign/,
     );
-    expect(screen.queryByTestId("task-accept")).toBeNull();
+    expect(screen.getByTestId("task-accept").textContent).toBe(
+      "Accept without paying 40 dollars",
+    );
+    press();
+    expect(screen.getByTestId("task-pay-later").textContent).toMatch(
+      /signed by both of you/,
+    );
+    expect(written).toHaveLength(0);
+    press();
+    await waitFor(() => expect(written).toHaveLength(1));
+    expect(tagOf("task-paid")).toBeUndefined();
+    expect(sent).toHaveLength(0);
+  });
+
+  it("says the dollars are play money next to a press that pays", () => {
+    wrap(
+      <AcceptAndPay
+        address={WALLET}
+        numbers={withNumbers({ playMoney: true })}
+        project={project}
+        task={task()}
+      />,
+    );
+    expect(screen.getByTestId("task-play-money").textContent).toMatch(
+      /play money/,
+    );
+  });
+
+  it("says it even when the record says the dollars are not play money", () => {
+    wrap(
+      <AcceptAndPay
+        address={WALLET}
+        numbers={withNumbers({ playMoney: false })}
+        project={project}
+        task={task()}
+      />,
+    );
+    expect(screen.getByTestId("task-play-money").textContent).toMatch(
+      /play money/,
+    );
   });
 
   it("will not pay from a wallet that does not run the project", () => {

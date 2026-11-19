@@ -1,4 +1,6 @@
-import { useQueryClient } from "@tanstack/react-query";
+import { mustSayPlayMoney } from "@creaton/core/pot/network.ts";
+import { boxOf } from "@creaton/core/pot/pot-state.ts";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../ui/button";
 import { useToast } from "../../ui/toast";
@@ -7,7 +9,8 @@ import {
   isRunner,
   type ProjectNumbers,
 } from "../money/numbers";
-import { useMoneySend } from "../money/use-money";
+import { useMoneySend, useWallet } from "../money/use-money";
+import { PLAY_MONEY_WORDS, boxNow } from "../pot/pot-words";
 import type { Project } from "../project/project-record";
 import { forgetPaid, paidNotRecorded, rememberPaid } from "./paid-journal";
 import { drawForTaskCall, rawDollars } from "./task-calls";
@@ -27,24 +30,25 @@ export type PayRoute =
 
 /**
  * Who pays and how: the runner's own wallet draws the pay from the allowance box (`Treasury.draw`), and only while the
- * box holds enough. A project run by two people needs both to sign a draw, which is not one press: it is not offered
- * here. Never the server, never an agent.
+ * box holds enough. `box` is the most the record and the chain's own reading say it holds (a draw by someone else lowers
+ * it, so it is never taken from the record alone, and the chain has the last word when the draw is sent). A project run by
+ * two people needs both to sign a draw, which is not one press: it is not offered here. Never the server, never an agent.
  */
 function payRoute(
   numbers: ProjectNumbers | null,
   address: string | null,
   usd: number,
+  box: bigint,
 ): PayRoute {
   if (!numbers) return { kind: "none", why: TASK_PROBLEM.notRunner };
   if (numbers.runner.isPair)
     return { kind: "none", why: TASK_PROBLEM.pairNeedsBoth };
   if (!isRunner(numbers, address))
     return { kind: "none", why: TASK_PROBLEM.notRunner };
-  // The box can only grow between draws, so the record's box is a safe floor for offering the press; the chain decides.
-  if (rawDollars(usd) > numbers.allowance.box)
+  if (rawDollars(usd) > box)
     return {
       kind: "none",
-      why: boxShortWords(numbers.allowance.box, allowancePerDay(numbers)),
+      why: boxShortWords(box, allowancePerDay(numbers)),
     };
   return {
     kind: "treasury",
@@ -97,15 +101,39 @@ export function AcceptAndPay({
   const [problem, setProblem] = useState<string | null>(null);
   const [sure, setSure] = useState(false);
   const [looking, setLooking] = useState(false);
+  const wallet = useWallet();
   const handIn = task.handIn;
-  if (!handIn) return null;
-  const owed = paidNotRecorded(task.id);
+  const owed = handIn ? paidNotRecorded(task.id) : null;
   const usd = task.usd ?? 0;
   const paying = numbers !== null && usd > 0;
-  const route = paying ? payRoute(numbers, address, usd) : null;
+  const treasury = numbers?.contracts.treasury ?? "";
+  const readBox = () =>
+    boxOf((to, data) => wallet.readCall(to, data), treasury);
+  // The box as the chain keeps it, for the gate: where it cannot be read the record's own figure stands.
+  const onChain = useQuery({
+    queryKey: ["pot", "task-box", treasury],
+    enabled: paying && !owed && Boolean(handIn) && treasury !== "",
+    staleTime: 15_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: readBox,
+  });
+  if (!handIn) return null;
+  const route =
+    paying && numbers
+      ? payRoute(numbers, address, usd, boxNow(numbers, onChain.data ?? 0n))
+      : null;
   const payee = task.payTo;
   const blocked =
     paying && !owed ? (route?.kind === "none" ? route.why : null) : null;
+  // A project run by two people, or a box too short now, still has a way forward: accept the work without paying here
+  // (two presses, said plainly), and pay from the Money tab. Only a wallet that is not the runner's has no press at all.
+  const payLater =
+    paying &&
+    !owed &&
+    route?.kind === "none" &&
+    numbers !== null &&
+    (numbers.runner.isPair || isRunner(numbers, address));
 
   const record = (txHash: string | null, piece: string) =>
     write.mutate(
@@ -133,16 +161,21 @@ export function AcceptAndPay({
     // The payment's record goes against the piece that was paid for, even if newer work was handed in since.
     if (owed) return record(owed.txHash, owed.handIn);
     if (!paying) return record(null, handIn.id);
-    if (!payee) {
+    if (!payee || payLater) {
       if (!sure) return setSure(true);
       return record(null, handIn.id);
     }
-    if (!route || route.kind === "none") return;
+    if (!route || route.kind === "none" || !numbers) return;
     setLooking(true);
     const now = await freshTask(queryClient, project, task.id);
+    // The box is read again as the chain has it now (a draw by someone else since the page was drawn lowers it).
+    const fresh = await readBox().catch(() => null);
     setLooking(false);
     if (moved(now, task, handIn.id, payee))
       return setProblem(TASK_PROBLEM.changed);
+    const have = boxNow(numbers, fresh ?? 0n);
+    if (rawDollars(usd) > have)
+      return setProblem(boxShortWords(have, allowancePerDay(numbers)));
     send.send(
       {
         chainId: route.chainId,
@@ -165,7 +198,7 @@ export function AcceptAndPay({
   };
 
   const busy = send.isPending || write.isPending || looking;
-  const unpaid = paying && !payee && !owed;
+  const unpaid = paying && !owed && (!payee || payLater);
   const label = owed
     ? "Save that it was paid"
     : unpaid
@@ -177,9 +210,21 @@ export function AcceptAndPay({
         : "Accept the work";
   return (
     <div className="flex flex-col gap-2">
-      {unpaid ? (
+      {paying && numbers && mustSayPlayMoney(numbers.playMoney) ? (
+        <p className="text-sm text-muted" data-testid="task-play-money">
+          {PLAY_MONEY_WORDS}
+        </p>
+      ) : null}
+      {unpaid && !payee ? (
         <p className="text-sm text-muted" data-testid="task-no-payee">
           {sure ? TASK_PROBLEM.noPayeeSure : TASK_PROBLEM.noPayee}
+        </p>
+      ) : null}
+      {unpaid && payee && sure ? (
+        <p className="text-sm text-muted" data-testid="task-pay-later">
+          {numbers?.runner.isPair
+            ? TASK_PROBLEM.pairSure
+            : TASK_PROBLEM.boxShortSure}
         </p>
       ) : null}
       {problem || blocked ? (
@@ -191,7 +236,7 @@ export function AcceptAndPay({
           {problem ?? blocked}
         </p>
       ) : null}
-      {blocked && payee ? null : (
+      {blocked && payee && !payLater ? null : (
         <Button
           block
           data-testid="task-accept"

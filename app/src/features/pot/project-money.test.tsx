@@ -182,7 +182,7 @@ describe("after a Back lands", () => {
     expect(screen.getByTestId("holding-take-out")).not.toBeNull();
     // It is in this account's own history.
     expect(screen.getByTestId("history").textContent).toMatch(
-      /backed with 10 dollars and got 1,000 Shares/,
+      /backed with 10 dollars and got about 1,000 Shares/,
     );
   });
 });

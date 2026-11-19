@@ -6,7 +6,9 @@
 #                         with its minimum-cash guard, the weekly check-in with a record hash, the door, the allowance (a draw,
 #                         a raise that must wait), a Team grant claimed after the cliff (the chain's clock is moved), a
 #                         member's own exit, outside money, and each refusal read in the app's own words;
-#   pot-screens.test.ts   what the money screens read and send, and a Pair's whole round for a draw with both signers;
+#   pot-screens.test.ts   what the money screens read and send, and a Pair's whole round for a draw and for a forfeit of a member's grant, with both signers;
+#   pot-allowance.test.ts an announced raise: the date the app reads is the date the Treasury's own RateProposed log announces
+#                         (announced at + one time unit), applying before it is refused and after it works;
 #   pot-states.test.ts    Take out with the door shut, after the team stopped checking in, with outside money arriving, after a
 #                         wind-down by anyone and by the runner; a Pair's call refused for its own proposer;
 #   passkey-back.test.ts  a Back from a passkey account: one operation, one passkey prompt, the Shares equal the quote.
@@ -51,7 +53,7 @@ cd "$ROOT/app"
 REPORT="$STATE/vitest.json"
 status=0
 M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts \
-  tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts tests/anvil/pot-states.test.ts tests/anvil/passkey-back.test.ts \
+  tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts tests/anvil/pot-states.test.ts tests/anvil/pot-allowance.test.ts tests/anvil/passkey-back.test.ts \
   --reporter=default --reporter=json --outputFile.json="$REPORT" "$@" || status=$?
 node -e '
 const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));

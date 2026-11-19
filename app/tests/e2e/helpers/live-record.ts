@@ -276,8 +276,8 @@ export async function liveRecord(
           ? null
           : {
               ratePpm: pendingRate,
-              proposedAt: pendingAt - u,
-              applicableAt: pendingAt,
+              proposedAt: pendingAt,
+              applicableAt: pendingAt + u,
             },
       box: text(box),
       boxCap: text(big(await T("boxCap"))),

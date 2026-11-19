@@ -49,6 +49,25 @@ function buildFits(chainId: number): "yes" | "no-network" | "other" {
   return network.chainId === chainId ? "yes" : "other";
 }
 
+/**
+ * Whether a record's contracts belong to this build's network: the Launcher it names is the build's own, and so is its
+ * dollar when the build names one. A record that names another Launcher or dollar (a redeploy this build does not know, or a
+ * wrong record) is never sent money from: a press would go to contracts nobody here has looked at.
+ */
+export function recordFitsBuild(numbers: {
+  launcher: string;
+  contracts: { dollar: string };
+}): boolean {
+  const network = potNetwork();
+  // A build that names no network is told so by the gate; there is nothing to compare with.
+  if (!network) return true;
+  if (numbers.launcher.toLowerCase() !== network.launcher) return false;
+  return (
+    network.dollar === null ||
+    numbers.contracts.dollar.toLowerCase() === network.dollar
+  );
+}
+
 const BUILD_WORDS = {
   "no-network":
     "Money steps are not switched on in this version of the app, so nothing can be sent from here.",

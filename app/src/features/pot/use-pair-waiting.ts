@@ -5,7 +5,7 @@
  */
 import { decodeParameters } from "@creaton/core/launchpad/evmAbi.ts";
 import { topicOf } from "@creaton/core/launchpad/work.ts";
-import { readProposal } from "@creaton/core/pot/pot-state.ts";
+import { proposalTtl, readProposal } from "@creaton/core/pot/pot-state.ts";
 import { useQuery } from "@tanstack/react-query";
 import type { ChainLog } from "../money/wallet";
 import { readLogsBack } from "../money/wallet";
@@ -15,10 +15,36 @@ const PROPOSED_TOPIC = topicOf(
   "Proposed(bytes32,address,address,bytes,uint256)",
 );
 const HEX32 = /^0x[0-9a-f]{64}$/;
-/** A waiting call's life: the Pair's own limit (14 days). */
-const TTL_SECS = 14 * 24 * 3600;
-/** How far back to look for them, in blocks. */
+/** How far back to look when the network cannot say how fast it makes blocks, in blocks. */
 const WINDOW_BLOCKS = 50_000;
+/** The most blocks ever looked back over, in pieces of `CHUNK` (a window wider than this is said to be incomplete). */
+const MAX_WINDOW = 600_000;
+const CHUNK = 10_000;
+/** Blocks sampled to learn how fast the network makes them. */
+const SAMPLE_BLOCKS = 5_000;
+
+/**
+ * How many blocks back a waiting call can still be in time: the Pair's own limit (read from it) over the network's own pace
+ * of blocks (the last `SAMPLE_BLOCKS` of them), with a margin. `needed` is what covering it takes, `span` what is looked at.
+ */
+export function windowOf(
+  ttlSecs: number,
+  head: number,
+  headTime: number,
+  sampleTime: number | null,
+  sampleBlocks: number,
+): { span: number; needed: number } {
+  let needed = WINDOW_BLOCKS;
+  if (sampleTime !== null && sampleBlocks > 0) {
+    const secsPerBlock = (headTime - sampleTime) / sampleBlocks;
+    // Blocks that share a second (a test chain) say nothing about pace: look as far as is allowed.
+    needed =
+      secsPerBlock > 0
+        ? Math.ceil((ttlSecs / secsPerBlock) * 1.25) + 1_000
+        : MAX_WINDOW;
+  }
+  return { span: Math.min(needed, MAX_WINDOW, head), needed };
+}
 
 export interface Proposal {
   id: string;
@@ -65,25 +91,44 @@ export function usePairWaiting(
     retry: false,
     queryFn: async (): Promise<{ waiting: Proposal[]; complete: boolean }> => {
       if (!pair || !ready) return { waiting: [], complete: true };
-      const to = await ready.wallet.blockNumber();
+      const wallet = ready.wallet;
+      const ttl = await proposalTtl(ready.read, pair);
+      const to = await wallet.blockNumber();
+      // The chain's own clock and pace (a browser clock can differ from a test chain's), where the sender can say them.
+      let now = Math.floor(Date.now() / 1000);
+      let sampleTime: number | null = null;
+      const sample = Math.min(to, SAMPLE_BLOCKS);
+      if (wallet.blockTime) {
+        try {
+          now = await wallet.blockTime("latest");
+          sampleTime = sample > 0 ? await wallet.blockTime(to - sample) : null;
+        } catch {
+          sampleTime = null;
+        }
+      }
+      const { span, needed } = windowOf(ttl, to, now, sampleTime, sample);
       const found = await readLogsBack(
-        ready.wallet,
+        wallet,
         { address: pair, topics: [PROPOSED_TOPIC] },
-        { from: Math.max(0, to - WINDOW_BLOCKS), to },
+        {
+          from: Math.max(0, to - span),
+          to,
+          chunk: CHUNK,
+          pieces: Math.ceil(MAX_WINDOW / CHUNK),
+        },
       );
       const proposals = found.logs
         .map((log) => proposalOf(log, pair))
         .filter((p): p is Proposal => p !== null);
-      const now = Math.floor(Date.now() / 1000);
       const alive = await Promise.all(
         proposals.map(async (p) => {
           const state = await readProposal(ready.read, pair, p.id);
-          return state && state.proposedAt + TTL_SECS >= now ? p : null;
+          return state && state.proposedAt + ttl >= now ? p : null;
         }),
       );
       return {
         waiting: alive.filter((p): p is Proposal => p !== null),
-        complete: found.complete,
+        complete: found.complete && (span >= needed || span >= to),
       };
     },
   });

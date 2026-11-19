@@ -5,6 +5,7 @@ import { numbersFor, S } from "../../../tests/helpers/pot-harness";
 import {
   allowanceWords,
   doorShutWords,
+  exactDollarsText,
   rateWords,
   sharesWords,
   smallDollarsText,
@@ -32,10 +33,27 @@ describe("amounts", () => {
     expect(smallDollarsText(0n)).toBe("0.00");
     expect(smallDollarsText(2_500_000n)).toBe("2.50");
   });
+  it("an amount as a call carries it: every non-zero decimal to six, never rounded", () => {
+    expect(exactDollarsText(25_123_456n)).toBe("25.123456");
+    expect(exactDollarsText(25_129_999n)).toBe("25.129999");
+    expect(exactDollarsText(10_005_000n)).toBe("10.005");
+    expect(exactDollarsText(25_500_000n)).toBe("25.50");
+    expect(exactDollarsText(25_000_000n)).toBe("25");
+    expect(exactDollarsText(1_234_567_000_001n)).toBe("1,234,567.000001");
+    expect(exactDollarsText(1n)).toBe("0.000001");
+    expect(exactDollarsText(0n)).toBe("0");
+  });
   it("a daily rate", () => {
     expect(rateWords(1_000)).toBe("0.10%");
     expect(rateWords(2_000)).toBe("0.20%");
+    expect(rateWords(1_500)).toBe("0.15%");
+    expect(rateWords(1_000_000)).toBe("100.00%");
     expect(rateWords(0)).toBe("0.00%");
+  });
+  it("a daily rate is not rounded down for the backer: every digit it has, and never 0.00% above nothing", () => {
+    expect(rateWords(1_049)).toBe("0.1049%");
+    expect(rateWords(4)).toBe("0.0004%");
+    expect(rateWords(12_345)).toBe("1.2345%");
   });
   it("a span", () => {
     expect(spanWords(3 * 86_400)).toBe("about 3 days");

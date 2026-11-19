@@ -257,6 +257,14 @@ export function announceForfeitCall(vester: string, id: bigint): PotCall {
   return build(VESTER_ABI, vester, "announceForfeit", [id]);
 }
 
+/**
+ * Announce the forfeit of a member's grant without the member's say: a call on the Treasury that only both signers of a
+ * Pair can make, so it is what waits in a Pair (the member's own `announceForfeitCall` is on the Vester).
+ */
+export function runnerForfeitCall(treasury: string, id: bigint): PotCall {
+  return build(TREASURY_ABI, treasury, "announceForfeit", [id]);
+}
+
 /** Run an announced burn once its notice is over (anyone). */
 export function executeForfeitCall(vester: string, id: bigint): PotCall {
   return build(VESTER_ABI, vester, "execute", [id]);

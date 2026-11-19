@@ -3,7 +3,9 @@
  * two Share tokens and the Vester. It comes from the server's record when there is one and from the Launcher when there
  * is not, so a person can always reach their Shares.
  */
+import { mustSayPlayMoney } from "@creaton/core/pot/network.ts";
 import type { ProjectNumbers } from "../money/numbers";
+import { recordFitsBuild } from "./use-pot";
 
 export interface MoneyTarget {
   chainId: number;
@@ -27,7 +29,8 @@ export function targetOf(numbers: ProjectNumbers): MoneyTarget {
     shares: numbers.contracts.shares,
     team: numbers.contracts.team,
     vester: numbers.contracts.vester,
-    dollar: numbers.contracts.dollar,
-    playMoney: numbers.playMoney,
+    // A dollar this build does not know is not offered a faucet or a balance line.
+    dollar: recordFitsBuild(numbers) ? numbers.contracts.dollar : null,
+    playMoney: mustSayPlayMoney(numbers.playMoney),
   };
 }

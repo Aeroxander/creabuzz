@@ -126,7 +126,7 @@ describe("Your Shares across projects", () => {
     wrap(<YourSharesList />);
     const history = await screen.findByTestId("your-history");
     expect(history.textContent).toMatch(
-      /backed Lantern with 10 dollars and got 1,000 Shares/,
+      /backed Lantern with 10 dollars and got about 1,000 Shares/,
     );
     expect(history.textContent).toMatch(/Kept in this browser/);
   });

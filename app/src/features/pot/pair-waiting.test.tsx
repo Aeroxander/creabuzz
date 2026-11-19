@@ -24,6 +24,7 @@ import {
 } from "../../../tests/helpers/pot-harness";
 import type { ProjectNumbers } from "../money/numbers";
 import { PairWaiting } from "./PairWaiting";
+import { windowOf } from "./use-pair-waiting";
 
 vi.mock(
   "../../lib/relay",
@@ -73,6 +74,7 @@ function proposed(
   };
 }
 
+const DAY = 86_400;
 function setup(
   account: string,
   logs: unknown[],
@@ -84,6 +86,7 @@ function setup(
     answers: {
       proposer: [proposer],
       proposedAt: [BigInt(Math.floor(Date.now() / 1000))],
+      PROPOSAL_TTL: [BigInt(14 * DAY)],
     } as never,
   });
 }
@@ -187,6 +190,28 @@ describe("the calls waiting for the second signer", () => {
     expect(screen.getAllByTestId("pair-waiting-call").length).toBe(1);
   });
 
+  it("keeps a call while the Pair's own time limit, read from the Pair and counted on the chain's clock, has not run out", async () => {
+    // The chain's clock is 20 days behind the browser's (a moved test chain). The call was proposed 3 days before the
+    // chain's now: it waits, although by the browser's clock it would be 17 days old.
+    setup(BACKER_EVM, [proposed(1, FOUNDER_EVM, DRAW.to, DRAW.data, 7n)]);
+    const nowOnChain = Math.floor(Date.now() / 1000) - 20 * DAY;
+    chain.blockTime = nowOnChain;
+    chain.answers.proposedAt = [BigInt(nowOnChain - 3 * DAY)];
+    show();
+    expect((await screen.findAllByTestId("pair-waiting-call")).length).toBe(1);
+  });
+
+  it("drops a call that is out of time on the chain's clock, with the limit as the Pair says it", async () => {
+    setup(BACKER_EVM, [proposed(1, FOUNDER_EVM, DRAW.to, DRAW.data, 7n)]);
+    // This Pair gives a call one day, not two weeks: a call proposed two days ago is out of time.
+    chain.answers.PROPOSAL_TTL = [BigInt(DAY)];
+    chain.answers.proposedAt = [BigInt(chain.blockTime - 2 * DAY)];
+    show();
+    expect((await screen.findByTestId("pair-none")).textContent).toBe(
+      "Nothing is waiting.",
+    );
+  });
+
   it("nothing waiting says so", async () => {
     setup(BACKER_EVM, []);
     show();
@@ -210,5 +235,37 @@ describe("the calls waiting for the second signer", () => {
     setup("0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc", []);
     show("0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc");
     expect(screen.queryByTestId("pair-card")).toBeNull();
+  });
+});
+
+describe("how far back the waiting calls are looked for", () => {
+  it("covers the Pair's limit at the network's own pace, not a fixed count of blocks", () => {
+    // 2-second blocks: 14 days is 604,800 blocks, far over the old 50,000; the look back is as wide as it takes, to a cap.
+    const slow = windowOf(
+      14 * 86_400,
+      400_000,
+      1_000_000,
+      1_000_000 - 2 * 5_000,
+      5_000,
+    );
+    expect(slow.needed).toBeGreaterThan(600_000);
+    expect(slow.span).toBe(400_000);
+    // 12-second blocks: about 100,800 blocks for 14 days, and a margin.
+    const normal = windowOf(
+      14 * 86_400,
+      5_000_000,
+      1_000_000,
+      1_000_000 - 12 * 5_000,
+      5_000,
+    );
+    expect(normal.span).toBeGreaterThan(100_800);
+    expect(normal.span).toBeLessThan(200_000);
+    // A network that cannot say its pace gets the fixed count; blocks within one second say nothing of pace.
+    expect(windowOf(14 * 86_400, 5_000_000, 1_000_000, null, 0).span).toBe(
+      50_000,
+    );
+    expect(
+      windowOf(14 * 86_400, 5_000_000, 1_000_000, 1_000_000, 5_000).span,
+    ).toBe(600_000);
   });
 });

@@ -7,7 +7,6 @@ import { type Abi, decodeCall } from "@creaton/core/pot/abi-codec.ts";
 import {
   LAUNCHER_ABI,
   TREASURY_ABI,
-  VESTER_ABI,
 } from "@creaton/core/pot/abis.generated.ts";
 import type { DecodedValue } from "@creaton/core/launchpad/evmAbi.ts";
 import type { ProjectNumbers } from "../money/numbers";
@@ -64,11 +63,9 @@ export function describePotCall(
   const abi: Abi | null =
     t === numbers.contracts.treasury
       ? TREASURY_ABI
-      : t === numbers.contracts.vester
-        ? VESTER_ABI
-        : t === numbers.launcher
-          ? LAUNCHER_ABI
-          : null;
+      : t === numbers.launcher
+        ? LAUNCHER_ABI
+        : null;
   if (!abi) return unknown();
   let call: ReturnType<typeof decodeCall>;
   try {
@@ -158,16 +155,17 @@ export function describePotCall(
             names: [agent],
           };
         }
+        case "announceForfeit(uint256)":
+          // What a Pair can hold for a member's grant: a call on the Treasury (it passes it on to the Vester itself).
+          return {
+            kind: "forfeit",
+            words: `Announce that the part of Team Share grant number ${big(args[0])} that has not unlocked is removed after a public notice of ${unitDays(numbers)}. The person keeps what has unlocked.`,
+            names: [],
+          };
         default:
           return unknown();
       }
     }
-    if (abi === VESTER_ABI && call.signature === "announceByRunner(uint256)")
-      return {
-        kind: "forfeit",
-        words: `Announce that the part of Team Share grant number ${big(args[0])} that has not unlocked is removed after a public notice of ${unitDays(numbers)}. The person keeps what has unlocked.`,
-        names: [],
-      };
     if (abi === LAUNCHER_ABI && call.signature === "windDown(bytes32)") {
       if (String(args[0]).toLowerCase() !== numbers.key.toLowerCase())
         return unknown();

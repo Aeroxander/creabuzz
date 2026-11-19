@@ -2,9 +2,10 @@
  * The one sheet every money press goes through: the numbers it is about (children), the calls those numbers made, and one
  * press. It never sends twice (a press while the step runs does nothing, and a step whose call went out but has not landed
  * is looked up before any other is sent), says what happened when a send fails and keeps the press so the person can try
- * again, and shows the legal line. Escape and the close button close it, and focus goes back to what opened it.
+ * again, and shows the legal line. Escape and the close button always close it (even while a wallet has not answered), and focus goes back to what opened it.
  */
 import type { PotCall } from "@creaton/core/pot/pot-calls.ts";
+import { mustSayPlayMoney } from "@creaton/core/pot/network.ts";
 import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
 import { useWallet } from "../money/use-money";
@@ -50,7 +51,10 @@ export interface PotSheetProps {
   account: string;
   /** The note shown when what landed was an earlier press of the same step (looked up, not sent again). */
   doneEarlier?: string;
-  /** Say play money under the numbers (a test network). */
+  /**
+   * The record's own flag for play money. The words are said all the same until real money is switched on (it is not, in
+   * step 1): a record that says `false` never takes the line off a money sheet.
+   */
   playMoney: boolean;
   /** Something on the sheet makes the press wrong now (a refusal read before sending). */
   blocked?: boolean;
@@ -117,8 +121,8 @@ export function PotSheet(props: PotSheetProps) {
     <Sheet
       description={`${props.description ? `${props.description}. ` : ""}Nothing is sent until you press the button below and say yes ${send.words.where}.`}
       onOpenChange={(next) => {
-        // A step on its way is not abandoned by closing: it is looked up when the sheet is opened again.
-        if (!next && send.isPending) return;
+        // A wallet that never answers must not lock the sheet: closing is always possible. A step that went out is not
+        // abandoned by it: it is looked up (never sent twice) when the sheet is opened again.
         if (!next) setProblem(null);
         onOpenChange(next);
       }}
@@ -127,7 +131,7 @@ export function PotSheet(props: PotSheetProps) {
       title={props.title}
     >
       {props.children}
-      {props.playMoney ? (
+      {mustSayPlayMoney(props.playMoney) ? (
         <p className="text-sm text-muted" data-testid="sheet-play-money">
           {PLAY_MONEY_WORDS}
         </p>

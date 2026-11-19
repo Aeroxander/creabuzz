@@ -384,3 +384,129 @@ describe("before there is a wallet", () => {
     );
   });
 });
+
+describe("what the sheet says is what the call takes", () => {
+  it("shows every decimal of a typed amount (to six) in the pay line, the press and the call: nothing is rounded down", async () => {
+    setup();
+    await openSheet("25.123456");
+    expect((await screen.findByTestId("back-pay")).textContent).toBe(
+      "25.123456 dollars",
+    );
+    expect(screen.getByTestId("sheet-confirm").textContent).toBe(
+      "Back with 25.123456 dollars",
+    );
+    expect(screen.getByTestId("back-fee").textContent).toMatch(
+      /^0\.502469 dollars/,
+    );
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    const decoded = decodeCall(PLAY_DOLLAR_ABI, chain.sent[0].data);
+    expect(decoded?.args[1]).toBe(25_123_456n);
+  });
+
+  it("does not show 10.005 as 10", async () => {
+    setup();
+    await openSheet("10.005");
+    expect((await screen.findByTestId("back-pay")).textContent).toBe(
+      "10.005 dollars",
+    );
+  });
+
+  it("states the fee percent the chain charged on this amount, not the record's hours-old percent", async () => {
+    // The record says 2%; the chain charges 5% now.
+    setup({
+      answers: {
+        feeFor: (args: readonly unknown[]) => [
+          ((args[0] as bigint) * 5n) / 100n,
+        ],
+      },
+    });
+    await openSheet("10");
+    expect(
+      await screen.findByTestId("back-fee").then((e) => e.textContent),
+    ).toBe("0.50 dollars (5%)");
+  });
+});
+
+describe("play money is said whatever the record says", () => {
+  it("the Back sheet says it when the record says playMoney false", async () => {
+    const odd = numbersFor((content) => {
+      content.playMoney = false;
+    });
+    expect(odd.playMoney).toBe(false);
+    nameTheNetwork(odd);
+    chain = installPotChain({
+      account: BACKER_EVM,
+      answers: backerAnswers(odd) as never,
+    });
+    wrap(<BackCard now={NOW} numbers={odd} projectName="Lantern" />);
+    fireEvent.change(await screen.findByLabelText("How many dollars?"), {
+      target: { value: "10" },
+    });
+    fireEvent.click(screen.getByTestId("backing-review"));
+    await screen.findByTestId("back-pay");
+    expect(screen.getByTestId("sheet-play-money").textContent).toMatch(
+      /play money/,
+    );
+  });
+});
+
+describe("a record that names contracts this build does not know is not sent money from", () => {
+  it("shows no Back box when the record's Launcher is not the build's", async () => {
+    setup();
+    // The build was made for a newer deployment; the server still serves the old one.
+    vi.stubEnv("VITE_CREATON_LAUNCHER", `0x${"7".repeat(40)}`);
+    wrap(<BackCard now={NOW} numbers={numbers} projectName="Lantern" />);
+    expect(
+      (await screen.findByTestId("back-wrong-contracts")).textContent,
+    ).toMatch(/does not know/);
+    expect(screen.queryByTestId("backing-amount")).toBeNull();
+    expect(chain.sent).toEqual([]);
+  });
+
+  it("shows no Back box when the record's dollar is not the build's", async () => {
+    setup();
+    vi.stubEnv("VITE_CREATON_DOLLAR", `0x${"8".repeat(40)}`);
+    wrap(<BackCard now={NOW} numbers={numbers} projectName="Lantern" />);
+    expect(await screen.findByTestId("back-wrong-contracts")).not.toBeNull();
+    expect(screen.queryByTestId("backing-amount")).toBeNull();
+  });
+});
+
+describe("a wallet that never answers does not lock the sheet", () => {
+  it("Escape closes it while the press is waiting", async () => {
+    setup();
+    const real = (
+      window as unknown as {
+        ethereum: { request: (a: { method: string }) => Promise<unknown> };
+      }
+    ).ethereum;
+    const request = real.request.bind(real);
+    real.request = (args) =>
+      args.method === "eth_sendTransaction"
+        ? new Promise(() => undefined)
+        : request(args);
+    await openSheet();
+    await screen.findByTestId("back-pay");
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() =>
+      expect(screen.getByTestId("sheet-confirm").textContent).toMatch(
+        /Waiting/,
+      ),
+    );
+    fireEvent.keyDown(screen.getByTestId("back-sheet"), {
+      key: "Escape",
+      code: "Escape",
+    });
+    await waitFor(() => expect(screen.queryByTestId("back-sheet")).toBeNull());
+  });
+});
+
+describe("what arrives after the sheet opened is announced", () => {
+  it("holds the quote in a polite live region", async () => {
+    setup();
+    await openSheet();
+    const pay = await screen.findByTestId("back-pay");
+    expect(pay.closest("[aria-live='polite']")).not.toBeNull();
+  });
+});

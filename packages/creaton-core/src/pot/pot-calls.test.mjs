@@ -272,6 +272,13 @@ for (const [name, call] of VESTER_CASES) {
   });
 }
 
+test("a Pair's forfeit of a member's grant is a Treasury call with the grant's id", () => {
+  const call = calls.runnerForfeitCall(TREASURY, 4n);
+  assert.equal(call.to, low(TREASURY));
+  const found = read(TREASURY_ABI, call);
+  assert.deepEqual([found.name, ...found.args], ["announceForfeit", 4n]);
+});
+
 test("launch carries its terms as one tuple, pinned against cast", () => {
   const call = calls.launchCall({
     launcher: LAUNCHER,

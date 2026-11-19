@@ -45,3 +45,32 @@ describe("typed dollars", () => {
     expect(parseDollarAmount("5", 5_000_000n).ok).toBe(true);
   });
 });
+
+describe("a comma is only ever a thousands mark", () => {
+  it("does not read a decimal comma as thousands: '10,5' is not 105 dollars", () => {
+    for (const text of [
+      "10,5",
+      "1,00",
+      "0,5",
+      "1,5",
+      "12,34",
+      "1,0000",
+      ",5",
+      "1,,000",
+    ])
+      expect(parseDollarAmount(text, MIN)).toEqual({
+        ok: false,
+        reason: "format",
+      });
+  });
+  it("still reads proper thousands marks", () => {
+    expect(parseDollarAmount("1,000", MIN)).toEqual({
+      ok: true,
+      raw: 1_000_000_000n,
+    });
+    expect(parseDollarAmount("$12,345,678.25", MIN)).toEqual({
+      ok: true,
+      raw: 12_345_678_250_000n,
+    });
+  });
+});

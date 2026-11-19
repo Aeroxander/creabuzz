@@ -360,6 +360,24 @@ describe("what the screens ask of a record", () => {
     expect(freshnessOf(slow, n.builtAt + 10_861).level).toBe("as-of");
   });
 
+  it("a day's limit holds whatever the refresh period: a record over a day old is stale, not fresh", () => {
+    const n = parsedExample();
+    // A period the parser allows (a day): 3R + 60 is over a day, so the day's limit must be tested first.
+    const daily = { ...n, refreshEverySecs: 86_400 };
+    expect(freshnessOf(daily, n.builtAt + 25 * 3_600).level).toBe("stale");
+    expect(freshnessOf(daily, n.builtAt + 3_600).level).toBe("fresh");
+  });
+
+  it("a record built far ahead of this device's clock is not fresh for ever", () => {
+    const n = parsedExample();
+    const future = { ...n, builtAt: n.builtAt + 10 * 365 * 86_400 };
+    expect(freshnessOf(future, n.builtAt + 100).level).toBe("stale");
+    // A few minutes of difference between the clocks is normal.
+    expect(
+      freshnessOf({ ...n, builtAt: n.builtAt + 300 }, n.builtAt).level,
+    ).toBe("fresh");
+  });
+
   it("words for amounts", () => {
     expect(dollarsText(7_322_810_944n)).toBe("7,322.81");
     expect(dollarsText(1_000_000n)).toBe("1");

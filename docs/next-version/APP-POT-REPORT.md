@@ -409,3 +409,84 @@ secret key only on the computer; do not type a real account's key anywhere.
    - Stop checking in for two time units (56 minutes on a 28-minute unit): the page says the project is quiet, Back says why it is paused
      and that you can still take your money out, and Take out still works. After 26 units anyone can wind it down, and Take out still works.
    - Stop the server and reload: the page says the numbers could not be read and still lets you take your Shares out.
+
+## Review fixes
+
+Two independent reviews of the whole track (the app, `packages/creaton-core/src/pot`, `scripts/pot-app-*`) were checked one finding at a
+time against the code. Each fix has a test on the production path that fails without it. The reviewers' scratch tests were turned into
+proper tests (listed) and the scratch files deleted: none is left, tracked or untracked.
+
+### Fixed
+
+| Finding | What was wrong | Fix | Test that fails without it |
+|---|---|---|---|
+| Review 1 B1 | The date of an announced raise was `Treasury.pendingAt()`, which is when it was announced. The contract applies it one time unit later (`applyRate` reverts `NotYet`). The card said "the wait is over" at once and Apply was refused. | `readAllowanceState` reads `Treasury.unit()` and returns `applicableAt = pendingAt + unit` (`pot-state.ts`). The e2e record helper had the same two numbers wrong and was fixed too. | `pot-state.test.mjs` (a real announcement shape); `allowance.test.tsx` (an announced raise waits for its date, with a real `pendingAt`); `tests/anvil/pot-allowance.test.ts` on the real Treasury: the app's date equals the `RateProposed` log's `applicableAt`, `applyRate` is refused before it and works after (`passTime`) |
+| Review 1 I1 | The Pair sentence for a forfeit described `Vester.announceByRunner`, which a Pair can never hold (a Pair proposes only to the Treasury or the Launcher). The call a Pair really holds, `Treasury.announceForfeit(uint256)`, read as "unknown", so the second signer could not confirm it. | `pair-terms.ts` has a Treasury case for `announceForfeit(uint256)` (the member's own wording and the notice length); the Vester branch is gone, and a Vester call now reads as unknown. New builder `runnerForfeitCall` in `pot-calls.ts`. | `pair-terms.test.ts` (the Treasury call reads as a forfeit; the Vester calls read as unknown); `pot-calls.test.mjs`; `pot-screens.test.ts` on the real chain: a Pair proposes the forfeit, the app reads it as a forfeit with the exact sentence, the second signer confirms, the grant is announced (state 1) |
+| Review 1 I2, Review 2 B1 | A record with `playMoney:false` took the play-money line off the Back, Take out, Draw, Grant and allowance sheets, while the page said it. | `PotSheet` says it through `mustSayPlayMoney(record flag)` (always, in step 1); `targetOf` does the same; the faucet follows. The Tasks tab and the Accept-and-pay press say it too (Review 2 I7). | `back-sheet.test.tsx` and `take-out.test.tsx` (a record with `playMoney:false`); `AcceptAndPay.test.tsx` (two) |
+| Review 1 I3, Review 2 I4 | A typed 25.123456 showed "You pay 25.12 dollars" and the call carried 25123456; the fee line floored the same way. | New `exactDollarsText` (every non-zero decimal to six, never rounded) for the pay line, the press label, the "not enough" line, the fee line and the history. Page figures that are estimates keep cents. | `back-sheet.test.tsx` (25.123456 shown in full and carried as 25123456; 10.005 is not "10"); `pot-words.test.ts` |
+| Review 1 I5 | The Accept button's gate said the record's box is "a safe floor". It is not: a draw by the runner or an agent after the record lowers it, and the record can be over a day old. | The gate uses the larger of the record's box and the chain's own box (new core read `boxOf`); the press reads the chain again before sending and stops with the number if it is short. | `AcceptAndPay.test.tsx` (a short record with a full chain is offered; a chain that fell after the page was drawn stops before any send); `pot-state.test.mjs` |
+| Review 1 I4 (the part that is a regression) | A project run by two people, or with a short box, could not accept a paid task at all (the button was hidden), so the task stayed "submitted". | The work can now be accepted without paying from here: a second, plainly worded choice (two presses, the same as for a task with no payee), pointing to "Draw from the box" on the Money tab. A wallet that does not run the project still gets no press. | `AcceptAndPay.test.tsx` (the Pair case and the short-box case) |
+| Review 1 I6 | The Pair proposal time limit was copied (14 days) and the look-back was a fixed 50,000 blocks (about 28 hours on a 2-second chain), so a call proposed three days ago dropped out, and "now" was the browser's clock. | The limit is read from `Pair.PROPOSAL_TTL` (new core read `proposalTtl`); "now" and the pace of blocks are read from the chain (`blockTime`, an optional method of the wallet); the look-back covers the limit at that pace, to a cap, and says so (not complete) when it cannot. A sender that cannot say block time (the passkey account) keeps the old fixed window and the browser's clock. | `pair-waiting.test.tsx` (a chain 20 days behind the browser keeps a call proposed 3 days before its own now; a one-day limit read from the Pair drops a 2-day-old call; the window function at 2 s, 12 s and unknown pace) |
+| Review 2 B2 | A passkey account could not Take out when the server's record could not be read: the passkey sender only sends to contracts the app has read, and the Launcher fallback never told it. | `readHolding` (every Take out goes through it, from the record or from the Launcher) remembers the project's contracts as send targets. | `passkey-takeout.test.tsx` (the take-out reaches the passkey sender, a stand-in impl; fails without the line) |
+| Review 2 I1 | `readHolding` failed whole when the play-dollar balance, the Team Shares balance or the quote failed, and then showed no Take out. | Only the Shares balance gates Take out; the rest are read on their own and left out when unreadable. The sheet reads its own quote. | `take-out.test.tsx` (the dollar balance fails; the quote fails once) |
+| Review 2 I2 | A record naming another Launcher or dollar than the build's still showed the Back box and sent money to them. | `recordFitsBuild` (use-pot.tsx): the Back box is off with words when the record's Launcher, or its dollar when the build names one, is not the build's; the faucet and dollar line go with it. Take out is not blocked. | `back-sheet.test.tsx` (two) |
+| Review 2 I3 | "10,5" was read as 105 dollars. | A comma is accepted only as a proper thousands mark. | `calls.test.ts` |
+| Review 2 I5 | The history wrote the quote down as what was received. | The line says "got about …" for the Shares of a Back and the dollars of a Take out; what was paid in is exact. | `take-out.test.tsx` (the dollars that landed differ from the quote); the two existing history tests were updated |
+| Review 2 I6 | While a send was pending, Escape and the close button did nothing: a wallet prompt that never answers locked the sheet. | Closing is always possible; the step that went out is looked up (never sent twice) when the sheet opens again. | `back-sheet.test.tsx` (the wallet never answers; Escape closes) |
+| Review 2 I8 | `rateWords` showed 1049 ppm as "0.10%" and 4 ppm as "0.00%". | Every digit the rate has (a part per million is 0.0001%), at least two decimals, never 0.00% above nothing. | `pot-words.test.ts` |
+| Review 1 O1, Review 2 O2 | `freshnessOf` tested "fresh" before the day's limit, and a record built far ahead of the clock was fresh for ever. | The day's limit first; a record more than 10 minutes ahead of the clock is "stale". | `numbers.test.ts` (two) |
+| Review 1 O3 | After a part (a quarter) that quotes nothing, the choice vanished and the person had to close the sheet. | The choice stays while something is held (a new answer, "that part is too small", keeps it); the "no Shares" line is only for holding none. | `take-out.test.tsx` |
+| Review 1 O4 | The WeekPage clock line used the record's own state word. | It works the state out at the device's clock (`quietStateAt`). | `clock-line.test.tsx` |
+| Review 1 O8 | `WalletGate` rendered inside a `ul`. | The list is a plain `div` list. | covered by `your-shares-list.test.tsx` |
+| Review 2 O1 | The fee percent came from the record, the fee from the chain. | The percent is worked out from the chain's fee on the typed amount. | `back-sheet.test.tsx` |
+| Review 2 O4 | The quote that arrives after the sheet opens was not announced. | The Back and Take out bodies sit in a polite live region. | `back-sheet.test.tsx` |
+
+Scratch tests kept as proper tests: `hostile-record.test.tsx` (extreme but parseable records show no NaN, Infinity or Invalid Date) and
+`money/refusal-shapes.test.ts` (contract refusals in the shapes wallets give them read as plain sentences). The reviewers' other scratch
+tests (typed amounts, rounding draft, play money, passkey, history, focus, live region, launcher mismatch, Take out gating, Tasks) are now
+the tests named in the table; the rounding draft asserted the bug and is gone.
+
+### Declined, with the reason
+
+- **Review 1 I4, the missing screens (launch, hand over, take the seat, wind down, Home's "you back this" hint).** Not a defect in what was
+  built; a decision on scope (the lead's L2 and L3 put the old stage, round and team screens behind the flag, and the design's step 1d is
+  for the lead to schedule). The builders (`launchCall`, `handOverCall`, `takeSeatCall`, `windDownCall`, `makePairCall`) are built and
+  tested; no screen uses them. Left open for the lead, below.
+- **Review 1 O5, the legacy chunks ship in the flag-off build (about 90 KB).** Dropping them at build time needs a compile-time constant at
+  every `lazy()` site; the legacy tests switch the flag on at run time, so that change would break them. Not reachable or loaded at run
+  time; carried weight only. Kept.
+- **Review 1 O6, Take out is two presses.** Accepted as built (the sheet carries the numbers a person must see); L7's wording of "one press"
+  should read "one signature, two presses". A note for the lead.
+- **Review 1 O7, a team take-out is refused when one Team Share rounds to nothing.** Conservative on purpose: there is no exact Treasury view
+  for it. The sheet already says the figure is an estimate that can be nothing.
+- **Review 1 O9, state sentences with wall time ("quiet for months").** On a test network a unit can be 28 minutes, so those words can be
+  wrong there. Left as written; the dates in the same sentences come from the record.
+- **Review 1 O10, the legal line and "take your money out any time" on every sheet, the faucet too.** The legal text is never hidden; the
+  faucet sheet keeps it.
+- **Review 1 O11, "landed" judged by a balance.** A look-up aid, not a send guard. Kept.
+- **Review 1 O2 (a wallet gate that offers no step in a build with no network).** The take-out needs the network the record or the Launcher
+  names; a build that names none cannot be told which chain to use. Kept as chosen.
+- **Review 1 O12, O13, Review 2 O5, O6.** O12 is the server track. O13 (the two old phone scripts) is not on this track's paths: reported
+  again to the lead. Review 2 O5 (re-read the quote at the press) costs a failed signature at worst, because the contract refuses a move
+  over 0.5% with words. Review 2 O6 (a just-backed project missing from You until the next record) is read from the server's holders list
+  by design; the project page and its Take out are unaffected.
+- **Review 2 O3 (focus after taking out everything).** Not done: the sheet cannot know the opener is gone without a structural change in
+  `ui/sheet.tsx`. Focus lands on the page, not lost to nothing. Left open.
+
+### Still open
+
+1. The screens for launch, hand over, take the seat, wind down and a Pair's creation (Review 1 I4): the lead's decision.
+2. The passkey sender has no block time, so a Pair's waiting calls on a phone use the browser's clock and the fixed window.
+3. The passkey phone script (`scripts/pot-app-phone-e2e.sh`) was not run after these changes; the changes do not touch the passkey sender
+   (only `wallet.ts` got an optional method).
+4. `scripts/phone-e2e.sh` and `scripts/phone-loop.sh` still need to be retired or re-pointed (not on this track).
+
+### What was run after the fixes
+
+| Run | Result |
+|---|---|
+| `cd app && npx vitest run` | 70 files, 524 passed, 0 failed |
+| core `node --experimental-strip-types --test src/pot/*.test.mjs` (forge on PATH, includes the fresh-ABI test) | 68 passed, 0 failed, 0 skipped |
+| `scripts/pot-app-loop.sh` (real anvil, real `contracts/pot` bytecode) | 7 tests passed, 0 failed, 0 skipped, in 5 files |
+| Playwright `--project=smoke --trace off` on the six `pot-*.spec.ts` files (a build made with `CREATON_DEPLOYMENTS_FILE`) | 30 passed, 0 failed |
+| `tsc --noEmit`, `biome check .`, `check:copy`, `check:px-text`, `check:file-sizes` (base 68309b077), `pnpm build` and the bundle check | clean; entry chunk 390 KiB against the 450 KB budget |

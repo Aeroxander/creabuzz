@@ -280,5 +280,46 @@ run("the money screens against the real contracts", () => {
     ).toBe(5_000n);
     // Once it ran, it is no longer waiting.
     expect(await state.readProposal(read, pair, proposal.id)).toBeNull();
+
+    // The Pair forfeits the second signer's grant without their say: the call a Pair can hold is the Treasury's own, it reads
+    // as a forfeit (never "unknown"), and both signers' round announces the burn on the Vester.
+    const forfeit = pot.runnerForfeitCall(parts.treasury, ids[0]!);
+    await wallets[founder].sendCalls(
+      [pot.pairProposeCall(pair, forfeit.to, forfeit.data)],
+      CHAIN,
+    );
+    const later = await wallets[second].getLogs({
+      address: pair,
+      topics: [topic],
+      from: 0,
+      to: await wallets[second].blockNumber(),
+    });
+    const forfeitProposals = later
+      .map((log) => proposalOf(log, pair)!)
+      .filter((p) => p.data === forfeit.data);
+    expect(forfeitProposals).toHaveLength(1);
+    const forfeitTerms = describePotCall(
+      numbers,
+      forfeitProposals[0]!.target,
+      forfeitProposals[0]!.data,
+      (a) => a,
+    );
+    expect(forfeitTerms.kind).toBe("forfeit");
+    const days = Math.max(1, Math.round(chain.unit / 86_400));
+    expect(forfeitTerms.words).toBe(
+      `Announce that the part of Team Share grant number ${ids[0]} that has not unlocked is removed after a public notice of ${days} ${days === 1 ? "day" : "days"}. The person keeps what has unlocked.`,
+    );
+    await wallets[second].sendCalls(
+      [
+        pot.pairConfirmCall(
+          pair,
+          forfeitProposals[0]!.target,
+          forfeitProposals[0]!.data,
+          forfeitProposals[0]!.nonce,
+        ),
+      ],
+      CHAIN,
+    );
+    expect((await state.readGrant(read, parts.vester, ids[0]!)).state).toBe(1);
   });
 });

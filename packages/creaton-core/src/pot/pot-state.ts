@@ -47,7 +47,7 @@ export interface AllowanceState {
   boxCap: bigint;
   /** The daily rate, in parts per million of the project's money a day. */
   ratePpm: number;
-  /** An announced raise: its rate and when it can be applied, or null. */
+  /** An announced raise: its rate and when it can be applied (announced at + one time unit), or null. */
   pending: { ratePpm: number; applicableAt: number } | null;
   /** The last check-in (unix seconds) and the end of the time the project counts as active (0 when none). */
   lastCheckIn: number;
@@ -70,6 +70,7 @@ export async function readAllowanceState(
     lastCheckIn,
     activeEnd,
     max,
+    unit,
   ] = await Promise.all(
     [
       "box",
@@ -80,6 +81,7 @@ export async function readAllowanceState(
       "lastCheckIn",
       "activeEnd",
       "MAX_RATE_PPM",
+      "unit",
     ].map((name) => one(read, TREASURY_ABI, treasury, name)),
   );
   const pendingTime = asNumber(pendingAt);
@@ -89,12 +91,18 @@ export async function readAllowanceState(
     ratePpm: asNumber(ratePpm),
     pending:
       pendingTime > 0
-        ? { ratePpm: asNumber(pendingPpm), applicableAt: pendingTime }
+        ? // `pendingAt` is when the raise was announced; it can be applied one time unit later (`applyRate` reverts `NotYet`).
+          { ratePpm: asNumber(pendingPpm), applicableAt: pendingTime + asNumber(unit) }
         : null,
     lastCheckIn: asNumber(lastCheckIn),
     activeEnd: asNumber(activeEnd),
     maxRatePpm: asNumber(max),
   };
+}
+
+/** The allowance box as the Treasury holds it now (as of its last settle: a draw settles first, so it can then hold more). */
+export async function boxOf(read: ReadCall, treasury: string): Promise<bigint> {
+  return asBigint(await one(read, TREASURY_ABI, treasury, "box"));
 }
 
 /** The daily rate now, in parts per million of the project's money a day (`Treasury.ratePpm`). */
@@ -215,6 +223,11 @@ export async function readPlatformDollar(
 ): Promise<string> {
   const [quote] = await ask(read, LAUNCHER_ABI, launcher, "platform", []);
   return asAddress(quote);
+}
+
+/** How long a call waits in a Pair before it is out of time, in seconds (`Pair.PROPOSAL_TTL`: read, never copied). */
+export async function proposalTtl(read: ReadCall, pair: string): Promise<number> {
+  return asNumber(await one(read, PAIR_ABI, pair, "PROPOSAL_TTL"));
 }
 
 /** A call waiting in a Pair: who proposed it and when, or null when it ran, was withdrawn or never was. */

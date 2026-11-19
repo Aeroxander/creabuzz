@@ -11,7 +11,7 @@ import { parseDollarAmount } from "../money/calls";
 import type { ProjectNumbers } from "../money/numbers";
 import { BackSheet } from "./BackSheet";
 import { doorShutWords, smallDollarsText } from "./pot-words";
-import { type Ready, WalletGate } from "./use-pot";
+import { recordFitsBuild, type Ready, WalletGate } from "./use-pot";
 
 function amountWords(
   reason: "empty" | "format" | "small",
@@ -99,7 +99,13 @@ export function BackCard({
       <h2 className="headline text-xl" id={titleId}>
         Back this project
       </h2>
-      {shut ? (
+      {!recordFitsBuild(numbers) ? (
+        <p className="text-sm" data-testid="back-wrong-contracts">
+          This project's money is on contracts this version of the app does not
+          know, so backing is off here. Nothing was sent. You can still take
+          your money out below.
+        </p>
+      ) : shut ? (
         <div className="flex flex-col gap-2" data-testid="back-door-shut">
           <p className="text-sm">{shut}</p>
           <p className="text-sm text-muted">

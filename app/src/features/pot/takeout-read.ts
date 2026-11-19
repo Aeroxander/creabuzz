@@ -21,7 +21,7 @@ const portionOf = (held: bigint, portion: Portion): bigint =>
   portion === "all" ? held : portion === "half" ? held / 2n : held / 4n;
 
 export type TakeOutRead =
-  | { ok: false; why: "none" | "nothing" }
+  | { ok: false; why: "none" | "tiny" | "nothing" }
   | {
       ok: true;
       kind: "backer" | "team";
@@ -52,7 +52,9 @@ export async function readTakeOut(
     account,
   );
   const shares = portionOf(held, portion);
-  if (held === 0n || shares === 0n) return { ok: false, why: "none" };
+  if (held === 0n) return { ok: false, why: "none" };
+  // Something is held but this portion of it rounds to no Shares: the person can still choose a bigger portion.
+  if (shares === 0n) return { ok: false, why: "tiny" };
   const readAt = Math.floor(Date.now() / 1000);
   if (kind === "team") {
     const plan = await planTeamTakeOut(read, {

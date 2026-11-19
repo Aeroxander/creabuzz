@@ -10,7 +10,7 @@ import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { useToast } from "../../ui/toast";
-import { dayText, type ProjectNumbers } from "../money/numbers";
+import { dayText, type ProjectNumbers, quietStateAt } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { checkInFor, mayCheckIn } from "../money/runner";
 import {
@@ -134,14 +134,15 @@ function WeekCard({
   );
 }
 
-function ClockLine({ numbers }: { numbers: ProjectNumbers }) {
+export function ClockLine({ numbers }: { numbers: ProjectNumbers }) {
   if (numbers.windDown)
     return (
       <li className="text-muted">
         Wound down: the allowance stopped for good.
       </li>
     );
-  if (numbers.quiet.state !== "active")
+  // The state at this device's own clock, as everywhere else (the record's own word is only the state when it was built).
+  if (quietStateAt(numbers, Math.floor(Date.now() / 1000)) !== "active")
     return (
       <li data-testid="week-clock">
         Quiet since {dayText(numbers.quiet.since)}: the allowance waits for your

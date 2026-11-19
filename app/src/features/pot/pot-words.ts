@@ -42,9 +42,30 @@ export function smallDollarsText(raw: bigint): string {
   return `0.${decimals.padEnd(2, "0")}`;
 }
 
-/** A daily rate in parts per million of the project's money, as a percent: 1000 reads "0.10%". */
+/**
+ * Dollars exactly as a call carries them: every non-zero decimal up to the six a dollar has, never rounded, with two
+ * decimals at least once there are any ("25", "25.50", "25.123456"). For an amount a person typed or a call will move.
+ */
+export function exactDollarsText(raw: bigint): string {
+  const whole = (raw / DOLLAR).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const decimals = (raw % DOLLAR)
+    .toString()
+    .padStart(6, "0")
+    .replace(/0+$/, "");
+  return decimals === "" ? whole : `${whole}.${decimals.padEnd(2, "0")}`;
+}
+
+/**
+ * A daily rate in parts per million of the project's money, as a percent, to the last digit it has (a part per million is
+ * 0.0001%): 1000 reads "0.10%", 1049 reads "0.1049%", and a rate above nothing never reads "0.00%".
+ */
 export function rateWords(ppm: number): string {
-  return `${(ppm / 10_000).toFixed(2)}%`;
+  const whole = Math.floor(ppm / 10_000);
+  const decimals = String(ppm % 10_000)
+    .padStart(4, "0")
+    .replace(/0+$/, "")
+    .padEnd(2, "0");
+  return `${whole}.${decimals}%`;
 }
 
 /** "about 3 days", "about 1 day", "less than a day": a span of seconds for people. */

@@ -150,13 +150,22 @@ export type Freshness =
   /** Older than a day: lists show no money figures; the project page says the numbers could not be refreshed. */
   | { level: "stale"; ageSecs: number };
 
-/** The age of the server's work: `now - builtAt` (a clock behind the server counts as zero). */
+/** How far ahead of this device's clock a record's time may be before it is not believed (a clock a little behind is normal). */
+const FUTURE_SLACK_SECS = 10 * 60;
+
+/**
+ * The age of the server's work: `now - builtAt` (a clock a little behind the server counts as zero). A record built far in
+ * the future of this device's clock cannot be told from a wrong one: it is "stale", never "fresh for ever". The
+ * day's limit is tested first, so a slow refresh period never makes a record older than a day "fresh".
+ */
 export function freshnessOf(numbers: ProjectNumbers, now: number): Freshness {
+  if (numbers.builtAt - now > FUTURE_SLACK_SECS)
+    return { level: "stale", ageSecs: 0 };
   const ageSecs = Math.max(0, now - numbers.builtAt);
+  if (ageSecs > 24 * 60 * 60) return { level: "stale", ageSecs };
   const limit = 3 * numbers.refreshEverySecs + 60;
   if (ageSecs <= limit) return { level: "fresh", ageSecs };
-  if (ageSecs <= 24 * 60 * 60) return { level: "as-of", ageSecs };
-  return { level: "stale", ageSecs };
+  return { level: "as-of", ageSecs };
 }
 
 /** The allowance box's growth in a day, as far as the record can say: the pot times the daily rate. An estimate. */

@@ -12,8 +12,8 @@ export interface MoneyCall {
 }
 
 /**
- * Dollars typed by a person as raw units, or why not: digits with at most one dot and at most 6 decimals ("1,000" and
- * a leading "$" are allowed), and at least `min` (the project's smallest Back, `numbers.limits.minJoin`: never typed
+ * Dollars typed by a person as raw units, or why not: digits with at most one dot and at most 6 decimals ("1,000" with
+ * proper thousands marks and a leading "$" are allowed; a comma anywhere else is refused), and at least `min` (the project's smallest Back, `numbers.limits.minJoin`: never typed
  * into a screen). No upper limit here: the chain refuses what it cannot take, and says why in words.
  */
 export function parseDollarAmount(
@@ -22,7 +22,11 @@ export function parseDollarAmount(
 ):
   | { ok: true; raw: bigint }
   | { ok: false; reason: "empty" | "format" | "small" } {
-  const cleaned = text.trim().replace(/^\$/, "").replace(/,/g, "");
+  const typed = text.trim().replace(/^\$/, "");
+  // A comma is only ever a thousands mark ("1,000.50"): "10,5" is not 105 dollars, it is not an amount.
+  if (typed.includes(",") && !/^\d{1,3}(,\d{3})+(\.\d*)?$/.test(typed))
+    return { ok: false, reason: "format" };
+  const cleaned = typed.replace(/,/g, "");
   if (cleaned === "") return { ok: false, reason: "empty" };
   const match = /^(\d{1,12})(?:\.(\d{0,6}))?$/.exec(cleaned);
   if (!match) return { ok: false, reason: "format" };

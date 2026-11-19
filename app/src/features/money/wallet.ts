@@ -126,6 +126,11 @@ export interface MoneyWallet {
   readCall(to: string, data: string): Promise<string>;
   /** The network's newest block number. */
   blockNumber(): Promise<number>;
+  /**
+   * The time (unix seconds) of block `block` or the newest one, as the network keeps it. Optional: a sender that cannot say
+   * leaves it out and a caller falls back to the browser's clock.
+   */
+  blockTime?(block: number | "latest"): Promise<number>;
   /** The network the wallet is on now. */
   chainId(): Promise<number>;
   /** Ask the wallet to sign typed data (EIP-712) as `from`; its signature. Never a transfer. */
@@ -368,6 +373,17 @@ export function injectedWallet(
       const block = quantity(await ask("eth_blockNumber"));
       if (block === null) throw new Error("The network did not give a block.");
       return block;
+    },
+    async blockTime(block) {
+      const tag = block === "latest" ? "latest" : `0x${block.toString(16)}`;
+      const found = await ask("eth_getBlockByNumber", [tag, false]);
+      const time = quantity(
+        found && typeof found === "object"
+          ? (found as { timestamp?: unknown }).timestamp
+          : null,
+      );
+      if (time === null) throw new Error("The network did not give a time.");
+      return time;
     },
     async chainId() {
       const chain = quantity(await ask("eth_chainId"));

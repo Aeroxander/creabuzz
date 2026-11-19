@@ -258,3 +258,95 @@ describe("play dollars", () => {
     ).toBe(true);
   });
 });
+
+describe("leaving does not depend on a nicety", () => {
+  it("Take out is still offered when only the play-dollar balance cannot be read", async () => {
+    const { dollar, shares } = numbers.contracts;
+    setup(
+      { shares: 1_000n * S },
+      {
+        balanceOf: (_args: readonly unknown[], to: string) => {
+          if (to === dollar) throw new Error("execution reverted");
+          return to === shares ? [1_000n * S] : [0n];
+        },
+      },
+    );
+    show();
+    expect(await screen.findByTestId("holding-take-out")).not.toBeNull();
+    expect(screen.getByTestId("holding-shares").textContent).toBe(
+      "1,000 Shares",
+    );
+    expect(screen.queryByTestId("holding-dollars")).toBeNull();
+    expect(screen.queryByTestId("holding-read-failed")).toBeNull();
+  });
+
+  it("Take out is still offered when only the quote of what it gives cannot be read; the sheet reads its own", async () => {
+    let asked = 0;
+    setup(
+      { shares: 1_000n * S },
+      {
+        quoteTakeOut: () => {
+          asked += 1;
+          if (asked === 1) throw new Error("node hiccup");
+          return [9_800_000n, 0n, 0n];
+        },
+      },
+    );
+    show();
+    fireEvent.click(await screen.findByTestId("holding-take-out"));
+    expect((await screen.findByTestId("takeout-cash")).textContent).toBe(
+      "9.80 dollars",
+    );
+  });
+
+  it("a part that is too small to take out leaves the choice on the sheet, so 'all of it' is one press away", async () => {
+    // Three wei of Shares: half is one wei, a quarter is none.
+    setup({ shares: 3n }, { quoteTakeOut: [1n, 0n, 0n] });
+    show();
+    fireEvent.click(await screen.findByTestId("holding-take-out"));
+    await screen.findByTestId("takeout-portion-quarter");
+    fireEvent.click(screen.getByTestId("takeout-portion-quarter"));
+    expect((await screen.findByTestId("takeout-tiny")).textContent).toMatch(
+      /too small to take out/,
+    );
+    fireEvent.click(screen.getByTestId("takeout-portion-all"));
+    expect(await screen.findByTestId("takeout-cash")).not.toBeNull();
+  });
+});
+
+describe("play money is said on a take-out whatever the record says", () => {
+  it("the Take out sheet says it when the record says playMoney false", async () => {
+    const odd = numbersFor((content) => {
+      content.playMoney = false;
+    });
+    chain = installPotChain({
+      account: BACKER_EVM,
+      answers: backerAnswers(odd, { shares: 1_000n * S }) as never,
+    });
+    wrap(<YourShares projectName="Lantern" target={targetOf(odd)} />);
+    fireEvent.click(await screen.findByTestId("holding-take-out"));
+    await screen.findByTestId("takeout-cash");
+    expect(screen.getByTestId("sheet-play-money").textContent).toMatch(
+      /play money/,
+    );
+  });
+});
+
+describe("the history says what was quoted, not what landed", () => {
+  it("writes a take-out down as 'about' the quoted dollars: the price may have moved inside the guard", async () => {
+    setup({ shares: 1_000n * S });
+    show();
+    fireEvent.click(await screen.findByTestId("holding-take-out"));
+    await screen.findByTestId("takeout-cash");
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    const { dollar, shares } = numbers.contracts;
+    chain.answers.balanceOf = (_args, to) =>
+      to === dollar ? [1_009_770_000n] : to === shares ? [0n] : [0n];
+    const step = await screen.findByTestId("history-step", undefined, {
+      timeout: 3000,
+    });
+    expect(step.textContent).toMatch(/got about 9\.80 dollars/);
+    expect(step.textContent).not.toMatch(/got 9\.80 dollars/);
+  });
+});

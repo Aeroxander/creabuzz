@@ -18,6 +18,7 @@ import { useHomeProjects } from "../home/use-home";
 import { type Project, projectRef } from "../project/project-record";
 import { ownSteps } from "./own-history";
 import {
+  exactDollarsText,
   NOT_A_RETURN,
   PLAY_MONEY_WORDS,
   sharesWords,
@@ -48,7 +49,7 @@ function Row({
   });
   const held = reading.data;
   return (
-    <li className="flex flex-col gap-1 py-2" data-testid="your-shares-row">
+    <div className="flex flex-col gap-1 py-2" data-testid="your-shares-row">
       <Link
         className="link min-h-11 font-semibold"
         params={{ ref: projectRef(project) }}
@@ -62,7 +63,7 @@ function Row({
         <p className="text-sm text-muted" data-testid="your-shares-row-failed">
           What you hold here could not be read now. Your money is not affected.
         </p>
-      ) : held.shares === 0n && held.teamShares === 0n ? (
+      ) : held.shares === 0n && (held.teamShares ?? 0n) === 0n ? (
         <p className="text-sm text-muted">You hold nothing here now.</p>
       ) : (
         <p className="text-sm">
@@ -80,7 +81,7 @@ function Row({
           ) : null}
         </p>
       )}
-    </li>
+    </div>
   );
 }
 
@@ -112,7 +113,7 @@ function Inner({ address }: { address: string }) {
             : "Open a project's Money tab to see what you hold there."}
         </p>
       ) : (
-        <ul className="divide-y divide-white/10">
+        <div className="divide-y divide-white/10">
           {holds.map(({ project, numbers }) => (
             <WalletGate
               chainId={numbers.chainId}
@@ -124,7 +125,7 @@ function Inner({ address }: { address: string }) {
               )}
             </WalletGate>
           ))}
-        </ul>
+        </div>
       )}
       <p className="text-sm text-muted">{NOT_A_RETURN}</p>
       {steps.length > 0 ? (
@@ -138,8 +139,8 @@ function Inner({ address }: { address: string }) {
               <li key={step.txHash}>
                 {dayText(step.at)}:{" "}
                 {step.kind === "back"
-                  ? `backed ${names.get(step.project) ?? "a project"} with ${smallDollarsText(BigInt(step.dollars))} dollars and got ${sharesWords(BigInt(step.shares))} Shares`
-                  : `took ${sharesWords(BigInt(step.shares))} ${step.kind === "take-out-team" ? "Team Shares" : "Shares"} out of ${names.get(step.project) ?? "a project"} and got ${smallDollarsText(BigInt(step.dollars))} dollars`}
+                  ? `backed ${names.get(step.project) ?? "a project"} with ${exactDollarsText(BigInt(step.dollars))} dollars and got about ${sharesWords(BigInt(step.shares))} Shares`
+                  : `took ${sharesWords(BigInt(step.shares))} ${step.kind === "take-out-team" ? "Team Shares" : "Shares"} out of ${names.get(step.project) ?? "a project"} and got about ${smallDollarsText(BigInt(step.dollars))} dollars`}
               </li>
             ))}
           </ul>

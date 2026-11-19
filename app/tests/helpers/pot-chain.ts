@@ -57,6 +57,8 @@ export interface PotChain {
   onSend: ((tx: { from: string; to: string; data: string }) => void) | null;
   /** The network the wallet is on, as a hex number. */
   chain: string;
+  /** The time (unix seconds) of every block it answers about: the chain's own clock, which a test can move. */
+  blockTime: number;
 }
 
 /** `supportsInterface(bytes4)` answered by hand: the shared encoder has no bytes4. */
@@ -80,6 +82,7 @@ export function installPotChain(options: {
     logs: options.logs ?? [],
     onSend: null,
     chain: options.chain ?? "0x7a69",
+    blockTime: Math.floor(Date.now() / 1000),
   };
   (window as unknown as { ethereum: unknown }).ethereum = {
     async request({ method, params }: { method: string; params?: unknown[] }) {
@@ -91,6 +94,8 @@ export function installPotChain(options: {
         return null;
       }
       if (method === "eth_blockNumber") return "0x3e8";
+      if (method === "eth_getBlockByNumber")
+        return { timestamp: `0x${chain.blockTime.toString(16)}` };
       if (method === "eth_getLogs") return chain.logs;
       if (method === "eth_getTransactionCount")
         return `0x${chain.sent.length.toString(16)}`;
