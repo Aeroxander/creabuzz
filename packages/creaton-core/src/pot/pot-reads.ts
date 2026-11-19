@@ -16,7 +16,7 @@ import { type Abi, decodeReturn, encodeCall } from "./abi-codec.ts";
 /** A read-only call: the node's raw answer as hex. The sender's `readCall` has this shape. */
 export type ReadCall = (to: string, data: string) => Promise<string>;
 
-async function ask(
+export async function ask(
   read: ReadCall,
   abi: Abi,
   to: string,
@@ -29,7 +29,7 @@ async function ask(
   return decodeReturn(abi, name, answer, args.length);
 }
 
-const asBigint = (value: unknown): bigint => {
+export const asBigint = (value: unknown): bigint => {
   if (typeof value !== "bigint") throw new Error("A number was expected.");
   return value;
 };

@@ -1,0 +1,231 @@
+/**
+ * More reads for the screens that run a project (the allowance, the grants) and for a take-out that cannot lean on the
+ * server's record: the allowance box as the chain has it, a grant, the faucet's use, and a project's contracts as the
+ * Launcher knows them. Like `pot-reads.ts`: strict, and an answer that is too short or the wrong shape throws. A screen
+ * that gets a throw says so; it never falls back to the server's record.
+ */
+import type { Abi } from "./abi-codec.ts";
+import {
+  LAUNCHER_ABI,
+  PAIR_ABI,
+  PLAY_DOLLAR_ABI,
+  TREASURY_ABI,
+  VESTER_ABI,
+} from "./abis.generated.ts";
+import { ask, asBigint, type ReadCall } from "./pot-reads.ts";
+
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+const asAddress = (value: unknown): string => {
+  if (typeof value !== "string" || !ADDRESS.test(value))
+    throw new Error("An address was expected.");
+  return value.toLowerCase();
+};
+
+const asNumber = (value: unknown): number => {
+  const n = asBigint(value);
+  if (n > BigInt(Number.MAX_SAFE_INTEGER))
+    throw new Error("A number was too large to read.");
+  return Number(n);
+};
+
+/** Read one value of a view with no arguments. */
+async function one(
+  read: ReadCall,
+  abi: Abi,
+  to: string,
+  name: string,
+): Promise<unknown> {
+  const [value] = await ask(read, abi, to, name, []);
+  return value;
+}
+
+/** The allowance box and the clock around it, as the Treasury holds them now. */
+export interface AllowanceState {
+  /** What the team may draw now, in dollar units (as of the last settle: a draw settles first, so it may be a little more). */
+  box: bigint;
+  boxCap: bigint;
+  /** The daily rate, in parts per million of the project's money a day. */
+  ratePpm: number;
+  /** An announced raise: its rate and when it can be applied, or null. */
+  pending: { ratePpm: number; applicableAt: number } | null;
+  /** The last check-in (unix seconds) and the end of the time the project counts as active (0 when none). */
+  lastCheckIn: number;
+  activeEnd: number;
+  /** The most the rate can be set to, in parts per million. */
+  maxRatePpm: number;
+}
+
+/** The allowance box, rate, announced raise and check-in clock at the chain's latest block. */
+export async function readAllowanceState(
+  read: ReadCall,
+  treasury: string,
+): Promise<AllowanceState> {
+  const [
+    box,
+    boxCap,
+    ratePpm,
+    pendingPpm,
+    pendingAt,
+    lastCheckIn,
+    activeEnd,
+    max,
+  ] = await Promise.all(
+    [
+      "box",
+      "boxCap",
+      "ratePpm",
+      "pendingRatePpm",
+      "pendingAt",
+      "lastCheckIn",
+      "activeEnd",
+      "MAX_RATE_PPM",
+    ].map((name) => one(read, TREASURY_ABI, treasury, name)),
+  );
+  const pendingTime = asNumber(pendingAt);
+  return {
+    box: asBigint(box),
+    boxCap: asBigint(boxCap),
+    ratePpm: asNumber(ratePpm),
+    pending:
+      pendingTime > 0
+        ? { ratePpm: asNumber(pendingPpm), applicableAt: pendingTime }
+        : null,
+    lastCheckIn: asNumber(lastCheckIn),
+    activeEnd: asNumber(activeEnd),
+    maxRatePpm: asNumber(max),
+  };
+}
+
+/** The daily rate now, in parts per million of the project's money a day (`Treasury.ratePpm`). */
+export async function ratePpmNow(
+  read: ReadCall,
+  treasury: string,
+): Promise<number> {
+  return asNumber(await one(read, TREASURY_ABI, treasury, "ratePpm"));
+}
+
+/** Whether `account` has already taken its play dollars from the faucet (`PlayDollar.faucetUsed`). */
+export async function faucetUsedBy(
+  read: ReadCall,
+  dollar: string,
+  account: string,
+): Promise<boolean> {
+  const [used] = await ask(read, PLAY_DOLLAR_ABI, dollar, "faucetUsed", [
+    account,
+  ]);
+  if (typeof used !== "boolean") throw new Error("A yes or no was expected.");
+  return used;
+}
+
+/** What the faucet gives, in dollar units (`PlayDollar.FAUCET_AMOUNT`). */
+export async function faucetAmount(
+  read: ReadCall,
+  dollar: string,
+): Promise<bigint> {
+  return asBigint(await one(read, PLAY_DOLLAR_ABI, dollar, "FAUCET_AMOUNT"));
+}
+
+/** One grant as the Vester holds it. */
+export interface GrantOnChain {
+  member: string;
+  /** A protected grant vests on calendar time and cannot be given up. */
+  protectedGrant: boolean;
+  /** 0 live, 1 announced to burn, 2 closed (the Vester's own numbering). */
+  state: number;
+  burnAt: number;
+  total: bigint;
+  claimed: bigint;
+  burn: bigint;
+}
+
+/** `Vester.grantOf(id)`. */
+export async function readGrant(
+  read: ReadCall,
+  vester: string,
+  id: bigint,
+): Promise<GrantOnChain> {
+  const [grant] = await ask(read, VESTER_ABI, vester, "grantOf", [id]);
+  if (!Array.isArray(grant) || grant.length < 8)
+    throw new Error("A grant was expected.");
+  const [member, isProtected, state, burnAt, total, claimed, , burn] = grant;
+  if (typeof isProtected !== "boolean")
+    throw new Error("A yes or no was expected.");
+  return {
+    member: asAddress(member),
+    protectedGrant: isProtected,
+    state: asNumber(state),
+    burnAt: asNumber(burnAt),
+    total: asBigint(total),
+    claimed: asBigint(claimed),
+    burn: asBigint(burn),
+  };
+}
+
+/** What a grant has built up so far with no cliff: what a member keeps on their own exit (`Vester.accruedOf`). */
+export async function accruedOf(
+  read: ReadCall,
+  vester: string,
+  id: bigint,
+): Promise<bigint> {
+  const [value] = await ask(read, VESTER_ABI, vester, "accruedOf", [id]);
+  return asBigint(value);
+}
+
+/** The parts of a project as the Launcher knows them. */
+export interface ProjectParts {
+  founder: string;
+  shares: string;
+  team: string;
+  treasury: string;
+  vester: string;
+  launchedAt: number;
+}
+
+/** `Launcher.projectByKey(key)`: where a project's contracts are, without the server's record. */
+export async function readProjectParts(
+  read: ReadCall,
+  launcher: string,
+  key: string,
+): Promise<ProjectParts> {
+  const [tuple] = await ask(read, LAUNCHER_ABI, launcher, "projectByKey", [
+    key,
+  ]);
+  if (!Array.isArray(tuple) || tuple.length < 6)
+    throw new Error("A project was expected.");
+  const [founder, shares, team, treasury, vester, launchedAt] = tuple;
+  const parts = {
+    founder: asAddress(founder),
+    shares: asAddress(shares),
+    team: asAddress(team),
+    treasury: asAddress(treasury),
+    vester: asAddress(vester),
+    launchedAt: asNumber(launchedAt),
+  };
+  // An unknown key reads as a project of empty addresses: that is "not here", never a place to send money.
+  if (/^0x0{40}$/.test(parts.treasury))
+    throw new Error("The network does not know this project.");
+  return parts;
+}
+
+/** The dollar the platform's projects are in (`Launcher.platform().quote`). */
+export async function readPlatformDollar(
+  read: ReadCall,
+  launcher: string,
+): Promise<string> {
+  const [quote] = await ask(read, LAUNCHER_ABI, launcher, "platform", []);
+  return asAddress(quote);
+}
+
+/** A call waiting in a Pair: who proposed it and when, or null when it ran, was withdrawn or never was. */
+export async function readProposal(
+  read: ReadCall,
+  pair: string,
+  id: string,
+): Promise<{ proposer: string; proposedAt: number } | null> {
+  const [by] = await ask(read, PAIR_ABI, pair, "proposer", [id]);
+  const proposer = asAddress(by);
+  if (/^0x0{40}$/.test(proposer)) return null;
+  const [at] = await ask(read, PAIR_ABI, pair, "proposedAt", [id]);
+  return { proposer, proposedAt: asNumber(at) };
+}

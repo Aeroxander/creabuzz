@@ -3,13 +3,23 @@
 import { encodeParameters } from "../launchpad/evmAbi.ts";
 import { abiTypeOf, decodeCall, functionOf } from "./abi-codec.ts";
 import {
+  LAUNCHER_ABI,
+  PAIR_ABI,
   PLAY_DOLLAR_ABI,
   SHARE_TOKEN_ABI,
   TREASURY_ABI,
   VESTER_ABI,
 } from "./abis.generated.ts";
 
-const ABIS = [TREASURY_ABI, VESTER_ABI, SHARE_TOKEN_ABI, PLAY_DOLLAR_ABI];
+// The Pair and the Launcher go last: a name they share with the Treasury (`checkIn`, `platform`) is the Treasury's here.
+const ABIS = [
+  TREASURY_ABI,
+  VESTER_ABI,
+  SHARE_TOKEN_ABI,
+  PLAY_DOLLAR_ABI,
+  PAIR_ABI,
+  LAUNCHER_ABI,
+];
 
 /** `answers[name]` is the values to return, or a function of the decoded args that returns them. */
 export function fakeChain(answers) {
