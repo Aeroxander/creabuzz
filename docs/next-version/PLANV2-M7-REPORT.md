@@ -217,7 +217,68 @@ What it needs from others (nothing here can be built without them):
    the owner's link tool; and a decision on signing without sending (above).
 7. **Not covered by the anvil loop**: the app's own Buy and Sell calls, a Vester claim of a plain grant, the reserve sale,
    the Pair's spend, and a hand-over with the founder leaving after a market.
-8. **Machine note.** The full smoke run is one worker and takes several minutes; do not run it during a cargo build.
+8. **A bid on a sale that failed cannot be collected from the app once a second auction replaces it in the record**
+   (the record keeps one sale). The contract still lets the bidder collect; it is a server record question (keep every
+   sale), and it is the first thing a failed first auction would show.
+9. **A very busy auction can have more than 512 checkpoints between a bid and the end**; the app stops there and says
+   the bid cannot be collected from here, rather than guess its hints. Not seen on anvil; a fork of a real busy auction
+   would show whether 512 is enough.
+10. **Machine note.** The full smoke run is one worker and takes several minutes; do not run it during a cargo build.
+
+## Review fixes
+
+Two reviews of the milestone found no wrong calldata (targets, selectors, units, the Pair's limits and the gift rules held),
+but several defects in what the screens said and allowed around those calls. Each fix below names the test that binds it;
+where a test did not exist before, one was written, and the ones that guard a fix were checked by undoing the fix once and
+seeing the test fail.
+
+| Finding | Fix | Test that binds it |
+|---|---|---|
+| The launch journey failed in a clean checkout: the card was dropped as soon as the record named the launch, and the confirmation said from the press was dropped with it | The confirmation is said from the mutation itself, not from the press | `team-screens.test.tsx` "says it is on the network even when the page drops the card..." (fails without the fix) and the `team-seat.spec.ts` journey, which passes |
+| A sale that missed its minimum could never be opened again from the app: the record keeps it as the one sale | The app reads `Finisher.stage()` and `retryBlock()` (`useSaleStage`). A failed sale shows "did not reach its minimum", and the Pair may open backing or an auction again, the auction only from the retry block, which the card names | `failed-sale-retry.test.tsx` (3 tests) and the anvil test `failed.test.ts`, which now opens the auction again from the retry block with the app's own proposal and confirm, and sees it refused before |
+| The wind-down sheet promised a floor holders can hand back against; before a market there is none | The bullet now says no auction or market can open afterwards | `winddown-copy.test.tsx` |
+| A remembered waiting call answered a different amount ("Your bid is in" with nothing sent) | The step's own input is part of its key: the amount of a bid, a hand-back or a trade, the Shares chosen and who for in a gift, who is offered the seat and whether the founder leaves, the second signer named, and the sale's stage for Finish | `waiting-call-amount.test.tsx` and "Give Shares with a gift already waiting" run the real path: a first press whose wait runs out, the call landing, then a different amount. Both fail when the amount is taken out of the key |
+| The co-signer confirmed a round or an auction without seeing its price | A waiting call now says its terms ("1 dollar buys 3,000 Shares", "starting at 0.0004 dollars a Share") and says so loudly when they are not the usual ones | `proposal-terms.test.ts` |
+| Bid copy promised everyone one price, the one the auction ends at | The sheet says the price moves as bids come in, a bid is filled at the price of each moment it is live, and no Share costs more than the top price. The done message no longer says it | `bid-disclosure.test.tsx` |
+| The disclosure before an auction was only on the Money tab | It is one component (`AuctionDisclosure.tsx`) shown on the Money tab and in the bid sheet. Held Shares, accounts, prices, release dates | `bid-disclosure.test.tsx` |
+| A wallet on another network made a live auction read as ended | Every project read waits until the wallet is on the project's network (`useWalletOnChain`), and the page falls back to the record's block. Sending still asks the wallet to switch | `wrong-network.test.tsx` |
+| Bid did nothing when the wallet had shared no account | The press asks the wallet to share one first, then opens the sheet; a refusal is said in words | `bid-connect.test.tsx` (2 tests) |
+| Every app bid is at the top price, so an oversubscribed auction left every bid "partly filled" and the app could not collect it | `exit-plan.ts` reads the bid and the auction's checkpoint list at the press and gives the auction its two hints (the last checkpoint under the bid's price, and the outbid block, or 0). A sale's bids can be collected only once the sale is finished (the auction reads as not graduated until its pool step ran) | `exit-plan.test.ts` (the plan, the walk's bound), `market-partial-bid.test.tsx`, calldata pinned against `cast`, and the anvil test `oversubscribed.test.ts`: five bids, 480,000 dollars, every bid partly filled, each settled with the app's hints on a real EVM; a wrong hint makes the contract refuse it |
+| The agreement file with a missing or fractional version blanked the page | Reads as "does not match" | `text-version.test.tsx` |
+| Optional: the Finish box on a sale already finished on the network | Says it is finished and offers no press | `finish-stage.test.tsx` |
+| Optional: Give Shares offered 10,000,000 Shares after a market, which the monthly limit always refuses | Not offered after a market | "Give Shares after a market" in `team-screens.test.tsx` |
+| Optional: the earlier backer's line was cached by entry only | The link's own leaf is part of the key | none: no test was added for the cache key itself (the existing `earlier.test.tsx` suite passes) |
+
+Two weak patterns in the anvil tests were also fixed: `failed.test.ts` threw its own error inside a `try` whose `catch` then
+checked the message, so a refusal that never happened would have passed. Both now assert the refusal happened.
+
+### Gates after the review fixes
+
+`tsc`, biome, `check:copy`, `check:px-text` and `check:file-sizes` (with `CHECK_FILE_SIZES_BASE=3d7ecf83d`) are clean. Vitest:
+232 passed in 40 files (the manager feature's tests are in that count). `pnpm build`: entry 417 KiB of 450. knip: nothing
+new from this work (`mineSalt` in `tests/anvil/deploy.ts` and the helpers it lists were there before). The anvil loop
+(`scripts/m7-chain-loop.sh`): 7 tests in 5 files pass, the new one being `oversubscribed.test.ts`. Playwright smoke at
+390x844: 73 passed in 5.1 minutes with axe, including the launch journey the first review found failing; the press counts
+are unchanged (Bid 2 presses and 1 field, Hand back 2 and 1, Give Shares 4 and 0, Add a second person 2 and 0, launch 2 and 0).
+`node scripts/regen-kinds.mjs --check`: up to date. No forge test was added and no contract source was touched.
+
+CLAUDE.md step 3 is still outstanding: a person has to try these flows, and nothing here is marked ready.
+
+### Declined, with the reason
+
+- **Seat offer and second-seat card need the wallet's account before they show** (first review, finding 2): a stranger who
+  has not shared an account cannot be known to be offered a seat, and a card for everyone who has no account would be noise
+  on every project. The person offered a seat links their wallet on You, which shares it. Bid, where a visitor does have a
+  reason to press, now connects.
+- **The hand-back estimate uses the stored melting floor and a fixed 5 of each 100 fee** (both reviews, optional): the text
+  says "about", the Treasury pays what its own rule says, and reading the fee settings and pending release would add reads
+  to every screen for a few percent. The estimate stays; the settings can differ from the default and the screen does not
+  read them. An item for the owner when fees become settable.
+- **The launch sheet states 3% and 2% as text while the call pins whatever the Launcher says** (second review, optional):
+  the pinned hash makes the call revert if settings move between render and press (it is read at press time), so no money
+  moves on terms the person did not see; the text can then be out of date until reloaded.
+- **Buy and Sell read the price up to 15 seconds before the press** (first review, optional): trading is off by default and
+  unproven against a real router; to be fixed when it is switched on, with a fork test.
 
 ## A note for the direction review
 
