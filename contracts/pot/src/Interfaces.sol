@@ -72,8 +72,62 @@ interface IPair {
 
 /// @notice What a Pair asks of the project's Treasury: take the seat, and check in.
 interface ITreasuryRunner {
+    /// @notice The time unit N in seconds (a Pair's proposals live two units).
+    function unit() external view returns (uint32);
     /// @notice Take the runner seat that was offered to the caller.
     function takeSeat() external;
     /// @notice The weekly check-in with the hash of the signed record.
     function checkIn(bytes32 recordHash) external;
+}
+
+/// @notice What the Treasury asks of the project's TaskBook (the task queue). Every call that changes the book comes from the
+/// Treasury alone, which has settled, checked the seat and moved the dollars; the book keeps the rules of the queue.
+interface ITaskBook {
+    /// @notice What a task's end leaves for the Treasury to book, in dollar units.
+    /// @dev `to` is the taker (`takenBy`), `pay` what goes to it. `c` was the stayers' claim and `n` the note face the task
+    /// held; `np` of the returned money is now owed to notes (still held, as `notesOwed`) and `pp` goes back to the pot.
+    /// `next` is the earliest end of any task still open, zero when none.
+    struct Resolved {
+        address to;
+        uint256 pay;
+        uint256 c;
+        uint256 n;
+        uint256 np;
+        uint256 pp;
+        uint64 next;
+    }
+
+    /// @notice The Treasury the book serves.
+    function treasury() external view returns (address);
+    /// @notice The time unit N the book was set up with (the Treasury's own).
+    function unit() external view returns (uint32);
+    /// @notice Set up the clone, once. `treasury_` is the only caller of every other state-changing function.
+    function initialize(address treasury_, uint32 unit_) external;
+    /// @notice A new task is announced. The Treasury has checked who may announce and who may be the payee.
+    function announce(bytes32 what, address payee, uint256 maxDollars, uint16 shareBps)
+        external
+        returns (uint64 serial, uint64 next);
+    /// @notice `who` takes task `serial` against the settled pot `pot`; returns the dollars to set aside.
+    function take(uint64 serial, address who, uint256 pot, uint256 minAmount)
+        external
+        returns (uint256 amount, uint64 next);
+    /// @notice Pay `pay` of the taken task's money to its taker; the rest comes back.
+    function accept(uint64 serial, uint256 pay) external returns (Resolved memory r);
+    /// @notice Send a taken task's money back at once.
+    function reject(uint64 serial) external returns (Resolved memory r);
+    /// @notice Withdraw a task nobody has taken.
+    function cancel(uint64 serial) external returns (uint64 next);
+    /// @notice End every task whose time is up: taken ones return their money, announced ones lapse.
+    function expireDue() external returns (uint256 sumC, uint64 next);
+    /// @notice End every open task now (a wind-down): announced ones are cancelled, taken ones return their money.
+    function sweepAll() external returns (uint256 sumC);
+    /// @notice Reverts unless task `serial` has ended without being paid in full (its money is back).
+    function requireReturned(uint64 serial) external view;
+    /// @notice The stayers' claim that comes back to the pot if the book is settled at time `at`.
+    function dueC(uint256 when) external view returns (uint256 sumC);
+    /// @notice The notice, the take window and the time a taken task is due, for a task of `shareBps`.
+    function noticeFor(uint16 shareBps)
+        external
+        view
+        returns (uint256 noticeSecs, uint256 takeWindowSecs, uint256 dueSecs);
 }
