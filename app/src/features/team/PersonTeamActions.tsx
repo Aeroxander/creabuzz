@@ -112,9 +112,15 @@ function GiveSheet({
   const picked = choice === null ? null : GIFT_CHOICES[choice];
   const plan = picked ? gift(picked.amount) : null;
   const market = afterMarket(numbers);
+  // After a market all gifts together may be at most 1% of the Shares in people's hands in 30 days, and fewer than 1,000,000,000
+  // are ever in hands: 10,000,000 is always refused then, so it is not offered.
+  const choices = GIFT_CHOICES.map((c, index) => ({ ...c, index })).filter(
+    (c) => !market || c.amount < 10_000_000n * SHARE,
+  );
   return (
     <SendSheet
-      action={`give:${numbers.chainId}:${treasury}:${teammate}`}
+      // The Shares chosen are part of the step: a waiting gift of another amount is never taken for this one.
+      action={`give:${numbers.chainId}:${treasury}:${teammate}:${picked?.amount ?? 0n}`}
       build={() => (plan ? [plan.call] : [])}
       chainId={numbers.chainId}
       confirmLabel={
@@ -139,13 +145,13 @@ function GiveSheet({
         <legend className="mb-1 text-sm text-muted">
           From the project's work pot, for work done. Choose how many:
         </legend>
-        {GIFT_CHOICES.map((c, index) => (
+        {choices.map((c) => (
           <Button
-            aria-pressed={choice === index}
-            data-testid={`give-choice-${index}`}
+            aria-pressed={choice === c.index}
+            data-testid={`give-choice-${c.index}`}
             key={c.label}
-            className={choice === index ? "ring-2 ring-mint" : undefined}
-            onClick={() => setChoice(index)}
+            className={choice === c.index ? "ring-2 ring-mint" : undefined}
+            onClick={() => setChoice(c.index)}
             variant="secondary"
           >
             {c.label} ({c.detail} of all Shares)

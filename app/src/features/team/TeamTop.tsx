@@ -180,7 +180,7 @@ function OfferSeatSheet({
 }) {
   return (
     <SendSheet
-      action={`offer-seat:${numbers.chainId}:${treasury}`}
+      action={`offer-seat:${numbers.chainId}:${treasury}:${teammate}`}
       build={async (w) => {
         const next = await readAddress(
           w,

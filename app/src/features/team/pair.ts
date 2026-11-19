@@ -7,7 +7,9 @@ import {
   selectorOf,
 } from "@creaton/core/launchpad/evmAbi.ts";
 import { topicOf } from "@creaton/core/launchpad/work.ts";
+import { DEFAULT_SHARES_PER_RAW_DOLLAR } from "../money/calls";
 import { dollarsText, sharesText } from "../money/numbers";
+import { priceText, sharePriceFromQ96 } from "../market/market-math";
 import type { ChainLog } from "../money/wallet";
 
 /** `Proposed(bytes32 indexed id, address indexed by, address target, bytes data, uint256 nonce)`'s topic. */
@@ -71,6 +73,31 @@ const KINDS: Record<string, ProposalKind> = {
   [selectorOf("windDown(bytes32)")]: "wind-down",
 };
 
+/** The starting price every auction opens at unless a project chose another (`Launcher.salePrices`), in dollars a Share. */
+const USUAL_START = 0.0004;
+
+/**
+ * The terms of a round or an auction in the sentence the second signer confirms: the price in it is the call's own, and a
+ * price other than the usual one is said so, because those terms cannot be changed once the round or auction is open.
+ */
+function termsOf(kind: "open-round" | "open-auction", args: string): string {
+  const [, value] = decodeParameters(["bytes32", "uint256"], args);
+  if (typeof value !== "bigint") throw new Error("No terms.");
+  if (kind === "open-round") {
+    // Raw Shares a raw dollar: 1e12 of them is one Share a dollar.
+    const perDollar = Number(value) / 1e12;
+    const said = `Open a backing round: 1 dollar buys ${perDollar.toLocaleString("en-US", { maximumFractionDigits: 2 })} Shares`;
+    return value === DEFAULT_SHARES_PER_RAW_DOLLAR
+      ? said
+      : `${said}. This is NOT the usual 3,000 a dollar`;
+  }
+  const start = sharePriceFromQ96(value);
+  const said = `Open the auction starting at ${priceText(start)} dollars a Share`;
+  return Math.abs(start - USUAL_START) / USUAL_START < 0.001
+    ? said
+    : `${said}. This is NOT the usual ${USUAL_START}`;
+}
+
 /** What a proposed call does, in a sentence a person can say yes to, and who it names when it names someone. */
 export function describeProposal(
   data: string,
@@ -79,10 +106,8 @@ export function describeProposal(
   const kind = KINDS[data.slice(0, 10).toLowerCase()] ?? "other";
   const args = `0x${data.slice(10)}`;
   try {
-    if (kind === "open-round")
-      return { kind, words: "Open a backing round", names: null };
-    if (kind === "open-auction")
-      return { kind, words: "Open the auction", names: null };
+    if (kind === "open-round" || kind === "open-auction")
+      return { kind, words: termsOf(kind, args), names: null };
     if (kind === "wind-down")
       return {
         kind,

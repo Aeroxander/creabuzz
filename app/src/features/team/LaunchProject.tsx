@@ -81,15 +81,15 @@ export function LaunchProject({ project }: { project: Project }) {
         recordWithLaunch(project, key),
         "Your project is on the network, but its page could not be updated. Press Finish linking to try again.",
       ),
+    // Said from the mutation itself, not from the press: once the record names the launch this card is gone, and a callback
+    // given to `mutate` is dropped with it, so the one confirmation would never show.
+    onSuccess: () => toast("Your project is on the network.", "done"),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["project"] }),
   });
   if (!wallet.isAvailable() || !where) return null;
   const busy = send.isPending || link.isPending;
   const finish = (key: string) =>
-    link.mutate(key, {
-      onSuccess: () => toast("Your project is on the network.", "done"),
-      onError: (error) => setProblem(error.message),
-    });
+    link.mutate(key, { onError: (error) => setProblem(error.message) });
   return (
     <Card
       aria-labelledby={titleId}

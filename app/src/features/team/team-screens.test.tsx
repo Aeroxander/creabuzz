@@ -2,7 +2,14 @@
 // guards (a double press, a wallet that may not, a call the app cannot name, a call already confirmed).
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { chainKeyFromTags } from "@creaton/core/launchpad/project-chain.ts";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { useQuery } from "@tanstack/react-query";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   accountOf,
@@ -65,6 +72,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   applyServerSettings(null);
 });
 
@@ -226,6 +234,81 @@ describe("Give Shares", () => {
         giveSharesData(STRANGER, 1_000_000n * 10n ** 18n),
       ).data,
     );
+  });
+});
+
+describe("Give Shares with a gift already waiting", () => {
+  it("sends a gift of another amount after an earlier one went out, waited, and has since landed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const stub = installChainStub({ account: FOUNDER_EVM });
+    // The runner alone, not through the Pair.
+    const direct = numbersOf(
+      numbersContent({
+        coordinate: COORDINATE,
+        now: NOW,
+        stage: "team",
+        runner: FOUNDER_EVM,
+      }),
+    );
+    wrap(
+      <PersonTeamActions
+        me={FOUNDER_EVM}
+        name="Fay"
+        numbers={direct}
+        pair={null}
+        wallet={{ state: "linked", address: STRANGER }}
+      />,
+    );
+    stub.holdReceipts = true;
+    fireEvent.click(screen.getByTestId("give-shares"));
+    fireEvent.click(await screen.findByTestId("give-choice-0"));
+    fireEvent.click(await screen.findByTestId("give-sheet-confirm"));
+    await waitFor(() => expect(stub.sent.length).toBe(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200_000);
+    });
+    await screen.findByTestId("give-sheet-problem");
+    // It lands afterwards; the runner comes back and chooses 1,000,000 Shares instead.
+    stub.holdReceipts = false;
+    fireEvent.click(screen.getByLabelText("Close"));
+    await waitFor(() => expect(screen.queryByTestId("give-sheet")).toBeNull());
+    fireEvent.click(screen.getByTestId("give-shares"));
+    fireEvent.click(await screen.findByTestId("give-choice-1"));
+    fireEvent.click(await screen.findByTestId("give-sheet-confirm"));
+    await waitFor(() => expect(stub.sent.length).toBe(2));
+    expect(stub.sent[1].data).toBe(
+      giveSharesData(STRANGER, 1_000_000n * 10n ** 18n),
+    );
+  });
+});
+
+describe("Give Shares after a market", () => {
+  it("does not offer the amount the monthly limit always refuses", async () => {
+    installChainStub({ account: BACKER_EVM });
+    const content = numbersContent({
+      coordinate: COORDINATE,
+      now: NOW,
+      stage: "team",
+      runner: PAIR,
+    });
+    // A market has opened: the project is run in the open.
+    (content.stage as { name: string }).name = "open";
+    content.contracts = {
+      ...(content.contracts as Record<string, unknown>),
+      pair: PAIR,
+    };
+    wrap(
+      <PersonTeamActions
+        me={BACKER_EVM}
+        name="Fay"
+        numbers={numbersOf(content)}
+        pair={pair}
+        wallet={{ state: "linked", address: STRANGER }}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("give-shares"));
+    await screen.findByTestId("give-choice-1");
+    expect(screen.queryByTestId("give-choice-2")).toBeNull();
   });
 });
 
@@ -399,6 +482,40 @@ describe("putting a project on the network", () => {
     expect(chainKeyFromTags(record.tags)).toBe(key);
     expect(record.tags).toContainEqual(["name", "Lantern lamps"]);
     expect(record.content).toBe('{"pitch":"x"}');
+    vi.unstubAllEnvs();
+  });
+
+  it("says it is on the network even when the page drops the card as soon as the record names the launch", async () => {
+    vi.stubEnv("VITE_CREATON_LAUNCHER", CONTRACTS.launcher);
+    vi.stubEnv("VITE_CREATON_CHAIN_ID", "31337");
+    installChainStub({
+      account: FOUNDER_EVM,
+      reads: {
+        "launchHash(bytes32)": `0x${word(0xabcn)}`,
+        "projectByKey(bytes32)": `0x${word(0).repeat(7)}`,
+      },
+    });
+    // The project page shows the card until its record names the launch, and reads it again when the link is written.
+    function Page() {
+      const record = useQuery({
+        queryKey: ["project", "page"],
+        queryFn: async () => ({ linked: published.length > 0 }),
+      });
+      // Another read of the project that takes a moment: the write's own wait for fresh numbers outlasts the card.
+      useQuery({
+        queryKey: ["project", "slow"],
+        queryFn: () => new Promise((resolve) => setTimeout(resolve, 150)),
+      });
+      return record.data?.linked ? null : <LaunchProject project={project()} />;
+    }
+    wrap(<Page />);
+    fireEvent.click(await screen.findByTestId("launch-press"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("launch-project")).toBeNull(),
+    );
+    expect(
+      await screen.findByText("Your project is on the network."),
+    ).not.toBeNull();
     vi.unstubAllEnvs();
   });
 

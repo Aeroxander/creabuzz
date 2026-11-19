@@ -124,7 +124,8 @@ function RunnerCard({
         ) : null}
       </div>
       <SendSheet
-        action={`hand-over:${numbers.chainId}:${treasury}`}
+        // Who is offered the seat, and whether the founder leaves, are part of the step.
+        action={`hand-over:${numbers.chainId}:${treasury}:${next ?? ""}:${leaving ? "leaves" : "stays"}`}
         build={() => (handOver ? [handOver.call] : [])}
         chainId={numbers.chainId}
         confirmLabel={both ? "Ask your co-signer to confirm" : "Offer the seat"}
@@ -205,8 +206,8 @@ function RunnerCard({
               platform's 1 of each 100 as the fee.
             </li>
             <li>
-              The floor stays for holders to hand back against; the fee for that
-              drops to the platform's 1 of each 100.
+              No auction or market can open afterwards, so nothing is ever
+              offered to the public.
             </li>
             <li>Money the project can already spend stays the runner's.</li>
           </ul>

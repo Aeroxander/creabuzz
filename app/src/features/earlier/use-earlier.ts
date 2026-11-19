@@ -129,6 +129,8 @@ export function useClaimLine(
       place?.chainId,
       place?.claim,
       link ? String(link.entry) : "",
+      // What the link says is part of the answer: a second link for the same entry with other data is read afresh.
+      link ? leafOf(link.entry, link.holder, link.amount, link.salt) : "",
     ],
     enabled: investingOn() && Boolean(place && link) && wallet.isAvailable(),
     staleTime: 10_000,
@@ -200,6 +202,8 @@ export function useAgreementText(list: ClaimList | undefined) {
   if (
     fingerprintOf(text.text) !== list.textHash ||
     fingerprintOf(text.summary) !== list.summaryHash ||
+    // A version that is missing or not a whole number is a file that does not match, never a crash.
+    !Number.isSafeInteger(text.version) ||
     BigInt(text.version) !== list.textVersion
   )
     return { kind: "moved" } as TextState;
