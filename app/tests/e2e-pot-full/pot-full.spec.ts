@@ -7,7 +7,11 @@ import { addRevenueCalls } from "../../../packages/creaton-core/src/pot/pot-call
 import * as reads from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import { call, passTime, rpc } from "../anvil/rpc";
 import { walletOf } from "../anvil/pot-chain";
-import { backFor, giveDollars, launchProject } from "../e2e/helpers/live-chain";
+import {
+  backFor,
+  giveDollars,
+  launchedProject,
+} from "../e2e/helpers/live-chain";
 import { installAnvilWallet } from "../e2e/helpers/live-wallet";
 import { PLAN_V2_BUDGETS, PressCounter } from "../helpers/press-counter";
 import { newPerson, phone, RUN as NAME_TAG } from "../e2e-real/people";
@@ -18,7 +22,6 @@ import {
   dollarsAsPageSays,
   dollarsInASentence,
   NOT_RUNNABLE,
-  nameTheLaunch,
   type NumbersJson,
   newestRecord,
   ok,
@@ -178,7 +181,7 @@ test("a project from its start to a Take out: the page, the server and the contr
     // ── a founder starts a project in the app and puts it on the chain ───────────────────────────────────────────
     const founder = await phone(browser);
     pages.push(founder);
-    await installAnvilWallet(founder, w.who.founder);
+    const founderWallet = await installAnvilWallet(founder, w.who.founder);
     await newPerson(founder, `Fay ${NAME_TAG}`);
     const name = `Lantern ${NAME_TAG}`;
     await founder.goto("/start");
@@ -199,12 +202,39 @@ test("a project from its start to a Take out: the page, the server and the contr
     const founderPub = getPublicKey(founderKey);
     ok(`the founder started "${name}" in the app (${link})`);
 
-    const project = await launchProject(w, projectId, founderPub);
-    projectKey = project.key;
-    await nameTheLaunch(founderKey, founderPub, projectId, project.key);
-    ok(
-      `the founder launched it on the chain (key ${project.key.slice(0, 10)}…) and named the launch in the project's record`,
+    // ── the founder opens it to backers from the project's page: one card, one sheet, one signature ─────────────────
+    const launch = new PressCounter();
+    await expect(founder.getByTestId("launch-card")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(founder.getByTestId("launch-play-money")).toContainText(
+      "play money",
     );
+    await launch.press(founder.getByTestId("launch-open"), "Launch");
+    await expect(founder.getByTestId("launch-sheet")).toBeVisible();
+    await expect(founder.getByTestId("launch-rate")).toHaveValue("0.10");
+    await expect(founder.getByTestId("launch-pool")).toHaveValue("10,000,000");
+    await shot(founder, "00-launch-sheet");
+    await launch.press(
+      founder.getByTestId("sheet-confirm"),
+      "Launch the project",
+    );
+    await expect(founder.getByTestId("launch-sheet")).toBeHidden({
+      timeout: 30_000,
+    });
+    same(
+      launch.presses,
+      2,
+      "launching took two presses (Launch, then the sheet's press)",
+    );
+    same(founderWallet.prompts, 1, "launching asked the wallet once");
+    const project = await launchedProject(w, projectId, founderPub);
+    projectKey = project.key;
+    ok(
+      `the founder launched it on the chain from the app (key ${project.key.slice(0, 10)}…); the app named the launch in the project's record`,
+    );
+    // The page is tied to the launch and, until the server has read the project, shows no figure (never a zero).
+    await expect(founder.getByTestId("launch-card")).toHaveCount(0);
 
     const first = await waitForRecord(
       project.key,
@@ -683,7 +713,7 @@ test("a project from its start to a Take out: the page, the server and the contr
     );
     check(
       jobs.every(
-        (j) => j.call === "treasury.sweepFees" || j.call === "treasury.release",
+        (j) => j.call === "treasury.collectFees" || j.call === "treasury.settle",
       ),
       "the helper sent only the two calls it may: collect the fee and settle",
     );

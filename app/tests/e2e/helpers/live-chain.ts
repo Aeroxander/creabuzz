@@ -234,6 +234,32 @@ export async function launchProject(
   };
 }
 
+/** A project the founder launched from the app (not through `launchProject`), as the chain knows it under `label`. */
+export async function launchedProject(
+  world: LiveWorld,
+  label: string,
+  founderNostr: string,
+): Promise<LiveProject> {
+  const coordinate = `37001:${founderNostr}:${label}`;
+  const projectId = projectIdOf(coordinate);
+  const key = chainKeyOf(world.who.founder, projectId);
+  const read = (to: string, data: string) => call(to, data);
+  const parts = await readProjectParts(read, world.chain.launcher, key);
+  return {
+    label,
+    coordinate,
+    projectId,
+    key,
+    treasury: parts.treasury,
+    shares: parts.shares,
+    team: parts.team,
+    vester: parts.vester,
+    dollar: world.chain.dollar,
+    launcher: world.chain.launcher,
+    launchedAt: parts.launchedAt,
+  };
+}
+
 async function usedFaucet(world: LiveWorld, who: string): Promise<boolean> {
   const { faucetUsedBy } = await import(
     "../../../../packages/creaton-core/src/pot/pot-state.ts"

@@ -17,7 +17,7 @@ import { expectNoSidewaysScroll } from "../helpers/layout";
 import { PressCounter } from "../helpers/press-counter";
 import { walletOf } from "../anvil/pot-chain";
 import { call, send } from "../anvil/rpc";
-import { NO_CHAIN_WHY, type LiveProject } from "./helpers/live-chain";
+import { launchedProject, NO_CHAIN_WHY } from "./helpers/live-chain";
 import {
   FOUNDER_KEY,
   FOUNDER_NOSTR,
@@ -57,30 +57,6 @@ function plainRelay(label: string) {
     ),
   );
   return relay;
-}
-
-/** The project as the chain knows it once launched under `label` by the world's founder. */
-async function launchedProject(
-  w: ReturnType<typeof world.get>,
-  label: string,
-): Promise<LiveProject> {
-  const coordinate = `37001:${FOUNDER_NOSTR}:${label}`;
-  const projectId = projectIdOf(coordinate);
-  const key = chainKeyOf(w.who.founder, projectId);
-  const parts = await state.readProjectParts(read, w.chain.launcher, key);
-  return {
-    label,
-    coordinate,
-    projectId,
-    key,
-    treasury: parts.treasury,
-    shares: parts.shares,
-    team: parts.team,
-    vester: parts.vester,
-    dollar: w.chain.dollar,
-    launcher: w.chain.launcher,
-    launchedAt: parts.launchedAt,
-  };
 }
 
 test("a founder starts a project, launches it with two numbers and one signature, and the page waits for the server before it shows any figure", async ({
@@ -182,7 +158,7 @@ test("a founder starts a project, launches it with two numbers and one signature
   );
 
   // The server reads the chain; the page looks again on its own and shows the project's money.
-  const project = await launchedProject(w, "lantern");
+  const project = await launchedProject(w, "lantern", FOUNDER_NOSTR);
   await seedServer(relay, w, project);
   await expect(page.getByTestId("project-money")).toBeVisible({
     timeout: 30_000,
