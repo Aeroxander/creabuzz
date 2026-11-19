@@ -1187,6 +1187,20 @@ fn attach_goals(tasks: &mut [Value], goals: &BTreeMap<String, Value>) {
     }
 }
 
+/// The distinct accounts named as a task's helper, sorted. A task open to anyone names none (its helper is empty until
+/// someone takes it), and an empty name is not a key the server can look up: sending it fails every read of the list.
+fn helper_keys(tasks: &[Value]) -> Vec<String> {
+    let mut helpers: Vec<String> = tasks
+        .iter()
+        .filter_map(|t| t["helper"].as_str())
+        .filter(|helper| is_hex64(helper))
+        .map(str::to_string)
+        .collect();
+    helpers.sort();
+    helpers.dedup();
+    helpers
+}
+
 /// Say of each task's helper whether the account is labelled as an agent, and who runs it: read from the helper's
 /// own profile (`buzz agents show`), so it is known before the helper has signed anything for the task. A helper
 /// whose steps carry an agent's mark stays marked. Returns whether every helper's profile was looked at.
@@ -1194,12 +1208,7 @@ pub(crate) async fn attach_helper_labels(
     client: &BuzzClient,
     tasks: &mut [Value],
 ) -> Result<bool, CliError> {
-    let mut helpers: Vec<String> = tasks
-        .iter()
-        .filter_map(|t| t["helper"].as_str().map(str::to_string))
-        .collect();
-    helpers.sort();
-    helpers.dedup();
+    let mut helpers = helper_keys(tasks);
     let complete = helpers.len() <= HELPERS_READ;
     helpers.truncate(HELPERS_READ);
     let mut run_by: HashMap<String, Option<String>> = HashMap::new();
@@ -1351,7 +1360,8 @@ pub(crate) async fn read_task_records(
         .collect();
     let mut helpers: Vec<String> = records
         .iter()
-        .filter(|r| r.part == "task" && !project.team.contains(&r.helper))
+        // A task open to anyone names no helper yet: an empty name is not an account the server can look up.
+        .filter(|r| r.part == "task" && is_hex64(&r.helper) && !project.team.contains(&r.helper))
         .map(|r| r.helper.clone())
         .collect();
     helpers.sort();
@@ -1371,6 +1381,33 @@ pub(crate) async fn read_task_records(
                 .filter(|e| chunk.contains(&e.pubkey.to_hex()))
                 .filter_map(parse_task_record),
         );
+    }
+    // A task open to anyone is taken and worked by someone outside the team, so its steps are read by the task they
+    // name, whoever signed them. The relay holds who may take; `project_tasks` picks the taker the same way.
+    let open: Vec<String> = records
+        .iter()
+        .filter(|r| r.part == "task" && r.helper.is_empty())
+        .map(|r| r.id.clone())
+        .take(HELPERS_READ)
+        .collect();
+    for chunk in open.chunks(50) {
+        let filter = json!({
+            "kinds": [KIND_LAUNCH_UPDATE],
+            "#e": chunk,
+            "#a": [project.coordinate],
+            "#l": [TASK_LABEL],
+        });
+        let events = parse_events(
+            client
+                .query_pages_bounded(filter, TASK_READ_BOUND + 1)
+                .await?,
+        )?;
+        complete &= events.len() <= TASK_READ_BOUND as usize;
+        for record in events.iter().filter_map(parse_task_record) {
+            if !records.iter().any(|known| known.id == record.id) {
+                records.push(record);
+            }
+        }
     }
     Ok((records, complete))
 }
@@ -2236,6 +2273,25 @@ mod tests {
 
     const COORD: &str = "37001:founder:orbit";
     const TODAY: &str = "2026-11-10";
+
+    /// A task open to anyone has an empty helper until it is taken; asking the server about "" as an account fails the
+    /// whole read ("Invalid public key"), found by the real-server loop `scripts/m8-agent-week.sh`.
+    #[test]
+    fn only_real_accounts_are_looked_up_as_helpers() {
+        let a = "a".repeat(64);
+        let b = "b".repeat(64);
+        let tasks = vec![
+            json!({ "helper": "" }),
+            json!({ "helper": b }),
+            json!({ "helper": a }),
+            json!({ "helper": b }),
+            json!({ "helper": "not a key" }),
+            json!({ "helper": null }),
+            json!({}),
+        ];
+        assert_eq!(helper_keys(&tasks), vec![a, b]);
+        assert!(helper_keys(&[json!({ "helper": "" })]).is_empty());
+    }
 
     struct World {
         founder: Keys,
