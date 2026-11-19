@@ -249,7 +249,8 @@ Chosen under the owner's standing go; the owner may overrule
 
 ## What is not done
 
-- **Sheets other than Back still say "your wallet"** for a passkey sender: the refund and take-out sheets in `Receipts.tsx`,
+- **Sheets other than Back still say "your wallet"** for a passkey sender in their own sentences (the error words of every
+  sheet now follow the sender, see "Review fixes"): the refund and take-out sheets in `Receipts.tsx`,
   Open backing, the team send sheets, and the weekly update. They belong to other tracks; `useMoneySend(...).words` gives each
   of them the right words (`where`, `waiting`, `twoCalls`), and `Back` shows the pattern.
 - **Team and market actions from a passkey account.** `signTypedData` is refused (`capabilities.signsMessages` is false), so
@@ -286,3 +287,102 @@ Rules held: no secret, key or service URL with a key is in the repo (settings by
 own loopback addresses); no names, amounts or wallets of real people (the fixtures are contract bytecode and anvil's public
 test accounts); no model or AI-vendor name in code, comments, docs, tests or commit subjects; no revenue wording about Shares; no `unsafe`, no new `unwrap()`/`expect()`; new public API in core has doc comments; the legal line is not restated
 here (the Back sheet still carries it word for word, and the browser spec checks it).
+
+## Review fixes
+
+Two independent reviews of commits `15e96b7dd..e94d7d26b` found two blockers and several important defects. Each is
+reproduced, fixed, and pinned by a test that fails without the fix (checked by putting the old code back for a moment).
+
+**Blockers**
+
+1. **A passkey Back that timed out and later landed was sent again as its second call alone.** A passkey Back is one
+   operation of two calls, but it was remembered as "call 0 of 2", so the next press took "landed" to mean "the first call
+   landed, send the rest" and sent the ask by itself (or, for "replaced", skipped the look-up and sent a full second Back).
+   Fixed in `sendStep` (`use-money.ts`): a sender that sends the whole step as one operation (`capabilities.atomicBatch`) is
+   remembered as the last of its calls, so landed means done, replaced goes through `confirm`, and a later look never sends
+   a lone later call. Tests: `app/src/features/money/passkey-step.test.tsx`, through `useMoneySend` with the real passkey
+   sender and its real sending part (only the network answers and the signing call are stand-ins).
+2. **`VITE_CREATON_SPONSOR_URL` was ignored on the app's real path.** `sendKernel033UserOp` always passes its own bundler
+   transport, and the sponsor transport was only built when none was passed, so the fee request went to the bundler.
+   Fixed in `zerodev.ts`: whenever a sponsor address is set, the fee request goes there, whatever transport is passed.
+   Tests: `phone-fixes.test.mjs` (through `sendKernel033UserOp`, and with a transport passed). The anvil loop and the browser
+   run now give the app two addresses, a bundler that knows no `zd_` method and a sponsor that answers only
+   `zd_sponsorUserOperation`, so they pass only when the fee is asked at the sponsor's own address (claim 32 below). A
+   sponsor setting that is set but unusable now makes the app say it is not switched on, instead of being dropped silently.
+
+**Important**
+
+3. **The address cache was shared between the wallet and the passkey sender.** The query keys now carry the sender
+   (`["money","address",kind]`, and the same for the on-network check and the connect write). Test: "the account shown".
+4. **The pending record was written only when the wait timed out.** Core has a new `onSigned` hook (after signing, before
+   the send); the passkey sender passes it on as `SendOptions.onSent`, and `sendStep` writes the record at that moment and
+   clears it when the step lands, reverts or is plainly refused. A tab killed during the wait now finds it again.
+5. **An accepted-but-unacknowledged send was reported as "nothing changed".** A send whose answer was lost, and whose retry
+   was told "already known", left no record. With the record written at signing, and bundler errors now carrying
+   `maybeDelivered` (a timeout, a dropped connection or a 5xx on any try), only the bundler's own plain refusal as the
+   first and only try is "did not go through"; anything else after signing is "pending", which the next press resolves by
+   looking the operation up.
+6. **The bundler's receipt was trusted completely.** A receipt for another operation (a different `userOpHash`) is now never
+   taken as an answer, in the wait or in `outcomeOf`. A bundler that cannot answer the look-up now makes the step "still
+   pending" (it used to read as "unknown", which meant "never sent" and a fresh send).
+7. **Copy on the Back path spoke of a wallet when the passkey sent.** `WalletStepError` carries which sender stopped it
+   (set by `useMoneySend`); `moneyProblem` says the passkey account's own words for "pending", "replaced", the wrong
+   network, not enough dollars and the network coin. The wallet's words are byte for byte what they were.
+8. **`LinkWallet` was a dead end on a phone with no wallet.** It is hidden when the sender cannot sign messages.
+9. **A sponsor's paymaster fields were unchecked.** The zero address, a field that is too short, and paymaster gas limits
+   above 10,000,000 are refused before anything is signed. The zero address from the node as the account is refused too.
+10. **Wrong message for a browser that holds no passkey for the account.** "To back from this phone you need to be signed in
+    with a passkey" was wrong for a person who is signed in by recovery key. It now says "This browser does not hold the
+    passkey for an account here, so it cannot back from one. Sign in with your passkey on the phone where you made it, or
+    open this page in a browser with a wallet."
+11. **Settings that carry a key.** An address with a name, a password, or a key/token/secret in its query is refused.
+12. **Documented:** the wording a sponsor must use for the daily limit to read in plain words (`app/.env.example`), and the
+    honest limit of the known-targets check (`send-targets.ts`: it catches this app's mistakes, not an attacker, and the
+    dollar token comes from the configured node).
+
+**Added proof.** `phone-loop.sh`: 33 claims (two new: the fee is asked at the sponsor's address and the operation sent to the
+bundler's; an operation signed by a key the account does not know is refused by the validator and nothing changes).
+`phone-e2e.sh` now runs the browser against the same two addresses. Two older core test fixtures gave receipts with a
+placeholder `userOpHash`; they now name the operation, as a real receipt does.
+
+**Declined or left, with the reason**
+
+- **Making the account recoverable from the passkey alone, or publishing the public key and credential id with the profile**
+  (both reviews, important): not built. It is the recovery decision the report already says must be taken before any
+  real-dollar account (a recovery module changes the account's address, and a published key or a discoverable-credential
+  sign-in changes what the person reveals and how sign-in works); it is not a defect of the send path. What this cut does is
+  the honest message above. **Before real dollars: a person whose browser storage is cleared, or who opens the site on a
+  laptop, cannot reach the account from the passkey alone** (iOS Safari also drops script-written storage after about a week
+  of non-use). The money would be stranded while the key still exists in the keychain. Decide this first.
+- **Node cross-check of the receipt** (the `UserOperationEvent` for the hash and sender in the bundle transaction): not
+  built. The hash check above stops a receipt for another operation; a bundler that lies about its own operation's result is
+  not stopped, and the Back's own `confirm` read of the round's record is the cross-check that holds for money. Do it with
+  the first real bundler.
+- **An operator-pinned paymaster address** (a new build setting): not built; the zero address and the gas caps are refused.
+  The page's caps protect the person, not the sponsor: an attacker builds operations in their own code.
+- **A timeout on the passkey prompt** (optional): not built. A prompt that never settles holds the in-page lock for that
+  account until the page is reloaded.
+- **Recomputing the account's CREATE2 address locally**, **a stack-version key on the remembered address**, and **telling the
+  person a hostile bundler learns the sender, the calls and the IP** (optional): not built; the first was already listed.
+
+**What the sponsor must enforce** (additions from the attack review; the placement, at the operator's side, stands)
+
+- The sponsor address and any key are public in the page, so anyone can call `zd_sponsorUserOperation` directly with accounts
+  of their own: a per-account limit alone is farmable because accounts cost nothing. Keep the whole-sponsor daily cap first.
+- Pin the init code to the known factory, init data and validator; allow only nonce key 0; decode the account's `execute`
+  call data and allow only the single (0x00) and batch (0x01) modes, never delegatecall; allow-list the inner call targets
+  and selectors. A policy that looks only at the outer "to" sees the account itself and checks nothing.
+- The app asks the sponsor before the passkey prompt, so a limit that counts requests is spent by people who cancel the
+  prompt. Count operations that reach `eth_sendUserOperation`, or land.
+- Cap the total gas of an operation (verification, call, pre-verification, paymaster) and give the paymaster a short validity
+  window. The first operation (the account's deploy) costs most: limit it per device or address.
+
+**Checks run after the fixes**
+
+- `packages/creaton-core`: `pnpm test` 1139 tests, 1139 passed, 0 failed (8 new in `phone-fixes.test.mjs`).
+- `web`: `pnpm test` 3502 tests, 3501 passed, 0 failed, 1 skipped (unchanged).
+- `app`: `vitest run` 280 tests in 44 files, 280 passed, 0 failed (it was 263 in 42 files);
+  `tsc --noEmit` clean; `biome check .` clean; `check:copy`, `check:px-text` pass; `check:file-sizes` passes with
+  `CHECK_FILE_SIZES_BASE`; `pnpm build` passes the bundle budget (entry chunk 436,474 bytes of 450,000).
+- `scripts/phone-loop.sh`: 3 files, 13 tests passed, 33 claims. `scripts/phone-e2e.sh`: 2 passed (1 passkey prompt, 2
+  presses, 1 typed field).
