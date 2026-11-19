@@ -174,26 +174,75 @@ describe("bidding", () => {
 });
 
 describe("finishing", () => {
-  it("finishes a sale that reached its minimum in one press, and only closes one that did not", async () => {
-    const stub = installChainStub({ account: BACKER_EVM, block: 8_300 });
+  const STRATEGY = "0x57a7000000000000000000000000000000000e61";
+  /** The chain as the finish press reads it: has the pool step run, and what does the auction say of its minimum. */
+  const chain = (o: { stepPending: boolean; graduated?: boolean }) => ({
+    "poolKey()": poolKeyWords(),
+    "strategy()": `0x${addressWord(STRATEGY)}`,
+    "registeredPoolIds(bytes32)": `0x${addressWord(o.stepPending ? AUCTION : `0x${"0".repeat(40)}`)}`,
+    "isGraduated()": `0x${word(o.graduated ? 1 : 0)}`,
+  });
+  const finish = async (
+    numbers: ReturnType<typeof market>,
+    reads: ReturnType<typeof chain>,
+  ) => {
+    const stub = installChainStub({ account: BACKER_EVM, block: 8_300, reads });
+    wrap(<MarketTop numbers={numbers} />);
+    const press = await screen.findByTestId("finish-press");
+    const label = press.textContent;
+    fireEvent.click(press);
+    await waitFor(() => expect(stub.sent.length).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 60));
+    cleanup();
+    return { label, steps: stub.sent.map((c) => c.data), to: stub.sent[0].to };
+  };
+  const datas = (...steps: ("openPool" | "settle" | "sweep")[]) =>
+    steps.map((s) => finishCall(CONTRACTS.finisher, s).data);
+
+  it("finishes a sale that reached its minimum in one press: the pool step, the split, the sweep", async () => {
+    const done = await finish(market({}), chain({ stepPending: true }));
+    expect(done.label).toBe("Finish the sale");
+    expect(done.to).toBe(CONTRACTS.finisher);
+    expect(done.steps).toEqual(datas("openPool", "settle", "sweep"));
+  });
+
+  it("closes a sale under its minimum with the pool step first, then the sweep (closing alone is refused)", async () => {
+    const done = await finish(
+      market({ bid: "50000000000" }),
+      chain({ stepPending: true }),
+    );
+    expect(done.label).toBe("Close the sale");
+    expect(done.steps).toEqual(datas("openPool", "sweep"));
+  });
+
+  it("believes the auction, not the record, once the pool step ran", async () => {
+    // The record said the minimum was reached; the auction says it was not: only the closing step is left.
+    expect(
+      (await finish(market({}), chain({ stepPending: false }))).steps,
+    ).toEqual(datas("sweep"));
+    // The record said it was not reached; the auction says it was: split, then sweep.
+    expect(
+      (
+        await finish(
+          market({ bid: "50000000000" }),
+          chain({ stepPending: false, graduated: true }),
+        )
+      ).steps,
+    ).toEqual(datas("settle", "sweep"));
+  });
+
+  it("sends nothing and says so when the chain cannot be read", async () => {
+    const stub = installChainStub({
+      account: BACKER_EVM,
+      block: 8_300,
+      reads: { "poolKey()": "0x" },
+    });
     wrap(<MarketTop numbers={market({})} />);
     fireEvent.click(await screen.findByTestId("finish-press"));
-    await waitFor(() => expect(stub.sent.length).toBe(3));
-    expect(stub.sent.map((c) => c.data)).toEqual(
-      (["openPool", "settle", "sweep"] as const).map(
-        (s) => finishCall(CONTRACTS.finisher, s).data,
-      ),
-    );
-    cleanup();
-    const failed = installChainStub({ account: BACKER_EVM, block: 8_300 });
-    wrap(<MarketTop numbers={market({ bid: "50000000000" })} />);
-    const press = await screen.findByTestId("finish-press");
-    expect(press.textContent).toBe("Close the sale");
-    fireEvent.click(press);
-    await waitFor(() => expect(failed.sent.length).toBe(1));
-    expect(failed.sent[0].data).toBe(
-      finishCall(CONTRACTS.finisher, "sweep").data,
-    );
+    expect(
+      (await screen.findByTestId("finish-press-problem")).textContent,
+    ).not.toMatch(/0x|undefined/);
+    expect(stub.sent.length).toBe(0);
   });
 });
 

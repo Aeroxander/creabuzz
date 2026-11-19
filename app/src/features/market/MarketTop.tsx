@@ -13,7 +13,6 @@ import { SendButton, SendSheet } from "../team/SendSheet";
 import { readWord } from "../team/use-team";
 import {
   bidCalls,
-  finishCall,
   handBackCalls,
   MARKET_READS,
   topPriceQ96,
@@ -28,7 +27,7 @@ import {
   priceText,
   sharePriceFromQ96,
 } from "./market-math";
-import { useBlock, useFloor, usePool } from "./use-market";
+import { readFinishCalls, useBlock, useFloor, usePool } from "./use-market";
 
 const SHARE = 10n ** 18n;
 
@@ -223,14 +222,8 @@ function FinishBox({ numbers }: { numbers: ProjectNumbers }) {
       <SendButton
         action={`finish:${numbers.chainId}:${finisher}`}
         block
-        build={() =>
-          reached
-            ? [
-                finishCall(finisher, "openPool"),
-                finishCall(finisher, "settle"),
-                finishCall(finisher, "sweep"),
-              ]
-            : [finishCall(finisher, "sweep")]
+        build={(wallet) =>
+          readFinishCalls(wallet, finisher, sale.auction, reached)
         }
         chainId={numbers.chainId}
         copy="finish"
@@ -476,7 +469,11 @@ function TradeSheet({
       copy="trade"
       disabled={!amountIn}
       done={side === "buy" ? "Bought." : "Sold."}
-      onOpenChange={onOpenChange}
+      onOpenChange={(next) => {
+        // The field is dollars under Buy and Shares under Sell: an amount typed for one is never carried to the other.
+        if (!next) setText("");
+        onOpenChange(next);
+      }}
       open={open}
       testId="trade-sheet"
       title={

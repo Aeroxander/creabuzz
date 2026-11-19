@@ -14,8 +14,14 @@ import type { ProjectNumbers } from "../money/numbers";
 import { useWallet } from "../money/use-money";
 import { addressFromWord, type MoneyWallet } from "../money/wallet";
 import { TREASURY_READS } from "../team/team-calls";
-import { readWord } from "../team/use-team";
-import { MARKET_READS, type PoolKey } from "./market-calls";
+import type { MoneyCall } from "../money/calls";
+import { readAddress, readWord } from "../team/use-team";
+import {
+  finishCall,
+  finishSteps,
+  MARKET_READS,
+  type PoolKey,
+} from "./market-calls";
 import type { FloorNow } from "./market-math";
 
 const words = (hex: string) =>
@@ -99,28 +105,64 @@ export function poolSlots(key: PoolKey): {
   return { id, slot0, liquidity };
 }
 
-/** Read the pool of a project's sale: its key from the Finisher, its price and liquidity from the pool manager. */
-export async function readPool(
+/** The key of a project's pool, as its Finisher gives it. */
+async function readPoolKey(
   wallet: Pick<MoneyWallet, "readCall">,
   finisher: string,
-  shares: string,
-): Promise<PoolNow> {
+): Promise<PoolKey> {
   const keyWords = words(await wallet.readCall(finisher, MARKET_READS.poolKey));
-  const manager = addressFromWord(
-    (await wallet.readCall(finisher, MARKET_READS.poolManager)).slice(0, 66),
-  );
-  if (keyWords.length < 5 || !manager)
-    throw new Error("The pool could not be read.");
+  if (keyWords.length < 5) throw new Error("The pool could not be read.");
   const hex = (w: bigint) => `0x${w.toString(16).padStart(40, "0")}`;
   const tick =
     keyWords[3] >= 2n ** 255n ? keyWords[3] - 2n ** 256n : keyWords[3];
-  const key: PoolKey = {
+  return {
     currency0: hex(keyWords[0]),
     currency1: hex(keyWords[1]),
     fee: Number(keyWords[2]),
     tickSpacing: Number(tick),
     hooks: hex(keyWords[4]),
   };
+}
+
+/**
+ * The finish calls an ended sale still needs, read at the moment of the press: whether the pool step ran (the pool
+ * strategy keeps the pool's id for the auction until it does) and, once it ran, whether the auction reached its minimum.
+ */
+export async function readFinishCalls(
+  wallet: Pick<MoneyWallet, "readCall">,
+  finisher: string,
+  auction: string,
+  reachedByRecord: boolean,
+): Promise<MoneyCall[]> {
+  const [key, strategy] = await Promise.all([
+    readPoolKey(wallet, finisher),
+    readAddress(wallet, finisher, MARKET_READS.strategy),
+  ]);
+  const holder = await readAddress(
+    wallet,
+    strategy,
+    MARKET_READS.registeredPoolId(poolSlots(key).id),
+  );
+  const stepPending = holder === auction.toLowerCase();
+  const graduated = stepPending
+    ? false
+    : (await readWord(wallet, auction, MARKET_READS.isGraduated)) !== 0n;
+  return finishSteps({ stepPending, graduated, reachedByRecord }).map((step) =>
+    finishCall(finisher, step),
+  );
+}
+
+/** Read the pool of a project's sale: its key from the Finisher, its price and liquidity from the pool manager. */
+export async function readPool(
+  wallet: Pick<MoneyWallet, "readCall">,
+  finisher: string,
+  shares: string,
+): Promise<PoolNow> {
+  const key = await readPoolKey(wallet, finisher);
+  const manager = addressFromWord(
+    (await wallet.readCall(finisher, MARKET_READS.poolManager)).slice(0, 66),
+  );
+  if (!manager) throw new Error("The pool could not be read.");
   const slots = poolSlots(key);
   const [state, liquidity] = await Promise.all([
     readWord(wallet, manager, MARKET_READS.extsload(slots.slot0)),

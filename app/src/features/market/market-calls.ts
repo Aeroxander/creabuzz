@@ -79,6 +79,27 @@ export function finishCall(finisher: string, step: FinishStep): MoneyCall {
   return call(finisher, encodeFunctionData(`${step}()`, [], []));
 }
 
+/**
+ * The finish steps still to send for an ended sale (`Finisher`): the pool step always comes first, a sale under its
+ * minimum included (it also writes the auction's last checkpoint, and closing is refused until it ran). Until it ran
+ * the auction cannot say whether the minimum was reached, so the server's record decides; once it ran, the auction
+ * does. So a record that was wrong costs one more press, never a sale that cannot be closed.
+ */
+export function finishSteps(input: {
+  /** The pool step has not run yet for this auction. */
+  stepPending: boolean;
+  /** The auction says its minimum was reached (only meaningful once the pool step ran). */
+  graduated: boolean;
+  /** The server's record says the bids reached the minimum. */
+  reachedByRecord: boolean;
+}): FinishStep[] {
+  if (input.stepPending)
+    return input.reachedByRecord
+      ? ["openPool", "settle", "sweep"]
+      : ["openPool", "sweep"];
+  return input.graduated ? ["settle", "sweep"] : ["sweep"];
+}
+
 /** Hand `amount` Shares back at the floor: let the Treasury burn them, then ask for the slice. */
 export function handBackCalls(
   shares: string,
@@ -215,6 +236,9 @@ export const MARKET_READS = {
   totalSupply: encodeFunctionData("totalSupply()", [], []),
   poolKey: encodeFunctionData("poolKey()", [], []),
   poolManager: encodeFunctionData("poolManager()", [], []),
+  strategy: encodeFunctionData("strategy()", [], []),
+  registeredPoolId: (id: string) =>
+    encodeFunctionData("registeredPoolIds(bytes32)", ["bytes32"], [id]),
   bid: (id: bigint) => encodeFunctionData("bids(uint256)", ["uint256"], [id]),
   clearingPrice: encodeFunctionData("clearingPrice()", [], []),
   isGraduated: encodeFunctionData("isGraduated()", [], []),
