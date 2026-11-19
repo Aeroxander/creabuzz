@@ -150,6 +150,23 @@ describe("the project's money", () => {
   });
 });
 
+describe("the app's own knowledge of the network wins over a record", () => {
+  it("a record that says the dollars are not play money, on a network this app knows is play money, still shows the play-money line and the faucet, and a sheet still says it", async () => {
+    setup({ shares: 0n });
+    show({ ...numbers, playMoney: false });
+    expect((await screen.findByTestId("play-money")).textContent).toMatch(
+      /play money, not real money/,
+    );
+    fireEvent.click(await screen.findByTestId("faucet-open"));
+    expect((await screen.findByTestId("faucet-words")).textContent).toMatch(
+      /play dollars/,
+    );
+    expect((await screen.findByTestId("sheet-play-money")).textContent).toMatch(
+      /play money/,
+    );
+  });
+});
+
 describe("after a Back lands", () => {
   it("the page shows the new Shares, and the play dollars that were spent", async () => {
     setup({ shares: 0n });
