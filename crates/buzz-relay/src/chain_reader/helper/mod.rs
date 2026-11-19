@@ -1,10 +1,11 @@
-//! The helper job (plan v2 section 8, milestone 5 part 2): sends the calls
-//! anyone may make so that rounds close, Shares are delivered, sales finish
-//! and fees are collected with nobody pressing.
+//! The helper job: sends the calls anyone may make so that nobody has to
+//! press them: collecting the platform's fee, and settling a project once the
+//! outside money paid in has all arrived.
 //!
 //! - **What:** a closed list of calls ([`calls::HelperCall`]); never a
-//!   backer's held Shares, a refund, a check-in, anything a runner or a Pair
-//!   signs, or anything that moves a person's money by choice.
+//!   check-in, a Take out, a refund, a draw, a claim of a member's Team Shares,
+//!   anything a runner or a Pair signs, or anything that moves a person's money
+//!   by choice. A person's money never waits on the helper: Take out is theirs.
 //! - **When:** jobs are built only from the reader's final rows
 //!   ([`plan::plan`]) and dropped when a rollback removes the row that made
 //!   them due. Right before sending, each job is checked again at the head:
@@ -52,8 +53,6 @@ pub const CAP_PAUSE_SECS: f64 = 3_600.0;
 /// put off without counting an attempt (a node that limits bursts must not
 /// end jobs for good), so the next pass starts with other jobs.
 pub const NODE_PAUSE_SECS: f64 = 300.0;
-/// `EarlierBackers.CHALLENGE`: no delivery inside 21 days of a consent.
-pub const CHALLENGE_SECS: u64 = 21 * 86_400;
 
 /// What one helper pass did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -129,10 +128,6 @@ fn word(data: &[u8], index: usize) -> Option<Word> {
         .and_then(|s| <[u8; 32]>::try_from(s).ok())
 }
 
-fn is_zero_word(data: &[u8], index: usize) -> bool {
-    word(data, index).is_none_or(|w| w == [0u8; 32])
-}
-
 fn uint(data: &[u8], index: usize) -> anyhow::Result<u128> {
     word(data, index)
         .and_then(|w| word_to_u128(&w))
@@ -145,18 +140,6 @@ fn view(signature: &str, args: &[Word]) -> Vec<u8> {
         out.extend_from_slice(a);
     }
     out
-}
-
-fn uint_arg(v: u64) -> Word {
-    let mut w = [0u8; 32];
-    w[24..].copy_from_slice(&v.to_be_bytes());
-    w
-}
-
-fn addr_arg(a: &[u8; 20]) -> Word {
-    let mut w = [0u8; 32];
-    w[12..].copy_from_slice(a);
-    w
 }
 
 fn margin(estimate: u64) -> u64 {
@@ -296,114 +279,23 @@ impl Helper {
             }
         };
         Ok(match &call {
-            HelperCall::RoundsSettleMany {
-                rounds,
-                round,
-                backers,
-            } => {
-                let mut keep = Vec::new();
-                for b in backers {
-                    let pos = view(
-                        "positionOf(uint256,address)",
-                        &[uint_arg(*round), addr_arg(b)],
-                    );
-                    let answer = match self.writer.call(rounds, &pos).await {
-                        Ok(a) => a,
-                        Err(CallError::Reverted(d)) => {
-                            return Err(Failure::Job(format!("positionOf reverted: {}", short(&d))))
-                        }
-                        Err(CallError::Unavailable(e)) => return Err(Failure::Node(e)),
-                    };
-                    // Position { ask, held, bought, settled }: only an
-                    // unsettled backer with an ask can be settled.
-                    if !is_zero_word(&answer, 0) && is_zero_word(&answer, 3) {
-                        keep.push(*b);
-                    }
-                }
-                if keep.is_empty() {
-                    Check::Nothing("every backer in the batch is settled or has no ask".into())
-                } else {
-                    Check::Due(HelperCall::RoundsSettleMany {
-                        rounds: *rounds,
-                        round: *round,
-                        backers: keep,
-                    })
-                }
-            }
-            HelperCall::RoundsRelease { round, .. } => positive(
-                self.view_uint(&target, view("releasable(uint256)", &[uint_arg(*round)]), 0)
-                    .await?,
-                "releasable",
-            ),
-            HelperCall::RoundsReturnUnsold { .. } => positive(
-                self.view_uint(&target, view("unsold()", &[]), 0).await?,
-                "unsold",
-            ),
-            HelperCall::RoundsSweepFees { .. } => positive(
-                self.view_uint(&target, view("platformOwed()", &[]), 0)
-                    .await?,
-                "platformOwed",
-            ),
             HelperCall::TreasurySweepFees { .. } => positive(
                 self.view_uint(&target, view("feesOwed()", &[]), 0).await?,
                 "feesOwed",
             ),
-            HelperCall::TreasuryRelease { .. } => positive(
-                self.view_uint(&target, view("pendingRelease()", &[]), 0)
-                    .await?,
-                "pendingRelease",
-            ),
-            HelperCall::VesterClaim { beneficiary, .. } => positive(
-                self.view_uint(
-                    &target,
-                    view("claimable(address)", &[addr_arg(beneficiary)]),
-                    0,
-                )
-                .await?,
-                "claimable",
-            ),
-            HelperCall::EarlierDeliverMany { claim, entries } => {
-                let count = self.view_uint(claim, view("entryCount()", &[]), 0).await?;
-                let hold = self
-                    .view_uint(claim, view("minHoldFromConsent()", &[]), 0)
+            // The allowance is worked out and arrived outside money moves in
+            // when the money is all here and still stored as arriving.
+            HelperCall::TreasuryRelease { .. } => {
+                let arriving = self.view_uint(&target, view("arriving()", &[]), 0).await?;
+                let end = self
+                    .view_uint(&target, view("arrivalEnd()", &[]), 0)
                     .await?;
-                let wait = u64::try_from(hold).unwrap_or(u64::MAX).max(CHALLENGE_SECS);
-                let mut keep = Vec::new();
-                for &e in entries.iter().filter(|e| u128::from(**e) < count) {
-                    // Entry { holder, holderVersion, consentAt, ... }: open
-                    // entries and entries inside their wait would revert the
-                    // whole batch (EarlierBackers review O1).
-                    let consent_at = self
-                        .view_uint(claim, view("entryOf(uint256)", &[uint_arg(e)]), 2)
-                        .await?;
-                    let consent_at = u64::try_from(consent_at).unwrap_or(u64::MAX);
-                    if consent_at == 0 || head_time < consent_at.saturating_add(wait) {
-                        continue;
-                    }
-                    if self
-                        .view_uint(claim, view("due(uint256)", &[uint_arg(e)]), 0)
-                        .await?
-                        > 0
-                    {
-                        keep.push(e);
-                    }
-                }
-                if keep.is_empty() {
-                    Check::Nothing("no agreed entry has Shares due".into())
+                if arriving > 0 && u128::from(head_time) >= end {
+                    Check::Due(call.clone())
                 } else {
-                    Check::Due(HelperCall::EarlierDeliverMany {
-                        claim: *claim,
-                        entries: keep,
-                    })
+                    Check::Nothing("no outside money has finished arriving".into())
                 }
             }
-            // A revert or the call's own answer decides these.
-            HelperCall::RoundsClose { .. }
-            | HelperCall::FinisherOpenPool { .. }
-            | HelperCall::FinisherSettle { .. }
-            | HelperCall::FinisherSweep { .. }
-            | HelperCall::FinisherAbandon { .. }
-            | HelperCall::HolderCollect { .. } => Check::Due(call.clone()),
         })
     }
 
@@ -453,24 +345,6 @@ impl Helper {
         metrics::counter!("buzz_chain_helper_node_errors_total").increment(1);
         tracing::warn!(job = %job.key, "chain helper: {reason}; put off");
         Ok(Outcome::Stop)
-    }
-
-    /// The members of a batch whose own call succeeds at the head (each
-    /// simulated alone with `eth_call`; nothing is sent). Review I1: one
-    /// backer whose settle reverts must not hold back the rest of the batch.
-    async fn members_that_pass(&self, call: &HelperCall) -> Result<Vec<usize>, Failure> {
-        let mut keep = Vec::new();
-        for i in 0..call.members() {
-            let Some(one) = call.only(&[i]) else {
-                continue;
-            };
-            match self.writer.call(&one.target(), &one.calldata()).await {
-                Ok(_) => keep.push(i),
-                Err(CallError::Reverted(_)) => {}
-                Err(CallError::Unavailable(e)) => return Err(Failure::Node(e)),
-            }
-        }
-        Ok(keep)
     }
 
     /// The most gas one call of this kind may ask for: the per-call cap, and
@@ -533,88 +407,35 @@ impl Helper {
             Err(Failure::Node(e)) => return self.node_failed(pool, job, "a view", e, report).await,
         };
 
-        // The call itself, from the helper's address, at the head. A batch
-        // that would revert is tried once more without the members whose own
-        // call reverts; they come back in a later batch of their own.
-        let mut narrowed = false;
-        let answer = loop {
-            match self.writer.call(&call.target(), &call.calldata()).await {
-                Ok(answer) => break answer,
-                Err(CallError::Unavailable(e)) => {
-                    return self.node_failed(pool, job, "eth_call", e, report).await
-                }
-                Err(CallError::Reverted(detail)) => {
-                    let lower = detail.to_ascii_lowercase();
-                    if let Some(name) = call
-                        .nothing_to_do_errors()
-                        .iter()
-                        .find(|e| lower.contains(&hex::encode(selector(e))))
-                    {
-                        store::mark_dropped(
-                            pool,
-                            job.id,
-                            &format!("nothing to do: {name}"),
-                            head.0,
-                        )
+        // The call itself, from the helper's address, at the head: a call that
+        // would revert is not sent.
+        match self.writer.call(&call.target(), &call.calldata()).await {
+            Ok(_) => {}
+            Err(CallError::Unavailable(e)) => {
+                return self.node_failed(pool, job, "eth_call", e, report).await
+            }
+            Err(CallError::Reverted(detail)) => {
+                let lower = detail.to_ascii_lowercase();
+                if let Some(name) = call
+                    .nothing_to_do_errors()
+                    .iter()
+                    .find(|e| lower.contains(&hex::encode(selector(e))))
+                {
+                    store::mark_dropped(pool, job.id, &format!("nothing to do: {name}"), head.0)
                         .await?;
-                        report.dropped += 1;
-                        return Ok(Outcome::Next);
-                    }
-                    if !narrowed && call.members() > 1 {
-                        narrowed = true;
-                        let keep = match self.members_that_pass(&call).await {
-                            Ok(keep) => keep,
-                            Err(Failure::Node(e)) => {
-                                return self.node_failed(pool, job, "eth_call", e, report).await
-                            }
-                            Err(Failure::Job(e)) => {
-                                self.retry(pool, job, &e, report).await?;
-                                return Ok(Outcome::Next);
-                            }
-                        };
-                        if keep.len() < call.members() {
-                            if let Some(fewer) = call.only(&keep) {
-                                tracing::warn!(
-                                    job = %job.key,
-                                    left_out = call.members() - keep.len(),
-                                    "chain helper: members whose own call reverts are left out of the batch"
-                                );
-                                call = fewer;
-                                continue;
-                            }
-                        }
-                    }
-                    self.retry(
-                        pool,
-                        job,
-                        &format!("the call would revert: {}", short(&detail)),
-                        report,
-                    )
-                    .await?;
+                    report.dropped += 1;
                     return Ok(Outcome::Next);
                 }
+                self.retry(
+                    pool,
+                    job,
+                    &format!("the call would revert: {}", short(&detail)),
+                    report,
+                )
+                .await?;
+                return Ok(Outcome::Next);
             }
-        };
-        let nothing = match &call {
-            HelperCall::FinisherOpenPool { .. }
-            | HelperCall::FinisherSettle { .. }
-            | HelperCall::FinisherSweep { .. } => {
-                is_zero_word(&answer, 0).then_some("the step answers false")
-            }
-            HelperCall::HolderCollect { .. } => (is_zero_word(&answer, 0)
-                && is_zero_word(&answer, 1))
-            .then_some("no fees to collect"),
-            HelperCall::RoundsRelease { .. } | HelperCall::VesterClaim { .. } => {
-                is_zero_word(&answer, 0).then_some("the call would move nothing")
-            }
-            _ => None,
-        };
-        if let Some(reason) = nothing {
-            store::mark_dropped(pool, job.id, reason, head.0).await?;
-            report.dropped += 1;
-            return Ok(Outcome::Next);
         }
-
         // The gas, within the call's room. A batch over it is halved (review
         // B1) and the first half sent. For a one-off batch (`settleMany`) the
         // rest is waiting still once that is final, so the builder makes it a
