@@ -25,7 +25,7 @@ import {
   sendKey,
 } from "./pending-sends";
 import { rememberSendTargets } from "./send-targets";
-import { useSender } from "./sender";
+import { senderWords, useSender } from "./sender";
 import { addressFromWord, type MoneyWallet, WalletStepError } from "./wallet";
 
 const moneyKeys = {
@@ -314,6 +314,8 @@ export function useMoneySend(action: string) {
     send,
     sendAsync,
     isPending: mutation.isPending,
+    /** What a sheet says of where the person agrees, for the sender sending this step. */
+    words: senderWords(wallet),
     /**
      * The call of this step that went out earlier from the account the wallet shows and has not landed, or null: the
      * next press looks it up (read on every render).

@@ -217,7 +217,7 @@ function BackSheet({
 
   return (
     <Sheet
-      description="Nothing is sent until you say so here and in your wallet."
+      description={`Nothing is sent until you say so here and ${send.words.where}.`}
       onOpenChange={(open) => {
         if (!open && !send.isPending) {
           setProblem(null);
@@ -255,10 +255,7 @@ function BackSheet({
             ? `You can lower or withdraw this ask until ${timeText(round.opensAt + LOWER_WINDOW_SECONDS)}. After that it stays.`
             : "This round is past its first 12 hours, so this ask cannot be lowered or withdrawn once sent."}
         </li>
-        <li>
-          Your wallet asks twice: once to let the round take the dollars, once
-          for the ask.
-        </li>
+        <li>{send.words.twoCalls}</li>
       </ul>
       <OwnershipLine />
       {waitingAmount !== null && waitingAmount !== value ? (
@@ -284,7 +281,7 @@ function BackSheet({
         onClick={confirm}
       >
         {send.isPending
-          ? "Waiting for your wallet…"
+          ? send.words.waiting
           : waitingAmount !== null
             ? `Look for your backing of ${dollarsText(waitingAmount)} dollars`
             : send.waiting

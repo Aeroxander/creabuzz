@@ -16,6 +16,7 @@ import {
   type MoneyWallet,
   type SenderKind,
   senderAvailability,
+  senderKind,
 } from "./wallet";
 
 const CHOICE_KEY = "creaton.money.sender";
@@ -105,6 +106,33 @@ export function useSenders(): {
 /** The sender that sends this person's money steps. */
 export function useSender(): MoneyWallet {
   return useSenders().chosen;
+}
+
+/**
+ * The words a sheet uses for where the person says yes, by sender: their wallet asks (once per call) or their passkey asks
+ * (once, for all the calls of the step, with the fee paid by the server).
+ */
+export function senderWords(sender: MoneyWallet): {
+  /** "... until you say so here and <where>." */
+  where: string;
+  /** The label of a press while the step runs. */
+  waiting: string;
+  /** What the person is asked for, as one sentence for a step of two calls (approve, then ask). */
+  twoCalls: string;
+} {
+  return senderKind(sender) === "passkey"
+    ? {
+        where: "with your passkey",
+        waiting: "Waiting for your passkey…",
+        twoCalls:
+          "Your passkey is asked once, for both steps. The server pays the network fee.",
+      }
+    : {
+        where: "in your wallet",
+        waiting: "Waiting for your wallet…",
+        twoCalls:
+          "Your wallet asks twice: once to let the round take the dollars, once for the ask.",
+      };
 }
 
 /** What to tell a person whose passkey sender cannot send, in plain words, or null when nothing needs saying. */

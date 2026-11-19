@@ -206,6 +206,11 @@ run(
       await path.press(page.getByTestId("back-review"), "Back");
       const sheet = page.getByTestId("back-sheet");
       await expect(sheet).toContainText("You get about 75,000 Shares");
+      // The sheet speaks of the passkey, not of a wallet this browser does not have.
+      await expect(sheet).toContainText(
+        "Your passkey is asked once, for both steps",
+      );
+      await expect(sheet).not.toContainText("wallet");
       await expect(sheet.getByTestId("ownership")).toHaveText(OWNERSHIP);
       await path.read(page, "the Back sheet");
       await path.press(
