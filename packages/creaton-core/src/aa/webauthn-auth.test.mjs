@@ -18,7 +18,7 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import test from "node:test";
-import { b64urlEncode } from "./passkey.ts";
+import { b64urlEncode } from "../account/passkey.ts";
 import {
   MAX_CLIENT_DATA_JSON_BYTES,
   ZERODEV_CHALLENGE_LOCATION,

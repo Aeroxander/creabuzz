@@ -16,7 +16,7 @@ import {
   kernelWrapHash,
   signKernelHash,
 } from "./kernel-signature.ts";
-import { b64urlEncode } from "./passkey.ts";
+import { b64urlEncode } from "../account/passkey.ts";
 import { keccak256 } from "./userop.ts";
 
 // The repo's pinned fixture passkey (contracts/test/kernel-sign.mjs): obviously fake, only ever used for tests. Its

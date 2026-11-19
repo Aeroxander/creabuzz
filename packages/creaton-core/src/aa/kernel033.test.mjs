@@ -57,7 +57,7 @@ import {
   signKernel033UserOp,
   userOpHashCalldataV07,
 } from "./kernel033.ts";
-import { b64urlEncode } from "./passkey.ts";
+import { b64urlEncode } from "../account/passkey.ts";
 import {
   hashPackedUserOperation,
   packAccountGasLimits,
