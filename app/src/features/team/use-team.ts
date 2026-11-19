@@ -6,7 +6,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { investingOn } from "../../lib/server";
 import type { ProjectNumbers } from "../money/numbers";
-import { useWallet } from "../money/use-money";
+import { useWallet, useWalletOnChain } from "../money/use-money";
 import {
   addressFromWord,
   type MoneyWallet,
@@ -62,9 +62,11 @@ export function usePair(numbers: ProjectNumbers | null) {
   const wallet = useWallet();
   const pair = numbers?.market.pair ?? null;
   const runsIt = Boolean(pair && numbers?.runner === pair);
+  const onChain = useWalletOnChain(numbers?.chainId);
   return useQuery({
     queryKey: teamKeys.pair(numbers?.chainId ?? 0, pair ?? ""),
-    enabled: investingOn() && wallet.isAvailable() && runsIt,
+    enabled:
+      investingOn() && wallet.isAvailable() && onChain === true && runsIt,
     staleTime: 60_000,
     queryFn: async (): Promise<PairState | null> => {
       if (!pair) return null;
@@ -99,9 +101,14 @@ export function usePairWaiting(
   pair: PairState | null,
 ) {
   const wallet = useWallet();
+  const onChain = useWalletOnChain(numbers?.chainId);
   return useQuery({
     queryKey: teamKeys.waiting(numbers?.chainId ?? 0, pair?.address ?? ""),
-    enabled: investingOn() && wallet.isAvailable() && Boolean(pair),
+    enabled:
+      investingOn() &&
+      wallet.isAvailable() &&
+      onChain === true &&
+      Boolean(pair),
     staleTime: 15_000,
     queryFn: async (): Promise<{ waiting: Proposal[]; complete: boolean }> => {
       if (!pair) return { waiting: [], complete: true };
@@ -144,11 +151,13 @@ export function useSeatOffer(
   const treasury = numbers?.contracts.treasury ?? null;
   const runner = numbers?.runner ?? null;
   const single = Boolean(runner && runner !== numbers?.market.pair);
+  const onChain = useWalletOnChain(numbers?.chainId);
   return useQuery({
     queryKey: teamKeys.seat(numbers?.chainId ?? 0, treasury ?? "", me ?? ""),
     enabled:
       investingOn() &&
       wallet.isAvailable() &&
+      onChain === true &&
       Boolean(numbers && treasury && me && runner && runner !== me),
     staleTime: 30_000,
     queryFn: async (): Promise<

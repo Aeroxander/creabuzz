@@ -18,6 +18,7 @@ import {
   pairConfirmCall,
   pairProposeCall,
 } from "./team-calls";
+import { SALE_STAGE, useBlock, useSaleStage } from "../market/use-market";
 import { type PairState, signsFor, usePairWaiting } from "./use-team";
 
 /**
@@ -45,14 +46,22 @@ export function PairCard({
   const asked = (selector: string) =>
     list.some((p) => p.data.startsWith(selector));
   const roundData = openRoundData(numbers.key, DEFAULT_SHARES_PER_RAW_DOLLAR);
+  // A sale that missed its minimum stays in the record as the one sale; the chain says it is closed (and from which block a
+  // new one may open), and then backing and a new auction are open to the Pair again.
+  const stage = useSaleStage(numbers).data;
+  const block = useBlock(numbers).data ?? numbers.asOf.block;
+  const failed = stage?.stage === SALE_STAGE.failed;
+  const retryIn = failed ? Math.max(0, stage.retryBlock - block) : 0;
+  const noSaleNow = !numbers.market.sale || failed;
   const canRaise =
     !anyRoundUnclosed(numbers) &&
     numbers.raised.left > 0n &&
-    !numbers.market.sale &&
+    noSaleNow &&
     !asked(roundData.slice(0, 10));
   const canAuction =
     !anyRoundUnclosed(numbers) &&
-    !numbers.market.sale &&
+    noSaleNow &&
+    retryIn === 0 &&
     !numbers.clock.woundDown;
   if (!signsFor(pair, me) || !treasury) return null;
   return (
@@ -125,6 +134,15 @@ export function PairCard({
             variant="secondary"
           />
         </div>
+      ) : null}
+      {failed ? (
+        <p className="text-sm" data-testid="pair-sale-failed">
+          The last auction did not reach its minimum and every bid was paid
+          back.{" "}
+          {retryIn === 0
+            ? "You can open one again."
+            : `You can open another from block ${stage?.retryBlock}, in ${retryIn} more ${retryIn === 1 ? "block" : "blocks"}.`}
+        </p>
       ) : null}
       {canAuction ? (
         <Button

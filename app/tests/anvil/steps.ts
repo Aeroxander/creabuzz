@@ -23,6 +23,8 @@ import {
   pairConfirmCall,
   pairProposeCall,
 } from "../../src/features/team/team-calls";
+import { exitCall, readExitPlan } from "../../src/features/market/exit-plan";
+import { collectCalls } from "../../src/features/market/market-calls";
 import { readWord } from "../../src/features/team/use-team";
 import { mintDollars, type Platform } from "./deploy";
 import {
@@ -178,4 +180,23 @@ export async function confirmThrough(
     [pairConfirmCall(pair, proposal.target, proposal.data, proposal.nonce)],
     31337,
   );
+}
+
+/**
+ * The app's calls that collect one bid after the sale finished: what settles it is read from the auction as the app's
+ * Collect press does (whole, or a partly filled bid with the auction's hints), then its Shares when `claim`.
+ */
+export async function collectBid(
+  wallet: MoneyWallet,
+  auction: string,
+  bidId: bigint,
+  claim: boolean,
+) {
+  const plan = await readExitPlan(wallet, auction, bidId);
+  if (plan.kind === "unavailable")
+    throw new Error(`no way to settle the bid: ${plan.reason}`);
+  return collectCalls(auction, bidId, {
+    exit: exitCall(auction, bidId, plan),
+    claim,
+  });
 }

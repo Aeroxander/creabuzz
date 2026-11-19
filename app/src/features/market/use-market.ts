@@ -11,7 +11,7 @@ import { topicOf } from "@creaton/core/launchpad/work.ts";
 import { useQuery } from "@tanstack/react-query";
 import { investingOn } from "../../lib/server";
 import type { ProjectNumbers } from "../money/numbers";
-import { useWallet } from "../money/use-money";
+import { useWallet, useWalletOnChain } from "../money/use-money";
 import { addressFromWord, type MoneyWallet } from "../money/wallet";
 import { TREASURY_READS } from "../team/team-calls";
 import type { MoneyCall } from "../money/calls";
@@ -33,11 +33,13 @@ export function useFloor(numbers: ProjectNumbers | null) {
   const treasury = numbers?.contracts.treasury ?? null;
   const shares = numbers?.contracts.shares ?? null;
   const settled = Boolean(numbers?.market.sale?.settled);
+  const onChain = useWalletOnChain(numbers?.chainId);
   return useQuery({
     queryKey: ["market", "floor", numbers?.chainId ?? 0, treasury ?? ""],
     enabled:
       investingOn() &&
       wallet.isAvailable() &&
+      onChain === true &&
       Boolean(treasury && shares) &&
       settled,
     staleTime: 30_000,
@@ -180,11 +182,13 @@ export function usePool(numbers: ProjectNumbers | null) {
   const wallet = useWallet();
   const finisher = numbers?.market.finisher ?? null;
   const shares = numbers?.contracts.shares ?? null;
+  const onChain = useWalletOnChain(numbers?.chainId);
   return useQuery({
     queryKey: ["market", "pool", numbers?.chainId ?? 0, finisher ?? ""],
     enabled:
       investingOn() &&
       wallet.isAvailable() &&
+      onChain === true &&
       Boolean(finisher && shares && numbers?.market.sale?.pool),
     staleTime: 15_000,
     queryFn: () => readPool(wallet, finisher as string, shares as string),
@@ -194,12 +198,62 @@ export function usePool(numbers: ProjectNumbers | null) {
 /** The network's newest block, for where the auction is (taking bids, closed to bids, ended). */
 export function useBlock(numbers: ProjectNumbers | null) {
   const wallet = useWallet();
+  const onChain = useWalletOnChain(numbers?.chainId);
   return useQuery({
     queryKey: ["market", "block", numbers?.chainId ?? 0],
+    // A wallet on another network has its own block numbers: never read as this project's.
     enabled:
-      investingOn() && wallet.isAvailable() && Boolean(numbers?.market.sale),
+      investingOn() &&
+      wallet.isAvailable() &&
+      onChain === true &&
+      Boolean(numbers?.market.sale),
     staleTime: 12_000,
     queryFn: () => wallet.blockNumber(),
+  });
+}
+
+/** `Finisher.Stage` as the contract numbers it. */
+export const SALE_STAGE = {
+  idle: 0,
+  open: 1,
+  done: 2,
+  failed: 3,
+  abandoned: 4,
+} as const;
+
+export interface SaleStage {
+  stage: number;
+  /** The block from which a failed sale's place may be taken by a new one (0 when none failed). */
+  retryBlock: number;
+}
+
+/**
+ * Where the project's sale stands on the chain (`Finisher.stage()`), which the record cannot say for a sale that failed
+ * (it keeps it as the one sale) or finished a moment ago. Undefined until read.
+ */
+export function useSaleStage(numbers: ProjectNumbers | null) {
+  const wallet = useWallet();
+  const finisher = numbers?.market.finisher ?? null;
+  const onChain = useWalletOnChain(numbers?.chainId);
+  return useQuery({
+    queryKey: ["market", "stage", numbers?.chainId ?? 0, finisher ?? ""],
+    enabled:
+      investingOn() &&
+      wallet.isAvailable() &&
+      onChain === true &&
+      Boolean(finisher && numbers?.market.sale),
+    staleTime: 12_000,
+    queryFn: async (): Promise<SaleStage> => {
+      if (!finisher) throw new Error("No Finisher.");
+      const [stage, retry] = await Promise.all([
+        readWord(wallet, finisher, MARKET_READS.stage),
+        readWord(wallet, finisher, MARKET_READS.retryBlock),
+      ]);
+      return {
+        stage: Number(stage),
+        retryBlock: retry > BigInt(Number.MAX_SAFE_INTEGER) ? 0 : Number(retry),
+      };
+    },
   });
 }
 
@@ -222,6 +276,7 @@ export interface MyBid {
 export function useMyBids(numbers: ProjectNumbers | null, me: string | null) {
   const wallet = useWallet();
   const sale = numbers?.market.sale ?? null;
+  const onChain = useWalletOnChain(numbers?.chainId);
   return useQuery({
     queryKey: [
       "market",
@@ -230,7 +285,11 @@ export function useMyBids(numbers: ProjectNumbers | null, me: string | null) {
       sale?.auction ?? "",
       me ?? "",
     ],
-    enabled: investingOn() && wallet.isAvailable() && Boolean(sale && me),
+    enabled:
+      investingOn() &&
+      wallet.isAvailable() &&
+      onChain === true &&
+      Boolean(sale && me),
     staleTime: 20_000,
     queryFn: async () => {
       if (!sale || !me)

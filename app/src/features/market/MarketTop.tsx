@@ -8,8 +8,13 @@ import { parseDollars } from "../money/calls";
 import { OwnershipLine } from "../money/MoneyTab";
 import { dollarsText, type ProjectNumbers, sharesText } from "../money/numbers";
 import { auctionState } from "../money/numbers-market";
-import { readQuote, useWalletAddress } from "../money/use-money";
+import {
+  readQuote,
+  useConnectWallet,
+  useWalletAddress,
+} from "../money/use-money";
 import { SendButton, SendSheet } from "../team/SendSheet";
+import { DisclosureBody } from "./AuctionDisclosure";
 import { readWord } from "../team/use-team";
 import {
   bidCalls,
@@ -27,7 +32,15 @@ import {
   priceText,
   sharePriceFromQ96,
 } from "./market-math";
-import { readFinishCalls, useBlock, useFloor, usePool } from "./use-market";
+import {
+  readFinishCalls,
+  SALE_STAGE,
+  type SaleStage,
+  useBlock,
+  useFloor,
+  usePool,
+  useSaleStage,
+} from "./use-market";
 
 const SHARE = 10n ** 18n;
 
@@ -57,11 +70,18 @@ export function parseShares(text: string): bigint | null {
 export function MarketTop({ numbers }: { numbers: ProjectNumbers }) {
   const sale = numbers.market.sale;
   const block = useBlock(numbers).data ?? numbers.asOf.block;
+  const stage = useSaleStage(numbers).data;
   if (!sale || numbers.clock.woundDown) return null;
   const state = auctionState(sale, block);
   if (state === "bidding" || state === "closing")
     return <BidBox closing={state === "closing"} numbers={numbers} />;
-  if (state === "ended" && !sale.pool) return <FinishBox numbers={numbers} />;
+  if (state === "ended" && !sale.pool)
+    // A sale that missed its minimum stays in the record as the one sale: the chain says it is closed and may be opened again.
+    return stage?.stage === SALE_STAGE.failed ? (
+      <FailedSaleBox block={block} retryBlock={stage.retryBlock} />
+    ) : (
+      <FinishBox numbers={numbers} stage={stage} />
+    );
   if (sale.pool) return <PoolBox numbers={numbers} />;
   return null;
 }
@@ -75,6 +95,7 @@ function BidBox({
 }) {
   const sale = numbers.market.sale;
   const me = useWalletAddress().data ?? null;
+  const connect = useConnectWallet();
   const titleId = useId();
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
@@ -134,6 +155,19 @@ function BidBox({
                     ? "A bid is at least 1 dollar."
                     : "Type an amount in dollars, like 250.",
                 );
+              if (!rounds)
+                return setError(
+                  "This project's page does not say where its money goes yet. Try again in a moment.",
+                );
+              // A wallet that has shared no account with this site is asked to first: the sheet needs the account.
+              if (!me)
+                return connect.mutate(undefined, {
+                  onSuccess: () => setOpen(true),
+                  onError: () =>
+                    setError(
+                      "Your wallet did not share an account. Allow it there, then press Bid again.",
+                    ),
+                });
               setOpen(true);
             }}
           >
@@ -143,7 +177,8 @@ function BidBox({
       )}
       {parsed.ok && rounds && me ? (
         <SendSheet
-          action={`bid:${numbers.chainId}:${sale.auction}`}
+          // The amount is part of the step: a waiting bid of another amount is never taken for this one.
+          action={`bid:${numbers.chainId}:${sale.auction}:${parsed.raw}`}
           build={async (wallet) => {
             const quote = await readQuote(wallet, rounds);
             const from = await wallet.getAddress();
@@ -165,7 +200,7 @@ function BidBox({
           chainId={numbers.chainId}
           confirmLabel="Place the bid"
           copy="bid"
-          done="Your bid is in. It is filled at the price the auction ends at."
+          done="Your bid is in. Collect your Shares and any unused dollars when the auction ends."
           onOpenChange={setOpen}
           open={open}
           testId="bid-sheet"
@@ -173,9 +208,10 @@ function BidBox({
         >
           <ul className="flex list-disc flex-col gap-1.5 pl-5">
             <li>
-              Everyone pays the same price per Share: the one the auction ends
-              at, at most {priceText(top)} dollars. At that price your{" "}
-              {dollarsText(parsed.raw)} dollars buy at least{" "}
+              The price moves as bids come in. Your bid is filled at the price
+              of each moment it is live, so an early bid can cost less than a
+              later one. No Share costs more than {priceText(top)} dollars, so
+              your {dollarsText(parsed.raw)} dollars buy at least{" "}
               {sharesText(
                 BigInt(Math.floor(Number(parsed.raw) / 1e6 / top)) * SHARE,
               )}{" "}
@@ -186,10 +222,12 @@ function BidBox({
               your bid comes back in full.
             </li>
             <li>
-              Shares bought in the auction are yours at once. After it ends you
-              collect them on the project's Money tab.
+              Shares bought in the auction are not held back for 365 days. After
+              it ends you collect them on the project's Money tab.
             </li>
           </ul>
+          <h3 className="mt-1 font-semibold">Before you bid</h3>
+          <DisclosureBody idPrefix="bid-disclosure" numbers={numbers} />
           <OwnershipLine />
         </SendSheet>
       ) : null}
@@ -197,13 +235,52 @@ function BidBox({
   );
 }
 
-function FinishBox({ numbers }: { numbers: ProjectNumbers }) {
+function FailedSaleBox({
+  block,
+  retryBlock,
+}: {
+  block: number;
+  retryBlock: number;
+}) {
+  const titleId = useId();
+  const wait = Math.max(0, retryBlock - block);
+  return (
+    <Card
+      aria-labelledby={titleId}
+      className="flex flex-col gap-2"
+      data-testid="failed-sale"
+      role="region"
+    >
+      <h2 className="headline text-xl" id={titleId}>
+        The auction did not reach its minimum
+      </h2>
+      <p className="text-sm text-muted">
+        Every bid comes back in full: bidders collect on the project's Money
+        tab. The people running the project can open an auction again{" "}
+        {wait === 0
+          ? "now."
+          : `from block ${retryBlock}, in ${wait} more ${wait === 1 ? "block" : "blocks"}.`}
+      </p>
+    </Card>
+  );
+}
+
+function FinishBox({
+  numbers,
+  stage,
+}: {
+  numbers: ProjectNumbers;
+  stage: SaleStage | undefined;
+}) {
   const titleId = useId();
   const sale = numbers.market.sale;
   const finisher = numbers.market.finisher;
   const totals = numbers.market.bids.find((b) => b.auction === sale?.auction);
   if (!sale || !finisher) return null;
   const reached = (totals?.amount ?? 0n) >= sale.minimum;
+  // Finished on the network while the record has not caught up: nothing is left to press.
+  const finished =
+    stage?.stage === SALE_STAGE.done || stage?.stage === SALE_STAGE.abandoned;
   return (
     <Card
       aria-labelledby={titleId}
@@ -219,19 +296,26 @@ function FinishBox({ numbers }: { numbers: ProjectNumbers }) {
           ? "It reached its minimum. Finishing opens the pool, splits the money and returns unsold Shares. The server's helper usually does it within minutes; anyone may press it."
           : "It did not reach its minimum, so every bid comes back in full. Closing it lets bidders take their dollars back. Anyone may press it."}
       </p>
-      <SendButton
-        action={`finish:${numbers.chainId}:${finisher}`}
-        block
-        build={(wallet) =>
-          readFinishCalls(wallet, finisher, sale.auction, reached)
-        }
-        chainId={numbers.chainId}
-        copy="finish"
-        done="Done. The numbers here catch up in a moment."
-        label={reached ? "Finish the sale" : "Close the sale"}
-        testId="finish-press"
-        variant="secondary"
-      />
+      {finished ? (
+        <p className="text-sm" data-testid="finish-done">
+          It is finished. The numbers here catch up in a moment.
+        </p>
+      ) : (
+        <SendButton
+          // The sale's stage is part of the step: a finish that landed earlier is never taken for the next one.
+          action={`finish:${numbers.chainId}:${finisher}:${stage?.stage ?? "unread"}`}
+          block
+          build={(wallet) =>
+            readFinishCalls(wallet, finisher, sale.auction, reached)
+          }
+          chainId={numbers.chainId}
+          copy="finish"
+          done="Done. The numbers here catch up in a moment."
+          label={reached ? "Finish the sale" : "Close the sale"}
+          testId="finish-press"
+          variant="secondary"
+        />
+      )}
     </Card>
   );
 }
@@ -378,7 +462,7 @@ function HandBackSheet({
   const paid = handBackPaid(slice, numbers.clock.woundDown);
   return (
     <SendSheet
-      action={`hand-back:${numbers.chainId}:${treasury}`}
+      action={`hand-back:${numbers.chainId}:${treasury}:${amount ?? 0n}`}
       build={() => (amount ? handBackCalls(shares, treasury, amount) : [])}
       chainId={numbers.chainId}
       confirmLabel="Hand back"
@@ -437,7 +521,7 @@ function TradeSheet({
       : parseShares(text);
   return (
     <SendSheet
-      action={`trade-${side}:${numbers.chainId}:${shares}`}
+      action={`trade-${side}:${numbers.chainId}:${shares}:${amountIn ?? 0n}`}
       build={async (wallet) => {
         if (!amountIn) return [];
         const from = await wallet.getAddress();

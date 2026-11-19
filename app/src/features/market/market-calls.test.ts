@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { exitCall } from "./exit-plan";
 import {
   bidCalls,
   collectCalls,
@@ -64,14 +65,38 @@ describe("market calls", () => {
     ).toEqual([PERMIT2, AUCTION]);
   });
 
+  it("settles a partly filled bid with the two hints, at the end (outbid 0) or after being outbid", () => {
+    expect(
+      exitCall(AUCTION, 7n, {
+        kind: "partial",
+        lastFullyFilled: 1005n,
+        outbid: 0n,
+      }).data,
+    ).toBe(
+      "0x36dec5f2000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000003ed0000000000000000000000000000000000000000000000000000000000000000",
+    );
+    expect(
+      exitCall(AUCTION, 7n, {
+        kind: "partial",
+        lastFullyFilled: 1005n,
+        outbid: 1500n,
+      }).data,
+    ).toBe(
+      "0x36dec5f2000000000000000000000000000000000000000000000000000000000000000700000000000000000000000000000000000000000000000000000000000003ed00000000000000000000000000000000000000000000000000000000000005dc",
+    );
+  });
+
   it("collects a bid, finishes a sale and hands Shares back", () => {
     expect(
-      collectCalls(AUCTION, 7n, { exit: true, claim: true }).map((c) => c.data),
+      collectCalls(AUCTION, 7n, {
+        exit: exitCall(AUCTION, 7n, { kind: "exit" }),
+        claim: true,
+      }).map((c) => c.data),
     ).toEqual([
       "0x8e4deb170000000000000000000000000000000000000000000000000000000000000007",
       "0x46e04a2f0000000000000000000000000000000000000000000000000000000000000007",
     ]);
-    expect(collectCalls(AUCTION, 7n, { exit: false, claim: true }).length).toBe(
+    expect(collectCalls(AUCTION, 7n, { exit: null, claim: true }).length).toBe(
       1,
     );
     expect(

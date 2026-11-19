@@ -7,7 +7,6 @@
 import { describe, expect, it } from "vitest";
 import {
   bidCalls,
-  collectCalls,
   finishCall,
   MARKET_READS,
 } from "../../src/features/market/market-calls";
@@ -25,6 +24,7 @@ import {
 } from "../../src/features/team/team-calls";
 import { teamProblem } from "../../src/features/team/team-copy";
 import { readAddress, readWord } from "../../src/features/team/use-team";
+import { collectBid } from "./steps";
 import { deployPlatform, mintDollars } from "./deploy";
 import { accounts, blockNumber, call, chainTime, mine, RPC, word } from "./rpc";
 import { confirmThrough, DAY, DOLLAR, data, launched, walletOf } from "./steps";
@@ -100,15 +100,14 @@ run("milestone 7 on anvil: a sale under its minimum", () => {
     ).toBe(0n);
 
     // Closing alone is refused until the pool step ran (what the app first sent), in the app's words.
-    try {
-      await walletOf(stranger).sendCalls(
-        [finishCall(p.finisher, "sweep")],
-        31337,
+    const early = await walletOf(stranger)
+      .sendCalls([finishCall(p.finisher, "sweep")], 31337)
+      .then(
+        () => null,
+        (error: unknown) => error,
       );
-      throw new Error("a sale closed before its pool step");
-    } catch (error) {
-      expect(teamProblem(error, "finish")).not.toMatch(/0x|revert/i);
-    }
+    expect(early).not.toBeNull();
+    expect(teamProblem(early, "finish")).not.toMatch(/0x|revert/i);
     // The record says the minimum was not reached: the press reads the chain and sends the pool step, then the sweep.
     const stranded = walletOf(stranger);
     const steps = await readFinishCalls(stranded, p.finisher, auction, false);
@@ -142,10 +141,7 @@ run("milestone 7 on anvil: a sale under its minimum", () => {
       });
       expect(logs.length).toBe(1);
       await wallet.sendCalls(
-        collectCalls(auction, BigInt(logs[0].topics[1]), {
-          exit: true,
-          claim: false,
-        }),
+        await collectBid(wallet, auction, BigInt(logs[0].topics[1]), false),
         31337,
       );
       expect(await balanceOf(bidder)).toBe(20_000n * DOLLAR);
@@ -154,5 +150,38 @@ run("milestone 7 on anvil: a sale under its minimum", () => {
       ).toBe(0n);
     }
     expect(await balanceOf(auction)).toBe(0n);
+
+    // The chain says the sale failed and from which block a new one may open: what the app reads to offer it again.
+    expect(await readWord(founderWallet, p.finisher, MARKET_READS.stage)).toBe(
+      3n,
+    );
+    const retryBlock = Number(
+      await readWord(founderWallet, p.finisher, MARKET_READS.retryBlock),
+    );
+    expect(retryBlock).toBeGreaterThan(await blockNumber());
+    // Too early is refused, in words; from that block the Pair opens it again with the app's own proposal and confirm.
+    const tooEarly = await confirmThrough(
+      pair,
+      founderWallet,
+      cosignerWallet,
+      platform.launcher,
+      openAuctionData(p.key, start),
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(tooEarly).not.toBeNull();
+    expect(teamProblem(tooEarly, "open-auction")).not.toMatch(/0x|revert/i);
+    await mine(retryBlock - (await blockNumber()) + 1);
+    await confirmThrough(
+      pair,
+      founderWallet,
+      cosignerWallet,
+      platform.launcher,
+      openAuctionData(p.key, start),
+    );
+    expect(await readWord(founderWallet, p.finisher, MARKET_READS.stage)).toBe(
+      1n,
+    );
   }, 600_000);
 });

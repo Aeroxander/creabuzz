@@ -25,6 +25,7 @@ import {
 } from "../../../tests/helpers/numbers-fixture";
 import { MarketMoney } from "./MarketMoney";
 import { MarketTop } from "./MarketTop";
+import { exitCall } from "./exit-plan";
 import { collectCalls, type PoolKey, tradeCalls } from "./market-calls";
 import { poolSlots } from "./use-market";
 
@@ -251,6 +252,9 @@ describe("a sale that did not reach its minimum", () => {
         "isGraduated()": `0x${word(0)}`,
         "claimBlock()": `0x${word(8_201)}`,
         "clearingPrice()": `0x${word(FLOOR)}`,
+        "endBlock()": `0x${word(8_200)}`,
+        // Finisher.Stage.Failed: closed, every bid refunded
+        "stage()": `0x${word(3)}`,
       },
     });
     wrap(
@@ -264,9 +268,10 @@ describe("a sale that did not reach its minimum", () => {
     await waitFor(() => expect(stub.sent.length).toBe(1));
     await new Promise((r) => setTimeout(r, 30));
     expect(stub.sent.map((c) => c.data)).toEqual(
-      collectCalls(AUCTION, 3n, { exit: true, claim: false }).map(
-        (c) => c.data,
-      ),
+      collectCalls(AUCTION, 3n, {
+        exit: exitCall(AUCTION, 3n, { kind: "exit" }),
+        claim: false,
+      }).map((c) => c.data),
     );
   });
 });

@@ -30,6 +30,7 @@ import {
   handBackCalls,
   tradeCalls,
 } from "./market-calls";
+import { exitCall } from "./exit-plan";
 import { MarketMoney } from "./MarketMoney";
 import { MarketTop } from "./MarketTop";
 import { poolSlots } from "./use-market";
@@ -422,6 +423,14 @@ describe("before and after the auction on the Money tab", () => {
         "isGraduated()": `0x${word(1)}`,
         "claimBlock()": `0x${word(8_201)}`,
         "clearingPrice()": `0x${word(FLOOR * 2n)}`,
+        "endBlock()": `0x${word(8_200)}`,
+        // Finisher.Stage.Done
+        "stage()": `0x${word(2)}`,
+        // checkpoints(block): the price then, three more words, and the next checkpoint's block
+        "checkpoints(uint64)": (_to, data) =>
+          BigInt(`0x${data.slice(10)}`) === 2_000n
+            ? `0x${word(FLOOR)}${word(0)}${word(0)}${word(0)}${word(0)}${word(8_200)}`
+            : `0x${word(FLOOR * 2n)}${word(0)}${word(0)}${word(0)}${word(0)}${word((1n << 64n) - 1n)}`,
       },
     });
     wrap(<MarketMoney numbers={market({ settled: true, pool: true })} />);
@@ -430,7 +439,10 @@ describe("before and after the auction on the Money tab", () => {
     fireEvent.click(screen.getByTestId("collect-bid"));
     await waitFor(() => expect(stub.sent.length).toBe(2));
     expect(stub.sent.map((c) => c.data)).toEqual(
-      collectCalls(AUCTION, 3n, { exit: true, claim: true }).map((c) => c.data),
+      collectCalls(AUCTION, 3n, {
+        exit: exitCall(AUCTION, 3n, { kind: "exit" }),
+        claim: true,
+      }).map((c) => c.data),
     );
   });
 });

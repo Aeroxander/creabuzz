@@ -182,6 +182,20 @@ export function useWalletAddress() {
   });
 }
 
+/**
+ * Whether the wallet is on the network a project lives on: true, false, or undefined while unknown. A wallet on another
+ * network answers every read about the project with that network's blocks and nothing, so project reads wait for true.
+ */
+export function useWalletOnChain(chainId: number | undefined) {
+  const wallet = useWallet();
+  return useQuery({
+    queryKey: ["money", "wallet-chain", chainId ?? 0],
+    enabled: investingOn() && wallet.isAvailable() && chainId !== undefined,
+    staleTime: 5_000,
+    queryFn: async () => (await wallet.chainId()) === chainId,
+  }).data;
+}
+
 /** Ask the wallet to share an account with this site. */
 export function useConnectWallet() {
   const wallet = useWallet();

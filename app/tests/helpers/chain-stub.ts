@@ -24,6 +24,8 @@ export interface ChainStub {
   account: string;
   /** The next send fails with this revert data, once. */
   refuse: string | null;
+  /** While true no sent call has a receipt yet (the wallet's wait runs out); set false and they have landed. */
+  holdReceipts: boolean;
 }
 
 export function installChainStub(options: {
@@ -40,6 +42,7 @@ export function installChainStub(options: {
     signed: [],
     account: options.account,
     refuse: null,
+    holdReceipts: false,
   };
   const bySelector = new Map<
     string,
@@ -82,7 +85,8 @@ export function installChainStub(options: {
         stub.sent.push({ from: stub.account, to: tx.to, data: tx.data });
         return `0x${stub.sent.length.toString(16).padStart(64, "0")}`;
       }
-      if (method === "eth_getTransactionReceipt") return { status: "0x1" };
+      if (method === "eth_getTransactionReceipt")
+        return stub.holdReceipts ? null : { status: "0x1" };
       throw { code: 4200, message: method };
     },
   };

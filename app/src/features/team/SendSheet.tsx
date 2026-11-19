@@ -82,6 +82,8 @@ export function SendSheet({
               onSuccess: () => {
                 // Team's own reads (the Pair's waiting calls, an offered seat) are read again too.
                 void queryClient.invalidateQueries({ queryKey: ["team"] });
+                // The market's own reads (the sale's stage, this wallet's bids) are read again too.
+                void queryClient.invalidateQueries({ queryKey: ["market"] });
                 toast(done, "done");
                 onSent?.();
                 onOpenChange(false);
@@ -146,6 +148,7 @@ export function SendButton({
             {
               onSuccess: () => {
                 void queryClient.invalidateQueries({ queryKey: ["team"] });
+                void queryClient.invalidateQueries({ queryKey: ["market"] });
                 toast(done, "done");
               },
               onError: (error) => setProblem(teamProblem(error, copy)),

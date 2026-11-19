@@ -7,7 +7,6 @@
 import { describe, expect, it } from "vitest";
 import {
   bidCalls,
-  collectCalls,
   finishCall,
   handBackCalls,
 } from "../../src/features/market/market-calls";
@@ -38,6 +37,7 @@ import {
 } from "../../src/features/team/team-calls";
 import { teamProblem } from "../../src/features/team/team-copy";
 import { readAddress } from "../../src/features/team/use-team";
+import { collectBid } from "./steps";
 import { deployPlatform, mintDollars } from "./deploy";
 import {
   accounts,
@@ -297,10 +297,7 @@ run("milestone 7 on anvil: alone, then two, then a market", () => {
       });
       expect(logs.length).toBe(1);
       await wallet.sendCalls(
-        collectCalls(auction, BigInt(logs[0].topics[1]), {
-          exit: true,
-          claim: true,
-        }),
+        await collectBid(wallet, auction, BigInt(logs[0].topics[1]), true),
         31337,
       );
       expect(

@@ -14,7 +14,6 @@ import {
   bidPlanWithDefaultHint,
   buildBidCalls,
   encodeClaimTokens,
-  encodeExitBid,
   encodePermit2Approve,
 } from "@creaton/core/launchpad/evmContractCalls.ts";
 import type { MoneyCall } from "../money/calls";
@@ -65,10 +64,14 @@ export function bidCalls(input: {
 export function collectCalls(
   auction: string,
   bidId: bigint,
-  steps: { exit: boolean; claim: boolean },
+  steps: {
+    /** The call that settles the bid (`exitCall`, by what the auction says), or null when it was settled already. */
+    exit: MoneyCall | null;
+    claim: boolean;
+  },
 ): MoneyCall[] {
   return [
-    ...(steps.exit ? [call(auction, encodeExitBid(bidId))] : []),
+    ...(steps.exit ? [steps.exit] : []),
     ...(steps.claim ? [call(auction, encodeClaimTokens(bidId))] : []),
   ];
 }
@@ -236,6 +239,8 @@ export const MARKET_READS = {
   totalSupply: encodeFunctionData("totalSupply()", [], []),
   poolKey: encodeFunctionData("poolKey()", [], []),
   poolManager: encodeFunctionData("poolManager()", [], []),
+  stage: encodeFunctionData("stage()", [], []),
+  retryBlock: encodeFunctionData("retryBlock()", [], []),
   strategy: encodeFunctionData("strategy()", [], []),
   registeredPoolId: (id: string) =>
     encodeFunctionData("registeredPoolIds(bytes32)", ["bytes32"], [id]),
@@ -243,6 +248,9 @@ export const MARKET_READS = {
   clearingPrice: encodeFunctionData("clearingPrice()", [], []),
   isGraduated: encodeFunctionData("isGraduated()", [], []),
   claimBlock: encodeFunctionData("claimBlock()", [], []),
+  endBlock: encodeFunctionData("endBlock()", [], []),
+  checkpoint: (block: bigint) =>
+    encodeFunctionData("checkpoints(uint64)", ["uint64"], [block]),
   extsload: (slot: string) =>
     encodeFunctionData("extsload(bytes32)", ["bytes32"], [slot]),
 } as const;
