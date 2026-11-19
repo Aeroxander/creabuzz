@@ -9,7 +9,7 @@ everything with `python3 -I` (isolated mode).
 | `v4_model.py` | The model, copied byte for byte. sha256 `a1388285675c649b4f8951dc942928d5449cb2856eb3993d3ce1dfb858944649`. 70-digit decimals, no integer rounding. Self-test: `python3 -I v4_model.py` (a 300-seed random run of 400 operations; about three seconds). |
 | `pot_ext.py` | The extension, on top of the unchanged model: the contracts' rules in exact arithmetic (below). All amounts in base units (dollars in millionths, Shares in wei). |
 | `gen_vectors.py` | Fixed and seeded scenarios run through the extension. `python3 -I gen_vectors.py` writes `vectors.json`; `--check` fails if the committed file differs. |
-| `vectors.json` | 52 scenarios (32 fixed, 20 seeded), 1,805 operations, every expected number as a decimal string. Read by `test/ModelVectors.t.sol`. |
+| `vectors.json` | Format 2: 83 scenarios (32 fixed and 20 seeded for step 1, 11 fixed and 20 seeded with task steps for step 2), 3,463 operations, every expected number as a decimal string. Read by `test/ModelVectors.t.sol`. |
 | `v4_attacks_output.txt`, `v4_team_output.txt`, `v4_fuzz_output.txt` | Outputs of the model's attack, Team and fuzz runs. Copied only. |
 
 ## Where the contracts differ from the model, and who wins
@@ -23,21 +23,33 @@ with the choice, in `POT-STEP1A-REPORT.md`.
 - **Outside money** arrives as one weighted-average stream over one time unit; the model's `release` takes a manual fraction.
 - **Time.** The check-in window (2N), active seconds, the door, the rate raise (propose, wait N, apply) and Team Share vesting exist only in the contracts and the extension.
 - **Fees** round up by at most one unit; Shares minted and cash paid round down.
-- **Tasks, locked money and exit notes** are step 2: the vector scenarios use none of them.
+- **Tasks, locked money and exit notes** (step 2). The extension implements the contracts' rules in exact arithmetic: the notice is
+  `2N + ceil(bps x N / 1400)` seconds (the one integer in the model: a time); a take can happen from the end of the notice for N
+  seconds; the money set aside is the smaller of the stated dollars and `bps` of the settled pot; the cap counts
+  `ceil(amount x 10,000 / pot)` ten-thousandths in any rolling 4N and refuses a take that passes 1,000; a joiner's price and credit count
+  the stayers' claim of every taken task at face (`x = P + D + C + offset`; the model's own `join` did, `pot_ext` did not); a leaver is
+  paid cash on the pot without the set-aside money and written a note for the rest, spread over the taken tasks by their claims; a
+  task that ends returns what is not paid to the worker at one ratio to the stayers and to the notes; a task that runs out returns
+  at the END of the settle, after the allowance and the release; a wind-down returns every open task and shuts the door. Where the
+  contracts floor (each note's part, the pool for notes, a claim, the take amount) the model is exact: at most 8 units per open
+  task per take-out, which the test adds to its allowance. The first 52 scenarios are unchanged; the file gains the columns `o4`
+  (the exit note a take-out writes), `locked` and `notes`.
 
 ## How the vectors bind the contracts
 
 `ModelVectors.t.sol` launches each scenario through the real Launcher, gives Team Shares by a real grant (vested over 104 time
 units of active time and claimed), optionally forces a pot and a paid-in with storage writes (only for the design's worked
 examples, whose states cannot be reached in a few steps), then replays the operations with the real calls and compares, after
-each, the pot, paid-in, Shares, Team Shares, burn queue, box, outside money arriving, fees owed and what the operation returned.
+each, the pot, paid-in, Shares, Team Shares, burn queue, box, outside money arriving, fees owed, the money set aside for tasks, the
+money held for notes, and what the operation returned (for tasks: the notice to the second, the money set aside, a refused take, a
+payment, the note a take-out writes, the money a claim pays).
 Between the Treasury's own quote and its action it asserts exact equality.
 
 Tolerance, stated in the test header: after `k` operations a dollar number may differ from the model's by `4k` units plus its own
 size times `4k / X`, and a Share number by `8k` wei plus the same relative term. `X` is the smallest money-in-the-quote the
 project held while it had backers (or the smallest join, if less: a join's fee rounds by up to one unit). That is the rounding
 the contracts define (floors, a fee rounded up, paid-in cut down) carried through at most `k` prices. The largest deviation seen
-over the 1,805 operations and 15,273 compared numbers is 24% of its allowance (`forge test --match-path test/ModelVectors.t.sol -vv`
+over the 3,463 operations and 32,633 compared numbers is 24% of its allowance (`forge test --match-path test/ModelVectors.t.sol -vv`
 prints it per chunk); the mutation check shows a changed formula moves numbers by orders of
 magnitude more.
 

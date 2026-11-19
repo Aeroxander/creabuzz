@@ -2,14 +2,19 @@
 pragma solidity ^0.8.30;
 
 import {StdStorage, stdStorage} from "forge-std/Test.sol";
+import {Vm} from "forge-std/Vm.sol";
 import {StackBase} from "./helpers/StackBase.sol";
 import {Treasury} from "../src/Treasury.sol";
+import {TaskBook} from "../src/TaskBook.sol";
 
 /// @notice Replays every scenario of `model/vectors.json` (written by `model/gen_vectors.py` from the exact-decimal
 /// reference model) against the real contracts, launched through the real Launcher, and compares every number after every
-/// operation: the pot, paid-in, Shares, Team Shares, the allowance box, outside money arriving, fees owed, the burn queue,
+/// operation: the pot, paid-in, Shares, Team Shares, the allowance box, outside money arriving, fees owed, the burn queue, the
+/// money set aside for taken tasks, the money held for exit notes,
 /// and what each operation returned (Shares minted, cash paid, what a take-out at once would pay, what is left behind for
-/// those who stay, dollars drawn, Team Shares announced and burned).
+/// those who stay, dollars drawn, Team Shares announced and burned; for the task queue: the notice to the second, the money
+/// set aside by a take, a take the cap refuses, a payment to a worker, the exit note a take-out writes, the money a note
+/// claim pays).
 ///
 /// TOLERANCE. The model is exact; the contracts round down (Shares minted, cash paid), round the platform fee up by at most
 /// one unit, and cut paid-in down. Every such rounding is at most a few units of a dollar (a millionth), and it can carry
@@ -19,6 +24,8 @@ import {Treasury} from "../src/Treasury.sol";
 /// (pot + outside money arriving + the one-dollar offset) the project held before any operation so far while it had backers,
 /// or the smallest join so far if that is less (a join's fee rounds by up to a unit, a part in its size of the Shares it mints).
 /// The relative term is the dollar dust of the earlier operations as a share of the money that set their prices.
+/// Tasks add one thing: a take-out spreads its note over the taken tasks and rounds each part down, so the few units that
+/// floors leave stay in the stayers' claim; the allowance grows by 8 units for every open task at every take-out.
 /// The test prints the worst deviation as a share of this allowance. A formula changed in a contract moves numbers by far more
 /// (one part in a thousand or more); `scripts/check-mutations.py` in this folder proves it for a list of changes.
 contract ModelVectorsTest is StackBase {
@@ -32,6 +39,7 @@ contract ModelVectorsTest is StackBase {
     address[] internal actors;
     uint256[] internal gid; // grant index in the scenario -> Vester id
     address[] internal gmember;
+    uint256 internal slack; // units added to every dollar allowance: the spread of exit notes rounds each part down
     uint256 internal worstPermille; // worst deviation as a thousandth of its allowance
     string internal worstWhere;
     uint256 internal checks;
@@ -44,6 +52,7 @@ contract ModelVectorsTest is StackBase {
         uint256[] o1;
         uint256[] o2;
         uint256[] o3;
+        uint256[] o4;
         uint256[] P;
         uint256[] A;
         uint256[] B;
@@ -52,6 +61,8 @@ contract ModelVectorsTest is StackBase {
         uint256[] D;
         uint256[] fees;
         uint256[] Z;
+        uint256[] locked;
+        uint256[] notes;
     }
 
     // the scenario being replayed
@@ -67,7 +78,7 @@ contract ModelVectorsTest is StackBase {
 
     /// @dev The scenarios are replayed in chunks of five, one test each, so no one test runs out of gas.
     uint256 internal constant CHUNK = 5;
-    uint256 internal constant CHUNKS = 12;
+    uint256 internal constant CHUNKS = 17;
 
     function test_vectorFileIsCompleteAndAllChunksCoverIt() public view {
         uint256[] memory rates = abi.decode(vm.parseJson(json, ".scenarios[*].head.rate"), (uint256[]));
@@ -123,6 +134,26 @@ contract ModelVectorsTest is StackBase {
         _chunk(11);
     }
 
+    function test_vectors_12() public {
+        _chunk(12);
+    }
+
+    function test_vectors_13() public {
+        _chunk(13);
+    }
+
+    function test_vectors_14() public {
+        _chunk(14);
+    }
+
+    function test_vectors_15() public {
+        _chunk(15);
+    }
+
+    function test_vectors_16() public {
+        _chunk(16);
+    }
+
     function _chunk(uint256 c) internal {
         uint256[] memory rates = abi.decode(vm.parseJson(json, ".scenarios[*].head.rate"), (uint256[]));
         uint256 ops;
@@ -143,6 +174,7 @@ contract ModelVectorsTest is StackBase {
 
     function _replay(uint256 i, uint32 rate) internal returns (uint256 n) {
         si = i;
+        slack = 0;
         string memory h = _p(i, "head.");
         sname = vm.parseJsonString(json, string.concat(h, "name"));
         uint256 pool = vm.parseJsonUint(json, string.concat(h, "pool"));
@@ -161,7 +193,7 @@ contract ModelVectorsTest is StackBase {
         n = kinds.length;
         Cols memory c = _cols();
         minX = type(uint256).max;
-        if (shares.totalSupply() > 0) minX = OFFSET + t.pot() + t.arriving();
+        if (shares.totalSupply() > 0) minX = OFFSET + t.pot() + t.arriving() + t.locked();
         for (uint256 j; j < n; ++j) {
             _op(j, keccak256(bytes(kinds[j])), c);
             // A warp is not followed by a settle: the next operation acts cold, on a clock nobody has settled, so each
@@ -171,7 +203,7 @@ contract ModelVectorsTest is StackBase {
             _state(j, c);
             // the money that priced the next operation: what is in the quote now, while there are backers
             if (shares.totalSupply() > 0) {
-                uint256 xNow = OFFSET + t.pot() + t.arriving();
+                uint256 xNow = OFFSET + t.pot() + t.arriving() + t.locked();
                 if (xNow < minX) minX = xNow;
             }
         }
@@ -214,6 +246,7 @@ contract ModelVectorsTest is StackBase {
         uint256[] memory o1 = c.o1;
         uint256[] memory o2 = c.o2;
         uint256[] memory o3 = c.o3;
+        uint256[] memory o4 = c.o4;
         address me = who < actors.length ? actors[who] : address(0);
         if (kind == keccak256("join")) {
             if (x < minX) minX = x; // the fee of a join rounds by up to a unit: a part in x of the Shares it mints
@@ -228,19 +261,28 @@ contract ModelVectorsTest is StackBase {
             _near(j, "take-out at once", instant, o2[j], USD_BASE);
         } else if (kind == keccak256("leave")) {
             uint256 nSh = shares.balanceOf(me) * x / y;
-            (uint256 q,, uint256 behind) = t.quoteTakeOut(me, nSh);
+            (uint256 q, uint256 qNote, uint256 behind) = t.quoteTakeOut(me, nSh);
+            vm.recordLogs();
             vm.prank(me);
             uint256 cash = t.leave(nSh, 0, me);
             assertEq(cash, q, _w(j, "the take-out quote is what leave paid"));
+            uint256 note = _noteOfLeave(Treasury.Left.selector);
+            assertEq(note, qNote, _w(j, "the take-out quote shows the note that was written"));
+            slack += 8 * _book().openCount();
             _near(j, "cash", cash, o1[j], USD_BASE);
             _near(j, "shares burned", nSh, o2[j], SHARE_BASE);
             _near(j, "left behind", behind, o3[j], USD_BASE);
+            _near(j, "exit note", note, o4[j], USD_BASE);
         } else if (kind == keccak256("leaveTeam")) {
             uint256 nT = team.balanceOf(me) * x / y;
+            vm.recordLogs();
             vm.prank(me);
             uint256 cash = t.leaveTeam(nT, 0, me);
+            uint256 note = _noteOfLeave(Treasury.TeamLeft.selector);
+            slack += 8 * _book().openCount();
             _near(j, "team cash", cash, o1[j], USD_BASE);
             _near(j, "team shares burned", nT, o2[j], SHARE_BASE);
+            _near(j, "team exit note", note, o4[j], USD_BASE);
         } else if (kind == keccak256("leaveTeamZero")) {
             uint256 nT = team.balanceOf(me);
             vm.prank(me);
@@ -285,8 +327,62 @@ contract ModelVectorsTest is StackBase {
             uint256 z0 = t.Z();
             v.execute(gid[who]);
             _near(j, "burned", z0 - t.Z(), o1[j], SHARE_BASE);
+        } else if (kind == keccak256("announce")) {
+            vm.prank(founder);
+            uint64 serial =
+                t.announceTask(keccak256(abi.encode("vector task", si, o2[j])), me, y, uint16(x));
+            assertEq(serial, o2[j], _w(j, "serials are numbered from 1, in order, never reused"));
+            TaskBook.Task memory k = _book().taskOf(serial);
+            assertEq(k.noticeEnd - k.announcedAt, o1[j], _w(j, "the notice is the model's, to the second"));
+            (uint256 notice,,) = t.noticeFor(uint16(x));
+            assertEq(notice, o1[j], _w(j, "noticeFor is the model's, to the second"));
+            ++checks;
+        } else if (kind == keccak256("cancel")) {
+            vm.prank(founder);
+            t.cancelTask(uint64(x));
+        } else if (kind == keccak256("takeEarly")) {
+            uint256 end = _book().taskOf(uint64(x)).noticeEnd;
+            assertEq(block.timestamp + 1, end, _w(j, "one second before the notice ends"));
+            vm.prank(me);
+            vm.expectRevert(abi.encodeWithSelector(TaskBook.NoticeRunning.selector, end));
+            t.takeTask(uint64(x), 0);
+        } else if (kind == keccak256("take")) {
+            vm.prank(me);
+            uint256 got = t.takeTask(uint64(x), 0);
+            _near(j, "dollars set aside", got, o1[j], USD_BASE);
+        } else if (kind == keccak256("takeBlocked")) {
+            vm.prank(me);
+            vm.expectPartialRevert(TaskBook.CapReached.selector);
+            t.takeTask(uint64(x), 0);
+        } else if (kind == keccak256("accept") || kind == keccak256("acceptAll")) {
+            address worker = _book().taskOf(uint64(x)).takenBy;
+            uint256 pay = kind == keccak256("accept") ? y : _book().taskOf(uint64(x)).locked;
+            uint256 before = usd.balanceOf(worker);
+            vm.prank(founder);
+            t.acceptTask(uint64(x), pay);
+            assertEq(usd.balanceOf(worker) - before, pay, _w(j, "the worker is paid what the runner named"));
+            _near(j, "payment", pay, o1[j], USD_BASE);
+        } else if (kind == keccak256("reject")) {
+            vm.prank(founder);
+            t.rejectTask(uint64(x));
+        } else if (kind == keccak256("claim")) {
+            uint256 paid = t.claimNote(uint64(x), me);
+            _near(j, "note paid", paid, o1[j], USD_BASE);
+        } else if (kind == keccak256("windDown")) {
+            vm.prank(founder);
+            t.windDown();
         } else {
             revert("unknown operation kind in the vector file");
+        }
+    }
+
+    /// @dev The exit note a take-out wrote, from its own event (third number of `Left` and `TeamLeft`).
+    function _noteOfLeave(bytes32 sig) internal returns (uint256 note) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == address(t) && logs[i].topics[0] == sig) {
+                (,, note) = abi.decode(logs[i].data, (uint256, uint256, uint256));
+            }
         }
     }
 
@@ -299,6 +395,8 @@ contract ModelVectorsTest is StackBase {
         _near(j, "outside money arriving", t.arriving(), c.D[j], USD_BASE);
         _near(j, "fees owed", t.feesOwed(), c.fees[j], USD_BASE);
         _near(j, "burn queue", t.Z(), c.Z[j], SHARE_BASE);
+        _near(j, "money set aside for tasks", t.locked(), c.locked[j], USD_BASE);
+        _near(j, "money held for notes", t.notesOwed(), c.notes[j], USD_BASE);
     }
 
     // ================================================== comparing ====================================================
@@ -306,7 +404,7 @@ contract ModelVectorsTest is StackBase {
     function _near(uint256 j, string memory what, uint256 actual, uint256 expected, uint256 base) internal {
         uint256 k = j + 1;
         uint256 den = minX;
-        uint256 allowance = base * k + (expected * 4 * k) / den + 1;
+        uint256 allowance = base * k + (expected * 4 * k) / den + 1 + slack;
         uint256 diff = actual > expected ? actual - expected : expected - actual;
         ++checks;
         uint256 permille = diff * 1000 / allowance;
@@ -346,6 +444,7 @@ contract ModelVectorsTest is StackBase {
         c.o1 = _col("o1");
         c.o2 = _col("o2");
         c.o3 = _col("o3");
+        c.o4 = _col("o4");
         c.P = _col("P");
         c.A = _col("A");
         c.B = _col("B");
@@ -354,5 +453,7 @@ contract ModelVectorsTest is StackBase {
         c.D = _col("D");
         c.fees = _col("fees");
         c.Z = _col("Z");
+        c.locked = _col("locked");
+        c.notes = _col("notes");
     }
 }

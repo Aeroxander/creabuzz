@@ -5,23 +5,32 @@
 # Deterministic: no clock, no environment, a seeded generator. Amounts are decimal STRINGS in base units (dollars in
 # millionths, Shares in wei), because JSON numbers lose digits above 2^53.
 #
-# File shape: {"format": 1, "scenarios": [ {"head": {name, note, pool, rate, actors, team_who, team_amt, force_P, force_A,
+# File shape: {"format": 2, "scenarios": [ {"head": {name, note, pool, rate, actors, team_who, team_amt, force_P, force_A,
 # force_who, force_amt}, "ops": {column: [values]}} ]}. Before the first operation a scenario may give Team Shares (team_who,
 # team_amt: granted, vested over 104 time units and claimed) and force a state (force_P, force_A, force_who, force_amt: a pot, a
 # paid-in and Shares in hands, as the design's worked examples need). Columns, one value per operation:
 #   kind  one of join, leave, leaveTeam, leaveTeamZero, revenue, warp, checkIn, draw, setRate, proposeRate, applyRate,
-#         grant, ownExit, execute
+#         grant, ownExit, execute, and for the task queue (step 2): announce, cancel, take, takeEarly, takeBlocked, accept,
+#         acceptAll, reject, claim, windDown
 #   who   the actor index (the payer for revenue, the grant's index for ownExit and execute)
-#   x, y  arguments: join/revenue/draw amount x; leave fraction x/y of the actor's Shares; warp seconds x; a rate x in ppm
-#   o1,o2,o3  what the operation returns, by kind:
-#         join        o1 Shares minted, o2 what taking them out at once would pay, o3 unused
-#         leave       o1 cash, o2 Shares burned, o3 outside money left behind for those who stay
-#         leaveTeam   o1 cash, o2 Team Shares burned
+#   x, y  arguments: join/revenue/draw amount x; leave fraction x/y of the actor's Shares; warp seconds x; a rate x in ppm;
+#         announce: x ten-thousandths of the pot, y dollar maximum, who the named payee; take, takeEarly, takeBlocked, cancel,
+#         reject, claim, acceptAll: x the task's serial (who takes, or is paid the note); accept: x the serial, y the payment
+#   o1,o2,o3,o4  what the operation returns, by kind:
+#         join        o1 Shares minted, o2 what taking them out at once would pay
+#         leave       o1 cash, o2 Shares burned, o3 outside money left behind for those who stay, o4 the exit note written
+#         leaveTeam   o1 cash, o2 Team Shares burned, o4 the exit note written
+#         announce    o1 the notice in seconds (2N + N/1400 per ten-thousandth, rounded up), o2 the serial
+#         take        o1 dollars set aside
+#         accept      o1 the payment (acceptAll: o1 what the task held)
+#         claim       o1 dollars paid to the holder
 #         draw        o1 dollars drawn
 #         ownExit     o1 Team Shares announced to burn
 #         execute     o1 Team Shares burned
-#   P A B G box D fees Z   the state after the operation (and one more settle at the same second): pot, paid-in, Shares,
-#         Team Shares, allowance box, outside money still arriving, platform fees owed, the burn queue.
+#   P A B G box D fees Z locked notes   the state after the operation (and one more settle at the same second): pot, paid-in,
+#         Shares, Team Shares, allowance box, outside money still arriving, platform fees owed, the burn queue, the money set
+#         aside for taken tasks (the stayers' claims), the money held for exit notes (their face against open tasks, and what
+#         is still claimable on tasks that ended).
 import copy
 import importlib.util
 import json
@@ -33,7 +42,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location("pot_ext", os.path.join(HERE, "pot_ext.py"))
 ext = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(ext)
-F, floor_int, EdgeError = ext.F, ext.floor_int, ext.EdgeError
+F, floor_int, EdgeError, Blocked = ext.F, ext.floor_int, ext.EdgeError, ext.Blocked
 UNIT, DAY = ext.UNIT, ext.DAY
 S = 10**18
 
@@ -61,16 +70,16 @@ class Scn:
             for who, amt in zip(force["who"], force["amt"]):
                 self.m.back[who] = F(amt)
                 self.m.B += F(amt)
-        self.cols = {k: [] for k in "kind who x y o1 o2 o3 P A B G box D fees Z".split()}
+        self.cols = {k: [] for k in "kind who x y o1 o2 o3 o4 P A B G box D fees Z locked notes".split()}
         self.grant_names = []
 
     # ----- recording
-    def _rec(self, kind, who=0, x=0, y=0, o1=0, o2=0, o3=0, settle=True):
+    def _rec(self, kind, who=0, x=0, y=0, o1=0, o2=0, o3=0, o4=0, settle=True):
         m = self.m
         if settle:  # a warp is not settled: the next operation acts cold, like a call on a clock nobody has settled
             m.settle()
-        row = dict(kind=kind, who=who, x=x, y=y, o1=o1, o2=o2, o3=o3, P=m.P, A=m.A, B=m.B, G=m.G, box=m.box, D=m.D,
-                   fees=m.fees, Z=m.Z)
+        row = dict(kind=kind, who=who, x=x, y=y, o1=o1, o2=o2, o3=o3, o4=o4, P=m.P, A=m.A, B=m.B, G=m.G, box=m.box, D=m.D,
+                   fees=m.fees, Z=m.Z, locked=m.Ctot(), notes=m.notes_held())
         for k, v in row.items():
             self.cols[k].append(v if k == "kind" else str(floor_int(v)))
 
@@ -84,13 +93,13 @@ class Scn:
 
     def leave(self, who, num=1, den=1):
         n = self.m.back[who] * F(num) / F(den)
-        cash, behind = self.m.take_out(who, n)
-        self._rec("leave", who, num, den, cash, n, behind)
+        cash, behind, note = self.m.take_out(who, n)
+        self._rec("leave", who, num, den, cash, n, behind, note)
 
     def leave_team(self, who, num=1, den=1):
         n = self.m.team[who] * F(num) / F(den)
-        cash = self.m.take_out_team(who, n)
-        self._rec("leaveTeam", who, num, den, cash, n)
+        cash, note = self.m.take_out_team(who, n)
+        self._rec("leaveTeam", who, num, den, cash, n, 0, note)
 
     def leave_team_zero(self, who):
         """The Team Share holder's take-out must pay nothing (and so revert): the pot holds no surplus for them."""
@@ -140,6 +149,68 @@ class Scn:
     def execute(self, idx):
         burn = self.m.execute_forfeit(idx)
         self._rec("execute", idx, 0, 0, burn)
+
+    # ----- the task queue
+    def wait_until(self, target):
+        """Move the clock to the second `target` (since the scenario began), with a check-in every six days so the runner's window
+        never closes on the way. The last move is a warp: the next operation acts cold on a clock nobody has settled."""
+        while self.m.t < target:
+            step = min(6 * DAY, target - self.m.t)
+            self.warp(step)
+            if self.m.t < target:
+                self.check_in()
+
+    def announce(self, who, bps, max_usd):
+        serial, notice = self.m.announce(bps, max_usd, who)
+        self._rec("announce", who, bps, int(max_usd), notice, serial)
+        return serial
+
+    def cancel(self, serial):
+        self.m.cancel_task(serial)
+        self._rec("cancel", 0, serial)
+
+    def wait_to_take(self, serial, extra=0):
+        """Wait for the notice to end, and `extra` seconds more (inside the take window)."""
+        self.wait_until(self.m.ann[serial]["notice_end"] + extra)
+
+    def take_early(self, who, serial):
+        """One second before the notice ends a take is refused."""
+        self.wait_until(self.m.ann[serial]["notice_end"] - 1)
+        self.m.settle()
+        assert self.m.t < self.m.ann[serial]["notice_end"]
+        self._rec("takeEarly", who, serial)
+        self.warp(1)
+
+    def take(self, who, serial):
+        """Take the task; True if it was taken, False if the cap refused it (recorded as a refused take)."""
+        try:
+            amount = self.m.take_task(serial, who)
+        except Blocked:
+            self._rec("takeBlocked", who, serial)
+            return False
+        self._rec("take", who, serial, 0, amount)
+        return True
+
+    def accept(self, serial, pay):
+        self.m.accept_task(serial, pay)
+        self._rec("accept", 0, serial, int(pay), pay)
+
+    def accept_all(self, serial):
+        pay = self.m.tasks[serial].locked
+        self.m.accept_task(serial, pay)
+        self._rec("acceptAll", 0, serial, 0, pay)
+
+    def reject(self, serial):
+        self.m.reject_task(serial)
+        self._rec("reject", 0, serial)
+
+    def claim(self, who, serial):
+        paid = self.m.claim(serial, who)
+        self._rec("claim", who, serial, 0, paid)
+
+    def wind_down(self):
+        self.m.wind_down()
+        self._rec("windDown")
 
     def to_json(self):
         return dict(name=self.name, note=self.note, pool=str(self.pool), rate=self.rate, actors=self.actors,
@@ -405,6 +476,249 @@ def random_scn(seed, nops=45):
     return s
 
 
+# ====================================================== the task scenarios ===============================================
+def _held(h0, h1):
+    return dict(P=usd(100_000), A=usd(100_000), who=[0, 1], amt=[shares(h0), shares(h1)])
+
+
+def fixed_tasks():
+    """The task queue and the exit notes, in exact arithmetic. Actor 2 is the worker (the named payee) in these scenarios."""
+    out = []
+
+    # design 2.3c and the plan's worked case: pot 100,000, a 5% task set aside, a holder of 40% takes out (cash 38,000, note
+    # 2,000), 3,000 of the 5,000 is paid: 2,000 comes back, 800 to the note and 1,200 to the stayers, 0.97 a Share each
+    s = Scn("task-worked-pro-rata", "a 5% task, a note of 2,000, 3,000 paid: stayers and the leaver both end at 0.97 a Share",
+            0, 0, 3, force=_held(40_000, 60_000))
+    a = s.announce(2, 500, usd(10_000))
+    s.take_early(2, a)
+    s.wait_to_take(a)
+    s.take(2, a)
+    s.leave(0)
+    s.accept(a, usd(3_000))
+    s.claim(0, a)
+    s.leave(1)
+    out.append(s)
+
+    s = Scn("task-rejected", "a rejected task sends the whole 5,000 back: the note is paid in full and the stayers lose nothing",
+            0, 0, 3, force=_held(40_000, 60_000))
+    a = s.announce(2, 500, usd(10_000))
+    s.wait_to_take(a)
+    s.take(2, a)
+    s.leave(0, 1, 2)
+    s.reject(a)
+    s.claim(0, a)
+    s.leave(0)
+    s.leave(1)
+    out.append(s)
+
+    s = Scn("task-paid-in-full", "a task paid in full voids the notes: the leaver keeps the cash, the stayers bear the payment",
+            0, 0, 3, force=_held(40_000, 60_000))
+    a = s.announce(2, 500, usd(10_000))
+    s.wait_to_take(a)
+    s.take(2, a)
+    s.leave(0)
+    s.accept_all(a)
+    s.leave(1)
+    out.append(s)
+
+    s = Scn("task-two-leavers-two-tasks", "notes spread over two taken tasks by their claims; one is paid in part, one in full",
+            0, 0, 4, force=dict(P=usd(100_000), A=usd(100_000), who=[0, 1, 3], amt=[shares(30_000), shares(30_000), shares(40_000)]))
+    a = s.announce(2, 500, usd(10_000))
+    b = s.announce(2, 200, usd(50_000))
+    s.wait_to_take(a)
+    s.take(2, a)
+    s.take(2, b)
+    s.leave(0, 1, 2)
+    s.leave(1)
+    s.accept(a, usd(2_500))
+    s.accept_all(b)
+    s.claim(1, a)
+    s.claim(0, a)
+    s.leave(0)
+    s.leave(3)
+    out.append(s)
+
+    s = Scn("task-runs-out", "a task nobody accepts runs out at its deadline and is returned inside the next action; the note is claimed cold",
+            0, 0, 3, force=_held(40_000, 60_000))
+    a = s.announce(2, 500, usd(10_000))
+    s.wait_to_take(a)
+    s.take(2, a)
+    s.leave(0, 1, 4)
+    s.wait_until(s.m.tasks[a].deadline + 5)
+    s.claim(0, a)
+    s.leave(1)
+    s.leave(0)
+    out.append(s)
+
+    s = Scn("task-runs-out-after-allowance", "expiry comes after the allowance: money returned by a deadline is not charged allowance for the time it was set aside",
+            0, 1000, 3, force=_held(40_000, 60_000))
+    a = s.announce(2, 500, usd(10_000))
+    s.wait_to_take(a)
+    s.take(2, a)
+    s.wait_until(s.m.tasks[a].deadline + 2 * DAY)
+    s.check_in()
+    s.leave(0)
+    s.draw()
+    s.leave(1)
+    out.append(s)
+
+    s = Scn("task-lapses", "a task nobody takes lapses and moves nothing; its slot is free and a new serial follows",
+            0, 0, 3, force=_held(40_000, 60_000))
+    a = s.announce(2, 300, usd(10_000))
+    s.wait_until(s.m.ann[a]["expires"] + 10)
+    b = s.announce(2, 100, usd(497))
+    s.wait_to_take(b)
+    s.take(2, b)
+    s.leave(0)
+    out.append(s)
+
+    s = Scn("task-wind-down", "a wind-down returns every open task: the notes keep their face and are claimed afterwards",
+            0, 0, 3, force=_held(40_000, 60_000))
+    a = s.announce(2, 500, usd(10_000))
+    c = s.announce(2, 100, usd(10_000))
+    s.wait_to_take(a)
+    s.take(2, a)
+    s.leave(0, 1, 2)
+    s.wind_down()
+    s.claim(0, a)
+    s.leave(0)
+    s.leave(1)
+    out.append(s)
+
+    s = Scn("task-team-take-out", "a Team Share holder takes out while money is set aside: cash by the Team formula and a note for the rest",
+            POOL, 0, 4, team=[(3, shares(2_000_000))], force=dict(P=usd(130_000), A=usd(100_000), who=[0], amt=[shares(100_000)]))
+    a = s.announce(2, 500, usd(10_000))
+    s.wait_to_take(a)
+    s.take(2, a)
+    s.leave_team(3, 1, 2)
+    s.leave(0, 1, 4)
+    s.accept(a, usd(2_000))
+    s.claim(3, a)
+    s.claim(0, a)
+    s.leave_team(3)
+    out.append(s)
+
+    s = Scn("task-join-during-lock", "a joiner pays the money set aside at face; the task is returned and nobody gains or loses by timing",
+            0, 0, 4, force=_held(40_000, 60_000))
+    a = s.announce(2, 500, usd(10_000))
+    s.wait_to_take(a)
+    s.take(2, a)
+    s.join(3, usd(50_000))
+    s.leave(3)
+    s.leave(0, 1, 2)
+    s.reject(a)
+    s.claim(0, a)
+    s.leave(0)
+    s.leave(1)
+    out.append(s)
+
+    # must-bind 4 with its numbers: two 5% tasks announced at day 0 and taken on the last second of their windows (1,000 of
+    # the pot, the whole cap), a third announced at day 30 whose notice ends at day 46.5: its take is refused until 28 days after
+    # the first two were taken (day 51.5), then it works; a fixed 28-day window would have let it through at day 46.5
+    s = Scn("task-cap-rolling-28-days", "taken 10% in 28 days, then a refused take, then the take at exactly 28 days after",
+            0, 0, 3, force=_held(40_000, 60_000))
+    a = s.announce(2, 500, usd(100_000))
+    b = s.announce(2, 500, usd(100_000))
+    s.wait_to_take(a, UNIT - 1)  # the last second of the window
+    s.take(2, a)
+    s.take(2, b)
+    s.wait_until(30 * DAY)
+    s.check_in()
+    c = s.announce(2, 500, usd(100_000))
+    s.wait_to_take(c)
+    assert not s.take(2, c)  # refused: 1,000 + 500 passes the cap
+    s.wait_until(s.m.takes[0][0] + 4 * UNIT)
+    assert s.take(2, c)  # at exactly 28 days after the first take
+    out.append(s)
+    return out
+
+
+def random_task_scn(seed, nops=70):
+    """A seeded run with every kind of task step: joins, take-outs, announce, wait, take (or a refused take), pay in part or
+    in full, reject, claims, time passing. The model decides what is valid at each step."""
+    rnd = random.Random(7000 + seed)
+    pool = rnd.choice([POOL, shares(1_000_000), 0])
+    rate = rnd.choice([0, 0, 1000, 2000])
+    team = [(5, pool // 10)] if pool and rnd.random() < 0.6 else []
+    s = Scn("tasks-random-%d" % seed, "seeded run with task steps, 70 operations at most", pool, rate, 6, team=team)
+
+    def probe():
+        c = copy.deepcopy(s.m)
+        c.settle()
+        return c
+
+    s.join(0, usd(rnd.choice([60_000, 100_000])) + rnd.randrange(1000))
+    s.join(1, usd(rnd.choice([20_000, 40_000])) + rnd.randrange(1000))
+    attempts = 0
+    while s.n_ops() < nops and attempts < 800:
+        attempts += 1
+        r = rnd.random()
+        m = probe()
+        try:
+            if r < 0.12:
+                if not m.door_open():
+                    s.check_in()
+                s.join(rnd.randrange(5), rnd.choice([40, 500, 7_000, 60_000]) * 10**6 + rnd.randrange(10**6))
+            elif r < 0.27:
+                w = rnd.randrange(5)
+                if m.back.get(w, 0) > 0:
+                    num, den = rnd.choice([(1, 10), (1, 4), (1, 3), (1, 2), (1, 1)])
+                    n = m.back[w] * F(num) / F(den)
+                    if n * m.vcash() >= 1000 and m.A > 0:
+                        s.leave(w, num, den)
+            elif r < 0.31:
+                if m.team.get(5, 0) > 0:
+                    num, den = rnd.choice([(1, 4), (1, 2), (1, 1)])
+                    if m.team[5] * F(num) / F(den) * m.u(m.P, m.G) >= 1000:
+                        s.leave_team(5, num, den)
+            elif r < 0.45:
+                if m.door_open() and len(m.ann) + len(m.tasks) < 8 and m.P > usd(1_000):
+                    s.announce(4, rnd.choice([1, 50, 100, 250, 500]), usd(rnd.choice([5, 300, 3_000, 60_000])))
+            elif r < 0.62:
+                if m.ann:
+                    serial = rnd.choice(sorted(m.ann))
+                    a = m.ann[serial]
+                    target = a["notice_end"] + rnd.choice([0, 0, 1, 3_600, DAY, UNIT - 1])
+                    if target < a["expires"] and m.t <= target:
+                        s.wait_until(target)
+                        m2 = probe()
+                        if serial in m2.ann and m2.door_open():
+                            s.take(4, serial)
+            elif r < 0.72:
+                if m.tasks:
+                    serial = rnd.choice(sorted(m.tasks))
+                    if rnd.random() < 0.35:
+                        s.accept_all(serial)
+                    else:
+                        pay = floor_int(m.tasks[serial].locked * F(rnd.choice([10, 33, 50, 70, 90]), 100))
+                        if pay >= 1000:
+                            s.accept(serial, pay)
+            elif r < 0.76:
+                if m.tasks:
+                    s.reject(rnd.choice(sorted(m.tasks)))
+            elif r < 0.88:
+                due = [(k, x) for k, x in sorted(m.claimable.items()) if x >= 1000]
+                if due:
+                    (serial, who), _x = rnd.choice(due)
+                    s.claim(who, serial)
+            elif r < 0.95:
+                s.warp(rnd.choice([3_600, DAY, 3 * DAY + 3, 6 * DAY, 9 * DAY + 17]))
+                s.check_in()
+            else:
+                s.check_in()
+        except (EdgeError, AssertionError, KeyError):
+            continue
+    # everyone out at the end
+    m = probe()
+    if not m.door_open():
+        s.check_in()
+    for w in range(5):
+        m = probe()
+        if m.back.get(w, 0) > 0 and m.back[w] * m.vcash() >= 1000:
+            s.leave(w)
+    return s
+
+
 # ====================================================== cross-check against the unchanged model =========================
 def cross_check():
     """The offset is the one place the contracts add to the price rule. Run time-free scenarios through the unchanged
@@ -420,7 +734,7 @@ def cross_check():
             new.join(i, a)
         for i in range(len(joins)):
             c_old, _ = old.leave(i)
-            c_new, _ = new.take_out(i, new.back[i])
+            c_new, _, _ = new.take_out(i, new.back[i])
             rel = abs(c_old * 10**6 - c_new) / c_new
             worst = max(worst, rel)
     assert worst < F(1, 1000), "the quote offset moved a payout by %s" % worst
@@ -447,12 +761,21 @@ def build():
             made += 1
         except (EdgeError, AssertionError, KeyError, ZeroDivisionError):
             continue
-    return dict(format=1, note="Generated by gen_vectors.py from v4_model.py and pot_ext.py. Do not edit by hand.",
+    scns += fixed_tasks()
+    seed, made = 0, 0
+    while made < 20:
+        seed += 1
+        try:
+            scns.append(random_task_scn(seed))
+            made += 1
+        except (EdgeError, AssertionError, KeyError, ZeroDivisionError):
+            continue
+    return dict(format=2, note="Generated by gen_vectors.py from v4_model.py and pot_ext.py. Do not edit by hand.",
                 scenarios=[s.to_json() for s in scns])
 
 
 def dump(doc):
-    lines = ['{"format": 1, "note": %s, "scenarios": [' % json.dumps(doc["note"])]
+    lines = ['{"format": 2, "note": %s, "scenarios": [' % json.dumps(doc["note"])]
     parts = []
     for sc in doc["scenarios"]:
         head = {k: v for k, v in sc.items() if k != "ops"}

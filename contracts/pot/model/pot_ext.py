@@ -8,7 +8,14 @@
 #   - the allowance as a linear accrual between settles on the pot, with the box cut to seven days of accrual on pot + box;
 #   - outside money arriving as one weighted-average stream over one time unit N;
 #   - the check-in window of 2N and active seconds;
-#   - Team Shares held by named accounts, and the burn queue Z with its one notice period.
+#   - Team Shares held by named accounts, and the burn queue Z with its one notice period;
+#   - the task queue and the exit notes of step 2 (JOIN-LEAVE-DESIGN.md 2.3b and 2.3c, as the contracts define them): a task is
+#     announced, waits its notice (2N plus N/1400 per ten-thousandth of the pot, rounded up to a second), can be taken for one
+#     more N, and is then due 2N after the take; the money set aside is the smaller of the stated dollars and the stated share of
+#     the settled pot; at most 10% of the pot taken in any rolling 4N; money set aside counts at face in a joiner's price; a leaver
+#     is paid cash on the pot without it and written a note for the rest, spread over the taken tasks by their stayers' claims;
+#     a task that ends returns what is not paid to the worker at ONE ratio to the stayers and to the notes; a task that runs out
+#     returns at the END of the settle (after the allowance and the release); a wind-down returns every open task.
 # Everything is plain Python with exact 70-digit decimals, no integer rounding. All amounts are in BASE UNITS: dollars in
 # millionths (1e6 = one dollar), Shares in wei (1e18 = one Share). Run with `python3 -I`; it has no packages.
 import importlib.util
@@ -44,6 +51,19 @@ class EdgeError(Exception):
     """A scenario sits on a rounding edge: the contract's integers could land on the other side of it."""
 
 
+class Blocked(Exception):
+    """A take that the 10% cap of the rolling 28 days refuses (the contract reverts it)."""
+
+
+def ceil_div(a, b):
+    """ceil(a / b) for whole numbers (the notice, in seconds)."""
+    return -(-a // b)
+
+
+def ceil_int(x):
+    return int(Decimal(x).to_integral_value(rounding=ROUND_CEILING))
+
+
 def floor_int(x):
     """Floor to a whole base unit. A value a hair under zero (exact arithmetic that should end at zero) is zero."""
     x = Decimal(x)
@@ -70,10 +90,14 @@ class PotProj(Proj):
         self.arr_end = 0
         self.grants = {}  # name -> dict(total, start_active, state, burn, burn_at)
         self.burn_at = {}
+        self.ann = {}  # announced tasks by serial: dict(bps, max, payee, notice_end, expires)
+        self.nserial = 1  # serials start at 1 and are never reused
+        self.takes = []  # (time, ten-thousandths of the pot) of every take, for the rolling cap
+        self.wound = False
 
     # ---------- the clock
     def window_end(self):
-        return self.last_ci + CHECK_IN_MULT * self.unit
+        return 0 if self.wound else self.last_ci + CHECK_IN_MULT * self.unit
 
     def door_open(self):
         return self.t < self.window_end()
@@ -97,13 +121,21 @@ class PotProj(Proj):
             self.P += rel
         self.active += dt
         self.last = t
+        # tasks whose time is up come back LAST, after the allowance and the release: a deadline returns what was set aside
+        # (no payment), the end of a take window only frees the slot
+        for serial in sorted(self.tasks):
+            if self.tasks[serial].deadline <= t:
+                self.resolve(serial, 0)
+        for serial in sorted(self.ann):
+            if self.ann[serial]["expires"] <= t:
+                del self.ann[serial]
 
     def advance(self, secs):
         self.t += secs
 
     # ---------- the price a joiner pays (the contract's PotMath.quote)
     def vq(self):
-        x = self.P + self.D + OFFSET_USD
+        x = self.P + self.D + self.Ctot() + OFFSET_USD
         aq = self.A + OFFSET_USD
         bq = self.B + OFFSET_SHARES
         ge = self.G - self.Z
@@ -120,7 +152,7 @@ class PotProj(Proj):
         n = m / self.vq()
         # the payment less what the joiner paid for the surplus part of the price (the same quote that priced the join), and,
         # with backers in the project, at most the paid-in per Share already there
-        x = self.P + self.D + OFFSET_USD
+        x = self.P + self.D + self.Ctot() + OFFSET_USD
         aq = self.A + OFFSET_USD
         sur = max(F(0), x - aq)
         credit = max(F(0), m - n * sur / (self.B + OFFSET_SHARES + (self.G - self.Z)))
@@ -137,13 +169,13 @@ class PotProj(Proj):
     def take_out(self, acct, n):
         self.settle()
         behind = n * (self.f(self.P + self.D, self.G) - self.f(self.P, self.G))
-        cash, _ = self.leave(acct, n)
-        return cash, behind
+        cash, note = self.leave(acct, n)
+        return cash, behind, note
 
     def take_out_team(self, acct, n):
         self.settle()
-        cash, _ = self.leave_team(acct, n)
-        return cash
+        cash, note = self.leave_team(acct, n)
+        return cash, note
 
     def revenue_in(self, who, x):
         self.settle()
@@ -181,6 +213,87 @@ class PotProj(Proj):
         assert self.pending and self.t >= self.pending[1] + self.unit
         self.rate = self.pending[0]
         self.pending = None
+
+    # ---------- the task queue (the contracts' rules in exact arithmetic)
+    def notice_secs(self, bps):
+        """2N plus N/1400 per ten-thousandth, rounded up to a whole second (14 days plus 12 hours per 1% at N = 7 days)."""
+        return 2 * self.unit + ceil_div(bps * self.unit, 1400)
+
+    def announce(self, bps, max_usd, payee):
+        self.settle()
+        assert not self.wound and self.door_open(), "no new task while quiet or wound down"
+        assert 1 <= bps <= 500 and len(self.ann) + len(self.tasks) < 8
+        serial = self.nserial
+        self.nserial += 1
+        notice = self.notice_secs(bps)
+        self.ann[serial] = dict(bps=bps, max=F(max_usd), payee=payee, notice_end=self.t + notice,
+                                expires=self.t + notice + self.unit)
+        return serial, notice
+
+    def cancel_task(self, serial):
+        self.settle()
+        del self.ann[serial]
+
+    def window_sum(self):
+        return sum(b for at, b in self.takes if at + 4 * self.unit > self.t)
+
+    def take_task(self, serial, who):
+        """The smaller of the stated dollars and the stated share of the settled pot, taken out of the pot into the task. The
+        cap counts ceil(amount x 10,000 / pot) ten-thousandths; a take that would pass 1,000 in any 4N is refused (Blocked)."""
+        self.settle()
+        assert self.door_open() and not self.wound
+        a = self.ann[serial]
+        assert a["notice_end"] <= self.t < a["expires"], "outside the take window"
+        by_share = self.P * F(a["bps"]) / F(10_000)
+        amount = min(a["max"], by_share)
+        if a["max"] < by_share:  # the share is exact when it binds; otherwise the ceil must not sit on an edge
+            bps = ceil_int(amount * 10_000 / self.P)
+            for d in (F(-8), F(8)):
+                if ceil_int(amount * 10_000 / (self.P + d)) != bps:
+                    raise EdgeError("the cap's ceil sits on a whole ten-thousandth")
+        else:
+            bps = a["bps"]
+        if self.window_sum() + bps > 1000:
+            raise Blocked()
+        self.takes.append((self.t, bps))
+        self.P -= amount
+        task = v4.Task(serial, who, amount)
+        task.deadline = self.t + 2 * self.unit
+        self.tasks[serial] = task
+        del self.ann[serial]
+        return amount
+
+    def accept_task(self, serial, pay):
+        self.settle()
+        task = self.tasks[serial]
+        assert self.t < task.deadline
+        pay = F(pay)
+        assert 0 < pay <= task.locked
+        return self.resolve(serial, pay)
+
+    def reject_task(self, serial):
+        self.settle()
+        return self.resolve(serial, 0)
+
+    def claim(self, serial, acct):
+        self.settle()
+        return self.claim_note(serial, acct)
+
+    def wind_down(self):
+        """The box returns to the pot, the door shuts for good, every open task ends: announced ones are cancelled, taken ones
+        return their money (the notes keep their face)."""
+        self.settle()
+        self.P += self.box
+        self.box = F(0)
+        self.wound = True
+        for serial in sorted(self.tasks):
+            self.resolve(serial, 0)
+        self.ann.clear()
+
+    def notes_held(self):
+        """What the Treasury holds for notes: the face of the notes against open tasks, and what is still claimable on tasks that ended."""
+        face = sum((sum(t.notes.values(), F(0)) for t in self.tasks.values()), F(0))
+        return face + sum(self.claimable.values(), F(0))
 
     # ---------- Team Shares in hands, grants and the burn queue
     def give_team(self, acct, k):
