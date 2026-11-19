@@ -14,7 +14,7 @@ vi.mock("@creaton/core/client/nip98.ts", () => ({
 
 const GOOD = {
   schema: "creaton.manager.v1",
-  loop_version: "manager-loop 1",
+  loop_version: "manager-loop 2",
   read: "I read 3 records and 1 answer.",
   this_week: [{ text: "Ship the page.", from: ["r1"], records: ["aa"] }],
   not_doing: [],

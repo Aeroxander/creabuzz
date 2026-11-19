@@ -26,7 +26,14 @@ export const TASK_PROBLEM = {
   recordAfterPay:
     "The money was sent, but the record that the work was accepted was not saved. Press again to save it: nothing is paid twice.",
   noPayee:
-    "The person who took this named no wallet to be paid at, so it can be accepted here without a payment.",
+    "The person who took this named no wallet to be paid at, so nothing can be sent. If you accept it now, nothing is paid and this app has no way to pay it later.",
+  noPayeeSure:
+    "Press again to accept it without paying. It will be closed, unpaid.",
+  /** Sent money cannot be taken back, so the app looks again first and stops when the task has moved. */
+  changed:
+    "This task changed while you were looking, so nothing was paid. Look at it again.",
+  ownWork:
+    "This work was done by you or by an agent you run. Someone else on the team has to accept it.",
   pairAboveAlone:
     "Above 500 dollars at Team both signers must agree, and the second signer's step is not in this app yet. Pay it from your wallet together, then accept it here.",
   notRunner:

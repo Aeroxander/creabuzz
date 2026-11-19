@@ -6,6 +6,8 @@ import { useToast } from "../../ui/toast";
 import type { ProjectNumbers } from "../money/numbers";
 import { useMoneySend } from "../money/use-money";
 import {
+  AGENT_DOLLARS_MAX,
+  AGENT_SHARES_MAX,
   DEFAULT_AGENT_DOLLARS,
   revokeAgentCall,
   setAgentCall,
@@ -34,10 +36,18 @@ export function AgentCaps({ numbers }: { numbers: ProjectNumbers }) {
   const addressProblem = ADDRESS.test(agent.trim())
     ? null
     : "The agent's wallet address: 0x and 40 letters and digits.";
-  const usd = /^[0-9]+$/.test(dollars.trim()) ? Number(dollars.trim()) : null;
-  const shareCount = /^[0-9]+$/.test(shares.trim())
+  const typedUsd = /^[0-9]{1,9}$/.test(dollars.trim())
+    ? Number(dollars.trim())
+    : null;
+  const usd =
+    typedUsd !== null && typedUsd <= AGENT_DOLLARS_MAX ? typedUsd : null;
+  const typedShares = /^[0-9]{1,15}$/.test(shares.trim())
     ? BigInt(shares.trim())
     : null;
+  const shareCount =
+    typedShares !== null && typedShares <= AGENT_SHARES_MAX
+      ? typedShares
+      : null;
   const run = (build: () => ReturnType<typeof setAgentCall>, done: string) => {
     setTried(true);
     setProblem(null);
@@ -79,7 +89,11 @@ export function AgentCaps({ numbers }: { numbers: ProjectNumbers }) {
         inputMode="numeric"
         label="Dollars a day"
         onChange={(e) => setDollars(e.target.value)}
-        problem={tried && usd === null ? "Whole dollars, like 25." : null}
+        problem={
+          tried && usd === null
+            ? "Whole dollars from 0 to 1,000,000, like 25."
+            : null
+        }
         value={dollars}
       />
       <Field
@@ -87,7 +101,11 @@ export function AgentCaps({ numbers }: { numbers: ProjectNumbers }) {
         inputMode="numeric"
         label="Shares a day"
         onChange={(e) => setShares(e.target.value)}
-        problem={tried && shareCount === null ? "Whole Shares, like 0." : null}
+        problem={
+          tried && shareCount === null
+            ? "Whole Shares from 0 to 1,000,000,000,000, like 0."
+            : null
+        }
         value={shares}
       />
       {problem ? (

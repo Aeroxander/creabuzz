@@ -18,9 +18,15 @@ const call = (to: string, data: string): MoneyCall => ({
   value: "0x0",
 });
 
-/** Raw dollar units (6 decimals) for whole dollars. */
+/** The most dollars a day a limit may name, and the most whole Shares a day: far under what a limit field can hold. */
+export const AGENT_DOLLARS_MAX = 1_000_000;
+export const AGENT_SHARES_MAX = 1_000_000_000_000n;
+
+/** Raw dollar units (6 decimals) for whole dollars. A fraction, a negative or an unsafe number is refused. */
 export function rawDollars(usd: number): bigint {
-  return BigInt(Math.trunc(usd)) * DOLLAR;
+  if (!Number.isSafeInteger(usd) || usd < 0)
+    throw new RangeError("Dollars must be a whole number from 0 up.");
+  return BigInt(usd) * DOLLAR;
 }
 
 /** Pay `usd` dollars to `to` from the project's spendable money, sent by its runner: `Treasury.spend`. */

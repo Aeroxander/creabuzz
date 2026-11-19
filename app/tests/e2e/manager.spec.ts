@@ -31,7 +31,7 @@ const COORD = coordOf(FOUNDER, "lantern");
 
 const DRAFT = {
   schema: "creaton.manager.v1",
-  loop_version: "manager-loop 1",
+  loop_version: "manager-loop 2",
   read: "I read 1 record and 1 answer. I can be wrong.",
   this_week: [
     { text: "Light the next ten stalls.", from: ["r1"], records: [] },

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   acceptRecord,
+  checksOwnWork,
   nextFor,
   postTaskRecord,
   type ProjectTask,
@@ -8,6 +9,7 @@ import {
   readUsd,
   type TaskRecordEvent,
   takeRecord,
+  type WorkerLinks,
 } from "./task-record";
 
 const FOUNDER = "f".repeat(64);
@@ -157,6 +159,57 @@ describe("a project's tasks", () => {
       acceptRecord(COORD, task, "9".repeat(64), null).tags.some(
         (t) => t[0] === "task-paid",
       ),
+    ).toBe(false);
+  });
+});
+
+describe("checking one's own work, asked before any money moves", () => {
+  // A teammate who is not an agent, and an agent the founder runs that is on the team's side of the table.
+  const submittedBy = (worker: string) => {
+    const task = openTask();
+    const take = step(worker, task, "take");
+    const piece = step(worker, task, "evidence");
+    const [t] = projectTasks(
+      [task, take, piece],
+      COORD,
+      new Set([FOUNDER, MATE]),
+      new Set([worker]),
+    );
+    return t as ProjectTask;
+  };
+  const links = (over: Partial<WorkerLinks> = {}): WorkerLinks => ({
+    founder: FOUNDER,
+    agents: new Set([AGENT]),
+    operators: new Map([[AGENT, MATE]]),
+    ...over,
+  });
+
+  it("is refused for the person who runs the worker agent when the project lists someone else", () => {
+    const t = submittedBy(AGENT);
+    const team = new Set([FOUNDER, MATE]);
+    // MATE runs the agent: the server refuses their confirmation, so the press must not be offered.
+    expect(checksOwnWork(t, MATE, team, links())).toBe(true);
+    expect(nextFor(t, MATE, team, links())).toBe("own-work");
+    // The founder did not run it: they may accept.
+    expect(checksOwnWork(t, FOUNDER, team, links())).toBe(false);
+    expect(nextFor(t, FOUNDER, team, links())).toBe("accept");
+    // Without the links nothing is known, as before.
+    expect(nextFor(t, MATE, team)).toBe("accept");
+  });
+
+  it("lets the founder check their own agent's work only while no other person is listed", () => {
+    const own = links({ operators: new Map([[AGENT, FOUNDER]]) });
+    const t = submittedBy(AGENT);
+    expect(checksOwnWork(t, FOUNDER, new Set([FOUNDER, MATE]), own)).toBe(true);
+    expect(nextFor(t, FOUNDER, new Set([FOUNDER, MATE]), own)).toBe("own-work");
+    // Alone, or with only another agent listed, the server lets them.
+    expect(checksOwnWork(t, FOUNDER, new Set([FOUNDER]), own)).toBe(false);
+    const withAgentMate = links({
+      operators: new Map([[AGENT, FOUNDER]]),
+      agents: new Set([AGENT, MATE]),
+    });
+    expect(
+      checksOwnWork(t, FOUNDER, new Set([FOUNDER, MATE]), withAgentMate),
     ).toBe(false);
   });
 });

@@ -36,6 +36,7 @@ export function TasksTab({
   const team = teamOf(project);
   const onTeam = Boolean(pubkey && team.has(pubkey));
   const agents = read.data?.agents ?? new Set<string>();
+  const operators = read.data?.operators ?? new Map<string, string>();
   // A person on the team posts; an agent account can, but the app offers it to people.
   const canPost = onTeam && numbers !== null && !(pubkey && agents.has(pubkey));
   const runner = numbers !== null && isRunner(numbers, address);
@@ -95,6 +96,7 @@ export function TasksTab({
             key={task.id}
             me={pubkey}
             numbers={numbers}
+            operators={operators}
             profiles={profiles}
             project={project}
             task={task}

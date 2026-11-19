@@ -31,6 +31,7 @@ export function TaskCard({
   me,
   team,
   agents,
+  operators,
   profiles,
   numbers,
   address,
@@ -40,13 +41,19 @@ export function TaskCard({
   me: string | null;
   team: ReadonlySet<string>;
   agents: ReadonlySet<string>;
+  /** Each agent account and the person who runs it. */
+  operators: ReadonlyMap<string, string>;
   profiles: Record<string, ProfileMetadata> | undefined;
   /** The project's numbers where the server turns money on; null where it does not (nothing about money shows). */
   numbers: ProjectNumbers | null;
   address: string | null;
 }) {
   const money = numbers !== null;
-  const next = nextFor(task, me, team);
+  const next = nextFor(task, me, team, {
+    founder: project.author,
+    agents,
+    operators,
+  });
   // An agent account checks no work: it is never offered the press.
   const mayAccept = next === "accept" && !(me && agents.has(me));
   return (
@@ -88,6 +95,11 @@ export function TaskCard({
         <TakeButton money={money} project={project} task={task} />
       ) : null}
       {next === "hand-in" ? <HandIn project={project} task={task} /> : null}
+      {next === "own-work" ? (
+        <p className="text-sm text-muted" data-testid="task-own-work">
+          {TASK_PROBLEM.ownWork}
+        </p>
+      ) : null}
       {mayAccept ? (
         <AcceptAndPay
           address={address}

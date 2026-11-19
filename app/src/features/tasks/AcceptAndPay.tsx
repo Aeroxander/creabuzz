@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Button } from "../../ui/button";
 import { useToast } from "../../ui/toast";
@@ -12,7 +13,7 @@ import {
 } from "./task-calls";
 import { acceptRecord, type ProjectTask } from "./task-record";
 import { dollarsWords, payProblem, TASK_PROBLEM } from "./tasks-copy";
-import { useTaskWrite } from "./use-tasks";
+import { freshTask, useTaskWrite } from "./use-tasks";
 
 /** How the work's payment can be sent from the wallet this site sees, or why it cannot. */
 export type PayRoute =
@@ -43,11 +44,30 @@ function payRoute(
   return { kind: "none", why: TASK_PROBLEM.notRunner };
 }
 
+/** Whether the task, read fresh, is no longer the one the press was about to pay for. */
+function moved(
+  now: ProjectTask | null,
+  task: ProjectTask,
+  piece: string,
+  payee: string,
+): boolean {
+  if (now === null) return true;
+  return (
+    now.state !== "submitted" ||
+    now.handIn?.id !== piece ||
+    now.worker !== task.worker ||
+    now.payTo !== payee
+  );
+}
+
 /**
- * Accept handed-in work and pay for it: one press. The money goes first, from the wallet; the record that the work was
- * accepted names its transaction and goes second. A payment whose record failed is remembered (`paid-journal.ts`), so
- * the next press writes the record and never pays again. With money off, or a task that pays nothing here, the press
- * only accepts the work.
+ * Accept handed-in work and pay for it: one press. The task is read again first and the press stops if it has moved
+ * (someone gave it up, handed in again, cancelled it): money sent for a record the server then refuses cannot be taken
+ * back. The money goes next, from the wallet; the record that the work was accepted names its transaction and goes
+ * last. A payment whose record failed is remembered (`paid-journal.ts`), so the next press writes the record, for the
+ * piece that was paid for, and never pays again. With money off the press only accepts the work. A task that pays but
+ * whose taker named no wallet cannot be paid: accepting it is a second, plainly worded choice (two presses), never the
+ * ordinary button.
  */
 export function AcceptAndPay({
   project,
@@ -64,7 +84,10 @@ export function AcceptAndPay({
   const write = useTaskWrite(project);
   const send = useMoneySend(`task-pay:${task.id}`);
   const toast = useToast();
+  const queryClient = useQueryClient();
   const [problem, setProblem] = useState<string | null>(null);
+  const [sure, setSure] = useState(false);
+  const [looking, setLooking] = useState(false);
   const handIn = task.handIn;
   if (!handIn) return null;
   const owed = paidNotRecorded(task.id);
@@ -75,10 +98,10 @@ export function AcceptAndPay({
   const blocked =
     paying && !owed ? (route?.kind === "none" ? route.why : null) : null;
 
-  const record = (txHash: string | null) =>
+  const record = (txHash: string | null, piece: string) =>
     write.mutate(
       {
-        record: acceptRecord(project.coordinate, task, handIn.id, txHash),
+        record: acceptRecord(project.coordinate, task, piece, txHash),
         failure: txHash ? TASK_PROBLEM.recordAfterPay : TASK_PROBLEM.accept,
       },
       {
@@ -96,11 +119,21 @@ export function AcceptAndPay({
       },
     );
 
-  const press = () => {
+  const press = async () => {
     setProblem(null);
-    if (owed) return record(owed.txHash);
-    if (!paying || !payee) return record(null);
+    // The payment's record goes against the piece that was paid for, even if newer work was handed in since.
+    if (owed) return record(owed.txHash, owed.handIn);
+    if (!paying) return record(null, handIn.id);
+    if (!payee) {
+      if (!sure) return setSure(true);
+      return record(null, handIn.id);
+    }
     if (!route || route.kind === "none") return;
+    setLooking(true);
+    const now = await freshTask(queryClient, project, task.id);
+    setLooking(false);
+    if (moved(now, task, handIn.id, payee))
+      return setProblem(TASK_PROBLEM.changed);
     send.send(
       {
         chainId: route.chainId,
@@ -119,24 +152,29 @@ export function AcceptAndPay({
             txHash: result.txHash,
             at: Math.floor(Date.now() / 1000),
           });
-          record(result.txHash);
+          record(result.txHash, handIn.id);
         },
         onError: (error) => setProblem(payProblem(error)),
       },
     );
   };
 
-  const busy = send.isPending || write.isPending;
+  const busy = send.isPending || write.isPending || looking;
+  const unpaid = paying && !payee && !owed;
   const label = owed
     ? "Save that it was paid"
-    : paying && payee
-      ? `Accept and pay ${dollarsWords(usd)}`
-      : "Accept the work";
+    : unpaid
+      ? sure
+        ? "Yes, accept it without paying"
+        : `Accept without paying ${dollarsWords(usd)}`
+      : paying
+        ? `Accept and pay ${dollarsWords(usd)}`
+        : "Accept the work";
   return (
     <div className="flex flex-col gap-2">
-      {paying && !payee && !owed ? (
+      {unpaid ? (
         <p className="text-sm text-muted" data-testid="task-no-payee">
-          {TASK_PROBLEM.noPayee}
+          {sure ? TASK_PROBLEM.noPayeeSure : TASK_PROBLEM.noPayee}
         </p>
       ) : null}
       {problem || blocked ? (
@@ -149,7 +187,13 @@ export function AcceptAndPay({
         </p>
       ) : null}
       {blocked && payee ? null : (
-        <Button block data-testid="task-accept" disabled={busy} onClick={press}>
+        <Button
+          block
+          data-testid="task-accept"
+          disabled={busy}
+          onClick={() => void press()}
+          variant={unpaid ? "secondary" : "primary"}
+        >
           {busy ? "Waiting…" : label}
         </Button>
       )}

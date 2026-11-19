@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGENT_DOLLARS_MAX,
   pairSpendCall,
   rawDollars,
   revokeAgentCall,
@@ -44,5 +45,14 @@ describe("task calls", () => {
       data: REVOKE,
       value: "0x0",
     });
+  });
+});
+
+describe("amounts that cannot be sent", () => {
+  it("refuses a fraction, a negative and a number too big to count exactly", () => {
+    for (const bad of [1.5, -1, Number.NaN, Number.POSITIVE_INFINITY, 1e20])
+      expect(() => rawDollars(bad)).toThrow(RangeError);
+    expect(rawDollars(AGENT_DOLLARS_MAX)).toBe(1_000_000_000_000n);
+    expect(rawDollars(0)).toBe(0n);
   });
 });

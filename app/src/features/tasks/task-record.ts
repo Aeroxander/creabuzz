@@ -354,12 +354,46 @@ export function acceptRecord(
   return stepRecord(coordinate, task, "confirm", "Work accepted", extra);
 }
 
+/** What the app knows about who runs whom, so it can tell when accepting would be checking one's own work. */
+export interface WorkerLinks {
+  /** The project's founder. */
+  founder: string;
+  /** Accounts labelled as agents. */
+  agents: ReadonlySet<string>;
+  /** Each agent account and the person who runs it, from the agent's own profile. */
+  operators: ReadonlyMap<string, string>;
+}
+
+/**
+ * Whether `me` accepting this task's work would be checking their own work or their agent's, which the server refuses.
+ * It lets the founder do it only while the project lists no other person who could (the server's `founder_alone`). The
+ * app asks before any money moves: a payment sent for a confirmation the server then refuses cannot be taken back.
+ */
+export function checksOwnWork(
+  task: ProjectTask,
+  me: string,
+  team: ReadonlySet<string>,
+  links: WorkerLinks,
+): boolean {
+  const worker = task.worker;
+  if (worker === null) return false;
+  if (worker !== me && links.operators.get(worker) !== me) return false;
+  const another = [...team].some(
+    (member) =>
+      member !== links.founder &&
+      member !== worker &&
+      !links.agents.has(member),
+  );
+  return !(me === links.founder && !another);
+}
+
 /** What the person can do on a task, from where they stand. */
 export function nextFor(
   task: ProjectTask,
   me: string | null,
   team: ReadonlySet<string>,
-): "take" | "hand-in" | "accept" | null {
+  links?: WorkerLinks,
+): "take" | "hand-in" | "accept" | "own-work" | null {
   if (!me) return task.state === "open" ? "take" : null;
   if (task.state === "open" && !team.has(me)) return "take";
   if (
@@ -368,6 +402,8 @@ export function nextFor(
   )
     return "hand-in";
   if (task.state === "submitted" && team.has(me) && task.worker !== me)
-    return "accept";
+    return links && checksOwnWork(task, me, team, links)
+      ? "own-work"
+      : "accept";
   return null;
 }

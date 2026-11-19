@@ -3,10 +3,20 @@
  * server decides who may sign it (the team posts and accepts, someone outside it takes, the helper hands in).
  */
 import { KIND_LAUNCH_UPDATE, KIND_PROFILE } from "@creaton/core/kinds.ts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  type QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { publishAsUser, read } from "../../lib/relay";
 import type { Project } from "../project/project-record";
-import { projectTasks, type RecordTemplate, TASK_LABEL } from "./task-record";
+import {
+  type ProjectTask,
+  projectTasks,
+  type RecordTemplate,
+  TASK_LABEL,
+} from "./task-record";
 
 /** How many task records one read takes: a project's tasks and all their steps. */
 const TASK_READ = 500;
@@ -31,38 +41,75 @@ function isAgentProfile(event: { pubkey: string; tags: string[][] }): boolean {
   );
 }
 
+/** Each agent account and the person who runs it: the first `auth` tag of its profile names its operator. */
+function operatorsOf(
+  profiles: readonly { pubkey: string; tags: string[][] }[],
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const profile of profiles) {
+    const owner = profile.tags.find((t) => t[0] === "auth")?.[1];
+    if (owner && /^[0-9a-f]{64}$/.test(owner) && !out.has(profile.pubkey))
+      out.set(profile.pubkey, owner);
+  }
+  return out;
+}
+
+/** Read the project's tasks and who runs which agent, fresh from the server. */
+async function fetchProjectTasks(project: Project) {
+  const team = teamOf(project);
+  const events = await read({
+    kinds: [KIND_LAUNCH_UPDATE],
+    "#a": [project.coordinate],
+    "#l": [TASK_LABEL],
+    limit: TASK_READ,
+  });
+  // Every signer and everyone on the team: an agent on the team is never offered Accept, whoever signed what.
+  const signers = [...new Set([...events.map((e) => e.pubkey), ...team])];
+  const labelled = signers.length
+    ? await read({
+        kinds: [KIND_PROFILE],
+        authors: signers,
+        limit: signers.length * 2,
+      })
+    : [];
+  const agentProfiles = labelled.filter(isAgentProfile);
+  const agents = new Set(agentProfiles.map((e) => e.pubkey));
+  return {
+    tasks: projectTasks(events, project.coordinate, team, agents),
+    agents,
+    operators: operatorsOf(agentProfiles),
+    complete: events.length < TASK_READ,
+  };
+}
+
 /** The project's tasks, newest first. */
 export function useProjectTasks(project: Project) {
-  const team = teamOf(project);
   return useQuery({
     queryKey: taskKeys.project(project.coordinate),
     staleTime: 15_000,
-    queryFn: async () => {
-      const events = await read({
-        kinds: [KIND_LAUNCH_UPDATE],
-        "#a": [project.coordinate],
-        "#l": [TASK_LABEL],
-        limit: TASK_READ,
-      });
-      // Every signer and everyone on the team: an agent on the team is never offered Accept, whoever signed what.
-      const signers = [...new Set([...events.map((e) => e.pubkey), ...team])];
-      const labelled = signers.length
-        ? await read({
-            kinds: [KIND_PROFILE],
-            authors: signers,
-            limit: signers.length * 2,
-          })
-        : [];
-      const agents = new Set(
-        labelled.filter(isAgentProfile).map((e) => e.pubkey),
-      );
-      return {
-        tasks: projectTasks(events, project.coordinate, team, agents),
-        agents,
-        complete: events.length < TASK_READ,
-      };
-    },
+    queryFn: () => fetchProjectTasks(project),
   });
+}
+
+/**
+ * One task as the server holds it right now, read past the page's 15-second snapshot (and put back as the page's
+ * snapshot): the last look before money moves. Null when the task is gone or the read failed.
+ */
+export async function freshTask(
+  queryClient: QueryClient,
+  project: Project,
+  id: string,
+): Promise<ProjectTask | null> {
+  try {
+    const now = await queryClient.fetchQuery({
+      queryKey: taskKeys.project(project.coordinate),
+      staleTime: 0,
+      queryFn: () => fetchProjectTasks(project),
+    });
+    return now.tasks.find((task) => task.id === id) ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /** Sign and send one task record, then read the tasks again. */
