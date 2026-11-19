@@ -12,6 +12,8 @@ import {
 } from "../../../../packages/creaton-core/src/pot/abi-codec.ts";
 import type { Abi } from "../../../../packages/creaton-core/src/pot/abi-codec.ts";
 import {
+  LAUNCHER_ABI,
+  PAIR_ABI,
   SHARE_TOKEN_ABI,
   TREASURY_ABI,
   VESTER_ABI,
@@ -222,6 +224,17 @@ export async function liveRecord(
   const pendingAt = Number(big(await T("pendingAt")));
   const pendingRate = Number(big(await T("pendingRatePpm")));
   const runnerAddress = String(await T("runner")).toLowerCase();
+  // A Pair runs it when the Launcher made the runner: its two signers are the Pair's own.
+  const runnerIsPair =
+    (await view(LAUNCHER_ABI, project.launcher, "isPair", [
+      runnerAddress,
+    ])) === true;
+  const signers = runnerIsPair
+    ? [
+        String(await view(PAIR_ABI, runnerAddress, "first")).toLowerCase(),
+        String(await view(PAIR_ABI, runnerAddress, "second")).toLowerCase(),
+      ]
+    : null;
   const paidIn = big(await T("paidIn"));
   const feesOwed = big(await T("feesOwed"));
   const claimedGrants = Number(
@@ -243,7 +256,7 @@ export async function liveRecord(
       team: project.team,
       vester: project.vester,
       dollar: project.dollar,
-      pair: null,
+      pair: runnerIsPair ? runnerAddress : null,
     },
     asOf: { block, time: now },
     builtAt: at - 5,
@@ -303,7 +316,7 @@ export async function liveRecord(
       next,
     },
     windDown: woundDown ? { kind: windKind, at: windAt } : null,
-    runner: { address: runnerAddress, isPair: false, signers: null },
+    runner: { address: runnerAddress, isPair: runnerIsPair, signers },
     team: {
       pool: text(10_000_000n * 10n ** 18n),
       inHands: text(teamSupply - inVester),
