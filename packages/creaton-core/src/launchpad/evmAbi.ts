@@ -302,8 +302,11 @@ function decodeValue(
     );
   }
   switch (t) {
-    case "bool":
-      return readWord(hex, headOffset) !== 0n;
+    case "bool": {
+      const flag = readWord(hex, headOffset);
+      if (flag > 1n) throw new Error("bool value out of range");
+      return flag === 1n;
+    }
     case "address":
       return `0x${readWord(hex, headOffset).toString(16).padStart(40, "0")}`;
     case "bytes32":
