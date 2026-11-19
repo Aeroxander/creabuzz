@@ -32,6 +32,7 @@ export default defineConfig({
         "**/passkey.spec.ts",
         "**/team.spec.ts",
         "**/team-seat.spec.ts",
+        "**/earlier.spec.ts",
         "**/a11y-team.spec.ts",
         "**/market.spec.ts",
         "**/tasks.spec.ts",
