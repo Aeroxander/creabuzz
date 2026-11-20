@@ -1015,7 +1015,10 @@ async fn a_record_announced_more_often_than_the_lookup_reads_is_refused_not_gues
 
 /// The three reads of a plan are served by indexes, not by a scan of the project's whole book (which holds every note):
 /// with sequential scans switched off and the general indexes out of the way, the planner can only answer them through
-/// the partial indexes of migration 0072, and reads the newest block through its key.
+/// the partial indexes of migration 0072, and reads the newest block through its key. The primary key of `chain_logs`
+/// is dropped too (inside the transaction, so rolled back): its columns are `(reader, block_number, log_index)`, and on
+/// a shared table that grows between runs the planner can pick it for the ordered read instead of the partial index,
+/// which made this test fail once in thirteen runs. The test now holds whichever way the table's size tips the planner.
 #[tokio::test]
 #[ignore = "requires Postgres and Redis"]
 async fn the_plan_reads_use_their_indexes_and_never_scan_every_block() {
@@ -1029,6 +1032,7 @@ async fn the_plan_reads_use_their_indexes_and_never_scan_every_block() {
     for statement in [
         "SET LOCAL enable_seqscan = off",
         "DROP INDEX idx_chain_logs_project, idx_chain_logs_tasks",
+        "ALTER TABLE chain_logs DROP CONSTRAINT chain_logs_pkey",
     ] {
         sqlx::query(statement)
             .execute(&mut *tx)
