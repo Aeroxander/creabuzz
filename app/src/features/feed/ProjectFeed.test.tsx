@@ -17,7 +17,7 @@ import {
 } from "../../../tests/helpers/numbers-v2-parse";
 import { seriousViolations } from "../../../tests/helpers/axe-dom";
 import { parseNumbers, type ProjectNumbers } from "../money/numbers";
-import { NOT_A_RETURN } from "../pot/pot-words";
+import { NOT_A_RETURN_LITERAL } from "../../../tests/helpers/legal-words";
 import type { Project } from "../project/project-record";
 import { ProjectFeed } from "./ProjectFeed";
 import { FIRST_ITEMS, MORE_ITEMS } from "./feed-rows";
@@ -103,10 +103,10 @@ describe("what happened", () => {
     expect(screen.queryByTestId("feed-show-earlier")).toBeNull();
   });
 
-  it("says the line about not being a return once, and the rounding and no-names note", () => {
+  it("does not repeat the line about not being a return (the money card above it has the one), and says the rounding and no-names note", () => {
     draw(numbersWith());
     const feed = screen.getByTestId("project-feed");
-    expect(feed.textContent?.split(NOT_A_RETURN)).toHaveLength(2);
+    expect(feed.textContent?.split(NOT_A_RETURN_LITERAL)).toHaveLength(1);
     expect(screen.getByTestId("feed-rounding").textContent).toBe(
       "Amounts are rounded to the nearest 100 dollars. No names are shown.",
     );

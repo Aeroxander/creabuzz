@@ -39,7 +39,7 @@ export function Tabs({
       >
         {items.map((item) => (
           <RadixTabs.Trigger
-            className="relative min-h-10 flex-1 whitespace-nowrap rounded-lg px-2.5 text-sm font-semibold text-muted transition-colors after:absolute after:inset-x-0 after:-inset-y-0.5 after:content-[''] data-[state=active]:bg-white/18 data-[state=active]:text-ink focus-visible:outline-2 focus-visible:outline-mint-ink"
+            className="relative min-h-10 flex-1 whitespace-nowrap rounded-lg px-1.5 text-sm min-[380px]:px-2.5 font-semibold text-muted transition-colors after:absolute after:inset-x-0 after:-inset-y-0.5 after:content-[''] data-[state=active]:bg-white/18 data-[state=active]:text-ink focus-visible:outline-2 focus-visible:outline-mint-ink"
             data-testid={`tab-${item.value}`}
             key={item.value}
             value={item.value}

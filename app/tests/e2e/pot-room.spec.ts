@@ -172,9 +172,11 @@ test("a person who does not back the project reads the room and is told what to 
     key: "c3".repeat(32),
   });
   const room = page.getByTestId("room");
+  // Said once: the top line says anyone can read, the status line below says who may write.
   await expect(page.getByTestId("room-read-line")).toHaveText(
-    "Anyone can read this room. Only people who back the project can write here.",
+    "Anyone can read this room.",
   );
+  await expect(room.getByText("can write here")).toHaveCount(1);
   await expect(room).toContainText("Posts and votes are public.");
   await expect(room.getByTestId("room-list")).toContainText(
     "The lids are painted. Friday works for me.",
@@ -189,6 +191,21 @@ test("a person who does not back the project reads the room and is told what to 
   await expect(composer(page)).toHaveCount(0);
   await expect(page.getByTestId("room-like")).toHaveCount(0);
   await expectNoSidewaysScroll(page, "the room at 360");
+  // The tab strip fits at 360 with the text size unchanged: every tab, the last one ("Room") whole, inside the strip.
+  const strip = page
+    .getByTestId("tab-room")
+    .locator("xpath=ancestor::*[@role='tablist']");
+  const stripBox = await strip.boundingBox();
+  expect(stripBox).not.toBeNull();
+  const fits = await strip.evaluate((el) => el.scrollWidth <= el.clientWidth);
+  expect(fits, "the tab strip needs no sideways scroll at 360").toBe(true);
+  for (const tab of await strip.getByRole("tab").all()) {
+    const box = await tab.boundingBox();
+    expect(box?.x ?? -1).toBeGreaterThanOrEqual((stripBox?.x ?? 0) - 1);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(
+      (stripBox?.x ?? 0) + (stripBox?.width ?? 0) + 1,
+    );
+  }
   await expectAccessible(
     page,
     "the room for someone who does not back the project",

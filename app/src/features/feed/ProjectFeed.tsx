@@ -3,7 +3,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { freshnessOf, type ProjectNumbers } from "../money/numbers";
-import { NOT_A_RETURN } from "../pot/pot-words";
 import type { Project } from "../project/project-record";
 import { asOfLine } from "../project/project-top-words";
 import {
@@ -69,7 +68,8 @@ function Counts({
  * The live feed ("Lately") under a project's top block (plan section 7.5): the things that lasted (tasks and updates) first,
  * then one line for the last two days of joins and take-outs at equal weight, and the hours behind a press. Everything comes
  * from the signed record's `feed` key: no names, no addresses, amounts rounded by the server, never a volume. A record that
- * has no feed, or one older than a day, draws nothing.
+ * has no feed, or one older than a day, draws nothing. It does not repeat "This can go up or down. It is not a return.": that line
+ * stands under the money card directly above it, and the feed is drawn only on the page that has the card.
  */
 export function ProjectFeed({
   numbers,
@@ -121,7 +121,6 @@ export function ProjectFeed({
         <h2 className="headline text-xl" id={titleId}>
           {FEED_TITLE}
         </h2>
-        <p className="text-sm text-muted">{NOT_A_RETURN}</p>
         <p className="text-sm text-muted" data-testid="feed-rounding">
           {roundingNote(feed.roundTo)}
         </p>

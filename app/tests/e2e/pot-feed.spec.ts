@@ -62,7 +62,9 @@ test("the feed on a phone: what happened, joins and take-outs at equal weight, t
   });
   const feed = page.getByRole("region", { name: "Lately" });
   await expect(feed).toBeVisible({ timeout: 20_000 });
-  await expect(feed).toContainText(NOT_A_RETURN);
+  // The line stands once, under the money card above the feed, and is not repeated inside the feed.
+  await expect(feed).not.toContainText(NOT_A_RETURN);
+  await expect(page.getByTestId("top-money")).toContainText(NOT_A_RETURN);
   await expect(feed).toContainText(
     "Amounts are rounded to the nearest 100 dollars. No names are shown.",
   );

@@ -10,6 +10,11 @@ import {
 
 export const READ_LINE =
   "Anyone can read this room. Only people who back the project can write here.";
+/**
+ * The first half of the line above, said alone where the status line under it already says who may write (`MAY_NOT_WRITE`): the
+ * sentence is on the screen once, never twice.
+ */
+export const READ_LINE_OPEN = "Anyone can read this room.";
 /** Said where people post and vote: never hidden, never reworded. */
 export const PUBLIC_LINE = "Posts and votes are public.";
 export const KIND_LINE = "The team can remove posts. Be kind.";

@@ -89,10 +89,17 @@ describe("the project page on record version 2", () => {
     expect(screen.getByTestId("ownership").textContent).toBe(
       "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one.",
     );
-    // The line stands under the money at the top of the page and again in the Money tab's own facts.
+    // The line stands under the money card at the top of the page and in the Money tab's own facts, and is not said a third time
+    // inside the feed ("Lately") that sits right under the top card.
+    expect(screen.getByTestId("top-money").textContent).toContain(
+      "This can go up or down. It is not a return.",
+    );
     expect(
-      screen.getAllByText(/This can go up or down. It is not a return./).length,
-    ).toBeGreaterThanOrEqual(2);
+      screen.getAllByText(/This can go up or down. It is not a return./),
+    ).toHaveLength(2);
+    expect(screen.getByTestId("project-feed").textContent).not.toContain(
+      "It is not a return.",
+    );
     expect(screen.queryByTestId("money-as-of")).toBeNull();
   });
 

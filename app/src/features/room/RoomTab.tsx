@@ -37,6 +37,7 @@ import {
   PUBLIC_LINE,
   READ_FAILED,
   READ_LINE,
+  READ_LINE_OPEN,
 } from "./room-words";
 import {
   roomOf,
@@ -164,6 +165,9 @@ export function RoomTab({
     stopped: new Set((stops ?? []).map((m) => m.person)),
   };
   const canWrite = standing.kind === "write";
+  // The status line below says "Only people who back this project can write here." for these two: the top line then says no more than "Anyone can read this room."
+  const saysWhoMayNot =
+    standing.kind === "signed-out" || standing.kind === "not-holding";
   const onChoose = (choice: MenuChoice, event: SignedEvent) => {
     const name = nameOf(profiles, event.pubkey);
     if (choice === "report") requireAccount(() => setReport(event));
@@ -191,7 +195,7 @@ export function RoomTab({
     <div className="flex flex-col gap-4" data-testid="room">
       <div className="flex flex-col gap-1">
         <p className="text-sm" data-testid="room-read-line">
-          {READ_LINE}
+          {saysWhoMayNot ? READ_LINE_OPEN : READ_LINE}
         </p>
         <p className="text-xs text-muted">{PUBLIC_LINE}</p>
       </div>

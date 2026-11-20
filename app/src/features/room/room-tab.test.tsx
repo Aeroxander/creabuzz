@@ -127,8 +127,9 @@ describe("a person who may not write", () => {
     roomPost(ANA, "Lamps arrive on Friday", NOW - 100);
     room({ perks: true });
     expect(await screen.findByText("Lamps arrive on Friday")).toBeTruthy();
+    // The status line below says who may write, so the top line says no more than that anyone can read: said once.
     expect(screen.getByTestId("room-read-line").textContent).toBe(
-      "Anyone can read this room. Only people who back the project can write here.",
+      "Anyone can read this room.",
     );
     expect(screen.getByText("Posts and votes are public.")).toBeTruthy();
     expect(screen.getByText("Perks from the team")).toBeTruthy();
@@ -151,6 +152,30 @@ describe("a person who may not write", () => {
     expect(
       screen.getByRole("button", { name: "More actions for Ana's post" }),
     ).toBeTruthy();
+  });
+
+  it("says who may write once on the screen, and keeps the whole line where nothing else says it", async () => {
+    world.standing = { kind: "not-holding" };
+    roomPost(ANA, "Lamps arrive on Friday", NOW - 100);
+    room();
+    await screen.findByText("Lamps arrive on Friday");
+    expect(
+      (document.body.textContent ?? "").match(/can write here/g),
+    ).toHaveLength(1);
+    cleanup();
+    // A holder who may write, and a person who must confirm the account first, are told it by the top line alone.
+    for (const standing of [
+      { kind: "write", graceEndsAt: null, renewBy: null },
+      { kind: "needs-link", expired: false },
+    ] as const) {
+      world.standing = standing;
+      room();
+      await screen.findByText("Lamps arrive on Friday");
+      expect(screen.getByTestId("room-read-line").textContent).toBe(
+        "Anyone can read this room. Only people who back the project can write here.",
+      );
+      cleanup();
+    }
   });
 
   it("is the same for a visitor with no account", async () => {
