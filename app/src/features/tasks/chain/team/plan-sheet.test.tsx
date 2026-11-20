@@ -531,6 +531,8 @@ describe("the Plan sheet", () => {
         };
       },
     });
+    // The Pair is read for what already waits in it (nothing here) before the ask is made.
+    Object.assign(chain.answers, { PROPOSAL_TTL: [86_400n] });
     show();
     await openSheet();
     expect(screen.getByTestId("sheet-confirm").textContent).toBe(

@@ -104,6 +104,11 @@ export const PLAN_BLOCK = {
     "Only the wallet that runs this project can plan a task (with two people running it, either signer can ask the other). Switch your wallet to it.",
   noPay:
     "This task says no pay, so it cannot be planned. Post it again with what it pays.",
+  boxPaid:
+    "The money for this task was already sent from the box, and only its record is missing. Save that it was paid on the task first. Nothing is planned.",
+  /** The same plan is already waiting for the other signer (read from the chain): a second ask would plan the task twice. */
+  alreadyAsked:
+    "This same plan is already waiting for the other signer to confirm it, so nothing new was asked. They confirm it on the Money tab.",
   tooBig: NEW_TASK_ERRORS.ShareTooBig.any.replace(" Nothing changed.", ""),
 } as const;
 

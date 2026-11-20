@@ -81,6 +81,22 @@ describe("what stops a plan", () => {
     expect(planBlock(input(numbers))).toBeNull();
   });
 
+  it("a task the box already paid (its record is still to be saved) is not planned", () => {
+    const numbers = scene();
+    expect(planBlock(input(numbers, { boxPaid: true }))?.sentence).toBe(
+      PLAN_BLOCK.boxPaid,
+    );
+    expect(planBlock(input(numbers, { boxPaid: false }))).toBeNull();
+  });
+
+  it("a pay-to of the zero address (open to anyone on the network) is no wallet, so nothing is planned", () => {
+    const numbers = scene();
+    const task = planTask({ payTo: `0x${"0".repeat(40)}` });
+    expect(planBlock(input(numbers, { task }))?.sentence).toMatch(
+      /has not named a wallet/,
+    );
+  });
+
   it("a project that wound down plans nothing", () => {
     const numbers = scene();
     const wound = {

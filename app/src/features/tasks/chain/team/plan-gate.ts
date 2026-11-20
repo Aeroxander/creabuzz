@@ -4,7 +4,7 @@
  */
 import { freshnessOf, type ProjectNumbers } from "../../../money/numbers";
 import { runnerRole } from "../../../money/runner";
-import type { ProjectTask } from "../../task-record";
+import { isWallet, type ProjectTask } from "../../task-record";
 import type { Door } from "../door";
 import { openCountAt, tieOf } from "../state";
 import type { ChainTasks } from "../types";
@@ -26,6 +26,8 @@ export interface PlanGateInput {
   now: number;
   /** The worker's name, for the sentence about a wallet they did not name. */
   workerName: string;
+  /** A payment of this task from the box that landed without its record is waiting in the journal: the task is paid already. */
+  boxPaid?: boolean;
 }
 
 /** What stops the press: a short name for it and the one sentence that says so. */
@@ -45,12 +47,15 @@ export function planBlock(input: PlanGateInput): PlanBlock | null {
     return stop(PLAN_BLOCK.stale);
   if (runnerRole(numbers, input.address).kind === "none")
     return stop(PLAN_BLOCK.notRunner);
+  if (input.boxPaid) return stop(PLAN_BLOCK.boxPaid);
   if (input.door.door === "box-only") return stop(input.door.sentence);
   const same = plannedAlready(read, task.id);
   if (same) return { why: "planned", sentence: alreadyPlanned(same.noticeEnd) };
   if (read.activeEnd <= read.time) return stop(PLAN_BLOCK.quiet);
   if (openCountAt(read.open, read.time) >= queue.limits.maxOpen)
     return stop(PLAN_BLOCK.full);
+  // The zero address reads as "open to anyone" on the network: a plan to it would let the first stranger take the task.
+  if (!isWallet(task.payTo)) return stop(cannotPlan("payee", input.workerName));
   const tie = tieOf(
     hypotheticalRow(task, BigInt(task.usd ?? 0) * 1_000_000n, input.share ?? 1),
     task,

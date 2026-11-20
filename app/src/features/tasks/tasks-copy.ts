@@ -57,6 +57,12 @@ export const TASK_PROBLEM = {
   /** A project wound down draws nothing. */
   woundDown:
     "This project is wound down, so nothing can be drawn from the allowance box any more.",
+  /** A plan of this task stands on the network: it is paid there, never from the box (one door). */
+  plannedOnNetwork:
+    "This task is planned on the network, so it is paid there. Nothing was sent from the box. Look at the task again.",
+  /** The network could not say whether a plan of this task stands: nothing is paid on a guess. */
+  planUnknown:
+    "Whether this task is planned on the network could not be checked just now, so nothing was sent. Try again in a moment.",
   /** Sent money cannot be taken back, so the app looks again first and stops when the task has moved. */
   changed:
     "This task changed while you were looking, so nothing was paid. Look at it again.",
@@ -94,6 +100,14 @@ export function owedWords(usd: number): string {
 /** What every reader sees once the payment's transaction is on the task's record. */
 export function paidWords(usd: number): string {
   return `Paid ${dollarsWords(usd)}.`;
+}
+
+/**
+ * A paid task whose payment this page cannot read as an amount (the network's row for it left the list, and a part payment is
+ * only held there): it never reads as paid in full, only as paid, with the price it was posted at.
+ */
+export function paidPriceWords(usd: number): string {
+  return `Paid. The price was ${dollarsWords(usd)}.`;
 }
 
 /**

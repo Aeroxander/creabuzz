@@ -36,6 +36,12 @@ vi.mock(
     (await import("../../../../../tests/helpers/money-harness")).relayMock,
 );
 
+vi.mock("../../use-tasks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../use-tasks")>()),
+  freshTask: async () =>
+    (await import("../../../../../tests/helpers/pay-scene")).serverTask(),
+}));
+
 beforeEach(() => {
   applyServerSettings({ investing: true, self: SERVER });
   published.length = 0;

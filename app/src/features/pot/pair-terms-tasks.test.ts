@@ -192,6 +192,33 @@ describe("pay for a task", () => {
   });
 });
 
+describe("a call the contract would refuse because the task is past its end", () => {
+  it("a taken task past its deadline is not offered for payment", () => {
+    const pay = acceptTaskCall({
+      treasury,
+      serial: 6n,
+      payDollars: 12_500_000n,
+    });
+    const late = words(
+      pay,
+      facts({
+        now: (taken.deadline ?? taken.expiresAt) + 1,
+        taskFacts: () => taken,
+      }),
+    );
+    expect(late.kind).toBe("unknown");
+    expect(late.words).toMatch(/which has changed since it was asked/);
+    const punctual = words(
+      pay,
+      facts({
+        now: (taken.deadline ?? taken.expiresAt) - 1,
+        taskFacts: () => taken,
+      }),
+    );
+    expect(punctual.kind).toBe("accept-task");
+  });
+});
+
 describe("send a task's money back and withdraw a plan", () => {
   it("send back: nobody is paid", () => {
     const t = words(rejectTaskCall({ treasury, serial: 6n }));

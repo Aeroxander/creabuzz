@@ -82,8 +82,9 @@ export function PayPresses(props: TaskSlotProps & { chain: ChainTask }) {
               links={links}
               me={me}
               numbers={numbers}
+              project={props.project}
               onClose={() => setWhich(null)}
-              onPaid={() => void save.save(ready)}
+              onPaid={(piece) => void save.save(ready, piece)}
               onSendBack={() => setWhich("send-back")}
               open={which === "accept"}
               ready={ready}

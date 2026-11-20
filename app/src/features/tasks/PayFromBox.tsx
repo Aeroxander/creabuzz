@@ -8,6 +8,7 @@ import { allowancePerDay, type ProjectNumbers } from "../money/numbers";
 import { asRunner, runnerRole } from "../money/runner";
 import { useMoneySend, useWallet } from "../money/use-money";
 import { PAIR_WORDS } from "../pot/runner-calls";
+import { planOfRecord } from "./chain/team/plan-read";
 import { readPairWaiting } from "../pot/use-pair-waiting";
 import { boxNow, PLAY_MONEY_WORDS } from "../pot/pot-words";
 import type { Project } from "../project/project-record";
@@ -165,8 +166,24 @@ export function PayFromBox({
           searched = false;
       }
     }
+    // One door: a task a plan stands on is paid there. The signed record can be older than the plan, so the chain is asked.
+    let planned: Awaited<ReturnType<typeof planOfRecord>> = null;
+    let unknown = false;
+    try {
+      planned = await planOfRecord(
+        (to, data) => wallet.readCall(to, data),
+        treasury,
+        task.id,
+        Math.floor(Date.now() / 1000),
+        wallet.blockTime?.bind(wallet),
+      );
+    } catch {
+      unknown = true;
+    }
     setLooking(false);
     if (!stillOwed(now, task, payee)) return setProblem(TASK_PROBLEM.changed);
+    if (unknown) return setProblem(TASK_PROBLEM.planUnknown);
+    if (planned) return setProblem(TASK_PROBLEM.plannedOnNetwork);
     if (!searched) {
       void found.refetch();
       return setProblem(TASK_PROBLEM.searchShort);

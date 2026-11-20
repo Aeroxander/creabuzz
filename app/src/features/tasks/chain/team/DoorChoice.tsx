@@ -12,6 +12,8 @@ import { Button } from "../../../../ui/button";
 import { runnerRole } from "../../../money/runner";
 import { WalletGate } from "../../../pot/use-pot";
 import { useState } from "react";
+import { paidNotRecorded } from "../../paid-journal";
+import { isWallet } from "../../task-record";
 import { doorFor } from "../door";
 import type { TaskSlotProps } from "../slot-props";
 import { PlanSheet } from "./PlanSheet";
@@ -35,6 +37,8 @@ function offersDoor(
   if (task.usd === null || task.worker === null) return false;
   if (!PLANNABLE.has(task.state)) return false;
   if (task.state === "accepted" && task.paidTx !== null) return false;
+  // The box already paid it and only the record is missing: planning it would pay it a second time.
+  if (paidNotRecorded(task.id)) return false;
   // A live plan is the one door of this task: the card shows the plan, not a choice.
   return !(
     chain &&
@@ -50,7 +54,7 @@ export function DoorChoice(props: TaskSlotProps) {
   if (!offersDoor(props) || task.usd === null || task.worker === null)
     return null;
   const name = task.worker === props.me ? "You" : nameOf(profiles, task.worker);
-  if (task.payTo === null)
+  if (!isWallet(task.payTo))
     return (
       <p className="text-sm text-muted" data-testid="door-waiting">
         {waitingForWallet(name)}

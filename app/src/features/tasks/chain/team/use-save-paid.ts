@@ -47,13 +47,17 @@ export function useSavePaid(input: {
   const [problem, setProblem] = useState<string | null>(null);
 
   /** Looks at the network, and writes the record when the task is paid there. Resolves true when the record was written. */
-  const save = async (ready: Ready): Promise<boolean> => {
+  const save = async (
+    ready: Ready,
+    paidPiece: string | null = null,
+  ): Promise<boolean> => {
     if (busy || chain === null) return false;
     setProblem(null);
     setBusy(true);
     try {
       const remembered = paidNotRecorded(task.id);
-      const piece = remembered?.handIn ?? task.handIn?.id ?? null;
+      // The piece that was paid for: the journal's, else the one the press looked at last, else the record's current one.
+      const piece = remembered?.handIn ?? paidPiece ?? task.handIn?.id ?? null;
       if (piece === null) return false;
       let now: Awaited<ReturnType<typeof readTaskNow>>;
       try {

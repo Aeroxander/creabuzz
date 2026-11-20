@@ -192,6 +192,27 @@ describe("a task with a live plan on the network", () => {
     expect(screen.queryByTestId("task-pay-section")).toBeNull();
   });
 
+  it("a paid record whose network row left the list never reads as paid in full: the price, not the payment", () => {
+    // A task paid in part (4 of 6 dollars) whose row aged out of the record's list: the record names the payment, the queue has
+    // no row for it, and the posted price is all the card has. It says paid, and says that is the price.
+    const numbers = sceneNumbers();
+    const record = planTask({
+      usd: 6,
+      state: "accepted",
+      acceptedBy: FOUNDER_KEY,
+      acceptedAt: 1,
+      handIn: { id: PIECE, at: 1, note: "done" },
+      paidTx: TX,
+    });
+    expect(queueOf(numbers).list.some((r) => r.what === `0x${record.id}`)).toBe(
+      false,
+    );
+    show(numbers, record);
+    expect(screen.getByTestId("task-paid").textContent).toBe(
+      "Paid. The price was 6 dollars.",
+    );
+  });
+
   it("a plan that is not for this task as the team wrote it shows the network's numbers and says why", () => {
     const { numbers, record } = sceneFor("taken", undefined, {
       payTo: "0x00000000000000000000000000000000000000ee",

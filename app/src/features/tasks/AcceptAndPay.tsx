@@ -11,6 +11,7 @@ import {
 } from "../money/numbers";
 import { useMoneySend, useWallet } from "../money/use-money";
 import { PLAY_MONEY_WORDS, boxNow } from "../pot/pot-words";
+import { planOfRecord } from "./chain/team/plan-read";
 import type { Project } from "../project/project-record";
 import { forgetPaid, paidNotRecorded, rememberPaid } from "./paid-journal";
 import { drawForTaskCall, rawDollars } from "./task-calls";
@@ -173,9 +174,25 @@ export function AcceptAndPay({
     const now = await freshTask(queryClient, project, task.id);
     // The box is read again as the chain has it now (a draw by someone else since the page was drawn lowers it).
     const fresh = await readBox().catch(() => null);
+    // One door: a task a plan stands on is paid there. The signed record can be older than the plan, so the chain is asked.
+    let planned: Awaited<ReturnType<typeof planOfRecord>> = null;
+    let unknown = false;
+    try {
+      planned = await planOfRecord(
+        (to, data) => wallet.readCall(to, data),
+        treasury,
+        task.id,
+        Math.floor(Date.now() / 1000),
+        wallet.blockTime?.bind(wallet),
+      );
+    } catch {
+      unknown = true;
+    }
     setLooking(false);
     if (moved(now, task, handIn.id, payee))
       return setProblem(TASK_PROBLEM.changed);
+    if (unknown) return setProblem(TASK_PROBLEM.planUnknown);
+    if (planned) return setProblem(TASK_PROBLEM.plannedOnNetwork);
     const have = boxNow(numbers, fresh ?? 0n);
     if (rawDollars(usd) > have)
       return setProblem(boxShortWords(have, allowancePerDay(numbers)));

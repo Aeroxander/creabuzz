@@ -318,3 +318,12 @@ describe("the words for every refusal of the task book and of the Treasury's tas
       );
   });
 });
+
+describe("dollarsPhrase", () => {
+  it("says 1 dollar for a hair over one dollar, never 1 dollars", async () => {
+    const { dollarsPhrase } = await import("./pot-copy-tasks");
+    expect(dollarsPhrase(1_000_000n)).toBe("1 dollar");
+    expect(dollarsPhrase(1_009_999n)).toBe("1 dollar");
+    expect(dollarsPhrase(2_000_000n)).toBe("2 dollars");
+  });
+});

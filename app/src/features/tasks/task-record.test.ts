@@ -156,6 +156,20 @@ describe("a project's tasks", () => {
     expect(read([open, a, junk])[0]?.payTo).toBe(PAY_TO);
   });
 
+  it("never reads the zero address as a wallet: on the network it means open to anyone", () => {
+    const open = openTask();
+    const ZERO = `0x${"0".repeat(40)}`;
+    const zero = step(STRANGER, open, "take", [["task-pay-to", ZERO]], 10);
+    expect(read([open, zero])[0]?.payTo).toBeNull();
+    // It is not a second wallet either: the real one beside it still reads.
+    const real = step(STRANGER, open, "accept", [["task-pay-to", PAY_TO]], 20);
+    expect(read([open, zero, real])[0]?.payTo).toBe(PAY_TO);
+    // And no record is ever written that names it.
+    expect(
+      takeRecord(COORD, read([open])[0] as ProjectTask, ZERO).tags,
+    ).not.toContainEqual(["task-pay-to", ZERO]);
+  });
+
   it("is accepted only by someone on the team who is not the worker nor an agent, and keeps the payment", () => {
     const task = openTask();
     const take = step(STRANGER, task, "take", [["task-pay-to", PAY_TO]]);

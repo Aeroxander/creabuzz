@@ -3,6 +3,7 @@ import { TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { wrap } from "../../../tests/helpers/money-harness";
+import { noBook } from "../../../tests/helpers/no-book";
 import type { ProjectNumbers } from "../money/numbers";
 import type { Project } from "../project/project-record";
 import { AcceptAndPay } from "./AcceptAndPay";
@@ -37,7 +38,9 @@ vi.mock("../money/use-money", () => ({
   }),
   useConnectWallet: () => ({ isPending: false, mutateAsync: async () => null }),
   useWallet: () => ({
-    readCall: async () => {
+    readCall: async (_to: string, data: string) => {
+      const none = noBook(data);
+      if (none) return none;
       if (chainBox === null) throw new Error("The node did not answer.");
       return `0x${chainBox.toString(16).padStart(64, "0")}`;
     },

@@ -25,6 +25,7 @@ import {
 import {
   dollarsWords,
   owedWords,
+  paidPriceWords,
   paidWords,
   payProblem,
   STATE_WORDS,
@@ -129,7 +130,8 @@ export function TaskCard({
       task.usd !== null &&
       task.paidTx ? (
         <p className="num text-sm font-semibold" data-testid="task-paid">
-          {paidWords(task.usd)}
+          {/* Where the record carries the network's queue and no row ties, a part payment may be what was paid: never "paid in full". */}
+          {queue ? paidPriceWords(task.usd) : paidWords(task.usd)}
         </p>
       ) : null}
       {task.worker ? (

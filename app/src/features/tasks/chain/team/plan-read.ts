@@ -97,6 +97,53 @@ export function plannedAlready(
   );
 }
 
+/** How many of the newest serials, besides the open ones, a look for a record's plan goes through. */
+export const RECENT_SERIALS = 8;
+
+/**
+ * The plan the network holds for the task record `id` right now: announced, taken or paid, and not past its end (a task
+ * past its end is ended by the next step). Reads the open tasks and the newest few, so a plan paid a moment ago is found
+ * too. Null when the project has no book or no plan of the record. Throws when the network cannot be asked: the box presses
+ * (the first door) stop on that, because paying a task a plan stands on pays it twice (plan section 8.1, "one door").
+ */
+export async function planOfRecord(
+  read: ReadCall,
+  treasury: string,
+  id: string,
+  fallbackNow: number,
+  blockTime?: (tag: "latest") => Promise<number>,
+): Promise<ChainTaskNow | null> {
+  const book = await readBookOf(read, treasury);
+  if (book === null) return null;
+  const [next] = await ask(read, TASK_BOOK_ABI, book, "nextSerial", []);
+  const last = asBigint(next);
+  const serials = new Set<bigint>(await readOpenSerials(read, book));
+  for (
+    let s = last - 1n;
+    s >= 0n && s >= last - BigInt(RECENT_SERIALS);
+    s -= 1n
+  )
+    serials.add(s);
+  const time = blockTime
+    ? await blockTime("latest").catch(() => fallbackNow)
+    : fallbackNow;
+  const what = `0x${id.toLowerCase()}`;
+  const rows = await Promise.all(
+    [...serials].map((s) => readTask(read, book, s)),
+  );
+  return (
+    rows.find(
+      (r): r is ChainTaskNow =>
+        r !== null &&
+        r.what === what &&
+        (r.state === "announced" ||
+          r.state === "taken" ||
+          r.state === "paid") &&
+        !isPastEnd(r, time),
+    ) ?? null
+  );
+}
+
 /**
  * The row a plan of `task` would be on the network, as far as the tie to the team's record is concerned: used to ask `tieOf`
  * whether the record could be planned at all, before anything is sent.

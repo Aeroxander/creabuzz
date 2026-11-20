@@ -28,7 +28,9 @@ const num = (v: DecodedValue | undefined): bigint =>
 
 /** "1 dollar", "25 dollars", "2.50 dollars", "0.43 dollars": an amount of dollar units in a sentence. */
 export function dollarsPhrase(raw: bigint): string {
-  return raw === 1_000_000n ? "1 dollar" : `${smallDollarsText(raw)} dollars`;
+  // The text is rounded down, so an amount a hair over one dollar reads "1 dollar", never "1 dollars".
+  const text = smallDollarsText(raw);
+  return text === "1" ? "1 dollar" : `${text} dollars`;
 }
 
 /** A share in ten-thousandths of the project's money as a percent: 100 is "1%", 495 is "4.95%", 1 is "0.01%". */

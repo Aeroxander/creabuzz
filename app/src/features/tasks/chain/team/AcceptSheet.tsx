@@ -10,8 +10,8 @@
  */
 import { acceptTaskCall } from "@creaton/core/pot/pot-calls.ts";
 import { readTask } from "@creaton/core/pot/pot-reads.ts";
-import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
 import { Button } from "../../../../ui/button";
 import { Card } from "../../../../ui/card";
 import { Field } from "../../../../ui/field";
@@ -20,7 +20,10 @@ import { pendingSend, sendKey } from "../../../money/pending-sends";
 import { PotSheet } from "../../../pot/PotSheet";
 import { PAIR_WORDS, runnerSend } from "../../../pot/runner-calls";
 import type { Ready } from "../../../pot/use-pot";
+import type { Project } from "../../../project/project-record";
 import type { ProjectTask, WorkerLinks } from "../../task-record";
+import { TASK_PROBLEM } from "../../tasks-copy";
+import { freshTask } from "../../use-tasks";
 import { acceptGate, nowOf } from "../state";
 import type { ChainTask } from "../types";
 import { partPay } from "./amount";
@@ -50,6 +53,7 @@ import { recordOwed } from "./use-save-paid";
 type Choice = "all" | "part";
 
 export function AcceptSheet({
+  project,
   numbers,
   task,
   chain,
@@ -63,6 +67,8 @@ export function AcceptSheet({
   onSendBack,
   onPaid,
 }: {
+  /** The project the task belongs to: its record is read again right before the press. */
+  project: Project;
   numbers: ProjectNumbers;
   /** The team's task record. */
   task: ProjectTask;
@@ -78,13 +84,16 @@ export function AcceptSheet({
   onClose: () => void;
   /** Offered beside the sentence when the money can still be sent back instead. */
   onSendBack: () => void;
-  /** Runs once the payment landed (the team's record is written there). */
-  onPaid: () => void;
+  /** Runs once the payment landed (the team's record is written there), with the piece of work that was paid for. */
+  onPaid: (piece: string | null) => void;
 }) {
   const treasury = numbers.contracts.treasury;
   const serial = chain.serial;
   const clock = nowOf(numbers.asOf.time);
   const action = `pay-task:${numbers.chainId}:${treasury}:${serial}`;
+  const queryClient = useQueryClient();
+  // The piece of work the press paid for, taken at the last look: the record is written against it, never against newer work.
+  const paidPiece = useRef<string | null>(null);
   const [choice, setChoice] = useState<Choice>("all");
   const [typed, setTyped] = useState("");
   const reading = useQuery({
@@ -176,7 +185,7 @@ export function AcceptSheet({
                 data-testid="accept-save-paid"
                 onClick={() => {
                   onClose();
-                  onPaid();
+                  onPaid(null);
                 }}
                 variant="secondary"
               >
@@ -288,7 +297,7 @@ export function AcceptSheet({
       }}
       lookLabel={PAY_LOOK}
       onLanded={() => {
-        if (send?.through !== "pair") onPaid();
+        if (send?.through !== "pair") onPaid(paidPiece.current);
       }}
       onOpenChange={(next) => {
         if (!next) onClose();
@@ -312,7 +321,20 @@ export function AcceptSheet({
         if (moved) return moved;
         if (stillWaiting && fresh.task.state === "paid") return null;
         const again = gateOf(fresh.task, Math.max(fresh.time, clock));
-        return again.ok ? null : again.sentence;
+        if (!again.ok) return again.sentence;
+        // The team's record is read past the cache too: the work handed in, its worker and their wallet must be what the card
+        // showed, or money would be paid for work the record no longer holds (step 1's last look, kept).
+        const now = await freshTask(queryClient, project, task.id);
+        if (
+          now === null ||
+          now.state !== task.state ||
+          now.handIn?.id !== task.handIn?.id ||
+          now.worker !== task.worker ||
+          now.payTo !== task.payTo
+        )
+          return TASK_PROBLEM.changed;
+        paidPiece.current = task.handIn?.id ?? null;
+        return null;
       }}
       testId="accept-sheet"
       title={payTitle(task.what)}

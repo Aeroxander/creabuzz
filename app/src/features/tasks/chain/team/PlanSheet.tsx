@@ -8,6 +8,8 @@
  * press is built from are the numbers on the sheet; the network is asked again right before the send, and a send that may
  * have landed is looked for before another is made.
  */
+import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
+import { TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
 import { announceTaskCall } from "@creaton/core/pot/pot-calls.ts";
 import { readTask } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
@@ -17,8 +19,10 @@ import { useToast } from "../../../../ui/toast";
 import type { ProjectNumbers } from "../../../money/numbers";
 import { pendingSend, sendKey } from "../../../money/pending-sends";
 import { PotSheet } from "../../../pot/PotSheet";
+import { readPairWaiting } from "../../../pot/use-pair-waiting";
 import { PAIR_WORDS, runnerSend } from "../../../pot/runner-calls";
 import type { Ready } from "../../../pot/use-pot";
+import { paidNotRecorded } from "../../paid-journal";
 import type { ProjectTask } from "../../task-record";
 import { doorFor, shareFor } from "../door";
 import { nowOf, openCountAt } from "../state";
@@ -117,6 +121,7 @@ export function PlanSheet({
           address: ready.address,
           now: clock,
           workerName,
+          boxPaid: paidNotRecorded(task.id) !== null,
         })
       : null;
   // The call is built from the numbers on the sheet whenever they make one; whether it may be pressed is the block's say.
@@ -134,6 +139,18 @@ export function PlanSheet({
       inner = null;
     }
   }
+  /** Whether a plan of this task is already waiting in the Pair. Throws when what is waiting cannot be read: nothing is asked on a guess. */
+  const waitingPlan = async (): Promise<boolean> => {
+    const found = await readPairWaiting(ready, numbers.runner.address);
+    return found.waiting.some((w) => {
+      if (w.target !== treasury.toLowerCase()) return false;
+      const call = decodeCall(TREASURY_ABI, w.data);
+      return (
+        call?.name === "announceTask" &&
+        String(call.args[0]).toLowerCase() === what
+      );
+    });
+  };
   const action = `plan-task:${numbers.chainId}:${treasury}:${what}`;
   // A send of this plan that may have landed: the press then looks for it first, and "this task is already planned" is what
   // finding it looks like, so that one block never stands in the way of the look (nothing new is sent while it is waiting).
@@ -285,6 +302,7 @@ export function PlanSheet({
       problemAction="plan-task"
       recheck={async () => {
         // The network is asked again: what the sheet showed must still be so, or nothing is sent.
+        if (paidNotRecorded(task.id)) return PLAN_BLOCK.boxPaid;
         const again = await readPlan(ready, treasury, share, clock);
         const same = plannedAlready(again, task.id);
         // A plan found while a send of this one is waiting is that send: the press then looks it up and sends nothing.
@@ -293,6 +311,10 @@ export function PlanSheet({
             ? null
             : alreadyPlanned(same.noticeEnd);
         if (again.activeEnd <= again.time) return PLAN_BLOCK.quiet;
+        // With two people running the project the same plan can already be waiting for the other signer (a reload lost this
+        // page's memory of it, or they asked from their own page): confirming both would plan the task twice.
+        if (send?.through === "pair" && (await waitingPlan()))
+          return PLAN_BLOCK.alreadyAsked;
         if (openCountAt(again.open, again.time) >= queue.limits.maxOpen)
           return PLAN_BLOCK.full;
         const was = data?.notice;

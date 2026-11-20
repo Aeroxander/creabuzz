@@ -11,7 +11,7 @@ import {
 import type { DecodedValue } from "@creaton/core/launchpad/evmAbi.ts";
 import type { ProjectNumbers } from "../money/numbers";
 import { durationWords } from "../tasks/chain/duration";
-import { phaseOf } from "../tasks/chain/state";
+import { isPastEnd, phaseOf } from "../tasks/chain/state";
 import type { ChainTaskNow, NoticeFor } from "../tasks/chain/types";
 import {
   acceptTaskWords,
@@ -159,7 +159,12 @@ function taskCallTerms(
   if (!facts || !task) return unknownTask();
   // The sentence says what the call does to a task in one state; a task in another state would be refused, so it is said so.
   const wants = signature === "cancelTask(uint64)" ? "announced" : "taken";
-  if (task.state !== wants || (wants === "taken" && task.takenBy === null))
+  // A task past its end is ended by the contract's next step first, so the call would be refused: it is said so, not offered.
+  if (
+    task.state !== wants ||
+    (wants === "taken" && task.takenBy === null) ||
+    isPastEnd(task, facts.now)
+  )
     return {
       kind: "unknown",
       words: pairTaskMoved(serial, phaseOf(task, facts.now)),

@@ -121,8 +121,18 @@ export function chainPays(pay: bigint) {
   );
 }
 
-export const show = (over: Parameters<typeof props>[0] = {}) =>
-  wrap(<TeamActions {...props(over)} />);
+let shownTask: ProjectTask | null = null;
+/**
+ * The team's task record as the server holds it right now, for the last look before a payment (`freshTask`): a test that does
+ * not move it gets the task the card was drawn with. A test of that look mocks `freshTask` itself.
+ */
+export const serverTask = (): ProjectTask | null => shownTask;
+
+export const show = (over: Parameters<typeof props>[0] = {}) => {
+  const drawn = props(over);
+  shownTask = drawn.task;
+  return wrap(<TeamActions {...drawn} />);
+};
 
 export async function openSheet() {
   fireEvent.click(await screen.findByTestId("pay-open"));

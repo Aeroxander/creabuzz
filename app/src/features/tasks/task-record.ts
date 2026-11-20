@@ -74,6 +74,13 @@ export interface ProjectTask {
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+/** The zero address: on the network it means "open to anyone", so it is never a wallet a person is paid at. */
+const NO_WALLET = /^0x0{40}$/i;
+
+/** Whether `value` is a wallet a pay can go to: an address that is not the zero address. */
+export function isWallet(value: string | null): value is string {
+  return value !== null && ADDRESS.test(value) && !NO_WALLET.test(value);
+}
 const TX = /^0x[0-9a-fA-F]{64}$/;
 
 function first(event: TaskRecordEvent, name: string): string | null {
@@ -179,7 +186,7 @@ function payToOf(
   )) {
     if (step.pubkey !== worker) continue;
     const value = first(step, "task-pay-to");
-    if (value === null || !ADDRESS.test(value)) continue;
+    if (!isWallet(value)) continue;
     // The latest step's spelling is the one shown.
     shown ??= value;
     named.add(value.toLowerCase());
@@ -371,7 +378,7 @@ export function takeRecord(
     task,
     "take",
     "Task taken",
-    payTo && ADDRESS.test(payTo) ? [["task-pay-to", payTo]] : [],
+    isWallet(payTo) ? [["task-pay-to", payTo]] : [],
   );
 }
 
@@ -384,7 +391,7 @@ export function agreeRecord(
   task: ProjectTask,
   payTo: string,
 ): RecordTemplate {
-  if (!ADDRESS.test(payTo))
+  if (!isWallet(payTo))
     throw new Error("A wallet to be paid at is an address.");
   return stepRecord(coordinate, task, "accept", "Agreed to the task", [
     ["task-pay-to", payTo],
