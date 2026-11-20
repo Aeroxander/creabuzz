@@ -28,6 +28,7 @@ import {
   WORKER_WALLET,
 } from "../../../../../tests/helpers/plan-scene";
 import {
+  PAID_TX,
   PAIR,
   SECOND,
   chain,
@@ -71,6 +72,37 @@ describe("what stops the pay press, in one sentence", () => {
     );
     expect(screen.queryByTestId("accept-all")).toBeNull();
     expect(confirm().disabled).toBe(true);
+  });
+
+  it("a task the network shows paid (the other signer's confirmation ran) offers to save that it was paid, and writes the record from the network", async () => {
+    setup({ chainRow: { state: "paid", pay: 1_000_000n } });
+    show();
+    await openSheet();
+    fireEvent.click(screen.getByTestId("accept-save-paid"));
+    await waitFor(() => expect(published).toHaveLength(1));
+    const tags = (published[0] as { tags: string[][] }).tags;
+    expect(tags.find((t) => t[0] === "task-paid")?.[1]).toBe(PAID_TX);
+    expect(chain.sent).toEqual([]);
+  });
+
+  it("offers no saving when the team's list already says paid, or the network does not say the task is paid", async () => {
+    setup({ chainRow: { state: "paid", pay: 1_000_000n } });
+    // Work accepted with the payment on record: nothing is owed on the list, so the card is not even offering the sheet.
+    show({
+      task: handedInTask(numbers, {
+        state: "accepted",
+        paidTx: `0x${"ee".repeat(32)}`,
+      }),
+    });
+    await settled();
+    expect(screen.queryByTestId("pay-open")).toBeNull();
+    cleanup();
+    // A task that is blocked for another reason is not offered a save.
+    setup({ chainRow: { takenBy: STRANGER_EVM } });
+    show();
+    await openSheet();
+    expect(screen.getByTestId("accept-blocked")).toBeTruthy();
+    expect(screen.queryByTestId("accept-save-paid")).toBeNull();
   });
 
   it("a wallet that took it that is not the wallet the worker named, and offers to send the money back", async () => {

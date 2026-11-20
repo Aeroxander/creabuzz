@@ -36,6 +36,7 @@ import {
   PAY_PART_LABEL,
   PAY_PRESS_PAIR,
   PAY_READ_FAILED,
+  SAVE_PAID,
   paidDone,
   payAll,
   payPress,
@@ -44,6 +45,7 @@ import {
 } from "./pay-words";
 import { SheetLine } from "./SheetLine";
 import { readTaskNow, stillSo } from "./task-now";
+import { recordOwed } from "./use-save-paid";
 
 type Choice = "all" | "part";
 
@@ -169,6 +171,18 @@ export function AcceptSheet({
             >
               {stops.sentence}
             </p>
+            {data.task.state === "paid" && recordOwed(task) ? (
+              <Button
+                data-testid="accept-save-paid"
+                onClick={() => {
+                  onClose();
+                  onPaid();
+                }}
+                variant="secondary"
+              >
+                {SAVE_PAID}
+              </Button>
+            ) : null}
             {stops.sendBackOffered ? (
               <Button
                 data-testid="accept-send-back"
