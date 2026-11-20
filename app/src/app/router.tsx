@@ -59,9 +59,13 @@ const home = createRoute({
 const project = createRoute({
   getParentRoute: () => root,
   path: "/p/$ref",
+  // `?tab=money` opens the Money tab (the news on You sends a holder there to take their money out).
+  validateSearch: (search: Record<string, unknown>): { tab?: "money" } =>
+    search.tab === "money" ? { tab: "money" } : {},
   component: function ProjectRoute() {
     const { ref } = project.useParams();
-    return <ProjectPage key={ref} projectRef={ref} />;
+    const { tab } = project.useSearch();
+    return <ProjectPage key={ref} projectRef={ref} initialTab={tab} />;
   },
 });
 

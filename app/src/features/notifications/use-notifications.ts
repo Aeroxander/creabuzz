@@ -18,6 +18,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
 import { useAccount } from "../../lib/account";
 import { readMulti } from "../../lib/relay";
+import { useUnseenNews } from "../alerts/use-news";
 
 export type { NotificationGroup };
 
@@ -76,15 +77,21 @@ export function useNotifications() {
   });
 }
 
-/** How many notifications arrived since the person last looked (the dot on You). */
+/**
+ * How many notifications arrived since the person last looked, and how many pieces of news about their projects they have
+ * not read (the dot on You: one count, the sum).
+ */
 export function useUnseenCount(): number {
   const { pubkey } = useAccount();
   const data = useNotifications().data;
-  if (!pubkey || !data) return 0;
+  const news = useUnseenNews();
+  if (!pubkey) return 0;
+  if (!data) return news;
   const seen = readSeenAt(relayWsUrl(), pubkey);
   return (
     data.groups.filter((g) => g.at > seen).length +
-    data.asks.filter((a) => a.createdAt > seen).length
+    data.asks.filter((a) => a.createdAt > seen).length +
+    news
   );
 }
 

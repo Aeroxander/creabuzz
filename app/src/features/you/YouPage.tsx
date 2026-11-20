@@ -27,6 +27,8 @@ import { NotificationsList } from "../notifications/NotificationsList";
 import { ProfileHead } from "../profile/ProfilePage";
 import { useProjectsBy } from "../profile/use-own-projects";
 
+// What is planned, taken and finished on the projects this account holds, and what it is owed (the record only, no money call).
+const NewsSection = lazy(() => import("../alerts/NewsSection"));
 // What this account holds across projects (money calls and ABIs load only where investing is on).
 const YourSharesList = lazy(() => import("../pot/YourSharesList"));
 // The old design's backing receipts: loaded only with the legacy-screens flag.
@@ -112,6 +114,11 @@ function SignedIn({ me }: { me: string }) {
       {legacyScreensOn() ? (
         <Suspense fallback={null}>
           <LegacyReceipts />
+        </Suspense>
+      ) : null}
+      {investingOn() ? (
+        <Suspense fallback={null}>
+          <NewsSection />
         </Suspense>
       ) : null}
       {investingOn() ? (

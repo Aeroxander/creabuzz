@@ -19,6 +19,7 @@ import {
   useProjectNumbers,
   useWalletAddress,
 } from "../money/use-money";
+import { useMarkProjectSeen } from "../alerts/use-news";
 import { PlannedStrips } from "../tasks/chain/holder/PlannedStrips";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
@@ -49,7 +50,14 @@ const LegacyMemberActions = lazy(() =>
 );
 
 /** The project page: its record, Ask to join, then Updates, Tasks, People and Money. */
-export function ProjectPage({ projectRef }: { projectRef: string }) {
+export function ProjectPage({
+  projectRef,
+  initialTab,
+}: {
+  projectRef: string;
+  /** The tab to open on, when the link names one (the news on You opens Money). */
+  initialTab?: "money";
+}) {
   const project = useProject(projectRef);
   if (project.isPending)
     return (
@@ -86,10 +94,16 @@ export function ProjectPage({ projectRef }: { projectRef: string }) {
         </EmptyState>
       </main>
     );
-  return <ProjectView project={project.data} />;
+  return <ProjectView initialTab={initialTab} project={project.data} />;
 }
 
-function ProjectView({ project }: { project: Project }) {
+function ProjectView({
+  project,
+  initialTab,
+}: {
+  project: Project;
+  initialTab?: "money";
+}) {
   const { pubkey } = useAccount();
   const activity = useProjectActivity(project);
   const people = activity.data ? projectPeople(project, activity.data) : null;
@@ -97,7 +111,9 @@ function ProjectView({ project }: { project: Project }) {
     people?.team.members.filter((m) => m.state === "accepted") ?? [];
   const onTeam = Boolean(pubkey && accepted.some((m) => m.pubkey === pubkey));
   const isFounder = pubkey === project.author;
-  const [tab, setTab] = useState("updates");
+  const [tab, setTab] = useState(
+    initialTab === "money" && investingOn() ? "money" : "updates",
+  );
   const investing = investingOn();
   const profiles = useProfiles([
     project.author,
@@ -114,6 +130,8 @@ function ProjectView({ project }: { project: Project }) {
       : null;
   const now = Math.floor(Date.now() / 1000);
   const walletAddress = useWalletAddress().data ?? null;
+  // The strips below are this project's news: opening the page reads it.
+  useMarkProjectSeen(numbers, walletAddress);
   const legacy = legacyScreensOn();
   const team = [project.author, ...accepted.map((m) => m.pubkey)];
   return (
