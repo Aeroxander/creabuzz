@@ -6,7 +6,6 @@
  */
 import { useId, useState } from "react";
 import { useAccount } from "../../lib/account";
-import { investingOn } from "../../lib/server";
 import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
@@ -42,7 +41,8 @@ const MOST_PROJECTS = 5;
 
 export function SeasonBand() {
   const seasons = useSeasons();
-  if (!investingOn() || !seasons.data) return null;
+  // Where the server does not offer investing the read is not made (`useSeasons`), so there is nothing to draw.
+  if (!seasons.data) return null;
   const now = Math.floor(Date.now() / 1000);
   const current = currentSeason(seasons.data, now);
   if (!current) return null;

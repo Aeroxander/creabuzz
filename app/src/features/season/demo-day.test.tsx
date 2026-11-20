@@ -47,7 +47,7 @@ import { SeasonPage } from "./SeasonPage";
 import { inSeasonOrder } from "./season-order";
 import { NOT_ADVICE } from "./season-words";
 import { BATCH_SIZE } from "./use-demo-day";
-import { MAX_PAGES, PAGE_SIZE } from "./use-season";
+import { PAGE_SIZE } from "./use-season";
 
 vi.mock(
   "../../lib/relay",
@@ -468,11 +468,12 @@ describe("a season with more entries than one read holds", () => {
     );
 
   it("follows the pages, at most three, and says it did not read all of a longer season", async () => {
-    serve([live, ...many(PAGE_SIZE * MAX_PAGES + 50)]);
+    serve([live, ...many(PAGE_SIZE * 3 + 50)]);
     page();
     await screen.findByTestId("demo-trim");
     const entryReads = reads.filter((f) => f["#t"]);
-    expect(entryReads).toHaveLength(MAX_PAGES);
+    // Three pages, whatever more there is: the server never holds more than that for one season.
+    expect(entryReads).toHaveLength(3);
     // Each page starts where the last stopped.
     expect(entryReads[0].until).toBeUndefined();
     expect(entryReads[1].until).toBeLessThanOrEqual(NOW - 5_000);

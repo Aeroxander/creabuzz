@@ -176,6 +176,22 @@ describe("the band's states", () => {
     expect(link.getAttribute("href")).toBe("/season/3");
   });
 
+  it("a season with more entries than one read holds gives no count rather than a wrong one", async () => {
+    const id64 = (n: number) => n.toString(16).padStart(64, "0");
+    serve([
+      demo,
+      ...Array.from({ length: 650 }, (_, i) =>
+        step(3, `37001:${id64(i + 1)}:p`, "entry", id64(i + 1), 5_000 + i),
+      ),
+    ]);
+    band();
+    await waitFor(() => expect(reads.filter((f) => f["#t"]).length).toBe(3));
+    await screen.findByRole("link", { name: "See demo day" });
+    expect(screen.getByTestId("season-band-words").textContent).toBe(
+      "Demo day: projects show what they made.",
+    );
+  });
+
   it("after the season: the last one's end, and a way to its demo day", async () => {
     serve([ended]);
     band();
@@ -231,6 +247,16 @@ describe("entering a project", () => {
     serve([open, project(OTHER, "oak", "Oak", { team: [ME] })]);
     band();
     await screen.findByRole("button", { name: "Enter Oak" });
+  });
+
+  it("a project that only mentions the person in a tag is not theirs to enter", async () => {
+    who.me = ME;
+    const mention = project(OTHER, "oak", "Oak");
+    mention.tags.push(["p", ME]);
+    serve([open, mention, mine]);
+    band();
+    await screen.findByRole("button", { name: "Enter Moss" });
+    expect(screen.queryByRole("button", { name: "Enter Oak" })).toBeNull();
   });
 
   it("a project that is not launched on the network, or is unlisted, is not offered", async () => {

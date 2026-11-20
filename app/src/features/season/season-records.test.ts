@@ -208,6 +208,18 @@ describe("an entry record", () => {
       3,
     ],
     [
+      "this season's tags but another season's number in the family tag",
+      {
+        ...entryEvent(3, "p", "entry"),
+        tags: [
+          ["a", coordinate("p")],
+          ["t", "season-3"],
+          ["season-entry", "4"],
+        ],
+      },
+      3,
+    ],
+    [
       "no season tag",
       {
         ...entryEvent(3, "p", "entry"),
