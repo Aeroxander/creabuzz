@@ -26,9 +26,6 @@ export function ageSuffix(age: AlertAge, asOf: number): string {
   return "";
 }
 
-/** A task's words as the sentences carry them: with quotes, or "a task" when there are none to trust. */
-export const whatWords = quotedWhat;
-
 /** The team plans to pay: before the take date, "from {date}"; once it can be taken, until when. */
 export function plannedWords(input: {
   max: bigint;
@@ -38,7 +35,7 @@ export function plannedWords(input: {
   /** The end of the take window. */
   until: number;
 }): string {
-  const head = `the team plans to pay up to ${dollarsPhrase(input.max)} for ${whatWords(input.what)}`;
+  const head = `the team plans to pay up to ${dollarsPhrase(input.max)} for ${quotedWhat(input.what)}`;
   return input.from !== null
     ? `${head}, from ${timeText(input.from)}. You can take your money out before then.`
     : `${head}. It can be taken until ${timeText(input.until)}. You can take your money out any time.`;
@@ -50,12 +47,12 @@ export function takenWords(input: {
   setAside: bigint;
   deadline: number;
 }): string {
-  return `${whatWords(input.what)} was taken. ${dollarsPhrase(input.setAside)} ${input.setAside === 1_000_000n ? "is" : "are"} set aside until ${timeText(input.deadline)}.`;
+  return `${quotedWhat(input.what)} was taken. ${dollarsPhrase(input.setAside)} ${input.setAside === 1_000_000n ? "is" : "are"} set aside until ${timeText(input.deadline)}.`;
 }
 
 /** A taken task whose deadline passed and nobody has settled yet. */
 export function ranOutWords(what: string | null): string {
-  return `${whatWords(what)} ran out. The money goes back to the project.`;
+  return `${quotedWhat(what)} ran out. The money goes back to the project.`;
 }
 
 /** A task that ended and moved money: paid, paid in part, or sent back or run out with nothing paid. */
@@ -65,7 +62,7 @@ export function endedWords(input: {
   pay: bigint;
   setAside: bigint;
 }): string {
-  const what = whatWords(input.what);
+  const what = quotedWhat(input.what);
   if (!input.paid)
     return `${what} ended and nothing was paid. The money went back to the project.`;
   return input.pay < input.setAside
@@ -78,7 +75,7 @@ export function claimWords(input: {
   what: string | null;
   claimable: bigint;
 }): string {
-  return `you can claim ${dollarsPhrase(input.claimable)} from ${whatWords(input.what)}. It ended after you took out.`;
+  return `you can claim ${dollarsPhrase(input.claimable)} from ${quotedWhat(input.what)}. It ended after you took out.`;
 }
 
 /** The sentence with its project in front: "Lantern: the team plans ...". */

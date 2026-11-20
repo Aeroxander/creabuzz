@@ -14,12 +14,7 @@ import { recordFitsBuild } from "../pot/use-pot";
 import type { Project } from "../project/project-record";
 import { projectRef } from "../project/project-record";
 import { projectTasksQuery } from "../tasks/use-tasks";
-import {
-  type AlertsResult,
-  alertsResult,
-  type MoreEnded,
-  type TaskAlert,
-} from "./alerts";
+import { type AlertsResult, alertsResult } from "./alerts";
 import { rememberHeld } from "./seen";
 
 /** The most projects one derivation reads a balance or a task list for. */
@@ -32,7 +27,7 @@ export interface Source {
 }
 
 /** Whether the record's own list says the person holds the project: yes, no (the list is whole), or it cannot say (cut). */
-export function heldHint(
+function heldHint(
   numbers: ProjectNumbers,
   accounts: readonly string[],
 ): boolean | "unknown" {
@@ -237,5 +232,3 @@ export function useDerived(
     pending: wordsPending || waiting,
   };
 }
-
-export type { MoreEnded, TaskAlert };

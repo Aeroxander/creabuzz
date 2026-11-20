@@ -30,7 +30,7 @@ import {
 } from "./alert-words";
 
 /** What an alert is about. */
-export type AlertKind = "planned" | "taken" | "ended" | "claim";
+type AlertKind = "planned" | "taken" | "ended" | "claim";
 
 /** One piece of news about a task, for one project. */
 export interface TaskAlert {
@@ -73,7 +73,7 @@ export interface AlertsInput {
 }
 
 /** The ended tasks of a project that were left out of the list after the first three. */
-export interface MoreEnded {
+interface MoreEnded {
   chainKey: string;
   projectName: string | null;
   count: number;

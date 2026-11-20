@@ -67,13 +67,15 @@ vi.mock("../tasks/use-tasks", async (actual) => ({
   projectTasksQuery: (project: { coordinate: string }) => ({
     queryKey: ["news-test-tasks", project.coordinate],
     staleTime: 0,
-    queryFn: async () => ({
-      ...(wordsFor.push(project.coordinate), {}),
-      tasks: records,
-      agents: new Set<string>(),
-      operators: new Map<string, string>(),
-      complete: true,
-    }),
+    queryFn: async () => {
+      wordsFor.push(project.coordinate);
+      return {
+        tasks: records,
+        agents: new Set<string>(),
+        operators: new Map<string, string>(),
+        complete: true,
+      };
+    },
   }),
 }));
 vi.mock("@tanstack/react-router", async (actual) => ({
