@@ -5,6 +5,8 @@ import {
   parseServerSettings,
   relaySignerFromInfo,
   serverSmartAccountLinks,
+  serverWebPushKey,
+  webPushKeyFromInfo,
   smartAccountLinksFromInfo,
   serverRelaySigner,
   serverTrading,
@@ -56,4 +58,59 @@ test("whether phone accounts' wallet links can be checked is a plain boolean, or
   assert.equal(serverSmartAccountLinks(), false);
   applyServerSettings({ investing: true });
   assert.equal(serverSmartAccountLinks(), null);
+});
+
+/** A 65-byte uncompressed point in base64url with no padding, as the server's information document carries it. */
+const pushKey = (first = 4, length = 65) =>
+  Buffer.from([
+    first,
+    ...Array.from({ length: length - 1 }, (_, i) => i + 1),
+  ]).toString("base64url");
+
+test("the web push key is read only as an uncompressed 65-byte point in base64url, else push says nothing", () => {
+  const good = pushKey();
+  assert.equal(good.length, 87);
+  assert.equal(webPushKeyFromInfo({ webPush: { publicKey: good } }), good);
+  // Not a point (the first byte), not 65 bytes, padded, standard alphabet, not text, not an object.
+  assert.equal(
+    webPushKeyFromInfo({ webPush: { publicKey: pushKey(2) } }),
+    null,
+  );
+  assert.equal(
+    webPushKeyFromInfo({ webPush: { publicKey: pushKey(4, 33) } }),
+    null,
+  );
+  assert.equal(
+    webPushKeyFromInfo({ webPush: { publicKey: `${good}=` } }),
+    null,
+  );
+  assert.equal(
+    webPushKeyFromInfo({
+      webPush: { publicKey: `${good.replace(/[-_]/g, "+")}+` },
+    }),
+    null,
+  );
+  assert.equal(webPushKeyFromInfo({ webPush: { publicKey: 7 } }), null);
+  assert.equal(webPushKeyFromInfo({ webPush: good }), null);
+  assert.equal(webPushKeyFromInfo({ webPush: [good] }), null);
+  assert.equal(webPushKeyFromInfo({}), null);
+  assert.equal(webPushKeyFromInfo(null), null);
+});
+
+test("applying a document keeps its web push key; a document without one forgets it", () => {
+  const good = pushKey();
+  applyServerSettings({ investing: true, webPush: { publicKey: good } });
+  assert.equal(serverWebPushKey(), good);
+  // Push is not part of the settings the web client compares.
+  assert.deepEqual(
+    parseServerSettings({ investing: true, webPush: { publicKey: good } }),
+    {
+      investing: true,
+      trading: null,
+    },
+  );
+  applyServerSettings({ investing: true });
+  assert.equal(serverWebPushKey(), null);
+  applyServerSettings(null);
+  assert.equal(serverWebPushKey(), null);
 });
