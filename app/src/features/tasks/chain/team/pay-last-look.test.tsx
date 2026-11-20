@@ -1,7 +1,7 @@
 // The pay sheet's last look also reads the team's record past the cache, as step 1's presses do: money is never paid for work
 // the record no longer shows (another piece handed in, the team asked for changes on another device).
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { published, SERVER } from "../../../../../tests/helpers/money-harness";
 import { handedInTask, TASK_ID } from "../../../../../tests/helpers/plan-scene";
@@ -15,6 +15,7 @@ import {
 } from "../../../../../tests/helpers/pay-scene";
 import { forgetPaid } from "../../paid-journal";
 import type { ProjectTask } from "../../task-record";
+import { TASK_PROBLEM } from "../../tasks-copy";
 
 vi.mock(
   "../../../../lib/relay",
@@ -53,5 +54,28 @@ describe("the pay sheet's last look at the team's record", () => {
     await new Promise((r) => setTimeout(r, 500));
     expect(chain.sent).toEqual([]);
     expect(screen.queryByTestId("sheet-problem")).not.toBeNull();
+  });
+
+  // Each thing the payment stands on is checked alone: the card is the same, one fact of the server's record differs.
+  it.each([
+    ["the task is no longer handed in", { state: "given-up" }],
+    ["the worker is another account", { worker: "ee".repeat(32) }],
+    [
+      "the pay-to wallet is another wallet",
+      { payTo: "0x00000000000000000000000000000000000000dd" },
+    ],
+  ] as const)("does not pay when %s", async (_what, change) => {
+    setup();
+    const shown = handedInTask(numbers);
+    moved = { ...shown, ...change };
+    show({ task: shown });
+    await openSheet();
+    fireEvent.click(confirm());
+    await waitFor(() =>
+      expect(screen.getByTestId("sheet-problem").textContent).toContain(
+        TASK_PROBLEM.changed,
+      ),
+    );
+    expect(chain.sent).toEqual([]);
   });
 });

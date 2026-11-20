@@ -6,6 +6,7 @@ import { wrap } from "../../../tests/helpers/money-harness";
 import { noBook } from "../../../tests/helpers/no-book";
 import type { ProjectNumbers } from "../money/numbers";
 import type { Project } from "../project/project-record";
+import { TASK_PROBLEM } from "./tasks-copy";
 import { AcceptAndPay } from "./AcceptAndPay";
 import { forgetPaid, rememberPaid } from "./paid-journal";
 import type { ProjectTask } from "./task-record";
@@ -27,6 +28,8 @@ const written: { record: { tags: string[][] } }[] = [];
 let fresh: ProjectTask | null;
 /** What the chain answers for the allowance box (null: the node does not answer). */
 let chainBox: bigint | null = null;
+/** True when the node does not answer the question "which task book does this project have". */
+let bookFails = false;
 
 vi.mock("../money/use-money", () => ({
   useMoneySend: () => ({
@@ -40,6 +43,7 @@ vi.mock("../money/use-money", () => ({
   useWallet: () => ({
     readCall: async (_to: string, data: string) => {
       const none = noBook(data);
+      if (none && bookFails) throw new Error("The node did not answer.");
       if (none) return none;
       if (chainBox === null) throw new Error("The node did not answer.");
       return `0x${chainBox.toString(16).padStart(64, "0")}`;
@@ -104,6 +108,7 @@ beforeEach(() => {
   written.length = 0;
   fresh = task();
   chainBox = null;
+  bookFails = false;
   forgetPaid(task().id);
 });
 afterEach(cleanup);
@@ -369,6 +374,26 @@ describe("accept and pay", () => {
     press();
     await screen.findByTestId("task-accept-problem");
     expect(sent).toHaveLength(0);
+  });
+
+  it("sends nothing, and says so, when the network cannot say whether a plan of the task stands", async () => {
+    // The task book cannot be read: whether the task is planned (and so paid at the other door) is not known.
+    chainBox = 45_000_000n;
+    bookFails = true;
+    wrap(
+      <AcceptAndPay
+        address={WALLET}
+        numbers={numbers}
+        project={project}
+        task={task()}
+      />,
+    );
+    press();
+    expect((await screen.findByTestId("task-accept-problem")).textContent).toBe(
+      TASK_PROBLEM.planUnknown,
+    );
+    expect(sent).toHaveLength(0);
+    expect(written).toHaveLength(0);
   });
 
   it("closes a paying task whose taker named no wallet only as a second, plainly worded choice", async () => {
