@@ -121,6 +121,41 @@ fn the_ended_rows_keep_every_row_with_notes_first_and_33_cancelled_tasks_cannot_
     );
 }
 
+/// A11: past the cap of 24, which rows with notes still to claim stay is decided by the size of what is left to claim
+/// (largest first) and then by the newest serial, not by age or by the serial alone. Here the largest are the OLDEST
+/// rows and the smallest are equal, so neither "newest first" nor "oldest first" gives the answer: only the ranking
+/// does, and a tie falls to the newest.
+#[test]
+fn past_24_rows_with_notes_the_largest_stay_and_a_tie_keeps_the_newest() {
+    let mut tasks: Vec<LTask> = Vec::new();
+    // Serials 1 to 20: large, and the larger the older (5_000 down to 4_981).
+    for s in 1..=20u64 {
+        tasks.push(moved(
+            s,
+            TaskState::Returned,
+            NOW - 400 * 86_400 + s,
+            5_000 - u128::from(s),
+        ));
+    }
+    // Serials 21 to 30: ten equal small rows, the newest ended most recently.
+    for s in 21..=30u64 {
+        tasks.push(moved(s, TaskState::Paid, NOW - 3_600 - (30 - s), 100));
+    }
+    let sel = select(&book_of(tasks), NOW, WINDOW);
+    assert_eq!(MAX_NOTE_ROWS, 24, "the plan's cap is a literal here");
+    let kept: std::collections::BTreeSet<u64> = sel.ended.iter().copied().collect();
+    let expected: std::collections::BTreeSet<u64> = (1..=20).chain(27..=30).collect();
+    assert_eq!(
+        kept, expected,
+        "the twenty largest stay, then the four newest of the equal ones"
+    );
+    assert_eq!(sel.notes_rows_dropped, 6, "the six left out are counted");
+    assert_eq!(
+        sel.ended_dropped, 0,
+        "rows cut for their notes are not counted twice"
+    );
+}
+
 /// A11: an ended row is kept for the window and not a second longer: 28 days to the second (the cap's window here is
 /// exactly 28 days, so the floor and the window agree).
 #[test]
