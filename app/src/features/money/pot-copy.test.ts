@@ -216,6 +216,23 @@ describe("the words for every refusal of the task book and of the Treasury's tas
     );
   });
 
+  it("a node's message that carries the selector alone does not hide the arguments in the revert data", () => {
+    const data = `${selectorOf("NoticeRunning(uint256)")}${(1_795_089_600).toString(16).padStart(64, "0")}`;
+    // The way a node phrases it: the bare selector in the message, the whole revert in `data`.
+    const cause = {
+      code: 3,
+      message: `execution reverted: custom error ${data.slice(0, 10)}`,
+      data,
+    };
+    expect(potRefusalOf(cause)).toEqual({
+      name: "NoticeRunning",
+      args: [1_795_089_600n],
+    });
+    expect(
+      potProblem(new WalletStepError("reverted", 0, cause), "take-task"),
+    ).toBe(say("NoticeRunning", "take-task", [1_795_089_600n]));
+  });
+
   it("take: the notice, the window, the cap and the guard on the amount", () => {
     expect(say("NoticeRunning", "take-task", [1_795_089_600n])).toMatch(
       /^The notice is still running\. This task can be taken from \d+ \w+, \d\d:\d\d\. Nothing changed\.$/,

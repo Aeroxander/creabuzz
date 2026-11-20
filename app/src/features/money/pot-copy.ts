@@ -413,12 +413,18 @@ export function potRefusalOf(
   error: unknown,
 ): { name: PotErrorName; args: readonly DecodedValue[] } | null {
   const texts = textsOf(error);
-  for (const text of texts)
-    for (const blob of text.matchAll(/0x[0-9a-fA-F]{8,}/g)) {
-      const found = decodeRevert(ABIS, blob[0]);
-      if (found && found.name in ERROR_WORDS)
-        return { name: found.name as PotErrorName, args: found.args };
-    }
+  // A node's message can carry the selector alone ("custom error 0x7a537613: ...") beside the full revert data. The longest
+  // blob goes first, so the arguments (a date, an amount) are read from the data and not lost to the bare selector.
+  const blobs = texts
+    .flatMap((text) =>
+      [...text.matchAll(/0x[0-9a-fA-F]{8,}/g)].map((b) => b[0]),
+    )
+    .sort((a, b) => b.length - a.length);
+  for (const blob of blobs) {
+    const found = decodeRevert(ABIS, blob);
+    if (found && found.name in ERROR_WORDS)
+      return { name: found.name as PotErrorName, args: found.args };
+  }
   // The node's own words ("execution reverted: DoorShut()"): the name alone, as a whole word.
   for (const text of texts)
     for (const name of POT_ERROR_NAMES)
