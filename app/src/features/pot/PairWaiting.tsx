@@ -112,14 +112,14 @@ function Inner({
                 key={proposal.id}
               >
                 <p
-                  className={`text-sm ${terms.kind === "unknown" ? "text-danger" : "font-semibold"}`}
+                  className={`break-words text-sm ${terms.kind === "unknown" ? "text-danger" : "font-semibold"}`}
                   data-testid="pair-terms"
                 >
                   {terms.words}
                 </p>
                 {terms.more?.map((line) => (
                   <p
-                    className="text-xs text-muted"
+                    className="break-words text-xs text-muted"
                     data-testid="pair-terms-more"
                     key={line}
                   >
@@ -189,7 +189,10 @@ function Inner({
       >
         {step ? (
           <>
-            <p className="text-sm font-semibold" data-testid="pair-sheet-terms">
+            <p
+              className="break-words text-sm font-semibold"
+              data-testid="pair-sheet-terms"
+            >
               {step.terms.words}
             </p>
             {step.terms.more?.map((line) => (

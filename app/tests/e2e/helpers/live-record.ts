@@ -22,6 +22,7 @@ import { topicOf } from "../../../../packages/creaton-core/src/launchpad/work.ts
 import { call, rpc } from "../../anvil/rpc";
 import { numbersV2Content } from "../../helpers/numbers-v2-fixture";
 import { chainNow, type LiveProject, type LiveWorld } from "./live-chain";
+import { liveTasks } from "./live-tasks";
 
 type Json = Record<string, unknown>;
 
@@ -80,6 +81,8 @@ export interface RecordOptions {
   holders?: string[];
   /** The last record hash the server saw in a check-in. */
   recordHash?: string | null;
+  /** The server also follows the project's task book: the record carries the `tasks` section read from the chain. */
+  tasks?: boolean;
   /** Change the record before it is returned (a stale one, one the server could not finish). */
   patch?: (content: Json) => void;
 }
@@ -367,6 +370,7 @@ export async function liveRecord(
     arrivalEnd: big(await T("arriving")) === 0n ? null : Number(arrivalEnd),
     activeSeconds: Number(big(await T("activeSeconds"))),
   };
+  if (options.tasks) content.tasks = await liveTasks(project, now, pot, u);
   options.patch?.(content);
   return content;
 }

@@ -277,6 +277,55 @@ test(`Post a task: ${PLAN_V2_BUDGETS.postTask.presses} presses and ${PLAN_V2_BUD
   expect(pay.fields).toBeLessThanOrEqual(PLAN_V2_BUDGETS.acceptAndPay.fields);
 });
 
+test("with the server reading the task book, a task nobody planned keeps the box flow: the card says why the box is the door, offers the plan as a second way in, and Accept and pay still pays in one press", async ({
+  page,
+}) => {
+  const w = world.get();
+  const project = await launchProject(w, "taskdoor", FOUNDER_NOSTR);
+  await backFor(w, project, w.who.helper, 450n);
+  await passTime(2000);
+  await checkIn(w, project);
+  const relay = createMockRelay();
+  // The server follows the project's task book now: its record carries the (empty) queue.
+  await seedServer(relay, w, project, { tasks: true });
+  relay.seed(profile(STRANGER, "Sam Stranger"));
+  seedHandedIn(relay, project, w.who.stranger);
+
+  const founder = await openTasks(
+    page,
+    relay,
+    project,
+    FOUNDER_KEY,
+    w.who.founder,
+  );
+  // No plan on the network for this task: the box is the door, and the sentence beside the press says why.
+  await expect(page.getByTestId("door-sentence")).toContainText(
+    "enough to pay this on any day, with no notice",
+    { timeout: 20_000 },
+  );
+  await expect(page.getByTestId("door-sentence")).toHaveAttribute(
+    "data-door",
+    "box",
+  );
+  // The plan stays one press away, for a team that prefers to give notice.
+  await expect(page.getByTestId("door-plan-also")).toHaveText(
+    "Plan it instead, so holders get notice first.",
+  );
+  const accept = page.getByTestId("task-accept");
+  await expect(accept).toHaveText("Accept and pay 3 dollars");
+  const before = await reads.balanceOf(read, project.dollar, w.who.stranger);
+  await accept.click();
+  await expect(page.getByTestId("toast")).toContainText(
+    "Accepted and paid 3 dollars.",
+    { timeout: 30_000 },
+  );
+  expect(founder.prompts).toBe(1);
+  expect(
+    (await reads.balanceOf(read, project.dollar, w.who.stranger)) - before,
+  ).toBe(3n * DOLLAR);
+  expect(stepsOf(relay, "confirm")).toHaveLength(1);
+});
+
 test("with the box short the work is accepted now and shown as 'accepted, pay owed' to everyone, never as paid; once the box holds enough the task is paid from the box and the payment is written on the same task", async ({
   page,
   browser,
