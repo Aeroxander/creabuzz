@@ -7,12 +7,17 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
 import { mustSayPlayMoney } from "@creaton/core/pot/network.ts";
-import { isRunner, type ProjectNumbers } from "../money/numbers";
+import { freshnessOf, isRunner, type ProjectNumbers } from "../money/numbers";
 import { PLAY_MONEY_WORDS } from "../pot/pot-words";
 import type { Project } from "../project/project-record";
 import { AgentCaps } from "./AgentCaps";
 import { PostTaskSheet } from "./PostTaskSheet";
 import { TaskCard } from "./TaskCard";
+import { nowOf } from "./chain/state";
+import { CheckInLine } from "./chain/team/CheckInLine";
+import { PlanOnlyCard } from "./chain/team/PlanOnlyCard";
+import { type TabItem, orderTasks } from "./chain/team/tasks-order";
+import { ageNoteOf, queueLine, tasksStaleWords } from "./chain/words";
 import { teamOf, useProjectTasks } from "./use-tasks";
 
 /**
@@ -81,6 +86,64 @@ export function TasksTab({
   const taken = new Set(
     tasks.flatMap((t) => (t.paidTx ? [t.paidTx.toLowerCase()] : [])),
   );
+  // The task queue (step 2) where the server's record carries one: plans first, then the other tasks, then plans that ended.
+  const queue =
+    numbers && typeof numbers.tasks === "object" && numbers.tasks
+      ? numbers.tasks
+      : null;
+  const now = numbers && queue ? nowOf(numbers.asOf.time) : 0;
+  const groups = queue
+    ? orderTasks(queue, tasks)
+    : {
+        planned: [],
+        others: tasks.map((task): TabItem => ({ kind: "task", task })),
+        ended: [],
+      };
+  const age = numbers && queue ? ageNoteOf(numbers, now) : null;
+  const stale =
+    numbers && queue ? freshnessOf(numbers, now).level === "stale" : false;
+  const card = (item: TabItem) =>
+    item.kind === "task" ? (
+      <li key={`task-${item.task.id}`}>
+        <TaskCard
+          address={address}
+          agents={agents}
+          me={pubkey}
+          numbers={numbers}
+          operators={operators}
+          profiles={profiles}
+          project={project}
+          taken={taken}
+          task={item.task}
+          team={team}
+        />
+      </li>
+    ) : numbers ? (
+      <li key={`plan-${item.row.serial}`}>
+        <PlanOnlyCard
+          ageNote={age}
+          now={now}
+          row={item.row}
+          windDownAt={numbers.windDown?.at ?? null}
+        />
+      </li>
+    ) : null;
+  const section = (title: string, items: TabItem[], testId: string) =>
+    items.length === 0 ? null : (
+      <section
+        aria-label={title}
+        className="flex flex-col gap-3"
+        data-testid={testId}
+      >
+        <h2 className="text-sm font-semibold text-muted">{title}</h2>
+        <ul className="m-0 flex list-none flex-col gap-3 p-0">
+          {items.map(card)}
+        </ul>
+      </section>
+    );
+  const none =
+    groups.planned.length + groups.others.length + groups.ended.length === 0;
+  const named = groups.planned.length > 0 || groups.ended.length > 0;
   return (
     <div className="flex flex-col gap-3" data-testid="project-tasks">
       {numbers && mustSayPlayMoney(numbers.playMoney) ? (
@@ -88,8 +151,21 @@ export function TasksTab({
           {PLAY_MONEY_WORDS}
         </p>
       ) : null}
+      {numbers && queueLine(numbers.tasks) ? (
+        <p className="text-sm text-muted" data-testid="tasks-queue-line">
+          {queueLine(numbers.tasks)}
+        </p>
+      ) : null}
+      {numbers && stale ? (
+        <p className="text-sm text-muted" data-testid="tasks-stale">
+          {tasksStaleWords(numbers.asOf.time)}
+        </p>
+      ) : null}
+      {onTeam && numbers && queue ? (
+        <CheckInLine now={now} numbers={numbers} queue={queue} />
+      ) : null}
       {post}
-      {tasks.length === 0 ? (
+      {none ? (
         <EmptyState
           icon={<ListChecks size={28} />}
           testId="tasks-none"
@@ -99,21 +175,20 @@ export function TasksTab({
           it.
         </EmptyState>
       ) : (
-        tasks.map((task) => (
-          <TaskCard
-            address={address}
-            agents={agents}
-            key={task.id}
-            me={pubkey}
-            numbers={numbers}
-            operators={operators}
-            profiles={profiles}
-            project={project}
-            taken={taken}
-            task={task}
-            team={team}
-          />
-        ))
+        <>
+          {section("Planned and running", groups.planned, "tasks-planned")}
+          {groups.others.length === 0 ? null : named ? (
+            section("Other tasks", groups.others, "tasks-others")
+          ) : (
+            <ul
+              aria-label="Tasks"
+              className="m-0 flex list-none flex-col gap-3 p-0"
+            >
+              {groups.others.map(card)}
+            </ul>
+          )}
+          {section("Ended plans", groups.ended, "tasks-ended")}
+        </>
       )}
       {read.data.complete ? null : (
         <p className="text-xs text-muted">
