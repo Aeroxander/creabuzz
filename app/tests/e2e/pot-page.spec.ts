@@ -93,6 +93,7 @@ test("at 360 by 640 the name, the money, what taking out gives, the banner and B
     "The dollars are play money",
   );
   await expectNoSidewaysScroll(page, "the project page at 360");
+  await expectAccessible(page, "the project page's top at 360");
   // For a person to look at.
   await page.screenshot({ path: "test-results/pot-screens/page-top-360.png" });
   await context.close();
@@ -288,3 +289,111 @@ test("Home ranks by money that stayed from the server's index: one link per row,
   await rows.first().getByRole("link").click();
   await expect(page.getByTestId("project-name")).toHaveText("Lantern");
 });
+
+test("by the keyboard alone: Share is reached in the page's own order, the sheet keeps focus inside, and Escape gives it back", async ({
+  page,
+}) => {
+  const w = world.get();
+  const project = await launchProject(w, "keyboard", FOUNDER_NOSTR);
+  await backFor(w, project, w.who.backer, 100n);
+  await openMoney(page, w, project, { account: w.who.backer, tab: null });
+  await expect(page.getByTestId("backing-review")).toBeVisible({
+    timeout: 20_000,
+  });
+  // Tab goes through the page in reading order and reaches Share (the amount box comes before it).
+  const seen: string[] = [];
+  for (let i = 0; i < 14; i += 1) {
+    await page.keyboard.press("Tab");
+    const id = await page.evaluate(
+      () =>
+        (document.activeElement as HTMLElement | null)?.getAttribute(
+          "data-testid",
+        ) ?? "",
+    );
+    seen.push(id);
+    if (id === "share-open") break;
+  }
+  expect(seen.indexOf("backing-amount")).toBeGreaterThanOrEqual(0);
+  expect(seen.indexOf("backing-amount")).toBeLessThan(
+    seen.indexOf("share-open"),
+  );
+  expect(seen.indexOf("backing-review")).toBeLessThan(
+    seen.indexOf("share-open"),
+  );
+  expect(seen.at(-1)).toBe("share-open");
+  await page.keyboard.press("Enter");
+  const sheet = page.getByTestId("share-sheet");
+  await expect(sheet).toBeVisible();
+  // Tab stays inside the open sheet.
+  for (let i = 0; i < 8; i += 1) {
+    await page.keyboard.press("Tab");
+    expect(
+      await page.evaluate(
+        () =>
+          document
+            .querySelector('[data-testid="share-sheet"]')
+            ?.contains(document.activeElement) ?? false,
+      ),
+    ).toBe(true);
+  }
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByTestId("share-open")).toBeFocused();
+});
+
+for (const size of [
+  { name: "phone-390", width: 390, height: 844 },
+  { name: "desktop-1280", width: 1280, height: 800 },
+])
+  test(`the page's top and Home with the ranking do not scroll sideways at ${size.name}`, async ({
+    browser,
+  }) => {
+    const w = world.get();
+    const project = await launchProject(w, `wide${size.width}`, FOUNDER_NOSTR);
+    await backFor(w, project, w.who.backer, 100n);
+    const context = await browser.newContext({
+      viewport: { width: size.width, height: size.height },
+    });
+    const page = await context.newPage();
+    const { relay } = await openMoney(page, w, project, {
+      account: w.who.backer,
+      tab: null,
+    });
+    await expect(page.getByTestId("backing-review")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expectNoSidewaysScroll(page, `the project page at ${size.name}`);
+    await page.screenshot({
+      path: `test-results/pot-screens/page-top-${size.name}.png`,
+    });
+    const held = exampleRecord().held as Record<string, any>;
+    const at = await chainNow();
+    relay.seed(
+      event(
+        39009,
+        RELAY,
+        shapeOnlyIndexContent(
+          [
+            {
+              key: project.key,
+              a: coordinateOf(project.label),
+              launchedAt: at - 3 * held.windows.rankSecs,
+              windowSecs: held.windows.rankSecs,
+              money: held.rank.money,
+              accounts: held.rank.accounts,
+              reached: false,
+            },
+          ],
+          { now: at },
+        ),
+        [["d", "explore"]],
+        at,
+      ),
+    );
+    await page.getByTestId("tab-link-home").click();
+    await expect(page.getByTestId("home-ranked")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expectNoSidewaysScroll(page, `Home at ${size.name}`);
+    await context.close();
+  });

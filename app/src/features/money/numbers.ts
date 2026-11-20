@@ -22,17 +22,10 @@ import type {
 } from "./numbers-types";
 
 export type {
-  EstablishedNumbers,
-  FeedHour,
-  FeedItem,
-  FeedItemKind,
-  FeedNumbers,
-  HeldNumbers,
   NumbersEvent,
   ProjectNumbers,
   QuietState,
   RemovedNumbers,
-  StreaksNumbers,
 } from "./numbers-types";
 
 /** Raw dollar units in one dollar, and raw Share units in one Share. */

@@ -14,8 +14,6 @@ import {
 
 /** Under every live number. */
 export const NOT_A_RETURN = "This can go up or down. It is not a return.";
-/** On every sheet that moves money. */
-export const CAN_TAKE_OUT = "You can take your money out any time.";
 /**
  * The banner on every page and sheet (design 2.7), word for word: the shell draws it under each page, a page that draws
  * its own says so, and every money sheet carries it.

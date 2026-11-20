@@ -16,10 +16,10 @@ import { peopleCount, windowWords } from "../project/project-top-words";
 import { Section } from "./Section";
 import type { Ranking, RankedProject } from "./use-ranking";
 
-export const RANKED_TITLE = "Money that stayed";
+const RANKED_TITLE = "Money that stayed";
 
 /** The line of one row: the money that stayed and the people who kept it. */
-export function rankedLine(row: RankedProject): string {
+function rankedLine(row: RankedProject): string {
   return `${smallDollarsText(row.entry.money)} kept ${windowWords(row.entry.windowSecs)} or more by ${peopleCount(row.entry.accounts)}.`;
 }
 
