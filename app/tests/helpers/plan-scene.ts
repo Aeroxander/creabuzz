@@ -107,3 +107,73 @@ export function pointRow(
   row.what = `0x${taskId}`;
   return row;
 }
+
+/** The serial of the example's taken row: the one the scenes of a task in progress are made from. */
+export const TAKEN_SERIAL = 6;
+
+/**
+ * The scene of a task in progress: the example's taken row made to name the team's task record and the worker's wallet (it
+ * was taken by that wallet, and paid to nobody else). `patch` changes the content after that.
+ */
+export function takenNumbers(
+  patch?: (content: Record<string, unknown>) => void,
+): ProjectNumbers {
+  return sceneNumbers((content) => {
+    const row = pointRow(content, TAKEN_SERIAL);
+    row.payee = WORKER_WALLET;
+    row.takenBy = WORKER_WALLET;
+    patch?.(content);
+  });
+}
+
+/** The taken row of a scene made by `takenNumbers`. */
+export function takenRowOf(numbers: ProjectNumbers): ChainTask {
+  const row = queueOf(numbers).list.find(
+    (r) => r.serial === BigInt(TAKEN_SERIAL),
+  );
+  if (!row) throw new Error("the scene has no taken row");
+  return row;
+}
+
+/** The team's task record for the taken row: it pays what the row's most is, and work has been handed in. */
+export function handedInTask(
+  numbers: ProjectNumbers,
+  over: Partial<ProjectTask> = {},
+): ProjectTask {
+  return planTask({
+    usd: Number(takenRowOf(numbers).maxDollars / 1_000_000n),
+    state: "submitted",
+    handIn: {
+      id: "ab".repeat(32),
+      at: NOW - 600,
+      note: "The guide in Spanish",
+    },
+    ...over,
+  });
+}
+
+/** The serial of the example's announced row that is not a repeat: the one the scenes of a plan nobody has taken are made from. */
+export const PLANNED_SERIAL = 7;
+
+/**
+ * The scene of a plan nobody has taken: the example's announced row made to name the team's task record, paid to the
+ * worker's wallet. `patch` changes the content after that.
+ */
+export function plannedNumbers(
+  patch?: (content: Record<string, unknown>) => void,
+): ProjectNumbers {
+  return sceneNumbers((content) => {
+    const row = pointRow(content, PLANNED_SERIAL);
+    row.payee = WORKER_WALLET;
+    patch?.(content);
+  });
+}
+
+/** The announced row of a scene made by `plannedNumbers`. */
+export function plannedRowOf(numbers: ProjectNumbers): ChainTask {
+  const row = queueOf(numbers).list.find(
+    (r) => r.serial === BigInt(PLANNED_SERIAL),
+  );
+  if (!row) throw new Error("the scene has no planned row");
+  return row;
+}

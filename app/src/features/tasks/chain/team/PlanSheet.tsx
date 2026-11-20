@@ -31,6 +31,7 @@ import { nowOf, openCountAt } from "../state";
 import type { ChainTasks } from "../types";
 import { dollarsPhrase } from "../words";
 import { planBlock } from "./plan-gate";
+import { SheetLine } from "./SheetLine";
 import { plannedAlready, readPlan } from "./plan-read";
 import {
   checkInLine,
@@ -55,25 +56,6 @@ import {
 const DOLLAR = 1_000_000n;
 /** How many serials after the one read at open a landed look goes through: a bound on work, far above what can be planned. */
 const LOOK_SERIALS = 20;
-
-function Line({
-  label,
-  testId,
-  children,
-}: {
-  label: string;
-  testId: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-0.5 py-1.5">
-      <dt className="text-sm text-muted">{label}</dt>
-      <dd className="break-words" data-testid={testId}>
-        {children}
-      </dd>
-    </div>
-  );
-}
 
 export function PlanSheet({
   numbers,
@@ -190,13 +172,13 @@ export function PlanSheet({
     body = (
       <>
         <dl className="divide-y divide-white/10">
-          <Line label="Pay to" testId="plan-pay-to">
+          <SheetLine label="Pay to" testId="plan-pay-to">
             {workerName}
             <span className="num block text-sm text-muted">
               {task.payTo ?? "no wallet named"}
             </span>
-          </Line>
-          <Line label="Up to" testId="plan-max">
+          </SheetLine>
+          <SheetLine label="Up to" testId="plan-max">
             {dollarsPhrase(pay)}
             {share !== null ? (
               <span
@@ -206,7 +188,7 @@ export function PlanSheet({
                 {shareLine(share)}
               </span>
             ) : null}
-          </Line>
+          </SheetLine>
         </dl>
         {data.notice && from !== null && until !== null ? (
           <div className="flex flex-col gap-1 text-sm" data-testid="plan-dates">

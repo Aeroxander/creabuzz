@@ -419,6 +419,22 @@ export function payRecord(
   ]);
 }
 
+/** Stop a task on the team's list (the plan for it was withdrawn on the network): the words say why, as the server requires. */
+export function cancelRecord(
+  coordinate: string,
+  task: ProjectTask,
+  note: string,
+): RecordTemplate {
+  return stepRecord(
+    coordinate,
+    task,
+    "cancel",
+    "Task stopped",
+    [],
+    note.trim().slice(0, 1_000),
+  );
+}
+
 /** What the app knows about who runs whom, so it can tell when accepting would be checking one's own work. */
 export interface WorkerLinks {
   /** The project's founder. */
