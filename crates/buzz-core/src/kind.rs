@@ -1127,6 +1127,15 @@ pub const KIND_WORK_TAKEN_ON: u32 = 37019;
 /// Global-only. See `docs/nips/NIP-LP.md`.
 pub const KIND_PROJECT_FOCUS: u32 = 37020;
 
+/// A season: a six-week group of projects with open entry, started by the platform's operator
+/// (parameterized replaceable, `d` = `season-<n>`). Content is a small JSON object with the
+/// season's number and its three dates (start, demo day, end). A later record with the same `d`
+/// replaces an earlier one, which is how the operator moves a date. Only a key in the relay's
+/// operator list may publish it; the relay checks the dates and the number at write. It carries no
+/// money and no rights: entering a project is a record the project's own team signs (kind 47003,
+/// `season-entry`). Global-only. See `docs/next-version/ROOM-AND-SEASON-RECORDS.md`.
+pub const KIND_SEASON: u32 = 37021;
+
 /// NIP-LP: work check run — one signed record of having run a claim's declared
 /// checks against a local artifact (regular, append-only; 47009 is retired).
 ///
@@ -1376,6 +1385,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_FORECAST,
     KIND_WORK_TAKEN_ON,
     KIND_PROJECT_FOCUS,
+    KIND_SEASON,
     KIND_WORK_CHECK_RUN,
 ];
 
@@ -1532,10 +1542,11 @@ const _: () = assert!(is_parameterized_replaceable(KIND_EVM_BINDING)); // 37017 
 const _: () = assert!(is_parameterized_replaceable(KIND_DEPLOYMENT_RECORD)); // 37018 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_WORK_TAKEN_ON)); // 37019 ∈ 30000–39999
 const _: () = assert!(is_parameterized_replaceable(KIND_PROJECT_FOCUS)); // 37020 ∈ 30000–39999
-                                                                         // Work check runs are append-only regular events: every run is kept, the
-                                                                         // newest per (claim id, evidence hash) wins on the read side. There is
-                                                                         // deliberately NO `assert!(is_parameterized_replaceable(...))` — the record
-                                                                         // must not replace under a d-tag coordinate.
+const _: () = assert!(is_parameterized_replaceable(KIND_SEASON)); // 37021 ∈ 30000–39999
+                                                                  // Work check runs are append-only regular events: every run is kept, the
+                                                                  // newest per (claim id, evidence hash) wins on the read side. There is
+                                                                  // deliberately NO `assert!(is_parameterized_replaceable(...))` — the record
+                                                                  // must not replace under a d-tag coordinate.
 const _: () = assert!(!is_ephemeral(KIND_WORK_CHECK_RUN));
 const _: () = assert!(!is_replaceable(KIND_WORK_CHECK_RUN));
 const _: () = assert!(!is_parameterized_replaceable(KIND_WORK_CHECK_RUN));
