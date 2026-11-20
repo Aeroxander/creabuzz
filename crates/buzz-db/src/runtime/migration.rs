@@ -780,7 +780,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 70);
+        assert_eq!(migrations.len(), 71);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1773,6 +1773,35 @@ mod postgres_tests {
             "'treasury.settle'",
         ] {
             assert!(migration.contains(text), "migration 0070 must say {text}");
+        }
+        assert!(!migration.to_ascii_lowercase().contains("community_id"));
+        assert!(!migration.contains("attach_community_write_fence"));
+    }
+
+    /// Migration 0071 gives the task book its role and the books' rows a
+    /// partial index. The desired-state schema must say the same, and the
+    /// migration must stay clear of community scoping (operator-global chain
+    /// facts).
+    #[test]
+    fn chain_tasks_role_migration_matches_the_desired_schema() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[70].version, 71);
+        let migration = migrations[70].sql.as_str();
+        let desired_schema = crate::test_support::desired_state_schema_sql();
+        for text in [
+            "'vester', 'tasks'",
+            "CREATE INDEX idx_chain_logs_tasks ON chain_logs (reader, project_key, block_number)",
+            "WHERE role = 'tasks'",
+        ] {
+            assert!(desired_schema.contains(text), "schema.sql must say {text}");
+        }
+        for text in [
+            "'vester', 'tasks'",
+            "CREATE INDEX idx_chain_logs_tasks ON chain_logs (reader, project_key, block_number)",
+            "WHERE role = 'tasks'",
+        ] {
+            assert!(migration.contains(text), "migration 0071 must say {text}");
         }
         assert!(!migration.to_ascii_lowercase().contains("community_id"));
         assert!(!migration.contains("attach_community_write_fence"));

@@ -17,3 +17,5 @@ CREATE TABLE chain_logs (
 );
 
 CREATE INDEX idx_chain_logs_project ON chain_logs (reader, project_key, block_number, log_index);
+-- The rows of the projects' task books, in block order (migration 0071).
+CREATE INDEX idx_chain_logs_tasks ON chain_logs (reader, project_key, block_number) WHERE role = 'tasks';
