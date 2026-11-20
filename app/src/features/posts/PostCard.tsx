@@ -106,9 +106,11 @@ export function PostActions({
           size={18}
         />
         {name ? (
-          <span className="sr-only">{`Like ${name}'s post,`}</span>
+          <span className="sr-only">{`Like ${name}'s post, ${engagement.ups}`}</span>
         ) : null}
-        <span className="num">{engagement.ups}</span>
+        <span aria-hidden={name ? "true" : undefined} className="num">
+          {engagement.ups}
+        </span>
       </button>
       <Link
         aria-label={

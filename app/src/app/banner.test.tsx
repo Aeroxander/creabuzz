@@ -173,6 +173,12 @@ describe("the banner on every sheet that shows money", () => {
     "features/money/BackBox.tsx": "the old design's rounds: legacy flag only",
     "features/money/Receipts.tsx": "the old design's rounds: legacy flag only",
     "features/posts/Composer.tsx": "a post, no money",
+    "features/room/HiddenSheet.tsx": "the people you hide, no money",
+    "features/room/PerksBlock.tsx":
+      "the founder's words for those who back the project, no money figure",
+    "features/room/PostMenu.tsx": "a list of presses on a post, no money",
+    "features/room/RoomSheets.tsx":
+      "report, remove and stop-writing forms, no money",
     "features/tasks/PostTaskSheet.tsx": "the old task board: not mounted",
     "features/tasks/TaskCard.tsx": "the old task board: not mounted",
     "features/team/SendSheet.tsx":

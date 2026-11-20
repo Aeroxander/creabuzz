@@ -1,13 +1,331 @@
-import type { ProfileMetadata } from "../../lib/profiles";
+/**
+ * The holder room, the project page's fifth tab (plan sections 4 and 7.6). Anyone can read it, signed in or not; who may write
+ * is the server's call, from the network, and this tab only offers a place to write to someone it will accept, and says in plain
+ * words what is wrong and what to do for everyone else. Posts are text. The team's own news and the work handed in appear
+ * among the posts, labelled, and the team's newest notice is pinned at the top so a quiet room is never blank.
+ */
+import { useEffect, useMemo, useState } from "react";
+import { useAccount } from "../../lib/account";
+import { type ProfileMetadata, nameOf } from "../../lib/profiles";
+import { useMutes } from "../../lib/mutes";
+import { useRequireAccount } from "../../lib/use-require-account";
+import { Button } from "../../ui/button";
+import { Card } from "../../ui/card";
+import { useToast } from "../../ui/toast";
 import type { ProjectNumbers } from "../money/numbers";
+import type { SignedEvent } from "../posts/use-posts";
 import type { Project } from "../project/project-record";
+import { projectUpdates, useProjectActivity } from "../project/use-project";
+import { useProjectTasks } from "../tasks/use-tasks";
+import { HiddenSheet } from "./HiddenSheet";
+import { PerksBlock } from "./PerksBlock";
+import type { MenuChoice } from "./PostMenu";
+import { RoomComposer } from "./RoomComposer";
+import { RoomNotice } from "./RoomNotice";
+import { RoomPostCard, type RoomTools } from "./RoomPostCard";
+import { MuteSheet, RemoveSheet, ReportSheet } from "./RoomSheets";
+import { RoomStatus } from "./RoomStatus";
+import { type Notice, noticesOf } from "./room-notices";
+import { buildRoom, PAGE } from "./room-read";
+import { markRoomSeen } from "./room-seen";
+import {
+  COMPOSER_LABEL,
+  EMPTY,
+  HIDE_DONE,
+  PUBLIC_LINE,
+  READ_FAILED,
+  READ_LINE,
+} from "./room-words";
+import {
+  roomOf,
+  useRoomEvents,
+  useRoomLike,
+  useRoomPost,
+  useRoomReply,
+  useStopWriting,
+} from "./use-room";
+import { useRoomStanding } from "./use-room-standing";
 
-/** The holder room, the page's fifth tab. A stub made by the page's package; the room package (A3) owns and overwrites this file. */
-export function RoomTab(_props: {
+type Item =
+  | {
+      kind: "post";
+      at: number;
+      id: string;
+      post: ReturnType<typeof buildRoom>["posts"][number];
+    }
+  | { kind: "notice"; at: number; id: string; notice: Notice };
+
+export function RoomTab({
+  project,
+  numbers,
+  profiles,
+  team,
+}: {
   project: Project;
   numbers: ProjectNumbers | null;
   profiles: Record<string, ProfileMetadata> | undefined;
   team: readonly string[];
 }) {
-  return null;
+  const room = roomOf(project);
+  const { pubkey: me } = useAccount();
+  const requireAccount = useRequireAccount();
+  const toast = useToast();
+  const events = useRoomEvents(room, project.coordinate);
+  const activity = useProjectActivity(project);
+  const tasks = useProjectTasks(project);
+  const mutes = useMutes();
+  const { standing, mutes: stops } = useRoomStanding(project, numbers, team);
+  const post = useRoomPost(room);
+  const reply = useRoomReply(room);
+  const like = useRoomLike(room);
+  const stop = useStopWriting(project.coordinate);
+  const [pages, setPages] = useState(1);
+  const [report, setReport] = useState<SignedEvent | null>(null);
+  const [removing, setRemoving] = useState<SignedEvent | null>(null);
+  const [stopping, setStopping] = useState<SignedEvent | null>(null);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
+  const [justHidden, setJustHidden] = useState<{
+    pubkey: string;
+    name: string;
+  } | null>(null);
+  const now = Math.floor(Date.now() / 1000);
+
+  const view = useMemo(
+    () =>
+      room && events.data
+        ? buildRoom({
+            notes: events.data.notes,
+            likes: events.data.likes,
+            coordinate: project.coordinate,
+            key: room.key,
+            me,
+            hidden: mutes.muted,
+          })
+        : null,
+    [events.data, room, project.coordinate, me, mutes.muted],
+  );
+  const notices = useMemo(
+    () =>
+      noticesOf({
+        updates: activity.data ? projectUpdates(project, activity.data) : [],
+        tasks: tasks.data?.tasks ?? [],
+        roles: new Map(project.team.map((m) => [m.pubkey, m.role])),
+      }),
+    [activity.data, tasks.data, project],
+  );
+  const pinned = notices[0] ?? null;
+  const items: Item[] = [
+    ...(view?.posts ?? []).map(
+      (p): Item => ({
+        kind: "post",
+        at: p.event.created_at,
+        id: p.event.id,
+        post: p,
+      }),
+    ),
+    ...notices
+      .slice(1)
+      .map((n): Item => ({ kind: "notice", at: n.at, id: n.id, notice: n })),
+  ].sort((a, b) => b.at - a.at || (a.id < b.id ? 1 : -1));
+  const shown = items.slice(0, PAGE * pages);
+
+  // The room has been looked at up to its newest thing: the tab's "New" dot goes.
+  const newest = Math.max(
+    pinned?.at ?? 0,
+    ...(view?.posts ?? []).map((p) => p.event.created_at),
+  );
+  useEffect(() => {
+    if (view && newest > 0) markRoomSeen(project.coordinate, newest);
+  }, [view, newest, project.coordinate]);
+
+  const tools: RoomTools = {
+    me,
+    founder: project.author,
+    team: new Set(team),
+    stopped: new Set((stops ?? []).map((m) => m.person)),
+  };
+  const canWrite = standing.kind === "write";
+  const onChoose = (choice: MenuChoice, event: SignedEvent) => {
+    const name = nameOf(profiles, event.pubkey);
+    if (choice === "report") requireAccount(() => setReport(event));
+    else if (choice === "remove") setRemoving(event);
+    else if (choice === "stop") setStopping(event);
+    else if (choice === "allow")
+      stop.mutate(
+        { person: event.pubkey, days: 0 },
+        {
+          onSuccess: () => toast(`${name} can write here again.`, "done"),
+          onError: () => toast("That was not saved. Try again.", "problem"),
+        },
+      );
+    else
+      requireAccount(() =>
+        mutes
+          .hide(event.pubkey)
+          .then(() => setJustHidden({ pubkey: event.pubkey, name }))
+          .catch((error: Error) => toast(error.message, "problem")),
+      );
+  };
+
+  if (!room) return null;
+  return (
+    <div className="flex flex-col gap-4" data-testid="room">
+      <div className="flex flex-col gap-1">
+        <p className="text-sm" data-testid="room-read-line">
+          {READ_LINE}
+        </p>
+        <p className="text-xs text-muted">{PUBLIC_LINE}</p>
+      </div>
+      <PerksBlock isFounder={me === project.author} project={project} />
+      <RoomStatus now={now} numbers={numbers} standing={standing}>
+        <RoomComposer
+          draftKey={project.coordinate}
+          label={COMPOSER_LABEL}
+          send={(text) => post.mutateAsync({ text })}
+        />
+      </RoomStatus>
+      {justHidden ? (
+        <Card
+          className="flex flex-col gap-2"
+          data-testid="room-hidden-note"
+          role="status"
+        >
+          <p className="text-sm">{HIDE_DONE(justHidden.name)}</p>
+          <div>
+            <Button
+              data-testid="room-hide-undo"
+              onClick={() => {
+                void mutes
+                  .showAgain(justHidden.pubkey)
+                  .then(() => setJustHidden(null));
+              }}
+              size="sm"
+              variant="secondary"
+            >
+              Undo
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+      {mutes.muted.size > 0 ? (
+        <div>
+          <Button
+            data-testid="room-hidden-open"
+            onClick={() => setHiddenOpen(true)}
+            size="sm"
+            variant="ghost"
+          >
+            {`Hidden people (${mutes.muted.size})`}
+          </Button>
+        </div>
+      ) : null}
+      {pinned ? (
+        <RoomNotice notice={pinned} pinned profiles={profiles} />
+      ) : null}
+      {events.isError ? (
+        <Card className="flex flex-col gap-2" data-testid="room-read-failed">
+          <p className="text-sm">{READ_FAILED}</p>
+          <div>
+            <Button
+              onClick={() => void events.refetch()}
+              size="sm"
+              variant="secondary"
+            >
+              Try again
+            </Button>
+          </div>
+        </Card>
+      ) : events.isPending ? (
+        <Card className="h-24 animate-pulse" data-testid="room-loading" />
+      ) : shown.length === 0 && !pinned ? (
+        <p className="text-sm text-muted" data-testid="room-empty">
+          {EMPTY}
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-3" data-testid="room-list">
+          {shown.map((item) =>
+            item.kind === "notice" ? (
+              <li key={item.id}>
+                <RoomNotice notice={item.notice} profiles={profiles} />
+              </li>
+            ) : (
+              <li key={item.id}>
+                <RoomPostCard
+                  canWrite={canWrite}
+                  engagement={item.post.engagement}
+                  event={item.post.event}
+                  onChoose={onChoose}
+                  onLike={(e) => like.mutateAsync(e)}
+                  onReply={(text, root, parent) =>
+                    reply.mutateAsync({ text, root, parent })
+                  }
+                  profiles={profiles}
+                  root={item.post.event}
+                  tools={tools}
+                >
+                  {item.post.replies.length > 0 ? (
+                    <section
+                      aria-label={`Replies to ${nameOf(profiles, item.post.event.pubkey)}`}
+                      className="flex flex-col gap-3"
+                    >
+                      {item.post.replies.map((r) => (
+                        <RoomPostCard
+                          canWrite={canWrite}
+                          engagement={r.engagement}
+                          event={r.event}
+                          key={r.event.id}
+                          nested
+                          onChoose={onChoose}
+                          onLike={(e) => like.mutateAsync(e)}
+                          onReply={(text, root, parent) =>
+                            reply.mutateAsync({ text, root, parent })
+                          }
+                          profiles={profiles}
+                          root={item.post.event}
+                          tools={tools}
+                        />
+                      ))}
+                    </section>
+                  ) : null}
+                </RoomPostCard>
+              </li>
+            ),
+          )}
+        </ul>
+      )}
+      {items.length > shown.length ? (
+        <div>
+          <Button
+            data-testid="room-more"
+            onClick={() => setPages((p) => p + 1)}
+            size="sm"
+            variant="secondary"
+          >
+            Show earlier posts
+          </Button>
+        </div>
+      ) : null}
+      <ReportSheet
+        onOpenChange={(open) => !open && setReport(null)}
+        post={report}
+      />
+      <RemoveSheet
+        onOpenChange={(open) => !open && setRemoving(null)}
+        post={removing}
+      />
+      <MuteSheet
+        coordinate={project.coordinate}
+        name={stopping ? nameOf(profiles, stopping.pubkey) : ""}
+        onOpenChange={(open) => !open && setStopping(null)}
+        person={stopping?.pubkey ?? null}
+      />
+      <HiddenSheet
+        hidden={[...mutes.muted]}
+        onOpenChange={setHiddenOpen}
+        onShowAgain={(pubkey) => void mutes.showAgain(pubkey)}
+        open={hiddenOpen}
+        pending={mutes.pending}
+      />
+    </div>
+  );
 }

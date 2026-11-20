@@ -20,6 +20,7 @@ import {
 import { useMarkProjectSeen } from "../alerts/use-news";
 import { ProjectFeed } from "../feed/ProjectFeed";
 import { RoomTab } from "../room/RoomTab";
+import { useRoomNews } from "../room/use-room-news";
 import { PlannedStrips } from "../tasks/chain/holder/PlannedStrips";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
@@ -134,6 +135,7 @@ function ProjectView({
   // The strips below are this project's news: opening the page reads it.
   useMarkProjectSeen(numbers, walletAddress);
   const legacy = legacyScreensOn();
+  const roomNews = useRoomNews(project, investing, activity.data);
   const team = [project.author, ...accepted.map((m) => m.pubkey)];
   return (
     <main
@@ -292,6 +294,7 @@ function ProjectView({
                 {
                   value: "room",
                   label: "Room",
+                  news: roomNews && tab !== "room",
                   content: (
                     <RoomTab
                       numbers={numbers}
