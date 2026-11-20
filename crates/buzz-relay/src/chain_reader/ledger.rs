@@ -787,11 +787,11 @@ impl Ledger {
         self.team_balances.iter().filter(|(_, v)| **v != 0)
     }
 
-    /// The accounts that hold Shares or Team Shares in hand, biggest backer
-    /// Shares first (then Team Shares, then address). Left out: the zero
-    /// address, the Treasury, the Vester, the two tokens and the dollar
-    /// (Shares sent there are stuck, nobody holds them), and `also`.
-    pub fn holders(&self, also: &BTreeSet<String>) -> Vec<Holder> {
+    /// The accounts that are not holders: the zero address, the Treasury, the
+    /// Vester, the two tokens and the dollar (Shares sent there are stuck, and
+    /// nobody holds them), and `also` (the Launcher). The one list that
+    /// [`Ledger::holders`] and the held-for-a-window count both leave out.
+    pub fn excluded(&self, also: &BTreeSet<String>) -> BTreeSet<String> {
         let mut skip: BTreeSet<String> = also.clone();
         skip.insert(hex0x(&[0u8; 20]));
         for a in [
@@ -803,6 +803,15 @@ impl Ledger {
         ] {
             skip.insert(a.clone());
         }
+        skip
+    }
+
+    /// The accounts that hold Shares or Team Shares in hand, biggest backer
+    /// Shares first (then Team Shares, then address). Left out: the zero
+    /// address, the Treasury, the Vester, the two tokens and the dollar
+    /// (Shares sent there are stuck, nobody holds them), and `also`.
+    pub fn holders(&self, also: &BTreeSet<String>) -> Vec<Holder> {
+        let skip = self.excluded(also);
         let accounts: BTreeSet<&String> = self
             .shares_balances()
             .map(|(a, _)| a)
