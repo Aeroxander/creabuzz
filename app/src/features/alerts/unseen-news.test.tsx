@@ -176,6 +176,34 @@ describe("the dot on You counts unread news from a bounded set", () => {
     }
   });
 
+  it("reads at most 20 known projects, the newest steps first", async () => {
+    setup(BACKER_EVM);
+    for (let i = 0; i < 22; i += 1)
+      rememberStep(BACKER_EVM, {
+        kind: "back",
+        project: `0x${(i + 1).toString(16).padStart(64, "0")}`,
+        at: NOW - DAY + i,
+        dollars: "1000000",
+        shares: "1",
+        txHash: `0x${(i + 1).toString(16).padStart(64, "e")}`,
+      });
+    const reads = vi.spyOn(relayMock, "read");
+    show();
+    await waitFor(() =>
+      expect(
+        reads.mock.calls.some(([f]) =>
+          (f as { kinds?: number[] }).kinds?.includes(39009),
+        ),
+      ).toBe(true),
+    );
+    const keyed = reads.mock.calls
+      .map(([f]) => f as { kinds?: number[]; "#d"?: string[] })
+      .filter((f) => f.kinds?.includes(39009));
+    expect(keyed[0]?.["#d"]).toHaveLength(20);
+    // The newest steps are the ones kept: the oldest two are left out.
+    expect(keyed[0]?.["#d"]).not.toContain(`0x${"1".padStart(64, "0")}`);
+  });
+
   it("knows no project, so reads no record and counts nothing, for a person this device has no history of", async () => {
     setup(BACKER_EVM);
     const reads = vi.spyOn(relayMock, "read");

@@ -134,7 +134,6 @@ export function useUnseenNews(): number {
   const sources = useKeyedSources(keys, on);
   const derived = useDerived(sources, on ? address : null, { words: false });
   const seen = useSeen(pubkey);
-  if (!on) return 0;
   return derived.alerts.filter((a) => !(a.id in seen)).length;
 }
 

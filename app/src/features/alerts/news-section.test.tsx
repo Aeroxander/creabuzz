@@ -52,6 +52,8 @@ import { readSeen } from "./seen";
 const PUBKEY = "b".repeat(64);
 let records: ProjectTask[] = [];
 const navigated: unknown[] = [];
+/** The projects the team's words were asked for. */
+const wordsFor: string[] = [];
 
 vi.mock(
   "../../lib/relay",
@@ -66,6 +68,7 @@ vi.mock("../tasks/use-tasks", async (actual) => ({
     queryKey: ["news-test-tasks", project.coordinate],
     staleTime: 0,
     queryFn: async () => ({
+      ...(wordsFor.push(project.coordinate), {}),
       tasks: records,
       agents: new Set<string>(),
       operators: new Map<string, string>(),
@@ -87,6 +90,8 @@ const numbers = sceneNumbers();
 interface Setup {
   patch?: (content: Record<string, unknown>, index: number) => void;
   shares?: bigint;
+  /** The network the wallet is on, as a hex number (default: the project's). */
+  chain?: string;
   /** The pubkey that signs the record. */
   signer?: string;
   projects?: number;
@@ -126,6 +131,7 @@ function setup(account: string, o: Setup = {}) {
   serve(events);
   return installPotChain({
     account,
+    chain: o.chain,
     answers: {
       ...backerAnswers(numbers, { shares: o.shares ?? 0n }),
     } as never,
@@ -141,6 +147,7 @@ beforeEach(() => {
   nameTheNetwork(numbers);
   records = [];
   navigated.length = 0;
+  wordsFor.length = 0;
 });
 afterEach(() => {
   cleanup();
@@ -210,6 +217,29 @@ describe("the list", () => {
     expect(screen.getByTestId("news-week").textContent).toMatch(
       /open the app at least every 7 days/,
     );
+  });
+
+  it("draws one Take out for each project and date, though two plans share the date", async () => {
+    setup(BACKER_EVM, {
+      patch: (content) => {
+        const tasks = content.tasks as Record<string, unknown>;
+        taskRow(tasks, 8).noticeEnd = taskRow(tasks, 7).noticeEnd;
+      },
+    });
+    wrap(<NewsSection />);
+    await screen.findByTestId("news-list");
+    expect(screen.getAllByTestId("news-urgent")).toHaveLength(2);
+    expect(
+      screen.getAllByRole("button", { name: /^Take out of Lantern before / }),
+    ).toHaveLength(1);
+  });
+
+  it("asks for the team's words of at most 20 projects, and only of projects that have news", async () => {
+    setup(BACKER_EVM, { projects: 22 });
+    wrap(<NewsSection />);
+    await screen.findByTestId("news-list");
+    await waitFor(() => expect(wordsFor.length).toBeGreaterThan(0));
+    expect(new Set(wordsFor).size).toBe(20);
   });
 
   it("makes the sentence a plain text node: a task name with markup is words, never an element", async () => {
@@ -340,6 +370,20 @@ describe("whose news it is, and what is said when there is none", () => {
         .map((r) => r.textContent?.split(":")[0]),
     );
     expect(names.size).toBeLessThanOrEqual(20);
+  });
+
+  it("a wallet on another network says nothing about what is held: no news is made from a read it cannot answer, and the section says so", async () => {
+    setup(STRANGER_EVM, { patch: unlisted, shares: 5n * S, chain: "0x1" });
+    wrap(<NewsSection />);
+    await screen.findByTestId("news-none");
+    expect(screen.getByTestId("news-stale").textContent).toBe(NEWS_STALE);
+  });
+
+  it("lists at most 30 rows, newest first, whatever the projects give", async () => {
+    setup(BACKER_EVM, { projects: 6 });
+    wrap(<NewsSection />);
+    await screen.findByTestId("news-list");
+    expect(rows()).toHaveLength(30);
   });
 
   it("a record made by anyone but the server makes no news", async () => {

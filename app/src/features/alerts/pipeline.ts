@@ -67,8 +67,6 @@ function useBalances(
       staleTime: 5 * 60_000,
       retry: false,
       queryFn: async (): Promise<boolean> => {
-        if ((await wallet.chainId()) !== numbers.chainId)
-          throw new Error("The wallet is on another network.");
         const { balanceOf } = await import("@creaton/core/pot/pot-reads.ts");
         const read = (to: string, data: string) => wallet.readCall(to, data);
         const [shares, team] = await Promise.all([

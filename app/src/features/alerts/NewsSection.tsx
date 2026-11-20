@@ -12,7 +12,6 @@ import { useAccount } from "../../lib/account";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { timeText } from "../money/numbers";
-import { useWalletAddress } from "../money/use-money";
 import { PLAY_MONEY_WORDS } from "../pot/pot-words";
 import {
   markReadWords,
@@ -85,7 +84,7 @@ function Row({
         ) : null}
       </p>
       <p className="text-xs text-muted">{timeText(alert.at)}</p>
-      {alert.urgent && alert.before !== null && projectRef ? (
+      {alert.before !== null && projectRef ? (
         <div className="flex flex-col items-start gap-2">
           <p className="break-words text-sm" data-testid="news-urgent">
             {urgentWords(alert.before)}
@@ -136,7 +135,6 @@ function List({ news, pubkey }: { news: News; pubkey: string }) {
   const unread = listed.filter(fresh).length;
   const drawn = new Set<string>();
   const drawTakeOut = (alert: TaskAlert) => {
-    if (!alert.urgent) return false;
     const slot = `${alert.chainKey}|${alert.before}`;
     if (drawn.has(slot)) return false;
     drawn.add(slot);
@@ -183,11 +181,11 @@ function List({ news, pubkey }: { news: News; pubkey: string }) {
 
 /** The section behind the wallet: nothing without an account to find news for. */
 export default function NewsSection() {
-  const address = useWalletAddress().data ?? null;
   const { pubkey } = useAccount();
   const news = useNews();
   const titleId = useId();
-  if (!address || !pubkey || news.status === "off") return null;
+  // Off with no wallet shown, no account signed in, or investing off: there is no news to find.
+  if (!pubkey || news.status === "off") return null;
   return (
     <section
       aria-labelledby={titleId}
