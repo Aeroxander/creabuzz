@@ -39,6 +39,12 @@ const BODY_MAX: usize = 4096;
 /// Requests one account may make in an hour, saves and removals together.
 pub const REQUESTS_PER_HOUR: u32 = 10;
 
+/// What the server says to an account with no linked wallet: alerts are for people who back a project.
+pub const NEEDS_LINK: &str =
+    "Alerts are for people who back a project. Back one and confirm your account there, then turn alerts on.";
+/// What the server says when it already keeps as many devices as it will.
+pub const FULL: &str = "This server cannot keep more devices for alerts now. Try again later.";
+
 /// What the server says when push is off. The app does not draw the card without `webPush` in the information document,
 /// so this is only what a hand-made call is told.
 pub const NOT_SWITCHED_ON: &str = "Alerts are not switched on for this server.";
@@ -217,7 +223,23 @@ pub async fn put(
         Ok(checked) => checked,
         Err(sentence) => return api_error(StatusCode::BAD_REQUEST, sentence).into_response(),
     };
-    match store::upsert_subscription(
+    // Alerts reach only holders, whose wallets the server knows from a link they made: on a server that reads the chain,
+    // a device is kept only for an account that has one, so accounts made for nothing do not fill the table.
+    if state.config.chain_reader.is_some() {
+        match crate::handlers::wallet_binding::linked_wallets(&state, tenant.community(), &account)
+            .await
+        {
+            Ok(wallets) if wallets.is_empty() => {
+                return api_error(StatusCode::FORBIDDEN, NEEDS_LINK).into_response()
+            }
+            Ok(_) => {}
+            Err(e) => {
+                return internal_error(&format!("reading the wallets of an account: {e}"))
+                    .into_response()
+            }
+        }
+    }
+    match store::upsert_subscription_capped(
         state.db.pool(),
         *tenant.community().as_uuid(),
         &account,
@@ -227,11 +249,17 @@ pub async fn put(
             auth: &checked.auth,
         },
         config.max_per_account,
+        store::DEVICES_PER_COMMUNITY_MAX,
         Utc::now(),
     )
     .await
     {
-        Ok(()) => (StatusCode::OK, Json(serde_json::json!({ "ok": true }))).into_response(),
+        Ok(store::Kept::Kept) => {
+            (StatusCode::OK, Json(serde_json::json!({ "ok": true }))).into_response()
+        }
+        Ok(store::Kept::CommunityFull) => {
+            api_error(StatusCode::SERVICE_UNAVAILABLE, FULL).into_response()
+        }
         Err(e) => internal_error(&format!("keeping a push subscription: {e}")).into_response(),
     }
 }

@@ -342,3 +342,43 @@ async fn m7_seasons_and_a_seasons_lineup_are_read_by_number_and_page_by_until() 
         assert_eq!(query(&w, &visitor, &filters).await, refusal(), "{filters}");
     }
 }
+
+/// I4: a room of more signers than the one-by-one bound is read whole: the 130 signers of 130 posts are judged in one
+/// query, a muted one among them is left out, and nobody's post is dropped for being past the hundredth.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn i4_a_room_with_more_signers_than_the_bound_is_read_whole_and_a_muted_signer_is_left_out() {
+    let (w, _operator, visitor) = world().await;
+    let community = w.tenant.community();
+    let mut want = Vec::new();
+    let mut first = None;
+    for n in 0..130u32 {
+        let who = Keys::generate();
+        let post = w.post(&who, &format!("post {n}"));
+        w.state
+            .db
+            .insert_event(community, &post, None)
+            .await
+            .expect("a stored post");
+        want.push(post.id.to_hex());
+        first.get_or_insert(who);
+    }
+    let (status, body) = query(&w, &visitor, &room_read(&w)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(ids(&body), sorted(want.clone()), "all 130 posts are served");
+    // One of them is muted: only that signer's post is left out.
+    let muted = first.expect("a signer");
+    w.state
+        .db
+        .timeout_community_member(
+            community,
+            &muted.public_key().to_bytes(),
+            &Keys::generate().public_key().to_bytes(),
+            chrono::Utc::now() + chrono::Duration::hours(1),
+            None,
+        )
+        .await
+        .expect("mute");
+    let (_, body) = query(&w, &visitor, &room_read(&w)).await;
+    assert_eq!(ids(&body).len(), 129, "the muted signer's post is left out");
+}

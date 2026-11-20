@@ -29,6 +29,8 @@ use crate::state::AppState;
 
 /// How often the loop looks for work.
 pub const TICK: Duration = Duration::from_secs(5);
+/// How often the alerts with no link are looked at again, in seconds.
+pub const UNLINKED_RETRY_SECS: i64 = 60;
 /// The time one send is given, connect to last byte.
 pub const SEND_TIMEOUT: Duration = Duration::from_secs(10);
 /// Rows claimed at once.
@@ -232,6 +234,8 @@ pub struct Sender {
     send_timeout: Duration,
     pauses: std::sync::atomic::AtomicU32,
     leader: tokio::sync::Mutex<Option<sqlx::PgConnection>>,
+    /// The unix second the alerts with no link were last looked at again.
+    last_unlinked_retry: std::sync::atomic::AtomicI64,
 }
 
 impl Sender {
@@ -246,6 +250,7 @@ impl Sender {
             send_timeout: SEND_TIMEOUT,
             pauses: std::sync::atomic::AtomicU32::new(0),
             leader: tokio::sync::Mutex::new(None),
+            last_unlinked_retry: std::sync::atomic::AtomicI64::new(0),
         }
     }
 
@@ -323,6 +328,27 @@ impl Sender {
                 // The cursor did not move: the next tick makes the same alerts again.
                 tracing::warn!(error = %format!("{e:#}"), "web push: making alerts failed; trying again");
                 metrics::counter!("buzz_web_push_alert_errors_total").increment(1);
+            }
+        }
+        // Alerts whose project's link was not found are looked at again about once a minute, for a day.
+        let at = now.timestamp();
+        if at
+            - self
+                .last_unlinked_retry
+                .load(std::sync::atomic::Ordering::Relaxed)
+            >= UNLINKED_RETRY_SECS
+        {
+            self.last_unlinked_retry
+                .store(at, std::sync::atomic::Ordering::Relaxed);
+            match super::alerts::retry_unlinked(&self.state, &self.config, now).await {
+                Ok(report) if report.linked > 0 => {
+                    tracing::info!(linked = report.linked, "web push: alerts found their link");
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    tracing::warn!(error = %format!("{e:#}"), "web push: looking again for links failed");
+                    metrics::counter!("buzz_web_push_alert_errors_total").increment(1);
+                }
             }
         }
         if self.is_paused().await {

@@ -652,6 +652,46 @@ pub async fn restriction_state(
     })
 }
 
+/// Which of `pubkeys` are banned or timed out now (the same rule as [`restriction_state`], including the owner of an
+/// agent account), in one query: the keys that are restricted. A key with no row is not.
+pub async fn restricted_among(
+    pool: &PgPool,
+    community: CommunityId,
+    pubkeys: &[Vec<u8>],
+) -> Result<std::collections::HashSet<Vec<u8>>> {
+    if pubkeys.is_empty() {
+        return Ok(std::collections::HashSet::new());
+    }
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authorization,
+    )
+    .await?;
+    let rows: Vec<Vec<u8>> = sqlx::query_scalar(
+        r#"
+        SELECT p.pubkey
+        FROM unnest($2::bytea[]) AS p(pubkey)
+        WHERE EXISTS (
+            SELECT 1 FROM community_bans b
+            WHERE b.community_id = $1
+              AND b.pubkey IN (
+                  SELECT p.pubkey
+                  UNION ALL
+                  SELECT u.agent_owner_pubkey FROM users u
+                  WHERE u.community_id = $1 AND u.pubkey = p.pubkey AND u.agent_owner_pubkey IS NOT NULL
+              )
+              AND ((b.banned AND (b.ban_expires_at IS NULL OR b.ban_expires_at > now()))
+                   OR b.muted_until > now())
+        )
+        "#,
+    )
+    .bind(community.as_uuid())
+    .bind(pubkeys)
+    .fetch_all(&mut *connection)
+    .await?;
+    Ok(rows.into_iter().collect())
+}
+
 /// Fetch the full ban/timeout row (moderation queue / audit views).
 pub async fn get_ban(
     pool: &PgPool,
@@ -1023,6 +1063,16 @@ impl Db {
         pubkey: &[u8],
     ) -> Result<RestrictionState> {
         restriction_state(&self.pool, community, pubkey).await
+    }
+
+    /// Which of `pubkeys` are banned or timed out now, in one query (see [`restricted_among`]).
+    #[datastore_span(name = "moderation_restricted_among", system = "postgresql")]
+    pub async fn moderation_restricted_among(
+        &self,
+        community: CommunityId,
+        pubkeys: &[Vec<u8>],
+    ) -> Result<std::collections::HashSet<Vec<u8>>> {
+        restricted_among(&self.pool, community, pubkeys).await
     }
 
     /// Fetch the full ban/timeout row for a member pubkey.

@@ -140,9 +140,15 @@ if (mode === "setup") {
     const unsigned = await call(sk, "PUT", "/push/web", body, false);
     if (unsigned.status !== 401) fail(`an unsigned PUT /push/web answered ${unsigned.status}, not 401`);
     const done = await call(sk, "PUT", "/push/web", body);
-    if (done.status !== 200) fail(`PUT /push/web for ${role} answered ${done.status}: ${done.text.slice(0, 300)}`);
     if (!device.endpoint.includes(standInHost)) fail("the stand-in's device is not at the stand-in");
-    ok(`${role}: a device is kept (the unsigned call was refused with 401)`);
+    if (role === "holder" || role === "leaver") {
+      if (done.status !== 200) fail(`PUT /push/web for ${role} answered ${done.status}: ${done.text.slice(0, 300)}`);
+      ok(`${role}: a device is kept (the unsigned call was refused with 401)`);
+    } else {
+      // An account with no linked wallet gets no device kept: the server reads the chain, and alerts are for people who back a project.
+      if (done.status !== 403) fail(`PUT /push/web for ${role}, who linked no wallet, answered ${done.status}, not 403: ${done.text.slice(0, 300)}`);
+      ok(`${role}: no device is kept for an account with no linked wallet (403)`);
+    }
   }
   // A bad subscription is refused and writes nothing: a host that is not a push service and not on the operator's list.
   const bad = await call(secret(keys, "stranger"), "PUT", "/push/web", JSON.stringify({ endpoint: "https://169.254.169.254/latest", keys: devices.stranger.keys }));

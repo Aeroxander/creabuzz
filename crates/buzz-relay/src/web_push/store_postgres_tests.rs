@@ -308,3 +308,63 @@ async fn the_sweep_removes_only_what_is_old() {
             .get("n");
     assert_eq!(rows, 0, "its rows went with it");
 }
+
+/// I3: a community keeps at most its cap of live devices: a new device is refused when it is full, a device the account
+/// already has is renewed, an expired one does not count, and a removed one makes room.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn i3_a_community_keeps_at_most_its_cap_of_live_devices() {
+    let (state, community) = community().await;
+    let now = Utc::now();
+    let (p256dh, auth) = ([4u8; 65], [9u8; 16]);
+    let keep = |account: u8, n: u8, at: chrono::DateTime<Utc>| {
+        let state = state.clone();
+        async move {
+            store::upsert_subscription_capped(
+                state.db.pool(),
+                community,
+                &[account; 32],
+                NewDevice {
+                    endpoint: &format!("https://fcm.googleapis.com/fcm/send/{account}-{n}"),
+                    p256dh: &p256dh,
+                    auth: &auth,
+                },
+                5,
+                3,
+                at,
+            )
+            .await
+            .expect("keep")
+        }
+    };
+    for account in 1..=3 {
+        assert_eq!(keep(account, 0, now).await, store::Kept::Kept);
+    }
+    assert_eq!(
+        keep(4, 0, now).await,
+        store::Kept::CommunityFull,
+        "a fourth account's device is refused"
+    );
+    assert_eq!(count(&state, community, &[4u8; 32]).await, 0);
+    assert_eq!(
+        keep(1, 0, now + Duration::seconds(5)).await,
+        store::Kept::Kept,
+        "a device already kept is renewed even when the community is full"
+    );
+    assert_eq!(
+        keep(1, 1, now).await,
+        store::Kept::CommunityFull,
+        "a second device of a full community is a new one"
+    );
+    delete_subscriptions(state.db.pool(), community, &[2u8; 32], None)
+        .await
+        .expect("removed");
+    assert_eq!(
+        keep(4, 0, now).await,
+        store::Kept::Kept,
+        "a removal makes room"
+    );
+    // Devices past their end do not count.
+    let later = now + Duration::days(store::SUBSCRIPTION_LIFETIME_DAYS + 1);
+    assert_eq!(keep(5, 0, later).await, store::Kept::Kept);
+}

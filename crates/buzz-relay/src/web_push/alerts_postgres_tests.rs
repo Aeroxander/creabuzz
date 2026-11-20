@@ -593,3 +593,121 @@ async fn p14_a_rollback_deletes_pending_rows_and_leaves_delivered_ones() {
     task_event(&pw.w, head + 1, t0 + 300, "TaskAnnounced", 2, None).await;
     assert_eq!(make(&pw).await.expect("pass").made, 1);
 }
+
+/// Point the run's launch of project A at `id` (the `projectId` it names), and return the one it named.
+async fn name_launch(pw: &PushWorld, id: &str) -> String {
+    let was: String = sqlx::query_scalar(
+        "SELECT decoded->>'projectId' FROM chain_logs \
+         WHERE reader = $1 AND role = 'launcher' AND event = 'ProjectLaunched' AND project_key = $2",
+    )
+    .bind(&pw.w.reader)
+    .bind(pw.w.key.as_slice())
+    .fetch_one(pw.w.state.db.pool())
+    .await
+    .expect("the launch");
+    sqlx::query(
+        "UPDATE chain_logs SET decoded = jsonb_set(decoded, '{projectId}', to_jsonb($3::text)) \
+         WHERE reader = $1 AND role = 'launcher' AND event = 'ProjectLaunched' AND project_key = $2",
+    )
+    .bind(&pw.w.reader)
+    .bind(pw.w.key.as_slice())
+    .bind(id)
+    .execute(pw.w.state.db.pool())
+    .await
+    .expect("the launch names another project id");
+    was
+}
+
+async fn link_of(pw: &PushWorld, serial: i64) -> Option<String> {
+    sqlx::query_scalar("SELECT link_ref FROM web_push_alerts WHERE reader = $1 AND serial = $2")
+        .bind(&pw.w.reader)
+        .bind(serial)
+        .fetch_one(pw.w.state.db.pool())
+        .await
+        .expect("the alert")
+}
+
+/// I2: an alert made while the project's record cannot be found is kept, and looked at again: when the record is
+/// found the alert gets its link, its audience and its rows in one step. One a day old is left as it is (the end of
+/// the retry), and one that is linked is never changed again.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn i2_an_alert_with_no_link_is_kept_and_linked_when_the_record_is_found_for_a_day() {
+    let pw = push_world().await;
+    let (head, t0) = head(&pw);
+    let (_holder, _device) = subscribed(&pw, HOLDER).await;
+    make(&pw).await.expect("starts the cursor");
+    // The launch names a coordinate no stored record has.
+    let real = name_launch(&pw, &format!("0x{}", "11".repeat(32))).await;
+    task_event(&pw.w, head + 1, t0 + 100, "TaskAnnounced", 1, None).await;
+    task_event(&pw.w, head + 2, t0 + 200, "TaskAnnounced", 2, None).await;
+    let report = make(&pw).await.expect("pass");
+    assert_eq!((report.made, report.queued), (2, 0), "{report:?}");
+    assert_eq!((link_of(&pw, 1).await, outbox_count(&pw).await), (None, 0));
+    let again = super::alerts::retry_unlinked(&pw.w.state, &pw.config, Utc::now())
+        .await
+        .expect("a retry");
+    assert_eq!(again.linked, 0, "the record is still not found: {again:?}");
+    // The chain's clock moves a day on, past the second alert's block and (by a moment) not past the first one's:
+    // the second alert's retry has ended when the record turns up.
+    add_block(&pw.w, head + 3, t0 + 200 + ALERT_LIFETIME_SECS + 1).await;
+    add_block(&pw.w, head + 1, t0 + 200 + ALERT_LIFETIME_SECS).await;
+    name_launch(&pw, &real).await;
+    let found = super::alerts::retry_unlinked(&pw.w.state, &pw.config, Utc::now())
+        .await
+        .expect("a retry");
+    assert_eq!((found.linked, found.queued), (1, 1), "{found:?}");
+    let link = format!("orbit-{}", &pw.w.founder.public_key().to_hex()[..16]);
+    assert_eq!(link_of(&pw, 1).await, Some(link));
+    assert_eq!(link_of(&pw, 2).await, None, "a day old: not retried");
+    assert_eq!(outbox_count(&pw).await, 1);
+    // Nothing more to do: a second retry makes no second row.
+    let last = super::alerts::retry_unlinked(&pw.w.state, &pw.config, Utc::now())
+        .await
+        .expect("a retry");
+    assert_eq!((last.linked, last.queued), (0, 0), "{last:?}");
+    assert_eq!(outbox_count(&pw).await, 1);
+}
+
+/// I2: records that anyone signs under the project's key do not hide the real one from the link search: 150 newer
+/// records (more than one page of the search) name the key, and the alert still has the project's link.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn i2_a_crowd_of_records_naming_the_key_does_not_hide_the_projects_link() {
+    let pw = push_world().await;
+    let (head, t0) = head(&pw);
+    let (_holder, _device) = subscribed(&pw, HOLDER).await;
+    make(&pw).await.expect("starts the cursor");
+    let community = pw.w.tenant.community();
+    for n in 0..150 {
+        let thief = nostr::Keys::generate();
+        let id = format!("decoy-{n}");
+        let event = nostr::EventBuilder::new(nostr::Kind::Custom(37001), "{}")
+            .tags([
+                nostr::Tag::parse(["d", &id]).expect("tag"),
+                nostr::Tag::parse(["chain-key", &crate::chain_reader::word::hex0x(&pw.w.key)])
+                    .expect("tag"),
+            ])
+            .custom_created_at(nostr::Timestamp::from(
+                nostr::Timestamp::now().as_secs() + 5,
+            ))
+            .sign_with_keys(&thief)
+            .expect("signed");
+        pw.w.state
+            .db
+            .replace_parameterized_event(community, &event, &id, None)
+            .await
+            .expect("a decoy");
+    }
+    task_event(&pw.w, head + 1, t0 + 100, "TaskAnnounced", 1, None).await;
+    let report = make(&pw).await.expect("pass");
+    assert_eq!((report.made, report.queued), (1, 1), "{report:?}");
+    assert_eq!(
+        link_of(&pw, 1).await,
+        Some(format!(
+            "orbit-{}",
+            &pw.w.founder.public_key().to_hex()[..16]
+        )),
+        "the real record is found among the decoys"
+    );
+}

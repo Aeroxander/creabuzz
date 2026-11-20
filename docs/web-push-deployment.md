@@ -56,7 +56,8 @@ person holds.
 
 The person removes their rows any time: the app's "Turn off" calls `DELETE /push/web` and the browser's own
 `unsubscribe()`. A push service answering "gone" (404 or 410) deletes the row. An expired row is swept hourly. At most
-`BUZZ_WEB_PUSH_MAX_PER_ACCOUNT` live rows per account; the oldest goes first.
+`BUZZ_WEB_PUSH_MAX_PER_ACCOUNT` live rows per account; the oldest goes first. A community keeps at most 100,000 live rows in all: a new
+device is refused (HTTP 503, "cannot keep more devices") when it is full, and a device already kept is still renewed.
 
 ### The two paths
 
@@ -65,7 +66,10 @@ a request cannot be played twice), and resolved to a community by host like ever
 hour per account.
 
 - `PUT /push/web`, body `{"endpoint": "...", "keys": {"p256dh": "...", "auth": "..."}}` exactly as a browser's
-  `PushSubscription.toJSON()` gives it. Keeps the device (or renews it if the account already has that address).
+  `PushSubscription.toJSON()` gives it. Keeps the device (or renews it if the account already has that address). **On a
+  server that reads the chain, only for an account that has a live wallet link** (the link the app makes after a Back);
+  any other account is refused with 403 and an `Alerts are for people who back a project` sentence, and writes nothing, so
+  accounts made for nothing do not fill the table.
 - `DELETE /push/web`, body `{"endpoint": "..."}` removes that device; no body removes every device of the account.
 
 A subscription is a bearer capability (the address that lets anyone send to that device), which is why it is a signed HTTP
@@ -91,6 +95,12 @@ passed.** No redirect is followed.
   the project, largest first, at most 2,000 per alert (the rest are counted and have the in-app alert only), mapped to the
   accounts that linked that wallet with a verified wallet link, mapped to their live devices. A device cannot name a wallet
   or a project, so it cannot be used to ask "does X hold here?".
+- **An alert whose project's link is not found is kept, not lost.** The link is the project record that names the
+  project's key and whose address the launch names; it is looked for among all of the records that name the key (in pages,
+  at most 500), so records anyone signs under another project's key cannot hide it. An alert made while the record is not
+  found is stored with no link and no rows; about once a minute the sender looks again for every such alert that is less
+  than a day old (on the chain's clock), and when the record is found gives the alert its link and its rows in one
+  transaction. A day old, it stays as it is: its terminal state is "reached nobody".
 - **Caps.** At most `BUZZ_WEB_PUSH_DAILY_CAP` alerts per device per UTC day and 3 per project per device per day. The rest
   are written as `dropped` with the reason, never silently skipped.
 - **The message** is at most 200 bytes: `{"v":1,"k":"planned"|"taken"|"ended","r":"<project link ref>"}`. No amount, no name,
@@ -171,7 +181,10 @@ because it carries no key.
 
 Because the sender is not authenticated, ten requests naming a victim's address use up that person's day **for Back and the
 like, not for exits**. That is accepted: a Back can be made from a wallet, one attacker's reach is bounded by the per-address
-limit, and the limit exists to cap your spend. An authenticated sponsor is the later fix.
+limit, and the limit exists to cap your spend. An authenticated sponsor is the later fix. For the same reason the per-address exit cap is the only
+cap an exit meets: one abuser behind a shared address can use up that address's exits for the day (a person with a little of the
+network's own gas can take out directly, and the app says so), and an abuser who changes address spends your upstream's cap, not a
+person's day. A per-sender or a server-wide cap on exits would let a stranger who names a victim's address stop them leaving.
 
 ### Your own sponsor's cap is the last backstop
 

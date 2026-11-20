@@ -240,8 +240,8 @@ run_client() { # mode and arguments; counts the client's checks
 run_client setup "$STATE/devices.json"
 device_path() { jq -r ".$1.endpoint" "$STATE/devices.json" | sed 's#^http://[^/]*##'; }
 count_sql() { psql "$DB_URL" -Atc "$1"; }
-[[ "$(count_sql "select count(*) from web_push_subscriptions")" == 4 ]] || fail "the relay does not keep the four devices"
-ok "the relay keeps exactly the four devices (the bad subscription wrote nothing)"
+[[ "$(count_sql "select count(*) from web_push_subscriptions")" == 2 ]] || fail "the relay does not keep exactly the two devices of the two accounts that linked a wallet"
+ok "the relay keeps exactly the two devices of the accounts that linked a wallet (the unlinked holder and the stranger kept none, and the bad subscription wrote nothing)"
 
 # ── the cursor starts where the chain is: nothing before it is alerted ─────────────────────────────────────────────────
 for _ in $(seq 1 60); do [[ "$(count_sql "select count(*) from web_push_cursor")" == 1 ]] && break; mine 1; sleep 1; done
@@ -293,7 +293,7 @@ ok "one alert (task $S_KEPT planned), one outbox row, delivered; the withdrawn p
 
 # ── the person turns alerts off; the next task reaches nobody; turning them on again brings the next one ─────────────────
 run_client remove "$STATE/devices.json" holder
-[[ "$(count_sql "select count(*) from web_push_subscriptions")" == 3 ]] || fail "removing the holder's device did not remove one row"
+[[ "$(count_sql "select count(*) from web_push_subscriptions")" == 1 ]] || fail "removing the holder's device did not remove one row"
 announce three "$WORKER" 20000000 100; S_AFTER="$SERIAL"
 mine 4
 for _ in $(seq 1 60); do

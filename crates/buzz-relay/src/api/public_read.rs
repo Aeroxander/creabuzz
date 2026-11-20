@@ -84,7 +84,8 @@ pub(crate) const PUBLIC_KINDS: [u32; 5] = [
 /// The newest room posts (kind 1) read for one room, and the newest likes (kind 7). A room with more shows its newest.
 const ROOM_POSTS_READ: i64 = 200;
 const ROOM_LIKES_READ: i64 = 400;
-/// How many distinct signers of one room are checked for standing.
+/// How many signers of one room are checked for standing one by one (the signers of the records read are checked in
+/// one query before that, so this only bounds what is looked up beyond them).
 const ROOM_SIGNER_CHECKS: usize = 100;
 /// The newest season records read, and the newest records of one season's lineup (500 entries and their leaves).
 const SEASONS_READ: i64 = 50;
@@ -754,6 +755,35 @@ struct Signers<'a> {
 }
 
 impl Signers<'_> {
+    /// Look up every signer in `signers` that is not known yet in one query, so a room or a season of any number of
+    /// signers is judged whole (the one-by-one bound is for what is read signer by signer). One check is counted.
+    async fn prefetch(
+        &mut self,
+        signers: impl IntoIterator<Item = [u8; 32]>,
+    ) -> Result<(), DbError> {
+        let mut asked: Vec<[u8; 32]> = signers
+            .into_iter()
+            .filter(|signer| !self.known.contains_key(signer))
+            .collect();
+        asked.sort_unstable();
+        asked.dedup();
+        if asked.is_empty() {
+            return Ok(());
+        }
+        self.checks += 1;
+        let list: Vec<Vec<u8>> = asked.iter().map(|signer| signer.to_vec()).collect();
+        let restricted = self
+            .state
+            .db
+            .moderation_restricted_among(self.community, &list)
+            .await?;
+        for signer in asked {
+            self.known
+                .insert(signer, !restricted.contains(signer.as_slice()));
+        }
+        Ok(())
+    }
+
     async fn shown(&mut self, signer: [u8; 32]) -> Result<bool, DbError> {
         if let Some(known) = self.known.get(&signer) {
             return Ok(*known);
@@ -937,6 +967,9 @@ impl<'a> Lookups<'a> {
                 })
                 .await?;
             cut |= stored.len() as i64 >= read;
+            signers
+                .prefetch(stored.iter().map(|post| post.event.pubkey.to_bytes()))
+                .await?;
             for post in stored {
                 let event = post.event;
                 if post.channel_id.is_none()
@@ -998,6 +1031,9 @@ impl<'a> Lookups<'a> {
             checks: 0,
             max: ROOM_SIGNER_CHECKS,
         };
+        signers
+            .prefetch(stored.iter().map(|record| record.event.pubkey.to_bytes()))
+            .await?;
         let mut shown = Vec::new();
         for record in stored {
             let event = record.event;

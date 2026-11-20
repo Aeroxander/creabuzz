@@ -383,3 +383,32 @@ async fn the_information_document_says_webpush_only_when_on_and_whether_phone_li
     assert!(linked.get("webPush").is_none());
     assert_eq!(linked["smartAccountLinks"], true);
 }
+
+/// I3 (the path): on a server that reads the chain, an account with no linked wallet is refused with a sentence and
+/// writes nothing; one that linked a wallet keeps its device.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn i3_on_a_server_that_reads_the_chain_only_an_account_with_a_linked_wallet_keeps_a_device() {
+    let pw = crate::web_push::test_support::push_world().await;
+    let (state, host, community) = (
+        Arc::clone(&pw.w.state),
+        pw.w.tenant.host().to_owned(),
+        *pw.w.tenant.community().as_uuid(),
+    );
+    let device = pw.stand_in.device();
+    let body = subscription(&device.endpoint, &device);
+    let stranger = pw.w.account().await;
+    assert_eq!(
+        call(&state, &host, &stranger, "PUT", body.clone(), true).await,
+        StatusCode::FORBIDDEN,
+        "an account with no linked wallet keeps no device"
+    );
+    assert_eq!(rows(&state, community, &stranger).await, 0);
+    let holder = pw.w.account().await;
+    pw.w.link(&holder, 3, 3_600).await.expect("the link");
+    assert_eq!(
+        call(&state, &host, &holder, "PUT", body, true).await,
+        StatusCode::OK
+    );
+    assert_eq!(rows(&state, community, &holder).await, 1);
+}

@@ -76,6 +76,19 @@ pub struct NewDevice<'a> {
     pub auth: &'a [u8; 16],
 }
 
+/// The most live devices one community keeps in all. Past it a new device is refused (a renewal of one already kept is
+/// not), so keys that cost nothing cannot grow the table for ever.
+pub const DEVICES_PER_COMMUNITY_MAX: i64 = 100_000;
+
+/// What [`upsert_subscription_capped`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kept {
+    /// The device is kept.
+    Kept,
+    /// The community already keeps its most devices and this one was not among them.
+    CommunityFull,
+}
+
 /// Keep a device for an account: add it, or renew it when the account already has this address. At most `max_per_account`
 /// devices stay; the oldest go first. Everything happens in one transaction under a lock for the account, so two requests
 /// at once cannot leave more than the cap.
@@ -87,7 +100,61 @@ pub async fn upsert_subscription(
     max_per_account: u32,
     now: DateTime<Utc>,
 ) -> Result<(), sqlx::Error> {
+    upsert_subscription_capped(
+        pool,
+        community,
+        pubkey,
+        device,
+        max_per_account,
+        i64::MAX,
+        now,
+    )
+    .await
+    .map(drop)
+}
+
+/// [`upsert_subscription`] that also holds the community to `max_in_community` live devices: a device the account does
+/// not already have is refused when the community is full. The count and the insert are one step under a lock for the
+/// community, so a crowd of requests at once cannot overshoot.
+pub async fn upsert_subscription_capped(
+    pool: &PgPool,
+    community: Uuid,
+    pubkey: &[u8; 32],
+    device: NewDevice<'_>,
+    max_per_account: u32,
+    max_in_community: i64,
+    now: DateTime<Utc>,
+) -> Result<Kept, sqlx::Error> {
     let mut tx = pool.begin().await?;
+    if max_in_community < i64::MAX {
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(format!("web_push:{community}"))
+            .execute(&mut *tx)
+            .await?;
+        let known: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM web_push_subscriptions \
+             WHERE community_id = $1 AND pubkey = $2 AND endpoint_hash = $3)",
+        )
+        .bind(community)
+        .bind(pubkey.as_slice())
+        .bind(endpoint_hash(device.endpoint).as_slice())
+        .fetch_one(&mut *tx)
+        .await?;
+        if !known {
+            let live: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM (SELECT 1 FROM web_push_subscriptions \
+                 WHERE community_id = $1 AND expires_at > $2 LIMIT $3) t",
+            )
+            .bind(community)
+            .bind(now)
+            .bind(max_in_community)
+            .fetch_one(&mut *tx)
+            .await?;
+            if live >= max_in_community {
+                return Ok(Kept::CommunityFull);
+            }
+        }
+    }
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
         .bind(format!("web_push:{community}:{}", hex::encode(pubkey)))
         .execute(&mut *tx)
@@ -120,7 +187,8 @@ pub async fn upsert_subscription(
     .bind(i64::from(max_per_account))
     .execute(&mut *tx)
     .await?;
-    tx.commit().await
+    tx.commit().await?;
+    Ok(Kept::Kept)
 }
 
 /// Delete an account's devices: the one with this address, or all of them. Their outbox rows go with them.

@@ -22,7 +22,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use anyhow::Context;
-use buzz_core::kind::KIND_LAUNCH_RECORD;
 use buzz_core::tenant::CommunityId;
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Row};
@@ -31,11 +30,9 @@ use uuid::Uuid;
 use super::settings::{WebPushConfig, PROJECT_DAILY_CAP};
 use super::store::{self, Subscription};
 use super::Kind;
-use crate::api::manager::cost::project_id;
 use crate::chain_reader::ledger::Ledger;
 use crate::chain_reader::word::{hex0x, parse_fixed};
 use crate::handlers::room_write::ROOM_MIN_SHARES;
-use crate::handlers::task_chain::chain_key_of;
 use crate::handlers::wallet_binding::{accounts_of_wallets, WALLETS_ASKED_MAX};
 use crate::state::AppState;
 
@@ -47,8 +44,8 @@ const CUT_COUNT_MAX: i64 = 100_000;
 pub const BATCH_ROWS: i64 = 200;
 /// The alert's own lifetime: a row older than this on the chain's clock when it is picked up is dropped.
 pub const ALERT_LIFETIME_SECS: u64 = 24 * 3600;
-/// The most project records read to find a project's link.
-const RECORDS_FOR_LINK: i64 = 50;
+/// The most alerts without a link looked at again in one pass.
+pub const UNLINKED_BATCH: i64 = 50;
 /// The `TaskResolved` state of a plan withdrawn before a take: it moved nothing, so it makes no alert.
 const STATE_WITHDRAWN: u64 = 6;
 
@@ -69,6 +66,8 @@ pub struct MakeReport {
     pub dropped: usize,
     /// Pending rows of alerts the chain rolled back, deleted.
     pub undone: u64,
+    /// Alerts that had no link when they were made and have one now (see [`retry_unlinked`]).
+    pub linked: usize,
 }
 
 /// A task row worth an alert, before its audience is read.
@@ -113,41 +112,22 @@ pub fn next_cursor(from: u64, blocks: &[u64], limit: usize, end: u64) -> u64 {
 
 /// The link reference (the part after `/p/`) of the project a launch names, or `None` when no stored project record of
 /// this chain key hashes to the launch's `projectId`. The founder's nostr key and the record's id are not on the chain,
-/// so the record is found by its `chain-key` tag and tied to the launch the way every other rule ties it.
+/// so the record is found by its `chain-key` tag and tied to the launch the way every other rule ties it
+/// ([`crate::chain_reader::explore::record_of_launch`], which pages through the records of the key, so records anyone
+/// signs under another project's key cannot hide the real one).
 pub async fn link_ref_of(
     state: &AppState,
     community: CommunityId,
     key: &[u8; 32],
     launched_id: &str,
-) -> Result<Option<String>, buzz_db::DbError> {
-    let records = state
-        .db
-        .query_events_for_event_write(&buzz_db::EventQuery {
-            kinds: Some(vec![KIND_LAUNCH_RECORD as i32]),
-            global_only: true,
-            custom_tag: Some(("chain-key".to_owned(), hex0x(key))),
-            limit: Some(RECORDS_FOR_LINK),
-            ..buzz_db::EventQuery::for_community(community)
-        })
-        .await?;
-    for stored in records {
-        let event = &stored.event;
-        if chain_key_of(event) != Some(*key) {
-            continue;
-        }
-        let Some(d) = event.tags.iter().find_map(|t| match t.as_slice() {
-            [name, value, ..] if name == "d" => Some(value.clone()),
-            _ => None,
-        }) else {
-            continue;
-        };
+) -> anyhow::Result<Option<String>> {
+    let found =
+        crate::chain_reader::explore::record_of_launch(state, community, key, launched_id).await?;
+    Ok(found.and_then(|(coordinate, event)| {
+        let d = coordinate.splitn(3, ':').nth(2)?;
         let author = event.pubkey.to_hex();
-        let coordinate = format!("{KIND_LAUNCH_RECORD}:{author}:{d}");
-        if project_id(&coordinate).eq_ignore_ascii_case(launched_id) {
-            return Ok(Some(format!("{d}-{}", &author[..16])));
-        }
-    }
-    Ok(None)
+        Some(format!("{d}-{}", &author[..16]))
+    }))
 }
 
 /// Who is told about a project: its holders, largest first, as accounts that proved the wallet.
@@ -524,62 +504,23 @@ pub async fn make_alerts(
     let mut ready = Vec::with_capacity(candidates.len());
     let mut per_project: BTreeMap<[u8; 32], (Option<String>, Audience)> = BTreeMap::new();
     for candidate in candidates {
-        if let std::collections::btree_map::Entry::Vacant(slot) =
-            per_project.entry(candidate.project_key)
-        {
-            let launched =
-                crate::handlers::room_write::launched_of(pool, &reader, &candidate.project_key)
-                    .await
-                    .context("read the project's launch")?;
-            let link = match &launched {
-                Some(launch) => {
-                    link_ref_of(state, community, &candidate.project_key, &launch.project_id)
-                        .await
-                        .context("find the project's link")?
-                }
-                None => None,
-            };
-            let audience = if link.is_some() {
-                let excluded = excluded_of(
-                    pool,
-                    &reader,
-                    &candidate.project_key,
-                    &reader_config.launcher,
-                    reader_next.saturating_sub(1),
-                )
-                .await?;
-                audience_of(state, community, &reader, &candidate.project_key, &excluded).await?
-            } else {
-                Audience::default()
-            };
-            slot.insert((link, audience));
-        }
-        let (link, audience) = &per_project[&candidate.project_key];
-        let devices = if audience.accounts.is_empty() {
-            Vec::new()
-        } else {
-            let mut tx = pool.begin().await?;
-            let found = store::live_subscriptions(
-                &mut tx,
-                *community.as_uuid(),
-                &audience.accounts,
+        ready.push(
+            prepare(
+                state,
+                community,
+                &reader,
+                reader_config,
+                reader_next,
                 now,
-                20_000,
+                candidate,
+                &mut per_project,
             )
-            .await?;
-            tx.rollback().await?;
-            found
-        };
-        ready.push(Ready {
-            link_ref: link.clone(),
-            audience: audience.holders,
-            cut: audience.cut,
-            devices,
-            candidate,
-        });
+            .await?,
+        );
     }
 
-    // One transaction: the alerts, their rows and the cursor.
+    // One transaction: the alerts, their rows and the cursor. An alert whose project's record could not be found is
+    // stored with no link and no rows, and [`retry_unlinked`] looks again until it is a day old.
     let mut tx = pool.begin().await?;
     for item in &ready {
         let c = &item.candidate;
@@ -602,45 +543,7 @@ pub async fn make_alerts(
             continue; // made before: a repeated pass or a restart
         };
         report.made += 1;
-        let ids: Vec<Uuid> = item.devices.iter().map(|d| d.id).collect();
-        let counts = if ids.is_empty() {
-            BTreeMap::new()
-        } else {
-            today_counts(&mut tx, *community.as_uuid(), &ids, &c.project_key, now).await?
-        };
-        for device in &item.devices {
-            let (total, about) = counts.get(&device.id).copied().unwrap_or((0, 0));
-            let reason = cap_reason(total, about, config.daily_cap);
-            let state = if reason.is_some() {
-                "dropped"
-            } else {
-                "pending"
-            };
-            let written = sqlx::query(
-                "INSERT INTO web_push_outbox \
-                     (community_id, alert_id, subscription_id, project_key, state, drop_reason, created_at, \
-                      next_attempt_at, done_at) \
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $7, CASE WHEN $5 = 'dropped' THEN $7 END) \
-                 ON CONFLICT (community_id, alert_id, subscription_id) DO NOTHING",
-            )
-            .bind(community.as_uuid())
-            .bind(alert_id)
-            .bind(device.id)
-            .bind(c.project_key.as_slice())
-            .bind(state)
-            .bind(reason)
-            .bind(now)
-            .execute(&mut *tx)
-            .await?
-            .rows_affected();
-            if written > 0 {
-                if reason.is_some() {
-                    report.dropped += 1;
-                } else {
-                    report.queued += 1;
-                }
-            }
-        }
+        write_outbox(&mut tx, community, alert_id, item, config, now, &mut report).await?;
     }
     sqlx::query("UPDATE web_push_cursor SET next_block = $2, updated_at = now() WHERE reader = $1 AND next_block = $3")
         .bind(&reader)
@@ -651,6 +554,224 @@ pub async fn make_alerts(
     tx.commit()
         .await
         .context("commit the alerts and the cursor")?;
+    Ok(report)
+}
+
+/// The link, the audience and the devices of one alert, with the per-project reads of `per_project` shared by the
+/// alerts of one pass.
+#[allow(clippy::too_many_arguments)]
+async fn prepare(
+    state: &Arc<AppState>,
+    community: CommunityId,
+    reader: &str,
+    reader_config: &crate::chain_reader::ChainReaderConfig,
+    reader_next: u64,
+    now: DateTime<Utc>,
+    candidate: Candidate,
+    per_project: &mut BTreeMap<[u8; 32], (Option<String>, Audience)>,
+) -> anyhow::Result<Ready> {
+    let pool = state.db.pool();
+    if let std::collections::btree_map::Entry::Vacant(slot) =
+        per_project.entry(candidate.project_key)
+    {
+        let launched =
+            crate::handlers::room_write::launched_of(pool, reader, &candidate.project_key)
+                .await
+                .context("read the project's launch")?;
+        let link = match &launched {
+            Some(launch) => {
+                link_ref_of(state, community, &candidate.project_key, &launch.project_id)
+                    .await
+                    .context("find the project's link")?
+            }
+            None => None,
+        };
+        let audience = if link.is_some() {
+            let excluded = excluded_of(
+                pool,
+                reader,
+                &candidate.project_key,
+                &reader_config.launcher,
+                reader_next.saturating_sub(1),
+            )
+            .await?;
+            audience_of(state, community, reader, &candidate.project_key, &excluded).await?
+        } else {
+            Audience::default()
+        };
+        slot.insert((link, audience));
+    }
+    let (link, audience) = &per_project[&candidate.project_key];
+    let devices = if audience.accounts.is_empty() {
+        Vec::new()
+    } else {
+        let mut tx = pool.begin().await?;
+        let found = store::live_subscriptions(
+            &mut tx,
+            *community.as_uuid(),
+            &audience.accounts,
+            now,
+            20_000,
+        )
+        .await?;
+        tx.rollback().await?;
+        found
+    };
+    Ok(Ready {
+        link_ref: link.clone(),
+        audience: audience.holders,
+        cut: audience.cut,
+        devices,
+        candidate,
+    })
+}
+
+/// The outbox rows of one new alert: one for each device, `dropped` at once when a cap holds.
+async fn write_outbox(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    community: CommunityId,
+    alert_id: i64,
+    item: &Ready,
+    config: &WebPushConfig,
+    now: DateTime<Utc>,
+    report: &mut MakeReport,
+) -> anyhow::Result<()> {
+    let c = &item.candidate;
+    let ids: Vec<Uuid> = item.devices.iter().map(|d| d.id).collect();
+    let counts = if ids.is_empty() {
+        BTreeMap::new()
+    } else {
+        today_counts(tx, *community.as_uuid(), &ids, &c.project_key, now).await?
+    };
+    for device in &item.devices {
+        let (total, about) = counts.get(&device.id).copied().unwrap_or((0, 0));
+        let reason = cap_reason(total, about, config.daily_cap);
+        let state = if reason.is_some() {
+            "dropped"
+        } else {
+            "pending"
+        };
+        let written = sqlx::query(
+            "INSERT INTO web_push_outbox \
+                 (community_id, alert_id, subscription_id, project_key, state, drop_reason, created_at, \
+                  next_attempt_at, done_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $7, CASE WHEN $5 = 'dropped' THEN $7 END) \
+             ON CONFLICT (community_id, alert_id, subscription_id) DO NOTHING",
+        )
+        .bind(community.as_uuid())
+        .bind(alert_id)
+        .bind(device.id)
+        .bind(c.project_key.as_slice())
+        .bind(state)
+        .bind(reason)
+        .bind(now)
+        .execute(&mut **tx)
+        .await?
+        .rows_affected();
+        if written > 0 {
+            if reason.is_some() {
+                report.dropped += 1;
+            } else {
+                report.queued += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Look again for the link of the alerts that had none when they were made (the project's record was not found: not
+/// stored yet, or hidden among many records that name its key). **A caught failure leaves a durable retry record**: the
+/// alert row with no link is that record. Each one still inside the alert's lifetime (a day of the chain's clock) is looked
+/// at again, oldest first, at most [`UNLINKED_BATCH`] a pass; when its link is found the alert gets its link, its audience
+/// and its outbox rows in one transaction. One that is a day old is left as it is: its terminal state, an alert that
+/// reached nobody.
+pub async fn retry_unlinked(
+    state: &Arc<AppState>,
+    config: &WebPushConfig,
+    now: DateTime<Utc>,
+) -> anyhow::Result<MakeReport> {
+    let mut report = MakeReport::default();
+    let Some(reader_config) = state.config.chain_reader.as_ref() else {
+        return Ok(report);
+    };
+    let reader = reader_config.reader_id();
+    let host = match &reader_config.community_host {
+        Some(h) => h.clone(),
+        None => crate::tenant::relay_url_authority(&state.config.relay_url),
+    };
+    let Some(community) = state
+        .db
+        .lookup_community_by_host(&host)
+        .await
+        .context("look up the community of the alerts")?
+        .map(|record| record.id)
+    else {
+        return Ok(report);
+    };
+    let pool = state.db.pool();
+    let Some((reader_next, as_of)) = reader_position(pool, &reader).await? else {
+        return Ok(report);
+    };
+    let oldest = i64::try_from(as_of.saturating_sub(ALERT_LIFETIME_SECS)).unwrap_or(0);
+    let rows = sqlx::query(
+        "SELECT a.id, a.project_key, a.serial, a.kind, a.block_number \
+         FROM web_push_alerts a JOIN chain_blocks b ON b.reader = a.reader AND b.number = a.block_number \
+         WHERE a.reader = $1 AND a.link_ref IS NULL AND b.block_time >= $2 \
+         ORDER BY a.block_number, a.id LIMIT $3",
+    )
+    .bind(&reader)
+    .bind(oldest)
+    .bind(UNLINKED_BATCH)
+    .fetch_all(pool)
+    .await
+    .context("read the alerts with no link")?;
+    let mut per_project: BTreeMap<[u8; 32], (Option<String>, Audience)> = BTreeMap::new();
+    for row in rows {
+        let key: Vec<u8> = row.try_get("project_key")?;
+        let (Ok(project_key), Some(kind)) = (
+            <[u8; 32]>::try_from(key.as_slice()),
+            Kind::parse(&row.try_get::<String, _>("kind")?),
+        ) else {
+            continue;
+        };
+        let candidate = Candidate {
+            project_key,
+            serial: u64::try_from(row.try_get::<i64, _>("serial")?).unwrap_or(0),
+            kind,
+            block: u64::try_from(row.try_get::<i64, _>("block_number")?).unwrap_or(0),
+        };
+        let item = prepare(
+            state,
+            community,
+            &reader,
+            reader_config,
+            reader_next,
+            now,
+            candidate,
+            &mut per_project,
+        )
+        .await?;
+        if item.link_ref.is_none() {
+            continue;
+        }
+        let id: i64 = row.try_get("id")?;
+        let mut tx = pool.begin().await?;
+        let updated = sqlx::query(
+            "UPDATE web_push_alerts SET link_ref = $2, audience = $3, cut = $4 WHERE id = $1 AND link_ref IS NULL",
+        )
+        .bind(id)
+        .bind(&item.link_ref)
+        .bind(i32::try_from(item.audience).unwrap_or(i32::MAX))
+        .bind(i32::try_from(item.cut).unwrap_or(i32::MAX))
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+        if updated > 0 {
+            write_outbox(&mut tx, community, id, &item, config, now, &mut report).await?;
+            report.linked += 1;
+        }
+        tx.commit().await.context("commit a linked alert")?;
+    }
     Ok(report)
 }
 
