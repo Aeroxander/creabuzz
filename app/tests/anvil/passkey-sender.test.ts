@@ -14,6 +14,12 @@ import type { MoneyCall } from "../../src/features/money/calls";
 import { moneyProblem } from "../../src/features/money/money-copy";
 import { WalletStepError } from "../../src/features/money/wallet";
 import { getPasskeyAssertion } from "../../../packages/creaton-core/src/account/passkey.ts";
+import { isValidKernelSignature } from "../../../packages/creaton-core/src/aa/kernel-signature.ts";
+import {
+  newWalletAttestation,
+  walletAttestationDigest,
+  walletTypedData,
+} from "../../../packages/creaton-core/src/account/wallet-proof.ts";
 import { call, RPC, word } from "./rpc";
 import { accounts } from "./rpc";
 import { pass, phoneWorld } from "./phone-world";
@@ -495,6 +501,59 @@ run(
         expect(await balanceOf(chain.token, account)).toBe(1n);
         pass(
           "a second send started while one runs is refused; the first lands once",
+        );
+      } finally {
+        await world.close();
+      }
+    });
+
+    it("signs the link to the person's account with the passkey, and the deployed account itself says it is valid (ERC-1271), for that link only", async () => {
+      const [admin] = await accounts();
+      const world = await phoneWorld(admin);
+      try {
+        const { sender, chain, authenticator } = world;
+        const account = await sender.getAddress();
+        // The account must be deployed before the network can be asked about it: the first send deploys it.
+        await sender.sendCalls([mint(chain.token, account, 1n)], 31337);
+        const me = "cd".repeat(32);
+        const attestation = newWalletAttestation(
+          account,
+          me,
+          31337,
+          Math.floor(Date.now() / 1000),
+          3,
+        );
+        const prompts = authenticator.calls.get;
+        const signature = await sender.signTypedData?.(
+          account,
+          walletTypedData(attestation),
+        );
+        expect(signature).toMatch(/^0x[0-9a-f]+$/);
+        expect(authenticator.calls.get - prompts).toBe(1);
+        const hex = (bytes: Uint8Array) =>
+          `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+        const ask = (digest: string) =>
+          isValidKernelSignature(
+            (tx) => sender.readCall(tx.to, tx.data),
+            account,
+            digest,
+            signature as string,
+          );
+        expect(await ask(hex(walletAttestationDigest(attestation)))).toBe(true);
+        pass(
+          "a passkey account signs the link to the person's account in one prompt, and the deployed account's own ERC-1271 check accepts it",
+        );
+        // The same signature over any other digest (another account's link, another number) is not accepted.
+        const other = newWalletAttestation(
+          account,
+          "ef".repeat(32),
+          31337,
+          Math.floor(Date.now() / 1000),
+          3,
+        );
+        expect(await ask(hex(walletAttestationDigest(other)))).toBe(false);
+        pass(
+          "the same signature over a link naming another Nostr account is refused by the account",
         );
       } finally {
         await world.close();
