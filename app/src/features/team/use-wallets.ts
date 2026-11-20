@@ -54,6 +54,40 @@ function chainChecker(wallet: MoneyWallet): ChainChecker | undefined {
  * is checked on this device; a smart account's (a phone account) is checked by asking the account on the network, and until
  * that can be asked it is shown as not checked.
  */
+export async function readWalletLinks(
+  wallet: MoneyWallet,
+  sorted: readonly string[],
+): Promise<Record<string, TeamWallet>> {
+  const events = (await read({
+    kinds: [KIND_EVM_BINDING],
+    authors: [...sorted],
+    limit: 20 * sorted.length,
+  })) as NostrEvent[];
+  const now = Math.floor(Date.now() / 1000);
+  const out: Record<string, TeamWallet> = {};
+  for (const pubkey of sorted) {
+    const result = await resolvePaymentWalletChecked(
+      events,
+      pubkey,
+      now,
+      chainChecker(wallet),
+    );
+    out[pubkey] =
+      result.state === "verified"
+        ? {
+            state: "linked",
+            address: result.wallet.address.toLowerCase(),
+            expires: result.wallet.expires,
+          }
+        : result.state === "unchecked" || result.state === "unreachable"
+          ? { state: "unchecked" }
+          : result.state === "expired"
+            ? { state: "expired" }
+            : { state: "none" };
+  }
+  return out;
+}
+
 export function useTeamWallets(pubkeys: readonly string[]) {
   const sorted = [...new Set(pubkeys)].sort();
   const wallet = useWallet();
@@ -62,36 +96,7 @@ export function useTeamWallets(pubkeys: readonly string[]) {
     queryKey: ["team", "wallets", kind, ...sorted],
     enabled: investingOn() && sorted.length > 0,
     staleTime: 60_000,
-    queryFn: async (): Promise<Record<string, TeamWallet>> => {
-      const events = (await read({
-        kinds: [KIND_EVM_BINDING],
-        authors: sorted,
-        limit: 20 * sorted.length,
-      })) as NostrEvent[];
-      const now = Math.floor(Date.now() / 1000);
-      const out: Record<string, TeamWallet> = {};
-      for (const pubkey of sorted) {
-        const result = await resolvePaymentWalletChecked(
-          events,
-          pubkey,
-          now,
-          chainChecker(wallet),
-        );
-        out[pubkey] =
-          result.state === "verified"
-            ? {
-                state: "linked",
-                address: result.wallet.address.toLowerCase(),
-                expires: result.wallet.expires,
-              }
-            : result.state === "unchecked" || result.state === "unreachable"
-              ? { state: "unchecked" }
-              : result.state === "expired"
-                ? { state: "expired" }
-                : { state: "none" };
-      }
-      return out;
-    },
+    queryFn: () => readWalletLinks(wallet, sorted),
   });
 }
 

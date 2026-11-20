@@ -13,6 +13,7 @@ import type { ProjectNumbers } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { type BackRead, readBack } from "./back-read";
 import { plannedBackLine } from "./back-tasks";
+import { useLinkAfterBack } from "../room/use-link-after-back";
 import { rememberStep } from "./own-history";
 import { senderKind } from "../money/wallet";
 import { PotSheet } from "./PotSheet";
@@ -74,6 +75,8 @@ export function BackSheet({
   const open = amount !== null;
   // From the record's rows, which the page already holds: never a read of the sheet's own.
   const planned = plannedBackLine(numbers);
+  // The last step of a Back that landed: the account is linked to this wallet, so the project's room opens for it.
+  const linkAfterBack = useLinkAfterBack(ready.wallet);
   const reading = useQuery({
     queryKey: [
       "pot",
@@ -247,6 +250,7 @@ export function BackSheet({
             shares: good.plan.quote.shares.toString(),
             txHash,
           });
+        void linkAfterBack();
       }}
       onOpenChange={(next) => {
         if (!next) onClose();
