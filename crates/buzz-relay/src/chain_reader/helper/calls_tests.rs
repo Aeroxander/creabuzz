@@ -18,12 +18,18 @@ pub(crate) fn every_call() -> Vec<HelperCall> {
     vec![
         HelperCall::TreasuryCollectFees { treasury: T },
         HelperCall::TreasurySettle { treasury: T },
+        HelperCall::TreasurySettleTasks {
+            treasury: T,
+            expiry: 1_800_000_000,
+        },
     ]
 }
 
 fn exhaustive(call: &HelperCall) {
     match call {
-        HelperCall::TreasuryCollectFees { .. } | HelperCall::TreasurySettle { .. } => {}
+        HelperCall::TreasuryCollectFees { .. }
+        | HelperCall::TreasurySettle { .. }
+        | HelperCall::TreasurySettleTasks { .. } => {}
     }
 }
 
@@ -68,6 +74,15 @@ pub(crate) const FORBIDDEN: &[&str] = &[
     "transferFrom(address,address,uint256)",
     "approve(address,uint256)",
     "transferAndCall(address,uint256,bytes)",
+    // The task book's seven calls (step 2): a task that ran out is returned by
+    // a plain `settle()`, never by one of these.
+    "announceTask(bytes32,address,uint256,uint16)",
+    "takeTask(uint64,uint256)",
+    "acceptTask(uint64,uint256)",
+    "rejectTask(uint64)",
+    "cancelTask(uint64)",
+    "returnTask(uint64)",
+    "claimNote(uint64,address)",
 ];
 
 pub(crate) fn selector_of(call: &HelperCall) -> [u8; 4] {
@@ -193,6 +208,37 @@ fn every_forbidden_call_is_a_real_function_of_the_contracts() {
             functions.contains(signature),
             "{signature} is not a function of the contracts"
         );
+    }
+}
+
+/// The settle for a task that ran out is the same `settle()` under the same
+/// stored name (the database's list is closed); only its stored arguments tell
+/// it from the settle of arrived outside money, and a stored argument that is
+/// not a second ends the job instead of sending something else.
+#[test]
+fn the_settle_of_a_task_is_settle_and_nothing_else() {
+    let call = HelperCall::TreasurySettleTasks {
+        treasury: T,
+        expiry: 1_804_807_401,
+    };
+    assert_eq!(call.name(), "treasury.settle");
+    assert_eq!(call.signature(), "settle()");
+    assert_eq!(call.calldata(), selector("settle()").to_vec());
+    assert_eq!(call.target(), T);
+    assert_eq!(call.args(), json!({ "taskExpiry": 1_804_807_401u64 }));
+    assert_eq!(
+        HelperCall::parse("treasury.settle", T, &call.args()).expect("reads back"),
+        call
+    );
+    // Without the argument it is the other settle.
+    assert_eq!(
+        HelperCall::parse("treasury.settle", T, &json!({})).expect("reads back"),
+        HelperCall::TreasurySettle { treasury: T }
+    );
+    for bad in [json!("soon"), json!(-1), json!(1.5), json!(null)] {
+        let err = HelperCall::parse("treasury.settle", T, &json!({ "taskExpiry": bad }))
+            .expect_err("a stored expiry that is not a second");
+        assert!(err.to_string().contains("not a second"), "{err}");
     }
 }
 

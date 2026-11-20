@@ -2,7 +2,8 @@
 //! press them: collecting the platform's fee, and settling a project once the
 //! outside money paid in has all arrived.
 //!
-//! - **What:** a closed list of calls ([`calls::HelperCall`]); never a
+//! - **What:** a closed list of calls ([`calls::HelperCall`]), among them the
+//!   settle of a task that ran out ten minutes ago; never a
 //!   check-in, a Take out, a refund, a draw, a claim of a member's Team Shares,
 //!   anything a runner or a Pair signs, or anything that moves a person's money
 //!   by choice. A person's money never waits on the helper: Take out is theirs.
@@ -273,6 +274,22 @@ impl Helper {
                     Check::Due(call.clone())
                 } else {
                     Check::Nothing("no outside money has finished arriving".into())
+                }
+            }
+            // A task still open whose time ran out ten minutes ago: the
+            // Treasury's own `nextExpiry` is the earliest of them (zero when
+            // none is open). Someone else's action settles first and moves it
+            // on, and then there is nothing left for this job to do.
+            HelperCall::TreasurySettleTasks { .. } => {
+                let next = self
+                    .view_uint(&target, view("nextExpiry()", &[]), 0)
+                    .await?;
+                if next != 0
+                    && u128::from(head_time) >= next + u128::from(calls::TASK_SETTLE_DELAY_SECS)
+                {
+                    Check::Due(call.clone())
+                } else {
+                    Check::Nothing("no open task has run out ten minutes ago".into())
                 }
             }
         })

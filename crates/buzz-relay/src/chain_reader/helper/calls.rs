@@ -8,6 +8,10 @@
 //! must be the runner's), a Take out for anyone, a refund, a draw from the
 //! allowance, a claim of a member's Team Shares, a join, a grant, a rate
 //! change, a wind-down, anything a runner, a Pair or the Launcher's admin signs.
+//! The seven calls of the task book (`announceTask`, `takeTask`, `acceptTask`,
+//! `rejectTask`, `cancelTask`, `returnTask`, `claimNote`) are never here either:
+//! a task that ran out is returned by a plain `settle()`, which moves no one's
+//! money to anyone.
 //!
 //! The stored names (`chain_helper_jobs.call`, whose list the database closes,
 //! migration 0070) are `treasury.collectFees` and `treasury.settle`. A migration
@@ -35,6 +39,19 @@ pub enum HelperCall {
         /// The project's Treasury.
         treasury: [u8; 20],
     },
+    /// `Treasury.settle()` for a task that has run out (the end of a take
+    /// window or a deadline): a settle returns the money of every task whose
+    /// time is up and makes `locked`, the notes and the record true without a
+    /// person pressing anything. The same call and the same stored name as
+    /// [`HelperCall::TreasurySettle`]; its arguments name the second the task
+    /// ran out, which is what makes the job once per expiry.
+    TreasurySettleTasks {
+        /// The project's Treasury.
+        treasury: [u8; 20],
+        /// The second the earliest overdue task ran out
+        /// (`TaskBook` `expiresAt`).
+        expiry: u64,
+    },
 }
 
 /// Every function signature the helper may call, and nothing else. The tests
@@ -45,6 +62,11 @@ pub const ALLOWED: [&str; 2] = ["collectFees()", "settle()"];
 /// migration 0070, allows exactly these and the retired names of the old
 /// contracts' calls, which are only history).
 pub const NAMES: [&str; 2] = ["treasury.collectFees", "treasury.settle"];
+
+/// How long after a task's time the helper settles it, in seconds (ten
+/// minutes): the team or a holder who is there has had that time to do it
+/// themselves, and a settle is only made when nobody did.
+pub const TASK_SETTLE_DELAY_SECS: u64 = 600;
 
 /// The share of the daily gas and spend caps the calls may use (nothing the
 /// helper sends blocks a person's money, which can always be taken out
@@ -75,7 +97,9 @@ impl HelperCall {
     pub fn name(&self) -> &'static str {
         match self {
             HelperCall::TreasuryCollectFees { .. } => "treasury.collectFees",
-            HelperCall::TreasurySettle { .. } => "treasury.settle",
+            HelperCall::TreasurySettle { .. } | HelperCall::TreasurySettleTasks { .. } => {
+                "treasury.settle"
+            }
         }
     }
 
@@ -83,7 +107,9 @@ impl HelperCall {
     pub fn signature(&self) -> &'static str {
         match self {
             HelperCall::TreasuryCollectFees { .. } => "collectFees()",
-            HelperCall::TreasurySettle { .. } => "settle()",
+            HelperCall::TreasurySettle { .. } | HelperCall::TreasurySettleTasks { .. } => {
+                "settle()"
+            }
         }
     }
 
@@ -91,7 +117,8 @@ impl HelperCall {
     pub fn target(&self) -> [u8; 20] {
         match self {
             HelperCall::TreasuryCollectFees { treasury }
-            | HelperCall::TreasurySettle { treasury } => *treasury,
+            | HelperCall::TreasurySettle { treasury }
+            | HelperCall::TreasurySettleTasks { treasury, .. } => *treasury,
         }
     }
 
@@ -104,15 +131,26 @@ impl HelperCall {
     /// The arguments as stored (`chain_helper_jobs.args`); the target is kept
     /// in its own column.
     pub fn args(&self) -> Value {
-        json!({})
+        match self {
+            HelperCall::TreasurySettleTasks { expiry, .. } => json!({ "taskExpiry": expiry }),
+            _ => json!({}),
+        }
     }
 
     /// Read a stored job back. An unknown name is an error; the job then ends
     /// as failed, never sent.
-    pub fn parse(name: &str, target: [u8; 20], _args: &Value) -> anyhow::Result<Self> {
+    pub fn parse(name: &str, target: [u8; 20], args: &Value) -> anyhow::Result<Self> {
         Ok(match name {
             "treasury.collectFees" => HelperCall::TreasuryCollectFees { treasury: target },
-            "treasury.settle" => HelperCall::TreasurySettle { treasury: target },
+            "treasury.settle" => match args.get("taskExpiry") {
+                None => HelperCall::TreasurySettle { treasury: target },
+                Some(expiry) => HelperCall::TreasurySettleTasks {
+                    treasury: target,
+                    expiry: expiry
+                        .as_u64()
+                        .ok_or_else(|| anyhow::anyhow!("taskExpiry is not a second"))?,
+                },
+            },
             other => bail!("unknown helper call {other:?}"),
         })
     }
@@ -129,7 +167,7 @@ impl HelperCall {
     pub fn nothing_to_do_errors(&self) -> &'static [&'static str] {
         match self {
             HelperCall::TreasuryCollectFees { .. } => &["NothingToPay()"],
-            HelperCall::TreasurySettle { .. } => &[],
+            HelperCall::TreasurySettle { .. } | HelperCall::TreasurySettleTasks { .. } => &[],
         }
     }
 }
