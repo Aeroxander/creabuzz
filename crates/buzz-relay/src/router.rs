@@ -145,6 +145,10 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     // The app's service worker, at the root so its scope is the whole site;
     // exact path
     "/sw.js",
+    // The sponsored-fee limit: a JSON-RPC call by a phone account that has no relay session, so there is no NIP-98 or
+    // assertion to ask for. It is bounded by its own method pin, body cap and daily limits (`api::sponsor`) and exists
+    // only when the operator names an upstream; exact path.
+    "/sponsor",
     // Invite landing page (SPA) — subtree
     "/invite/",
     // Git web GUI (SPA) — exact + subtree
@@ -357,6 +361,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         // The AI manager's draft for a project's founder (NIP-98 auth, behind the same gateway setting).
         .route(api::manager::MANAGER_DRAFT_PATH, post(api::manager::draft))
         .route(api::gifs::SHARE_PATH, post(api::gifs::share))
+        // Web push subscriptions (NIP-98 auth): `PUT` keeps a device, `DELETE` removes it. They answer "not switched on"
+        // unless the operator turned push on.
+        .route(
+            api::web_push::PATH,
+            axum::routing::put(api::web_push::put).delete(api::web_push::delete),
+        )
         .route(
             "/workflows/{workflow_id}/runs",
             get(api::workflows::workflow_runs),
@@ -451,7 +461,17 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .merge(media_router)
         .merge(git_router)
         .merge(git_policy_router);
-    for optional in [accessory_router, admin_router].into_iter().flatten() {
+    // The sponsored-fee limit exists only when the operator named an upstream (`BUZZ_SPONSOR_UPSTREAM_URL`); it carries
+    // its own body bound.
+    let sponsor_router = state.config.sponsor.is_some().then(|| {
+        Router::new()
+            .route(api::sponsor::PATH, post(api::sponsor::sponsor))
+            .with_state(state.clone())
+    });
+    for optional in [accessory_router, admin_router, sponsor_router]
+        .into_iter()
+        .flatten()
+    {
         merged = merged.merge(optional);
     }
 
@@ -3609,6 +3629,14 @@ mod tests {
         // Webhook (prefix)
         assert!(is_exempt("/hooks/abc123"));
         assert!(!is_exempt("/hooksnot"), "/hooksnot must not match /hooks/");
+
+        // The sponsored-fee limit is public (a phone account has no session); the push subscription path is not
+        assert!(is_exempt("/sponsor"));
+        assert!(
+            !is_exempt("/sponsored"),
+            "/sponsored must not match /sponsor"
+        );
+        assert!(!is_exempt("/push/web"), "a push subscription is protected");
 
         // Operator / admin subtrees
         assert!(is_exempt("/operator/communities"));

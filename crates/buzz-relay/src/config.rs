@@ -616,6 +616,14 @@ pub struct Config {
     /// `BUZZ_CHAIN_RPC_URL`) means it does not run.
     pub chain_reader: Option<crate::chain_reader::ChainReaderConfig>,
 
+    /// Web push alerts (step 3): the operator's own VAPID key and contact (`BUZZ_WEB_PUSH_*`). Unset means push is off:
+    /// no `webPush` in the information document, the subscription paths answer "not switched on", and nothing is sent.
+    pub web_push: Option<crate::web_push::WebPushConfig>,
+
+    /// The sponsored-fee limit (`BUZZ_SPONSOR_*`): `POST /sponsor` in front of the operator's own sponsor. Unset (no
+    /// `BUZZ_SPONSOR_UPSTREAM_URL`) means the path does not exist.
+    pub sponsor: Option<crate::api::sponsor::SponsorConfig>,
+
     /// Relay-owned KLIPY integration. Unset means GIF search is not advertised
     /// and its proxy routes return 404.
     pub klipy: Option<KlipyConfig>,
@@ -1300,6 +1308,24 @@ impl Config {
             });
         let chain_reader = crate::chain_reader::ChainReaderConfig::from_env()
             .map_err(ConfigError::InvalidValue)?;
+        let web_push =
+            crate::web_push::WebPushConfig::from_env().map_err(ConfigError::InvalidValue)?;
+        if web_push.is_some() && chain_reader.is_none() {
+            // An alert is made from the chain's own task rows: push with no chain reader could never send one.
+            return Err(ConfigError::InvalidValue(
+                "web push (BUZZ_WEB_PUSH_*) is set but BUZZ_CHAIN_RPC_URL is not; alerts are made from the chain's rows, so set both, or neither"
+                    .to_owned(),
+            ));
+        }
+        let sponsor =
+            crate::api::sponsor::SponsorConfig::from_env().map_err(ConfigError::InvalidValue)?;
+        if sponsor.is_some() && chain_reader.is_none() {
+            // The sponsor only pays for calls to the contracts the chain reader follows: without it nothing is allowed.
+            return Err(ConfigError::InvalidValue(
+                "the sponsor (BUZZ_SPONSOR_UPSTREAM_URL) is set but BUZZ_CHAIN_RPC_URL is not; it pays only for the contracts the chain reader follows, so set both, or neither"
+                    .to_owned(),
+            ));
+        }
         let klipy = std::env::var("BUZZ_KLIPY_API_KEY")
             .ok()
             .map(|value| value.trim().to_string())
@@ -2014,6 +2040,8 @@ impl Config {
             llm,
             evm_auth,
             chain_reader,
+            web_push,
+            sponsor,
             klipy,
             media,
             media_max_concurrent_uploads,
@@ -2651,6 +2679,231 @@ mod tests {
             let err = Config::from_env().expect_err("a bad value must fail startup");
             assert!(err.to_string().contains(name), "{err}");
             assert!(!err.to_string().contains("47e179ec"), "{err}");
+            match keep {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+    }
+
+    /// P3 (web push settings): off unless both the key and the contact are set; one without the other, a setting without
+    /// either, and push without the chain reader stop startup; bad values stop startup; the key is never echoed.
+    #[test]
+    fn web_push_is_off_unless_both_the_key_and_the_contact_are_set_and_half_a_setting_fails_startup(
+    ) {
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64;
+        use base64::Engine;
+        let _guard = env_guards();
+        const KNOBS: [&str; 8] = [
+            "BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY",
+            "BUZZ_WEB_PUSH_SUBJECT",
+            "BUZZ_WEB_PUSH_DAILY_CAP",
+            "BUZZ_WEB_PUSH_MAX_PER_ACCOUNT",
+            "BUZZ_WEB_PUSH_EXTRA_HOSTS",
+            "BUZZ_CHAIN_RPC_URL",
+            "BUZZ_CHAIN_ID",
+            "BUZZ_CHAIN_LAUNCHER",
+        ];
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+        // A key made for this test: nothing is written anywhere.
+        let key = loop {
+            let bytes: [u8; 32] = rand::random();
+            let text = B64.encode(bytes);
+            if crate::web_push::vapid::VapidKey::from_base64url(&text).is_ok() {
+                break text;
+            }
+        };
+        let both_names = |err: &str| {
+            err.contains("BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY") && err.contains("BUZZ_WEB_PUSH_SUBJECT")
+        };
+        // P3: neither is off.
+        assert!(Config::from_env().expect("defaults").web_push.is_none());
+        // One of the two is a startup error that names both.
+        std::env::set_var("BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY", &key);
+        let err = Config::from_env()
+            .expect_err("the key without the contact")
+            .to_string();
+        assert!(both_names(&err) && !err.contains(&key), "{err}");
+        std::env::remove_var("BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY");
+        std::env::set_var("BUZZ_WEB_PUSH_SUBJECT", "mailto:operator@example.org");
+        let err = Config::from_env()
+            .expect_err("the contact without the key")
+            .to_string();
+        assert!(both_names(&err), "{err}");
+        std::env::remove_var("BUZZ_WEB_PUSH_SUBJECT");
+        // A setting with neither is half a configuration too.
+        for (name, value) in [
+            ("BUZZ_WEB_PUSH_DAILY_CAP", "6"),
+            ("BUZZ_WEB_PUSH_MAX_PER_ACCOUNT", "5"),
+            ("BUZZ_WEB_PUSH_EXTRA_HOSTS", "127.0.0.1:9"),
+        ] {
+            std::env::set_var(name, value);
+            let err = Config::from_env().expect_err("a setting alone").to_string();
+            assert!(both_names(&err) && err.contains(name), "{err}");
+            std::env::remove_var(name);
+        }
+        // Both, but no chain reader: alerts come from the chain's rows, so it could never send one.
+        std::env::set_var("BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY", &key);
+        std::env::set_var("BUZZ_WEB_PUSH_SUBJECT", "mailto:operator@example.org");
+        let err = Config::from_env()
+            .expect_err("push without the chain reader")
+            .to_string();
+        assert!(err.contains("BUZZ_CHAIN_RPC_URL"), "{err}");
+        std::env::set_var("BUZZ_CHAIN_RPC_URL", "http://127.0.0.1:8545");
+        std::env::set_var("BUZZ_CHAIN_ID", "31337");
+        std::env::set_var(
+            "BUZZ_CHAIN_LAUNCHER",
+            "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+        );
+        let on = Config::from_env()
+            .expect("both set")
+            .web_push
+            .expect("push is on");
+        assert_eq!(on.subject, "mailto:operator@example.org");
+        assert_eq!((on.daily_cap, on.max_per_account), (6, 5), "the defaults");
+        assert!(on.extra_hosts.is_empty());
+        assert_eq!(on.vapid.public_bytes().len(), 65);
+        assert!(
+            !format!("{on:?}").contains(&key),
+            "the key is never printed"
+        );
+        // The optional settings.
+        std::env::set_var("BUZZ_WEB_PUSH_DAILY_CAP", "2");
+        std::env::set_var("BUZZ_WEB_PUSH_MAX_PER_ACCOUNT", "3");
+        std::env::set_var("BUZZ_WEB_PUSH_EXTRA_HOSTS", "127.0.0.1:9, Standin.Test");
+        let on = Config::from_env()
+            .expect("settings")
+            .web_push
+            .expect("push is on");
+        assert_eq!((on.daily_cap, on.max_per_account), (2, 3));
+        assert_eq!(on.extra_hosts, ["127.0.0.1:9", "standin.test"]);
+        // A value that is set and cannot be read stops startup, and never echoes the key.
+        for (name, bad) in [
+            ("BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY", "not base64 !!"),
+            ("BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY", "AAAA"),
+            (
+                "BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY",
+                "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            ),
+            ("BUZZ_WEB_PUSH_SUBJECT", "operator@example.org"),
+            ("BUZZ_WEB_PUSH_SUBJECT", "http://example.org"),
+            ("BUZZ_WEB_PUSH_DAILY_CAP", "0"),
+            ("BUZZ_WEB_PUSH_DAILY_CAP", "51"),
+            ("BUZZ_WEB_PUSH_MAX_PER_ACCOUNT", "0"),
+            ("BUZZ_WEB_PUSH_MAX_PER_ACCOUNT", "21"),
+            ("BUZZ_WEB_PUSH_EXTRA_HOSTS", "bad host!"),
+            ("BUZZ_WEB_PUSH_EXTRA_HOSTS", "host:notaport"),
+        ] {
+            let keep = std::env::var(name).ok();
+            std::env::set_var(name, bad);
+            let err = Config::from_env()
+                .expect_err("a bad value must fail startup")
+                .to_string();
+            assert!(err.contains(name) || both_names(&err), "{name}: {err}");
+            assert!(!err.contains(&key), "{err}");
+            match keep {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
+            }
+        }
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+    }
+
+    /// P3 (the sponsor's settings): off unless an upstream is named; a limit without it, or the upstream without the chain
+    /// reader, stops startup; the upstream's address never appears in an error or in what is printed.
+    #[test]
+    fn the_sponsor_is_off_unless_an_upstream_is_named_and_never_shows_its_address() {
+        let _guard = env_guards();
+        const KNOBS: [&str; 8] = [
+            "BUZZ_SPONSOR_UPSTREAM_URL",
+            "BUZZ_SPONSOR_PER_ACCOUNT_PER_DAY",
+            "BUZZ_SPONSOR_TOTAL_PER_DAY",
+            "BUZZ_SPONSOR_PER_IP_PER_DAY",
+            "BUZZ_SPONSOR_EXIT_PER_IP_PER_DAY",
+            "BUZZ_CHAIN_RPC_URL",
+            "BUZZ_CHAIN_ID",
+            "BUZZ_CHAIN_LAUNCHER",
+        ];
+        for k in KNOBS {
+            std::env::remove_var(k);
+        }
+        assert!(
+            Config::from_env().expect("defaults").sponsor.is_none(),
+            "no upstream: the path does not exist"
+        );
+        std::env::set_var("BUZZ_SPONSOR_PER_ACCOUNT_PER_DAY", "5");
+        let err = Config::from_env().expect_err("a limit alone").to_string();
+        assert!(
+            err.contains("BUZZ_SPONSOR_UPSTREAM_URL")
+                && err.contains("BUZZ_SPONSOR_PER_ACCOUNT_PER_DAY"),
+            "{err}"
+        );
+        std::env::remove_var("BUZZ_SPONSOR_PER_ACCOUNT_PER_DAY");
+        let secret = "https://sponsor.example/v1/key-4711-secret";
+        std::env::set_var("BUZZ_SPONSOR_UPSTREAM_URL", secret);
+        let err = Config::from_env()
+            .expect_err("the upstream without the reader")
+            .to_string();
+        assert!(
+            err.contains("BUZZ_CHAIN_RPC_URL") && !err.contains("4711"),
+            "{err}"
+        );
+        std::env::set_var("BUZZ_CHAIN_RPC_URL", "http://127.0.0.1:8545");
+        std::env::set_var("BUZZ_CHAIN_ID", "31337");
+        std::env::set_var(
+            "BUZZ_CHAIN_LAUNCHER",
+            "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+        );
+        let on = Config::from_env()
+            .expect("on")
+            .sponsor
+            .expect("the sponsor is on");
+        assert_eq!(
+            (
+                on.per_account_per_day,
+                on.total_per_day,
+                on.per_ip_per_day,
+                on.exit_per_ip_per_day
+            ),
+            (10, 1_000, 40, 200),
+            "the defaults"
+        );
+        assert!(
+            !format!("{on:?}").contains("4711"),
+            "the address is never printed"
+        );
+        std::env::set_var("BUZZ_SPONSOR_PER_ACCOUNT_PER_DAY", "3");
+        std::env::set_var("BUZZ_SPONSOR_EXIT_PER_IP_PER_DAY", "7");
+        let on = Config::from_env()
+            .expect("on")
+            .sponsor
+            .expect("the sponsor is on");
+        assert_eq!((on.per_account_per_day, on.exit_per_ip_per_day), (3, 7));
+        for (name, bad) in [
+            ("BUZZ_SPONSOR_UPSTREAM_URL", "not a url key-4711"),
+            (
+                "BUZZ_SPONSOR_UPSTREAM_URL",
+                "ftp://sponsor.example/key-4711",
+            ),
+            ("BUZZ_SPONSOR_PER_ACCOUNT_PER_DAY", "0"),
+            ("BUZZ_SPONSOR_TOTAL_PER_DAY", "-1"),
+            ("BUZZ_SPONSOR_PER_IP_PER_DAY", "many"),
+            ("BUZZ_SPONSOR_EXIT_PER_IP_PER_DAY", "0"),
+        ] {
+            let keep = std::env::var(name).ok();
+            std::env::set_var(name, bad);
+            let err = Config::from_env()
+                .expect_err("a bad value must fail startup")
+                .to_string();
+            assert!(err.contains(name), "{err}");
+            assert!(!err.contains("4711"), "{err}");
             match keep {
                 Some(v) => std::env::set_var(name, v),
                 None => std::env::remove_var(name),

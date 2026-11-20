@@ -149,7 +149,10 @@ pub(crate) async fn room_world_with(
     configure: impl FnOnce(&mut crate::config::Config),
 ) -> RoomWorld {
     let fx = Fixture::load();
-    let config = reader_config();
+    let host = format!("room-{}.example", Uuid::new_v4().simple());
+    let mut config = reader_config();
+    // The community the reader's records and alerts go to is the test's own.
+    config.community_host = Some(host.clone());
     let reader = config.reader_id();
     let state = crate::test_support::test_state_with(|c| {
         c.new_account_posts_per_hour = 0;
@@ -160,7 +163,6 @@ pub(crate) async fn room_world_with(
         configure(c);
     })
     .await;
-    let host = format!("room-{}.example", Uuid::new_v4().simple());
     let community = state
         .db
         .ensure_configured_community(&host)

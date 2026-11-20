@@ -21,6 +21,10 @@ pub mod nip_fi;
 pub mod operator;
 pub(crate) mod public_read;
 pub mod self_serve;
+/// The sponsored-fee limit: `POST /sponsor`, off unless the operator names an upstream.
+pub mod sponsor;
+/// Web push subscriptions: `PUT` and `DELETE /push/web`.
+pub mod web_push;
 pub mod workflows;
 
 // Re-export imeta helpers used by ingest pipeline.

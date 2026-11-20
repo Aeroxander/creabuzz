@@ -508,7 +508,7 @@ fn counter_account(label: &str) -> Option<nostr::PublicKey> {
 /// it saw; anything before it is the client's own claim). An IPv6 address is
 /// cut to its network, since one machine holds a whole one. `None` without
 /// the header: such a request is held to the shared budget alone.
-fn client_address(headers: &HeaderMap) -> Option<String> {
+pub(crate) fn client_address(headers: &HeaderMap) -> Option<String> {
     let last = headers
         .get_all("x-forwarded-for")
         .iter()

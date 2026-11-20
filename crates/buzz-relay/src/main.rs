@@ -1219,6 +1219,13 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         Err(e) => return Err(anyhow::anyhow!("chain reader: {e:#}")),
     }
 
+    // Web push (step 3): off unless the operator set BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY and BUZZ_WEB_PUSH_SUBJECT. Its own
+    // supervised task, so a push outage can never stall the chain reader or Take out.
+    match buzz_relay::web_push::sender::spawn(Arc::clone(&state)) {
+        Some(_) => info!("web push on"),
+        None => info!("web push off (BUZZ_WEB_PUSH_* not set)"),
+    }
+
     // NIP-PL matcher and worker are enabled as one unit behind the explicit
     // deployment opt-in. The gateway URL alone never enables push.
     if state.config.push_enabled {

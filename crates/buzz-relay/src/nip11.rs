@@ -46,6 +46,20 @@ pub struct RelayInfo {
     /// nothing: the web build's own switches then decide.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub investing: Option<bool>,
+    /// Web push: `{"publicKey": "<base64url, 65 bytes>"}`, the public half of the operator's own VAPID key, which an app
+    /// subscribes with. Absent unless the operator turned push on (`BUZZ_WEB_PUSH_*`), and then nothing else about push is
+    /// published.
+    #[serde(default, rename = "webPush", skip_serializing_if = "Option::is_none")]
+    pub web_push: Option<serde_json::Value>,
+    /// Whether this server can check a phone account's wallet link (it has a chain connection: `BUZZ_EVM_AUTH` and
+    /// `BUZZ_EVM_RPC_URL`). Present whenever a chain reader is configured, so the app can say plainly that rooms and
+    /// alerts are not switched on for phone accounts here before a person tries.
+    #[serde(
+        default,
+        rename = "smartAccountLinks",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub smart_account_links: Option<bool>,
     /// Host-bound atomic read-state snapshot capability; absent on unresolved hosts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub read_state_snapshot: Option<serde_json::Value>,
@@ -298,6 +312,8 @@ impl RelayInfo {
             access: None,
             example_project: None,
             investing: None,
+            web_push: None,
+            smart_account_links: None,
             read_state_snapshot: None,
             buzz_v1: None,
             artifacts: serde_json::json!({
@@ -410,6 +426,18 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         state.config.klipy.as_ref().map(|_| "klipy"),
     );
     info.investing = state.config.investing;
+    info.web_push = state
+        .config
+        .web_push
+        .as_ref()
+        .map(|push| serde_json::json!({ "publicKey": push.vapid.public_base64url() }));
+    info.smart_account_links = state.config.chain_reader.as_ref().map(|_| {
+        state
+            .config
+            .evm_auth
+            .as_ref()
+            .is_some_and(|evm| evm.rpc_url.is_some())
+    });
     if let Ok(tenant) = crate::tenant::bind_community(&state.db, raw_host).await {
         info.access = state
             .membership_required(tenant.community(), false)

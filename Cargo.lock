@@ -1553,6 +1553,7 @@ dependencies = [
 name = "buzz-relay"
 version = "0.2.1"
 dependencies = [
+ "aes-gcm",
  "anyhow",
  "async-compression",
  "async-trait",
@@ -1582,6 +1583,7 @@ dependencies = [
  "futures",
  "futures-util",
  "hex",
+ "hkdf",
  "hmac 0.13.0",
  "http-body",
  "http-body-util",
@@ -1596,6 +1598,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "p256",
  "postcard",
  "pulldown-cmark",
  "rand 0.10.1",

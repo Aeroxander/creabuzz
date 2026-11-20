@@ -81,6 +81,8 @@ pub mod tenant;
 mod test_support;
 /// Relay-side tunnel session directory and routing.
 pub mod tunnel;
+/// Web push alerts: encryption, VAPID, the alert maker and the sender (off unless the operator configures it).
+pub mod web_push;
 /// Webhook secret generation and constant-time comparison.
 pub mod webhook_secret;
 /// Workflow action sink — relay-side implementation of [`buzz_workflow::ActionSink`].

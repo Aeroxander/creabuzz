@@ -123,6 +123,10 @@ k256      = { version = "0.14", features = ["ecdsa"] }
 sha3      = "0.10"
 hex       = "0.4"
 hmac      = "0.13"
+# Web push (RFC 8291 message encryption, RFC 8292 VAPID): written on these, no web-push crate.
+p256      = { version = "0.13", default-features = false, features = ["arithmetic", "ecdsa", "std"] }
+hkdf      = "0.13"
+aes-gcm   = "0.10"
 base64    = "0.22"
 
 # Randomness
