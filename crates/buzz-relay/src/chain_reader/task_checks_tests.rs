@@ -528,6 +528,85 @@ async fn every_book_of_the_run_builds_and_obeys_the_rules() {
     }
 }
 
+// -------------------------------------------- the settled lines held exactly
+
+/// A copy of the chain whose `quoteBack` answer has word `at` (0 shares, 1 take-out value, 2 locked line, 3 arriving
+/// line) changed by `change`.
+fn with_quote_word(
+    chain: &BookChain,
+    treasury: &[u8; 20],
+    at: usize,
+    change: impl Fn(u128) -> u128,
+) -> BookChain {
+    let mut copy = copy_of(chain);
+    let mut data = selector("quoteBack(uint256)").to_vec();
+    data.extend_from_slice(&word_of(1_000_000));
+    let answer = copy
+        .answers
+        .get_mut(&(*treasury, data))
+        .expect("quoteBack(1 dollar) was captured");
+    assert_eq!(answer.len(), 128, "quoteBack answers four words");
+    let mut bytes = [0u8; 16];
+    bytes.copy_from_slice(&answer[at * 32 + 16..at * 32 + 32]);
+    let value = change(u128::from_be_bytes(bytes));
+    answer[at * 32 + 16..at * 32 + 32].copy_from_slice(&value.to_be_bytes());
+    copy
+}
+
+/// Review fix I1: the record's settled `locked` and `arriving` are held to the contract's own settled figures
+/// (`quoteBack`'s two lines), exactly. `boxCap` is a floor division on the pot and box together (and is zero at
+/// a rate of zero), so a settle that the server got wrong by a unit, or by the money of a task that ran out, passed
+/// every other check. With these two comparisons switched off, every refusal below is missing and the test fails.
+#[tokio::test]
+async fn the_settled_locked_and_arriving_lines_are_held_to_the_contract_exactly() {
+    let mut locked_tried = 0;
+    let mut arriving_tried = 0;
+    for name in [
+        "A_example",
+        "A_overdue",
+        "A_stream",
+        "A_live",
+        "A_end",
+        "B_pair",
+        "B_end",
+    ] {
+        let (fx, ledger, as_of, chain) = load(name);
+        let treasury = address_of(&ledger.contracts.treasury);
+        build_with(&fx, &ledger, &as_of, &chain)
+            .await
+            .unwrap_or_else(|e| panic!("{name}: the honest answers build: {e:#}"));
+        for (at, word) in [(2usize, "locked"), (3usize, "arriving")] {
+            for change in [|v: u128| v + 1, |v: u128| v.saturating_sub(1)] {
+                let off = with_quote_word(&chain, &treasury, at, change);
+                // A line that cannot go lower (zero) stays as it was and builds: only a real change is judged.
+                let same = off.answers == chain.answers;
+                let result = build_with(&fx, &ledger, &as_of, &off).await;
+                if same {
+                    assert!(result.is_ok(), "{name} {word}: nothing changed");
+                    continue;
+                }
+                let text = error_of(result);
+                assert!(
+                    text.contains("nothing is published")
+                        && text.contains(word)
+                        && text.contains("events say")
+                        && text.contains("the contract says"),
+                    "{name}: the {word} line off by one: {text}"
+                );
+                if at == 2 {
+                    locked_tried += 1;
+                } else {
+                    arriving_tried += 1;
+                }
+            }
+        }
+    }
+    assert!(
+        locked_tried >= 7 && arriving_tried >= 7,
+        "the run must cover both lines: locked {locked_tried}, arriving {arriving_tried}"
+    );
+}
+
 // ------------------------------------------------------------- bounded work
 
 /// A node that answers every view with an answer of the right length and counts the calls
@@ -578,6 +657,8 @@ impl ChainSource for Counting {
             8
         } else if sel == selector("agents(address)") || sel == selector("noticeFor(uint16)") {
             3
+        } else if sel == selector("quoteBack(uint256)") {
+            4
         } else {
             1
         };

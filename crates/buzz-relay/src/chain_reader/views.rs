@@ -22,6 +22,9 @@ use super::word::{hex0x, parse_fixed, Word};
 pub const MAX_GRANT_READS: usize = super::record::MAX_GRANTS;
 /// The most agent accounts whose views are read in one record.
 pub const MAX_AGENT_READS: usize = 100;
+/// The amount `Treasury.quoteBack` is asked about: one dollar (the smallest join). Only the two settled lines of its
+/// answer are used, and they do not depend on the amount.
+const QUOTE_AMOUNT: u128 = 1_000_000;
 
 const TREASURY_UINTS: [&str; 35] = [
     "pot",
@@ -211,6 +214,11 @@ pub struct Views {
     /// The block they were read at.
     pub block: u64,
     treasury: BTreeMap<&'static str, u128>,
+    /// `quoteBack(..).lockedLine`: the contract's own settled `locked` (what is set aside for taken tasks, after any
+    /// task that ran out came back), at the block.
+    pub locked_line: u128,
+    /// `quoteBack(..).arrivingLine`: the contract's own settled `arriving` at the block.
+    pub arriving_line: u128,
     /// `Treasury.doorFlag()`.
     pub door_flag: bool,
     /// `Treasury.doorOpenNow()`.
@@ -476,6 +484,13 @@ pub async fn read(
         );
         treasury_at.push((name, at));
     }
+    // The only views that return the contract's settled `locked` and `arriving` (exactly, not rounded).
+    let quote = plan.add(
+        "Treasury.quoteBack(1 dollar)".into(),
+        treasury,
+        "quoteBack(uint256)",
+        &[uint_word(QUOTE_AMOUNT)],
+    );
     let door_flag = plan.add("Treasury.doorFlag()".into(), treasury, "doorFlag()", &[]);
     let door_open = plan.add(
         "Treasury.doorOpenNow()".into(),
@@ -647,6 +662,8 @@ pub async fn read(
         a.expect_words(1)?;
         Ok(a)
     };
+    let quoted = at(quote);
+    quoted.expect_words(4)?;
     let runner_view = single(runner_at)?.address(0)?;
     let is_pair_view = single(is_pair)?.flag(0)?;
 
@@ -835,6 +852,8 @@ pub async fn read(
     Ok(Views {
         block,
         treasury: treasury_views,
+        locked_line: quoted.uint(2)?,
+        arriving_line: quoted.uint(3)?,
         door_flag: single(door_flag)?.flag(0)?,
         door_open_now: single(door_open)?.flag(0)?,
         runner: runner_view,

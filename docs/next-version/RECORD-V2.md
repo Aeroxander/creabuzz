@@ -308,7 +308,10 @@ allowance for time it was not in the pot.
 **Check on every build, no exceptions:** the worked-forward values (the final `pot` and `box`, after the release) must satisfy
 `mulDiv(pot + box, rate * 7, 1e6) == boxCap()` (with the final pot, the returned claims included; the clamp above uses the pot before them,
 as the contract does) and `active == activeNow()`. If either differs the record is **not published** (section 4.3). Both views are the contract's own
-settled numbers, so a formula slip, a changed contract or a mis-set time cannot pass. (The two money views `leaveValue()` and
+settled numbers, so a formula slip, a changed contract or a mis-set time cannot pass. `boxCap` is a floor division on the sum, though, and it is
+zero at a rate of zero, so two more exact checks run on every build: the worked-forward `locked` and `arriving` must equal the two settled lines of
+`quoteBack(1 dollar)` (`lockedLine`, `arrivingLine`), the only views that return them. With those two exact, the settled pot and box together are
+exact too (they differ from the stored ones only by what arrived and what ran out). (The two money views `leaveValue()` and
 `teamValue()` are also checked, by the example test (section 7.3), not on every build.)
 
 When the Treasury gains a `snapshot()` view that returns the settled `(pot, box, arriving, active)`, the server reads it, deletes this
@@ -396,7 +399,7 @@ later block).
 3. **Cross-checks, on every build.** The ledger rebuilt from the events must equal the stored views at `asOf.block`: `pot`, `paidIn`,
    `box`, `arriving`, `feesOwed`, `Z`, `activeSeconds`, B (`shares.totalSupply()`) and G (`team.totalSupply()`), and the ledger's `lastSettle` must not be later than the view's (a settle that moves nothing emits no `Settled`, so the events can only lag it; the record carries the view's `lastSettle`). The two
    tokens' summed balances must equal their `totalSupply()`. The Vester's Team balance from `Transfer`s must equal
-   `team.balanceOf(vester)`. And the settled snapshot must match `boxCap()` and `activeNow()` (section 3).
+   `team.balanceOf(vester)`. And the settled snapshot must match `boxCap()`, `activeNow()`, and `quoteBack`'s `lockedLine` and `arrivingLine` exactly (section 3).
 4. **If any cross-check fails, the views are right and the record is not published.** The previous record stays, the server logs an
    error that names each field and both values, and tries again on the next pass. A stuck project shows its age to the app
    (section 6) and Take out keeps working, because it never depended on the record. A server never publishes a number it could not
@@ -664,7 +667,7 @@ book** (never guessed: the book's address is the Treasury's own `TasksReady` log
 | `state` | `announced`, `taken`, `paid`, `rejected`, `returned`, `cancelled` or `lapsed` | Where it is on the network at `asOf.block`. `returned` is a task that ran out or was swept by a wind-down. A taken task whose `deadline <= asOf.time` is still `taken` here until someone settles; the app words it from the dates. |
 | `shareBps` | int | The share of the pot it may ask for (1 to 500). |
 | `maxDollars` | amount | The most it may set aside. |
-| `atMostNow` | amount or null | While an announced task's take window has not ended (`asOf.time < expiresAt`): `min(maxDollars, mulDiv(money.pot, shareBps, 10000))`, the most a take at `asOf.time` would set aside; null otherwise. |
+| `atMostNow` | amount or null | While an announced task's take window has not ended (`asOf.time < expiresAt`): `min(maxDollars, mulDiv(money.pot, shareBps, 10000))`, the most a take would set aside at this pot once its notice has ended (a take is refused while the notice still runs, but the figure is shown during it so a holder sees what would be set aside); null otherwise. |
 | `announcedAt`, `noticeEnd`, `expiresAt` | int | Announce time; the first second it can be taken; the end of the take window while announced, the deadline once taken. |
 | `takenBy` | address or null | Who took it, and the only address a payment goes to. |
 | `takenAt`, `deadline` | int or null | When taken; when due. |

@@ -319,6 +319,26 @@ pub fn build(
             view_cap,
         );
     }
+    // The settled `locked` and `arriving` against the contract's own (`quoteBack`), exactly. With these two exact, the
+    // settled pot and box together are exact too (the record's pot and box only differ from the stored ones by what
+    // arrived and what ran out). `boxCap` alone cannot see this: it is a floor division on the sum, and it is zero for
+    // a project whose allowance rate is zero.
+    if settled.locked != v.locked_line {
+        put(
+            &mut bad,
+            "locked (set aside after what ran out)",
+            settled.locked,
+            v.locked_line,
+        );
+    }
+    if settled.arriving != v.arriving_line {
+        put(
+            &mut bad,
+            "arriving (settled outside money)",
+            settled.arriving,
+            v.arriving_line,
+        );
+    }
     if settled.active_seconds != v.t("activeNow")? {
         put(
             &mut bad,

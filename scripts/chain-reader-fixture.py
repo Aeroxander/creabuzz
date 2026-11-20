@@ -266,6 +266,7 @@ def record_book(p, launcher, dollar, block, logs):
     get(p["team"], "balanceOf(address)", v)
     get(dollar, "balanceOf(address)", t)
     get(launcher, "testNetwork()")
+    get(t, "quoteBack(uint256)", 1_000_000)
     runner = addr_of(eth_call(t, "runner()", block=at_b))
     is_pair = uint(get(launcher, "isPair(address)", runner)) != 0
     if is_pair:
