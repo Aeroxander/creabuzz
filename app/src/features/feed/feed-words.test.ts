@@ -62,7 +62,7 @@ describe("the items, in the words of the plan", () => {
     expect(itemWords(paid, before)).toBe("A task was paid.");
     expect(itemWords(ended, before)).toBe("A task ended without being paid.");
     expect(itemWords(withdrawn, before)).toBe("A plan was withdrawn.");
-    expect(itemWords(update, before)).toBe("The team posted its update.");
+    expect(itemWords(update, before)).toBe("The team checked in.");
   });
 
   it("never says a price, a gain, a volume, a name or an address", () => {

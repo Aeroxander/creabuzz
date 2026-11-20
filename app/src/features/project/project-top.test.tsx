@@ -33,7 +33,8 @@ import {
 import { parsedExample } from "../../../tests/helpers/numbers-v2-parse";
 import { WithMoneyBanner } from "../../app/MoneyBanner";
 import { smallDollarsText } from "../pot/pot-words";
-import { PLAY_MONEY_WORDS, TAKE_OUT_BANNER } from "../pot/pot-words";
+import { PLAY_MONEY_WORDS } from "../pot/pot-words";
+import { BANNER_LITERAL } from "../../../tests/helpers/legal-words";
 import { ProjectPage } from "./ProjectPage";
 import { projectPath, projectRef } from "./project-record";
 import { keptLine, peopleLine, takeOutNowLine } from "./project-top-words";
@@ -121,9 +122,7 @@ describe("the money, the banner and Back in the order a stranger reads them", ()
     expect(screen.getByTestId("top-play-money").textContent).toBe(
       PLAY_MONEY_WORDS,
     );
-    expect(screen.getByTestId("money-banner").textContent).toBe(
-      TAKE_OUT_BANNER,
-    );
+    expect(screen.getByTestId("money-banner").textContent).toBe(BANNER_LITERAL);
     const back = await screen.findByTestId("backing-box");
     const order = [
       screen.getByTestId("project-name"),
@@ -163,8 +162,8 @@ describe("the money, the banner and Back in the order a stranger reads them", ()
       peopleLine(n.holderCount),
     );
     expect(screen.getByTestId("top-kept").textContent).toBe(keptLine(n));
-    expect(screen.getByTestId("top-update").textContent).toMatch(
-      new RegExp(`Updates: ${n.streaks?.updates.weeks} weeks in a row\\.$`),
+    expect(screen.getByTestId("top-check-in").textContent).toMatch(
+      new RegExp(`Check-ins: ${n.streaks?.updates.weeks} weeks in a row\\.$`),
     );
     expect(screen.getByTestId("top-chips").textContent).toContain(
       "Open to back",
@@ -252,10 +251,10 @@ describe("what is drawn when a key is absent, null, wrong or old", () => {
     await screen.findByTestId("top-facts");
     expect(screen.queryByTestId("top-kept")).toBeNull();
     expect(screen.queryByTestId("established-chip")).toBeNull();
-    expect(screen.getByTestId("top-update").textContent).toMatch(
-      /^(Last update|No update yet)/,
+    expect(screen.getByTestId("top-check-in").textContent).toMatch(
+      /^(Last check-in|No check-in yet)/,
     );
-    expect(screen.getByTestId("top-update").textContent).not.toMatch(
+    expect(screen.getByTestId("top-check-in").textContent).not.toMatch(
       /weeks in a row/,
     );
   });
@@ -389,7 +388,7 @@ describe("the Share sheet", () => {
       ),
     );
     expect(write).toHaveBeenCalledWith(link);
-    expect(sheet.textContent).toContain(TAKE_OUT_BANNER);
+    expect(sheet.textContent).toContain(BANNER_LITERAL);
   });
 
   it("says plainly when the browser would not copy", async () => {

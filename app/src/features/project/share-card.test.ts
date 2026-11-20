@@ -10,7 +10,7 @@ import {
   raw,
   SERVER,
 } from "../../../tests/helpers/numbers-v2-parse";
-import { TAKE_OUT_BANNER } from "../pot/pot-words";
+import { BANNER_LITERAL } from "../../../tests/helpers/legal-words";
 import { projectPath } from "./project-record";
 import {
   CARD_NAME_FALLBACK,
@@ -47,7 +47,7 @@ function recorder() {
 }
 
 const NOW = parsedExample().builtAt + 100;
-const scanned = (drawn: string[]) => drawn.filter((s) => s !== TAKE_OUT_BANNER);
+const scanned = (drawn: string[]) => drawn.filter((s) => s !== BANNER_LITERAL);
 
 describe("what the picture says", () => {
   it("every string drawn passes the forbidden pattern (banner taken out first), for the example's project", () => {
@@ -58,7 +58,7 @@ describe("what the picture says", () => {
     );
     const { ctx, drawn } = recorder();
     drawShareCard(ctx, card, "Creaton");
-    expect(drawn).toContain(TAKE_OUT_BANNER);
+    expect(drawn).toContain(BANNER_LITERAL);
     expect(drawn).toContain("Lantern");
     expect(drawn).toContain("Solar lamps for night markets.");
     for (const text of scanned(drawn))
@@ -67,7 +67,8 @@ describe("what the picture says", () => {
       );
     // No digit but a count of weeks.
     for (const text of scanned(drawn))
-      if (/\d/.test(text)) expect(text).toMatch(/weeks? of updates in a row$/);
+      if (/\d/.test(text))
+        expect(text).toMatch(/weeks? of check-ins in a row$/);
   });
 
   it("carries the example's own facts, from the record", () => {
@@ -75,7 +76,7 @@ describe("what the picture says", () => {
     const card = cardContent({ name: "Lantern", pitch: "" }, n, NOW);
     expect(card.facts).toEqual([
       "Open to back",
-      `${n.streaks?.updates.weeks} weeks of updates in a row`,
+      `${n.streaks?.updates.weeks} weeks of check-ins in a row`,
     ]);
     expect(card.playMoney).toBe(CARD_PLAY_MONEY);
     expect(card.facts.length).toBeLessThanOrEqual(2);
@@ -180,7 +181,7 @@ describe("what the picture says", () => {
 
   it("does not put a run of updates on a picture from a stale record, and says the unit's own length when it is not a week", () => {
     const fresh = cardContent({ name: "L", pitch: "" }, parsedExample(), NOW);
-    expect(fresh.facts.join(" ")).toMatch(/weeks of updates in a row/);
+    expect(fresh.facts.join(" ")).toMatch(/weeks of check-ins in a row/);
     const old = cardContent(
       { name: "L", pitch: "" },
       parsedExample(),

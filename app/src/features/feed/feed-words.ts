@@ -46,7 +46,7 @@ export function itemWords(item: FeedItem, now: number): string {
     case "task_withdrawn":
       return "A plan was withdrawn.";
     case "update":
-      return "The team posted its update.";
+      return "The team checked in.";
   }
 }
 

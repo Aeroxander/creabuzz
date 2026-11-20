@@ -80,7 +80,7 @@ export interface CardContent {
 
 /**
  * Everything the card says. The facts are what the record can say without an amount: whether the door is open (only while the
- * record is not too old to say) and the run of updates (from one unit), which a record past a day does not say either.
+ * record is not too old to say) and the run of check-ins (from one unit), which a record past a day does not say either.
  */
 export function cardContent(
   input: { name: string; pitch: string },
@@ -96,8 +96,8 @@ export function cardContent(
   if (numbers && runs >= 1)
     facts.push(
       numbers.unit === WEEK_SECS
-        ? `${unitCount(runs, numbers.unit)} of updates in a row`
-        : `Updates in a row for ${unitCount(runs, numbers.unit)}`,
+        ? `${unitCount(runs, numbers.unit)} of check-ins in a row`
+        : `Check-ins in a row for ${unitCount(runs, numbers.unit)}`,
     );
   return {
     name: nameForCard(input.name),

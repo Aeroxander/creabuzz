@@ -32,7 +32,7 @@ import {
   keptLine,
   peopleLine,
   takeOutNowLine,
-  updateLine,
+  checkInLine,
 } from "./project-top-words";
 
 // The Back box carries the money calls and their contract ABIs: it loads after the page's first paint, as the Money tab did.
@@ -131,20 +131,20 @@ function TopMoney({
   );
 }
 
-/** Who backs it, how long money has stayed and the updates (rows 7 to 9). */
+/** Who backs it, how long money has stayed and the check-ins (rows 7 to 9). */
 function TopFacts({ numbers, now }: { numbers: ProjectNumbers; now: number }) {
   const level = freshnessOf(numbers, now).level;
-  // Money figures hide with a record past a day; the updates are not money and stay, with their age.
+  // Money figures hide with a record past a day; the check-ins are not money and stay, with their age.
   const kept = level === "stale" ? null : keptLine(numbers);
-  const update = updateLine(numbers, relativeTime);
+  const checkIn = checkInLine(numbers, relativeTime);
   return (
     <ul className="flex flex-col gap-1.5 px-1 text-sm" data-testid="top-facts">
       {level === "stale" ? null : (
         <li data-testid="top-people">{peopleLine(numbers.holderCount)}</li>
       )}
       {kept ? <li data-testid="top-kept">{kept}</li> : null}
-      <li data-testid="top-update">
-        {update}
+      <li data-testid="top-check-in">
+        {checkIn}
         {level === "fresh" ? "" : ` (${asOfLine(numbers)})`}
       </li>
     </ul>

@@ -324,7 +324,7 @@ describe("the strips above a project's tabs", () => {
     const notes = screen.getAllByTestId("task-not-takeable");
     expect(notes.length).toBeGreaterThan(0);
     expect(notes[0]?.textContent).toBe(
-      `This task cannot be taken unless the team sends its weekly update (its check-in) before ${timeText(numbers.clock.activeUntil as number)}.`,
+      `This task cannot be taken unless the team checks in before ${timeText(numbers.clock.activeUntil as number)}.`,
     );
     expect(row.state).toBe("announced");
   });

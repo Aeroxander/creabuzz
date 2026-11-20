@@ -1,6 +1,6 @@
 /**
  * The sentences of the top of a project's page (plan section 7.1), made from the signed record and nothing else: who backs
- * it, how long money has stayed, the last update and its weeks in a row, what taking out now would give, and the words of
+ * it, how long money has stayed, the last check-in and its weeks in a row, what taking out now would give, and the words of
  * the "Established" hint. Pure, so one test holds every sentence. A part the record could not say gives null and the page
  * draws nothing for it: never "none" and never zero for what is not known.
  */
@@ -61,17 +61,18 @@ export function keptLine(numbers: ProjectNumbers): string | null {
   return `Nobody has kept money in it for ${window} yet.`;
 }
 
-/** The run of updates in a row, from one unit: weeks on a real network, the unit's own length on a test one. */
+/** The run of weekly check-ins in a row (the team's mark on the chain, not a written update), from one unit: weeks on a real network, the unit's own length on a test one. */
 export function streakLine(runs: number, unit: number): string | null {
   if (runs < 1) return null;
-  return `Updates: ${unitCount(runs, unit)} in a row`;
+  return `Check-ins: ${unitCount(runs, unit)} in a row`;
 }
 
 /**
- * The last update and, when there are weeks in a row, the run. The last update is the team's last check-in (the birth of
- * the project when there has been none, which reads as no update).
+ * The last check-in and, when there are weeks in a row, the run. A check-in is the team's weekly mark on the network (the birth of
+ * the project when there has been none, which reads as no check-in). It is not the written update the Updates tab and demo day
+ * show: those are posts, and a team can write one without checking in and the other way round, so the two have two names.
  */
-export function updateLine(
+export function checkInLine(
   numbers: ProjectNumbers,
   when: (unix: number) => string,
 ): string {
@@ -80,7 +81,8 @@ export function updateLine(
     : numbers.clock.lastCheckIn > numbers.launchedAt
       ? numbers.clock.lastCheckIn
       : null;
-  const said = last === null ? "No update yet." : `Last update ${when(last)}.`;
+  const said =
+    last === null ? "No check-in yet." : `Last check-in ${when(last)}.`;
   const run = numbers.streaks
     ? streakLine(numbers.streaks.updates.weeks, numbers.unit)
     : null;

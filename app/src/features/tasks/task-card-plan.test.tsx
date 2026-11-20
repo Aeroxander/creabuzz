@@ -231,7 +231,7 @@ describe("a task with a live plan on the network", () => {
     });
     show(numbers, record, { me: WORKER, address: null });
     expect(screen.getByTestId("task-not-takeable").textContent).toMatch(
-      /^This task cannot be taken unless the team sends its weekly update \(its check-in\) before /,
+      /^This task cannot be taken unless the team checks in before /,
     );
   });
 

@@ -18,7 +18,7 @@ import {
   peopleLine,
   streakLine,
   takeOutNowLine,
-  updateLine,
+  checkInLine,
   windowWords,
 } from "./project-top-words";
 
@@ -119,19 +119,19 @@ describe("how long money has stayed", () => {
   });
 });
 
-describe("the updates", () => {
+describe("the check-ins", () => {
   const when = (unix: number) => `at ${unix}`;
-  it("names the last update and the weeks in a row from the record", () => {
+  it("names the last check-in and the weeks in a row from the record", () => {
     const n = parsedExample();
     const u = n.streaks?.updates;
     expect(u).toBeTruthy();
-    expect(updateLine(n, when)).toBe(
-      `Last update at ${u?.lastAt}. Updates: ${u?.weeks} weeks in a row.`,
+    expect(checkInLine(n, when)).toBe(
+      `Last check-in at ${u?.lastAt}. Check-ins: ${u?.weeks} weeks in a row.`,
     );
   });
 
   it("says one week in the singular, and nothing of a run under one week", () => {
-    expect(streakLine(1, 604_800)).toBe("Updates: 1 week in a row");
+    expect(streakLine(1, 604_800)).toBe("Check-ins: 1 week in a row");
     expect(streakLine(0, 604_800)).toBeNull();
     const none = parsedWith((c) => {
       c.streaks.updates = {
@@ -140,28 +140,46 @@ describe("the updates", () => {
         lastAt: c.streaks.updates.lastAt,
       };
     });
-    expect(updateLine(none, when)).toMatch(/^Last update at \d+\.$/);
+    expect(checkInLine(none, when)).toMatch(/^Last check-in at \d+\.$/);
   });
 
-  it("says no update yet when there has been none", () => {
+  it("says no check-in yet when there has been none", () => {
     const n = parsedWith((c) => {
       c.streaks.updates = { weeks: 0, longest: 0, lastAt: null };
     });
-    expect(updateLine(n, when)).toBe("No update yet.");
+    expect(checkInLine(n, when)).toBe("No check-in yet.");
   });
 
-  it("without the streak key still says the last update, from the clock, and 'none' only at the birth of the project", () => {
+  it("without the streak key still says the last check-in, from the clock, and 'none' only at the birth of the project", () => {
     const older = parsedWith((c) => {
       delete c.streaks;
     });
-    expect(updateLine(older, when)).toBe(
-      `Last update at ${older.clock.lastCheckIn}.`,
+    expect(checkInLine(older, when)).toBe(
+      `Last check-in at ${older.clock.lastCheckIn}.`,
     );
     const birth = parsedWith((c) => {
       delete c.streaks;
       c.clock.lastCheckIn = c.launchedAt;
     });
-    expect(updateLine(birth, when)).toBe("No update yet.");
+    expect(checkInLine(birth, when)).toBe("No check-in yet.");
+  });
+});
+
+describe("check-in and update are two words for two things", () => {
+  const when = (unix: number) => `at ${unix}`;
+  it("never calls the team's weekly mark on the network an update, so demo day's 'No update yet.' cannot contradict it", () => {
+    const n = parsedExample();
+    for (const line of [
+      checkInLine(n, when),
+      checkInLine(
+        parsedWith((c) => {
+          c.streaks.updates = { weeks: 0, longest: 0, lastAt: null };
+        }),
+        when,
+      ),
+      streakLine(3, 604_800) ?? "",
+    ])
+      expect(line).not.toMatch(/update/i);
   });
 });
 
@@ -189,17 +207,17 @@ describe("the door chip", () => {
 
 describe("what a streak and the kept money say", () => {
   it("says weeks only for a week-long unit, and the unit's own length otherwise", () => {
-    expect(streakLine(14, 604_800)).toBe("Updates: 14 weeks in a row");
+    expect(streakLine(14, 604_800)).toBe("Check-ins: 14 weeks in a row");
     expect(streakLine(14, 1_680)).toBe(
-      "Updates: 14 periods of 28 minutes in a row",
+      "Check-ins: 14 periods of 28 minutes in a row",
     );
     expect(streakLine(1, 1_680)).toBe(
-      "Updates: 1 period of 28 minutes in a row",
+      "Check-ins: 1 period of 28 minutes in a row",
     );
     const n = parsedWith((c) => {
       c.unit = 1_680;
     });
-    expect(updateLine(n, () => "just now")).not.toMatch(/weeks/);
+    expect(checkInLine(n, () => "just now")).not.toMatch(/weeks/);
   });
 
   it("never says the money of one person who kept it to the cent: it is said to the nearest 100 dollars", () => {
