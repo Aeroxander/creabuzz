@@ -10,7 +10,8 @@
 //
 // `read` prints the record's content (JSON) on stdout. With a condition such as
 // totals.tookOut=2500000000 it polls (up to CHAIN_LOOP_WAIT_SECS, default 60)
-// until the record's content has that value.
+// until the record's content has that value; with asOf.block>=123 until the
+// number is at least that (the record has caught up with a block).
 
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
@@ -59,7 +60,9 @@ function valueAt(obj, dotted) {
 
 async function read(base, key, condition) {
   const body = JSON.stringify([{ kinds: [KIND_PROJECT_NUMBERS], "#d": [key], limit: 1 }]);
-  const [want, wantValue] = condition ? condition.split("=") : [];
+  const [, want, op, wantValue] = condition ? (condition.match(/^([^=<>]+)(>=|=)(.*)$/) ?? []) : [];
+  if (condition && !want) throw new Error(`cannot read the condition ${condition}`);
+  const holds = (value) => (op === ">=" ? Number(value) >= Number(wantValue) : String(value) === wantValue);
   const deadline = Date.now() + Number(process.env.CHAIN_LOOP_WAIT_SECS ?? 60) * 1000;
   let last = "";
   while (Date.now() < deadline) {
@@ -70,7 +73,7 @@ async function read(base, key, condition) {
     if (list.length > 0) {
       const content = JSON.parse(list[0].content);
       last = JSON.stringify(valueAt(content, want ?? "version"));
-      if (!want || String(valueAt(content, want)) === wantValue) {
+      if (!want || holds(valueAt(content, want))) {
         console.log(JSON.stringify({ event: { id: list[0].id, pubkey: list[0].pubkey, created_at: list[0].created_at, tags: list[0].tags }, content }));
         return;
       }
