@@ -74,6 +74,15 @@ describe("pruning on every write", () => {
     expect(Object.keys(readSeen(ME, RELAY)).sort()).toEqual(["claim", "new"]);
   });
 
+  it("a project's own page, which knows only its own ids, drops nothing of the other projects for its age", () => {
+    markSeen(ME, ["claim-elsewhere"], new Set(), NOW - 90 * DAY, RELAY);
+    markSeen(ME, ["here"], new Set(["here"]), NOW, RELAY, false);
+    expect(Object.keys(readSeen(ME, RELAY)).sort()).toEqual([
+      "claim-elsewhere",
+      "here",
+    ]);
+  });
+
   it("keeps at most 500 ids, the live ones first, then the newest", () => {
     const live = new Set(["live-1", "live-2"]);
     markSeen(ME, ["live-1", "live-2"], live, NOW - 100, RELAY);

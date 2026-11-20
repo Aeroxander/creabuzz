@@ -4,8 +4,8 @@
  * a holder who opens the app a week later still finds a planned task before its date. Pure: the same inputs give the same
  * alerts, and the only clock is the one handed in (lifted to the record's own time by the one clock rule of 1.6).
  *
- * One row gives at most one alert at a time: a plan not yet taken is `planned`, a taken task (or one past its deadline that
- * nobody settled) is `taken`, a task that ended and moved money is `ended`; a row that lists the person as owed money adds a
+ * One row gives at most one alert at a time: a plan not yet taken is `planned`, a taken task is `taken`, one past its deadline
+ * that nobody settled is `ran-out`, a task that ended and moved money is `ended`; a row that lists the person as owed money adds a
  * `claim`. A plan that was withdrawn or lapsed moved nothing and makes none. A project the person does not hold makes none
  * (but what they are owed still shows: a leaver holds no Shares).
  */
@@ -30,7 +30,7 @@ import {
 } from "./alert-words";
 
 /** What an alert is about. */
-type AlertKind = "planned" | "taken" | "ended" | "claim";
+type AlertKind = "planned" | "taken" | "ran-out" | "ended" | "claim";
 
 /** One piece of news about a task, for one project. */
 export interface TaskAlert {
@@ -116,7 +116,20 @@ const byAtDescending = (a: TaskAlert, b: TaskAlert) =>
   b.at - a.at || (a.serial < b.serial ? 1 : a.serial > b.serial ? -1 : 0);
 
 /**
- * The news for these projects, in the order it shows: planned and taken first, then claims, then ended, each newest first
+ * The live news in the order it matters: a plan still in its notice comes first, the one whose notice ends soonest at the very
+ * top (the holder can still take their money out before that day), then the rest, newest first. A list that is cut after
+ * some rows therefore never cuts a notice that is about to end.
+ */
+const byUrgency = (a: TaskAlert, b: TaskAlert) => {
+  if (a.urgent !== b.urgent) return a.urgent ? -1 : 1;
+  if (a.urgent && b.urgent && a.before !== b.before)
+    return (a.before ?? 0) - (b.before ?? 0);
+  return byAtDescending(a, b);
+};
+
+/**
+ * The news for these projects, in the order it shows: planned and taken first (a plan in its notice, soonest end first, then the
+ * rest newest first), then claims, then ended, each newest first
  * (at most three ended alerts per project, the rest counted in `moreEnded`). Every alert comes from a row of a record the app
  * believes; the team's own records only ever supply the task's words, and only where they are the record the plan names.
  */
@@ -212,9 +225,10 @@ export function alertsResult(input: AlertsInput): AlertsResult {
           }),
         );
       } else if (phase === "overdue") {
+        // Its own kind, so its own id: a holder who read "was taken" is told again when it ran out.
         alert = make(
           row,
-          "taken",
+          "ran-out",
           row.deadline ?? row.expiresAt,
           ranOutWords(tiedOnly(row, task)),
         );
@@ -260,7 +274,7 @@ export function alertsResult(input: AlertsInput): AlertsResult {
   }
   return {
     alerts: [
-      ...live.sort(byAtDescending),
+      ...live.sort(byUrgency),
       ...claims.sort(byAtDescending),
       ...ended.sort(byAtDescending),
     ],

@@ -138,7 +138,7 @@ describe("a planned task in two lines, on its card", () => {
     );
   });
 
-  it("says it can be taken until a date once the notice is over, and leaves the second line as it was", () => {
+  it("says it can be taken until a date once the notice is over, and that leaving works any day", () => {
     const numbers = plannedNumbers((content) => {
       const row = taskRow(
         content.tasks as Record<string, unknown>,
@@ -152,7 +152,7 @@ describe("a planned task in two lines, on its card", () => {
       `It can be taken until ${timeText(row.expiresAt)}.`,
     );
     expect(screen.getByTestId("planned-line-2").textContent).toMatch(
-      /^You can take your money out before then\./,
+      /^You can take your money out any time\./,
     );
   });
 

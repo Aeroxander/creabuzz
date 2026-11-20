@@ -138,14 +138,15 @@ describe("a planned task in two lines, for everyone", () => {
     });
     expect(first).toContain("to whoever takes it for a task,");
   });
-  it("once it can be taken, the first line says until when and the second is unchanged", () => {
+  it("once it can be taken, the first line says until when and the second says leaving works any day", () => {
     const base = { max, name: "Anna", what: "Guide", date: 1_800_000_000 };
     const shut = plannedLines({ ...base, open: false });
     const open = plannedLines({ ...base, open: true });
     expect(open[0]).toContain(
       `It can be taken until ${timeText(1_800_000_000)}.`,
     );
-    expect(open[1]).toBe(shut[1]);
+    expect(shut[1]).toMatch(/^You can take your money out before then\./);
+    expect(open[1]).toMatch(/^You can take your money out any time\./);
   });
   it("under it, what would be set aside today", () => {
     expect(atMostNowLine(63_750_604n)).toBe(

@@ -16,6 +16,7 @@ import { PLAY_MONEY_WORDS } from "../pot/pot-words";
 import {
   markReadWords,
   moreEndedWords,
+  moreNewsWords,
   NEWS_FAILED,
   NEWS_HEADING,
   NEWS_LOADING,
@@ -34,7 +35,7 @@ import { MOST_PROJECTS } from "./pipeline";
 import { markSeen, useSeen } from "./seen";
 import { type News, useNews } from "./use-news";
 
-/** The most rows the section lists. */
+/** The most rows the section lists, besides every plan whose notice has not ended: those are never cut. */
 const MOST_ROWS = 30;
 
 function Row({
@@ -112,7 +113,9 @@ function Row({
 }
 
 function List({ news, pubkey }: { news: News; pubkey: string }) {
-  const listed = news.alerts.slice(0, MOST_ROWS);
+  // The alerts come with plans in their notice first, soonest end first: a cut never takes a notice a holder can still leave before.
+  const urgent = news.alerts.filter((a) => a.urgent).length;
+  const listed = news.alerts.slice(0, Math.max(MOST_ROWS, urgent));
   const seen = useSeen(pubkey);
   // What was unread when the list opened stays marked for this visit, though it is marked read as soon as it is drawn.
   const opened = useRef(new Set<string>());
@@ -153,6 +156,11 @@ function List({ news, pubkey }: { news: News; pubkey: string }) {
           />
         ))}
       </ul>
+      {listed.length < news.alerts.length ? (
+        <p className="text-sm text-muted" data-testid="news-more">
+          {moreNewsWords(news.alerts.length - listed.length)}
+        </p>
+      ) : null}
       {news.moreEnded.map((more) => (
         <p
           className="text-sm text-muted"

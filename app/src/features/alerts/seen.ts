@@ -75,7 +75,9 @@ export function readSeen(
 
 /**
  * Marks `ids` read at `now`. Pruning on every write keeps the ids still derived (`live`) and the ones read within 60 days, at
- * most 500 of them, newest first: a live alert is never dropped to make room.
+ * most 500 of them, newest first: a live alert is never dropped to make room. `live` is the ids derived now only when the
+ * caller looked at every project (`whole`); a caller that knows one project's ids (its own page) passes `whole` false, and then
+ * no id is dropped for its age, because the others may still be live: an unclaimed note lives on, and must not read "New" again.
  */
 export function markSeen(
   pubkey: string,
@@ -83,13 +85,14 @@ export function markSeen(
   live: ReadonlySet<string>,
   now: number,
   relay: string = relayWsUrl(),
+  whole = true,
 ): void {
   const key = keyOf(relay, pubkey);
   const stored = read(key);
   const seen = { ...stored.seen };
   for (const id of ids) seen[id] = now;
   const kept = Object.entries(seen)
-    .filter(([id, at]) => live.has(id) || now - at <= KEEP_SECS)
+    .filter(([id, at]) => !whole || live.has(id) || now - at <= KEEP_SECS)
     .sort(
       (a, b) => Number(live.has(b[0])) - Number(live.has(a[0])) || b[1] - a[1],
     )

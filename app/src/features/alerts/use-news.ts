@@ -160,7 +160,9 @@ export function useMarkProjectSeen(
       tasksOf: () => undefined,
       now,
     }).map((a) => a.id);
-    if (ids.length > 0) markSeen(pubkey, ids, new Set(ids), now);
+    // Only this project's ids are known here: nothing else is dropped for its age.
+    if (ids.length > 0)
+      markSeen(pubkey, ids, new Set(ids), now, undefined, false);
     if (address && holdingHint(numbers, [address]).listed)
       rememberHeld(pubkey, address, numbers.key, true, now);
   }, [pubkey, address, key, built]);

@@ -103,7 +103,7 @@ describe("every kind of news and every phase of a row", () => {
     expect(alert?.said).toContain(`until ${timeText(row.deadline ?? 0)}.`);
   });
 
-  it("a taken task past its deadline that nobody settled reads as ran out, and goes on being taken news", () => {
+  it("a taken task past its deadline that nobody settled reads as ran out, as news of its own", () => {
     const late = sceneNumbers((content) => {
       const row = taskRow(
         content.tasks as Record<string, unknown>,
@@ -113,11 +113,11 @@ describe("every kind of news and every phase of a row", () => {
       row.deadline = past;
       row.expiresAt = past;
     });
-    const alert = find(alertsOf(input(late)), "taken", BigInt(TAKEN_SERIAL));
+    const alert = find(alertsOf(input(late)), "ran-out", BigInt(TAKEN_SERIAL));
     expect(alert?.said).toContain(
       "ran out. The money goes back to the project.",
     );
-    expect(alert?.id).toBe(`${late.key}:${TAKEN_SERIAL}:taken`);
+    expect(alert?.id).toBe(`${late.key}:${TAKEN_SERIAL}:ran-out`);
   });
 
   it("tasks that ended and moved money are ended news: paid in part, sent back, ran out", () => {
@@ -246,10 +246,14 @@ describe("order, ids and the cap on ended news", () => {
     );
     expect(lastLive).toBeLessThan(order.indexOf("claim"));
     expect(order.lastIndexOf("claim")).toBeLessThan(order.indexOf("ended"));
-    for (const kind of ["planned", "ended"] as const) {
-      const times = alerts.filter((a) => a.kind === kind).map((a) => a.at);
-      expect(times).toEqual([...times].sort((a, b) => b - a));
-    }
+    const times = alerts.filter((a) => a.kind === "ended").map((a) => a.at);
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+    // A plan still in its notice comes before any other news, the one whose notice ends soonest first.
+    const urgent = alerts.filter((a) => a.urgent);
+    expect(urgent.length).toBeGreaterThan(1);
+    expect(alerts.slice(0, urgent.length)).toEqual(urgent);
+    const ends = urgent.map((a) => a.before ?? 0);
+    expect(ends).toEqual([...ends].sort((a, b) => a - b));
   });
 
   it("an id is the project, the serial and the kind, so a changed state is a new id", () => {

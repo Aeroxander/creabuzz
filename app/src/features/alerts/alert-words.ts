@@ -112,6 +112,11 @@ export function moreEndedWords(project: string, count: number): string {
   return `${project}: and ${count} more ended`;
 }
 
+/** Under a list that was cut: the rest is on the projects' own pages. */
+export function moreNewsWords(count: number): string {
+  return `And ${count} more on the projects' own pages.`;
+}
+
 /** The button that marks what is listed as read, named by how many it marks. */
 export function markReadWords(count: number): string {
   return `Mark ${count} as read`;

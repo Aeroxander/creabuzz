@@ -38,6 +38,18 @@ function heldHint(
 /** What a read of the network says about one project: held, not held, or not read (yet, or at all). */
 type Balance = boolean | "failed" | undefined;
 
+/** How long a balance read may take before it counts as failed: one that never answers must not hold the news back for ever. */
+export const BALANCE_READ_MS = 15_000;
+
+/** `work`, or an error when it has not answered within `ms`. */
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("The read took too long.")), ms);
+  });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
+
 /**
  * Whether `address` holds Shares or Team Shares in each of `items`, read from the network (the ABIs load only when the first
  * read is made). A read on another network, or one that fails, says `failed`: nothing is then said about that project.
@@ -47,6 +59,7 @@ function useBalances(
   address: string | null,
 ): Map<string, Balance> {
   const wallet = useWallet();
+  const available = address !== null && wallet.isAvailable();
   const reads = useQueries({
     queries: items.map(({ numbers }) => ({
       queryKey: [
@@ -57,17 +70,19 @@ function useBalances(
         numbers.contracts.team,
         address,
       ],
-      enabled:
-        address !== null && wallet.isAvailable() && recordFitsBuild(numbers),
+      enabled: available && recordFitsBuild(numbers),
       staleTime: 5 * 60_000,
       retry: false,
       queryFn: async (): Promise<boolean> => {
         const { balanceOf } = await import("@creaton/core/pot/pot-reads.ts");
         const read = (to: string, data: string) => wallet.readCall(to, data);
-        const [shares, team] = await Promise.all([
-          balanceOf(read, numbers.contracts.shares, address as string),
-          balanceOf(read, numbers.contracts.team, address as string),
-        ]);
+        const [shares, team] = await withTimeout(
+          Promise.all([
+            balanceOf(read, numbers.contracts.shares, address as string),
+            balanceOf(read, numbers.contracts.team, address as string),
+          ]),
+          BALANCE_READ_MS,
+        );
         return shares > 0n || team > 0n;
       },
     })),
@@ -75,6 +90,10 @@ function useBalances(
   return new Map(
     items.map(({ numbers }, i): [string, Balance] => {
       const read = reads[i];
+      // A project that cannot be read at all (another Launcher than this build's, or no wallet to ask) is not waited for: it
+      // counts as one that could not be refreshed, so it never holds the other projects' news back.
+      if (!available || !recordFitsBuild(numbers))
+        return [numbers.key, "failed"];
       return [
         numbers.key,
         read?.data !== undefined
@@ -153,6 +172,14 @@ export function useDerived(
     const read = balances.get(key);
     return typeof read === "boolean" ? read : false;
   };
+  // What is known for sure: the record's whole list, or a balance read that came back. A cut list not read (yet, or at all)
+  // is not known: `undefined`, and nothing is forgotten on it.
+  const knownHeld = (key: string): boolean | undefined => {
+    const hint = hints.get(key) ?? false;
+    if (hint !== "unknown") return hint;
+    const read = balances.get(key);
+    return typeof read === "boolean" ? read : undefined;
+  };
   const heldSignature = [...hints.keys()]
     .map((k) => `${k}:${heldOf(k)}`)
     .join();
@@ -208,7 +235,7 @@ export function useDerived(
 
   // What was found is remembered on this device: the dot reads these projects first next time.
   const heldNow = [...hints.keys()]
-    .map((key) => [key, heldOf(key)] as const)
+    .map((key) => [key, knownHeld(key)] as const)
     .filter(([, held]) => typeof held === "boolean");
   const heldNote = heldNow.map(([k, h]) => `${k}:${h}`).join();
   // biome-ignore lint/correctness/useExhaustiveDependencies: `heldNote` stands for `heldNow`.
