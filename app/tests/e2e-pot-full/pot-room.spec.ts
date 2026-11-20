@@ -321,7 +321,7 @@ test("a visitor reads the page, two back and one takes out, the feed and the roo
     await founder.getByRole("button", { name: "Remove this post" }).tap();
     const removeSheet = founder.getByTestId("remove-sheet");
     await removeSheet
-      .getByLabel("Say why. Everyone can see the reason.")
+      .getByLabel("Say why. The reason is kept in a public log.")
       .fill("An advert, not for this room.");
     await removeSheet.getByRole("button", { name: "Remove" }).tap();
     await expect(

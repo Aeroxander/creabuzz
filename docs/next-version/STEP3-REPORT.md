@@ -272,6 +272,133 @@ If something differs from what is written here, that is a finding: write down th
 - **Counsel's list** gains three notes, none answered: a holders-only room with perks text, a ranking by money that stayed, and push messages about tasks. Real money stays off until the outside audit and counsel.
 - **The human tests of the pull request checklist are not done and are not marked.** Nothing here carries the `buzz-review-completed` mark.
 
+## Review fixes (the app's side)
+
+Five independent reviews of step 3 (record, room, page, social, fit) were taken. This section is the app fixer's: every finding that
+concerns `app/`, `packages/creaton-core/`, `scripts/pot-app-*` and `scripts/pot-full-loop.sh`. Server findings (the ranking index's
+window and cuts, dust and `held`, the index's re-signing, the room's grace and mute rules, push alerts, the sponsor, the visitor's
+signer check) are the other fixer's and are not repeated here. Commits: `c0d274917` (page, card, feed, ranking) and `ab021d62d`
+(room, wallet link, sign-out); the loops' spec text and this page follow. The reviewers' scratch files of this side
+(`review-s3-*`, 13 files) are deleted; their useful cases are now ordinary tests (listed with each fix) and none remains, tracked
+or not. Each guard below was switched off once, alone, and a named test failed (section "Guards switched off", at the end).
+
+### Fixed
+
+The page's top, card, feed, ranking (reviews "page" and "fit"):
+
+- **The share picture carried founder text (page B1, fit R4).** The name was drawn unfiltered and the line was filtered by a deny list.
+  Now both are folded to plain characters (a full-width `＄500` is `$500`) and left off when they carry a currency sign or word, a
+  percent, a multiple (`10x`, `ten times`, `...fold`), a word about price, gain, return or making money, or a figure (a name may keep a
+  short plain number such as "Studio 54"; a line may keep none). A name that fails is drawn as "A new project", and the system-share
+  title and text use the same filtered name. `share-card.ts`; tests in `share-card.test.ts` (eight hostile names, seven hostile lines,
+  the plain ones kept).
+- **A stale record's run of updates on the picture (page I1).** The run is only said for a record not past a day. Test: a 90-day-old
+  record gives no fact.
+- **"About as much came in as went out" (page I2, fit R3).** The server rounds each hour on its own, so the sum of the hours is not a
+  net. When any hour with a join or a take-out rounded to nothing, the line now says "Some amounts were too small to show, so there is no
+  total." (also for an hour with both). Tests: `feed-words.test.ts` (the reviewers' five-and-one case) and `ProjectFeed.test.tsx` (drawn).
+- **An exact amount of one person's money (page I3).** `keptLine` and the Home row print the money that stayed to the nearest 100
+  dollars ("about 1,200 dollars", "under 100 dollars"), as the feed rounds; the page and Home use one function (`keptMoney`).
+- **The feed's rounding was not checked (page I4).** The feed is now believed only when `roundTo` is the server's 100 dollars, every net
+  is a multiple of it, hours are exactly one bucket apart and the last holds the record's own time, items run newest first and none is
+  dated after the record. Tests in `numbers-social.test.ts` (one each).
+- **The "Open to back" chip against the Back box (page I5).** The chip asks the same question as the box, for the same moment
+  (`doorChip(numbers, now)`).
+- **"weeks" said for any unit (page I6).** `unitCount` says weeks only for a 604,800-second unit and otherwise the unit's own length
+  ("14 periods of 28 minutes"), on the page's update line and the card.
+- **"The link shows no amounts" (page I7).** The server's preview carries the founder's own words, so the sheet now says "The link shows
+  only what the founder wrote."
+- **Cross-checks of the four keys (page O1).** A run of updates longer than the project has lived, money that stayed above all of the
+  project's money, a badge whose inputs are not `held`'s own figures, and (Home) an index whose entries have different windows are each
+  not believed (the part is null; the money is untouched). Tests in `numbers-social.test.ts` and `ranking.test.ts`.
+- **A planned task's "You can take your money out first" after its date (page O3).** Said only while the notice runs.
+- **A failed lazy chunk takes the page down (page O4).** A small `ChunkBoundary` (`ui/chunk-boundary.tsx`) around the Back box, the
+  Money, Tasks and Room tabs says "This part of the page could not load. Your money is not affected." with a reload press; the two
+  sheets and the alert renewal draw nothing when they fail. Tests: the boundary alone, and the page with `BackSection` failing (the
+  Money tab and Take out stay).
+- **The word "earns" next to Shares in a comment (page O6, fit)**; **duplicate feed keys (page O8).**
+
+The room, the link and sign-out (reviews "social" and "fit"):
+
+- **A composer the server would refuse (social B1).** The room now counts what the *linked* wallet holds, never the wallet the browser
+  happens to be connected to. Shares in a connected wallet the account is not linked to offer the Confirm press, not a composer; the
+  team-grant and the take-out grace use the same one wallet. `use-room-standing.ts`; tests in `use-room-standing.test.tsx`.
+- **A failed balance read sent a holder to Back again (social B2).** A failed read or a wallet on another network is a new standing,
+  "could not check", with a plain sentence and a Try again press; "Back this project" is only shown when the read worked and the balance
+  is below the floor. Tests: the pure rule, the hook (and the retry), and the drawn room.
+- **Sign-out left alerts on (social B3).** Sign out turns this device's alerts off first (browser, then the server's row, bounded at 5 seconds, never throws, only for a device this
+  account saved) and drops the tab's unsent room posts. Test: `sign-out-alerts.test.tsx` (the real You page; another account's device is left alone).
+- **Back published the wallet link without saying so (fit R1).** The Back box now says, beside a labelled tick box ("Let me write in this project's room"), that the link
+  is public ("Anyone on this server can see the link, and so can see how many Shares that wallet holds"), and the Confirm press in the room says the same.
+  The Back box offers it only where it could be made; unticked, Back signs nothing more. Tests: `back-links-account.test.tsx`, `link-after-back.test.tsx`.
+- **Composer (social I1, O1, O2, I5; fit R5).** A held or repeated Control+Enter posts once; words typed while a post is on its way
+  are kept (only what was sent is cleared); an answer keeps its words per post when closed with Escape; a draft and the room's "New"
+  dot are the account's own, not the tab's or the device's. Tests: `room-composer.test.tsx`, `room-fixes.test.tsx`, `use-room-news.test.tsx`.
+- **Quiet failures (social I3, I4, O8).** A refused like says so in the room's plain words and a second press waits for the first;
+  Undo and "Show again" that are not saved say so; a hide list that could not be opened is said. Tests in `room-fixes.test.tsx`.
+- **The removal sheet's promise (social I2).** The app shows no public log, so the sheet now says "The reason you give is kept in a
+  public log" instead of "Everyone can see...". (A visible log in the room needs a project tag on the server's entry: open, below.)
+- **Bidirectional controls in post text (social O3).** `displayText` takes out the right-to-left overrides and isolates (shared
+  code; web's tests and `check:unused` pass).
+
+### Declined, with the reason
+
+- **Page O2** (the Home chip is from the index alone and up to a day old): it is a hint beside a link to the page, which reads its own
+  record; it can only be stale, not wrong. **Page R2 / O1(e) second half** (an index whose own block time is old while its signing time
+  is fresh): a quiet test network's chain legitimately has an old last block, and the server's own re-signing will keep the signing
+  time fresh; refusing it would hide a valid ranking there. **Page O5, O7** (wording of a few first-screen lines, empty-state noise):
+  the kept line was reworded by I3; the rest is taste and changes nothing the design asks for.
+- **Held-since line says "weeks" for any unit (page I6, third place).** Step 2 decided and tested on the real chain that a unit is "the
+  project's week" in that one line (`held-since.test.ts`, `tests/anvil/held-since.test.ts`, `pot-feed.spec.ts`); the new step 3
+  sentences (the update line and the card) use the exact unit. The two now differ on a test network; changing the older one is a copy
+  decision for the owner.
+- **Social O4** (the worker drops a malformed push without showing): the server's messages are well formed, the plan fixes the three
+  sentences, and a worker that showed a notice for an unreadable message would turn any garbage into an alert; a test holds the drop.
+- **Social O6** (Home band prefers demo day over open entry; a listed but not yet accepted member is offered "Enter"): the server
+  refuses the second and the first is A4's choice 3.
+- **Social O7** (the room reads the newest 200 posts and 500 likes; a team stop can fall out of the 200 newest team records): the server
+  still enforces, and a busy room is not the first launch. Recorded as open below.
+- **The "cut" list of the social review** (take away report categories, hidden people, stops, the link states, demo-day batching, the
+  taken and ended alerts, the perks sheet): each is in the design or in the owner's list (V1 names "planned, taken or ended"; V3 names report, mute, perks);
+  the part that was really heavy and wrong was the silent link, which now has one tick box and one sentence. Nothing was cut.
+- **Fit: "Leave is accepted only while entry is open" and "an uppercase hex `e` tag"**: server side; not the app's.
+
+### Still open
+
+- **The phone path of the room against a real relay (fit R6).** A passkey Back followed by writing in the room is proven on the real
+  contract (`phone-loop.sh`) and in the app's tests, not through a relay with the chain connection and smart-account links on.
+  The first human test must cover it.
+- **The room's list of the team's stops** comes from the newest 200 team records (social O7), and "Show earlier posts" can run out
+  without saying so.
+- **A visible reason for a removed post.** The server's public log entry carries no project tag, so the room cannot cheaply show it.
+- **The server's findings** (ranking index window and cuts, dust and `held`, re-signing, the room's grace, the team's mute reaching the
+  founder, push decoys, sponsor, visitor signer checks) are the other fixer's; the app reads whatever they sign. `app/` waits for none
+  of them: the checks the app makes on the record (above) are the same whether or not the server's fix is in.
+
+### Chosen under the owner's standing go; the owner may overrule
+
+- **The wallet link tick box starts ticked.** Back is as fast as before, and the sentence is next to the box, but the default
+  publishes a link. Unticked by default would be the safest; the cost is one more press in the room for most holders.
+- **Money that stayed is "about N dollars", to the nearest 100, on the page and on Home**, so a one-person project says nothing exact.
+  A project with less than 50 dollars kept says "under 100 dollars".
+- **A feed with any other rounding than 100 dollars is not drawn at all** (a constant in the app; a server that changes it needs the app changed).
+- **A name the card cannot carry is drawn as "A new project"**, never cut or blurred.
+- **The number words ("ten times", "a hundred") are left off a founder's line; "one" and "two" are not**, so a line such as "One lamp at a time" stays.
+
+### Guards switched off once each (the app fixer's)
+
+Each line was removed alone, the named tests run, and the file put back; every one made at least one test fail (the count is "failed of run"):
+
+- The composer's in-flight check (1 of 4), the held-key check (1 of 4), clearing only what was sent (1 of 4): `room-composer.test.tsx`.
+- Counting the linked wallet before the connected one (2 of 11): `use-room-standing.test.tsx`. The "could not check" standing (3 of 22): `room-standing.test.ts`, `use-room-standing.test.tsx`.
+- The like's in-flight check (1 of 9), the account in the draft's key (1 of 9), the hide-list notice (1 of 9): `room-fixes.test.tsx`. The account in the "New" key (2 of 4): `use-room-news.test.tsx`.
+- Turning the device's alerts off before sign-out (1 of 2): `sign-out-alerts.test.tsx`. Passing the person's tick to the link (1 of 3): `back-links-account.test.tsx`.
+- The filtered name on the card (1 of 10), the freshness of the run of updates (2 of 10), the money-and-multiple words (2 of 10): `share-card.test.ts`.
+- The "no total" sentence (3 of 21), the date of a planned task (1 of 8): `feed-words.test.ts`, `ProjectFeed.test.tsx`.
+- The feed's 100-dollar rounding (1 of 22), one bucket apart (1 of 22), the run longer than the project's life (1 of 22), the badge's inputs equal to `held` (1 of 22): `numbers-social.test.ts`.
+- The chip agreeing with the box (1 of 20), the rounded kept money (2 of 20), the unit's own length (2 of 20): `project-top-words.test.ts`. One window per ranking index (1 of 12): `ranking.test.ts`.
+- The chunk boundary around the Back box (1 of 1): `chunk-failed.test.tsx`.
+
 ## 13. Commits
 
 The step 3 work, oldest first, after step 2's `35ea0a894` (the plan `eb5b1a4b9`, its reviewed revision):

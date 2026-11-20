@@ -8,6 +8,7 @@ import { newPerson, phone, RUN as NAME_TAG } from "../e2e-real/people";
 import * as pot from "../../../packages/creaton-core/src/pot/pot-calls.ts";
 import * as potState from "../../../packages/creaton-core/src/pot/pot-state.ts";
 import { smallDollarsText } from "../../src/features/pot/pot-words";
+import { keptMoney } from "../../src/features/project/project-top-words";
 import { inSeasonOrder } from "../../src/features/season/season-order";
 import {
   buzzAsOperator,
@@ -428,7 +429,7 @@ test("a badge by three inputs, a ranking by money that stayed, and a season with
       if (!p) throw new Error("unknown project in the index");
       await expect(rows.nth(i)).toContainText(p.name);
       await expect(rows.nth(i)).toContainText(
-        `${smallDollarsText(BigInt(e.money))} kept 30 days or more by ${e.accounts} people.`,
+        `${keptMoney(BigInt(e.money)).replace(/^./, (c) => c.toUpperCase())} kept 30 days or more by ${e.accounts} people.`,
       );
     }
     ok(
