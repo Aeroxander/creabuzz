@@ -35,6 +35,10 @@ const ProfilePage = lazyRouteComponent(
   () => import("../features/profile/ProfilePage"),
   "ProfilePage",
 );
+const SeasonPage = lazyRouteComponent(
+  () => import("../features/season/SeasonPage"),
+  "SeasonPage",
+);
 const StartPage = lazyRouteComponent(
   () => import("../features/start/StartPage"),
   "StartPage",
@@ -81,6 +85,18 @@ const legacyProject = createRoute({
     const { author } = legacyProject.useSearch();
     const ref = `${id}-${(author ?? "").slice(0, 16)}`;
     return <ProjectPage key={ref} projectRef={ref} />;
+  },
+});
+
+/** A season's page: the projects that entered, together, on demo day (and for good after). */
+const season = createRoute({
+  getParentRoute: () => root,
+  path: "/season/$n",
+  component: function SeasonRoute() {
+    const { n } = season.useParams();
+    // A number is 1 to 9999 with no leading zero, as the server's season records have it; anything else is no season.
+    const number = /^[1-9][0-9]{0,3}$/.test(n) ? Number(n) : 0;
+    return <SeasonPage key={number} number={number} />;
   },
 });
 
@@ -157,6 +173,7 @@ export function createAppRouter(legacy: boolean = legacyScreensOn()) {
     home,
     project,
     legacyProject,
+    season,
     start,
     week,
     you,

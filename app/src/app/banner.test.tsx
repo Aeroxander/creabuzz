@@ -56,6 +56,7 @@ const SHELL_DRAWS: Record<string, 0 | 1> = {
   "/": 1,
   "/p/$ref": 1,
   "/launchpad/$id": 1,
+  "/season/$n": 1,
   "/start": 1,
   "/week": 1,
   "/you": 1,

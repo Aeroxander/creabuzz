@@ -24,6 +24,7 @@ import {
 } from "@creaton/core/project/team.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { publishAsUser, read, readMulti } from "../../lib/relay";
+import { isNotAnUpdate } from "../season/season-records";
 import {
   latestProjects,
   parseProjectRef,
@@ -77,7 +78,7 @@ export interface ProjectActivity {
   declines: JoinDecline[];
 }
 
-function updateText(content: string): { title: string; body: string } {
+export function updateText(content: string): { title: string; body: string } {
   try {
     const parsed: unknown = JSON.parse(content);
     if (parsed && typeof parsed === "object") {
@@ -120,6 +121,8 @@ export function useProjectActivity(project: Project | null | undefined) {
       const updates: ProjectUpdate[] = [];
       for (const event of records) {
         if (isJoinAskTags(event.tags) || isTeamAnswerTags(event.tags)) continue;
+        // A season entry or a room stop is a record about the project, not something the team said.
+        if (isNotAnUpdate(event.tags)) continue;
         const { title, body } = updateText(event.content);
         updates.push({
           id: event.id,
