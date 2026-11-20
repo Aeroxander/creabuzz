@@ -610,3 +610,86 @@ test("a project run by two: one signer asks to plan, the other reads the plan in
   expect(planned?.what).toBe(`0x${task.id}`);
   expect(planned?.maxDollars).toBe(10n * DOLLAR);
 });
+
+test("a task that names its helper: until they say yes and name their wallet the team cannot plan the pay; once they have, it can", async ({
+  page,
+  browser,
+}) => {
+  const w = world.get();
+  const project = await launchProject(w, "planname", FOUNDER_NOSTR);
+  await backFor(w, project, w.who.helper, 450n);
+  await checkIn(w, project);
+  const relay = createMockRelay();
+  await serverFor(w, project, relay);
+  // The team made a task for one person (made by the command line or an agent: the app's own "Post a task" is open to anyone).
+  const at = now() - 3600;
+  const task = event(
+    47003,
+    FOUNDER_NOSTR,
+    { title: "Task", body: WHAT },
+    [
+      ["a", project.coordinate],
+      ["l", "creaton-task"],
+      ["task-part", "task"],
+      ["task-what", WHAT],
+      ["task-usd", "10"],
+      ["task-helper", STRANGER],
+    ],
+    at,
+  );
+  relay.seed(task);
+
+  // The team: the helper has named no wallet, so nothing can be planned, and the card says why.
+  await page.setViewportSize(PHONE_360);
+  await openTasks(page, relay, project, FOUNDER_KEY, w.who.founder);
+  await expect(page.getByTestId("door-waiting")).toContainText(
+    "has not named a wallet to be paid at",
+    { timeout: 20_000 },
+  );
+  await expect(page.getByTestId("door-plan")).toHaveCount(0);
+
+  // The helper: "This task is for you", one press names the wallet they connected.
+  const helper = await (
+    await browser.newContext({ viewport: PHONE_360 })
+  ).newPage();
+  const wallet = await openTasks(
+    helper,
+    relay,
+    project,
+    READER_KEY,
+    w.who.stranger,
+  );
+  await expect(helper.getByTestId("agree-words")).toContainText(
+    "This task is for you.",
+    { timeout: 20_000 },
+  );
+  await expectAccessible(helper, "A task made for the helper, 360 px");
+  await expectNoSidewaysScroll(helper, "A task made for the helper, 360 px");
+  await helper.getByTestId("agree-press").focus();
+  await helper.keyboard.press("Enter");
+  await expect
+    .poll(() => stepsOf(relay, "accept").length, { timeout: 20_000 })
+    .toBe(1);
+  const [yes] = stepsOf(relay, "accept");
+  expect(yes?.pubkey).toBe(STRANGER);
+  expect(tagOf(yes, "task-pay-to")?.toLowerCase()).toBe(w.who.stranger);
+  expect(tagOf(yes, "task")).toBe(task.id);
+  // The wallet was only asked to share its account: nothing was signed for the chain.
+  expect(wallet.sent).toEqual([]);
+  await expect(helper.getByTestId("agree")).toHaveCount(0, { timeout: 20_000 });
+
+  // The team now can plan the pay, to exactly that wallet.
+  await page.reload();
+  await page.getByTestId("tab-tasks").click({ timeout: 20_000 });
+  await expect(page.getByTestId("door-plan")).toHaveText(
+    "Plan the pay of 10 dollars",
+    {
+      timeout: 20_000,
+    },
+  );
+  await page.getByTestId("door-plan").click();
+  await expect(page.getByTestId("plan-pay-to")).toContainText(w.who.stranger, {
+    ignoreCase: true,
+    timeout: 20_000,
+  });
+});

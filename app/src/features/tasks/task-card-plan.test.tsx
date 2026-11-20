@@ -301,3 +301,21 @@ describe("a task with no live plan", () => {
     expect(screen.getByTestId("task-pays")).toBeTruthy();
   });
 });
+
+describe("a task that names its helper", () => {
+  it("offers the named helper, on the card, the step that names their wallet; nobody else", () => {
+    const numbers = sceneNumbers();
+    const named = planTask({
+      openToAnyone: false,
+      state: "offered",
+      payTo: null,
+    });
+    show(numbers, named, { me: WORKER, address: null });
+    expect(screen.getByTestId("agree-words").textContent).toMatch(
+      /^This task is for you\./,
+    );
+    cleanup();
+    show(numbers, named, { me: FOUNDER_KEY });
+    expect(screen.queryByTestId("agree")).toBeNull();
+  });
+});

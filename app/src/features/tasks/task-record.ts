@@ -375,6 +375,22 @@ export function takeRecord(
   );
 }
 
+/**
+ * The yes of the helper a task names, with the wallet they connected: their own `accept` step carrying `task-pay-to` (the
+ * server allows that tag on an `accept` as well as on a `take`). The wallet is refused here unless it is an address.
+ */
+export function agreeRecord(
+  coordinate: string,
+  task: ProjectTask,
+  payTo: string,
+): RecordTemplate {
+  if (!ADDRESS.test(payTo))
+    throw new Error("A wallet to be paid at is an address.");
+  return stepRecord(coordinate, task, "accept", "Agreed to the task", [
+    ["task-pay-to", payTo],
+  ]);
+}
+
 /** Hand work in on a task, with a few words of what was done and where to look. */
 export function handInRecord(
   coordinate: string,

@@ -183,6 +183,17 @@ describe("the door on the card", () => {
     expect(screen.queryByTestId("door-choice")).toBeNull();
   });
 
+  it("says a helper who has not said yes yet has named no wallet, and offers no plan", async () => {
+    setup();
+    show({
+      task: planTask({ openToAnyone: false, state: "offered", payTo: null }),
+    });
+    expect((await screen.findByTestId("door-waiting")).textContent).toMatch(
+      /has not named a wallet to be paid at.*Ask them to agree to the task first/,
+    );
+    expect(screen.queryByTestId("door-plan")).toBeNull();
+  });
+
   it("says the worker has not named a wallet and offers no plan", async () => {
     setup();
     show({ task: planTask({ payTo: null }) });

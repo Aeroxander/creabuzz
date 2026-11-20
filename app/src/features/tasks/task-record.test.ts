@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   acceptRecord,
+  agreeRecord,
   checksOwnWork,
   nextFor,
   payOwed,
@@ -329,5 +330,53 @@ describe("checking one's own work, asked before any money moves", () => {
     expect(
       checksOwnWork(t, FOUNDER, new Set([FOUNDER, MATE]), withAgentMate),
     ).toBe(false);
+  });
+});
+
+describe("the helper's yes, with the wallet they will be paid at", () => {
+  /** A task naming `STRANGER` as its helper, paying 40 dollars. */
+  const namedTask = () =>
+    record(FOUNDER, [
+      ["task-part", "task"],
+      ["task-what", "Translate the guide"],
+      ["task-usd", "40"],
+      ["task-helper", STRANGER],
+    ]);
+  const asEvent = (who: string, template: ReturnType<typeof agreeRecord>) =>
+    record(
+      who,
+      template.tags.filter((t) => t[0] !== "a" && t[0] !== "l"),
+      template.content,
+    );
+
+  it("is an accept step carrying the wallet, and the task then reads that wallet as the one to be paid at", () => {
+    const task = namedTask();
+    const [before] = read([task]);
+    expect(before?.state).toBe("offered");
+    expect(before?.payTo).toBeNull();
+    const [t] = read([task]);
+    if (!t) throw new Error("no task");
+    const yes = agreeRecord(COORD, t, PAY_TO);
+    expect(yes.tags).toEqual(
+      expect.arrayContaining([
+        ["task-part", "accept"],
+        ["task-pay-to", PAY_TO],
+        ["task", task.id],
+      ]),
+    );
+    const [after] = read([task, asEvent(STRANGER, yes)]);
+    expect(after?.payTo).toBe(PAY_TO);
+    expect(after?.state).toBe("working");
+  });
+
+  it("names no wallet when someone else signs it, and refuses what is not an address", () => {
+    const task = namedTask();
+    const [t] = read([task]);
+    if (!t) throw new Error("no task");
+    const yes = agreeRecord(COORD, t, PAY_TO);
+    expect(read([task, asEvent(MATE, yes)])[0]?.payTo).toBeNull();
+    expect(read([task, asEvent(OTHER, yes)])[0]?.payTo).toBeNull();
+    expect(() => agreeRecord(COORD, t, "0xnot")).toThrow(/address/);
+    expect(() => agreeRecord(COORD, t, "")).toThrow(/address/);
   });
 });

@@ -19,8 +19,11 @@ import { PLAN_INSTEAD, planButton, waitingForWallet } from "./plan-words";
 
 const DOLLAR = 1_000_000n;
 
-/** The record states a pay can still be planned or drawn for: the work is under way, handed in, or accepted with the pay owed. */
-const PLANNABLE = new Set(["working", "submitted", "accepted"]);
+/**
+ * The record states a pay can still be planned or drawn for: the work is under way, handed in, or accepted with the pay owed.
+ * A task made for one helper who has not said yes yet is "offered": the card says the wallet is missing (no press).
+ */
+const PLANNABLE = new Set(["offered", "working", "submitted", "accepted"]);
 
 /** Whether the door choice belongs on this card: a task with a pay, taken, not paid, and no plan on the network. */
 function offersDoor(
