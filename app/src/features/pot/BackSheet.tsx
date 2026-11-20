@@ -82,8 +82,9 @@ export function BackSheet({
   const planned = plannedBackLine(numbers);
   // The last step of a Back that landed: the account is linked to this wallet, so the project's room opens for it.
   const linkAfterBack = useLinkAfterBack(ready.wallet);
-  // The link makes the wallet public, so it is a choice in plain sight, made before the Back and never silently afterwards.
-  const [wantLink, setWantLink] = useState(true);
+  // The link makes the wallet public, so it is a choice in plain sight, made before the Back and never silently afterwards. The
+  // box starts unticked (a box that is already ticked is not consent); the room offers the same link as one press where it is needed.
+  const [wantLink, setWantLink] = useState(false);
   const offerLink = canLinkAfterBack(ready.wallet);
   const reading = useQuery({
     queryKey: [

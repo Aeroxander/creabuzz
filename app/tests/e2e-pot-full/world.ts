@@ -610,17 +610,37 @@ export async function startAndLaunch(
   await expect(founder.getByTestId("launch-sheet")).toBeHidden({
     timeout: 30_000,
   });
+  // The sheet closes when the launch lands; the founder's own record naming the launch is written a moment later. A page left in
+  // that moment (the next step of a journey is a new address) leaves the project launched on the network and not tied to its
+  // page: its record names no launch, so no list of the founder's projects offers it (the season band), until "Finish linking" is
+  // pressed. The app's own sign that the page is tied is that the launch card is gone.
+  await expect(founder.getByTestId("launch-card")).toBeHidden({
+    timeout: 30_000,
+  });
   const project = await launchedProject(w, projectId, founderPub);
   return { name, link, projectId, founderPub, project };
 }
 
-/** A person presses Back from the project's page with `dollars` play dollars (the faucet first when they have none): two presses. */
-export async function backInApp(page: Page, dollars: number): Promise<void> {
+/**
+ * A person presses Back from the project's page with `dollars` play dollars (the faucet first when they have none): two presses.
+ * The box that links the account to the wallet starts unticked (a box that makes something public is never pre-ticked): the
+ * helper checks that, then ticks it unless `linkWallet` is false, so a person who does not tick it can be followed into the room.
+ */
+export async function backInApp(
+  page: Page,
+  dollars: number,
+  options: { linkWallet?: boolean } = {},
+): Promise<void> {
+  const linkWallet = options.linkWallet ?? true;
   const amount = page.getByTestId("backing-amount");
   await expect(amount).toBeVisible({ timeout: 20_000 });
   await amount.fill(String(dollars));
   await page.getByTestId("backing-review").click();
   await expect(page.getByTestId("back-sheet")).toBeVisible();
+  const choice = page.getByTestId("back-link-choice");
+  await expect(choice).toBeVisible({ timeout: 20_000 });
+  await expect(choice, "the link box starts unticked").not.toBeChecked();
+  if (linkWallet) await choice.check();
   await page.getByTestId("sheet-confirm").click();
   await expect(page.getByTestId("back-sheet")).toBeHidden({ timeout: 30_000 });
 }

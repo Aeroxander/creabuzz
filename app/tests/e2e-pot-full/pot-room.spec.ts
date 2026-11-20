@@ -55,8 +55,8 @@ const BANNER =
   "You can take your money out any time. Nothing here promises a profit.";
 const NOT_A_RETURN = "This can go up or down. It is not a return.";
 const PUBLIC_LINE = "Posts and votes are public.";
-const READ_LINE =
-  "Anyone can read this room. Only people who back the project can write here.";
+const READ_LINE = "Anyone can read this room.";
+const MAY_NOT_WRITE = "Only people who back this project can write here.";
 /** The sentences the real server gives (docs/next-version/ROOM-AND-SEASON-RECORDS.md, section 3). */
 const SERVER_NO_LINK =
   "link your wallet to your account first, so the server can see that you back this project";
@@ -167,40 +167,52 @@ test("a visitor reads the page, two back and one takes out, the feed and the roo
     // The room reads for anyone and says who may write.
     await visitor.getByTestId("tab-room").click();
     await expect(visitor.getByTestId("room-read-line")).toHaveText(READ_LINE);
+    await expect(
+      visitor.getByTestId("room").getByText(MAY_NOT_WRITE),
+    ).toHaveCount(1);
     await expect(composer(visitor)).toHaveCount(0);
     ok(
       "the visitor can read the room and is told only people who back can write",
     );
 
     // ── two people back it in the app ─────────────────────────────────────────────────────────────────────────────
-    const person = async (account: string, who: string) => {
+    // Hana ticks the box that links her account to her wallet when she Backs; Ben does not (the box starts unticked), and meets
+    // the same link as one press in the room when he first wants to write.
+    const person = async (
+      account: string,
+      who: string,
+      linkWallet: boolean,
+    ) => {
       const page = await phone(browser);
       pages.push(page);
       await installAnvilWallet(page, account);
       await newPerson(page, `${who} ${NAME_TAG}`);
       await giveDollars(w, account);
       await page.goto(link);
-      await backInApp(page, 150);
+      await backInApp(page, 150, { linkWallet });
       const pub = getPublicKey(await secretKeyOf(page));
       return { page, pub, key: await secretKeyOf(page), account };
     };
-    const hana = await person(holderA, "Hana");
-    const ben = await person(holderB, "Ben");
-    for (const [who, p] of [
-      ["Hana", hana],
-      ["Ben", ben],
-    ] as const) {
-      let links = 0;
-      for (let i = 0; i < 40 && links === 0; i += 1) {
-        links = (await query({ kinds: [37017], authors: [p.pub], limit: 5 }))
-          .length;
-        if (links === 0) await new Promise((r) => setTimeout(r, 500));
-      }
-      check(
-        links > 0,
-        `${who}'s Back ended by linking the account to the wallet that made it (no extra screen)`,
-      );
+    const hana = await person(holderA, "Hana", true);
+    const ben = await person(holderB, "Ben", false);
+    let hanaLinks = 0;
+    for (let i = 0; i < 40 && hanaLinks === 0; i += 1) {
+      hanaLinks = (
+        await query({ kinds: [37017], authors: [hana.pub], limit: 5 })
+      ).length;
+      if (hanaLinks === 0) await new Promise((r) => setTimeout(r, 500));
     }
+    check(
+      hanaLinks > 0,
+      "Hana ticked the box, and her Back ended by linking the account to the wallet that made it (no extra screen)",
+    );
+    // Ben left the box as it was (unticked): his Back went out and nothing was published about his wallet.
+    await new Promise((r) => setTimeout(r, 3_000));
+    same(
+      (await query({ kinds: [37017], authors: [ben.pub], limit: 5 })).length,
+      0,
+      "Ben did not tick the box: his Back linked nothing, and his wallet was not made public",
+    );
     const both = await waitForRecord(
       project.key,
       "both backers' money is in",
@@ -244,11 +256,36 @@ test("a visitor reads the page, two back and one takes out, the feed and the roo
     same(roomBefore.length, 0, "the refused post is not in the room");
 
     // ── the holders write ─────────────────────────────────────────────────────────────────────────────────────────
-    for (const p of [hana, ben]) {
-      await p.page.goto(link);
-      await p.page.getByTestId("tab-room").click();
-      await expect(composer(p.page)).toBeVisible({ timeout: 40_000 });
-    }
+    await hana.page.goto(link);
+    await hana.page.getByTestId("tab-room").click();
+    await expect(composer(hana.page)).toBeVisible({ timeout: 40_000 });
+    // Ben holds Shares but did not tick the box: his room shows, right where the writing box would be, the one press that links
+    // his account to his wallet (with the sentence that says the link is public), and the press works for the wallet that
+    // already holds Shares. Until he presses it, the server would refuse him in its own words.
+    await ben.page.goto(link);
+    await ben.page.getByTestId("tab-room").click();
+    const needsLink = ben.page.getByTestId("room-needs-link");
+    await expect(needsLink).toBeVisible({ timeout: 40_000 });
+    await expect(composer(ben.page)).toHaveCount(0);
+    await expect(needsLink).toContainText(
+      "Anyone on this server can see the link",
+    );
+    const benKey = await secretKeyOf(ben.page);
+    const benRefused = await tryPublish(
+      signedRoomPost(benKey, "Too early", founderPub, projectId, project.key),
+      benKey,
+    );
+    check(
+      !benRefused.accepted && benRefused.text.includes(SERVER_NO_LINK),
+      "a holder who did not tick the box is refused until the account is linked, in the server's words",
+    );
+    await needsLink.getByTestId("room-confirm").click();
+    await expect(composer(ben.page)).toBeVisible({ timeout: 60_000 });
+    check(
+      (await query({ kinds: [37017], authors: [ben.pub], limit: 5 })).length >
+        0,
+      "Ben pressed the one link step in the room, and the account is linked to the wallet that holds his Shares",
+    );
     await expect(hana.page.getByTestId("room-public-line")).toHaveText(
       PUBLIC_LINE,
     );

@@ -70,25 +70,29 @@ async function back() {
 }
 
 describe("a Back that lands links the account", () => {
-  it("asks for the link once, after the Back landed", async () => {
+  it("asks for the link once, after the Back landed, when the person ticked the box", async () => {
     await back();
     expect(linked).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("back-link-choice"));
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
     await waitFor(() => expect(linked).toHaveBeenCalledTimes(1));
     expect(linked).toHaveBeenCalledWith(true);
   });
 
-  it("says in plain words, before the press, that the link is public, and leaves it to the person", async () => {
+  it("says in plain words, before the press, that the link is public, and leaves it to the person: the box starts unticked", async () => {
     await back();
     const hint = screen.getByTestId("back-link-hint");
     expect(hint.textContent).toMatch(/Anyone on this server can see the link/);
     expect(hint.textContent).toMatch(/how many Shares that wallet holds/);
     const choice = screen.getByTestId("back-link-choice") as HTMLInputElement;
-    expect(choice.checked).toBe(true);
+    // A box that makes something public is never already ticked: it is not consent.
+    expect(choice.checked).toBe(false);
     expect(choice.getAttribute("aria-describedby")).toBe("back-link-hint");
-    // Unticked: the Back goes out, and the link is not asked for.
-    fireEvent.click(choice);
+    expect(
+      screen.getByText("Let me write in this project's room"),
+    ).toBeTruthy();
+    // Left as it was: the Back goes out, and the link is not asked for.
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
     await waitFor(() => expect(linked).toHaveBeenCalledTimes(1));
