@@ -46,6 +46,7 @@ test.skip(NO_CHAIN_WHY !== null, NO_CHAIN_WHY ?? "");
 const world = liveWorld();
 const HOLDER_KEY = "a4".repeat(32);
 const PHONE_360 = { width: 360, height: 780 };
+const DESKTOP = { width: 1280, height: 800 };
 const USD = 10;
 
 interface Scene {
@@ -147,6 +148,14 @@ test("a holder opens You and reads what the team planned, with the day money can
   await expect(page.getByTestId("planned-strip").first()).toContainText(
     `up to ${USD} dollars`,
   );
+  // The strip and the Money tab's section on a phone, and on a desktop window: nothing runs past the screen.
+  await expect(page.getByTestId("planned-section")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expectAccessible(page, "The strip and the Money tab, 360 px");
+  await expectNoSidewaysScroll(page, "The strip and the Money tab, 360 px");
+  await page.setViewportSize(DESKTOP);
+  await expectNoSidewaysScroll(page, "The strip and the Money tab, 1280 px");
 });
 
 test("the dot counts a new step of the same task as news again, and opening the project reads it", async ({
