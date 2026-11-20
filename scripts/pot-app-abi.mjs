@@ -18,6 +18,7 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** The contracts whose ABI the app and the shared package use, with the constant each is exported as. */
 export const CONTRACTS = [
   { name: "Treasury", constant: "TREASURY_ABI" },
+  { name: "TaskBook", constant: "TASK_BOOK_ABI" },
   { name: "Vester", constant: "VESTER_ABI" },
   { name: "Launcher", constant: "LAUNCHER_ABI" },
   { name: "Pair", constant: "PAIR_ABI" },

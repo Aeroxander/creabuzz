@@ -112,6 +112,9 @@ const ERROR_WORDS: Record<PotErrorName, Words> = {
     back: "This project is not taking new backers right now: the person who runs it closed the door, or has not checked in lately. Nothing was taken.",
     any: "This project is not taking new backers right now. Nothing changed.",
   },
+  Inconsistent: {
+    any: "Something in the project's numbers did not add up, so nothing was done. Nothing changed. Try again in a moment.",
+  },
   NoOwner: {
     revenue:
       "Nobody holds any Shares in this project yet, so a payment would have no one to go to. Nothing was taken.",
@@ -151,6 +154,9 @@ const ERROR_WORDS: Record<PotErrorName, Words> = {
   },
   OfferExpired: {
     any: "The offer of the seat ran out. Ask for a new one. Nothing changed.",
+  },
+  ProjectQuiet: {
+    any: "The team has not checked in lately, so no task can be planned or taken until they do. Nothing changed.",
   },
   Reentrancy: {
     any: "Another step on this project was still running. Nothing changed. Try again in a moment.",
