@@ -547,6 +547,16 @@ down). This is a check on the file and on the parsers, **not** a place to copy f
     takes' `takenAt + capWindowSecs` and `capBps` (equal when nothing was cut: `cut.endedDropped` and `cut.notesRowsDropped` are `0`);
     `nextExpiry` is the least `expiresAt` of the open rows; `repeatOf` of a later live row of the same `what` names an earlier plan.
 
+12. (Step 3) The social keys, section 11: each of `held`, `feed`, `streaks` and `established` is an object or `null`, never `0` or `[]`;
+    `held.windows` are `30 x (unit / 7)` and `13 x unit` seconds; `held.rank.bps` and `held.badge.bps` are
+    `floor(10000 x shares / shares.backers)`; `held.rank.money` is `mulDiv(held.rank.shares, value.leaveValue, 1e18)`; `held.badge.shares`
+    is at most `held.rank.shares`, which is at most `shares.backers`; `held.rank.accounts <= held.countedAccounts <= holderCount`; the feed
+    has 48 hours, each `at` a multiple of `feed.bucketSecs` (`unit / 168`) and the last one holds `asOf.time`; every `net.amount` is a
+    multiple of `feed.roundTo` and `net.dir` is `even` exactly when it is `"0"`; `feed.items` are newest first, at most 30, all inside the last
+    28 days of the unit, and carry a `serial` exactly for the `task_*` kinds; `streaks.updates.weeks <= longest` and `lastAt <= clock.lastCheckIn`;
+    `established.reached` is `heldBps >= rule.minHeldBps and accounts >= rule.minAccounts and twoSigners` (and `null` when `held.badge` is);
+    `established.rule.heldSecs == held.windows.badgeSecs`. **No address and no per-account figure is in any of the four.**
+
 The **server** also runs the example through its builder's cross-check functions (the section 4.3 rules) in both directions: the
 example passes, and a copy with `money.pot` raised by one unit is refused. The **app** parses the example with the new parser, shows
 every screen that reads the record from it, and a record with `version` 1 or 3, with a missing required field, or with a bad
@@ -591,6 +601,10 @@ and the `removed` form.
 - **S6.** One merged `holders` list (backer Shares first), cut at 200; grants listed unless finished; agents at 50.
 - **S7.** `playMoney` is `Launcher.testNetwork()`, and an unknown value means play money.
 - **S8.** The `ledger` block ships in every record, marked for checks only.
+- **S10 to S14 (step 3, section 11).** The social keys are each right or `null`, and a failed one never stops the record (unlike the task
+  section); the badge's constants (60 percent, 13 units, 10 accounts, two signers) ship in the record; the 30-day and the 91-day windows are
+  counted apart (either may be `null`); the feed carries hour buckets and a net rounded to 100, never a per-event row and never volume; the
+  streak counts launch-aligned windows (stricter than the contract's rule, on purpose).
 - **S9.** `totals` (five sums) and `firstBackedAt` ship now: the first serves the allowance page and the manager's gate, the second
   the manager's gate (L6); both are plain sums of events.
 
@@ -744,3 +758,120 @@ holder (at most 160) and one `claimableNote` per row with notes (at most 8). The
 rows and holders are read in a second batch at the same block, because the cut needs the cap's window, which is a view. The reader's own
 pass is not constant (it reads a project's stored rows each pass, as for Joined and Left); a pass that takes longer than half the shortest
 refresh time logs an error.
+
+## 11. Step 3 additions: how long money has stayed, the feed, the streak and the badge (`held`, `feed`, `streaks`, `established`)
+
+Additive inside version 2: no field is removed, renamed or re-meant, so the version stays 2. Four new keys at the top level, **always present
+as keys**. A key the server could not work out is **`null`** ("not known here"), never `0` and never `[]`; a failure of one of them (a database
+error, a window over its cap, a failed check of its own) signs that key as `null`, logs one error line naming the project, the key and the
+reason, and signs the rest of the record as usual. They are display only: no screen unlocks a power from them and no money rule reads them.
+The plan these tables come from is `docs/next-version/STEP3-PLAN.md` (section 2 and the choices C11 to C17, C43); amounts are decimal strings,
+times unix seconds. **No address and no per-account figure is in any of them** (the feed and the picture round and aggregate); a person's own
+weeks held are worked out on their own device and are not in the record.
+
+### 11.1 `held`: how long money has stayed
+
+The lowest balance each account had at any moment of a window, summed over accounts: Shares that were held **without a fall** for the whole
+window. Moving Shares between accounts cannot raise it (the sender's lowest balance falls by what the receiver's starts from); selling and
+buying back lowers it. A window is the last `windows.*Secs` seconds up to `asOf.time`; a change counts as inside it when its block's time is
+later than the window's start.
+
+| Field | Meaning |
+|---|---|
+| `windows.rankSecs` | `30 x (unit / 7)`: the ranking window (30 days) |
+| `windows.badgeSecs` | `13 x unit`: the badge window (the design's 13N) |
+| `rank` | `null` when this window could not be counted; else the object below |
+| `rank.shares` | backer Shares held without a fall for `rankSecs` (18 decimals) |
+| `rank.bps` | `floor(10000 x rank.shares / shares.backers)` |
+| `rank.money` | what `rank.shares` would get at `value.leaveValue` (6 decimals): `mulDiv(rank.shares, value.leaveValue, 1e18)`; for lists and words, never for a sheet |
+| `rank.accounts` | accounts whose lowest balance is worth at least `limits.minJoin` at `value.leaveValue` |
+| `badge` | `null` when this window could not be counted; else `{shares, bps}` as above for `badgeSecs` |
+| `countedAccounts` | accounts that hold **now** at least `limits.minJoin` at `value.leaveValue` (never cut at 200 like `holders`) |
+
+The accounts nobody holds for are left out (the zero address, the Treasury, the Vester, the two tokens, the dollar and the Launcher), the same
+list `holders` leaves out. **The bound:** a window is counted by the database from this project's balance changes inside it, at most
+`500000` rows and `20000` accounts; a window over either is `null`, never a smaller number (the two windows are counted apart). Said plainly: a
+person who holds a few Shares can make enough one-wei moves in a window to push that project's `held.badge` to `null`; what is lost is a ranking
+row or a badge, both display only.
+
+### 11.2 `established`: the badge
+
+| Field | Meaning |
+|---|---|
+| `rule.minHeldBps` | 6000: at least 60 percent of the money held for the badge window |
+| `rule.heldSecs` | equals `held.windows.badgeSecs` |
+| `rule.minAccounts` | 10 |
+| `heldBps` | `held.badge.bps`; `null` when `held.badge` is |
+| `accounts` | `held.countedAccounts`; `null` when `held` is |
+| `twoSigners` | the runner is a Pair with two different non-zero signers |
+| `reached` | `heldBps >= rule.minHeldBps and accounts >= rule.minAccounts and twoSigners`; `null` when `heldBps` is |
+
+The thresholds are server constants (the contracts have no number for them) and ship in the record, so an app reads and does not copy them.
+
+### 11.3 `feed`: joins and take-outs by the hour, and what else happened
+
+| Field | Meaning |
+|---|---|
+| `roundTo` | the rounding step, 100 dollars (6 decimals) |
+| `bucketSecs` | `unit / 168`: one hour on a 7-day unit, a proportionally short one on a test network |
+| `hours[]` | the last 48 hours ending at the one that holds `asOf.time`, oldest first, **every hour present** (a quiet hour is a zero bucket) |
+| `hours[].at` | the hour's first second |
+| `hours[].joins` | backs in it |
+| `hours[].tookOut` | take-outs in it (a Team Share take-out counts the same: equal weight) |
+| `hours[].net` | `{dir, amount}`: the absolute net money in, `Sum(Joined.paid - Joined.fee) - Sum(Left.cash + TeamLeft.cash)`, **rounded half up to `roundTo` once per hour** (never per event); `dir` is `in`, `out` or `even` (exactly when `amount` is `"0"`) |
+| `items[]` | up to 30 things that are not money flows, newest first, inside the last `28 x (unit / 7)` seconds |
+| `items[].kind` | `task_planned`, `task_taken`, `task_paid`, `task_ended` (sent back, lapsed or ran out), `task_withdrawn`, `update` (a check-in) |
+| `items[].at` | the block's time |
+| `items[].serial` | the task's number for the `task_*` kinds, else `null` |
+| `items[].date` | for `task_planned` the end of the notice; for `task_taken` the deadline; else `null` |
+| `cut` | how many items inside the window were left out because of the 30 |
+
+**Volume is not published:** no hour carries money in and money out apart, so for an hour with both it cannot be worked out. An hour with
+joins and no take-outs has a net equal to its volume to within 50 dollars; the chain is public and shows it already. Rate raises and wind-downs
+are not items: the money screens say them.
+
+### 11.4 `streaks`: the project's weeks of updates
+
+`streaks.updates.weeks` is the number of consecutive windows, newest first, that each hold at least one check-in. Windows are one unit long and
+**aligned to the launch** (window `k` is `[launchedAt + k x unit, launchedAt + (k + 1) x unit)`), so two passes inside one window give the same
+answer. The window that holds `asOf.time` is still open: empty, it is skipped; with a check-in, it counts; the first empty **closed** window ends
+the run. It is stricter than the contract's rule (one check-in in two units keeps a project live) on purpose. `longest` is the longest such run in
+the project's life; `lastAt` the newest check-in (or `null`).
+
+### 11.5 What the server checks before it signs these keys
+
+Each runs on every build; a failure makes **that key** `null` (above). `held`: `badge.shares <= rank.shares <= shares.backers`;
+`rank.accounts <= countedAccounts <= holderCount`; both `bps` and `rank.money` equal their arithmetic; the walk is over rows at or below the
+final block. `feed`: 48 hours, aligned, the last holding `asOf.time`; every amount a multiple of `roundTo`; `dir` even exactly when the amount
+is `"0"`; at most 30 items, newest first, a `serial` for the `task_*` kinds only; **every hour is counted again from the rows by a second,
+separate function** (joins, take-outs and net, and the sum over the window), and so are the items. `streaks`: `weeks <= longest`; `lastAt` is
+the newest check-in row. `established`: its inputs are `held`'s, its rule is the server's, `reached` equals the rule. `validate` repeats the
+checks that need only the record, so a record whose verdict contradicts its inputs is refused. The four keys are out of the digest of facts
+(they move with the clock; each event that changes one already changes a field in it), so they never make the server sign again by themselves.
+
+**What the app shows when a key is absent, wrong or old** is in `STEP3-PLAN.md` section 2.7: a missing or `null` key is "not known here" (no
+ranking row, no chip, no feed), never "none" or "0"; the figures hide with the other money figures after 24 hours.
+
+### 11.6 The ranking index (`d = explore`)
+
+One small record per community the server signs next to the project records, so Home reads one record and then the few projects it names.
+Kind 39009, tags `d = explore`, `chain`, `launcher`, signed by the relay's key. Content:
+`{"version": 1, "kind": "explore", "asOf": {"block", "time"}, "entries": [...], "seen": n, "cut": n}`; an entry is
+`{"key", "a", "launchedAt", "windowSecs", "money", "accounts", "reached"}` (`money` is `held.rank.money`, `accounts` is `held.rank.accounts`,
+`reached` is `established.reached`, which may be `null`, `a` is `37001:<founder>:<id>`).
+
+- **The rule.** Sorted by `money` (most first), then `accounts` (most first), then `launchedAt` (older first), then `key`. A project with no
+  `held.rank` or with `money` zero is not listed. At most **20** entries (about 4 KB); `seen` counts the projects that could be listed and `cut`
+  those left out of the 20. **Never the pot, the price of a Share, joins, volume or anything in the feed**: it is money held, valued at what a
+  take-out would give now, and it carries no name, address or per-person figure.
+- **The tie.** A project is listed only when `ProjectLaunched.projectId` equals the hash of the coordinate of a stored, listed project record
+  (kind 37001, the newest 5,000 of the community) that names its chain key: a founder cannot claim another project's key, and nobody's word
+  decides who is eligible. A project whose founder is banned or muted, whose record was removed or is not listed is left out.
+- **The rows.** Five nullable columns of the reader's `chain_project_numbers` row (`rank_money`, `rank_accounts`, `rank_window_secs`, `reached`,
+  `launched_at`) are written by the statement that records a signing, all null when the record has no `held.rank`; a row marked stale by a
+  rollback is not read.
+- **When.** At the end of a publishing pass, looked at no oftener than every 600 s, signed again only when the entries differ from the live
+  index's and the live one is at least 600 s old; with nothing to list and no index live, none is signed. A failed build is logged and counted
+  (`explore_failed`), the old index stays, and nothing else is affected.
+- **The app** checks that the relay's key signed it, hides it past 24 hours, sorts by the same rule itself (it never trusts the order), reads the
+  records of the first ten entries by coordinate and drops an entry whose record is missing, unlisted or removed.
