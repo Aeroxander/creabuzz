@@ -1,7 +1,7 @@
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { APP_NAME } from "@creaton/core/brand.ts";
 import { PenLine, Sprout } from "lucide-react";
-import { lazy, type ReactNode, Suspense, useId, useState } from "react";
+import { lazy, Suspense, useState } from "react";
 import { Mark } from "../../app/Mark";
 import { useAccount } from "../../lib/account";
 import { useFollows } from "../../lib/follows";
@@ -18,8 +18,12 @@ import {
   useEngagement,
   useRecentPosts,
 } from "../posts/use-posts";
+import { SeasonBand } from "../season/SeasonBand";
 import { ProjectCard } from "./ProjectCard";
+import { RankedSection } from "./RankedSection";
+import { Section } from "./Section";
 import { useHomeProjects } from "./use-home";
+import { useRanking } from "./use-ranking";
 
 // The old design's open rounds: loaded only with the legacy-screens flag.
 const LegacyOpenRounds = lazy(() =>
@@ -28,35 +32,10 @@ const LegacyOpenRounds = lazy(() =>
   })),
 );
 
-function Section({
-  title,
-  children,
-  testId,
-}: {
-  title: string;
-  children: ReactNode;
-  testId?: string;
-}) {
-  const id = useId();
-  return (
-    <section
-      aria-labelledby={id}
-      className="flex flex-col gap-3"
-      data-testid={testId}
-    >
-      <h2
-        className="text-sm font-semibold uppercase tracking-wider text-muted"
-        id={id}
-      >
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
 /**
- * Home: the projects you follow, the projects shipping now, and recent posts. Never sorted by money. (The open backing rounds of the old design show only with the legacy-screens flag.)
+ * Home: the projects you follow, the money that stayed (the one place a list is sorted by money, and by money that has stayed,
+ * never by a price), the projects shipping now (newest first, never sorted by money), and recent posts. (The open backing
+ * rounds of the old design show only with the legacy-screens flag.)
  */
 export function HomePage() {
   const { pubkey } = useAccount();
@@ -64,6 +43,7 @@ export function HomePage() {
   const [composing, setComposing] = useState(false);
   const follows = useFollows().data;
   const projects = useHomeProjects();
+  const ranking = useRanking();
   const followedPeople = follows ? [...follows.people] : [];
   const posts = useRecentPosts(
     followedPeople.length > 0 ? followedPeople : null,
@@ -118,6 +98,8 @@ export function HomePage() {
         </section>
       )}
 
+      <SeasonBand />
+
       {legacyScreensOn() ? (
         <Section testId="home-rounds" title="Open rounds">
           <Suspense fallback={null}>
@@ -137,6 +119,8 @@ export function HomePage() {
           ))}
         </Section>
       ) : null}
+
+      <RankedSection ranking={ranking.data} />
 
       <Section testId="home-projects" title="Shipping now">
         {projects.isPending ? (

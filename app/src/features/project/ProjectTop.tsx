@@ -98,7 +98,8 @@ function TopMoney({
   chips: ReactNode;
 }) {
   const level = freshnessOf(numbers, now).level;
-  if (level === "stale") return <StaleMoney numbers={numbers} />;
+  if (level === "stale")
+    return <StaleMoney numbers={numbers} testId="top-money-stale" />;
   return (
     <div
       className="glass flex flex-col gap-0.5 rounded-2xl p-3"

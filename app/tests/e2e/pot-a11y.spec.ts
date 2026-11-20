@@ -47,7 +47,7 @@ test("the Money tab, the Back sheet and the Take out sheet have no serious acces
   await page.getByTestId("backing-review").click();
   await expect(page.getByTestId("back-shares")).toBeVisible();
   await expectAccessible(page, "Back sheet");
-  await page.getByText("Details").click();
+  await page.getByTestId("back-sheet").getByText("Details").click();
   await expectAccessible(page, "Back sheet, details open");
   await page.keyboard.press("Escape");
 

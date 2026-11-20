@@ -110,8 +110,9 @@ describe("the project page on record version 2", () => {
 
   it("says the numbers could not be refreshed after a day, and that taking money out still works", async () => {
     await page(undefined, NOW - 2 * 86_400);
-    // The top of the page and the Money tab each say it.
-    const [stale] = await screen.findAllByTestId("money-stale");
+    // The Money tab says it, and so does the top of the page (under its own name).
+    const stale = await screen.findByTestId("money-stale");
+    expect(screen.getByTestId("top-money-stale")).not.toBeNull();
     expect(stale.textContent).toMatch(
       /not been able to refresh this project's numbers since/,
     );

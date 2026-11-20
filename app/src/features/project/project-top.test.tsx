@@ -278,9 +278,7 @@ describe("what is drawn when a key is absent, null, wrong or old", () => {
 
   it("a record older than a day shows none of the money, no chip and no kept line, and Back waits", async () => {
     await page(established(true), NOW - 2 * 86_400);
-    expect(
-      (await screen.findAllByTestId("money-stale")).length,
-    ).toBeGreaterThan(0);
+    expect(await screen.findByTestId("top-money-stale")).not.toBeNull();
     expect(screen.queryByTestId("top-money-pot")).toBeNull();
     expect(screen.queryByTestId("top-take-out-now")).toBeNull();
     expect(screen.queryByTestId("established-chip")).toBeNull();

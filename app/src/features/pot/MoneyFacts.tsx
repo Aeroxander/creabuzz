@@ -37,9 +37,16 @@ function Row({
 }
 
 /** A record too old to show figures: what it means for the person's own money. */
-export function StaleMoney({ numbers }: { numbers: ProjectNumbers }) {
+export function StaleMoney({
+  numbers,
+  testId = "money-stale",
+}: {
+  numbers: ProjectNumbers;
+  /** The page's top says it too, under its own name, so the Money tab's stays the only one of its name. */
+  testId?: string;
+}) {
   return (
-    <div className="glass rounded-2xl p-4" data-testid="money-stale">
+    <div className="glass rounded-2xl p-4" data-testid={testId}>
       <p>
         We have not been able to refresh this project's numbers since{" "}
         {dayText(numbers.builtAt)}. Your money is not affected: you can take it
