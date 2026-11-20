@@ -1,5 +1,6 @@
 /**
- * The Money tab of a project: what the project holds and means for a person, the Back box, what you hold and its Take out,
+ * The Money tab of a project: what the project holds and means for a person, what you hold and its Take out (the Back box is
+ * in the top of the page, drawn once there),
  * and, for the people who run it, the allowance, Team Shares and the calls waiting for a second signer. Every money screen
  * of the test network says it is play money. Figures here are the server's record with its age; each sheet reads the chain.
  */
@@ -24,7 +25,6 @@ import {
 } from "../money/numbers";
 import { OwnershipLine } from "../money/OwnershipLine";
 import { AllowanceSection } from "./AllowanceSection";
-import { BackCard } from "./BackCard";
 import { ChainOnlyShares } from "./ChainOnlyShares";
 import type { GrantMember } from "./GrantSheet";
 import { MoneyFacts, StaleMoney } from "./MoneyFacts";
@@ -155,16 +155,6 @@ export function ProjectMoney({
         <StaleMoney numbers={numbers} />
       ) : (
         <MoneyFacts now={now} numbers={numbers} />
-      )}
-      {stale ? (
-        <Card data-testid="back-paused">
-          <p className="text-sm">
-            Backing waits until the numbers are fresh again. Taking your money
-            out does not wait.
-          </p>
-        </Card>
-      ) : (
-        <BackCard now={now} numbers={numbers} projectName={projectName} />
       )}
       <YourShares
         projectName={projectName}

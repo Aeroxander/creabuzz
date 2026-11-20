@@ -89,9 +89,10 @@ describe("the project page on record version 2", () => {
     expect(screen.getByTestId("ownership").textContent).toBe(
       "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one.",
     );
+    // The line stands under the money at the top of the page and again in the Money tab's own facts.
     expect(
-      screen.getByText(/This can go up or down. It is not a return./),
-    ).not.toBeNull();
+      screen.getAllByText(/This can go up or down. It is not a return./).length,
+    ).toBeGreaterThanOrEqual(2);
     expect(screen.queryByTestId("money-as-of")).toBeNull();
   });
 
@@ -109,7 +110,8 @@ describe("the project page on record version 2", () => {
 
   it("says the numbers could not be refreshed after a day, and that taking money out still works", async () => {
     await page(undefined, NOW - 2 * 86_400);
-    const stale = await screen.findByTestId("money-stale");
+    // The top of the page and the Money tab each say it.
+    const [stale] = await screen.findAllByTestId("money-stale");
     expect(stale.textContent).toMatch(
       /not been able to refresh this project's numbers since/,
     );

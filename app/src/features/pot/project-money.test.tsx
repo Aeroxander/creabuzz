@@ -19,7 +19,7 @@ import {
   S,
 } from "../../../tests/helpers/pot-harness";
 import { dollarsText, type ProjectNumbers } from "../money/numbers";
-import { ProjectMoney } from "./ProjectMoney";
+import { PageMoney } from "../../../tests/helpers/page-money";
 import { smallDollarsText } from "./pot-words";
 
 vi.mock(
@@ -68,7 +68,7 @@ function show(
   } = {},
 ) {
   return wrap(
-    <ProjectMoney
+    <PageMoney
       chainKey={options.chainKey ?? numbers.key}
       error={options.error}
       loading={options.loading ?? false}

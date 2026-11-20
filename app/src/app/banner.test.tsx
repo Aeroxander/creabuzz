@@ -164,7 +164,10 @@ describe("the banner on every sheet that shows money", () => {
   });
 
   // Every other sheet is named here, with why it needs none: a sheet that is added without a line fails this test.
+  const OWN_BANNER = "carries the banner itself";
   const OTHER_SHEETS: Record<string, string> = {
+    "features/project/EstablishedSheet.tsx": OWN_BANNER,
+    "features/project/ShareSheet.tsx": OWN_BANNER,
     "features/account/RecoveryKeySheet.tsx": "a secret key, no money",
     "features/account/TermsAgainHost.tsx": "the terms, no money",
     "features/money/BackBox.tsx": "the old design's rounds: legacy flag only",
@@ -193,5 +196,11 @@ describe("the banner on every sheet that shows money", () => {
       .filter((f) => f !== "features/pot/PotSheet.tsx")
       .sort();
     expect(users).toEqual(Object.keys(OTHER_SHEETS).sort());
+    // A sheet that says it carries the banner draws the banner's own component.
+    for (const [file, why] of Object.entries(OTHER_SHEETS))
+      if (why === OWN_BANNER)
+        expect(readFileSync(join(root, file), "utf8"), file).toMatch(
+          /<BannerText\b/,
+        );
   });
 });

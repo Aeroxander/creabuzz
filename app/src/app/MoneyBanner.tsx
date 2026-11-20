@@ -20,9 +20,16 @@ type Claim = () => () => void;
 const ClaimContext = createContext<Claim | null>(null);
 
 /** The banner's words as a line of text: one component for the shell's banner and for a page's own. */
-export function BannerText({ className }: { className?: string }) {
+export function BannerText({
+  className,
+  testId = "money-banner",
+}: {
+  className?: string;
+  /** A sheet that carries the words names its own, so a count of the page's banners never includes it. */
+  testId?: string;
+}) {
   return (
-    <p className={className ?? "text-sm text-muted"} data-testid="money-banner">
+    <p className={className ?? "text-sm text-muted"} data-testid={testId}>
       {TAKE_OUT_BANNER}
     </p>
   );

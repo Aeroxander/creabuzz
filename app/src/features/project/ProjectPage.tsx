@@ -1,4 +1,3 @@
-import { relativeTime } from "@creaton/core/client/relative-time.ts";
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { lazy, Suspense, useState } from "react";
 import { BackHeader } from "../../app/BackHeader";
@@ -8,7 +7,6 @@ import { nameOf, pictureOf, useProfiles } from "../../lib/profiles";
 import { legacyScreensOn } from "../../lib/legacy";
 import { investingOn } from "../../lib/server";
 import { useRequireAccount } from "../../lib/use-require-account";
-import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
@@ -20,10 +18,13 @@ import {
   useWalletAddress,
 } from "../money/use-money";
 import { useMarkProjectSeen } from "../alerts/use-news";
+import { ProjectFeed } from "../feed/ProjectFeed";
+import { RoomTab } from "../room/RoomTab";
 import { PlannedStrips } from "../tasks/chain/holder/PlannedStrips";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
 import type { Project } from "./project-record";
+import { ProjectTop } from "./ProjectTop";
 import { UpdatesTab } from "./UpdatesTab";
 import { projectPeople, useProject, useProjectActivity } from "./use-project";
 
@@ -49,7 +50,7 @@ const LegacyMemberActions = lazy(() =>
   })),
 );
 
-/** The project page: its record, Ask to join, then Updates, Tasks, People and Money. */
+/** The project page: its top (what it is, its money, Back, Share), Ask to join, then Updates, Tasks, People, Money and Room. */
 export function ProjectPage({
   projectRef,
   initialTab,
@@ -136,7 +137,7 @@ function ProjectView({
   const team = [project.author, ...accepted.map((m) => m.pubkey)];
   return (
     <main
-      className="screen mx-auto flex max-w-lg flex-col gap-5"
+      className="screen mx-auto flex max-w-lg flex-col gap-4"
       data-testid="project-page"
     >
       <BackHeader
@@ -144,28 +145,14 @@ function ProjectView({
         heading={false}
         title="Project"
       />
-      <header className="flex flex-col gap-3">
-        <h1 className="headline text-4xl" data-testid="project-name">
-          {project.name}
-        </h1>
-        {project.pitch ? (
-          <p className="text-lg text-muted">{project.pitch}</p>
-        ) : null}
-        <div className="flex items-center gap-2.5 text-sm">
-          <Avatar
-            name={founderName}
-            picture={pictureOf(profiles, project.author)}
-            pubkey={project.author}
-            size="sm"
-          />
-          <span>
-            Started by <span className="font-semibold">{founderName}</span>{" "}
-            <span className="text-muted">
-              {relativeTime(project.startedAt)}
-            </span>
-          </span>
-        </div>
-      </header>
+      <ProjectTop
+        founderName={founderName}
+        founderPicture={pictureOf(profiles, project.author)}
+        investing={investing}
+        now={now}
+        numbers={numbers}
+        project={project}
+      />
 
       {legacy ? (
         <Suspense fallback={null}>
@@ -202,6 +189,8 @@ function ProjectView({
           project={project}
         />
       ) : null}
+
+      <ProjectFeed numbers={numbers} project={project} />
 
       <Tabs
         items={[
@@ -293,6 +282,23 @@ function ProjectView({
                         team={team}
                       />
                     </Suspense>
+                  ),
+                },
+              ]
+            : []),
+          // The room is the holders' place under a project that is launched: it needs the server's chain reader.
+          ...(investing && chainKeyOfProject(project)
+            ? [
+                {
+                  value: "room",
+                  label: "Room",
+                  content: (
+                    <RoomTab
+                      numbers={numbers}
+                      profiles={profiles}
+                      project={project}
+                      team={team}
+                    />
                   ),
                 },
               ]

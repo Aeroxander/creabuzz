@@ -38,8 +38,9 @@ function BackForm({
   const min = numbers.limits.minJoin;
   return (
     <>
+      {/* The box and its press in one row, so Back is in the first screen of a phone. */}
       <form
-        className="flex flex-col gap-3"
+        className="flex items-start gap-3"
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
@@ -49,20 +50,25 @@ function BackForm({
           setAmount(parsed.raw);
         }}
       >
-        <Field
-          autoComplete="off"
-          data-testid="backing-amount"
-          hint={`From ${smallDollarsText(min)} ${min === 1_000_000n ? "dollar" : "dollars"}. There is no most.`}
-          inputMode="decimal"
-          label="How many dollars?"
-          onChange={(event) => setText(event.target.value)}
-          placeholder="For example: 25"
-          problem={problem}
-          value={text}
-        />
-        <Button block data-testid="backing-review" type="submit">
-          Back
-        </Button>
+        <div className="min-w-0 flex-1">
+          <Field
+            autoComplete="off"
+            data-testid="backing-amount"
+            hint={`From ${smallDollarsText(min)} ${min === 1_000_000n ? "dollar" : "dollars"}. There is no most.`}
+            inputMode="decimal"
+            label="How many dollars?"
+            onChange={(event) => setText(event.target.value)}
+            placeholder="For example: 25"
+            problem={problem}
+            value={text}
+          />
+        </div>
+        {/* Level with the box: the height of the label above it (one line and its gap). */}
+        <div className="shrink-0 pt-[1.625rem]">
+          <Button data-testid="backing-review" type="submit">
+            Back
+          </Button>
+        </div>
       </form>
       <BackSheet
         amount={amount}
@@ -92,11 +98,11 @@ export function BackCard({
   return (
     <Card
       aria-labelledby={titleId}
-      className="flex flex-col gap-3"
+      className="flex flex-col gap-2 p-3"
       data-testid="backing-box"
       role="region"
     >
-      <h2 className="headline text-xl" id={titleId}>
+      <h2 className="headline text-lg" id={titleId}>
         Back this project
       </h2>
       {!recordFitsBuild(numbers) ? (

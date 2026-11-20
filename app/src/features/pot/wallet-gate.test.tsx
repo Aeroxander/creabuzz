@@ -12,7 +12,7 @@ import {
   nameTheNetwork,
   numbersFor,
 } from "../../../tests/helpers/pot-harness";
-import { ProjectMoney } from "./ProjectMoney";
+import { PageMoney } from "../../../tests/helpers/page-money";
 
 vi.mock(
   "../../lib/relay",
@@ -30,7 +30,7 @@ const numbers = numbersFor();
 
 function show() {
   return wrap(
-    <ProjectMoney
+    <PageMoney
       chainKey={numbers.key}
       error={null}
       loading={false}
