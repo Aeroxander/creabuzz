@@ -128,6 +128,10 @@ export function markReadWords(count: number): string {
 /** The note on a row nobody has opened yet, spoken to a screen reader beside the sentence. */
 export const NEWS_UNSEEN = "New";
 
-/** What the section says about where news comes from and how long the notice is: nothing reaches a phone yet, so it needs the app opened. */
+/** The first half of the section's line about where news comes from: said only where the server sends no alerts at all. */
+export const NEWS_NOT_SENT =
+  "News shows here when you open the app; nothing is sent to your phone yet.";
+
+/** What the section says about how long the notice is: a planned task waits, so the app needs opening. */
 export const NEWS_WEEK =
-  "News shows here when you open the app; nothing is sent to your phone yet. A planned task waits at least 14 days before any money can move, so open the app at least every 7 days.";
+  "A planned task waits at least 14 days before any money can move, so open the app at least every 7 days.";

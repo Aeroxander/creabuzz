@@ -5,6 +5,7 @@
  * Money tab. What is listed is marked read after it renders; "Mark {n} as read" does it by hand. Never "no news" for a read
  * that failed. Shown only where the server turns investing on and a wallet shows an account.
  */
+import { serverWebPushKey } from "@creaton/core/client/server-settings.ts";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Bell } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
@@ -24,6 +25,7 @@ import {
   NEWS_RETRY,
   NEWS_STALE,
   NEWS_TAKE_OUT,
+  NEWS_NOT_SENT,
   NEWS_UNSEEN,
   NEWS_WEEK,
   newsLimitWords,
@@ -249,7 +251,7 @@ export default function NewsSection() {
             </p>
           ) : null}
           <p className="text-xs text-muted" data-testid="news-week">
-            {NEWS_WEEK}
+            {serverWebPushKey() ? NEWS_WEEK : `${NEWS_NOT_SENT} ${NEWS_WEEK}`}
           </p>
         </>
       )}

@@ -45,6 +45,7 @@ import type { ProjectTask } from "../tasks/task-record";
 import { seriousViolations } from "../../../tests/helpers/axe-dom";
 import { taskRow } from "../../../tests/helpers/numbers-v2-fixture";
 import { timeText } from "../money/numbers";
+import { KEY } from "./push/push-fake";
 import { NEWS_FAILED, NEWS_NONE, NEWS_STALE } from "./alert-words";
 import NewsSection from "./NewsSection";
 import { readSeen } from "./seen";
@@ -216,8 +217,25 @@ describe("the list", () => {
     await screen.findByTestId("news-list");
     const kinds = rows().map((r) => r.getAttribute("data-kind"));
     expect(kinds.lastIndexOf("planned")).toBeLessThan(kinds.indexOf("ended"));
-    expect(screen.getByTestId("news-week").textContent).toMatch(
-      /open the app at least every 7 days/,
+    // This server sends no alerts (no push key): the line says so, and says to open the app.
+    expect(screen.getByTestId("news-week").textContent).toBe(
+      "News shows here when you open the app; nothing is sent to your phone yet. A planned task waits at least 14 days before any money can move, so open the app at least every 7 days.",
+    );
+  });
+
+  it("does not say nothing is sent to the phone where the server offers alerts", async () => {
+    setup(BACKER_EVM);
+    applyServerSettings({
+      investing: true,
+      self: SERVER,
+      webPush: { publicKey: KEY },
+    });
+    wrap(<NewsSection />);
+    await screen.findByTestId("news-list");
+    const week = screen.getByTestId("news-week").textContent ?? "";
+    expect(week).not.toMatch(/nothing is sent to your phone/);
+    expect(week).toBe(
+      "A planned task waits at least 14 days before any money can move, so open the app at least every 7 days.",
     );
   });
 
