@@ -196,6 +196,34 @@ fn h1_late_buyers_count_nothing_and_sellers_count_what_they_kept() {
     assert_eq!(held.lowest, vec![40, 20]);
 }
 
+/// Moves that do not fit the balance (the stored rows disagree with each other) are an error, never a number: an
+/// account that holds 10 now and received 50 in the window would have started below zero.
+#[test]
+fn h1_moves_that_do_not_fit_the_balance_are_an_error_and_not_a_number() {
+    let a = who(1);
+    let balances = [(a.clone(), 10u128)];
+    for deltas in [vec![50i128], vec![20, -5]] {
+        let changes: Vec<Change> = deltas
+            .iter()
+            .enumerate()
+            .map(|(i, d)| change(i as u64, &a, *d))
+            .collect();
+        let WindowRaw::Counted(runs) = held::walk(&changes, Limits::default()) else {
+            panic!("not cut");
+        };
+        let err = held::lowest(
+            &runs,
+            balances.iter().map(|(a, b)| (a, b)),
+            &BTreeSet::new(),
+        )
+        .expect_err("the moves do not fit a balance of 10");
+        assert!(
+            format!("{err:#}").contains("its balance now is 10"),
+            "{err:#}"
+        );
+    }
+}
+
 /// H2: moving Shares between accounts never raises the total held for a window, and a shorter window never
 /// holds less than a longer one. Random sequences of transfers.
 #[test]
@@ -883,6 +911,67 @@ async fn v2_a_failing_check_nulls_that_key_and_nothing_else() {
         v.as_object_mut().expect("object").remove("feed");
     }
     assert_eq!(a, b, "only the feed changed");
+}
+
+/// V2 (the second function): a feed or a streak that is sound in itself but is not what the rows say is caught by the
+/// recount from the rows, which the record alone cannot do: a back more in an hour, an hour's net moved by a whole
+/// step, an item changed, a last check-in a second off.
+#[tokio::test]
+async fn v2_the_recount_from_the_rows_catches_what_the_record_alone_cannot() {
+    let built = build_from("A_example").await.expect("builds");
+    let (fx, _, as_of, _) = super::record_tests::load("A_example");
+    let (project, _) = super::fixture::BookChain::load(&fx, "A_example");
+    let rows = fx.rows(&project, as_of.block);
+    assert!(record_social::check_feed_rows(&built.record, &rows).is_ok());
+    assert!(record_social::check_streaks_rows(&built.record, &rows).is_ok());
+    let tampered = |change: &dyn Fn(&mut Record)| {
+        let mut r = built.record.clone();
+        change(&mut r);
+        assert_eq!(
+            record::validate(&r),
+            Vec::<String>::new(),
+            "the record alone finds nothing wrong with it"
+        );
+        r
+    };
+    // One back more in the last hour (the record's own checks do not count backs).
+    let r = tampered(&|r| r.feed.as_mut().expect("feed").hours[47].joins += 1);
+    assert!(
+        record_social::check_feed_rows(&r, &rows).is_err(),
+        "a back more"
+    );
+    // An hour's net moved by a whole rounding step: still a multiple of it, still `in`.
+    let r = tampered(&|r| {
+        let hour = &mut r.feed.as_mut().expect("feed").hours[10];
+        hour.net.dir = record_social::NetDir::In;
+        hour.net.amount = "100000000".into();
+    });
+    assert!(
+        record_social::check_feed_rows(&r, &rows).is_err(),
+        "an hour's net"
+    );
+    // An item's task number changed.
+    let r = tampered(&|r| {
+        let items = &mut r.feed.as_mut().expect("feed").items;
+        let task = items
+            .iter_mut()
+            .find(|i| i.serial.is_some())
+            .expect("a task item");
+        task.serial = task.serial.map(|s| s + 100);
+    });
+    assert!(
+        record_social::check_feed_rows(&r, &rows).is_err(),
+        "an item"
+    );
+    // The last check-in a second early (still a time the clock knows).
+    let r = tampered(&|r| {
+        let u = &mut r.streaks.as_mut().expect("streaks").updates;
+        u.last_at = u.last_at.map(|t| t - 1);
+    });
+    assert!(
+        record_social::check_streaks_rows(&r, &rows).is_err(),
+        "the last check-in"
+    );
 }
 
 /// V3: a held that could not be read at all (a database error) is `null` and the record is still built.
