@@ -5,7 +5,9 @@
 --
 -- 1. This project's Share changes in block order from a block on, with the log's place inside the block, so the
 --    window query reads them in order and stops at its row cap without sorting what it did not read.
--- 2. The first block after a time: the window's first block, one index step.
+-- 2. The first block after a time: the window's first block, one index step. It deliberately does not hold `number`:
+--    with it the planner could serve the reader's "newest block" read (`ORDER BY number DESC LIMIT 1`, meant for the
+--    primary key) from this index and a sort when its statistics are stale.
 -- 3. The ranking columns of `chain_project_numbers`: what the signed record said about the money that stayed
 --    (null when the record has none), written in the same statement that records the signing.
 --
@@ -14,7 +16,7 @@
 CREATE INDEX idx_chain_balance_changes_block
     ON chain_balance_changes (reader, project_key, token, block_number, log_index);
 
-CREATE INDEX idx_chain_blocks_time ON chain_blocks (reader, block_time, number);
+CREATE INDEX idx_chain_blocks_time ON chain_blocks (reader, block_time);
 
 ALTER TABLE chain_project_numbers
     ADD COLUMN rank_money       NUMERIC(78, 0) CHECK (rank_money IS NULL OR rank_money >= 0),

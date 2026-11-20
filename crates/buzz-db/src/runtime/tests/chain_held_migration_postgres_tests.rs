@@ -17,7 +17,7 @@ async fn assert_indexes_and_columns(pool: &PgPool) {
         (
             "idx_chain_blocks_time",
             "chain_blocks",
-            "(reader, block_time, number)",
+            "(reader, block_time)",
         ),
     ] {
         let def: String = sqlx::query_scalar(

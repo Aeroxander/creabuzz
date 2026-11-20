@@ -473,8 +473,8 @@ async fn h9_the_bound_is_real_on_a_table_of_a_million_rows() {
         .expect("the plan reads the blocks");
     assert_eq!(blocks["Index Name"], "idx_chain_blocks_time");
     assert!(
-        blocks["Actual Rows"].as_i64().expect("rows") <= 1,
-        "one block is read to find the window's first: {}",
+        blocks["Actual Rows"].as_i64().expect("rows") <= 2,
+        "the window's first block is found from the first block or two of the index, not by reading the window's 800,000: {}",
         blocks["Actual Rows"]
     );
     db.drop().await;

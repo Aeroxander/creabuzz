@@ -1018,7 +1018,8 @@ async fn a_record_announced_more_often_than_the_lookup_reads_is_refused_not_gues
 /// the partial indexes of migration 0072, and reads the newest block through its key. The primary key of `chain_logs`
 /// is dropped too (inside the transaction, so rolled back): its columns are `(reader, block_number, log_index)`, and on
 /// a shared table that grows between runs the planner can pick it for the ordered read instead of the partial index,
-/// which made this test fail once in thirteen runs. The test now holds whichever way the table's size tips the planner.
+/// which made this test fail once in thirteen runs. The test now holds whichever way the table's size or its stale
+/// statistics tip the planner: every index that is not meant for a read is dropped for the transaction.
 #[tokio::test]
 #[ignore = "requires Postgres and Redis"]
 async fn the_plan_reads_use_their_indexes_and_never_scan_every_block() {
@@ -1033,6 +1034,10 @@ async fn the_plan_reads_use_their_indexes_and_never_scan_every_block() {
         "SET LOCAL enable_seqscan = off",
         "DROP INDEX idx_chain_logs_project, idx_chain_logs_tasks",
         "ALTER TABLE chain_logs DROP CONSTRAINT chain_logs_pkey",
+        // Migration 0073's index on `(reader, block_time, number)` can also serve a read of one reader's newest block
+        // when the table's statistics are stale (right after other tests have filled and emptied it): the read is
+        // meant for the primary key, so it is the only one left.
+        "DROP INDEX idx_chain_blocks_time",
     ] {
         sqlx::query(statement)
             .execute(&mut *tx)

@@ -1843,7 +1843,7 @@ mod postgres_tests {
         for text in [
             "CREATE INDEX idx_chain_balance_changes_block",
             "ON chain_balance_changes (reader, project_key, token, block_number, log_index)",
-            "CREATE INDEX idx_chain_blocks_time ON chain_blocks (reader, block_time, number)",
+            "CREATE INDEX idx_chain_blocks_time ON chain_blocks (reader, block_time)",
             "rank_money",
             "rank_accounts",
             "rank_window_secs",
