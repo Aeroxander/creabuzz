@@ -16,6 +16,12 @@ import {
 export const NOT_A_RETURN = "This can go up or down. It is not a return.";
 /** On every sheet that moves money. */
 export const CAN_TAKE_OUT = "You can take your money out any time.";
+/**
+ * The banner on every page and sheet (design 2.7), word for word: the shell draws it under each page, a page that draws
+ * its own says so, and every money sheet carries it.
+ */
+export const TAKE_OUT_BANNER =
+  "You can take your money out any time. Nothing here promises a profit.";
 /** On every money screen of the test network. */
 export const PLAY_MONEY_WORDS =
   "This is a test network. The dollars are play money, not real money.";

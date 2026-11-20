@@ -3,6 +3,7 @@ import { RecoveryOfferHost } from "../features/account/RecoveryKeySheet";
 import { TermsAgainHost } from "../features/account/TermsAgainHost";
 import { UnlockBar } from "../features/account/UnlockBar";
 import { useUnseenCount } from "../features/notifications/use-notifications";
+import { WithMoneyBanner } from "./MoneyBanner";
 import { TabBar } from "./TabBar";
 
 /** Every screen: the gradient behind, the account notices on top, the screen, and the tab bar at the bottom. */
@@ -19,7 +20,9 @@ export function Shell() {
           <UnlockBar />
         </>
       )}
-      <Outlet />
+      <WithMoneyBanner hidden={signUp}>
+        <Outlet />
+      </WithMoneyBanner>
       {signUp ? null : <TabBar badge={unseen} />}
       <RecoveryOfferHost />
     </>

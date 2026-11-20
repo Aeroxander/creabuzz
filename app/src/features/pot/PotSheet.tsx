@@ -17,7 +17,7 @@ import { type PotAction, potProblem } from "../money/pot-copy";
 import { type MoneySendInput, useMoneySend } from "../money/use-money";
 import type { MoneyWallet } from "../money/wallet";
 import type { PendingSend } from "../money/pending-sends";
-import { CAN_TAKE_OUT, PLAY_MONEY_WORDS } from "./pot-words";
+import { PLAY_MONEY_WORDS, TAKE_OUT_BANNER } from "./pot-words";
 
 export interface PotSheetProps {
   open: boolean;
@@ -164,7 +164,9 @@ export function PotSheet(props: PotSheetProps) {
           {PLAY_MONEY_WORDS}
         </p>
       ) : null}
-      <p className="text-sm text-muted">{CAN_TAKE_OUT}</p>
+      <p className="text-sm text-muted" data-testid="sheet-banner">
+        {TAKE_OUT_BANNER}
+      </p>
       <OwnershipLine />
       {earlierWaiting ? (
         <p className="text-sm" data-testid="sheet-earlier-waiting">
