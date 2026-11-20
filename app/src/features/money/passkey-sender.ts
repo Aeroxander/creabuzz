@@ -96,6 +96,8 @@ export interface PasskeyImpl {
   sendCalls: MoneyWallet["sendCalls"];
   readCall: MoneyWallet["readCall"];
   blockNumber: MoneyWallet["blockNumber"];
+  /** The time of a block: optional, so a test double without it still stands in; the wallet then says the read failed. */
+  blockTime?: NonNullable<MoneyWallet["blockTime"]>;
   chainId: MoneyWallet["chainId"];
   getLogs: MoneyWallet["getLogs"];
   outcomeOf: MoneyWallet["outcomeOf"];
@@ -186,6 +188,14 @@ export function createPasskeySender(
     },
     readCall: (to, data) => need((i) => i.readCall(to, data)),
     blockNumber: () => need((i) => i.blockNumber()),
+    blockTime: (block) =>
+      need((i) =>
+        i.blockTime
+          ? i.blockTime(block)
+          : Promise.reject(
+              new Error("This account cannot say a block's time."),
+            ),
+      ),
     chainId: () => need((i) => i.chainId()),
     getLogs: (filter) => need((i) => i.getLogs(filter)),
     signTypedData: () =>

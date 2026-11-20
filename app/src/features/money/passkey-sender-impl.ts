@@ -298,6 +298,8 @@ export function createPasskeyImpl(
 
     readCall: async (to, data) => rpc.ethCall({ to, data }),
     blockNumber: async () => Number(await rpc.blockNumber()),
+    blockTime: async (block) =>
+      rpc.blockTime(block === "latest" ? "latest" : BigInt(block)),
     chainId: () => rpc.chainId(),
     getLogs: async (filter) =>
       rpc.getLogs({

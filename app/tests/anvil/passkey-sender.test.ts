@@ -523,6 +523,12 @@ run(
           to: head,
         });
         expect(logs.length).toBeGreaterThan(0);
+        // A block's time (the feed's "weeks held" line needs it): the network's own clock, never before the block's own.
+        const time = await sender.blockTime?.(head);
+        expect(time).toBeGreaterThan(1_600_000_000);
+        expect(await sender.blockTime?.("latest")).toBeGreaterThanOrEqual(
+          time ?? Number.POSITIVE_INFINITY,
+        );
         expect(call).toBeDefined();
         pass(
           "a phone with no wallet reads the chain (balance, block, logs) through the configured node",

@@ -236,6 +236,8 @@ export interface Kernel033ChainReadRpc extends Kernel033ChainRpc {
   blockNumber(): Promise<bigint>;
   /** `eth_chainId`. */
   chainId(): Promise<number>;
+  /** The time in unix seconds of block `block` (or the newest one): `eth_getBlockByNumber` → `timestamp`. */
+  blockTime(block: bigint | "latest"): Promise<number>;
   /** `eth_getLogs` over `[from, to]` (both included). */
   getLogs(filter: {
     address: string;
@@ -766,6 +768,13 @@ export function createKernel033ChainRpc(options: {
       Number(
         rpcQuantity("eth_chainId", await request<unknown>("eth_chainId", [])),
       ),
+    blockTime: async (block) => {
+      const found = await request<{ timestamp?: unknown } | null>(
+        "eth_getBlockByNumber",
+        [block === "latest" ? "latest" : `0x${block.toString(16)}`, false],
+      );
+      return Number(rpcQuantity("eth_getBlockByNumber", found?.timestamp));
+    },
     getLogs: async (filter) => {
       const logs = await request<unknown>("eth_getLogs", [
         {

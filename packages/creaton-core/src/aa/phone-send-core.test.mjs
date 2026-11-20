@@ -404,6 +404,31 @@ test("the chain client reads the newest block, the chain id and logs", async () 
   });
 });
 
+test("the chain client reads a block's time, by number and for the newest block, and refuses an answer with none", async () => {
+  const { fetchImpl, calls } = mockFetch([
+    { result: { timestamp: "0x6b49d200" } },
+    { result: { timestamp: "0x6b49d201" } },
+    { result: null },
+  ]);
+  const textFetch = async (url, init) => {
+    const response = await fetchImpl(url, init);
+    const payload = await response.json();
+    return { status: 200, text: async () => JSON.stringify(payload) };
+  };
+  const rpc = createKernel033ChainRpc({
+    url: "http://rpc.invalid",
+    fetchImpl: textFetch,
+    maxAttempts: 1,
+  });
+  assert.equal(await rpc.blockTime(16n), 0x6b49d200);
+  assert.equal(await rpc.blockTime("latest"), 0x6b49d201);
+  assert.deepEqual(calls[0].body.params, ["0x10", false]);
+  assert.deepEqual(calls[1].body.params, ["latest", false]);
+  assert.equal(calls[0].body.method, "eth_getBlockByNumber");
+  // A block the node does not know has no time: never zero.
+  await assert.rejects(() => rpc.blockTime(99n));
+});
+
 test("the account's next sequence number is read from EntryPoint with key 0", async () => {
   let asked;
   const sequence = await readEntryPointSequence(
