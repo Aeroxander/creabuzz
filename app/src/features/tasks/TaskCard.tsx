@@ -1,5 +1,5 @@
 import { relativeTime } from "@creaton/core/client/relative-time.ts";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { nameOf, type ProfileMetadata } from "../../lib/profiles";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Button } from "../../ui/button";
@@ -11,8 +11,10 @@ import { useConnectWallet } from "../money/use-money";
 import type { Project } from "../project/project-record";
 import { AcceptAndPay } from "./AcceptAndPay";
 import { PayFromBox } from "./PayFromBox";
-import { chainRowOf, nowOf } from "./chain/state";
+import { chainRowOf, nowOf, phaseOf, recordWordsOf } from "./chain/state";
 import { TaskSlots } from "./chain/slots";
+import { PlanState } from "./chain/team/PlanState";
+import { endedLine } from "./chain/words";
 import {
   handInRecord,
   nextFor,
@@ -60,6 +62,7 @@ export function TaskCard({
   taken?: ReadonlySet<string>;
 }) {
   const money = numbers !== null;
+  const titleId = useId();
   const next = nextFor(task, me, team, {
     founder: project.author,
     agents,
@@ -69,24 +72,50 @@ export function TaskCard({
   const mayAccept = next === "accept" && !(me && agents.has(me));
   const mayPay = next === "pay" && !(me && agents.has(me));
   const owes = payOwed(task);
+  // The task queue (step 2): where the server's record carries one, the network's row for this task record. A plan that is
+  // announced, taken or paid is the task's one door: the step 1 pay presses are not drawn, and the money lines are the
+  // network's own (a part payment must never read as paid in full).
+  const queue =
+    numbers && typeof numbers.tasks === "object" && numbers.tasks
+      ? numbers.tasks
+      : null;
+  const now = numbers && queue ? nowOf(numbers.asOf.time) : 0;
+  const chain = queue ? chainRowOf(queue, task.id) : null;
+  const live =
+    chain !== null &&
+    (chain.state === "announced" ||
+      chain.state === "taken" ||
+      chain.state === "paid");
   return (
     <article
+      aria-labelledby={titleId}
       className="plain flex flex-col gap-2 rounded-2xl p-4"
       data-state={task.state}
       data-testid="task-card"
     >
+      {live && chain && numbers ? (
+        <PlanState
+          chain={chain}
+          now={now}
+          numbers={numbers}
+          profiles={profiles}
+          task={task}
+        />
+      ) : null}
       <div className="flex items-center justify-between gap-2 text-xs text-muted">
         <span data-testid="task-state">{STATE_WORDS[task.state]}</span>
         <span>{relativeTime(task.at)}</span>
       </div>
-      <h3 className="font-semibold">{task.what}</h3>
-      {money && task.usd !== null && task.state !== "accepted" ? (
+      <h3 className="font-semibold" id={titleId}>
+        {task.what}
+      </h3>
+      {money && !live && task.usd !== null && task.state !== "accepted" ? (
         <p className="num text-sm font-semibold" data-testid="task-pays">
           Pays {dollarsWords(task.usd)} on accept
         </p>
       ) : null}
       {/* Accepted work is paid only when a payment is on its record: until then everyone reads that the pay is owed. */}
-      {money && owes !== null ? (
+      {money && !live && owes !== null ? (
         <p
           className="num text-sm font-semibold text-danger"
           data-testid="task-pay-owed"
@@ -95,6 +124,7 @@ export function TaskCard({
         </p>
       ) : null}
       {money &&
+      !live &&
       task.state === "accepted" &&
       task.usd !== null &&
       task.paidTx ? (
@@ -130,7 +160,17 @@ export function TaskCard({
           {TASK_PROBLEM.ownWork}
         </p>
       ) : null}
-      {mayAccept ? (
+      {chain && !live && numbers ? (
+        <p className="text-xs text-muted" data-testid="task-plan-ended">
+          {endedLine({
+            task: chain,
+            phase: phaseOf(chain, now, numbers.windDown?.at ?? null),
+            name: null,
+            what: recordWordsOf(chain, task),
+          })}
+        </p>
+      ) : null}
+      {mayAccept && !live ? (
         <AcceptAndPay
           address={address}
           numbers={numbers}
@@ -138,7 +178,7 @@ export function TaskCard({
           task={task}
         />
       ) : null}
-      {mayPay && numbers ? (
+      {mayPay && !live && numbers ? (
         <PayFromBox
           address={address}
           numbers={numbers}
@@ -148,19 +188,19 @@ export function TaskCard({
         />
       ) : null}
       {/* The task queue (step 2): mounted only where the server's record carries one; a card without it is the step 1 card. */}
-      {numbers && typeof numbers.tasks === "object" && numbers.tasks ? (
+      {numbers && queue ? (
         <TaskSlots
           address={address}
           agents={agents}
-          chain={chainRowOf(numbers.tasks, task.id)}
+          chain={chain}
           me={me}
-          now={nowOf(numbers.asOf.time)}
+          now={now}
           numbers={numbers}
           operators={operators}
           profiles={profiles}
           project={project}
           task={task}
-          tasks={numbers.tasks}
+          tasks={queue}
           team={team}
         />
       ) : null}

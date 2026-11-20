@@ -82,6 +82,10 @@ function numbersWith(tasks: ProjectNumbers["tasks"]): ProjectNumbers {
     chainId: 31337,
     playMoney: true,
     asOf: { block: 10, time: ASOF },
+    builtAt: ASOF,
+    refreshEverySecs: 600,
+    clock: { activeUntil: null },
+    windDown: null,
     runner: {
       address: "0x00000000000000000000000000000000000000ee",
       isPair: false,
