@@ -135,7 +135,7 @@ the view; Pair events followed. Pass B's:
 5. **Heartbeat on every promised refresh**, even when nothing changed (section 6 needs it; the old rule only moved a clock).
    `published_at` now always means "last signed".
 6. **`BUZZ_CHAIN_REFRESH_SECS` may be as low as 5** (was 60), so the loop can show the cadence; the defaults are 3600 and 600. The
-   ceiling is now 86400 (was 7 days), see below.
+   ceiling is now 43200, half a day (was 7 days, then 86400), see below.
 7. **Agents.** Up to 100 accounts the events named are read, the first 50 (live first) are listed; `truncated` is true when more exist.
    Agent addresses come only from `AgentSet` events, as the spec says.
 8. **Two replicas, one record.** Unchanged: only the writer-lock holder signs; `builtAt` is set to the `created_at` actually kept,
@@ -239,13 +239,13 @@ mined them into 2 or 3 blocks depending on timing. The run then had 86 or 87 blo
   future run. No other test hard-coded a block number of this run (the others use `fx.head()`).
 - `--check` ran **6 times in a row, 6 passes** after the regeneration, and 5 more at the end (see "What ran").
 
-### 2. The refresh settings end at 86400 seconds
+### 2. The refresh settings end at half a day (43200 seconds)
 
-`BUZZ_CHAIN_REFRESH_SECS` and `BUZZ_CHAIN_ACTIVE_REFRESH_SECS` accepted 5 to 604800; the app accepts `refreshEverySecs` up to 86400
-and refuses a longer promise, so a server set to 2 days would sign records the app throws away. Both now take 5 to 86400
-(`settings.rs`: `MIN_REFRESH_SECS`, `MAX_REFRESH_SECS`). `config::tests::the_chain_refresh_settings_end_at_one_day`: 5 and 86400 are
-accepted for each; 4, 86401 and 604800 (the old ceiling) are refused naming the setting and "5 to 86400". It fails with the old
-ceiling put back. `RECORD-V2.md` section 6 says so.
+`BUZZ_CHAIN_REFRESH_SECS` and `BUZZ_CHAIN_ACTIVE_REFRESH_SECS` accepted 5 to 604800 at first; the app accepts `refreshEverySecs` up to 86400
+and refuses a longer promise. They were set to 5 to 86400 in the closing work and to **5 to 43200** in round four (see "Review fixes, round
+four"): the app calls a record stale once it is older than a day, so a server set to a day would show every record stale for part of each
+cycle. (`settings.rs`: `MIN_REFRESH_SECS`, `MAX_REFRESH_SECS`; test `config::tests::the_chain_refresh_settings_end_at_half_a_day`.)
+`RECORD-V2.md` section 6 says so.
 
 ### 3. Migration 0070: the Team token's role, Team Share balances, the helper's call names
 
@@ -311,7 +311,7 @@ The helper section of that report now says, at its top and at the settings table
    migration transaction) rather than patched, since the sum of the changes is the balance by construction.
 3. **Agents' cut rule:** "probably live" comes from events (on, set after the last change of runner); the contract's views still decide
    `live`. Grants stay cut by id, as the spec had it.
-4. **Refresh floor stays 5 seconds**, ceiling 86400 (the app's range).
+4. **Refresh floor stays 5 seconds**, ceiling 43200 (half a day, since round four; it was 86400, the app's range).
 5. **The other four calls anyone may make** (`applyRate()`, `Vester.execute`, `Vester.burnAfterWindDown`, `Treasury.windDown()`) are
    still not built: with the database list no longer in the way, adding them is a product decision (who pays for gas for what).
 
@@ -356,3 +356,62 @@ On 19 November 2026, local Postgres and Redis, a database migrated to 0070 for t
   5 of 5 at the end.
 - `scripts/chain-loop-pot.sh` (relay rebuilt from this tree, fresh database migrated through 70): **95 checks passed**, exit 0; anvil and
   the relay stopped, scratch database dropped.
+
+## Review fixes, round four
+
+An independent verifier found the step 1 gap track not ready at `426318757` for one app blocker (see `APP-POT-REPORT.md`) and listed items
+for the server side too. The lead decided each; nothing else changed.
+
+### Fixed
+
+1. **G4, the `lastSettle` guard has a test that fails without it.** `Ledger::mismatches` names `lastSettle` when the ledger's last settle
+   is later than the view's (RECORD-V2.md 4.3), and says nothing when the view's is later (a settle that moves nothing emits no
+   `Settled`). New test `chain_reader::ledger::tests::a_ledger_settle_later_than_the_views_is_a_mismatch_and_an_earlier_one_is_not`, on
+   the real run's ledger: the view's last settle one second before the ledger's gives exactly one mismatch (`lastSettle`, with both
+   values), one second after gives none. With the guard replaced by `if false` the test fails ("only lastSettle differs: []", left 0,
+   right 1); with the guard in place it passes.
+2. **G5, the refresh ceiling is half a day (decision F3, revised).** `MAX_REFRESH_SECS = 43_200` in `chain_reader/settings.rs`: the app calls
+   a record stale once it is older than a day, so a server set to a day would show every record stale for part of each cycle. A larger
+   setting is refused when the server starts, in the same way as before (the message says "from 5 to 43200"). The test is now
+   `config::tests::the_chain_refresh_settings_end_at_half_a_day`: 5 and 43200 are accepted for each of the two settings; 4, 43201, 86400
+   (the former ceiling) and 604800 are refused naming the setting and its range. `RECORD-V2.md` section 6 says what the server allows
+   (5 to 43200; with `MAX_REFRESH_SECS` put back to 86_400 the test fails at the `config.rs` assertion) and that the app's own rule does not change (it accepts a stated refresh of 5 to 86400 and calls a record stale after a
+   day). The item is gone from "Still open" in both reports. (The earlier report `PLANV2-M5-REPORT.md`, which belongs to another track,
+   still names its own older range and was not touched.)
+3. **`scripts/chain-loop-pot.sh`: a cash figure that depends on the chain's clock is no longer asserted exactly.** The check "paid what the
+   quote said" compared the cash of a Take out with a quote read a second or so earlier, while outside money is still arriving. It now
+   asks for the cash to be at least the quote (the call's minimum is the quote, sent by the script) and at most one part in 1,000 above
+   it. I did not reproduce a failure of the exact check; the loosened check passed in my run (95 checks).
+
+### Declined, with the reason
+
+- Nothing declined on the server side in this round.
+
+### Still open
+
+- `PLANV2-M5-REPORT.md` (another track's file) still lists the old range for `BUZZ_CHAIN_REFRESH_SECS`; this report and `RECORD-V2.md` are the
+  current word.
+- The four calls anyone may make that the helper does not build (`applyRate()`, `Vester.execute`, `Vester.burnAfterWindDown`,
+  `Treasury.windDown()`): a product decision (as before).
+
+### What ran in round four
+
+All run in this session on 19 and 20 November 2026, with local Postgres and Redis started for them, `CARGO_BUILD_JOBS=2`:
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo clippy -p buzz-relay --lib --tests -- -D warnings` | finished, no warnings |
+| `cargo test -p buzz-relay --lib chain_reader -- --include-ignored --test-threads=1` | **69 passed, 0 failed, 0 ignored** (the Postgres-backed ones included) |
+| `cargo test -p buzz-relay --lib manager::` | 23 passed, 0 failed, 12 ignored (the ignored need services this run did not start for them) |
+| `cargo test -p buzz-relay --lib config::` | **104 passed, 0 failed** |
+| `node scripts/chain-reader-events.mjs --check` | "pot-events.json and events_table.rs match the contracts/pot build" |
+| `python3 -I scripts/chain-reader-fixture.py --check` | "pot-run.json is what a fresh run gives" |
+| `scripts/chain-loop-pot.sh` (relay built from this tree) | **95 checks passed**, exit 0 |
+| `scripts/pot-full-loop.sh` | 213 checks passed |
+
+Guards reverted and the tests run: `if self.last_settle > view.last_settle` replaced by `if false` fails
+`a_ledger_settle_later_than_the_views_is_a_mismatch_and_an_earlier_one_is_not` ("only lastSettle differs: []", left 0, right 1);
+`MAX_REFRESH_SECS` put back to 86_400 fails `the_chain_refresh_settings_end_at_half_a_day`. Both files were restored and the tests
+pass with the guards in place (checked by `git diff` on those two files showing only the intended round-four change).
+

@@ -104,11 +104,11 @@ cash, the sheet's button sends) and one signature. This is the budget the plan a
 The record specification was followed exactly in every field the run reads: the same example file is parsed by the server's types and by
 the app's parser (their own tests), and in this run the app read the server's real records at every step. One point disagreed:
 
-1. **`refreshEverySecs` (timing).** *(Closed: the server's range now ends at 86,400 seconds, the range the app accepts.)* The app refused a record that promises a refresh faster than 60 seconds; the server's setting allows
+1. **`refreshEverySecs` (timing).** *(Closed: the server's settings now end at 43,200 seconds, half a day; the app still accepts a stated refresh up to 86,400 and calls a record stale after a day.)* The app refused a record that promises a refresh faster than 60 seconds; the server's setting allows
    5 (its report's choice 6, so a loop can show the cadence). The specification says 600 or 3600 and names no floor, so the app's
    floor was the departure: a record signed with a 30-second promise read as "No numbers yet". **Fixed in the app** (`numbers-read.ts`:
    the floor is 5, the server's own); the test `numbers-hostile.test.ts` accepts 5 and refuses 4 (and 0 and a week as before).
-   The server's setting allowed up to 7 days while the app reads at most 24 hours; the server track has since ended its range at 86,400.
+   The server's setting allowed up to 7 days while the app reads at most 24 hours; the server track has since ended its range at 43,200 (half a day), so a server set to the ceiling still re-signs well inside the app's one-day rule.
 
 Other things the joined-up run showed that are not disagreements:
 
@@ -151,6 +151,10 @@ Other things the joined-up run showed that are not disagreements:
   limits. Each is driven in a real browser on a real local chain with the server's record stood in by the spec
   (`app/tests/e2e/pot-seat.spec.ts`, `pot-tasks.spec.ts`, `pot-week.spec.ts`), not with the real server and reader. This run uses the
   launch, the check-in, the draw and the Money tab's founder view.
+- **The recorded payment of a box-paid task is not checked on the network.** A teammate could make a task read "Paid" with an invented
+  transaction. It moves no money (the Treasury moves money only on a signed draw). Step 2 moves planned task money to the on-chain task
+  queue, where "paid" is read from the network and never from a person's word; the box-paid label is revisited there and must be closed
+  before real money.
 - **A passkey account launching** (the phone path) was proven for the contracts and as one operation in a unit test, not in a browser;
   **more than a handful of projects**, **two relays at once**, **the hosted manager** against a real model, and **a launch on Sepolia**
   were not run.
@@ -232,7 +236,7 @@ Files: `scripts/pot-full-loop.sh` (the world and the cleanup), `app/playwright.p
 kinds of spec share it. The journey reads the server with signed HTTP requests, keeps no key anywhere (the founder's account key
 is read from the browser's own storage and used in memory to sign one record), and uses only anvil's public development accounts.
 
-Gates, as run: see the end of `APP-POT-REPORT.md` ("Third round, app engineer B"). No file under `crates/` or `contracts/` was touched.
+Gates, as run: see the end of `APP-POT-REPORT.md` ("Review fixes, round four", "Gates, as run in round four") and of `READER-V2-REPORT.md` ("What ran in round four"). No file under `crates/` or `contracts/` was touched.
 
 ## 8. Chosen under the owner's standing go; the owner may overrule
 

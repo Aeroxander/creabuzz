@@ -824,9 +824,6 @@ into proper tests and the scratch files deleted: none is left, tracked or untrac
 ### Still open
 
 - The recorded payment of a task is not checked on the network (above). Before real money.
-- The refresh ceiling: the settings range still ends at 86400 seconds (the lead's decision, F3). The app calls a record stale once it is
-  older than a day, so a server set to the ceiling leaves each record stale for as long as the next pass takes. The comment on
-  `MAX_REFRESH_SECS` now says to use at most half a day (43200). Not changed in behaviour.
 - A task accepted so long ago that the search (40 pieces of 10,000 blocks, about 9 days on a 2-second chain) cannot reach back to its
   acceptance: no payment is offered on a guess; the person is shown the sentence and may say "Nothing was paid for this" (see fix 11).
   That word is theirs, and a payment that appears afterwards still stops the press.
@@ -871,5 +868,95 @@ Everything started was stopped (checked with `ps`); the private build was delete
 | `pot-full-loop.sh`, the phone scripts, the Postgres-backed reader tests | not re-run in this round: none of their code changed (the changes are in `app/src/features/tasks`, one anvil test and this report). The verifier ran all three on the earlier commit and they passed. |
 
 Not changed, as the verifier noted: the two edits outside the track's list (`JOIN-LEAVE-DESIGN.md` question for counsel, `PLANV2-M5P2-REPORT.md` helper
-settings) stay as committed; the recorded payment of a task is still not checked on the network (before real money); the refresh ceiling stays at
-86400 seconds (F3).
+settings) stay as committed; the recorded payment of a task is still not checked on the network (before real money); the refresh ceiling stayed at
+86400 seconds in that round (F3; it is 43200 since round four).
+
+## Review fixes, round four
+
+An independent verifier found the track not ready at `426318757` for one blocker (G1) and listed five important items (G2 to G6). The
+lead decided G7. Nothing else changed.
+
+### Fixed
+
+1. **G1, the blocker: the search stopped too early, so a payment could be missed and a task paid twice.**
+   `app/src/features/tasks/pay-lookup.ts`, `reaches()`: the stop test was `blockTime(start) <= since + SKEW_SECS`. A payment counts when its
+   block's time is at least `since - SKEW_SECS`, so the search may stop only once a piece starts at or before that moment; with the old
+   sign it stopped at a piece that began within the hour after the acceptance, and a payment made inside the hour before the cut that lay
+   in the next older piece was never read. The page then offered a bare "Pay from the box" and the task was paid twice. The test is now
+   `<= since - SKEW_SECS`, and the comment says the rule.
+2. **G2, tests on `findPayment` itself with a fake wallet (no chain).** New `app/src/features/tasks/pay-lookup.test.ts` (5 tests). Each
+   guard was reverted in turn and the tests failed:
+
+   | Guard reverted | Result |
+   |---|---|
+   | The stop test put back to `since + SKEW_SECS` (G1) | 3 failed: "finds a payment from the hour before the cut that lies in an older piece than the one that starts within an hour after the acceptance", "goes on while a piece starts later than an hour before the acceptance", "says the search is short when a bound is reached before the acceptance" |
+   | The filter `at + SKEW_SECS < since` removed | 1 failed: "does not return a payment older than the hour before the acceptance, and counts one exactly at its edge" |
+   | The stop removed (never stops) | 1 failed: "stops, reading no further piece, once a piece starts at or before an hour before the acceptance" |
+
+   With every guard in place: 5 passed. The tests pin (a) the older-piece payment is found, (b) a payment one second older than the cut
+   is not returned and one exactly at the cut is, (c) a piece that starts at the cut stops the search after one read, and one that starts
+   a second later does not (it reads 15,001, 5,001 and 0).
+3. **G3, the real-chain task test means the same on every anvil version.** `app/tests/anvil/pot-task-pay.test.ts` mines the 35,000 blocks
+   with `anvil_mine` given the count and an interval of one second (`["0x88b8", "0x1"]`), and asserts the count mined and that the mined
+   blocks are one second apart at the start and the end of the run. `scripts/pot-app-loop.sh`: **13 passed, 0 failed, 0 skipped, in 7
+   files, in six runs in a row** after the last change below. Before it, the loop failed in 2 of 7 runs. I read the second failure: it was in
+   `tests/anvil/pot-states.test.ts`, which asserted the Shares of a Back equal to the quote (1,960.008 Shares landed against a quote of
+   1,960): the quote is read at one second and the press is mined a second or so later, and the price moves with the clock once outside
+   money is arriving. (I did not read the first failure.) The two helpers there, `back` and `takeOut` (which had the same exact
+   assertion), now accept a result within one part in 1,000 either side of the quote and never below the call's own minimum
+   (`minShares`, `minCash`).
+4. **G6, the browser specs assert the whole legal line.** `tests/e2e/pot-seat.spec.ts` and `tests/e2e/pot-phone.spec.ts` asserted a prefix
+   ("Buyers acquire ownership only: governance and exit.") with `toContainText`; they now compare the whole line, written out word for
+   word, with `toHaveText`. The two market unit tests (`market-trade.test.tsx`, `market-screens.test.tsx`) matched a regular expression
+   on the first words; they now check for the whole line. Every other spec that mentions the line (`smoke.spec.ts`,
+   `pot-stranger.spec.ts`, `pot-full.spec.ts`, `ProjectPage.test.tsx`, `project-money.test.tsx`) already compared the whole of it.
+5. **G5, the app's rule is unchanged** (a record is stale after a day; the app accepts a record's stated refresh from 5 to 86400
+   seconds). The server's side is in `READER-V2-REPORT.md` (the settings now end at 43200).
+
+### Declined, with the reason
+
+- **G7: the recorded payment of a box-paid task is not checked on the network.** A teammate could make a task read "Paid" with an invented
+  transaction. It moves no money: the Treasury moves money only on a signed draw. Step 2 moves planned task money to the on-chain task
+  queue, where "paid" is read from the network and never from a person's word; the box-paid label is revisited there and **must be closed
+  before real money**.
+
+### Still open
+
+- The recorded payment of a box-paid task is not checked on the network (G7, above). Before real money.
+- A task accepted so long ago that the search (40 pieces of 10,000 blocks) cannot reach back to the acceptance: no payment is offered on a
+  guess, and the person may say "Nothing was paid for this" (as before).
+- Launch is checked per key (wallet plus project); a launch from another wallet of the same founder is not seen by the card (as before).
+- Focus after the seat is taken, loading cards without status text, and a person offered the seat who has not connected a wallet (as before).
+
+### Chosen under the owner's standing go; the owner may overrule
+
+1. The wall-clock drift between a quote and the press is allowed as one part in 1,000 either side of the quote in the real-chain tests
+   (`tests/anvil/pot-states.test.ts`), and never below the call's own minimum; in `scripts/chain-loop-pot.sh` (whose Take out sends the
+   quote itself as the minimum) as up to one part in 1,000 above the quote. The alternative, pinning every block's time, would test a
+   chain no one runs. The other anvil files (`pot-loop`, `pot-screens`) still assert the Shares equal to the quote exactly; they did not
+   fail in any run of this round.
+2. The two market unit tests were brought to the whole line too, though G6 named the browser specs: the same rule, two lines each.
+
+### Gates, as run in round four
+
+All run in this session on 19 and 20 November 2026, on this tree before the commits of round four (the same files as the commits), each
+command started after the other cargo and forge work had finished, with `nice -n 10`.
+
+| Command | Result |
+|---|---|
+| `tsc --noEmit` (app) | exit 0 |
+| `vitest run --maxWorkers=2` (app) | 83 files, **637 passed, 0 failed** (of which `pay-lookup.test.ts`: 5) |
+| `biome check .` (app) | 336 files, no fixes applied, exit 0 |
+| `check:copy`, `check:px-text`, `check:file-sizes` (`CHECK_FILE_SIZES_BASE=855c585a0`) | all pass |
+| the build (`tsc --noEmit`, `vite build` with `CREATON_DEPLOYMENTS_FILE=../contracts/pot/deployments/pot-31337.json`, `check-bundle-size.mjs`) | built; `index` 391 KiB ok, all scripts 994 KiB |
+| `packages/creaton-core` tests (`node --experimental-strip-types --test "src/**/*.test.mjs"`) | 1,211 tests, **1,210 passed, 0 failed, 1 skipped** |
+| `knip --no-progress` (what `cd web && pnpm check:unused` runs) | exit 0, no output |
+| `scripts/pot-app-loop.sh`, six runs in a row after the last change | each **13 passed, 0 failed, 0 skipped**, 7 files (before that change 2 of 7 runs had a failure, see fix 3) |
+| `scripts/phone-loop.sh` | 33 claims proven |
+| `scripts/pot-app-phone-e2e.sh` (runs `pot-phone.spec.ts`, which G6 changed) | 2 passed, 0 failed |
+| Playwright `--project=smoke --trace off` (the build made with the deployments file) | **80 passed, 0 failed, 1 skipped** |
+| `scripts/pot-full-loop.sh` | **213 checks passed** (1 journey passed, the `--serve` seed spec skipped by design) |
+
+The guards, each reverted in turn and the tests run (see fix 2): the stop test back to `+ SKEW_SECS` fails 3 of the 5 tests in
+`pay-lookup.test.ts`; the filter `at + SKEW_SECS < since` removed fails 1; the stop removed fails 1; with all three in place 5 pass.
+
