@@ -21,6 +21,19 @@
 # The two journeys do not share a world because the first moves the chain's clock by days (a record is dated by the server's own
 # clock, so a chain that is days ahead of it reads as an old record for the rest of that world).
 #
+# Step 3's journeys (app/tests/e2e-pot-full/pot-room.spec.ts, pot-seasons.spec.ts, pot-push.spec.ts), each in a world of its own:
+#   pot-room      a visitor opens a project's link and reads the page (one banner, the line "not a return", play money, one Back);
+#                 two people back and one takes out, and the live feed shows it rounded, with no names and the net money in; a holder
+#                 writes in the room, a stranger is refused in the server's own words, and after taking out and one time unit the
+#                 person is read-only (the server says so too);
+#   pot-seasons   ten backers and a Pair on one project and the badge appears exactly when its three inputs say so (the chain's clock is
+#                 moved by days); Home ranks by money held 30 days or more with the number of different accounts beside it, and a late
+#                 buyer does not move it; the operator starts a season with the real `buzz` command, a founder enters two projects from
+#                 Home, and the demo day page lists them;
+#   pot-push      the relay with web push on and a local stand-in for a push service: a holder turns alerts on from You, a task is
+#                 planned, and the stand-in receives the message the device decrypts; the real service worker shows its fixed sentence
+#                 for the same kind of news as the in-app alert; after Turn off the next task reaches nobody.
+#
 # Prints one `ok` line per check from the journey and, at the end, "pot-full-loop: N checks passed." Stops everything it started
 # (anvil, the relay, a Redis or Postgres it had to start), drops its scratch database and removes its temporary files, whatever
 # the outcome. Never runs cargo: the relay must already be built (`cargo build -p buzz-relay`).
@@ -30,7 +43,7 @@
 # uses; this script installs nothing), and a built relay. Uses anvil's well-known development accounts only; every amount is
 # play money.
 #
-# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: both journeys, each in a world of its own;
+# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all five journeys, each in a world of its own;
 #                                                          with arguments (a file name such as pot-tasks.spec, a --grep): one world, those only
 #         scripts/pot-full-loop.sh --serve       the same world, left running for a person to try on a phone (see below)
 #         scripts/pot-full-loop.sh --hold        one world, left running for an engineer: it writes the environment a journey needs to
@@ -44,7 +57,7 @@
 #   until you press Ctrl-C, then stops everything it started. The chain's development accounts are public and unlocked, so
 #   anyone on the same network can send play-money transactions to it while it runs: use a network you trust. It also leaves one
 #   planned task on the project (see the words it prints).
-# Env:    SERVE_HOST (with --serve: the address a phone reaches this computer at), POSTGRES_ADMIN_URL (default postgres://buzz:buzz_dev@127.0.0.1:5432/postgres), REDIS_URL, RELAY_BIN, FOUNDRY_BIN,
+# Env:    BUZZ_BIN (the `buzz` command, default target/debug/buzz, for the season journey), SERVE_HOST (with --serve: the address a phone reaches this computer at), POSTGRES_ADMIN_URL (default postgres://buzz:buzz_dev@127.0.0.1:5432/postgres), REDIS_URL, RELAY_BIN, FOUNDRY_BIN,
 #         RUN_TIMEOUT (seconds for the browser run, default 900), KEEP_DB=1 (keep the scratch database),
 #         RELAY_LOG_COPY=<file>, PW_CHROMIUM_PATH / PW_CHROMIUM_EXTRA_ARGS (a Chromium other than Playwright's pinned one),
 #         SHOTS_DIR=<folder> (keep the journey's screenshots there).
@@ -60,6 +73,9 @@ SERVE=""
 HOLD=""
 if [[ "${1:-}" == "--serve" ]]; then SERVE=1; shift; fi
 if [[ "${1:-}" == "--hold" ]]; then HOLD=1; shift; fi
+# With a journey named on the command line, the push world is the one that has the stand-in.
+for arg in "$@"; do [[ "$arg" == *pot-push* ]] && WORLD_PUSH=1; done
+[[ -n "${HOLD_PUSH:-}" ]] && WORLD_PUSH=1
 
 [[ -n "${FOUNDRY_BIN:-}" ]] && PATH="$FOUNDRY_BIN:$PATH"
 for tool in anvil cast forge psql curl node jq openssl python3 pnpm; do
@@ -71,13 +87,17 @@ BOUNDED="$(command -v timeout || command -v gtimeout || true)"
 ADMIN_URL="${POSTGRES_ADMIN_URL:-postgres://buzz:buzz_dev@127.0.0.1:5432/postgres}"
 REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}"
 RELAY_BIN="${RELAY_BIN:-target/debug/buzz-relay}"
-RUN_TIMEOUT="${RUN_TIMEOUT:-900}"
+BUZZ_BIN="${BUZZ_BIN:-target/debug/buzz}"
+RUN_TIMEOUT="${RUN_TIMEOUT:-1500}"
 POT="$REPO_ROOT/contracts/pot"
 DB=""
 DB_URL=""
 STATE="$(mktemp -d)"
 APP_DIST="$STATE/app-dist"
 ANVIL_PID=""
+STANDIN_PID=""
+STANDIN_URL=""
+WORLD_PUSH="${WORLD_PUSH:-}"
 RELAY_PID=""
 REDIS_PID=""
 PG_CLUSTER=""
@@ -108,6 +128,7 @@ stop_pid() {
 world_down() {
   stop_pid "$MINER_PID"; MINER_PID=""
   stop_pid "$RELAY_PID"; RELAY_PID=""
+  stop_pid "$STANDIN_PID"; STANDIN_PID=""; STANDIN_URL=""
   stop_pid "$ANVIL_PID"; ANVIL_PID=""
   [[ -n "${RELAY_LOG_COPY:-}" && -f "$STATE/relay.log" ]] && cp "$STATE/relay.log" "$RELAY_LOG_COPY"
   if [[ -n "$DB_MADE" && "${KEEP_DB:-}" == "1" ]]; then
@@ -176,7 +197,7 @@ world_up() {
   DB="buzz_pot_full_$$_$WORLD"
   DB_URL="${ADMIN_URL%/*}/$DB"
   step "world $WORLD: a local chain on :$CHAIN_PORT"
-  anvil --host "$BIND_HOST" --port "$CHAIN_PORT" --chain-id 31337 --gas-limit 100000000 --cache-path "$STATE/anvil-cache-$WORLD" \
+  anvil --host "$BIND_HOST" --port "$CHAIN_PORT" --chain-id 31337 --accounts 14 --gas-limit 100000000 --cache-path "$STATE/anvil-cache-$WORLD" \
     --silent >"$STATE/anvil.log" 2>&1 &
   ANVIL_PID=$!
   wait_for 50 cast block-number --rpc-url "$RPC" || fail "anvil did not start"
@@ -214,6 +235,24 @@ world_up() {
   PORT="$(free_port)"; HEALTH="$(free_port)"; METRICS="$(free_port)"
   BASE="http://localhost:$PORT"
   PUBLIC_BASE="http://$PUBLIC_HOST:$PORT"
+  # The platform's operator: a key made for this run (never written to a file). Its public half is the server's owner; the season
+  # journey signs with the key through the real `buzz` command.
+  OPERATOR_KEY="$(openssl rand -hex 32)"
+  OPERATOR_PUB="$(cd app && node --input-type=module -e "import {getPublicKey} from 'nostr-tools/pure'; import {hexToBytes} from 'nostr-tools/utils'; console.log(getPublicKey(hexToBytes(process.argv[1])))" "$OPERATOR_KEY")" \
+    || fail "could not derive the operator's public key"
+  PUSH_ENV=()
+  if [[ -n "$WORLD_PUSH" ]]; then
+    local vapid_key
+    vapid_key="$(openssl ecparam -name prime256v1 -genkey -noout -out /dev/stdout 2>/dev/null | openssl ec -outform DER 2>/dev/null | tail -c +8 | head -c 32 | basenc --base64url | tr -d '=')"
+    [[ ${#vapid_key} -eq 43 ]] || fail "could not make a push key for this run"
+    local standin_port
+    standin_port="$(free_port)"
+    node scripts/web-push-standin.mjs --port "$standin_port" >"$STATE/standin.log" 2>&1 &
+    STANDIN_PID=$!
+    STANDIN_URL="http://127.0.0.1:$standin_port"
+    wait_for 20 curl -fsS "$STANDIN_URL/_received" || fail "the push stand-in did not start"
+    PUSH_ENV=(BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY="$vapid_key" BUZZ_WEB_PUSH_SUBJECT="mailto:operator@example.org" BUZZ_WEB_PUSH_EXTRA_HOSTS="127.0.0.1:$standin_port")
+  fi
   step "starting the relay on :$PORT (the chain reader on this chain: 2 confirmations, 1 s passes, a fresh record at least every 30 s)"
   env DATABASE_URL="$DB_URL" REDIS_URL="$REDIS_URL" BUZZ_AUTO_MIGRATE=true \
     BUZZ_RELAY_PRIVATE_KEY="$(openssl rand -hex 32)" \
@@ -221,7 +260,7 @@ world_up() {
     BUZZ_HEALTH_PORT="$HEALTH" BUZZ_METRICS_PORT="$METRICS" \
     BUZZ_WEB_DIR="$APP_DIST" BUZZ_WEB_SPA=full BUZZ_MEDIA_BASE_URL="http://$PUBLIC_HOST:$PORT/media" \
     BUZZ_REQUIRE_RELAY_MEMBERSHIP=false BUZZ_GIT_CONFORMANCE_PROBE=false \
-    BUZZ_INVESTING=true \
+    BUZZ_INVESTING=true RELAY_OWNER_PUBKEY="$OPERATOR_PUB" "${PUSH_ENV[@]}" \
     BUZZ_TERMS_OF_SERVICE_MARKDOWN="$(cat docs/policies/TERMS-DRAFT.md)" \
     BUZZ_PRIVACY_POLICY_MARKDOWN="$(cat docs/policies/PRIVACY-DRAFT.md)" \
     BUZZ_AGE_ATTESTATION_REQUIRED=true \
@@ -245,6 +284,12 @@ world_up() {
   relay_up | jq -e '.investing == true and (.self | test("^[0-9a-f]{64}$"))' >/dev/null \
     || fail "the relay does not say it offers investing and its own key"
   grep -q 'chain reader started' "$STATE/relay.log" || fail "the chain reader did not start"
+  if [[ -n "$WORLD_PUSH" ]]; then
+    local public
+    public="$(relay_up | jq -r '.webPush.publicKey // empty')"
+    [[ -n "$public" ]] || fail "the relay does not carry a push key in its information"
+    curl -fsS -X POST -d "{\"publicKey\":\"$public\"}" "$STANDIN_URL/_vapid" >/dev/null || fail "could not give the stand-in the operator's public key"
+  fi
   curl -fsS -m 5 -H 'Accept: text/html' "$BASE/welcome" >"$STATE/page.html" 2>&1 || true
   grep -q '<div id="root"' "$STATE/page.html" || fail "the relay does not serve the app's page"
 }
@@ -280,6 +325,14 @@ if [[ -n "$SERVE" ]]; then
   then, with account number 5 in the wallet, open the project's Tasks tab and press "Set the money aside". The team's side (plan,
   pay, send back, withdraw) needs a project of your own: see docs/next-version/STEP2-SERVER-APP-REPORT.md.
 
+  Step 3 on the same project: the page opens on the name, the money with "This can go up or down. It is not a return.", the
+  banner and Back; Share gives the link and a picture; after you Back, the Room tab asks you once to confirm that your account is
+  the wallet's (one signature) and then you can write; "Lately" shows joins and take-outs with rounded amounts and no names. The
+  room's "one time unit after taking out" is a real week on this chain: move the chain's clock from this computer
+  (cast rpc --rpc-url $RPC evm_increaseTime 700000) and the server will say the room is read only for someone who took out.
+  Alerts away from the app and seasons are not in this mode: a phone needs a secure address for alerts (see
+  docs/next-version/STEP3-REPORT.md, section 9), and a season is started by the operator's key, which only the full run holds.
+
 EOF
   while kill -0 "$RELAY_PID" 2>/dev/null && kill -0 "$ANVIL_PID" 2>/dev/null; do sleep 2; done
   fail "the chain or the server stopped"
@@ -294,6 +347,7 @@ run_journey() {
     env BUZZ_REAL_RELAY_URL="$BASE" POT_RPC_URL="$RPC" POT_DEPLOYMENTS_FILE="$STATE/deployments.json" \
       POT_STATE_DIR="$STATE" POT_CHECKS_FILE="$CHECKS_FILE" POT_REPO_ROOT="$REPO_ROOT" POT_DB_URL="$DB_URL" \
       POT_HELPER_ADDRESS="$(cast wallet address --private-key "$K_HELPER" | tr 'A-F' 'a-f')" \
+      POT_OPERATOR_KEY="$OPERATOR_KEY" POT_BUZZ_BIN="$REPO_ROOT/$BUZZ_BIN" POT_STANDIN_URL="$STANDIN_URL" \
       ${SHOTS_DIR:+POT_SHOTS_DIR="$SHOTS_DIR"} \
       "$BOUNDED" "$RUN_TIMEOUT" node_modules/.bin/playwright test --config=playwright.pot-full.config.ts \
       --reporter=list --trace off "$@" )
@@ -330,6 +384,8 @@ POT_CHECKS_FILE=$CHECKS_FILE
 POT_REPO_ROOT=$REPO_ROOT
 POT_DB_URL=$DB_URL
 POT_HELPER_ADDRESS=$(cast wallet address --private-key "$K_HELPER" | tr 'A-F' 'a-f')
+POT_BUZZ_BIN=$REPO_ROOT/$BUZZ_BIN
+POT_STANDIN_URL=$STANDIN_URL
 EOF
   echo "[pot-full-loop] HOLDING world $WORLD. Environment for a journey: $HOLD_ENV. The relay log: $STATE/relay.log. Press Ctrl-C to stop it all."
   while kill -0 "$RELAY_PID" 2>/dev/null && kill -0 "$ANVIL_PID" 2>/dev/null; do sleep 2; done
@@ -339,13 +395,15 @@ elif [[ $# -gt 0 ]]; then
   run_journey "$@"
   world_down
 else
-  # The step 1 journey first, then the task queue's, each in a world of its own.
-  world_up
-  run_journey pot-full.spec
-  world_down
-  world_up
-  run_journey pot-tasks.spec
-  world_down
+  # Step 1's journey, step 2's task queue and step 3's three, each in a world of its own (the chain's clock is moved by days in
+  # most of them, and a world that is days ahead of the server's clock cannot be reused). Only the push world has a stand-in.
+  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-seasons.spec pot-push.spec; do
+    WORLD_PUSH=""
+    [[ "$journey" == pot-push.spec ]] && WORLD_PUSH=1
+    world_up
+    run_journey "$journey"
+    world_down
+  done
 fi
 CHECKS="$(grep -c '^ok' "$CHECKS_FILE" 2>/dev/null || echo 0)"
 EXTRA="$(awk '/^plus /{s+=$2} END{print s+0}' "$CHECKS_FILE" 2>/dev/null)"

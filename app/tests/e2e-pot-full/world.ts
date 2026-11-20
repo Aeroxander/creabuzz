@@ -12,8 +12,16 @@ import * as nip49 from "nostr-tools/nip49";
 import { finalizeEvent, generateSecretKey } from "nostr-tools/pure";
 import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 import { withChainKey } from "../../../packages/creaton-core/src/launchpad/project-chain.ts";
+import { expect, type Page } from "@playwright/test";
+import { getPublicKey } from "nostr-tools/pure";
 import { accounts, pointAtRpc, rpc } from "../anvil/rpc";
 import type { PotChain } from "../anvil/pot-chain";
+import {
+  chainNow,
+  launchedProject,
+  type LiveProject,
+} from "../e2e/helpers/live-chain";
+import { buildPost } from "../../../packages/creaton-core/src/social/feed/feed-events.ts";
 import type { LiveWorld } from "../e2e/helpers/live-chain";
 
 const need = (name: string): string => {
@@ -244,6 +252,49 @@ export interface NumbersJson {
   };
   tasks?: TasksJson | null;
   holders: { account: string; shares: string }[];
+  /** Step 3's keys (RECORD-V2 section 11): an object, or null for "not known here"; absent in a record from an older server. */
+  held?: HeldJson | null;
+  feed?: FeedJson | null;
+  streaks?: {
+    updates: { weeks: number; longest: number; lastAt: number | null };
+  } | null;
+  established?: EstablishedJson | null;
+}
+
+/** The record's `held` key: how long money has stayed (the ranking's and the badge's inputs). */
+export interface HeldJson {
+  windows: { rankSecs: number; badgeSecs: number };
+  rank: { shares: string; bps: number; money: string; accounts: number } | null;
+  badge: { shares: string; bps: number } | null;
+  countedAccounts: number;
+}
+
+/** The record's `feed` key: hours of joins and take-outs, rounded, with no names. */
+export interface FeedJson {
+  roundTo: string;
+  bucketSecs: number;
+  hours: {
+    at: number;
+    joins: number;
+    tookOut: number;
+    net: { dir: "in" | "out" | "even"; amount: string };
+  }[];
+  items: {
+    kind: string;
+    at: number;
+    serial: number | null;
+    date: number | null;
+  }[];
+  cut: number;
+}
+
+/** The record's `established` key: the badge's rule, its three inputs and the server's verdict. */
+export interface EstablishedJson {
+  rule: { minHeldBps: number; heldSecs: number; minAccounts: number };
+  heldBps: number | null;
+  accounts: number | null;
+  twoSigners: boolean;
+  reached: boolean | null;
 }
 
 /**
@@ -468,4 +519,143 @@ export function startMiner(): () => void {
       });
   }, 1000);
   return () => clearInterval(timer);
+}
+
+// --- Things the step 3 journeys do in the app and with the operator's tools ------------------------------------------
+
+/** The operator's key and the `buzz` command, for the one thing only the platform's operator does: start a season. */
+export const OPERATOR = {
+  key: process.env.POT_OPERATOR_KEY ?? "",
+  bin: process.env.POT_BUZZ_BIN ?? "",
+};
+
+/** The local stand-in for a push service the loop started (empty when this world has none). */
+export const STANDIN_URL = process.env.POT_STANDIN_URL ?? "";
+
+/** Run the real `buzz` command as the operator against this run's server; returns what it printed and its exit code. */
+export function buzzAsOperator(args: string[]): {
+  status: number;
+  stdout: string;
+  stderr: string;
+} {
+  if (!OPERATOR.key || !OPERATOR.bin)
+    throw new Error(
+      "no operator key or `buzz` command: run this with scripts/pot-full-loop.sh",
+    );
+  const out = spawnSync(OPERATOR.bin, args, {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      BUZZ_RELAY_URL: RUN.relay,
+      BUZZ_PRIVATE_KEY: OPERATOR.key,
+    },
+  });
+  return { status: out.status ?? 1, stdout: out.stdout, stderr: out.stderr };
+}
+
+/** Say something to the push stand-in (its own small HTTP interface) and read the answer as JSON. */
+export async function standin<T = unknown>(
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const res = await fetch(`${STANDIN_URL}${path}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok)
+    throw new Error(`the stand-in answered ${res.status} for ${path}`);
+  return (await res.json()) as T;
+}
+
+/** A project started in the app and launched on the chain, as its founder's page sees it. */
+export interface StartedProject {
+  name: string;
+  /** The page's path: /p/<id>-<16 hex of the founder>. */
+  link: string;
+  projectId: string;
+  founderPub: string;
+  project: LiveProject;
+}
+
+/**
+ * The founder's page (a phone with the founder's wallet and an account) starts a project from the app's own form and launches it
+ * on the chain from the launch card, then reads what the chain made of it. One signature asks the wallet once.
+ */
+export async function startAndLaunch(
+  w: LiveWorld,
+  founder: Page,
+  name: string,
+  goal = "A shared repair shop for night-market stalls.",
+  how = "Ten stalls bring their tools and share them.",
+): Promise<StartedProject> {
+  await founder.goto("/start");
+  await founder.getByTestId("start-name").fill(name);
+  await founder.getByTestId("start-goal").fill(goal);
+  await founder.getByTestId("start-how").fill(how);
+  await founder.getByTestId("start-submit").click();
+  await expect(founder.getByTestId("project-name")).toHaveText(name);
+  const link = new URL(founder.url()).pathname;
+  const ref = /^\/p\/(.+)-([0-9a-f]{16})$/.exec(link);
+  if (!ref) throw new Error(`not a project link: ${link}`);
+  const projectId = ref[1];
+  const founderPub = getPublicKey(await secretKeyOf(founder));
+  await expect(founder.getByTestId("launch-card")).toBeVisible({
+    timeout: 20_000,
+  });
+  await founder.getByTestId("launch-open").click();
+  await expect(founder.getByTestId("launch-sheet")).toBeVisible();
+  await founder.getByTestId("sheet-confirm").click();
+  await expect(founder.getByTestId("launch-sheet")).toBeHidden({
+    timeout: 30_000,
+  });
+  const project = await launchedProject(w, projectId, founderPub);
+  return { name, link, projectId, founderPub, project };
+}
+
+/** A person presses Back from the project's page with `dollars` play dollars (the faucet first when they have none): two presses. */
+export async function backInApp(page: Page, dollars: number): Promise<void> {
+  const amount = page.getByTestId("backing-amount");
+  await expect(amount).toBeVisible({ timeout: 20_000 });
+  await amount.fill(String(dollars));
+  await page.getByTestId("backing-review").click();
+  await expect(page.getByTestId("back-sheet")).toBeVisible();
+  await page.getByTestId("sheet-confirm").click();
+  await expect(page.getByTestId("back-sheet")).toBeHidden({ timeout: 30_000 });
+}
+
+/** Put a page's clock on the chain's when the chain's clock was moved ahead of the computer's (the page then agrees what day it is). */
+export async function syncClock(page: Page): Promise<void> {
+  const chain = await chainNow();
+  if (chain - Math.floor(Date.now() / 1000) > 30)
+    await page.clock.install({ time: chain * 1000 });
+}
+
+/** A room post signed by `key` for a project (what the app's composer sends), not yet sent: for what a refusal says. */
+export function signedRoomPost(
+  key: Uint8Array,
+  text: string,
+  founderPub: string,
+  projectId: string,
+  chainKey: string,
+): ReturnType<typeof finalizeEvent> {
+  const template = buildPost({
+    text,
+    room: { launch: { pubkey: founderPub, id: projectId }, key: chainKey },
+  });
+  return finalizeEvent(
+    { ...template, created_at: Math.floor(Date.now() / 1000) },
+    key,
+  );
+}
+
+/** One number from the server's own database (a count the journey checks directly: what the server kept, never what a page says). */
+export function dbCount(sql: string): number {
+  const out = spawnSync("psql", [need("POT_DB_URL"), "-Atc", sql], {
+    encoding: "utf8",
+  });
+  if (out.status !== 0)
+    throw new Error(`could not read the server's database: ${out.stderr}`);
+  return Number(out.stdout.trim());
 }
