@@ -4,6 +4,7 @@ import {
   KIND_TEXT_NOTE,
 } from "@creaton/core/kinds.ts";
 import { isGoalRecordTags } from "@creaton/core/project/goals.ts";
+import { inAnyRoom } from "@creaton/core/social/feed/feed-events.ts";
 import {
   isJoinAskTags,
   joinAskEvent,
@@ -130,8 +131,8 @@ export function useProjectActivity(project: Project | null | undefined) {
         });
       }
       for (const event of posts) {
-        // Only top-level posts about the project; replies stay in their thread.
-        if (event.tags.some((t) => t[0] === "e")) continue;
+        // Only top-level posts about the project; replies stay in their thread, and the holder room is read in its own tab.
+        if (event.tags.some((t) => t[0] === "e") || inAnyRoom(event)) continue;
         updates.push({
           id: event.id,
           author: event.pubkey,

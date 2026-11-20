@@ -67,9 +67,12 @@ export function PostText({
 export function PostActions({
   event,
   engagement,
+  name,
 }: {
   event: SignedEvent;
   engagement: Engagement;
+  /** The author's name: with it each press says whose post it is, so a screen reader hears one post's two presses apart from another's. */
+  name?: string;
 }) {
   const like = useLike();
   const requireAccount = useRequireAccount();
@@ -78,7 +81,7 @@ export function PostActions({
   return (
     <div className="flex items-center gap-1 text-sm text-muted">
       <button
-        aria-label={`Like, ${engagement.ups}`}
+        aria-label={name ? undefined : `Like, ${engagement.ups}`}
         aria-pressed={liked}
         className={cn(
           "btn btn-ghost btn-sm",
@@ -102,10 +105,17 @@ export function PostActions({
           fill={liked ? "currentColor" : "none"}
           size={18}
         />
+        {name ? (
+          <span className="sr-only">{`Like ${name}'s post,`}</span>
+        ) : null}
         <span className="num">{engagement.ups}</span>
       </button>
       <Link
-        aria-label={`Comments, ${engagement.replies}`}
+        aria-label={
+          name
+            ? `Comments on ${name}'s post, ${engagement.replies}`
+            : `Comments, ${engagement.replies}`
+        }
         className="btn btn-ghost btn-sm text-muted"
         params={{ id: event.id }}
         to="/post/$id"
@@ -140,7 +150,11 @@ export function PostCard({
       >
         <PostText text={event.content} />
       </Link>
-      <PostActions engagement={engagement} event={event} />
+      <PostActions
+        engagement={engagement}
+        event={event}
+        name={nameOf(profiles, event.pubkey)}
+      />
     </article>
   );
 }

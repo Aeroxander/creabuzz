@@ -12,8 +12,10 @@ import {
   buildPost,
   buildReply,
   buildVote,
+  inAnyRoom,
   type LaunchRef,
   parseNote,
+  type RoomRef,
 } from "@creaton/core/social/feed/feed-events.ts";
 import { fetchThread } from "@creaton/core/social/thread-read.ts";
 import type { Row, SignedEvent } from "@creaton/core/social/timeline.ts";
@@ -36,9 +38,14 @@ const postKeys = {
 
 const RECENT_LIMIT = 40;
 
-/** Top-level posts only: replies live under their post. */
+/**
+ * Top-level posts only: replies live under their post. A holder room's posts are never here: the room is read in its own tab,
+ * by its tag, and what is said there is not in Home, a profile or a project's updates.
+ */
 function topLevel(events: readonly NostrEvent[]): NostrEvent[] {
-  return events.filter((event) => parseNote(event)?.rootId === null);
+  return events.filter(
+    (event) => parseNote(event)?.rootId === null && !inAnyRoom(event),
+  );
 }
 
 /** The newest top-level posts, by `authors` when given (people you follow), otherwise by everyone. */
@@ -80,11 +87,14 @@ export function useEngagement(ids: readonly string[]) {
     queryFn: async () =>
       computeEngagement(
         sorted,
-        await read({
-          kinds: [KIND_REACTION, KIND_REPOST, KIND_TEXT_NOTE],
-          "#e": sorted,
-          limit: 500,
-        }),
+        // Anything from a room that names one of these posts is not counted: a room is counted in its own tab.
+        (
+          await read({
+            kinds: [KIND_REACTION, KIND_REPOST, KIND_TEXT_NOTE],
+            "#e": sorted,
+            limit: 500,
+          })
+        ).filter((event) => !inAnyRoom(event)),
         pubkey,
       ),
   });
@@ -106,12 +116,15 @@ export function useThread(id: string) {
   });
 }
 
-/** Write a post, about a project when one is given. */
+/** Write a post, about a project when one is given (or in its holder room when `room` is given). */
 export function usePublishPost() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: { text: string; launch?: LaunchRef | null }) =>
-      publishAsUser(buildPost(input), "Your post was not sent. Try again."),
+    mutationFn: (input: {
+      text: string;
+      launch?: LaunchRef | null;
+      room?: RoomRef | null;
+    }) => publishAsUser(buildPost(input), "Your post was not sent. Try again."),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: postKeys.all }),
   });
 }
@@ -124,6 +137,7 @@ export function usePublishReply() {
       text: string;
       root: SignedEvent;
       parent: SignedEvent;
+      room?: RoomRef | null;
     }) =>
       publishAsUser(buildReply(input), "Your reply was not sent. Try again."),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: postKeys.all }),
