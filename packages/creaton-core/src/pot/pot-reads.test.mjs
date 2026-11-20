@@ -551,6 +551,7 @@ test("the look goes newest first, a page at a time, and names each task once", a
     { from: 2_001, to: 7_000 },
     { from: 100, to: 2_000 },
   ]);
+  assert.equal(reads.NOTE_SCAN_PAGE, 5_000);
 });
 
 test("a node that refuses a big range gets smaller pages, and the answer is the same", async () => {

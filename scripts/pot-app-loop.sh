@@ -16,6 +16,9 @@
 #   pot-task-pay.test.ts  paying an accepted task from the box: the payment search finds a draw by payee and amount after the work was
 #                         accepted (and not another amount, another wallet, one a task already carries, or one made before), also
 #                         when a Pair's second signer made it by confirming;
+#   pot-task-reads.test.ts the seven task calls and the task reads (the shared library's S1): plan, withdraw, take early and in time,
+#                         a take out that writes a note, pay in part, a claim a stranger sends for someone else, send back,
+#                         run out and return, a plan nobody takes; with S1_CAPTURE_OUT=<file> it writes the raw answers;
 #   pot-states.test.ts    Take out with the door shut, after the team stopped checking in, with outside money arriving, after a
 #                         wind-down by anyone and by the runner; a Pair's call refused for its own proposer;
 #   passkey-back.test.ts  a Back from a passkey account: one operation, one passkey prompt, the Shares equal the quote.
@@ -60,7 +63,7 @@ cd "$ROOT/app"
 REPORT="$STATE/vitest.json"
 status=0
 M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts \
-  tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts tests/anvil/pot-team.test.ts tests/anvil/pot-states.test.ts tests/anvil/pot-allowance.test.ts tests/anvil/pot-task-pay.test.ts tests/anvil/passkey-back.test.ts \
+  tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts tests/anvil/pot-team.test.ts tests/anvil/pot-states.test.ts tests/anvil/pot-allowance.test.ts tests/anvil/pot-task-pay.test.ts tests/anvil/pot-task-reads.test.ts tests/anvil/passkey-back.test.ts \
   --reporter=default --reporter=json --outputFile.json="$REPORT" "$@" || status=$?
 node -e '
 const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
