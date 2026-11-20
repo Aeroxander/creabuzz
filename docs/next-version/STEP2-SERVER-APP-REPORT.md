@@ -324,3 +324,120 @@ scripts/pot-chain-loop.sh                 # the contracts, with cast only
 scripts/phone-loop.sh                     # the passkey path
 # helpful: FOUNDRY_BIN=<folder with anvil, cast, forge>  SHOTS_DIR=<folder for the journey's screenshots>  RELAY_LOG_COPY=<file>
 ```
+
+## 9. Review fixes (app side)
+
+Five independent reviews of the server and the app were read. This section is the app fixer's: every finding about `app/**`,
+`packages/creaton-core/**`, `scripts/pot-app-*` and `scripts/pot-full-loop.sh`. The server fixer's findings (the relay's plan choice and
+its payee check, the reader's exact check of the settled money, the lookup indexes, the helper) are in the server's own section. Each
+finding below was checked against the code first. Each fix has a test on the production path that fails when the fix is switched off
+(U5); the switch-off was tried once, and the result is written next to the fix.
+
+### 9.1 Fixed
+
+**Team side**
+
+| Finding | What was wrong | The fix | Test, and what failed with the guard off |
+|---|---|---|---|
+| B1 (BLOCKER) one door | The two step 1 box presses (`AcceptAndPay`, `PayFromBox`) hid only by the signed record, so a plan stood on the network while the box paid the same task a second time. | Both presses now read the project's task book right before they send (`planOfRecord` in `chain/team/plan-read.ts`: the open tasks and the newest 8 serials; announced, taken or paid, and not past its end, counts). A plan found stops the press with one sentence; a read that fails stops it too ("could not be checked, nothing was sent"). | `tasks/box-door.test.tsx` (3 tests): with the guard off 2 of 3 fail (a draw is sent). |
+| I1 the mirror | The plan door was offered, and the Plan sheet was not blocked, for a task the box had paid and whose record was still to be saved (the paid journal). | `DoorChoice` offers no door while the journal holds a payment of the task; `planBlock` and the sheet's last look refuse it (`PLAN_BLOCK.boxPaid`). | `chain/team/door-after-box.test.tsx` (with a control that offers the door) and a case in `plan-gate.test.ts`: both fail with the guard off. |
+| I2 last look | The Accept sheet's last look read only the chain; step 1's read of the team's record right before paying was lost. | `AcceptSheet.recheck` reads the record past the cache (`freshTask`) and stops when the state, the handed-in piece, the worker or the wallet differ from the card. The piece is taken at that moment and handed to `useSavePaid.save`, so "accepted and paid" is written for the piece that was paid for. | `chain/team/pay-last-look.test.tsx` fails with the check off. The pay-sheet tests now hand the card's own task to the last look (`serverTask()` in `tests/helpers/pay-scene.tsx`). |
+| I3 zero payee | `payToOf`, the card and the gate accepted the zero address as a wallet; on the network that means "open to anyone", so a plan to it lets the first stranger take the task. | New `isWallet` (a 40-hex address that is not zero) in `task-record.ts`, used by the parser, the take and agree records, `DoorChoice` (shows "needs a wallet") and `planBlock`. | `chain/team/zero-payee.test.tsx`, a gate case and a parser case in `task-record.test.ts`: each fails with its guard off. |
+| I4 / fit I2 part payment | A task paid in part whose row had left the record's list read "Paid 6 dollars." from the posted price. | Where the record carries the network's queue and no row ties, the card says "Paid. The price was 6 dollars." (`paidPriceWords`). Without a queue the step 1 words stay. | A case in `task-card-plan.test.tsx`; fails with the old words. |
+| I5 Pair twice | A plan could be asked of the other signer twice (reload, other device); confirming both plans the task twice. | The Plan sheet's last look reads what waits in the Pair and refuses a second `announceTask` for the same record ("already waiting"). A read that fails stops the press. | `chain/team/plan-pair-twice.test.tsx`, built from the first press's own proposal as the chain's log; fails with the check off. |
+| O1 | A Pair sentence read as confirmable for a call the contract refuses (a task past its end). | `taskCallTerms` uses `isPastEnd`. | `pair-terms-tasks.test.ts` case; fails with the check off. |
+| O2 | `dollarsPhrase(1_009_999n)` read "1 dollars". The Pair sentence for paying a task rounded the amounts down to the cent ("pay all" of 57.486851 read 57.48). | `dollarsPhrase` says "1 dollar" for any amount that reads "1". `acceptTaskWords` says exact amounts. | `pot-copy.test.ts` and `pair-terms-tasks.test.ts`; each fails with its change off. |
+| fit O7 | A refused step on a planned task showed the server's own sentence with its program prefix ("invalid: ..."), and a take with no wallet read "Someone may have taken it first". | `taskRefusalWords` (tasks-copy.ts) maps the eight sentences of the server's plan rules to plain ones inside `useTaskWrite`. `retry:` is left as it is: `use-save-paid` reads it. | `tasks/task-refusal.test.tsx`; fails with the mapping off. |
+
+**Holder side and alerts**
+
+| Finding | The fix | Test, and what failed with the guard off |
+|---|---|---|
+| I1 the dot forgets | Only a whole list or a balance read that came back may say "does not hold it". A read that is pending or failed forgets nothing (`knownHeld` in `alerts/pipeline.ts`). | `alerts/forgotten-held.test.tsx` fails with the old rule. |
+| I2 urgent news cut | Plans in their notice come first, soonest end first (`byUrgency`); the You list is never shorter than the number of them (`max(30, urgent)`), and says "And n more on the projects' own pages" under a cut. | `alerts/urgent-cut.test.tsx` (22 urgent of 66 rows; and 32 urgent, more than the 30 rows) and the order case in `alerts.test.ts`: each fails with its guard off. |
+| I3 news stuck | A project that cannot be read at all (another Launcher than this build's, or no wallet to ask) counts as one that could not be refreshed, and a balance read that never answers is given up after 15 s (`BALANCE_READ_MS`). | `alerts/news-stuck.test.tsx` (the odd-project case, with its control; and a read that never answers, with the clock moved): fail with the guard off. |
+| O1 ran out | A task that ran out is its own kind (`ran-out`), so its id is new and a holder who read "was taken" is told. | `alerts/ran-out-id.test.ts` and `alerts.test.ts`. |
+| O2 copy | Once a plan can be taken, the strip says "You can take your money out any time." (the news already said so). | `chain/holder/planned-copy.test.ts`, `words.test.ts`, `holder-lines.test.tsx`. |
+| O3 (one item) | A project page marks only its own ids; it no longer drops other projects' read marks older than 60 days (`markSeen(..., whole = false)`). | `alerts/seen.test.ts` case; fails with the old pruning. |
+
+**Scratch tests of the reviews** (all `review-s2-*` of the app side are gone, tracked or not): the box-door, door-after-box, pay-last-look,
+pair-plan-twice, zero-payee, part-paid-old, forgotten-held, urgent-cut, news-stuck, ran-out-id and copy tests became the proper tests above.
+`review-s2-x-amounts` became `chain/team/amount-odd.test.ts` (26 odd typed amounts never give an amount the sheet did not show) and
+`review-s2-h-fuzz` became `chain/holder/holder-extremes.test.ts` (1,500 parser-valid extreme records through every holder function; none
+throws). `review-s2-x-server-records.test.ts` was deleted: it needed a folder of records from a loop run (it skipped without one); what it
+proved (the real server's nine records read in full by the app's parser) is what `pot-full-loop.sh` does on every run.
+
+### 9.2 Declined, with the reason
+
+- **Fit O1 / rule 6, `claimFigure` blocks a claim when the app's rounding and the contract's own view differ.** Declined. The guard fires
+  only when the app's formula and the contract's `claimableNote` disagree, which they do not on the contracts this build is made for
+  (the loops compare them). The two reviewers disagree on it. A figure the app cannot reproduce is not shown beside a press that moves
+  money; if the contract's rounding ever changes, the build changes with it. Still open as a choice for the owner.
+- **Fit O8, a plan with no payee can be taken by anyone but the app never offers it.** This is the plan's own choice C9; nothing to fix.
+- **Team O3, `acceptGate` says "The deadline passed" 60 s early.** Wrong: `deadlinePassed` already says "too close to pay this safely"
+  while time remains (`words.ts`); only a time at or past the deadline says "passed".
+- **Team O4** (the `reaches()` early return): the reviewer himself calls it fine.
+
+### 9.3 Still open
+
+- Team B1, second half: the card still trusts the record's `live` when its tasks section is "unreadable". The presses are guarded on the
+  chain now, so no money can move twice; the card may still draw a box press beside a plan until the record catches up (the press then
+  says the task is planned).
+- Team I1, second half: a payment found by the box search (`findPayment`) is not looked for when the Plan sheet opens. The journal case
+  is closed; a payment made by a Pair's second signer and not yet recorded is not (the Plan sheet cannot know it without the search).
+- Team O5: identical accessible names on several cards ("Pay for the work"); the cards are labelled regions, the buttons do not carry the
+  task in their name.
+- Holder O3 items not done: a claim alert stays up to one refresh period after the person claims; `PlannedStrips` draws "Take out before"
+  only for a holder the record lists; at most 3 strips in serial order; the strip's "set aside today" figure can come from a record older
+  than a day (a small age note says so); `YourSharesList` finds claims only among the last 300 records; claims on You read one note list per
+  matched project with no cap across projects; the You news block can be 30 rows tall above "Your Shares"; the Money tab shows "Money you
+  can claim" to a visitor who never held. Holder O4 (identically named strips and claim buttons, "Look for your step", "never runs out" next to "ran out").
+- Fit "what could be cut" (the News pipeline's balance reads, the note finder's look-back scan, the per-holder claimable figures, C35):
+  not touched; scope.
+
+### 9.4 Chosen under the owner's standing go; the owner may overrule
+
+- **How far the box presses look.** `planOfRecord` reads the open tasks and the newest 8 serials of the book (a bound; a plan paid
+  longer ago than 8 plans is not found, but then its record carries the payment and the card does not offer the press). A read that fails
+  stops the press: nothing is paid on a guess.
+- **Words for a paid task with no row.** Wherever the record carries the network's queue and no row ties, a paid task reads "Paid. The
+  price was N dollars." This includes a task the box paid in full (no row ever existed): the sentence is true for both, and a part payment
+  can no longer read as paid in full. A project record without a queue keeps the step 1 words.
+- **The You list.** Plans in their notice come first, soonest end first, and are never cut: the list shows at least all of them, so the
+  most it can show is 8 open plans for each of 20 projects. The other news is cut at 30 rows with a line that says how many more there
+  are. "Mark n as read" still marks everything the dot counts.
+- **15 seconds** for a balance read on You before it counts as failed (`BALANCE_READ_MS`).
+- **Plain refusals** are mapped in `useTaskWrite` for all task writes, by the tail of the server's sentence (so a small change of the
+  server's wording keeps working); `retry:` is passed on unchanged.
+- **Small additive changes in files the builders owned (U1):** `chain/team/PayPresses.tsx` and `AcceptSheet.tsx` (a `project` prop and a
+  piece handed to the save), `use-save-paid.ts` (an optional piece), `alerts/use-news.ts` (one argument), and the test helpers
+  `tests/helpers/pay-scene.tsx` (`serverTask()`) and `tests/helpers/no-book.ts` (new). The three step 1 unit tests of the box presses and
+  the Plan sheet's Pair test now answer the reads the new looks make (no book, an empty Pair); the pay-sheet tests hand the card's task to the
+  last look.
+
+### 9.5 What ran after the fixes, and the exact results
+
+All on the commits below, with the server fixer's commits (`a2e433ae2`, `f7fb96c7c`, `b009b97e4`, `05aa94d80`) already in. The wait for
+them was about 25 minutes.
+
+| Command | Result |
+|---|---|
+| `tsc --noEmit` | clean |
+| `vitest run` (app) | **138 files, 1,239 tests passed, 0 failed** (1,184 before the fixes; no `review-s2-*` file left) |
+| `biome check .` | 477 files, no problem |
+| `check:copy`, `check:px-text` | pass |
+| `check:file-sizes` with `CHECK_FILE_SIZES_BASE=0e38c9811` | pass |
+| `node scripts/pot-app-abi.mjs --check` | "pot ABIs are current" |
+| the build, with `CREATON_DEPLOYMENTS_FILE` naming a copy of the deployments file | built; main bundle 386 KiB ok, all scripts 1,129 KiB, inside the budget |
+| `pnpm -C packages/creaton-core test` | 1,229 tests, 1,228 pass, 0 fail, 1 skipped (the shared library was not changed; `web` was not run for that reason) |
+| `scripts/pot-app-loop.sh`, twice | **16 tests passed, 0 failed, 0 skipped, in 10 files**, both times |
+| `scripts/phone-loop.sh` | **33 claims proven** |
+| Playwright `smoke` project, `--trace off`, port chosen at random | **94 passed, 1 skipped, 0 failed, 0 flaky** (7.3 minutes). The skipped spec is `pot-phone.spec.ts`, which needs the passkey build that `scripts/pot-app-phone-e2e.sh` makes; not run |
+| `scripts/pot-full-loop.sh`, relay built from `05aa94d80` | **616 checks passed**, both journeys, the reader never refused to sign |
+
+Nothing is left running (checked: no anvil, relay or preview server). Postgres and Redis were already up and are left up.
+
+### 9.6 Commits of this section
+
+`05c152538` (team side), `27ef63515` (holder side and alerts), `a946c5740` (plain refusals, exact Pair amounts), and the commit of this
+section.
