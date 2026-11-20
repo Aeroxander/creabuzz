@@ -29,8 +29,9 @@
 //! | `task-part` = accept, evidence, more-time, give-up| the task's helper: the one it names, |
 //! |                                                   | or for a task open to anyone, its    |
 //! |                                                   | taker (see "Tasks open to anyone")   |
-//! |   accept may carry `task-pay-to`                  | the helper's own wallet (see "Plans   |
-//! |                                                   | on the network")                     |
+//! |   (accept may carry `task-pay-to`)                | the same: the wallet it names is the |
+//! |                                                   | helper's own (see "Plans on the      |
+//! |                                                   | network")                            |
 //! | `task-part` = take                                | anyone signed in but the team, on a  |
 //! |                                                   | task open to anyone that nobody has  |
 //! |                                                   | taken; a few a day, and small        |
