@@ -353,7 +353,7 @@ run_journey() {
       --reporter=list --trace off "$@" )
   code=$?
   local checks extra
-  checks="$(grep -c '^ok' "$CHECKS_FILE" 2>/dev/null || echo 0)"
+  checks="$(grep -c '^ok' "$CHECKS_FILE" 2>/dev/null || true)"; checks="${checks:-0}"
   extra="$(awk '/^plus /{s+=$2} END{print s+0}' "$CHECKS_FILE" 2>/dev/null)"
   if [[ $code -ne 0 ]]; then
     [[ $code -eq 124 ]] && printf '\033[31m[pot-full-loop] the browser run did not finish in %ss\033[0m\n' "$RUN_TIMEOUT" >&2
@@ -405,7 +405,7 @@ else
     world_down
   done
 fi
-CHECKS="$(grep -c '^ok' "$CHECKS_FILE" 2>/dev/null || echo 0)"
+CHECKS="$(grep -c '^ok' "$CHECKS_FILE" 2>/dev/null || true)"; CHECKS="${CHECKS:-0}"
 EXTRA="$(awk '/^plus /{s+=$2} END{print s+0}' "$CHECKS_FILE" 2>/dev/null)"
 echo
 echo "pot-full-loop: $((CHECKS + EXTRA)) checks passed."

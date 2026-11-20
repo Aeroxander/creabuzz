@@ -106,6 +106,9 @@ export function useMyProjects(me: string | null, enabled: boolean) {
     queryKey: seasonKeys.mine(me ?? ""),
     enabled: enabled && me !== null && investingOn(),
     staleTime: 30_000,
+    // Home read again each time it opens: a project launched and tied a moment ago (in this very session) is offered at once,
+    // not after the 30 seconds a list read earlier would otherwise be believed.
+    refetchOnMount: "always",
     queryFn: async (): Promise<Project[]> => {
       if (!me) return [];
       const [founded, listed] = await readMulti([

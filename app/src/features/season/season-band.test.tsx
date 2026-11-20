@@ -75,7 +75,11 @@ function project(
   };
 }
 
-function band() {
+function band(
+  client: QueryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  }),
+) {
   const root = createRootRoute({ component: SeasonBand });
   const stub = (path: string) =>
     createRoute({ getParentRoute: () => root, path, component: () => null });
@@ -84,11 +88,7 @@ function band() {
     history: createMemoryHistory({ initialEntries: ["/"] }),
   });
   return render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
+    <QueryClientProvider client={client}>
       <ToastProvider>
         <RouterProvider router={router} />
       </ToastProvider>
@@ -242,6 +242,24 @@ describe("entering a project", () => {
       ],
       content: "{}",
     });
+  });
+
+  it("a project launched and tied a moment ago is offered when Home opens again in the same session (the list read earlier is not believed)", async () => {
+    who.me = ME;
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    serve([open, mine]);
+    const first = band(client);
+    await screen.findByRole("button", { name: "Enter Moss" });
+    expect(screen.queryByRole("button", { name: "Enter Fern" })).toBeNull();
+    first.unmount();
+    // The founder launches Fern and ties its page (its record now names the launch), then is back on Home well inside the 30
+    // seconds the list read a moment ago would otherwise be kept.
+    serve([open, mine, project(ME, "fern", "Fern")]);
+    band(client);
+    await screen.findByRole("button", { name: "Enter Fern" });
+    expect(screen.getByRole("button", { name: "Enter Moss" })).not.toBeNull();
   });
 
   it("a project is offered when the founder lists the person on the team", async () => {
