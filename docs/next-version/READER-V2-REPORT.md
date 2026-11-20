@@ -775,4 +775,4 @@ three source files compare equal to their backups by sha256). The index guard wa
 - **Deploy order**: the new reader (this build) must run before the first project is launched on the step 2 Launcher; an older binary drops the unknown `TasksReady` and `TaskMoney` topics for good (stored rows are final), never finds the book and refuses to sign for that project (fail closed, no wrong record).
 - The relay's `confirm` rule now needs the worker to have named the wallet on a `take` or `accept` step they signed, for a task whose plan the network paid. The app's own flows already do (the e2e helpers take naming the payee); any script that confirms a paid plan must, too.
 - `contracts/pot/deployments/pot-31337.json` is rewritten by every deploy; do not run two loops at once.
-- Commits: see the end of this report's last commit message list in the hand-over (the lead has the ids).
+- Commits of this section: `a2e433ae2` (the exact `quoteBack` lines), `f7fb96c7c` (the relay rules and migration 0072), `b009b97e4` (the boundary tests and this section).
