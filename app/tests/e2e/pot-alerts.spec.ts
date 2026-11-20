@@ -113,7 +113,8 @@ test("a holder opens You and reads what the team planned, with the day money can
   await expect(row).toContainText(
     `the team plans to pay up to ${USD} dollars for “${WHAT}”, from `,
   );
-  await expect(row).toContainText("You can take your money out before then.");
+  // Said once, in the line under the sentence, with the date.
+  await expect(row).not.toContainText("before then");
   await expect(page.getByTestId("news-urgent")).toContainText(
     "You can take your money out before ",
   );
@@ -240,7 +241,8 @@ test("a holder who was away finds the planned task still there, with the right d
   const row = page.getByTestId("news-row").first();
   await expect(row).toBeVisible({ timeout: 20_000 });
   await expect(row).toContainText("the team plans to pay up to");
-  await expect(row).toContainText("You can take your money out before then.");
+  // Said once, in the line under the sentence, with the date.
+  await expect(row).not.toContainText("before then");
   await expect(row).toContainText("(as of ");
   // The date is the network's, never the phone's: the day the notice ends.
   const date = new Date(noticeEnd * 1000).toLocaleString("en-GB", {

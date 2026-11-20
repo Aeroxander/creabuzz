@@ -26,7 +26,10 @@ export function ageSuffix(age: AlertAge, asOf: number): string {
   return "";
 }
 
-/** The team plans to pay: before the take date, "from {date}"; once it can be taken, until when. */
+/**
+ * The team plans to pay: before the take date, "from {date}"; once it can be taken, until when. Before the take date the row's
+ * next line (`urgentWords`) says the money can leave before then, so this sentence does not say it a second time.
+ */
 export function plannedWords(input: {
   max: bigint;
   what: string | null;
@@ -37,7 +40,7 @@ export function plannedWords(input: {
 }): string {
   const head = `the team plans to pay up to ${dollarsPhrase(input.max)} for ${quotedWhat(input.what)}`;
   return input.from !== null
-    ? `${head}, from ${timeText(input.from)}. You can take your money out before then.`
+    ? `${head}, from ${timeText(input.from)}.`
     : `${head}. It can be taken until ${timeText(input.until)}. You can take your money out any time.`;
 }
 

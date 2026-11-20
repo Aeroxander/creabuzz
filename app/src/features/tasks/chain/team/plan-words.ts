@@ -173,7 +173,7 @@ export const PLAN_INSTEAD = "Plan it instead, so holders get notice first.";
  * moment it first could be.
  */
 export function notTakeable(activeUntil: number): string {
-  return `This task cannot be taken unless the team checks in before ${timeText(activeUntil)}.`;
+  return `This task cannot be taken unless the team sends its weekly update (its check-in) before ${timeText(activeUntil)}.`;
 }
 
 /** On the Tasks tab, to the team: planned tasks that nobody can take unless the project checks in again. */

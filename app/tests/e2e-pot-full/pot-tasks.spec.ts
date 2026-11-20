@@ -389,7 +389,7 @@ test("a task from its plan to its claim: the page, the server and the contracts 
     const news = viewer.getByTestId("news-row").first();
     await expect(news).toBeVisible({ timeout: 30_000 });
     await expect(news.getByTestId("news-sentence")).toContainText(
-      `${name}: the team plans to pay up to ${mostWords} dollars for “${WHAT}”, from ${noticeDate}. You can take your money out before then.`,
+      `${name}: the team plans to pay up to ${mostWords} dollars for “${WHAT}”, from ${noticeDate}.`,
     );
     await expect(news.getByTestId("news-urgent")).toContainText(
       `You can take your money out before ${noticeDate}.`,

@@ -85,12 +85,12 @@ function Row({
         ) : null}
       </p>
       <p className="text-xs text-muted">{timeText(alert.at)}</p>
-      {alert.before !== null && projectRef ? (
+      {alert.before !== null ? (
         <div className="flex flex-col items-start gap-2">
           <p className="break-words text-sm" data-testid="news-urgent">
             {urgentWords(alert.before)}
           </p>
-          {drawTakeOut ? (
+          {drawTakeOut && projectRef ? (
             <Button
               aria-label={`${NEWS_TAKE_OUT} of ${project} before ${timeText(alert.before)}`}
               onClick={() =>

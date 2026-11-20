@@ -5,7 +5,7 @@ puts the task queue and exit notes of `contracts/pot` (`TaskBook`, `Treasury`) i
 notice before any money moves, a worker takes it and the money is set aside, a holder who leaves while it is set aside is left a note,
 the team pays all or part of it or sends it back, and anyone returns the money of a task that ran out. The server reads it all from the
 chain and signs it into the project's numbers record (version 2, a new `tasks` section); the app reads that record for lists and the
-chain for every press. Nothing is pushed. **No person has tested any of this: every run below was made by an agent. The human test is the
+chain for every press. Step 2 is pushed on branch v6 (since 20 November 2026, commit 35ea0a894). **No person has tested any of this: every run below was made by an agent. The human test is the
 owner's and is still to do (the steps are in section 7).** This is not legal or tax advice, and no figure here is a promise of any
 result for anyone. Every amount is play money on a local test chain. The legal line, quoted as it stands: "Buyers acquire ownership only:
 governance and exit. No dividends or revenue share, ever, unless they contribute and earn one."

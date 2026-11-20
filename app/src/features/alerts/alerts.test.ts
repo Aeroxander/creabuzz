@@ -71,7 +71,8 @@ describe("every kind of news and every phase of a row", () => {
       expect(alert?.urgent).toBe(true);
       expect(alert?.before).toBe(row.noticeEnd);
       expect(alert?.said).toContain(`from ${timeText(row.noticeEnd)}`);
-      expect(alert?.said).toContain("You can take your money out before then.");
+      // Said once: the line under the row (`urgentWords`) carries the take-out sentence, with its date.
+      expect(alert?.said).not.toContain("take your money out");
       expect(alert?.words).toBe(`Lantern: ${alert?.said}`);
     }
   });

@@ -230,6 +230,7 @@ export function TakeOutSheet({
             </p>
             {taskInfo?.onWhereToClaim ? (
               <Button
+                className="-ml-[15px]"
                 data-testid="takeout-where-to-claim"
                 onClick={() => {
                   close();

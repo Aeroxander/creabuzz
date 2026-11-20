@@ -12,14 +12,15 @@ import { dollarsPhrase, quotedWhat } from "../words";
 
 export const CLAIMS_HEADING = "Money you can claim";
 
+/** The button under the list that searches the network's own records. */
+export const LOOK_FIRST = "Look for money I can claim";
+
 /** Under the heading, always: what is owed never runs out, and where the list comes from. */
-export const CLAIMS_NEVER_EXPIRE =
-  "Money you are owed from a task never runs out. This list comes from what the server and this browser remember; to find an older one, look back.";
+export const CLAIMS_NEVER_EXPIRE = `Money you are owed from a task never runs out. This list shows what the server and this browser remember. If one is missing, press “${LOOK_FIRST}” under this list: it searches the network's own records for older ones.`;
 
 /** Nothing is listed; the server's list is whole, or it is cut. */
 export const CLAIMS_NONE = "Nothing is waiting for you to claim.";
-export const CLAIMS_NONE_CUT =
-  "Nothing is listed for you, but the server's list is cut, so an older one may be missing. Look back to find it.";
+export const CLAIMS_NONE_CUT = `Nothing is listed for you, but the server's list is cut, so an older one may be missing. Press “${LOOK_FIRST}” to find it.`;
 
 export const CLAIMS_READ_FAILED =
   "What you can claim could not be read from the network just now. Your money is not affected. Try again in a moment.";
@@ -60,7 +61,6 @@ export function claimPress(claimable: bigint): string {
 
 // --- The look back ------------------------------------------------------------------------------------------------------
 
-export const LOOK_FIRST = "Look for money I can claim";
 export const LOOK_FURTHER = "Look further back";
 export const LOOKING = "Looking…";
 

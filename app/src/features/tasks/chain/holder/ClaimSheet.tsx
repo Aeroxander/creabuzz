@@ -114,7 +114,14 @@ export function ClaimSheet({
               {dollarsPhrase(data.task.returned)}
             </SheetLine>
           )}
-          <SheetLine label="You are owed now" testId="claim-owed">
+          <SheetLine
+            label={
+              figure.overdue
+                ? "You are owed now"
+                : "Your part of what came back"
+            }
+            testId="claim-owed"
+          >
             {dollarsPhrase(figure.claimable)}
           </SheetLine>
         </dl>

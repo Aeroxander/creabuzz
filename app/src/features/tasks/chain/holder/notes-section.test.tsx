@@ -43,6 +43,7 @@ import type { ChainTask } from "../types";
 import { dollarsPhrase } from "../words";
 import { goToClaims } from "./claims-anchor";
 import { NotesCard } from "./NotesSection";
+import { LOOK_FIRST } from "./notes-words";
 
 let records: ProjectTask[] = [];
 
@@ -233,7 +234,7 @@ describe("the list", () => {
     });
     show();
     expect((await screen.findByTestId("notes-none")).textContent).toMatch(
-      /the server's list is cut, so an older one may be missing\. Look back to find it\.$/,
+      /the server's list is cut, so an older one may be missing\. Press “Look for money I can claim” to find it\.$/,
     );
   });
 
@@ -268,6 +269,11 @@ describe("the list", () => {
     expect(screen.getByTestId("notes-never-expire").textContent).toMatch(
       /never runs out/,
     );
+    // It names the button that finds older ones, by the button's own words.
+    expect(screen.getByTestId("notes-never-expire").textContent).toContain(
+      `“${LOOK_FIRST}”`,
+    );
+    expect(screen.getByTestId("notes-look").textContent).toBe(LOOK_FIRST);
   });
 
   it("is a list with a name, under one heading that can take focus", async () => {
