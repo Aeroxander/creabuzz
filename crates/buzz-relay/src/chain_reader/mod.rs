@@ -109,6 +109,9 @@ struct Schedule {
     failing: HashMap<Word, (u32, i64)>,
     /// The unix second before which the ranking index is not looked at again.
     explore_after: i64,
+    /// Looks at the ranking index in a row that listed nothing or failed (the pause before the next one grows with
+    /// it, from [`explore::RETRY_SECS`] to [`explore::EVERY_SECS`]).
+    explore_misses: u32,
 }
 
 /// What one full pass did.
@@ -491,7 +494,9 @@ impl ChainReader {
                 }
             }
         }
-        // The ranking index of the money that stayed: at most every ten minutes, never at the cost of a pass.
+        // The ranking index of the money that stayed: at most every ten minutes, never at the cost of a pass. A look
+        // that listed nothing or failed is repeated sooner (a minute, then twice as long each time up to the ten
+        // minutes), so the first index is not ten minutes late and a failed one is not waited out.
         let due = {
             let mut schedule = self.schedule();
             let due = now >= schedule.explore_after;
@@ -502,9 +507,24 @@ impl ChainReader {
             due
         };
         if due {
-            match self.publish_explore(&tenant, &as_of, now).await {
-                Ok(true) => report.explore_signed += 1,
-                Ok(false) => {}
+            let result = self.publish_explore(&tenant, &as_of, now).await;
+            let listed = matches!(result, Ok((_, listed)) if listed > 0);
+            {
+                let mut schedule = self.schedule();
+                if listed {
+                    schedule.explore_misses = 0;
+                } else {
+                    let pause = explore::RETRY_SECS
+                        .saturating_mul(1u64 << schedule.explore_misses.min(10))
+                        .min(explore::EVERY_SECS);
+                    schedule.explore_misses = schedule.explore_misses.saturating_add(1);
+                    schedule.explore_after =
+                        now.saturating_add(i64::try_from(pause).unwrap_or(i64::MAX));
+                }
+            }
+            match result {
+                Ok((true, _)) => report.explore_signed += 1,
+                Ok((false, _)) => {}
                 Err(e) => {
                     report.explore_failed += 1;
                     metrics::counter!("buzz_chain_reader_explore_failed_total").increment(1);
@@ -530,15 +550,15 @@ impl ChainReader {
     }
 
     /// Build the ranking index and sign it when its entries changed. Returns
-    /// whether a record was signed.
+    /// whether a record was signed and how many projects the index lists.
     async fn publish_explore(
         &self,
         tenant: &TenantContext,
         as_of: &AsOf,
         now: i64,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<(bool, usize)> {
         let index = explore::build(&self.state, tenant, self.scan.reader.as_str(), as_of).await?;
-        explore::publish(
+        let signed = explore::publish(
             &self.state,
             tenant,
             self.config.chain_id,
@@ -546,7 +566,8 @@ impl ChainReader {
             &index,
             now,
         )
-        .await
+        .await?;
+        Ok((signed, index.entries.len()))
     }
 
     /// A project's build failed: it waits longer after each failure in a row.
@@ -603,6 +624,7 @@ impl ChainReader {
         key: &Word,
         as_of: &AsOf,
         ledger: &ledger::Ledger,
+        floor: u128,
     ) -> anyhow::Result<(held::Window, held::Window)> {
         let pool = self.state.db.pool();
         let reader = self.scan.reader.as_str();
@@ -612,20 +634,24 @@ impl ChainReader {
             record_social::rank_secs(ledger.unit),
             record_social::badge_secs(ledger.unit),
         ] {
-            let raw = held::held_input(
+            let raw = held::held_input_above(
                 pool,
                 reader,
                 key,
                 as_of.block,
                 as_of.time.saturating_sub(secs),
                 held::Limits::default(),
+                floor,
             )
             .await?;
             windows.push(match raw {
                 held::WindowRaw::Cut => held::Window::Cut,
-                held::WindowRaw::Counted(runs) => {
-                    held::Window::Counted(held::lowest(&runs, ledger.shares_balances(), &excluded)?)
-                }
+                held::WindowRaw::Counted(runs) => held::Window::Counted(held::lowest_above(
+                    &runs,
+                    ledger.shares_balances(),
+                    &excluded,
+                    floor,
+                )?),
             });
         }
         let badge = windows.pop().context("the badge window")?;
@@ -657,7 +683,9 @@ impl ChainReader {
         let created_at = prev.map_or(now, |p| now.max(p.published_at + 1));
         // The held-for-a-window counts are display only: a failure to read them leaves `held` null in this
         // record (and is tried again at the next build), it never stops the record.
-        let windows = match self.count_windows(key, as_of, &ledger).await {
+        let read = numbers::read_views(self.source.as_ref(), &ledger, as_of).await?;
+        let floor = record_social::dust_floor(read.t("leaveValue")?, read.t("MIN_JOIN")?);
+        let windows = match self.count_windows(key, as_of, &ledger, floor).await {
             Ok(windows) => Some(windows),
             Err(e) => {
                 tracing::error!(project = %hex0x(key), "chain reader: held not counted: {e:#}");
@@ -669,14 +697,13 @@ impl ChainReader {
             held: windows.as_ref().map(|(rank, badge)| (rank, badge)),
         };
         let (content, social_report) = numbers::derive(
-            self.source.as_ref(),
+            &read,
             &ledger,
             as_of,
             &self.cadence(),
             u64::try_from(created_at).context("time before 1970")?,
             &social,
-        )
-        .await?;
+        )?;
         for line in &social_report.failed {
             tracing::error!(project = %hex0x(key), "chain reader: {line}");
             metrics::counter!("buzz_chain_reader_social_failed_total").increment(1);

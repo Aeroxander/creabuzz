@@ -325,6 +325,95 @@ async fn h10_the_query_equals_the_pure_walk_on_random_rows() {
     db.drop().await;
 }
 
+/// H11: an account below the floor is not counted: 200 one-wei transfers to fresh addresses do not push a window
+/// over its cap of accounts (the same rows with no floor do), the honest holders' figures are what they were, and a
+/// window over the cap of rows is cut even when every account in it is below the floor.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn h11_accounts_below_the_floor_do_not_cut_a_window() {
+    let db = Scratch::new().await;
+    let reader = "h11";
+    let limits = Limits {
+        rows_max: 10_000,
+        accounts_max: 50,
+    };
+    for n in 0..=201 {
+        db.block(reader, n, 100 + n * 10).await;
+    }
+    // Three holders, minted long before the window.
+    for account in 1..=3u8 {
+        db.change(reader, 1, 0, i32::from(account), account, 1_000)
+            .await;
+    }
+    // Inside the window: holder 2 sends holder 3 five, and holder 1 sends one wei to each of 200 fresh addresses.
+    db.change(reader, 1, 1, 0, 2, -5).await;
+    db.change(reader, 1, 1, 1, 3, 5).await;
+    for n in 0..200i64 {
+        let dust = 10 + u8::try_from(n).expect("a byte");
+        db.change(reader, 1, 2 + n, 0, 1, -1).await;
+        db.change(reader, 1, 2 + n, 1, dust, 1).await;
+    }
+    let start = 100;
+    // No floor: 203 accounts moved, over the cap of 50: the window is cut (this is the attack).
+    assert_eq!(
+        held::held_input(&db.pool, reader, &key(1), 201, start, limits)
+            .await
+            .expect("runs"),
+        WindowRaw::Cut,
+        "without a floor, one-wei transfers cut the window"
+    );
+    // With a floor of ten wei: only the three holders are counted, and their figures are exact.
+    let WindowRaw::Counted(runs) =
+        held::held_input_above(&db.pool, reader, &key(1), 201, start, limits, 10)
+            .await
+            .expect("runs")
+    else {
+        panic!("with the floor the window is counted");
+    };
+    assert_eq!(
+        runs.keys().cloned().collect::<Vec<_>>(),
+        [who(1), who(2), who(3)]
+    );
+    assert_eq!(runs[&who(1)].total, -200);
+    assert_eq!(runs[&who(2)].total, -5);
+    assert_eq!(runs[&who(3)].total, 5);
+    // A floor of exactly one wei counts the fresh addresses (a balance equal to the floor counts).
+    assert_eq!(
+        held::held_input_above(&db.pool, reader, &key(1), 201, start, limits, 1)
+            .await
+            .expect("runs"),
+        WindowRaw::Cut,
+        "an account at the floor counts"
+    );
+    // The cap of rows still holds when no account in the window reaches the floor: two dust accounts that pass
+    // one wei back and forth fifty times.
+    db.change(reader, 2, 0, 0, 60, 1).await;
+    for n in 0..50i64 {
+        let (from, to) = if n % 2 == 0 { (60u8, 61u8) } else { (61, 60) };
+        db.change(reader, 2, 1 + n, 0, from, -1).await;
+        db.change(reader, 2, 1 + n, 1, to, 1).await;
+    }
+    let small = Limits {
+        rows_max: 20,
+        accounts_max: 50,
+    };
+    assert_eq!(
+        held::held_input_above(&db.pool, reader, &key(2), 201, start, small, 10)
+            .await
+            .expect("runs"),
+        WindowRaw::Cut,
+        "rows over the cap cut the window whatever the accounts hold"
+    );
+    assert_eq!(
+        held::held_input_above(&db.pool, reader, &key(2), 201, start, Limits::default(), 10)
+            .await
+            .expect("runs"),
+        WindowRaw::Counted(Default::default()),
+        "under the cap, accounts that never reach the floor are simply not counted"
+    );
+    db.drop().await;
+}
+
 /// The nodes of a JSON plan.
 fn nodes<'a>(plan: &'a Value, out: &mut Vec<&'a Value>) {
     out.push(plan);
@@ -353,6 +442,7 @@ async fn scan_of(
         .bind(start)
         .bind(i64::try_from(limits.rows_max).expect("cap"))
         .bind(i64::try_from(limits.accounts_max).expect("cap"))
+        .bind("0")
         .fetch_one(&db.pool)
         .await
         .expect("explain analyze");
@@ -360,7 +450,7 @@ async fn scan_of(
     nodes(&plan[0]["Plan"], &mut all);
     let scan = all
         .iter()
-        .find(|n| n["Relation Name"] == "chain_balance_changes")
+        .find(|n| n["Relation Name"] == "chain_balance_changes" && n["Alias"] == "c")
         .unwrap_or_else(|| panic!("the plan reads the changes: {plan}"));
     (
         scan["Actual Rows"].as_i64().expect("rows")
@@ -462,6 +552,7 @@ async fn h9_the_bound_is_real_on_a_table_of_a_million_rows() {
     .bind(800_000i64)
     .bind(4_000i64)
     .bind(20_000i64)
+    .bind("0")
     .fetch_one(&db.pool)
     .await
     .expect("explain analyze");
@@ -502,4 +593,58 @@ async fn the_signed_records_social_keys_equal_the_pure_builds_for_both_projects(
             assert_eq!(signed[key], built.value[key], "{name}: {key}");
         }
     }
+}
+
+/// The reader's own path: 20,001 one-wei transfers to fresh addresses, inside both windows of a project, leave its
+/// signed `held` and `established` with figures (the reader counts only accounts that hold what a smallest Back
+/// buys). The same rows with no floor cut the windows, which the test shows first so that it is the floor that is
+/// tested and not the placement of the rows.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_crowd_of_one_wei_transfers_leaves_a_signed_record_its_held_figures() {
+    let fx = Fixture::load();
+    let (reader, chain, _state) = setup(&fx).await;
+    chain.serve_books(&fx, &["A_end", "B_end"]);
+    let key = fx.projects["A"].key;
+    let block = i64::try_from(fx.head() - 3).expect("block");
+    sqlx::query(
+        "INSERT INTO chain_balance_changes (reader, block_number, log_index, account, project_key, delta, token) \
+         SELECT $1, $2, 100000 + g, decode(lpad(to_hex(10000000 + g), 40, '0'), 'hex'), $3, 1, 'shares' \
+         FROM generate_series(1, $4) g",
+    )
+    .bind(reader.reader_id())
+    .bind(block)
+    .bind(key.as_slice())
+    .bind(i64::try_from(held::HELD_ACCOUNTS_MAX).expect("cap") + 1)
+    .execute(reader.state.db.pool())
+    .await
+    .expect("one-wei transfers");
+    read_all(&reader, &chain).await;
+    let signed = stored_record(&reader, &key).await;
+    let rank_secs = signed["held"]["windows"]["rankSecs"]
+        .as_u64()
+        .expect("a window");
+    let as_of = (
+        signed["asOf"]["block"].as_u64().expect("block"),
+        signed["asOf"]["time"].as_u64().expect("time"),
+    );
+    assert_eq!(
+        held::held_input(
+            reader.state.db.pool(),
+            reader.reader_id(),
+            &key,
+            as_of.0,
+            as_of.1.saturating_sub(rank_secs),
+            Limits::default()
+        )
+        .await
+        .expect("the query runs"),
+        WindowRaw::Cut,
+        "with no floor these rows cut the ranking window"
+    );
+    assert!(
+        !signed["held"]["rank"].is_null() && !signed["held"]["badge"].is_null(),
+        "with the floor the signed record has its figures: {}",
+        signed["held"]
+    );
 }

@@ -1,8 +1,6 @@
 //! The ranking index's rule, the tie to a coordinate and what the index carries (the IX series of
 //! `docs/next-version/STEP3-PLAN.md` section 9.2). The Postgres half is in `explore_postgres_tests.rs`.
 
-use std::collections::BTreeMap;
-
 use serde_json::Value;
 
 use super::*;
@@ -76,35 +74,29 @@ fn ix1_at_most_twenty_entries_and_the_cut_is_counted() {
     assert!(bytes < 6_000, "about 4 KB for 20 entries: {bytes}");
 }
 
-/// The tie: a row is kept only with a coordinate whose hash is the launch's `projectId`, whoever else claims the
-/// key; a key whose launch is not read is left out.
+/// The tie: a record ties a key only when its coordinate's hash is the launch's `projectId`, whoever else claims
+/// the key; a key whose launch names nothing found ties nothing.
 #[test]
 fn a_project_is_listed_only_with_the_coordinate_its_launch_names() {
-    let stored = |key: u8| Stored {
-        key: [key; 32],
-        money: 10,
-        accounts: 1,
-        window_secs: 1,
-        reached: None,
-        launched_at: 1,
-    };
     // A toy hash: the id of a coordinate is its text reversed.
     let id_of = |c: &str| c.chars().rev().collect::<String>();
     let claims = vec![
-        ("37001:aa:honest".to_owned(), [1u8; 32]),
         ("37001:bb:thief".to_owned(), [1u8; 32]),
+        ("37001:aa:honest".to_owned(), [1u8; 32]),
         ("37001:cc:other".to_owned(), [2u8; 32]),
     ];
-    let ids = BTreeMap::from([
-        ([1u8; 32], id_of("37001:aa:honest").to_uppercase()),
-        ([2u8; 32], id_of("37001:zz:something-else")),
-    ]);
-    let rows = tie(vec![stored(1), stored(2), stored(3)], &claims, &ids, id_of);
-    assert_eq!(rows.len(), 1);
+    let want = id_of("37001:aa:honest").to_uppercase();
     assert_eq!(
-        rows[0].coordinate, "37001:aa:honest",
+        tied_coordinate(&claims, &[1u8; 32], &want, id_of).map(String::as_str),
+        Some("37001:aa:honest"),
         "the thief's record claims the key and is not listed"
     );
+    assert_eq!(
+        tied_coordinate(&claims, &[2u8; 32], &want, id_of),
+        None,
+        "another key's record does not tie"
+    );
+    assert_eq!(tied_coordinate(&claims, &[3u8; 32], &want, id_of), None);
 }
 
 /// IX4: no address, name or per-person figure in the index, and no price, pot, volume or join count.

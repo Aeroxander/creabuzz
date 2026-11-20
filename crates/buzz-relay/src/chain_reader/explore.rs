@@ -13,8 +13,9 @@
 //! (money held, valued at `value.leaveValue`), then the number of different accounts, then age, then the key.
 //! Never the pot, never the price of a Share, never joins, never volume, never anything in the feed.
 //!
-//! [`explore_of`] is pure: rows in, the sorted and capped index out. [`build`] reads the rows, the project
-//! records and each listed project's standing; [`publish`] signs it, only when the entries changed.
+//! [`explore_of`] is pure: rows in, the sorted and capped index out. [`build`] reads the rows a page at a time,
+//! each project's record by its key and each listed project's standing; [`publish`] signs it when the entries
+//! changed, and again when the live one is half a day old.
 
 use std::collections::BTreeMap;
 
@@ -32,14 +33,25 @@ use crate::state::AppState;
 
 /// The most entries of the index (about 4 KB).
 pub const MAX_ENTRIES: usize = 20;
-/// How many of the community's newest project records are read to tie a project to its coordinate.
-pub const RECORDS_READ: i64 = 5_000;
-/// How many ranking rows are read before the cap (the best ones first).
-pub const ROWS_READ: i64 = 500;
-/// How many listed candidates are looked at for their standing before the build gives up the rest.
+/// How many ranking rows are read in one page (the best ones first).
+pub const PAGE: i64 = 50;
+/// How many ranking rows are looked at in all before the build gives up the rest (so that rows no record ties
+/// cannot make a build read for ever).
+pub const ROWS_READ: usize = 500;
+/// How many tied candidates are looked at for their standing before the build gives up the rest.
 pub const STANDING_CHECKS: usize = 100;
+/// The records of one chain key read to find the one the launch names, in pages of [`RECORDS_PAGE`].
+pub const RECORDS_PER_KEY: i64 = 500;
+/// The page of those reads.
+pub const RECORDS_PAGE: i64 = 100;
 /// The index is looked at no oftener than this many seconds.
 pub const EVERY_SECS: u64 = 600;
+/// The index is looked at again after this many seconds while the last look found nothing to list or failed; it
+/// doubles on each miss in a row, up to [`EVERY_SECS`].
+pub const RETRY_SECS: u64 = 60;
+/// A live index whose entries have not changed is signed again when it is this old, so that the app, which does not
+/// show an index older than a day, keeps a ranking that is still right.
+pub const RESIGN_SECS: i64 = 12 * 3_600;
 /// The index's own version.
 pub const VERSION: u32 = 1;
 /// The `d` tag of the index.
@@ -183,18 +195,37 @@ pub(crate) struct Stored {
     pub(crate) launched_at: u64,
 }
 
-/// The best [`ROWS_READ`] rows of this reader's table: only records that are not stale and have money that
-/// stayed. Ranking order, so the cap keeps the best.
-pub(crate) async fn stored_rows(pool: &PgPool, reader: &str) -> anyhow::Result<Vec<Stored>> {
+/// How many projects of this reader's table have money that stayed (the rows [`stored_rows`] pages through).
+pub(crate) async fn stored_count(pool: &PgPool, reader: &str) -> anyhow::Result<u64> {
+    let n: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM chain_project_numbers \
+         WHERE reader = $1 AND NOT stale AND rank_money > 0 \
+           AND rank_accounts IS NOT NULL AND rank_window_secs IS NOT NULL AND launched_at IS NOT NULL",
+    )
+    .bind(reader)
+    .fetch_one(pool)
+    .await
+    .context("count the ranking rows")?;
+    Ok(u64::try_from(n).unwrap_or(0))
+}
+
+/// One page of this reader's table: only records that are not stale and have money that stayed. Ranking order, so
+/// the pages go from the best on.
+pub(crate) async fn stored_rows(
+    pool: &PgPool,
+    reader: &str,
+    offset: i64,
+) -> anyhow::Result<Vec<Stored>> {
     let rows = sqlx::query(
         "SELECT project_key, rank_money::text AS money, rank_accounts, rank_window_secs, reached, launched_at \
          FROM chain_project_numbers \
          WHERE reader = $1 AND NOT stale AND rank_money > 0 \
            AND rank_accounts IS NOT NULL AND rank_window_secs IS NOT NULL AND launched_at IS NOT NULL \
-         ORDER BY rank_money DESC, rank_accounts DESC, launched_at ASC, project_key ASC LIMIT $2",
+         ORDER BY rank_money DESC, rank_accounts DESC, launched_at ASC, project_key ASC LIMIT $2 OFFSET $3",
     )
     .bind(reader)
-    .bind(ROWS_READ)
+    .bind(PAGE)
+    .bind(offset)
     .fetch_all(pool)
     .await
     .context("read the ranking rows")?;
@@ -261,43 +292,75 @@ pub fn claim_of(event: &nostr::Event) -> Option<(String, Word)> {
     ))
 }
 
-/// Tie the rows to coordinates: a row is kept, with its coordinate, only when some stored project record that
-/// names its key has a coordinate whose hash is the `projectId` its launch named. `claims` are the records'
-/// `(coordinate, key)`; `ids` the launches' project ids by key. Pure.
-pub(crate) fn tie(
-    stored: Vec<Stored>,
-    claims: &[(String, Word)],
-    ids: &BTreeMap<Word, String>,
+/// The coordinate of the record that ties a key to its launch: the first of `claims` (the records' `(coordinate,
+/// key)`) that names `key` and whose coordinate hashes (`id_of`) to `want`, the `projectId` the launch named. Pure.
+pub(crate) fn tied_coordinate<'a>(
+    claims: &'a [(String, Word)],
+    key: &Word,
+    want: &str,
     id_of: impl Fn(&str) -> String,
-) -> Vec<Row> {
-    let mut out = Vec::new();
-    for s in stored {
-        let Some(want) = ids.get(&s.key) else {
-            continue;
-        };
-        let coordinate = claims
-            .iter()
-            .filter(|(_, key)| *key == s.key)
-            .map(|(c, _)| c)
-            .find(|c| id_of(c.as_str()).eq_ignore_ascii_case(want));
-        if let Some(coordinate) = coordinate {
-            out.push(Row {
-                key: hex0x(&s.key),
-                coordinate: coordinate.clone(),
-                launched_at: s.launched_at,
-                window_secs: s.window_secs,
-                money: s.money,
-                accounts: s.accounts,
-                reached: s.reached,
-            });
+) -> Option<&'a String> {
+    claims
+        .iter()
+        .filter(|(_, k)| k == key)
+        .map(|(c, _)| c)
+        .find(|c| id_of(c.as_str()).eq_ignore_ascii_case(want))
+}
+
+/// The stored project record of chain key `key` whose coordinate hashes to `launched_id` (the `projectId` its
+/// launch named), found by the record's `chain-key` tag, newest first, in pages of [`RECORDS_PAGE`] up to
+/// [`RECORDS_PER_KEY`] records: anyone can sign a record that names another project's key, so a few junk records
+/// must not hide the real one, and the search must still end. Unlisted records are not found.
+pub async fn record_of_launch(
+    state: &AppState,
+    community: buzz_core::tenant::CommunityId,
+    key: &Word,
+    launched_id: &str,
+) -> anyhow::Result<Option<(String, nostr::Event)>> {
+    let mut offset = 0;
+    while offset < RECORDS_PER_KEY {
+        let page = state
+            .db
+            .query_events_for_event_write(&buzz_db::EventQuery {
+                kinds: Some(vec![KIND_LAUNCH_RECORD as i32]),
+                global_only: true,
+                custom_tag: Some(("chain-key".to_owned(), hex0x(key))),
+                limit: Some(RECORDS_PAGE),
+                max_limit: Some(RECORDS_PAGE),
+                offset: Some(offset),
+                ..buzz_db::EventQuery::for_community(community)
+            })
+            .await
+            .context("read the project records of a key")?;
+        let claims: Vec<(String, Word)> = page.iter().filter_map(|r| claim_of(&r.event)).collect();
+        if let Some(coordinate) = tied_coordinate(
+            &claims,
+            key,
+            launched_id,
+            crate::api::manager::cost::project_id,
+        ) {
+            let event = page
+                .into_iter()
+                .map(|r| r.event)
+                .find(|e| claim_of(e).is_some_and(|(c, _)| &c == coordinate));
+            return Ok(event.map(|e| (coordinate.clone(), e)));
         }
+        if i64::try_from(page.len()).unwrap_or(0) < RECORDS_PAGE {
+            break;
+        }
+        offset += RECORDS_PAGE;
     }
-    out
+    Ok(None)
 }
 
 /// Build the index: the ranking rows tied to their coordinates and held to the standing every public project
-/// has (listed, not removed, a founder who is neither banned nor muted). A failed read is an error, never an
-/// empty index.
+/// has (listed, not removed, a founder who is neither banned nor muted). The rows are read a page at a time,
+/// best first; each one's record is looked for by its key ([`record_of_launch`], one bounded search per
+/// candidate), so the number of records in the community decides nothing, and the build goes on until
+/// [`MAX_ENTRIES`] are kept or [`ROWS_READ`] rows or [`STANDING_CHECKS`] standing checks are used. `seen` is
+/// how many projects have money that stayed, `cut` how many of them are not in the entries (whatever the
+/// reason: past the cap, no record that the launch names, an unlisted or removed project). A failed read is an
+/// error, never an empty index.
 pub async fn build(
     state: &AppState,
     tenant: &TenantContext,
@@ -309,53 +372,52 @@ pub async fn build(
         anyhow::bail!("a build that fails (a test)");
     }
     let pool = state.db.pool();
-    let stored = stored_rows(pool, reader).await?;
     let as_of = AsOfRec {
         block: as_of.block,
         time: as_of.time,
     };
-    if stored.is_empty() {
-        return Ok(explore_of(Vec::new(), as_of));
-    }
-    let keys: Vec<Word> = stored.iter().map(|s| s.key).collect();
-    let ids = launched_ids(pool, reader, &keys).await?;
-    let records = state
-        .db
-        .query_events(&buzz_db::EventQuery {
-            kinds: Some(vec![KIND_LAUNCH_RECORD as i32]),
-            global_only: true,
-            limit: Some(RECORDS_READ),
-            max_limit: Some(RECORDS_READ),
-            ..buzz_db::EventQuery::for_community(tenant.community())
-        })
-        .await
-        .context("read the project records")?;
-    let claims: Vec<(String, Word)> = records.iter().filter_map(|r| claim_of(&r.event)).collect();
-    let tied = tie(stored, &claims, &ids, crate::api::manager::cost::project_id);
-    // The best first; a project's standing is asked until the index is full.
-    let mut kept = Vec::new();
-    let ordered = ranked(tied);
-    let seen = ordered.len() as u64;
-    for row in ordered.into_iter().take(STANDING_CHECKS) {
-        if kept.len() >= MAX_ENTRIES {
+    let seen = stored_count(pool, reader).await?;
+    let mut kept: Vec<Row> = Vec::new();
+    let (mut examined, mut asked, mut offset) = (0usize, 0usize, 0i64);
+    'pages: while kept.len() < MAX_ENTRIES && examined < ROWS_READ {
+        let page = stored_rows(pool, reader, offset).await?;
+        if page.is_empty() {
             break;
         }
-        let Some(event) = records
-            .iter()
-            .find(|r| claim_of(&r.event).is_some_and(|(c, _)| c == row.coordinate))
-        else {
-            continue;
-        };
-        let standing =
-            crate::share_preview::public_standing(state, tenant.community(), event.event.clone())
+        offset += i64::try_from(page.len()).unwrap_or(PAGE);
+        let keys: Vec<Word> = page.iter().map(|s| s.key).collect();
+        let ids = launched_ids(pool, reader, &keys).await?;
+        for stored in page {
+            if kept.len() >= MAX_ENTRIES || examined >= ROWS_READ || asked >= STANDING_CHECKS {
+                break 'pages;
+            }
+            examined += 1;
+            let Some(want) = ids.get(&stored.key) else {
+                continue;
+            };
+            let Some((coordinate, event)) =
+                record_of_launch(state, tenant.community(), &stored.key, want).await?
+            else {
+                continue;
+            };
+            asked += 1;
+            let standing = crate::share_preview::public_standing(state, tenant.community(), event)
                 .await
                 .context("read a project's standing")?;
-        if standing.is_some() {
-            kept.push(row);
+            if standing.is_some() {
+                kept.push(Row {
+                    key: hex0x(&stored.key),
+                    coordinate,
+                    launched_at: stored.launched_at,
+                    window_secs: stored.window_secs,
+                    money: stored.money,
+                    accounts: stored.accounts,
+                    reached: stored.reached,
+                });
+            }
         }
     }
     let mut index = explore_of(kept, as_of);
-    // `seen` counts the projects that could be listed (they passed the tie); `cut` those left out.
     index.seen = seen.max(index.entries.len() as u64);
     index.cut = index.seen - index.entries.len() as u64;
     Ok(index)
@@ -389,7 +451,9 @@ async fn live_entries(
 }
 
 /// Sign and store `index` as the relay, **only when its entries differ from the live index's** and the live
-/// one is at least [`EVERY_SECS`] old. Returns whether a record was signed. A failure leaves the old index.
+/// one is at least [`EVERY_SECS`] old, or when the entries are the same and the live one is at least
+/// [`RESIGN_SECS`] old (an index the app would no longer show is signed again while it is still right). Returns
+/// whether a record was signed. A failure leaves the old index.
 pub async fn publish(
     state: &std::sync::Arc<AppState>,
     tenant: &TenantContext,
@@ -403,9 +467,10 @@ pub async fn publish(
     match &live {
         Some((entries, at)) => {
             if *entries == index.entries {
-                return Ok(false);
-            }
-            if now - at < i64::try_from(EVERY_SECS).unwrap_or(i64::MAX) {
+                if now - at < RESIGN_SECS {
+                    return Ok(false);
+                }
+            } else if now - at < i64::try_from(EVERY_SECS).unwrap_or(i64::MAX) {
                 return Ok(false);
             }
             created_at = created_at.max(at + 1);

@@ -66,23 +66,34 @@ impl Default for Cadence {
     }
 }
 
-/// Read the views at `as_of.block` and build the project's record: a JSON
+/// Build the project's record from the views read at `as_of.block` ([`read_views`]): a JSON
 /// value of the shape of `docs/next-version/record-v2-example.json`.
-pub async fn derive(
-    source: &dyn ChainSource,
+pub fn derive(
+    read: &Views,
     ledger: &Ledger,
     as_of: &AsOf,
     cadence: &Cadence,
     built_at: u64,
     social: &SocialInput<'_>,
 ) -> anyhow::Result<(Value, SocialReport)> {
-    let read = views::read(source, as_of.launcher, ledger, as_of.block, as_of.time).await?;
-    super::note_play_money(read.test_network);
-    let (record, report) = build(ledger, as_of, &read, cadence, built_at, social)?;
+    let (record, report) = build(ledger, as_of, read, cadence, built_at, social)?;
     Ok((
         serde_json::to_value(&record).context("write the record")?,
         report,
     ))
+}
+
+/// Read the contracts' views at the block the record is for (and note whether this is a play-money network). The
+/// held windows need two of them (the Share's worth and the smallest Back) before they are counted, so the views
+/// are read first and [`derive`] builds from them.
+pub async fn read_views(
+    source: &dyn ChainSource,
+    ledger: &Ledger,
+    as_of: &AsOf,
+) -> anyhow::Result<Views> {
+    let read = views::read(source, as_of.launcher, ledger, as_of.block, as_of.time).await?;
+    super::note_play_money(read.test_network);
+    Ok(read)
 }
 
 fn put(problems: &mut Vec<String>, field: &str, events: impl ToString, view: impl ToString) {

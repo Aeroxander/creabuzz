@@ -1028,3 +1028,36 @@ fn x1_the_example_has_the_four_keys_with_figures() {
         FEED_HOURS
     );
 }
+
+/// The floor is the fewest Shares a smallest Back buys: that many are worth a Back, one fewer is not; with no
+/// price there is no floor.
+#[test]
+fn the_dust_floor_is_the_fewest_shares_a_smallest_back_buys() {
+    for (leave_value, min_join) in [
+        (1_000_000u128, 1_000_000u128),
+        (1_234_567, 1_000_000),
+        (3, 1_000_000),
+        (999_999_999, 5_000_000),
+        (7, 1),
+    ] {
+        let floor = record_social::dust_floor(leave_value, min_join);
+        let worth = |shares: u128| shares * leave_value / 1_000_000_000_000_000_000;
+        assert!(worth(floor) >= min_join, "{leave_value} {min_join}");
+        assert!(worth(floor - 1) < min_join, "{leave_value} {min_join}");
+    }
+    assert_eq!(record_social::dust_floor(0, 1_000_000), 0);
+    assert_eq!(record_social::dust_floor(u128::MAX, u128::MAX), 0);
+}
+
+/// An account below the floor is left out of the lowest balances and of their sum (a holder at the floor counts).
+#[test]
+fn an_account_below_the_floor_is_not_counted_in_the_lowest_balances() {
+    let (a, b, c) = (who(1), who(2), who(3));
+    let now = [(a.clone(), 100u128), (b.clone(), 9), (c.clone(), 10)];
+    let raw = Default::default();
+    let all = held::lowest(&raw, now.iter().map(|(a, b)| (a, b)), &BTreeSet::new()).expect("fits");
+    assert_eq!((all.shares, all.lowest.len()), (119, 3));
+    let above = held::lowest_above(&raw, now.iter().map(|(a, b)| (a, b)), &BTreeSet::new(), 10)
+        .expect("fits");
+    assert_eq!((above.shares, above.lowest), (110, vec![100, 10]));
+}

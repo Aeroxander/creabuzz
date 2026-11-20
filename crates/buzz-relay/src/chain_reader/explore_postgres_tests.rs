@@ -10,7 +10,7 @@ use super::super::numbers::AsOf;
 use super::super::scan_postgres_tests::{read_all, setup};
 use super::super::source::ChainSource as _;
 use super::super::word::hex0x;
-use super::{build, publish, Index};
+use super::{build, publish, Index, RESIGN_SECS, RETRY_SECS};
 use buzz_core::kind::{KIND_LAUNCH_RECORD, KIND_PROJECT_NUMBERS};
 
 const NOW: i64 = 1_900_000_000;
@@ -149,7 +149,8 @@ async fn ix2_and_ix3_the_index_lists_tied_projects_and_is_signed_only_when_it_ch
         vec![(hex0x(&a).as_str(), coordinate.as_str())],
         "only A, only with the coordinate its launch names: {index:?}"
     );
-    assert_eq!((index.seen, index.cut), (1, 0));
+    // B has money that stayed too but only a thief's record names it: it is counted in `seen` and is one of the `cut`.
+    assert_eq!((index.seen, index.cut), (2, 1));
     assert_eq!(index.as_of.block, fx.head());
 
     // IX2: a stale row is not read (a rollback marked it).
@@ -235,6 +236,39 @@ async fn ix2_and_ix3_the_index_lists_tied_projects_and_is_signed_only_when_it_ch
     )
     .await
     .expect("publishes"));
+    // The app shows no index older than a day, so the same entries must be signed again well inside it.
+    const _: () = assert!(RESIGN_SECS <= 12 * 3_600);
+    // The same entries, but the live index is half a day old: signed again, so the app, which shows no index older
+    // than a day, keeps a ranking that is still right.
+    assert!(
+        !publish(
+            &state,
+            &tenant,
+            31337,
+            &reader.config.launcher,
+            &index,
+            NOW + RESIGN_SECS - 1
+        )
+        .await
+        .expect("publishes"),
+        "not yet half a day"
+    );
+    assert!(
+        publish(
+            &state,
+            &tenant,
+            31337,
+            &reader.config.launcher,
+            &index,
+            NOW + RESIGN_SECS
+        )
+        .await
+        .expect("publishes"),
+        "the same entries are signed again when the live index is half a day old"
+    );
+    let (_, _, resigned_id, _) = live(&state, community).await.expect("an index is live");
+    assert_ne!(first_id, resigned_id);
+    let first_id = resigned_id;
     // Different entries inside ten minutes: not yet; after: yes, and the live record is the new one.
     let mut changed = index.clone();
     changed.entries.clear();
@@ -245,7 +279,7 @@ async fn ix2_and_ix3_the_index_lists_tied_projects_and_is_signed_only_when_it_ch
         31337,
         &reader.config.launcher,
         &changed,
-        NOW + 599
+        NOW + RESIGN_SECS + 599
     )
     .await
     .expect("publishes"));
@@ -255,7 +289,7 @@ async fn ix2_and_ix3_the_index_lists_tied_projects_and_is_signed_only_when_it_ch
         31337,
         &reader.config.launcher,
         &changed,
-        NOW + 601
+        NOW + RESIGN_SECS + 601
     )
     .await
     .expect("publishes"));
@@ -265,7 +299,13 @@ async fn ix2_and_ix3_the_index_lists_tied_projects_and_is_signed_only_when_it_ch
 
     // A build that fails keeps the old index and is counted; the records are signed all the same.
     super::FAIL_BUILD.with(|f| f.set(true));
-    reader.schedule().explore_after = 0;
+    {
+        let mut schedule = reader.schedule();
+        schedule.explore_after = 0;
+        // The passes before this one looked at an index with nothing to list (no record named a key yet): their
+        // misses made the pause grow, so this look starts from none.
+        schedule.explore_misses = 0;
+    }
     let head = chain.head().await.expect("head");
     let report = reader
         .publish_pass(head)
@@ -277,6 +317,13 @@ async fn ix2_and_ix3_the_index_lists_tied_projects_and_is_signed_only_when_it_ch
         (1, 0, 0),
         "{report:?}"
     );
+    // A look that failed is repeated in about a minute, not in ten, and the pause doubles with each miss in a row.
+    let wait = reader.schedule().explore_after - chrono::Utc::now().timestamp();
+    assert!(
+        (1..=i64::try_from(RETRY_SECS).expect("secs") + 5).contains(&wait),
+        "a failed look is repeated soon: {wait}"
+    );
+    assert_eq!(reader.schedule().explore_misses, 1);
     let (_, _, kept_id, kept) = live(&state, community).await.expect("the old index stays");
     assert_eq!((kept_id, kept), (second_id, changed));
     // The next pass after the pause tries again and is not stopped by the one that failed.
@@ -284,4 +331,77 @@ async fn ix2_and_ix3_the_index_lists_tied_projects_and_is_signed_only_when_it_ch
     let report = reader.publish_pass(head).await.expect("a pass");
     assert_eq!(report.explore_failed, 0, "{report:?}");
     assert!(report.explore_signed <= 1, "{report:?}");
+}
+
+/// The index finds a project's record by its key, whatever else is stored: 150 newer records of thieves naming the
+/// same key push the honest one past the first page of the search, and 120 launched projects with more money and no
+/// record that their launch names (they could be made for the price of holding the money) push it past the first
+/// page of rows. Both leave the project listed, and `seen` and `cut` say what was left out.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_index_finds_a_record_among_many_and_a_project_among_richer_ones_with_no_record() {
+    let fx = Fixture::load();
+    let (reader, chain, state) = setup(&fx).await;
+    chain.serve_books(&fx, &["A_end", "B_end"]);
+    read_all(&reader, &chain).await;
+    let pool = state.db.pool();
+    let id = reader.reader_id().to_owned();
+    let tenant = reader.tenant().await.expect("tenant").expect("a community");
+    let community = tenant.community();
+    let a = fx.projects["A"].key;
+    let as_of = AsOf {
+        chain_id: 31337,
+        launcher: reader.config.launcher,
+        block: fx.head(),
+        time: fx.time_of(fx.head()),
+    };
+    let honest = Keys::generate();
+    let coordinate = project_record(&state, community, &honest, "alpha-project", &a).await;
+    sqlx::query(
+        "UPDATE chain_logs SET decoded = jsonb_set(decoded, '{projectId}', to_jsonb($3::text)) \
+         WHERE reader = $1 AND project_key = $2 AND role = 'launcher' AND event = 'ProjectLaunched'",
+    )
+    .bind(&id)
+    .bind(a.as_slice())
+    .bind(crate::api::manager::cost::project_id(&coordinate))
+    .execute(pool)
+    .await
+    .expect("A's launch names the coordinate");
+    // Newer records of other keys' thieves naming A's key.
+    for n in 0..(super::RECORDS_PAGE + 50) {
+        project_record(
+            &state,
+            community,
+            &Keys::generate(),
+            &format!("clone-{n}"),
+            &a,
+        )
+        .await;
+    }
+    // Launched projects with more money than A and nothing that ties them to a record.
+    sqlx::query(
+        "INSERT INTO chain_project_numbers (reader, project_key, source_block, facts_digest, content_digest, \
+             event_id, rank_money, rank_accounts, rank_window_secs, reached, launched_at) \
+         SELECT reader, sha256(project_key || int4send(g)), source_block, facts_digest, content_digest, event_id, \
+             rank_money * 10, rank_accounts, rank_window_secs, reached, launched_at \
+         FROM chain_project_numbers, generate_series(1, 120) g WHERE reader = $1 AND project_key = $2",
+    )
+    .bind(&id)
+    .bind(a.as_slice())
+    .execute(pool)
+    .await
+    .expect("richer projects with no record");
+    let index = build(&state, &tenant, &id, &as_of).await.expect("builds");
+    let listed: Vec<&str> = index.entries.iter().map(|e| e.a.as_str()).collect();
+    assert_eq!(
+        listed,
+        [coordinate.as_str()],
+        "the honest project is listed: {index:?}"
+    );
+    assert!(
+        index.seen >= 121 && index.cut == index.seen - 1,
+        "what was left out is counted: seen {}, cut {}",
+        index.seen,
+        index.cut
+    );
 }

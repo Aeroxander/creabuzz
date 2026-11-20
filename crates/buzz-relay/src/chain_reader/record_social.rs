@@ -336,6 +336,21 @@ fn rank_of(h: &Held, supply: u128, leave_value: u128, min_join: u128) -> anyhow:
     })
 }
 
+/// The fewest Shares that count as an account of the project: the least a Back buys at `leave_value` a Share
+/// (`min_join` is the smallest Back). An account holding less is not worth a Back, is not counted in `accounts`,
+/// and is left out of the held windows, so a crowd of one-wei transfers cannot put a project over a cap of the
+/// count (what it costs to make 20,000 accounts that count is 20,000 smallest Backs). With no price (`leave_value`
+/// is zero) or a figure that overflows there is no floor.
+pub fn dust_floor(leave_value: u128, min_join: u128) -> u128 {
+    if leave_value == 0 {
+        return 0;
+    }
+    min_join
+        .checked_mul(ONE_SHARE)
+        .and_then(|n| n.checked_add(leave_value - 1))
+        .map_or(0, |n| n / leave_value)
+}
+
 /// How many of `balances` are worth at least `min_join` at `leave_value` a Share.
 pub fn count_worth(
     balances: impl Iterator<Item = u128>,
