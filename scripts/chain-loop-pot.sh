@@ -199,7 +199,10 @@ QUOTE="$(cast call --rpc-url "$RPC" "$T" "quoteTakeOut(address,uint256)(uint256,
 BEFORE="$(call "$USD" "balanceOf(address)(uint256)" "$BACKER")"
 send "$K_BACKER" "$T" "leave(uint256,uint256,address)" "$N_SH" "$QUOTE" "$BACKER"
 TAKEN="$(python3 -c "print($(call "$USD" "balanceOf(address)(uint256)" "$BACKER") - $BEFORE)")"
-expect_eq "paid what the quote said" "$TAKEN" "$QUOTE"
+# The quote is read at one second and the leave is mined a second or so later while outside money is still arriving, so the
+# cash can sit a hair above the quote (never below: the call's minimum is the quote). Within one part in 1,000 is "what it said".
+python3 -c "import sys; t, q = int(sys.argv[1]), int(sys.argv[2]); sys.exit(0 if q <= t <= q + q // 1000 else 1)" "$TAKEN" "$QUOTE" \
+  || fail "paid what the quote said: got $TAKEN, the quote was $QUOTE (it may be above by one part in 1,000, never below)"
 TAKE_BLOCK="$LAST_BLOCK"
 ok "the first backer took out all their Shares in one press and got $TAKEN, the quote (block $TAKE_BLOCK)"
 mine 4 # the last events are final once two blocks lie over them
