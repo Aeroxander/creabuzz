@@ -98,7 +98,7 @@ export function plannedAlready(
 }
 
 /** How many of the newest serials, besides the open ones, a look for a record's plan goes through. */
-export const RECENT_SERIALS = 8;
+const RECENT_SERIALS = 8;
 
 /**
  * The plan the network holds for the task record `id` right now: announced, taken or paid, and not past its end (a task
