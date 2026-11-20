@@ -10,8 +10,8 @@ is a test network with play dollars: every money screen says so. Legal line, quo
 "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one."
 Legal text, terms, privacy, the age box and "Posts and votes are public" are never hidden or reworded by this work.
 
-Where a point was open I chose the option the design recommends, or else the simplest safe one. Every such choice is in
-section 9 under "Chosen under the owner's standing go; the owner may overrule", numbered **C1 to C30**; the text cites them as
+Where a point was open I chose the option the design recommends, or else the simplest safe one. Section 10 lists what two independent reviews changed. Every such choice is in
+section 9 under "Chosen under the owner's standing go; the owner may overrule", numbered **C1 to C37**; the text cites them as
 (C#).
 
 ## 0. The shape of it in one page
@@ -100,11 +100,13 @@ A project with no `TasksReady` row (a step 1 Launcher's project, which cannot ha
 `tasks()` on a Treasury that has no `TasksReady` row. If an operator later points the reader at a step 1 Launcher, those projects
 read as `tasks: null` and keep working (the contract has no book to ask).
 
-### 1.2 The settled numbers change (`money.pot`, `money.locked`)
+### 1.2 The settled numbers change (`money.pot`, `money.locked`, `money.arriving`)
 
-`Treasury._settled()` now returns money from tasks that have run out **last**, after the allowance and the arriving release (the
-returned money is not charged allowance for time it was not in the pot). RECORD-V2 section 3 must follow, or `money.pot` is wrong
-whenever a task ran out and nobody has settled since. The roll-forward gets one more step, **after** the arriving release:
+The contract has changed twice since step 1 in ways the record's roll-forward (RECORD-V2 section 3) must follow, or `money.pot` and `money.arriving` are wrong.
+
+**(a) Outside money arrives on its own stream** (commit db3cb71, `Treasury.sol` lines 153-157, 577, 909-919). `addRevenue` stores `arrivalStart` (the block time) and `arrivalTotal` (what had not yet arrived plus the new money), and `_settled()` releases `target - done` with `target = t >= arrivalEnd ? arrivalTotal : mulDiv(arrivalTotal, t - arrivalStart, arrivalEnd - arrivalStart)` and `done = arrivalTotal - arriving`, so settling every second gives what settling once gives. The step 1 reader used `mulDiv(arriving, t - lastSettle, arrivalEnd - lastSettle)`, which differs by units while money is mid-stream; the boxCap and held-identity checks usually still pass, so a wrong record could be signed as fresh. The reader changes: the views `arrivalStart()` and `arrivalTotal()` join the batch (and the Python mirror, and the book-covers-every-call test, 2.8); the ledger rebuilds them from `RevenueAdded` (`arrivalStart` = the row's block time, `arrivalTotal` = `arrivingAfter`) and checks both against the views; `roll_forward` uses the contract's formula; the record's `ledger` gets both (1.3). Test A5b: settling every second and settling once give the same pot, and the step 1 formula fails it.
+
+**(b) Tasks that ran out come back last.** `Treasury._settled()` returns money from tasks that have run out **last**, after the allowance and the arriving release (the returned money is not charged allowance for time it was not in the pot). Without it `money.pot` is wrong whenever a task ran out and nobody has settled since. The roll-forward gets one more step, **after** the arriving release:
 
 ```
 dueC   = book.dueC(asOf.time)          # view at asOf.block: sum of the stayers' claims C of Taken tasks whose expiresAt <= asOf.time
@@ -134,6 +136,8 @@ random run and a scripted walk), **checked** which view it must equal at `asOf.b
 | `money.pot` | As before, now including run-out tasks' returned money (1.2). | `TaskMoney.potAfter` and the step 1 events; settled by section 3 | the existing `boxCap()` and `activeNow()` checks |
 | `refreshEverySecs` | 600 while the allowance accrues, outside money arrives **or any task is open** (announced or taken), else 3600 (C12). `atMostNow` and the cap room move with time, and a task's state moves with the clock. | server rule | n/a |
 
+**New in `ledger`** (checks only, RECORD-V2 2.12; the app never reads them): `locked` and `notesOwed` (the stored numbers), `arrivalStart` (int) and `arrivalTotal` (amount), as the contract keeps them (the last two stay at their old values when `arriving` is `"0"`). With them `validate` redoes the whole roll-forward from the record alone: `dueC` is the sum of `stayerClaim` over listed taken rows with `deadline <= asOf.time` (every open row is listed), `money.locked == ledger.locked - dueC`, and `money.pot` follows. RECORD-V2 section 10 says so.
+
 **New top-level field `tasks`**, an object, or `null` (1.1). Every field is required when `tasks` is an object.
 
 | Field | Type | Meaning | Source | Rebuilt / checked |
@@ -149,13 +153,13 @@ random run and a scripted walk), **checked** which view it must equal at `asOf.b
 | `tasks.limits.minTask` | amount | The smallest task (1 dollar). | | view `book.MIN_TASK()` |
 | `tasks.limits.capWindowSecs` | int | The rolling window of the cap: `CAP_WINDOW_MULT x unit` (28 days on a real network). | | view `book.CAP_WINDOW_MULT()` times `unit` |
 | `tasks.limits.takeWindowSecs`, `dueSecs` | int, int | How long a task can be taken after its notice (one unit), and how long after a take it is due (two units). | | views `book.noticeFor(1)` second and third results |
-| `tasks.cap.usedBps` | int | The takes counted in the window now (ten-thousandths of the pot at each take, less what was given back). | **settled at `asOf.time`**: sum of `capBps` of takes with `takenAt + capWindowSecs > asOf.time` | view `book.windowSumBps()` |
-| `tasks.cap.roomBps` | int | The room left under the cap: `capBps - usedBps` ("the room left under the 28-day cap"). | arithmetic | view `book.takeRoomBps()` |
-| `tasks.cap.frees` | array, at most 16 | When room comes back: `{at, bps}` per counted take, oldest first, `at = takenAt + capWindowSecs`, `bps` that take's counted share. | the ring of takes, rebuilt | sum of `bps` equals `usedBps` |
+| `tasks.cap.usedBps` | int | The takes counted in the window now (ten-thousandths of the pot at each take, less what was given back). | **settled at `asOf.time`**: the sum of `capBps` of takes with `takenAt + capWindowSecs > asOf.time`, **less the pending give-back**: the `capBps` of taken rows with `deadline <= asOf.time` (the next settle ends them unpaid and gives their share back; `takeTask` settles first, so a take sees that room; the ledger applies the contract's own test that the ring slot still holds this take) | view `book.windowSumBps()` minus the pending give-back (the view reads the ring as stored) |
+| `tasks.cap.roomBps` | int | The room left under the cap: `capBps - usedBps` ("the room left under the 28-day cap"), settled as above. | arithmetic | view `book.takeRoomBps()` plus the pending give-back |
+| `tasks.cap.frees` | array, at most 16 | When room comes back: `{at, bps}` per counted take, oldest first, `at = takenAt + capWindowSecs`, `bps` that take's counted share. | the ring of takes, rebuilt, without the pending give-back | sum of `bps` equals `usedBps` |
 | `tasks.next` | `{at, kind, serial}` or null | The next date something can happen: the earliest of "can be taken" (`noticeEnd`, kind `can_be_taken`), "lapses" (`expiresAt` of an announced task, `lapses`), "due" (`deadline` of a taken task, `due`) and "room frees" (first `frees.at`, kind `cap_room`, serial 0), strictly after `asOf.time`; null when none. | arithmetic on the rows | the example test redoes it independently (A14, 8.2) |
 | `tasks.list` | array | The rows of 1.4: open tasks first (serial ascending), then ended tasks (serial descending). At most 8 open plus 32 ended. | | |
-| `tasks.cut` | object | `{maxEnded: 32, endedWithinSecs: capWindowSecs, endedDropped: n}`: the rule that chose the ended rows and how many it left out (1.5). | | |
-| `tasks.truncated` | bool | True when `endedDropped > 0` or a row's note list was cut. A cut list never says "none". | | |
+| `tasks.cut` | object | `{maxEnded: 32, endedWithinSecs: max(capWindowSecs, 28 days), endedDropped: n, notesRowsDropped: m}`: the rule that chose the ended rows and how many it left out (1.5). The 28-day floor keeps ended rows (and their alerts) on a short-unit test network. | | |
+| `tasks.truncated` | bool | True when `endedDropped > 0`, `notesRowsDropped > 0` or a row's note list was cut. A cut list never says "none". | | |
 
 `tasks.truncated` is separate from the top-level `truncated` (holders, grants, agents) on purpose: the app's holder hint
 reads the top-level one (RECORD-V2 2.13), and a task cut must not make it less certain.
@@ -185,18 +189,13 @@ struct whose order the generator reads from the ABI, section 2.2); the state wor
 | `notesLeft` | amount | What is still held for the claims of its notes. | `TaskResolved.notesPool`, then `NoteClaimed.notesLeftAfter` | `notesLeft` |
 | `capBps` | int | What this take still counts in the cap (the take's share less `capGivenBack`); 0 when never taken or when it ended unpaid and the share was given back. | `TaskTaken.takeBps` minus `TaskResolved.capGivenBack` | equals the entry of the ring (via `windowSumBps` sums) |
 | `resolvedAt`, `resolvedTx` | int or null, bytes32 or null | When it ended (the block time of `TaskResolved`) and the transaction that ended it (the proof the app writes into a team record, 3.3). | the log row's block time and `tx_hash` | n/a |
-| `repeatOf` | int or null | The serial of an **earlier** row with the same `what` that is announced, taken or paid (or ended with a payment). The same task record planned twice would be paid twice; the app refuses to pay the later one and tells holders (attack 2, 8.1). Computed over the whole history in the ledger, not only the listed rows. | arithmetic on the ledger's `what` index | n/a |
+| `repeatOf` | int or null | The serial of an **earlier** row with the same `what` that is announced, taken or paid. **One rule for the server, the relay and the app: the plan of a task record is its lowest-serial row in state announced, taken or paid; every later such row is a repeat, and a plan that ended unpaid (withdrawn, lapsed, sent back, ran out) binds nothing.** The same task record planned twice would be paid twice; the app refuses to pay the later one and tells holders (attack 2, 8.1). Computed over the whole history in the ledger, not only the listed rows. | arithmetic on the ledger's `what` index | n/a |
 | `notes` | object or null | Null when `noteFace` is 0 and there is nothing held, or when the task was paid in full (its notes are void, `NothingToPay`). Otherwise `{faceTotal, holders: [{account, face, claimable}], holdersCut}`. | below | below |
 
-**Notes in a row** (a holder's notes per task and what a claim would pay now). `face` is `noteOf(serial, account)`; `claimable` is
-`claimableNote(serial, account)`: **0 while the task is open or paid in full**, otherwise `mulDiv(face, returned, setAside)` (the
-contract's own rounding, from the view). `holders` lists at most **20** accounts, largest `face` first then address, and only for
-the **8 newest tasks that still have notes outstanding** (`notesLeft > 0` or an open taken task with `noteFace > 0`); older rows
-carry `notes.holders: []` with `holdersCut: true`. `faceTotal` is `noteFace` of the row. Rebuilt from `NoteMinted(serial, holder
+**Notes in a row** (a holder's notes per task and what a claim would pay now). `face` is `noteOf(serial, account)`; `claimable` is **0 while the task is open or paid in full**, otherwise `mulDiv(face, returned, setAside)` (the contract's own rounding; the server computes it and checks it against `claimableNote` for the largest holder of each row). For a taken task past its deadline that nobody has settled, the contract view says 0 but a claim settles first and pays the whole `face`, so the row says `face` (the settled meaning, as for `money.pot`). `holders` lists at most **20** accounts, largest `face` first then address, and only for the **8 rows with the most still to claim** (`notesLeft`, then newest; an open taken task counts by `noteFace`); the other rows carry `notes.holders: []` with `holdersCut: true` and still have `faceTotal`. `faceTotal` is `noteFace` of the row. Rebuilt from `NoteMinted(serial, holder
 indexed; part, ...)` (add `part` to that holder) and `NoteClaimed(serial, holder; paid, ...)` (that holder's note is 0), exactly as
 `TaskLedger` does with `lNote`. **Checked:** the sum over **all** holders' notes of a task (listed or not) equals the view
-`taskOf.noteFace` (for a task not paid in full); each listed holder's `face` and `claimable` equal the views `noteOf` and
-`claimableNote` at `asOf.block` (at most 8 x 20 x 2 = 320 view calls in the same batch, only when such rows exist).
+`taskOf.noteFace` (for a task not paid in full); each listed holder's `face` equals the view `noteOf` (at most 8 x 20 = 160 calls) and the largest holder's `claimable` of each row equals the view `claimableNote`, except in the overdue case above where the view is 0 (at most 8 more calls; all in the same batch, only when such rows exist).
 
 The rows give the **list**; the figure a person presses on is always read from the chain when the claim sheet opens (5.9), exactly as
 positions are (RECORD-V2 2.13). The record's rows are a hint for lists and for the alert "you can claim", and the way to find a
@@ -207,17 +206,20 @@ note when the person has no Shares left: a leaver is not in `holders` of the rec
 | What | Bound | Rule | What the record says |
 |---|---|---|---|
 | Open tasks | 8 | the contract's `MAX_OPEN`; the server cannot exceed it and fails the build if the book says more | `tasks.limits.maxOpen`, `openCount` |
-| Ended rows | 32 | every ended task that ended within `capWindowSecs` (28 days) **or** still has `notesLeft > 0` or an unclaimed note, newest serial first, at most 32 | `tasks.cut`, `endedDropped`, `tasks.truncated` |
-| Note rows | 20 holders x 8 tasks | 1.4 | `notes.holdersCut`, `tasks.truncated` |
+| Ended rows | 32 | chosen in this order, stopping at 32: (1) rows with `notesLeft > 0` (money a leaver can still claim), largest `notesLeft` first then newest, at most 24, **whatever their age**; (2) rows that moved money (paid, rejected, returned) and ended within `max(capWindowSecs, 28 days)`, newest first; (3) cancelled and lapsed rows (no money moved) within that time, at most 4. The list is then written newest serial first | `tasks.cut`, `endedDropped`, `notesRowsDropped`, `tasks.truncated` |
+| Note holders | 20 holders for each of the 8 rows with the most still to claim | 1.4 | `notes.holdersCut`, `tasks.truncated` |
 | Cap `frees` | 16 | the ring of takes | none (a contract constant) |
-| Per project, view calls | about 17 views + 1 per row (at most 40) + 2 per listed note holder (at most 320) | one batch with the step 1 views, at the one block | none |
+| Per project, view calls | about 19 views (with `arrivalStart`, `arrivalTotal`) + 1 per row (at most 40) + 1 `noteOf` per listed note holder (at most 160) + 1 `claimableNote` per row with notes (at most 8) | one batch with the step 1 views, at the one block | none |
 
 Worst-case size added to the record: 40 rows at about 1.3 KB plus 160 note rows at about 160 bytes is about 78 KB. RECORD-V2
 section 1 puts the step 1 worst case at about 120 KB and the frame at 512 KB: the worst record is about 200 KB. A test builds the
 worst case (A11, 8.2) and asserts the signed event stays under 300 KB.
 
-An ended task older than 28 days with no notes left drops out of the list. Nothing is lost that matters: it moved no money anyone
-can still claim, and the chain has it. The app's alert for it was derived from the record while it was in it (6).
+An ended task older than 28 days with no notes left drops out of the list. Nothing is lost that matters: it moved no money anyone can still claim, and the chain has it. The app's alert for it was derived from the record while it was in it (6).
+
+**A leaver's note must not fall out of the list because of noise.** Rows with money still to claim rank first and rows that moved nothing rank last with a cap of 4, so a team that announces and cancels many tasks cannot push a note out (announcing and cancelling cost only gas). If more than 24 rows hold unclaimed notes the smallest are left out and the record says so (`notesRowsDropped`, `truncated`). Notes never expire, so this is the one place where the record cannot be the whole answer: the rest is found from the person's own history of Take outs and by the look-back scan (5.9), and the page says that plainly.
+
+**What is bounded and what is not (T7).** The record, the views and the app's reads are bounded as the table says. The reader's own pass is not constant: like step 1 (Joined, Left), it reads the project's stored rows each pass, and each Take out with notes adds up to 8 `NoteMinted` rows and one `TaskMoney` row. The ledger therefore keeps per-holder notes only for tasks whose notes are outstanding and drops a task's map when its notes are all claimed or void; the per-task totals come from the events (`noteFaceAfter`, `notesPool`). A pass that takes longer than half the refresh time logs an error. Folding per-holder notes into a running-totals table (as `chain_balances`) is the named follow-up if a test-network project outgrows this (C37).
 
 ### 1.6 What the app shows when a field is absent, wrong or old
 
@@ -227,16 +229,17 @@ can still claim, and the chain has it. The app's alert for it was derived from t
 | `tasks` present but any part of it does not parse (a bad row, a duplicate serial, more than 8 open, a list over 40 rows, a negative number, `openCount` not equal to the open rows) | **Only the tasks section is treated as unreadable** (`tasks: "unreadable"` in the parsed type); the rest of the record parses as always. The Tasks tab says "The task list could not be read. Your money is not affected: you can take it out any time." No alert is made from it. (Hostile record tests, 8.) |
 | Record fresh | Nothing special; dates in the Details fold. |
 | Record older than `3 x refreshEverySecs + 60` (RECORD-V2 section 6) | Every task date and state on a list or page says "as of {time}" (the record's `asOf.time`). Alerts still show, marked "as of". Buttons are not removed: each press re-reads the chain (5.3). |
-| Record older than 24 hours | The Tasks tab and the planned-task lines are replaced by: "We have not been able to refresh this project's tasks since {date}. Your money is not affected: you can take it out any time." Alerts from this project are not made, and the You page says the project's news could not be refreshed. Take out, claim a note and "Return the money" stay (they read the chain, never the record). |
+| Record older than 24 hours | A planned or taken task that was in the record stays on its strip, card and alert, marked "as of {date}. This may be out of date: the server has not refreshed this project since." (a notice that was true is not hidden by an outage). The Plan sheet is blocked (it needs a fresh pot, 5.2); every other sheet reads the chain and stays. The Tasks tab adds: "We have not been able to refresh this project's tasks since {date}. Your money is not affected: you can take it out any time." Take out, claiming a note and "Return the money" stay (they read the chain, never the record). |
 | Wrong network (the wallet is on another chain) | The sheet's gate (`WalletGate`, unchanged) says which network and offers the switch; no press. |
-| A task row whose dates are before `now` but whose state is still `announced` or `taken` | The app words it from the dates (5.4); the chain re-read before any press decides. |
+| A task row whose dates are before `now` but whose state is still `announced` or `taken` | The app words it from the dates (5.4); the chain re-read before any press decides. **Such a task is still open in the book until someone settles**, and the contract settles first in every call: so the app counts it as ended where that matters (the 8-open gate, 5.2), offers Return and not Withdraw or Send back (5.6, 5.7), and treats its note as claimable in full (5.9). |
+| The clock | Every phase and date test uses `now = max(device time, asOf.time of the newest record)`, so a phone clock set behind cannot make an ended task look open. |
 
 The state of a task is **never** carried forward by the app from an old record into a button: a press re-reads `taskOf(serial)`
 from the chain (5.3).
 
 ---
 
-## 2. Server work (WP1: `crates/buzz-relay/src/chain_reader`, the generators, the fixture, the loop script, the migration)
+## 2. Server work (WP1: `crates/buzz-relay/src/chain_reader`, the generators, the fixture, the migration; WP2 builds the helper job 2.7 and the chain loop 2.9)
 
 ### 2.1 Files to change
 
@@ -247,19 +250,19 @@ from the chain (5.3).
 | `testdata/pot-events.json` | regenerated by the same script (forge's own topics). |
 | `scan.rs` | `discovered(...)` takes the emitting role and reveals the book from a Treasury `TasksReady`; the discovery loop in `scan_range` decodes Treasury logs as well as Launcher logs for this; `late` discovery reads the stored `TasksReady` rows. |
 | `store.rs` | `launcher_reveals` becomes `reveals` and also returns Treasury `TasksReady` rows (`event IN ('ProjectLaunched','PairMade','TasksReady')`). A new read `task_logs_of(project)` is not needed: `rows_of_project` already returns every stored row of the project. **No change to `commit_range`.** |
-| `ledger.rs` | `Contracts.tasks: Option<String>`; `is_ours` knows `Role::Tasks`; the Treasury arms for `TasksReady` (sets `contracts.tasks`, `book_block`) and `TaskMoney` (sets `pot`, `locked`, `notes_owed` from the three "after" fields, as `TaskLedger._applyTaskMoney` does for the buckets); `LogRow` gains `tx: [u8; 32]` (from `chain_logs.tx_hash`). `Stored` gains `locked`, `notes_owed`, `open_count`, `next_serial`, `window_sum_bps`. `mismatches` compares them. |
+| `ledger.rs` | `Contracts.tasks: Option<String>`; `is_ours` knows `Role::Tasks`; the Treasury arms for `TasksReady` (sets `contracts.tasks`, `book_block`) and `TaskMoney` (sets `pot`, `locked`, `notes_owed` from the three "after" fields, as `TaskLedger._applyTaskMoney` does for the buckets); `LogRow` gains `tx: [u8; 32]` (from `chain_logs.tx_hash`). `Stored` gains `locked`, `notes_owed`, `open_count`, `next_serial`, `window_sum_bps`, `arrival_start`, `arrival_total` (the `RevenueAdded` arm sets the last two: the row's block time and `arrivingAfter`). `mismatches` compares them. |
 | `ledger_tasks.rs` (new) | The task ledger: `TaskLedger { tasks: BTreeMap<u64, LTask>, notes: BTreeMap<(u64, String), u128>, takes: Vec<Take>, whats: BTreeMap<[u8;32], Vec<u64>>, open_count, next_serial, locked, notes_owed, book_block }` and `fn apply(&mut self, row: &LogRow)`. A line-for-line port of `TaskLedger._applyBook` (2.3). |
-| `views.rs` | The book's views in the same one-block batch (2.4); `Views` gets `book: Option<BookViews>` with the per-row `taskOf` answers and the per-holder `noteOf`/`claimableNote` answers. |
+| `views.rs` | The book's views, and the Treasury's `arrivalStart` and `arrivalTotal`, in the same one-block batch (2.4); `Views` gets `book: Option<BookViews>` with the per-row `taskOf` answers and the per-holder `noteOf`/`claimableNote` answers. |
 | `views_table.rs` (new, generated) | The `taskOf` tuple's field names and Solidity types, in order, from the ABI (the script writes it and `testdata/pot-abi.json`; a test compares). |
-| `record.rs` | `roll_forward` gets the `dueC` step (1.2); `Stored` gets `locked`, `due_c`; `validate` gets the task rules (2.5); `Record.tasks: Option<TasksRec>` serialised as `null` when none (no `skip_serializing_if`: the key is always there), `deny_unknown_fields` stays. |
+| `record.rs` | `roll_forward` gets the contract's arrival formula and the `dueC` step (1.2); `Stored` and `LedgerRec` get `locked`, `notes_owed`, `arrival_start`, `arrival_total` (1.3), and `validate` redoes the roll-forward from them; `validate` gets the task rules (2.5); `Record.tasks: Option<TasksRec>` serialised as `null` when none (no `skip_serializing_if`: the key is always there), `deny_unknown_fields` stays. |
 | `record_tasks.rs` (new) | `TasksRec`, `TaskRowRec`, `TaskNotesRec`, `CapRec`, `NextRec`, `CutRec`, `LimitsTasksRec`, the cut (1.5), `next`, `repeat_of`, `at_most_now` and their unit tests. Keeps `record.rs` from growing past the file-size gate. |
 | `numbers.rs` | `cross_check` gets the task groups (2.5); `build` fills `tasks`, `money.locked`, `money.notesOwed`; `facts_of` strips the time-moving task numbers (`atMostNow`, `cap.usedBps`, `cap.roomBps`, `cap.frees` is kept, `next`) so they do not re-sign a record every pass; the refresh rule (C12). |
 | `mod.rs` | `refresh_every`: 600 while `openCount > 0`. |
-| `helper/plan.rs` | A settle job for an expired task (2.7). No new call in the allow-list. |
+| `helper/plan.rs` (**WP2**) | A settle job for an expired task (2.7). No new call in the allow-list. |
 | `fixture.rs` | Role `Tasks` in the fixture's contract list. |
-| `migrations/0071_chain_tasks_role.sql` (next free number at merge; `ls migrations`) | Add `'tasks'` to `chain_contracts_role_check`. `schema/tables/public/chain_contracts.sql` gets the same role (CLAUDE.md gotcha 7: `schema.sql` is a manifest, the table file holds the `CREATE TABLE`; there is no seed DML here, so `scripts/reconcile-schema-after-pgschema.sql` needs no new statement; a test asserts the constraint in a pgschema-created database). `chain_logs.role` has no check. |
-| `scripts/chain-reader-events.mjs`, `scripts/chain-reader-fixture.py`, `scripts/chain-loop-pot.sh`, `scripts/chain-loop-pot-check.py`, `scripts/chain-loop-query.mjs` | 2.8 and 2.9. |
-| `docs/next-version/RECORD-V2.md` | A new section 10 "Step 2 additions" with this section 1 (tables only, the prose stays here); section 3 gets the `dueC` step; sections 2.3 and 9 lose "always 0 in step 1". Owner: WP1. |
+| `migrations/0071_chain_tasks_role.sql` (next free number at merge; `ls migrations`) | Add `'tasks'` to `chain_contracts_role_check`, and a partial index `idx_chain_logs_tasks ON chain_logs (reader, project_key, block_number) WHERE role = 'tasks'` (the relay's task rules, 3.3, read only these rows; `schema/tables/public/chain_logs.sql` gets the same index). `schema/tables/public/chain_contracts.sql` gets the same role (CLAUDE.md gotcha 7: `schema.sql` is a manifest, the table file holds the `CREATE TABLE`; there is no seed DML here, so `scripts/reconcile-schema-after-pgschema.sql` needs no new statement; a test asserts the constraint in a pgschema-created database). `chain_logs.role` has no check. |
+| `scripts/chain-reader-events.mjs`, `scripts/chain-reader-fixture.py` (WP1); `scripts/chain-loop-pot.sh`, `scripts/chain-loop-pot-check.py`, `scripts/chain-loop-query.mjs` (WP2) | 2.8 and 2.9. |
+| `docs/next-version/RECORD-V2.md` | A new section 10 "Step 2 additions" with this section 1 (tables only, the prose stays here); section 3 gets the arrival formula and the `dueC` step; section 10 also names the four new `ledger` fields (1.3); sections 2.3 and 9 lose "always 0 in step 1". Owner: WP1. |
 
 ### 2.2 The new events and the views table, generated
 
@@ -291,25 +294,24 @@ Process the project's rows in `(block, log_index)` order. For each book event, s
 | `NoteClaimed` | `notes[(serial, holder)] = 0`; `noteFace = noteFaceAfter`; `notesLeft = notesLeftAfter` |
 | Treasury `TaskMoney` | `pot, locked, notes_owed` = the three "after" fields |
 | Treasury `Settled` | as step 1 (it is now also emitted when only a task's return moved money) |
+| Treasury `RevenueAdded` | as step 1, and `arrival_start` = the row's block time, `arrival_total` = `arrivingAfter` (1.2 a) |
 
-The window at `asOf.time` is `sum(take.bps)` over takes with `take.at + capWindowSecs > asOf.time`; `frees` lists those takes oldest
-first (at most 16, the ring). Rounding, ordering and the **single "after" snapshot per event** are what make the ledger exact: do not
+The window at `asOf.time` is `sum(take.bps)` over takes with `take.at + capWindowSecs > asOf.time`; `frees` lists those takes oldest first (at most 16, the ring). The record's `cap` numbers then subtract the pending give-back (1.3). Rounding, ordering and the **single "after" snapshot per event** are what make the ledger exact: do not
 recompute a task's money from other fields. If an event the table knows fails to decode, the range fails and is read again (step 1
 rule, unchanged).
 
 ### 2.4 The views, in the one batch at `asOf.block`
 
-Added to the step 1 list (RECORD-V2 4.2): Treasury `tasks`, `nextExpiry`, `locked` (already read), `notesOwed` (already read); the
+Added to the step 1 list (RECORD-V2 4.2): Treasury `arrivalStart`, `arrivalTotal`, `tasks`, `nextExpiry`, `locked` (already read), `notesOwed` (already read); the
 book `openCount`, `nextSerial`, `windowSumBps`, `takeRoomBps`, `dueC(asOf.time)`, `noticeFor(1)`, the constants `MAX_OPEN`,
-`MAX_SHARE_BPS`, `CAP_BPS`, `MIN_TASK`, `CAP_WINDOW_MULT`; then, for each listed row, `taskOf(serial)`; and for each listed note
-holder `noteOf(serial, holder)` and `claimableNote(serial, holder)`. A failed call, an answer of the wrong length or a number that
+`MAX_SHARE_BPS`, `CAP_BPS`, `MIN_TASK`, `CAP_WINDOW_MULT`; then, for each listed row, `taskOf(serial)`; and for each listed note holder `noteOf(serial, holder)`, and `claimableNote` for the largest holder of each row with notes (the one check of the formula). A failed call, an answer of the wrong length or a number that
 does not fit is an error (step 1 rule); the record is not built at a later block.
 
 ### 2.5 The checks (every one has a test that fails without it: the A tests of 8.2)
 
 In `numbers.rs::cross_check` (before the record is built) and `record.rs::validate` (after):
 
-1. `tasks.book` equals `Treasury.tasks()`; `openCount`, `nextSerial`, `nextExpiry`, `windowSumBps`, `takeRoomBps` equal the ledger's.
+1. `tasks.book` equals `Treasury.tasks()`; `openCount`, `nextSerial`, `nextExpiry`, `windowSumBps`, `takeRoomBps` equal the ledger's; `arrivalStart` and `arrivalTotal` equal the ledger's.
 2. **Per row**: every field of 1.4 that has a `taskOf` field equals it (a mismatch names the field and both values, like step 1).
 3. **Money buckets**: the ledger's `locked` equals the view `locked()`; the sum of `stayer` over taken open rows equals `locked()`;
    the ledger's `notes_owed` equals the view `notesOwed()`; the sum of `noteFace` of open taken rows plus `notesLeft` of ended rows
@@ -317,11 +319,13 @@ In `numbers.rs::cross_check` (before the record is built) and `record.rs::valida
 4. **Per task**: for each task, `setAside == stayerClaim + noteFace` while taken (`C + N == L`, invariant I2); the sum of all
    holders' notes equals `noteFace` unless paid in full; for an ended task `returned <= setAside` and, if paid, `pay + returned ==
    setAside`.
-5. **Cap**: the ledger's window sum equals the view `windowSumBps()`; `usedBps + roomBps == capBps`.
+5. **Cap**: the ledger's window sum equals the view `windowSumBps()` (both as stored); the record's `usedBps` is that less the pending give-back (1.3, A5c); `usedBps + roomBps == capBps`.
 6. **Settled snapshot**: with `dueC` (1.2) the existing `boxCap()` and `activeNow()` checks still hold; the `held` identity holds with
    settled `locked`; the totals identity of RECORD-V2 2.10 still holds once it has two more terms, `totals.paidToWorkers` and
    `totals.noteClaims` (below): a worker's payment leaves through `TaskMoney` kind 2 and a claimed note through kind 6, and neither is in `totals.drawn`.
 7. **Counts**: open rows equal `openCount` and are at most 8; serials in the list are unique; `repeatOf` is smaller than the row's serial.
+
+**A mismatch anywhere in the task section fails the whole build, on purpose (C33).** The previous record stays, so every money field of that project freezes with it and the app's own age bands say so; the reader logs the field and both values at error level (step 1's operator alarm). A degraded record that dropped `tasks` would hide a planned task from holders, which is the worse failure; leaving needs no record.
 
 **One more total** (so the identity stays an identity): `totals.paidToWorkers` (amount) = sum of `TaskResolved.pay`, and
 `totals.noteClaims` (amount) = sum of `NoteClaimed.paid`. The identity becomes
@@ -333,7 +337,7 @@ the app's `numbers-types` get the two fields (additive).
 
 The A tests of 8.2 (A1 to A16), each run once with its guard switched off.
 
-### 2.7 The chain helper (small, C14)
+### 2.7 The chain helper (small, C14; built by WP2)
 
 The planner already builds a `treasury.settle` job when arrived money waits. It builds one more kind of job: when the ledger has a
 taken task with `deadline + 600 s <= now` or an announced task with `expiresAt + 600 s <= now`, and the project's last
@@ -359,7 +363,7 @@ already does for its 115 days):
    take-out of a third holder, leave the note unclaimed;
 5. announce T5 (W2), let the take window pass (**lapse**);
 6. announce T6 (W1, 1%) and leave it **in its notice**; announce and take T7 (W1) with a note outstanding and leave it **taken**;
-7. **the example block** is the block after T7's take-out note with T6 in notice (so the record shows: 2 open rows, ended rows of
+7. **the example block** is the block after T7's take-out note with T6 in notice, **inside an outside-money stream** (the run adds outside money twice, the second merging into the first, so `arrivalStart` and `arrivalTotal` matter) (so the record shows: 3 open rows (T6 in notice, T7 taken, T8 announced), ended rows of
    state `cancelled`, `paid` in part, `rejected`, `returned`, `lapsed`; note rows with claimable money; `cap.frees`; `next`; a
    `repeatOf` case from announcing T2's what once more and leaving it announced, T8);
 8. the run then ends as before with a wind-down by choice, which sweeps T6, T7 and T8 (`cancelled`, `returned`, `cancelled`).
@@ -368,16 +372,16 @@ already does for its 115 days):
 test `the_example_is_what_the_server_writes` builds the record from the fixture's `books` entry and compares it byte for byte
 with the file; running that test with `UPDATE_EXAMPLE=1` rewrites it. The step 1 example (a scratch-script chain) is retired; the
 tests that read it follow the new numbers (WP3 and WP1 update their own). The `books` entry per named block holds the raw answers of
-every view the builder calls; `the_books_cover_every_call_the_builder_makes` fails if the Python list and the Rust list differ.
+every view the builder calls; `the_books_cover_every_call_the_builder_makes` fails if a call the builder makes is not in the book (the book may hold more: the Python reads every serial and every `NoteMinted` holder and never reimplements the cut or the holder ordering). The example is first written at M1 by the builder without its cross-checks and rewritten at M2 (7.2); its bytes change then only if a check found a mistake.
 
-### 2.9 The chain loop (`scripts/chain-loop-pot.sh`, `chain-loop-pot-check.py`)
+### 2.9 The chain loop (`scripts/chain-loop-pot.sh`, `chain-loop-pot-check.py`; built by WP2)
 
 After step 1's walk, on the real unit of 7 days with the chain's clock moved as step 1's loop moves it: a launch's `tasks.book` equals `cast call treasury "tasks()"`; announce, cancel, announce,
 check in, move the chain clock past the notice, take, a Take out that writes a note, accept in part, claim by a stranger, a second
 task rejected, a third run out and returned by a take-out's settle, a fourth lapsed. At each stop the relay's signed record (kind
 39009, read as in step 1) is compared with `cast call`s **by the independent Python checker**: every row's fields against
 `taskOf(serial)`, the three buckets, `windowSumBps` and `takeRoomBps`, `money.locked` settled (the checker redoes `dueC`), the
-sum of notes against `noteFace`, and the worked-forward pot with `dueC`. New checks: about 30 (the count is printed). It also
+sum of notes against `noteFace`, and the worked-forward pot with the arrival formula of 1.2 and `dueC` (the checker redoes both from `cast call`s on `arrivalStart`, `arrivalTotal` and the task book). New checks: about 30 (the count is printed). It also
 checks that the helper sent a `settle` for the run-out task with nobody pressing and nothing else, and that `refreshEverySecs` is
 600 while a task is open and 3600 after the last one ended.
 
@@ -394,8 +398,8 @@ checks (5.5) are the safety; these rules are the early, honest refusal.
 - **What-hash** (C4): the network task's `what` is the **event id** of the task record (`task-part` = `task`), 32 bytes. The id is the
   SHA-256 of the signed record, so it commits to the words, the pay (`task-usd`), the helper, the project (`a` tag), the signer and the
   time. Nobody can change a task record after it is planned.
-- **Pay amount**: `maxDollars` of the plan must equal `task-usd x 1,000,000`. A plan that differs is shown (1.4) and refused for
-  Accept by the app (5.5).
+- **Pay amount**: `maxDollars` of the plan must equal `task-usd x 1,000,000`. A plan that differs is shown (1.4) and refused for Accept by the app (5.5). A task record with no `task-usd` (a named-helper task may have none) does not tie: `amount` fails and Accept is off.
+- **Which plan**: the lowest-serial row with this `what` in state announced, taken or paid (`repeatOf`, 1.4). The relay, the server and the app use this one rule, and one shared fixture (a record planned twice) is tested by all three.
 - **Pay-to address**: the address the worker named under their own signature: `task-pay-to` on a **take** (open task, as today) or on
   an **accept** step (a task that names its helper; **new**, C5). The plan's `payee` and the chain's `takenBy` must equal it.
 - **Serial**: not in any relay record (C6). The relay never needs to name it: `what` finds the plan, the plan's serial is in the
@@ -409,19 +413,16 @@ checks (5.5) are the safety; these rules are the early, honest refusal.
 | No other tag is added or changed. No new `task-part` value, no new kind in `crates/buzz-core/src/kind.rs`. | | `kind.rs` has a test that asserts 47003 stays the only task kind; WP2 adds none |
 
 The app's builder follows: a new `agreeRecord(coordinate, task, payTo)` for the helper's `accept` step carries `task-pay-to` (WP5 owns the helper's side, in
-`tasks/chain/holder/agree-record.ts`, which builds its own tags from the exported `TASK_LABEL` and `KIND_LAUNCH_UPDATE`; `task-record.ts` stays WP4's and is not edited for it). The command line gets `accept --pay-to` (WP2, 7.1).
+`tasks/chain/holder/agree-record.ts`, which builds its own tags from the exported `TASK_LABEL` and `KIND_LAUNCH_UPDATE`; `task-record.ts` stays WP4's and is not edited for it). WP4 does change `task-record.ts::readTask`, which reads `task-pay-to` today only from `take`: it reads the worker's latest `take` or `accept` step that carries one (by `created_at`, then id), and two different values from the same worker read as no pay-to (the tie then fails `payee`, the safe direction). The command line gets `accept --pay-to` (WP2, 7.1).
 
 ### 3.3 What the relay refuses (new file `handlers/task_chain.rs`, called from `launch_update_authority.rs` after `decide`)
 
 `task_chain::chain_task_of(pool, reader, chain_key, project_id, what) -> ChainLookup` reads the reader's rows in `chain_logs` (the
 same database, the same `reader` the manager reads: `state.chain_reader.reader_id()`), following the precedent of
 `api/manager/cost.rs::first_backing`: the project record's `chain-key` tag gives the key, a `ProjectLaunched` row for that key must
-carry `projectId` equal to `cost::project_id(coordinate)` (a launch made for someone else's record is not this project), then the
-project's `tasks` rows are read by `idx_chain_logs_project` and the plan is the `TaskAnnounced` row whose `decoded->>'what'` equals the
-task id. The answer is `NoReader` (no reader configured), `NotRead` (the key's launch is not in the rows yet), `Absent` (the project is
-read and has no plan with this `what`), or `Plan { serial, state, payee, taken_by, max_dollars, paid_tx }` where the state and
-`taken_by` follow the latest `TaskTaken` and `TaskResolved` rows of that serial, and `paid_tx` is the stored `tx_hash` of a
-`TaskResolved` of state 3. A failed read is a server fault and **refuses the write** (an outage never lets a record past a check:
+carry `projectId` equal to `cost::project_id(coordinate)` (a launch made for someone else's record is not this project), then the project's rows with `role = 'tasks'` are read through the partial index of migration 0071 (a `take`, which any signed-in account can send, must not scan the project's whole history) and the plan is the lowest-serial `TaskAnnounced` row whose `decoded->>'what'` equals the task id and whose state is announced, taken or paid (1.4). The answer is `NoReader` (no reader configured), `NotRead` (the key's launch is not in the rows yet), `Absent` (the project is
+read and has no plan with this `what`), or `Plan { serial, state, payee, taken_by, max_dollars, paid_tx, as_of }` where the state and
+`taken_by` follow the latest `TaskTaken` and `TaskResolved` rows of that serial, and `paid_tx` is the stored `tx_hash` of a `TaskResolved` of state 3. `as_of` is the newest block time the reader has stored for the chain. **A plan whose end (announced: `expiresAt`; taken: `deadline`) is at or before `as_of` counts as ended here**, because the next settle ends it: a plan nobody has settled yet must not block the team's `cancel` for ever. A failed read is a server fault and **refuses the write** (an outage never lets a record past a check:
 the rule of `task_takes.rs`).
 
 Applied to task steps whose task has a **live** plan (`Plan`: announced, taken or paid; a plan that ended unpaid ties nothing, 3.5), by step:
@@ -431,7 +432,7 @@ Applied to task steps whose task has a **live** plan (`Plan`: announced, taken o
 | `take` (open task) | no `task-pay-to`; or the plan names a payee different from it; or the chain says it is taken by another address; or it ended | `invalid: this task is planned on the network: name the wallet you will take it with` / `invalid: the plan on the network names another wallet` / `restricted: this task is already taken on the network by another wallet` / `restricted: this task's plan has ended on the network` |
 | `accept` (named helper) carrying `task-pay-to` | the plan's payee differs | `invalid: the plan on the network names another wallet` |
 | `confirm` (team accepts work) | the chain does not say `paid` for this plan; or `task-paid` is missing or is not the transaction that paid it (`paid_tx`) | `retry: the network has not shown this payment to the server yet; try again in a minute` when the chain says `taken` or the reader has not read the block; `invalid: pay it on the network first, then record it` otherwise; `invalid: that is not the payment that paid this task` |
-| `cancel` (team stops the task) | the chain says the plan is `announced` or `taken` | `invalid: withdraw or send back the money on the network first` |
+| `cancel` (team stops the task) | the chain says the plan is `announced` or `taken` and not past its end (above) | `invalid: withdraw or send back the money on the network first` |
 | `send-back` (returns work for changes), `evidence`, `more-time`, `give-up` | never refused by this module (they move no money; the network has its own deadline) | |
 | `task` (a new task record) | never | |
 
@@ -501,9 +502,7 @@ All return `PotCall` data built from the ABI; the seven selectors are pinned aga
 `readNoticeFor(read, treasury, shareBps) -> {noticeSecs, takeWindowSecs, dueSecs}`, `readTakeRoom(read, book)`,
 `readNoteOf(read, book, serial, holder)`, `readClaimable(read, book, serial, holder)`, `readBookOf(read, treasury)` (`tasks()`),
 `readActiveEnd(read, treasury)` (`activeEnd()`, for the check-in line and the quiet gate), `readUnit(read, treasury)`, and
-`scanNotes(getLogs, book, bookBlock, holder) -> serial[]` (the `NoteMinted(serial, holder)` logs filtered by the indexed holder, from
-`bookBlock`, in pages of at most 5,000 blocks, at most 40 pages; a node that refuses the range makes the scan say "could not look",
-never "none"). `TakeOutQuote.note` loses its "always zero until step 2" comment.
+`scanNotes(getLogs, book, bookBlock, holder, from?) -> { serials, reachedBlock, done }` (the `NoteMinted(serial, holder)` logs filtered by the indexed holder, **newest first**, walking back from the latest block toward `bookBlock`; a page starts at 5,000 blocks and is halved when the node refuses the range; at most 40 pages per press, then it returns where it got to (`reachedBlock`, `done: false`) and the next press continues from there, so there is no overall ceiling; a node that refuses even a small range gives "could not look", never "none"). `TakeOutQuote.note` loses its "always zero until step 2" comment.
 
 ### 4.4 The shared state and words (new, owned by WP3, used by WP4 and WP5): `app/src/features/tasks/chain/`
 
@@ -511,6 +510,7 @@ never "none"). `TakeOutQuote.note` loses its "always zero until step 2" comment.
 chain/types.ts      ChainTask, ChainTasks (the parsed section of 1.3 and 1.4; amounts bigint, serial bigint), ChainTaskNow
 chain/state.ts      phaseOf, stateWords, nextDateOf, tieOf, acceptGate, doorFor, shareFor, noticeWords, durationWords
 chain/words.ts      every sentence of section 5 that more than one screen uses (the error words live in money/pot-copy.ts)
+chain/join.ts      useTaskJoin(chainKey): the one hook that reads the project's relay task records and joins them to the record's rows (task record id = `what`), giving every card, strip and alert its `tieOf` input; one read per project, shared
 chain/slots.tsx     three slot components TaskCard mounts: <TeamActions/>, <WorkerActions/>, <HolderLines/>
 chain/team/TeamActions.tsx      stub (WP3) replaced by WP4
 chain/holder/WorkerActions.tsx  stub (WP3) replaced by WP5
@@ -526,37 +526,38 @@ type Phase =
   | "missed"      // announced, now >= expiresAt (nobody took it in time; it lapses)
   | "working"     // taken, now < deadline
   | "overdue"     // taken, now >= deadline (ran out, not yet returned)
-  | "paid" | "sent-back" | "ran-out" | "withdrawn" | "lapsed";
+  | "paid" | "sent-back" | "ran-out" | "withdrawn" | "lapsed"
+  | "wound-down";  // ended by the project's wind-down sweep: resolvedAt equals the record's windDown.at
 phaseOf(task: ChainTask, now: number): Phase;
 stateWords(task: ChainTask, now: number): { headline: string; detail: string | null };   // 5.4, "can be taken from 3 Dec" etc.
 
 type Tie =
   | { ok: true }
-  | { ok: false; why: "no-record" | "what" | "amount" | "payee" | "taker" | "repeat" | "worker-left" | "not-taken" };
+  | { ok: false; why: "no-record" | "what" | "closed" | "already-paid" | "amount" | "payee" | "taker" | "repeat" | "worker-left" | "not-taken" };
 tieOf(chain: ChainTask, relay: ProjectTask | null): Tie;   // pure; the relay task is the app's own reading of kind 47003
 
 acceptGate(input: { fresh: ChainTaskNow; shown: ChainTask; relay: ProjectTask | null; now: number; me: string }):
   { ok: true } | { ok: false; sentence: string; sendBackOffered: boolean };
 
-type Door = { door: "box" | "plan" | "too-big"; sentence: string; planAlso: boolean };
-doorFor(input: { usd: number; boxCap: bigint; pot: bigint; limits: ChainTasks["limits"]; notice: NoticeFor | null }): Door;
-shareFor(maxDollars: bigint, pot: bigint, maxShareBps: number): number | null;   // 5.1, the 10% margin
+type Door = { door: "box" | "box-only" | "plan" | "too-big"; sentence: string; planAlso: boolean };
+doorFor(input: { usd: number; box: bigint; boxCap: bigint; pot: bigint; payee: string | null;
+                 runner: { address: string; signers: string[] | null };
+                 limits: ChainTasks["limits"]; notice: NoticeFor | null }): Door;
+shareFor(maxDollars: bigint, pot: bigint, maxShareBps: number): number | null;   // 5.1: ceilDiv(max * 11000, pot), integers only
 noticeWords(secs: number): string; durationWords(secs: number): string;          // "16 days 12 hours", on a test network "1 hour 17 minutes"
 ```
 
-`tieOf` returns, in this order and returning the first failure: `no-record` (no task record with id = `chain.what` in the project's
-tasks), `what` (the record exists but belongs to another project or is not a `task` record), `amount` (`maxDollars !=
+`tieOf` returns, in this order and returning the first failure: `no-record` (no task record with id = `chain.what` in the project's tasks), `what` (the record exists but belongs to another project or is not a `task` record), `closed` (the team's record is cancelled or its worker gave up: a finished task cannot cover a new payment), `already-paid` (the record is accepted with a payment on it), `amount` (`maxDollars !=
 usd x 1e6`), `payee` (`chain.payee` is null or differs from the record's pay-to), `taker` (state taken or paid and `takenBy` differs
 from the record's pay-to), `repeat` (`repeatOf != null`), `worker-left` (the record's worker gave up), `not-taken` (the relay
 worker never took or agreed). `acceptGate` calls `tieOf` on the **fresh** chain read and adds "state is taken", "not past the
-deadline" and "the runner is the sender". Each `why` has one sentence in `chain/words.ts` (5.5).
+deadline" and "the runner is the sender". When `tieOf` fails, the app shows the network's numbers and **not the record's words** ("a task"), and Accept is off. Each `why` has one sentence in `chain/words.ts` (5.5).
 
 ### 4.5 The parser (`money/numbers-types.ts`, `numbers-read.ts`, owned by WP3)
 
 `ProjectNumbers.tasks: ChainTasks | null | "unreadable" | undefined`. Strictness as step 1 (amounts bigint, times bounded, addresses
 and bytes32 shaped, no negative or absurd number), plus: at most 8 open and at most 32 ended rows, unique serials, `openCount`
-equals the open rows, `repeatOf < serial`, `state` one of the seven words, `notes.holders` at most 20. A section that fails
-is `"unreadable"`, the rest of the record is read (1.6). New totals fields `paidToWorkers`, `noteClaims`. The parser test reads the
+equals the open rows, `repeatOf < serial`, `state` one of the seven words, `notes.holders` at most 20. A section that fails is `"unreadable"`, the rest of the record is read (1.6). The tasks parser is a new file `numbers-read-tasks.ts` (`numbers-read.ts` is 396 lines and the file-size gate is 600), and the new sentences go in `money/pot-copy-tasks.ts` (`pot-copy.ts` is 429 lines). New totals fields `paidToWorkers`, `noteClaims`. The parser test reads the
 **new example** (`record-v2-example.json`, WP1) and a hostile set (attack 9, 8.1).
 
 ### 4.6 Every new error, in words (`money/pot-copy.ts`; `ERROR_WORDS` is keyed by every error name, so it does not compile until each has words)
@@ -569,11 +570,11 @@ none shows a name, code or hex.
 
 | Error (from) | Sentence |
 |---|---|
-| `BadInput` (book, Treasury; **extend the existing entry**) | `plan-task`: "A task needs its record, at least 1 dollar and a share of the project's money from 0.01% to 5%. Nothing changed." `pay-task`: "Pay more than nothing, or send the money back instead. Nothing was paid." (existing variants and `any` stay) |
+| `BadInput` (book, Treasury; **extend the existing entry**) | `plan-task`: "A task needs its record, a person to pay who is not the project itself, at least 1 dollar and a share of the project's money from 0.01% to 5%. Nothing changed." `pay-task`: "Pay more than nothing, or send the money back instead. Nothing was paid." (existing variants and `any` stay) |
 | `ShareTooBig` | "That is more of the project's money than one task may ask for. Plan it in smaller parts. Nothing changed." |
 | `TooManyOpen` | "The most tasks are already planned or taken. Wait for one to end, or withdraw one that nobody has taken. Nothing changed." |
 | `NoSuchTask` | "The network does not know that task. Nothing changed." |
-| `WrongTaskState` | `take-task`: "This task cannot be taken now: it was already taken, withdrawn or has ended. Nothing changed." `pay-task`, `send-back-task`: "This task is not waiting for a payment: it may already be paid, sent back or have run out. Nothing was paid." `withdraw-task`: "Someone has taken this task, so it cannot be withdrawn. Send the money back instead. Nothing changed." `any`: "This task is not in a state this step works on. Nothing changed." |
+| `WrongTaskState` | `take-task`: "This task cannot be taken now: it was already taken, withdrawn or has ended. Nothing changed." `pay-task`, `send-back-task`: "This task is not waiting for a payment: it may already be paid, sent back or have run out. Nothing was paid." `withdraw-task`: "Someone has taken this task, or its time is over, so it cannot be withdrawn. Nothing changed." `any`: "This task is not in a state this step works on. Nothing changed." |
 | `NoticeRunning(readyAt)` | "The notice is still running. This task can be taken from {time}. Nothing changed." |
 | `TakeWindowOver` | "The time to take this task is over, so it lapses and nothing was set aside. Ask the team to plan it again." |
 | `CapReached(used, add, cap)` | "Too much of the project's money has been set aside for tasks recently: {used} of the {cap} the limit allows, and this task needs {add}. It can be taken once earlier tasks are old enough to stop counting. Nothing was set aside." |
@@ -582,7 +583,7 @@ none shows a name, code or hex.
 | `TooMuch(amount, available)` (**extend**) | `pay-task`: "That is more than the {available} dollars set aside for this task. Pay less. Nothing was paid." |
 | `NotYet(readyAt)` (**extend**) | `return-task`: "This task is not past its deadline yet. The money can be returned from {time}. Nothing changed." `claim-note`: "This task has not ended yet, so there is nothing to claim. It ends by {time}." |
 | `NothingToPay` (**extend**) | `claim-note`: "There is nothing to claim here: the task was paid in full, or you already claimed. Nothing changed." |
-| `NotAllowed` (**extend**) | `plan-task`, `send-back-task`, `withdraw-task`: "Only the person who runs the project can do this (with two people running it, both must say yes). Nothing changed." `pay-task`: "Only the person who runs the project can pay for a task, and not someone who took the task and now also runs the project. Nothing was paid." `take-task`: "This task is for someone else, or you run this project and so cannot take its tasks. Nothing changed." |
+| `NotAllowed` (**extend**) | `plan-task`: "Only the person who runs the project can plan a task (with two people running it, both must say yes), and a task cannot be paid to someone who runs the project. Nothing changed." `send-back-task`, `withdraw-task`: "Only the person who runs the project can do this (with two people running it, both must say yes). Nothing changed."  `pay-task`: "Only the person who runs the project can pay for a task, and not someone who took the task and now also runs the project. Nothing was paid." `take-task`: "This task is for someone else, or you run this project and so cannot take its tasks. Nothing changed." |
 | `ProjectQuiet` (Treasury) | "The team has not checked in lately, so no task can be planned or taken until they do. Nothing changed." |
 | `Inconsistent` (book, Treasury) | "Something in the project's numbers did not add up, so nothing was done. Nothing changed. Try again in a moment." |
 | `BadSetup` (book) | already worded (same name). |
@@ -618,7 +619,7 @@ never offered. An optional second line "The task: “{words}”" is shown under 
 `pot-calls.test.mjs` (selectors against `cast sig`, round trip of every builder, refusals of bad arguments), `pot-reads.test.mjs`
 against the `fake-chain.mjs` stub and against a real anvil answer, `abi-codec.test.mjs` (the tuple), `numbers.test.ts`,
 `numbers-hostile.test.ts` (attack 9, 8.1), `chain/state.test.ts` (every phase at every edge second: `now = noticeEnd - 1, noticeEnd, expiresAt - 1,
-expiresAt, deadline - 1, deadline`; `tieOf` each failure; `acceptGate` each failure; `doorFor` at the cap, one unit over and at zero; `shareFor`
+expiresAt, deadline - 1, deadline`; `tieOf` each failure (with `closed`, `already-paid` and the lowest-serial rule on the shared two-plans fixture); `acceptGate` each failure; `doorFor` at the cap, one unit over, at zero, with the box below the pay but under the cap, and for a payee who runs the project; `shareFor`
 at 5%, 4.55%, 0), `pot-copy.test.ts` (each new error in each action reads as a sentence with no hex, no name, no "revert"), and the
 `check:copy` scan over `chain/words.ts`.
 
@@ -663,13 +664,13 @@ Where: on a task card (team side) once a person has taken the task or agreed to 
 accepted and paid, and on an accepted task that still has "pay owed". It shows one proposed door and one sentence; the other door
 stays one press away when it is valid.
 
-**The rule (the design names it, 2.3: the allowance is the small, any-day door; tasks above it are planned):** with `usd` the task's pay
-in dollars and `boxCap` the most the allowance box can hold (`allowance.boxCap` in the record, read again from `boxCap()` on the chain
-when the sheet opens):
+**The rule (the design names it, 2.3: the allowance is the small, any-day door; tasks above it are planned):** with `usd` the task's pay in dollars, `box` what the allowance box holds now, `boxCap` the most it can hold (`allowance.box` and `allowance.boxCap` in the record, both read again from the chain when the sheet opens) and `payee` the wallet the worker named:
 
 | Case | Proposed door | Sentence (the app's own words; `{cap}` and `{notice}` are filled) |
 |---|---|---|
-| `usd x 1e6 <= boxCap` and `boxCap > 0` | **box** (step 1, `PayFromBox`, unchanged) | "This is small enough for the allowance box, which can hold up to {cap} dollars. The team can pay it any day, with no notice." |
+| the payee runs the project (the runner, or a Pair's signer: the contract refuses to plan or take a task for them) | **box-only** (no plan press) | "A task paid to someone who runs the project cannot be planned. It can be paid from the allowance." |
+| `usd x 1e6 <= box` now, `box > 0` | **box** (step 1, `PayFromBox`, unchanged) | "The allowance box holds {box} dollars now, enough to pay this on any day, with no notice." |
+| `box < usd x 1e6 <= boxCap` | **box**, later (the box press stays off until the box holds it: step 1's own gate) | "The allowance box holds {box} dollars now and fills up to {cap}. The team can pay this from the box once it holds {usd}, or plan it so holders get {notice} notice first." |
 | `usd x 1e6 > boxCap` and the share fits (`shareFor` is not null) | **plan** | "This is more than the allowance box can hold ({cap} dollars), so it is planned: holders get {notice} notice before any money moves, and anyone can take their money out first." |
 | `boxCap == 0` (allowance off or no money in it) and it fits | **plan** | "The allowance is not paying into the box, so this is planned: holders get {notice} notice before any money moves, and anyone can take their money out first." |
 | the share does not fit (`shareFor` is null: the pay is more than 4.5% of the project's money, the most one task can ask for after the margin) | **too-big** (no press) | "This is more of the project's money than one task may ask for. Plan it in smaller parts, or pay part of it from the allowance." |
@@ -688,8 +689,7 @@ Reads when it opens (chain): `tasks()`, `nextSerial`, `openSerials` and `taskOf`
 `noticeFor(shareBps)`, `activeEnd()`, `unit()`, `boxCap()`, the account, the door. From the record, with its "as of": `money.pot`
 (for the share), `tasks.limits`, `tasks.cap`.
 
-The share is `shareFor(maxDollars, pot, maxShareBps)`: `ceil(maxDollars x 10,000 x 1.1 / pot)` ten-thousandths, at least 1, at most
-`maxShareBps`; null when it passes (C8). The 10% margin makes the contract's "smaller of the dollars and the share of the pot at the
+The share is `shareFor(maxDollars, pot, maxShareBps)`: `ceilDiv(maxDollars x 11,000, pot)` ten-thousandths in integers (a tenth more than the pay's own share of the pot), at least 1, at most `maxShareBps`; null when it passes (C8). The 10% margin makes the contract's "smaller of the dollars and the share of the pot at the
 take" bind on the dollars unless the project's money fell by more than a tenth between now and the take. It is shown, not hidden.
 
 ```
@@ -701,19 +701,17 @@ Holders get {notice} notice. It can be taken from {date}.
 If nobody takes it within {window}, it lapses and nothing moves.
 Once taken, it is due {due} later.
 The team must check in again before {date} or it cannot be taken. The last check-in counts until {activeUntil}.
-Room under the limit for tasks now: {room}% of the project's money. This one needs about {share}% when it is taken; if there is not enough room then, it waits until earlier tasks are old enough to stop counting (from {date}).
+Details (folded): the share asked is {share}%, a tenth more than the pay's share of the project's money, so a small fall does not short-change the worker. Room under the limit for tasks now: {room}% of the project's money. This one needs about {pay / pot}% when it is taken; if there is not enough room then, it waits until earlier tasks are old enough to stop counting (from {date}).
 {door sentence of 5.1}
 This is play money.            You can take your money out any time.   [legal line]
 [ Plan this task ]            (a Pair: [ Ask the other signer ])
 ```
 
 `{notice}`, `{window}`, `{due}` come from `noticeFor(share)` read now; `{date}` is now plus the notice ("if you press now"). `{name}` is the
-person's profile name from the task record's worker (and the full address is always shown, as the Pair sentences do). Done: "Planned. Holders
-can see it now, and anyone can take their money out before {date}." (Pair: "Asked. It is planned when the other signer confirms.")
+person's profile name from the task record's worker (and the full address is always shown, as the Pair sentences do). Done: "Planned. Holders can see it now, and anyone can take their money out before {date}." with `{date}` the `noticeEnd` the chain gives after landing, not the date shown before the press (Pair: "Asked. It is planned when the other signer confirms.")
 
-Blocks (no press, a sentence, `data-testid="plan-blocked"`): the record is older than 24 hours ("We could not refresh this project's numbers, so a plan
-cannot be sized now. Try again in a moment."); the project is quiet (`activeEnd <= now`: the `ProjectQuiet` sentence with "Check in first");
-8 tasks open ("The most tasks are already planned or taken..."); the same task is already planned (an open row whose `what` equals the record's
+Blocks (no press, a sentence, `data-testid="plan-blocked"`): the record is older than its "as of" band (`3 x refreshEverySecs + 60`, 1.6; a day of take-outs is more than the 10% margin covers) ("We could not refresh this project's numbers, so a plan cannot be sized now. Try again in a moment."); the person to be paid runs the project (5.1); the project is quiet (`activeEnd <= now`: the `ProjectQuiet` sentence with "Check in first");
+8 tasks open **whose end is still in the future** (a plan or take whose time is up is ended by the settle that the announce makes first, so it does not count: 1.6) ("The most tasks are already planned or taken..."); the same task is already planned (an open row whose `what` equals the record's
 id, read from the chain: "This task is already planned: it can be taken from {date}."); the task record is not one that ties (`tieOf` against a
 hypothetical row: the worker named no wallet: "{name} has not named a wallet to be paid at, so this cannot be planned. Ask them to agree to the task
 first."); the share does not fit (5.1, too-big); wrong network (the gate); a wallet that is not the runner or a signer (the gate's sentence).
@@ -741,11 +739,10 @@ Three places show it, all from the record (`tasks.list`), all with the record's 
 all the same; the words are not trusted when they do not tie). `{name}` is the profile name of the pay-to, else the short address; the
 full address is in the Details fold. `{date}` is `noticeEnd`: "from 3 Dec, 14:05". While `now >= noticeEnd`, the first line is "...
 it can be taken until {date}." and the second is unchanged. Below, in `text-sm text-muted`: "{atMostNow} dollars would be set aside today
-(a share of the project's money). This can go up or down. It is not a return." (`NOT_A_RETURN`, `atMostNow` from the row). A button
-"Take out" (the existing sheet, 5.11) sits next to it on the project page for a holder. Phone: the two lines wrap, the date never truncates
+(a share of the project's money). This can go up or down. It is not a return." (`NOT_A_RETURN`, `atMostNow` from the row). A button "Take out" (the existing sheet, 5.11) sits next to it on the project page for a holder; its accessible name is "Take out before {date}" (the Money tab has its own "Take out", so two controls on one page are never named alike). Phone: the two lines wrap, the date never truncates
 (`break-words`), the strip is one card with one heading.
 
-**A taken or ended task** (the lead's alert kinds, 6): "{name} took “{what}”. {setAside} dollars are set aside until {deadline}." / "“{what}” was paid {pay}
+**A taken or ended task** (the lead's alert kinds, 6; a taken task past its deadline reads as in 5.4, "Ran out", not "set aside until" a past date): "{name} took “{what}”. {setAside} dollars are set aside until {deadline}." / "“{what}” was paid {pay}
 dollars." / "“{what}” was sent back. Nothing was paid; the money went back to the project." / "“{what}” ran out. Nothing was paid; the money went back." /
 "The plan for “{what}” was withdrawn." / "Nobody took “{what}” in time, so it lapsed. Nothing moved."
 
@@ -765,8 +762,10 @@ Every state the app names is a function of the row and `now`, and a row comes fr
 | `ran-out` | "Ran out. Nothing was paid." | "The money went back to the project." |
 | `withdrawn` | "Withdrawn." | "Nobody took it, so no money moved." |
 | `lapsed` | "Lapsed. Nobody took it in time." | "Nothing moved." |
+| `wound-down` | "Closed. The project wound down." | "Nothing was paid. Any money set aside went back." |
 
-A task record with **no** plan keeps its step 1 words (`STATE_WORDS`), unchanged. A task with a plan shows both lines: the network's
+
+`wound-down` is an ended row (`returned` or `cancelled`) whose `resolvedAt` equals the record's `windDown.at`: the sweep, not a decision about the task. A task record with **no** plan keeps its step 1 words (`STATE_WORDS`), unchanged. A task with a plan shows both lines: the network's
 headline first (bold), the record's own step under it ("Work handed in") in muted text; they never swap, and a team record that says
 "Accepted" while the network says `taken` shows "Taken, due {date}." with the record's step beside it.
 
@@ -783,7 +782,7 @@ this holds; otherwise it shows the one sentence below, offers "Send the money ba
 | The task on the network is `taken` (not announced, paid, sent back, ran out) | "This task is not waiting for payment on the network: {state words}. Nothing can be paid." |
 | `block.timestamp < deadline` (read from the latest block's time, or the app clock with 60 seconds of room) | "The deadline passed on {date}. The money goes back to the project and cannot be paid now." |
 | `takenBy` equals the pay-to address in the task record of **this** task (`tieOf`: `taker`) | "The network says this task was taken by {addr}, but the person who took it here named {addr2} to be paid. Nothing can be paid until they match. You can send the money back." |
-| The plan's what-hash is the id of this task record and the pay equals the record's (`tieOf`: `what`, `amount`) | "This plan on the network is not for this task as it was written here ({reason}), so it cannot be paid from here. You can send the money back." |
+| The plan's what-hash is the id of this task record and the pay equals the record's (`tieOf`: `what`, `amount`, `closed`, `already-paid`: a task already paid from the box or closed on the team's list is never paid a second time) | "This plan on the network is not for this task as it was written here ({reason}), so it cannot be paid from here. You can send the money back." |
 | No earlier plan of the same record exists (`repeatOf` null) | "This task was planned more than once on the network (task {n} came first), so only the first can be paid. You can send this money back." |
 | The record's worker is still the worker (they did not give up), and the sender is not the worker, nor runs the worker, nor is an agent (`checksOwnWork`, step 1) | the step 1 sentences (`TASK_PROBLEM.ownWork`, `notRunner`) |
 | The money is in a bucket the pay can reach: `setAside > 0` | "Nothing is set aside for this task, so nothing can be paid." |
@@ -803,16 +802,13 @@ This is play money.   You can take your money out any time.   [legal line]
 
 Pay part: `payDollars` is a whole number of cents from 1 dollar to `setAside` (`TooMuch` and `BadInput` are the contract's own refusals,
 worded in 4.6). "What is left" line gives the figure: "{rest} dollars go back." The press sends `acceptTaskCall({serial, payDollars})`
-(**there is no payee argument**; the money goes to `takenBy` and to nobody else). Done: "Paid {pay} dollars to {name}." On landing the app writes the
-team's record, as step 1: `acceptRecord(project.coordinate, task, handIn.id, txHash)` carrying `task-paid` = the transaction (the relay's rule 3.3 ties
-it to the network payment); the step 1 `paid-journal` remembers a payment whose record failed ("The money was sent, but the record that the work was
-accepted was not saved. Press again to save it: nothing is paid twice." and `retry:` from the relay reads as "The payment went through. The server has
-not read it yet, so the record is not saved. Press again in a minute: nothing is paid twice."). `landed`: `taskOf(serial).state == paid`. `action`:
+(**there is no payee argument**; the money goes to `takenBy` and to nobody else). Done: "Paid {pay} dollars to {name}." On landing the app writes the team's record, as step 1: `acceptRecord(project.coordinate, task, handIn.id, txHash)` carrying `task-paid` = the transaction. **The transaction is read from the chain by serial** (the `TaskResolved` log of that serial, or the record's `resolvedTx` once it shows), never taken from what the sheet sent: after a Pair's proposal, a refresh or a replaced call, the hash the sheet knows is not the payment, and step 1's `findPayment` (which searches by exact amount) cannot find a part payment. The relay's rule 3.3 ties it to the network payment; the step 1 `paid-journal` remembers a payment whose record failed ("The money was sent, but the record that the work was
+accepted was not saved. Press again to save it: nothing is paid twice." and `retry:` from the relay reads as "The payment went through. The server has not read it yet, so the record is not saved. Press again in a few minutes: nothing is paid twice."). `landed`: `taskOf(serial).state == paid`. `action`:
 `pay-task:{chainId}:{treasury}:{serial}`; `detail`: `{serial}:{payDollars}`. The `recheck` is the gate again on a fresh read.
 
 ### 5.6 Send the money back (WP4: `SendBackSheet.tsx`)
 
-Where: the task card for the runner, when the network task is `taken` (any time, including after the relay worker gave up or handed in nothing).
+Where: the task card for the runner, when the network task is `taken` and `now < deadline` (including after the relay worker gave up or handed in nothing). After the deadline the contract settles first and ends the task, so a send-back would fail and roll back; the card then shows Return (5.9) and no send-back press.
 (The team's existing relay step "send-back" keeps its meaning, "return work for changes", and its button "Ask for changes". C7.)
 
 > **Send the money back for “{what}”.** Nobody is paid. All {setAside} dollars go back to the project and to the people who took out while it was set aside.
@@ -823,7 +819,7 @@ Press "Send the money back" (`rejectTaskCall`; Pair: "Ask the other signer"). Do
 
 ### 5.7 Withdraw a plan (WP4: `WithdrawSheet.tsx`)
 
-Where: the task card for the runner, when the network task is `announced` (any time in the notice or the take window).
+Where: the task card for the runner, when the network task is `announced` and `now < expiresAt` (the notice or the take window). After it the plan lapses by itself and nothing moves, so no press is offered and the card says Lapsed.
 
 > **Withdraw the plan for “{what}”.** Nobody has taken it, so no money moves. The task stays on your list and can be planned again.
 
@@ -840,13 +836,13 @@ made outside this app) shows "Open to anyone. The team chose not to name who is 
 Reads: `taskOf(serial)`, `activeEnd()`, the account. From the record with "as of": `money.pot`, the task's `atMostNow`.
 
 ```
-Take “{what}”                                                     [x]
+Set the money aside for “{what}”                                 [x]
 You are named for this task: {max} dollars at most.
 Taking it sets money aside for you now: the smaller of {max} dollars and {share}% of the project's money, about {atMostNow} dollars today.
 If the team accepts your work, you are paid what they choose, up to what is set aside, by {due} after you take it. If they do not, the money goes back.
 [x] Take it only if the whole {max} dollars is set aside          (checked: nothing is taken if less would be)
 This is play money.   [legal line]
-[ Take this task ]
+[ Set the money aside ]
 ```
 
 Unchecked, the least accepted is 1 dollar. The guard is `minAmount`: checked = `maxDollars`, unchecked = `minTask`. The press sends
@@ -858,6 +854,8 @@ the sender is the runner or a signer (`NotAllowed`). `landed`: state `taken` and
 Done: "Taken. {setAside} dollars are set aside for you until {deadline}. Hand your work in on the task." After landing the app does not write a relay record (the
 chain is the take); the relay worker's earlier `take` or `accept` record carried the pay-to.
 
+The press is named for what it does, "Set the money aside", because the relay worker's own step-1 button on the same card is "Take this task" (the worker saying "I will do this", which carries the wallet): two presses with one name and two effects would be a trap (C34).
+
 **A task that names its helper** (made by the command line or an agent; the app's own "Post a task" makes open tasks): the named helper sees "This task is for you." and a button
 "Agree and name my wallet" (`holder/AgreeButton.tsx`), which connects the wallet as `takeRecord`'s press does and writes the helper's `accept` step with `task-pay-to` = that account
 (`holder/agree-record.ts`). Until they have, the plan sheet refuses the task (5.2: "{name} has not named a wallet to be paid at"). Nothing else about a named task changes.
@@ -867,26 +865,24 @@ chain is the take); the relay worker's earlier `take` or `accept` record carried
 **Return.** Anyone sees, on a task whose phase is `overdue`, once the chain read says `state == taken && now >= deadline`: "The deadline passed on {date} and nobody was paid.
 Anyone can return the money to the project." and a button "Return the money" (`returnTaskCall`). Nothing is signed by the sender except that call (no token). Done: "Returned. The
 money is in the project again." `landed`: state `returned` (or `lapsed`). A holder is never required to do it: every take-out, back and claim settles first and returns it too; the button
-exists so a person who looks at an overdue task can fix it in one press. `NotYet` words ("This task is not past its deadline yet...") when early. The server's helper also settles (2.7).
+exists so a person who looks at an overdue task can fix it in one press. A plan whose phase is `missed` has no button: it lapses on the next step by itself and moves nothing, and nothing waits for it (the gates of 1.6 already count it as ended). `NotYet` words ("This task is not past its deadline yet...") when early. The server's helper also settles (2.7).
 
 **Notes (T1: "the notes list and claim").** Where: the Money tab, a section "Money you can claim", and the same rows on You. It lists tasks
 for which the person holds a note, newest first, at most 20, each as:
 
 > **“{what}”: you took out while {setAside} dollars were set aside for it. The task is {ended / still running}.**
-> Running: "You will be able to claim up to {face} dollars if it is not paid." Ended unpaid or paid in part: "You can claim {claimable} dollars now." Paid in full: "It was paid in full, so there is nothing to claim."
+> Running: "You will be able to claim up to {face} dollars if it is not paid." Ran out, not yet returned: "This task ran out. You can claim {face} dollars now; claiming returns the money first." Ended unpaid or paid in part: "You can claim {claimable} dollars now." Paid in full: "It was paid in full, so there is nothing to claim."
 
 Ended rows show a button "Claim {claimable} dollars" that opens `ClaimSheet`. How the list is made (S1: a person's position is read from the chain, never from the record):
 
-1. **Candidates**: the record's rows that list the person in `notes.holders`, every ended row with `notesLeft > 0`, and every open taken row; at most 40 serials (the cut keeps the newest).
-2. **Reads** (one `eth_call` batch when the section opens, and again when a sheet opens): `noteOf(serial, me)` and `claimableNote(serial, me)` for each candidate. The figure on the button is the chain's,
-   never the record's. Rows with `noteOf == 0` disappear.
-3. **"Look for money I can claim"** (a link under the section, a press by the person): `scanNotes` from `tasks.bookBlock` for `NoteMinted` logs naming the person, then step 2 for the serials found. This finds notes
-   on tasks that left the record's list, and for a person with no Shares left. It says "Could not look just now. Try again in a moment." when the node refuses the range, and never says "none" for a failed look.
-4. A person who took out of a project (this browser's own history, `own-history.ts`) sees the section on that project's page even with no Shares.
+1. **Candidates**: the record's rows that list the person in `notes.holders`, every ended row with `notesLeft > 0`, and every open taken row (rows are kept by 1.5, so a row with money to claim is never cut for age), plus the serials in this browser's own history (4 below); at most 40.
+2. **Reads** (one `eth_call` batch when the section opens, and again when a sheet opens): `noteOf(serial, me)` and `taskOf(serial)` for each candidate. The figure on the button is the chain's, never the record's: `mulDiv(noteOf, returned, setAside)` (the contract's own formula; for a taken task past its deadline that nobody has settled it is the whole `noteOf`, because a claim settles first), and the sheet checks it against `claimableNote` when it opens. Rows with `noteOf == 0` disappear. At most 40 reads on one project's Money tab; the You page stages them (the first 10 rows, then "Show more").
+3. **"Look for money I can claim"** (a link under the section, a press by the person): `scanNotes` newest first (4.3) for `NoteMinted` logs naming the person, then step 2 for the serials found. This finds notes on tasks that left the record's list, and for a person with no Shares left. When a press ends before `tasks.bookBlock` it says "Looked back to {date}. Look further back" and the next press continues; only a scan that reached `bookBlock` says "Nothing found back to the start of this project's tasks."; a node that refuses the range says "Could not look just now. Try again in a moment."; a failed or unfinished look is never "none".
+4. A person who took out of a project (this browser's own history, `own-history.ts`) sees the section on that project's page even with no Shares. **After a Take out lands, the app reads the receipt's `NoteMinted` logs, best effort, and writes the minted serials into that step in `own-history.ts` (an optional `notes` field; WP5)**: this never gates, delays or fails the Take out, a failed read loses nothing, and those serials are candidates with no scan. Notes never expire; an old small note of someone who cleared their browser is found only by the look-back, and the page says so plainly.
 
 `ClaimSheet`: "Claim {claimable} dollars for “{what}”. When you took out, {setAside} dollars were set aside for this task. It ended, and {returned} dollars of it came back; you are owed {claimable} dollars now.
 The money goes to your account." Press "Claim {claimable} dollars" (`claimNoteCall({serial, holder: me})`). **The holder argument is always the connected account**: the sheet has no way to name another (A6).
-Blocks: the task has not ended (`NotYet`), nothing to claim (`NothingToPay`), `claimable == 0` ("This note pays nothing now. Nothing to claim."), wrong account. `landed`: `noteOf(serial, me) == 0`. `action`:
+Blocks: the task has not ended (`NotYet`), nothing to claim (`NothingToPay`), the task is paid in full or the note is already claimed (`NothingToPay` words; a task that ran out and is not yet settled is **not** blocked: the press settles it), wrong account. `landed`: `noteOf(serial, me) == 0`. `action`:
 `claim-note:{chainId}:{treasury}:{serial}:{me}`; `detail`: `{serial}:{face}`. One claim per press (no "claim all": each is its own signature and its own check, C27).
 
 ### 5.10 The lines on the Back sheet and the Take out sheet (T6) (WP5: `pot/BackSheet.tsx`, `pot/TakeOutSheet.tsx`, `pot/pot-words.ts`)
@@ -895,7 +891,7 @@ Blocks: the task has not ended (`NotYet`), nothing to claim (`NothingToPay`), `c
 
 > "Part of the project's money is set aside for a task, for up to {dueSecs}. You get {cash} dollars now, and up to {note} dollars more if the task is not paid in full."
 
-and a link "Where the notes are claimed" to the Money tab section of 5.9. `{dueSecs}` is the record's `tasks.limits.dueSecs` in words ("14 days"); when the record has none the sentence is
+and a link "Where you claim it" to the Money tab section of 5.9 (the word "note" is not in the sheet's copy). `{dueSecs}` is the record's `tasks.limits.dueSecs` in words ("14 days"); when the record has none the sentence is
 "Part of the project's money is set aside for a task. You get {cash} dollars now, and up to {note} dollars more if the task is not paid in full." The press never waits for the record. **The sheet needs only `quoteTakeOut`**: `good.call` and the minimum cash come from `readTakeOut` as today; the task decoration (the link and `{dueSecs}`) is rendered from props the project page already
 holds, never from a query the sheet makes, and a hung or failed read of tasks, notes or the record cannot disable, delay or reword the press (test C13, 8.2: it hangs the record and the book reads and presses Take out). The arriving-money line is unchanged.
 
@@ -903,10 +899,11 @@ holds, never from a query the sheet makes, and a hung or failed read of tasks, n
 
 > "Money set aside for tasks: {X} dollars. You pay for it at full value now. If the task is paid, that cost is shared by everyone who holds; if it is not, the money comes back to the project."
 
-and `none` as today. Numbers stay the chain's `quoteBack`; the sentence is in `pot-words.ts` and both sheets' tests assert it.
+and `none` as today. **A planned task** (the record has an open row in `notice` or `open`) adds one line from the record's rows, a prop and never a query: "The team plans to pay up to {max} dollars for a task, from {date}. You can take your money out any time." Numbers stay the chain's `quoteBack`; the sentence is in `pot-words.ts` and both sheets' tests assert it.
 
 ### 5.11 The Tasks tab, the project page and the check-in line (WP4 owns `TasksTab.tsx`, `TaskCard.tsx`, `use-tasks.ts`; WP5 owns `ProjectPage.tsx` strips and `ProjectMoney.tsx`)
 
+- **One door per task (WP4's rule and test, D10).** When a live plan (announced, taken or paid) ties to the task, `AcceptAndPay` and `PayFromBox` are **not rendered** and the chain `AcceptSheet` is the only pay path (else the team pays from the box, the relay then refuses the `confirm`, or both doors pay). Every money line on the card (`paidWords`, `owedWords`, "Pays X on accept") then comes from the network row (`pay`, `setAside`, `returned`), never from `task.usd`: a part payment must not read as paid in full. Without a live plan the step 1 card is unchanged.
 - **Task card**: the step 1 card plus, when the task record ties to a row, the headline of 5.4 above the record's step, and the slot components
   (`<TeamActions/>`, `<WorkerActions/>`, `<HolderLines/>`, mounted once by `chain/slots.tsx`). A plan with no matching record is its own card ("A planned task with no matching task here: {max} dollars to {addr},
   from {date}") so a team cannot plan something a holder cannot see.
@@ -915,6 +912,7 @@ and `none` as today. Numbers stay the chain's `quoteBack`; the sentence is in `p
   "{n} planned task(s) can be taken from {date}, but nobody can take them unless the project checks in again before {activeUntil}. Check in on This week." with a link to the check-in. A plan whose take window opens
   after the quiet date shows "This task cannot be taken unless the team checks in before {activeUntil}." to everyone on its card, so a worker or a holder is never told "can be taken" when it cannot (a teammate who withholds a check-in
   makes the task lapse, never move money: A11).
+- **Bundles**: `ProjectPage` lazy-loads `TasksTab` and `ProjectMoney`; the strips and the Back-sheet line sit in the main bundle and import no ABI (`check-bundle-size` guards it).
 - **The Money tab** adds "Planned and running tasks" (5.3) and "Money you can claim" (5.9) under "Money set aside for tasks: {money.locked} dollars. Room left for tasks: {roomBps/100}% of the project's money for now; more from {frees[0].at}."
 
 ### 5.12 The `landed` check, per call
@@ -960,11 +958,11 @@ interface TaskAlert {
   stale: boolean;         // the record is past 3R + 60 s: the sentence says "(as of {time})"
   words: string;          // 6.4
 }
-alertsOf(input: { numbers: ProjectNumbers[]; names: Map<string,string>; me: readonly string[]; held: (chainKey) => boolean | "unknown"; now: number }): TaskAlert[]
+alertsOf(input: { numbers: ProjectNumbers[]; names: Map<string,string>; me: readonly string[]; held: (chainKey) => boolean | "unknown";
+                  tasksOf: (chainKey) => ProjectTask[] | undefined; now: number }): TaskAlert[]   // now = max(device, asOf): 5.0 clock rule
 ```
 
-One row of the record yields at most one alert at a time: `announced` in phase `notice` or `open` => `planned`; `taken` => `taken`; an ended row inside the cut => `ended`; a row whose
-`notes.holders` lists one of `me` with `claimable > 0` => `claim` (also). Ordered by `at` descending. `held` says whether the person holds the project (6.2).
+One row of the record yields at most one alert at a time: `announced` in phase `notice` or `open` => `planned`; `taken` => `taken` (a taken row past its deadline reads "ran out", 6.4); an ended row that moved money (paid, sent back, ran out) => `ended`; a row whose `notes.holders` lists one of `me` with `claimable > 0` => `claim` (also). **Withdrawn and lapsed plans make no alert** (nothing moved: they stay card states). Order: planned and taken first, then claims, then ended, each by `at` descending; **at most 3 ended alerts per project**, the rest as one line "and {n} more ended", so a flood of cheap tasks cannot push a real notice off the page. `tasksOf` is the project's relay task records (for `tieOf` and the task's words; `undefined` reads "a task"): one `readMulti` per project that has an alert, at most 20 projects. `held` says whether the person holds the project (6.2).
 
 ### 6.2 Whose alerts (every holder)
 
@@ -972,14 +970,14 @@ A person is a holder of project P when one of their accounts (the connected wall
 (a) projects whose recent records list one of their accounts in `holders` (`holdingHint(numbers, accounts).listed`, the same read `YourSharesList` makes: 3 pages of 100 records); (b) projects in this
 browser's own history (`ownSteps`: their Backs and Take outs); (c) projects whose note rows list them. For a project that is only a hint ("not listed, and the list was cut": `holdingHint.certain` false) the app
 reads `shares.balanceOf(me)` and `team.balanceOf(me)` once per project per five minutes (at most 20 projects, newest alert first) and makes alerts only when a balance is above zero or a note exists. A person with
-no wallet connected sees no You news and still sees the strips on every project page (5.3). The people who run a project and its team members see the same strips; they are not told apart.
+no wallet connected sees no You news and still sees the strips on every project page (5.3). The people who run a project and its team members see the same strips; they are not told apart. **The stated limit:** a holder of a project whose holder list was cut, on a new device with no history, is found only through the balance reads, which cover at most 20 such projects; beyond that the strips on each project page remain.
 
 ### 6.3 Where it shows
 
 1. **You**: a section "News about your projects" above "Your Shares" (`alerts/NewsSection.tsx`), the 30 newest alerts, each a row with the sentence, the project's name as one link, and the time; an urgent row has a
    second line and a button "Take out" that opens the project's Money tab at the Take out sheet. Empty: "No news about your projects." Never "no news" for a failed read: "News could not be read just now. Your money
    is not affected." with "Try again".
-2. **The dot on You** (`useUnseenCount`): counts unseen alerts in addition to what it counts today (the sum, one dot).
+2. **The dot on You** (`useUnseenCount`, which runs on every page): counts unseen alerts in addition to what it counts today (the sum, one dot). It derives them from a **bounded set**, never the 3-page holder scan: the projects in this browser's own history and the last-seen holdings, at most 20, the newest record of each, read on app open and on focus (no interval). The full derivation runs only when the You page opens.
 3. **The project page**: the strips of 5.3 for everyone, which are also what marks the project's alerts seen.
 4. Not built: a chip on Home's project cards, a sound, a browser notification (C28).
 
@@ -991,13 +989,12 @@ no wallet connected sees no You news and still sees the strips on every project 
 | taken | "{Project}: “{what}” was taken. {setAside} dollars are set aside until {deadline}." |
 | ended, paid in full | "{Project}: “{what}” was paid {pay} dollars." |
 | ended, paid in part | "{Project}: “{what}” was paid {pay} of the {setAside} dollars set aside; the rest went back." |
+| taken, past its deadline | "{Project}: “{what}” ran out. The money goes back to the project." |
 | ended, sent back or ran out | "{Project}: “{what}” ended and nothing was paid. The money went back to the project." |
-| ended, withdrawn | "{Project}: the plan for “{what}” was withdrawn." |
-| ended, lapsed | "{Project}: nobody took “{what}” in time, so it lapsed. Nothing moved." |
+
 | claim | "{Project}: you can claim {x} dollars from “{what}”. It ended after you took out." |
 
-`{what}` is the task record's words when `tieOf` is ok, else "a task". The list carries the play-money line (`PLAY_MONEY_WORDS`) once, at its top. A record in the "as of" band adds "(as of {time})" to each sentence;
-a record past 24 hours makes none (1.6), and the section says "Some projects' news could not be refreshed. Your money is not affected."
+`{what}` is the task record's words when `tieOf` is ok, else "a task". The list carries the play-money line (`PLAY_MONEY_WORDS`) once, at its top. A record in the "as of" band adds "(as of {time})" to each sentence; a record past 24 hours still shows its planned and taken alerts, marked "as of {time}, may be out of date" (1.6), and the section adds "Some projects' news could not be refreshed. Your money is not affected."
 
 ### 6.5 Marked read (per device, a convenience)
 
@@ -1017,20 +1014,19 @@ semantics, one link per row, the mark button's label names its count), the dot, 
 
 ## 7. The work packages (five engineers, six packages)
 
-Engineer A: WP1. Engineer B: WP2, then WP6. Engineer C: WP3. Engineer D: WP4. Engineer E: WP5. The machine is shared (4 CPUs): one heavy build or test at a time per person,
-`CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0` for cargo, `nice -n 10`, and run the loops (anvil, relay) one at a time. Estimates (engineer-days, a guess): WP1 9, WP2 4, WP3 6, WP4 8, WP5 9, WP6 5 (about 41 days, about
-8 engineer-weeks on top of the 5.5 the design gave the contracts; the design's whole step 2 figure of 5.5 was for contracts, server and app and is low: C30).
+Engineer A: WP1. Engineer B: WP2 (the relay rules, then the helper job and the chain loop, which WP1 would otherwise carry while B waits), then WP6. Engineer C: WP3. Engineer D: WP4. Engineer E: WP5. The machine is shared (4 CPUs): one heavy build or test at a time per person,
+`CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0` for cargo, `nice -n 10`, and run the loops (anvil, relay) one at a time. Estimates (engineer-days, a guess): WP1 10, WP2 8, WP3 7, WP4 9, WP5 10, WP6 5 (about 49 days, about 10 engineer-weeks on top of the 5.5 the design gave the contracts; the design's whole step 2 figure of 5.5 was for contracts, server and app and is low: C30).
 
 ### 7.1 Ownership (one owner per path; a change to another's path is asked of the owner and waits for their commit)
 
 | WP | Owns (exact) | Does not touch |
 |---|---|---|
-| **WP1 Server reader and record** | `crates/buzz-relay/src/chain_reader/**` (including `helper/**`, `testdata/**`, `events_table.rs`, `views_table.rs`, `record_tasks.rs`, `ledger_tasks.rs`); `scripts/chain-reader-events.mjs`, `scripts/chain-reader-fixture.py`, `scripts/chain-loop-pot.sh`, `scripts/chain-loop-pot-check.py`, `scripts/chain-loop-query.mjs`; `migrations/0071_chain_tasks_role.sql`, `schema/tables/public/chain_contracts.sql`; `docs/next-version/RECORD-V2.md`, `docs/next-version/record-v2-example.json`, a "Step 2" section of `docs/next-version/READER-V2-REPORT.md` | `handlers/**`, `app/**`, `packages/**` |
-| **WP2 Relay rules** | `crates/buzz-relay/src/handlers/launch_update_authority.rs` and `launch_update_authority_postgres_tests.rs`; new `handlers/task_chain.rs`, `handlers/task_chain_postgres_tests.rs`; the `mod task_chain;` line in `handlers/mod.rs`; `handlers/task_takes.rs` (only if needed); `crates/buzz-cli/src/commands/launchpad_tasks.rs` (an `accept` step may carry `--pay-to`, so the command line agrees with 3.2) | `chain_reader/**`, `app/**` |
-| **WP3 Shared library, parser, state, words** | `packages/creaton-core/src/pot/**`; `scripts/pot-app-abi.mjs`; `app/src/features/money/numbers.ts`, `numbers-types.ts`, `numbers-read.ts`, `numbers*.test.ts`, `pot-copy.ts`, `pot-copy.test.ts`, `money-copy.ts`; `app/src/features/tasks/chain/types.ts`, `state.ts`, `words.ts`, `slots.tsx`, `state.test.ts`, `words.test.ts` and the three **stub** files (`chain/team/TeamActions.tsx`, `chain/holder/WorkerActions.tsx`, `chain/holder/HolderLines.tsx`) that WP4 and WP5 overwrite; the one-time edit of `tasks/TaskCard.tsx` that mounts `chain/slots.tsx` (made on day 2, before WP4 starts editing that file) | screens |
-| **WP4 App, team side** | `app/src/features/tasks/{TaskCard.tsx, TasksTab.tsx, use-tasks.ts, task-record.ts, task-record.test.ts, tasks-copy.ts, AcceptAndPay.tsx, PayFromBox.tsx}` (and their tests); `app/src/features/tasks/chain/team/**`; `app/src/features/pot/{pair-terms.ts, pair-terms.test.ts, use-pair-waiting.ts, PairWaiting.tsx}` and their tests; `app/tests/e2e/pot-plan.spec.ts`, `app/tests/e2e/pot-tasks.spec.ts` (the existing step 1 spec) | the holder files, `chain/state.ts` (asked of WP3) |
-| **WP5 App, worker and holder side, with alerts** | `app/src/features/tasks/chain/holder/**`; `app/src/features/alerts/**` (new); `app/src/features/pot/{BackSheet.tsx, TakeOutSheet.tsx, pot-words.ts, ProjectMoney.tsx, YourSharesList.tsx}` and tests; `app/src/features/project/ProjectPage.tsx` (the strips); `app/src/features/you/YouPage.tsx`; `app/src/features/notifications/use-notifications.ts` (the unseen count); `app/tests/e2e/pot-notes.spec.ts`, `pot-alerts.spec.ts` | the team files |
-| **WP6 The joined-up loop and report** | `scripts/pot-app-loop.sh`; `app/tests/anvil/pot-tasks.test.ts` and `app/tests/anvil/pot-chain.ts` additions; `scripts/pot-full-loop.sh`, `app/tests/e2e-pot-full/pot-tasks.spec.ts`, `world.ts`; `docs/next-version/STEP2-SERVER-APP-REPORT.md`; the final run of everything | everything else |
+| **WP1 Server reader and record** | `crates/buzz-relay/src/chain_reader/**` (except `helper/**`, which is WP2's; including `testdata/**`, `events_table.rs`, `views_table.rs`, `record_tasks.rs`, `ledger_tasks.rs`); `scripts/chain-reader-events.mjs`, `scripts/chain-reader-fixture.py`; `migrations/0071_chain_tasks_role.sql`, `schema/tables/public/chain_contracts.sql`, `schema/tables/public/chain_logs.sql`; `docs/next-version/RECORD-V2.md`, `docs/next-version/record-v2-example.json`, a "Step 2" section of `docs/next-version/READER-V2-REPORT.md` | `handlers/**`, `app/**`, `packages/**` |
+| **WP2 Relay rules** | `crates/buzz-relay/src/handlers/launch_update_authority.rs` and `launch_update_authority_postgres_tests.rs`; new `handlers/task_chain.rs`, `handlers/task_chain_postgres_tests.rs`; the `mod task_chain;` line in `handlers/mod.rs`; `handlers/task_takes.rs` (only if needed); `crates/buzz-cli/src/commands/launchpad_tasks.rs` (an `accept` step may carry `--pay-to`, so the command line agrees with 3.2; **last in WP2's order and droppable with C5, C35**); from day 4: `crates/buzz-relay/src/chain_reader/helper/**` (2.7), `scripts/chain-loop-pot.sh`, `scripts/chain-loop-pot-check.py`, `scripts/chain-loop-query.mjs` (2.9) | `chain_reader/**`, `app/**` |
+| **WP3 Shared library, parser, state, words** | `packages/creaton-core/src/pot/**`; `scripts/pot-app-abi.mjs`; `app/src/features/money/numbers.ts`, `numbers-types.ts`, `numbers-read.ts`, `numbers*.test.ts`, `pot-copy.ts`, `pot-copy.test.ts`, `money-copy.ts`; `app/src/features/tasks/chain/types.ts`, `state.ts`, `join.ts`, `words.ts`, `slots.tsx`, `state.test.ts`, `words.test.ts`; `app/src/features/money/numbers-read-tasks.ts`, `pot-copy-tasks.ts`; `app/tests/helpers/**` and `app/tests/e2e/mock-relay.ts` (**additive only**: stub answers for `taskOf`, `noteOf`, `claimableNote`, `openSerials`, `windowSumBps` and the like, a `withTasks` patcher on `numbers-v2-fixture.ts`; WP4, WP5 and WP6 ask WP3 for what they lack); the `scripts/check-copy.mjs` allowlist (an entry only with a reason) and the three **stub** files (`chain/team/TeamActions.tsx`, `chain/holder/WorkerActions.tsx`, `chain/holder/HolderLines.tsx`) that WP4 and WP5 overwrite; the one-time edit of `tasks/TaskCard.tsx` that mounts `chain/slots.tsx` (made on day 2, before WP4 starts editing that file) | screens |
+| **WP4 App, team side** | `app/src/features/tasks/{TaskCard.tsx, TasksTab.tsx, use-tasks.ts, task-record.ts, task-record.test.ts, tasks-copy.ts, AcceptAndPay.tsx, PayFromBox.tsx}` (and their tests); `app/src/features/tasks/chain/team/**`; `app/src/features/pot/{pair-terms.ts, pair-terms.test.ts, use-pair-waiting.ts, PairWaiting.tsx}` and their tests; `app/tests/e2e/pot-plan.spec.ts`, `app/tests/e2e/pot-tasks.spec.ts` (the existing step 1 spec); `task-record.ts::readTask` (3.2) and the one-door rule on `TaskCard.tsx` (5.11) | the holder files, `chain/state.ts` (asked of WP3) |
+| **WP5 App, worker and holder side, with alerts** | `app/src/features/tasks/chain/holder/**`; `app/src/features/alerts/**` (new); `app/src/features/pot/{BackSheet.tsx, TakeOutSheet.tsx, pot-words.ts, ProjectMoney.tsx, YourSharesList.tsx, own-history.ts}` and tests; `app/src/features/project/ProjectPage.tsx` (the strips); `app/src/features/you/YouPage.tsx`; `app/src/features/notifications/use-notifications.ts` (the unseen count); `app/tests/e2e/pot-notes.spec.ts`, `pot-alerts.spec.ts` | the team files |
+| **WP6 The joined-up loop and report** | `scripts/pot-app-loop.sh`; `app/tests/anvil/pot-tasks.test.ts` and `app/tests/anvil/pot-chain.ts` additions; `scripts/pot-full-loop.sh`, `app/tests/e2e-pot-full/pot-tasks.spec.ts`, `world.ts`, `app/tests/e2e/helpers/live-*.ts` (`live-record.ts` is a hand-written TypeScript record builder that repeats the roll-forward: it gets the arrival formula and the `dueC` step, and has no `tasks` section on purpose: task specs use WP3's patched example in mock mode and the real relay in WP6's loops); `docs/next-version/STEP2-SERVER-APP-REPORT.md`; the final run of everything | everything else |
 
 Shared files that two people could want, and who gets them: `TaskCard.tsx` is WP3 once (day 2), then WP4; WP5's blocks are components mounted through `chain/slots.tsx`. `ProjectPage.tsx` and `ProjectMoney.tsx` are WP5 only
 (WP4's check-in line lives in `TasksTab`). `numbers-*` and `pot-copy.ts` are WP3 only: WP4 and WP5 ask for a field or a sentence by a message to C and wait for the commit. `docs/next-version/*.md` of the record and the
@@ -1041,22 +1037,22 @@ reader are WP1 only. A package never edits a generated file by hand (`events_tab
 | When | WP | What lands | Needed by |
 |---|---|---|---|
 | Day 0 | the lead | the step 2 contracts in the main repository, `forge build` in `contracts/pot` | everyone |
-| Days 0 to 3 | WP1 **M1** | `events_table.rs` + `pot-events.json` regenerated, `ledger_tasks.rs`, the fixture run with the tasks scenario, the first generated `record-v2-example.json` (rows, notes, cap, next), the record types | WP3 (parser and the example), WP4, WP5 (the real shape instead of guesses), WP2 (fixture rows for its tests) |
+| Days 0 to 5 | WP1 **M1** | `events_table.rs` + `pot-events.json` regenerated, `ledger_tasks.rs`, the arrival fix (1.2 a), the fixture run with the tasks scenario, the record types, and **a `build` that writes rows, notes, cap and next from the ledger and the `taskOf` views (no cross-checks yet)**, so the first generated `record-v2-example.json` really is the server's own output; WP2's `chain_logs` fixture rows come from the same run | WP3 (parser and the example), WP4, WP5 (the real shape instead of guesses), WP2 (fixture rows for its tests) |
 | Days 0 to 2 | WP3 **S1** | `types.ts`, the `state.ts` signatures with `unimplemented` bodies, the stubs, `slots.tsx`, `TaskCard.tsx` mounting, the regenerated ABIs, the seven builders | WP4, WP5 (they build against the types and shape-only fixtures labelled `shape-only`, replaced by the real example at M1) |
-| Days 0 to 3 | WP2 | the decision function and its pure tests, then the Postgres tests when WP1 M1 lands | WP6 |
-| Days 3 to 8 | WP1 **M2** | views, cross-checks, validate, `numbers.rs`, the rolled-forward pot; WP3 **S2**: the parser, `state.ts` bodies, words, errors in words; WP4 and WP5 the screens | WP6 |
-| Days 8 to 11 | WP1, WP4, WP5 | **M3** of WP1 (publish path, refresh rule, helper job, the loop script); WP4 and WP5 finish the screens, a11y, the specs | WP6 |
+| Days 0 to 4, then 4 to 10 | WP2 | days 0 to 4: the decision function and its pure tests, then the Postgres tests once WP1 M1 lands (day 5, done by day 6); days 4 to 10: the helper job (2.7), then the chain loop script (2.9), which runs once WP1 M2 lands; the `accept --pay-to` command last | WP6 |
+| Days 5 to 9 | WP1 **M2** | the cross-checks, `validate`, the task rules, the rolled-forward pot with arrival and `dueC`; the example is rewritten (its bytes change only if a check found a mistake); WP3 **S2**: the parser, `state.ts` bodies, words, errors in words; WP4 and WP5 the screens | WP6 |
+| Days 9 to 11 | WP1, WP4, WP5 | **M3** of WP1 (publish path, refresh rule, the record spec); WP4 and WP5 finish the screens, a11y, the specs | WP6 |
 | Days 11 to 15 | WP6 | the joined-up loops and the report; every package fixes what the loops find | the lead |
 
-The two things that must not slip: the **types** (WP3 S1) and the **first generated example** (WP1 M1). If M1 is late, WP4 and WP5 keep building against `shape-only` fixtures and the join is the first test run (a mismatch is then a bug in
+The two things that must not slip: the **types** (WP3 S1, day 2) and the **first generated example** (WP1 M1, day 5). If M1 is late, WP4 and WP5 keep building against `shape-only` fixtures and the join is the first test run (a mismatch is then a bug in
 the fixture, not a reason to hand-copy numbers).
 
 ### 7.3 The checks each package runs before it hands over (nothing is "done" on green CI alone: each runs the thing)
 
 | WP | Commands (from the repository root) | And exercises |
 |---|---|---|
-| WP1 | `node scripts/chain-reader-events.mjs --check`; `python3 -I scripts/chain-reader-fixture.py --check` (twice: it must give the same bytes); `CARGO_BUILD_JOBS=2 cargo test -p buzz-relay --lib chain_reader`; the same with `-- --include-ignored --test-threads=1 scan_postgres_tests` against the local Postgres and Redis; `cargo clippy -p buzz-relay --all-targets -- -D warnings`; `cargo fmt -p buzz-relay -- --check`; a pgschema apply of `schema/` and the constraint check; `scripts/chain-loop-pot.sh` | the chain loop (about 125 checks): the record equals the contracts, field by field, at its own block |
-| WP2 | `cargo test -p buzz-relay --lib launch_update_authority task_takes task_chain`; the Postgres tests (`-- --include-ignored --test-threads=1 task_`); clippy, fmt; `cargo test -p buzz-cli launchpad_tasks` | a real relay with a fixture chain read: each refusal over the wire, with a real signed record |
+| WP1 | `node scripts/chain-reader-events.mjs --check`; `python3 -I scripts/chain-reader-fixture.py --check` (twice: it must give the same bytes); `CARGO_BUILD_JOBS=2 cargo test -p buzz-relay --lib chain_reader`; the same with `-- --include-ignored --test-threads=1 scan_postgres_tests` against the local Postgres and Redis; `cargo clippy -p buzz-relay --all-targets -- -D warnings`; `cargo fmt -p buzz-relay -- --check`; a pgschema apply of `schema/` and the constraint and index check | the example block against `cast call`s, field by field |
+| WP2 | `cargo test -p buzz-relay --lib launch_update_authority task_takes task_chain`; the Postgres tests (`-- --include-ignored --test-threads=1 task_`); clippy, fmt; `cargo test -p buzz-cli launchpad_tasks` | a real relay with a fixture chain read: each refusal over the wire, with a real signed record; and for the helper and the loop: `scripts/chain-loop-pot.sh` (about 125 checks: the record equals the contracts, field by field, at its own block) |
 | WP3 | `node --experimental-strip-types --test "packages/creaton-core/src/**/*.test.mjs"` (`pnpm -C packages/creaton-core test`); `pnpm -C app test -- src/features/money src/features/tasks/chain`; `pnpm -C app check`; `node scripts/pot-app-abi.mjs --check` | every error of every ABI in words; the example parses |
 | WP4 | `pnpm -C app test -- src/features/tasks src/features/pot/pair`; `pnpm -C app check`; `pnpm -C app test:e2e pot-plan` (the mock-bridge Playwright spec) | the screens at 360 px and 1280 px, keyboard only, with a screen reader's accessible names read from the DOM |
 | WP5 | `pnpm -C app test -- src/features/alerts src/features/pot src/features/tasks/chain/holder src/features/you src/features/project`; `pnpm -C app check`; `pnpm -C app test:e2e pot-notes pot-alerts` | the same, and a week-later open (the app clock moved) |
@@ -1076,7 +1072,7 @@ the product name from `APP_NAME`, `check:copy`, one component per file under the
 | # | Attack | Defence | Test (8.2) |
 |---|---|---|---|
 | 1 | **A teammate fakes a task's state** (a task record saying "accepted", "paid", "cancelled") | The state words come only from the signed record (T2). The record is signed by the server's key and checked (signer, `d`, founder and id); it is made from final logs and views at one block. A team record is a record-step under the headline, never the headline. The relay refuses `confirm` and `cancel` that contradict the chain (3.3). | A1, A2, B3, B4, B5 |
-| 2 | **An app task tied to another on-chain task** (the plan's `what` points at another record, or the same record is planned twice and paid twice) | `what` is the record's id, so a swap needs another real record; `tieOf` checks id, amount, payee and taker; `repeatOf` marks a second plan of the same record and Accept is off for it; the plan door refuses a record already planned (`recheck` reads the open serials). | A3, C5, C6, D4 |
+| 2 | **An app task tied to another on-chain task** (the plan's `what` points at another record, or the same record is planned twice and paid twice) | `what` is the record's id, so a swap needs another real record; `tieOf` checks id, amount, payee and taker, and that the team's record is not already paid or closed; `repeatOf` marks a second plan of the same record and Accept is off for it; the plan door refuses a record already planned (`recheck` reads the open serials). | A3, C5, C6, D4 |
 | 3 | **A pay-to address changed after the plan** | The network fixes `payee` at the plan and `takenBy` at the take; the contract pays `takenBy` only (no `to`); the team record's `task-pay-to` is under the worker's own signature and the relay allows one live take and no re-take after give-up; the app compares `takenBy` with the record's pay-to on a **fresh chain read** before offering Accept and again in `recheck`. A pay-to written later does not exist (a second `take` is refused while one is live). | B1, B2, C4, D2 |
 | 4 | **A stale record shown as fresh** | Age rules (1.6): "as of", then the 24-hour replacement; the alert and the strips carry "as of"; a press re-reads the chain and does not read the record's state; `asOf` never goes backwards (step 1 guard); the app uses the newest record by `created_at` and the parser's signer check. | C7, D5, E3 |
 | 5 | **A holder who never sees the notice** | The notice is at least 14 days; the strips are on the project page for everyone; the You news and the dot for holders; derived alerts survive a week's absence; the claim stated is the weekly looker's. The honest remainder (a holder who does not open the app for 3 weeks or more; push and email are step 3) is written in the report and on the sheet. | E1, E2, E4 |
@@ -1105,17 +1101,20 @@ the product name from `APP_NAME`, `check:copy`, one component per file under the
 | A3 | `the_same_what_planned_twice_marks_the_later_row_repeat_of_the_earlier` | `repeatOf` |
 | A4 | `the_sum_of_every_holders_notes_equals_the_notes_face_and_a_task_paid_in_full_has_none` | the notes check and the void-note rule |
 | A5 | `a_run_out_task_is_returned_in_the_settled_pot_and_locked` (a block with a task past its deadline and nobody settling): `money.pot`, `money.locked` equal what a settle at that time gives | `dueC` in `roll_forward` |
+| A5b | `settling_every_second_gives_the_pot_settling_once_gives` (outside money mid-stream, a second merge, a take-out inside it); `the_step_1_arrival_formula_fails_it` | the arrival formula, `arrivalStart`, `arrivalTotal` |
+| A5c | `the_cap_numbers_free_the_share_of_a_taken_task_past_its_deadline` (a block with such a task nobody settled: `usedBps`, `roomBps`, `frees` equal what a settle then gives) | the pending give-back |
 | A6 | `the_box_cap_check_still_holds_with_a_returned_task_and_fails_when_the_return_is_dropped` | the order of the roll-forward |
 | A7 | `the_cap_window_sum_gives_back_a_take_that_ended_unpaid_and_keeps_a_paid_one` (replay of the fixture's reject and part payment) | `capGivenBack` |
 | A8 | `the_ring_frees_list_adds_up_to_the_used_share` | `cap.frees` |
 | A9 | `the_amount_a_take_sets_aside_is_the_at_most_now_formula_at_the_settled_pot` (fixture's real takes) | `atMostNow` |
 | A10 | `the_book_is_found_from_tasks_ready_and_followed_from_that_block`, `a_rollback_past_it_forgets_it`, `a_project_with_no_tasks_ready_has_tasks_null`, `the_stored_rows_reveal_a_book_the_reader_did_not_follow_yet` | discovery |
-| A11 | `the_ended_rows_are_cut_at_32_by_age_and_notes_and_the_record_says_so`; `the_worst_record_is_under_300_kb` | the cuts |
+| A11 | `the_ended_rows_keep_every_row_with_notes_first_and_33_cancelled_tasks_cannot_push_a_note_out`; `the_cut_says_how_many_rows_it_left_out`; `the_worst_record_is_under_300_kb` | the cuts and their order (1.5) |
 | A12 | `the_task_tuple_is_the_forge_abi`; `the_table_is_the_forge_build` (existing) | generated layouts |
 | A13 | `refresh_is_600_while_a_task_is_open_and_3600_after`; `a_task_phase_change_alone_does_not_resign` (facts) | refresh and facts |
 | A14 | the example: `the_example_is_what_the_server_writes` (byte for byte), `the_example_obeys_every_rule_of_the_spec` (the independent checks of RECORD-V2 7.3 extended: rows, notes, cap, next, identity with `paidToWorkers` and `noteClaims`), `the_server_accepts_the_example_and_refuses_it_with_a_pot_one_unit_too_high` and `...a_row_one_unit_off` | T4 |
 | A15 | helper: `settle_is_planned_for_an_expired_task_once_and_never_for_a_task_not_due`, `the_never_list_gains_the_seven_task_calls` | 2.7 |
-| A16 | pgschema: the constraint allows `tasks` in a database made from `schema/` | migration 0071 |
+| A16 | pgschema: the constraint allows `tasks` in a database made from `schema/`; the partial index exists | migration 0071 |
+| A17 | `a_tasks_book_that_differs_from_the_treasurys_publishes_nothing`; validate rule 7 (open count, unique serials, `repeatOf < serial`); `a_serial_past_2_to_the_53_fails_the_build`; `a_task_mismatch_freezes_the_money_fields_and_logs_the_field` (C33) | 2.5 |
 
 **Relay (WP2)**
 
@@ -1124,7 +1123,7 @@ the product name from `APP_NAME`, `check:copy`, one component per file under the
 | B1 | `a_take_with_another_pay_to_than_the_plan_names_is_refused`; `a_take_with_no_pay_to_on_a_planned_task_is_refused` | 3.3 take |
 | B2 | `an_accept_may_carry_a_pay_to_and_it_must_match_the_plan`; `a_pay_to_on_any_other_step_is_refused` (existing) | 3.2 |
 | B3 | `a_confirm_for_a_planned_task_needs_the_network_payment` (`invalid:`), `...with_another_transaction_is_refused`, `...with_the_right_transaction_is_accepted` | 3.3 confirm |
-| B4 | `a_cancel_is_refused_while_the_plan_is_announced_or_taken_and_accepted_after_the_network_withdrew` | 3.3 cancel |
+| B4 | `a_cancel_is_refused_while_the_plan_is_announced_or_taken_and_accepted_after_the_network_withdrew_or_the_plan_is_past_its_end` | 3.3 cancel |
 | B5 | `a_plan_of_another_project_with_the_same_what_is_ignored`; `a_launch_made_for_another_record_is_ignored` | the project tie |
 | B6 | `a_confirm_before_the_reader_has_the_block_is_refused_with_retry` | `retry:` |
 | B7 | `a_reader_that_cannot_be_read_refuses_the_write`; `no_reader_leaves_step_1_behaviour_exactly` | outage and step 1 |
@@ -1139,7 +1138,7 @@ the product name from `APP_NAME`, `check:copy`, one component per file under the
 | C2 | `numbers-hostile.test.ts`: the hostile set of attack 9, none throws | parser |
 | C3 | the record of another project or another signer is null | existing, kept |
 | C4 | `state.test.ts`: `acceptGate` refuses when `takenBy` differs from the record's pay-to; when `what` is another record's id; when `maxDollars` differs from the pay; when `repeatOf` is set; when the deadline passed; when the sender is the worker | T2 |
-| C5 | `tieOf` each failure in order; the same record planned twice marks the later | attack 2 |
+| C5 | `tieOf` each failure in order (with `closed` and `already-paid`); the same record planned twice marks the later and the lowest-serial live plan binds, on the fixture the relay and the server also use | attack 2 |
 | C6 | `PlanSheet`: a record already planned (an open row with the same `what`) is refused at open and at `recheck` | attack 2 |
 | C7 | the age bands change the words; a stale record never shows a state as current | attack 4 |
 | C8 | `pot-calls.test.mjs`: `claimNoteCall` for the connected account; the sheet cannot name another | attack 6 |
@@ -1152,7 +1151,7 @@ the product name from `APP_NAME`, `check:copy`, one component per file under the
 | C15 | `shareFor` at 5%, 4.55%, 0, one unit; the sheet shows share, notice and date | attack 16 |
 | C16 | `pair-terms.test.ts`: the four sentences word for word; `accept-task` with no facts is `unknown` and not confirmable; a call to another contract is `unknown` | attack 17 |
 | C17 | `pot-copy.test.ts`: every error of the book and the Treasury in every new action reads as a sentence (no hex, no name, no "revert") | 4.6 |
-| C18 | `doorFor`: at the cap (box), one unit over (plan), `boxCap == 0` (plan), too big | 5.1 |
+| C18 | `doorFor`: at the cap (box), one unit over (plan), `boxCap == 0` (plan), too big, a payee who runs the project (box-only), box below the pay but under the cap | 5.1 |
 | C19 | each sheet: loading, read failed, stale record, wrong network, blocked, ok, pending-send, Pair; keyboard only (Tab order, Escape closes, focus returns), accessible names (no duplicate, one owner of each label) | rule 7 |
 | C20 | `check:copy` and `check:px-text` pass on every new file | copy rules |
 
@@ -1164,17 +1163,19 @@ the product name from `APP_NAME`, `check:copy`, one component per file under the
 | D2 | `TakeSheet`: only the payee sees a press; the notice running shows the wait and no press; `minAmount` is the maximum when the box is checked and the minimum when not | 5.8 |
 | D3 | `TakeSheet`/`WorkerActions`: a runner or a signer is never offered Take | `NotAllowed` |
 | D4 | `ReturnButton`: shown only on `taken` past the deadline; `NotYet` words early | 5.9 |
-| D5 | `NotesSection`: candidates, chain read overrides the record's figure, a leaver with no Shares sees it, "Look for money I can claim" says "could not look" on a refused range and never "none" | 5.9 |
-| D6 | `ClaimSheet`: holder is the connected account; claimable 0 gives no press; a task paid in full gives none | attack 6 |
+| D5 | `NotesSection`: candidates, chain read overrides the record's figure, a leaver with no Shares sees it, a note on a row the record cut is found from own history with no scan, "Look for money I can claim" walks newest first, says "Looked back to {date}" when it stops early, "could not look" on a refused range, and never "none" for an unfinished look | 5.9 |
+| D6 | `ClaimSheet`: holder is the connected account; a task paid in full or a note already claimed gives no press; a task that ran out and is not yet settled shows the full note and the press works | attack 6 |
 | D7 | a second tab and a reload in the middle of claim and take | attack 7 |
 | D8 | `BackSheet`: the set-aside sentence with money set aside and "none" without | 5.10 |
 | D9 | the play-money line on every new strip, list and sheet | attack 18 |
+| D10 | `TaskCard`: with a live plan `AcceptAndPay` and `PayFromBox` are not rendered and every money line comes from the network row (a part payment never reads as paid in full); without a plan the step 1 card is unchanged | 5.11 |
+| D11 | a taken task past its deadline offers Return and no Send back; a `missed` plan offers nothing; the 8-open gate counts a plan past its end as free | 1.6, 5.6, 5.7 |
 | E1 | alerts: a week later the planned alert is still there | attack 5 |
 | E2 | the You news and the dot count unseen; marking read; reload; storage that throws | 6.5 |
-| E3 | no alert from a record past 24 hours; "as of" in the band | attack 4 |
+| E3 | a record past 24 hours still shows planned and taken alerts marked "may be out of date"; "as of" in the band; a phone clock behind `asOf` is lifted to it | attack 4 |
 | E4 | `held` unknown reads the balance; not held makes none | 6.2 |
 | E5 | the strip says "cannot be taken unless the team checks in" | attack 11 |
-| E6 | a forged team record makes no alert; a hostile `what` is plain text | attack 12 |
+| E6 | a forged team record makes no alert; a hostile `what` is plain text; 33 cancelled tasks leave the planned notice first and at most 3 ended alerts per project | attack 12 |
 | E7 | a11y: the news list, the strips, the claim list (list semantics, one link per row, labels) | rule 7 |
 
 **Loops (WP6)**
@@ -1220,27 +1221,70 @@ the product name from `APP_NAME`, `check:copy`, one component per file under the
 | C10 | **Alerts are derived in the app from the signed record**, marked read on the device, for holders found by the record's list, the app's history, the notes rows and a balance read where the list was cut. | Server-written events per holder; team-written events (6) |
 | C11 | Door rule: the box if the pay is at most `allowance.boxCap` (read again from the chain), else the plan; the plan door stays available for a small task; split pays are allowed. | A fixed dollar threshold (a number the founder cannot see and the design avoids); forbid splitting (cannot be enforced) |
 | C12 | Refresh every 600 seconds while any task is open. | Leave 3600 (the cap room and `atMostNow` would be an hour old) |
-| C13 | Ended rows kept: those that ended in the last 28 days or still have notes, at most 32; 20 note holders per row for the 8 newest rows with notes. | Keep all (unbounded); keep none (a leaver's note unfindable) |
+| C13 | Ended rows kept, 32 at most, in this order: rows with notes left (24 at most, any age), rows that moved money within 28 days, then at most 4 that moved nothing; 20 note holders per row for the 8 rows with the most to claim. | Keep all (unbounded); newest first by age (a flood of cancelled tasks would push a leaver's note out) |
 | C14 | The helper settles an expired task (a `settle()` only) 10 minutes after its time. | Nothing (the next action settles anyway) |
 | C15 | The Take sheet's default guard is "the whole maximum or nothing" (`minAmount = maxDollars`), unchecked means 1 dollar. | Always the least (a worker could be set aside less than they expect without noticing) |
-| C16 | State words "Ran out" for a task that ran out unpaid, beside the lead's seven. | Call it "sent back" (it was not) |
+| C16 | State words "Ran out" for a task that ran out unpaid and "Closed. The project wound down." for a task the wind-down swept, beside the lead's seven. | Call them "sent back" or "withdrawn" (they were not) |
 | C17 | Totals gain `paidToWorkers` and `noteClaims` so the identity stays an identity. | Leave the identity without them (it would fail on the first payment) |
 | C18 | The example record is the **server's output** for the fixture's project A at one named block, byte-compared by a test; the step 1 scratch example is retired and the tests that read it follow. | Keep both (two sources of truth) |
 | C19 | The fixture and the example are one run (`pot-run.json` is regenerated whole; the contracts changed, so every number moved anyway). | A second fixture file (two runs to keep identical) |
 | C20 | The Pair's plan sentence ends with "The date counts from when you confirm." as a second line, not a change of the sentence. | Put it in the sentence (a copy change) |
 | C21 | A malformed `tasks` section makes only `tasks` unreadable; the rest of the record is believed. | Treat the whole record as bad (Take out and Back would go blank on a task bug, against T6) |
 | C22 | A task card shows the network's headline first and the team record's step under it; they never swap. | One merged state (a team word could then decide the headline) |
-| C23 | The plan sheet needs a record under 24 hours old (the share needs the pot); the other sheets need none. | Read the pot from the chain (no view returns the settled pot; the contracts' report names that) |
+| C23 | The plan sheet needs a record inside its "as of" band (the share needs the pot; a day of take-outs is more than the 10% margin); the other sheets need none. | Read the pot from the chain (no view returns the settled pot; the contracts' report names that) |
 | C24 | The check-in line (a task cannot be taken after the quiet date) sits on the Tasks tab and on every task card. | Say nothing (the contracts' own report: "the app must prompt the check-in before the take date") |
 | C25 | No new event kind, no new HTTP endpoint, no relay event for alerts; one tag change (`task-pay-to` on `accept`). | A new kind (CLAUDE.md: tags on existing events first) |
 | C26 | The relay judges only plans it can see in its own `chain_logs`; where the reader has not read yet it is lenient except on `confirm`. | Refuse everything until read (a lag would block honest tasks) |
 | C27 | One claim per press; no "claim all". | A batch of claims in one signature (each needs its own check) |
 | C28 | No Home chip, sound or browser notification. | Build them (step 3) |
 | C29 | The report's "KINDS table in `team/pair.ts`" is the live `pot/pair-terms.ts` `describePotCall`; the kinds are named `announce-task`, `accept-task`, `reject-task`, `cancel-task`. | Edit the parked step 1 file (it is not what the Pair sheet reads) |
-| C30 | Honest cost: about 41 engineer-days for server and app on top of the contracts, not the design's 5.5 engineer-weeks for all of step 2. | n/a (a correction of an estimate) |
+| C30 | Honest cost: about 49 engineer-days for server and app on top of the contracts, not the design's 5.5 engineer-weeks for all of step 2. | n/a (a correction of an estimate) |
+| C31 | **One plan per task record**: the lowest-serial row in state announced, taken or paid binds; later such rows are repeats (relay, server and app share the rule and one fixture). | Any live plan binds (two could both be paid) |
+| C32 | The door rule also reads what the box holds now (it says when the box will hold enough) and the payee: a payee who runs the project gets the box only. | The cap alone (the sentence would promise a payment the box cannot make; the plan press would fail on the contract) |
+| C33 | A mismatch anywhere in the task section fails the whole build (money fields freeze, the reader logs the field). | Publish with `tasks` dropped (a planned task would vanish from holders) |
+| C34 | The chain press is "Set the money aside"; the relay worker's step 1 button keeps "Take this task". | Rename the step 1 button (changes step 1 copy and tests) |
+| C35 | Plans for a task that names its helper (C5, `AgreeButton`, `accept --pay-to`) stay in, **last in order and droppable** (about 3 engineer-days) without touching anything else; without them only open tasks the worker took in the app can be planned, and an agent or command-line task keeps the box door only. | Cut them now (decide by whether agent tasks above the box are wanted in step 2) |
+| C36 | No alert for withdrawn or lapsed plans (nothing moved); planned and taken alerts rank first; at most 3 ended alerts per project. | One alert per state change (a cheap flood buries the real notice) |
+| C37 | Ledger memory stays bounded by outstanding notes, not by history; a running-totals fold of per-holder notes is the named follow-up, with a pass-time alarm. | Build the fold now (a migration and a second source of truth for a test network) |
 
 Checked against the product contract: `VISION.md` is the workspace vision (zero-notification defaults, an agent-first command line); this plan adds no push, no sound and no per-holder
 write, and its one new surface for holders is a quiet "News about your projects" section and a dot that already exists, about money moving, which is what the design's protection rests on. The direction of the money
 (join fast, leave any day, protected by notice and the right to leave) is `JOIN-LEAVE-DESIGN.md`, and this plan follows it. CLAUDE.md asks that agent-facing operations go in `buzz-cli`: the one that
 changes here is `launchpad tasks accept --pay-to` (WP2); reading plans from the command line is not built in step 2. The one intentional tension, named: the protection still depends on a holder
 opening the app (design 1, "where it is weak"); alerts that arrive without opening the app are step 3b.
+
+---
+
+## 10. Review of this plan
+
+Two independent reviews of the first version (commit be8c484) were checked line by line against the contracts and the reader's code. Where a point was real the plan above was changed; the places are named.
+
+**Changed (real findings)**
+
+- **Outside money arrival (blocker).** The step 2 Treasury releases arriving money from `arrivalStart` and `arrivalTotal` (commit db3cb71); the reader still used the step 1 formula, so `money.pot` and `money.arriving` could be a few units off mid-stream and still pass the checks. Now 1.2 (a), the new `ledger` fields (1.3), 2.1 to 2.4, 2.8 (the fixture stream), 2.9 and test A5b.
+- **A leaver's note could fall out of the record (blocker).** The 32-row cut ranked by age, so cancelled tasks could push out rows with money to claim, and the scan could not reach recent blocks on an older project. Now rows with notes rank first, zero-money rows last and capped (1.5), the scan is newest first and resumable (4.3, 5.9), Take out writes the minted serials into the person's own history (5.9), and the page says plainly what only the look-back finds. A11.
+- **The `ledger` section could not redo the roll-forward** without `locked`, `notesOwed` and the arrival pair: added (1.3).
+- **Cap numbers were pessimistic until a settle**: `usedBps`, `roomBps`, `frees` now subtract the pending give-back of taken tasks past their deadline (1.3). A5c.
+- **A task past its time is still open until someone settles**, and the contract settles first: so the 8-open gate counts it as free (5.2), the relay's `cancel` rule treats a plan past its end as ended (3.3), send-back and withdraw are offered only before the end (5.6, 5.7), and a note on a ran-out task is claimable in full and the press settles it (1.4, 5.9). The clock is `max(device, asOf)` (1.6). D11, B4.
+- **Bounded work, stated honestly** (1.5): the record, the views and the app reads are bounded; the reader's pass is not constant (as in step 1), and the per-holder notes are kept only while outstanding. The relay's task read has its own partial index (migration 0071), so a `take` does not scan a project's history.
+- **M1 could not produce a server-written example** (7.2): M1 now includes a `build` without cross-checks; the example is rewritten at M2. WP1 is re-estimated.
+- **Unowned files** (7.1): test helpers and `mock-relay.ts` (WP3, additive), `chain/join.ts` (WP3), the `readTask` pay-to change and the one-door rule (WP4), `own-history.ts` (WP5), `live-*.ts` (WP6), the copy allowlist (WP3). The helper job and the chain loop moved to WP2's engineer, who was idle days 4 to 10. The new parser and words files are split to stay under the file-size gate.
+- **Step 1 pay buttons stayed mounted on a planned task** and a part payment read as paid in full: one door per task, money lines from the network row (5.11, D10).
+- **The plan door fails for a payee who runs the project** (a solo founder): `doorFor` takes the payee and answers box-only (5.1); the plan sheet blocks it and the error words say it (4.6).
+- **The door sentence** now reads what the box holds now, not only its cap (5.1).
+- **The tie**: one plan per record (1.4, 3.1, C31); `tieOf` gains `closed` and `already-paid`, so a finished task cannot cover a new payment (4.4); a task with no `task-usd` does not tie; two different pay-to values from one worker read as none (3.2).
+- **The payment transaction** written back after a part payment is read from the chain by serial, not taken from the sheet (5.5); the relay's `retry:` reads "in a few minutes".
+- **Alerts**: a cheap flood cannot bury the real notice (ordering and cap, 6.1; withdrawn and lapsed make none, C36); `alertsOf` gets the relay tasks it needs for the words (6.1); an old record still shows planned and taken alerts marked "may be out of date" (1.6, 6.4); the dot reads a bounded set, never the 3-page holder scan (6.3); the limit for a holder with a cut list on a new device is stated (6.2).
+- **The Back sheet shows a planned task** in one line from the record (5.10).
+- **Copy**: the chain press is "Set the money aside" (C34); "note" is out of the Take out sheet's link ("Where you claim it"); the strip's Take out is named with its date; the plan sheet's share, room and cap lines are folded under Details and use the pay's own share of the pot; `shareFor` is integer math; a wind-down sweep has its own word (5.4); the done line uses the chain's date; a taken task past its deadline reads "ran out" in alerts; `plan-task` errors name a payee who runs the project.
+- **Smaller**: the plan sheet blocks on the record's "as of" band, not 24 hours (C23); the ended-rows window is at least 28 days on a short-unit network; the book-covers-every-call test is "subset", not "equal" (2.8); the example has 3 open rows, not 2; a task-section mismatch fails the whole build on purpose and is said so (C33); the claim reads cost 160 `noteOf` calls plus 8 checks, not 320 (cut of the per-holder `claimableNote`); the You page stages its reads; new tests A5b, A5c, A17, D10, D11.
+
+**Declined, with the reason**
+
+- **A Return button on a `missed` (lapsed but unsettled) plan.** It moves nothing and, with the gates above counting it as ended, nothing waits for it; the next step or the helper's settle closes it. A button would say "return the money" where no money was set aside.
+- **Cutting plans for a task that names its helper.** It is the owner's call (agents and the command line are the users); it stays, last in order, droppable for about 3 days (C35).
+- **Cutting the `frees` list and the Take sheet's checkbox.** The list is how the app says when room returns; the checkbox is the worker's protection (C15). Both are small.
+- **Folding per-holder notes into a running-totals table now.** A migration and a second source of truth for a test network; bounded and alarmed instead (C37).
+- **A "Connect your wallet" step in the Take sheet.** `WalletGate` already offers it.
+- **A phone clock set ahead.** The app cannot know; the chain read before any press decides. Only the behind case is bounded (1.6).
+- **A fixed ceiling on the note scan.** Each press is bounded (40 pages) but the scan is resumable, so there is no overall ceiling, which is what the reviewer asked for.
