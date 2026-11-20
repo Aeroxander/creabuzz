@@ -12,7 +12,12 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import type { ProjectNumbers } from "../money/numbers";
 import { signsForRunner } from "../money/numbers";
-import { describePotCall, type OwedTask, type Terms } from "./pair-terms";
+import {
+  describePotCall,
+  type OwedTask,
+  type PairTaskFacts,
+  type Terms,
+} from "./pair-terms";
 import { PotSheet } from "./PotSheet";
 import { type Proposal, usePairWaiting } from "./use-pair-waiting";
 import { type Ready, WalletGate } from "./use-pot";
@@ -28,14 +33,21 @@ function Inner({
   ready,
   nameOf,
   tasksFor,
+  taskWordsOf,
 }: {
   numbers: ProjectNumbers;
   ready: Ready;
   nameOf: (address: string) => string;
   tasksFor?: (payee: string, raw: bigint) => readonly OwedTask[];
+  taskWordsOf?: (what: string) => string | null;
 }) {
   const pair = numbers.contracts.pair;
-  const waiting = usePairWaiting(pair, ready, numbers.chainId);
+  const waiting = usePairWaiting(
+    pair,
+    ready,
+    numbers.chainId,
+    numbers.contracts.treasury,
+  );
   const [step, setStep] = useState<Step>(null);
   if (!pair) return null;
   if (waiting.isPending)
@@ -53,6 +65,16 @@ function Inner({
     );
   const list = waiting.data.waiting;
   const me = ready.address;
+  // What the network says about the tasks the waiting calls name, read when they were listed: no facts, no task sentence.
+  const read = waiting.data.facts;
+  const facts: PairTaskFacts | undefined = read
+    ? {
+        taskFacts: (serial) => read.tasks.get(String(serial)) ?? null,
+        noticeFor: (share) => read.notices.get(share) ?? null,
+        now: read.now,
+        recordWords: (what) => taskWordsOf?.(what) ?? null,
+      }
+    : undefined;
   const call = step
     ? step.kind === "confirm"
       ? pairConfirmCall(
@@ -80,6 +102,7 @@ function Inner({
               proposal.data,
               nameOf,
               tasksFor,
+              facts,
             );
             const mine = proposal.by === me.toLowerCase();
             return (
@@ -94,6 +117,15 @@ function Inner({
                 >
                   {terms.words}
                 </p>
+                {terms.more?.map((line) => (
+                  <p
+                    className="text-xs text-muted"
+                    data-testid="pair-terms-more"
+                    key={line}
+                  >
+                    {line}
+                  </p>
+                ))}
                 <p className="text-xs text-muted">
                   {mine
                     ? "You asked. It happens when the other signer confirms."
@@ -160,6 +192,11 @@ function Inner({
             <p className="text-sm font-semibold" data-testid="pair-sheet-terms">
               {step.terms.words}
             </p>
+            {step.terms.more?.map((line) => (
+              <p className="text-xs text-muted" key={line}>
+                {line}
+              </p>
+            ))}
             {step.terms.names.length > 0 ? (
               <ul className="text-xs text-muted" data-testid="pair-sheet-names">
                 {step.terms.names.map((n) => (
@@ -187,12 +224,15 @@ export function PairWaiting({
   address,
   nameOf,
   tasksFor,
+  taskWordsOf,
 }: {
   numbers: ProjectNumbers;
   address: string | null;
   nameOf: (address: string) => string;
   /** The names of the accepted tasks that are owed exactly this much at this wallet, for a draw that pays one. */
   tasksFor?: (payee: string, raw: bigint) => readonly OwedTask[];
+  /** The team's own words for the task record with this id (a task call's `what`), when the project has one. */
+  taskWordsOf?: (what: string) => string | null;
 }) {
   const titleId = useId();
   if (!numbers.contracts.pair || !signsForRunner(numbers, address)) return null;
@@ -215,6 +255,7 @@ export function PairWaiting({
             nameOf={nameOf}
             numbers={numbers}
             ready={ready}
+            taskWordsOf={taskWordsOf}
             tasksFor={tasksFor}
           />
         )}

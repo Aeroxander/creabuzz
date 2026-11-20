@@ -5,6 +5,15 @@
  */
 import { decodeParameters } from "@creaton/core/launchpad/evmAbi.ts";
 import { topicOf } from "@creaton/core/launchpad/work.ts";
+import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
+import { TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
+import {
+  type ChainTaskNow,
+  type NoticeFor,
+  readBookOf,
+  readNoticeFor,
+  readTask,
+} from "@creaton/core/pot/pot-reads.ts";
 import { proposalTtl, readProposal } from "@creaton/core/pot/pot-state.ts";
 import { useQuery } from "@tanstack/react-query";
 import type { ChainLog } from "../money/wallet";
@@ -79,11 +88,97 @@ export function proposalOf(log: ChainLog, pair: string): Proposal | null {
   }
 }
 
+/** What the network says about the tasks the waiting calls name, read when they are shown (plan section 4.7). */
+export interface WaitingTaskFacts {
+  /** The task as the chain has it now, by serial; null when it does not exist or could not be read. */
+  tasks: Map<string, ChainTaskNow | null>;
+  /** What a plan of each share asked for gets; null when it could not be read. */
+  notices: Map<number, NoticeFor | null>;
+  /** The network's clock. */
+  now: number;
+}
+
+/** The most task calls whose details are read in one look: a bound on work (a call beyond it is shown as unreadable). */
+const MAX_FACTS = 20;
+
+/**
+ * What the network says about each task call among `proposals` to `treasury`: the task for a pay, a send back and a
+ * withdrawal, and the notice for a plan. One that cannot be read is null (its call is then never offered for confirming),
+ * and a read that fails never stops the others.
+ */
+export async function readTaskFacts(
+  ready: Ready,
+  treasury: string,
+  proposals: readonly Proposal[],
+  now: number,
+): Promise<WaitingTaskFacts> {
+  const facts: WaitingTaskFacts = {
+    tasks: new Map(),
+    notices: new Map(),
+    now,
+  };
+  let book: string | null | undefined;
+  const bookOf = async () => {
+    if (book === undefined) {
+      try {
+        book = await readBookOf(ready.read, treasury);
+      } catch {
+        book = null;
+      }
+    }
+    return book;
+  };
+  let read = 0;
+  for (const proposal of proposals) {
+    if (proposal.target !== treasury.toLowerCase()) continue;
+    let call: ReturnType<typeof decodeCall>;
+    try {
+      call = decodeCall(TREASURY_ABI, proposal.data);
+    } catch {
+      continue;
+    }
+    if (!call) continue;
+    if (read >= MAX_FACTS) break;
+    if (call.name === "announceTask") {
+      read += 1;
+      const share = Number(call.args[3]);
+      if (!facts.notices.has(share)) {
+        facts.notices.set(
+          share,
+          await readNoticeFor(ready.read, treasury, share).catch(() => null),
+        );
+      }
+    } else if (
+      call.name === "acceptTask" ||
+      call.name === "rejectTask" ||
+      call.name === "cancelTask"
+    ) {
+      read += 1;
+      const serial = call.args[0];
+      if (typeof serial !== "bigint" || facts.tasks.has(String(serial)))
+        continue;
+      const where = await bookOf();
+      facts.tasks.set(
+        String(serial),
+        where
+          ? await readTask(ready.read, where, serial).catch(() => null)
+          : null,
+      );
+    }
+  }
+  return facts;
+}
+
 /** What is waiting in `pair` right now, read from the chain (see the file's header). Throws when the chain cannot be read. */
 export async function readPairWaiting(
   ready: Ready,
   pair: string,
-): Promise<{ waiting: Proposal[]; complete: boolean }> {
+  treasury: string | null = null,
+): Promise<{
+  waiting: Proposal[];
+  complete: boolean;
+  facts: WaitingTaskFacts | null;
+}> {
   const wallet = ready.wallet;
   const ttl = await proposalTtl(ready.read, pair);
   const to = await wallet.blockNumber();
@@ -119,9 +214,12 @@ export async function readPairWaiting(
       return state && state.proposedAt + ttl >= now ? p : null;
     }),
   );
+  const waiting = alive.filter((p): p is Proposal => p !== null);
   return {
-    waiting: alive.filter((p): p is Proposal => p !== null),
+    waiting,
     complete: found.complete && (span >= needed || span >= to),
+    // What the task calls among them are about, as the chain says now; without a Treasury none is read.
+    facts: treasury ? await readTaskFacts(ready, treasury, waiting, now) : null,
   };
 }
 
@@ -129,15 +227,20 @@ export function usePairWaiting(
   pair: string | null,
   ready: Ready | null,
   chainId: number,
+  treasury: string | null = null,
 ) {
   return useQuery({
-    queryKey: ["pot", "pair-waiting", pair ?? "", chainId],
+    queryKey: ["pot", "pair-waiting", pair ?? "", chainId, treasury ?? ""],
     enabled: Boolean(pair && ready),
     staleTime: 10_000,
     retry: false,
     queryFn: async () =>
       pair && ready
-        ? readPairWaiting(ready, pair)
-        : { waiting: [] as Proposal[], complete: true },
+        ? readPairWaiting(ready, pair, treasury)
+        : {
+            waiting: [] as Proposal[],
+            complete: true,
+            facts: null as WaitingTaskFacts | null,
+          },
   });
 }

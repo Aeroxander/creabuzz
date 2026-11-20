@@ -174,6 +174,10 @@ export function ProjectMoney({
         address={wallet.address}
         nameOf={nameOfAddress}
         numbers={numbers}
+        taskWordsOf={(what) =>
+          tasksRead.data?.tasks.find((t) => `0x${t.id}` === what.toLowerCase())
+            ?.what ?? null
+        }
         tasksFor={(payee, raw) =>
           owedTaskNames(tasksRead.data?.tasks ?? [], payee, raw, (pubkey) =>
             nameOf(profiles, pubkey),

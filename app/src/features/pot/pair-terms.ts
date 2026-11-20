@@ -10,6 +10,19 @@ import {
 } from "@creaton/core/pot/abis.generated.ts";
 import type { DecodedValue } from "@creaton/core/launchpad/evmAbi.ts";
 import type { ProjectNumbers } from "../money/numbers";
+import { durationWords } from "../tasks/chain/duration";
+import { phaseOf } from "../tasks/chain/state";
+import type { ChainTaskNow, NoticeFor } from "../tasks/chain/types";
+import {
+  acceptTaskWords,
+  announceTaskWords,
+  cancelTaskWords,
+  DATE_COUNTS_FROM_CONFIRM,
+  pairTaskMoved,
+  rejectTaskWords,
+  theTaskWords,
+  UNKNOWN_TASK_WORDS,
+} from "../tasks/chain/words";
 import { rateWords, sharesWords, smallDollarsText } from "./pot-words";
 
 type PairCallKind =
@@ -23,6 +36,10 @@ type PairCallKind =
   | "wind-down"
   | "forfeit"
   | "agent"
+  | "announce-task"
+  | "accept-task"
+  | "reject-task"
+  | "cancel-task"
   | "unknown";
 
 export interface Terms {
@@ -31,6 +48,23 @@ export interface Terms {
   words: string;
   /** Every account the sentence names, lowercased, so the screen can show each in full. */
   names: string[];
+  /** Lines under the sentence that are not part of it (the date a plan counts from, the words of the task). */
+  more?: string[];
+}
+
+/**
+ * What the network says, read when a waiting call is shown, for the four task calls (plan section 4.7). Without it, a call
+ * that names a task is never read out: its sentence needs the task as it is now, and a guess is never shown.
+ */
+export interface PairTaskFacts {
+  /** The task as the network has it now; null when it could not be read. */
+  taskFacts: (serial: bigint) => ChainTaskNow | null;
+  /** What a plan of this share gets (the notice, the time to take it, the time it is due after); null when not read. */
+  noticeFor: (shareBps: number) => NoticeFor | null;
+  /** The network's clock, in seconds. */
+  now: number;
+  /** The team's own words for the task record with this id (`what`), when this project has one. */
+  recordWords: (what: string) => string | null;
 }
 
 export const UNKNOWN_WORDS =
@@ -77,12 +111,88 @@ function forTask(tasks: readonly OwedTask[]): string {
     : `, the pay for one of these tasks, as the project's page records them: ${said.join("; ")}`;
 }
 
+const unknownTask = (): Terms => ({
+  kind: "unknown",
+  words: UNKNOWN_TASK_WORDS,
+  names: [],
+});
+
+const ZERO = /^0x0{40}$/;
+
+/** "Plan a task: ..." with the notice read from the network and a second line that the date counts from the confirming. */
+function announceTerms(
+  args: readonly DecodedValue[],
+  who: (address: string) => string,
+  facts: PairTaskFacts | undefined,
+): Terms {
+  const shareBps = Number(big(args[3]));
+  const notice = facts?.noticeFor(shareBps) ?? null;
+  if (!facts || !notice) return unknownTask();
+  const payee = address(args[1]);
+  const open = ZERO.test(payee);
+  const words = facts.recordWords(String(args[0]).toLowerCase());
+  return {
+    kind: "announce-task",
+    words: announceTaskWords({
+      max: big(args[2]),
+      who: open ? null : who(payee),
+      shareBps,
+      notice: durationWords(notice.noticeSecs),
+      from: facts.now + notice.noticeSecs,
+      window: durationWords(notice.takeWindowSecs),
+      due: durationWords(notice.dueSecs),
+    }),
+    names: open ? [] : [payee],
+    more: [DATE_COUNTS_FROM_CONFIRM, ...(words ? [theTaskWords(words)] : [])],
+  };
+}
+
+/** Pay, send back or withdraw task `serial`: said from the task as the network has it now, never from the call alone. */
+function taskCallTerms(
+  signature: string,
+  args: readonly DecodedValue[],
+  who: (address: string) => string,
+  facts: PairTaskFacts | undefined,
+): Terms {
+  const serial = big(args[0]);
+  const task = facts?.taskFacts(serial) ?? null;
+  if (!facts || !task) return unknownTask();
+  // The sentence says what the call does to a task in one state; a task in another state would be refused, so it is said so.
+  const wants = signature === "cancelTask(uint64)" ? "announced" : "taken";
+  if (task.state !== wants || (wants === "taken" && task.takenBy === null))
+    return {
+      kind: "unknown",
+      words: pairTaskMoved(serial, phaseOf(task, facts.now)),
+      names: [],
+    };
+  const words = facts.recordWords(task.what);
+  const more = words ? [theTaskWords(words)] : undefined;
+  const base = { names: [] as string[], ...(more ? { more } : {}) };
+  if (signature === "rejectTask(uint64)")
+    return { kind: "reject-task", words: rejectTaskWords(serial), ...base };
+  if (signature === "cancelTask(uint64)")
+    return { kind: "cancel-task", words: cancelTaskWords(serial), ...base };
+  const taker = task.takenBy ?? "";
+  return {
+    kind: "accept-task",
+    words: acceptTaskWords({
+      pay: big(args[1]),
+      setAside: task.setAside,
+      serial,
+      who: who(taker),
+    }),
+    ...base,
+    names: [taker],
+  };
+}
+
 export function describePotCall(
   numbers: ProjectNumbers,
   target: string,
   data: string,
   nameOf: (address: string) => string,
   tasksFor: (payee: string, raw: bigint) => readonly OwedTask[] = () => [],
+  facts?: PairTaskFacts,
 ): Terms {
   const t = target.toLowerCase();
   const abi: Abi | null =
@@ -195,6 +305,12 @@ export function describePotCall(
             words: `Announce that the part of Team Share grant number ${big(args[0])} that has not unlocked is removed after a public notice of ${unitDays(numbers)}. The person keeps what has unlocked.`,
             names: [],
           };
+        case "announceTask(bytes32,address,uint256,uint16)":
+          return announceTerms(args, who, facts);
+        case "acceptTask(uint64,uint256)":
+        case "rejectTask(uint64)":
+        case "cancelTask(uint64)":
+          return taskCallTerms(call.signature, args, who, facts);
         default:
           return unknown();
       }

@@ -290,6 +290,11 @@ export function cancelTaskWords(serial: bigint): string {
   return `Withdraw task ${serial}. It was not taken, so no money moves.`;
 }
 
+/** A waiting call names a task that is no longer in the state the call works on: it cannot be confirmed any more. */
+export function pairTaskMoved(serial: bigint, phase: Phase): string {
+  return `This call is about task ${serial}, which has changed since it was asked: it is now ${phaseWord(phase)}. It cannot be confirmed any more. Whoever asked can withdraw it.`;
+}
+
 /** The line under a Pair sentence when the task's `what` ties to a task record here. */
 export function theTaskWords(words: string): string {
   return `The task: ${quotedWhat(words)}`;
