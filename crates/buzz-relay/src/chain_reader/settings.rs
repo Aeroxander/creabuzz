@@ -47,12 +47,11 @@ pub struct ChainReaderConfig {
 /// promise below this.
 pub const MIN_REFRESH_SECS: u64 = 5;
 
-/// The most a record may promise as its refresh: one day. The record's `refreshEverySecs` is what the app reads, and
-/// the app accepts no promise above 86400 seconds (RECORD-V2 section 6: older than a day is "not refreshed"), so the
-/// settings end where the app's range ends. A setting at the ceiling is a range limit, not a recommendation: the app calls
-/// a record "stale" once it is older than a day, so a server that re-signs only every 86400 seconds leaves each record
-/// stale for as long as the next pass takes. Set it to at most half a day (43200) to keep records fresh all day.
-pub const MAX_REFRESH_SECS: u64 = 86_400;
+/// The most a server may be set to promise as a record's refresh: half a day. The record's `refreshEverySecs` is what the
+/// app reads, and the app calls a record "stale" once it is older than a day (RECORD-V2 section 6) and accepts no promise
+/// above 86400 seconds. A server set to a full day would leave every record stale for part of each cycle, so the settings
+/// end at half a day and a larger setting is refused at start. The app's own range does not change.
+pub const MAX_REFRESH_SECS: u64 = 43_200;
 
 const VARS: [&str; 9] = [
     "BUZZ_CHAIN_ID",

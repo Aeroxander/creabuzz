@@ -2518,11 +2518,12 @@ mod tests {
         }
     }
 
-    /// The server's refresh settings end where the app's accepted range ends
-    /// (86400 seconds, RECORD-V2 section 6): a longer promise would be a record
-    /// the app throws away.
+    /// The server's refresh settings end at half a day (43200 seconds,
+    /// RECORD-V2 section 6): the app calls a record stale once it is older than
+    /// a day, so a server set to a day would show every record stale for part
+    /// of each cycle.
     #[test]
-    fn the_chain_refresh_settings_end_at_one_day() {
+    fn the_chain_refresh_settings_end_at_half_a_day() {
         let _guard = ENV_MUTEX.lock().unwrap();
         const KNOBS: [&str; 5] = [
             "BUZZ_CHAIN_RPC_URL",
@@ -2548,7 +2549,7 @@ mod tests {
         };
         assert_eq!(read().expect("defaults"), (3_600, 600));
         for name in ["BUZZ_CHAIN_REFRESH_SECS", "BUZZ_CHAIN_ACTIVE_REFRESH_SECS"] {
-            for ok in ["5", "86400"] {
+            for ok in ["5", "43200"] {
                 std::env::set_var(name, ok);
                 let (long, active) = read().expect("inside the range");
                 let got = if name == "BUZZ_CHAIN_REFRESH_SECS" {
@@ -2558,14 +2559,15 @@ mod tests {
                 };
                 assert_eq!(got, ok.parse::<u64>().unwrap(), "{name}={ok}");
             }
-            // One second too short, one second past a day, and a week (the
-            // old ceiling) are all refused, naming the setting and its range.
-            for bad in ["4", "86401", "604800"] {
+            // One second too short, one second past half a day, a whole day
+            // (the former ceiling) and a week are all refused, naming the
+            // setting and its range.
+            for bad in ["4", "43201", "86400", "604800"] {
                 std::env::set_var(name, bad);
                 let err = read().expect_err("outside the range");
                 let text = err.to_string();
                 assert!(
-                    text.contains(name) && text.contains("5 to 86400"),
+                    text.contains(name) && text.contains("5 to 43200"),
                     "{name}={bad}: {text}"
                 );
             }
