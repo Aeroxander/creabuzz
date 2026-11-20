@@ -29,6 +29,8 @@
 //! | `task-part` = accept, evidence, more-time, give-up| the task's helper: the one it names, |
 //! |                                                   | or for a task open to anyone, its    |
 //! |                                                   | taker (see "Tasks open to anyone")   |
+//! |   accept may carry `task-pay-to`                  | the helper's own wallet (see "Plans   |
+//! |                                                   | on the network")                     |
 //! | `task-part` = take                                | anyone signed in but the team, on a  |
 //! |                                                   | task open to anyone that nobody has  |
 //! |                                                   | taken; a few a day, and small        |
@@ -97,6 +99,15 @@
 //!
 //! An account on record as a manager agent (its profile says `["agent-role", "manager"]`, see `agent_label`) signs no
 //! task step at all: it drafts for the founder and never takes, hands in or confirms work.
+//!
+//! # Plans on the network
+//!
+//! A team can announce a task on the network (a "plan"), naming the task record's id as the plan's `what`. When the
+//! server's chain reader has read such a plan, the steps that touch its money agree with it (see `task_chain`): a take
+//! names the wallet it is paid to (`task-pay-to`, also allowed on the `accept` step of a task that names its helper)
+//! and that wallet is the plan's; a confirmation names the transaction that paid the plan; the team's cancel waits
+//! until the plan is withdrawn on the network. A task with no plan, or a server with no chain reader, is judged as
+//! before. The relay never checks money: the app reads the chain before it offers a payment.
 //!
 //! Records stored before this check existed are not looked at again.
 
@@ -473,8 +484,9 @@ fn check_ask_is_small(event: &Event) -> Result<(), String> {
 }
 
 /// What a task's money tags may hold, and on which step: `task-usd` (whole dollars, 1 to [`TASK_USD_MAX`]) on the task,
-/// `task-pay-to` (an address, `0x` and 40 hex digits) on a take, `task-paid` (a transaction, `0x` and 64 hex digits)
-/// on a confirmation. One of each at most, and none anywhere else.
+/// `task-pay-to` (an address, `0x` and 40 hex digits) on a take or on the accept step of a task that names its helper
+/// (the wallet the worker names under their own signature), `task-paid` (a transaction, `0x` and 64 hex digits) on a
+/// confirmation. One of each at most, and none anywhere else.
 fn check_money_tags(money: &[(&str, &str)], part: Option<TaskPart>) -> Result<(), String> {
     let hex_of = |value: &str, digits: usize| {
         value.len() == digits + 2
@@ -487,19 +499,19 @@ fn check_money_tags(money: &[(&str, &str)], part: Option<TaskPart>) -> Result<()
             return Err(format!("a record can carry only one `{name}` tag"));
         }
         seen.push(name);
-        let (step, ok) = match *name {
+        let (steps, ok): (&[TaskPart], bool) = match *name {
             "task-usd" => (
-                TaskPart::Task,
+                &[TaskPart::Task],
                 !value.starts_with('0')
                     && value.bytes().all(|b| b.is_ascii_digit())
                     && value
                         .parse::<u64>()
                         .is_ok_and(|usd| (1..=TASK_USD_MAX).contains(&usd)),
             ),
-            "task-pay-to" => (TaskPart::Take, hex_of(value, 40)),
-            _ => (TaskPart::Confirm, hex_of(value, 64)),
+            "task-pay-to" => (&[TaskPart::Take, TaskPart::Accept], hex_of(value, 40)),
+            _ => (&[TaskPart::Confirm], hex_of(value, 64)),
         };
-        if part != Some(step) {
+        if !part.is_some_and(|part| steps.contains(&part)) {
             return Err(format!("`{name}` belongs on another step of a task"));
         }
         if !ok {
@@ -975,6 +987,10 @@ pub(crate) async fn enforce_launch_update_authority(
         }
     })?;
 
+    if let Some((part, Some(task_id))) = requirement.step {
+        super::task_chain::enforce(state, &record.event, &coordinate, event, part, &task_id)
+            .await?;
+    }
     if requirement.join {
         enforce_join_caps(state, community, event, &coordinate).await?;
     }

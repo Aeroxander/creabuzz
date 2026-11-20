@@ -72,6 +72,10 @@ pub mod report_resolution;
 pub mod req;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
+/// A team's task record tied to its task on the network: the server's reads behind `launch_update_authority`.
+pub mod task_chain;
+#[cfg(test)]
+mod task_chain_postgres_tests;
 /// Tasks open to anyone and manager agents: the server's reads behind `launch_update_authority`.
 pub mod task_takes;
 #[cfg(test)]

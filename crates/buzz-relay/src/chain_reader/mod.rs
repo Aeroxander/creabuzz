@@ -16,7 +16,7 @@
 
 pub mod events;
 #[cfg(test)]
-mod fixture;
+pub(crate) mod fixture;
 pub mod helper;
 pub mod ledger;
 pub mod ledger_tasks;
