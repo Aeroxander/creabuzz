@@ -1,4 +1,5 @@
-//! Migration 0071 (the task book's role and the partial index on its rows), and
+//! Migrations 0071 (the task book's role and the partial index on its rows) and 0072 (the indexes of the relay's
+//! task-rule lookups), and
 //! the same two facts in a database made from the desired-state schema in
 //! `schema/` (the shape `pgschema apply` builds). The schema has no seed
 //! rows for these tables, so nothing in
@@ -56,6 +57,22 @@ async fn assert_role_and_index(pool: &PgPool, reader: &str) {
             && def.contains("WHERE (role = 'tasks'"),
         "the index is partial on the books' rows: {def}"
     );
+    for (index, text) in [
+        ("idx_chain_logs_task_what", "TaskAnnounced"),
+        ("idx_chain_logs_task_serial", "TaskTaken"),
+    ] {
+        let def: String = sqlx::query_scalar(
+            "SELECT indexdef FROM pg_indexes WHERE tablename = 'chain_logs' AND indexname = $1",
+        )
+        .bind(index)
+        .fetch_one(pool)
+        .await
+        .unwrap_or_else(|e| panic!("the index {index} exists: {e}"));
+        assert!(
+            def.contains("WHERE") && def.contains(text),
+            "{index} is partial on the task events: {def}"
+        );
+    }
 }
 
 #[tokio::test]

@@ -20,8 +20,8 @@ use uuid::Uuid;
 
 use super::ingest::{ingest_event, IngestAuth, IngestError};
 use super::task_chain::{
-    NAME_WALLET, NOT_SEEN_YET, NOT_THAT_PAYMENT, OTHER_WALLET, PAY_FIRST, PLAN_ENDED,
-    TAKEN_ELSEWHERE, WITHDRAW_FIRST,
+    ANNOUNCED_SQL, AS_OF_SQL, LATER_SQL, NAME_WALLET, NOT_SEEN_YET, NOT_THAT_PAYMENT, OTHER_WALLET,
+    PAID_ELSEWHERE, PAY_FIRST, PLAN_ENDED, TAKEN_ELSEWHERE, WITHDRAW_FIRST,
 };
 use crate::api::manager::cost::project_id;
 use crate::chain_reader::events::{self, Role};
@@ -360,6 +360,14 @@ impl World {
             .to_lowercase()
     }
 
+    /// The wallet that took the run's plan `serial` (lower case): the one the network paid.
+    fn taken_by(&self, serial: u64) -> String {
+        self.book_row("TaskTaken", serial).2["takenBy"]
+            .as_str()
+            .expect("a taker")
+            .to_lowercase()
+    }
+
     /// The transaction that paid the run's plan `serial` (the resolve whose state is paid), as `0x` hex.
     fn paid_tx(&self, serial: u64) -> String {
         let paid = self
@@ -565,6 +573,18 @@ async fn a_confirm_for_a_planned_task_needs_the_network_payment() {
     for task in [&paid, &taken, &announced] {
         w.accept(task.clone(), "the team posts a task").await;
     }
+    // The worker took the paid one before the reader had its plan (a lenient take), naming the wallet that was paid.
+    w.accept(
+        step(
+            &w.stranger,
+            &w.coordinate,
+            "take",
+            &paid,
+            &[&pay_to(&w.taken_by(PAID))],
+        ),
+        "the worker takes it, naming their wallet",
+    )
+    .await;
     w.seed_run(&[(PAID, &paid), (TAKEN, &taken), (ANNOUNCED, &announced)])
         .await;
     let right = w.paid_tx(PAID);
@@ -755,6 +775,17 @@ async fn the_same_record_planned_twice_is_tied_to_its_lowest_serial_plan() {
     // The run planned serial 2's record again as serial 8: both rows name this record.
     let again = open_task(&w.founder, &w.coordinate, "Planned twice", "40");
     w.accept(again.clone(), "the team posts a task").await;
+    w.accept(
+        step(
+            &w.stranger,
+            &w.coordinate,
+            "take",
+            &again,
+            &[&pay_to(&w.taken_by(PAID))],
+        ),
+        "the worker takes it, naming their wallet",
+    )
+    .await;
     w.seed_run(&[(PAID, &again), (8, &again)]).await;
     // Serial 2 was paid: it binds, so its payment confirms and the later row does not.
     w.accept(
@@ -768,6 +799,11 @@ async fn the_same_record_planned_twice_is_tied_to_its_lowest_serial_plan() {
         "the payment of the plan that binds",
     )
     .await;
+    // A worker who had not taken it yet is refused too: the record is planned and paid already.
+    let w = world(true).await;
+    let again = open_task(&w.founder, &w.coordinate, "Planned twice", "40");
+    w.accept(again.clone(), "the team posts a task").await;
+    w.seed_run(&[(PAID, &again), (8, &again)]).await;
     w.refuse(
         step(
             &w.stranger,
@@ -780,6 +816,259 @@ async fn the_same_record_planned_twice_is_tied_to_its_lowest_serial_plan() {
         "the record is planned and paid already",
     )
     .await;
+}
+
+/// A worker's take of `task` naming `wallet`, accepted before the reader has the plan (a lenient take).
+async fn worker_takes(w: &World, task: &Event, wallet: Option<&str>) {
+    let extra: Vec<[&str; 2]> = wallet.map(pay_to).into_iter().collect();
+    let extra: Vec<&[&str]> = extra.iter().map(|tag| tag.as_slice()).collect();
+    w.accept(
+        step(&w.stranger, &w.coordinate, "take", task, &extra),
+        "the worker takes the task",
+    )
+    .await;
+}
+
+/// Review fix: the network paid the wallet that took the plan, and a `confirm` records that as the worker's pay only
+/// when the worker named that very wallet under their own signature. A team that planned its own wallet as the
+/// payee, took it and paid itself cannot record it as the named worker's paid task. With the check switched off the
+/// two refusals below are accepted and this test fails.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_confirm_is_refused_when_the_network_paid_a_wallet_the_worker_never_named() {
+    // (what the worker named, accepted?)
+    for (named, accepted, what) in [
+        (Some(NOT_A_PLANNED_WALLET), false, "another wallet"),
+        (None, false, "no wallet"),
+        (Some("taken-by"), true, "the wallet that was paid"),
+    ] {
+        let w = world(true).await;
+        let task = open_task(&w.founder, &w.coordinate, "Paid", "40");
+        w.accept(task.clone(), "the team posts a task").await;
+        let wallet = w.taken_by(PAID);
+        worker_takes(
+            &w,
+            &task,
+            named.map(|n| if n == "taken-by" { wallet.as_str() } else { n }),
+        )
+        .await;
+        w.seed_run(&[(PAID, &task)]).await;
+        let confirm = step(
+            &w.founder,
+            &w.coordinate,
+            "confirm",
+            &task,
+            &[&["task-paid", &w.paid_tx(PAID)]],
+        );
+        if accepted {
+            w.accept(confirm, what).await;
+        } else {
+            w.refuse(confirm, PAID_ELSEWHERE, what).await;
+        }
+    }
+}
+
+/// Review fix: a plan that is past its end but that nobody has settled yet must not hide a live later plan of the
+/// same record. The run's serial 6 (taken) is past its deadline at the reader's newest block while serial 7
+/// (announced, same record here) is still live: every rule is held against serial 7. With the lowest-serial rule
+/// judging only afterwards whether the plan is over, all four steps below were let through (or wrongly refused).
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_plan_past_its_end_that_nobody_settled_does_not_hide_a_live_repeat_of_the_same_record() {
+    let w = world(true).await;
+    let task = open_task(&w.founder, &w.coordinate, "Planned twice", "40");
+    w.accept(task.clone(), "the team posts a task").await;
+    w.seed_run(&[(TAKEN, &task), (ANNOUNCED, &task)]).await;
+    let time = |event: &str, serial: u64, field: &str| -> u64 {
+        w.book_row(event, serial).2[field]
+            .as_str()
+            .and_then(|s| s.parse().ok())
+            .expect("a time")
+    };
+    let deadline = time("TaskTaken", TAKEN, "deadline");
+    let ends = time("TaskAnnounced", ANNOUNCED, "expiresAt");
+    assert!(
+        deadline < ends,
+        "the run must have serial 6 past its deadline while serial 7 still lives"
+    );
+    w.read_a_block_at(deadline).await;
+
+    w.refuse(
+        step(&w.stranger, &w.coordinate, "take", &task, &[]),
+        NAME_WALLET,
+        "a take that names no wallet is held to the live plan",
+    )
+    .await;
+    w.refuse(
+        step(
+            &w.founder,
+            &w.coordinate,
+            "confirm",
+            &task,
+            &[&["task-paid", &w.paid_tx(PAID)]],
+        ),
+        PAY_FIRST,
+        "a confirm while the live plan is announced and unpaid",
+    )
+    .await;
+    w.refuse(
+        step(&w.founder, &w.coordinate, "cancel", &task, &[]),
+        WITHDRAW_FIRST,
+        "a cancel while the live plan can still be taken",
+    )
+    .await;
+    w.accept(
+        step(
+            &w.stranger,
+            &w.coordinate,
+            "take",
+            &task,
+            &[&pay_to(&w.payee(ANNOUNCED))],
+        ),
+        "a take of the live plan is not refused as ended",
+    )
+    .await;
+}
+
+/// A plan that ended unpaid binds nothing, and the plan read is the lowest-serial one that did not: the run's serial 3
+/// was sent back and serial 7 is announced and live, both naming this record. The take is held to serial 7. With the
+/// number of announced rows read cut to one, only serial 3 is seen, the lookup says "no plan" and the take passes.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_plan_that_ended_unpaid_is_followed_by_the_live_repeat_of_the_same_record() {
+    let w = world(true).await;
+    let task = open_task(
+        &w.founder,
+        &w.coordinate,
+        "Sent back, then planned again",
+        "40",
+    );
+    w.accept(task.clone(), "the team posts a task").await;
+    w.seed_run(&[(SENT_BACK, &task), (ANNOUNCED, &task)]).await;
+    w.refuse(
+        step(&w.stranger, &w.coordinate, "take", &task, &[]),
+        NAME_WALLET,
+        "the live repeat binds",
+    )
+    .await;
+    w.refuse(
+        step(&w.founder, &w.coordinate, "cancel", &task, &[]),
+        WITHDRAW_FIRST,
+        "the live repeat holds the task on the network",
+    )
+    .await;
+}
+
+/// Review fix: a task record that was announced more often than the lookup reads (64 times, each costing the team
+/// gas) is not guessed at. The old cut read the lowest 64 and, if all had ended, said "no plan" and switched every
+/// rule off for a live 65th; now the lookup fails and the write is refused as a server fault.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_record_announced_more_often_than_the_lookup_reads_is_refused_not_guessed_at() {
+    let w = world(true).await;
+    let task = open_task(&w.founder, &w.coordinate, "Announced again and again", "40");
+    w.accept(task.clone(), "the team posts a task").await;
+    w.seed_run(&[(ANNOUNCED, &task)]).await;
+    let key = w.fx.projects["A"].key;
+    let what = hex0x(&task.id.to_bytes());
+    // 64 more plans of the same record, all withdrawn: 65 rows name it.
+    for i in 0..64u64 {
+        let serial = 1_000 + i;
+        for (block, event, decoded) in [
+            (
+                10_000 + 2 * i,
+                "TaskAnnounced",
+                json!({ "serial": serial.to_string(), "what": what, "payee": NOT_A_PLANNED_WALLET,
+                        "expiresAt": "99999999999" }),
+            ),
+            (
+                10_001 + 2 * i,
+                "TaskResolved",
+                json!({ "serial": serial.to_string(), "state": "6" }),
+            ),
+        ] {
+            sqlx::query(
+                "INSERT INTO chain_logs (reader, block_number, log_index, block_hash, tx_hash, address, role, \
+                 project_key, event, topics, data, decoded) \
+                 VALUES ($1, $2, 0, $3, $3, $4, 'tasks', $5, $6, '{}', $7, $8)",
+            )
+            .bind(&w.reader)
+            .bind(i64::try_from(block).expect("block"))
+            .bind(vec![1u8; 32])
+            .bind(vec![2u8; 20])
+            .bind(key.as_slice())
+            .bind(event)
+            .bind(Vec::<u8>::new())
+            .bind(&decoded)
+            .execute(w.state.db.pool())
+            .await
+            .expect("a row");
+        }
+    }
+    w.refuse(
+        step(&w.stranger, &w.coordinate, "take", &task, &[]),
+        "internal:",
+        "a record with more plans than are read is not guessed at",
+    )
+    .await;
+}
+
+/// The three reads of a plan are served by indexes, not by a scan of the project's whole book (which holds every note):
+/// with sequential scans switched off and the general indexes out of the way, the planner can only answer them through
+/// the partial indexes of migration 0072, and reads the newest block through its key.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_plan_reads_use_their_indexes_and_never_scan_every_block() {
+    let w = world(true).await;
+    let task = open_task(&w.founder, &w.coordinate, "Indexed", "40");
+    w.seed_run(&[(ANNOUNCED, &task)]).await;
+    let key = w.fx.projects["A"].key;
+    let mut tx = w.state.db.pool().begin().await.expect("a transaction");
+    // On a table this small the planner may prefer any index; leave it only the ones the reads are meant for (the drops
+    // are rolled back with the transaction).
+    for statement in [
+        "SET LOCAL enable_seqscan = off",
+        "DROP INDEX idx_chain_logs_project, idx_chain_logs_tasks",
+    ] {
+        sqlx::query(statement)
+            .execute(&mut *tx)
+            .await
+            .expect("prepare the plan");
+    }
+    let explain = |sql: &str| format!("EXPLAIN {sql}");
+    let announced: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(explain(ANNOUNCED_SQL)))
+        .bind(&w.reader)
+        .bind(key.as_slice())
+        .bind(format!("0x{}", hex::encode(task.id.to_bytes())))
+        .bind(65i64)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("explain");
+    let later: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(explain(LATER_SQL)))
+        .bind(&w.reader)
+        .bind(key.as_slice())
+        .bind(vec!["7".to_owned()])
+        .fetch_all(&mut *tx)
+        .await
+        .expect("explain");
+    let as_of: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(explain(AS_OF_SQL)))
+        .bind(&w.reader)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("explain");
+    let (announced, later, as_of) = (announced.join("\n"), later.join("\n"), as_of.join("\n"));
+    assert!(
+        announced.contains("idx_chain_logs_task_what"),
+        "the announced rows of a record use their index:\n{announced}"
+    );
+    assert!(
+        later.contains("idx_chain_logs_task_serial"),
+        "the takes and resolutions of a serial use their index:\n{later}"
+    );
+    assert!(
+        as_of.contains("chain_blocks_pkey"),
+        "the newest block is read through the primary key:\n{as_of}"
+    );
 }
 
 #[tokio::test]

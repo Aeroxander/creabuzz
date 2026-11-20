@@ -9,10 +9,15 @@
 //! - The plan's `what` is the **id of the task record** (the signed `task-part = task` event), so nobody can change a
 //!   task record after it is planned.
 //! - The plan of a task record is its **lowest-serial** row that is announced, taken or paid. A plan that ended unpaid
-//!   (withdrawn, lapsed, sent back, ran out) binds nothing, and a later row with the same `what` is a repeat.
+//!   (withdrawn, lapsed, sent back, ran out) binds nothing, and a later row with the same `what` is a repeat. A row
+//!   that is past its end but that nobody has settled yet counts as ended for this choice too, so a live later plan
+//!   of the same record is the one that binds (and when no plan is live, the over one is still the plan, so a take of
+//!   it is refused with words). A paid row binds for ever.
 //! - The wallet a worker is paid to is the one they name under their own signature, in `task-pay-to`, on a `take` (a
 //!   task open to anyone) or on the `accept` step (a task that names its helper). The plan's `payee` and the chain's
-//!   `takenBy` must be it.
+//!   `takenBy` must be it: a `take` and an `accept` are held to the plan's payee when it names one, and a `confirm`
+//!   of a paid plan is held to the wallet the worker named, so the team cannot pay another wallet and record it as
+//!   the worker's pay.
 //!
 //! # What is refused
 //!
@@ -30,6 +35,7 @@
 
 use std::sync::Arc;
 
+use buzz_core::tenant::CommunityId;
 use nostr::Event;
 use serde_json::Value;
 use sqlx::{PgPool, Row};
@@ -56,13 +62,33 @@ pub(crate) const NOT_SEEN_YET: &str =
 pub(crate) const PAY_FIRST: &str = "invalid: pay it on the network first, then record it";
 /// Said on a `confirm` that names no payment, or another one than the one that paid the plan.
 pub(crate) const NOT_THAT_PAYMENT: &str = "invalid: that is not the payment that paid this task";
+/// Said on a `confirm` of a plan that the network paid to a wallet the worker never named.
+pub(crate) const PAID_ELSEWHERE: &str =
+    "invalid: the network paid another wallet than the one the worker named";
 /// Said on a `cancel` while the plan still holds the task on the network.
 pub(crate) const WITHDRAW_FIRST: &str =
     "invalid: withdraw or send back the money on the network first";
 
-/// The most announced rows with one `what` that are read: a task record is planned once, and a team that announces it
-/// again and again (each costs it gas) cannot make a take read an unbounded list.
+/// The most announced rows with one `what` that are judged: a task record is planned once, and a team that announces
+/// it again and again (each costs it gas) cannot make a take read an unbounded list. A record with more is not
+/// guessed at: the lookup fails, which refuses the write (a server fault, never a rule switched off by a long list).
 const PLANS_READ: i64 = 64;
+
+/// The announced rows of one task record (`$3`: its id as `0x` hex, lower case), by serial. Served by the partial index
+/// `idx_chain_logs_task_what` (migration 0072).
+pub(crate) const ANNOUNCED_SQL: &str =
+    "SELECT decoded FROM chain_logs WHERE reader = $1 AND project_key = $2 \
+         AND role = 'tasks' AND event = 'TaskAnnounced' AND lower(decoded->>'what') = $3 \
+     ORDER BY (decoded->>'serial')::numeric LIMIT $4";
+/// The takes and resolutions of the plans found (`$3`: their serials as decimal text), in chain order. Served by the
+/// partial index `idx_chain_logs_task_serial` (migration 0072).
+pub(crate) const LATER_SQL: &str =
+    "SELECT event, decoded, tx_hash FROM chain_logs WHERE reader = $1 \
+         AND project_key = $2 AND role = 'tasks' AND event IN ('TaskTaken', 'TaskResolved') \
+         AND decoded->>'serial' = ANY($3) ORDER BY block_number, log_index";
+/// The time of the reader's newest stored block (through the primary key, never a scan of every block).
+pub(crate) const AS_OF_SQL: &str =
+    "SELECT block_time FROM chain_blocks WHERE reader = $1 ORDER BY number DESC LIMIT 1";
 
 /// Where a plan is on the network, as far as its stored rows say.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -147,12 +173,16 @@ pub(crate) type LaterRow = (String, Value, Vec<u8>);
 /// The plan among `announced` rows (oldest serial first), given the rows that came after them.
 ///
 /// The plan is the lowest-serial row that is announced, taken or paid. A row's state is the last of its own events:
-/// `TaskTaken` takes it, `TaskResolved` ends it (state 3 is paid; 4 to 7 ended unpaid).
+/// `TaskTaken` takes it, `TaskResolved` ends it (state 3 is paid; 4 to 7 ended unpaid). A row that is not paid and is
+/// past its end at `as_of` is over: the next settle ends it, so a later row that is still live binds instead. When
+/// every row that has not ended is over, the lowest of them is the plan (a take of it is refused with words). A paid
+/// row binds whatever its age.
 pub(crate) fn plan_of(
     announced: &[Value],
     later: &[LaterRow],
     as_of: u64,
 ) -> Result<Option<Plan>, sqlx::Error> {
+    let mut first_over: Option<Plan> = None;
     for row in announced {
         let serial = number(row, "serial")?;
         let mut plan = Plan {
@@ -185,11 +215,15 @@ pub(crate) fn plan_of(
                 _ => {}
             }
         }
-        if !ended {
+        if ended {
+            continue;
+        }
+        if !plan.is_over() || plan.state == PlanState::Paid {
             return Ok(Some(plan));
         }
+        first_over.get_or_insert(plan);
     }
-    Ok(None)
+    Ok(first_over)
 }
 
 /// Read the plan of the task record `what` of the project the record names, from the reader's rows.
@@ -223,17 +257,18 @@ pub(crate) async fn chain_task_of(
     if launched != project_id.to_lowercase() {
         return Ok(ChainLookup::Absent);
     }
-    let announced: Vec<Value> = sqlx::query_scalar(
-        "SELECT decoded FROM chain_logs WHERE reader = $1 AND project_key = $2 AND role = 'tasks' \
-             AND event = 'TaskAnnounced' AND lower(decoded->>'what') = $3 \
-         ORDER BY (decoded->>'serial')::numeric LIMIT $4",
-    )
-    .bind(reader)
-    .bind(chain_key.as_slice())
-    .bind(format!("0x{}", hex::encode(what)))
-    .bind(PLANS_READ)
-    .fetch_all(pool)
-    .await?;
+    let announced: Vec<Value> = sqlx::query_scalar(ANNOUNCED_SQL)
+        .bind(reader)
+        .bind(chain_key.as_slice())
+        .bind(format!("0x{}", hex::encode(what)))
+        .bind(PLANS_READ + 1)
+        .fetch_all(pool)
+        .await?;
+    if i64::try_from(announced.len()).is_ok_and(|read| read > PLANS_READ) {
+        return Err(sqlx::Error::Decode(
+            format!("the task record has more than {PLANS_READ} plans announced").into(),
+        ));
+    }
     if announced.is_empty() {
         return Ok(ChainLookup::Absent);
     }
@@ -241,30 +276,25 @@ pub(crate) async fn chain_task_of(
         .iter()
         .map(|row| number(row, "serial").map(|serial| serial.to_string()))
         .collect::<Result<_, _>>()?;
-    let later: Vec<LaterRow> = sqlx::query(
-        "SELECT event, decoded, tx_hash FROM chain_logs WHERE reader = $1 AND project_key = $2 \
-             AND role = 'tasks' AND event IN ('TaskTaken', 'TaskResolved') AND decoded->>'serial' = ANY($3) \
-         ORDER BY block_number, log_index",
-    )
-    .bind(reader)
-    .bind(chain_key.as_slice())
-    .bind(&serials)
-    .fetch_all(pool)
-    .await?
-    .into_iter()
-    .map(|row| {
-        Ok((
-            row.try_get::<String, _>("event")?,
-            row.try_get::<Value, _>("decoded")?,
-            row.try_get::<Vec<u8>, _>("tx_hash")?,
-        ))
-    })
-    .collect::<Result<_, sqlx::Error>>()?;
-    let as_of: Option<i64> =
-        sqlx::query_scalar("SELECT max(block_time) FROM chain_blocks WHERE reader = $1")
-            .bind(reader)
-            .fetch_one(pool)
-            .await?;
+    let later: Vec<LaterRow> = sqlx::query(LATER_SQL)
+        .bind(reader)
+        .bind(chain_key.as_slice())
+        .bind(&serials)
+        .fetch_all(pool)
+        .await?
+        .into_iter()
+        .map(|row| {
+            Ok((
+                row.try_get::<String, _>("event")?,
+                row.try_get::<Value, _>("decoded")?,
+                row.try_get::<Vec<u8>, _>("tx_hash")?,
+            ))
+        })
+        .collect::<Result<_, sqlx::Error>>()?;
+    let as_of: Option<i64> = sqlx::query_scalar(AS_OF_SQL)
+        .bind(reader)
+        .fetch_optional(pool)
+        .await?;
     let as_of = u64::try_from(as_of.unwrap_or(0)).unwrap_or(0);
     Ok(plan_of(&announced, &later, as_of)?.map_or(ChainLookup::Absent, ChainLookup::Plan))
 }
@@ -277,6 +307,10 @@ pub(crate) struct StepNames {
     pub(crate) pay_to: Option<String>,
     /// The transaction that paid the task.
     pub(crate) paid: Option<String>,
+    /// The wallet the task's worker named under their own signature on the task's `take` and `accept` steps, when
+    /// they named one (two different ones read as none). Not in the record being written: [`enforce`] reads it for
+    /// a `confirm` of a paid plan.
+    pub(crate) worker_pay_to: Option<String>,
 }
 
 impl StepNames {
@@ -291,6 +325,7 @@ impl StepNames {
         Self {
             pay_to: first("task-pay-to"),
             paid: first("task-paid"),
+            worker_pay_to: None,
         }
     }
 }
@@ -313,7 +348,7 @@ fn is_judged(part: TaskPart, names: &StepNames) -> bool {
 /// |---|---|
 /// | `take` | the plan is over; no `task-pay-to`; the plan names another wallet; it is taken by another wallet |
 /// | `accept` naming a wallet | the plan names another wallet |
-/// | `confirm` | no payment has paid the plan: `retry:` while it is taken or not read, `invalid:` before it is taken or when the named payment is not the one that paid it |
+/// | `confirm` | no payment has paid the plan: `retry:` while it is taken or not read, `invalid:` before it is taken, when the named payment is not the one that paid it, or when the network paid a wallet the worker did not name |
 /// | `cancel` | the plan is announced or taken and not over |
 ///
 /// A lookup that finds no plan (`NoReader`, `Absent`) refuses nothing; `NotRead` refuses only a `confirm`.
@@ -355,10 +390,13 @@ pub(crate) fn decide_chain(
         TaskPart::Confirm => match plan.state {
             PlanState::Paid => {
                 let paid_by = plan.paid_tx.map(|tx| format!("0x{}", hex::encode(tx)));
-                if names.paid.is_some() && names.paid == paid_by {
-                    Ok(())
-                } else {
-                    Err(NOT_THAT_PAYMENT)
+                if names.paid.is_none() || names.paid != paid_by {
+                    return Err(NOT_THAT_PAYMENT);
+                }
+                // The money went to the wallet that took the plan: it must be the one the worker named.
+                match (names.worker_pay_to.as_deref(), plan.taken_by.as_deref()) {
+                    (Some(named), Some(taker)) if named == taker => Ok(()),
+                    _ => Err(PAID_ELSEWHERE),
                 }
             }
             // Ended unpaid by its time: it binds nothing, and the record is a step 1 record.
@@ -371,21 +409,36 @@ pub(crate) fn decide_chain(
     }
 }
 
+/// The step being written: which one, the task record it names (the plan's `what`) and the account that does the task.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StepOn<'a> {
+    /// The step.
+    pub(crate) part: TaskPart,
+    /// The id of the task record it names.
+    pub(crate) task_id: &'a [u8; 32],
+    /// The account that does the task (hex), when it has one.
+    pub(crate) worker: Option<&'a str>,
+}
+
 /// Hold a task step against its plan on the network, with the reader's rows.
 ///
 /// `project_record` is the project's stored record (it names the chain key), `coordinate` its address, `event` the step
-/// being written and `task_id` the task record it names (the plan's `what`). Runs after the signer is judged. No
-/// reader, no chain key, or a step that moves no money leaves the record as it was; a read that fails refuses the
-/// write.
+/// being written and `step` which step it is (see [`StepOn`]). Runs after the signer is judged. No reader, no chain key, or a step that moves no money
+/// leaves the record as it was; a read that fails refuses the write.
 pub(crate) async fn enforce(
     state: &Arc<AppState>,
+    community: CommunityId,
     project_record: &Event,
     coordinate: &str,
     event: &Event,
-    part: TaskPart,
-    task_id: &[u8; 32],
+    step: StepOn<'_>,
 ) -> Result<(), IngestError> {
-    let names = StepNames::of(event);
+    let StepOn {
+        part,
+        task_id,
+        worker,
+    } = step;
+    let mut names = StepNames::of(event);
     if !is_judged(part, &names) {
         return Ok(());
     }
@@ -406,6 +459,13 @@ pub(crate) async fn enforce(
     )
     .await
     .map_err(|e| internal("reading the task's plan on the network", e))?;
+    // Only a confirm of a plan the network has paid is held to the worker's own wallet.
+    if let (TaskPart::Confirm, ChainLookup::Plan(plan), Some(worker)) = (part, &lookup, worker) {
+        if plan.state == PlanState::Paid {
+            names.worker_pay_to =
+                super::task_takes::stored_pay_to(state, community, task_id, worker).await?;
+        }
+    }
     decide_chain(part, &names, &lookup).map_err(|reason| {
         if reason.starts_with("restricted:") {
             IngestError::AuthFailed(reason.into())
@@ -428,7 +488,7 @@ mod tests {
             serial: 3,
             state,
             payee: payee.map(str::to_owned),
-            taken_by: (state == PlanState::Taken).then(|| WALLET.to_owned()),
+            taken_by: (state != PlanState::Announced).then(|| WALLET.to_owned()),
             ends_at: 2_000,
             paid_tx: (state == PlanState::Paid).then_some(TX),
             as_of: 1_000,
@@ -439,6 +499,15 @@ mod tests {
         StepNames {
             pay_to: pay_to.map(str::to_owned),
             paid: paid.map(str::to_owned),
+            worker_pay_to: None,
+        }
+    }
+
+    /// A confirm that names `paid` and whose worker named `wallet`.
+    fn confirm_names(paid: &str, wallet: Option<&str>) -> StepNames {
+        StepNames {
+            worker_pay_to: wallet.map(str::to_owned),
+            ..names(None, Some(paid))
         }
     }
 
@@ -535,11 +604,19 @@ mod tests {
         let wrong = format!("0x{}", hex::encode([8u8; 32]));
         let paid = plan(PlanState::Paid, Some(WALLET));
         assert_eq!(
-            judged(TaskPart::Confirm, &names(None, Some(&right)), paid.clone()),
+            judged(
+                TaskPart::Confirm,
+                &confirm_names(&right, Some(WALLET)),
+                paid.clone()
+            ),
             Ok(())
         );
         assert_eq!(
-            judged(TaskPart::Confirm, &names(None, Some(&wrong)), paid.clone()),
+            judged(
+                TaskPart::Confirm,
+                &confirm_names(&wrong, Some(WALLET)),
+                paid.clone()
+            ),
             Err(NOT_THAT_PAYMENT)
         );
         assert_eq!(
@@ -570,6 +647,46 @@ mod tests {
         assert_eq!(
             judged(TaskPart::Confirm, &names(None, Some(&right)), ran_out),
             Ok(())
+        );
+    }
+
+    /// Review fix: the right payment is not enough. The network paid the wallet that took the plan, and the worker
+    /// must have named that wallet; a team that planned its own wallet as the payee cannot record the pay as the
+    /// worker's.
+    #[test]
+    fn a_confirm_of_a_paid_plan_needs_the_wallet_the_worker_named() {
+        let right = format!("0x{}", hex::encode(TX));
+        let paid = plan(PlanState::Paid, Some(WALLET));
+        assert_eq!(
+            judged(
+                TaskPart::Confirm,
+                &confirm_names(&right, Some(OTHER)),
+                paid.clone()
+            ),
+            Err(PAID_ELSEWHERE),
+            "the worker named another wallet than the one paid"
+        );
+        assert_eq!(
+            judged(
+                TaskPart::Confirm,
+                &confirm_names(&right, None),
+                paid.clone()
+            ),
+            Err(PAID_ELSEWHERE),
+            "the worker named none (or two different ones)"
+        );
+        // A paid plan whose taker is unknown (the zero address) cannot match any wallet.
+        let nobody = Plan {
+            taken_by: None,
+            ..paid
+        };
+        assert_eq!(
+            judged(
+                TaskPart::Confirm,
+                &confirm_names(&right, Some(WALLET)),
+                nobody
+            ),
+            Err(PAID_ELSEWHERE)
         );
     }
 
@@ -707,6 +824,49 @@ mod tests {
         // A row that does not read is an error, never skipped.
         let broken = [serde_json::json!({ "serial": "x" })];
         assert!(plan_of(&broken, &[], 100).is_err());
+    }
+
+    /// Review fix: a plan that is past its end but that nobody has settled must not hide a live later plan of the same
+    /// record. A paid plan binds whatever its age, and when no plan is live the over one is still the plan.
+    #[test]
+    fn a_plan_past_its_end_does_not_hide_a_live_later_plan_of_the_same_record() {
+        // Serial 1 is announced with its window ended at 5000 (nobody settled it); serial 2 is live until 9000.
+        let mut late = announced(2, WALLET);
+        late["expiresAt"] = serde_json::json!("9000");
+        let rows = [announced(1, WALLET), late];
+        let live = plan_of(&rows, &[], 6_000).expect("rows").expect("a plan");
+        assert_eq!((live.serial, live.state), (2, PlanState::Announced));
+        assert!(!live.is_over());
+        // Before the end of serial 1 it is the plan, as the lowest serial.
+        let first = plan_of(&rows, &[], 4_000).expect("rows").expect("a plan");
+        assert_eq!(first.serial, 1);
+        // Once both are past their ends, the lowest is still the plan (a take of it is refused with words).
+        let both = plan_of(&rows, &[], 9_000).expect("rows").expect("a plan");
+        assert_eq!((both.serial, both.is_over()), (1, true));
+        // Serial 1 taken, its deadline (9000) ahead: it binds. Past the deadline with nobody settled: over, so a repeat
+        // that is still live (serial 2, window to 20000) binds instead.
+        let mut longer = announced(2, WALLET);
+        longer["expiresAt"] = serde_json::json!("20000");
+        let rows_long = [announced(1, WALLET), longer];
+        let taken_late = [taken(1, WALLET)];
+        let found = plan_of(&rows_long, &taken_late, 7_000)
+            .expect("rows")
+            .expect("a plan");
+        assert_eq!((found.serial, found.state), (1, PlanState::Taken));
+        let found = plan_of(&rows_long, &taken_late, 9_000)
+            .expect("rows")
+            .expect("a plan");
+        assert_eq!((found.serial, found.state), (2, PlanState::Announced));
+        // A paid serial 1 binds for ever, however old.
+        let paid = [taken(1, WALLET), resolved(1, 3, 4)];
+        let found = plan_of(&rows, &paid, 100_000)
+            .expect("rows")
+            .expect("a plan");
+        assert_eq!((found.serial, found.state), (1, PlanState::Paid));
+        // A row that ended unpaid is skipped whatever the time.
+        let ended = [resolved(1, 6, 1)];
+        let found = plan_of(&rows, &ended, 100).expect("rows").expect("a plan");
+        assert_eq!(found.serial, 2);
     }
 
     /// A row of another event that a query for plans never returns; it is ignored if it did.

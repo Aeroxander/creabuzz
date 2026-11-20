@@ -780,7 +780,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 71);
+        assert_eq!(migrations.len(), 72);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1802,6 +1802,29 @@ mod postgres_tests {
             "WHERE role = 'tasks'",
         ] {
             assert!(migration.contains(text), "migration 0071 must say {text}");
+        }
+        assert!(!migration.to_ascii_lowercase().contains("community_id"));
+        assert!(!migration.contains("attach_community_write_fence"));
+    }
+
+    /// Migration 0072 indexes the relay's task-rule lookups (the announced rows of one task record, and the takes and
+    /// resolutions of one serial). The desired-state schema must say the same, and the migration must stay clear of
+    /// community scoping (operator-global chain facts).
+    #[test]
+    fn chain_task_lookup_indexes_migration_matches_the_desired_schema() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[71].version, 72);
+        let migration = migrations[71].sql.as_str();
+        let desired_schema = crate::test_support::desired_state_schema_sql();
+        for text in [
+            "CREATE INDEX idx_chain_logs_task_what ON chain_logs (reader, project_key, (lower(decoded->>'what')))",
+            "WHERE role = 'tasks' AND event = 'TaskAnnounced'",
+            "CREATE INDEX idx_chain_logs_task_serial ON chain_logs (reader, project_key, (decoded->>'serial'))",
+            "WHERE role = 'tasks' AND event IN ('TaskTaken', 'TaskResolved')",
+        ] {
+            assert!(desired_schema.contains(text), "schema.sql must say {text}");
+            assert!(migration.contains(text), "migration 0072 must say {text}");
         }
         assert!(!migration.to_ascii_lowercase().contains("community_id"));
         assert!(!migration.contains("attach_community_write_fence"));

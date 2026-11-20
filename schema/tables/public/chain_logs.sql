@@ -19,3 +19,9 @@ CREATE TABLE chain_logs (
 CREATE INDEX idx_chain_logs_project ON chain_logs (reader, project_key, block_number, log_index);
 -- The rows of the projects' task books, in block order (migration 0071).
 CREATE INDEX idx_chain_logs_tasks ON chain_logs (reader, project_key, block_number) WHERE role = 'tasks';
+-- The relay's task-rule lookups: the announced rows of one task record, and the takes and resolutions of one serial
+-- (migration 0072).
+CREATE INDEX idx_chain_logs_task_what ON chain_logs (reader, project_key, (lower(decoded->>'what')))
+    WHERE role = 'tasks' AND event = 'TaskAnnounced';
+CREATE INDEX idx_chain_logs_task_serial ON chain_logs (reader, project_key, (decoded->>'serial'))
+    WHERE role = 'tasks' AND event IN ('TaskTaken', 'TaskResolved');

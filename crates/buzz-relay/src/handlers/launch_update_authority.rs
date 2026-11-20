@@ -989,8 +989,19 @@ pub(crate) async fn enforce_launch_update_authority(
     })?;
 
     if let Some((part, Some(task_id))) = requirement.step {
-        super::task_chain::enforce(state, &record.event, &coordinate, event, part, &task_id)
-            .await?;
+        super::task_chain::enforce(
+            state,
+            community,
+            &record.event,
+            &coordinate,
+            event,
+            super::task_chain::StepOn {
+                part,
+                task_id: &task_id,
+                worker: task.as_ref().and_then(TaskFacts::worker),
+            },
+        )
+        .await?;
     }
     if requirement.join {
         enforce_join_caps(state, community, event, &coordinate).await?;

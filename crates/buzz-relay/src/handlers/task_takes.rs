@@ -1,6 +1,7 @@
 //! The server's reads behind tasks open to anyone and manager agents (see `launch_update_authority`).
 //!
 //! - [`stored_takes`]: who has a task open to anyone, from its stored `take`, `give-up` and `cancel` steps.
+//! - [`stored_pay_to`]: the wallet a worker named on their own `take` and `accept` steps of a task.
 //! - [`enforce_take_caps`]: a few takes a day per account; a refused take is not stored, so it uses no room.
 //! - [`is_manager_agent`]: an account on record as an agent whose stored profile says `["agent-role", "manager"]`.
 //!
@@ -92,6 +93,72 @@ pub(crate) async fn stored_takes(
     Ok(read_takes(&steps, signer))
 }
 
+/// The most of the worker's own `take` and `accept` steps of one task read for their wallet.
+const PAY_TO_STEPS_READ: i64 = 50;
+
+/// The one wallet among `values` (each a `task-pay-to` tag value, in any case): every value that is an address (`0x` and
+/// 40 hex digits) counts, and two different ones read as none, so a wallet changed after the fact is never believed.
+/// Lower case.
+pub(crate) fn single_wallet<'a>(values: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let mut named = HashSet::new();
+    for value in values {
+        let Some(digits) = value.strip_prefix("0x") else {
+            continue;
+        };
+        if digits.len() == 40 && digits.bytes().all(|b| b.is_ascii_hexdigit()) {
+            named.insert(value.to_lowercase());
+        }
+    }
+    let mut named = named.into_iter();
+    match (named.next(), named.next()) {
+        (Some(wallet), None) => Some(wallet),
+        _ => None,
+    }
+}
+
+/// The wallet the account `worker` (hex) named on its own `take` and `accept` steps of the task `task_id`: the one wallet
+/// they all agree on, lower case, or `None` when they named none or two different ones.
+pub(crate) async fn stored_pay_to(
+    state: &Arc<AppState>,
+    community: CommunityId,
+    task_id: &[u8; 32],
+    worker: &str,
+) -> Result<Option<String>, IngestError> {
+    let Ok(worker) = hex::decode(worker) else {
+        return Ok(None);
+    };
+    let steps = state
+        .db
+        .query_events_for_event_write(&buzz_db::EventQuery {
+            kinds: Some(vec![KIND_LAUNCH_UPDATE as i32]),
+            pubkey: Some(worker),
+            tag_filters: vec![
+                ("task".to_string(), vec![hex::encode(task_id)]),
+                (
+                    "task-part".to_string(),
+                    vec!["take".to_string(), "accept".to_string()],
+                ),
+            ],
+            global_only: true,
+            limit: Some(PAY_TO_STEPS_READ),
+            ..buzz_db::EventQuery::for_community(community)
+        })
+        .await
+        .map_err(|e| internal("reading the wallet the worker named", e))?;
+    let wallets: Vec<String> = steps
+        .iter()
+        .filter_map(|record| {
+            record.event.tags.iter().find_map(|tag| {
+                let fields = tag.as_slice();
+                (fields.first().map(String::as_str) == Some("task-pay-to"))
+                    .then(|| fields.get(1).cloned())
+                    .flatten()
+            })
+        })
+        .collect();
+    Ok(single_wallet(wallets.iter().map(String::as_str)))
+}
+
 /// Hold one account to `per_day` takes in 24 hours, counted by the server's receive time.
 pub(crate) async fn enforce_take_caps(
     state: &Arc<AppState>,
@@ -147,4 +214,28 @@ pub(crate) async fn stored_role(
         .into_iter()
         .next();
     Ok(profile.and_then(|stored| role_of(&stored.event)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::single_wallet;
+
+    const A: &str = "0x00000000000000000000000000000000000000aa";
+    const B: &str = "0x00000000000000000000000000000000000000bb";
+
+    #[test]
+    fn the_wallet_a_worker_named_is_the_one_they_all_agree_on() {
+        assert_eq!(single_wallet([A]), Some(A.to_owned()));
+        // The same wallet in another spelling is the same wallet; the answer is lower case.
+        assert_eq!(
+            single_wallet([A, "0x00000000000000000000000000000000000000AA"]),
+            Some(A.to_owned())
+        );
+        // Two different wallets from one worker read as none; so does nothing, or a value that is no address.
+        assert_eq!(single_wallet([A, B]), None);
+        assert_eq!(single_wallet([]), None);
+        assert_eq!(single_wallet(["0xabc", "nonsense"]), None);
+        // A value that is no address counts for nothing: it neither names a wallet nor spoils the other.
+        assert_eq!(single_wallet(["0xabc", A]), Some(A.to_owned()));
+    }
 }
