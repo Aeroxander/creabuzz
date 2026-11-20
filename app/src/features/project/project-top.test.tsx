@@ -88,6 +88,10 @@ const established = (reached: boolean) => (c: Json) => {
   e.accounts = e.rule.minAccounts;
   e.twoSigners = true;
   e.reached = reached;
+  // The badge's inputs are the record's own `held`.
+  const held = c.held as Record<string, any>;
+  held.badge.bps = e.heldBps;
+  held.countedAccounts = e.accounts;
 };
 
 beforeEach(() => {
@@ -361,7 +365,7 @@ describe("the Share sheet", () => {
     return screen.findByTestId("share-sheet");
   };
 
-  it("shows the project's own link, which shows no amounts, and copies it, saying so once", async () => {
+  it("shows the project's own link, which shows only what the founder wrote, and copies it, saying so once", async () => {
     const write = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", {
       ...navigator,
@@ -371,7 +375,7 @@ describe("the Share sheet", () => {
     await page();
     const sheet = await openShare();
     expect(sheet.textContent).toContain(
-      "Anyone with the link can read the project. The link shows no amounts.",
+      "Anyone with the link can read the project. The link shows only what the founder wrote.",
     );
     const link = (within(sheet).getByTestId("share-link") as HTMLInputElement)
       .value;

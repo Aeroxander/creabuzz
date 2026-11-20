@@ -1,7 +1,7 @@
 /**
  * How long a person has held a project's Shares: the number of whole units since their balance last became positive and
  * stayed so (plan section 2.5 and 7.5). It is worked out here, on the person's own device, from their own transfer logs on the
- * Shares token, and nothing is sent anywhere and no record holds it. It earns nothing: no points, no badge, nothing unlocks.
+ * Shares token, and nothing is sent anywhere and no record holds it. It is only a figure to read: no points, no badge, nothing unlocks.
  *
  * The walk goes backwards from the balance the person holds now, one block at a time, newest first. A block's net change tells
  * the balance before it; the first block (going back) that began at nothing is when the holding started. A take-out to nothing

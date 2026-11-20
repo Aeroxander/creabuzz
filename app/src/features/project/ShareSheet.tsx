@@ -1,5 +1,5 @@
 /**
- * Share a project: its link (the existing `/p/<id>-<founder>` one, which shows no amounts), and a picture the person's own
+ * Share a project: its link (the existing `/p/<id>-<founder>` one, which shows only what the founder wrote), and a picture the person's own
  * device draws for the places that take a file. The picture carries no amount, no count of people, no gain figure and no
  * price (`share-card.ts`). Nothing is sent anywhere by this sheet: copying and sharing are the person's own presses.
  */
@@ -24,7 +24,7 @@ import { renderShareCard } from "./share-card-draw";
 /** Words of the sheet, in one place. */
 export const SHARE_WORDS = {
   title: "Share this project",
-  lead: "Anyone with the link can read the project. The link shows no amounts.",
+  lead: "Anyone with the link can read the project. The link shows only what the founder wrote.",
   copy: "Copy link",
   copied: "Link copied.",
   copyFailed:

@@ -44,6 +44,22 @@ const HOURS_MAX = 48;
 const ITEMS_MAX = 30;
 /** The most any count of people, joins or weeks may be (no real project is near it). */
 const PEOPLE_MAX = 1_000_000;
+/**
+ * What the feed's amounts are rounded to: 100 dollars (6 decimals). The privacy of a small project rests on it, so a feed that
+ * says another figure (an exact one) is not believed and is never drawn.
+ */
+export const FEED_ROUND_TO = 100_000_000n;
+
+/** What the parts of a record say that the four keys are checked against (all from the money part of the same record). */
+export interface SocialContext {
+  /** The time of the record's last block. */
+  asOfTime: number;
+  launchedAt: number;
+  /** The project's time unit in seconds. */
+  unit: number;
+  /** The project's money now. */
+  pot: bigint;
+}
 
 function readWindow(raw: unknown, at: string): HeldWindow {
   const w = obj(raw, at);
@@ -53,7 +69,7 @@ function readWindow(raw: unknown, at: string): HeldWindow {
   };
 }
 
-function readHeld(raw: unknown): HeldNumbers {
+function readHeld(raw: unknown, ctx: SocialContext): HeldNumbers {
   const h = obj(raw, "held");
   const windows = obj(h.windows, "held.windows");
   const rankSecs = time(windows.rankSecs, "held.windows.rankSecs");
@@ -78,6 +94,8 @@ function readHeld(raw: unknown): HeldNumbers {
   );
   // The people who held for a window are among the people who hold now.
   if (rank && rank.accounts > countedAccounts) fail("held.rank.accounts");
+  // Money that stayed cannot be more than the project's money.
+  if (rank && rank.money > ctx.pot) fail("held.rank.money");
   return { windows: { rankSecs, badgeSecs }, rank, badge, countedAccounts };
 }
 
@@ -120,32 +138,41 @@ function readItems(raw: unknown): FeedItem[] {
   return out;
 }
 
-function readFeed(raw: unknown): FeedNumbers {
+function readFeed(raw: unknown, ctx: SocialContext): FeedNumbers {
   const f = obj(raw, "feed");
   const roundTo = amount(f.roundTo, "feed.roundTo");
   const bucketSecs = time(f.bucketSecs, "feed.bucketSecs");
-  if (roundTo === 0n || bucketSecs === 0) fail("feed");
+  if (roundTo !== FEED_ROUND_TO || bucketSecs === 0) fail("feed");
   const hours = arr(f.hours, "feed.hours", HOURS_MAX).map((h, i) =>
     readHour(h, `feed.hours[${i}]`),
   );
-  // Oldest first, one bucket apart: a feed that is out of order cannot be told as "the last hours".
+  // Oldest first and exactly one bucket apart: a feed that is out of order or has gaps cannot be told as "the last hours".
   for (let i = 1; i < hours.length; i += 1)
-    if (hours[i].at <= hours[i - 1].at) fail("feed.hours");
-  return {
-    roundTo,
-    bucketSecs,
-    hours,
-    items: readItems(f.items),
-    cut: count(f.cut, "feed.cut"),
-  };
+    if (hours[i].at - hours[i - 1].at !== bucketSecs) fail("feed.hours");
+  // The last hour is the one that holds the record's own time, so "the last two days" is the two days up to this record.
+  const last = hours[hours.length - 1];
+  if (last && !(last.at <= ctx.asOfTime && ctx.asOfTime < last.at + bucketSecs))
+    fail("feed.hours");
+  // Every amount is a whole multiple of the rounding: an exact figure is never drawn.
+  for (const h of hours) if (h.net.amount % roundTo !== 0n) fail("feed.net");
+  const items = readItems(f.items);
+  // Newest first, and none from after the record's own time.
+  for (let i = 0; i < items.length; i += 1) {
+    if (items[i].at > ctx.asOfTime + bucketSecs) fail("feed.items");
+    if (i > 0 && items[i].at > items[i - 1].at) fail("feed.items");
+  }
+  return { roundTo, bucketSecs, hours, items, cut: count(f.cut, "feed.cut") };
 }
 
-function readStreaks(raw: unknown): StreaksNumbers {
+function readStreaks(raw: unknown, ctx: SocialContext): StreaksNumbers {
   const s = obj(raw, "streaks");
   const u = obj(s.updates, "streaks.updates");
   const weeks = whole(u.weeks, "streaks.updates.weeks", PEOPLE_MAX);
   const longest = whole(u.longest, "streaks.updates.longest", PEOPLE_MAX);
   if (weeks > longest) fail("streaks.updates.weeks");
+  // A run cannot be longer than the project has lived (the window that holds the record's time is still open: one more).
+  const lived = Math.floor((ctx.asOfTime - ctx.launchedAt) / ctx.unit) + 1;
+  if (!(ctx.unit > 0) || longest > lived) fail("streaks.updates.longest");
   return {
     updates: {
       weeks,
@@ -155,7 +182,10 @@ function readStreaks(raw: unknown): StreaksNumbers {
   };
 }
 
-function readEstablished(raw: unknown): EstablishedNumbers {
+function readEstablished(
+  raw: unknown,
+  held: HeldNumbers | null | undefined,
+): EstablishedNumbers {
   const e = obj(raw, "established");
   const rule = obj(e.rule, "established.rule");
   const minHeldBps = whole(rule.minHeldBps, "established.rule.minHeldBps", BPS);
@@ -183,6 +213,13 @@ function readEstablished(raw: unknown): EstablishedNumbers {
       accounts >= minAccounts &&
       twoSigners;
     if (reached !== worked) fail("established.reached");
+  }
+  // The inputs are the record's own `held` (the server says so): a badge built on other figures is not believed.
+  if (held) {
+    if (held.badge && heldBps !== null && heldBps !== held.badge.bps)
+      fail("established.heldBps");
+    if (accounts !== null && accounts !== held.countedAccounts)
+      fail("established.accounts");
   }
   return {
     rule: { minHeldBps, heldSecs, minAccounts },
@@ -213,13 +250,16 @@ export interface SocialKeys {
  * The step 3 keys of a record body: a key that is missing is left out, one that is null or cannot be believed is null.
  * Never throws and never touches the money.
  */
-export function readSocial(body: Json): SocialKeys {
+export function readSocial(body: Json, ctx: SocialContext): SocialKeys {
   const out: SocialKeys = {};
   if (!isObject(body)) return out;
-  if ("held" in body) out.held = apart(body.held, readHeld);
-  if ("feed" in body) out.feed = apart(body.feed, readFeed);
-  if ("streaks" in body) out.streaks = apart(body.streaks, readStreaks);
+  if ("held" in body) out.held = apart(body.held, (v) => readHeld(v, ctx));
+  if ("feed" in body) out.feed = apart(body.feed, (v) => readFeed(v, ctx));
+  if ("streaks" in body)
+    out.streaks = apart(body.streaks, (v) => readStreaks(v, ctx));
   if ("established" in body)
-    out.established = apart(body.established, readEstablished);
+    out.established = apart(body.established, (v) =>
+      readEstablished(v, out.held),
+    );
   return out;
 }

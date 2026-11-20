@@ -20,11 +20,8 @@ import {
   shapeOnlyIndexContent,
 } from "../../../tests/helpers/numbers-v2-fixture";
 import { parsedExample } from "../../../tests/helpers/numbers-v2-parse";
-import {
-  NOT_A_RETURN,
-  PLAY_MONEY_WORDS,
-  smallDollarsText,
-} from "../pot/pot-words";
+import { NOT_A_RETURN, PLAY_MONEY_WORDS } from "../pot/pot-words";
+import { keptMoney } from "../project/project-top-words";
 import { HomePage } from "./HomePage";
 import { rankedEmpty, rankedFootnote } from "./RankedSection";
 
@@ -113,6 +110,20 @@ afterEach(() => {
 });
 
 describe("Money that stayed", () => {
+  it("says the money of one person who kept it to the nearest 100 dollars, never to the cent", async () => {
+    await home(
+      project(1),
+      index([entry(1, { money: "1234567890", accounts: 1 })]),
+    );
+    const row = within(await screen.findByTestId("ranked-list")).getAllByRole(
+      "listitem",
+    )[0];
+    expect(row.textContent).toMatch(
+      /About 1,200 dollars kept 30 days or more by 1 person\./,
+    );
+    expect(row.textContent).not.toMatch(/1,234/);
+  });
+
   it("lists the projects in the app's own order, with the money and the people from the index", async () => {
     // The index comes in the wrong order on purpose.
     await home(
@@ -134,7 +145,7 @@ describe("Money that stayed", () => {
     expect(names(list)).toEqual(["A", "B", "C"]);
     const first = within(list).getAllByRole("listitem")[0];
     expect(first.textContent).toContain(
-      `${smallDollarsText(BigInt(times(3)))} kept 30 days or more by ${rank.accounts} people.`,
+      `${keptMoney(BigInt(times(3))).replace(/^./, (c) => c.toUpperCase())} kept 30 days or more by ${rank.accounts} people.`,
     );
   });
 

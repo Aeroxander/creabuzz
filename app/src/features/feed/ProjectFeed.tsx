@@ -100,6 +100,14 @@ export function ProjectFeed({
 
   const sum = sumHours(feed.hours);
   const items = shownItems(feed.items, shown);
+  // Two items alike (the same kind at the same moment) are still two rows: a count after the name keeps their keys apart.
+  const count = new Map<string, number>();
+  const keyed = items.map((item) => {
+    const base = `${item.kind}-${item.at}-${item.serial ?? "x"}`;
+    const n = (count.get(base) ?? 0) + 1;
+    count.set(base, n);
+    return { item, key: `${base}-${n}` };
+  });
   const moved = movedHours(feed.hours);
   const empty = feed.items.length === 0 && !sum.moved;
   return (
@@ -137,14 +145,14 @@ export function ProjectFeed({
             data-testid="feed-items"
             ref={list}
           >
-            {items.map((item) => (
+            {keyed.map(({ item, key }) => (
               <li
                 className="flex flex-col text-sm focus-visible:outline-2 focus-visible:outline-mint-ink"
                 data-testid="feed-item"
-                key={`${item.kind}-${item.at}-${item.serial ?? "x"}`}
+                key={key}
                 tabIndex={-1}
               >
-                <span>{itemWords(item)}</span>
+                <span>{itemWords(item, now)}</span>
                 <span className="text-muted">{relativeTime(item.at)}</span>
               </li>
             ))}
@@ -202,6 +210,8 @@ export function ProjectFeed({
                         joins: h.joins,
                         tookOut: h.tookOut,
                         net: signedNet(h),
+                        hidden:
+                          h.joins > 0 && h.tookOut > 0 && h.net.dir === "even",
                       })}
                     </span>
                   </li>

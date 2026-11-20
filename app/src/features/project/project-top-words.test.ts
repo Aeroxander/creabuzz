@@ -9,11 +9,12 @@ import {
   raw,
   SERVER,
 } from "../../../tests/helpers/numbers-v2-parse";
-import { smallDollarsText } from "../pot/pot-words";
+import { doorShutWords, smallDollarsText } from "../pot/pot-words";
 import {
   doorChip,
   establishedRows,
   keptLine,
+  keptMoney,
   peopleLine,
   streakLine,
   takeOutNowLine,
@@ -60,7 +61,7 @@ describe("how long money has stayed", () => {
     const rank = n.held?.rank;
     expect(rank).toBeTruthy();
     expect(keptLine(n)).toBe(
-      `Kept 30 days or more: ${smallDollarsText(rank?.money ?? 0n)} by ${rank?.accounts} people.`,
+      `Kept 30 days or more: ${keptMoney(rank?.money ?? 0n)} by ${rank?.accounts} people.`,
     );
   });
 
@@ -130,8 +131,8 @@ describe("the updates", () => {
   });
 
   it("says one week in the singular, and nothing of a run under one week", () => {
-    expect(streakLine(1)).toBe("Updates: 1 week in a row");
-    expect(streakLine(0)).toBeNull();
+    expect(streakLine(1, 604_800)).toBe("Updates: 1 week in a row");
+    expect(streakLine(0, 604_800)).toBeNull();
     const none = parsedWith((c) => {
       c.streaks.updates = {
         weeks: 0,
@@ -166,10 +167,53 @@ describe("the updates", () => {
 
 describe("the door chip", () => {
   it("says open or closed from the record", () => {
-    expect(doorChip(parsedExample())).toBe("Open to back");
-    expect(doorChip(parsedWith((c) => (c.door.openNow = false)))).toBe(
-      "Closed to new backers",
+    const n = parsedExample();
+    expect(doorChip(n, n.builtAt + 100)).toBe("Open to back");
+    const shut = parsedWith((c) => (c.door.openNow = false));
+    expect(doorChip(shut, shut.builtAt + 100)).toBe("Closed to new backers");
+  });
+
+  it("agrees with the Back box at the moment of looking: a quiet time that began after the record was built closes the chip too", () => {
+    const n = parsedWith((c) => {
+      c.quiet.quietFrom = c.builtAt - 60;
+      c.quiet.dormantFrom = c.builtAt + 10_000_000;
+      c.quiet.windableFrom = c.builtAt + 20_000_000;
+      c.door.openNow = true;
+      c.door.switchOn = true;
+    });
+    const at = n.builtAt + 30;
+    expect(doorShutWords(n, at)).not.toBeNull();
+    expect(doorChip(n, at)).toBe("Closed to new backers");
+  });
+});
+
+describe("what a streak and the kept money say", () => {
+  it("says weeks only for a week-long unit, and the unit's own length otherwise", () => {
+    expect(streakLine(14, 604_800)).toBe("Updates: 14 weeks in a row");
+    expect(streakLine(14, 1_680)).toBe(
+      "Updates: 14 periods of 28 minutes in a row",
     );
+    expect(streakLine(1, 1_680)).toBe(
+      "Updates: 1 period of 28 minutes in a row",
+    );
+    const n = parsedWith((c) => {
+      c.unit = 1_680;
+    });
+    expect(updateLine(n, () => "just now")).not.toMatch(/weeks/);
+  });
+
+  it("never says the money of one person who kept it to the cent: it is said to the nearest 100 dollars", () => {
+    const one = parsedWith((c) => {
+      c.held.rank.accounts = 1;
+      c.held.rank.money = "1234567890";
+      c.held.countedAccounts = 3;
+    });
+    const line = keptLine(one) ?? "";
+    expect(line).toMatch(/by 1 person\.$/);
+    expect(line).toMatch(/about 1,200 dollars/);
+    expect(line).not.toMatch(/1,234/);
+    expect(keptMoney(40_000_000n)).toBe("under 100 dollars");
+    expect(keptMoney(50_000_000n)).toBe("about 100 dollars");
   });
 });
 
@@ -181,6 +225,9 @@ describe("what Established means, line by line, from the record's own rule", () 
       e.accounts = e.rule.minAccounts;
       e.twoSigners = true;
       e.reached = true;
+      // The badge's inputs are the record's own `held` (a badge built on other figures is not believed).
+      c.held.badge.bps = e.heldBps;
+      c.held.countedAccounts = e.accounts;
     });
     const rows = establishedRows(n);
     expect(rows?.map((r) => r.met)).toEqual([true, true, true]);

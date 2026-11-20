@@ -13,6 +13,7 @@ import {
 import { TAKE_OUT_BANNER } from "../pot/pot-words";
 import { projectPath } from "./project-record";
 import {
+  CARD_NAME_FALLBACK,
   CARD_PLAY_MONEY,
   CARD_WIDTH,
   cardAlt,
@@ -120,15 +121,82 @@ describe("what the picture says", () => {
     expect(
       cardContent({ name: "L", pitch: "" }, closed, NOW).facts,
     ).not.toContain("Open to back");
-    // A record past a day says nothing about the door; the weeks of updates are not money and stay.
+    // A record past a day says nothing about the door, and its run of updates has no "as of" on a picture: neither is said.
     const stale = cardContent(
       { name: "L", pitch: "" },
       parsedExample(),
       NOW + 3 * 86_400,
     );
     expect(stale.facts).not.toContain("Open to back");
-    expect(stale.facts.some((f) => /weeks of updates/.test(f))).toBe(true);
+    expect(stale.facts).toEqual([]);
     expect(cardContent({ name: "L", pitch: "" }, null, NOW).facts).toEqual([]);
+  });
+
+  it("leaves a name that carries an amount or a gain off the picture, and the share text, and names the project plainly instead", () => {
+    for (const name of [
+      "Raised $5M",
+      "Up 300%",
+      "100x gains",
+      "Doubles your money",
+      "Double your money: 10x returns, $5,000 each",
+      "Back us with 1,000 dollars",
+      "＄500 lamps",
+      "Up ten times since launch",
+    ]) {
+      const card = cardContent({ name, pitch: "" }, null, NOW);
+      expect(card.name, name).toBe(CARD_NAME_FALLBACK);
+      expect(card.name).not.toMatch(FORBIDDEN_ON_CARD);
+      const { ctx, drawn } = recorder();
+      drawShareCard(ctx, card, "Creaton");
+      expect(drawn.join("|"), name).not.toContain(name);
+      expect(cardAlt(card)).not.toContain(name);
+    }
+    // A plain name, and one with a short plain number, stay as typed.
+    expect(cardContent({ name: "Lantern", pitch: "" }, null, NOW).name).toBe(
+      "Lantern",
+    );
+    expect(cardContent({ name: "Studio 54", pitch: "" }, null, NOW).name).toBe(
+      "Studio 54",
+    );
+    expect(
+      cardContent({ name: "  Night\n Market ", pitch: "" }, null, NOW).name,
+    ).toBe("Night Market");
+  });
+
+  it("leaves a founder's line off when it states a gain or an amount in words a deny list would not know", () => {
+    for (const pitch of [
+      "Already 10x in a week",
+      "5M raised, 3x soon",
+      "Back us for 1000 dollars and watch it climb",
+      "＄500 today",
+      "Up ten times since launch",
+    ]) {
+      expect(pitchForCard(pitch), pitch).toBe("");
+    }
+    expect(pitchForCard("One lamp at a time, for night markets.")).toBe(
+      "One lamp at a time, for night markets.",
+    );
+  });
+
+  it("does not put a run of updates on a picture from a stale record, and says the unit's own length when it is not a week", () => {
+    const fresh = cardContent({ name: "L", pitch: "" }, parsedExample(), NOW);
+    expect(fresh.facts.join(" ")).toMatch(/weeks of updates in a row/);
+    const old = cardContent(
+      { name: "L", pitch: "" },
+      parsedExample(),
+      parsedExample().builtAt + 90 * 86_400,
+    );
+    expect(old.facts.join(" ")).not.toMatch(/weeks|updates/);
+    const short = parseNumbers(
+      exampleEvent({ ...(raw() as object), unit: 1_680 }),
+      SERVER,
+    );
+    if (!short || short.removed) throw new Error("no");
+    const facts = cardContent({ name: "L", pitch: "" }, short, NOW).facts.join(
+      " ",
+    );
+    expect(facts).toMatch(/periods of 28 minutes/);
+    expect(facts).not.toMatch(/weeks/);
   });
 
   it("says it is play money for a record that says so and for one that does not exist yet", () => {

@@ -9,6 +9,7 @@ import { investingOn } from "../../lib/server";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
+import { ChunkBoundary } from "../../ui/chunk-boundary";
 import { EmptyState } from "../../ui/empty-state";
 import { Tabs } from "../../ui/tabs";
 import { useToast } from "../../ui/toast";
@@ -215,14 +216,16 @@ function ProjectView({
             value: "tasks",
             label: "Tasks",
             content: (
-              <Suspense fallback={<Card className="h-24 animate-pulse" />}>
-                <TasksTab
-                  address={walletAddress}
-                  numbers={numbers}
-                  profiles={profiles}
-                  project={project}
-                />
-              </Suspense>
+              <ChunkBoundary>
+                <Suspense fallback={<Card className="h-24 animate-pulse" />}>
+                  <TasksTab
+                    address={walletAddress}
+                    numbers={numbers}
+                    profiles={profiles}
+                    project={project}
+                  />
+                </Suspense>
+              </ChunkBoundary>
             ),
           },
           {
@@ -268,25 +271,27 @@ function ProjectView({
                       />
                     </Suspense>
                   ) : (
-                    <Suspense
-                      fallback={<Card className="h-40 animate-pulse" />}
-                    >
-                      <ProjectMoney
-                        chainKey={chainKeyOfProject(project)}
-                        error={numbersRead.error}
-                        loading={
-                          numbersRead.isPending &&
-                          numbersRead.fetchStatus !== "idle"
-                        }
-                        now={now}
-                        numbers={numbersRead.data}
-                        onRetry={() => void numbersRead.refetch()}
-                        profiles={profiles}
-                        project={project}
-                        projectName={project.name}
-                        team={team}
-                      />
-                    </Suspense>
+                    <ChunkBoundary>
+                      <Suspense
+                        fallback={<Card className="h-40 animate-pulse" />}
+                      >
+                        <ProjectMoney
+                          chainKey={chainKeyOfProject(project)}
+                          error={numbersRead.error}
+                          loading={
+                            numbersRead.isPending &&
+                            numbersRead.fetchStatus !== "idle"
+                          }
+                          now={now}
+                          numbers={numbersRead.data}
+                          onRetry={() => void numbersRead.refetch()}
+                          profiles={profiles}
+                          project={project}
+                          projectName={project.name}
+                          team={team}
+                        />
+                      </Suspense>
+                    </ChunkBoundary>
                   ),
                 },
               ]
@@ -299,16 +304,18 @@ function ProjectView({
                   label: "Room",
                   news: roomNews && tab !== "room",
                   content: (
-                    <Suspense
-                      fallback={<Card className="h-24 animate-pulse" />}
-                    >
-                      <RoomTab
-                        numbers={numbers}
-                        profiles={profiles}
-                        project={project}
-                        team={team}
-                      />
-                    </Suspense>
+                    <ChunkBoundary>
+                      <Suspense
+                        fallback={<Card className="h-24 animate-pulse" />}
+                      >
+                        <RoomTab
+                          numbers={numbers}
+                          profiles={profiles}
+                          project={project}
+                          team={team}
+                        />
+                      </Suspense>
+                    </ChunkBoundary>
                   ),
                 },
               ]

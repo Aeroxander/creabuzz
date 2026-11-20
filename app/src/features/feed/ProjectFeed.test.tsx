@@ -89,7 +89,9 @@ describe("what happened", () => {
     expect(rows()).toHaveLength(FIRST_ITEMS);
     // Newest first, in the words of the plan, from the record's own rows.
     rows().forEach((row, i) => {
-      expect(row.textContent).toContain(itemWords(items[i]));
+      expect(row.textContent).toContain(
+        itemWords(items[i], Math.floor(Date.now() / 1000)),
+      );
     });
     fireEvent.click(screen.getByTestId("feed-show-earlier"));
     expect(rows()).toHaveLength(FIRST_ITEMS + MORE_ITEMS);
@@ -223,6 +225,45 @@ describe("what is never drawn", () => {
     cleanup();
     draw(numbersWith());
     expect(screen.queryByTestId("feed-as-of")).toBeNull();
+  });
+});
+
+describe("hours that rounded to nothing", () => {
+  it("five small backs in one hour each and a small take-out do not read 'about as much came in as went out'", () => {
+    draw(
+      numbersWith((f) => {
+        for (const h of f.hours) {
+          h.joins = 0;
+          h.tookOut = 0;
+          h.net = { dir: "even", amount: "0" };
+        }
+        for (const i of [39, 40, 41, 42, 43]) f.hours[i].joins = 1;
+        f.hours[45].tookOut = 1;
+      }),
+    );
+    const text = screen.getByTestId("feed-lately").textContent ?? "";
+    expect(text).toMatch(/5 backed, 1 took out/);
+    expect(text).not.toMatch(/About as much came in as went out/);
+    expect(screen.getByTestId("feed-net").textContent).toBe(
+      "Some amounts were too small to show, so there is no total.",
+    );
+  });
+
+  it("an hour with both a back and a take-out that rounded to nothing says there is no total for that hour too", () => {
+    draw(
+      numbersWith((f) => {
+        f.hours[46] = {
+          ...f.hours[46],
+          joins: 1,
+          tookOut: 1,
+          net: { dir: "even", amount: "0" },
+        };
+      }),
+    );
+    fireEvent.click(screen.getByTestId("feed-by-hour"));
+    expect(screen.getByTestId("feed-hours").textContent).not.toMatch(
+      /About as much came in/,
+    );
   });
 });
 

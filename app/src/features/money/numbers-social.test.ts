@@ -244,6 +244,71 @@ describe("what the parts must agree with", () => {
     expect(parsed(bad)?.feed).toBeNull();
   });
 
+  it("a feed that is not rounded to the server's 100 dollars, or has an amount that is not a multiple of it, is not believed (never drawn as an exact figure)", () => {
+    const exact = raw() as any;
+    exact.feed.roundTo = "1";
+    exact.feed.hours[47] = {
+      ...exact.feed.hours[47],
+      joins: 1,
+      net: { dir: "in", amount: "12345678" },
+    };
+    expect(parsed(exact)?.feed).toBeNull();
+    const odd = raw() as any;
+    odd.feed.hours[47] = {
+      ...odd.feed.hours[47],
+      joins: 1,
+      net: { dir: "in", amount: String(BigInt(odd.feed.roundTo) + 1n) },
+    };
+    expect(parsed(odd)?.feed).toBeNull();
+  });
+
+  it("hours that are not one bucket apart, or do not end at the record's own time, are not believed", () => {
+    const gap = raw() as any;
+    gap.feed.hours[10].at += 1;
+    expect(parsed(gap)?.feed).toBeNull();
+    const old = raw() as any;
+    for (const h of old.feed.hours) h.at -= 365 * 86_400;
+    expect(parsed(old)?.feed).toBeNull();
+    const ahead = raw() as any;
+    for (const h of ahead.feed.hours) h.at += ahead.feed.bucketSecs;
+    expect(parsed(ahead)?.feed).toBeNull();
+  });
+
+  it("items oldest first, or dated after the record's own time, are not believed", () => {
+    const reversed = raw() as any;
+    reversed.feed.items.reverse();
+    expect(parsed(reversed)?.feed).toBeNull();
+    const future = raw() as any;
+    future.feed.items[0].at = future.asOf.time + 30 * 86_400;
+    expect(parsed(future)?.feed).toBeNull();
+  });
+
+  it("a run of updates longer than the project has lived is not believed", () => {
+    const bad = raw() as any;
+    bad.streaks.updates.weeks = 900;
+    bad.streaks.updates.longest = 900;
+    expect(parsed(bad)?.streaks).toBeNull();
+  });
+
+  it("money kept for a window above all the project's money is not believed", () => {
+    const bad = raw() as any;
+    bad.held.rank.money = "999999999999999999";
+    expect(parsed(bad)?.held).toBeNull();
+  });
+
+  it("a badge whose inputs are not the record's own held figures is not believed", () => {
+    const bad = raw() as any;
+    bad.established.heldBps = bad.established.rule.minHeldBps;
+    bad.established.accounts = bad.established.rule.minAccounts;
+    bad.established.twoSigners = true;
+    bad.established.reached = true;
+    expect(parsed(bad)?.established).toBeNull();
+    const other = raw() as any;
+    other.established.accounts = other.held.countedAccounts + 1;
+    other.established.reached = false;
+    expect(parsed(other)?.established).toBeNull();
+  });
+
   it("a streak cannot be longer than the longest one", () => {
     const bad = raw() as any;
     bad.streaks.updates.weeks = bad.streaks.updates.longest + 1;

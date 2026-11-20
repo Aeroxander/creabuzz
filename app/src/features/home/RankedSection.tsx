@@ -6,13 +6,13 @@
  */
 import { Link } from "@tanstack/react-router";
 import { Card } from "../../ui/card";
-import {
-  NOT_A_RETURN,
-  PLAY_MONEY_WORDS,
-  smallDollarsText,
-} from "../pot/pot-words";
+import { NOT_A_RETURN, PLAY_MONEY_WORDS } from "../pot/pot-words";
 import { projectRef } from "../project/project-record";
-import { peopleCount, windowWords } from "../project/project-top-words";
+import {
+  keptMoney,
+  peopleCount,
+  windowWords,
+} from "../project/project-top-words";
 import { Section } from "./Section";
 import type { Ranking, RankedProject } from "./use-ranking";
 
@@ -20,7 +20,9 @@ const RANKED_TITLE = "Money that stayed";
 
 /** The line of one row: the money that stayed and the people who kept it. */
 function rankedLine(row: RankedProject): string {
-  return `${smallDollarsText(row.entry.money)} kept ${windowWords(row.entry.windowSecs)} or more by ${peopleCount(row.entry.accounts)}.`;
+  // To the nearest 100 dollars, as the feed: the money of one person who kept it is never given to the cent.
+  const money = keptMoney(row.entry.money);
+  return `${money.charAt(0).toUpperCase()}${money.slice(1)} kept ${windowWords(row.entry.windowSecs)} or more by ${peopleCount(row.entry.accounts)}.`;
 }
 
 /** What the ranking is, under the list. It never says the list is complete. */

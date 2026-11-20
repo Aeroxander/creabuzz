@@ -5,6 +5,7 @@ import { RecoveryOfferHost } from "../features/account/RecoveryKeySheet";
 import { TermsAgainHost } from "../features/account/TermsAgainHost";
 import { UnlockBar } from "../features/account/UnlockBar";
 import { useUnseenCount } from "../features/notifications/use-notifications";
+import { ChunkBoundary } from "../ui/chunk-boundary";
 import { WithMoneyBanner } from "./MoneyBanner";
 import { TabBar } from "./TabBar";
 
@@ -31,9 +32,11 @@ export function Shell() {
       {signUp ? null : <TabBar badge={unseen} />}
       <RecoveryOfferHost />
       {!signUp && serverWebPushKey() ? (
-        <Suspense fallback={null}>
-          <PushRenewal />
-        </Suspense>
+        <ChunkBoundary quiet>
+          <Suspense fallback={null}>
+            <PushRenewal />
+          </Suspense>
+        </ChunkBoundary>
       ) : null}
     </>
   );

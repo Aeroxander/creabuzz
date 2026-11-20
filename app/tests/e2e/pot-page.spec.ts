@@ -123,7 +123,7 @@ test("the banner is on the page once, the Back box once, and Home has the shell'
   await expect(page.getByTestId("money-banner")).toHaveCount(1);
 });
 
-test("Share gives the link that shows no amounts, a copy that says so, and a picture", async ({
+test("Share gives the link that shows only what the founder wrote, a copy that says so, and a picture", async ({
   page,
 }) => {
   const w = world.get();
@@ -134,7 +134,7 @@ test("Share gives the link that shows no amounts, a copy that says so, and a pic
   await page.getByTestId("share-open").click({ timeout: 20_000 });
   const sheet = page.getByTestId("share-sheet");
   await expect(sheet).toContainText(
-    "Anyone with the link can read the project. The link shows no amounts.",
+    "Anyone with the link can read the project. The link shows only what the founder wrote.",
   );
   const link = await sheet.getByLabel("Link to this project").inputValue();
   expect(new URL(link).pathname).toBe(new URL(page.url()).pathname);
@@ -174,6 +174,10 @@ test("the Established chip appears only for a project that reached it, and its s
       e.accounts = e.rule.minAccounts;
       e.twoSigners = true;
       e.reached = true;
+      // The badge's inputs are the record's own `held`.
+      const held = content.held as Record<string, any>;
+      held.badge.bps = e.heldBps;
+      held.countedAccounts = e.accounts;
     },
   });
   const chip = page.getByTestId("established-chip");

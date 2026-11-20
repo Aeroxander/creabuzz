@@ -25,10 +25,13 @@ export function roundingNote(roundTo: bigint): string {
 }
 
 /** What one thing the team or a worker did is called, with when it happened and, where it matters, the date it points to. */
-export function itemWords(item: FeedItem): string {
+export function itemWords(item: FeedItem, now: number): string {
   const date = item.date === null ? null : timeText(item.date);
   switch (item.kind) {
     case "task_planned":
+      // "You can take your money out first" is only true while the notice runs: after its date the task may be taken.
+      if (item.date !== null && item.date <= now)
+        return `A task was planned. It could be taken from ${date}.`;
       return date
         ? `A task was planned. It can be taken from ${date}. You can take your money out first.`
         : "A task was planned. You can take your money out first.";
@@ -68,6 +71,11 @@ export interface FeedSum {
   net: bigint;
   /** Whether any bucket had a join or a take-out. */
   moved: boolean;
+  /**
+   * Whether an hour with a join or a take-out rounded to no money at all. The server rounds each hour on its own, so the
+   * sum of the hours says nothing true once one of them was too small to show.
+   */
+  hidden: boolean;
 }
 
 /** Adds up buckets: counts and the signed net. Never reads more than the buckets it is given. */
@@ -75,24 +83,31 @@ export function sumHours(hours: readonly FeedHour[]): FeedSum {
   let joins = 0;
   let tookOut = 0;
   let net = 0n;
+  let hidden = false;
   for (const h of hours) {
     joins += h.joins;
     tookOut += h.tookOut;
+    if (h.joins + h.tookOut > 0 && h.net.dir === "even") hidden = true;
     if (h.net.dir === "in") net += h.net.amount;
     else if (h.net.dir === "out") net -= h.net.amount;
   }
-  return { joins, tookOut, net, moved: joins + tookOut > 0 };
+  return { joins, tookOut, net, moved: joins + tookOut > 0, hidden };
 }
 
 /**
  * The sentence under the counts. About as much as the rounding can say: a sum that rounds to nothing with one side only
- * says the amounts were too small to show, never that as much went out as came in.
+ * says the amounts were too small to show, never that as much went out as came in; and with any hour that rounded to nothing
+ * it says there is no total.
  */
 export function netSentence(sum: {
   joins: number;
   tookOut: number;
   net: bigint;
+  hidden?: boolean;
 }): string {
+  // An hour that rounded to nothing hides what it held: no total is said over it, never "about as much".
+  if (sum.hidden)
+    return "Some amounts were too small to show, so there is no total.";
   if (sum.net > 0n)
     return `About ${feedDollars(sum.net)} more came in than went out.`;
   if (sum.net < 0n)

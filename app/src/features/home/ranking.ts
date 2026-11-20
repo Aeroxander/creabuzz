@@ -83,7 +83,7 @@ function readEntry(raw: unknown, at: string): ExploreEntry {
 /**
  * The index an event carries, or null when it is not to be believed: not from the server's own key, not the index (`d` is not
  * `explore`), signed longer ago than a day or in the future, a version it does not know, more entries than the server signs,
- * the same project twice, or an entry that is not readable. Never throws.
+ * the same project twice, entries of different windows, or an entry that is not readable. Never throws.
  */
 export function parseIndex(
   event: IndexEvent,
@@ -105,6 +105,8 @@ export function parseIndex(
       (e, i) => readEntry(e, `entries[${i}]`),
     );
     if (new Set(entries.map((e) => e.key)).size !== entries.length) return null;
+    // One window per index: money kept for different lengths of time is not ranked against each other.
+    if (new Set(entries.map((e) => e.windowSecs)).size > 1) return null;
     return {
       asOf: {
         block: count(asOf.block, "asOf.block"),

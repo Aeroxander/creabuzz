@@ -83,7 +83,16 @@ export function parseNumbers(
     )
       return null;
     // The step 3 keys are read apart from the money: a wrong one is null for that part and never fails the record.
-    return { ...readBody(body, d), ...readSocial(body) };
+    const money = readBody(body, d);
+    return {
+      ...money,
+      ...readSocial(body, {
+        asOfTime: money.asOf.time,
+        launchedAt: money.launchedAt,
+        unit: money.unit,
+        pot: money.money.pot,
+      }),
+    };
   } catch {
     // Unreadable (a field that cannot be believed), or anything unforeseen: "cannot read", never a crash.
     return null;

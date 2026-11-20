@@ -12,6 +12,7 @@ import { BannerText, useOwnBanner } from "../../app/MoneyBanner";
 import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
+import { ChunkBoundary } from "../../ui/chunk-boundary";
 import { freshnessOf, type ProjectNumbers } from "../money/numbers";
 import { StaleMoney } from "../pot/MoneyFacts";
 import {
@@ -254,7 +255,7 @@ export function ProjectTop({
                       <EstablishedChip onOpen={openEstablished} />
                     ) : null}
                     <span className="rounded-full bg-white/10 px-2.5 py-1 text-sm">
-                      {doorChip(numbers)}
+                      {doorChip(numbers, now)}
                     </span>
                   </div>
                 ) : null
@@ -274,13 +275,15 @@ export function ProjectTop({
           </Card>
           <div className="flex flex-col gap-3" data-testid="top-presses">
             {numbers ? (
-              <Suspense fallback={<Card className="h-40 animate-pulse" />}>
-                <BackSection
-                  now={now}
-                  numbers={numbers}
-                  projectName={project.name}
-                />
-              </Suspense>
+              <ChunkBoundary>
+                <Suspense fallback={<Card className="h-40 animate-pulse" />}>
+                  <BackSection
+                    now={now}
+                    numbers={numbers}
+                    projectName={project.name}
+                  />
+                </Suspense>
+              </ChunkBoundary>
             ) : null}
             <Button
               data-testid="share-open"
@@ -303,24 +306,26 @@ export function ProjectTop({
               onEstablished={openEstablished}
             />
           ) : null}
-          <Suspense fallback={null}>
-            {shareSeen ? (
-              <ShareSheet
-                now={now}
-                numbers={numbers}
-                onOpenChange={setShareOpen}
-                open={shareOpen}
-                project={project}
-              />
-            ) : null}
-            {establishedSeen && numbers ? (
-              <EstablishedSheet
-                numbers={numbers}
-                onOpenChange={setEstablishedOpen}
-                open={establishedOpen}
-              />
-            ) : null}
-          </Suspense>
+          <ChunkBoundary quiet>
+            <Suspense fallback={null}>
+              {shareSeen ? (
+                <ShareSheet
+                  now={now}
+                  numbers={numbers}
+                  onOpenChange={setShareOpen}
+                  open={shareOpen}
+                  project={project}
+                />
+              ) : null}
+              {establishedSeen && numbers ? (
+                <EstablishedSheet
+                  numbers={numbers}
+                  onOpenChange={setEstablishedOpen}
+                  open={establishedOpen}
+                />
+              ) : null}
+            </Suspense>
+          </ChunkBoundary>
         </>
       ) : null}
     </div>

@@ -47,10 +47,11 @@ describe("the items, in the words of the plan", () => {
     const planned = said.get("task_planned");
     const taken = said.get("task_taken");
     if (!planned?.date || !taken?.date) throw new Error("dates");
-    expect(itemWords(planned)).toBe(
+    const before = planned.date - 86_400;
+    expect(itemWords(planned, before)).toBe(
       `A task was planned. It can be taken from ${timeText(planned.date)}. You can take your money out first.`,
     );
-    expect(itemWords(taken)).toBe(
+    expect(itemWords(taken, before)).toBe(
       `A task was taken. It is due ${timeText(taken.date)}.`,
     );
     const paid = said.get("task_paid");
@@ -58,16 +59,16 @@ describe("the items, in the words of the plan", () => {
     const withdrawn = said.get("task_withdrawn");
     const update = said.get("update");
     if (!paid || !ended || !withdrawn || !update) throw new Error("kinds");
-    expect(itemWords(paid)).toBe("A task was paid.");
-    expect(itemWords(ended)).toBe("A task ended without being paid.");
-    expect(itemWords(withdrawn)).toBe("A plan was withdrawn.");
-    expect(itemWords(update)).toBe("The team posted its update.");
+    expect(itemWords(paid, before)).toBe("A task was paid.");
+    expect(itemWords(ended, before)).toBe("A task ended without being paid.");
+    expect(itemWords(withdrawn, before)).toBe("A plan was withdrawn.");
+    expect(itemWords(update, before)).toBe("The team posted its update.");
   });
 
   it("never says a price, a gain, a volume, a name or an address", () => {
     const feed = parsedExample().feed;
     if (!feed) throw new Error("feed");
-    const all = feed.items.map(itemWords).join(" ");
+    const all = feed.items.map((i) => itemWords(i, 0)).join(" ");
     expect(all).not.toMatch(/volume|price|gain|profit|return|0x|\$/i);
   });
 });
@@ -109,6 +110,58 @@ describe("the counts and the net", () => {
     );
     expect(netSentence({ joins: 0, tookOut: 2, net: 0n })).toBe(
       "The amounts were too small to show.",
+    );
+  });
+
+  it("never says 'about as much' over an hour that rounded to nothing: five small backs and one small take-out give no total", () => {
+    const even = { dir: "even" as const, amount: 0n };
+    const hours = [
+      ...Array.from({ length: 5 }, (_, i) => ({
+        at: i * 3600,
+        joins: 1,
+        tookOut: 0,
+        net: even,
+      })),
+      { at: 5 * 3600, joins: 0, tookOut: 1, net: even },
+    ];
+    const sum = sumHours(hours);
+    expect(sum.joins).toBe(5);
+    expect(sum.tookOut).toBe(1);
+    expect(sum.hidden).toBe(true);
+    expect(netSentence(sum)).toBe(
+      "Some amounts were too small to show, so there is no total.",
+    );
+    // Hours that all carry a figure still add up as before.
+    const clear = sumHours([
+      {
+        at: 0,
+        joins: 1,
+        tookOut: 0,
+        net: { dir: "in" as const, amount: 100_000_000n },
+      },
+      {
+        at: 3600,
+        joins: 0,
+        tookOut: 1,
+        net: { dir: "out" as const, amount: 100_000_000n },
+      },
+    ]);
+    expect(clear.hidden).toBe(false);
+    expect(netSentence(clear)).toBe("About as much came in as went out.");
+  });
+
+  it("does not say 'you can take your money out first' once the notice has run out", () => {
+    const planned = {
+      kind: "task_planned" as const,
+      at: 1,
+      serial: 3,
+      date: 5_000,
+    };
+    expect(itemWords(planned, 6_000)).toBe(
+      `A task was planned. It could be taken from ${timeText(5_000)}.`,
+    );
+    expect(itemWords(planned, 4_000)).toMatch(
+      /You can take your money out first\./,
     );
   });
 

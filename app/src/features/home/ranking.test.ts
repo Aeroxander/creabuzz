@@ -106,6 +106,13 @@ describe("the index is believed only from the server, for the ranking, and while
     expect(parse(event([], { content: "null" }))).toBeNull();
   });
 
+  it("not when its entries carry different windows (money kept for different lengths is not ranked together)", () => {
+    expect(
+      parse(event([shape(1, { windowSecs: 1, money: "999000000" }), shape(2)])),
+    ).toBeNull();
+    expect(parse(event([shape(1), shape(2)]))).not.toBeNull();
+  });
+
   it("not when one entry cannot be read", () => {
     const fields = Object.keys(shape(1)) as (keyof ShapeOnlyEntry)[];
     for (const f of fields) {

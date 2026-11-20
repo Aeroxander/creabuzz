@@ -7,7 +7,10 @@
 import { durationWords } from "../tasks/chain/duration";
 import type { ProjectNumbers } from "../money/numbers";
 import { timeText } from "../money/numbers";
-import { smallDollarsText } from "../pot/pot-words";
+import { FEED_ROUND_TO } from "../money/numbers-social";
+import { feedDollars } from "../feed/feed-words";
+import { doorShutWords, smallDollarsText } from "../pot/pot-words";
+import { unitCount } from "./unit-words";
 
 /** What the money line says about what a take-out would give: the figure of the same name on the Take out sheet. */
 export function takeOutNowLine(numbers: ProjectNumbers): string {
@@ -32,6 +35,17 @@ export function peopleCount(n: number): string {
 }
 
 /**
+ * Money that stayed, said to the nearest 100 dollars (as the feed says its amounts) so that the money of one person who kept
+ * it is never said to the cent: "about 4,800 dollars", or "under 100 dollars" for less than half of that.
+ */
+export function keptMoney(raw: bigint): string {
+  const rounded = ((raw + FEED_ROUND_TO / 2n) / FEED_ROUND_TO) * FEED_ROUND_TO;
+  return rounded === 0n
+    ? `under ${feedDollars(FEED_ROUND_TO)}`
+    : `about ${feedDollars(rounded)}`;
+}
+
+/**
  * How long money has stayed (`held.rank`): the money that has been in for the whole window, by how many people; or that
  * nobody has kept money in it that long; or that the project is too young to say. Null when the record does not say.
  */
@@ -40,17 +54,17 @@ export function keptLine(numbers: ProjectNumbers): string | null {
   if (!held?.rank) return null;
   const window = windowWords(held.windows.rankSecs);
   if (held.rank.accounts > 0 && held.rank.money > 0n)
-    return `Kept ${window} or more: ${smallDollarsText(held.rank.money)} by ${peopleCount(held.rank.accounts)}.`;
+    return `Kept ${window} or more: ${keptMoney(held.rank.money)} by ${peopleCount(held.rank.accounts)}.`;
   // Younger than the window: nothing could have stayed that long yet.
   if (numbers.asOf.time - numbers.launchedAt < held.windows.rankSecs)
     return "Too new to say how long money stays.";
   return `Nobody has kept money in it for ${window} yet.`;
 }
 
-/** The weeks of updates in a row, from one week. */
-export function streakLine(weeks: number): string | null {
-  if (weeks < 1) return null;
-  return `Updates: ${weeks.toLocaleString("en-GB")} ${weeks === 1 ? "week" : "weeks"} in a row`;
+/** The run of updates in a row, from one unit: weeks on a real network, the unit's own length on a test one. */
+export function streakLine(runs: number, unit: number): string | null {
+  if (runs < 1) return null;
+  return `Updates: ${unitCount(runs, unit)} in a row`;
 }
 
 /**
@@ -68,14 +82,19 @@ export function updateLine(
       : null;
   const said = last === null ? "No update yet." : `Last update ${when(last)}.`;
   const run = numbers.streaks
-    ? streakLine(numbers.streaks.updates.weeks)
+    ? streakLine(numbers.streaks.updates.weeks, numbers.unit)
     : null;
   return run ? `${said} ${run}.` : said;
 }
 
-/** The door, as a chip. */
-export function doorChip(numbers: ProjectNumbers): string {
-  return numbers.door.openNow ? "Open to back" : "Closed to new backers";
+/**
+ * The door, as a chip: the same answer as the Back box gives for the same moment (the record may have been built before the
+ * team's quiet time began), so the chip never says "open" over a box that says backing is paused.
+ */
+export function doorChip(numbers: ProjectNumbers, now: number): string {
+  return doorShutWords(numbers, now) === null
+    ? "Open to back"
+    : "Closed to new backers";
 }
 
 export const ESTABLISHED = "Established";

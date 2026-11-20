@@ -7,6 +7,7 @@
 import { mustSayPlayMoney } from "@creaton/core/pot/network.ts";
 import { type ProjectNumbers, freshnessOf } from "../money/numbers";
 import { doorShutWords, TAKE_OUT_BANNER } from "../pot/pot-words";
+import { unitCount, WEEK_SECS } from "./unit-words";
 
 export const CARD_WIDTH = 1200;
 export const CARD_HEIGHT = 630;
@@ -18,20 +19,52 @@ export const FORBIDDEN_ON_CARD =
 
 /** More words a founder's own line must not carry onto the card: they speak of making money, which the card never does. */
 const FOUNDER_WORDS_LEFT_OFF =
-  /\b(money|cash|income|wealth|rich|doubl\w*|interest|passive)\b/i;
+  /\b(money|cash|income|wealth|rich|doubl\w*|triple\w*|interest|passive)\b/i;
+/** Money words and multiples the picture never carries: "dollars", "ten times", "a million". */
+const AMOUNT_WORDS =
+  /\b(dollars?|bucks?|usd|eur|euros?|cents?|btc|eth|sats?|pounds?|gbp|yen|times|\w+fold|hundreds?|thousands?|millions?|billions?|trillions?|dozens?)\b/i;
+
+/** What a name that cannot go on the card is called instead. */
+export const CARD_NAME_FALLBACK = "A new project";
 
 /**
- * The founder's line, or nothing: a founder's own words can carry what the card must not (a currency sign, a percent sign,
- * a word about price, gain, return, profit, worth or value, or about making money), so such a line is left off and the card
- * is only its name.
+ * Whether founder text carries what the card must not: an amount, a price, a gain, a multiple ("10x", "ten times"), a currency
+ * sign or word, or a word about making money. It is an allow list in spirit: the text is first folded to its plain form (so a
+ * full-width "＄500" is "$500"), and a line is kept only when none of this is found in it. `smallNumbers` lets a name keep a
+ * short plain number ("Studio 54"), never one that is a figure ("100x", "5M", "300%", "1,000").
+ */
+function carriesFigure(flat: string, smallNumbers: boolean): boolean {
+  if (
+    FORBIDDEN_ON_CARD.test(flat) ||
+    FOUNDER_WORDS_LEFT_OFF.test(flat) ||
+    AMOUNT_WORDS.test(flat) ||
+    /\p{Sc}/u.test(flat)
+  )
+    return true;
+  const rest = smallNumbers
+    ? flat.replace(/(?<![\d.,])\d{1,2}(?![\d.,]|\s*[kmb]\b|\s*[x×%])/giu, "")
+    : flat;
+  return /\p{N}/u.test(rest);
+}
+
+/** Founder text folded to plain single-spaced characters. */
+function plain(text: string): string {
+  return text.normalize("NFKC").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The founder's line, or nothing: a founder's own words can carry what the card must not (an amount, a gain, a multiple, a
+ * currency, a number at all), so such a line is left off and the card is only its name.
  */
 export function pitchForCard(pitch: string): string {
-  const flat = pitch.replace(/\s+/g, " ").trim();
-  return flat === "" ||
-    FORBIDDEN_ON_CARD.test(flat) ||
-    FOUNDER_WORDS_LEFT_OFF.test(flat)
-    ? ""
-    : flat;
+  const flat = plain(pitch);
+  return flat === "" || carriesFigure(flat, false) ? "" : flat;
+}
+
+/** The project's name for the card: the founder's own, unless it carries what the card must not (then a plain word). */
+function nameForCard(name: string): string {
+  const flat = plain(name);
+  return flat === "" || carriesFigure(flat, true) ? CARD_NAME_FALLBACK : flat;
 }
 
 export interface CardContent {
@@ -47,7 +80,7 @@ export interface CardContent {
 
 /**
  * Everything the card says. The facts are what the record can say without an amount: whether the door is open (only while the
- * record is not too old to say) and the weeks of updates in a row (from one week).
+ * record is not too old to say) and the run of updates (from one unit), which a record past a day does not say either.
  */
 export function cardContent(
   input: { name: string; pitch: string },
@@ -55,19 +88,19 @@ export function cardContent(
   now: number,
 ): CardContent {
   const facts: string[] = [];
-  if (
-    numbers &&
-    freshnessOf(numbers, now).level !== "stale" &&
-    doorShutWords(numbers, now) === null
-  )
+  const fresh = numbers !== null && freshnessOf(numbers, now).level !== "stale";
+  if (numbers && fresh && doorShutWords(numbers, now) === null)
     facts.push("Open to back");
-  const weeks = numbers?.streaks?.updates.weeks ?? 0;
-  if (weeks >= 1)
+  // A record past a day does not say how many weeks: an old run is never put on a picture that has no "as of".
+  const runs = fresh ? (numbers?.streaks?.updates.weeks ?? 0) : 0;
+  if (numbers && runs >= 1)
     facts.push(
-      `${weeks} ${weeks === 1 ? "week" : "weeks"} of updates in a row`,
+      numbers.unit === WEEK_SECS
+        ? `${unitCount(runs, numbers.unit)} of updates in a row`
+        : `Updates in a row for ${unitCount(runs, numbers.unit)}`,
     );
   return {
-    name: input.name.replace(/\s+/g, " ").trim(),
+    name: nameForCard(input.name),
     pitch: pitchForCard(input.pitch),
     facts: facts.slice(0, 2),
     banner: TAKE_OUT_BANNER,
