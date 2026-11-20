@@ -17,6 +17,7 @@
 pub mod events;
 #[cfg(test)]
 pub(crate) mod fixture;
+pub mod held;
 pub mod helper;
 pub mod ledger;
 pub mod ledger_tasks;
@@ -24,6 +25,7 @@ pub mod numbers;
 mod numbers_tasks;
 pub mod publish;
 pub mod record;
+pub mod record_social;
 pub mod record_tasks;
 mod record_tasks_rules;
 pub mod scan;
@@ -133,6 +135,13 @@ pub struct PublishReport {
     /// Projects whose numbers could not be worked out or signed (tried again
     /// next pass).
     pub failed: usize,
+    /// Social keys (`held`, `feed`, `streaks`, `established`) signed as `null`
+    /// because they could not be counted or failed their own checks. The rest
+    /// of the record was signed.
+    pub social_failed: usize,
+    /// Held-for-a-window counts left without a figure because the window was
+    /// over its cap of rows or accounts.
+    pub held_cut: usize,
 }
 
 /// Whether a publishing pass that took `elapsed` outgrew `refresh_secs`, the
@@ -434,11 +443,13 @@ impl ChainReader {
                 .publish_project(&tenant, &key, source_block, &as_of, previous.get(&key), now)
                 .await
             {
-                Ok(signed) => {
+                Ok((signed, social)) => {
                     self.schedule().failing.remove(&key);
                     if signed {
                         report.signed += 1;
                     }
+                    report.social_failed += social.failed.len();
+                    report.held_cut += usize::try_from(social.cut).unwrap_or(usize::MAX);
                 }
                 Err(e) => {
                     report.failed += 1;
@@ -534,8 +545,46 @@ impl ChainReader {
         anyhow::bail!("a newer record for the project is stored; the numbers were not kept")
     }
 
+    /// Count how long money has stayed over the ranking window and the badge
+    /// window (`held`). An error is a database or consistency failure, never a
+    /// window over its cap (that is [`held::Window::Cut`]).
+    async fn count_windows(
+        &self,
+        key: &Word,
+        as_of: &AsOf,
+        ledger: &ledger::Ledger,
+    ) -> anyhow::Result<(held::Window, held::Window)> {
+        let pool = self.state.db.pool();
+        let reader = self.scan.reader.as_str();
+        let excluded = ledger.excluded(&std::collections::BTreeSet::from([hex0x(&as_of.launcher)]));
+        let mut windows = Vec::with_capacity(2);
+        for secs in [
+            record_social::rank_secs(ledger.unit),
+            record_social::badge_secs(ledger.unit),
+        ] {
+            let raw = held::held_input(
+                pool,
+                reader,
+                key,
+                as_of.block,
+                as_of.time.saturating_sub(secs),
+                held::Limits::default(),
+            )
+            .await?;
+            windows.push(match raw {
+                held::WindowRaw::Cut => held::Window::Cut,
+                held::WindowRaw::Counted(runs) => {
+                    held::Window::Counted(held::lowest(&runs, ledger.shares_balances(), &excluded)?)
+                }
+            });
+        }
+        let badge = windows.pop().context("the badge window")?;
+        let rank = windows.pop().context("the rank window")?;
+        Ok((rank, badge))
+    }
+
     /// Work out and, when they changed, sign one project's numbers. Returns
-    /// whether a record was signed.
+    /// whether a record was signed, and what the social keys did.
     async fn publish_project(
         &self,
         tenant: &TenantContext,
@@ -544,26 +593,44 @@ impl ChainReader {
         as_of: &AsOf,
         prev: Option<&store::Published>,
         now: i64,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<(bool, record_social::SocialReport)> {
         let pool = self.state.db.pool();
         let reader = self.scan.reader.as_str();
         let logs = store::project_logs(pool, reader, key, as_of.block).await?;
         let Some(mut ledger) = ledger::Ledger::from_logs(&logs)? else {
-            return Ok(false);
+            return Ok((false, record_social::SocialReport::default()));
         };
         ledger.set_balances(
             &store::balances(pool, reader, key, events::Role::Shares, as_of.block).await?,
             &store::balances(pool, reader, key, events::Role::Team, as_of.block).await?,
         )?;
         let created_at = prev.map_or(now, |p| now.max(p.published_at + 1));
-        let content = numbers::derive(
+        // The held-for-a-window counts are display only: a failure to read them leaves `held` null in this
+        // record (and is tried again at the next build), it never stops the record.
+        let windows = match self.count_windows(key, as_of, &ledger).await {
+            Ok(windows) => Some(windows),
+            Err(e) => {
+                tracing::error!(project = %hex0x(key), "chain reader: held not counted: {e:#}");
+                None
+            }
+        };
+        let social = record_social::SocialInput {
+            rows: &logs,
+            held: windows.as_ref().map(|(rank, badge)| (rank, badge)),
+        };
+        let (content, social_report) = numbers::derive(
             self.source.as_ref(),
             &ledger,
             as_of,
             &self.cadence(),
             u64::try_from(created_at).context("time before 1970")?,
+            &social,
         )
         .await?;
+        for line in &social_report.failed {
+            tracing::error!(project = %hex0x(key), "chain reader: {line}");
+            metrics::counter!("buzz_chain_reader_social_failed_total").increment(1);
+        }
         let facts = digest(&numbers::facts_of(&content));
         let shown = digest(&numbers::without_as_of(&content));
         if let Some(p) = prev {
@@ -584,7 +651,7 @@ impl ChainReader {
                 self.schedule()
                     .quiet_until
                     .insert(*key, p.published_at.saturating_add(promised));
-                return Ok(false);
+                return Ok((false, social_report));
             }
         }
         let (event_id, created_at) = self.sign(tenant, key, &content, created_at).await?;
@@ -603,7 +670,7 @@ impl ChainReader {
         .await?;
         // The next look is at the project's refresh time after this signing.
         self.schedule().quiet_until.remove(key);
-        Ok(true)
+        Ok((true, social_report))
     }
 }
 
@@ -917,6 +984,8 @@ mod helper_block_tests {
 
 #[cfg(test)]
 mod mul_div_tests;
+#[cfg(test)]
+mod record_social_tests;
 #[cfg(test)]
 mod record_tests;
 #[cfg(test)]

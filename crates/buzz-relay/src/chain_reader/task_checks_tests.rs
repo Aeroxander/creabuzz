@@ -78,7 +78,15 @@ async fn honest(name: &str) -> (Ledger, AsOf, Views) {
 }
 
 fn build_of(ledger: &Ledger, as_of: &AsOf, read: &Views) -> anyhow::Result<Record> {
-    numbers::build(ledger, as_of, read, &Cadence::default(), as_of.time + 1)
+    numbers::build(
+        ledger,
+        as_of,
+        read,
+        &Cadence::default(),
+        as_of.time + 1,
+        &super::record_social::SocialInput::empty(),
+    )
+    .map(|(record, _)| record)
 }
 
 /// A2: a task row one unit off its view, in any field, publishes nothing, and the

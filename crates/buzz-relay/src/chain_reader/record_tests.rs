@@ -19,6 +19,7 @@ use super::fixture::{BookChain, Fixture};
 use super::ledger::Ledger;
 use super::numbers::{self, AsOf, Cadence};
 use super::record::{self, mul_div, Record};
+use super::record_social::{SocialInput, SocialReport};
 use super::record_tasks;
 use super::views;
 
@@ -194,6 +195,16 @@ fn the_example_obeys_every_rule_of_section_7_3() {
                                 | "lapses"
                                 | "due"
                                 | "cap_room"
+                                // The words of the feed (step 3): the way an hour's money went and what an item says.
+                                | "in"
+                                | "out"
+                                | "even"
+                                | "task_planned"
+                                | "task_taken"
+                                | "task_paid"
+                                | "task_ended"
+                                | "task_withdrawn"
+                                | "update"
                         ),
                     "{path}: {s:?} is neither an amount nor a word of the record"
                 );
@@ -578,13 +589,26 @@ pub(super) struct Built {
 pub(super) async fn build_from(name: &str) -> anyhow::Result<Built> {
     let (fx, ledger, as_of, chain) = load(name);
     let read = views::read(&chain, fx.launcher, &ledger, as_of.block, as_of.time).await?;
-    let record = numbers::build(
+    let (project, _) = BookChain::load(&fx, name);
+    let rows = fx.rows(&project, as_of.block);
+    let windows = super::record_social_tests::windows_of(&rows, &ledger, &as_of);
+    let social = SocialInput {
+        rows: &rows,
+        held: Some((&windows.0, &windows.1)),
+    };
+    let (record, report) = numbers::build(
         &ledger,
         &as_of,
         &read,
         &Cadence::default(),
         as_of.time + 131,
+        &social,
     )?;
+    assert_eq!(
+        report,
+        SocialReport::default(),
+        "the example's social keys all build and pass their checks"
+    );
     let value = serde_json::to_value(&record)?;
     Ok(Built { record, value })
 }
@@ -813,7 +837,15 @@ pub(super) async fn build_with(
     chain: &BookChain,
 ) -> anyhow::Result<Record> {
     let read = views::read(chain, fx.launcher, ledger, as_of.block, as_of.time).await?;
-    numbers::build(ledger, as_of, &read, &Cadence::default(), as_of.time + 1)
+    numbers::build(
+        ledger,
+        as_of,
+        &read,
+        &Cadence::default(),
+        as_of.time + 1,
+        &SocialInput::empty(),
+    )
+    .map(|(record, _)| record)
 }
 
 pub(super) fn address_of(text: &str) -> [u8; 20] {

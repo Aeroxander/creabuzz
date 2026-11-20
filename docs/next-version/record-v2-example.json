@@ -16,7 +16,7 @@
     "pair": null
   },
   "asOf": {
-    "block": 88,
+    "block": 91,
     "time": 1803787880
   },
   "builtAt": 1803788011,
@@ -26,17 +26,17 @@
     "bps": 200
   },
   "money": {
-    "pot": "6375060409",
-    "paidIn": "4840150584",
+    "pot": "6382995720",
+    "paidIn": "4847971127",
     "arriving": "2273078314",
     "arrivalEnd": 1804146881,
     "feesOwed": "150000000",
-    "locked": "57272731",
-    "notesOwed": "4511956",
-    "held": "8903035356"
+    "locked": "57277014",
+    "notesOwed": "4507673",
+    "held": "8910970667"
   },
   "shares": {
-    "backers": "485219269279133836439362",
+    "backers": "486003269279133836439362",
     "teamCounted": "10000000000000000000000000",
     "announcedBurn": "356593406593406593406594"
   },
@@ -52,7 +52,7 @@
       "applicableAt": 1804245800
     },
     "box": "43111946",
-    "boxCap": "44927206",
+    "boxCap": "44982753",
     "drawnLastDay": "0"
   },
   "clock": {
@@ -183,7 +183,7 @@
   "totals": {
     "joined": "7500000000",
     "fees": "150000000",
-    "tookOut": "2441065375",
+    "tookOut": "2433130064",
     "drawn": "60000000",
     "outside": "4000000000",
     "paidToWorkers": "78728416",
@@ -193,7 +193,7 @@
   "holders": [
     {
       "account": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
-      "shares": "352800000000000000000000",
+      "shares": "345744000000000000000000",
       "teamShares": "0"
     },
     {
@@ -202,12 +202,17 @@
       "teamShares": "0"
     },
     {
+      "account": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+      "shares": "7840000000000000000000",
+      "teamShares": "0"
+    },
+    {
       "account": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
       "shares": "0",
       "teamShares": "260851648351648351648351"
     }
   ],
-  "holderCount": 2,
+  "holderCount": 3,
   "teamHolderCount": 1,
   "truncated": false,
   "tasks": {
@@ -260,8 +265,8 @@
         "takenAt": 1803597801,
         "deadline": 1804807401,
         "setAside": "57486851",
-        "stayerClaim": "57272731",
-        "noteFace": "214120",
+        "stayerClaim": "57277014",
+        "noteFace": "209837",
         "pay": "0",
         "returned": "0",
         "notesLeft": "0",
@@ -270,11 +275,11 @@
         "resolvedTx": null,
         "repeatOf": null,
         "notes": {
-          "faceTotal": "214120",
+          "faceTotal": "209837",
           "holders": [
             {
               "account": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
-              "face": "214120",
+              "face": "209837",
               "claimable": "0"
             }
           ],
@@ -288,7 +293,7 @@
         "state": "announced",
         "shareBps": 100,
         "maxDollars": "400000000",
-        "atMostNow": "63750604",
+        "atMostNow": "63829957",
         "announcedAt": 1802967080,
         "noticeEnd": 1804219880,
         "expiresAt": 1804824680,
@@ -314,7 +319,7 @@
         "state": "announced",
         "shareBps": 100,
         "maxDollars": "400000000",
-        "atMostNow": "63750604",
+        "atMostNow": "63829957",
         "announcedAt": 1803053480,
         "noticeEnd": 1804306280,
         "expiresAt": 1804911080,
@@ -355,7 +360,7 @@
         "notesLeft": "0",
         "capBps": 0,
         "resolvedAt": 1803148520,
-        "resolvedTx": "0xf5cd9d082809aafa16ccd39f5f6bd5d2f36d34fbc3d134787566655a4d65917a",
+        "resolvedTx": "0xb2309025630b1c3dc04fa1646c364fd8c98cda8f331475ba392d66b6942f69c8",
         "repeatOf": null,
         "notes": null
       },
@@ -381,7 +386,7 @@
         "notesLeft": "0",
         "capBps": 0,
         "resolvedAt": 1802967080,
-        "resolvedTx": "0xbc04fb0bf0432c4b53571c29e9eb74d17b785b00c5a178f5f598c9094b3a0703",
+        "resolvedTx": "0x463763c36cc466297ad218133f99115076e6d43e7601b1efd57d1163e66fb0c2",
         "repeatOf": null,
         "notes": null
       },
@@ -407,7 +412,7 @@
         "notesLeft": "4297836",
         "capBps": 0,
         "resolvedAt": 1803381800,
-        "resolvedTx": "0x2f0f0ba1bcfe7205faf2ed96f6bee4b8453fd4a76729d6d6e55b37cf6c143d02",
+        "resolvedTx": "0x20c3eb21cad5ffdd4529321f4455286167f44bb452fae1ead671b8230d4c8fee",
         "repeatOf": null,
         "notes": {
           "faceTotal": "4297836",
@@ -443,7 +448,7 @@
         "notesLeft": "0",
         "capBps": 0,
         "resolvedAt": 1801740200,
-        "resolvedTx": "0x2ee434694aebb1e38d79092d366011ef58ef59e451152dc371e0ab3069957bb4",
+        "resolvedTx": "0xe255a64b80e8e6551d421b1cc123471a92615a2a33d94cf95d67294f601a2c9b",
         "repeatOf": null,
         "notes": null
       },
@@ -469,7 +474,7 @@
         "notesLeft": "0",
         "capBps": 200,
         "resolvedAt": 1801913000,
-        "resolvedTx": "0x3801bb80b7d1f2ac4f368b7459167b23958c263bc720060436c2cdc71e45f61f",
+        "resolvedTx": "0xaf3a8315468209462a5e54db3de1ad779a4e89984220a099091dcc896cb7d624",
         "repeatOf": null,
         "notes": null
       }
@@ -482,16 +487,594 @@
     },
     "truncated": false
   },
+  "held": {
+    "windows": {
+      "rankSecs": 2592000,
+      "badgeSecs": 7862400
+    },
+    "rank": {
+      "shares": "478163269279133836439362",
+      "bps": 9838,
+      "money": "4839490448",
+      "accounts": 2
+    },
+    "badge": {
+      "shares": "443832347614173212177305",
+      "bps": 9132
+    },
+    "countedAccounts": 3
+  },
+  "feed": {
+    "roundTo": "100000000",
+    "bucketSecs": 3600,
+    "hours": [
+      {
+        "at": 1803618000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803621600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803625200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803628800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803632400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803636000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803639600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803643200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803646800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803650400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803654000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803657600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803661200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803664800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803668400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803672000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803675600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803679200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803682800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803686400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803690000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803693600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803697200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803700800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803704400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803708000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803711600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803715200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803718800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803722400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803726000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803729600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803733200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803736800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803740400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803744000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803747600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803751200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803754800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803758400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803762000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803765600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803769200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803772800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803776400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803780000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803783600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1803787200,
+        "joins": 0,
+        "tookOut": 1,
+        "net": {
+          "dir": "out",
+          "amount": "400000000"
+        }
+      }
+    ],
+    "items": [
+      {
+        "kind": "task_taken",
+        "at": 1803597801,
+        "serial": 6,
+        "date": 1804807401
+      },
+      {
+        "kind": "update",
+        "at": 1803468200,
+        "serial": null,
+        "date": null
+      },
+      {
+        "kind": "task_ended",
+        "at": 1803381800,
+        "serial": 4,
+        "date": null
+      },
+      {
+        "kind": "task_withdrawn",
+        "at": 1803148520,
+        "serial": 9,
+        "date": null
+      },
+      {
+        "kind": "task_planned",
+        "at": 1803122600,
+        "serial": 9,
+        "date": 1804375400
+      },
+      {
+        "kind": "task_planned",
+        "at": 1803053480,
+        "serial": 8,
+        "date": 1804306280
+      },
+      {
+        "kind": "task_planned",
+        "at": 1802967080,
+        "serial": 7,
+        "date": 1804219880
+      },
+      {
+        "kind": "task_ended",
+        "at": 1802967080,
+        "serial": 5,
+        "date": null
+      },
+      {
+        "kind": "update",
+        "at": 1802863400,
+        "serial": null,
+        "date": null
+      },
+      {
+        "kind": "task_planned",
+        "at": 1802345000,
+        "serial": 6,
+        "date": 1803597800
+      },
+      {
+        "kind": "update",
+        "at": 1802258600,
+        "serial": null,
+        "date": null
+      },
+      {
+        "kind": "task_taken",
+        "at": 1802129001,
+        "serial": 4,
+        "date": 1803338601
+      },
+      {
+        "kind": "task_paid",
+        "at": 1801913000,
+        "serial": 2,
+        "date": null
+      },
+      {
+        "kind": "task_ended",
+        "at": 1801740200,
+        "serial": 3,
+        "date": null
+      },
+      {
+        "kind": "update",
+        "at": 1801653800,
+        "serial": null,
+        "date": null
+      },
+      {
+        "kind": "task_taken",
+        "at": 1801610601,
+        "serial": 3,
+        "date": 1802820201
+      },
+      {
+        "kind": "task_taken",
+        "at": 1801567401,
+        "serial": 2,
+        "date": 1802777001
+      }
+    ],
+    "cut": 0
+  },
+  "streaks": {
+    "updates": {
+      "weeks": 14,
+      "longest": 14,
+      "lastAt": 1803468200
+    }
+  },
+  "established": {
+    "rule": {
+      "minHeldBps": 6000,
+      "heldSecs": 7862400,
+      "minAccounts": 10
+    },
+    "heldBps": 9132,
+    "accounts": 3,
+    "twoSigners": false,
+    "reached": false
+  },
   "ledger": {
     "lastSettle": 1803787880,
-    "pot": "6375060409",
+    "pot": "6382995720",
     "box": "43111946",
     "arriving": "2273078314",
     "arrivalEnd": 1804146881,
     "arrivalStart": 1803684260,
     "arrivalTotal": "2929166667",
     "activeSeconds": 8786880,
-    "locked": "57272731",
-    "notesOwed": "4511956"
+    "locked": "57277014",
+    "notesOwed": "4507673"
   }
 }

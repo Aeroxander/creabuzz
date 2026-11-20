@@ -18,6 +18,7 @@
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 
+use super::record_social::{EstablishedRec, FeedRec, HeldRec, StreaksRec};
 use super::record_tasks::{TaskStateRec, TasksRec};
 
 /// The record's version.
@@ -698,6 +699,14 @@ pub struct Record {
     pub truncated: bool,
     /// The task queue; null when the project has no task book.
     pub tasks: Option<TasksRec>,
+    /// How long money has stayed (step 3); null when it could not be counted.
+    pub held: Option<HeldRec>,
+    /// Joins and take-outs by the hour, and what else happened (step 3); null when it could not be built.
+    pub feed: Option<FeedRec>,
+    /// The project's weeks of updates in a row (step 3); null when it could not be built.
+    pub streaks: Option<StreaksRec>,
+    /// The badge's inputs and the server's verdict (step 3); null when it could not be built.
+    pub established: Option<EstablishedRec>,
     /// The stored numbers, for checks only.
     pub ledger: LedgerRec,
 }
@@ -1075,6 +1084,8 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
 
     // The task queue, on its own rules.
     super::record_tasks_rules::check(r, bad)?;
+    // The social keys (step 3), on their own rules: each is present and sound, or `null`.
+    super::record_social::check_record(r, bad);
     Ok(())
 }
 

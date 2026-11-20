@@ -27,6 +27,7 @@ use super::record::{
     LimitsRec, MoneyRec, PendingRec, QuietRec, Record, RunnerRec, SharesRec, Stored, TeamRec,
     TotalsRec, WindDownRec, WorthRec, DORMANT_UNITS, MAX_AGENTS, MAX_GRANTS, MAX_HOLDERS,
 };
+use super::record_social::{self, SocialInput, SocialReport};
 use super::record_tasks;
 use super::source::ChainSource;
 use super::views::{self, Views};
@@ -73,11 +74,15 @@ pub async fn derive(
     as_of: &AsOf,
     cadence: &Cadence,
     built_at: u64,
-) -> anyhow::Result<Value> {
+    social: &SocialInput<'_>,
+) -> anyhow::Result<(Value, SocialReport)> {
     let read = views::read(source, as_of.launcher, ledger, as_of.block, as_of.time).await?;
     super::note_play_money(read.test_network);
-    let record = build(ledger, as_of, &read, cadence, built_at)?;
-    serde_json::to_value(&record).context("write the record")
+    let (record, report) = build(ledger, as_of, &read, cadence, built_at, social)?;
+    Ok((
+        serde_json::to_value(&record).context("write the record")?,
+        report,
+    ))
 }
 
 fn put(problems: &mut Vec<String>, field: &str, events: impl ToString, view: impl ToString) {
@@ -265,13 +270,18 @@ fn grant_state(state: u8) -> anyhow::Result<GrantStateRec> {
 
 /// Build the record from a ledger and the views read at its block. Every
 /// check of RECORD-V2 section 4.3 runs here; an `Err` means "do not publish".
+///
+/// The four social keys (RECORD-V2 section 11) are worked out from `social` last and never fail the build: a
+/// key that could not be counted, or whose own checks fail, is `null` in the record and named in the returned
+/// [`SocialReport`]. No cross-check above depends on them.
 pub fn build(
     ledger: &Ledger,
     as_of: &AsOf,
     v: &Views,
     cadence: &Cadence,
     built_at: u64,
-) -> anyhow::Result<Record> {
+    social: &SocialInput<'_>,
+) -> anyhow::Result<(Record, SocialReport)> {
     if v.block != as_of.block {
         bail!(
             "the views were read at block {}, not {}",
@@ -516,6 +526,11 @@ pub fn build(
     let holder_count = all.iter().filter(|h| h.shares != 0).count() as u64;
     let team_holder_count = all.iter().filter(|h| h.team != 0).count() as u64;
     let holders_cut = all.len() > MAX_HOLDERS;
+    let holder_balances: Vec<u128> = all
+        .iter()
+        .map(|h| h.shares)
+        .filter(|shares| *shares != 0)
+        .collect();
     let holders: Vec<HolderRec> = all
         .into_iter()
         .take(MAX_HOLDERS)
@@ -554,7 +569,7 @@ pub fn build(
     let counted = v.team_supply;
     let promised = v.v("committed")?;
 
-    let record = Record {
+    let mut record = Record {
         version: record::VERSION,
         chain_id: as_of.chain_id,
         launcher: hex0x(&as_of.launcher),
@@ -676,6 +691,10 @@ pub fn build(
         team_holder_count,
         truncated: holders_cut || agents_cut || unfinished > MAX_GRANTS,
         tasks: record_tasks::build(ledger, v, t, settled.pot)?,
+        held: None,
+        feed: None,
+        streaks: None,
+        established: None,
         ledger: LedgerRec {
             last_settle,
             pot: stored.pot.to_string(),
@@ -689,6 +708,7 @@ pub fn build(
             notes_owed: v.t("notesOwed")?.to_string(),
         },
     };
+    let report = record_social::fill(&mut record, social, &holder_balances);
     let problems = record::validate(&record);
     if !problems.is_empty() {
         bail!(
@@ -696,7 +716,7 @@ pub fn build(
             problems.join("; ")
         );
     }
-    Ok(record)
+    Ok((record, report))
 }
 
 /// How often the server promises a fresh record: often while something moves
@@ -750,6 +770,12 @@ const MOVES_WITH_TIME: &[&[&str]] = &[
     &["tasks", "cap", "usedBps"],
     &["tasks", "cap", "roomBps"],
     &["tasks", "next"],
+    // The social keys move with the clock (a window slides, an hour passes) and every event that changes one
+    // already changes a field above (RECORD-V2 section 11): they alone never make the server sign again.
+    &["held"],
+    &["feed"],
+    &["streaks"],
+    &["established"],
 ];
 
 fn strip(value: &mut Value, path: &[&str]) {

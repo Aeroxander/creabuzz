@@ -14,7 +14,8 @@ a launch, a grant, a join in one transaction (transferAndCall) and in two (appro
 draws from the allowance, outside money arriving, a rate raise and its application, a lowered rate, the door switch, an
 agent (set, drawing, revoked), a member's own exit (announce, burn), the runner's exit of a grant, a Team Share claim and
 take-out, fees collected, a seat offered, withdrawn, offered again and taken, a wind-down by choice and the burns after
-it. Between day 20 and day 101 it also plays the task queue (step 2): a task announced and withdrawn, one taken and paid in
+it. Step 3 adds plain Share transfers between holders, which the held-for-a-window counts of the record need: a dip (day 41 to day 55,
+older than 30 days at the example block) and a late buyer (day 88, inside the last 30). A take-out that empties an account (day 97) is already in the run. Between day 20 and day 101 it also plays the task queue (step 2): a task announced and withdrawn, one taken and paid in
 part with a leaver's note claimed by the leaver, an open task taken by a stranger and sent back (its note claimed for the
 leaver by the stranger), one that runs out and is returned by someone else's take-out (its note left unclaimed), one whose take
 window passes, the same task record announced twice, and three tasks still open at the example block (one in its notice, one
@@ -412,6 +413,29 @@ def play(tmp):
         tx(BACKER2, T, "leave(uint256,uint256,address)", n, 0, ADDR[BACKER2], at=day(60))
 
     at(60, take_out_a_tenth)
+
+    # Step 3: plain Share transfers between holders (they change who holds without a join or a take-out), which the
+    # held-for-a-window counts need. A dip: the second backer sends half its Shares to the first on day 41 and the
+    # first sends the same Shares back on day 55: older than 30 days at the example block, inside the 91-day window
+    # only, and lower than the second backer's balance at the end, so the two windows give different figures. And a
+    # late buyer: on day 88, inside the last 30 days, the first backer gives 2% of its Shares to a third account,
+    # which has held them only a while, so the first account's lowest balance falls and the third starts late.
+    dip = {}
+
+    def dip_out():
+        dip["n"] = uint(eth_call(A["shares"], "balanceOf(address)", ADDR[BACKER2])) // 2
+        tx(BACKER2, A["shares"], "transfer(address,uint256)", ADDR[BACKER1], dip["n"], at=day(41.3))
+
+    def dip_back():
+        tx(BACKER1, A["shares"], "transfer(address,uint256)", ADDR[BACKER2], dip["n"], at=day(55))
+
+    def late_buyer():
+        n = uint(eth_call(A["shares"], "balanceOf(address)", ADDR[BACKER1])) // 50
+        tx(BACKER1, A["shares"], "transfer(address,uint256)", ADDR[MEMBER1], n, at=day(88.3))
+
+    at(41.3, dip_out)
+    at(55, dip_back)
+    at(88.3, late_buyer)
     at(70, lambda: tx(runner_of(), T, "grantTeam(address,uint256)", ADDR[MEMBER2], 100_000 * 10**18, at=day(70)))
     at(95, lambda: tx(PAYER, V, "claim(uint256)", 0, at=day(95)))
 
