@@ -295,7 +295,10 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('chain_helper_jobs', 'deployment-global calls the chain helper sends; public chain facts'),
     ('chain_helper_sends', 'deployment-global transactions the chain helper broadcast and their fees'),
     ('chain_balances', 'deployment-global Shares balances the chain reader keeps; public chain facts'),
-    ('chain_balance_changes', 'deployment-global Shares balance changes by block, undone on a rollback')
+    ('chain_balance_changes', 'deployment-global Shares balance changes by block, undone on a rollback'),
+    ('web_push_cursor', 'deployment-global position of the web push alert maker; public chain facts'),
+    ('web_push_alerts', 'deployment-global task alerts made from public chain rows'),
+    ('sponsor_usage', 'deployment-global count of sponsored fees by day and key')
 ON CONFLICT (table_name) DO NOTHING;
 
 DO $$
@@ -307,7 +310,8 @@ BEGIN
       FROM unnest(ARRAY['chain_reader_cursor', 'chain_blocks', 'chain_contracts',
                         'chain_logs', 'chain_project_numbers',
                         'chain_helper_jobs', 'chain_helper_sends',
-                        'chain_balances', 'chain_balance_changes']) AS t(name)
+                        'chain_balances', 'chain_balance_changes',
+                        'web_push_cursor', 'web_push_alerts', 'sponsor_usage']) AS t(name)
      WHERE NOT EXISTS (SELECT 1 FROM _operator_global_tables g WHERE g.table_name = t.name);
     IF missing IS NOT NULL THEN
         RAISE EXCEPTION 'chain reader tables missing from _operator_global_tables after pgschema apply: %', missing;

@@ -111,6 +111,8 @@ pub const EXPECTED_SCOPED_TABLES: &[&str] = &[
     "subscriptions",
     "thread_metadata",
     "users",
+    "web_push_outbox",
+    "web_push_subscriptions",
     "workflow_approvals",
     "workflow_runs",
     "workflows",
@@ -131,6 +133,10 @@ pub const PURGE_SCOPED_TABLES: &[&str] = &[
     "board_people",
     "board_settings",
     "board_thread_state",
+    // Web push (migration 0074): a device's rows reference only `communities` and the device; the outbox references the
+    // device, so it goes first.
+    "web_push_outbox",
+    "web_push_subscriptions",
     "workflow_approvals",
     "scheduled_workflow_fires",
     "workflow_runs",

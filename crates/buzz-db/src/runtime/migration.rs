@@ -567,6 +567,9 @@ mod postgres_tests {
             "chain_helper_sends",
             "chain_balances",
             "chain_balance_changes",
+            "web_push_cursor",
+            "web_push_alerts",
+            "sponsor_usage",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -780,7 +783,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 73);
+        assert_eq!(migrations.len(), 74);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1856,6 +1859,94 @@ mod postgres_tests {
         assert!(!migration.contains("attach_community_write_fence"));
     }
 
+    /// Migration 0074 adds the web push tables and the sponsor counts. Three are operator-global (registered in every
+    /// schema source, never fenced); the device rows and the outbox carry `community_id` and are fenced. The desired-state
+    /// schema must say the same.
+    #[test]
+    fn web_push_and_sponsor_migration_matches_the_desired_schema() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[73].version, 74);
+        let migration = migrations[73].sql.as_str();
+        let desired_schema = crate::test_support::desired_state_schema_sql();
+        let reconcile = std::fs::read_to_string(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../scripts/reconcile-schema-after-pgschema.sql"),
+        )
+        .expect("read the post-pgschema reconcile script");
+        for table in ["web_push_cursor", "web_push_alerts", "sponsor_usage"] {
+            let registered = format!("('{table}', 'deployment-global");
+            assert!(
+                migration.contains(&registered),
+                "migration 0074 must register {table}"
+            );
+            assert!(
+                desired_schema.contains(&registered),
+                "schema seeds must register {table}"
+            );
+            assert!(
+                reconcile.contains(&registered),
+                "the reconcile script must register {table} (pgschema skips seeds)"
+            );
+            assert!(
+                reconcile.contains(&format!("'{table}'")),
+                "the reconcile script must assert {table} is registered"
+            );
+            assert!(
+                desired_schema.contains(&format!("CREATE TABLE {table} (")),
+                "schema.sql must declare {table}"
+            );
+            assert!(migration.contains(&format!("CREATE TABLE {table} (")));
+            assert!(!migration.contains(&format!("attach_community_write_fence('{table}')")));
+        }
+        for table in ["web_push_subscriptions", "web_push_outbox"] {
+            let fence = format!("attach_community_write_fence('{table}')");
+            assert!(
+                migration.contains(&fence),
+                "migration 0074 must fence {table}"
+            );
+            assert!(
+                desired_schema.contains(&fence),
+                "schema triggers must fence {table}"
+            );
+            assert!(desired_schema.contains(&format!("CREATE TABLE {table} (")));
+            assert!(migration.contains(&format!("CREATE TABLE {table} (")));
+            assert!(!migration.contains(&format!("('{table}', 'deployment-global")));
+        }
+        // What a subscription keeps is exactly this: no name, agent, address, project or wallet.
+        let subscriptions = desired_schema
+            .split("CREATE TABLE web_push_subscriptions (")
+            .nth(1)
+            .and_then(|rest| rest.split(");").next())
+            .expect("the subscriptions table");
+        for column in [
+            "community_id",
+            "id",
+            "pubkey",
+            "endpoint",
+            "endpoint_hash",
+            "p256dh",
+            "auth",
+            "created_at",
+            "expires_at",
+        ] {
+            assert!(subscriptions.contains(&format!("{column} ")), "{column}");
+        }
+        for banned in [
+            "user_agent",
+            "wallet",
+            "project",
+            "label",
+            "ip_address",
+            "name",
+        ] {
+            assert!(
+                !subscriptions.contains(banned),
+                "a subscription keeps no {banned}"
+            );
+        }
+    }
+
     #[test]
     fn every_pgschema_apply_runs_post_apply_reconciliation() {
         fn files_under(root: &Path) -> Vec<PathBuf> {
@@ -2723,6 +2814,20 @@ mod postgres_tests {
             "0064 fences exactly the three board moderation tables: {board_fences:?}"
         );
         expected_fences.extend(board_fences);
+        // Web push's two tenant tables (0074) attach their fences in that migration.
+        let migration_0074: &str = MIGRATOR
+            .iter()
+            .find(|migration| migration.version == 74)
+            .expect("embedded migration 0074")
+            .sql
+            .as_ref();
+        let push_fences = surface(migration_0074).fence_attachments;
+        assert_eq!(
+            push_fences.len(),
+            2,
+            "0074 fences exactly the two web push tenant tables: {push_fences:?}"
+        );
+        expected_fences.extend(push_fences);
         assert_eq!(
             expected_fences, schema.fence_attachments,
             "write-fence attachment targets differ after recovery policy"
