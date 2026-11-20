@@ -35,6 +35,11 @@
 //! | `task-part` = take                                | anyone signed in but the team, on a  |
 //! |                                                   | task open to anyone that nobody has  |
 //! |                                                   | taken; a few a day, and small        |
+//! | `room-mute`                                       | the founder or a team member; never  |
+//! |                                                   | of the founder, an operator or self  |
+//! | `season-entry`, `season-leave`                    | the founder or a team member (see    |
+//! |                                                   | `season_rules`)                      |
+//! | `season-remove`                                   | an operator of the server only       |
 //! | none of the above, body names on-chain work       | anyone, as before (no lookup)        |
 //! | none of the above (a plain update, anything else) | the founder or a team member         |
 //!
@@ -254,7 +259,31 @@ pub(crate) struct Requirement {
     pub(crate) step: Option<(TaskPart, Option<[u8; 32]>)>,
     /// An ask to join the project (`join-ask`): any signed-in account but the team may sign it.
     pub(crate) join: bool,
+    /// A team's stop on a person writing in the project's room (`room-mute`).
+    pub(crate) room_mute: Option<RoomMute>,
+    /// A season family record (`season-entry`, `season-leave`, `season-remove`).
+    pub(crate) season: Option<super::season_rules::Step>,
 }
+
+/// What a `room-mute` record names: the person it stops (hex pubkey) and when it ends (unix seconds).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RoomMute {
+    /// The person it stops.
+    pub(crate) person: String,
+    /// When it ends.
+    pub(crate) until: u64,
+}
+
+/// The longest a team may stop a person writing in one record, in seconds (30 days).
+pub(crate) const ROOM_MUTE_MAX_SECS: u64 = 30 * 86_400;
+/// The most wallets a `room-mute` record lists.
+pub(crate) const ROOM_MUTE_WALLETS_MAX: usize = 8;
+/// Said when a `room-mute` record is not well formed or runs longer than 30 days.
+pub(crate) const BAD_ROOM_MUTE: &str =
+    "invalid: a room mute names one person, up to 8 wallets and an end within 30 days";
+/// Said when a team tries to stop the founder, an operator or itself.
+pub(crate) const MUTE_PROTECTED: &str =
+    "restricted: the founder and the people who run this server cannot be stopped from writing";
 
 impl Requirement {
     /// Whether the record is one an agent account never signs: a goal, a
@@ -327,6 +356,9 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
     let mut named: Vec<&str> = Vec::new();
     let mut project: Option<&str> = None;
     let mut money: Vec<(&str, &str)> = Vec::new();
+    let mut room_mutes: Vec<&str> = Vec::new();
+    let mut mute_wallets: Vec<&str> = Vec::new();
+    let mut expirations: Vec<&str> = Vec::new();
     for tag in event.tags.iter() {
         let fields = tag.as_slice();
         let Some(name) = fields.first().map(|s| s.as_str()) else {
@@ -347,6 +379,9 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
             "task" if task_id.is_none() => task_id = Some(value),
             "task-helper" if helper.is_none() => helper = Some(value),
             "task-usd" | "task-pay-to" | "task-paid" => money.push((name, value)),
+            "room-mute" => room_mutes.push(value),
+            "room-mute-wallet" => mute_wallets.push(value),
+            "expiration" => expirations.push(value),
             _ => {}
         }
     }
@@ -447,6 +482,8 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
             team: false,
             step: None,
             join: true,
+            room_mute: None,
+            season: None,
         }));
     }
 
@@ -462,6 +499,37 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
         known = true;
     }
 
+    // The team's stop on a person writing in the room, and the season families: each is a record of its own.
+    let season = super::season_rules::classify_step(event)?;
+    let room_mute = if room_mutes.is_empty() && mute_wallets.is_empty() {
+        None
+    } else {
+        Some(read_room_mute(&room_mutes, &mute_wallets, &expirations)?)
+    };
+    if season.is_some() || room_mute.is_some() {
+        if founder || team || known || step.is_some() || !declines.is_empty() {
+            return Err("a room mute or a season record cannot also be anything else".into());
+        }
+        if season.is_some() && room_mute.is_some() {
+            return Err("a record cannot be both a room mute and a season record".into());
+        }
+        if event.content.len() > JOIN_CONTENT_MAX || event.tags.len() > SEASON_TAGS_MAX {
+            return Err(format!(
+                "this record carries at most {JOIN_CONTENT_MAX} bytes of content and {SEASON_TAGS_MAX} tags"
+            ));
+        }
+        // A removal is the operator's, judged apart from the team; the rest are the team's.
+        let removal = season.is_some_and(|step| step.family == super::season_rules::Family::Remove);
+        return Ok(Some(Requirement {
+            founder: false,
+            team: !removal,
+            step: None,
+            join: false,
+            room_mute,
+            season,
+        }));
+    }
+
     if !(founder || team || known || step.is_some()) {
         if is_open_work_record(event) {
             return Ok(None);
@@ -474,7 +542,41 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
         team,
         step,
         join: false,
+        room_mute: None,
+        season: None,
     }))
+}
+
+/// The most tags a `room-mute` or season record carries (its `a`, a topic, the family tag, up to 8 wallets, an end).
+const SEASON_TAGS_MAX: usize = 16;
+
+/// Read the tags of a `room-mute` record: exactly one person (64 hex digits), at most 8 wallets (lower-case `0x` and
+/// 40 hex digits, none twice) and exactly one end (whole seconds). The end's bound against the clock is judged when the
+/// record is written ([`enforce_launch_update_authority`]), not here.
+fn read_room_mute(people: &[&str], wallets: &[&str], ends: &[&str]) -> Result<RoomMute, String> {
+    let bad = || BAD_ROOM_MUTE.trim_start_matches("invalid: ").to_owned();
+    let ([person], [end]) = (people, ends) else {
+        return Err(bad());
+    };
+    if id_bytes(person).is_none() || wallets.len() > ROOM_MUTE_WALLETS_MAX {
+        return Err(bad());
+    }
+    let mut seen: Vec<&str> = Vec::new();
+    for wallet in wallets {
+        if super::wallet_binding::parse_wallet(wallet).is_none() || seen.contains(wallet) {
+            return Err(bad());
+        }
+        seen.push(wallet);
+    }
+    let until = end
+        .parse::<u64>()
+        .ok()
+        .filter(|until| until.to_string() == *end)
+        .ok_or_else(bad)?;
+    Ok(RoomMute {
+        person: (*person).to_owned(),
+        until,
+    })
 }
 
 /// Hold an ask to join to a small size: its JSON content, its tag count and the bytes of its tag fields. A stranger can
@@ -598,11 +700,11 @@ impl ProjectTeam {
         }
     }
 
-    fn is_founder(&self, who: &str) -> bool {
+    pub(crate) fn is_founder(&self, who: &str) -> bool {
         self.founder == who
     }
 
-    fn has(&self, who: &str) -> bool {
+    pub(crate) fn has(&self, who: &str) -> bool {
         self.is_founder(who) || self.members.contains(who)
     }
 
@@ -864,15 +966,18 @@ pub(crate) fn internal(what: &str, error: impl std::fmt::Display) -> IngestError
 /// Runs after the envelope check, so the record has exactly one well-formed
 /// `a` tag. A lookup that fails is a server fault and refuses the write: an
 /// outage never lets a record past the check.
+///
+/// Returns the lock on a season that an entry or a leave takes (see [`super::season_rules::SeasonLock`]): the caller
+/// keeps it until the record is stored, so two entries arriving together cannot both pass the season's caps.
 pub(crate) async fn enforce_launch_update_authority(
     state: &Arc<AppState>,
     tenant: &TenantContext,
     event: &Event,
-) -> Result<(), IngestError> {
+) -> Result<Option<super::season_rules::SeasonLock>, IngestError> {
     let Some(requirement) =
         classify(event).map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?
     else {
-        return Ok(());
+        return Ok(None);
     };
     let community = tenant.community();
     let coordinate = event
@@ -1011,6 +1116,44 @@ pub(crate) async fn enforce_launch_update_authority(
         .is_some_and(|(part, _)| part == TaskPart::Take)
     {
         super::task_takes::enforce_take_caps(state, community, event, TAKES_PER_DAY).await?;
+    }
+    if let Some(mute) = &requirement.room_mute {
+        enforce_room_mute(state, &team, mute, &signer)?;
+    }
+    match requirement.season {
+        Some(step) => {
+            super::season_rules::enforce_step(
+                state,
+                tenant,
+                event,
+                step,
+                &record.event,
+                &coordinate,
+            )
+            .await
+        }
+        None => Ok(None),
+    }
+}
+
+/// Hold a `room-mute` record to its bounds against the clock and to the people no team may stop: its end is at most
+/// 30 days ahead (one in the past lifts a mute), and it names neither the founder, an operator of the server, nor its
+/// own signer. Who may sign it (the team) is judged by [`decide`].
+fn enforce_room_mute(
+    state: &AppState,
+    team: &ProjectTeam,
+    mute: &RoomMute,
+    signer: &str,
+) -> Result<(), IngestError> {
+    let now = u64::try_from(chrono::Utc::now().timestamp()).unwrap_or(0);
+    if mute.until > now.saturating_add(ROOM_MUTE_MAX_SECS) {
+        return Err(IngestError::Rejected(BAD_ROOM_MUTE.into()));
+    }
+    if team.is_founder(&mute.person)
+        || mute.person == signer
+        || super::season_rules::is_operator(state, &mute.person)
+    {
+        return Err(IngestError::AuthFailed(MUTE_PROTECTED.into()));
     }
     Ok(())
 }
@@ -2321,5 +2464,106 @@ mod tests {
         assert!(!facts.cancelled);
         assert!(read_takes(&[step(&a, 1, "0", TaskPart::Cancel)], &b).cancelled);
         assert_eq!(read_takes(&[], &a), TakeFacts::default());
+    }
+
+    const WALLET_A: &str = "0x00000000000000000000000000000000000000aa";
+
+    #[test]
+    fn a_room_mute_and_a_season_entry_are_the_teams_and_a_season_removal_is_not() {
+        let w = World::new();
+        let (team, person) = (w.team(), w.helper.public_key().to_hex());
+        let mute = w.record(
+            &w.founder,
+            &[
+                &["room-mute", &person],
+                &["room-mute-wallet", WALLET_A],
+                &["expiration", "1900000000"],
+            ],
+        );
+        let req = classify(&mute).expect("reads").expect("a family");
+        assert!(req.team && !req.founder);
+        assert_eq!(
+            req.room_mute,
+            Some(RoomMute {
+                person: person.clone(),
+                until: 1_900_000_000
+            })
+        );
+        let confirm = ConfirmFacts::none();
+        let decide_for = |req: &Requirement, who: &Keys| {
+            decide(
+                req,
+                &who.public_key().to_hex(),
+                &w.coordinate(),
+                &team,
+                None,
+                &confirm,
+                false,
+            )
+        };
+        assert_eq!(decide_for(&req, &w.founder), Ok(()));
+        assert_eq!(decide_for(&req, &w.mate), Ok(()));
+        assert_eq!(decide_for(&req, &w.stranger), Err(NOT_TEAM));
+
+        for family in ["season-entry", "season-leave"] {
+            let record = w.record(&w.mate, &[&["t", "season-2"], &[family, "2"]]);
+            let req = classify(&record).expect("reads").expect("a family");
+            assert!(req.team, "{family}");
+            assert_eq!(decide_for(&req, &w.mate), Ok(()), "{family}");
+            assert_eq!(decide_for(&req, &w.stranger), Err(NOT_TEAM), "{family}");
+        }
+        // A removal is judged by the operator test of its own rule, not by the team.
+        let removal = w.record(&w.stranger, &[&["t", "season-2"], &["season-remove", "2"]]);
+        let req = classify(&removal).expect("reads").expect("a family");
+        assert!(!req.team && !req.founder);
+        assert_eq!(decide_for(&req, &w.stranger), Ok(()));
+    }
+
+    #[test]
+    fn a_room_mute_or_a_season_record_is_nothing_else_and_holds_to_its_shape() {
+        let w = World::new();
+        let person = w.helper.public_key().to_hex();
+        let ok_mute: Vec<Vec<&str>> =
+            vec![vec!["room-mute", &person], vec!["expiration", "1900000000"]];
+        let with = |extra: &[&[&str]]| {
+            let mut tags: Vec<&[&str]> = ok_mute.iter().map(Vec::as_slice).collect();
+            tags.extend_from_slice(extra);
+            classify(&w.record(&w.founder, &tags))
+        };
+        assert!(with(&[]).expect("reads").is_some());
+        // Mixed with another family.
+        assert!(with(&[&["update-part", "done", "x"]]).is_err());
+        assert!(with(&[&["goal", "g1"]]).is_err());
+        assert!(with(&[&["t", "season-1"], &["season-entry", "1"]]).is_err());
+        // Two people, a wallet that is not an address, nine wallets, a second end, no end, an end that is not a number.
+        assert!(with(&[&["room-mute", &person]]).is_err());
+        assert!(with(&[&["room-mute-wallet", "0xAA"]]).is_err());
+        let nine: Vec<Vec<String>> = (0..9)
+            .map(|n| vec!["room-mute-wallet".to_string(), format!("0x{n:040x}")])
+            .collect();
+        let nine: Vec<Vec<&str>> = nine
+            .iter()
+            .map(|t| t.iter().map(String::as_str).collect())
+            .collect();
+        let nine: Vec<&[&str]> = nine.iter().map(Vec::as_slice).collect();
+        assert!(with(&nine).is_err());
+        assert!(with(&[&["expiration", "1900000001"]]).is_err());
+        assert!(classify(&w.record(&w.founder, &[&["room-mute", &person]])).is_err());
+        assert!(classify(&w.record(
+            &w.founder,
+            &[&["room-mute", &person], &["expiration", "01"]]
+        ))
+        .is_err());
+        assert!(
+            classify(&w.record(&w.founder, &[&["room-mute", "short"], &["expiration", "1"]]))
+                .is_err()
+        );
+        // A season record carries its one family and its one topic.
+        assert!(classify(&w.record(&w.founder, &[&["season-entry", "1"]])).is_err());
+        assert!(classify(&w.record(
+            &w.founder,
+            &[&["t", "season-1"], &["season-entry", "1"], &["goal", "g"]]
+        ))
+        .is_err());
     }
 }

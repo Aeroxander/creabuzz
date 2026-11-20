@@ -302,6 +302,7 @@ async fn a_failed_log_write_leaves_the_post_and_its_report_untouched() {
                 action_id: uuid::Uuid::new_v4(),
                 at: chrono::Utc::now(),
                 actor_pubkey: &owner_bytes,
+                actor_authority: "community",
                 author_pubkey: &author_bytes,
                 event_id: &post_id,
                 public_reason: Some("Spam"),

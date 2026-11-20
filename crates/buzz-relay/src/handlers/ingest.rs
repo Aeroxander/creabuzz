@@ -35,13 +35,13 @@ use buzz_core::kind::{
     KIND_ORG_JOIN_REQUEST, KIND_ORG_NODE, KIND_ORG_PITCH, KIND_PERSONA, KIND_PIN_LIST, KIND_POLL,
     KIND_POLL_RESPONSE, KIND_PRESENCE_UPDATE, KIND_PRIVATE_MANAGED_AGENT, KIND_PRODUCT_FEEDBACK,
     KIND_PROFILE, KIND_PROJECT, KIND_PROJECT_FOCUS, KIND_REACTION, KIND_READ_STATE, KIND_REPORT,
-    KIND_REPOST, KIND_SCORE_ROOT, KIND_SKILL, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF,
-    KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2, KIND_STREAM_REMINDER, KIND_TEAM,
-    KIND_TEAM_CATALOG, KIND_TEAM_RUN, KIND_TEAM_STRATEGY, KIND_TEAM_TURN, KIND_TEXT_NOTE,
-    KIND_USER_STATUS, KIND_WIKI_CORRECTION, KIND_WIKI_PAGE, KIND_WORKFLOW_DEF,
-    KIND_WORKFLOW_TRIGGER, KIND_WORK_CHECK_RUN, KIND_WORK_TAKEN_ON, RELAY_ADMIN_ADD_MEMBER,
-    RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_ACCESS,
-    RELAY_ADMIN_SET_WORKSPACE_PROFILE,
+    KIND_REPOST, KIND_SCORE_ROOT, KIND_SEASON, KIND_SKILL, KIND_STREAM_MESSAGE,
+    KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_EDIT, KIND_STREAM_MESSAGE_V2,
+    KIND_STREAM_REMINDER, KIND_TEAM, KIND_TEAM_CATALOG, KIND_TEAM_RUN, KIND_TEAM_STRATEGY,
+    KIND_TEAM_TURN, KIND_TEXT_NOTE, KIND_USER_STATUS, KIND_WIKI_CORRECTION, KIND_WIKI_PAGE,
+    KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, KIND_WORK_CHECK_RUN, KIND_WORK_TAKEN_ON,
+    RELAY_ADMIN_ADD_MEMBER, RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER,
+    RELAY_ADMIN_SET_ACCESS, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
 use buzz_core::tenant::TenantContext;
 use buzz_core::verification::verify_event;
@@ -625,6 +625,8 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
         // Work taken on and a project's focus: statements, no money and no rights.
         | KIND_WORK_TAKEN_ON
         | KIND_PROJECT_FOCUS
+        // A season: the operator's statement about the platform, no money and no rights.
+        | KIND_SEASON
         // A check-run record: the contributor's own bounded execution records
         // for a claim. A statement of what ran, no money and no rights; the
         // reviewer's verdict stays theirs.
@@ -899,6 +901,8 @@ pub(crate) fn is_global_only_kind(kind: u32) -> bool {
             // Work taken on and a project's focus name their launch in an `a` tag.
             | KIND_WORK_TAKEN_ON
             | KIND_PROJECT_FOCUS
+            // A season belongs to the platform, not to a channel.
+            | KIND_SEASON
             // A check-run record names its launch in an `a` tag and its claim
             // via `claim`/`evidence` tags; it belongs to no channel.
             | KIND_WORK_CHECK_RUN
@@ -5164,13 +5168,22 @@ async fn ingest_event_inner(
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
+    let mut _season_lock: Option<super::season_rules::SeasonLock> = None;
     if kind_u32 == KIND_LAUNCH_UPDATE {
         validate_launch_mirror_envelope(&event, "launch update event")
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
         // Goals, promises, team updates and task steps count only from the
         // right signer; checked here, once, against the project as it stands.
-        super::launch_update_authority::enforce_launch_update_authority(state, tenant, &event)
-            .await?;
+        // A season entry takes a lock on its season that is kept until this
+        // function returns, that is until the record is stored.
+        _season_lock =
+            super::launch_update_authority::enforce_launch_update_authority(state, tenant, &event)
+                .await?;
+    }
+
+    // A season (kind 37021): only an operator of the server starts one, and its number and dates are held to bounds.
+    if kind_u32 == KIND_SEASON {
+        super::season_rules::enforce_season_record(state, &event)?;
     }
 
     if kind_u32 == KIND_LAUNCH_PROPOSAL {
@@ -5430,6 +5443,11 @@ async fn ingest_event_inner(
     if let Err(reason) = validate_social_event(kind_u32, &event) {
         return Err(IngestError::Rejected(format!("invalid: {reason}")));
     }
+
+    // A holder room's posts, replies and likes: who may write is decided from the network, never from a person's
+    // word (see `room_write`). Any other event, an ordinary post included, passes without a lookup of its own.
+    // Boxed: the ingest future runs close to a worker's stack.
+    Box::pin(super::room_write::enforce(state, tenant, &event)).await?;
 
     // Pre-validate kind:0 content before storage so we don't store an event
     // whose profile sync will silently fail in the side-effect handler.

@@ -27,8 +27,11 @@ pub struct HomeRemoval<'a> {
     pub action_id: Uuid,
     /// When it happened; the audit row and the closed reports use it.
     pub at: DateTime<Utc>,
-    /// Who removed it (a community owner or admin).
+    /// Who removed it (a community owner or admin, or the people who keep a project's room).
     pub actor_pubkey: &'a [u8],
+    /// The authority the audit row records: `community` for an owner or admin, `board_moderator` for the people who
+    /// keep one project's room (the closest value the table allows: they moderate one place, not the community).
+    pub actor_authority: &'a str,
     /// Who wrote it.
     pub author_pubkey: &'a [u8],
     /// The removed post or reply.
@@ -107,7 +110,7 @@ impl Db {
             INSERT INTO moderation_actions (
                 community_id, id, actor_pubkey, action, target_pubkey, target_event_id,
                 channel_id, public_reason, actor_authority, created_at
-            ) VALUES ($1, $2, $3, 'delete_message', $4, $5, NULL, $6, 'community', $7)
+            ) VALUES ($1, $2, $3, 'delete_message', $4, $5, NULL, $6, $8, $7)
             "#,
         )
         .bind(community.as_uuid())
@@ -117,6 +120,7 @@ impl Db {
         .bind(removal.event_id)
         .bind(removal.public_reason)
         .bind(removal.at)
+        .bind(removal.actor_authority)
         .execute(tx.conn())
         .await?;
 

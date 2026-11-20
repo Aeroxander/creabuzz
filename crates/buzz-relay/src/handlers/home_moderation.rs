@@ -39,6 +39,18 @@ use crate::state::AppState;
 pub(crate) const NOT_A_MODERATOR: &str =
     "only the community's owners and admins can remove someone's post from Home";
 
+/// The refusal for someone who does not keep the room a room post is in.
+pub(crate) const NOT_A_KEEPER: &str =
+    "only the people who keep this room can remove a post from it";
+
+/// The refusal for a team member removing the founder's post or another team member's.
+pub(crate) const KEEPER_GUARD_RAIL: &str =
+    "a team member cannot remove the founder's post or another team member's post";
+
+/// The refusal for removing an operator's post: that is the operators' own.
+pub(crate) const OPERATOR_GUARD_RAIL: &str =
+    "the people who run this server keep their own posts: they cannot be removed from a room";
+
 /// The refusal for an admin removing the owner's or a fellow admin's post.
 pub(crate) const ADMIN_GUARD_RAIL: &str =
     "an admin cannot remove a post by the community's owner or a fellow admin";
@@ -124,6 +136,51 @@ pub(crate) fn may_remove_post_by(
     }
 }
 
+/// Whether `actor`, who is no community owner or admin, keeps the room `post` is in and may remove it: the founder
+/// or a team member the founder lists on the project the post's `a` tag names, when the post carries that project's
+/// own room tag. A team member cannot remove the founder's post or another team member's (only the founder removes a
+/// team member's post), and nobody removes an operator's post this way. A post that is in no room is not theirs.
+async fn may_keeper_remove(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    actor: &[u8],
+    author: &[u8],
+    post: &Event,
+) -> Result<(), IngestError> {
+    use super::room_write::{project_record, room_key, room_of, scan, split_coordinate};
+    let not_a_moderator = || IngestError::Rejected(restricted(NOT_A_MODERATOR));
+    let not_a_keeper = || IngestError::Rejected(restricted(NOT_A_KEEPER));
+    let scanned = scan(post);
+    let Some((coordinate, room)) = room_of(&scanned) else {
+        return Err(not_a_moderator());
+    };
+    let (Some(key), Some((founder, d))) = (room_key(room), split_coordinate(coordinate)) else {
+        return Err(not_a_moderator());
+    };
+    let record = project_record(state, tenant.community(), &founder, d)
+        .await
+        .map_err(|e| super::launch_update_authority::internal("reading the project record", e))?;
+    let Some(record) = record else {
+        return Err(not_a_keeper());
+    };
+    // A post that names a room the project does not have is in no room of this project.
+    if super::task_chain::chain_key_of(&record) != Some(key) {
+        return Err(not_a_moderator());
+    }
+    let team = super::launch_update_authority::ProjectTeam::from_record(&record);
+    let (actor_hex, author_hex) = (hex::encode(actor), hex::encode(author));
+    if !team.has(&actor_hex) {
+        return Err(not_a_keeper());
+    }
+    if super::season_rules::is_operator(state, &author_hex) {
+        return Err(IngestError::Rejected(restricted(OPERATOR_GUARD_RAIL)));
+    }
+    if !team.is_founder(&actor_hex) && author != actor && team.has(&author_hex) {
+        return Err(IngestError::Rejected(restricted(KEEPER_GUARD_RAIL)));
+    }
+    Ok(())
+}
+
 /// Remove the Home post a kind:9005 without an `h` tag names, or refuse with a
 /// plain reason. Accepted only once the removal, its audit row, the closed
 /// reports and the public log entry are committed.
@@ -143,8 +200,9 @@ pub(crate) async fn remove_home_post(
     let actor = event.pubkey.to_bytes().to_vec();
     let community = tenant.community();
 
-    // Who may, before anything about the post is said.
-    let authority = authorize_moderation_action(
+    // Who may, before anything about the post is said. A community owner or admin may remove any Home post; failing
+    // that, the people who keep a project's room may remove a post in it (asked below, once the post is read).
+    let authority = match authorize_moderation_action(
         tenant,
         state,
         &actor,
@@ -153,10 +211,17 @@ pub(crate) async fn remove_home_post(
         ModerationAction::DeleteMessage,
     )
     .await
-    .map_err(|e| match e.downcast_ref::<buzz_db::DbError>() {
-        Some(db) => IngestError::Internal(format!("error: database error checking roles: {db}")),
-        None => IngestError::Rejected(restricted(NOT_A_MODERATOR)),
-    })?;
+    {
+        Ok(authority) => Some(authority),
+        Err(e) => match e.downcast_ref::<buzz_db::DbError>() {
+            Some(db) => {
+                return Err(IngestError::Internal(format!(
+                    "error: database error checking roles: {db}"
+                )))
+            }
+            None => None,
+        },
+    };
 
     let target = state
         .db
@@ -178,18 +243,26 @@ pub(crate) async fn remove_home_post(
 
     let author =
         super::ingest::effective_message_author(&target.event, &state.relay_keypair.public_key());
-    let author_role = if authority == ModerationAuthority::CommunityAdmin && author != actor {
-        state
-            .db
-            .get_relay_member(community, &hex::encode(&author))
-            .await
-            .map_err(|e| IngestError::Internal(format!("error: database error: {e}")))?
-            .map(|member| member.role)
-    } else {
-        None
-    };
-    may_remove_post_by(authority, author_role.as_deref(), author == actor)
-        .map_err(|reason| IngestError::Rejected(restricted(reason)))?;
+    match authority {
+        Some(authority) => {
+            let author_role = if authority == ModerationAuthority::CommunityAdmin && author != actor
+            {
+                state
+                    .db
+                    .get_relay_member(community, &hex::encode(&author))
+                    .await
+                    .map_err(|e| IngestError::Internal(format!("error: database error: {e}")))?
+                    .map(|member| member.role)
+            } else {
+                None
+            };
+            may_remove_post_by(authority, author_role.as_deref(), author == actor)
+                .map_err(|reason| IngestError::Rejected(restricted(reason)))?;
+        }
+        None => {
+            may_keeper_remove(state, tenant, &actor, &author, &target.event).await?;
+        }
+    }
 
     let reason = tag_value(event, "public_reason")
         .map(|r| super::board_moderation::clip_reason(&r))
@@ -204,8 +277,9 @@ pub(crate) async fn remove_home_post(
         &LogEntry {
             actor: &actor,
             role: match authority {
-                ModerationAuthority::CommunityOwner => "community_owner",
-                _ => "community_admin",
+                Some(ModerationAuthority::CommunityOwner) => "community_owner",
+                Some(_) => "community_admin",
+                None => "project_team",
             },
             action_id,
             target: &target_id,
@@ -225,6 +299,11 @@ pub(crate) async fn remove_home_post(
                 action_id,
                 at: now,
                 actor_pubkey: &actor,
+                actor_authority: if authority.is_some() {
+                    "community"
+                } else {
+                    "board_moderator"
+                },
                 author_pubkey: &author,
                 event_id: &target_id,
                 public_reason: reason.as_deref(),

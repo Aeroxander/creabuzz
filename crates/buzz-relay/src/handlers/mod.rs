@@ -70,6 +70,19 @@ pub mod report;
 pub mod report_resolution;
 /// REQ handler — subscribe, deliver historical events, then EOSE.
 pub mod req;
+#[cfg(test)]
+mod room_removal_postgres_tests;
+/// Test support for the room, the seasons and the team's tools (a community, a project, the run's chain rows).
+#[cfg(test)]
+pub(crate) mod room_support;
+/// Who may write in a project's holder room: decided from the network, never from a person's word.
+pub mod room_write;
+#[cfg(test)]
+mod room_write_postgres_tests;
+/// Seasons: the operator's season record and how a project enters one.
+pub mod season_rules;
+#[cfg(test)]
+mod season_rules_postgres_tests;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
 /// A team's task record tied to its task on the network: the server's reads behind `launch_update_authority`.
@@ -80,6 +93,8 @@ mod task_chain_postgres_tests;
 pub mod task_takes;
 #[cfg(test)]
 mod task_takes_postgres_tests;
+/// Which wallets an account has proved are its own, and which accounts proved a wallet.
+pub mod wallet_binding;
 #[cfg(test)]
 #[path = "wiki_enforcement_tests.rs"]
 mod wiki_enforcement_postgres_tests;

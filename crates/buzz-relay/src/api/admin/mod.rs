@@ -1344,7 +1344,7 @@ fn config_operator_exists(config: &crate::config::Config) -> bool {
 
 /// Returns true if the hex pubkey is covered by a config-backed grant
 /// (RELAY_OPERATOR_PUBKEYS or owner-fallback B).
-fn is_config_backed_pubkey(config: &crate::config::Config, pubkey_hex: &str) -> bool {
+pub(crate) fn is_config_backed_pubkey(config: &crate::config::Config, pubkey_hex: &str) -> bool {
     if config
         .relay_operator_pubkeys
         .iter()

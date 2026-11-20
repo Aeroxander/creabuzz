@@ -12,7 +12,11 @@
 //!   invite-only for itself, on a server that lets communities choose, is not
 //!   opened by the operator's setting.
 //! - **Which kinds.** The project record (kind 37001) and records about a
-//!   project (kind 47003). Nothing else, whatever the filter asks for.
+//!   project (kind 47003); a project's holder room (kinds 1 and 7, only a filter
+//!   that names one project's `#a` and the same project's `#t room:<chain key>`);
+//!   the operator's seasons (kind 37021) and the season entries that name one
+//!   season (kind 47003 with one `#t season-<n>`). Nothing else, whatever the
+//!   filter asks for.
 //! - **Which project.** Every filter names one project: a record filter by its
 //!   id (`#d`), a filter for records about it by its address (`#a`). The
 //!   project must pass [`crate::share_preview::public_standing`], the rule the
@@ -56,7 +60,9 @@ use axum::{
     response::Json,
 };
 use buzz_auth::LimitType;
-use buzz_core::kind::{KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE};
+use buzz_core::kind::{
+    KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE, KIND_REACTION, KIND_SEASON, KIND_TEXT_NOTE,
+};
 use buzz_core::{CommunityId, StoredEvent, TenantContext};
 use buzz_db::DbError;
 use serde_json::Value;
@@ -68,7 +74,21 @@ use crate::share_preview::{public_standing, records_named, Founder, FOUNDER_PART
 use crate::state::AppState;
 
 /// The kinds a caller who is not a member may be answered with.
-pub(crate) const PUBLIC_KINDS: [u32; 2] = [KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE];
+pub(crate) const PUBLIC_KINDS: [u32; 5] = [
+    KIND_LAUNCH_RECORD,
+    KIND_LAUNCH_UPDATE,
+    KIND_TEXT_NOTE,
+    KIND_REACTION,
+    KIND_SEASON,
+];
+/// The newest room posts (kind 1) read for one room, and the newest likes (kind 7). A room with more shows its newest.
+const ROOM_POSTS_READ: i64 = 200;
+const ROOM_LIKES_READ: i64 = 400;
+/// How many distinct signers of one room are checked for standing.
+const ROOM_SIGNER_CHECKS: usize = 100;
+/// The newest season records read, and the newest records of one season's lineup (500 entries and their leaves).
+const SEASONS_READ: i64 = 50;
+const ENTRIES_READ: i64 = 700;
 /// The most filters one public read may carry.
 pub(crate) const MAX_FILTERS: usize = 6;
 /// The most records one filter is answered with.
@@ -178,6 +198,12 @@ enum SetKey {
     Records { id: String, founder: Founder },
     /// Every record about one project that may be shown.
     About { coordinate: String },
+    /// The posts and likes of one project's room that may be shown.
+    Room { coordinate: String, room: String },
+    /// The operator's season records (one number, or all).
+    Seasons { number: Option<u32> },
+    /// The entry, leave and removal records of one season.
+    Entries { number: u32 },
 }
 
 /// Records that may be shown, newest first, as read at `read_at`.
@@ -254,6 +280,23 @@ enum PublicFilter {
         until: Option<u64>,
         limit: usize,
     },
+    /// One project's holder room: `kinds` of 1 and 7, one `#a`, one `#t room:<chain key>`.
+    Room {
+        coordinate: String,
+        room: String,
+        kinds: Vec<u32>,
+        since: Option<u64>,
+        until: Option<u64>,
+        limit: usize,
+    },
+    /// The operator's seasons: `kinds: [37021]`, optionally one `#d season-<n>`.
+    Seasons { number: Option<u32>, limit: usize },
+    /// One season's lineup: `kinds: [47003]`, one `#t season-<n>`, no `#a`; paged by `until`.
+    Entries {
+        number: u32,
+        until: Option<u64>,
+        limit: usize,
+    },
 }
 
 fn is_hex(text: &str) -> bool {
@@ -297,6 +340,13 @@ fn seconds(filter: &serde_json::Map<String, Value>, key: &str) -> Option<Option<
     }
 }
 
+/// The number of `season-<n>`, when it is a canonical number from 1 to 9999.
+fn season_number(text: &str) -> Option<u32> {
+    let digits = text.strip_prefix("season-")?;
+    let number: u32 = digits.parse().ok()?;
+    (number.to_string() == digits && (1..=9_999).contains(&number)).then_some(number)
+}
+
 /// `37001:<founder key>:<project id>` taken apart, or `None`.
 fn coordinate_parts(coordinate: &str) -> Option<(String, String)> {
     let rest = coordinate.strip_prefix(&format!("{KIND_LAUNCH_RECORD}:"))?;
@@ -308,13 +358,69 @@ fn coordinate_parts(coordinate: &str) -> Option<(String, String)> {
 /// key is accounted for: a key this does not know makes the filter not public.
 fn parse_filter(raw: &Value) -> Option<PublicFilter> {
     let filter = raw.as_object()?;
-    let kinds = filter.get("kinds")?.as_array()?;
+    let kinds: Vec<u32> = filter
+        .get("kinds")?
+        .as_array()?
+        .iter()
+        .map(|kind| u32::try_from(kind.as_u64()?).ok())
+        .collect::<Option<_>>()?;
+    let limit = limit_of(filter)?;
+    let only = |allowed: &[&str]| filter.keys().all(|key| allowed.contains(&key.as_str()));
+
+    // A holder room: posts and likes, of one project and its own room tag.
+    if !kinds.is_empty()
+        && kinds.len() <= 2
+        && kinds
+            .iter()
+            .all(|k| matches!(*k, KIND_TEXT_NOTE | KIND_REACTION))
+    {
+        if !only(&["kinds", "#a", "#t", "since", "until", "limit"])
+            || (kinds.len() == 2 && kinds[0] == kinds[1])
+        {
+            return None;
+        }
+        let [coordinate] = strings(filter.get("#a")?)?.try_into().ok()?;
+        let [room] = strings(filter.get("#t")?)?.try_into().ok()?;
+        coordinate_parts(&coordinate)?;
+        crate::handlers::room_write::room_key(&room)?;
+        return Some(PublicFilter::Room {
+            coordinate,
+            room,
+            kinds,
+            since: seconds(filter, "since")?,
+            until: seconds(filter, "until")?,
+            limit,
+        });
+    }
     let [kind] = kinds.as_slice() else {
         return None;
     };
-    let kind = u32::try_from(kind.as_u64()?).ok()?;
-    let limit = limit_of(filter)?;
-    let only = |allowed: &[&str]| filter.keys().all(|key| allowed.contains(&key.as_str()));
+    let kind = *kind;
+    if kind == KIND_SEASON {
+        if !only(&["kinds", "#d", "limit"]) {
+            return None;
+        }
+        let number = match filter.get("#d") {
+            None => None,
+            Some(value) => {
+                let [d] = strings(value)?.try_into().ok()?;
+                Some(season_number(&d)?)
+            }
+        };
+        return Some(PublicFilter::Seasons { number, limit });
+    }
+    // One season's lineup: records about projects, named by the season and not by a project.
+    if kind == KIND_LAUNCH_UPDATE && filter.contains_key("#t") {
+        if !only(&["kinds", "#t", "until", "limit"]) {
+            return None;
+        }
+        let [topic] = strings(filter.get("#t")?)?.try_into().ok()?;
+        return Some(PublicFilter::Entries {
+            number: season_number(&topic)?,
+            until: seconds(filter, "until")?,
+            limit,
+        });
+    }
 
     if kind == KIND_LAUNCH_RECORD {
         if !only(&["kinds", "authors", "founder_start", "#d", "limit"]) {
@@ -643,6 +749,8 @@ struct Signers<'a> {
     community: CommunityId,
     known: HashMap<[u8; 32], bool>,
     checks: usize,
+    /// How many signers are asked about.
+    max: usize,
 }
 
 impl Signers<'_> {
@@ -651,7 +759,7 @@ impl Signers<'_> {
             return Ok(*known);
         }
         // Past the bound nothing more is checked, and what is not checked is not shown.
-        if self.checks >= MAX_SIGNER_CHECKS {
+        if self.checks >= self.max {
             return Ok(false);
         }
         self.checks += 1;
@@ -702,6 +810,15 @@ impl<'a> Lookups<'a> {
                                 RecordSet::new(self.read_records(id, founder).await?, false)
                             }
                             SetKey::About { coordinate } => self.read_about(coordinate).await?,
+                            SetKey::Room { coordinate, room } => {
+                                self.read_room(coordinate, room).await?
+                            }
+                            SetKey::Seasons { number } => {
+                                RecordSet::new(self.read_seasons(*number).await?, false)
+                            }
+                            SetKey::Entries { number } => {
+                                RecordSet::new(self.read_entries(*number).await?, false)
+                            }
                         });
                         self.state
                             .public_reads
@@ -772,6 +889,132 @@ impl<'a> Lookups<'a> {
             .collect())
     }
 
+    /// The posts and likes of the room `room` of the project at `coordinate` that may be shown: none unless the project
+    /// passes [`public_standing`] and the room tag is the project's own chain key; the newest [`ROOM_POSTS_READ`] posts
+    /// and [`ROOM_LIKES_READ`] likes (a room with more is `cut`), by signers who are neither muted nor banned.
+    async fn read_room(&self, coordinate: &str, room: &str) -> Result<RecordSet, DbError> {
+        let nothing = || RecordSet::new(Vec::new(), false);
+        let Some((founder, id)) = coordinate_parts(coordinate) else {
+            return Ok(nothing());
+        };
+        let Some(record) = self
+            .read_records(&id, &Founder::Key(founder))
+            .await?
+            .into_iter()
+            .next()
+        else {
+            return Ok(nothing());
+        };
+        let own_room = crate::handlers::task_chain::chain_key_of(&record)
+            .map(|key| format!("room:0x{}", hex::encode(key)));
+        if own_room.as_deref() != Some(room) {
+            return Ok(nothing());
+        }
+        let mut signers = Signers {
+            state: self.state,
+            community: self.community,
+            known: HashMap::from([(record.pubkey.to_bytes(), true)]),
+            checks: 0,
+            max: ROOM_SIGNER_CHECKS,
+        };
+        let (mut shown, mut cut) = (Vec::new(), false);
+        for (kind, read) in [
+            (KIND_TEXT_NOTE, ROOM_POSTS_READ),
+            (KIND_REACTION, ROOM_LIKES_READ),
+        ] {
+            let stored = self
+                .state
+                .db
+                .query_events(&buzz_db::EventQuery {
+                    kinds: Some(vec![kind as i32]),
+                    tag_filters: vec![
+                        ("a".to_string(), vec![coordinate.to_string()]),
+                        ("t".to_string(), vec![room.to_string()]),
+                    ],
+                    global_only: true,
+                    limit: Some(read),
+                    ..buzz_db::EventQuery::for_community(self.community)
+                })
+                .await?;
+            cut |= stored.len() as i64 >= read;
+            for post in stored {
+                let event = post.event;
+                if post.channel_id.is_none()
+                    && has_tag(&event, "a", coordinate)
+                    && has_tag(&event, "t", room)
+                    && signers.shown(event.pubkey.to_bytes()).await?
+                {
+                    shown.push(event);
+                }
+            }
+        }
+        Ok(RecordSet::new(shown, cut))
+    }
+
+    /// The season records (one number, or the newest of all) signed by a current operator of the server.
+    async fn read_seasons(&self, number: Option<u32>) -> Result<Vec<nostr::Event>, DbError> {
+        let stored = self
+            .state
+            .db
+            .query_events(&buzz_db::EventQuery {
+                kinds: Some(vec![KIND_SEASON as i32]),
+                d_tag: number.map(crate::handlers::season_rules::season_d),
+                global_only: true,
+                limit: Some(SEASONS_READ),
+                ..buzz_db::EventQuery::for_community(self.community)
+            })
+            .await?;
+        Ok(stored
+            .into_iter()
+            .map(|record| record.event)
+            .filter(|event| {
+                crate::handlers::season_rules::is_operator(self.state, &event.pubkey.to_hex())
+                    && crate::handlers::season_rules::parse_season_record(event).is_ok()
+            })
+            .collect())
+    }
+
+    /// One season's entry, leave and removal records, newest first, at most [`ENTRIES_READ`], by signers who are
+    /// neither muted nor banned. The app checks each against the project's own team.
+    async fn read_entries(&self, number: u32) -> Result<Vec<nostr::Event>, DbError> {
+        let stored = self
+            .state
+            .db
+            .query_events(&buzz_db::EventQuery {
+                kinds: Some(vec![KIND_LAUNCH_UPDATE as i32]),
+                tag_filters: vec![(
+                    "t".to_string(),
+                    vec![crate::handlers::season_rules::season_d(number)],
+                )],
+                global_only: true,
+                limit: Some(ENTRIES_READ),
+                ..buzz_db::EventQuery::for_community(self.community)
+            })
+            .await?;
+        let mut signers = Signers {
+            state: self.state,
+            community: self.community,
+            known: HashMap::new(),
+            checks: 0,
+            max: ROOM_SIGNER_CHECKS,
+        };
+        let mut shown = Vec::new();
+        for record in stored {
+            let event = record.event;
+            let is_entry = matches!(
+                crate::handlers::season_rules::classify_step(&event),
+                Ok(Some(step)) if step.number == number
+            );
+            if record.channel_id.is_none()
+                && is_entry
+                && signers.shown(event.pubkey.to_bytes()).await?
+            {
+                shown.push(event);
+            }
+        }
+        Ok(shown)
+    }
+
     /// Every record about the project at `coordinate` that may be shown: see [`is_served`].
     async fn read_about(&self, coordinate: &str) -> Result<RecordSet, DbError> {
         let nothing = || RecordSet::new(Vec::new(), false);
@@ -793,6 +1036,7 @@ impl<'a> Lookups<'a> {
             // A founder who may be shown needs no second check as a signer.
             known: HashMap::from([(record.pubkey.to_bytes(), true)]),
             checks: 0,
+            max: MAX_SIGNER_CHECKS,
         };
 
         // The work that was accepted: what the team confirmed, less what the team sent back.
@@ -923,6 +1167,51 @@ async fn answer_filter(
             }
             Ok(shown)
         }
+        PublicFilter::Room {
+            coordinate,
+            room,
+            kinds,
+            since,
+            until,
+            limit,
+        } => {
+            let set = lookups
+                .set(SetKey::Room {
+                    coordinate: coordinate.clone(),
+                    room: room.clone(),
+                })
+                .await?;
+            Ok(set
+                .events
+                .iter()
+                .filter(|event| {
+                    let at = event.created_at.as_secs();
+                    kinds.contains(&u32::from(event.kind.as_u16()))
+                        && since.is_none_or(|since| at >= since)
+                        && until.is_none_or(|until| at <= until)
+                })
+                .take(*limit)
+                .cloned()
+                .collect())
+        }
+        PublicFilter::Seasons { number, limit } => {
+            let set = lookups.set(SetKey::Seasons { number: *number }).await?;
+            Ok(set.events.iter().take(*limit).cloned().collect())
+        }
+        PublicFilter::Entries {
+            number,
+            until,
+            limit,
+        } => {
+            let set = lookups.set(SetKey::Entries { number: *number }).await?;
+            Ok(set
+                .events
+                .iter()
+                .filter(|event| until.is_none_or(|until| event.created_at.as_secs() <= until))
+                .take(*limit)
+                .cloned()
+                .collect())
+        }
     }
 }
 
@@ -1000,6 +1289,8 @@ pub(crate) async fn answer(
 
 #[cfg(test)]
 mod postgres_tests;
+#[cfg(test)]
+mod room_postgres_tests;
 
 #[cfg(test)]
 mod tests {
