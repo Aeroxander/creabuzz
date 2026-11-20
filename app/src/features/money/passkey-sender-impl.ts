@@ -25,7 +25,13 @@ import {
   encodeExecuteCallData,
   type SenderCall,
 } from "@creaton/core/aa/sponsoredSender.ts";
+import { signKernelHash } from "@creaton/core/aa/kernel-signature.ts";
 import { keccak256 } from "@creaton/core/aa/userop.ts";
+import {
+  walletAttestationDigest,
+  walletTypedData,
+  type WalletAttestation,
+} from "@creaton/core/account/wallet-proof.ts";
 import { BundlerNotConfiguredError } from "@creaton/core/aa/aa.ts";
 import { UserOpPendingError } from "@creaton/core/aa/zerodev.ts";
 import type {
@@ -116,6 +122,50 @@ function errorText(revert: string): { message?: string } {
   } catch {
     return {};
   }
+}
+
+/**
+ * The digest of the one message a passkey account signs besides its money steps: the wallet link that names the person's
+ * account (never a transfer). `typed` is rebuilt from its own fields and must be exactly what the link's builder makes, and
+ * the account it names must be the account signing: anything else is refused, so this can never be made to sign something else.
+ */
+export function walletLinkDigest(from: string, typed: unknown): string {
+  const t = typed as {
+    domain?: Record<string, unknown>;
+    message?: Record<string, unknown>;
+  } | null;
+  const d = t?.domain;
+  const m = t?.message;
+  if (
+    !d ||
+    !m ||
+    typeof m.npub !== "string" ||
+    !/^0x[0-9a-f]{64}$/.test(m.npub)
+  )
+    throw new Error("A passkey account signs only the link to your account.");
+  const envelope: WalletAttestation = {
+    domain: {
+      name: String(d.name),
+      version: String(d.version),
+      chain_id: Number(d.chainId),
+      verifying_contract: String(d.verifyingContract),
+    },
+    attestation: {
+      account: String(m.account),
+      npub: (m.npub.slice(2).match(/../g) ?? []).map((h) =>
+        Number.parseInt(h, 16),
+      ),
+      expires: Number(m.expires),
+      nonce: Number(m.nonce),
+    },
+    signature: "",
+  };
+  if (
+    JSON.stringify(walletTypedData(envelope)) !== JSON.stringify(typed) ||
+    envelope.attestation.account.toLowerCase() !== from.toLowerCase()
+  )
+    throw new Error("A passkey account signs only the link to your account.");
+  return `0x${[...walletAttestationDigest(envelope)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function createPasskeyImpl(
@@ -294,6 +344,22 @@ export function createPasskeyImpl(
       } finally {
         sending.delete(from);
       }
+    },
+
+    async signTypedData(from, typed) {
+      const credentialId = probe.credentialId();
+      if (!credentialId) throw new WalletStepError("no-passkey", 0);
+      const account = await accountAddress();
+      if (from.toLowerCase() !== account.toLowerCase())
+        throw new WalletStepError("failed", 0);
+      // One passkey prompt; the account itself says on the network whether the signature is valid.
+      return signKernelHash({
+        credentialId,
+        hash: walletLinkDigest(account, typed),
+        account,
+        chainId: settings.chainId,
+        getAssertion: deps.getAssertion,
+      });
     },
 
     readCall: async (to, data) => rpc.ethCall({ to, data }),

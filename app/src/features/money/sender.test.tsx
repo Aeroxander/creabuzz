@@ -164,11 +164,11 @@ describe("the passkey sender before anything loads", () => {
     });
     expect(not(SETTINGS, READY)).toEqual({ ok: true });
   });
-  it("is a passkey sender that signs no messages and sponsors the fee", () => {
+  it("is a passkey sender that signs the link to the account and sponsors the fee", () => {
     const sender = createPasskeySender(SETTINGS, { probe: READY });
     expect(senderKind(sender)).toBe("passkey");
     expect(senderCapabilities(sender)).toEqual({
-      signsMessages: false,
+      signsMessages: true,
       atomicBatch: true,
       feeSponsored: true,
     });
@@ -247,13 +247,13 @@ describe("the passkey sender before anything loads", () => {
     await expect(sender.getAddress()).rejects.toThrow("chunk failed");
     await expect(sender.getAddress()).resolves.toBe("0xaccount");
   });
-  it("shows no account and signs no message", async () => {
+  it("shows no account and signs nothing when it is not set up", async () => {
     const load = neverLoaded();
     const sender = createPasskeySender(null, { probe: READY, load });
     await expect(sender.connectedAddress()).resolves.toBeNull();
-    await expect(sender.signTypedData("0x1", {})).rejects.toThrow(
-      /cannot sign messages/,
-    );
+    await expect(sender.signTypedData("0x1", {})).rejects.toMatchObject({
+      reason: "not-set-up",
+    });
     await expect(sender.ensureChain(31337)).rejects.toMatchObject({
       reason: "wrong-network",
     });

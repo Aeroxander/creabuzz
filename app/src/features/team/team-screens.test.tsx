@@ -212,7 +212,7 @@ describe("Give Shares", () => {
         name="Fay"
         numbers={team()}
         pair={pair}
-        wallet={{ state: "linked", address: STRANGER }}
+        wallet={{ state: "linked", address: STRANGER, expires: 2_000_000_000 }}
       />,
     );
     // A signer of the Pair gets Give Shares but never the second seat (the project is already Team).
@@ -256,7 +256,7 @@ describe("Give Shares with a gift already waiting", () => {
         name="Fay"
         numbers={direct}
         pair={null}
-        wallet={{ state: "linked", address: STRANGER }}
+        wallet={{ state: "linked", address: STRANGER, expires: 2_000_000_000 }}
       />,
     );
     stub.holdReceipts = true;
@@ -303,7 +303,7 @@ describe("Give Shares after a market", () => {
         name="Fay"
         numbers={numbersOf(content)}
         pair={pair}
-        wallet={{ state: "linked", address: STRANGER }}
+        wallet={{ state: "linked", address: STRANGER, expires: 2_000_000_000 }}
       />,
     );
     fireEvent.click(screen.getByTestId("give-shares"));

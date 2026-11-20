@@ -1,9 +1,10 @@
+import { serverSmartAccountLinks } from "@creaton/core/client/server-settings.ts";
 import { useId, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
 import { useWallet, useWalletAddress } from "../money/use-money";
-import { senderCapabilities } from "../money/wallet";
+import { senderCapabilities, senderKind } from "../money/wallet";
 import { potProblem } from "../money/pot-copy";
 import { useLinkWallet, useTeamWallets } from "./use-wallets";
 
@@ -19,8 +20,13 @@ export function LinkWallet({ me }: { me: string }) {
   const toast = useToast();
   const titleId = useId();
   const [problem, setProblem] = useState<string | null>(null);
-  // A passkey account cannot sign the proof this links with: there is nothing to link, so nothing is offered.
-  if (!wallet.isAvailable() || !senderCapabilities(wallet).signsMessages)
+  // A sender that cannot sign the proof has nothing to link. A phone account's link is checked by the server on the network: a
+  // server that says it cannot check one is not offered a link that would never count.
+  if (
+    !wallet.isAvailable() ||
+    !senderCapabilities(wallet).signsMessages ||
+    (senderKind(wallet) === "passkey" && serverSmartAccountLinks() === false)
+  )
     return null;
   const current = linked?.state === "linked" ? linked.address : null;
   const same = Boolean(current && address && current === address);

@@ -56,8 +56,21 @@ describe("Your wallet on You", () => {
     current = stand("wallet", true);
     expect(shown()).not.toBeNull();
   });
-  it("is not offered when the passkey account is the sender", () => {
+  it("is not offered to a sender that cannot sign the proof", () => {
     current = stand("passkey", false);
+    expect(shown()).toBeNull();
+  });
+  it("is offered to a phone account, which signs the link with its passkey", () => {
+    current = stand("passkey", true);
+    expect(shown()).not.toBeNull();
+  });
+  it("is not offered to a phone account when the server says it cannot check one", () => {
+    current = stand("passkey", true);
+    applyServerSettings({
+      investing: true,
+      self: "http://s.invalid",
+      smartAccountLinks: false,
+    } as never);
     expect(shown()).toBeNull();
   });
 });

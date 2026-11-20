@@ -98,6 +98,8 @@ export interface PasskeyImpl {
   blockNumber: MoneyWallet["blockNumber"];
   /** The time of a block: optional, so a test double without it still stands in; the wallet then says the read failed. */
   blockTime?: NonNullable<MoneyWallet["blockTime"]>;
+  /** Signs the wallet link that names the person's account: optional, so a test double without it still stands in. */
+  signTypedData?: MoneyWallet["signTypedData"];
   chainId: MoneyWallet["chainId"];
   getLogs: MoneyWallet["getLogs"];
   outcomeOf: MoneyWallet["outcomeOf"];
@@ -115,7 +117,8 @@ export interface PasskeyDeps {
 }
 
 const CAPABILITIES: SenderCapabilities = {
-  signsMessages: false,
+  // Only the link to the person's own account (a smart account's signature the network checks), never another message.
+  signsMessages: true,
   atomicBatch: true,
   feeSponsored: true,
 };
@@ -198,9 +201,13 @@ export function createPasskeySender(
       ),
     chainId: () => need((i) => i.chainId()),
     getLogs: (filter) => need((i) => i.getLogs(filter)),
-    signTypedData: () =>
-      Promise.reject(
-        new Error("A passkey account cannot sign messages here yet."),
+    signTypedData: (from, typed) =>
+      need((i) =>
+        i.signTypedData
+          ? i.signTypedData(from, typed)
+          : Promise.reject(
+              new Error("This account cannot sign the link to your account."),
+            ),
       ),
     ensureChain: async (chainId) => {
       if (!settings || chainId !== settings.chainId)
