@@ -157,8 +157,8 @@ describe("selling in the pool", () => {
     fireEvent.change(screen.getByTestId("trade-amount"), {
       target: { value: "250000" },
     });
-    expect(screen.getByTestId("trade-sheet").textContent).toMatch(
-      /Buyers acquire ownership only/,
+    expect(screen.getByTestId("trade-sheet").textContent).toContain(
+      "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one.",
     );
     fireEvent.click(confirm);
     fireEvent.click(confirm);

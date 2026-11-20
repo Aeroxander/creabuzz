@@ -135,8 +135,8 @@ describe("bidding", () => {
     });
     fireEvent.click(screen.getByTestId("bid-review"));
     const confirm = await screen.findByTestId("bid-sheet-confirm");
-    expect(screen.getByTestId("bid-sheet").textContent).toMatch(
-      /Buyers acquire ownership only/,
+    expect(screen.getByTestId("bid-sheet").textContent).toContain(
+      "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one.",
     );
     fireEvent.click(confirm);
     fireEvent.click(confirm);

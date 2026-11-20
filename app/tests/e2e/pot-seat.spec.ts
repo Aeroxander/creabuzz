@@ -38,6 +38,10 @@ import {
 } from "./helpers/live-team";
 import { createMockRelay } from "./mock-relay";
 
+/** The legal line, word for word. */
+const LEGAL_LINE =
+  "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one.";
+
 test.skip(NO_CHAIN_WHY !== null, NO_CHAIN_WHY ?? "");
 
 /**
@@ -112,9 +116,7 @@ test("the runner winds a project down: two presses, one signature, what it does 
   await expect(page.getByTestId("sheet-play-money")).toContainText(
     "play money",
   );
-  await expect(sheet.getByTestId("ownership")).toContainText(
-    "Buyers acquire ownership only: governance and exit.",
-  );
+  await expect(sheet.getByTestId("ownership")).toHaveText(LEGAL_LINE);
   await expectAccessible(page, "Wind down sheet");
   await page.screenshot({
     path: "test-results/pot-screens/wind-down-sheet.png",

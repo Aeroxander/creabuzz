@@ -18,6 +18,10 @@ import { FOUNDER_NOSTR, pageOf, seedServer } from "./helpers/live-browser";
 import { RELAY } from "./helpers/money-world";
 import { COMMUNITY_HOST, createMockRelay, PREVIEW_PORT } from "./mock-relay";
 
+/** The legal line, word for word. */
+const LEGAL_LINE =
+  "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one.";
+
 /**
  * A phone with no wallet app signs up with a passkey and, from its passkey account, gets play dollars, Backs a project and
  * Takes out, in a real browser (Chrome's virtual authenticator) against the pot contracts on a real local chain, EntryPoint
@@ -171,9 +175,7 @@ run(
         timeout: 30_000,
       });
       await expect(sheet).toContainText("This is one signature.");
-      await expect(sheet.getByTestId("ownership")).toContainText(
-        "Buyers acquire ownership only: governance and exit.",
-      );
+      await expect(sheet.getByTestId("ownership")).toHaveText(LEGAL_LINE);
       await back.press(
         page.getByTestId("sheet-confirm"),
         "Back with 25 dollars",
