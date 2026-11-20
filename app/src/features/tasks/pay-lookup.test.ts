@@ -51,7 +51,7 @@ function fakeWallet(logs: ChainLog[], timeOf: (block: number) => number) {
   };
 }
 
-const search = (w: ReturnType<typeof fakeWallet>["wallet"]) =>
+const search = (w: Parameters<typeof findPayment>[0]) =>
   findPayment(w, TREASURY, PAYEE, RAW, SINCE);
 
 describe("the stop test and the filter on time", () => {
