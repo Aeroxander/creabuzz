@@ -875,3 +875,52 @@ Kind 39009, tags `d = explore`, `chain`, `launcher`, signed by the relay's key. 
   (`explore_failed`), the old index stays, and nothing else is affected.
 - **The app** checks that the relay's key signed it, hides it past 24 hours, sorts by the same rule itself (it never trusts the order), reads the
   records of the first ten entries by coordinate and drops an entry whose record is missing, unlisted or removed.
+
+## 12. Step 3 additions outside the record: what the server says about phone links, alerts and the sponsored fee
+
+Three things the app reads from the server that are not in a numbers record. Nothing here changes a money field or a contract; the record stays
+version 2. The full account of the server side is in `docs/web-push-deployment.md` (for an operator) and `docs/next-version/STEP3-PLAN.md`
+section 6 (for the reasons). Rooms and seasons (package P2) are in `docs/next-version/ROOM-AND-SEASON-RECORDS.md`.
+
+### 12.1 Two keys of the information document (`GET /info`, `Accept: application/nostr+json`)
+
+| Key | When present | Meaning |
+|---|---|---|
+| `webPush` | **Only** when the operator turned web push on (`BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY` and `BUZZ_WEB_PUSH_SUBJECT` both set). Absent otherwise: the app does not draw the opt-in card and never invents a way to switch alerts on. | `{"publicKey": "<base64url, 65 bytes, uncompressed P-256>"}`: the key a browser subscribes with (`applicationServerKey`). Nothing else about push is published. |
+| `smartAccountLinks` | Whenever the server has a chain reader. | `true` when the server can check a **phone account's** wallet link (it has `BUZZ_EVM_AUTH` and `BUZZ_EVM_RPC_URL`); `false` otherwise. With `false` a phone account cannot link a wallet, so it cannot write in a room and cannot be alerted: the app says so in plain words before a person tries and draws no button that cannot work. Absent on a server with no chain reader. |
+
+### 12.2 The two subscription paths (HTTP, because a subscription is a bearer capability and must not become a stored, public event)
+
+Both are signed per request with the person's own key (NIP-98: method, address and the body's SHA-256 in a `payload` tag; the same
+`Authorization: Nostr <base64 event>` header the app already sends to `/events`), and a request cannot be played twice.
+
+| Call | Body | Answer |
+|---|---|---|
+| `PUT /push/web` | what a browser's `PushSubscription.toJSON()` gives: `{"endpoint": "...", "keys": {"p256dh": "<base64url>", "auth": "<base64url>"}}` | `200 {"ok": true}`: the device is kept for the signer's account (or renewed when the account already has that address; the oldest of more than five goes). |
+| `DELETE /push/web` | `{"endpoint": "..."}` removes that device; **no body** removes every device of the account | `200 {"ok": true, "removed": n}` |
+
+Answers: `404 {"error": "Alerts are not switched on for this server."}` when push is off (and nothing is read or written); `401` for an unsigned or
+replayed request; `400 {"error": "<a sentence for the person>"}` for an address that is not allowed, a key that is not a point on the curve or a
+secret that is not 16 bytes (nothing is written); `413` for a body over 4,096 bytes; `429` after 10 requests an hour for one account. A person
+**turns alerts off** with `DELETE /push/web` and the browser's own `unsubscribe()`; what the server kept for the device is deleted at once. A
+subscription is good for 90 days; the app asks again when a device is opened and the row is older than 30 days (a `PUT` of the same address
+renews it).
+
+### 12.3 What a push carries (the service worker reads exactly this)
+
+After decryption the message is `{"v": 1, "k": "planned" | "taken" | "ended", "r": "<project link ref>"}`, at most 200 bytes. `r` is the part of the
+project's link after `/p/`. **No amount, no name, no date and no project name**, ever. A worker shows one of three fixed sentences by `k`, opens
+the news page when pressed, and drops a message of any other shape without showing anything. An alert is made only from the chain's own task rows
+(planned, taken, ended; a plan withdrawn before anyone took it makes none, and neither does its withdrawal) and goes only to an account that proved the wallet that holds Shares in
+the project (at least 0.001 of a Share, backer Shares or Team Shares); a person with no linked wallet gets none and is told why in the opt-in.
+
+### 12.4 The sponsored fee (`POST /sponsor`, when the operator sets it up)
+
+A phone account's network fee is asked for with the JSON-RPC call `zd_sponsorUserOperation`. When the operator names an upstream sponsor the
+server answers the same call at `POST /sponsor` (the app's `VITE_CREATON_SPONSOR_URL` then names that path; it carries no key) and limits it: per
+sender (10), per client address (40) and for the whole server (1,000) per UTC day for ordinary operations; **a take out (`leave`, `leaveTeam`) is
+never refused by the per-account or the server limit and never counted against them**, only by one generous per-address cap (200). A refusal is a
+JSON-RPC error answered with HTTP 200 whose message is `daily limit exceeded` (a limit) or `not allowed` (a method, a chain, a batch, a body over
+32 KB, call data that cannot be read, or a target that is not a contract the server follows), both of which hold a word the app turns into plain
+words (`exceed`, `not allowed`). Said plainly, one limit stays: because the `sender` in the request is not authenticated, ten requests naming a
+victim's address use up that person's day for a Back and the like (not for taking out).

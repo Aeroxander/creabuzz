@@ -266,6 +266,8 @@ async fn p8_only_a_linked_holder_is_told() {
     let unlinked_device = pw.stand_in.device();
     super::test_support::keep(&pw, &unlinked, &unlinked_device).await;
     let (revoked, revoked_device) = subscribed(&pw, LATE).await;
+    // A replacement signed in the same second as the record it replaces does not replace it.
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
     pw.w.unlink(&revoked, LATE)
         .await
         .expect("takes the link back");

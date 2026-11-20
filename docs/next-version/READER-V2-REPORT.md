@@ -861,3 +861,145 @@ Each edit was made in the production file, the tests were run, and the file was 
 - **The ranking index is signed only when its entries change**, at most every 600 s, and not at all while nothing could be listed. A project is listed only once the reader has stored a project record whose coordinate hashes to the launch's `projectId`: on the fixture chain nothing hashes, so the ranking is empty there.
 - **Scratch databases:** the H4, H8, H9 and H10 tests create `held_<uuid>` databases and drop them at the end; one left behind after a crash is harmless and can be dropped by hand. H9 needs about 300 MB of disk for a moment.
 
+
+## Step 3, package P3: web push alerts and the sponsored-fee limit (server, 20 November 2026)
+
+The plan is `docs/next-version/STEP3-PLAN.md` (section 6 and the tests P1 to P16 and K1 to K9 of 9.2); the operator's page is `docs/web-push-deployment.md`;
+what the app reads is `RECORD-V2.md` section 12. Nothing in `contracts/pot` changed and no record changed: this package adds one migration, a module,
+two paths and two keys of the information document. **Both services are off unless the operator names what they need, and neither is on in a plain
+deployment.**
+
+### What is built
+
+| Piece | Where |
+|---|---|
+| Migration 0074 and the desired-state files: `web_push_subscriptions` and `web_push_outbox` (community tables, fenced, in the deletion catalog), `web_push_cursor`, `web_push_alerts` and `sponsor_usage` (operator-global, registered in the migration, the seeds and the reconcile script) | `migrations/0074_web_push_and_sponsor.sql`, `schema/{tables/public,seeds,triggers}/`, `schema/schema.sql`, `scripts/reconcile-schema-after-pgschema.sql`, `crates/buzz-db/src/{runtime/migration.rs,store/deletion.rs}` |
+| RFC 8291 message encryption (`aes128gcm`, one record) on `p256`, `hkdf` and `aes-gcm`, which are now direct dependencies (they were transitive); the RFC's own appendix A is a test | `web_push/ece.rs` |
+| RFC 8292 VAPID: the ES256 token written by hand on `p256` (no `jsonwebtoken`), the keyed per-device topic; the RFC's example token is a test | `web_push/vapid.rs` |
+| Settings: both of `BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY` and `BUZZ_WEB_PUSH_SUBJECT`, or neither (one is a startup error that names both); `BUZZ_WEB_PUSH_DAILY_CAP`, `_MAX_PER_ACCOUNT`, `_EXTRA_HOSTS`. Push also needs the chain reader | `web_push/settings.rs`, `config.rs` |
+| Where an address may point, and where it is sent: known push services or the operator's list, no credentials, the name resolved at send time and the connection made to the address that passed (`pick_address`), no redirect | `web_push/hosts.rs` |
+| `PUT` and `DELETE /push/web`, signed per request (NIP-98), 10 requests an hour per account | `api/web_push.rs`, `web_push/store.rs` |
+| The alert maker (cursor at the reader's position, task rows to alerts, audience, caps, rollback) and the sender (lease, backoff, terminal state, pause, one sender per deployment) | `web_push/alerts.rs`, `web_push/sender.rs`, started from `main.rs` |
+| `POST /sponsor`: the pins, the call-data reader (`calldata.rs`, held to the app's own decoder by vectors the app's encoder made), the three limits on ordinary operations, exits counted only against one address cap | `api/sponsor.rs`, `api/sponsor/calldata.rs`, `scripts/sponsor-calldata-vectors.mjs` |
+| `/info` carries `webPush` (only when on) and `smartAccountLinks` (whenever there is a chain reader) | `nip11.rs` |
+| The stand-in push service (Node, no dependencies: makes devices, decrypts, checks the VAPID token) and the real-relay loop | `scripts/web-push-standin.mjs`, `scripts/web-push-loop.sh`, `scripts/web-push-loop-client.mjs` |
+
+### Chosen under the owner's standing go; the owner may overrule
+
+- **Any `2xx` is delivered.** The plan said 201; the push services answer 201, and a 200 or 202 from a gateway means the same.
+- **A row's age is measured on the chain's clock**: a task row more than 24 hours older than the newest block the reader has stored is dropped, not
+  the wall clock (a test chain's clock is not the wall's, and a stopped reader that catches up drops what is old either way).
+- **A plan the chain already shows as withdrawn makes no `planned` alert** (the plan says a withdrawn plan makes none; the app's alert comes from the
+  signed record, which never lists a plan withdrawn before it was written). A plan alerted and withdrawn later is not taken back.
+- **`gone` is momentary**: a 404 or 410 marks the row and deletes the device in one transaction, and the device's rows go with it (cascade), so the
+  durable record of a gone device is the metric `buzz_web_push_sent_total{result="gone"}` and nothing in the table. (The alternative, rows that outlive their
+  device, would keep a trace of a person who turned alerts off.)
+- **A deleted device takes its outbox rows with it**, delivered ones too, so the daily cap restarts for a device that comes back. A person who turns
+  alerts off has nothing about the device left.
+- **No `failures` column on the device row** (the plan listed one): failures are counted on the outbox row, where the retry record is, and the device row keeps nothing else.
+- **`BUZZ_WEB_PUSH_EXTRA_HOSTS` may be plain `http`** (and may resolve to a private address), only for the exact `host` or `host:port` the operator listed:
+  a local stand-in has no certificate. Every other address must be `https`.
+- **A subscription-request limit of 10 an hour per account is kept in memory per process** (the way self-serve creation keeps its caps), with a hard
+  capacity, not in the database. Behind a load balancer the real ceiling is the cap times the number of servers.
+- **The cut of the audience is counted up to 100,000** (one bounded count query), so `cut` is exact below that and a floor above it.
+- **`/sponsor` is an exact path in the NIP-FI exempt list** (`router.rs`): a phone account has no session to present, and the path carries its own pins
+  and limits. `PUT` and `DELETE /push/web` are not exempt. Its refusals are HTTP 200 JSON-RPC errors (a 4xx would be hidden and a 5xx retried by the app).
+- **The server-wide sponsor total is kept per reader (`all:<reader>`)**, the deployment, not one global key.
+- **A sponsor request whose `chainId` is not the reader's chain is "not allowed"**, and so is any target that is not a contract the reader follows, the
+  dollar token or the Launcher; the allow-list is read from the reader's tables and kept 30 seconds.
+- **Sponsor and push both need the chain reader**: either set without `BUZZ_CHAIN_RPC_URL` stops the relay at start.
+- **The alert maker replays only the project's launch row** to find the contract accounts (`Ledger::excluded`, the one list), not every row.
+- **Dependencies**: `p256` (features `arithmetic`, `ecdsa`, `std`; no `ecdh`, so the shared secret is the scalar multiple's x coordinate), `hkdf` 0.13 and `aes-gcm` 0.10.
+  `Cargo.lock` gains only the three entries in `buzz-relay`'s dependency list (no crate that was not in it); the sources of the curve crates had not been downloaded until now.
+- **The tick is every 5 seconds**; one pass claims up to 32 rows and sends 8 at a time.
+
+### Small changes outside P3's own list (each minimal)
+
+- `crates/buzz-relay/src/api/public_read.rs`: `client_address` is `pub(crate)` (the sponsor reads the client's address by the rule the public reads use).
+- `crates/buzz-relay/src/handlers/room_support.rs` (P2's test support): the reader's community host is the test's own, so the alert maker finds the world's community.
+- `crates/buzz-db/src/store/deletion.rs` and `runtime/migration.rs`: the two new community tables are in the deletion catalog and in the fence-attachment test; the migration count is 74.
+- `scripts/sponsor-calldata-vectors.mjs` and `scripts/web-push-loop-client.mjs` are scripts the plan did not name (the vectors the Rust reader is held to, and the loop's Nostr half).
+- `app/.env.example`: the sponsor lines now say `/sponsor` exists and which settings it reads.
+
+### Guards switched off once (review rule 3)
+
+Each edit was made in the production file, the tests of the whole package were run, and the files were put back (compared byte for byte). Three runs of
+many edits each, so a failing test is matched to its edit by what it asserts; where two edits share a test it is said.
+
+| Guard off | Tests that failed |
+|---|---|
+| the cursor starts at 0, not the reader's position | `p7b_a_fresh_cursor_starts_at_the_readers_position_and_old_rows_make_no_alert` (100 old rows made 100 alerts) |
+| the unique key absorbs nothing (a repeated row makes a second alert) | `p7_one_alert_per_task_event_and_a_repeated_pass_or_a_rewound_cursor_makes_no_second` |
+| the audience has no floor (a holder of one wei, and a person who took out and holds a zero row, are told) | `p8_the_audience_is_largest_first_above_the_floor_and_cut_at_2000_with_the_cut_counted`, `p8_only_a_linked_holder_is_told` |
+| the contract accounts are not left out of the audience | `p8_the_audience_is_largest_first_...` (it is the only one that asserts an excluded account) |
+| no cut at 2,000 | `p8_the_audience_is_largest_first_...` |
+| no daily cap, no project cap | `the_daily_cap_and_the_project_cap_say_which_one_held`, `p10_the_project_cap_and_the_daily_cap_write_dropped_rows_with_their_reason` |
+| no rollback handling | `p14_a_rollback_deletes_pending_rows_and_leaves_delivered_ones` |
+| a plan the chain shows as withdrawn still alerts | `a_withdrawn_plan_makes_no_alert_and_the_other_endings_do` |
+| a row older than the alert's lifetime is sent | `a_row_older_than_the_alerts_own_lifetime_is_too_old`, `a_row_older_than_the_alerts_own_lifetime_is_dropped_not_sent` |
+| the cursor moves before the work (not in the transaction of the alerts) | `a_failed_pass_keeps_the_cursor_and_the_next_pass_makes_every_alert` |
+| the pause does not grow | `the_pause_doubles_from_a_minute_to_six_hours`, `p9_retry_after_is_honoured_...` |
+| more than 8 attempts (80) | `p9_retry_after_is_honoured_the_pause_doubles_and_the_eighth_attempt_ends_failed` (alone in its run) |
+| `Retry-After` ignored | `p9_retry_after_is_honoured_...` at its first assertion ("the service's wait is honoured, not the 60 s") |
+| a gone device is kept | `p9_a_404_and_a_410_delete_the_device` |
+| a crashed lease is never reclaimed | `a_claim_holds_a_lease_a_crashed_lease_is_reclaimed_and_a_release_gives_the_attempt_back` |
+| a device beyond the cap stays | `p5_at_most_the_cap_of_devices_stay_and_the_oldest_goes`, `p5_requests_at_once_cannot_leave_more_than_the_cap`, `p4_and_p5_a_bad_subscription_writes_nothing_and_the_cap_holds_through_the_path` |
+| a redirect is followed | `a_timeout_is_a_retry_and_a_redirect_is_a_terminal_refusal_that_is_never_followed` |
+| the address is not checked again at send time | `an_address_that_is_no_longer_allowed_is_not_called` |
+| the sender never pauses after refusals of the key | `three_different_devices_refused_in_a_row_pause_the_sender_once`, `p13_repeated_refusals_of_the_operators_key_pause_the_sender_once` |
+| every replica sends (the lock always held) | `p15_and_p16_the_sender_is_not_started_when_off_and_only_one_replica_sends` |
+| the topic is a plain hash of public values | `topics_are_per_device_stable_for_one_alert_and_not_a_plain_hash`, `p12_topics_are_per_device_stable_for_one_alert_and_keyed` |
+| a different content-coding label in the key derivation | `rfc8291_appendix_a_vector` |
+| a device key off the curve is kept | `a_good_subscription_passes_and_every_bad_one_is_refused_with_a_sentence`, `p4_and_p5_...` |
+| any host is allowed | `the_known_services_pass_and_everything_else_is_refused`, `p4_and_p5_...` |
+| a private or loopback address counts as public | `private_loopback_and_link_local_addresses_are_not_public`, `the_address_that_passes_is_the_one_connected_to` |
+| the information document names no `webPush` | `the_information_document_says_webpush_only_when_on_and_whether_phone_links_can_be_checked` |
+| an exit counts like any other operation | `an_exit_meets_only_the_address_cap_and_every_other_operation_meets_three`, `k8_an_exit_is_never_counted_or_refused_by_the_person_or_server_limit`, `k9_a_stranger_can_use_up_a_victims_day_but_never_the_victims_exit` |
+| no per-account, no server-wide, no per-address limit (three edits) | `k1_the_per_account_limit`, `k2_the_server_wide_limit`, `k3_the_per_address_limit` |
+| a refused or unreachable upstream keeps its count (two edits) | `k4_the_reservation_is_released_when_the_upstream_refuses_or_fails` |
+| any method, any chain, any target, a body of any size (four edits) | `the_request_is_pinned`, `the_pins_hold_through_the_handler` |
+
+**Not switched off, and why.** The NIP-98 requirement of the two paths is the existing verifier's (`bridge.rs`), tested by the unsigned and tampered
+and replayed requests of `p6_the_paths_need_a_signed_request_and_a_person_removes_their_own_devices`, but not switched off. `FOR UPDATE SKIP LOCKED`
+is exercised by two claimers at once in the lease test, which also passes with it removed on a small queue (Postgres re-checks the row), so that test
+does not bind it; it is named as unbound. The upstream's address never appearing in a **log line** is held by reading the code (no error from the
+upstream request is ever printed; `forward` returns nothing but its own status) and by `k7` for answers and `Debug`; no log capture was built.
+
+### What ran
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo clippy -p buzz-relay -p buzz-db --all-targets -- -D warnings` | no warnings |
+| `cargo test -p buzz-relay --lib -- web_push api::sponsor api::web_push config:: nip11 --include-ignored --test-threads=1` (Postgres and Redis running) | **204 passed, 0 failed**. Of these 73 are new in this package: 47 in `web_push` (3 RFC 8291, 4 VAPID, 4 addresses, 1 settings, 2 store, 5 alerts, 3 sender, 1 message; 11 alert maker, 9 sender and 4 device rows against Postgres), 6 in `api::web_push` (2 pure, 4 Postgres), 18 in `api::sponsor` (5 pure, 4 call data, 9 Postgres) and 2 settings tests in `config::` |
+| `cargo test -p buzz-relay --lib -- --skip mesh_demo` | 1903 passed, 0 failed, 694 ignored |
+| `cargo test -p buzz-db --lib -- migration desired chain_ web_push store::deletion::postgres_tests --include-ignored --test-threads=1` | 108 passed, 1 failed: `blocked_owner_submission_cannot_be_claimed` claims the next owner submission of the whole test database, and the shared development database holds 21 submissions left by earlier runs; its cause is the state of that shared database, not a table of this package; the deletion catalog and fence tests that this package had to change pass |
+| `scripts/check-postgres-test-discovery.py crates/buzz-relay/src` | validated |
+| `node --experimental-strip-types scripts/sponsor-calldata-vectors.mjs --check` | the vectors are what the app's encoder gives |
+| `node scripts/web-push-standin.mjs --self-test` | reads RFC 8291 appendix A's message and RFC 8292's token |
+| `cargo build -p buzz-relay -p buzz-cli` (from HEAD, then the loops) | built |
+| `scripts/web-push-loop.sh` (a real relay on a real chain, the stand-in push service) | **28 checks passed**: the half-set relay stops and names both settings; push off has no `webPush` and answers 404; with both the public key is in `/info`; the unsigned `PUT` is 401, a subscription to the metadata address 400; the cursor starts where the chain is and the history made no alert; a planned task and a planned-and-withdrawn one made exactly ONE push, to the linked holder, decrypted as `{"v":1,"k":"planned","r":"<link>"}` with a verified token and a 32-character topic, and none to a stranger, a leaver or a holder who never linked; after "Turn off" the next task reached nobody and after keeping the device the next one did; a 403 from the service left a pending row with its status; the key is in no log line |
+| `scripts/chain-loop-pot.sh` (the relay built from HEAD) | **2936 checks passed** (the same as before this package: nothing in the reader changed) |
+
+### For the next engineer
+
+- **Migration 0074 is applied to the development database `buzz`** (it was there, with the right checksum, after the buzz-db migration tests ran). A database migrated by the relay or `buzz-admin migrate`
+  gets it by itself. The migration count assertion in buzz-db is 74; the next migration is 0075.
+- **How the app registers and removes a subscription** (A4): read `/info`; if it has no `webPush`, draw no card. Otherwise `registration.pushManager.subscribe({userVisibleOnly: true,
+  applicationServerKey: <the 65 bytes of webPush.publicKey>})`, then `PUT /push/web` on the community's own host with the body `JSON.stringify({endpoint, keys: {p256dh, auth}})`
+  (what `sub.toJSON()` gives; other fields such as `expirationTime` are ignored) and the header `Authorization: Nostr <base64 of a kind 27235 event>` whose tags are `u` (the full address,
+  `https://<host>/push/web`), `method` (`PUT`) and `payload` (the SHA-256 hex of exactly the body bytes sent). "Turn off" is `DELETE /push/web` with `{"endpoint": "..."}` signed the same
+  way (method `DELETE`), then `await sub.unsubscribe()`; no body removes every device of the account. Renew (a `PUT` again) when the device's row is older than 30 days. Answers are in
+  `RECORD-V2.md` 12.2. Alerts reach only an account that has linked the wallet that holds Shares; say so in the card (the opt-in text is the plan's section 7.8).
+- **The worker reads `{"v":1,"k":"planned"|"taken"|"ended","r":"<link ref>"}`** and nothing else (`web_push/mod.rs`, `message`; `Kind::as_str`). For the cross-language check (X3): the three words are
+  `Kind::as_str`, and the sponsor's two refusal sentences are `api::sponsor::{LIMIT_EXCEEDED, NOT_ALLOWED}` with the words the app's classifier holds in `APP_WORDS` (the app's own regex is
+  `looksLikePolicyDenial` in `packages/creaton-core/src/aa/zerodev.ts`).
+- **The stand-in** (`scripts/web-push-standin.mjs`): `POST /_vapid {publicKey}`, `POST /_devices` (returns `{endpoint, keys}` to hand to `PUT /push/web`), `POST /_script {answers: [201, 410,
+  {status: 429, retryAfter: 120}]}`, `GET /_received` (decrypted message, headers, the token's claims or why it failed), `POST /_reset`. Start the relay with `BUZZ_WEB_PUSH_EXTRA_HOSTS=127.0.0.1:<its port>`.
+  `scripts/web-push-loop.sh` is a working example of the whole chain; the sender ticks every 5 seconds, so allow up to 15 seconds for a push after the reader has stored a task row (the reader stores
+  rows `BUZZ_CHAIN_CONFIRMATIONS` blocks late).
+- **A key for a run** is made with the one line in `docs/web-push-deployment.md`; the loop makes one and passes it in the relay's environment only.
+- **Tests that link and unlink a wallet inside one second** must wait a second between the two records (a replacement signed in the same second as the record it replaces does not replace it): one run of `p8_only_a_linked_holder_is_told` did not wait and failed once.
+- **The queue is one for the whole deployment**, so a test that sends must start with an empty one (`push_world` deletes the pending and sending rows of the test database).
+- **Not done:** no log capture for the upstream's address; no test of the NIP-98 requirement switched off; a push to a real service is the first human test; the opt-in's words and the worker are A4's.
+- **Disk:** the machine was at 3.0 GB free twice; older duplicate test executables in `target/debug/deps` were deleted (about 1.3 GB, newest of each kept).
