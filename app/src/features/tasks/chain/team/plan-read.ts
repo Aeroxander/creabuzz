@@ -133,3 +133,31 @@ export function hypotheticalRow(
     notes: null,
   };
 }
+
+/** How many serials after the one read at open a landed look goes through: a bound on work, far above what can be planned. */
+export const LOOK_SERIALS = 20;
+
+/**
+ * Whether a plan of the task record `what` has landed since the sheet opened: some serial from `before` (the number the next
+ * plan had then, as text) up to `LOOK_SERIALS` on holds it. False when `before` is not a number, the book is not there or
+ * nothing is found. Throws when the network cannot be asked. Used for a call replaced in the wallet, which may have landed
+ * under another hash.
+ */
+export async function plannedSince(
+  read: ReadCall,
+  treasury: string,
+  what: string,
+  before: string | undefined,
+): Promise<boolean> {
+  if (!before || !/^\d+$/.test(before)) return false;
+  const book = await readBookOf(read, treasury);
+  if (book === null) return false;
+  const [next] = await ask(read, TASK_BOOK_ABI, book, "nextSerial", []);
+  const last = asBigint(next);
+  const start = BigInt(before);
+  for (let s = start; s < last && s < start + BigInt(LOOK_SERIALS); s += 1n) {
+    const row = await readTask(read, book, s);
+    if (row?.what === what) return true;
+  }
+  return false;
+}

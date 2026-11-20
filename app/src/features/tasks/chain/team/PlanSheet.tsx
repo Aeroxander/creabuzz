@@ -9,13 +9,7 @@
  * have landed is looked for before another is made.
  */
 import { announceTaskCall } from "@creaton/core/pot/pot-calls.ts";
-import {
-  ask,
-  asBigint,
-  readBookOf,
-  readTask,
-} from "@creaton/core/pot/pot-reads.ts";
-import { TASK_BOOK_ABI } from "@creaton/core/pot/abis.generated.ts";
+import { readTask } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../../../ui/button";
 import { Card } from "../../../../ui/card";
@@ -32,7 +26,12 @@ import type { ChainTasks } from "../types";
 import { dollarsPhrase } from "../words";
 import { planBlock } from "./plan-gate";
 import { SheetLine } from "./SheetLine";
-import { plannedAlready, readPlan } from "./plan-read";
+import {
+  LOOK_SERIALS,
+  plannedAlready,
+  plannedSince,
+  readPlan,
+} from "./plan-read";
 import {
   checkInLine,
   detailsLine,
@@ -54,8 +53,6 @@ import {
 } from "./plan-words";
 
 const DOLLAR = 1_000_000n;
-/** How many serials after the one read at open a landed look goes through: a bound on work, far above what can be planned. */
-const LOOK_SERIALS = 20;
 
 export function PlanSheet({
   numbers,
@@ -247,26 +244,15 @@ export function PlanSheet({
       description="Nothing moves yet. Holders get notice first"
       detail={detail}
       done={send?.through === "pair" ? PLAN_ASKED : PLANNED}
-      landed={async (wallet, _from, earlier) => {
+      landed={(wallet, _from, earlier) =>
         // A call replaced in the wallet may have landed under another hash: a newer serial with this task's id says so.
-        const before = (earlier.detail ?? "").split(":")[1];
-        if (!before || !/^\d+$/.test(before)) return false;
-        const read = (to: string, data: string) => wallet.readCall(to, data);
-        const book = await readBookOf(read, treasury);
-        if (book === null) return false;
-        const [next] = await ask(read, TASK_BOOK_ABI, book, "nextSerial", []);
-        const last = asBigint(next);
-        const start = BigInt(before);
-        for (
-          let s = start;
-          s < last && s < start + BigInt(LOOK_SERIALS);
-          s += 1n
-        ) {
-          const row = await readTask(read, book, s);
-          if (row?.what === what) return true;
-        }
-        return false;
-      }}
+        plannedSince(
+          (to, data) => wallet.readCall(to, data),
+          treasury,
+          what,
+          (earlier.detail ?? "").split(":")[1],
+        )
+      }
       lookLabel={PLAN_LOOK}
       onLanded={(_txHash, landed) => {
         // Said again with the chain's own date; a plan asked of the other signer has no date yet, and an earlier press that
