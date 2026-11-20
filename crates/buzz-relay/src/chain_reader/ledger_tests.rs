@@ -569,6 +569,47 @@ fn the_cross_check_names_each_number_that_differs() {
     assert_eq!((m.ledger, m.view), (good.pot, good.pot + 1));
 }
 
+/// RECORD-V2.md 4.3: the ledger's `lastSettle` must not be later than the view's. A settle that moves nothing emits no
+/// `Settled`, so a view that is later than the events is normal and passes; a ledger that is later than the view is a
+/// mismatch, named with both values. The guard is `self.last_settle > view.last_settle` in `Ledger::mismatches`.
+#[test]
+fn a_ledger_settle_later_than_the_views_is_a_mismatch_and_an_earlier_one_is_not() {
+    let fx = fx();
+    let l = ledger_at(&fx, "A", fx.head());
+    let v = &fx.json["final"]["A"]["views"];
+    let good = Stored {
+        pot: n(v, "pot"),
+        paid_in: n(v, "paidIn"),
+        box_: n(v, "box"),
+        arriving: n(v, "arriving"),
+        fees_owed: n(v, "feesOwed"),
+        z: n(v, "Z"),
+        active_seconds: n(v, "activeSeconds"),
+        last_settle: u64::try_from(n(v, "lastSettle")).expect("time"),
+        shares_supply: n(v, "sharesSupply"),
+        team_supply: n(v, "teamSupply"),
+        vester_team_balance: l.vester_team_balance(),
+    };
+    assert!(l.last_settle > 0, "the fixture's ledger has a last settle");
+    assert!(l.mismatches(&good).is_empty());
+    // The view's last settle is earlier than the ledger's: the events show a settle the contract does not.
+    let behind = Stored {
+        last_settle: l.last_settle - 1,
+        ..good
+    };
+    let found = l.mismatches(&behind);
+    assert_eq!(found.len(), 1, "only lastSettle differs: {found:?}");
+    assert_eq!(found[0].field, "lastSettle");
+    assert_eq!(found[0].ledger, u128::from(l.last_settle));
+    assert_eq!(found[0].view, u128::from(l.last_settle - 1));
+    // The view's last settle is later (a silent settle after the last event): not a mismatch.
+    let ahead = Stored {
+        last_settle: l.last_settle + 1,
+        ..good
+    };
+    assert!(l.mismatches(&ahead).is_empty());
+}
+
 /// Holders: the accounts with Shares in hand, biggest first, without the
 /// Treasury, the Vester, the tokens or the zero address.
 #[test]
