@@ -368,4 +368,51 @@ for who in EXPECTED.get("notHolders", []):
 if "firstBackedAt" in EXPECTED:
     check("first backed at is the first join's block time", rec["firstBackedAt"], EXPECTED["firstBackedAt"])
 
+# ---- the four social keys (held, feed, streaks, established), recomputed from the node's own raw logs and balances by
+# scripts/chain-social-recompute.py (it shares no code with the server).
+import importlib.util
+import os
+import urllib.request
+
+
+def node(method, *params):
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": list(params)}).encode()
+    with urllib.request.urlopen(urllib.request.Request(RPC, body, {"content-type": "application/json"}), timeout=60) as r:
+        out = json.load(r)
+    if "error" in out:
+        fail(f"{method}: {out['error']}")
+    return out["result"]
+
+
+spec = importlib.util.spec_from_file_location("chain_social_recompute", os.path.join(os.path.dirname(os.path.abspath(__file__)), "chain-social-recompute.py"))
+social = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(social)
+mine = {T.lower(), SH.lower()} | ({BOOK.lower()} if BOOK else set())
+raw = [
+    {"block": int(l["blockNumber"], 16), "index": int(l["logIndex"], 16), "address": l["address"], "topics": l["topics"], "data": l["data"]}
+    for l in node("eth_getLogs", {"fromBlock": "0x0", "toBlock": hex(int(BLOCK)), "address": sorted(mine)})
+]
+times = {b: int(node("eth_getBlockByNumber", hex(b), False)["timestamp"], 16) for b in {l["block"] for l in raw}}
+logs = social.decode(raw, times, mine, int(BLOCK))
+excluded = {social.ZERO, T.lower(), V.lower(), SH.lower(), TM.lower(), USD.lower(), LAUNCHER.lower()}
+balance_of = lambda account: uint(SH, "balanceOf(address)(uint256)", account)
+ctx = {
+    "treasury": T.lower(), "shares": SH.lower(), "excluded": excluded, "candidates": [],
+    "balance": balance_of, "supply": uint(SH, "totalSupply()(uint256)"),
+    "in_excluded": sum(balance_of(e) for e in excluded if e != social.ZERO),
+    "leave": uint(T, "leaveValue()(uint256)"), "min_join": uint(T, "MIN_JOIN()(uint256)"),
+}
+before = count
+
+
+def quiet(label, got, want):
+    global count
+    if str(got) != str(want):
+        fail(f"social: {label}: the record says {got}, the recomputation from the raw logs says {want}")
+    count += 1
+
+
+social.check_social(rec, logs, rec["asOf"]["time"], ctx, quiet)
+print(f"ok    the four social keys: {count - before} checks against the raw logs")
+
 print(f"CHECKS {count}")

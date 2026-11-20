@@ -32,6 +32,10 @@ spec = importlib.util.spec_from_file_location("chain_reader_fixture", os.path.jo
 fx = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(fx)
 
+_social_spec = importlib.util.spec_from_file_location("chain_social_recompute", os.path.join(HERE, "chain-social-recompute.py"))
+social = importlib.util.module_from_spec(_social_spec)
+_social_spec.loader.exec_module(social)
+
 EXAMPLE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(fx.REPO, "docs", "next-version", "record-v2-example.json")
 STATES = {"announced": 1, "taken": 2, "paid": 3, "rejected": 4, "returned": 5, "cancelled": 6, "lapsed": 7}
 ZERO = "0x" + "00" * 20
@@ -67,19 +71,6 @@ def same(what, record, chain):
 
 def lower(a):
     return a.lower()
-
-
-# The event signatures the social keys read, hashed here (not taken from the server's table).
-SIG = {
-    "Transfer": "Transfer(address,address,uint256)",
-    "Joined": "Joined(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256)",
-    "Left": "Left(address,address,uint256,uint256,uint256,uint256,uint256,uint256)",
-    "TeamLeft": "TeamLeft(address,address,uint256,uint256,uint256,uint256,uint256)",
-    "CheckedIn": "CheckedIn(address,bytes32,uint64)",
-    "TaskAnnounced": "TaskAnnounced(uint64,bytes32,address,uint256,uint16,uint64,uint64,uint64,uint8)",
-    "TaskTaken": "TaskTaken(uint64,address,uint256,uint256,uint64,uint64,uint256,uint8)",
-    "TaskResolved": "TaskResolved(uint64,uint8,uint256,uint256,uint256,uint256,uint256,uint8,uint256)",
-}
 
 
 def main():
@@ -225,163 +216,24 @@ def check(r, block, now, played):
     print(f"the four social keys, recomputed from the raw logs: {checks - start} checks")
 
 
-def decode_logs(played, block):
-    """Project A's logs up to `block` as (time, block, index, name, address, topics, words), decoded by position."""
-    topic0 = {fx.run(["cast", "keccak", sig]).lower(): name for name, sig in SIG.items()}
-    times = {b["number"]: b["time"] for b in played["blocks"]}
-    a = played["projects"]["A"]
-    mine = {a["treasury"], a["tasks"], a["shares"]}
-    out = []
-    for l in played["logs"]:
-        if l["block"] > block or l["address"] not in mine:
-            continue
-        name = topic0.get(l["topics"][0].lower())
-        if name is None:
-            continue
-        data = l["data"][2:]
-        words = [int(data[i : i + 64], 16) for i in range(0, len(data), 64)]
-        out.append((times[l["block"]], l["block"], l["index"], name, l["address"], l["topics"], words))
-    out.sort(key=lambda e: (e[1], e[2]))
-    return out
-
-
 def check_social(r, block, now, played):
+    """The four social keys, recomputed from the run's raw logs by scripts/chain-social-recompute.py."""
     a = played["projects"]["A"]
-    unit, launched = r["unit"], r["launchedAt"]
-    logs = decode_logs(played, block)
     t, shares_token = a["treasury"], a["shares"]
-    zero = "0x" + "00" * 20
-
-    # ---- held: each account's lowest balance over a window, counted by walking its own balances through time.
-    leave = num(block, t, "leaveValue()(uint256)")
-    min_join = num(block, t, "MIN_JOIN()(uint256)")
-    supply = num(block, shares_token, "totalSupply()(uint256)")
+    times = {b["number"]: b["time"] for b in played["blocks"]}
+    raw = [{"block": l["block"], "index": l["index"], "address": l["address"], "topics": l["topics"], "data": l["data"]} for l in played["logs"]]
+    logs = social.decode(raw, times, {a["treasury"], a["tasks"], a["shares"]}, block)
     # Nobody holds for the zero address, the project's contracts, the dollar and the Launcher.
-    excluded = {zero, a["treasury"], a["vester"], a["shares"], a["team"], played["dollar"], played["launcher"]}
-    moves = {}
-    for time, blk, idx, name, addr, topics, words in logs:
-        if name != "Transfer" or addr != shares_token:
-            continue
-        frm, to = "0x" + topics[1][-40:], "0x" + topics[2][-40:]
-        if frm == to:
-            continue
-        if frm != zero:
-            moves.setdefault(frm, []).append((blk, idx, time, -words[0]))
-        if to != zero:
-            moves.setdefault(to, []).append((blk, idx, time, words[0]))
-    holders = {}
-    for account in set(moves) | set(played["accounts"].values()):
-        balance = num(block, shares_token, "balanceOf(address)(uint256)", account)
-        if balance and account not in excluded:
-            holders[account] = balance
-    in_excluded = sum(
-        num(block, shares_token, "balanceOf(address)(uint256)", e) for e in excluded if e != zero
-    )
-    same("held: the holders' balances add up to the supply less what the excluded accounts hold", sum(holders.values()), supply - in_excluded)
-
-    def lowest(window):
-        start = now - window
-        out = {}
-        for account, balance in holders.items():
-            history = sorted(moves.get(account, []))
-            at_start = sum(d for _, _, tm, d in history if tm <= start)
-            low = running = at_start
-            for _, _, tm, d in history:
-                if tm > start:
-                    running += d
-                    low = min(low, running)
-            same(f"held: the walk of {account[:8]} ends at its balance", running, balance)
-            out[account] = low
-        return out
-
-    rank_secs, badge_secs = 30 * (unit // 7), 13 * unit
-    H = r["held"]
-    same("held.windows.rankSecs", H["windows"]["rankSecs"], rank_secs)
-    same("held.windows.badgeSecs", H["windows"]["badgeSecs"], badge_secs)
-    lows = lowest(rank_secs)
-    rank_shares = sum(lows.values())
-    same("held.rank.shares", H["rank"]["shares"], str(rank_shares))
-    same("held.rank.bps", H["rank"]["bps"], 10_000 * rank_shares // supply)
-    same("held.rank.money", H["rank"]["money"], str(rank_shares * leave // 10**18))
-    same("held.rank.accounts", H["rank"]["accounts"], sum(1 for v in lows.values() if v * leave // 10**18 >= min_join))
-    badge_shares = sum(lowest(badge_secs).values())
-    same("held.badge.shares", H["badge"]["shares"], str(badge_shares))
-    same("held.badge.bps", H["badge"]["bps"], 10_000 * badge_shares // supply)
-    counted = sum(1 for v in holders.values() if v * leave // 10**18 >= min_join)
-    same("held.countedAccounts", H["countedAccounts"], counted)
-    same("the two windows give different figures in this run (a dip older than the rank window)", rank_shares != badge_shares, True)
-
-    # ---- established
-    E = r["established"]
-    signers = r["runner"]["signers"]
-    two = bool(r["runner"]["isPair"] and signers and signers[0] != signers[1] and zero not in signers)
-    same("established.rule", E["rule"], {"minHeldBps": 6000, "heldSecs": badge_secs, "minAccounts": 10})
-    same("established.heldBps", E["heldBps"], 10_000 * badge_shares // supply)
-    same("established.accounts", E["accounts"], counted)
-    same("established.twoSigners", E["twoSigners"], two)
-    same("established.reached", E["reached"], 10_000 * badge_shares // supply >= 6000 and counted >= 10 and two)
-
-    # ---- feed
-    F = r["feed"]
-    bucket = unit // 168
-    first = now - now % bucket - 47 * bucket
-    same("feed.bucketSecs", F["bucketSecs"], bucket)
-    same("feed.roundTo", F["roundTo"], str(100 * 10**6))
-    same("feed has 48 hours", len(F["hours"]), 48)
-    for k, hour in enumerate(F["hours"]):
-        lo = first + k * bucket
-        joins = took = up = down = 0
-        for time, blk, idx, name, addr, topics, words in logs:
-            if addr != t or not (lo <= time < lo + bucket):
-                continue
-            if name == "Joined":
-                joins += 1
-                up += words[0] - words[1]
-            elif name in ("Left", "TeamLeft"):
-                took += 1
-                down += words[1]
-        rounded = (abs(up - down) + 50 * 10**6) // (100 * 10**6) * (100 * 10**6)
-        want = {"dir": "even" if rounded == 0 else ("in" if up > down else "out"), "amount": str(rounded)}
-        same(f"feed hour {k} at", hour["at"], lo)
-        same(f"feed hour {k} joins", hour["joins"], joins)
-        same(f"feed hour {k} tookOut", hour["tookOut"], took)
-        same(f"feed hour {k} net", hour["net"], want)
-    window = 28 * (unit // 7)
-    items = []
-    for time, blk, idx, name, addr, topics, words in reversed(logs):
-        if time + window <= now:
-            continue
-        serial = int(topics[1], 16) if name.startswith("Task") else None
-        if name == "CheckedIn" and addr == t:
-            items.append({"kind": "update", "at": time, "serial": None, "date": None})
-        elif name == "TaskAnnounced":
-            items.append({"kind": "task_planned", "at": time, "serial": serial, "date": words[5]})
-        elif name == "TaskTaken":
-            items.append({"kind": "task_taken", "at": time, "serial": serial, "date": words[4]})
-        elif name == "TaskResolved":
-            kind = {3: "task_paid", 6: "task_withdrawn"}.get(words[0], "task_ended")
-            items.append({"kind": kind, "at": time, "serial": serial, "date": None})
-    same("feed.items", F["items"], items[:30])
-    same("feed.cut", F["cut"], max(0, len(items) - 30))
-
-    # ---- streaks: windows aligned to the launch
-    checkins = sorted(time for time, blk, idx, name, addr, topics, words in logs if name == "CheckedIn" and addr == t)
-    windows = {(tm - launched) // unit for tm in checkins}
-    current = (now - launched) // unit
-    weeks, k = 0, current if current in windows else current - 1
-    while k >= 0 and k in windows:
-        weeks += 1
-        k -= 1
-    longest = run = 0
-    prev = None
-    for w in sorted(windows):
-        run = run + 1 if prev is not None and prev + 1 == w else 1
-        longest = max(longest, run)
-        prev = w
-    S = r["streaks"]["updates"]
-    same("streaks.updates.weeks", S["weeks"], weeks)
-    same("streaks.updates.longest", S["longest"], longest)
-    same("streaks.updates.lastAt", S["lastAt"], checkins[-1] if checkins else None)
+    excluded = {social.ZERO, a["treasury"], a["vester"], a["shares"], a["team"], played["dollar"], played["launcher"]}
+    balance = lambda account: num(block, shares_token, "balanceOf(address)(uint256)", account)
+    ctx = {
+        "treasury": t, "shares": shares_token, "excluded": excluded, "candidates": list(played["accounts"].values()),
+        "balance": balance, "supply": num(block, shares_token, "totalSupply()(uint256)"),
+        "in_excluded": sum(balance(e) for e in excluded if e != social.ZERO),
+        "leave": num(block, t, "leaveValue()(uint256)"), "min_join": num(block, t, "MIN_JOIN()(uint256)"),
+    }
+    rank, badge = social.check_social(r, logs, now, ctx, same)
+    same("the two windows give different figures in this run (a dip older than the rank window)", rank != badge, True)
 
 
 if __name__ == "__main__":
