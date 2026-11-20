@@ -780,7 +780,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 72);
+        assert_eq!(migrations.len(), 73);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1825,6 +1825,32 @@ mod postgres_tests {
         ] {
             assert!(desired_schema.contains(text), "schema.sql must say {text}");
             assert!(migration.contains(text), "migration 0072 must say {text}");
+        }
+        assert!(!migration.to_ascii_lowercase().contains("community_id"));
+        assert!(!migration.contains("attach_community_write_fence"));
+    }
+
+    /// Migration 0073 adds the two indexes of the held-for-a-window query and the ranking columns of the numbers table.
+    /// The desired-state schema must say the same, and the migration must stay clear of community scoping
+    /// (operator-global chain facts).
+    #[test]
+    fn chain_held_indexes_migration_matches_the_desired_schema() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[72].version, 73);
+        let migration = migrations[72].sql.as_str();
+        let desired_schema = crate::test_support::desired_state_schema_sql();
+        for text in [
+            "CREATE INDEX idx_chain_balance_changes_block",
+            "ON chain_balance_changes (reader, project_key, token, block_number, log_index)",
+            "CREATE INDEX idx_chain_blocks_time ON chain_blocks (reader, block_time, number)",
+            "rank_money",
+            "rank_accounts",
+            "rank_window_secs",
+            "launched_at",
+        ] {
+            assert!(desired_schema.contains(text), "schema.sql must say {text}");
+            assert!(migration.contains(text), "migration 0073 must say {text}");
         }
         assert!(!migration.to_ascii_lowercase().contains("community_id"));
         assert!(!migration.contains("attach_community_write_fence"));
