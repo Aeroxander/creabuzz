@@ -614,6 +614,22 @@ pub async fn published(pool: &PgPool, reader: &str) -> anyhow::Result<HashMap<Wo
     Ok(out)
 }
 
+/// What a signed record said about the money that stayed, kept beside it so the ranking index can be built
+/// without reading every record (migration 0073). All `None` when the record has no ranking row.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RankingColumns {
+    /// `held.rank.money`, 6 decimals.
+    pub money: Option<u128>,
+    /// `held.rank.accounts`.
+    pub accounts: Option<u64>,
+    /// `held.windows.rankSecs`.
+    pub window_secs: Option<u64>,
+    /// `established.reached`.
+    pub reached: Option<bool>,
+    /// `launchedAt`.
+    pub launched_at: Option<u64>,
+}
+
 /// A signed record to remember.
 pub struct PublishedRow<'a> {
     /// The project.
@@ -628,6 +644,8 @@ pub struct PublishedRow<'a> {
     pub event_id: &'a [u8; 32],
     /// Its `created_at`.
     pub published_at: i64,
+    /// What it said about the money that stayed.
+    pub ranking: RankingColumns,
 }
 
 /// Remember what was signed for a project.
@@ -638,11 +656,15 @@ pub async fn record_published(
 ) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO chain_project_numbers (reader, project_key, source_block, facts_digest, \
-             content_digest, event_id, published_at) \
-         VALUES ($1, $2, $3, $4, $5, $6, to_timestamp($7)) \
+             content_digest, event_id, published_at, rank_money, rank_accounts, rank_window_secs, \
+             reached, launched_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, to_timestamp($7), $8::numeric, $9, $10, $11, $12) \
          ON CONFLICT (reader, project_key) DO UPDATE SET source_block = EXCLUDED.source_block, \
              facts_digest = EXCLUDED.facts_digest, content_digest = EXCLUDED.content_digest, \
-             event_id = EXCLUDED.event_id, published_at = EXCLUDED.published_at, stale = false",
+             event_id = EXCLUDED.event_id, published_at = EXCLUDED.published_at, stale = false, \
+             rank_money = EXCLUDED.rank_money, rank_accounts = EXCLUDED.rank_accounts, \
+             rank_window_secs = EXCLUDED.rank_window_secs, reached = EXCLUDED.reached, \
+             launched_at = EXCLUDED.launched_at",
     )
     .bind(reader)
     .bind(row.key.as_slice())
@@ -651,6 +673,11 @@ pub async fn record_published(
     .bind(row.content_digest.as_slice())
     .bind(row.event_id.as_slice())
     .bind(row.published_at as f64)
+    .bind(row.ranking.money.map(|m| m.to_string()))
+    .bind(row.ranking.accounts.map(i32::try_from).transpose()?)
+    .bind(row.ranking.window_secs.map(i64::try_from).transpose()?)
+    .bind(row.ranking.reached)
+    .bind(row.ranking.launched_at.map(i64::try_from).transpose()?)
     .execute(pool)
     .await?;
     Ok(())

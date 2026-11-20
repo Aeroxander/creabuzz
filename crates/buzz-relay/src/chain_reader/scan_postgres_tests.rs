@@ -25,7 +25,7 @@ use super::{ChainReader, ChainReaderConfig, PublishReport};
 
 /// The run's blocks served by a fake node. `fork` replaces the tail with
 /// empty blocks of another hash, as a reorganisation does.
-struct FixtureChain {
+pub(super) struct FixtureChain {
     blocks: Mutex<Vec<(Header, Vec<RawLog>)>>,
     /// Answer every log request twice over.
     duplicate: AtomicBool,
@@ -72,7 +72,7 @@ impl FixtureChain {
     }
 
     /// Serve the views of the books `names` (all taken at one block).
-    fn serve_books(&self, fx: &Fixture, names: &[&str]) {
+    pub(super) fn serve_books(&self, fx: &Fixture, names: &[&str]) {
         let mut answers = self.answers.lock().expect("lock");
         for name in names {
             let (_, book) = super::fixture::BookChain::load(fx, name);
@@ -208,7 +208,9 @@ fn config(launcher: [u8; 20]) -> ChainReaderConfig {
     }
 }
 
-async fn setup(fx: &Fixture) -> (ChainReader, Arc<FixtureChain>, Arc<crate::state::AppState>) {
+pub(super) async fn setup(
+    fx: &Fixture,
+) -> (ChainReader, Arc<FixtureChain>, Arc<crate::state::AppState>) {
     setup_deep(fx, 0, 2).await
 }
 
@@ -249,7 +251,10 @@ async fn setup_deep(
 }
 
 /// Passes until the reader has read to the head less its lag.
-async fn read_all(reader: &ChainReader, chain: &FixtureChain) -> super::scan::ScanReport {
+pub(super) async fn read_all(
+    reader: &ChainReader,
+    chain: &FixtureChain,
+) -> super::scan::ScanReport {
     let want = chain.head().await.expect("head") - reader.scan.lag;
     for _ in 0..20 {
         let report = reader.pass().await.expect("a pass").0;
@@ -653,7 +658,7 @@ async fn the_reader_signs_records_and_signs_them_again_when_the_refresh_is_due()
 // ---------------------------------------------------------------------------
 
 /// The content of the record last signed for `key`.
-async fn stored_record(reader: &ChainReader, key: &Word) -> Value {
+pub(super) async fn stored_record(reader: &ChainReader, key: &Word) -> Value {
     let pool = reader.state.db.pool();
     let event_id: Vec<u8> = sqlx::query_scalar(
         "SELECT event_id FROM chain_project_numbers WHERE reader = $1 AND project_key = $2",

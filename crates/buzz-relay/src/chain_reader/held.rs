@@ -167,15 +167,19 @@ pub fn lowest<'a>(
 /// The window's query. `$1` reader, `$2` project key, `$3` the final block, `$4` the window's start (a
 /// block's time: a change counts when its block is later), `$5` the most rows read, `$6` the most accounts.
 ///
-/// `first` finds the first block inside the window through `idx_chain_blocks_time`; `win` reads this
-/// project's change rows from that block on through `idx_chain_balance_changes_block`, in `(block, log_index)`
-/// order, with the `LIMIT` before the running sum; the outer query makes one row per account.
+/// The window's first block is found in one step of `idx_chain_blocks_time` (a scalar subquery, evaluated
+/// once, so the planner does not turn it into a join that must be sorted). The project's change rows are then
+/// read from that block on through `idx_chain_balance_changes_block`, which holds the whole sort key
+/// `(block, log_index)`: they come out in order, so the `LIMIT`, placed before the running sum, stops the scan
+/// after `rows_max + 1` rows and no row beyond is read to be sorted. The outer query makes one row per account.
 pub(crate) const WINDOW_SQL: &str = "\
-WITH first AS (SELECT min(number) AS n FROM chain_blocks WHERE reader = $1 AND block_time > $4), \
-win AS (SELECT c.account, c.block_number, c.log_index, c.delta \
-        FROM chain_balance_changes c, first \
+WITH win AS (SELECT c.account, c.block_number, c.log_index, c.delta \
+        FROM chain_balance_changes c \
         WHERE c.reader = $1 AND c.project_key = $2 AND c.token = 'shares' \
-          AND c.block_number >= first.n AND c.block_number <= $3 \
+          AND c.block_number >= (SELECT b.number FROM chain_blocks b \
+                                  WHERE b.reader = $1 AND b.block_time > $4 \
+                                  ORDER BY b.block_time, b.number LIMIT 1) \
+          AND c.block_number <= $3 \
         ORDER BY c.block_number, c.log_index LIMIT $5 + 1) \
 SELECT account, sum(delta)::text AS total, min(cum)::text AS lowest_run, max(rows_read) AS rows_read \
 FROM (SELECT account, delta, \

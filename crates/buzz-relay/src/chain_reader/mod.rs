@@ -15,6 +15,7 @@
 //! session advisory lock on a connection of its own, checked on every pass.
 
 pub mod events;
+pub mod explore;
 #[cfg(test)]
 pub(crate) mod fixture;
 pub mod held;
@@ -106,6 +107,8 @@ struct Schedule {
     /// Failed builds in a row, and the unix second before which the project
     /// is not tried again.
     failing: HashMap<Word, (u32, i64)>,
+    /// The unix second before which the ranking index is not looked at again.
+    explore_after: i64,
 }
 
 /// What one full pass did.
@@ -142,6 +145,10 @@ pub struct PublishReport {
     /// Held-for-a-window counts left without a figure because the window was
     /// over its cap of rows or accounts.
     pub held_cut: usize,
+    /// Ranking indexes signed this pass (0 or 1).
+    pub explore_signed: usize,
+    /// Ranking indexes that could not be built or signed (the old one stays).
+    pub explore_failed: usize,
 }
 
 /// Whether a publishing pass that took `elapsed` outgrew `refresh_secs`, the
@@ -484,6 +491,29 @@ impl ChainReader {
                 }
             }
         }
+        // The ranking index of the money that stayed: at most every ten minutes, never at the cost of a pass.
+        let due = {
+            let mut schedule = self.schedule();
+            let due = now >= schedule.explore_after;
+            if due {
+                schedule.explore_after =
+                    now.saturating_add(i64::try_from(explore::EVERY_SECS).unwrap_or(i64::MAX));
+            }
+            due
+        };
+        if due {
+            match self.publish_explore(&tenant, &as_of, now).await {
+                Ok(true) => report.explore_signed += 1,
+                Ok(false) => {}
+                Err(e) => {
+                    report.explore_failed += 1;
+                    metrics::counter!("buzz_chain_reader_explore_failed_total").increment(1);
+                    tracing::error!(
+                        "chain reader: the ranking index was not signed (the old one stays): {e:#}"
+                    );
+                }
+            }
+        }
         // The reader reads a project's stored rows each pass (a Take out with notes
         // adds rows, RECORD-V2 section 10.3): a pass that outgrows its refresh time
         // is the alarm to fold the per-holder notes into a running-totals table.
@@ -497,6 +527,26 @@ impl ChainReader {
             );
         }
         Ok(report)
+    }
+
+    /// Build the ranking index and sign it when its entries changed. Returns
+    /// whether a record was signed.
+    async fn publish_explore(
+        &self,
+        tenant: &TenantContext,
+        as_of: &AsOf,
+        now: i64,
+    ) -> anyhow::Result<bool> {
+        let index = explore::build(&self.state, tenant, self.scan.reader.as_str(), as_of).await?;
+        explore::publish(
+            &self.state,
+            tenant,
+            self.config.chain_id,
+            &self.config.launcher,
+            &index,
+            now,
+        )
+        .await
     }
 
     /// A project's build failed: it waits longer after each failure in a row.
@@ -665,6 +715,7 @@ impl ChainReader {
                 content_digest: &shown,
                 event_id: &event_id,
                 published_at: created_at,
+                ranking: explore::columns_of(&content),
             },
         )
         .await?;
@@ -982,6 +1033,8 @@ mod helper_block_tests {
     }
 }
 
+#[cfg(test)]
+mod held_postgres_tests;
 #[cfg(test)]
 mod mul_div_tests;
 #[cfg(test)]
