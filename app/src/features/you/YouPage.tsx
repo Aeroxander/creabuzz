@@ -5,6 +5,7 @@ import {
   removePasskeyIdentity,
 } from "@creaton/core/account/passkey-identity.ts";
 import { forgetIdentity } from "@creaton/core/client/identity.ts";
+import { serverWebPushKey } from "@creaton/core/client/server-settings.ts";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, KeyRound, LogOut, MessageSquare } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
@@ -29,6 +30,11 @@ import { useProjectsBy } from "../profile/use-own-projects";
 
 // What is planned, taken and finished on the projects this account holds, and what it is owed (the record only, no money call).
 const NewsSection = lazy(() => import("../alerts/NewsSection"));
+// Alerts when the app is closed (a short message when a task is planned, taken or ended): the card is drawn only where the
+// server says it can send them.
+const PushCard = lazy(() =>
+  import("../alerts/push/PushCard").then((m) => ({ default: m.PushCard })),
+);
 // What this account holds across projects (money calls and ABIs load only where investing is on).
 const YourSharesList = lazy(() => import("../pot/YourSharesList"));
 // The old design's backing receipts: loaded only with the legacy-screens flag.
@@ -119,6 +125,11 @@ function SignedIn({ me }: { me: string }) {
       {investingOn() ? (
         <Suspense fallback={null}>
           <NewsSection />
+        </Suspense>
+      ) : null}
+      {investingOn() && serverWebPushKey() ? (
+        <Suspense fallback={null}>
+          <PushCard me={me} />
         </Suspense>
       ) : null}
       {investingOn() ? (

@@ -1,10 +1,15 @@
+import { serverWebPushKey } from "@creaton/core/client/server-settings.ts";
 import { Outlet, useRouterState } from "@tanstack/react-router";
+import { lazy, Suspense } from "react";
 import { RecoveryOfferHost } from "../features/account/RecoveryKeySheet";
 import { TermsAgainHost } from "../features/account/TermsAgainHost";
 import { UnlockBar } from "../features/account/UnlockBar";
 import { useUnseenCount } from "../features/notifications/use-notifications";
 import { WithMoneyBanner } from "./MoneyBanner";
 import { TabBar } from "./TabBar";
+
+// Saves this device's alerts at the server again before it forgets them; loaded only where the server sends alerts.
+const PushRenewal = lazy(() => import("../features/alerts/push/PushRenewal"));
 
 /** Every screen: the gradient behind, the account notices on top, the screen, and the tab bar at the bottom. */
 export function Shell() {
@@ -25,6 +30,11 @@ export function Shell() {
       </WithMoneyBanner>
       {signUp ? null : <TabBar badge={unseen} />}
       <RecoveryOfferHost />
+      {!signUp && serverWebPushKey() ? (
+        <Suspense fallback={null}>
+          <PushRenewal />
+        </Suspense>
+      ) : null}
     </>
   );
 }
