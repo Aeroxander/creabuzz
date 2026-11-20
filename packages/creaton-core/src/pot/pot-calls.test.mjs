@@ -361,3 +361,248 @@ test("a Pair's proposal, confirmation and withdrawal carry the inner call whole"
     ["cancel", HASH],
   );
 });
+
+// --- Tasks ---------------------------------------------------------------------------------------------------------
+// Each literal below is what `cast calldata "<signature>" <arguments>` prints (foundry 1.4.3), so a builder that drifts
+// from the contract's own function fails here. The commands are in the comment above each one.
+
+const WHAT = `0x${"ab".repeat(32)}`;
+
+test("the seven task calls have the selectors `cast sig` gives, and the Treasury has them", () => {
+  const selectors = {
+    // cast sig "announceTask(bytes32,address,uint256,uint16)" and the rest
+    announceTask: "0xf799daee",
+    takeTask: "0x6efda0f9",
+    acceptTask: "0xa4e235c2",
+    rejectTask: "0xbe99bca8",
+    cancelTask: "0x6190aab8",
+    returnTask: "0x6c950913",
+    claimNote: "0xa5826642",
+  };
+  const made = {
+    announceTask: calls.announceTaskCall({
+      treasury: TREASURY,
+      what: WHAT,
+      payee: YOU,
+      maxDollars: 1_000_000n,
+      shareBps: 1,
+    }),
+    takeTask: calls.takeTaskCall({
+      treasury: TREASURY,
+      serial: 1n,
+      minAmount: 1n,
+    }),
+    acceptTask: calls.acceptTaskCall({
+      treasury: TREASURY,
+      serial: 1n,
+      payDollars: 1n,
+    }),
+    rejectTask: calls.rejectTaskCall({ treasury: TREASURY, serial: 1n }),
+    cancelTask: calls.cancelTaskCall({ treasury: TREASURY, serial: 1n }),
+    returnTask: calls.returnTaskCall({ treasury: TREASURY, serial: 1n }),
+    claimNote: calls.claimNoteCall({
+      treasury: TREASURY,
+      serial: 1n,
+      holder: YOU,
+    }),
+  };
+  for (const [name, selector] of Object.entries(selectors)) {
+    assert.equal(made[name].data.slice(0, 10), selector, name);
+    assert.equal(made[name].to, low(TREASURY), name);
+    assert.equal(made[name].value, "0x0", name);
+    assert.equal(read(TREASURY_ABI, made[name]).name, name);
+  }
+});
+
+test("the task calls' data is what cast calldata gives, byte for byte", () => {
+  // cast calldata "announceTask(bytes32,address,uint256,uint16)" 0xabab…ab <YOU> 400000000 250
+  assert.equal(
+    calls.announceTaskCall({
+      treasury: TREASURY,
+      what: WHAT,
+      payee: YOU,
+      maxDollars: 400_000_000n,
+      shareBps: 250,
+    }).data,
+    "0xf799daeeabababababababababababababababababababababababababababababababab00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c80000000000000000000000000000000000000000000000000000000017d7840000000000000000000000000000000000000000000000000000000000000000fa",
+  );
+  // the same with the zero address: whoever takes it first, and the 5% most
+  assert.equal(
+    calls.announceTaskCall({
+      treasury: TREASURY,
+      what: WHAT.toUpperCase().replace("0X", "0x"),
+      payee: null,
+      maxDollars: 1_000_000n,
+      shareBps: 500,
+    }).data,
+    "0xf799daeeabababababababababababababababababababababababababababababababab000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000f424000000000000000000000000000000000000000000000000000000000000001f4",
+  );
+  // cast calldata "takeTask(uint64,uint256)" 3 400000000
+  assert.equal(
+    calls.takeTaskCall({
+      treasury: TREASURY,
+      serial: 3n,
+      minAmount: 400_000_000n,
+    }).data,
+    "0x6efda0f900000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000017d78400",
+  );
+  // cast calldata "acceptTask(uint64,uint256)" 3 240000000
+  assert.equal(
+    calls.acceptTaskCall({
+      treasury: TREASURY,
+      serial: 3n,
+      payDollars: 240_000_000n,
+    }).data,
+    "0xa4e235c20000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000e4e1c00",
+  );
+  // cast calldata "rejectTask(uint64)" 18446744073709551615 (the largest serial)
+  assert.equal(
+    calls.rejectTaskCall({
+      treasury: TREASURY,
+      serial: 18_446_744_073_709_551_615n,
+    }).data,
+    "0xbe99bca8000000000000000000000000000000000000000000000000ffffffffffffffff",
+  );
+  // cast calldata "cancelTask(uint64)" 7
+  assert.equal(
+    calls.cancelTaskCall({ treasury: TREASURY, serial: 7n }).data,
+    "0x6190aab80000000000000000000000000000000000000000000000000000000000000007",
+  );
+  // cast calldata "returnTask(uint64)" 12
+  assert.equal(
+    calls.returnTaskCall({ treasury: TREASURY, serial: 12n }).data,
+    "0x6c950913000000000000000000000000000000000000000000000000000000000000000c",
+  );
+  // cast calldata "claimNote(uint64,address)" 5 <YOU>
+  assert.equal(
+    calls.claimNoteCall({ treasury: TREASURY, serial: 5n, holder: YOU }).data,
+    "0xa5826642000000000000000000000000000000000000000000000000000000000000000500000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c8",
+  );
+});
+
+test("every task call reads back to the arguments it was built with", () => {
+  const announce = read(
+    TREASURY_ABI,
+    calls.announceTaskCall({
+      treasury: TREASURY,
+      what: WHAT,
+      payee: YOU,
+      maxDollars: 400_000_000n,
+      shareBps: 250,
+    }),
+  );
+  assert.deepEqual(
+    [announce.name, ...announce.args],
+    ["announceTask", WHAT, low(YOU), 400_000_000n, 250n],
+  );
+  const open = read(
+    TREASURY_ABI,
+    calls.announceTaskCall({
+      treasury: TREASURY,
+      what: WHAT,
+      payee: null,
+      maxDollars: 1_000_000n,
+      shareBps: 1,
+    }),
+  );
+  assert.equal(open.args[1], calls.ZERO_ADDRESS);
+  const take = read(
+    TREASURY_ABI,
+    calls.takeTaskCall({ treasury: TREASURY, serial: 9n, minAmount: 5n }),
+  );
+  assert.deepEqual([take.name, ...take.args], ["takeTask", 9n, 5n]);
+  const accept = read(
+    TREASURY_ABI,
+    calls.acceptTaskCall({ treasury: TREASURY, serial: 9n, payDollars: 6n }),
+  );
+  assert.deepEqual([accept.name, ...accept.args], ["acceptTask", 9n, 6n]);
+});
+
+test("acceptTask has no recipient: its calldata is the serial and the amount and nothing more", () => {
+  const call = calls.acceptTaskCall({
+    treasury: TREASURY,
+    serial: 3n,
+    payDollars: 5n,
+  });
+  // 4 bytes of selector and two words: the money goes to whoever took the task, and a call cannot name another.
+  assert.equal((call.data.length - 2) / 2, 4 + 64);
+});
+
+test("a claim names exactly the holder it is given", () => {
+  const mine = read(
+    TREASURY_ABI,
+    calls.claimNoteCall({ treasury: TREASURY, serial: 5n, holder: ME }),
+  );
+  assert.equal(mine.args[1], low(ME));
+  const yours = read(
+    TREASURY_ABI,
+    calls.claimNoteCall({ treasury: TREASURY, serial: 5n, holder: YOU }),
+  );
+  assert.equal(yours.args[1], low(YOU));
+  assert.notEqual(mine.args[1], yours.args[1]);
+  assert.throws(
+    () =>
+      calls.claimNoteCall({ treasury: TREASURY, serial: 5n, holder: "0x12" }),
+    /invalid address/,
+  );
+});
+
+test("a bad task argument never becomes calldata", () => {
+  const ok = { treasury: TREASURY, what: WHAT, payee: YOU, maxDollars: 1n };
+  // the share: whole ten-thousandths from 1 to 500
+  for (const shareBps of [0, 501, -1, 1.5, Number.NaN, 65_536]) {
+    assert.throws(
+      () => calls.announceTaskCall({ ...ok, shareBps }),
+      /share/,
+      String(shareBps),
+    );
+  }
+  // the record's id: 32 bytes and not all zero
+  for (const what of [
+    "0x12",
+    `0x${"00".repeat(32)}`,
+    `0x${"zz".repeat(32)}`,
+    "",
+  ]) {
+    assert.throws(
+      () => calls.announceTaskCall({ ...ok, what, shareBps: 1 }),
+      /32-byte/,
+      what,
+    );
+  }
+  // amounts: more than nothing, a bigint, at most a uint128
+  for (const maxDollars of [0n, -1n, 1n << 128n, 5, "5"]) {
+    assert.throws(
+      () => calls.announceTaskCall({ ...ok, maxDollars, shareBps: 1 }),
+      /more than nothing/,
+    );
+  }
+  assert.throws(
+    () => calls.takeTaskCall({ treasury: TREASURY, serial: 1n, minAmount: 0n }),
+    /more than nothing/,
+  );
+  assert.throws(
+    () =>
+      calls.acceptTaskCall({ treasury: TREASURY, serial: 1n, payDollars: 0n }),
+    /more than nothing/,
+  );
+  assert.throws(
+    () =>
+      calls.acceptTaskCall({ treasury: TREASURY, serial: 1n, payDollars: -5n }),
+    /more than nothing/,
+  );
+  // serials: from 1, a uint64
+  for (const serial of [0n, -1n, 1n << 64n, 3, "3"]) {
+    for (const build of [
+      calls.rejectTaskCall,
+      calls.cancelTaskCall,
+      calls.returnTaskCall,
+    ]) {
+      assert.throws(() => build({ treasury: TREASURY, serial }), /task number/);
+    }
+  }
+  assert.throws(
+    () => calls.announceTaskCall({ ...ok, payee: "0x12", shareBps: 1 }),
+    /invalid address/,
+  );
+});

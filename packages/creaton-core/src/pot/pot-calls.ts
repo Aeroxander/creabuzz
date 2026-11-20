@@ -241,6 +241,134 @@ export function takeSeatCall(treasury: string): PotCall {
   return build(TREASURY_ABI, treasury, "takeSeat", []);
 }
 
+// --- Tasks (the Treasury's task queue; `contracts/pot/src/TaskBook.sol`) -----------------------------------------------
+
+const UINT64_MAX = (1n << 64n) - 1n;
+/** The book keeps every amount as a uint128. */
+const UINT128_MAX = (1n << 128n) - 1n;
+/** The most one task may ask for, in ten-thousandths of the pot (the book's `MAX_SHARE_BPS`; the contract has the last word). */
+const MAX_TASK_SHARE_BPS = 500;
+
+/** A task's number: a whole number from 1 (serials start at 1 and never repeat) that fits a uint64. */
+function taskSerial(serial: bigint): bigint {
+  if (typeof serial !== "bigint" || serial < 1n || serial > UINT64_MAX)
+    throw new Error("A task number is a whole number from 1");
+  return serial;
+}
+
+/** A dollar amount in raw units: more than nothing and no more than the book can keep. */
+function taskAmount(value: bigint, label: string): bigint {
+  if (typeof value !== "bigint" || value < 1n || value > UINT128_MAX)
+    throw new Error(`${label} must be more than nothing and a whole number`);
+  return value;
+}
+
+/**
+ * Plan a task (`Treasury.announceTask`). Sender: the runner (with a Pair, both signers, through a proposal). Nothing moves.
+ * `what` is the 32-byte id of the team's signed task record; `payee` is who may take it (null: whoever takes it first);
+ * `maxDollars` the most it may set aside, in raw dollar units; `shareBps` the share of the pot it may ask for, 1 to 500
+ * ten-thousandths. The contract still decides every other limit (the smallest task, the open count, who the payee may be).
+ */
+export function announceTaskCall(input: {
+  treasury: string;
+  what: string;
+  payee: string | null;
+  maxDollars: bigint;
+  shareBps: number;
+}): PotCall {
+  if (!/^0x[0-9a-fA-F]{64}$/.test(input.what) || /^0x0{64}$/.test(input.what))
+    throw new Error("A task is named by the 32-byte id of its record");
+  if (
+    !Number.isInteger(input.shareBps) ||
+    input.shareBps < 1 ||
+    input.shareBps > MAX_TASK_SHARE_BPS
+  )
+    throw new Error(
+      "A task's share is from 0.01% to 5% of the project's money",
+    );
+  return build(TREASURY_ABI, input.treasury, "announceTask", [
+    input.what.toLowerCase(),
+    input.payee === null ? ZERO_ADDRESS : input.payee,
+    taskAmount(input.maxDollars, "What a task may cost"),
+    BigInt(input.shareBps),
+  ]);
+}
+
+/**
+ * Take a planned task (`Treasury.takeTask`) and have its money set aside. Sender: the named payee, never the runner or a
+ * signer. `minAmount` is the least the taker accepts to have set aside: the call is refused if less would be.
+ */
+export function takeTaskCall(input: {
+  treasury: string;
+  serial: bigint;
+  minAmount: bigint;
+}): PotCall {
+  return build(TREASURY_ABI, input.treasury, "takeTask", [
+    taskSerial(input.serial),
+    taskAmount(input.minAmount, "The least to set aside"),
+  ]);
+}
+
+/**
+ * Pay `payDollars` of a taken task's set-aside money (`Treasury.acceptTask`). Sender: the runner (with a Pair, both).
+ * There is no recipient: the money goes to whoever took the task, and to nobody else.
+ */
+export function acceptTaskCall(input: {
+  treasury: string;
+  serial: bigint;
+  payDollars: bigint;
+}): PotCall {
+  return build(TREASURY_ABI, input.treasury, "acceptTask", [
+    taskSerial(input.serial),
+    taskAmount(input.payDollars, "A payment"),
+  ]);
+}
+
+/** Send a taken task's money back, paying nobody (`Treasury.rejectTask`). Sender: the runner (with a Pair, both). */
+export function rejectTaskCall(input: {
+  treasury: string;
+  serial: bigint;
+}): PotCall {
+  return build(TREASURY_ABI, input.treasury, "rejectTask", [
+    taskSerial(input.serial),
+  ]);
+}
+
+/** Withdraw a planned task nobody has taken (`Treasury.cancelTask`). Sender: the runner (with a Pair, both). */
+export function cancelTaskCall(input: {
+  treasury: string;
+  serial: bigint;
+}): PotCall {
+  return build(TREASURY_ABI, input.treasury, "cancelTask", [
+    taskSerial(input.serial),
+  ]);
+}
+
+/** Make sure a task that ran out is back in the project (`Treasury.returnTask`). Sender: anyone. */
+export function returnTaskCall(input: {
+  treasury: string;
+  serial: bigint;
+}): PotCall {
+  return build(TREASURY_ABI, input.treasury, "returnTask", [
+    taskSerial(input.serial),
+  ]);
+}
+
+/**
+ * Claim `holder`'s note on an ended task (`Treasury.claimNote`). Anyone may send it; the money goes to `holder` only. The
+ * app always passes the connected account, so a person can only ever claim for themselves.
+ */
+export function claimNoteCall(input: {
+  treasury: string;
+  serial: bigint;
+  holder: string;
+}): PotCall {
+  return build(TREASURY_ABI, input.treasury, "claimNote", [
+    taskSerial(input.serial),
+    input.holder,
+  ]);
+}
+
 // --- A member's grant ---------------------------------------------------------------------------------------------
 
 /** Send a grant's unlocked Team Shares to its member (anyone may press; the Shares go to the member). */
