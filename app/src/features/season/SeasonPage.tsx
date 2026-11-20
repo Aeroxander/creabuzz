@@ -5,7 +5,7 @@
  * project". It draws its own banner (the shell's steps aside), and carries the line that money can go up or down once under
  * the list's heading.
  */
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { BackHeader } from "../../app/BackHeader";
 import { BannerText, useOwnBanner } from "../../app/MoneyBanner";
 import { investingOn } from "../../lib/server";
@@ -48,6 +48,13 @@ function Batch({
   entries: readonly SeasonEntry[];
 }) {
   const batch = useDemoBatch(number, index, coordinates, entries);
+  const placed = useRef(false);
+  // A batch the person asked for ("Show more") puts the keyboard on its first card's press, where the button they used was.
+  useEffect(() => {
+    if (placed.current || index === 0 || !batch.data?.length) return;
+    placed.current = true;
+    document.querySelector<HTMLElement>(`[data-batch="${index}"] a`)?.focus();
+  }, [batch.data, index]);
   if (batch.isPending)
     return (
       <li>
@@ -72,7 +79,7 @@ function Batch({
   return (
     <>
       {batch.data.map((card) => (
-        <DemoCard card={card} key={card.project.coordinate} />
+        <DemoCard batch={index} card={card} key={card.project.coordinate} />
       ))}
     </>
   );

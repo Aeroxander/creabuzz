@@ -270,6 +270,10 @@ describe("the demo day page", () => {
       expect(screen.getAllByTestId("demo-card")).toHaveLength(30),
     );
     expect(recordReads()).toBe(30);
+    // The keyboard is where the button was: on the first card of the batch that was asked for.
+    const firstNew = document.querySelector('[data-batch="1"] a');
+    expect(firstNew).not.toBeNull();
+    expect(document.activeElement).toBe(firstNew);
     expect(screen.queryByTestId("demo-more")).toBeNull();
   });
 });

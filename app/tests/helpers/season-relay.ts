@@ -60,8 +60,14 @@ export async function readServed(filter: Filter) {
 
 export const seasonRelayMock = {
   read: (filter: Filter) => readServed(filter),
-  readMulti: async (filters: Filter[]) =>
-    Promise.all(filters.map((f) => readServed(f))),
+  // As the real client: a read takes 1 to 10 filters (`nostr-client.ts`), and more is refused.
+  readMulti: async (filters: Filter[]) => {
+    if (filters.length === 0 || filters.length > 10)
+      throw new RangeError(
+        `A read takes 1 to 10 filters, not ${filters.length}.`,
+      );
+    return Promise.all(filters.map((f) => readServed(f)));
+  },
   readLatest: async (filter: Filter) => (await readServed(filter))[0] ?? null,
   publishAsUser: async (event: {
     kind: number;

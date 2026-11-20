@@ -19,7 +19,7 @@ import {
   type TeamAnswer,
 } from "@creaton/core/project/team.ts";
 import { useQuery } from "@tanstack/react-query";
-import { read, readMulti } from "../../lib/relay";
+import { type NostrFilter, readMulti } from "../../lib/relay";
 import { investingOn } from "../../lib/server";
 import {
   freshnessOf,
@@ -39,6 +39,8 @@ import {
 
 /** Projects drawn at a time, with "Show more" for the next. */
 export const BATCH_SIZE = 24;
+/** What the server accepts in one read: 10 filters, and a longer list is asked for in parts (`nostr-client.ts`). */
+const FILTERS_PER_READ = 10;
 /** How many records of one project's team are read to find its newest update. */
 const UPDATES_READ = 60;
 /** The words of an update kept for a card: its title and the start of its body. */
@@ -66,6 +68,14 @@ interface Record47003 {
   created_at: number;
   tags: string[][];
   content: string;
+}
+
+/** Many filters read in parts of ten, the answers in the order the filters were given. */
+async function readInParts(filters: readonly NostrFilter[]) {
+  const parts: NostrFilter[][] = [];
+  for (let i = 0; i < filters.length; i += FILTERS_PER_READ)
+    parts.push(filters.slice(i, i + FILTERS_PER_READ));
+  return (await Promise.all(parts.map((part) => readMulti(part)))).flat();
 }
 
 const cut = (text: string, max: number): string => {
@@ -138,7 +148,7 @@ async function readDemoBatch(
     return who ? [{ coordinate, ...who }] : [];
   });
   if (named.length === 0) return [];
-  const found = await readMulti(
+  const found = await readInParts(
     named.map((n) => ({
       kinds: [KIND_LAUNCH_RECORD],
       authors: [n.founder],
@@ -158,8 +168,8 @@ async function readDemoBatch(
 
   const signer = serverRelaySigner();
   const keys = projects.flatMap((p) => chainKeyOfProject(p) ?? []);
-  const [records, numberEvents] = await Promise.all([
-    readMulti(
+  const [records, numberAnswers] = await Promise.all([
+    readInParts(
       projects.map((p) => ({
         kinds: [KIND_LAUNCH_UPDATE],
         "#a": [p.coordinate],
@@ -167,14 +177,18 @@ async function readDemoBatch(
       })),
     ),
     investingOn() && signer && keys.length > 0
-      ? read({
-          kinds: [KIND_PROJECT_NUMBERS],
-          authors: [signer],
-          "#d": keys,
-          limit: keys.length * 5,
-        })
+      ? readInParts(
+          // The keys of one batch, ten to a filter, in one read.
+          Array.from({ length: Math.ceil(keys.length / 10) }, (_, i) => ({
+            kinds: [KIND_PROJECT_NUMBERS],
+            authors: [signer],
+            "#d": keys.slice(i * 10, i * 10 + 10),
+            limit: 50,
+          })),
+        )
       : Promise.resolve([]),
   ]);
+  const numberEvents = numberAnswers.flat();
 
   const voices = new Map<string, Map<string, number | null>>();
   projects.forEach((project, i) => {

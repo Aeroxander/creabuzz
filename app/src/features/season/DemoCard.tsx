@@ -28,7 +28,14 @@ function moneyWords(card: DemoCardData): string {
     : money;
 }
 
-export function DemoCard({ card }: { card: DemoCardData }) {
+export function DemoCard({
+  card,
+  batch,
+}: {
+  card: DemoCardData;
+  /** Which batch of 24 the card is in: the first card of a batch the person asked for takes the keyboard's place. */
+  batch: number;
+}) {
   const headingId = useId();
   const { project, update } = card;
   return (
@@ -36,6 +43,7 @@ export function DemoCard({ card }: { card: DemoCardData }) {
       <article
         aria-labelledby={headingId}
         className="glass glass-text flex flex-col gap-2 rounded-2xl p-4"
+        data-batch={batch}
         data-testid="demo-card"
       >
         <h3 className="headline break-words text-xl" id={headingId}>
