@@ -1003,3 +1003,106 @@ upstream request is ever printed; `forward` returns nothing but its own status) 
 - **The queue is one for the whole deployment**, so a test that sends must start with an empty one (`push_world` deletes the pending and sending rows of the test database).
 - **Not done:** no log capture for the upstream's address; no test of the NIP-98 requirement switched off; a push to a real service is the first human test; the opt-in's words and the worker are A4's.
 - **Disk:** the machine was at 3.0 GB free twice; older duplicate test executables in `target/debug/deps` were deleted (about 1.3 GB, newest of each kept).
+
+## Step 3, review fixes (server, 20 November 2026)
+
+Five independent reviews of step 3 (record, room, page, social, fit) were read; every finding about `crates/**`, the schema, the loop scripts and the record documents was checked against the code first.
+Each fix below has a test on the production path that fails without it (the third table). The reviewers' scratch files of this side (`crates/buzz-relay/tests/review-s3-record.rs`,
+`scripts/review-s3-{room,push}.sh` and their two clients) are turned into the tests named below and **deleted**; none of this side remains, tracked or untracked. No file of `contracts/pot` is touched
+(`git diff 35ea0a894..HEAD -- contracts/pot` is empty), the record stays version 2 with no new field, and no migration was needed.
+
+### Fixed
+
+| Finding | What was wrong (checked) | The fix |
+|---|---|---|
+| record IMPORTANT 1 (and fit R2's start) | `explore::build` tied a project to its record through the newest 5,000 project records of the community and read only the best 500 rows before the tie; about 84 fresh keys saved 60 records a day each to push everyone out, and 500 richer projects with no record hid the honest ones. `seen` and `cut` did not say so. | `record_of_launch` finds the record **by its key** (the `chain-key` tag), one search for each candidate, newest first, pages of 100, at most 500 records of that key; the rows are read a page of 50 at a time, best first, until 20 are kept (500 rows looked at, 100 standing checks at most). `seen` is the number of projects with money that stayed (one count) and `cut` is everything not in the entries, whatever the reason. The newest-5,000 read is gone. |
+| record IMPORTANT 2 | 20,001 one-wei transfers to fresh addresses tripped the 20,000-accounts cap of `held`, so a rival's `held.rank`, `held.badge`, `established.reached` and ranking columns went `null` for 30 or 91 days. | The window query (`WINDOW_SQL`, `$7`) returns only accounts that hold **now** at least `dust_floor = ceil(limits.minJoin x 1e18 / value.leaveValue)` (the fewest Shares a smallest Back buys); the same floor is in `held::lowest_above`, so the sums and the accounts cap agree. Making a window `null` by accounts now costs 20,001 smallest Backs held at the end; what still cuts is 500,000 rows from one sender (stated in RECORD-V2 11.1). The views are read before the windows are counted (`numbers::read_views`, `derive` now takes them). The last row of the query carries the rows read, so a window over the row cap is cut even when no account in it reaches the floor. |
+| record IMPORTANT 3, page I8, fit R2 | An unchanged ranking index was never signed again, so on a quiet network it was older than the 24 hours after which Home hides it; a failed or empty first look waited 600 s. | `publish` signs the same entries again when the live index is 12 hours old (`RESIGN_SECS`). A look that listed nothing or failed is repeated after 60 s, then 120, 240 ... up to 600 (`explore_misses`), so the first index is not ten minutes late and the retry has a backoff and a ceiling. |
+| record OPTIONAL 3 | RECORD-V2 7.1 named block 88 and a "third who backed 500 at day 90" (the example is at block 91 and the run has a late buyer at day 88). | The section now names no block or time (the file's own `asOf` says), and describes the run as the fixture plays it. |
+| room B1 | A past or dust holder wrote for ever: any negative balance change, of one wei, started a new grace (`last_decrease_time`). | Only a decrease of at least `ROOM_MIN_SHARES` (the floor of step 4) starts the grace. |
+| room B2 | A team member could stop the founder (or an operator, or a fellow member) writing by listing their wallet under a made-up person: the mute follows a wallet to every account that linked it. | At write time (`enforce_room_mute`, now async) every `room-mute-wallet` must be a live linked wallet of the person named, and none may be linked by the founder, an operator or the signer. At read time the founder and the operators are never muted whatever a record says. |
+| room I1 | A mute signed by a team member stayed after the founder took the member off the team. | `read_mutes` reads only records signed by the founder or a member listed on the project record now; the older record of a current member decides again. |
+| room C1 (optional) | Count-then-insert with no lock: 40 posts at once stored 15 against 12 an hour. | One advisory lock for one account and one room, held until the event is stored (`SeasonLock::acquire_named`, returned by `room_write::enforce` and kept by `ingest_event`). |
+| room I2 | The link of an alert was searched among the newest 50 records naming the key; 55 decoys hid the real one and the alert was stored with no link, no rows and no retry. | The same paged search as the index (`record_of_launch`). An alert made while the record is not found is **kept** (its row with no link is the durable retry record) and `retry_unlinked` looks again about once a minute (the sender's tick) for each such alert less than a day old on the chain's clock, oldest first, 50 a pass; when found it gives the alert its link, audience and outbox rows in one transaction. At a day old it stays as it is (terminal: reached nobody). |
+| room I3 | 120 fresh keys each stored a device: nothing tied a device to a wallet and the table had no cap. | On a server that reads the chain `PUT /push/web` refuses (403, a plain sentence) an account with no live wallet link and writes nothing; a community keeps at most 100,000 live devices (`upsert_subscription_capped`, count and insert under one lock; a renewal is never refused; 503 when full). |
+| room I4 | A visitor's read of a room or a season dropped everything from signers past the 100th. | The signers of the records read are judged in **one query** (`moderation_restricted_among`, the same rule as `restriction_state`, an agent's owner included) before the one-by-one bound is used. |
+
+### Declined, with the reason
+
+- **record OPTIONAL 1 (Established made with nine day-old accounts).** The design (2.6) says "at least 10 different accounts hold" and records that it "can be faked"; the rule is as written. Counting only accounts that held for the whole badge window needs a new field in
+  `held.badge` and a change in the app's words, which is wider than a few lines and changes the contract the app was built on. RECORD-V2 11.2 now says plainly what it costs to fake (nine smallest Backs and the fee). Open for the owner.
+- **record OPTIONAL 2 (feed `joins` and `tookOut` count events).** The design gives joins and take-outs equal weight and the chain shows every event; counting accounts would change what the numbers mean and the fixture. RECORD-V2 11.3 now says "events, not accounts". The
+  app's "N backed" is the other fixer's words ("N backs").
+- **record OPTIONAL 4** is a statement that no leak was found; nothing to do.
+- **room I5 (a sponsored Take out is limited only per address).** A per-sender cap on exits lets a stranger name a victim's address and use up their exits (the `sender` is not authenticated: step 3 plan 6, R6); a "holds Shares" check would read the chain reader's rows, which
+  lag a fresh Back by its confirmations, and would refuse a real person their exit; a server-wide cap lets one abuser stop everyone. Rotating addresses spends the operator's own upstream cap, which the deployment document names as the last backstop; it now also says the shared-address case.
+- **room: `next_cursor` skips the unread rows of one block that holds more than 200 task rows.** Not a few lines (a second read of that one block and a test with 250 rows); only task announcements, takes and resolutions of this reader count, and the alert is a convenience beside the in-app alert. Open.
+- **room: a device kept by two accounts on one browser; a quote or an `E`-tag reply is not a room event; `FOR UPDATE SKIP LOCKED` has no test.** The first is handled in the app; the second never shows in a room (a room is read by its own tags, and a NIP-22 `E` tag does not match the app's `#e`
+  filter); the third is not a finding against behaviour.
+- **fit: an upper-case hex `e` tag naming a room post "may skip the room rule".** Checked: it is counted as a bad tag and then, with no room tag, the event is not a room event. It cannot appear in a room (the app and `/query` match `#e` exactly and the room is read by its tags), so nothing is
+  shown or hidden wrongly.
+- **page I7 (the share link's preview carries the founder's words, while the app says it shows no amounts).** The preview is the founder's name and pitch by the plan's choice (7.2); the sentence is the app's, and the other fixer changes it.
+- **social, page and fit findings about the app** belong to the other fixer.
+- **fit R6 (the phone path of the room is not proven through a real relay with `smartAccountLinks` on)** needs the first human test with a passkey; not run here.
+
+### Still open
+
+- `held` is cut by 500,000 rows from one sender (about 250,000 transfers); stated in RECORD-V2 11.1.
+- The index finds a record among at most 500 that name the same key; an attacker who signs more than that under one project's key hides that project from the ranking and from alerts' links until the founder saves the record again (a saved record is the newest). Both say so by `cut` / by an alert with no link.
+- Established can still be made with nine smallest Backs (declined above).
+- `next_cursor` (above).
+
+### Guards switched off once (U5), and what failed
+
+Eighteen edits were made to the code in three builds and every named test failed; the files were then restored byte for byte (`git diff` shows only the fixes).
+
+| Guard switched off | Failed |
+|---|---|
+| the floor of a decrease (`delta < 0`) | `b1_a_move_below_the_floor_does_not_renew_the_grace_of_a_past_holder` |
+| the wallets of a mute must be the person's / not the founder's, an operator's, the signer's | `b2_a_mute_may_list_only_wallets_the_person_linked_and_never_the_founders_or_an_operators` |
+| the founder and operators are never muted (read time) | `b2_the_founder_and_an_operator_are_never_stopped_even_by_an_older_record_that_names_their_wallet` |
+| only the team's own signers' mutes are read | `i1_a_mute_ends_with_its_signers_place_on_the_team` |
+| the lock on one account's count (made unique per event) | `c1_posts_sent_at_once_by_one_account_stay_inside_the_hourly_cap` |
+| the floor passed to the held windows (0) | `a_crowd_of_one_wei_transfers_leaves_a_signed_record_its_held_figures` |
+| the floor in the window query's `HAVING` | `h11_accounts_below_the_floor_do_not_cut_a_window` |
+| the search of records by key in pages (one page) and the pages of rows (one page) | `the_index_finds_a_record_among_many_and_a_project_among_richer_ones_with_no_record` |
+| the same entries signed again at 12 hours | `ix2_and_ix3_the_index_lists_tied_projects_and_is_signed_only_when_it_changes` (at the re-sign assertion) |
+| the shorter wait after a look that listed nothing | the same test, at "a failed look is repeated soon: 600" |
+| the retry of alerts with no link | `i2_an_alert_with_no_link_is_kept_and_linked_when_the_record_is_found_for_a_day` |
+| the paged search for an alert's link | `i2_a_crowd_of_records_naming_the_key_does_not_hide_the_projects_link` |
+| the cap of devices in a community | `i3_a_community_keeps_at_most_its_cap_of_live_devices` |
+| the link requirement of `PUT /push/web` | `i3_on_a_server_that_reads_the_chain_only_an_account_with_a_linked_wallet_keeps_a_device` |
+| the one-query judgement of signers (prefetch) | `i4_a_room_with_more_signers_than_the_bound_is_read_whole_and_a_muted_signer_is_left_out` |
+
+The first build's constant-only change of `RESIGN_SECS` did not fail the test (the test used the constant itself); a compile-time assertion that it is at most 12 hours now stands in the test.
+
+### What ran
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo clippy -p buzz-relay --lib --tests -- -D warnings`, `cargo clippy -p buzz-db --lib -- -D warnings` | clean |
+| `cargo test -p buzz-relay --lib -- chain_reader handlers::room_write handlers::wallet_binding handlers::season_rules handlers::room_removal handlers::launch_update_authority handlers::ingest web_push api::web_push api::sponsor public_read --include-ignored --test-threads=1` | **618 passed, 0 failed** (the `chain_reader` part alone was 163 passed, 1 failed at the first run: the index test's `seen`/`cut` and its retry wait, which these fixes change on purpose, and that test was updated) |
+| `task_chain` three times in a row | 29 passed, 0 failed, three times |
+| `config::` three times in a row | 106 passed, 0 failed, three times |
+| `manager::` (without `planted_eval_against_a_real_model`) | 34 passed, 0 failed |
+| `cargo test -p buzz-db --lib -- migration chain_ desired --include-ignored --test-threads=1` | 59 passed, 0 failed |
+| `cargo test -p buzz-core`, `-p buzz-cli` | not run: nothing of them changed |
+| `node scripts/chain-reader-events.mjs --check` | the tables match the contracts build |
+| `python3 -I scripts/chain-reader-fixture.py --check` (twice) | "is what a fresh run gives", both times |
+| `python3 -I scripts/chain-reader-example-check.py` | all 416 checks passed (222 recomputed from the raw logs); the example is byte for byte what the server writes |
+| `git diff 35ea0a894..HEAD -- contracts/pot` | empty |
+| `cargo build -p buzz-relay` | built |
+| `scripts/chain-loop-pot.sh` | **2936 checks passed** |
+| `scripts/room-loop.sh` | 55 checks passed |
+| `scripts/web-push-loop.sh` | 28 checks passed (its client and its two counts changed: the unlinked holder and the stranger now get a 403 and keep no device, so the relay keeps two devices, not four) |
+
+### For the next engineer (the app)
+
+- **`PUT /push/web` now answers 403 to an account with no live wallet link** (on a server that reads the chain) with `Alerts are for people who back a project. Back one and confirm your account there, then turn alerts on.`, and 503 `This server cannot keep more devices for alerts now. Try again later.` when
+  the community is full. The app's opt-in must say the first in its own plain words (the card should be drawn only for an account that has linked a wallet, or the answer shown as a sentence); `app/src/features/alerts/push/` reads the answer.
+- `explore` entries and the signed index are as before; only `seen` and `cut` mean more (all projects with money that stayed, and all that are not in the entries).
+- A mute may list only wallets the person linked themselves; the app's "stop" press already reads the person's own `kind 37017` records. A record that lists anyone else's wallet is now refused with `a room mute may list only wallets the person has linked to their own account`
+  or `the founder and the people who run this server cannot be stopped from writing`; show them plainly.
+- `feed.hours[].joins` and `tookOut` are events, not accounts (said in RECORD-V2 11.3).
+- Disk: the machine stayed above 3.5 GB free; the test executable of the previous build (about 400 MB) was removed before each rebuild. No anvil, relay, stand-in or scratch database is left; Postgres and Redis are left running.
