@@ -32,6 +32,9 @@ let current: ServerSettings = NOTHING;
 /** The server's own signing key from the same document (its `self` field), or null. */
 let currentSigner: string | null = null;
 
+/** What the document said about checking a phone account's wallet link (`smartAccountLinks`), or null. */
+let currentSmartLinks: boolean | null = null;
+
 const HEX64 = /^[0-9a-f]{64}$/;
 
 /**
@@ -42,6 +45,21 @@ export function relaySignerFromInfo(info: unknown): string | null {
   if (!info || typeof info !== "object" || Array.isArray(info)) return null;
   const self = (info as { self?: unknown }).self;
   return typeof self === "string" && HEX64.test(self) ? self : null;
+}
+
+/**
+ * Whether the server says it can check a phone (passkey) account's wallet link on the network (`smartAccountLinks`): a plain
+ * boolean, or null when it said nothing. Only `false` changes what the app offers (a room cannot be written from a phone account).
+ */
+export function smartAccountLinksFromInfo(info: unknown): boolean | null {
+  if (!info || typeof info !== "object" || Array.isArray(info)) return null;
+  const says = (info as { smartAccountLinks?: unknown }).smartAccountLinks;
+  return typeof says === "boolean" ? says : null;
+}
+
+/** What the server said about checking phone accounts' wallet links, or null when it said nothing. */
+export function serverSmartAccountLinks(): boolean | null {
+  return currentSmartLinks;
 }
 
 /** The server's own signing key, or null when it said none (or has not been asked yet). */
@@ -76,6 +94,7 @@ export function serverTrading(): boolean | null {
 export function applyServerSettings(info: unknown): void {
   current = parseServerSettings(info);
   currentSigner = relaySignerFromInfo(info);
+  currentSmartLinks = smartAccountLinksFromInfo(info);
 }
 
 /**

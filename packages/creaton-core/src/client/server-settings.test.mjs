@@ -4,6 +4,8 @@ import {
   applyServerSettings,
   parseServerSettings,
   relaySignerFromInfo,
+  serverSmartAccountLinks,
+  smartAccountLinksFromInfo,
   serverRelaySigner,
   serverTrading,
 } from "./server-settings.ts";
@@ -42,4 +44,16 @@ test("trading counts only as a plain boolean and is said nothing about by defaul
   assert.equal(serverTrading(), null);
   applyServerSettings(null);
   assert.equal(serverTrading(), null);
+});
+
+test("whether phone accounts' wallet links can be checked is a plain boolean, or nothing", () => {
+  assert.equal(smartAccountLinksFromInfo({ smartAccountLinks: false }), false);
+  assert.equal(smartAccountLinksFromInfo({ smartAccountLinks: true }), true);
+  assert.equal(smartAccountLinksFromInfo({ smartAccountLinks: "false" }), null);
+  assert.equal(smartAccountLinksFromInfo({}), null);
+  assert.equal(smartAccountLinksFromInfo(null), null);
+  applyServerSettings({ investing: true, smartAccountLinks: false });
+  assert.equal(serverSmartAccountLinks(), false);
+  applyServerSettings({ investing: true });
+  assert.equal(serverSmartAccountLinks(), null);
 });

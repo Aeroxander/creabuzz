@@ -62,6 +62,45 @@ export interface LaunchRef {
   id: string;
 }
 
+/**
+ * A project's holder room: the project (its record's coordinate) and the chain key its record names. A room post, reply or
+ * like carries the project's `a` tag and the room's `t` tag (`room:<chain key>`), and the server lets it in only from
+ * someone it sees holding the project's Shares. The tag is how a room is read: one filter, by the tag only.
+ */
+export interface RoomRef {
+  launch: LaunchRef;
+  /** The project record's `chain-key`: `0x` and 64 lower-case hex digits. */
+  key: string;
+}
+
+const CHAIN_KEY = /^0x[0-9a-f]{64}$/;
+/** The prefix of the room's `t` tag. A topic typed as `#word` cannot hold a `:`, so it can never look like it. */
+export const ROOM_TAG_PREFIX = "room:";
+
+/** The room's `t` tag value for a chain key. */
+export function roomTagValue(key: string): string {
+  if (!CHAIN_KEY.test(key)) throw new Error("The room's key is not valid.");
+  return `${ROOM_TAG_PREFIX}${key}`;
+}
+
+/** The chain key of the room an event belongs to (its `room:` tag), or null when it is in no room. */
+export function roomKeyOf(event: { tags: readonly string[][] }): string | null {
+  for (const tag of event.tags) {
+    if (tag[0] !== "t" || typeof tag[1] !== "string") continue;
+    if (!tag[1].startsWith(ROOM_TAG_PREFIX)) continue;
+    const key = tag[1].slice(ROOM_TAG_PREFIX.length);
+    if (CHAIN_KEY.test(key)) return key;
+  }
+  return null;
+}
+
+/** Whether an event carries a room tag of any shape: it is a room's, and never belongs in an ordinary feed. */
+export function inAnyRoom(event: { tags: readonly string[][] }): boolean {
+  return event.tags.some(
+    (tag) => tag[0] === "t" && String(tag[1]).startsWith(ROOM_TAG_PREFIX),
+  );
+}
+
 const HEX64 = /^[0-9a-f]{64}$/;
 /** Posts are short; the relay enforces its own ceiling too. */
 export const MAX_POST_CHARS = 2000;
@@ -69,6 +108,14 @@ const MAX_TOPICS = 5;
 
 export function launchCoordinate(launch: LaunchRef): string {
   return `${KIND_LAUNCH_RECORD}:${launch.pubkey.toLowerCase()}:${launch.id}`;
+}
+
+/** The two tags that put an event in a room. */
+function roomTags(room: RoomRef): string[][] {
+  return [
+    ["a", launchCoordinate(room.launch)],
+    ["t", roomTagValue(room.key)],
+  ];
 }
 
 /** The `launch` part of a `37001:<pubkey>:<d>` coordinate, or null. */
@@ -100,13 +147,21 @@ function cleanText(text: string): string {
   return trimmed;
 }
 
-/** A top-level post, optionally about one launch. */
+/**
+ * A top-level post, optionally about one launch. With `room` it is a post in that project's holder room: its project tag
+ * and its room tag, and no `nostr:naddr` reference in the text (the room is text, and only text).
+ */
 export function buildPost(input: {
   text: string;
   launch?: LaunchRef | null;
+  room?: RoomRef | null;
 }): EventTemplate {
   let content = cleanText(input.text);
   const tags: string[][] = extractTopics(content).map((t) => ["t", t]);
+  if (input.room) {
+    tags.push(...roomTags(input.room));
+    return { kind: KIND_TEXT_NOTE, tags, content };
+  }
   if (input.launch) {
     const coord = launchCoordinate(input.launch);
     tags.push(["a", coord]);
@@ -129,6 +184,8 @@ export function buildReply(input: {
   text: string;
   root: SignedEventLike;
   parent: SignedEventLike;
+  /** A reply in a holder room carries the room's project and room tags, and no other `a` tag. */
+  room?: RoomRef | null;
 }): EventTemplate {
   const content = cleanText(input.text);
   const tags: string[][] = [
@@ -139,7 +196,9 @@ export function buildReply(input: {
   ];
   const mentioned = new Set([input.parent.pubkey, input.root.pubkey]);
   for (const pubkey of mentioned) tags.push(["p", pubkey]);
-  for (const coord of launchCoordinates(input.root)) tags.push(["a", coord]);
+  if (input.room) tags.push(...roomTags(input.room));
+  else
+    for (const coord of launchCoordinates(input.root)) tags.push(["a", coord]);
   for (const topic of extractTopics(content)) tags.push(["t", topic]);
   return { kind: KIND_TEXT_NOTE, tags, content };
 }
@@ -151,13 +210,16 @@ export function buildVote(input: {
   target: SignedEventLike;
   direction: VoteDirection;
   launch?: LaunchRef | null;
+  /** A like in a holder room carries the room's project and room tags. */
+  room?: RoomRef | null;
 }): EventTemplate {
   const tags: string[][] = [
     ["e", input.target.id],
     ["p", input.target.pubkey],
     ["k", String(input.target.kind)],
   ];
-  if (input.launch) tags.push(["a", launchCoordinate(input.launch)]);
+  if (input.room) tags.push(...roomTags(input.room));
+  else if (input.launch) tags.push(["a", launchCoordinate(input.launch)]);
   return { kind: KIND_REACTION, tags, content: input.direction };
 }
 
