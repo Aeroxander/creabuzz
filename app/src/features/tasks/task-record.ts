@@ -161,6 +161,32 @@ export function projectTasks(
   return out.sort((a, b) => b.at - a.at || (a.id < b.id ? 1 : -1));
 }
 
+/**
+ * The wallet the worker named to be paid at: the address on their own `take` step (an open task) or `accept` step (a task that
+ * names its helper), read from every such step they signed. Two different addresses from the same worker read as none, so a
+ * pay-to changed after the fact is never believed (the plan on the network is checked against it, and no pay-to fails the
+ * check: the safe direction). A step whose address is not an address counts for nothing.
+ */
+function payToOf(
+  worker: string | null,
+  steps: readonly TaskRecordEvent[],
+): string | null {
+  if (worker === null) return null;
+  const named = new Set<string>();
+  let shown: string | null = null;
+  for (const step of [...steps].sort(
+    (a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : -1),
+  )) {
+    if (step.pubkey !== worker) continue;
+    const value = first(step, "task-pay-to");
+    if (value === null || !ADDRESS.test(value)) continue;
+    // The latest step's spelling is the one shown.
+    shown ??= value;
+    named.add(value.toLowerCase());
+  }
+  return named.size === 1 ? shown : null;
+}
+
 function readTask(
   task: TaskRecordEvent,
   what: string,
@@ -249,7 +275,10 @@ function readTask(
     }),
   );
   const paid = paying ? first(paying, "task-paid") : null;
-  const payTo = take ? first(take, "task-pay-to") : null;
+  const payTo = payToOf(
+    worker,
+    steps.filter((s) => part(s) === "take" || part(s) === "accept"),
+  );
   return {
     id: task.id,
     author: task.pubkey,
@@ -258,7 +287,7 @@ function readTask(
     usd,
     openToAnyone: named === null,
     worker,
-    payTo: payTo && ADDRESS.test(payTo) ? payTo : null,
+    payTo,
     state,
     handIn: handInOf(acceptedPiece ?? waiting),
     acceptedBy: accepted?.pubkey ?? null,

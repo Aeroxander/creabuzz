@@ -106,6 +106,55 @@ describe("a project's tasks", () => {
     expect(t.state).toBe("open");
   });
 
+  it("reads the wallet to be paid at from the worker's take or, for a named helper, from their accept step", () => {
+    const open = openTask();
+    const taken = step(STRANGER, open, "take", [["task-pay-to", PAY_TO]], 10);
+    // A later step of the same worker naming the same wallet changes nothing; the latest spelling is shown.
+    const SHOUT = "0x00000000000000000000000000000000000000CD";
+    const again = step(STRANGER, open, "accept", [["task-pay-to", SHOUT]], 20);
+    expect(read([open, taken, again])[0]?.payTo).toBe(SHOUT);
+    // A take that names no wallet, then an accept that does: the accept's wallet counts.
+    const bare = step(STRANGER, open, "take", [], 10);
+    expect(read([open, bare, again])[0]?.payTo).toBe(SHOUT);
+    // A task that names its helper: the helper's own accept step carries the wallet.
+    const named = record(FOUNDER, [
+      ["task-part", "task"],
+      ["task-what", "Run the audit"],
+      ["task-helper", STRANGER],
+    ]);
+    const agree = step(STRANGER, named, "accept", [["task-pay-to", PAY_TO]]);
+    expect(read([named, agree])[0]).toMatchObject({
+      worker: STRANGER,
+      payTo: PAY_TO,
+    });
+    // Someone else's accept step (the team's, a stranger's) names nobody's wallet.
+    const byTeam = step(MATE, named, "accept", [["task-pay-to", PAY_TO]]);
+    const byOther = step(OTHER, named, "accept", [["task-pay-to", PAY_TO]]);
+    expect(read([named, byTeam, byOther])[0]?.payTo).toBeNull();
+  });
+
+  it("reads two different wallets from the same worker as no wallet at all", () => {
+    const open = openTask();
+    const a = step(STRANGER, open, "take", [["task-pay-to", PAY_TO]], 10);
+    const b = step(
+      STRANGER,
+      open,
+      "accept",
+      [["task-pay-to", "0x00000000000000000000000000000000000000ce"]],
+      20,
+    );
+    expect(read([open, a, b])[0]?.payTo).toBeNull();
+    // A step that names something that is not an address does not count as a second wallet.
+    const junk = step(
+      STRANGER,
+      open,
+      "accept",
+      [["task-pay-to", "0xnope"]],
+      30,
+    );
+    expect(read([open, a, junk])[0]?.payTo).toBe(PAY_TO);
+  });
+
   it("is accepted only by someone on the team who is not the worker nor an agent, and keeps the payment", () => {
     const task = openTask();
     const take = step(STRANGER, task, "take", [["task-pay-to", PAY_TO]]);
