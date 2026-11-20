@@ -42,6 +42,8 @@ pub mod presence;
 pub mod private_managed_agent;
 /// Canonical relay runtime identities.
 pub mod relay;
+/// A season: the operator's record of six weeks of open entry and the day its projects are shown.
+pub mod season;
 /// The tags a task hand-in may carry for reported results and run records.
 pub mod task_result;
 /// Tenant identity — the server-resolved community key carried on scoped paths.

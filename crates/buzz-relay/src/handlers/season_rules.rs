@@ -20,10 +20,9 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use buzz_core::kind::{event_kind_u32, KIND_LAUNCH_UPDATE, KIND_SEASON};
+use buzz_core::kind::{KIND_LAUNCH_UPDATE, KIND_SEASON};
 use buzz_core::tenant::{CommunityId, TenantContext};
 use nostr::Event;
-use serde_json::Value;
 use sqlx::PgPool;
 
 use super::ingest::IngestError;
@@ -80,98 +79,12 @@ pub(crate) const PER_FOUNDER_MAX: usize = 3;
 pub(crate) const CHANGES_MAX: u64 = 12;
 /// The most records of a season that are read before the season counts as full.
 pub(crate) const RECORDS_READ_MAX: i64 = 5_000;
-/// The largest season number.
-pub(crate) const NUMBER_MAX: u32 = 9_999;
-
-const DAY: u64 = 86_400;
-/// 1 January 2020 and 1 January 2100, in unix seconds: the dates a season may name.
-const DATE_MIN: u64 = 1_577_836_800;
-const DATE_MAX: u64 = 4_102_444_800;
-/// The most bytes of a season record's content.
-const CONTENT_MAX: usize = 1_024;
-
-/// A season, as its record says.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Season {
-    /// Its number, from 1.
-    pub(crate) number: u32,
-    /// When entry opens.
-    pub(crate) starts_at: u64,
-    /// Demo day: entry ends and the projects are shown.
-    pub(crate) demo_day_at: u64,
-    /// When the season ends.
-    pub(crate) ends_at: u64,
-}
-
-impl Season {
-    /// Whether entry and leave are open at `now`: from the start up to, not including, demo day.
-    pub(crate) fn is_open(&self, now: u64) -> bool {
-        (self.starts_at..self.demo_day_at).contains(&now)
-    }
-}
-
-/// A canonical decimal season number from 1 to [`NUMBER_MAX`].
-fn parse_number(text: &str) -> Option<u32> {
-    if text.is_empty() || text.len() > 4 || text.starts_with('0') {
-        return None;
-    }
-    if !text.bytes().all(|b| b.is_ascii_digit()) {
-        return None;
-    }
-    text.parse::<u32>()
-        .ok()
-        .filter(|n| (1..=NUMBER_MAX).contains(n))
-}
-
-/// The `d` tag of a season's record.
-pub(crate) fn season_d(number: u32) -> String {
-    format!("season-{number}")
-}
+/// A season, as its record says (the bounds are `buzz_core::season`'s, shared with `buzz launchpad seasons start`).
+pub(crate) use buzz_core::season::{season_d, Season, NUMBER_MAX};
 
 /// Read a season record's tags and content and hold them to their bounds. Pure: who signed it is not asked here.
 pub(crate) fn parse_season_record(event: &Event) -> Result<Season, &'static str> {
-    if event_kind_u32(event) != KIND_SEASON || event.content.len() > CONTENT_MAX {
-        return Err(BAD_SEASON);
-    }
-    let mut ds = event.tags.iter().filter_map(|tag| {
-        let parts = tag.as_slice();
-        (parts.first().map(String::as_str) == Some("d"))
-            .then(|| parts.get(1).cloned().unwrap_or_default())
-    });
-    let (Some(d), None) = (ds.next(), ds.next()) else {
-        return Err(BAD_SEASON);
-    };
-    let body: Value = serde_json::from_str(&event.content).map_err(|_| BAD_SEASON)?;
-    let field = |name: &str| body.get(name).and_then(Value::as_u64);
-    let number = field("number")
-        .and_then(|n| u32::try_from(n).ok())
-        .filter(|n| (1..=NUMBER_MAX).contains(n))
-        .ok_or(BAD_SEASON)?;
-    if body.get("v").and_then(Value::as_u64) != Some(1) || d != season_d(number) {
-        return Err(BAD_SEASON);
-    }
-    let (Some(starts_at), Some(demo_day_at), Some(ends_at)) =
-        (field("startsAt"), field("demoDayAt"), field("endsAt"))
-    else {
-        return Err(BAD_SEASON);
-    };
-    let to_demo = demo_day_at.checked_sub(starts_at).ok_or(BAD_SEASON)?;
-    let after = ends_at.checked_sub(demo_day_at).ok_or(BAD_SEASON)?;
-    let in_order = starts_at < demo_day_at && demo_day_at <= ends_at;
-    if !in_order
-        || !(DAY..=56 * DAY).contains(&to_demo)
-        || after > 14 * DAY
-        || starts_at < DATE_MIN
-        || ends_at >= DATE_MAX
-    {
-        return Err(BAD_SEASON);
-    }
-    Ok(Season {
-        number,
-        starts_at,
-        demo_day_at,
-        ends_at,
-    })
+    buzz_core::season::parse_record(event).map_err(|_| BAD_SEASON)
 }
 
 /// Whether `pubkey_hex` is one of the server's operators: a key in `RELAY_OPERATOR_PUBKEYS`, or the relay's owner
@@ -279,7 +192,7 @@ pub(crate) fn classify_step(event: &Event) -> Result<Option<Step>, String> {
             )
         };
     };
-    let Some(number) = parse_number(number) else {
+    let Some(number) = buzz_core::season::parse_number(number) else {
         return Err(format!(
             "`{}` must hold a season number from 1 to {NUMBER_MAX}",
             family.tag()
@@ -618,6 +531,7 @@ pub(crate) async fn enforce_step(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use buzz_core::season::{CONTENT_MAX, DAY};
     use nostr::{EventBuilder, Keys, Kind, Tag};
     use serde_json::json;
 

@@ -21,6 +21,7 @@ pub mod launchpad_inbox;
 pub mod launchpad_manager;
 pub mod launchpad_record;
 pub mod launchpad_result;
+pub mod launchpad_seasons;
 pub mod launchpad_start;
 pub mod launchpad_tasks;
 pub mod launchpad_work;

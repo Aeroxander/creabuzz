@@ -700,6 +700,7 @@ pub async fn dispatch(cmd: crate::LaunchpadCmd, client: &BuzzClient) -> Result<(
         LaunchpadCmd::Tasks { step } => super::launchpad_tasks::dispatch(step, client).await,
         LaunchpadCmd::Brain { step } => super::launchpad_brain::dispatch(&step),
         LaunchpadCmd::Manager { step } => super::launchpad_manager::dispatch(step, client).await,
+        LaunchpadCmd::Seasons { step } => super::launchpad_seasons::dispatch(step, client).await,
         LaunchpadCmd::Updates { step } => super::launchpad_record::dispatch(step, client).await,
         LaunchpadCmd::Record { id, author } => {
             super::launchpad_record::cmd_record(client, &id, author.as_deref()).await

@@ -1663,6 +1663,12 @@ Example:\n  buzz launchpad start --name 'Star Atlas' --goal 'Publish the norther
         #[arg(long)]
         pitch: Option<String>,
     },
+    /// Seasons, for the people who run the server: start one (six weeks of open entry, then a demo week), show them,
+    /// or take a project out of one. Only an operator's key is accepted
+    Seasons {
+        #[command(subcommand)]
+        step: commands::launchpad_seasons::SeasonsCmd,
+    },
     /// A project's weekly update, as its founder or a team member
     Updates {
         #[command(subcommand)]
@@ -4198,6 +4204,7 @@ mod tests {
                 "record-proposal",
                 "record-receipt",
                 "record-verdict",
+                "seasons",
                 "show",
                 "start",
                 "tasks",
@@ -4382,7 +4389,7 @@ mod tests {
             ("emoji", 5),
             ("feed", 1),
             ("issues", 6),
-            ("launchpad", 26),
+            ("launchpad", 27),
             ("media", 1),
             ("messages", 8),
             ("pack", 2),
