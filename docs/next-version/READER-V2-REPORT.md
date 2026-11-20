@@ -1106,3 +1106,47 @@ The first build's constant-only change of `RESIGN_SECS` did not fail the test (t
   or `the founder and the people who run this server cannot be stopped from writing`; show them plainly.
 - `feed.hours[].joins` and `tookOut` are events, not accounts (said in RECORD-V2 11.3).
 - Disk: the machine stayed above 3.5 GB free; the test executable of the previous build (about 400 MB) was removed before each rebuild. No anvil, relay, stand-in or scratch database is left; Postgres and Redis are left running.
+
+## Follow-up round (server, 20 November 2026)
+
+A short round on the two verifiers' "important" findings of step 3. Nothing new was added; only the two points below were touched.
+
+### Closed
+
+- **S1, the season record's signer filter had no test.** `read_season` keeps only the records signed by a current operator, and no test failed
+  when that filter was dropped. New test `season_rules_postgres_tests::m1b_a_season_reads_only_from_a_current_operators_record` (Postgres, through the
+  real `ingest_event` and the real `read_season` / `enforce_step`): an operator signs season 1, the season reads; the same server with an operator list
+  that no longer holds the signer reads it as missing, and an entry into it is refused as for a season that does not exist; the new operator's own
+  record for the same number then wins although the former operator's record is newer. Run with the filter switched off
+  (`.filter(|_stored| true)`) it **failed**; the file was restored byte for byte and it passes. The entry, leave and removal records are **not**
+  filtered by signer on the read path (`read_rows` keeps every record of the season); who may sign them is judged once, at write time, so a removal
+  an operator signed stays a removal after that operator leaves the list. That is the design, so there is no second filter to test.
+- **S2, `next_cursor` stepped over task rows of one block holding more than 200.** A caller could lose rows for good: with 201 rows read from one block,
+  the cursor could not name a place inside the block, so it went to the next block and the rows after the 200th of that block never made an alert
+  (the second pass, starting at that block, hit the same cut and stepped over it). The fix is contained, in `web_push/alerts.rs` only, with no change to
+  the table or to any generated file: when the first unread row is in the same block as the first row (`oversized_block`), that block is read whole,
+  alone (up to `BLOCK_ROWS_MAX` = 10,000 rows, a ceiling far above what one block's gas allows; a block above it logs a warning), and the cursor goes
+  past it. Any other cut is as before (the cursor goes to the first block not fully read, and a block read twice is absorbed by the unique key).
+  Tests: pure `a_batch_that_one_block_fills_is_read_whole_and_no_other_is`; Postgres `a_block_with_more_task_rows_than_a_batch_makes_every_alert` (100
+  rows, a block of 250, then 5: 355 alerts) and `a_cursor_on_a_block_of_more_than_a_batch_reads_all_of_it` (one block of 250: 250 alerts, the cursor past
+  it). With `oversized_block` made to answer `None` all three **failed**; restored, they pass.
+
+### Still open
+
+- Everything listed under "Still open" in the review-fixes section above, except `next_cursor`, which is closed here.
+- The alert reads at most `BLOCK_ROWS_MAX` rows of one block; the rest of such a block would make no alert (it logs a warning). A block cannot hold that
+  many task events within its gas, so this is a ceiling, not a limit anyone can reach.
+
+### What ran
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo clippy -p buzz-relay --lib --tests -- -D warnings` | clean |
+| `cargo test -p buzz-relay --lib -- handlers::season_rules --include-ignored --test-threads=1` | 13 passed, 0 failed |
+| `cargo test -p buzz-relay --lib -- chain_reader --include-ignored --test-threads=1` | 164 passed, 0 failed |
+| `cargo test -p buzz-relay --lib -- task_chain --include-ignored --test-threads=1` | 29 passed, 0 failed |
+| `cargo test -p buzz-relay --lib -- web_push --include-ignored --test-threads=1` | 61 passed, 0 failed |
+| `node scripts/chain-reader-events.mjs --check` | the four generated files match the contracts build |
+| `python3 -I scripts/chain-reader-fixture.py --check` | "is what a fresh run gives" |
+| `python3 -I scripts/chain-reader-example-check.py` | all 416 checks passed |

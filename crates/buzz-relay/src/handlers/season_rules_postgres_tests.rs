@@ -5,6 +5,7 @@
 //! `cargo test -p buzz-relay --lib -- season_rules_postgres_tests --include-ignored --test-threads=1`.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use nostr::{Event, Keys};
 use serde_json::json;
@@ -12,10 +13,12 @@ use serde_json::json;
 use super::room_support::{
     add_member, example_record, ingest, room_world_with, signed, tag, RoomWorld,
 };
+use crate::state::AppState;
+
 use super::season_rules::{
-    ALREADY_IN, BAD_SEASON, CHANGES_MAX, ENTRIES_MAX, ENTRY_MIN_ACCOUNTS, FOUNDER_FULL, NOT_IN,
-    NOT_LAUNCHED, NOT_OPEN, NOT_OPERATOR, NOT_OPERATOR_REMOVE, NO_PROJECT, NO_SEASON,
-    PER_FOUNDER_MAX, REMOVED, SEASON_FULL, TOO_FEW_BACKERS, TOO_OFTEN,
+    read_season, ALREADY_IN, BAD_SEASON, CHANGES_MAX, ENTRIES_MAX, ENTRY_MIN_ACCOUNTS,
+    FOUNDER_FULL, NOT_IN, NOT_LAUNCHED, NOT_OPEN, NOT_OPERATOR, NOT_OPERATOR_REMOVE, NO_PROJECT,
+    NO_SEASON, PER_FOUNDER_MAX, REMOVED, SEASON_FULL, TOO_FEW_BACKERS, TOO_OFTEN,
 };
 
 const DAY: u64 = 86_400;
@@ -81,7 +84,17 @@ async fn accept(w: &RoomWorld, event: Event, what: &str) {
 }
 
 async fn refuse(w: &RoomWorld, event: Event, expected: &str, what: &str) {
-    match ingest(&w.state, &w.tenant, event).await {
+    refuse_with(&w.state, w, event, expected, what).await;
+}
+
+async fn refuse_with(
+    state: &Arc<AppState>,
+    w: &RoomWorld,
+    event: Event,
+    expected: &str,
+    what: &str,
+) {
+    match ingest(state, &w.tenant, event).await {
         Ok(()) => panic!("{what}: should be refused"),
         Err(reason) => assert!(
             reason.contains(expected),
@@ -179,6 +192,68 @@ async fn m1_only_an_operator_starts_a_season_its_dates_are_bound_and_a_later_rec
         "entry after the dates moved",
     )
     .await;
+}
+
+/// The same server with another list of operators (the stored events and everything else are the same).
+fn with_operators(w: &RoomWorld, operators: Vec<String>) -> Arc<AppState> {
+    let mut config = (*w.state.config).clone();
+    config.relay_operator_pubkeys = operators;
+    config.relay_owner_pubkey = None;
+    let mut state = (*w.state).clone();
+    state.config = Arc::new(config);
+    Arc::new(state)
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn m1b_a_season_reads_only_from_a_current_operators_record() {
+    let (w, operator) = season_world().await;
+    let community = w.tenant.community();
+    accept(&w, open_season(&operator, 1, 20), "the operator's season").await;
+    assert!(
+        read_season(&w.state, community, 1)
+            .await
+            .expect("the read")
+            .is_some(),
+        "a current operator's record reads"
+    );
+
+    // The signer is no longer an operator (the list holds somebody else): the season reads as missing, and an entry is
+    // refused as for a season that does not exist.
+    let other = Keys::generate();
+    let later = with_operators(&w, vec![other.public_key().to_hex()]);
+    assert!(
+        read_season(&later, community, 1)
+            .await
+            .expect("the read")
+            .is_none(),
+        "a record whose signer is no longer an operator is not a season"
+    );
+    refuse_with(
+        &later,
+        &w,
+        family(&w.founder, &w.coordinate, 1, "season-entry", 0),
+        NO_SEASON,
+        "an entry into the former operator's season",
+    )
+    .await;
+
+    // The new operator's own record for the same number wins, although the former operator's is newer.
+    add_member(&later, &w.tenant, &other).await;
+    let start = now() - 3_600;
+    let theirs = season(&other, 1, start, start + 2 * DAY, start + 3 * DAY, 0);
+    if let Err(reason) = ingest(&later, &w.tenant, theirs).await {
+        panic!("the new operator's season: refused: {reason}");
+    }
+    let read = read_season(&later, community, 1)
+        .await
+        .expect("the read")
+        .expect("the new operator's season");
+    assert_eq!(
+        read.demo_day_at,
+        start + 2 * DAY,
+        "only the current operator's dates are read, not the newer record of a former one"
+    );
 }
 
 #[tokio::test]
