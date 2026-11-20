@@ -135,6 +135,12 @@ pub struct PublishReport {
     pub failed: usize,
 }
 
+/// Whether a publishing pass that took `elapsed` outgrew `refresh_secs`, the
+/// shortest refresh time the server promises: longer than half of it.
+fn pass_is_slow(elapsed: Duration, refresh_secs: i64) -> bool {
+    elapsed.as_millis().saturating_mul(2) > u128::try_from(refresh_secs).unwrap_or(0) * 1_000
+}
+
 /// Seconds a project waits after its `failures`-th failed build in a row.
 fn failure_pause(failures: u32) -> i64 {
     FAILURE_PAUSE_SECS
@@ -341,6 +347,7 @@ impl ChainReader {
     /// Sign the numbers of every project whose final events changed, or whose
     /// time-dependent numbers moved and are older than the refresh time.
     pub async fn publish_pass(&self, head: u64) -> anyhow::Result<PublishReport> {
+        let began = std::time::Instant::now();
         let pool = self.state.db.pool();
         let reader = self.scan.reader.as_str();
         let mut report = PublishReport::default();
@@ -465,6 +472,18 @@ impl ChainReader {
                     tracing::error!(project = %hex0x(key), "chain reader: removal not signed: {e:#}");
                 }
             }
+        }
+        // The reader reads a project's stored rows each pass (a Take out with notes
+        // adds rows, RECORD-V2 section 10.3): a pass that outgrows its refresh time
+        // is the alarm to fold the per-holder notes into a running-totals table.
+        let took = began.elapsed();
+        if pass_is_slow(took, refresh) {
+            tracing::error!(
+                took_secs = took.as_secs(),
+                refresh_secs = refresh,
+                "chain reader: a publishing pass took longer than half the refresh time it promises; \
+                 the work per pass has outgrown it"
+            );
         }
         Ok(report)
     }
@@ -811,6 +830,16 @@ where
 #[cfg(test)]
 mod schedule_tests {
     use super::*;
+
+    /// The alarm for a pass that outgrew its refresh time.
+    #[test]
+    fn a_pass_longer_than_half_the_refresh_time_is_slow() {
+        let secs = Duration::from_secs;
+        assert!(!pass_is_slow(secs(300), 600), "exactly half is not longer");
+        assert!(pass_is_slow(Duration::from_millis(300_001), 600));
+        assert!(!pass_is_slow(secs(0), 600));
+        assert!(pass_is_slow(secs(1), 0), "a zero promise cannot be met");
+    }
 
     /// A project that keeps failing waits longer each time, up to a cap.
     #[test]

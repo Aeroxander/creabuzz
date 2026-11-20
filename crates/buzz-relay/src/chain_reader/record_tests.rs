@@ -1432,6 +1432,13 @@ async fn refresh_is_600_while_a_task_is_open_and_3600_after() {
         600,
         "a task is open"
     );
+    // A record never promises more than the settings allow (half a day), whatever the cadence says.
+    let wide = Cadence {
+        active_secs: 100_000,
+        idle_secs: 200_000,
+    };
+    assert_eq!(numbers::refresh_every(&wide, false, false, true), 43_200);
+    assert_eq!(numbers::refresh_every(&wide, false, false, false), 43_200);
     // The run: tasks open at the example block, none at the end of the run.
     let open = build_from("A_example").await.expect("builds");
     assert!(open.record.tasks.as_ref().expect("a book").open_count > 0);

@@ -1090,3 +1090,113 @@ async fn the_stored_rows_reveal_a_book_the_reader_did_not_follow_yet() {
     );
     assert_eq!(after.locked, before.locked);
 }
+
+/// A log writer the test can read back.
+#[derive(Clone, Default)]
+struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
+
+impl std::io::Write for CapturedLogs {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .extend_from_slice(data);
+        Ok(data.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for CapturedLogs {
+    type Writer = Self;
+    fn make_writer(&'a self) -> Self::Writer {
+        self.clone()
+    }
+}
+
+/// A17, C33: a mismatch anywhere in the task section fails the whole build. The project's record
+/// stays as it was (so every money field of the project freezes with it, and the app's age rules
+/// say so), the reader names the task, the field and both values at error level, and the project
+/// is signed again as soon as the contract and the events agree. Nothing is signed with the
+/// section dropped: a planned task would vanish from holders.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_task_mismatch_freezes_the_money_fields_and_logs_the_field() {
+    let logs = CapturedLogs::default();
+    let _subscriber = tracing::subscriber::set_default(
+        tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(logs.clone())
+            .finish(),
+    );
+    let fx = Fixture::load();
+    let (reader, chain, state) = setup(&fx).await;
+    chain.serve_books(&fx, &["A_end", "B_end"]);
+    read_all(&reader, &chain).await;
+    let head = chain.head().await.expect("head");
+    let a = fx.projects["A"].key;
+    let before = stored_record(&reader, &a).await;
+    let serial = before["tasks"]["list"][0]["serial"]
+        .as_u64()
+        .expect("a listed task");
+    // The refresh is due (a heartbeat of an hour, the record is two hours old).
+    let id = reader.reader_id().to_owned();
+    sqlx::query(
+        "UPDATE chain_project_numbers SET published_at = now() - interval '7200 seconds' \
+         WHERE reader = $1",
+    )
+    .bind(&id)
+    .execute(state.db.pool())
+    .await
+    .expect("age the records");
+    // The contract says one unit more in the task's `noteFace` than the events add up to.
+    let key = {
+        let mut data = buzz_evm_allowance::abi::selector("taskOf(uint64)").to_vec();
+        let mut arg = [0u8; 32];
+        arg[24..].copy_from_slice(&serial.to_be_bytes());
+        data.extend_from_slice(&arg);
+        (fx.projects["A"].tasks, data)
+    };
+    let at = super::views_table::TASK_OF
+        .iter()
+        .position(|(name, _)| *name == "noteFace")
+        .expect("noteFace");
+    let honest = chain
+        .answers
+        .lock()
+        .expect("lock")
+        .get(&key)
+        .cloned()
+        .expect("the book's answer was captured");
+    let mut off = honest.clone();
+    off[at * 32 + 31] ^= 1;
+    chain.answers.lock().expect("lock").insert(key.clone(), off);
+
+    let report = reader.publish_pass(head).await.expect("a pass");
+    assert_eq!(report.failed, 1, "project A is not built: {report:?}");
+    let after = stored_record(&reader, &a).await;
+    assert_eq!(after, before, "the record stays as it was");
+    let text = String::from_utf8(logs.0.lock().expect("lock").clone()).expect("text");
+    assert!(
+        text.contains("ERROR")
+            && text.contains("numbers not signed")
+            && text.contains(&format!("task {serial} noteFace: events say")),
+        "the log names the task and the field: {text}"
+    );
+
+    // The contract and the events agree again: the project is signed (after its pause).
+    chain.answers.lock().expect("lock").insert(key, honest);
+    reader.schedule().failing.clear();
+    // A new second, so that the new record is not the same event as the old one.
+    tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
+    let report = reader.publish_pass(head).await.expect("a pass");
+    assert_eq!(report.failed, 0, "{report:?}");
+    assert!(report.signed >= 1, "project A is signed: {report:?}");
+    let again = stored_record(&reader, &a).await;
+    assert!(
+        again["builtAt"].as_u64() > before["builtAt"].as_u64(),
+        "a new record, with the section"
+    );
+    assert!(again["tasks"].is_object(), "and its tasks are there");
+}

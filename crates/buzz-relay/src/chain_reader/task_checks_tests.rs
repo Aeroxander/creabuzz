@@ -674,4 +674,25 @@ async fn the_views_of_one_project_are_bounded_whatever_its_history() {
         assert_eq!(count(once), 1, "{once} is asked once");
     }
     assert!(read.book.is_some());
+
+    // A11, end to end: what the record lists of that history. Every open row, and of the 200 ended
+    // rows (all with money a leaver can still claim) the 24 with the most; the record says how many
+    // it left out and that it is cut, and stays far under the size a record may have.
+    let tasks = super::record_tasks::build(&ledger, &read, as_of.time, 10_000_000_000)
+        .expect("builds")
+        .expect("a book");
+    assert_eq!(tasks.list.len(), 8 + 24);
+    assert_eq!(tasks.cut.notes_rows_dropped, 200 - 24);
+    assert!(tasks.truncated);
+    assert!(
+        tasks.list.iter().filter(|r| r.notes.is_some()).count() == tasks.list.len(),
+        "every listed row has its notes"
+    );
+    let rows_with_holders = tasks
+        .list
+        .iter()
+        .filter(|r| r.notes.as_ref().is_some_and(|n| !n.holders.is_empty()))
+        .count();
+    assert_eq!(rows_with_holders, 8, "note holders for 8 rows only");
+    assert!(serde_json::to_vec(&tasks).expect("written").len() < 300_000);
 }

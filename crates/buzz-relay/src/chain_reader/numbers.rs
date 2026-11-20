@@ -690,11 +690,14 @@ pub fn refresh_every(
     money_arriving: bool,
     tasks_open: bool,
 ) -> u64 {
-    if accruing || money_arriving || tasks_open {
+    let secs = if accruing || money_arriving || tasks_open {
         cadence.active_secs
     } else {
         cadence.idle_secs
-    }
+    };
+    // A record never promises more than the settings allow a server to be set to
+    // (the app reads a longer promise as a dead server for part of each cycle).
+    secs.min(super::settings::MAX_REFRESH_SECS)
 }
 
 /// Paths of numbers that move with time, not with events: they change every
