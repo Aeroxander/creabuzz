@@ -26,7 +26,7 @@ import {
 const SEASONS_READ = 50;
 /** One page of a season's entries, and how many pages are followed: the server's own cap is 500 entries. */
 export const PAGE_SIZE = 200;
-export const MAX_PAGES = 3;
+const MAX_PAGES = 3;
 
 const seasonKeys = {
   all: ["season"] as const,
