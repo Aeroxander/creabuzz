@@ -209,8 +209,19 @@ run("paying an accepted task from the box, against the real contracts", () => {
     // A task accepted long ago: more than the first three pieces of ten thousand blocks lie between the acceptance and the
     // newest block. The search goes on back to the acceptance: it still finds the first payment, and for a wallet that was
     // never paid it says "nothing found" (not "could not look back"), so the press can be offered.
-    await rpc("anvil_mine", ["0x88b8"]);
-    expect((await finder.blockNumber()) > 35_000).toBe(true);
+    // The spacing of the mined blocks is stated (one second apart: `anvil_mine` takes the count and the interval in seconds),
+    // so the case means the same on every anvil version, whatever spacing a version gives blocks mined without one.
+    const headBefore = await finder.blockNumber();
+    await rpc("anvil_mine", ["0x88b8", "0x1"]);
+    const headAfter = await finder.blockNumber();
+    expect(headAfter - headBefore).toBe(0x88b8);
+    // The mined blocks are one second apart, at the start of the run and at its end.
+    for (const block of [headBefore + 2, headAfter]) {
+      expect(
+        (await finder.blockTime!(block)) - (await finder.blockTime!(block - 1)),
+      ).toBe(1);
+    }
+    expect(headAfter > 35_000).toBe(true);
     const old = await findPayment(
       finder,
       parts.treasury,

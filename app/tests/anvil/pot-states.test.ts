@@ -102,7 +102,11 @@ async function launchProject(
   };
 }
 
-/** Back with the app's own plan and check the Shares that landed are the quote. */
+/**
+ * Back with the app's own plan and check the Shares that landed are the quote. The quote is read at one second and the press is
+ * mined a second or so later, and the price moves with the clock once outside money is arriving, so the Shares may sit a hair
+ * off the quote, within one part in 1,000, and never below the call's own minimum.
+ */
 async function back(
   chain: Awaited<ReturnType<typeof deployPot>>,
   project: { shares: string; treasury: string },
@@ -118,7 +122,13 @@ async function back(
   expect(plan).not.toBeNull();
   await walletOf(who).sendCalls(plan!.calls, CHAIN);
   const got = (await reads.balanceOf(read, project.shares, who)) - before;
-  expect(got).toBe(plan!.quote.shares);
+  expect(got).toBeGreaterThanOrEqual(plan!.minShares);
+  expect(got).toBeGreaterThanOrEqual(
+    plan!.quote.shares - plan!.quote.shares / 1000n,
+  );
+  expect(got).toBeLessThanOrEqual(
+    plan!.quote.shares + plan!.quote.shares / 1000n,
+  );
   return got;
 }
 
@@ -141,8 +151,15 @@ async function takeOut(
   await walletOf(who).sendCalls([plan!.call], CHAIN);
   const cash = (await reads.balanceOf(read, chain.dollar, who)) - before;
   expect(cash).toBeGreaterThanOrEqual(plan!.minCash);
-  // Nothing moved between the read and the press, so the chain paid what it quoted.
-  expect(cash).toBe(plan!.quote.cashNow);
+  // The chain paid what it quoted. The quote is read at one second and the press is mined a second or so later, and outside
+  // money that is still arriving moves with the clock, so the cash may sit a hair off the quote: within one part in 1,000,
+  // and (above) never below the call's own minimum.
+  expect(cash).toBeGreaterThanOrEqual(
+    plan!.quote.cashNow - plan!.quote.cashNow / 1000n,
+  );
+  expect(cash).toBeLessThanOrEqual(
+    plan!.quote.cashNow + plan!.quote.cashNow / 1000n,
+  );
   expect(await reads.balanceOf(read, project.shares, who)).toBe(
     heldBefore - shares,
   );
