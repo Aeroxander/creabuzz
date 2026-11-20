@@ -5,7 +5,7 @@
  */
 
 /** A value the record carried that cannot be believed: thrown inside the parser, turned into null at its edge. */
-export class Unreadable extends Error {}
+class Unreadable extends Error {}
 
 export type Json = Record<string, unknown>;
 

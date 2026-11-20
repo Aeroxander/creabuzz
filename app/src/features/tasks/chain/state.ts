@@ -4,20 +4,34 @@
  * is gated by a fresh read of the chain (`acceptGate`). A team member's own task record never changes what the app calls a
  * state; it can only fail a tie.
  *
- * S1 (the shared library's first part) fixes the shapes the screens build against. `phaseOf`, `stateWords`, `nextDateOf`,
- * `tieOf`, `acceptGate`, `doorFor`, `shareFor`, `noticeWords` and `durationWords` have their signatures here and bodies
- * that throw until S2 builds them; `nowOf` and `chainRowOf` are built.
+ * The door rule and the share of a plan live in `door.ts`, the lengths of time in `duration.ts` and the sentences more
+ * than one screen says in `words.ts`; they are all re-exported here so a screen imports from one place.
  */
-import type { ProjectTask } from "../task-record";
-import type { ChainTask, ChainTaskNow, ChainTasks, NoticeFor } from "./types";
+import type { WorkerLinks, ProjectTask } from "../task-record";
+import { checksOwnWork } from "../task-record";
+import type { ProjectNumbers } from "../../money/numbers";
+import { isRunner, signsForRunner, timeText } from "../../money/numbers";
+import type { ChainTask, ChainTaskNow, ChainTasks } from "./types";
+import {
+  deadlinePassed,
+  dollarsPhrase,
+  NOT_RUNNER,
+  NOTHING_SET_ASIDE,
+  notThisTask,
+  notWaitingForPay,
+  OWN_WORK,
+  plannedMoreThanOnce,
+  takerDiffers,
+} from "./words";
+
+export { doorFor, shareFor } from "./door";
+export { durationWords, noticeWords } from "./duration";
 
 /**
  * Where a task is, by the dates and the network's state (5.4):
  * a plan in its notice, open to be taken, missed (nobody took it in time), taken and working, taken and overdue (ran out,
  * not yet returned), or ended in one of five ways. `wound-down` is an ended row whose `resolvedAt` equals the record's
  * wind-down time: the sweep, not a decision about the task.
- *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
  */
 export type Phase =
   | "notice" // announced, now < noticeEnd
@@ -32,9 +46,7 @@ export type Phase =
   | "lapsed"
   | "wound-down"; // ended by the project's wind-down sweep
 
-/** Whether a network task ties to the team's task record, and the first reason it does not (in this order). *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
- */
+/** Whether a network task ties to the team's task record, and the first reason it does not (in this order). */
 export type Tie =
   | { ok: true }
   | {
@@ -51,17 +63,6 @@ export type Tie =
         | "worker-left"
         | "not-taken";
     };
-
-/** The way a task is paid (5.1): from the allowance box, only from it, as a plan with notice, or not at all (too big). *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
- */
-export type Door = {
-  door: "box" | "box-only" | "plan" | "too-big";
-  /** The one sentence shown beside the press, always. */
-  sentence: string;
-  /** True when the proposed door is the box and a plan would also fit: "Plan it instead, so holders get notice first." */
-  planAlso: boolean;
-};
 
 /** The one clock every phase and date test uses: a phone set behind cannot make an ended task look open (1.6). */
 export function nowOf(
@@ -98,54 +99,252 @@ export function chainRowOf(
   );
 }
 
-/** Raised by a function whose body the second part of the shared library (S2) builds. */
-function notBuilt(name: string, ..._inputs: unknown[]): never {
-  throw new Error(`chain/state.ts: ${name} is not built yet (step 2, S2)`);
-}
+// --- The phase and its words (5.4) --------------------------------------------------------------------------------
 
-/** The phase of `task` at `now` (seconds): every state the app names, from the row and the clock. *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
+/**
+ * The phase of `task` at `now` (seconds): every state the app names, from the row and the clock. A taken task whose
+ * deadline has passed is `overdue` here even though the network keeps it `taken` until someone settles; an announced one
+ * whose time is up is `missed`. `windDownAt` is the record's wind-down time: an ended row that came to its end at that
+ * second was swept by the wind-down, not decided on.
  */
-export function phaseOf(task: ChainTask, now: number): Phase {
-  return notBuilt("phaseOf", task, now);
+export function phaseOf(
+  task: ChainTaskNow & { resolvedAt?: number | null },
+  now: number,
+  windDownAt: number | null = null,
+): Phase {
+  switch (task.state) {
+    case "announced":
+      return now < task.noticeEnd
+        ? "notice"
+        : now < task.expiresAt
+          ? "open"
+          : "missed";
+    case "taken":
+      return now < (task.deadline ?? task.expiresAt) ? "working" : "overdue";
+    case "paid":
+      return "paid";
+    case "rejected":
+      return "sent-back";
+    case "returned":
+    case "cancelled": {
+      const swept =
+        windDownAt !== null &&
+        task.resolvedAt !== null &&
+        task.resolvedAt === windDownAt;
+      if (swept) return "wound-down";
+      return task.state === "returned" ? "ran-out" : "withdrawn";
+    }
+    case "lapsed":
+      return "lapsed";
+  }
 }
 
-/** The words for a task's state at `now` (5.4): a headline and, when there is one, a detail line. *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
+/** What stateWords may be told besides the row and the clock. */
+export interface StateOptions {
+  /** The record's wind-down time (`numbers.windDown?.at`), so a sweep reads as "Closed". */
+  windDownAt?: number | null;
+  /** The pay-to's name; without it the detail says "Whoever takes it" for an open task and the wallet's start otherwise. */
+  payeeName?: string | null;
+}
+
+/** "0x3c44…93bc": a wallet the app has no name for, short enough for a line (the full address is always in the details). */
+function shortAddress(address: string): string {
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+/**
+ * The words for a task's state at `now` (5.4): a headline and, when there is one, a detail line. The network's state, never
+ * the team's record: a record that says "Accepted" while the network says `taken` still reads "Taken, due {date}."
  */
 export function stateWords(
   task: ChainTask,
   now: number,
+  options: StateOptions = {},
 ): { headline: string; detail: string | null } {
-  return notBuilt("stateWords", task, now);
+  const phase = phaseOf(task, now, options.windDownAt ?? null);
+  const who =
+    options.payeeName ??
+    (task.payee ? shortAddress(task.payee) : "Whoever takes it");
+  const would = `${who} would be paid up to ${dollarsPhrase(task.maxDollars)}.`;
+  const aside = `${dollarsPhrase(task.setAside)} ${task.setAside === 1_000_000n ? "is" : "are"} set aside for it.`;
+  switch (phase) {
+    case "notice":
+      return {
+        headline: `Planned. Can be taken from ${timeText(task.noticeEnd)}.`,
+        detail: would,
+      };
+    case "open":
+      return {
+        headline: `Can be taken now, until ${timeText(task.expiresAt)}.`,
+        detail: would,
+      };
+    case "missed":
+    case "lapsed":
+      return {
+        headline: "Lapsed. Nobody took it in time.",
+        detail: "Nothing moved.",
+      };
+    case "working":
+      return {
+        headline: `Taken, due ${timeText(task.deadline ?? task.expiresAt)}.`,
+        detail: aside,
+      };
+    case "overdue":
+      return {
+        headline: "Ran out. The money goes back to the project.",
+        detail: "Anyone can return it now.",
+      };
+    case "paid":
+      return {
+        headline: `Paid ${dollarsPhrase(task.pay)}.`,
+        detail:
+          task.pay < task.setAside
+            ? `Paid ${dollarsPhrase(task.pay)} of the ${dollarsPhrase(task.setAside)} set aside; the rest went back.`
+            : null,
+      };
+    case "sent-back":
+      return {
+        headline: "Sent back. Nothing was paid.",
+        detail: "The money went back to the project.",
+      };
+    case "ran-out":
+      return {
+        headline: "Ran out. Nothing was paid.",
+        detail: "The money went back to the project.",
+      };
+    case "withdrawn":
+      return {
+        headline: "Withdrawn.",
+        detail: "Nobody took it, so no money moved.",
+      };
+    case "wound-down":
+      return {
+        headline: "Closed. The project wound down.",
+        detail: "Nothing was paid. Any money set aside went back.",
+      };
+  }
 }
 
-/** The next date something happens on `task` after `now`: the take date, the end of the take window, or the due date; null when none. *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
+/**
+ * The next date something happens on `task` after `now`: the take date while it is in its notice, the end of the take
+ * window while it can be taken, the due date while it is taken; null when none (it ended, or its time is already up).
  */
 export function nextDateOf(task: ChainTask, now: number): number | null {
-  return notBuilt("nextDateOf", task, now);
+  const phase = phaseOf(task, now);
+  if (phase === "notice") return task.noticeEnd;
+  if (phase === "open") return task.expiresAt;
+  if (phase === "working") return task.deadline ?? task.expiresAt;
+  return null;
 }
+
+// --- Open until someone settles: what counts as open and what can be pressed (1.6, 5.6, 5.7, 5.9) ----------------
+
+/**
+ * A task is open in the book until a call settles it, even after its time is up (the contract settles first in every call).
+ * True for a row that is announced or taken and whose end has passed: the app counts it as ended wherever it matters.
+ */
+export function isPastEnd(task: ChainTaskNow, now: number): boolean {
+  if (task.state === "announced") return now >= task.expiresAt;
+  if (task.state === "taken") return now >= (task.deadline ?? task.expiresAt);
+  return false;
+}
+
+/** How many of `rows` count against the limit on open tasks at `now`: open on the network and not past their end. */
+export function openCountAt(
+  rows: readonly ChainTaskNow[],
+  now: number,
+): number {
+  return rows.filter(
+    (row) =>
+      (row.state === "announced" || row.state === "taken") &&
+      !isPastEnd(row, now),
+  ).length;
+}
+
+/** "Withdraw the plan" is offered while nobody has taken it and its time is not up. */
+export function canWithdraw(task: ChainTaskNow, now: number): boolean {
+  return task.state === "announced" && now < task.expiresAt;
+}
+
+/** "Send the money back" is offered while the task is taken and its deadline has not passed (after it the contract settles first). */
+export function canSendBack(task: ChainTaskNow, now: number): boolean {
+  return task.state === "taken" && now < (task.deadline ?? task.expiresAt);
+}
+
+/** "Return the money" is offered on a taken task past its deadline that nobody has settled. */
+export function canReturn(task: ChainTaskNow, now: number): boolean {
+  return task.state === "taken" && now >= (task.deadline ?? task.expiresAt);
+}
+
+/**
+ * What a note of `face` pays on `task` at `now`: nothing while the task is running (or when it was paid in full or nothing
+ * came back); `face x returned / setAside` once it ended (the contract's own rounding, down); the whole `face` for a taken
+ * task past its deadline that nobody settled, because a claim settles first and returns all of it. A sheet checks this
+ * against the chain's `claimableNote` when it opens.
+ */
+export function claimableNow(
+  task: ChainTaskNow,
+  face: bigint,
+  now: number,
+): bigint {
+  if (face === 0n || task.state === "announced") return 0n;
+  if (task.state === "taken")
+    return now >= (task.deadline ?? task.expiresAt) ? face : 0n;
+  // Ended: nothing came back (paid in full), or the task never held money.
+  if (task.setAside === 0n || task.returned === 0n) return 0n;
+  return (face * task.returned) / task.setAside;
+}
+
+// --- The tie between a network task and the team's task record (3.1, 4.4) ---------------------------------------
+
+const lower = (v: string | null | undefined) => (v ?? "").toLowerCase();
 
 /**
  * Whether the network task `chain` ties to the team's task record `relay` (pure; the relay task is the app's own reading
  * of kind 47003). Returns the first failure, in this order: `no-record`, `what`, `closed`, `already-paid`, `amount`,
  * `payee`, `taker`, `repeat`, `worker-left`, `not-taken`. When it fails the app shows the network's numbers and not the
- * record's words, and Accept is off.
- *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
+ * record's words, and Accept is off. One plan binds a task record: the lowest-serial row announced, taken or paid; a later
+ * one is a repeat (`repeatOf`) and never ties.
  */
 export function tieOf(chain: ChainTask, relay: ProjectTask | null): Tie {
-  return notBuilt("tieOf", chain, relay);
+  const no = (why: Extract<Tie, { ok: false }>["why"]): Tie => ({
+    ok: false,
+    why,
+  });
+  if (relay === null) return no("no-record");
+  if (chain.what !== `0x${relay.id.toLowerCase()}`) return no("what");
+  if (relay.state === "cancelled" || relay.state === "given-up")
+    return no("closed");
+  if (relay.state === "accepted" && relay.paidTx !== null)
+    return no("already-paid");
+  // A task with no pay stated does not tie: the plan's most must be the pay.
+  if (relay.usd === null || chain.maxDollars !== BigInt(relay.usd) * 1_000_000n)
+    return no("amount");
+  if (chain.payee === null || relay.payTo === null) return no("payee");
+  if (lower(chain.payee) !== lower(relay.payTo)) return no("payee");
+  if (
+    (chain.state === "taken" || chain.state === "paid") &&
+    lower(chain.takenBy) !== lower(relay.payTo)
+  )
+    return no("taker");
+  if (chain.repeatOf !== null) return no("repeat");
+  if (relay.worker === null) return no("worker-left");
+  if (relay.state === "open" || relay.state === "offered")
+    return no("not-taken");
+  return { ok: true };
 }
+
+// --- Whether Accept may be offered (5.5) -------------------------------------------------------------------------
+
+/** A press that has to land before the deadline needs some room: closer than this is refused (the clock may be a little off). */
+const DEADLINE_ROOM_SECS = 60;
 
 /**
  * Whether Accept may be offered. `fresh` is `taskOf(serial)` read from the chain now, `shown` the row the card showed,
- * `relay` the team's record, `me` the sender. It runs `tieOf` on the fresh read and adds: the state is taken, the deadline
- * is not past, the sender runs the project. A failure carries the one sentence to show, and whether "Send the money back"
- * is offered beside it (it is whenever money is set aside).
- *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
+ * `relay` the team's record, `now` the one clock, `me` the signed-in account's key and `address` the connected wallet. It
+ * runs `tieOf` on the fresh read and adds: the state is taken, the deadline is not near, the sender runs the project and is
+ * not checking their own work, and money is set aside. A failure carries the one sentence to show, and whether "Send the
+ * money back" is offered beside it (it is while the task is taken and its deadline has not passed).
  */
 export function acceptGate(input: {
   fresh: ChainTaskNow;
@@ -153,55 +352,45 @@ export function acceptGate(input: {
   relay: ProjectTask | null;
   now: number;
   me: string;
+  address: string | null;
+  runner: ProjectNumbers["runner"];
+  team: ReadonlySet<string>;
+  links: WorkerLinks;
 }): { ok: true } | { ok: false; sentence: string; sendBackOffered: boolean } {
-  return notBuilt("acceptGate", input);
-}
-
-/**
- * The door for paying a task (5.1): `usd` the pay in dollars, `box` what the allowance box holds now, `boxCap` the most it
- * can hold, `pot` the project's money, `payee` the wallet the worker named, `runner` who runs the project, `limits` the
- * record's limits and `notice` what a plan of this size gets (null when it could not be read).
- *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
- */
-export function doorFor(input: {
-  usd: number;
-  box: bigint;
-  boxCap: bigint;
-  pot: bigint;
-  payee: string | null;
-  runner: { address: string; signers: string[] | null };
-  limits: ChainTasks["limits"];
-  notice: NoticeFor | null;
-}): Door {
-  return notBuilt("doorFor", input);
-}
-
-/**
- * The share of the pot a plan asks for, in ten-thousandths: `ceil(maxDollars x 11,000 / pot)` in whole numbers (a tenth
- * more than the pay's own share, so a small fall does not short-change the worker), at least 1; null when it passes
- * `maxShareBps` or the pot is nothing.
- *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
- */
-export function shareFor(
-  maxDollars: bigint,
-  pot: bigint,
-  maxShareBps: number,
-): number | null {
-  return notBuilt("shareFor", maxDollars, pot, maxShareBps);
-}
-
-/** A notice in words, "16 days 12 hours"; on a test network "1 hour 17 minutes". *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
- */
-export function noticeWords(secs: number): string {
-  return notBuilt("noticeWords", secs);
-}
-
-/** A length of time in words, the same units as `noticeWords`. *
- * @public Signature for the task screens (S1); built by S2. Drop this tag when a screen uses it.
- */
-export function durationWords(secs: number): string {
-  return notBuilt("durationWords", secs);
+  const { fresh, shown, relay, now } = input;
+  const stop = (sentence: string) => ({
+    ok: false as const,
+    sentence,
+    sendBackOffered: canSendBack(fresh, now) && fresh.setAside > 0n,
+  });
+  // The network's numbers now, with what only the record's history knows (a repeat) carried over from the row shown.
+  const row: ChainTask = {
+    ...shown,
+    ...fresh,
+    pay: fresh.state === "paid" ? fresh.setAside - fresh.returned : shown.pay,
+  };
+  if (fresh.state !== "taken") return stop(notWaitingForPay(phaseOf(row, now)));
+  const deadline = fresh.deadline ?? fresh.expiresAt;
+  if (now + DEADLINE_ROOM_SECS >= deadline)
+    return stop(deadlinePassed(deadline, now));
+  const tie = tieOf(row, relay);
+  if (!tie.ok) {
+    if (tie.why === "taker")
+      return stop(takerDiffers(row.takenBy ?? "nobody", relay?.payTo ?? null));
+    if (tie.why === "repeat")
+      return stop(plannedMoreThanOnce(row.repeatOf ?? 0n));
+    return stop(notThisTask(tie.why));
+  }
+  const runs =
+    input.address !== null &&
+    (isRunner({ runner: input.runner } as ProjectNumbers, input.address) ||
+      signsForRunner(
+        { runner: input.runner } as ProjectNumbers,
+        input.address,
+      ));
+  if (!runs) return stop(NOT_RUNNER);
+  if (relay && checksOwnWork(relay, input.me, input.team, input.links))
+    return stop(OWN_WORK);
+  if (fresh.setAside === 0n) return stop(NOTHING_SET_ASIDE);
+  return { ok: true };
 }

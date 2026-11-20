@@ -1,8 +1,9 @@
 /**
  * SHAPE-ONLY fixtures for the task queue screens (`src/features/tasks/chain/types.ts`): a row and a `tasks` section with
- * every field present and plausible, changed by a patch. They are made by hand to give a screen something to render, so the
- * numbers in them are not facts about any contract: a test that needs real numbers reads the example record the server
- * writes (`docs/next-version/record-v2-example.json`) instead, and no test copies a number from one into the other.
+ * every field present and plausible, changed by a patch. They are made by hand for the edge cases a test needs to name
+ * (a second before a date, a state the example does not hold), so the numbers in them are not facts about any contract. A
+ * test that needs real numbers reads the example record the server writes (`docs/next-version/record-v2-example.json`,
+ * through `withTasks` in `numbers-v2-fixture.ts` or `parsedExample()`), and no test copies a number from it into one of these.
  */
 import type {
   ChainTask,

@@ -9,6 +9,16 @@ import {
   raw,
   SERVER,
 } from "../../../tests/helpers/numbers-v2-parse";
+import {
+  COORDINATE,
+  NOW,
+  numbersV2Of,
+} from "../../../tests/helpers/money-harness";
+import {
+  numbersV2Content,
+  taskRow,
+  withTasks,
+} from "../../../tests/helpers/numbers-v2-fixture";
 import type { ChainTask, ChainTasks } from "../tasks/chain/types";
 import { parseNumbers } from "./numbers";
 
@@ -317,5 +327,65 @@ describe("a queue that cannot be believed is unreadable and nothing else is", ()
     c.tasks.list.reverse();
     const n = parse(c);
     expect(n.tasks).toEqual(parsedExample().tasks);
+  });
+});
+
+describe("the fixture the screens' tests use", () => {
+  const make = (patch?: (c: Json) => void) =>
+    numbersV2Of(numbersV2Content({ coordinate: COORDINATE, now: NOW, patch }));
+
+  it("has no queue unless a test asks, so a step 1 test is a step 1 record", () => {
+    expect(make().tasks).toBeUndefined();
+  });
+
+  it("brings the example's queue back with `withTasks`, moved in time with the rest of the record", () => {
+    const n = make(withTasks());
+    const queue = n.tasks as ChainTasks;
+    const original = parsedExample().tasks as ChainTasks;
+    expect(queue.list).toHaveLength(original.list.length);
+    // every date keeps its distance from the record's own time
+    const shift = n.asOf.time - parsedExample().asOf.time;
+    for (const [i, row] of queue.list.entries()) {
+      const was = original.list[i] as ChainTask;
+      expect(row.noticeEnd).toBe(was.noticeEnd + shift);
+      expect(row.deadline).toBe(
+        was.deadline === null ? null : was.deadline + shift,
+      );
+      expect(row.resolvedAt).toBe(
+        was.resolvedAt === null ? null : was.resolvedAt + shift,
+      );
+      expect(row.pay).toBe(was.pay);
+    }
+    expect(queue.nextExpiry).toBe((original.nextExpiry ?? 0) + shift);
+    expect(queue.cap.frees[0]?.at).toBe(
+      (original.cap.frees[0]?.at ?? 0) + shift,
+    );
+    expect(queue.limits).toEqual(original.limits);
+  });
+
+  it("lets a test change a row, and empties or clears the queue", () => {
+    const n = make(
+      withTasks((tasks) => {
+        taskRow(tasks, 6).state = "paid";
+        // a queue that says three are open must hold three open rows: the parser would not read it otherwise
+        tasks.openCount = (tasks.openCount as number) - 1;
+      }),
+    );
+    expect(
+      (n.tasks as ChainTasks).list.find((r) => r.serial === 6n)?.state,
+    ).toBe("paid");
+    // the example's own rows are untouched by the change
+    expect(
+      (parsedExample().tasks as ChainTasks).list.find((r) => r.serial === 6n)
+        ?.state,
+    ).toBe("taken");
+    expect(
+      make(
+        withTasks((t, c) => {
+          c.tasks = null;
+          void t;
+        }),
+      ).tasks,
+    ).toBeNull();
   });
 });

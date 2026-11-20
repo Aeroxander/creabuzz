@@ -19,13 +19,16 @@ import {
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
   SHARE_TOKEN_ABI,
+  TASK_BOOK_ABI,
   TREASURY_ABI,
   VESTER_ABI,
 } from "../../../packages/creaton-core/src/pot/abis.generated.ts";
 
 // The Pair and the Launcher go last: a name they share with the Treasury (`checkIn`, `platform`) is the Treasury's.
+// The task book follows the Treasury: `noticeFor` and `unit` are the same function on both and read the same.
 const ABIS = [
   TREASURY_ABI,
+  TASK_BOOK_ABI,
   VESTER_ABI,
   SHARE_TOKEN_ABI,
   PLAY_DOLLAR_ABI,

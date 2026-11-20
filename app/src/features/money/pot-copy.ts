@@ -14,11 +14,19 @@ import {
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
   SHARE_TOKEN_ABI,
+  TASK_BOOK_ABI,
   TREASURY_ABI,
   VESTER_ABI,
 } from "@creaton/core/pot/abis.generated.ts";
 import { moneyProblem } from "./money-copy";
 import { dollarsText, timeText } from "./numbers";
+import {
+  NEW_TASK_ERRORS,
+  TASK_ACTION_WORDS,
+  TASK_EXTENSIONS,
+  type TaskAction,
+  type Text,
+} from "./pot-copy-tasks";
 import { WalletStepError } from "./wallet";
 
 /** What a person was doing when a step stopped; some refusals read better said for one of them. */
@@ -40,10 +48,12 @@ export type PotAction =
   | "launch"
   | "link"
   | "wind-down"
-  | "pair";
+  | "pair"
+  | TaskAction;
 
 const ABIS: readonly Abi[] = [
   TREASURY_ABI,
+  TASK_BOOK_ABI,
   VESTER_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
@@ -52,16 +62,16 @@ const ABIS: readonly Abi[] = [
 ];
 
 type ErrorItem<T> = T extends { type: "error"; name: infer N } ? N : never;
-/** The name of every custom error in the six ABIs. */
+/** The name of every custom error in the seven ABIs (the task book's included). */
 export type PotErrorName =
   | ErrorItem<(typeof TREASURY_ABI)[number]>
+  | ErrorItem<(typeof TASK_BOOK_ABI)[number]>
   | ErrorItem<(typeof VESTER_ABI)[number]>
   | ErrorItem<(typeof LAUNCHER_ABI)[number]>
   | ErrorItem<(typeof PAIR_ABI)[number]>
   | ErrorItem<(typeof SHARE_TOKEN_ABI)[number]>
   | ErrorItem<(typeof PLAY_DOLLAR_ABI)[number]>;
 
-type Text = string | ((args: readonly DecodedValue[]) => string);
 type Words = { any: Text } & Partial<Record<PotAction, Text>>;
 
 const num = (v: DecodedValue | undefined): bigint =>
@@ -73,8 +83,14 @@ const NOTHING = "Nothing changed.";
 const dollarsPhrase = (raw: bigint): string =>
   raw === 1_000_000n ? "1 dollar" : `${dollarsText(raw)} dollars`;
 
-/** The sentence for each error, for any action and, where it reads better, for one action. */
-const ERROR_WORDS: Record<PotErrorName, Words> = {
+/**
+ * The sentence for each error that was worded before the task book, for any action and, where it reads better, for one
+ * action. The errors new with the task book, and what the older ones say for a task step, are in `pot-copy-tasks.ts`.
+ */
+const EARLIER_WORDS: Record<
+  Exclude<PotErrorName, keyof typeof NEW_TASK_ERRORS>,
+  Words
+> = {
   // The Treasury
   AlreadyWoundDown: {
     any: "This project has wound down, so this cannot be done. Taking out your Shares still works.",
@@ -341,6 +357,16 @@ const ERROR_WORDS: Record<PotErrorName, Words> = {
   },
 };
 
+/** Every error's sentences: the earlier ones with what they say for a task step, and the task book's own. */
+const ERROR_WORDS: Record<PotErrorName, Words> = (() => {
+  const merged: Record<string, Words> = { ...EARLIER_WORDS };
+  for (const [name, more] of Object.entries(TASK_EXTENSIONS)) {
+    const earlier = merged[name];
+    if (earlier) merged[name] = { ...earlier, ...more };
+  }
+  return { ...merged, ...NEW_TASK_ERRORS } as Record<PotErrorName, Words>;
+})();
+
 /** The names the sentences above are keyed by (the test walks them against the ABIs). */
 export const POT_ERROR_NAMES = Object.keys(ERROR_WORDS) as PotErrorName[];
 
@@ -363,6 +389,7 @@ const ACTION_WORDS: Record<PotAction, string> = {
   link: "Linking your wallet",
   "wind-down": "Winding down",
   pair: "The call",
+  ...TASK_ACTION_WORDS,
 };
 
 /** What `potProblem` says when it knows nothing more about an action; the test tells it from a sentence made for an error. */

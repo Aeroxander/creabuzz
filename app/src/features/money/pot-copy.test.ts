@@ -12,6 +12,7 @@ import {
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
   SHARE_TOKEN_ABI,
+  TASK_BOOK_ABI,
   TREASURY_ABI,
   VESTER_ABI,
 } from "@creaton/core/pot/abis.generated.ts";
@@ -25,8 +26,10 @@ import {
 } from "./pot-copy";
 import { WalletStepError } from "./wallet";
 
+// The task book's refusals bubble through the Treasury, so the book's ABI is read as well as the Treasury's.
 const ABIS = [
   TREASURY_ABI,
+  TASK_BOOK_ABI,
   VESTER_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
@@ -53,9 +56,16 @@ const ACTIONS: PotAction[] = [
   "link",
   "wind-down",
   "pair",
+  "plan-task",
+  "take-task",
+  "pay-task",
+  "send-back-task",
+  "withdraw-task",
+  "return-task",
+  "claim-note",
 ];
 
-/** Every custom error in the six ABIs, as the generated file has them. */
+/** Every custom error in the seven ABIs, as the generated file has them. */
 const ERRORS: AbiItem[] = ABIS.flatMap((abi) =>
   (abi as readonly AbiItem[]).filter((item) => item.type === "error"),
 );
@@ -162,5 +172,132 @@ describe("the words for every refusal of the money contracts", () => {
       "Taking out your Shares did not go through. Nothing changed. Try again.",
     );
     expect(potProblem(undefined, "back")).toBe(potFallback("back"));
+  });
+});
+
+describe("the words for every refusal of the task book and of the Treasury's task calls (4.6)", () => {
+  /** The refusal `name` with these arguments, as a node would hand it back. */
+  function refusal(name: string, args: bigint[] = []) {
+    const item = ERRORS.find(
+      (e) => e.name === name && (e.inputs?.length ?? 0) === args.length,
+    );
+    if (!item) throw new Error(`${name} is not in the ABIs`);
+    const data =
+      selectorOf(signatureOf(item)) +
+      encodeParameters((item.inputs ?? []).map(abiTypeOf), args).slice(2);
+    return refused(data);
+  }
+  const say = (name: string, action: PotAction, args: bigint[] = []) =>
+    potProblem(refusal(name, args), action);
+
+  it("every error of the book is in the table, and the new ones read for any action", () => {
+    const book = (TASK_BOOK_ABI as readonly AbiItem[]).filter(
+      (i) => i.type === "error",
+    );
+    expect(book.length).toBeGreaterThan(10);
+    for (const item of book) expect(POT_ERROR_NAMES).toContain(item.name);
+  });
+
+  it("plan: a task's limits and who may plan, in the words of the plan", () => {
+    expect(say("BadInput", "plan-task")).toBe(
+      "A task needs its record, a person to pay who is not the project itself, at least 1 dollar and a share of the project's money from 0.01% to 5%. Nothing changed.",
+    );
+    expect(say("ShareTooBig", "plan-task")).toBe(
+      "That is more of the project's money than one task may ask for. Plan it in smaller parts. Nothing changed.",
+    );
+    expect(say("TooManyOpen", "plan-task")).toMatch(
+      /withdraw one that nobody has taken/,
+    );
+    expect(say("NotAllowed", "plan-task")).toMatch(
+      /both must say yes.*cannot be paid to someone who runs the project/s,
+    );
+    expect(say("ProjectQuiet", "plan-task")).toBe(
+      "The team has not checked in lately, so no task can be planned or taken until they do. Nothing changed.",
+    );
+  });
+
+  it("take: the notice, the window, the cap and the guard on the amount", () => {
+    expect(say("NoticeRunning", "take-task", [1_795_089_600n])).toMatch(
+      /^The notice is still running\. This task can be taken from \d+ \w+, \d\d:\d\d\. Nothing changed\.$/,
+    );
+    expect(say("TakeWindowOver", "take-task")).toMatch(
+      /lapses and nothing was set aside/,
+    );
+    expect(say("CapReached", "take-task", [900n, 200n, 1_000n])).toBe(
+      "Too much of the project's money has been set aside for tasks recently: 9% of the 10% the limit allows, and this task needs 2%. It can be taken once earlier tasks are old enough to stop counting. Nothing was set aside.",
+    );
+    expect(say("TakesFull", "take-task")).toMatch(
+      /Try again later\. Nothing was set aside\.$/,
+    );
+    expect(say("TooLittleCash", "take-task", [40_000_000n, 12_500_000n])).toBe(
+      "The project's money moved, so only 12.50 dollars would be set aside, less than the 40 dollars you asked for. Nothing was taken. Look again and press again.",
+    );
+    expect(say("WrongTaskState", "take-task")).toMatch(
+      /already taken, withdrawn or has ended/,
+    );
+    expect(say("NotAllowed", "take-task")).toMatch(
+      /for someone else, or you run this project/,
+    );
+  });
+
+  it("pay and send back: more than set aside, nothing, a task that is not waiting", () => {
+    expect(say("TooMuch", "pay-task", [50_000_000n, 40_000_000n])).toBe(
+      "That is more than the 40 dollars set aside for this task. Pay less. Nothing was paid.",
+    );
+    expect(say("BadInput", "pay-task")).toBe(
+      "Pay more than nothing, or send the money back instead. Nothing was paid.",
+    );
+    for (const action of ["pay-task", "send-back-task"] as const)
+      expect(say("WrongTaskState", action)).toMatch(
+        /may already be paid, sent back or have run out\. Nothing was paid\.$/,
+      );
+    expect(say("NotAllowed", "pay-task")).toMatch(
+      /not someone who took the task and now also runs the project/,
+    );
+    expect(say("NotAllowed", "send-back-task")).toMatch(/both must say yes/);
+  });
+
+  it("withdraw, return and claim", () => {
+    expect(say("WrongTaskState", "withdraw-task")).toMatch(
+      /cannot be withdrawn\. Nothing changed\.$/,
+    );
+    expect(say("NotYet", "return-task", [1_795_089_600n])).toMatch(
+      /^This task is not past its deadline yet\. The money can be returned from /,
+    );
+    expect(say("NotYet", "claim-note", [1_795_089_600n])).toMatch(
+      /^This task has not ended yet, so there is nothing to claim\. It ends by /,
+    );
+    expect(say("NothingToPay", "claim-note")).toBe(
+      "There is nothing to claim here: the task was paid in full, or you already claimed. Nothing changed.",
+    );
+    expect(say("NoSuchTask", "claim-note")).toBe(
+      "The network does not know that task. Nothing changed.",
+    );
+  });
+
+  it("an error with no sentence for a task step says its own general one, and an earlier action keeps its words", () => {
+    expect(say("NotAllowed", "claim-note")).toMatch(
+      /This account may not do this/,
+    );
+    expect(say("TooMuch", "draw", [2n, 1n])).toMatch(
+      /allowance box holds right now/,
+    );
+    expect(say("NotYet", "rate", [1_795_089_600n])).toMatch(/applied from/);
+    expect(say("Inconsistent", "take-task")).toMatch(/did not add up/);
+  });
+
+  it("a task step the app cannot read the refusal of says which step did not go through", () => {
+    for (const action of [
+      "plan-task",
+      "take-task",
+      "pay-task",
+      "send-back-task",
+      "withdraw-task",
+      "return-task",
+      "claim-note",
+    ] as const)
+      expect(potProblem(new Error("socket hang up"), action)).toMatch(
+        /did not go through\. Nothing changed\. Try again\.$/,
+      );
   });
 });
