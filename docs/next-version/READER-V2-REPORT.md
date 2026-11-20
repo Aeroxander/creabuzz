@@ -683,3 +683,96 @@ applies 0071). Nothing is needed to find a project's task book: the reader learn
 returns a task that ran out, and the next action by anyone does. The helper builds its jobs once a minute at most, from rows two blocks deep, so after a warp
 mine at least three blocks and allow about a minute and a half. For a short wait set `BUZZ_CHAIN_ACTIVE_REFRESH_SECS=5` and `BUZZ_CHAIN_REFRESH_SECS=7`
 (the loop's values): the record promises the first while a task is open or money moves, the second otherwise, and says so in `refreshEverySecs`.
+
+## Step 2, review fixes (server, 20 November 2026)
+
+Five independent reviews of the step 2 server and app were read; this section is about everything that concerns `crates/**`, the migrations, the schema, `scripts/chain-reader-*`
+and the record documents. `contracts/pot` is unchanged (`git diff a8208c2c6..HEAD -- contracts/pot` is empty; `a8208c2c6` is the last commit that touches it). The app findings
+(the team side, the holder side, the app part of the fit review) are the other fixer's.
+
+### Fixed
+
+| Finding | What was wrong | What was done | The test that fails without it |
+|---|---|---|---|
+| Record review I1 (IMPORTANT) | The settled `locked` and `arriving` were worked forward by the server and only `boxCap` (a floor division on the sum, zero at a rate of zero) and `activeNow` were held to the contract. The step 1 arrival formula gave a pot one unit off at 55 of the reviewer's 7,155 blocks and `boxCap` would have missed 54 of them. | `quoteBack(1 dollar)` joins the first batch of views; `numbers::build` requires the worked-forward `locked` and `arriving` to equal its `lockedLine` and `arrivingLine` exactly (with those two exact the settled pot and box together are exact). The fixture generator asks the same call and the fixture was regenerated (7 new answers, one for each book; nothing else moved, and the example record is byte for byte the same). `RECORD-V2.md` says so. | `task_checks_tests::the_settled_locked_and_arriving_lines_are_held_to_the_contract_exactly`: every book of the run, each line one unit up and down, the refusal names the field and both values. |
+| Relay review IMPORTANT 1 | A plan that was over but not settled (its window or deadline past, nobody had called the Treasury) won the lowest-serial choice, was then judged "over", and so hid a live later plan of the same record: a `confirm` and a `cancel` that should be refused were accepted, and a `take` of the live plan was refused as ended. | `plan_of` treats a row that is not paid and is past its end as ended for the choice and takes the next live serial; when no row is live the lowest over one is still the plan (a take of it is refused with words, as before); a paid row binds for ever. | `task_chain::tests::a_plan_past_its_end_does_not_hide_a_live_later_plan_of_the_same_record`; Postgres `a_plan_past_its_end_that_nobody_settled_does_not_hide_a_live_repeat_of_the_same_record` (the reviewer's 1a, 1b, 1d; 1c is the same decision for a taken plan, covered by the unit test). |
+| Relay review IMPORTANT 2 | A `confirm` of a paid plan only compared the payment's transaction; a team that planned its own wallet as payee, took it and paid itself could record that as the named worker's paid task. | `enforce` reads the worker's own `take` and `accept` steps of the task (`task_takes::stored_pay_to`, the same rule as the app's `payToOf`: all steps the worker signed, two different wallets read as none) and `decide_chain` refuses with `PAID_ELSEWHERE` unless it equals the wallet that took the plan on the network. A worker who named none is refused too (a planned task has a named wallet by C4 and C35). `enforce` takes a `StepOn` (step, task id, worker) so the signature stays small. | `task_chain::tests::a_confirm_of_a_paid_plan_needs_the_wallet_the_worker_named`; `task_takes::tests::the_wallet_a_worker_named_is_the_one_they_all_agree_on`; Postgres `a_confirm_is_refused_when_the_network_paid_a_wallet_the_worker_never_named` (another wallet: refused; none: refused; the wallet that was paid: accepted). The two older confirm tests now have the worker take first, naming the paid wallet. |
+| Fit review IMPORTANT 1 | A take, accept, confirm or cancel of a planned task scanned the project's whole task book twice and read every stored block of the reader for `max(block_time)`. | Migration 0072 (and `schema/`): two partial indexes, `idx_chain_logs_task_what` (the announced rows of one task record) and `idx_chain_logs_task_serial` (the takes and resolutions of a serial), neither holding the notes. The newest block is read as `ORDER BY number DESC LIMIT 1` through the primary key. The three queries are constants shared by the code and the test. | Postgres `the_plan_reads_use_their_indexes_and_never_scan_every_block` (with sequential scans off and the general indexes out of the way the plan must use the new indexes and the primary key; with `idx_chain_logs_task_what` dropped it fails, tried); `buzz-db` `chain_task_lookup_indexes_migration_matches_the_desired_schema`; the migration count is 72; the Postgres migration test checks both indexes in a migrated and in a schema-made database. |
+| Relay review OPTIONAL 3 / fit review OPTIONAL 5 (`PLANS_READ`) | A record announced 65 times: the old cut read 64 rows and, if all had ended, said "no plan", switching every rule off for a live 65th. | The lookup reads 65 rows and fails (a server fault, the write is refused) when there are more than 64. | Postgres `a_record_announced_more_often_than_the_lookup_reads_is_refused_not_guessed_at`, and `a_plan_that_ended_unpaid_is_followed_by_the_live_repeat_of_the_same_record` (a sent-back plan and a live repeat; with the read cut to one row it fails). |
+| Fit review OPTIONAL 5 (the 28-day boundary, the four quiet rows, `atMostNow` at the second a take window ends) | Three guards no test bound: moving each constant or comparison changed nothing that failed. | Tests with literal numbers on the production path. | `record_tasks::tests::an_ended_row_is_kept_for_28_days_to_the_second`; `..the_ended_rows_keep_every_row_with_notes_first..` now says 4 and 29 as numbers and asserts `MAX_QUIET_ROWS == 4`; `..at_most_now_stops_at_the_second_a_take_window_ends`. |
+| Record review OPTIONAL 5 | The `atMostNow` line in `RECORD-V2.md` said "the most a take at `asOf.time` would set aside" although a take is refused while the notice runs. | The line now says it is shown during the notice so holders see what would be set aside. | docs only |
+
+Scratch tests of the server side: `crates/buzz-relay/tests/review-s2-live.rs` (the record reviewer's live-chain walk) is **deleted**. It needs a Python chain driver that lives outside the repository (random
+walks of the real contracts on a fresh anvil) and the reader's whole scan path against it; its finding is now the fixture test above, and its live path (real scan, real views, `derive` at every
+block) is what `scripts/chain-loop-pot.sh` runs on every build (758 checks, which now includes the new exact comparison at every stop). The relay reviewer's `review-s2-wire.*` scripts are outside the
+repository; their seven attacks are the Postgres tests above (1a, 1b, 1c, 1d and 2a, 2b), one per attack. None of the server's scratch files remain, tracked or untracked.
+
+### Declined, with the reason
+
+- **Record review OPTIONAL 1** (an unknown topic from a followed contract is dropped for good, so an old reader never finds a step 2 book and refuses to sign for ever, fail closed): no code change. A warning on every
+  unknown topic would fire for the ordinary events of the tokens, which the table does not list on purpose. The operational answer is in "For the next engineer": deploy the new reader before the first project is launched
+  on the new Launcher.
+- **Record review OPTIONAL 3** (`CREATE INDEX` not `CONCURRENTLY`): the migration runner is transactional and `CONCURRENTLY` cannot run in a transaction; the indexes are partial and build quickly. Migration 0072 follows the same rule.
+- **Relay review OPTIONAL 1** (`confirm` is refused with `retry:` while the launch is not read, even for a task that never had a plan): the agreed C26; the reviewer says the same.
+- **Relay review OPTIONAL 2** (a helper plan error for the task job drops the project's other jobs until the next build): the error is logged and propagates on purpose (rule 1: nothing caught is turned into success); it is not reachable today
+  because the ledger and the rows come from the same logs, and the next build is 60 seconds away.
+- **Relay review OPTIONAL 4** (a record with no `chain-key`, or another `a` kind, is not tied): the relay rules are early refusals; the app's re-read of the chain before any payment is the real check, and the team is the payer.
+- **Fit review OPTIONAL 3** (a `kind.rs` test that 47003 stays the only task kind): there is no way to ask "which kinds are task kinds" of the kind list; a test that pinned the whole list would fail for every unrelated kind added. No kind was added in step 2.
+- **Fit review OPTIONAL 6** (the plan's end is judged by the newest stored block, not the wall clock): documented in `task_chain.rs` and the plan; unchanged.
+- **Fit review OPTIONAL 8** (an open plan with no payee can be taken by anyone on the chain and the app never offers it): the plan's choice C9.
+- The app findings of all five reviews (team B1, I1 to I5, O1 to O5; holder I1 to I3 and O1 to O4; fit I2 and O1, O2, O7): the other fixer's.
+
+### Still open
+
+- **Record review OPTIONAL 2**: the per-pass work is O(all stored rows of a project) (plan C37, accepted). The slow-pass alarm only logs; someone has to watch for it.
+- **Record review OPTIONAL 4**: a runner that announces tasks eleven minutes apart gets one settle from the helper for each lapse; bounded by the helper's daily gas and spend caps.
+- **Fit review OPTIONAL 4**: `store::reveals` reads all of a reader's history for the Launcher events and `TasksReady` on every scan range (the same pattern as step 1).
+- The record review's operational note: `scripts/chain-loop-pot.sh`, the fixture generator, `pot-full-loop` and any random walk deploy with forge and rewrite the git-ignored `contracts/pot/deployments/pot-31337.json`; two running at once can leave it half written. Do not run them side by side.
+
+### Guards switched off once (U5)
+
+A temporary environment switch (`S2_OFF`, read in the production code) was put in beside each guard, the test binary was built once, each guard was switched off in turn, and the switches were removed afterwards (the
+three source files compare equal to their backups by sha256). The index guard was tried by dropping `idx_chain_logs_task_what` from the test database for one run and creating it again.
+
+| Guard off | Tests that failed |
+|---|---|
+| none (control) | 149 passed, 0 failed (`chain_reader`, `task_chain`) |
+| the two settled-line comparisons (`quoteBack`) | `the_settled_locked_and_arriving_lines_are_held_to_the_contract_exactly` |
+| the "past its end counts as ended" choice in `plan_of` | the unit test and the Postgres test above |
+| the worker's wallet check on a paid confirm | the unit test and `a_confirm_is_refused_when_the_network_paid_a_wallet_the_worker_never_named` |
+| the read of 65 rows cut to one | the live-repeat test, the sent-back test, the 65-plans test |
+| the failure on more than 64 plans | the 65-plans test |
+| the 28-day boundary `>` to `>=` | `an_ended_row_is_kept_for_28_days_to_the_second` |
+| four quiet rows to five | `the_ended_rows_keep_every_row_with_notes_first_and_33_cancelled_tasks_cannot_push_a_note_out` |
+| `atMostNow` at the second the window ends (`<` to `<=`) | `at_most_now_stops_at_the_second_a_take_window_ends` |
+| the partial index `idx_chain_logs_task_what` | `the_plan_reads_use_their_indexes_and_never_scan_every_block` |
+
+### What ran
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo clippy -p buzz-relay --lib --tests -- -D warnings` | no warnings (one `too_many_arguments` on the first try, fixed with `StepOn`) |
+| `cargo test -p buzz-relay --lib -- chain_reader --include-ignored --test-threads=1` | **120 passed, 0 failed** (117 before, 3 new) |
+| `... launch_update_authority` | 32 passed, 0 failed |
+| `... task_takes` | 6 passed, 0 failed |
+| `... task_chain` (unit and Postgres tests of the task rules) | **29 passed, 0 failed** (22 before, 7 new; the new `task_takes::tests` case is outside this filter) |
+| `... manager::` with `--skip planted_eval_against_a_real_model` | 34 passed, 0 failed; the skipped test needs `BUZZ_LLM_PROXY_URL` and `BUZZ_LLM_API_KEY` for a real model and panics without them, as it always does |
+| `... config::`, three times in a row | 104 passed, 0 failed, each time |
+| `cargo test -p buzz-db --lib -- migration chain_ desired --include-ignored --test-threads=1` (migration count 72, the schema tests, the Postgres migration tests) | 55 passed, 0 failed |
+| `cargo test -p buzz-cli launchpad_tasks` | not run: nothing in `buzz-cli` changed |
+| `node scripts/chain-reader-events.mjs --check` | "match the contracts/pot build" |
+| `python3 -I scripts/chain-reader-fixture.py --check`, twice | "is what a fresh run gives", both times |
+| `forge fmt --check src script test`, `forge build`, `forge test` (once) | clean; built; **540 tests passed, 0 failed** (55 suites) |
+| `cargo build -p buzz-relay` | built |
+| `scripts/chain-loop-pot.sh` | **758 checks passed** |
+| `scripts/pot-chain-loop.sh` | 24 checks passed |
+
+### For the next engineer
+
+- **Migration 0072 is new** (two partial indexes). The shared test database `buzz_w1_tests` had it applied by hand (the file, then a row in `_sqlx_migrations` with the file's sha384 as the checksum; `buzz-admin migrate` sees it as applied) because building `buzz-admin` takes ten minutes on this machine. A database
+  that is migrated by `buzz-admin migrate` or by the relay with `BUZZ_AUTO_MIGRATE=true` gets it by itself.
+- **Deploy order**: the new reader (this build) must run before the first project is launched on the step 2 Launcher; an older binary drops the unknown `TasksReady` and `TaskMoney` topics for good (stored rows are final), never finds the book and refuses to sign for that project (fail closed, no wrong record).
+- The relay's `confirm` rule now needs the worker to have named the wallet on a `take` or `accept` step they signed, for a task whose plan the network paid. The app's own flows already do (the e2e helpers take naming the payee); any script that confirms a paid plan must, too.
+- `contracts/pot/deployments/pot-31337.json` is rewritten by every deploy; do not run two loops at once.
+- Commits: see the end of this report's last commit message list in the hand-over (the lead has the ids).

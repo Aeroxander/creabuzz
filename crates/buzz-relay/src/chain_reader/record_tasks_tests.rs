@@ -93,15 +93,10 @@ fn the_ended_rows_keep_every_row_with_notes_first_and_33_cancelled_tasks_cannot_
         "an old task with nothing to claim is not"
     );
     let withdrawn_listed = sel.ended.iter().filter(|s| **s >= 10).count();
-    assert_eq!(
-        withdrawn_listed, MAX_QUIET_ROWS,
-        "at most four rows that moved nothing"
-    );
-    assert_eq!(
-        sel.ended_dropped,
-        33 - MAX_QUIET_ROWS as u64,
-        "the cut says how many it left out"
-    );
+    // The plan says "at most 4": a literal, so that moving the constant fails here.
+    assert_eq!(withdrawn_listed, 4, "at most four rows that moved nothing");
+    assert_eq!(MAX_QUIET_ROWS, 4);
+    assert_eq!(sel.ended_dropped, 29, "the cut says how many it left out");
     assert_eq!(sel.notes_rows_dropped, 0);
     // Newest serial first.
     assert!(sel.ended.windows(2).all(|w| w[0] > w[1]));
@@ -124,6 +119,68 @@ fn the_ended_rows_keep_every_row_with_notes_first_and_33_cancelled_tasks_cannot_
         (7..=30).all(|s| kept.contains(&s)) && (1..7).all(|s| !kept.contains(&s)),
         "the largest notes stay (here the highest serials hold the most)"
     );
+}
+
+/// A11: an ended row is kept for the window and not a second longer: 28 days to the second (the cap's window here is
+/// exactly 28 days, so the floor and the window agree).
+#[test]
+fn an_ended_row_is_kept_for_28_days_to_the_second() {
+    const DAYS_28: u64 = 28 * 86_400;
+    assert_eq!(WINDOW, DAYS_28);
+    let book = book_of(vec![
+        moved(1, TaskState::Paid, NOW - DAYS_28, 0),
+        moved(2, TaskState::Paid, NOW - DAYS_28 + 1, 0),
+        withdrawn(3, NOW - DAYS_28),
+        withdrawn(4, NOW - DAYS_28 + 1),
+    ]);
+    let sel = select(&book, NOW, WINDOW);
+    assert_eq!(
+        sel.ended,
+        vec![4, 2],
+        "the rows that ended a second inside the window are listed, those that ended exactly 28 days ago are not"
+    );
+    assert_eq!(sel.ended_within, DAYS_28);
+}
+
+/// A9: `atMostNow` is for a task that can still be taken: an announced one before its take window ends. At the very
+/// second it ends, the next settle lapses it and the field is gone.
+#[tokio::test]
+async fn at_most_now_stops_at_the_second_a_take_window_ends() {
+    let (_, ledger, as_of, chain) = crate::chain_reader::record_tests::load("A_example");
+    let open = ledger
+        .tasks
+        .tasks
+        .values()
+        .find(|k| k.state == TaskState::Announced)
+        .expect("the example has an announced task");
+    let (serial, expires_at) = (open.serial, open.expires_at);
+    let read = crate::chain_reader::views::read(
+        &chain,
+        Fixture::load().launcher,
+        &ledger,
+        as_of.block,
+        as_of.time,
+    )
+    .await
+    .expect("the honest answers read");
+    let row_at = |t: u64| -> Option<String> {
+        let section = build(&ledger, &read, t, 10_000_000_000)
+            .expect("builds")
+            .expect("a book");
+        section
+            .list
+            .iter()
+            .find(|row| row.serial == serial)
+            .expect("the task is listed")
+            .at_most_now
+            .clone()
+    };
+    assert!(
+        row_at(expires_at - 1).is_some(),
+        "one second before the end"
+    );
+    assert_eq!(row_at(expires_at), None, "at the second it ends");
+    assert_eq!(row_at(expires_at + 1), None, "after it");
 }
 
 /// A11: the cut says how many rows it left out, and what falls in each part of it.
