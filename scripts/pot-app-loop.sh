@@ -19,6 +19,17 @@
 #   pot-task-reads.test.ts the seven task calls and the task reads (the shared library's S1): plan, withdraw, take early and in time,
 #                         a take out that writes a note, pay in part, a claim a stranger sends for someone else, send back,
 #                         run out and return, a plan nobody takes; with S1_CAPTURE_OUT=<file> it writes the raw answers;
+#   pot-tasks.test.ts     the task queue through the app's own readers, gates and call builders (step 2): the Plan sheet's read and its
+#                         look for a plan that landed under another hash, a plan withdrawn, a take too early (the gate and the chain
+#                         say the same words) and in time, a Take out that writes a note and the note finder, the pay sheet's gate
+#                         and amount rules, a part payment and the transaction the team's record names, a claim that pays the holder
+#                         and nobody else, a task nobody settled that runs out and is returned by a stranger (the holder who left
+#                         claims the whole), a task sent back, and a project run by two that plans and pays a task with both signers
+#                         (each call said in words from what the network holds, one that has moved reading as unknown);
+#   pot-settled.test.ts   the settled money the browser specs' record builder (tests/e2e/helpers/live-settled.ts) works out, against what
+#                         the Treasury itself stores after a settle at seven times: two settles inside an arriving stream at times
+#                         where a formula that follows the last settle and the contract's give different roundings, a merged stream, after
+#                         it ended, a task taken and not due, and the settle that puts the money of a task that ran out back;
 #   pot-states.test.ts    Take out with the door shut, after the team stopped checking in, with outside money arriving, after a
 #                         wind-down by anyone and by the runner; a Pair's call refused for its own proposer;
 #   passkey-back.test.ts  a Back from a passkey account: one operation, one passkey prompt, the Shares equal the quote.
@@ -63,7 +74,7 @@ cd "$ROOT/app"
 REPORT="$STATE/vitest.json"
 status=0
 M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts \
-  tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts tests/anvil/pot-team.test.ts tests/anvil/pot-states.test.ts tests/anvil/pot-allowance.test.ts tests/anvil/pot-task-pay.test.ts tests/anvil/pot-task-reads.test.ts tests/anvil/passkey-back.test.ts \
+  tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts tests/anvil/pot-team.test.ts tests/anvil/pot-states.test.ts tests/anvil/pot-allowance.test.ts tests/anvil/pot-task-pay.test.ts tests/anvil/pot-task-reads.test.ts tests/anvil/pot-tasks.test.ts tests/anvil/pot-settled.test.ts tests/anvil/passkey-back.test.ts \
   --reporter=default --reporter=json --outputFile.json="$REPORT" "$@" || status=$?
 node -e '
 const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
