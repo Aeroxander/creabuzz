@@ -145,7 +145,13 @@ type Params = { fromBlock: string; toBlock: string };
  */
 export function serveLogs(
   logs: ReturnType<typeof mintedLog>[],
-  options: { head: number; refuseAbove?: number; refuseAll?: boolean },
+  options: {
+    head: number;
+    refuseAbove?: number;
+    refuseAll?: boolean;
+    /** A range that reaches below this block is refused (a node that gives up part of the way back). */
+    refuseBelow?: number;
+  },
 ): { from: number; to: number }[] {
   const asked: { from: number; to: number }[] = [];
   const eth = (
@@ -167,6 +173,8 @@ export function serveLogs(
           code: -32005,
           message: "query returned more than 10000 results",
         };
+      if (options.refuseBelow !== undefined && from < options.refuseBelow)
+        throw { code: -32005, message: "block range not available" };
       if (
         options.refuseAbove !== undefined &&
         to - from + 1 > options.refuseAbove

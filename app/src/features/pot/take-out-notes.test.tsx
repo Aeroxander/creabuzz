@@ -100,6 +100,14 @@ describe("the tasks a Take out left money owed on", () => {
           block: 990,
           tx: FIRST_TX,
         }),
+        // Another book's (same transaction): not this project's.
+        mintedLog({
+          book: "0x00000000000000000000000000000000000000ba",
+          serial: 10n,
+          holder: BACKER_EVM,
+          block: 990,
+          tx: FIRST_TX,
+        }),
         // Another transaction's, another account's: not this step's.
         mintedLog({
           book: book(),

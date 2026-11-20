@@ -306,6 +306,31 @@ describe("the last look and the one send", () => {
     expect(chain.sent).toHaveLength(1);
   }, 20_000);
 
+  it("looks again right before the send: a claim that is gone while a send of ours waits is that send having landed, so the press looks and sends nothing", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    notesScene({ patch: named });
+    chain.holdReceipts = true;
+    show();
+    await openClaim();
+    fireEvent.click(confirm());
+    await waitFor(() => expect(chain.sent).toHaveLength(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200_000);
+    });
+    await screen.findByTestId("sheet-problem");
+    fireEvent.keyDown(screen.getByTestId("claim-sheet"), { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("claim-sheet")).toBeNull());
+    // Opened again while the network still shows the claim, and then the earlier send lands.
+    fireEvent.click(screen.getByTestId("notes-claim"));
+    await screen.findByTestId("claim-set-aside");
+    expect(confirm().textContent).toBe("Look for your claim");
+    chain.answers.noteOf = [0n];
+    fireEvent.click(confirm());
+    await waitFor(() => expect(screen.queryByTestId("claim-sheet")).toBeNull());
+    expect(screen.queryByTestId("sheet-problem")).toBeNull();
+    expect(chain.sent).toHaveLength(1);
+  }, 20_000);
+
   it("a claim that is gone with no send of ours waiting is a block, not a landed step", async () => {
     notesScene({ patch: named });
     show();

@@ -187,15 +187,16 @@ export function TakeSheet({
       description="Taking sets the money aside for you"
       detail={detail}
       done={TAKEN}
-      landed={async (wallet, from) => {
-        // A call replaced in the wallet may have landed under another hash: the task is taken by this account.
+      landed={async (wallet) => {
+        // A call replaced in the wallet may have landed under another hash: the task is taken.
         if (!data) return false;
         const row = await readTask(
           (to, call) => wallet.readCall(to, call),
           data.book,
           serial,
         );
-        return row?.state === "taken" && same(row.takenBy, from);
+        // Only the wallet the plan names can take it, and the sheet is only open for that wallet: a task found taken is the step.
+        return row?.state === "taken";
       }}
       lookLabel={TAKE_LOOK}
       onLanded={(_txHash, landed) => {

@@ -56,6 +56,8 @@ describe("the claims a Take out wrote", () => {
     rememberNotes(A, tx(99), [5n]);
     rememberNotes(A, tx(1), []);
     expect(ownNoteSerials(A, "0xkey")).toEqual([]);
+    // A step that left nothing owed has no list of claims at all, not an empty one.
+    expect(ownSteps(A, "0xkey")[0]?.notes).toBeUndefined();
   });
 
   it("lose nothing and throw nothing when storage cannot be used: this page still remembers", () => {

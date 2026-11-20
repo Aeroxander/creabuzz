@@ -342,10 +342,8 @@ function NoteRow({
 }) {
   const phase = phaseOf(note.task, now, windDownAt);
   const running = phase === "working";
-  const overdue = phase === "overdue";
-  const claimable = overdue
-    ? note.face
-    : claimableNow(note.task, note.face, now);
+  // A task that ran out and nobody settled pays the whole claim (`claimableNow`'s own rule): a claim settles it first.
+  const claimable = claimableNow(note.task, note.face, now);
   const paidInFull = note.task.state === "paid" && note.task.returned === 0n;
   const id = useId();
   return (

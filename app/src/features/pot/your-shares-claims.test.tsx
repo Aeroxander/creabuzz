@@ -14,6 +14,7 @@ import {
   serve,
   wrap,
 } from "../../../tests/helpers/money-harness";
+import { FOUNDER_EVM } from "../../../tests/helpers/numbers-v2-fixture";
 import { CLAIMANT, STAYER } from "../../../tests/helpers/notes-scene";
 import {
   chainIdentityV2,
@@ -110,6 +111,13 @@ describe("Money you can claim, on You", () => {
       (await within(section).findByTestId("notes-row")).textContent,
     ).toMatch(/still running/);
     expect(within(section).queryByTestId("notes-claim")).toBeNull();
+  });
+
+  it("shows the project to an account the record lists as a holder, though no row names it", async () => {
+    setup(FOUNDER_EVM);
+    wrap(<YourSharesList />);
+    const group = await screen.findByTestId("your-claims");
+    expect(await within(group).findByTestId("notes-none")).toBeTruthy();
   });
 
   it("shows nothing for an account that holds no Shares and has no step of its own here", async () => {

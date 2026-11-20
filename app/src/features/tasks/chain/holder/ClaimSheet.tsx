@@ -187,11 +187,13 @@ export function ClaimSheet({
           pendingSend(sendKey(action, ready.address)) !== null;
         // A claim that is gone while a send of this one waits is that send having landed: look for it, send nothing.
         if (stillWaiting && again.face === 0n) return null;
-        if (moved(data, again))
-          return changedWhileLooking(
-            phaseOf(again.task, Math.max(again.time, clock), windDownAt),
-          );
-        return claimFigure(again, Math.max(again.time, clock)).block;
+        // What the sheet stood on is compared (the claim, the task's result and dates), and the clock only goes forward: if
+        // nothing moved, the press is as payable now as when the sheet opened.
+        return moved(data, again)
+          ? changedWhileLooking(
+              phaseOf(again.task, Math.max(again.time, clock), windDownAt),
+            )
+          : null;
       }}
       testId="claim-sheet"
       title={

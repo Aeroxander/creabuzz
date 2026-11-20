@@ -224,6 +224,23 @@ describe("the Back sheet's lines about tasks", () => {
     expect(chain.reads.some((r) => r.name === "taskOf")).toBe(false);
   });
 
+  it("says a plan that can be taken now can be taken now, with no date", async () => {
+    numbers = sceneNumbers((content) => {
+      const tasks = content.tasks as Record<string, unknown>;
+      for (const r of tasks.list as Record<string, unknown>[])
+        if (r.state === "announced")
+          r.noticeEnd = (content.asOf as { time: number }).time - 60;
+    });
+    nameTheNetwork(numbers);
+    setup();
+    await openBack();
+    const rows = queueOf(numbers).list.filter((r) => r.state === "announced");
+    const total = rows.reduce((sum, r) => sum + r.maxDollars, 0n);
+    expect(screen.getByTestId("back-planned").textContent).toBe(
+      `The team plans to pay up to ${dollars(total)} in all for ${rows.length} tasks, and it can be taken now. You can take your money out any time.`,
+    );
+  });
+
   it("says it for one task in the singular, and says nothing without a plan or without a queue", async () => {
     numbers = sceneNumbers((content) => {
       const tasks = content.tasks as Record<string, unknown>;
@@ -271,6 +288,13 @@ describe("Take out on a strip", () => {
     const button = await screen.findByRole("button", {
       name: `Take out before ${timeText(waiting?.noticeEnd ?? 0)}`,
     });
+    // Only a plan has the button: the task in progress has none.
+    const running = screen
+      .getAllByTestId("planned-strip")
+      .filter((strip) => strip.dataset.state === "running");
+    expect(running.length).toBeGreaterThan(0);
+    for (const strip of running)
+      expect(strip.querySelector("[data-testid=strip-take-out]")).toBeNull();
     fireEvent.click(button);
     expect(await screen.findByTestId("takeout-sheet")).not.toBeNull();
     expect((await screen.findByTestId("takeout-cash")).textContent).toBe(

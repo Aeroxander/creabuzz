@@ -25,7 +25,7 @@ const RECENT_BLOCKS = 500;
 const TX = /^0x[0-9a-f]{64}$/;
 
 /** The serials of the tasks the transaction `txHash` wrote claims on for `holder`, in the book `book`. Throws when the network cannot be asked. */
-export async function mintedSerials(
+async function mintedSerials(
   wallet: Pick<MoneyWallet, "blockNumber" | "getLogs">,
   book: string,
   holder: string,

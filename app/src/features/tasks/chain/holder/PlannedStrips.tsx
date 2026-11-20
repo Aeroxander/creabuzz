@@ -139,8 +139,8 @@ function Strip({
 }) {
   const titleId = useId();
   const planned = row.state === "announced";
-  const holder =
-    planned && address !== null && holdingHint(numbers, [address]).listed;
+  // The button is only drawn for a plan (`drawTakeOut` is false for a task in progress) and for a holder the record lists.
+  const holder = address !== null && holdingHint(numbers, [address]).listed;
   return (
     <section
       aria-labelledby={titleId}

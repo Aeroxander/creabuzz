@@ -414,6 +414,36 @@ describe("the look back", () => {
   });
 });
 
+describe("a look the node gives up on part of the way back", () => {
+  it("keeps what it found before it gave up, and says it could not look, never that nothing was found", async () => {
+    notesScene({ rows: (queue) => [...queue.list, extraRow(30n)] });
+    serveLogs(
+      [
+        mintedLog({
+          book: queueBook(),
+          serial: 30n,
+          holder: CLAIMANT,
+          block: 950,
+        }),
+      ],
+      { head: 1_000, refuseBelow: 500 },
+    );
+    show();
+    await screen.findByTestId("notes-row");
+    expect(screen.getAllByTestId("notes-row")).toHaveLength(1);
+    fireEvent.click(screen.getByTestId("notes-look"));
+    await waitFor(() =>
+      expect(screen.getByTestId("notes-look-words").textContent).toBe(
+        "Could not look just now. Try again in a moment.",
+      ),
+    );
+    // What it found on the way is on the list.
+    await waitFor(() =>
+      expect(screen.getAllByTestId("notes-row")).toHaveLength(2),
+    );
+  });
+});
+
 describe("on You, where the first ten are shown", () => {
   it("shows ten, then the rest when asked", async () => {
     const extras = Array.from({ length: 12 }, (_, i) => 100n + BigInt(i));

@@ -24,6 +24,7 @@ import type { ProjectTask } from "../../task-record";
 import { chainRowOf, nowOf } from "../state";
 import type { TaskSlotProps } from "../slot-props";
 import { HolderLines } from "./HolderLines";
+import { PlannedLines } from "./PlannedLines";
 import { PlannedSection } from "./PlannedSection";
 import { PlannedStrips } from "./PlannedStrips";
 
@@ -153,6 +154,35 @@ describe("a planned task in two lines, on its card", () => {
     expect(screen.getByTestId("planned-line-2").textContent).toMatch(
       /^You can take your money out before then\./,
     );
+  });
+
+  it("names the wallet by its start and end when the record's person did not name that wallet, and by their name when they did", () => {
+    const numbers = plannedNumbers();
+    const row = plannedRowOf(numbers);
+    const other = planTask({
+      usd: Number(row.maxDollars / 1_000_000n),
+      payTo: "0x00000000000000000000000000000000000000ee",
+    });
+    wrap(<HolderLines {...props(numbers, other)} />);
+    const line = screen.getByTestId("planned-line-1").textContent ?? "";
+    expect(line).not.toContain("Pat");
+    expect(line).toMatch(/to 0x[0-9a-f]{4}…[0-9a-f]{4} for /);
+  });
+
+  it("draws nothing for a row that is not a plan or a task in progress", () => {
+    const numbers = plannedNumbers();
+    const ended = queueOf(numbers).list.find((r) => r.state === "returned");
+    if (!ended) throw new Error("no ended row");
+    const { container } = wrap(
+      <PlannedLines
+        now={nowOf(numbers.asOf.time)}
+        numbers={numbers}
+        profiles={undefined}
+        row={ended}
+        task={null}
+      />,
+    );
+    expect(container.textContent).toBe("");
   });
 
   it("lets the date wrap on a phone, and draws nothing for a task that was taken (the card's headline says it)", () => {

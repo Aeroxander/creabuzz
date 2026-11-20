@@ -54,6 +54,19 @@ describe("which tasks to look at", () => {
       expect(stranger).not.toContain(row.serial);
   });
 
+  it("lists a row that names the account among the holders of claims, even when it is ended with nothing left to claim", () => {
+    const ended = queue.list.find((r) => r.serial === BigInt(ENDED_SERIAL));
+    if (!ended) throw new Error("no ended row");
+    const row = { ...ended, serial: 777n, notesLeft: 0n };
+    const only = { ...queue, list: [row] };
+    expect(
+      noteCandidates({ queue: only, account: CLAIMANT, own: [], found: [] }),
+    ).toEqual([777n]);
+    expect(
+      noteCandidates({ queue: only, account: STAYER, own: [], found: [] }),
+    ).toEqual([]);
+  });
+
   it("adds what this browser remembers and what a look back found, each once, newest first", () => {
     const got = noteCandidates({
       queue: null,
@@ -97,6 +110,13 @@ describe("what a claim pays", () => {
     expect(
       claimFigure({ task: paidInFull, face, view: 0n }, after + 1).block,
     ).toMatch(/paid in full, or you already claimed/);
+  });
+
+  it("is nothing for a claim too small to pay anything: the contract would clear it for no money, so no press", () => {
+    const small = ended({ setAside: row.setAside * 10n });
+    const figure = claimFigure({ task: small, face: 1n, view: 0n }, after + 1);
+    expect(figure.claimable).toBe(0n);
+    expect(figure.block).toMatch(/nothing to claim here/);
   });
 
   it("is not payable while the task is running, and says when it ends", () => {

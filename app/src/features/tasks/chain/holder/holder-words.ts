@@ -75,7 +75,7 @@ export function takeWait(from: number): string {
 /** The press that opens the sheet, and the one inside it. */
 export const TAKE_PRESS = "Set the money aside";
 /** The opener says the same: the team-side step 1 button on the same card is "Take this task" and must not be confused with it (C34). */
-export const TAKE_OPEN = TAKE_PRESS;
+export const TAKE_OPEN = "Set the money aside";
 export const TAKE_LOOK = "Look for your step";
 
 export function takeTitle(what: string | null): string {

@@ -163,8 +163,9 @@ export function ReturnSheet({
           result: "returned",
           windDownAt,
         });
-        if (moved) return moved;
-        return returnBlock(again, Math.max(again.time, clock), windDownAt);
+        // What the sheet stood on is compared above (state and dates), and the clock only goes forward: if it did not move,
+        // the press is as possible now as when the sheet opened.
+        return moved;
       }}
       testId="return-sheet"
       title={RETURN_TITLE}
