@@ -38,11 +38,10 @@ import {
 import { WithMoneyBanner } from "../../app/MoneyBanner";
 import { ToastProvider } from "../../ui/toast";
 import {
-  NOT_A_RETURN,
-  PLAY_MONEY_WORDS,
-  smallDollarsText,
-  TAKE_OUT_BANNER,
-} from "../pot/pot-words";
+  BANNER_LITERAL,
+  NOT_A_RETURN_LITERAL,
+} from "../../../tests/helpers/legal-words";
+import { PLAY_MONEY_WORDS, smallDollarsText } from "../pot/pot-words";
 import { SeasonPage } from "./SeasonPage";
 import { inSeasonOrder } from "./season-order";
 import { NOT_ADVICE } from "./season-words";
@@ -394,12 +393,12 @@ describe("the page", () => {
     const heading = within(section).getByRole("heading", {
       name: "Projects showing what they made",
     });
-    expect(heading.nextElementSibling?.textContent).toBe(NOT_A_RETURN);
-    expect(document.body.textContent?.split(NOT_A_RETURN).length).toBe(2);
-    expect(screen.getAllByTestId("money-banner")).toHaveLength(1);
-    expect(screen.getByTestId("money-banner").textContent).toBe(
-      TAKE_OUT_BANNER,
+    expect(heading.nextElementSibling?.textContent).toBe(NOT_A_RETURN_LITERAL);
+    expect(document.body.textContent?.split(NOT_A_RETURN_LITERAL).length).toBe(
+      2,
     );
+    expect(screen.getAllByTestId("money-banner")).toHaveLength(1);
+    expect(screen.getByTestId("money-banner").textContent).toBe(BANNER_LITERAL);
     await waitFor(() =>
       expect(screen.queryByTestId("shell-banner")).toBeNull(),
     );

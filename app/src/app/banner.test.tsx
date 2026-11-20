@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installWallet, SERVER, wrap } from "../../tests/helpers/money-harness";
 import { FOUNDER_EVM } from "../../tests/helpers/numbers-v2-fixture";
 import { PotSheet } from "../features/pot/PotSheet";
-import { TAKE_OUT_BANNER } from "../features/pot/pot-words";
+import { BANNER_LITERAL } from "../../tests/helpers/legal-words";
 import { BannerText, useOwnBanner } from "./MoneyBanner";
 import { createAppRouter } from "./router";
 import { Shell } from "./Shell";
@@ -42,7 +42,7 @@ vi.mock("../features/notifications/use-notifications", () => ({
 
 const BANNER = "money-banner";
 const bannerCount = () => screen.queryAllByTestId(BANNER).length;
-const wording = () => screen.queryAllByText(TAKE_OUT_BANNER).length;
+const wording = () => screen.queryAllByText(BANNER_LITERAL).length;
 
 /** Every path of the real route tree, with a concrete address that matches it. */
 const REAL_PATHS = Object.keys(createAppRouter(true).routesByPath).sort();
@@ -103,6 +103,14 @@ describe("the banner on every route", () => {
     expect(wording()).toBe(SHELL_DRAWS[path]);
   });
 
+  it("draws the owner's sentence word for word (compared with the literal, not with the app's own constant)", async () => {
+    shellAt("/");
+    await screen.findByText("page");
+    expect(screen.getByTestId("shell-banner").textContent).toBe(
+      "You can take your money out any time. Nothing here promises a profit.",
+    );
+  });
+
   it("is not drawn where the server does not offer investing", async () => {
     applyServerSettings(null);
     shellAt("/");
@@ -159,9 +167,7 @@ describe("the banner on every sheet that shows money", () => {
         <p>numbers</p>
       </PotSheet>,
     );
-    expect(screen.getByTestId("sheet-banner").textContent).toBe(
-      TAKE_OUT_BANNER,
-    );
+    expect(screen.getByTestId("sheet-banner").textContent).toBe(BANNER_LITERAL);
   });
 
   // Every other sheet is named here, with why it needs none: a sheet that is added without a line fails this test.

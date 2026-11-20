@@ -274,6 +274,21 @@ describe("what the parts must agree with", () => {
     expect(parsed(ahead)?.feed).toBeNull();
   });
 
+  it("hours whose only fault is two neighbours that are not exactly one bucket apart are not believed (the order and the last hour are right)", () => {
+    // An hour is missing in the middle: the list still runs oldest first, still ends at the record's own time, every amount is
+    // still a multiple of the rounding. Nothing but the distance between two neighbours is wrong.
+    const missing = raw() as any;
+    missing.feed.hours.splice(20, 1);
+    expect(parsed(missing)?.feed).toBeNull();
+    // The first twenty hours sit half a bucket early: one pair is one and a half buckets apart and every other pair is exact.
+    const half = raw() as any;
+    for (let i = 0; i < 20; i += 1)
+      half.feed.hours[i].at -= half.feed.bucketSecs / 2;
+    expect(parsed(half)?.feed).toBeNull();
+    // The same list with every pair exact is believed, so the two cases above fail for the gap alone.
+    expect(parsed(raw())?.feed).not.toBeNull();
+  });
+
   it("items oldest first, or dated after the record's own time, are not believed", () => {
     const reversed = raw() as any;
     reversed.feed.items.reverse();

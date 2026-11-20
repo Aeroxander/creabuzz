@@ -20,7 +20,8 @@ import {
   shapeOnlyIndexContent,
 } from "../../../tests/helpers/numbers-v2-fixture";
 import { parsedExample } from "../../../tests/helpers/numbers-v2-parse";
-import { NOT_A_RETURN, PLAY_MONEY_WORDS } from "../pot/pot-words";
+import { PLAY_MONEY_WORDS } from "../pot/pot-words";
+import { NOT_A_RETURN_LITERAL } from "../../../tests/helpers/legal-words";
 import { keptMoney } from "../project/project-top-words";
 import { HomePage } from "./HomePage";
 import { rankedEmpty, rankedFootnote } from "./RankedSection";
@@ -155,9 +156,9 @@ describe("Money that stayed", () => {
     expect(
       within(section).getByRole("heading", { name: "Money that stayed" }),
     ).not.toBeNull();
-    expect(section.textContent?.split(NOT_A_RETURN).length).toBe(2);
+    expect(section.textContent?.split(NOT_A_RETURN_LITERAL).length).toBe(2);
     const heading = within(section).getByRole("heading");
-    expect(heading.nextElementSibling?.textContent).toBe(NOT_A_RETURN);
+    expect(heading.nextElementSibling?.textContent).toBe(NOT_A_RETURN_LITERAL);
     expect(within(section).getByTestId("ranked-footnote").textContent).toBe(
       rankedFootnote(WINDOW),
     );
