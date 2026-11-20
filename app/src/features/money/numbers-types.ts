@@ -1,4 +1,5 @@
 /** The shapes of a version 2 record once it is read (`numbers.ts` parses it, `numbers-read.ts` reads it strictly). */
+import type { ChainTasks } from "../tasks/chain/types";
 
 /** Where a project is, in the words of the record: checked in, quiet, dormant, open to wind down, wound down. */
 export type QuietState =
@@ -152,6 +153,12 @@ export interface ProjectNumbers {
   teamHolderCount: number;
   /** A list was cut at its cap: "none" is never said about a cut list. */
   truncated: boolean;
+  /**
+   * The project's task queue, from the signed record (step 2): an object when the server wrote one and it reads; null when
+   * the project has no task book; "unreadable" when the section did not parse (the rest of the record is believed); absent
+   * when the server is older than step 2. Every task screen treats the last three as "no queue screens" (1.6).
+   */
+  tasks?: ChainTasks | null | "unreadable";
 }
 
 /** A launch that later left the chain: nothing about money is shown for it. */

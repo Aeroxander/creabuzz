@@ -11,6 +11,8 @@ import { useConnectWallet } from "../money/use-money";
 import type { Project } from "../project/project-record";
 import { AcceptAndPay } from "./AcceptAndPay";
 import { PayFromBox } from "./PayFromBox";
+import { chainRowOf, nowOf } from "./chain/state";
+import { TaskSlots } from "./chain/slots";
 import {
   handInRecord,
   nextFor,
@@ -143,6 +145,23 @@ export function TaskCard({
           project={project}
           taken={taken}
           task={task}
+        />
+      ) : null}
+      {/* The task queue (step 2): mounted only where the server's record carries one; a card without it is the step 1 card. */}
+      {numbers && typeof numbers.tasks === "object" && numbers.tasks ? (
+        <TaskSlots
+          address={address}
+          agents={agents}
+          chain={chainRowOf(numbers.tasks, task.id)}
+          me={me}
+          now={nowOf(numbers.asOf.time)}
+          numbers={numbers}
+          operators={operators}
+          profiles={profiles}
+          project={project}
+          task={task}
+          tasks={numbers.tasks}
+          team={team}
         />
       ) : null}
     </article>
