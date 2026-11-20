@@ -214,8 +214,8 @@ export function useStopWriting(coordinate: string) {
           coordinate,
           person: input.person,
           wallets: linkedAddresses(records as SignedEvent[], input.person),
-          // A stop that already ended is how one is lifted.
-          until: days === 0 ? now - 1 : now + days * 86_400 - 60,
+          // A stop that already ended is how one is lifted; a few minutes short of the longest, so a clock a little ahead of the server's is not refused.
+          until: days === 0 ? now - 1 : now + days * 86_400 - 300,
         }),
         "That was not saved. Try again.",
       );
