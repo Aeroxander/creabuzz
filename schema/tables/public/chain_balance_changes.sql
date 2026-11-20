@@ -13,3 +13,8 @@ CREATE TABLE chain_balance_changes (
 
 CREATE INDEX idx_chain_balance_changes_account
     ON chain_balance_changes (reader, project_key, token, account, block_number);
+
+-- One project's Share changes in block order from a block on (migration 0073): the window query of the held
+-- figures reads a range of this and stops at its row cap.
+CREATE INDEX idx_chain_balance_changes_block
+    ON chain_balance_changes (reader, project_key, token, block_number, log_index);

@@ -8,3 +8,5 @@ CREATE TABLE chain_blocks (
     block_time   BIGINT NOT NULL CHECK (block_time >= 0),
     PRIMARY KEY (reader, number)
 );
+-- The first block after a time, one index step: the first block of a window (migration 0073).
+CREATE INDEX idx_chain_blocks_time ON chain_blocks (reader, block_time, number);
