@@ -52,15 +52,20 @@ For a room event the server runs these steps in this order; the first that fails
    **`claimable` is not `"0"`** counts as holding. (`vested` does not: it stays above zero for a member who claimed and left.)
    A grants list that was cut and does not list the wallet reads as "does not hold".
 6. **Grace after taking out.** If none holds: the time of the newest decrease of any of those wallets' balances for the project
-   (backer or Team Shares) is read. The write is allowed while `thatTime + unit > asOf`, where `unit` is the project's own time
+   (backer or Team Shares) **of at least the floor of step 4** is read (a smaller move, such as one wei sent to a second wallet and back,
+   is not taking out and starts no grace: without this a past holder could write for ever for the price of a fee). The write is allowed while `thatTime + unit > asOf`, where `unit` is the project's own time
    unit (the launch's `platform.unit`) and `asOf` is the newest block time the reader has stored (the chain's own clock). After
    that the person is read-only: "not holding". A person with no decrease on record who does not hold has never held, or backed
    after the reader's last block; both read "not holding", whose sentence says to wait a minute if they just backed.
 7. **Not muted by the team.** The newest unexpired `room-mute` record for the signer's key, or for any account whose newest
-   record lists a wallet the signer has bound (section 4), refuses the write.
+   record lists a wallet the signer has bound (section 4), refuses the write. Only records signed by the founder or a member **listed
+   on the project record now** are read: a mute does not outlive its signer's place on the team, and the older record of a current
+   member decides again. The founder and the people who run the server are never muted, whatever a record says.
 8. **Not too fast, not too many voices.** At most **12 room posts an hour** and **60 room events a day** per account per room
    (kinds 1 and 1111 are posts; every room event counts toward the day), and at most **5 accounts may write in a room through one
    wallet** (the number of live bindings of the wallet that matched at step 4).
+   The count and the store are one step for one account in one room (an advisory lock held until the event is stored), so posts sent at
+   once cannot all pass the same count.
 
 Global bans, mutes and timeouts of the whole server apply before all of this, unchanged.
 
@@ -99,7 +104,9 @@ up to 8 `["room-mute-wallet", "<address>"]` (lower-case `0x` and 40 hex digits: 
 team's app from the person's kind 37017 records), exactly one `["expiration", "<unix seconds>"]`. Content `{}`. Signed by the founder
 or a listed team member. The expiration is at most 30 days after the server's clock; one in the past lifts the mute. The newest
 record naming a person (by `created_at`, then id) is that person's state. A team cannot mute the founder, an operator of the
-server, or its own signer. Refusals: `restricted: only this project's team can post this`, `invalid: a room mute names one
+server, or its own signer. **Each listed wallet must be one the person named in `room-mute` has linked themselves (live), and none may be
+linked by the founder, an operator or the signer**: the mute follows a wallet to every account that linked it, so a wallet of someone else
+under a made-up person would stop them (`invalid: a room mute may list only wallets the person has linked to their own account`). Refusals: `restricted: only this project's team can post this`, `invalid: a room mute names one
 person, up to 8 wallets and an end within 30 days`, `restricted: the founder and the people who run this server cannot be
 stopped from writing`.
 

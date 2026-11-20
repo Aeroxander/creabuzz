@@ -34,7 +34,7 @@ use serde_json::Value;
 use sqlx::PgPool;
 
 use super::ingest::IngestError;
-use super::launch_update_authority::internal;
+use super::launch_update_authority::{internal, ProjectTeam};
 use super::task_chain::{chain_key_of, AS_OF_SQL};
 use super::wallet_binding::{
     accounts_of_wallets, linked_wallets, parse_wallet, wallet_text, Wallet,
@@ -305,8 +305,11 @@ async fn holding_wallets(
         .collect())
 }
 
-/// The chain time of the newest decrease of any of `wallets`' balances of the project, if there is one.
-async fn last_decrease_time(
+/// The chain time of the newest decrease of any of `wallets`' balances of the project, if there is one. Only a
+/// decrease of at least [`ROOM_MIN_SHARES`] counts, the size of the stake that opens a seat: a smaller move (one wei
+/// sent to a second wallet and back, for the price of a fee) must not start a new grace for a person who holds
+/// nothing, or a past holder could write for ever.
+pub(crate) async fn last_decrease_time(
     pool: &PgPool,
     reader: &str,
     key: &[u8; 32],
@@ -318,12 +321,14 @@ async fn last_decrease_time(
          CROSS JOIN (VALUES ('shares'), ('team')) AS t(tok) \
          CROSS JOIN LATERAL ( \
              SELECT c.block_number AS b FROM chain_balance_changes c \
-             WHERE c.reader = $1 AND c.project_key = $2 AND c.token = t.tok AND c.account = w.a AND c.delta < 0 \
+             WHERE c.reader = $1 AND c.project_key = $2 AND c.token = t.tok AND c.account = w.a \
+               AND c.delta <= -($4::numeric) \
              ORDER BY c.block_number DESC LIMIT 1) x",
     )
     .bind(reader)
     .bind(key.as_slice())
     .bind(accounts)
+    .bind(ROOM_MIN_SHARES.to_string())
     .fetch_one(pool)
     .await?;
     let Some(block) = block else {
@@ -481,10 +486,13 @@ pub(crate) fn mute_record_of(event: &Event) -> Option<MuteRecord> {
 }
 
 /// The project's `room-mute` records that carry `value` in their `name` tag (`room-mute` or `room-mute-wallet`), newest
-/// first, at most [`MUTES_READ`].
+/// first, at most [`MUTES_READ`], **signed by someone on the project's team now**: a mute outlives neither the member
+/// who signed it nor a founder's change of mind, so a record from a person the founder has taken off the team is not
+/// read, and the older record of a current member decides again.
 async fn read_mutes(
     state: &AppState,
     community: CommunityId,
+    team: &ProjectTeam,
     coordinate: &str,
     name: &str,
     values: Vec<String>,
@@ -504,6 +512,7 @@ async fn read_mutes(
         .query_events_for_event_write(&query)
         .await?
         .iter()
+        .filter(|stored| team.has(&stored.event.pubkey.to_hex()))
         .filter_map(|stored| mute_record_of(&stored.event))
         .collect())
 }
@@ -512,6 +521,7 @@ async fn read_mutes(
 async fn is_muted(
     state: &AppState,
     community: CommunityId,
+    team: &ProjectTeam,
     coordinate: &str,
     signer: &str,
     wallets: &[Wallet],
@@ -521,6 +531,7 @@ async fn is_muted(
     let mut records = read_mutes(
         state,
         community,
+        team,
         coordinate,
         "room-mute",
         vec![signer.to_owned()],
@@ -532,6 +543,7 @@ async fn is_muted(
         read_mutes(
             state,
             community,
+            team,
             coordinate,
             "room-mute-wallet",
             wallets.iter().map(wallet_text).collect(),
@@ -545,7 +557,7 @@ async fn is_muted(
     people.dedup();
     people.retain(|person| person != signer);
     if !people.is_empty() {
-        records.extend(read_mutes(state, community, coordinate, "room-mute", people).await?);
+        records.extend(read_mutes(state, community, team, coordinate, "room-mute", people).await?);
     }
     Ok(mute_holds(&records, signer, wallets, now))
 }
@@ -612,18 +624,20 @@ fn refuse(reason: &'static str) -> IngestError {
 
 /// Run the room rule on an event about to be stored, if it is a room event. Called from `ingest.rs` after the
 /// signer, the scope and the server-wide bans and timeouts are judged.
+///
+/// A room event that passes returns the lock on its writer's count, which the caller keeps until the event is stored.
 pub(crate) async fn enforce(
     state: &Arc<AppState>,
     tenant: &TenantContext,
     event: &Event,
-) -> Result<(), IngestError> {
+) -> Result<Option<super::season_rules::SeasonLock>, IngestError> {
     let kind = event_kind_u32(event);
     if !ROOM_KINDS.contains(&kind) {
-        return Ok(());
+        return Ok(None);
     }
     let scanned = scan(event);
     if scanned.room_tags.is_empty() && scanned.e_ids.is_empty() && scanned.bad_e == 0 {
-        return Ok(());
+        return Ok(None);
     }
     if scanned.e_ids.len() + scanned.bad_e > E_TAGS_MAX {
         return Err(IngestError::Rejected(OUTSIDE_THE_ROOM.into()));
@@ -640,7 +654,7 @@ pub(crate) async fn enforce(
     };
     if scanned.room_tags.is_empty() && named.is_empty() {
         // Not a room event: it names no room post and carries no room tag.
-        return Ok(());
+        return Ok(None);
     }
     #[cfg(test)]
     RULE_RUNS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -752,23 +766,35 @@ pub(crate) async fn enforce(
         return Err(refuse(NOT_HOLDING));
     }
 
-    // 7. Not muted by the team.
+    // 7. Not muted by the team. The founder and the people who run the server are never stopped, whatever a record
+    // says (a record that lists their wallet is refused when it is written; this is the same rule at the read).
     let now = u64::try_from(chrono::Utc::now().timestamp()).unwrap_or(0);
-    if is_muted(
-        state,
-        community,
-        coordinate,
-        &event.pubkey.to_hex(),
-        &wallets,
-        now,
-    )
-    .await
-    .map_err(|e| internal("reading the team's mutes", e))?
+    let signer_hex = event.pubkey.to_hex();
+    let team = ProjectTeam::from_record(&project.record);
+    if !team.is_founder(&signer_hex)
+        && !super::season_rules::is_operator(state, &signer_hex)
+        && is_muted(
+            state,
+            community,
+            &team,
+            coordinate,
+            &signer_hex,
+            &wallets,
+            now,
+        )
+        .await
+        .map_err(|e| internal("reading the team's mutes", e))?
     {
         return Err(refuse(MUTED));
     }
 
-    // 8. Rates, and not too many voices behind one wallet.
+    // 8. Rates, and not too many voices behind one wallet. The count and the store are one step for one account in
+    // one room: the lock is kept until the event is stored, so a crowd sent at once cannot all pass the same count.
+    let lock = super::season_rules::SeasonLock::acquire_named(
+        pool,
+        format!("creaton-room:{signer_hex}:{room}"),
+    )
+    .await?;
     let (posts, events) = recent_writes(pool, community, &signer_bytes, room)
         .await
         .map_err(|e| internal("counting the signer's recent room posts", e))?;
@@ -787,7 +813,7 @@ pub(crate) async fn enforce(
     if !under_cap {
         return Err(refuse(TOO_MANY_ACCOUNTS));
     }
-    Ok(())
+    Ok(Some(lock))
 }
 
 #[cfg(test)]

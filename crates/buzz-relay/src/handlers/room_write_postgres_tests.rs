@@ -76,6 +76,26 @@ impl RoomWorld {
         .expect("a balance");
     }
 
+    /// A balance change of `delta` for the run's account `n` in project A at `block`, as the reader stores it.
+    async fn change(&self, n: usize, token: &str, block: u64, log_index: i32, delta: i128) {
+        let (_, address) = super::room_support::anvil(&self.fx, n);
+        let account = crate::chain_reader::word::parse_fixed::<20>(&address).expect("address");
+        sqlx::query(
+            "INSERT INTO chain_balance_changes (reader, block_number, log_index, account, project_key, delta, token) \
+             VALUES ($1, $2, $3, $4, $5, $6::numeric, $7)",
+        )
+        .bind(&self.reader)
+        .bind(i64::try_from(block).expect("block"))
+        .bind(log_index)
+        .bind(account.as_slice())
+        .bind(self.key.as_slice())
+        .bind(delta.to_string())
+        .bind(token)
+        .execute(self.state.db.pool())
+        .await
+        .expect("a balance change");
+    }
+
     /// The run's example numbers record (what the server's own builder made from the same run).
     async fn example_numbers(&self) -> Value {
         let record = example_record();
@@ -810,5 +830,208 @@ async fn r21_a_lookup_that_fails_refuses_the_write_and_never_lets_it_pass() {
     assert!(
         matches!(result, Err(super::ingest::IngestError::Internal(_))),
         "a failed lookup refuses the write as a fault: {result:?}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn b1_a_move_below_the_floor_does_not_renew_the_grace_of_a_past_holder() {
+    let w = room_world(true).await;
+    w.seed_to(w.fx.head()).await;
+    let keys = w.linked(LEAVER).await;
+    let left_at = w.time_of(LEAVER_LAST_DECREASE);
+    let newest = w.fx.head() + 1;
+    // A unit after taking out the person is read only.
+    w.read_a_block_at(left_at + w.unit()).await;
+    w.refuse(
+        w.post(&keys, "late"),
+        NOT_HOLDING,
+        "a unit after taking out",
+    )
+    .await;
+    // One wei moved from their wallet to another of theirs (for the price of a fee) is not taking out.
+    w.change(LEAVER, "shares", newest, 0, -1).await;
+    w.refuse(
+        w.post(&keys, "one wei"),
+        NOT_HOLDING,
+        "a one wei move renews nothing",
+    )
+    .await;
+    let just_short = i128::try_from(ROOM_MIN_SHARES - 1).expect("floor");
+    w.change(LEAVER, "team", newest, 1, -just_short).await;
+    w.refuse(
+        w.post(&keys, "one wei short"),
+        NOT_HOLDING,
+        "a move one wei short of the floor renews nothing",
+    )
+    .await;
+    // A decrease the size of the floor is a real stake leaving: the grace starts again, on the chain's own clock.
+    let floor = i128::try_from(ROOM_MIN_SHARES).expect("floor");
+    w.change(LEAVER, "shares", newest, 2, -floor).await;
+    w.accept(
+        w.post(&keys, "took out the floor"),
+        "a decrease of the floor",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn b2_a_mute_may_list_only_wallets_the_person_linked_and_never_the_founders_or_an_operators()
+{
+    let operator = Keys::generate();
+    let operator_hex = operator.public_key().to_hex();
+    let w = super::room_support::room_world_with(true, |c| {
+        c.relay_operator_pubkeys = vec![operator_hex.clone()];
+    })
+    .await;
+    w.seed_to(w.fx.head()).await;
+    // The founder holds and writes from a wallet they linked, as the app's Back flow does.
+    w.link(&w.founder, HOLDER, 3_600)
+        .await
+        .expect("founder link");
+    w.accept(w.post(&w.founder, "my room"), "the founder writes")
+        .await;
+    // A team member stops somebody else and lists the founder's wallet: refused, the founder keeps writing.
+    let somebody = w.account().await;
+    w.refuse(
+        mute(&w, &w.mate, &somebody, &[HOLDER], now() + 3_600, 0),
+        "wallets the person has linked",
+        "the founder's wallet under a made-up person",
+    )
+    .await;
+    w.accept(w.post(&w.founder, "still here"), "the founder still writes")
+        .await;
+    // A person who really linked that same wallet (they hold the wallet's key too) is no way round it.
+    let sharing = w.linked(HOLDER).await;
+    w.refuse(
+        mute(&w, &w.mate, &sharing, &[HOLDER], now() + 3_600, 2),
+        "cannot be stopped",
+        "a wallet the founder has linked too",
+    )
+    .await;
+    // The same for a wallet an operator of the server has linked, and one the signer has linked.
+    super::room_support::add_member(&w.state, &w.tenant, &operator).await;
+    w.link(&operator, LATE, 3_600).await.expect("operator link");
+    let sharing_late = w.linked(LATE).await;
+    w.refuse(
+        mute(&w, &w.mate, &sharing_late, &[LATE], now() + 3_600, 4),
+        "cannot be stopped",
+        "a wallet an operator has linked too",
+    )
+    .await;
+    w.link(&w.mate, OTHER_NOBODY, 3_600)
+        .await
+        .expect("mate link");
+    let sharing_mate = w.linked(OTHER_NOBODY).await;
+    w.refuse(
+        mute(
+            &w,
+            &w.mate,
+            &sharing_mate,
+            &[OTHER_NOBODY],
+            now() + 3_600,
+            5,
+        ),
+        "cannot be stopped",
+        "a wallet the signer has linked too",
+    )
+    .await;
+    // Control: a person's own wallet is listed as before.
+    let own = w.linked(NOBODY).await;
+    w.accept(
+        mute(&w, &w.founder, &own, &[NOBODY], now() + 3_600, 6),
+        "a person's own wallet",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn b2_the_founder_and_an_operator_are_never_stopped_even_by_an_older_record_that_names_their_wallet(
+) {
+    let operator = Keys::generate();
+    let operator_hex = operator.public_key().to_hex();
+    let w = super::room_support::room_world_with(true, |c| {
+        c.relay_operator_pubkeys = vec![operator_hex.clone()];
+    })
+    .await;
+    w.seed_to(w.fx.head()).await;
+    // The person links a wallet and the team stops them naming it; only afterwards does the founder link that wallet.
+    let person = w.linked(HOLDER).await;
+    w.accept(
+        mute(&w, &w.mate, &person, &[HOLDER], now() + 3_600, 0),
+        "the mute",
+    )
+    .await;
+    w.refuse(w.post(&person, "stopped"), MUTED, "the person")
+        .await;
+    w.link(&w.founder, HOLDER, 3_600)
+        .await
+        .expect("founder link");
+    w.accept(
+        w.post(&w.founder, "the founder is not stopped"),
+        "the founder shares the wallet of a muted person",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn i1_a_mute_ends_with_its_signers_place_on_the_team() {
+    let w = room_world(true).await;
+    w.seed_to(w.fx.head()).await;
+    let person = w.linked(HOLDER).await;
+    w.accept(
+        mute(&w, &w.mate, &person, &[HOLDER], now() + 3_600, 0),
+        "a team member's mute",
+    )
+    .await;
+    w.refuse(w.post(&person, "stopped"), MUTED, "the person")
+        .await;
+    // The founder takes the team member off the project record: what they signed no longer counts.
+    w.accept(
+        signed(
+            &w.founder,
+            37001,
+            &[
+                tag(&["d", "orbit"]),
+                tag(&["name", "Orbit"]),
+                tag(&["chain-key", &crate::chain_reader::word::hex0x(&w.key)]),
+            ],
+            "{}",
+            2,
+        ),
+        "the founder drops the team member",
+    )
+    .await;
+    w.accept(
+        w.post(&person, "free again"),
+        "a mute signed by someone no longer on the team",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn c1_posts_sent_at_once_by_one_account_stay_inside_the_hourly_cap() {
+    let w = room_world(true).await;
+    w.seed_to(w.fx.head()).await;
+    let keys = w.linked(HOLDER).await;
+    let mut tasks = tokio::task::JoinSet::new();
+    for n in 0..(POSTS_PER_HOUR * 3) {
+        let (state, tenant) = (w.state.clone(), w.tenant.clone());
+        let post = w.post(&keys, &format!("post {n}"));
+        tasks.spawn(async move { ingest(&state, &tenant, post).await });
+    }
+    let mut stored = 0;
+    while let Some(done) = tasks.join_next().await {
+        if done.expect("the task").is_ok() {
+            stored += 1;
+        }
+    }
+    assert_eq!(
+        stored, POSTS_PER_HOUR,
+        "the cap holds when the posts are sent at once"
     );
 }

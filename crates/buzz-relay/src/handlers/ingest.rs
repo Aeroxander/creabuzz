@@ -5447,7 +5447,10 @@ async fn ingest_event_inner(
     // A holder room's posts, replies and likes: who may write is decided from the network, never from a person's
     // word (see `room_write`). Any other event, an ordinary post included, passes without a lookup of its own.
     // Boxed: the ingest future runs close to a worker's stack.
-    Box::pin(super::room_write::enforce(state, tenant, &event)).await?;
+    // A room event keeps the lock on its writer's count until it is stored.
+    if let Some(lock) = Box::pin(super::room_write::enforce(state, tenant, &event)).await? {
+        _season_lock = Some(lock);
+    }
 
     // Pre-validate kind:0 content before storage so we don't store an event
     // whose profile sync will silently fail in the side-effect handler.

@@ -339,7 +339,12 @@ impl SeasonLock {
     /// Take the lock on season `d`, trying for a few seconds. A connection is held only once the lock is had: a
     /// crowd of entries waiting for their turn must not use up the pool the one that holds the lock reads with.
     async fn acquire(pool: &PgPool, d: &str) -> Result<Self, IngestError> {
-        let name = format!("creaton-season:{d}");
+        Self::acquire_named(pool, format!("creaton-season:{d}")).await
+    }
+
+    /// Take the advisory lock called `name` (the same way, with the same wait). The holder room uses it to make one
+    /// account's count of its recent posts and the store of the next one a single step.
+    pub(crate) async fn acquire_named(pool: &PgPool, name: String) -> Result<Self, IngestError> {
         for pause_ms in [
             0u64, 5, 10, 20, 40, 80, 160, 320, 640, 1_000, 1_000, 1_000, 1_000, 1_000, 1_000, 1_000,
         ] {

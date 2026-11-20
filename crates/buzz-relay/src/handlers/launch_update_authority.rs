@@ -272,6 +272,8 @@ pub(crate) struct RoomMute {
     pub(crate) person: String,
     /// When it ends.
     pub(crate) until: u64,
+    /// The wallets it names: the mute follows each of them to every account that has linked it.
+    pub(crate) wallets: Vec<super::wallet_binding::Wallet>,
 }
 
 /// The longest a team may stop a person writing in one record, in seconds (30 days).
@@ -281,6 +283,9 @@ pub(crate) const ROOM_MUTE_WALLETS_MAX: usize = 8;
 /// Said when a `room-mute` record is not well formed or runs longer than 30 days.
 pub(crate) const BAD_ROOM_MUTE: &str =
     "invalid: a room mute names one person, up to 8 wallets and an end within 30 days";
+/// Said when a room mute lists a wallet the person it stops has not linked.
+pub(crate) const MUTE_WALLET_NOT_THEIRS: &str =
+    "invalid: a room mute may list only wallets the person has linked to their own account";
 /// Said when a team tries to stop the founder, an operator or itself.
 pub(crate) const MUTE_PROTECTED: &str =
     "restricted: the founder and the people who run this server cannot be stopped from writing";
@@ -562,11 +567,16 @@ fn read_room_mute(people: &[&str], wallets: &[&str], ends: &[&str]) -> Result<Ro
         return Err(bad());
     }
     let mut seen: Vec<&str> = Vec::new();
+    let mut named = Vec::with_capacity(wallets.len());
     for wallet in wallets {
-        if super::wallet_binding::parse_wallet(wallet).is_none() || seen.contains(wallet) {
+        let Some(parsed) = super::wallet_binding::parse_wallet(wallet) else {
+            return Err(bad());
+        };
+        if seen.contains(wallet) {
             return Err(bad());
         }
         seen.push(wallet);
+        named.push(parsed);
     }
     let until = end
         .parse::<u64>()
@@ -576,6 +586,7 @@ fn read_room_mute(people: &[&str], wallets: &[&str], ends: &[&str]) -> Result<Ro
     Ok(RoomMute {
         person: (*person).to_owned(),
         until,
+        wallets: named,
     })
 }
 
@@ -1118,7 +1129,7 @@ pub(crate) async fn enforce_launch_update_authority(
         super::task_takes::enforce_take_caps(state, community, event, TAKES_PER_DAY).await?;
     }
     if let Some(mute) = &requirement.room_mute {
-        enforce_room_mute(state, &team, mute, &signer)?;
+        enforce_room_mute(state, community, &team, mute, &signer).await?;
     }
     match requirement.season {
         Some(step) => {
@@ -1139,8 +1150,14 @@ pub(crate) async fn enforce_launch_update_authority(
 /// Hold a `room-mute` record to its bounds against the clock and to the people no team may stop: its end is at most
 /// 30 days ahead (one in the past lifts a mute), and it names neither the founder, an operator of the server, nor its
 /// own signer. Who may sign it (the team) is judged by [`decide`].
-fn enforce_room_mute(
+///
+/// A mute follows each wallet it lists to every account that has linked that wallet, so the wallets are held to the
+/// same rule as the person: each must be one the person has linked themselves now, and none may be linked by the
+/// founder, an operator or the signer. Without that, a team member could list the founder's wallet under any person
+/// and stop the founder writing in their own room.
+async fn enforce_room_mute(
     state: &AppState,
+    community: buzz_core::tenant::CommunityId,
     team: &ProjectTeam,
     mute: &RoomMute,
     signer: &str,
@@ -1149,9 +1166,29 @@ fn enforce_room_mute(
     if mute.until > now.saturating_add(ROOM_MUTE_MAX_SECS) {
         return Err(IngestError::Rejected(BAD_ROOM_MUTE.into()));
     }
-    if team.is_founder(&mute.person)
-        || mute.person == signer
-        || super::season_rules::is_operator(state, &mute.person)
+    let protected = |who: &str| {
+        team.is_founder(who) || who == signer || super::season_rules::is_operator(state, who)
+    };
+    if protected(&mute.person) {
+        return Err(IngestError::AuthFailed(MUTE_PROTECTED.into()));
+    }
+    if mute.wallets.is_empty() {
+        return Ok(());
+    }
+    let person =
+        id_bytes(&mute.person).ok_or_else(|| IngestError::Rejected(BAD_ROOM_MUTE.into()))?;
+    let linked = super::wallet_binding::linked_wallets(state, community, &person)
+        .await
+        .map_err(|e| internal("reading the wallets of the person to stop", e))?;
+    if mute.wallets.iter().any(|wallet| !linked.contains(wallet)) {
+        return Err(IngestError::Rejected(MUTE_WALLET_NOT_THEIRS.into()));
+    }
+    let owners = super::wallet_binding::accounts_of_wallets(state, community, &mute.wallets)
+        .await
+        .map_err(|e| internal("reading who has linked the wallets of a mute", e))?;
+    if owners
+        .iter()
+        .any(|(_, account)| protected(&hex::encode(account)))
     {
         return Err(IngestError::AuthFailed(MUTE_PROTECTED.into()));
     }
@@ -2486,7 +2523,10 @@ mod tests {
             req.room_mute,
             Some(RoomMute {
                 person: person.clone(),
-                until: 1_900_000_000
+                until: 1_900_000_000,
+                wallets: vec![
+                    crate::handlers::wallet_binding::parse_wallet(WALLET_A).expect("a wallet")
+                ],
             })
         );
         let confirm = ConfirmFacts::none();
