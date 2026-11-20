@@ -20,6 +20,7 @@ use anyhow::{anyhow, bail, Context};
 use serde_json::Value;
 
 use super::ledger::{GrantState, Ledger, Stored as LedgerStored, StoredBook};
+use super::numbers_tasks;
 use super::record::{
     self, quiet_state, roll_forward, AgentRec, AllowanceRec, AsOfRec, ClockRec, ContractsRec,
     DoorRec, FeeRec, ForfeitRec, GrantKind, GrantRec, GrantStateRec, HolderRec, LedgerRec,
@@ -215,6 +216,7 @@ fn cross_check(ledger: &Ledger, v: &Views, t: u64) -> anyhow::Result<Vec<String>
             v.t64("arrivalEnd")?,
         );
     }
+    bad.extend(numbers_tasks::cross_check(ledger, v, t)?);
     for g in &v.grants {
         let Some(l) = ledger.grants.get(&g.id) else {
             bad.push(format!(

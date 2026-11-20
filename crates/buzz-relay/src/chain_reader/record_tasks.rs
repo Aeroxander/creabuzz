@@ -470,21 +470,27 @@ fn small(v: u128, what: &str) -> anyhow::Result<u64> {
     u64::try_from(v).map_err(|_| anyhow!("{what} does not fit 64 bits"))
 }
 
-/// What a claim of a note of `face` against `k` would pay at `t`: nothing while
-/// the task is open (a taken task past its deadline that nobody has settled
-/// counts as ended: a claim settles first and pays the whole face, as the
-/// settled pot counts what ran out as back); nothing when the task was paid in
-/// full; otherwise the contract's own rounding of the share of what came back.
-fn claimable_of(k: &LTask, face: u128, t: u64) -> anyhow::Result<u128> {
-    if k.state.is_open() {
-        let overdue = k.state == TaskState::Taken && k.expires_at <= t;
-        return Ok(if overdue { face } else { 0 });
-    }
-    if k.returned == 0 || k.set_aside == 0 {
+/// What the contract's `claimableNote` gives for a note of `face` against `k`:
+/// nothing while the task is open and nothing when the task was paid in full;
+/// otherwise the contract's own rounding of the share of what came back.
+pub fn contract_claim(k: &LTask, face: u128) -> anyhow::Result<u128> {
+    if k.state.is_open() || k.returned == 0 || k.set_aside == 0 {
         return Ok(0);
     }
     mul_div(face, k.returned, k.set_aside)
         .ok_or_else(|| anyhow!("the claim on task {} does not fit", k.serial))
+}
+
+/// What a claim of a note of `face` against `k` would pay at `t`, as the record
+/// says it: what the contract's view gives, except for a taken task past its
+/// deadline that nobody has settled. The view says nothing for it, but a claim
+/// settles first and pays the whole face, as the settled pot counts what ran out
+/// as back.
+fn claimable_of(k: &LTask, face: u128, t: u64) -> anyhow::Result<u128> {
+    if k.state == TaskState::Taken && k.expires_at <= t {
+        return Ok(face);
+    }
+    contract_claim(k, face)
 }
 
 fn notes_of(

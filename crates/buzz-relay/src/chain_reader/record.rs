@@ -704,7 +704,7 @@ pub struct Record {
 
 // ----------------------------------------------------------------- the checks
 
-fn amount(text: &str, what: &str) -> anyhow::Result<u128> {
+pub(super) fn amount(text: &str, what: &str) -> anyhow::Result<u128> {
     if text.is_empty() || !text.bytes().all(|b| b.is_ascii_digit()) {
         bail!("{what} is not a whole number: {text:?}");
     }
@@ -712,7 +712,7 @@ fn amount(text: &str, what: &str) -> anyhow::Result<u128> {
         .with_context(|| format!("{what} is too large"))
 }
 
-fn is_hex(text: &str, bytes: usize) -> bool {
+pub(super) fn is_hex(text: &str, bytes: usize) -> bool {
     text.len() == 2 + 2 * bytes
         && text.starts_with("0x")
         && text[2..]
@@ -1072,6 +1072,9 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
             format!("allowance.boxCap {box_cap} is not what the settled pot and box allow"),
         );
     }
+
+    // The task queue, on its own rules.
+    super::record_tasks_rules::check(r, bad)?;
     Ok(())
 }
 

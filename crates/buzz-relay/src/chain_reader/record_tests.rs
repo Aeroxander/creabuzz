@@ -29,11 +29,11 @@ const EXAMPLE_PATH: &str = concat!(
     "/../../docs/next-version/record-v2-example.json"
 );
 
-fn example() -> Value {
+pub(super) fn example() -> Value {
     serde_json::from_str(EXAMPLE).expect("the example is JSON")
 }
 
-fn n(v: &Value) -> u128 {
+pub(super) fn n(v: &Value) -> u128 {
     v.as_str().expect("an amount").parse().expect("a number")
 }
 
@@ -570,12 +570,12 @@ fn the_example_obeys_every_rule_of_section_7_3() {
 
 // ------------------------------------------------------ the builder, real run
 
-struct Built {
-    record: Record,
-    value: Value,
+pub(super) struct Built {
+    pub(super) record: Record,
+    pub(super) value: Value,
 }
 
-async fn build_from(name: &str) -> anyhow::Result<Built> {
+pub(super) async fn build_from(name: &str) -> anyhow::Result<Built> {
     let (fx, ledger, as_of, chain) = load(name);
     let read = views::read(&chain, fx.launcher, &ledger, as_of.block, as_of.time).await?;
     let record = numbers::build(
@@ -589,7 +589,7 @@ async fn build_from(name: &str) -> anyhow::Result<Built> {
     Ok(Built { record, value })
 }
 
-fn load(name: &str) -> (Fixture, Ledger, AsOf, BookChain) {
+pub(super) fn load(name: &str) -> (Fixture, Ledger, AsOf, BookChain) {
     let fx = Fixture::load();
     let (project, chain) = BookChain::load(&fx, name);
     let ledger = Ledger::from_logs(&fx.rows(&project, chain.block))
@@ -786,7 +786,13 @@ async fn a_failed_read_is_an_error_and_never_a_record() {
 }
 
 /// Change the answer to the call named by `sig` (and `args`) to `word`.
-fn set_answer(chain: &mut BookChain, to: &[u8; 20], sig: &str, args: &[[u8; 32]], word: u128) {
+pub(super) fn set_answer(
+    chain: &mut BookChain,
+    to: &[u8; 20],
+    sig: &str,
+    args: &[[u8; 32]],
+    word: u128,
+) {
     let mut data = buzz_evm_allowance::abi::selector(sig).to_vec();
     for a in args {
         data.extend_from_slice(a);
@@ -800,7 +806,7 @@ fn set_answer(chain: &mut BookChain, to: &[u8; 20], sig: &str, args: &[[u8; 32]]
     *answer = w;
 }
 
-async fn build_with(
+pub(super) async fn build_with(
     fx: &Fixture,
     ledger: &Ledger,
     as_of: &AsOf,
@@ -810,7 +816,7 @@ async fn build_with(
     numbers::build(ledger, as_of, &read, &Cadence::default(), as_of.time + 1)
 }
 
-fn address_of(text: &str) -> [u8; 20] {
+pub(super) fn address_of(text: &str) -> [u8; 20] {
     super::word::parse_fixed::<20>(text).expect("address")
 }
 

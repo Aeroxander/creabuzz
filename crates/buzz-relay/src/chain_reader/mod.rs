@@ -21,9 +21,11 @@ pub mod helper;
 pub mod ledger;
 pub mod ledger_tasks;
 pub mod numbers;
+mod numbers_tasks;
 pub mod publish;
 pub mod record;
 pub mod record_tasks;
+mod record_tasks_rules;
 pub mod scan;
 mod settings;
 pub mod source;
@@ -890,3 +892,5 @@ mod mul_div_tests;
 mod record_tests;
 #[cfg(test)]
 mod scan_postgres_tests;
+#[cfg(test)]
+mod task_checks_tests;
