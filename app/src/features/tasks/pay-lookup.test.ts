@@ -95,4 +95,20 @@ describe("the stop test and the filter on time", () => {
     const far = { ...wallet, blockNumber: async () => 10_000_000 };
     await expect(search(far)).rejects.toBeInstanceOf(PaymentSearchShort);
   });
+
+  it("does not stop at the first piece when the wallet cannot tell the time of a block: it reads to the first block", async () => {
+    // A start whose time is unknown does not count as reaching the acceptance: an older piece may still hold the payment.
+    const { wallet, ranges } = fakeWallet([], () => SINCE - 10 * HOUR);
+    const { blockTime: _unused, ...noClock } = wallet;
+    expect(await search(noClock)).toBeNull();
+    expect(ranges.map((r) => r.from)).toEqual([15_001, 5_001, 0]);
+  });
+
+  it("finds a payment in an older piece when the wallet cannot tell the time of a block, on amount and wallet alone", async () => {
+    const { wallet, ranges } = fakeWallet([drawAt(9_000)], () => SINCE);
+    const { blockTime: _unused, ...noClock } = wallet;
+    expect((await search(noClock))?.txHash).toBe(HASH);
+    // Nothing in the newest piece, and no clock to say that it was enough: the next piece was read.
+    expect(ranges).toHaveLength(2);
+  });
 });

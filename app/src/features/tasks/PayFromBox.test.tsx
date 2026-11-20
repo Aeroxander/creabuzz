@@ -308,6 +308,22 @@ describe("an accepted task whose pay is owed", () => {
     expect(written).toHaveLength(0);
   });
 
+  it("looks at the hand-in again too: work handed in again between the draw and the press is not paid for by this press", async () => {
+    card(accepted());
+    const button = await screen.findByTestId("task-pay");
+    // Same task, still accepted and unpaid, but the piece that was accepted is another one now.
+    fresh = accepted({
+      handIn: { id: "2".repeat(64), at: 1_800_000_300, note: "done again" },
+    });
+    fireEvent.click(button);
+    await screen.findByTestId("task-pay-problem");
+    expect(screen.getByTestId("task-pay-problem").textContent).toMatch(
+      /changed while you were looking/,
+    );
+    expect(sent).toHaveLength(0);
+    expect(written).toHaveLength(0);
+  });
+
   it("offers no press to a wallet that does not run the project, and says so", () => {
     card(accepted(), { address: PAYEE });
     expect(screen.getByTestId("task-pay-not-runner").textContent).toMatch(
