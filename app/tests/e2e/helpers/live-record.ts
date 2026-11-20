@@ -23,6 +23,7 @@ import { call, rpc } from "../../anvil/rpc";
 import { numbersV2Content } from "../../helpers/numbers-v2-fixture";
 import { chainNow, type LiveProject, type LiveWorld } from "./live-chain";
 import { liveTasks } from "./live-tasks";
+import { readStored, rollForward } from "./live-settled";
 
 type Json = Record<string, unknown>;
 
@@ -43,7 +44,6 @@ async function view(
 
 const big = (v: unknown) => BigInt(v as bigint);
 const text = (v: bigint) => v.toString();
-const mulDiv = (a: bigint, b: bigint, c: bigint) => (a * b) / c;
 
 interface Log {
   topics: string[];
@@ -73,6 +73,12 @@ const wordOf = (log: Log, n: number) =>
   BigInt(`0x${log.data.slice(2 + n * 64, 2 + (n + 1) * 64)}`);
 const sum = (logs: Log[], n: number) =>
   logs.reduce((total, log) => total + wordOf(log, n), 0n);
+
+/** What the Treasury's `TaskMoney` events of one kind moved (word 0 is the kind, word 2 the amount). */
+const sumKind = (logs: Log[], kind: bigint) =>
+  logs
+    .filter((log) => wordOf(log, 0) === kind)
+    .reduce((total, log) => total + wordOf(log, 2), 0n);
 
 export interface RecordOptions {
   /** Unix seconds at the browser: the record was built 5 seconds before it. Default: the chain's own clock. */
@@ -110,31 +116,10 @@ export async function liveRecord(
   const last = big(await T("lastSettle"));
   const end = big(await T("activeEnd"));
   const rate = big(await T("ratePpm"));
-  let pot = big(await T("pot"));
-  let box = big(await T("box"));
-  let arriving = big(await T("arriving"));
   const arrivalEnd = big(await T("arrivalEnd"));
-  const upto = t < end ? t : end;
-  const dt = upto > last ? upto - last : 0n;
-  const cap = mulDiv(pot + box, rate * 7n, 1_000_000n);
-  if (dt !== 0n && rate !== 0n) {
-    const toBox = mulDiv(pot, rate * dt, 1_000_000n * (unit / 7n));
-    box += toBox;
-    pot -= toBox;
-  }
-  if (box > cap) {
-    pot += box - cap;
-    box = cap;
-  }
-  if (arriving !== 0n) {
-    const released =
-      t >= arrivalEnd
-        ? arriving
-        : mulDiv(arriving, t - last, arrivalEnd - last);
-    arriving -= released;
-    pot += released;
-  }
-  const active = big(await T("activeSeconds")) + dt;
+  const settled = rollForward(t, await readStored(tr, t));
+  const { pot, box, arriving, locked } = settled;
+  const active = settled.activeSeconds;
 
   const supply = big(
     await view(SHARE_TOKEN_ABI, project.shares, "totalSupply"),
@@ -191,6 +176,7 @@ export async function liveRecord(
   const teamLeft = await logsOf(tr, TREASURY_ABI, "TeamLeft");
   const drawn = await logsOf(tr, TREASURY_ABI, "AllowanceDrawn");
   const outside = await logsOf(tr, TREASURY_ABI, "RevenueAdded");
+  const taskMoney = await logsOf(tr, TREASURY_ABI, "TaskMoney");
   let firstBackedAt: number | null = null;
   if (joined[0]) {
     const b = await rpc<{ timestamp: string }>("eth_getBlockByNumber", [
@@ -271,7 +257,7 @@ export async function liveRecord(
       arriving: text(arriving),
       arrivalEnd: arriving === 0n ? null : Number(arrivalEnd),
       feesOwed: text(feesOwed),
-      locked: text(big(await T("locked"))),
+      locked: text(locked),
       notesOwed: text(big(await T("notesOwed"))),
       held: text(dollarHeld),
     },
@@ -354,6 +340,8 @@ export async function liveRecord(
       tookOut: text(sum(left, 1) + sum(teamLeft, 1)),
       drawn: text(sum(drawn, 0)),
       outside: text(sum(outside, 0)),
+      paidToWorkers: text(sumKind(taskMoney, 2n)),
+      noteClaims: text(sumKind(taskMoney, 6n)),
     },
     firstBackedAt,
     holders,
@@ -368,7 +356,11 @@ export async function liveRecord(
     box: text(big(await T("box"))),
     arriving: text(big(await T("arriving"))),
     arrivalEnd: big(await T("arriving")) === 0n ? null : Number(arrivalEnd),
+    arrivalStart: Number(big(await T("arrivalStart"))),
+    arrivalTotal: text(big(await T("arrivalTotal"))),
     activeSeconds: Number(big(await T("activeSeconds"))),
+    locked: text(big(await T("locked"))),
+    notesOwed: text(big(await T("notesOwed"))),
   };
   if (options.tasks) content.tasks = await liveTasks(project, now, pot, u);
   options.patch?.(content);
