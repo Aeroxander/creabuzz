@@ -46,8 +46,8 @@ function amountOf(log: ChainLog): bigint | null {
  * The newest draw from `treasury` to `payee` of exactly `raw` dollars (raw units) made at or after `since` (seconds), or null.
  * `taken` are payments already recorded for other tasks: they are never offered again. A network that cannot say a block's
  * time is trusted on amount and payee alone for what it finds. The search goes back from the newest block, piece by piece,
- * until a piece begins at or before the acceptance (then nothing earlier can count), however long ago that was, up to a
- * bound. It throws (never "nothing found") when the logs cannot be read, and `PaymentSearchShort` when nothing was found
+ * until a piece begins at or before an hour before the acceptance (then nothing earlier can count), however long ago that
+ * was, up to a bound. It throws (never "nothing found") when the logs cannot be read, and `PaymentSearchShort` when nothing was found
  * and the bound was reached before the acceptance (or the network cannot say when a block was): an earlier payment could
  * lie further back, so the caller must not treat that as "not paid yet" and must let a person say it was not paid.
  */
@@ -94,7 +94,12 @@ export async function findPayment(
   throw new PaymentSearchShort();
 }
 
-/** Whether the block the search starts at is no later than the acceptance (a start whose time is unknown does not count). */
+/**
+ * Whether nothing older than this piece can count. A payment counts when its time is at least `since - SKEW_SECS`, so the
+ * search may stop only once a piece starts at or before that moment: every block before it is older still. A piece that starts
+ * later than that (for example within the hour after the acceptance) may be followed by an older piece holding a payment made
+ * inside the hour before the cut, so the search must go on. A start whose time is unknown does not count.
+ */
 async function reaches(
   wallet: Pick<MoneyWallet, "blockTime">,
   start: number,
@@ -102,7 +107,7 @@ async function reaches(
 ): Promise<boolean> {
   if (!wallet.blockTime) return false;
   try {
-    return (await wallet.blockTime(start)) <= since + SKEW_SECS;
+    return (await wallet.blockTime(start)) <= since - SKEW_SECS;
   } catch {
     return false;
   }
