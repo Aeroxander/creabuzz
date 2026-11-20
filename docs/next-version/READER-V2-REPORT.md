@@ -588,3 +588,98 @@ ceiling.
   published: task N <field>: events say X, the contract says Y` at error level, a pause of 15 seconds doubling to 5 minutes, and the old record stays.
 - `scripts/chain-reader-example-check.py [record.json]` is the field-by-field check of plan 7.3; the loop's checker (WP2) can reuse its field table.
 - Not done at WP1: the helper job and the chain loop (WP2); the agree step and `accept --pay-to` (C35, WP2).
+
+## Step 2, the helper and the chain loop (server, 20 November 2026)
+
+### The helper settles a task that has run out (plan 2.7, C14)
+
+A task that nobody returned stays `taken` (or `announced`) in the book until some action settles the Treasury. The helper now makes that action when
+nobody does: ten minutes after the task's time, it sends `Treasury.settle()` and nothing else.
+
+- **When** (`helper/plan.rs`): the ledger built from final rows has an open task whose `expiresAt` (the end of its take window, or its deadline once
+  taken) plus 600 seconds is at or before the final block's time. One job per project and expiry second, keyed `settle-task:<treasury>:<expiresAt>`; the
+  earliest overdue task names it, because one settle returns every task that is due. `due_block` is the block of the row that fixed that second (the task's
+  announcement or its take), so a rollback past it deletes the job.
+- **Checked again at the head** (`helper/mod.rs::check`): the Treasury's own `nextExpiry()` must be non-zero and ten minutes past at the head's time. Someone
+  else's take-out, claim or check-in settles first and moves it on; the job is then dropped, not failed, and nothing is sent.
+- **The call** (`helper/calls.rs`): `HelperCall::TreasurySettleTasks { treasury, expiry }`. It has the same signature (`settle()`) and the same stored name
+  (`treasury.settle`, the database's list stays closed, no migration) as the settle of arrived outside money; only its stored argument `{"taskExpiry": <second>}`
+  tells it apart. A stored argument that is not a second ends the job as failed and is never sent as another settle.
+- **Bounded**: the helper's existing machinery applies to the new job: a pause of 60 s that doubles after each failed attempt up to six hours, a terminal
+  `failed` state after `BUZZ_CHAIN_HELPER_MAX_ATTEMPTS` (default 8), the daily gas and spend caps, one transaction in flight, and a call that would revert is
+  never sent. A failure is kept in the job's row (`attempts`, `last_error`), never swallowed.
+- **Never**: the closed list of forbidden calls grew from 35 to 42 with the task book's seven (`announceTask`, `takeTask`, `acceptTask`, `rejectTask`,
+  `cancelTask`, `returnTask`, `claimNote`); a test fails if any is in the allow-list or can be produced, and each is checked to be a real function of the
+  built contracts.
+
+### The chain loop (plan 2.9): `scripts/chain-loop-pot.sh`, `chain-loop-pot-check.py`, `chain-loop-query.mjs`
+
+The loop now continues after its step 1 walk, on the real 7-day unit (the chain's clock moved with `evm_increaseTime`, a few days at a time, a check-in
+before each warp so the project stays open):
+
+| Stop | What was done | What the record must equal |
+|---|---|---|
+| `planned` | a task planned and withdrawn; three planned and left in their notice | the book from `Treasury.tasks()`, three open rows, one cancelled |
+| `taken` | after the notice, a named worker takes one plan, a stranger takes the open one | rows against `taskOf`, money set aside, the cap |
+| `note` | a Take out of half the Shares while both are taken (writes notes) | the leaver's `noteOf` on both rows |
+| `paid` | the team pays 60% of one task; a stranger claims the leaver's note | `paidToWorkers`, `noteClaims`, the leaver paid and the stranger not |
+| `rejected` | the other task is sent back | the cap given back (`windowSumBps` falls by the row's `capBps`) |
+| `lapsed` | a plan nobody took lapses at the next check-in; a fifth is announced; a third backer joins | the lapsed row, the new open one |
+| `quiet` | the fifth is taken, a second Take out writes a note, the project goes quiet with the task open | `refreshEverySecs` is still the active cadence |
+| `returned` | the fifth runs out; **nobody presses anything**; the relay's helper settles it | the helper's one `settle()` is the transaction that resolved it; the idle cadence |
+| `claimed` | the leaver claims their own note on the returned task | the totals and the note |
+
+At every stop the checker (`--stop`) compares with `cast call --block <the record's block>`: the book's address, counters, `nextExpiry`, the seven limits, every
+listed row's 16 words against `taskOf`, the amount a row promises, `pay + returned == setAside`, every listed holder's `noteOf` and `claimableNote`, the stayers' claims
+against `money.locked`, `C + N == L` for each taken task, the notes owed, the cap (`usedBps`, `roomBps`, the frees), which tasks the list holds (open, with
+money to claim, or ended inside 28 days, from the loop's own record of when it ended each), the totals the loop knows from what it sent (including the two new
+ones), the dollars held against the buckets, and the settled pot, box, arriving money and active seconds worked forward with the stream formula from
+`arrivalStart` and `arrivalTotal` and the money of tasks that ran out put back last (`dueC` from the book). After the `note` stop nine copies of the record, each
+with one number wrong, must each be refused with a named difference.
+
+The first record (step 1's single stop) is checked in full as before, with the same task checks on an empty book, and now also the arrival formula and the buckets.
+The `chain-loop-query.mjs read` condition accepts `path>=number` so a stop can wait for the record to reach a block.
+
+### What ran
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` (`buzz-relay`, `buzz-cli`) | clean |
+| `cargo clippy -p buzz-relay --all-targets -- -D warnings` | no warnings |
+| `cargo test -p buzz-relay --lib chain_reader::helper -- --include-ignored --test-threads=1` (local Postgres and Redis) | **16 passed, 0 failed** (9 before, 7 new) |
+| `cargo build -p buzz-relay` | built |
+| `scripts/chain-loop-pot.sh`, twice | **758 checks passed** both times (about six times the plan's 125, because every stop repeats the whole task section and the settled numbers; see below) |
+| `scripts/pot-chain-loop.sh` | 24 checks passed |
+| `cargo test -p buzz-cli launchpad_tasks` | 24 passed, 0 failed (`accept --pay-to`, C35) |
+
+The 758: step 1's record 105 checks (about 15 of them new: the stream, the buckets and the empty book), then nine stops of 64 to 73 checks each (617 in all), and 36
+of the loop's own `ok` lines around them (the deployment, the launch, balances, states, the cap given back, the helper's settle, the nine refused copies).
+
+### Guards switched off once (U5)
+
+A temporary environment switch was put in the helper's production code, the test binary built once, and each guard switched off in turn; every temporary line was
+removed afterwards (the files compare equal to the backups).
+
+| Guard off | Tests that failed |
+|---|---|
+| the ten minutes (delay 0) | `a_task_that_ran_out_ten_minutes_ago_gets_one_settle_for_that_second` |
+| only open tasks count (all tasks) | the same, `it_is_the_earliest_task_that_runs_out_and_a_settle_ends_the_job`, the weekly fee test |
+| the earliest task names the job (the latest instead) | the first two of the plan tests |
+| the head's `nextExpiry()` view | `a_task_someone_else_already_returned_is_not_settled_again`, `a_task_that_ran_out_a_second_short_of_ten_minutes_ago_is_left_alone` |
+| the growing pause | `a_settle_that_keeps_failing_waits_longer_each_time_and_ends_failed` |
+| the attempt limit | the same |
+| the call's calldata (another function than `settle()`) | the allowed-selector test, the forbidden-call test, `the_settle_of_a_task_is_settle_and_nothing_else`, two Postgres tests |
+| a stored expiry that is not a second read as the other settle | six tests, among them `stored_calls_read_back_and_unknown_ones_are_refused` |
+| the helper's task job not built, in the real loop (relay built with the switch) | the loop fails: "the helper did not settle the task that ran out" |
+| the loop's checks: nine wrong records | each refused (the loop's own nine checks) |
+| `accept --pay-to`: the tag not written, the address not checked | `accept_may_carry_pay_to_and_the_record_is_the_one_the_relay_accepts` |
+
+### For the next engineer (the joined-up loop)
+
+To start a relay that reads tasks, give it what `chain-loop-pot.sh` gives it: `BUZZ_CHAIN_RPC_URL`, `BUZZ_CHAIN_ID`, `BUZZ_CHAIN_LAUNCHER` (the Launcher from
+`contracts/pot/deployments/pot-<chain id>.json`), `BUZZ_CHAIN_START_BLOCK` (at or before the launch), and a Postgres with migrations applied (`BUZZ_AUTO_MIGRATE=true`
+applies 0071). Nothing is needed to find a project's task book: the reader learns it from the Treasury's `TasksReady` log. For the helper add
+`BUZZ_CHAIN_HELPER_KEY` (anvil's public key 7 in the loop) with `BUZZ_CHAIN_HELPER_DAILY_GAS` and `BUZZ_CHAIN_HELPER_DAILY_SPEND_WEI`; without the key nothing
+returns a task that ran out, and the next action by anyone does. The helper builds its jobs once a minute at most, from rows two blocks deep, so after a warp
+mine at least three blocks and allow about a minute and a half. For a short wait set `BUZZ_CHAIN_ACTIVE_REFRESH_SECS=5` and `BUZZ_CHAIN_REFRESH_SECS=7`
+(the loop's values): the record promises the first while a task is open or money moves, the second otherwise, and says so in `refreshEverySecs`.
