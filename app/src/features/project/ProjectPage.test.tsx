@@ -21,6 +21,8 @@ import {
   numbersV2Content,
 } from "../../../tests/helpers/numbers-v2-fixture";
 import { LEGACY_TEST_IDS } from "../../../tests/helpers/legacy-test-ids";
+import { parsedExample } from "../../../tests/helpers/numbers-v2-parse";
+import { dollarsText } from "../money/numbers";
 import { ProjectPage } from "./ProjectPage";
 import { projectRef } from "./project-record";
 
@@ -79,7 +81,8 @@ describe("the project page on record version 2", () => {
   it("shows the project's money, the play-money line and the legal line", async () => {
     await page();
     const pot = await screen.findByTestId("money-pot");
-    expect(pot.textContent).toBe("7,322.81");
+    // The example's own pot, read from the parsed record and never typed here.
+    expect(pot.textContent).toBe(dollarsText(parsedExample().money.pot));
     expect(screen.getByTestId("play-money").textContent).toMatch(
       /play money, not real money/,
     );

@@ -60,10 +60,14 @@ describe("a record that cannot be read is null, never a crash and never a defaul
       }
     return out;
   }
-  const PATHS = leafPaths(raw()).filter(
-    // `key` is checked against the d tag, and the signers/holders lists are exercised by their own elements.
-    (p) => p.join(".") !== "key",
+  const ALL_PATHS = leafPaths(raw());
+  const PATHS = ALL_PATHS.filter(
+    // `key` is checked against the d tag, and the signers/holders lists are exercised by their own elements. The task
+    // queue is read apart (C21): its leaves are walked below, where a broken one makes only the queue unreadable.
+    (p) => p.join(".") !== "key" && p[0] !== "tasks",
   );
+  // The two totals a step 2 server adds: a record from an older server leaves them out, and is still read.
+  const MAY_BE_ABSENT = new Set(["totals.paidToWorkers", "totals.noteClaims"]);
   function edit(
     path: (string | number)[],
     change: (parent: any, k: any) => void,
@@ -103,6 +107,7 @@ describe("a record that cannot be read is null, never a crash and never a defaul
         .slice(0, -1)
         .reduce((o: any, k) => o[k], raw() as any);
       if (Array.isArray(parentOf)) continue;
+      if (MAY_BE_ABSENT.has(path.join("."))) continue;
       if (parse(c) !== null) survivors.push(path.join("."));
     }
     expect(survivors).toEqual([]);
@@ -250,8 +255,12 @@ describe("a record that cannot be read is null, never a crash and never a defaul
   });
 
   it("a field the reader does not know changes nothing (additive fields do not bump the version)", () => {
-    const withExtra = { ...raw(), tasks: [{ id: 1 }], newThing: { x: 1 } };
-    expect(parse(withExtra)).not.toBeNull();
+    const withExtra = { ...raw(), newThing: { x: 1 } };
+    const n = parse(withExtra);
+    expect(n).not.toBeNull();
+    // And a `tasks` that is not the queue the reader knows is an unreadable queue, with the rest of the record read.
+    const odd = parse({ ...raw(), tasks: [{ id: 1 }] });
+    expect(odd && !odd.removed && odd.tasks).toBe("unreadable");
   });
 
   it("play money is the safe default when the record does not say", () => {
@@ -282,6 +291,160 @@ describe("a record that cannot be read is null, never a crash and never a defaul
       JSON.parse('{"version":2,"__proto__":{"x":1}}'),
     ])
       expect(() => parse(content)).not.toThrow();
+  });
+});
+
+describe("a task queue that cannot be believed makes only the queue unreadable (C21)", () => {
+  const parse = (content: unknown) => {
+    const n = parseNumbers(exampleEvent(content), SERVER);
+    if (!n || n.removed) throw new Error("the rest of the record was not read");
+    return n;
+  };
+  const clean = parse(raw());
+  const TASK_PATHS = leafPaths(raw()).filter(
+    (p) => p[0] === "tasks" && p.length > 1,
+  );
+  const restOf = (n: ReturnType<typeof parse>) => ({ ...n, tasks: undefined });
+
+  function leafPaths(value: unknown, path: (string | number)[] = []) {
+    const out: (string | number)[][] = [];
+    if (Array.isArray(value))
+      value.forEach((v, i) => {
+        out.push(path.concat(i), ...leafPaths(v, path.concat(i)));
+      });
+    else if (value && typeof value === "object")
+      for (const [k, v] of Object.entries(value))
+        out.push(path.concat(k), ...leafPaths(v, path.concat(k)));
+    return out;
+  }
+  const at = (path: (string | number)[]) =>
+    path.reduce((o: any, k) => o[k], raw() as any);
+  function broken(
+    path: (string | number)[],
+    change: (parent: any, k: any) => void,
+  ) {
+    const c = raw() as any;
+    let parent = c;
+    for (const step of path.slice(0, -1)) parent = parent[step];
+    change(parent, path[path.length - 1]);
+    return c;
+  }
+  const unreadable = (content: unknown, why: string) => {
+    const n = parse(content);
+    expect(n.tasks, why).toBe("unreadable");
+    // The rest of the record reads exactly as it does without the fault: leaving is never blanked by a task bug.
+    expect(restOf(n), why).toEqual(restOf(clean));
+  };
+
+  it("has many leaves to check", () => {
+    expect(TASK_PATHS.length).toBeGreaterThan(100);
+  });
+
+  it("a missing field, anywhere in the queue", () => {
+    for (const path of TASK_PATHS) {
+      const parent = at(path.slice(0, -1));
+      if (Array.isArray(parent)) continue;
+      unreadable(
+        broken(path, (p, k) => {
+          delete p[k];
+        }),
+        `missing ${path.join(".")}`,
+      );
+    }
+  });
+
+  it("a field of the wrong kind, anywhere in the queue", () => {
+    const wrong = (v: unknown) =>
+      typeof v === "string"
+        ? 5
+        : typeof v === "number"
+          ? "5"
+          : typeof v === "boolean"
+            ? "yes"
+            : v === null
+              ? "x"
+              : Array.isArray(v)
+                ? { not: "a list" }
+                : [];
+    for (const path of TASK_PATHS)
+      unreadable(
+        broken(path, (p, k) => {
+          p[k] = wrong(p[k]);
+        }),
+        `wrong kind ${path.join(".")}`,
+      );
+  });
+
+  it("an amount that is negative, fractional, padded, hexadecimal, a number or absurd", () => {
+    const paths = TASK_PATHS.filter((p) => {
+      const v = at(p);
+      return typeof v === "string" && /^\d+$/.test(v);
+    });
+    expect(paths.length).toBeGreaterThan(20);
+    for (const path of paths)
+      for (const bad of [
+        "-1",
+        "1.5",
+        "01",
+        "0x10",
+        "1e6",
+        "",
+        "9".repeat(40),
+        1,
+        -1,
+      ])
+        unreadable(
+          broken(path, (p, k) => {
+            p[k] = bad;
+          }),
+          `${path.join(".")} = ${String(bad)}`,
+        );
+  });
+
+  it("a time, count, share or serial that is negative, fractional, absurd or text", () => {
+    const paths = TASK_PATHS.filter((p) => typeof at(p) === "number");
+    expect(paths.length).toBeGreaterThan(40);
+    for (const path of paths)
+      for (const bad of [-1, 1.5, 2 ** 53, Number.MAX_SAFE_INTEGER, "1"])
+        unreadable(
+          broken(path, (p, k) => {
+            p[k] = bad;
+          }),
+          `${path.join(".")} = ${String(bad)}`,
+        );
+  });
+
+  it("an address or 32-byte value that is short, capitalised or not hex", () => {
+    const paths = TASK_PATHS.filter((p) => {
+      const v = at(p);
+      return typeof v === "string" && /^0x[0-9a-f]+$/.test(v);
+    });
+    expect(paths.length).toBeGreaterThan(10);
+    for (const path of paths)
+      for (const bad of [
+        "0x12",
+        "0xAB",
+        `0x${"g".repeat(at(path).length - 2)}`,
+        at(path).toUpperCase().replace("0X", "0x"),
+        "",
+      ])
+        if (bad !== at(path))
+          unreadable(
+            broken(path, (p, k) => {
+              p[k] = bad;
+            }),
+            `${path.join(".")} = ${bad}`,
+          );
+  });
+
+  it("a script in a field is only a string that does not fit", () => {
+    const what = "<script>alert(1)</script>".padEnd(66, "0");
+    unreadable(
+      broken(["tasks", "list", 0, "what"], (p, k) => {
+        p[k] = what;
+      }),
+      "what",
+    );
   });
 });
 

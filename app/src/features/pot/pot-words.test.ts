@@ -2,6 +2,7 @@
 // that means, and why the door is shut. No protocol word, event name or contract name is in any of them.
 import { describe, expect, it } from "vitest";
 import { numbersFor, S } from "../../../tests/helpers/pot-harness";
+import { allowancePerDay, dollarsText } from "../money/numbers";
 import {
   allowanceWords,
   doorShutWords,
@@ -65,17 +66,22 @@ describe("amounts", () => {
 describe("the allowance and the Team's part", () => {
   it("says the daily limit, what it is today and what the box holds", () => {
     const words = allowanceWords(numbers);
-    expect(words).toMatch(
-      /up to 0\.10% of the project's money a day \(about 7\.32 dollars today\)/,
+    expect(words).toContain(
+      `up to 0.10% of the project's money a day (about ${dollarsText(allowancePerDay(numbers))} dollars today)`,
     );
-    expect(words).toMatch(/It holds 43\.97 dollars now/);
+    expect(words).toContain(
+      `It holds ${dollarsText(numbers.allowance.box)} dollars now`,
+    );
   });
   it("an allowance switched off says nothing goes into the box", () => {
     const off = { ...numbers, allowance: { ...numbers.allowance, ratePpm: 0 } };
     expect(allowanceWords(off)).toMatch(/switched off/);
   });
   it("the Team's part is a whole percent, and none without Team Shares", () => {
-    expect(teamPartPercent(numbers)).toBe(93);
+    const { backers, teamCounted } = numbers.shares;
+    expect(teamPartPercent(numbers)).toBe(
+      Number((teamCounted * 100n) / (backers + teamCounted)),
+    );
     expect(
       teamPartPercent({
         ...numbers,

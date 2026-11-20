@@ -19,7 +19,7 @@ import {
   nameTheNetwork,
   numbersFor,
 } from "../../../tests/helpers/pot-harness";
-import type { ProjectNumbers } from "../money/numbers";
+import { dollarsText, type ProjectNumbers } from "../money/numbers";
 import { AllowanceSection } from "./AllowanceSection";
 
 vi.mock(
@@ -97,15 +97,16 @@ describe("who sees the allowance screen", () => {
     // The Treasury's stored box is as of its last settle (0 here); the record's box is worked forward to its own time.
     setup(FOUNDER_EVM, { box: [0n] });
     show();
+    const box = dollarsText(numbers.allowance.box);
     expect((await screen.findByTestId("allowance-box")).textContent).toBe(
-      "43.97 dollars",
+      `${box} dollars`,
     );
     expect(
       (screen.getByTestId("allowance-draw") as HTMLButtonElement).disabled,
     ).toBe(false);
     fireEvent.click(screen.getByTestId("allowance-draw"));
-    expect((await screen.findByTestId("draw-box")).textContent).toMatch(
-      /holds about 43\.97 dollars/,
+    expect((await screen.findByTestId("draw-box")).textContent).toContain(
+      `holds about ${box} dollars`,
     );
   });
 

@@ -24,6 +24,7 @@ import {
   S,
 } from "../../../tests/helpers/pot-harness";
 import type { ProjectNumbers } from "../money/numbers";
+import { sharesWords } from "./pot-words";
 import type { GrantMember } from "./GrantSheet";
 import { TeamSharesSection } from "./TeamSharesSection";
 
@@ -147,8 +148,8 @@ describe("grant Team Shares", () => {
   }
   it("shows the pool, the clock of a grant and the Team Shares' limit, and sends the member and amount typed", async () => {
     await open();
-    expect(screen.getByTestId("grant-pool").textContent).toMatch(
-      /7,500,000 of the 10,000,000 Team Shares are left to grant/,
+    expect(screen.getByTestId("grant-pool").textContent).toContain(
+      `${sharesWords(numbers.team.ungranted)} of the ${sharesWords(numbers.team.pool)} Team Shares are left to grant`,
     );
     expect(screen.getByTestId("grant-clock").textContent).toMatch(
       /Each grant has its own clock.*about 91 days.*about 728 days/s,
@@ -194,7 +195,10 @@ describe("grant Team Shares", () => {
       target: { value: "9,000,000" },
     });
     expect(
-      screen.getByText(/Only about 7,500,000 Team Shares are left in the pool/),
+      screen.getByText(
+        `Only about ${sharesWords(numbers.team.ungranted)} Team Shares are left in the pool`,
+        { exact: false },
+      ),
     ).not.toBeNull();
     expect(
       (screen.getByTestId("sheet-confirm") as HTMLButtonElement).disabled,

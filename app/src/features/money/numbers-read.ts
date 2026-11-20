@@ -10,6 +10,25 @@ import type {
   ProjectNumbers,
   QuietState,
 } from "./numbers-types";
+import { readTasks } from "./numbers-read-tasks";
+import {
+  address,
+  addressOrNull,
+  amount,
+  arr,
+  bool,
+  bytes32,
+  COUNT_LIMIT,
+  count,
+  fail,
+  type Json,
+  obj,
+  oneOf,
+  TIME_LIMIT,
+  time,
+  timeOrNull,
+  whole,
+} from "./numbers-strict";
 
 const QUIET_STATES: readonly QuietState[] = [
   "active",
@@ -19,71 +38,7 @@ const QUIET_STATES: readonly QuietState[] = [
   "wound_down",
 ];
 
-// --- Strict reading -----------------------------------------------------------------------------------------------
-
-/** A value the record carried that cannot be believed: thrown inside the parser, turned into null at its edge. */
-class Unreadable extends Error {}
-
-export type Json = Record<string, unknown>;
-
-export const isObject = (v: unknown): v is Json =>
-  Boolean(v) && typeof v === "object" && !Array.isArray(v);
-
-export const BYTES32 = /^0x[0-9a-f]{64}$/;
-const ADDRESS = /^0x[0-9a-f]{40}$/;
-const DECIMAL = /^(0|[1-9]\d{0,38})$/;
-/** The most any amount can be: 2^128. Far beyond any dollar or Share count the contracts allow. */
-const AMOUNT_LIMIT = 1n << 128n;
-/** The latest time the record may name: far past any real clock, short of anything that overflows. */
-const TIME_LIMIT = 2 ** 40;
-const COUNT_LIMIT = 1_000_000_000;
-
-function fail(path: string): never {
-  throw new Unreadable(path);
-}
-
-export function obj(v: unknown, path: string): Json {
-  return isObject(v) ? v : fail(path);
-}
-function arr(v: unknown, path: string, max: number): unknown[] {
-  return Array.isArray(v) && v.length <= max ? v : fail(path);
-}
-function bool(v: unknown, path: string): boolean {
-  return typeof v === "boolean" ? v : fail(path);
-}
-function amount(v: unknown, path: string): bigint {
-  if (typeof v !== "string" || !DECIMAL.test(v)) return fail(path);
-  const n = BigInt(v);
-  return n < AMOUNT_LIMIT ? n : fail(path);
-}
-function whole(v: unknown, path: string, max: number): number {
-  return typeof v === "number" && Number.isSafeInteger(v) && v >= 0 && v <= max
-    ? v
-    : fail(path);
-}
-export const time = (v: unknown, path: string) => whole(v, path, TIME_LIMIT);
-const count = (v: unknown, path: string) => whole(v, path, COUNT_LIMIT);
-function timeOrNull(v: unknown, path: string): number | null {
-  return v === null ? null : time(v, path);
-}
-function address(v: unknown, path: string): string {
-  return typeof v === "string" && ADDRESS.test(v) ? v : fail(path);
-}
-function addressOrNull(v: unknown, path: string): string | null {
-  return v === null ? null : address(v, path);
-}
-function bytes32(v: unknown, path: string): string {
-  return typeof v === "string" && BYTES32.test(v) ? v : fail(path);
-}
-function oneOf<T extends string>(
-  v: unknown,
-  allowed: readonly T[],
-  path: string,
-): T {
-  return typeof v === "string" && (allowed as readonly string[]).includes(v)
-    ? (v as T)
-    : fail(path);
-}
+export { BYTES32, isObject, type Json, obj, time } from "./numbers-strict";
 
 const CAPS = { holders: 200, grants: 200, agents: 50 } as const;
 
@@ -386,11 +341,27 @@ export function readBody(body: Json, key: string): ProjectNumbers {
       tookOut: amount(totals.tookOut, "totals.tookOut"),
       drawn: amount(totals.drawn, "totals.drawn"),
       outside: amount(totals.outside, "totals.outside"),
+      // Step 2 adds two totals; a record from an older server has neither, and says so by leaving them out.
+      ...(totals.paidToWorkers === undefined
+        ? {}
+        : {
+            paidToWorkers: amount(totals.paidToWorkers, "totals.paidToWorkers"),
+          }),
+      ...(totals.noteClaims === undefined
+        ? {}
+        : { noteClaims: amount(totals.noteClaims, "totals.noteClaims") }),
     },
     firstBackedAt: timeOrNull(body.firstBackedAt, "firstBackedAt"),
     holders,
     holderCount: count(body.holderCount, "holderCount"),
     teamHolderCount: count(body.teamHolderCount, "teamHolderCount"),
     truncated: bool(body.truncated, "truncated"),
+    // Read apart (C21): a task queue that cannot be believed is "unreadable" and the rest of the record stands.
+    ...withTasks(readTasks(body.tasks)),
   };
+}
+
+/** The `tasks` key of the parsed record: left out when the server wrote none, so an older record reads as it always did. */
+function withTasks(tasks: ReturnType<typeof readTasks>) {
+  return tasks === undefined ? {} : { tasks };
 }

@@ -145,6 +145,9 @@ export interface ProjectNumbers {
     tookOut: bigint;
     drawn: bigint;
     outside: bigint;
+    /** What accepted tasks have been paid and what leavers' notes have been claimed (step 2); absent from an older record. */
+    paidToWorkers?: bigint;
+    noteClaims?: bigint;
   };
   /** When the project's first Back landed, or null before. */
   firstBackedAt: number | null;

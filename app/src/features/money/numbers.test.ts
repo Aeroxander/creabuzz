@@ -41,28 +41,29 @@ describe("record version 2: the example", () => {
       raw().contracts && (raw().contracts as Json).treasury,
     );
     expect(n.contracts.pair).toBeNull();
-    expect(n.money.pot).toBe(7_322_810_944n);
-    expect(n.money.arriving).toBe(2_145_838_296n);
-    expect(n.money.arrivalEnd).toBe(1_795_522_201);
-    expect(n.allowance.pending).toEqual({
-      ratePpm: 1500,
-      proposedAt: 1_794_831_000,
-      applicableAt: 1_795_435_800,
-    });
+    // Every number is read from the example file itself: the example is the server's own output and is never retyped.
+    const r = raw() as Record<string, any>;
+    expect(n.money.pot).toBe(BigInt(r.money.pot));
+    expect(n.money.arriving).toBe(BigInt(r.money.arriving));
+    expect(n.money.locked).toBe(BigInt(r.money.locked));
+    expect(n.money.notesOwed).toBe(BigInt(r.money.notesOwed));
+    expect(n.money.arrivalEnd).toBe(r.money.arrivalEnd);
+    expect(n.totals.paidToWorkers).toBe(BigInt(r.totals.paidToWorkers));
+    expect(n.totals.noteClaims).toBe(BigInt(r.totals.noteClaims));
+    expect(n.allowance.pending).toEqual(r.allowance.pending);
     expect(n.runner.isPair).toBe(false);
     expect(n.runner.signers).toBeNull();
-    expect(n.team.grants).toHaveLength(3);
+    expect(n.team.grants).toHaveLength(r.team.grants.length);
     expect(n.team.grants[1]?.state).toBe("announced");
     expect(n.team.grants[1]?.forfeit?.byMember).toBe(true);
-    expect(n.team.grants[2]?.cliff).toEqual({
-      passed: false,
-      endsAtIfActive: 1_799_841_900,
-    });
-    expect(n.agents).toHaveLength(1);
-    expect(n.holders).toHaveLength(3);
-    expect(n.holderCount).toBe(2);
+    expect(n.team.grants[2]?.cliff).toEqual(
+      (raw() as Record<string, any>).team.grants[2].cliff,
+    );
+    expect(n.agents).toHaveLength(r.agents.length);
+    expect(n.holders).toHaveLength(r.holders.length);
+    expect(n.holderCount).toBe(r.holderCount);
     expect(n.limits.minJoin).toBe(1_000_000n);
-    expect(n.firstBackedAt).toBe(1_785_938_400);
+    expect(n.firstBackedAt).toBe((raw() as Record<string, any>).firstBackedAt);
     expect(n.truncated).toBe(false);
   });
 
@@ -145,14 +146,23 @@ describe("the example against RECORD-V2.md section 7.3, with the contracts' inte
       box = cap;
     }
     if (arriving !== 0n) {
+      // The contract's own stream (`_settled`): what the whole stream has released by `t`, less what it already released.
       const arrivalEnd = BigInt(l.arrivalEnd);
-      const released =
-        t >= arrivalEnd
-          ? arriving
-          : mulDiv(arriving, t - last, arrivalEnd - last);
+      const start = BigInt(l.arrivalStart);
+      const total = big(l.arrivalTotal);
+      const target =
+        t >= arrivalEnd ? total : mulDiv(total, t - start, arrivalEnd - start);
+      const released = target - (total - arriving);
       arriving -= released;
       pot += released;
     }
+    // Tasks that ran out come back last: the stayers' claims of taken rows whose deadline has passed.
+    const dueC = (rec.tasks.list as any[])
+      .filter((row) => row.state === "taken" && row.deadline <= rec.asOf.time)
+      .reduce((sum, row) => sum + big(row.stayerClaim), 0n);
+    pot += dueC;
+    expect(big(l.locked) - dueC).toBe(big(rec.money.locked));
+    expect(big(l.notesOwed)).toBe(big(rec.money.notesOwed));
     expect(pot).toBe(big(rec.money.pot));
     expect(box).toBe(big(rec.allowance.box));
     expect(arriving).toBe(big(rec.money.arriving));
@@ -199,6 +209,8 @@ describe("the example against RECORD-V2.md section 7.3, with the contracts' inte
       big(t.fees) +
         big(t.tookOut) +
         big(t.drawn) +
+        big(t.paidToWorkers) +
+        big(t.noteClaims) +
         big(m.pot) +
         big(rec.allowance.box) +
         big(m.arriving) +
@@ -331,8 +343,14 @@ describe("what the screens ask of a record", () => {
       BACKER_EVM,
       "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
     ]);
+    const listed = (raw().holders as Json[]).filter((h) =>
+      [BACKER_EVM, "0x90f79bf6eb2c4f870365e785982e1f101e93b906"].includes(
+        h.account as string,
+      ),
+    );
+    expect(listed).toHaveLength(2);
     expect(both.shares).toBe(
-      490_000_000_000_000_000_000_000n + 176_561_850_392_687_662_002_152n,
+      listed.reduce((sum, h) => sum + BigInt(h.shares as string), 0n),
     );
   });
 

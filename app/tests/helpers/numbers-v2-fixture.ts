@@ -80,7 +80,55 @@ export function shiftTimes(content: Json, delta: number): void {
   if (ledger) {
     shift(ledger, "lastSettle");
     shift(ledger, "arrivalEnd");
+    shift(ledger, "arrivalStart");
   }
+  const tasks = content.tasks as Json | null | undefined;
+  if (tasks) shiftTasks(tasks, shift);
+}
+
+/** The points in time of a record's `tasks` section (the durations in `limits` and `cut` stay as they are). */
+function shiftTasks(tasks: Json, shift: (o: Json, name: string) => void) {
+  shift(tasks, "nextExpiry");
+  if (tasks.next) shift(tasks.next as Json, "at");
+  const cap = tasks.cap as Json | undefined;
+  for (const free of (cap?.frees as Json[] | undefined) ?? [])
+    shift(free, "at");
+  for (const row of (tasks.list as Json[] | undefined) ?? [])
+    for (const name of [
+      "announcedAt",
+      "noticeEnd",
+      "expiresAt",
+      "takenAt",
+      "deadline",
+      "resolvedAt",
+    ])
+      shift(row, name);
+}
+
+/** The example's `tasks` section, kept for `withTasks`: the fixture leaves it out unless a test asks, so a step 1 test is a step 1 record. */
+const stashed = new WeakMap<Json, Json | null>();
+
+/**
+ * A `patch` that puts the example's task queue back into the record, moved in time with the rest of it, and then changes it
+ * (`edit` may also replace a row's `what` so it ties to a team record, change a state, or empty the list). The example's
+ * own numbers stay the example's: a test reads them from the parsed record, never from a copy.
+ */
+export function withTasks(
+  edit?: (tasks: Json, content: Json) => void,
+): (content: Json) => void {
+  return (content) => {
+    const tasks = stashed.get(content);
+    if (tasks === undefined) throw new Error("withTasks: not a fixture record");
+    content.tasks = tasks === null ? null : structuredClone(tasks);
+    if (content.tasks) edit?.(content.tasks as Json, content);
+  };
+}
+
+/** The row of `tasks` with this serial, for a test that changes it. */
+export function taskRow(tasks: Json, serial: number): Json {
+  const row = (tasks.list as Json[]).find((r) => r.serial === serial);
+  if (!row) throw new Error(`the example has no task ${serial}`);
+  return row;
 }
 
 export interface NumbersV2Options {
@@ -88,7 +136,7 @@ export interface NumbersV2Options {
   coordinate: string;
   /** Unix seconds "now": the record was built 100 seconds before it. */
   now: number;
-  /** Change the record before it is returned (a field, a state, a list). */
+  /** Change the record before it is returned (a field, a state, a list); `withTasks(...)` brings the task queue in. */
   patch?: (content: Json) => void;
 }
 
@@ -97,6 +145,9 @@ export function numbersV2Content(o: NumbersV2Options): Json {
   const content = exampleRecord();
   const exampleBuilt = content.builtAt as number;
   shiftTimes(content, o.now - 100 - exampleBuilt);
+  // The queue is out unless `withTasks` brings it back, so a test that does not ask for tasks sees a record with none.
+  stashed.set(content, (content.tasks as Json | null | undefined) ?? null);
+  delete content.tasks;
   const { projectId, key } = chainIdentityV2(o.coordinate);
   content.projectId = projectId;
   content.key = key;

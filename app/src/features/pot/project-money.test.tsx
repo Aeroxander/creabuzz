@@ -18,8 +18,9 @@ import {
   numbersFor,
   S,
 } from "../../../tests/helpers/pot-harness";
-import type { ProjectNumbers } from "../money/numbers";
+import { dollarsText, type ProjectNumbers } from "../money/numbers";
 import { ProjectMoney } from "./ProjectMoney";
+import { smallDollarsText } from "./pot-words";
 
 vi.mock(
   "../../lib/relay",
@@ -97,10 +98,10 @@ describe("the project's money", () => {
   it("says what the project holds, what one Share gives, the allowance, the Team's part and where it stands, in plain words", async () => {
     show(numbers);
     expect((await screen.findByTestId("money-pot")).textContent).toBe(
-      "7,322.81",
+      dollarsText(numbers.money.pot),
     );
     expect(screen.getByTestId("money-share-value").textContent).toBe(
-      "0.010058",
+      smallDollarsText(numbers.value.leaveValue),
     );
     expect(screen.getByTestId("play-money").textContent).toMatch(
       /play money, not real money/,
