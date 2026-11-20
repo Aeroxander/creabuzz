@@ -11,6 +11,7 @@ import { Card } from "../../ui/card";
 import { potProblem } from "../money/pot-copy";
 import { rememberStep } from "./own-history";
 import { PotSheet } from "./PotSheet";
+import { trackNotes } from "./take-out-notes";
 import {
   NOT_A_RETURN,
   sharesWords,
@@ -282,7 +283,7 @@ export function TakeOutSheet({
       lookLabel="Look for your take-out"
       onLanded={(txHash, landed) => {
         // An earlier press that was looked up is not this amount: it is not written down as if it were.
-        if (good && landed === detail)
+        if (good && landed === detail) {
           rememberStep(ready.address, {
             kind: team ? "take-out-team" : "take-out",
             project: target.key,
@@ -291,6 +292,10 @@ export function TakeOutSheet({
             shares: good.shares.toString(),
             txHash,
           });
+          // A take out that left money owed for a task: keep which tasks, best effort, in the background. It never gates,
+          // delays or fails the take out.
+          if (good.note > 0n) void trackNotes(ready, target.treasury, txHash);
+        }
       }}
       onOpenChange={(next) => {
         if (!next) close();

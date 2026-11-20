@@ -144,15 +144,12 @@ describe("the Take out sheet's line about a task", () => {
     expect(screen.queryByTestId("takeout-note")).toBeNull();
   });
 
-  it("presses with the record hung, the book unreadable and the queue unreadable: it reads the quote and nothing about tasks", async () => {
+  it("presses with the record hung, the book unreadable and the queue unreadable: until the press it reads the quote and nothing about tasks", async () => {
     // No answer for any task view: a read of one would fail the sheet.
     setup({ quoteTakeOut: quote });
     numbers = { ...numbers, tasks: "unreadable" } as ProjectNumbers;
     await open(undefined);
-    fireEvent.click(screen.getByTestId("sheet-confirm"));
-    await waitFor(() => expect(chain.sent.length).toBe(1));
-    const names = new Set(chain.reads.map((r) => r.name));
-    for (const task of [
+    const tasksViews = [
       "tasks",
       "taskOf",
       "openSerials",
@@ -161,8 +158,17 @@ describe("the Take out sheet's line about a task", () => {
       "nextSerial",
       "takeRoomBps",
       "activeEnd",
-    ])
-      expect(names.has(task)).toBe(false);
+    ];
+    const before = new Set(chain.reads.map((r) => r.name));
+    for (const name of tasksViews) expect(before.has(name)).toBe(false);
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() => expect(chain.sent).toHaveLength(1));
+    // After it landed the app may look (in the background, best effort) for the tasks it left money owed on: only the book's
+    // address, never a view of a task.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const after = new Set(chain.reads.map((r) => r.name));
+    for (const name of tasksViews.filter((n) => n !== "tasks"))
+      expect(after.has(name)).toBe(false);
   });
 });
 

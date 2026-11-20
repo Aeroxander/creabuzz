@@ -10,6 +10,7 @@ import { nameOf, type ProfileMetadata } from "../../lib/profiles";
 import { investingOn } from "../../lib/server";
 import type { Project } from "../project/project-record";
 import { goToClaims } from "../tasks/chain/holder/claims-anchor";
+import { NotesCard } from "../tasks/chain/holder/NotesSection";
 import { PlannedSection } from "../tasks/chain/holder/PlannedSection";
 import { owedTaskNames, useProjectTasks } from "../tasks/use-tasks";
 import { useTeamWallets } from "../team/use-wallets";
@@ -176,6 +177,14 @@ export function ProjectMoney({
         profiles={profiles}
         project={project ?? null}
       />
+      {queue ? (
+        <NotesCard
+          anchor
+          numbers={numbers}
+          project={project ?? null}
+          projectKey={numbers.key}
+        />
+      ) : null}
       <AllowanceSection address={wallet.address} now={now} numbers={numbers} />
       <TeamSharesSection
         address={wallet.address}

@@ -16,7 +16,8 @@ import {
 } from "../money/use-money";
 import { useHomeProjects } from "../home/use-home";
 import { type Project, projectRef } from "../project/project-record";
-import { ownSteps } from "./own-history";
+import { NotesCard } from "../tasks/chain/holder/NotesSection";
+import { ownSteps, tookOutHere } from "./own-history";
 import {
   exactDollarsText,
   NOT_A_RETURN,
@@ -104,6 +105,19 @@ function Inner({ address }: { address: string }) {
     ]),
   );
   const steps = ownSteps(address).slice(0, 10);
+  // Projects where this account may be owed money from a task: it holds Shares there, took out from this browser, or the
+  // server's rows list it. What it is owed is read from the network (a person who took out holds no Shares).
+  const me = address.toLowerCase();
+  const owing = matched.filter(({ numbers }) => {
+    if (typeof numbers.tasks !== "object" || !numbers.tasks) return false;
+    return (
+      holdingHint(numbers, [address]).listed ||
+      tookOutHere(address, numbers.key) ||
+      numbers.tasks.list.some((row) =>
+        row.notes?.holders.some((h) => h.account === me),
+      )
+    );
+  });
   return (
     <div className="flex flex-col gap-3">
       {holds.length === 0 ? (
@@ -128,6 +142,27 @@ function Inner({ address }: { address: string }) {
         </div>
       )}
       <p className="text-sm text-muted">{NOT_A_RETURN}</p>
+      {owing.length > 0 ? (
+        <section
+          aria-labelledby="your-claims-title"
+          className="flex flex-col gap-3"
+          data-testid="your-claims"
+        >
+          <h3 className="text-sm font-semibold" id="your-claims-title">
+            Money you can claim
+          </h3>
+          {owing.map(({ project, numbers }) => (
+            <NotesCard
+              heading={project.name}
+              key={project.coordinate}
+              numbers={numbers}
+              project={project}
+              projectKey={numbers.key}
+              staged
+            />
+          ))}
+        </section>
+      ) : null}
       {steps.length > 0 ? (
         <section
           aria-label="Your Backs and Take outs"

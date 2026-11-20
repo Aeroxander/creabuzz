@@ -14,7 +14,15 @@ export interface OwnStep {
   /** Shares bought or given up, in Share units. */
   shares: string;
   txHash: string;
+  /**
+   * The tasks a Take out wrote money-owed claims on, by serial (decimal text), when the app could read them after it landed:
+   * best effort, never needed for the Take out, and each one is read from the network again before it is shown.
+   */
+  notes?: string[];
 }
+
+/** The most serials one step remembers (a take-out spreads over at most the open tasks). */
+const MAX_NOTES = 16;
 
 const STORAGE_KEY = "creaton.pot.history";
 /** The newest steps kept per account. */
@@ -36,7 +44,11 @@ const isStep = (v: unknown): v is OwnStep => {
     /^\d{1,40}$/.test(s.dollars) &&
     typeof s.shares === "string" &&
     /^\d{1,40}$/.test(s.shares) &&
-    typeof s.txHash === "string"
+    typeof s.txHash === "string" &&
+    (s.notes === undefined ||
+      (Array.isArray(s.notes) &&
+        s.notes.length <= MAX_NOTES &&
+        s.notes.every((n) => typeof n === "string" && /^\d{1,15}$/.test(n))))
   );
 };
 
@@ -83,4 +95,51 @@ export function paidInFromHere(account: string, project: string): bigint {
   return ownSteps(account, project)
     .filter((s) => s.kind === "back")
     .reduce((sum, s) => sum + BigInt(s.dollars), 0n);
+}
+
+/**
+ * Writes the serials of the tasks a Take out left money owed on into that step (found by its transaction), best effort: a
+ * step that is not there, or storage that cannot be used, loses nothing that matters, since the same claims are found by the
+ * look-back. Never throws.
+ */
+export function rememberNotes(
+  account: string,
+  txHash: string,
+  serials: readonly bigint[],
+): void {
+  try {
+    if (serials.length === 0) return;
+    const all = readAll();
+    const key = account.toLowerCase();
+    const mine = all[key] ?? [];
+    const step = mine.find((s) => s.txHash === txHash);
+    if (!step) return;
+    step.notes = [...new Set(serials.map((n) => n.toString()))].slice(
+      0,
+      MAX_NOTES,
+    );
+    all[key] = mine;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    } catch {
+      memory = all;
+    }
+  } catch {
+    // The claims are found by the look-back all the same.
+  }
+}
+
+/** The tasks this browser remembers this account left money owed on, in one project, as serials (newest step first). */
+export function ownNoteSerials(account: string, project: string): bigint[] {
+  const seen = new Set<string>();
+  for (const step of ownSteps(account, project))
+    for (const n of step.notes ?? []) seen.add(n);
+  return [...seen].map((n) => BigInt(n));
+}
+
+/** Whether this browser remembers a Take out of this account in this project (it sees the claims section with no Shares). */
+export function tookOutHere(account: string, project: string): boolean {
+  return ownSteps(account, project).some(
+    (s) => s.kind === "take-out" || s.kind === "take-out-team",
+  );
 }
