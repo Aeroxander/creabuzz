@@ -46,7 +46,7 @@ export async function readTaskNow(
 }
 
 /** Whether the task moved between what a sheet showed and what the chain says now: anything a press depends on differs. */
-export function movedSince(shown: ChainTaskNow, fresh: ChainTaskNow): boolean {
+function movedSince(shown: ChainTaskNow, fresh: ChainTaskNow): boolean {
   return (
     shown.state !== fresh.state ||
     shown.takenBy !== fresh.takenBy ||

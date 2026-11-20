@@ -106,7 +106,7 @@ const MAX_FACTS = 20;
  * withdrawal, and the notice for a plan. One that cannot be read is null (its call is then never offered for confirming),
  * and a read that fails never stops the others.
  */
-export async function readTaskFacts(
+async function readTaskFacts(
   ready: Ready,
   treasury: string,
   proposals: readonly Proposal[],
