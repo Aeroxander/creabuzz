@@ -120,6 +120,8 @@ describe("the band's states", () => {
     applyServerSettings(null);
     serve([open]);
     band();
+    // Given time to read and to draw: it does neither.
+    await new Promise((resolve) => setTimeout(resolve, 80));
     expect(screen.queryByTestId("season-band")).toBeNull();
     expect(reads).toHaveLength(0);
   });
