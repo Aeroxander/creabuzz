@@ -420,7 +420,7 @@ pass with the guards in place (checked by `git diff` on those two files showing 
 
 Package WP1, milestone M1 of `STEP2-SERVER-APP-PLAN.md`: the reader follows each project's task book and writes the `tasks` section of the
 record from the events and the contracts' views. `contracts/pot` is not edited. Nothing is pushed. The per-row cross-checks of the book against
-`taskOf` and the task rules of `validate` are milestone M2 (not built here, see "What M2 must add").
+`taskOf` and the task rules of `validate` were left to milestone M2, which is the next section after this one's tables ("Step 2, milestones M2 and M3").
 
 ### What was built
 
@@ -465,13 +465,10 @@ deadline that no Treasury call settles (`A_overdue`); the wind-down by choice th
 - **Per-row checks were not built at M1** (see below): the ledger is tied to the views by the replay test (`A1`) at every snapshot block, and
   the record's own rules (`validate`) tie `money.locked` to the rows, but a build does not yet compare each row with `taskOf`.
 
-### What M2 must add (not built)
+### What M1 left to M2
 
-The cross-check of every field of a row with `book.taskOf(serial)` (A2), the notes checks (sum of holders equals `noteFace` for non-void tasks;
-each listed holder's `face` equals `noteOf`; the largest holder's `claimable` equals `claimableNote`, except for a taken task past its deadline
-where the view says 0), the `validate` rules of plan 2.5 items 3, 4, 5 and 7 (the buckets from rows, `C + N == L`, the cap and the counts), the
-failure of the whole build on any task mismatch (C33) with the field named at error level, and A17's last two tests. `views::read` already
-reads what these need (`taskOf` for every listed row, `noteOf` for every listed holder, `claimableNote` for the largest holder of each row).
+The per-row check against `taskOf`, the notes checks, the `validate` rules for the buckets, the cap and the counts, and the failure of the whole build
+on a task mismatch (C33). They are built at M2, below.
 
 ### Guards switched off once (U5), and what failed
 
@@ -510,3 +507,84 @@ Treasury's `TasksReady` and `TaskMoney`), `ledger_tests` (the cross-check litera
 the buckets and the two new totals), `record_tests` (the example is the server's output of the new run; the test that raised the door and a
 grant count to fixed values now flips what the example holds), `scan_postgres_tests::stored_of` (the same new fields). No step 1 test was
 removed and none was loosened.
+
+## Step 2, milestones M2 and M3 (server, 20 November 2026)
+
+WP1, milestones M2 and M3 of `STEP2-SERVER-APP-PLAN.md`: every cross-check of the ledger against the views, the record's own task rules, the
+bounded work per project, the publish path, the refresh rule, and the spec. `contracts/pot` is not edited. Nothing is pushed. **The example
+record did not change by one byte**: no check found a mistake in M1's output (`UPDATE_EXAMPLE=1` was run and the file is identical), so the
+app engineers' fixtures and parsers need nothing from M2 and M3.
+
+### What was built
+
+| Part | Where |
+|---|---|
+| **The events against the views.** Every listed row, all 17 words of `taskOf` (the generated table names them; a test fails if the tuple grows without a check), every listed holder's `noteOf`, the largest holder's `claimableNote` (a taken task past its deadline that nobody settled: the view says 0, the record says the whole face), `takeRoomBps`, the Treasury's `nextExpiry`, the open count against `MAX_OPEN`; and the sums over **every task the ledger holds**, listed or not: the stayers' claims against `locked()`, the note faces of open tasks plus what is left for the notes of ended ones against `notesOwed()`, each task's claim plus note face against what was set aside (`C + N == L`), the holders' notes against `noteFace`, paid plus returned against what was set aside. A difference names the task, the field and both values and fails the whole build (C33) | `numbers_tasks.rs`, called from `numbers.rs::cross_check` |
+| **The record's own rules** (`validate`), redone from the record alone: open rows are the open count (at most 8), listed first, ordered, no serial twice, every serial below `nextSerial`; each row's shape by state; `deadline == takenAt + dueSecs`; `atMostNow`; notes present exactly when something is held, the face, the holders' order and their claims; `money.notesOwed` against the rows; `usedBps + roomBps == capBps`; the `frees` ascending and adding up; `usedBps` and `frees` against the takes of the listed rows still in the window; `nextExpiry`; `next` (a second, independent function over the rows); the cut (`endedWithinSecs`, at most 24 rows with notes and 4 that moved nothing, no ended row older than the cut keeps unless it has notes) and `truncated`; `repeatOf` | `record_tasks_rules.rs`, called at the end of `record.rs::check` |
+| **Bounded work per project**, measured on the production read: a book with 8 open tasks and 200 ended ones, each note held by 30 accounts, asks for 32 `taskOf`, 160 `noteOf`, 8 `claimableNote` and the book's twelve calls once each; the record lists 8 + 24 rows, says it left 176 note rows out, is `truncated`, and is far below 300 KB | `task_checks_tests.rs` (the counting node) |
+| **The publish path.** A failed task check keeps the project's previous record (every money field of the project freezes with it, which the app's age rules say), logs the task, the field and both values at error level, and the project is signed again once the contract and the events agree. A pass that takes longer than half the shortest refresh time logs an error (plan 1.5, the alarm for folding the per-holder notes into a running-totals table) | `mod.rs::publish_pass`, `pass_is_slow` |
+| **The refresh rule.** 600 seconds while any task is open (it was already built at M1), and `refresh_every` never promises more than the settings' ceiling of 43200 | `numbers.rs::refresh_every` |
+| **The spec.** `RECORD-V2.md`: section 6 (the rule and the ceiling), 2.2, 7.3 (the totals identity with `paidToWorkers` and `noteClaims`, the extra checks of the example), 9 (S4), and section 10.4 and 10.5 (what the server checks, what a build costs the node). `PLANV2-M5-REPORT.md`: the "removed" pointer where the config table named the old 60-second-to-7-day range | `docs/next-version/` |
+| **The example block against `cast call`s**, field by field, by a script that reads only the example file and asks the chain itself | `scripts/chain-reader-example-check.py` |
+
+### Chosen under the owner's standing go; the owner may overrule
+
+- **`pay` is not in `taskOf`**, so a row's `pay` cannot be held to a view. It is held by `pay + returned == setAside` for every task that ended after a take
+  and by `pay == 0` unless the task was paid (both in the cross-check and in `validate`).
+- **`usedBps` and `frees` are redone from the listed rows** in `validate`, equal when nothing was cut (`endedDropped` and `notesRowsDropped` are 0) and the
+  rows' share a floor when something was. `money.notesOwed` against the rows is the same: equal unless `notesRowsDropped > 0`.
+- **`next` is written twice on purpose** (the builder's function over the ledger, `validate`'s over the rows), so a record whose `next` is wrong fails
+  in `validate` rather than being checked against itself.
+- **`ringIdx` is held to the view** though the record does not carry it: a ledger whose ring is wrong would give wrong cap numbers.
+- **The ceiling is applied where the promise is made** (`refresh_every`), not only where the settings are read, so a `Cadence` built any other way cannot
+  promise more than half a day.
+- **The alarm's threshold** is half of the shorter of the two refresh settings (the one a project with an open task promises).
+- **The plan's "about 19 views" per project is out of date**: the step 1 list is 51 fixed calls and the book adds 12; the record spec says so.
+
+### Guards switched off once (U5), and what failed
+
+Method: a temporary switch read from the environment was put in the production code (a filter on the lines the checks write, a filter on `validate`'s
+lines, and one `if` at each of the places named below), the test binary built once, each guard switched off in turn, and every temporary line removed
+afterwards (`grep` finds none; the files are the committed ones). **Every guard failed at least one test.**
+
+| Guards switched off | Count | Tests that failed |
+|---|---|---|
+| The per-row check, one field at a time: `what`, `payee`, `state`, `shareBps`, `ringIdx`, `takenBy`, `announcedAt`, `noticeEnd`, `expiresAt`, `takenAt`, `deadline`, `maxDollars`, `locked`, `stayer`, `noteFace`, `returned`, `notesLeft` | 17 | `a_task_row_one_unit_off_the_view_publishes_nothing` (A2, three rows: paid, ran out with a note, taken) |
+| Open rows against the open count; open count against `MAX_OPEN`; next serial against the highest; `takeRoomBps`; `nextExpiry` | 5 | `a_ledger_that_does_not_add_up_...`, `the_cap_room_the_next_expiry_and_the_open_limit_are_held_to_the_contract` |
+| The buckets and sums: money set aside; money held for notes; `C + N == L`; the holders' notes against the face; paid plus returned; a payment on a task that did not end paid | 6 | `a_ledger_that_does_not_add_up_publishes_nothing_and_says_which_sum` (A4) |
+| A listed holder's `noteOf`; the largest holder's `claimableNote`; events that name tasks of no book | 3 | `a_note_or_a_claim_one_unit_off_its_view_publishes_nothing`, `task_events_with_no_book_publish_nothing` |
+| Each rule of `validate` (30 rules: the counts and order, serials, `nextExpiry`, `atMostNow` on an open and on a taken row, the notes, the claims, the shape by state, the deadline, `repeatOf` both ways, the cap's room, dates and used share against the rows, `next`, the cut, `truncated`, hex, share and size, `notesOwed` against the rows) | 30 | `a_record_the_task_rules_refuse_is_never_signed` (A14, A17) |
+| The task check inside a real publish pass (the per-row `noteFace` guard off) | 1 | `a_task_mismatch_freezes_the_money_fields_and_logs_the_field` (A17, C33; Postgres) |
+| The ceiling in `refresh_every` | 1 | `refresh_is_600_while_a_task_is_open_and_3600_after` |
+| The alarm (`pass_is_slow` always false) | 1 | `a_pass_longer_than_half_the_refresh_time_is_slow` |
+| The cut's bounds: 24 rows with notes; 8 rows with holders; 20 holders per row | 3 | `the_views_of_one_project_are_bounded_whatever_its_history`, and the cut tests (`the_ended_rows_keep_every_row_with_notes_first_...`, `note_holders_are_listed_for_eight_rows_and_twenty_holders_each`) |
+
+Falsifying the example check: a copy of the example with a `noteFace` one unit up, a claim of 1, a `returned` one up, `usedBps` one up and `locked` one up fails
+8 of the 194 checks of `chain-reader-example-check.py`, each named.
+
+### What ran
+
+On 20 November 2026, local Postgres and Redis (`buzz_w1_tests`, migration 0071 applied), `CARGO_BUILD_JOBS=2`:
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo clippy -p buzz-relay --lib --tests -- -D warnings` | no warnings |
+| `cargo test -p buzz-relay --lib chain_reader -- --include-ignored --test-threads=1` | **110 passed, 0 failed** (99 before M2: 9 new check tests, the alarm's test, and the Postgres test of C33) |
+| `cargo test -p buzz-relay --lib config::` | 104 passed, 0 failed |
+| `cargo test -p buzz-relay --lib manager::` | 23 passed, 0 failed, 12 ignored; with `--include-ignored`: 34 passed, 1 failed: `planted_eval_against_a_real_model` needs `BUZZ_LLM_PROXY_URL` and a key for a real model and is not about the reader |
+| `node scripts/chain-reader-events.mjs --check` | matches the build |
+| `python3 -I scripts/chain-reader-fixture.py --check`, twice | "pot-run.json is what a fresh run gives" each time |
+| `pgschema apply` of `schema/schema.sql` into an empty database, then `scripts/reconcile-schema-after-pgschema.sql` | applied (393 statements); `chain_contracts_role_check` lists `'tasks'`; `idx_chain_logs_tasks` exists as a partial index on `role = 'tasks'`; the reconcile script needs nothing new (no seed rows). The scratch database was dropped |
+| `python3 -I scripts/chain-reader-example-check.py` | **all 194 checks passed**: the example record is what the contracts say at block 88 (30 on the Treasury, the stream and the settled numbers, 14 on the book's counters and limits, 150 on 8 rows, their notes and claims) |
+| `UPDATE_EXAMPLE=1 cargo test ... the_example_is_what_the_server_writes` | passes and `git diff` of the example is empty |
+
+Existing tests that changed: none removed, none loosened. `record_tests.rs` made nine of its helpers visible to the new test file and its refresh test gained the
+ceiling.
+
+### For the next engineer
+
+- The reader's behaviour a loop will see: a task mismatch gives the line `chain reader: numbers not signed: the events and the contracts disagree, nothing is
+  published: task N <field>: events say X, the contract says Y` at error level, a pause of 15 seconds doubling to 5 minutes, and the old record stays.
+- `scripts/chain-reader-example-check.py [record.json]` is the field-by-field check of plan 7.3; the loop's checker (WP2) can reuse its field table.
+- Not done at WP1: the helper job and the chain loop (WP2); the agree step and `accept --pay-to` (C35, WP2).

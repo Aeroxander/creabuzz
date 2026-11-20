@@ -140,7 +140,7 @@ After a launch that later leaves the chain the record becomes `{"version": 1, "c
 | `BUZZ_CHAIN_START_BLOCK` | 0 | The first block to read (the Launcher's deployment block) |
 | `BUZZ_CHAIN_CONFIRMATIONS` | 12 | Blocks under the head before a log counts; the reader reads no block above that, and never the newest 2 (a lower setting acts as 2) |
 | `BUZZ_CHAIN_POLL_SECS` | 12 | Seconds between passes |
-| `BUZZ_CHAIN_REFRESH_SECS` | 3600 (60 to 7 days) | How often a record whose time-moving numbers changed is signed again without a new event |
+| `BUZZ_CHAIN_REFRESH_SECS` | 3600 (~~60 to 7 days~~ **removed**: now 5 to 43200 seconds, half a day; `BUZZ_CHAIN_ACTIVE_REFRESH_SECS`, 600, has the same range and is what a project promises while its allowance accrues, outside money arrives or a task is open; see `RECORD-V2.md` section 6) | How often a record whose time-moving numbers changed is signed again without a new event |
 | `BUZZ_CHAIN_LOG_RANGE` | 2000 (at most 10,000) | Blocks per log request |
 | `BUZZ_CHAIN_COMMUNITY_HOST` | the host of `BUZZ_RELAY_URL` | The community whose events receive the records |
 

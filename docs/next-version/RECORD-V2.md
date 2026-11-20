@@ -1,6 +1,7 @@
 # Record version 2: the project numbers (kind 39009)
 
-The one specification the server and the app both build against for step 1 of `docs/next-version/JOIN-LEAVE-DESIGN.md`. The server
+The one specification the server and the app both build against for steps 1 and 2 of `docs/next-version/JOIN-LEAVE-DESIGN.md` (step 2's
+additions, the task queue and the exit notes, are section 10). The server
 (`crates/buzz-relay/src/chain_reader`) writes this record; the app (`app/src/features/money/numbers.ts` and everything that reads
 it) reads it. The contracts are `contracts/pot`; their events and views are listed in `docs/next-version/POT-STEP1A-REPORT.md`
 sections 7 and "Review fixes". **The contracts are the truth.** Where this page and a contract disagree, the contract is right and
@@ -9,7 +10,7 @@ this page is wrong: report it.
 One complete, valid example is `docs/next-version/record-v2-example.json`. Both tracks test against that one file (section 7), so
 they cannot drift apart. It was made by running the real contracts, not by hand (section 7.2).
 
-Status: a specification. Nothing here is built yet. Choices the design left open are marked **(S#)** and collected in section 9; the
+Status: a specification, and the server writes it as it stands (step 1 and, since step 2, the additions of section 10). Choices the design left open are marked **(S#)** and collected in section 9; the
 owner may overrule any of them. This is not legal or tax advice, and no figure here is a promise of any result for anyone.
 
 ## 1. What the record is, and the rules that hold for every field
@@ -75,7 +76,7 @@ switch is not part of step 1).
 | `asOf.block` | int | The final block every number is read at. | the reader's newest final block |
 | `asOf.time` | int | That block's timestamp: the moment the money numbers describe. | block header |
 | `builtAt` | int | The server's clock when it signed the record; equal to the event's `created_at` (the relay may add one second to keep a record newer than the stored one, and then `builtAt` is that value). The app uses `builtAt`. | server clock |
-| `refreshEverySecs` | int | How often the server promises to sign a fresh record for this project: 600 while the allowance is accruing or outside money is arriving, otherwise 3600 (section 6). | server rule |
+| `refreshEverySecs` | int | How often the server promises to sign a fresh record for this project: 600 while the allowance is accruing, outside money is arriving or any task is open (announced or taken), otherwise 3600 (section 6). Never more than 43200. | server rule |
 
 ### 2.3 The project's money (all dollar amounts, 6 decimals)
 
@@ -421,12 +422,14 @@ Take out, `cashNow` sets `minCash`. If the chain read fails the sheet says so an
 **The server's promise** (the record's `refreshEverySecs`, R):
 
 - a changed fact (any event in a final block) is signed at the next pass, within about a minute of the block becoming final;
-- while the allowance is accruing (`rate > 0`, the pot is above zero and `asOf.time < clock.activeUntil`) or `money.arriving` is not
-  zero, a new record at least every **600 seconds** (R = 600);
+- while the allowance is accruing (`rate > 0`, the pot is above zero and `asOf.time < clock.activeUntil`), `money.arriving` is not
+  zero **or any task is open** (`tasks.openCount > 0`: a notice ends, a take window closes, room comes back in the cap, and what a take
+  would set aside moves with the pot), a new record at least every **600 seconds** (R = 600);
 - otherwise at least every **3600 seconds** (R = 3600): a heartbeat, so a quiet project is not mistaken for a dead server.
 
 The two numbers are the server's settings (`BUZZ_CHAIN_ACTIVE_REFRESH_SECS`, `BUZZ_CHAIN_REFRESH_SECS`). Each may be set from 5 to
-43200 seconds (half a day), and a larger setting is refused when the server starts. The app's own rule does not change: it accepts a
+43200 seconds (half a day), and a larger setting is refused when the server starts; the record never promises more than 43200 whatever
+the settings say. The app's own rule does not change: it accepts a
 record's stated `refreshEverySecs` from 5 to 86400 seconds and calls a record stale once it is older than a day. The server's range ends at
 half a day because a server set to a full day would leave every record stale for part of each cycle.
 
@@ -517,7 +520,7 @@ down). This is a check on the file and on the parsers, **not** a place to copy f
 4. With `a1 = min(pot, paidIn)`: `value.leaveValue == mulDiv(1e18, a1, B) + mulDiv(1e18, pot - a1, B + G)` and
    `value.teamValue == mulDiv(1e18, max(pot - paidIn, 0), B + G)` (B and G are `shares.backers`, `shares.teamCounted`).
 5. `money.held == pot + box + arriving + feesOwed + locked + notesOwed`; and
-   `totals.joined + totals.outside == totals.fees + totals.tookOut + totals.drawn + pot + box + arriving + locked + notesOwed`.
+   `totals.joined + totals.outside == totals.fees + totals.tookOut + totals.drawn + totals.paidToWorkers + totals.noteClaims + pot + box + arriving + locked + notesOwed`.
 6. `team.inHands + team.inVester == shares.teamCounted`; `team.ungranted == team.inVester - team.promised >= 0`.
 7. Not truncated: the holders' `shares` sum to `shares.backers`, their `teamShares` sum to `team.inHands`, and the two counts match.
 8. Each grant: `claimable == vested - claimed`; a live grant's `vested` is `0` before the cliff and `mulDiv(keeps, elapsed, vestUnits x unit)`
@@ -534,8 +537,12 @@ down). This is a check on the file and on the parsers, **not** a place to copy f
     `min(maxDollars, mulDiv(money.pot, shareBps, 10000))` while an announced task can still be taken and null otherwise; `cap.usedBps` is the
     sum of `capBps` of the takes inside the window, less a taken task past its deadline; `usedBps + roomBps == limits.capBps`; the `frees`
     add up to `usedBps`; `next` is the earliest of the dates after `asOf.time`; `money.locked` is the sum of `stayerClaim` over the taken
-    rows that have not run out; `money.notesOwed` is the sum of `noteFace` of open rows and `notesLeft` of ended rows (when no row is
-    cut); a holder's `claimable` is `mulDiv(face, returned, setAside)` for an ended row and `0` for an open one.
+    rows that have not run out; `money.notesOwed` is the sum of `noteFace` of open rows and `notesLeft` of ended rows (equal when
+    `cut.notesRowsDropped` is `0`, otherwise at least that); a holder's `claimable` is `mulDiv(face, returned, setAside)` for an ended row
+    and `0` for an open one, except a taken row past its deadline, where it is the whole `face`; a row's `deadline` is `takenAt + dueSecs`;
+    `usedBps` is the sum of `capBps` of the rows taken inside the window (less a taken row past its deadline), and `frees` are those
+    takes' `takenAt + capWindowSecs` and `capBps` (equal when nothing was cut: `cut.endedDropped` and `cut.notesRowsDropped` are `0`);
+    `nextExpiry` is the least `expiresAt` of the open rows; `repeatOf` of a later live row of the same `what` names an earlier plan.
 
 The **server** also runs the example through its builder's cross-check functions (the section 4.3 rules) in both directions: the
 example passes, and a copy with `money.pot` raised by one unit is refused. The **app** parses the example with the new parser, shows
@@ -575,7 +582,7 @@ and the `removed` form.
 - **S2.** The settled snapshot is worked forward by the server and checked against `boxCap()` and `activeNow()` on every build; no
   record is published when it differs (sections 3 and 4.3).
 - **S3.** A failed cross-check blocks the publish rather than publishing with a warning flag.
-- **S4.** Freshness: R is 600 s while money moves and 3600 s otherwise; the app measures `now - builtAt`, shows "as of" past `3R + 60`
+- **S4.** Freshness: R is 600 s while money moves or a task is open and 3600 s otherwise; the app measures `now - builtAt`, shows "as of" past `3R + 60`
   s and hides money figures past 24 hours (section 6).
 - **S5.** "Dormant" is a display state at 13 units: the 13 is a server constant, because the contracts have no number for it.
 - **S6.** One merged `holders` list (backer Shares first), cut at 200; grants listed unless finished; agents at 50.
@@ -690,14 +697,47 @@ person's own history of take-outs and by scanning the book from `bookBlock`.
 
 `money.pot` and `money.arriving` follow the contract's arrival stream and the return of tasks that ran out (section 3), and
 `money.locked` is the settled figure. `refreshEverySecs` is 600 while the allowance accrues, outside money arrives **or any task is open**,
-and 3600 otherwise. `totals` gains `paidToWorkers` and `noteClaims` (section 2.10). `ledger` gains `arrivalStart`, `arrivalTotal`, `locked`
+and 3600 otherwise, and never more than 43200 (the ceiling of the server's settings, section 6). `totals` gains `paidToWorkers` and `noteClaims` (section 2.10). `ledger` gains `arrivalStart`, `arrivalTotal`, `locked`
 and `notesOwed` (checks only, section 2.12).
 
 ### 10.5 What the server checks before it signs (step 2)
 
-The ledger rebuilt from the book's events must equal the contracts' views for the buckets (`locked`, `notesOwed`), the stream
-(`arrivalStart`, `arrivalTotal`, `arrivalEnd`), the open count, the next serial and the 28-day sum; `Treasury.tasks()` must be the book its
-`TasksReady` event named; the settled pot and the box must still satisfy `boxCap()` with the returned claims in the pot; and the record
-must pass its own rules (the roll-forward from the record's `ledger` and rows, `money.locked` is what the running rows hold, the totals
-identity with `paidToWorkers` and `noteClaims`). Any failure publishes nothing and the previous record stays. The per-row check of every
-field of 10.2 against `taskOf` and the note checks are added at the next milestone (`STEP2-SERVER-APP-PLAN.md` section 2.5).
+Every check below runs on every build, at the one block the record is true for. **Any failure anywhere in the task section fails the
+whole build** (C33): nothing is published, the project's previous record stays (so every money field of the project freezes with it,
+and the app's age rules say so), and the reader logs the task, the field and both values at error level. A record with the task
+section dropped would hide a planned task from holders, which is the worse failure; leaving needs no record.
+
+**The events against the views** (`numbers_tasks.rs`; the view is right):
+
+- `Treasury.tasks()` is the book the `TasksReady` event named; `openCount`, `nextSerial`, `windowSumBps` (read at the block's time),
+  `takeRoomBps` (which must equal `capBps` less the window sum), the Treasury's `nextExpiry`, `arrivalStart`, `arrivalTotal` and
+  `arrivalEnd` equal what the events rebuild; the open count is at most `MAX_OPEN`.
+- **Every listed row, every field of `taskOf`** (17 words, in the order the contracts' build gives): `what`, `payee`, `state`,
+  `shareBps`, `ringIdx`, `takenBy`, `announcedAt`, `noticeEnd`, `expiresAt`, `takenAt`, `deadline`, `maxDollars`, `locked` (the amount
+  set aside), `stayer`, `noteFace`, `returned`, `notesLeft`. A task one unit off names itself, the field and both values.
+- **Every listed holder's note** equals `noteOf(serial, holder)`, and **the largest holder's claim** of each row with notes equals
+  `claimableNote` (a taken row past its deadline that nobody settled: the view says `0`, the record says the whole face, as a claim
+  settles first).
+- **The sums, over every task the ledger holds** (not only the listed rows): the stayers' claims of taken tasks equal `locked()`; the
+  note faces of open tasks plus what is left for the notes of ended ones equal `notesOwed()`; for each task the holders' notes add up to
+  `noteFace`, while taken `setAside == stayerClaim + noteFace`, and when ended `pay + returned == setAside` (and `pay == 0` unless paid).
+- The settled pot and the box still satisfy `boxCap()` and `activeNow()` with the returned claims in the pot (section 3).
+
+**The record against itself** (`validate`, redone from the record alone): the roll-forward from `ledger` and the rows; `money.locked` is
+what the running rows hold; the totals identity with `paidToWorkers` and `noteClaims`; open rows are the open count and at most 8, listed
+first by serial, then ended rows newest first, no serial twice and every serial below `nextSerial`; each row's shape for its state
+(announced, withdrawn and lapsed rows have no take and every money field `"0"`; a taken row has its take, a deadline of `takenAt +
+dueSecs` and `setAside == stayerClaim + noteFace`; an ended row after a take has `pay + returned == setAside`); `atMostNow`;
+`notes` present exactly when something is held, `faceTotal == noteFace`, holders largest first, their claims; `money.notesOwed` against
+the rows; `cap.usedBps + cap.roomBps == limits.capBps`, the `frees` ascending and adding up to `usedBps`, and both equal to the takes of the
+listed rows still in the window; `nextExpiry`; `next` (redone from the rows); `cut.endedWithinSecs`, at most 24 ended rows with notes and 4
+that moved nothing, no ended row older than the cut keeps unless it has notes, and `truncated` exactly when the cut left something out;
+`repeatOf` smaller than the row's serial and set on every later live row of the same `what`.
+
+**What a build costs the node** (one project, at the one block): 51 view calls for the Treasury, the Vester and the tokens, the book's
+twelve (`tasks()`, `openCount`, `nextSerial`, `windowSumBps`, `takeRoomBps`, `dueC`, `noticeFor(1)` and the five constants), three per
+unfinished grant and four per agent account (as in step 1), plus one `taskOf` per listed row (at most 40), one `noteOf` per listed note
+holder (at most 160) and one `claimableNote` per row with notes (at most 8). The
+rows and holders are read in a second batch at the same block, because the cut needs the cap's window, which is a view. The reader's own
+pass is not constant (it reads a project's stored rows each pass, as for Joined and Left); a pass that takes longer than half the shortest
+refresh time logs an error.
