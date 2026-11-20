@@ -334,6 +334,21 @@ export function tieOf(chain: ChainTask, relay: ProjectTask | null): Tie {
   return { ok: true };
 }
 
+/**
+ * The team's own words for a plan, when the record is the one the plan was made for: the id in `what` is the hash of the
+ * signed record, so a record whose id is `what` cannot have other words than the ones planned. Unlike `tieOf` it does not
+ * look at the pay or the wallet, so a task that has since been paid or stopped (where `tieOf` rightly fails) still reads in
+ * its own words ("\u201cTranslate the guide\u201d was paid ...") and not as "a task". Null with no record or another one.
+ */
+export function recordWordsOf(
+  chain: ChainTask,
+  relay: ProjectTask | null,
+): string | null {
+  return relay !== null && chain.what === `0x${relay.id.toLowerCase()}`
+    ? relay.what
+    : null;
+}
+
 // --- Whether Accept may be offered (5.5) -------------------------------------------------------------------------
 
 /** A press that has to land before the deadline needs some room: closer than this is refused (the clock may be a little off). */

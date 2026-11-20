@@ -171,8 +171,8 @@ function readSection(raw: unknown): ChainTasks {
     seen.add(row.serial);
   }
   const open = rows.filter((row) => isOpen(row.state));
-  if (open.length > MAX_OPEN || rows.length - open.length > MAX_ENDED)
-    fail("tasks.list");
+  if (rows.length - open.length > MAX_ENDED) fail("tasks.list");
+  // At most 8 open (the contract's limit), and the count says how many rows are open.
   const openCount = whole(t.openCount, "tasks.openCount", MAX_OPEN);
   if (openCount !== open.length) fail("tasks.openCount");
   const nextSerial = serialOf(t.nextSerial, "tasks.nextSerial", 1);

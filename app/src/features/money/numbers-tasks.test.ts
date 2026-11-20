@@ -242,13 +242,26 @@ describe("a queue that cannot be believed is unreadable and nothing else is", ()
     }, "open count too low");
   });
 
-  it("thirty-three ended rows, and a list of more than forty", () => {
-    unreadable((t) => {
-      const ended = t.list.find((r: any) => r.state === "lapsed");
-      for (let i = 0; i < 33; i++)
-        t.list.push({ ...structuredClone(ended), serial: 200 + i });
+  it("thirty-three ended rows (thirty-two are read), and a list of more than forty", () => {
+    const ended = (t: any, count: number) => {
+      const planned = t.list.find(
+        (r: any) => r.state === "announced" && r.repeatOf === null,
+      );
+      const lapsed = t.list.find((r: any) => r.state === "lapsed");
+      t.list = [
+        planned,
+        ...Array.from({ length: count }, (_, i) => ({
+          ...structuredClone(lapsed),
+          serial: 200 + i,
+        })),
+      ];
+      t.openCount = 1;
       t.nextSerial = 1000;
-    }, "33 ended");
+    };
+    const c = rec();
+    ended(c.tasks, 32);
+    expect((parse(c).tasks as ChainTasks).list).toHaveLength(33);
+    unreadable((t) => ended(t, 33), "33 ended");
     unreadable((t) => {
       const ended = t.list.find((r: any) => r.state === "lapsed");
       for (let i = 0; i < 41; i++)

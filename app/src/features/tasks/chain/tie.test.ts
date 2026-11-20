@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { parsedExample } from "../../../../tests/helpers/numbers-v2-parse";
 import type { ProjectTask, WorkerLinks } from "../task-record";
-import { acceptGate, chainRowOf, tieOf } from "./state";
+import { acceptGate, chainRowOf, recordWordsOf, tieOf } from "./state";
 import type { ChainTask, ChainTaskNow, ChainTasks } from "./types";
 
 const example = parsedExample();
@@ -133,6 +133,27 @@ describe("tieOf", () => {
         }),
       ),
     ).toEqual({ ok: true });
+  });
+});
+
+describe("recordWordsOf: the team's words for a plan made for that very record", () => {
+  it("is the record's words when its id is the plan's `what`, even after the task was paid or stopped", () => {
+    expect(recordWordsOf(taken, recordOf(taken))).toBe("Translate the guide");
+    const paid = recordOf(taken, {
+      state: "accepted",
+      paidTx: `0x${"1".repeat(64)}`,
+    });
+    expect(tieOf(taken, paid)).toEqual({ ok: false, why: "already-paid" });
+    expect(recordWordsOf(taken, paid)).toBe("Translate the guide");
+    expect(recordWordsOf(taken, recordOf(taken, { state: "cancelled" }))).toBe(
+      "Translate the guide",
+    );
+  });
+  it("is nothing with no record, or a record that is another task's", () => {
+    expect(recordWordsOf(taken, null)).toBeNull();
+    expect(
+      recordWordsOf(taken, recordOf(taken, { id: "e".repeat(64) })),
+    ).toBeNull();
   });
 });
 
