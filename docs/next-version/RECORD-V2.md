@@ -86,8 +86,8 @@ switch is not part of step 1).
 | `money.arriving` | amount | Outside money that has been paid in and has not yet reached the pot. | **settled** |
 | `money.arrivalEnd` | int or null | When the last of it has arrived; null when `arriving` is `"0"`. | view `arrivalEnd()` when `arriving` is not zero |
 | `money.feesOwed` | amount | The platform's fee waiting to be collected; not part of the pot. | view `feesOwed()` |
-| `money.locked` | amount | Money set aside for a taken task. Always `"0"` in step 1. | view `locked()` |
-| `money.notesOwed` | amount | Exit notes owed. Always `"0"` in step 1. | view `notesOwed()` |
+| `money.locked` | amount | Money set aside for taken tasks that are still running at `asOf.time`: the stayers' claims. **Settled** (section 3): what ran out is back in `pot`. This is the line the Back sheet's price counts at face. | view `locked()` less `book.dueC(asOf.time)` |
+| `money.notesOwed` | amount | What is held for exit notes: the face of the notes against open tasks plus what is left to claim on tasks that ended. | view `notesOwed()` |
 | `money.held` | amount | Every dollar the Treasury holds: `pot + box + arriving + feesOwed + locked + notesOwed` (plus any donation nobody can claim). | view `dollar.balanceOf(treasury)` |
 | `allowance.box` | amount | The daily allowance accrued and not yet drawn; at most `boxCap`; not part of the pot. | **settled** |
 | `allowance.boxCap` | amount | The most the box can hold, seven days of accrual. | view `boxCap()` |
@@ -222,10 +222,13 @@ Remaining active seconds for the cliff are `max(0, startActive + cliffUnits x un
 | `totals.tookOut` | amount | Everything ever paid out to Take out, backers and Team Shares. | events `Left.cash`, `TeamLeft.cash`, summed |
 | `totals.drawn` | amount | Everything ever drawn from the allowance. | event `AllowanceDrawn.amount`, summed |
 | `totals.outside` | amount | Everything ever paid in from outside. | event `RevenueAdded.amount`, summed |
+| `totals.paidToWorkers` | amount | Everything paid to workers for tasks (step 2). | event `TaskResolved.pay`, summed |
+| `totals.noteClaims` | amount | Everything paid out for claimed exit notes (step 2). | event `NoteClaimed.paid`, summed |
 | `firstBackedAt` | int or null | The time of the project's first `Joined` (every join has money in it, the minimum is 1 dollar); null before. The AI manager's "free while the founder posts weekly" gate and the hosted allowance start from it (L6). | event `Joined`, the first |
 
-The totals obey one identity, which the example test checks: `joined + outside = fees + tookOut + drawn + pot + box + arriving
-+ locked + notesOwed`.
+The totals obey one identity, which the example test checks: `joined + outside = fees + tookOut + drawn + paidToWorkers +
+noteClaims + pot + box + arriving + locked + notesOwed` (a worker's payment leaves through `TaskMoney` kind 2 and a claimed note
+through kind 6; neither is in `drawn`; the dust of a last note goes to the pot).
 
 ### 2.11 Holders (the lists as version 1 carried them)
 
@@ -245,8 +248,10 @@ token column: it needs one), and checks that the sum of all balances equals each
 
 ### 2.12 The ledger (for checks only)
 
-`ledger.{lastSettle, pot, box, arriving, arrivalEnd, activeSeconds}` are the stored numbers at `asOf.block` as of the last time
-anyone settled, from which section 3 works the figures above forward. They are what the events rebuild exactly (section 4). **The app
+`ledger.{lastSettle, pot, box, arriving, arrivalEnd, arrivalStart, arrivalTotal, activeSeconds, locked, notesOwed}` are the stored
+numbers at `asOf.block` as of the last time anyone settled, from which section 3 works the figures above forward
+(`arrivalStart` is a time and `arrivalTotal` an amount; both stay at their old values when `arriving` is `"0"`; `locked` is the
+stored figure, before what ran out is returned). They are what the events rebuild exactly (section 4). **The app
 must not show or read them**: they are older than the figures and would mislead. They exist so a test can redo section 3 from the
 record alone. `ledger.arrivalEnd` is null when `ledger.arriving` is `"0"`.
 
@@ -283,16 +288,25 @@ upto   = min(t, end)                        dt   = upto > last ? upto - last : 0
 cap    = mulDiv(pot + box, rate * 7, 1e6)               (rate = ratePpm())
 if dt != 0 and rate != 0:  toBox = mulDiv(pot, rate * dt, 1e6 * (unit / 7));  box += toBox;  pot -= toBox
 if box > cap:              pot += box - cap;  box = cap
-if arriving != 0:          released = t >= arrivalEnd() ? arriving : mulDiv(arriving, t - last, arrivalEnd() - last)
+if arriving != 0:          target   = t >= arrivalEnd() ? arrivalTotal() : mulDiv(arrivalTotal(), t - arrivalStart(), arrivalEnd() - arrivalStart())
+                           released = max(target - (arrivalTotal() - arriving), 0)
                            arriving -= released;  pot += released
+dueC   = book.dueC(t)                       (the stayers' claims of taken tasks whose deadline is <= t; 0 with no book)
+pot   += dueC;  locked = locked() - dueC    (tasks that ran out come back LAST, after the allowance and the release)
 active = activeSeconds() + dt
 ```
 
-(`pot`, `box`, `arriving`, `activeSeconds()` on the right are the stored views at `asOf.block`.) The results are `money.pot`,
-`allowance.box`, `money.arriving` and `clock.activeSeconds`.
+(`pot`, `box`, `arriving`, `locked`, `activeSeconds()` and the stream's `arrivalStart()`, `arrivalTotal()`, `arrivalEnd()` on the right
+are the stored views at `asOf.block`.) The results are `money.pot`, `allowance.box`, `money.arriving`, `money.locked` and
+`clock.activeSeconds`. Step 2 changed two things here. **Outside money arrives on its own stream**: `addRevenue` stores
+`arrivalStart` (the block time) and `arrivalTotal` (what had not arrived plus the new money), and what has been released is one
+rounding of one formula on those two, so settling every second gives what settling once gives (the step 1 formula,
+`mulDiv(arriving, t - last, end - last)`, did not). **Tasks that ran out come back last**: the returned money is not charged
+allowance for time it was not in the pot.
 
 **Check on every build, no exceptions:** the worked-forward values (the final `pot` and `box`, after the release) must satisfy
-`mulDiv(pot + box, rate * 7, 1e6) == boxCap()` and `active == activeNow()`. If either differs the record is **not published** (section 4.3). Both views are the contract's own
+`mulDiv(pot + box, rate * 7, 1e6) == boxCap()` (with the final pot, the returned claims included; the clamp above uses the pot before them,
+as the contract does) and `active == activeNow()`. If either differs the record is **not published** (section 4.3). Both views are the contract's own
 settled numbers, so a formula slip, a changed contract or a mis-set time cannot pass. (The two money views `leaveValue()` and
 `teamValue()` are also checked, by the example test (section 7.3), not on every build.)
 
@@ -361,7 +375,11 @@ Treasury: `pot`, `paidIn`, `box`, `arriving`, `arrivalEnd`, `feesOwed`, `locked`
 `pendingAt`, `lastSettle`, `lastCheckIn`, `activeSeconds`, `activeEnd`, `activeNow`, `doorFlag`, `doorOpenNow`, `windDownKind`,
 `windDownAt`, `Z`, `runner`, `unit`, `feeBps`, `boxCap`, `leaveValue`, `teamValue`, `agentUsd`, `agentTeam`, `agentEpoch`,
 `agentEpochOf`, `agents`, `agentUsdUsed`, `agentTeamUsed`, and the constants `MIN_JOIN`, `MIN_REVENUE`, `MAX_RATE_PPM`,
-`CHECK_IN_MULT`, `WIND_MULT`. Vester: `grantCount`, `grantOf`, `vestedOf`, `committed`, and the constants `CLIFF_MULT`, `VEST_MULT`,
+`CHECK_IN_MULT`, `WIND_MULT`, and (step 2) `arrivalStart`, `arrivalTotal`, `nextExpiry`, `tasks`. Task book (when the project has
+one): `openCount`, `nextSerial`, `windowSumBps`, `takeRoomBps`, `dueC(asOf.time)`, `noticeFor(1)`, the constants `MAX_OPEN`,
+`MAX_SHARE_BPS`, `CAP_BPS`, `MIN_TASK`, `CAP_WINDOW_MULT`, and for each listed row `taskOf(serial)` (a 17-word struct whose field
+order is read from the contracts build, never typed), `noteOf(serial, holder)` for each listed note holder and `claimableNote`
+for the largest holder of each row with notes (a second batch at the same block: the cut needs `CAP_WINDOW_MULT`). Vester: `grantCount`, `grantOf`, `vestedOf`, `committed`, and the constants `CLIFF_MULT`, `VEST_MULT`,
 `MIN_GRANT`, `MAX_GRANTS_PER_MEMBER`, `PROTECTED_LENGTH`. Tokens: `totalSupply`, `balanceOf(vester)`. Dollar: `balanceOf(treasury)`.
 Launcher: `testNetwork`, `isPair`. Pair: `first`, `second`. These are about 45 calls plus 3 per grant and 5 per agent; send them as
 one JSON-RPC batch at the one block number. If the node cannot serve that block, **the record is not built** (never fall back to a
@@ -432,22 +450,31 @@ exception, because the three times are fixed between check-ins.
 
 ### 7.1 The file
 
-`docs/next-version/record-v2-example.json`: a complete, valid version 2 record, as it would be signed at **2026-11-19 12:00:00 UTC**
-(block 41, `asOf.time` 1795089600; built 131 seconds later). One project, "Demo Project", on a local chain (31337) with the real
-time unit (7 days), play money:
+`docs/next-version/record-v2-example.json`: a complete, valid version 2 record, **the server's own output** for the fixture's project A
+(the run `scripts/chain-reader-fixture.py` plays on anvil and `crates/buzz-relay/src/chain_reader/testdata/pot-run.json` holds), built
+at block 88 (`asOf.time` 1803787880, 2027-02-28 04:11:20 UTC on the run's own clock; built 131 seconds later). It is not a hand-built
+file: the test `the_example_is_what_the_server_writes` builds the record from the run's logs and the real chain's answers and
+compares it byte for byte with the file, and running the tests with `UPDATE_EXAMPLE=1` rewrites it. One project on a local chain
+(31337) with the real time unit (7 days), play money:
 
-- **two backers** (5,000 and 2,000 play dollars joined; the second took out a tenth of his Shares at day 60);
+- **two backers** (5,000 and 2,000 play dollars joined; the second took out a tenth of his Shares at day 60, the first a fifth at
+  day 77 and a tenth just before the block), and **a third who backed 500 at day 90 and took it all out at day 97**;
 - **a founder grant past its cliff** (2,000,000 Team Shares granted at day 0, claimed in part: `cliff.passed` true, `claimable` above
   zero), **a grant with a forfeit notice running** (a member's own exit: kept part vested and claimable, the rest announced to burn
   in one day) and **a live grant before its cliff** (`cliff.endsAtIfActive` set);
-- **outside money arriving** (3,000 paid in at day 104, 28% arrived so far, the rest by 2026-11-24) and the pot above paid-in,
-  so `teamValue` is above zero;
-- **a rate raise waiting** (0.10% to 0.15%, applicable from 2026-11-23);
-- a live agent that drew 5 play dollars the same day, an allowance box not empty, platform fees owed;
+- **outside money arriving**: 3,000 paid in at day 98 and 1,000 merged into the same stream at day 100.5, so `arrivalStart` is the
+  second payment's time and `arrivalTotal` what had not arrived plus the new money (`arrivalEnd` is after `asOf.time`);
+- **a rate raise waiting** (0.10% to 0.15%), an allowance box not empty, platform fees owed;
+- **the task queue** (section 10): nine tasks were planned. The list shows eight, three of them open: task 6 **taken** with a leaver's
+  note outstanding, task 7 **in its notice**, task 8 **announced** for a task record that task 2 already planned (`repeatOf: 2`);
+  and five ended: task 2 **paid in part** (60%, its leaver's note claimed), task 3 **sent back** (an open task a stranger took), task 4
+  **ran out** (returned by someone else's take-out, its note left unclaimed: `claimable` above zero), task 5 **lapsed**, task 9
+  **withdrawn**. Task 1, withdrawn on day 20, is older than 28 days with no notes left and is not listed (the cut, section 10).
+  `tasks.cap.frees` has two entries and `tasks.next` is the date room comes back in the cap;
 - the runner is one person, so `runner.isPair` is false and `contracts.pair` is null. Variants a fixture can make by changing the
   file: a Pair runner (`contracts.pair` = an address, `runner.isPair` true, `runner.signers` = two addresses); a project past 14
   quiet days (`quiet.state` `"quiet"`, `door.openNow` false, `box` stops growing); a wound-down project (below); a project with no
-  backers (`holders: []`, `value.leaveValue` `"0"`).
+  backers (`holders: []`, `value.leaveValue` `"0"`); a project with no task book (`tasks: null`).
 
 A wound-down project differs only here (everything else keeps its shape):
 
@@ -465,30 +492,18 @@ the two members, 5 the outside payer, 6 the agent); the contract addresses are w
 
 ### 7.2 How the numbers were made
 
-By running the real contracts, not by hand. A scratch copy of `contracts/pot` was deployed with its own deploy script to a fresh
-anvil chain (clock set to 2026-08-05 10:00 UTC, chain id 31337, time unit 604,800), then one project was launched and played for 106
-days with `cast`, each transaction mined at an exact timestamp:
+By running the real contracts. `scripts/chain-reader-fixture.py` deploys `contracts/pot` with its own deploy script to a fresh anvil
+chain (chain id 31337, time unit 604,800), plays two projects with `cast`, each transaction mined at an exact timestamp, and writes
+every header, every log and the raw answer of every view call the builder makes at named blocks. Project A is played for 115 days:
+a launch, grants, backers, weekly check-ins, draws, outside money twice, a rate raise, an agent, a member's exit, a seat hand-over,
+the task queue (section 10), and a wind-down by choice. The example block (`A_example`) is the one right after a leaver's take-out
+writes a note against the task that is taken, with one task in its notice and another announced again.
 
-| Day | What |
-|---|---|
-| 0 | Launch: rate 1000 ppm (0.10%), Team pool 10,000,000. Day 0 + 1 h: the founder grants himself 2,000,000 Team Shares (grant 0). |
-| 0 + 2 h | Backer one backs 5,000 in one signature (`transferAndCall`). Day 1: backer two backs 2,000 (approve, then `join`). |
-| 7, 14, … 105 | The founder checks in every week with a different hash. The project is active the whole time (active seconds equal 106 days). |
-| 14.5, 35.5, 56.5, 77.5, 98.5 | The runner draws 30 play dollars from the allowance. |
-| 20 | Grant 1: 400,000 Team Shares to a member. Day 70: grant 2: 100,000 to another member. |
-| 60 | Backer two takes out a tenth of his Shares. |
-| 95 | The founder claims what grant 0 has vested. |
-| 100 | The first member announces his own exit from grant 1 (keeps what has accrued, the rest burns after a unit). |
-| 103 | The runner proposes the rate 0.15%. |
-| 104 | An outsider pays in 3,000 play dollars (approve, then `addRevenue`). |
-| 105 | The founder authorises an agent; the agent draws 5 play dollars about 1.2 h before the record. |
-| 106, 12:00 UTC | One empty block is mined at that exact time, and the record is built from it. |
-
-Everything was read at that block and **asserted while it was built**: the ledger from the events equals the stored views; the
-section 3 roll-forward equals `boxCap()` and `activeNow()`; the formulas of `PotMath` equal `leaveValue()` and `teamValue()`; every
-holder balance sums to the supplies; `held` equals the buckets and the totals identity holds. The whole run was done twice on two
-fresh chains and the two files are **byte-for-byte identical**. The generator and an independent checker were scratch scripts and are
-not part of the repository (section 9, item 11).
+At that block the builder reads the ledger from the events and the views from the (replayed) chain and **asserts while it builds**: the
+ledger from the events equals the stored views; the section 3 roll-forward equals `boxCap()` and `activeNow()`; the held identity and the
+totals identity hold. The test `the_example_obeys_every_rule_of_section_7_3` then checks the file itself with the contracts' integer
+formulas, independent of the builder, and `scripts/chain-reader-fixture.py --check` fails when the run is not the file (the same bytes
+every run).
 
 ### 7.3 What both tracks must test against the example
 
@@ -513,6 +528,14 @@ down). This is a check on the file and on the parsers, **not** a place to copy f
    `quiet.windableFrom == lastCheckIn + windDownUnits x unit`; `quiet.dormantFrom == lastCheckIn + 13 x unit`; `quiet.state` is the
    word the three times give at `asOf.time`; `door.openNow == (door.switchOn and asOf.time < door.shutsAt)`.
 10. `allowance.pending.applicableAt == proposedAt + unit`; `money.arrivalEnd > asOf.time` while `arriving` is not zero.
+11. (Step 2) The task queue, section 10: the open rows are the open count, serials are unique, open rows first (serial ascending) then ended
+    rows (serial descending); `setAside == stayerClaim + noteFace` while taken; `pay + returned == setAside` when paid; `pay == 0` and
+    `returned == setAside` when sent back or run out; every money field `"0"` for announced, withdrawn and lapsed rows; `atMostNow` is
+    `min(maxDollars, mulDiv(money.pot, shareBps, 10000))` while an announced task can still be taken and null otherwise; `cap.usedBps` is the
+    sum of `capBps` of the takes inside the window, less a taken task past its deadline; `usedBps + roomBps == limits.capBps`; the `frees`
+    add up to `usedBps`; `next` is the earliest of the dates after `asOf.time`; `money.locked` is the sum of `stayerClaim` over the taken
+    rows that have not run out; `money.notesOwed` is the sum of `noteFace` of open rows and `notesLeft` of ended rows (when no row is
+    cut); a holder's `claimable` is `mulDiv(face, returned, setAside)` for an ended row and `0` for an open one.
 
 The **server** also runs the example through its builder's cross-check functions (the section 4.3 rules) in both directions: the
 example passes, and a copy with `money.pot` raised by one unit is refused. The **app** parses the example with the new parser, shows
@@ -590,7 +613,7 @@ and the `removed` form.
 - The server's balance table needs a token column (section 2.11) and a new role for the Team token; the Rounds, Finisher, receipts,
   bids, sale and refund-formula code go (L1).
 - The record has no tasks, notice, take or notes: step 2 adds `tasks` and fills `money.locked` and `money.notesOwed` (no version
-  change).
+  change; done, section 10).
 - The earlier-backers block is parked: version 2 has none (L1).
 - The generator and the checker are in the build session's scratch folder only (item 11 below).
 
@@ -598,3 +621,83 @@ and the `removed` form.
    were run from the session's scratch folder; they are not in the repository because this track owns only this page and the
    example. If wanted they can be committed beside the contracts' vectors as `contracts/pot/scripts/`; the example can be rebuilt
    byte for byte from them on a fresh anvil.
+
+## 10. Step 2 additions: the task queue and the exit notes (`tasks`)
+
+Additive inside version 2: nothing is removed, renamed or re-meant (`money.locked` and `money.notesOwed` were `"0"` in step 1 and now
+carry their values). An older app ignores `tasks`; a step 2 app with no `tasks` (or `null`) shows the step 1 tasks flow and no queue.
+The plan these tables come from is `docs/next-version/STEP2-SERVER-APP-PLAN.md` (sections 1.3 to 1.6 and the choices C1 to C37); the
+record is the server's, the contracts are the truth. Amounts are decimal strings of dollar units (6 decimals), times unix seconds,
+counts and shares JSON integers, addresses and 32-byte values lower-case `0x` text. **`tasks` is `null` for a project with no task
+book** (never guessed: the book's address is the Treasury's own `TasksReady` log, section 4.1).
+
+### 10.1 `tasks`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `tasks.book` | address | The project's task book (checked against the view `Treasury.tasks()`; a difference publishes nothing). |
+| `tasks.bookBlock` | int | The block of `TasksReady`: the first block the book can have logs in. The app scans for a person's notes from here. |
+| `tasks.nextSerial` | int | The serial the next plan gets. Serials start at 1 and never repeat; a book whose serial passes 2^53 fails the build. |
+| `tasks.openCount` | int | Tasks announced or taken, not ended (at most 8). |
+| `tasks.nextExpiry` | int or null | The earliest second an open task runs out (the end of a take window, or a deadline); null when none is open. |
+| `tasks.limits` | object | `maxOpen` (8), `maxShareBps` (500: the most one task may ask for, in ten-thousandths of the pot), `capBps` (1000: the most that may be taken in any rolling window), `minTask` (amount), `capWindowSecs` (`CAP_WINDOW_MULT x unit`), `takeWindowSecs` (how long a task can be taken after its notice), `dueSecs` (how long after a take it is due). All read from the book's views. |
+| `tasks.cap` | object | The 28-day cap **settled at `asOf.time`**: `usedBps` (the takes counted in the window now, in ten-thousandths of the pot at each take, less the share the next settle gives back for a taken task past its deadline), `roomBps` (`limits.capBps - usedBps`), `frees` (at most 16 `{at, bps}`, oldest first: when each counted take stops counting, `at = takenAt + capWindowSecs`; they add up to `usedBps`). |
+| `tasks.next` | `{at, kind, serial}` or null | The next date something can happen, strictly after `asOf.time`: `kind` is `can_be_taken` (an announced task's notice ends), `lapses` (its take window ends), `due` (a taken task's deadline) or `cap_room` (the first `frees.at`, serial 0). Ties go in that order, then the lowest serial. |
+| `tasks.list` | array | The rows (10.2): open tasks first (serial ascending), then ended ones (serial descending); at most 8 open and 32 ended. |
+| `tasks.cut` | object | `{maxEnded: 32, endedWithinSecs, endedDropped, notesRowsDropped}`: the rule that chose the ended rows and how many it left out (10.3). |
+| `tasks.truncated` | bool | True when `endedDropped > 0`, `notesRowsDropped > 0` or a row's note list was cut. A cut list never says "none". Separate from the top-level `truncated` (holders, grants, agents) on purpose. |
+
+### 10.2 A task row (`tasks.list[]`)
+
+| Field | Type | Meaning |
+|---|---|---|
+| `serial` | int | The task's number, never reused. |
+| `what` | bytes32 | The hash tied to the team's task record: the record's event id. |
+| `payee` | address or null | Who may take it; null when open to anyone. |
+| `state` | `announced`, `taken`, `paid`, `rejected`, `returned`, `cancelled` or `lapsed` | Where it is on the network at `asOf.block`. `returned` is a task that ran out or was swept by a wind-down. A taken task whose `deadline <= asOf.time` is still `taken` here until someone settles; the app words it from the dates. |
+| `shareBps` | int | The share of the pot it may ask for (1 to 500). |
+| `maxDollars` | amount | The most it may set aside. |
+| `atMostNow` | amount or null | While an announced task's take window has not ended (`asOf.time < expiresAt`): `min(maxDollars, mulDiv(money.pot, shareBps, 10000))`, the most a take at `asOf.time` would set aside; null otherwise. |
+| `announcedAt`, `noticeEnd`, `expiresAt` | int | Announce time; the first second it can be taken; the end of the take window while announced, the deadline once taken. |
+| `takenBy` | address or null | Who took it, and the only address a payment goes to. |
+| `takenAt`, `deadline` | int or null | When taken; when due. |
+| `setAside` | amount | L: what the take moved out of the project's money (`"0"` before a take; kept after the end, because notes are paid against it). |
+| `stayerClaim` | amount | C: the stayers' claim while taken (`"0"` otherwise). |
+| `noteFace` | amount | N: the face of the notes against it (`"0"` when paid in full). |
+| `pay` | amount | What the worker was paid (`"0"` unless `paid`). |
+| `returned` | amount | What came back when it ended: `setAside - pay`. |
+| `notesLeft` | amount | What is still held for the claims of its notes. |
+| `capBps` | int | What this take still counts in the cap (the take's share less what was given back; 0 when never taken or when it ended unpaid). |
+| `resolvedAt`, `resolvedTx` | int or null, bytes32 or null | When it ended (the block time of the event) and the transaction that ended it. |
+| `repeatOf` | int or null | The serial of the earlier plan of the same task record that this row repeats: the lowest-serial row with this `what` in state announced, taken or paid, when it is smaller than this row's serial. Set only for a row that is itself announced, taken or paid (a plan that ended unpaid binds nothing). One rule for the server, the relay and the app. |
+| `notes` | object or null | Null when `noteFace` is `"0"` and nothing is held, or when the task was paid in full (its notes are void). Otherwise `{faceTotal, holders: [{account, face, claimable}], holdersCut}`. `faceTotal` is `noteFace`. `claimable` is `"0"` while the task is open (a taken task past its deadline that nobody settled counts as ended: its holders' `claimable` is the whole `face`, as a claim settles first) and `mulDiv(face, returned, setAside)` once it ended. At most 20 holders (largest `face` first, then address), listed for the 8 rows with the most still to claim (`notesLeft`, then newest; an open taken task counts by `noteFace`); the other rows carry `holders: []` and `holdersCut: true` and still have `faceTotal`. |
+
+The rows are a hint for lists and for alerts. A press always reads the chain first (`taskOf(serial)`, `noteOf`, `claimableNote`): the
+record is minutes old.
+
+### 10.3 The cut
+
+Open rows are always listed. Ended rows are chosen in this order, stopping at 32: (1) rows with `notesLeft > 0` (money a leaver can still
+claim), largest `notesLeft` first then newest, at most 24, **whatever their age**; (2) rows that moved money (paid, rejected, returned) and
+ended within `max(capWindowSecs, 28 days)`, newest first; (3) cancelled and lapsed rows within that time, at most 4. The list is then
+written newest serial first. `cut.endedDropped` counts the ended rows that were eligible and did not fit; a row that aged out (older than
+the window, nothing left to claim) is not counted. `cut.notesRowsDropped` counts rows with notes still to claim that did not fit. A team
+that announces and cancels many tasks cannot push a leaver's note out: rows with money to claim rank first, rows that moved nothing last
+with a cap of 4. Notes never expire, so this is the one place where the record cannot be the whole answer: the rest is found from the
+person's own history of take-outs and by scanning the book from `bookBlock`.
+
+### 10.4 The numbers that changed
+
+`money.pot` and `money.arriving` follow the contract's arrival stream and the return of tasks that ran out (section 3), and
+`money.locked` is the settled figure. `refreshEverySecs` is 600 while the allowance accrues, outside money arrives **or any task is open**,
+and 3600 otherwise. `totals` gains `paidToWorkers` and `noteClaims` (section 2.10). `ledger` gains `arrivalStart`, `arrivalTotal`, `locked`
+and `notesOwed` (checks only, section 2.12).
+
+### 10.5 What the server checks before it signs (step 2)
+
+The ledger rebuilt from the book's events must equal the contracts' views for the buckets (`locked`, `notesOwed`), the stream
+(`arrivalStart`, `arrivalTotal`, `arrivalEnd`), the open count, the next serial and the 28-day sum; `Treasury.tasks()` must be the book its
+`TasksReady` event named; the settled pot and the box must still satisfy `boxCap()` with the returned claims in the pot; and the record
+must pass its own rules (the roll-forward from the record's `ledger` and rows, `money.locked` is what the running rows hold, the totals
+identity with `paidToWorkers` and `noteClaims`). Any failure publishes nothing and the previous record stays. The per-row check of every
+field of 10.2 against `taskOf` and the note checks are added at the next milestone (`STEP2-SERVER-APP-PLAN.md` section 2.5).

@@ -415,3 +415,98 @@ Guards reverted and the tests run: `if self.last_settle > view.last_settle` repl
 `MAX_REFRESH_SECS` put back to 86_400 fails `the_chain_refresh_settings_end_at_half_a_day`. Both files were restored and the tests
 pass with the guards in place (checked by `git diff` on those two files showing only the intended round-four change).
 
+
+## Step 2, milestone M1 (server, 20 November 2026)
+
+Package WP1, milestone M1 of `STEP2-SERVER-APP-PLAN.md`: the reader follows each project's task book and writes the `tasks` section of the
+record from the events and the contracts' views. `contracts/pot` is not edited. Nothing is pushed. The per-row cross-checks of the book against
+`taskOf` and the task rules of `validate` are milestone M2 (not built here, see "What M2 must add").
+
+### What was built
+
+| Part | Where |
+|---|---|
+| The seven new events and the new `tasks` role, generated from the build; the one struct-valued view (`taskOf`, 17 words) written as a table and a JSON file the build gives, with a test that compares them | `scripts/chain-reader-events.mjs` (now writes four files), `events_table.rs`, `views_table.rs`, `testdata/pot-events.json`, `testdata/pot-abi.json` |
+| Finding the book: the Treasury's own `TasksReady` log names it; it is followed from that block; stored rows reveal a book the reader did not follow yet; a rollback forgets it | `scan.rs` (`discovered(role, ...)`), `store.rs` (`reveals`) |
+| Migration 0071 (`'tasks'` in the role check, a partial index on the books' rows) and the same two facts in `schema/` | `migrations/0071_chain_tasks_role.sql`, `schema/tables/public/chain_contracts.sql`, `chain_logs.sql`, buzz-db tests |
+| `ledger_tasks.rs`, the port of `contracts/pot/test/helpers/TaskLedger.sol` (tasks, notes, the 16-place ring of takes, the open count, the next serial, what repeats what) | `chain_reader/ledger_tasks.rs`; `ledger.rs` takes the Treasury's `TasksReady` and `TaskMoney`, the stream's start and total, and `paidToWorkers` / `noteClaims` |
+| The arrival formula fix (plan 1.2 a) and the return of tasks that ran out, last (1.2 b) | `record.rs::roll_forward`, `record.rs::validate` |
+| The record types of the `tasks` section, the cut, the next date, the amount a take sets aside, the section's builder | `record_tasks.rs`; `Record.tasks`, `LedgerRec`, `TotalsRec` in `record.rs` |
+| The views of the book and of the rows the record lists, in a second batch at the same block | `views.rs` (`BookViews`, `TaskView`) |
+| The fixture with the tasks scenario, and `record-v2-example.json` as the server's own output for it at one named block | `scripts/chain-reader-fixture.py`, `testdata/pot-run.json`, `docs/next-version/record-v2-example.json` |
+| The spec | `RECORD-V2.md` (sections 2.3, 2.10, 2.12, 3, 4.2, 7, and the new section 10) |
+
+The scenario the fixture plays on project A (all on the real unit of 7 days, each transaction at an exact time): a task announced and withdrawn
+(day 20); a task taken and paid in part (60%) with a leaver's note, claimed by the leaver; an open task taken by a stranger and sent back, its
+leaver's note claimed for the leaver by the stranger; a task that runs out and is returned by someone else's take-out, its note left
+unclaimed; a task whose take window passes; the same task record announced twice; one taken with a note outstanding, one in its notice and one
+announced again at the example block; a second payment of outside money merged into the first stream; a block after the run-out task's
+deadline that no Treasury call settles (`A_overdue`); the wind-down by choice that sweeps what is open. 260 logs, 116 blocks.
+
+### Chosen under the owner's standing go; the owner may overrule
+
+- **Two batches of views at the one block.** The cut of ended rows needs the cap's window (`CAP_WINDOW_MULT`, a view), so the Treasury's and the
+  book's own views go first and the rows' `taskOf` and the notes' `noteOf` / `claimableNote` second, at the same block. The plan said one batch;
+  the property that matters (one block, the previous record stays on any failure) is kept.
+- **`repeatOf` is set only for a row that is itself announced, taken or paid.** A plan that ended unpaid binds nothing, so it repeats nothing.
+- **`cut.endedDropped` counts rows that were eligible and did not fit, not rows that aged out.** An ended task older than 28 days with no notes
+  left drops out of the list without making `tasks.truncated` true; otherwise every project would read "cut" a month after its first task.
+- **The next date breaks ties in a fixed order**: can be taken, lapses, due, room in the cap; then the lowest serial.
+- **Ranking of the rows whose note holders are listed** counts an open taken task by `noteFace` and an ended one by `notesLeft`.
+- **A taken task past its deadline that nobody settled** has `claimable` equal to its holders' whole `face` (a claim settles first), as
+  `money.pot` counts what ran out as back.
+- **Serials in the example are not the plan's labels.** The task taken at the example block is serial 6 (announced first), the one in its
+  notice serial 7, the repeat serial 8, and a second withdrawn task serial 9; serial 1 (withdrawn on day 20) has aged out of the list. The
+  plan wanted a withdrawn row in the example; a task older than 28 days with nothing to claim cannot be in a list cut by the plan's own rule,
+  so a second task is withdrawn inside the 28 days.
+- **The example block is at day 101.7**, after the door was shut and opened again, so the example is an ordinary live project (door open).
+- **The fixture reads the book's field order from the build** (`TASK_FIELDS`), never from a typed list, and the snapshot of every block carries
+  every task's raw `taskOf` answer; `pot-run.json` is 0.9 MB for that reason.
+- **Per-row checks were not built at M1** (see below): the ledger is tied to the views by the replay test (`A1`) at every snapshot block, and
+  the record's own rules (`validate`) tie `money.locked` to the rows, but a build does not yet compare each row with `taskOf`.
+
+### What M2 must add (not built)
+
+The cross-check of every field of a row with `book.taskOf(serial)` (A2), the notes checks (sum of holders equals `noteFace` for non-void tasks;
+each listed holder's `face` equals `noteOf`; the largest holder's `claimable` equals `claimableNote`, except for a taken task past its deadline
+where the view says 0), the `validate` rules of plan 2.5 items 3, 4, 5 and 7 (the buckets from rows, `C + N == L`, the cap and the counts), the
+failure of the whole build on any task mismatch (C33) with the field named at error level, and A17's last two tests. `views::read` already
+reads what these need (`taskOf` for every listed row, `noteOf` for every listed holder, `claimableNote` for the largest holder of each row).
+
+### Guards switched off once (U5), and what failed
+
+Each guard was switched off in the production code, the `chain_reader` tests run (the Postgres tests for discovery), and the file put back
+(checked afterwards: the code has none of the edits).
+
+| Guard switched off | Where | Tests that failed |
+|---|---|---|
+| A take that ended unpaid is not given back to the cap (`capGivenBack` ignored) | `ledger_tasks.rs::resolved` | 19, among them `the_ledger_from_the_logs_equals_the_views_for_every_task_after_every_block_of_the_fixture` (A1), `the_ring_frees_list_adds_up_to_the_used_share` (A8) and the record tests that build real blocks |
+| The claims of tasks that ran out are not returned to the pot, last (`dueC`) | `record.rs::roll_forward` | `a_run_out_task_is_returned_in_the_settled_pot_and_locked` (A5), `the_box_cap_check_still_holds_with_a_returned_task_and_fails_when_the_return_is_dropped` (A6), `the_cap_numbers_free_the_share_of_a_taken_task_past_its_deadline` (A5c) |
+| The step 1 arrival formula instead of the stream's | `record.rs::roll_forward` | **First try: nothing failed (82 passed).** The two formulas are the same line mathematically and differ by a few units of rounding, and every block of the run that was built sat on a settle, so no check saw the difference (the `boxCap` view moves only when a unit flips the rounding). A finding, not a pass: `every_settle_of_the_run_is_what_the_roll_forward_gives_from_the_state_before_it` was added, which works the ledger's numbers just before each of the run's settles forward to the settle's time and compares pot, box, arriving money and active seconds with what the contract's `Settled` event says, exactly. With the step 1 formula back in it fails; with the contract's formula it passes |
+| The share a taken task past its deadline will give back is not taken off the cap (`pending_give_back`) | `ledger_tasks.rs` | `the_ring_frees_list_adds_up_to_the_used_share`, `the_cap_numbers_free_the_share_of_a_taken_task_past_its_deadline` |
+| Rows with notes still to claim are not listed first (the cut) | `record_tasks.rs::select` | `the_ended_rows_keep_every_row_with_notes_first_and_33_cancelled_tasks_cannot_push_a_note_out`, `note_holders_are_listed_for_eight_rows_and_twenty_holders_each`, `the_example_is_what_the_server_writes` |
+| The book is not found from `TasksReady` | `scan.rs::discovered` | 6 of the 14 Postgres tests, among them `the_book_is_found_from_tasks_ready_and_followed_from_that_block`, `a_rollback_past_it_forgets_it` and `the_stored_rows_reveal_a_book_the_reader_did_not_follow_yet` |
+
+Not tried: the migration's role (the buzz-db test `a_database_made_from_the_desired_state_schema_allows_tasks_and_has_the_index` inserts a
+`tasks` contract and reads the index definition, so a constraint or an index without it fails it by construction), `repeatOf` (the test
+`the_same_what_planned_twice_marks_the_later_row_repeat_of_the_earlier` reads the run's repeated plan).
+
+### What ran
+
+On 20 November 2026, local Postgres and Redis (a database copied from the shared one and given migration 0071 by hand), `CARGO_BUILD_JOBS=2`:
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` (whole workspace) | clean |
+| `cargo clippy -p buzz-relay --lib --tests -- -D warnings` | no warnings |
+| `cargo test -p buzz-relay --lib chain_reader -- --include-ignored --test-threads=1` | **99 passed, 0 failed, 0 ignored** (69 before step 2; 14 of them Postgres-backed, three new) |
+| `cargo test -p buzz-db --lib -- migration chain_ --include-ignored --test-threads=1` | **51 passed, 0 failed** (migration count now 71; two new tests of 0071) |
+| `node scripts/chain-reader-events.mjs --check` | "pot-events.json, events_table.rs, pot-abi.json and views_table.rs match the contracts/pot build" |
+| `python3 -I scripts/chain-reader-fixture.py --check`, three times | "pot-run.json is what a fresh run gives" each time |
+| `UPDATE_EXAMPLE=1 cargo test ... the_example_is_what_the_server_writes`, then without | passes; the example is the server's own bytes |
+
+Existing step 1 reader tests that changed, and why: `events_tests::the_table_is_the_forge_build` (35 to 42 pairs: the book's five events and the
+Treasury's `TasksReady` and `TaskMoney`), `ledger_tests` (the cross-check literal now carries the new stored numbers; the totals identity gets
+the buckets and the two new totals), `record_tests` (the example is the server's output of the new run; the test that raised the door and a
+grant count to fixed values now flips what the example holds), `scan_postgres_tests::stored_of` (the same new fields). No step 1 test was
+removed and none was loosened.
