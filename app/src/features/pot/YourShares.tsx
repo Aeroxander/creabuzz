@@ -12,6 +12,7 @@ import { dayText } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { rememberSendTargets } from "../money/send-targets";
 import { FaucetCard } from "./FaucetCard";
+import { heldLine } from "./held-since";
 import { ownSteps, paidInFromHere } from "./own-history";
 import {
   exactDollarsText,
@@ -21,6 +22,7 @@ import {
 } from "./pot-words";
 import { TakeOutSheet, type TakeOutTaskInfo } from "./TakeOutSheet";
 import type { MoneyTarget } from "./target";
+import { useHeldSince } from "./use-held-since";
 import { type Ready, WalletGate } from "./use-pot";
 
 /**
@@ -107,6 +109,7 @@ export function Holding({
     retry: false,
     queryFn: () => readHolding(ready, target),
   });
+  const held = useHeldSince(ready, target, reading.data?.shares ?? 0n);
   if (reading.isPending)
     return (
       <Card className="h-24 animate-pulse" data-testid="holding-reading" />
@@ -175,6 +178,12 @@ export function Holding({
           </div>
         ) : null}
       </dl>
+      {/* How long the holding has lasted: from the person's own transfers, on this device; drawn only when it could be read. */}
+      {shares > 0n && held.data ? (
+        <p className="text-sm" data-testid="holding-held-since">
+          {heldLine(held.data)}
+        </p>
+      ) : null}
       {shares > 0n ? (
         <>
           <p className="text-sm text-muted">{NOT_A_RETURN}</p>

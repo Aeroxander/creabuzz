@@ -32,6 +32,9 @@
 #                         it ended, a task taken and not due, and the settle that puts the money of a task that ran out back;
 #   pot-states.test.ts    Take out with the door shut, after the team stopped checking in, with outside money arriving, after a
 #                         wind-down by anyone and by the runner; a Pair's call refused for its own proposer;
+#   held-since.test.ts    how long an account has held a project's Shares (the line under "You hold"), from its own Transfer logs: a
+#                         Back starts it, more Shares coming in do not move it, a take-out to nothing and a send-out of everything
+#                         reset it, an account that never held reads null;
 #   passkey-back.test.ts  a Back from a passkey account: one operation, one passkey prompt, the Shares equal the quote.
 # It prints one line with the count of tests passed, failed and skipped. Replaces scripts/m7-chain-loop.sh (the
 # Rounds-and-auction loop, retired with those screens). Cleans up after itself (anvil stopped, its state removed).
@@ -74,7 +77,7 @@ cd "$ROOT/app"
 REPORT="$STATE/vitest.json"
 status=0
 M7_ANVIL_RPC="$RPC" pnpm exec vitest run --config vitest.anvil.config.ts \
-  tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts tests/anvil/pot-team.test.ts tests/anvil/pot-states.test.ts tests/anvil/pot-allowance.test.ts tests/anvil/pot-task-pay.test.ts tests/anvil/pot-task-reads.test.ts tests/anvil/pot-tasks.test.ts tests/anvil/pot-settled.test.ts tests/anvil/passkey-back.test.ts \
+  tests/anvil/pot-loop.test.ts tests/anvil/pot-screens.test.ts tests/anvil/pot-team.test.ts tests/anvil/pot-states.test.ts tests/anvil/pot-allowance.test.ts tests/anvil/pot-task-pay.test.ts tests/anvil/pot-task-reads.test.ts tests/anvil/pot-tasks.test.ts tests/anvil/pot-settled.test.ts tests/anvil/held-since.test.ts tests/anvil/passkey-back.test.ts \
   --reporter=default --reporter=json --outputFile.json="$REPORT" "$@" || status=$?
 node -e '
 const r = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));

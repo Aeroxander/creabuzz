@@ -137,7 +137,11 @@ export function mintedLog(input: {
   };
 }
 
-type Params = { fromBlock: string; toBlock: string };
+type Params = { fromBlock: string; toBlock: string; topics?: unknown[] };
+
+/** The ERC-20 `Transfer` topic: the reads of "how long you have held it" ask for these, and they are not looks for notes. */
+const TRANSFER_TOPIC =
+  "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 
 /**
  * Makes the wallet's `eth_getLogs` answer by range, from `logs`, and its newest block `head`; returns every range asked.
@@ -165,6 +169,8 @@ export function serveLogs(
     if (method === "eth_blockNumber") return `0x${options.head.toString(16)}`;
     if (method === "eth_getLogs") {
       const p = params?.[0] as Params;
+      // The holding line's own reads of the Share token's transfers are neither counted nor served here.
+      if (p.topics?.[0] === TRANSFER_TOPIC) return [];
       const from = Number(BigInt(p.fromBlock));
       const to = Number(BigInt(p.toBlock));
       asked.push({ from, to });
