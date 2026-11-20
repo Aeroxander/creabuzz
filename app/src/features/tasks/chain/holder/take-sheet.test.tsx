@@ -32,6 +32,8 @@ import {
 import { timeText, type ProjectNumbers } from "../../../money/numbers";
 import { durationWords } from "../duration";
 import { percentOfBps } from "../words";
+import { nowOf } from "../state";
+import { PlanOnlyCard } from "../team/PlanOnlyCard";
 import { TakeOffer } from "./TakeOffer";
 
 vi.mock(
@@ -157,6 +159,29 @@ describe("who is offered the press", () => {
         })}
       />,
     );
+    await settled();
+    expect(screen.queryByTestId("take-open")).toBeNull();
+  });
+
+  it("is offered on a plan that no task record here names, to the wallet it names and to no one else", async () => {
+    scene();
+    const row = plannedRowOf(numbers);
+    const card = (address: string) => (
+      <PlanOnlyCard
+        address={address}
+        ageNote={null}
+        now={nowOf(numbers.asOf.time)}
+        numbers={numbers}
+        row={row}
+        windDownAt={null}
+      />
+    );
+    wrap(card(WORKER_WALLET));
+    expect((await screen.findByTestId("take-open")).textContent).toBe(
+      "Set the money aside",
+    );
+    cleanup();
+    wrap(card(STRANGER_EVM));
     await settled();
     expect(screen.queryByTestId("take-open")).toBeNull();
   });

@@ -9,6 +9,8 @@ import { runnerRole } from "../../../money/runner";
 import { canSendBack, canWithdraw, phaseOf, stateWords } from "../state";
 import type { ChainTask } from "../types";
 import { dollarsPhrase } from "../words";
+import { ReturnOffer } from "../holder/ReturnOffer";
+import { TakeOffer } from "../holder/TakeOffer";
 import { SendBackPress } from "./SendBackPress";
 import { secondPlan } from "./plan-words";
 import { WithdrawPress } from "./WithdrawPress";
@@ -67,6 +69,21 @@ export function PlanOnlyCard({
         <p className="text-xs text-muted" data-testid="plan-only-repeat">
           {secondPlan(row.repeatOf)}
         </p>
+      ) : null}
+      {/* A plan nobody here wrote is still a plan: the wallet it names can set the money aside, and anyone can return the money once it ran out. */}
+      {numbers && typeof numbers.tasks === "object" && numbers.tasks ? (
+        <>
+          <TakeOffer
+            address={address ?? null}
+            chain={row}
+            me={null}
+            now={now}
+            numbers={numbers}
+            task={null}
+            tasks={numbers.tasks}
+          />
+          <ReturnOffer chain={row} now={now} numbers={numbers} task={null} />
+        </>
       ) : null}
       {numbers && runnerRole(numbers, address ?? null).kind !== "none" ? (
         <>

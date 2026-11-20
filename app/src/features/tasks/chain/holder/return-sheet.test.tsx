@@ -38,6 +38,7 @@ import type { ProjectTask } from "../../task-record";
 import type { TaskSlotProps } from "../slot-props";
 import { chainRowOf, nowOf } from "../state";
 import type { ChainTask } from "../types";
+import { PlanOnlyCard } from "../team/PlanOnlyCard";
 import { ReturnOffer } from "./ReturnOffer";
 import { WorkerActions } from "./WorkerActions";
 
@@ -173,6 +174,24 @@ describe("who sees the press to return the money", () => {
     wrap(<ReturnOffer {...props(task, { chain: null })} />);
     await settled();
     expect(screen.queryByTestId("return-open")).toBeNull();
+  });
+
+  it("is offered on a plan that no task record here names, whose money ran out", async () => {
+    overdue();
+    const row = takenRowOf(numbers);
+    wrap(
+      <PlanOnlyCard
+        address={STRANGER_EVM}
+        ageNote={null}
+        now={nowOf(numbers.asOf.time)}
+        numbers={numbers}
+        row={row}
+        windDownAt={null}
+      />,
+    );
+    expect((await screen.findByTestId("return-open")).textContent).toBe(
+      "Return the money",
+    );
   });
 
   it("is mounted with the worker's presses on the card", async () => {

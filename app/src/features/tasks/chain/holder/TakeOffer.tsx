@@ -8,6 +8,7 @@ import { useState } from "react";
 import { Button } from "../../../../ui/button";
 import { isRunner, signsForRunner } from "../../../money/numbers";
 import { WalletGate } from "../../../pot/use-pot";
+import type { ProjectTask } from "../../task-record";
 import type { TaskSlotProps } from "../slot-props";
 import { phaseOf } from "../state";
 import { OPEN_TO_ANYONE, TAKE_OPEN, takeWait } from "./holder-words";
@@ -25,7 +26,13 @@ export function TakeOffer({
   me,
   address,
   now,
-}: TaskSlotProps) {
+}: Pick<
+  TaskSlotProps,
+  "chain" | "tasks" | "numbers" | "me" | "address" | "now"
+> & {
+  /** The team's record of the task, or null for a plan that has none here: only the wallet the plan names is offered the press. */
+  task: ProjectTask | null;
+}) {
   const [open, setOpen] = useState(false);
   if (chain?.state !== "announced" || numbers.windDown) return null;
   const phase = phaseOf(chain, now);
@@ -39,7 +46,10 @@ export function TakeOffer({
   // The wallet the plan names, or the person whose own record named it (they may not have connected it yet).
   const named =
     same(address, chain.payee) ||
-    (me !== null && task.worker === me && same(task.payTo, chain.payee));
+    (me !== null &&
+      task !== null &&
+      task.worker === me &&
+      same(task.payTo, chain.payee));
   if (!named || isRunner(numbers, address) || signsForRunner(numbers, address))
     return null;
   if (phase === "notice")
