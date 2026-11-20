@@ -406,8 +406,9 @@ before = count
 
 
 def quiet(label, got, want):
+    """Like `check`, without a line each, and with the keys of an object in any order (the relay's JSON is sorted)."""
     global count
-    if str(got) != str(want):
+    if json.dumps(got, sort_keys=True) != json.dumps(want, sort_keys=True):
         fail(f"social: {label}: the record says {got}, the recomputation from the raw logs says {want}")
     count += 1
 
