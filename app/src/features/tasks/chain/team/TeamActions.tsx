@@ -35,7 +35,7 @@ export function TeamActions(props: TaskSlotProps) {
     <>
       <DoorChoice {...props} />
       {canWithdraw(chain, now) ? (
-        <WithdrawPress {...props} chain={chain} />
+        <WithdrawPress chain={chain} numbers={numbers} what={task.what} />
       ) : null}
       {unsaved ? <SavePaidPress {...props} chain={chain} /> : null}
       {!unsaved && chain.state === "taken" ? (

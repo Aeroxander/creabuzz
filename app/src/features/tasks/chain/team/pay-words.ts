@@ -89,7 +89,7 @@ export const SEND_BACK_DONE = "Sent back. The money is in the project again.";
 export const SEND_BACK_ASKED =
   "Asked. It is sent back when the other signer confirms.";
 
-export function sendBackTitle(what: string): string {
+export function sendBackTitle(what: string | null): string {
   return `Send the money back for ${quotedWhat(what)}`;
 }
 
@@ -114,7 +114,7 @@ export const WITHDRAW_DONE = "Withdrawn.";
 export const WITHDRAW_ASKED =
   "Asked. It is withdrawn when the other signer confirms.";
 
-export function withdrawTitle(what: string): string {
+export function withdrawTitle(what: string | null): string {
   return `Withdraw the plan for ${quotedWhat(what)}`;
 }
 

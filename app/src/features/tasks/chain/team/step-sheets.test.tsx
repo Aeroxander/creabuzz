@@ -41,6 +41,7 @@ import type { ProjectTask } from "../../task-record";
 import type { TaskSlotProps } from "../slot-props";
 import { chainRowOf, nowOf } from "../state";
 import type { ChainTask } from "../types";
+import { PlanOnlyCard } from "./PlanOnlyCard";
 import { TeamActions } from "./TeamActions";
 
 vi.mock(
@@ -412,4 +413,61 @@ describe("withdraw a plan", () => {
     );
     expect(chain.sent).toHaveLength(1);
   }, 20_000);
+});
+
+describe("a plan with no task record here", () => {
+  const card = (row: ChainTask, address: string | null = FOUNDER_EVM) =>
+    wrap(
+      <PlanOnlyCard
+        address={address}
+        ageNote={null}
+        now={nowOf(numbers.asOf.time)}
+        numbers={numbers}
+        row={row}
+        windDownAt={null}
+      />,
+    );
+
+  it("the person who runs the project can withdraw it, and the sheet says it is for a task it cannot name", async () => {
+    planned();
+    card(plannedRowOf(numbers));
+    fireEvent.click(await screen.findByTestId("withdraw-open"));
+    await screen.findByTestId("withdraw-words");
+    expect(
+      screen.getByRole("heading", { name: "Withdraw the plan for a task" }),
+    ).toBeTruthy();
+    fireEvent.click(confirm());
+    await waitFor(() => expect(chain.sent).toHaveLength(1));
+    expect(decodeCall(TREASURY_ABI, chain.sent[0]?.data ?? "")?.args).toEqual([
+      BigInt(PLANNED_SERIAL),
+    ]);
+  });
+
+  it("a taken one can have its money sent back", async () => {
+    taken();
+    card(takenRowOf(numbers));
+    fireEvent.click(await screen.findByTestId("send-back-open"));
+    await screen.findByTestId("send-back-words");
+    expect(
+      screen.getByRole("heading", { name: "Send the money back for a task" }),
+    ).toBeTruthy();
+  });
+
+  it("nobody else is offered either, and nothing is offered after the end", async () => {
+    planned();
+    card(plannedRowOf(numbers), STRANGER_EVM);
+    expect(screen.queryByTestId("withdraw-open")).toBeNull();
+    cleanup();
+    wrap(
+      <PlanOnlyCard
+        address={FOUNDER_EVM}
+        ageNote={null}
+        now={plannedRowOf(numbers).expiresAt + 1}
+        numbers={numbers}
+        row={plannedRowOf(numbers)}
+        windDownAt={null}
+      />,
+    );
+    expect(screen.queryByTestId("withdraw-open")).toBeNull();
+  });
 });

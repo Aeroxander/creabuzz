@@ -99,7 +99,7 @@ export function PayPresses(props: TaskSlotProps & { chain: ChainTask }) {
               onClose={() => setWhich(null)}
               open={which === "send-back"}
               ready={ready}
-              task={task}
+              what={task.what}
             />
           ) : null}
         </div>

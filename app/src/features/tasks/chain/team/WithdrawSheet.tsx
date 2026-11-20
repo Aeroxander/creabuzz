@@ -6,7 +6,6 @@ import { cancelTaskCall } from "@creaton/core/pot/pot-calls.ts";
 import type { ChainTaskNow } from "@creaton/core/pot/pot-reads.ts";
 import type { ProjectNumbers } from "../../../money/numbers";
 import type { Ready } from "../../../pot/use-pot";
-import type { ProjectTask } from "../../task-record";
 import { canWithdraw, phaseOf } from "../state";
 import type { ChainTask } from "../types";
 import { phaseWord } from "../words";
@@ -34,14 +33,15 @@ function stop(task: ChainTaskNow, now: number): string | null {
 
 export function WithdrawSheet({
   numbers,
-  task,
+  what,
   chain,
   ready,
   open,
   onClose,
 }: {
   numbers: ProjectNumbers;
-  task: ProjectTask;
+  /** The task's words as the team's record has them; null when no record here is the one the plan was made for. */
+  what: string | null;
   chain: ChainTask;
   ready: Ready;
   open: boolean;
@@ -50,7 +50,7 @@ export function WithdrawSheet({
   const step: StepConfig = {
     action: "withdraw-task",
     testId: "withdraw-sheet",
-    title: withdrawTitle(task.what),
+    title: withdrawTitle(what),
     description: "No money moves",
     press: WITHDRAW_PRESS,
     pairPress: PAY_PRESS_PAIR,

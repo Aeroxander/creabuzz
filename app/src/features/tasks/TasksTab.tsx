@@ -121,8 +121,10 @@ export function TasksTab({
     ) : numbers ? (
       <li key={`plan-${item.row.serial}`}>
         <PlanOnlyCard
+          address={address}
           ageNote={age}
           now={now}
+          numbers={numbers}
           row={item.row}
           windDownAt={numbers.windDown?.at ?? null}
         />

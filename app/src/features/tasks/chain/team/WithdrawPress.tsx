@@ -4,15 +4,23 @@
  */
 import { useState } from "react";
 import { Button } from "../../../../ui/button";
+import type { ProjectNumbers } from "../../../money/numbers";
 import { WalletGate } from "../../../pot/use-pot";
-import type { TaskSlotProps } from "../slot-props";
 import type { ChainTask } from "../types";
 import { WITHDRAW_OPEN } from "./pay-words";
 import { WithdrawSheet } from "./WithdrawSheet";
 
-export function WithdrawPress(props: TaskSlotProps & { chain: ChainTask }) {
+export function WithdrawPress({
+  numbers,
+  chain,
+  what,
+}: {
+  numbers: ProjectNumbers;
+  chain: ChainTask;
+  /** The task's words from the team's record; null when none is the one this plan was made for. */
+  what: string | null;
+}) {
   const [open, setOpen] = useState(false);
-  const { chain, task, numbers } = props;
   return (
     <WalletGate chainId={numbers.chainId} what="withdraw this plan">
       {(ready) => (
@@ -31,7 +39,7 @@ export function WithdrawPress(props: TaskSlotProps & { chain: ChainTask }) {
             onClose={() => setOpen(false)}
             open={open}
             ready={ready}
-            task={task}
+            what={what}
           />
         </>
       )}

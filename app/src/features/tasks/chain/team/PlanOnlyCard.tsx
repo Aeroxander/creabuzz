@@ -4,10 +4,14 @@
  */
 import { useId } from "react";
 import { timeText } from "../../../money/numbers";
-import { phaseOf, stateWords } from "../state";
+import type { ProjectNumbers } from "../../../money/numbers";
+import { runnerRole } from "../../../money/runner";
+import { canSendBack, canWithdraw, phaseOf, stateWords } from "../state";
 import type { ChainTask } from "../types";
 import { dollarsPhrase } from "../words";
+import { SendBackPress } from "./SendBackPress";
 import { secondPlan } from "./plan-words";
+import { WithdrawPress } from "./WithdrawPress";
 
 /** "A planned task with no matching task here: 40 dollars to 0x…, from 3 Dec, 14:05" (a second plan of a task says so instead). */
 function planOnlyWords(row: ChainTask, who: string): string {
@@ -23,9 +27,14 @@ export function PlanOnlyCard({
   now,
   windDownAt,
   ageNote,
+  numbers,
+  address,
 }: {
   row: ChainTask;
   now: number;
+  /** The project's numbers and the connected wallet: the person who runs the project can withdraw or send back a plan nobody can read here. */
+  numbers?: ProjectNumbers;
+  address?: string | null;
   windDownAt: number | null;
   /** "as of …" when the record is old. */
   ageNote: string | null;
@@ -58,6 +67,16 @@ export function PlanOnlyCard({
         <p className="text-xs text-muted" data-testid="plan-only-repeat">
           {secondPlan(row.repeatOf)}
         </p>
+      ) : null}
+      {numbers && runnerRole(numbers, address ?? null).kind !== "none" ? (
+        <>
+          {canWithdraw(row, now) ? (
+            <WithdrawPress chain={row} numbers={numbers} what={null} />
+          ) : null}
+          {canSendBack(row, now) && row.setAside > 0n ? (
+            <SendBackPress chain={row} numbers={numbers} what={null} />
+          ) : null}
+        </>
       ) : null}
     </article>
   );

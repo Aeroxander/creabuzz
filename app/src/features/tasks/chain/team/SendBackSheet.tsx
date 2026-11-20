@@ -6,7 +6,6 @@ import { rejectTaskCall } from "@creaton/core/pot/pot-calls.ts";
 import type { ChainTaskNow } from "@creaton/core/pot/pot-reads.ts";
 import type { ProjectNumbers } from "../../../money/numbers";
 import type { Ready } from "../../../pot/use-pot";
-import type { ProjectTask } from "../../task-record";
 import { canSendBack, phaseOf } from "../state";
 import type { ChainTask } from "../types";
 import { notHoldingMoney } from "../words";
@@ -31,14 +30,15 @@ function stop(task: ChainTaskNow, now: number): string | null {
 
 export function SendBackSheet({
   numbers,
-  task,
+  what,
   chain,
   ready,
   open,
   onClose,
 }: {
   numbers: ProjectNumbers;
-  task: ProjectTask;
+  /** The task's words as the team's record has them; null when no record here is the one the plan was made for. */
+  what: string | null;
   chain: ChainTask;
   ready: Ready;
   open: boolean;
@@ -47,7 +47,7 @@ export function SendBackSheet({
   const step: StepConfig = {
     action: "send-back-task",
     testId: "send-back-sheet",
-    title: sendBackTitle(task.what),
+    title: sendBackTitle(what),
     description: "Nobody is paid",
     press: SEND_BACK_PRESS,
     pairPress: PAY_PRESS_PAIR,
