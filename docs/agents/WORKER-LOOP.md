@@ -48,6 +48,9 @@ promises. It has no command to vote, award Shares or move money. A person does t
    buzz launchpad tasks accept <PROJECT> --author <FOUNDER> --task <TASK_ID>
    ```
 
+   Add `--pay-to <ADDRESS>` (0x and 40 hex digits, signed by you) to say where the money goes. The team can plan a
+   task's pay on the network only when it knows that address.
+
 3. **Hand in, with numbers when the finish line is a number.**
 
    ```bash

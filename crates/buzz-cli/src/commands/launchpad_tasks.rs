@@ -12,7 +12,8 @@
 //! * `open`: the help requests anyone may offer on, across every project, a bounded page at a time;
 //! * `offer`: "I can help" on an update that asks for help;
 //! * `accept`: say yes to a task that names this account. A task is this account's only once it signs a step for that
-//!   task: an offer to help is never agreement, since any project could name any offer ever made;
+//!   task: an offer to help is never agreement, since any project could name any offer ever made. `--pay-to` names the
+//!   address the money goes to, as a take does, so the team can plan the task's pay on the network;
 //! * `submit`: hand work in, as words and links;
 //! * `more-time`: ask for more time, with a reason;
 //! * `give-up`: hand the task back.
@@ -160,6 +161,10 @@ agreement; the team decides. When nothing in the page fits and `cut` is true, pa
         /// Task id (64-char hex)
         #[arg(long)]
         task: String,
+        /// The address the money goes to (0x and 40 hex digits), signed by you. Without it the team cannot plan the
+        /// task's pay on the network, because it does not know where to pay.
+        #[arg(long = "pay-to")]
+        pay_to: Option<String>,
     },
     /// Take a task open to anyone (one that names no helper and says what it pays). You become its helper; the team
     /// checks the work and pays from its own wallet on accept, never the server.
@@ -1616,12 +1621,38 @@ fn tell(project: &Project, view: &Value) -> Vec<String> {
     out
 }
 
+/// An address the money goes to: `0x` and 40 hex digits, the same words for a take and an accept.
+fn check_pay_to(pay_to: Option<&str>) -> Result<(), CliError> {
+    match pay_to {
+        Some(address) if !is_0x_hex(address, 40) => Err(CliError::Usage(
+            "--pay-to must be an address: 0x and 40 hex digits".into(),
+        )),
+        _ => Ok(()),
+    }
+}
+
+/// The tags and body of an accept: the step, the task, the team told and, when the helper names one, where to pay.
+/// The relay allows `task-pay-to` on an accept as well as on a take, under the helper's own signature.
+fn accept_parts(
+    task_id: &str,
+    tell: &[String],
+    pay_to: Option<&str>,
+) -> Result<(Vec<Tag>, Value), CliError> {
+    let (mut tags, content) = step_parts("accept", task_id, tell, "", &[], None)?;
+    if let Some(address) = pay_to {
+        tags.push(tag(&["task-pay-to", address])?);
+    }
+    Ok((tags, content))
+}
+
 async fn cmd_accept(
     client: &BuzzClient,
     id: &str,
     author: &str,
     task: &str,
+    pay_to: Option<&str>,
 ) -> Result<(), CliError> {
+    check_pay_to(pay_to)?;
     let me = client.keys().public_key().to_hex();
     let project = read_project(client, id, author).await?;
     let (view, _) = my_task(client, &project, task, &me).await?;
@@ -1636,7 +1667,7 @@ async fn cmd_accept(
             ))
         }
     }
-    let (tags, content) = step_parts("accept", task, &tell(&project, &view), "", &[], None)?;
+    let (tags, content) = accept_parts(task, &tell(&project, &view), pay_to)?;
     publish(client, &project.coordinate, tags, content).await
 }
 
@@ -1672,13 +1703,7 @@ async fn cmd_take(
     pay_to: Option<&str>,
 ) -> Result<(), CliError> {
     require_hex64(task, "--task")?;
-    if let Some(address) = pay_to {
-        if !is_0x_hex(address, 40) {
-            return Err(CliError::Usage(
-                "--pay-to must be an address: 0x and 40 hex digits".into(),
-            ));
-        }
-    }
+    check_pay_to(pay_to)?;
     let me = client.keys().public_key().to_hex();
     let project = read_project(client, id, author).await?;
     if project.team_set().contains(&me) {
@@ -2220,7 +2245,12 @@ pub async fn dispatch(cmd: TasksCmd, client: &BuzzClient) -> Result<(), CliError
             update,
             note,
         } => cmd_offer(client, &id, &author, &update, note.as_deref()).await,
-        TasksCmd::Accept { id, author, task } => cmd_accept(client, &id, &author, &task).await,
+        TasksCmd::Accept {
+            id,
+            author,
+            task,
+            pay_to,
+        } => cmd_accept(client, &id, &author, &task, pay_to.as_deref()).await,
         TasksCmd::Take {
             id,
             author,
@@ -2471,6 +2501,56 @@ mod tests {
             "https://example.org/b",
         ])
         .is_ok());
+    }
+
+    #[test]
+    fn accept_may_carry_pay_to_and_the_record_is_the_one_the_relay_accepts() {
+        let pay_to = "0x00000000000000000000000000000000000000cd";
+        let task = "a".repeat(64);
+        let team = "b".repeat(64);
+        // Without a wallet the step is what it always was.
+        let (tags, _) = accept_parts(&task, std::slice::from_ref(&team), None).expect("tags");
+        let plain = pairs(&tags);
+        assert!(plain.contains(&vec!["task-part".to_string(), "accept".to_string()]));
+        assert!(!plain.iter().any(|t| t[0] == "task-pay-to"));
+        // With one: that one tag more, once, shaped as a take's pay-to is.
+        let (tags, _) = accept_parts(&task, &[team], Some(pay_to)).expect("tags");
+        let with = pairs(&tags);
+        assert!(with.contains(&vec!["task-pay-to".to_string(), pay_to.to_string()]));
+        assert_eq!(with.iter().filter(|t| t[0] == "task-pay-to").count(), 1);
+        assert_eq!(with.len(), plain.len() + 1);
+        let (take_tags, _) = take_parts(&task, &[], Some(pay_to)).expect("tags");
+        let take = pairs(&take_tags);
+        let pay_tag = |tags: &[Vec<String>]| tags.iter().find(|t| t[0] == "task-pay-to").cloned();
+        assert_eq!(pay_tag(&with), pay_tag(&take));
+        // An address that is not one is refused before anything is signed, with the same words as a take.
+        for bad in [
+            "",
+            "0x12",
+            "cd",
+            &format!("0x{}", "g".repeat(40)),
+            &format!("0x{}", "a".repeat(41)),
+        ] {
+            let err = check_pay_to(Some(bad)).expect_err("not an address");
+            assert!(err.to_string().contains("0x and 40 hex digits"), "{bad}");
+        }
+        assert!(check_pay_to(None).is_ok());
+        assert!(check_pay_to(Some(pay_to)).is_ok());
+        // The command line takes it.
+        let id = "a".repeat(64);
+        let base = [
+            "buzz",
+            "launchpad",
+            "tasks",
+            "accept",
+            "orbit",
+            "--author",
+            &id,
+            "--task",
+            &id,
+        ];
+        assert!(crate::Cli::try_parse_from(base).is_ok());
+        assert!(crate::Cli::try_parse_from(base.into_iter().chain(["--pay-to", pay_to])).is_ok());
     }
 
     #[test]
