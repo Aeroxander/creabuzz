@@ -108,6 +108,70 @@ async fn p7b_a_fresh_cursor_starts_at_the_readers_position_and_old_rows_make_no_
     );
 }
 
+/// A block that alone holds more task rows than one pass reads loses none of them: the batch before it, the block
+/// itself (read whole, though it is more than a batch) and the one after it each make their alerts.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_block_with_more_task_rows_than_a_batch_makes_every_alert() {
+    let pw = push_world().await;
+    let (head, t0) = head(&pw);
+    let (_holder, _device) = subscribed(&pw, HOLDER).await;
+    make(&pw).await.expect("starts the cursor");
+    let mut serial = 0u64;
+    // 100 rows, then 250 in one block (more than the 200 of a batch), then 5.
+    for (block, rows) in [(head + 1, 100i32), (head + 2, 250), (head + 3, 5)] {
+        add_block(&pw.w, block, t0 + (block - head) * 100).await;
+        for log_index in 0..rows {
+            serial += 1;
+            add_task_row(&pw.w, block, log_index, "TaskAnnounced", serial, None).await;
+        }
+    }
+    set_reader_next(&pw.w, head + 4).await;
+    let mut passes = 0;
+    while cursor(&pw).await != Some(i64::try_from(head + 4).expect("block")) {
+        passes += 1;
+        assert!(passes <= 5, "the cursor does not reach the reader");
+        make(&pw).await.expect("a pass");
+    }
+    assert_eq!(serial, 355);
+    assert_eq!(
+        alert_count(&pw).await,
+        355,
+        "every task row made its alert, none was stepped over"
+    );
+}
+
+/// The case where the cursor itself sits on the oversized block (nothing before it): the first pass must not move past
+/// the rows it did not read.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_cursor_on_a_block_of_more_than_a_batch_reads_all_of_it() {
+    let pw = push_world().await;
+    let (head, t0) = head(&pw);
+    let (_holder, _device) = subscribed(&pw, HOLDER).await;
+    make(&pw).await.expect("starts the cursor");
+    add_block(&pw.w, head + 1, t0 + 100).await;
+    for log_index in 0..250i32 {
+        add_task_row(
+            &pw.w,
+            head + 1,
+            log_index,
+            "TaskAnnounced",
+            u64::try_from(log_index).expect("n") + 1,
+            None,
+        )
+        .await;
+    }
+    set_reader_next(&pw.w, head + 2).await;
+    let report = make(&pw).await.expect("one pass");
+    assert_eq!((report.rows, report.made), (250, 250), "{report:?}");
+    assert_eq!(
+        cursor(&pw).await,
+        Some(i64::try_from(head + 2).expect("block"))
+    );
+    assert_eq!(alert_count(&pw).await, 250);
+}
+
 #[tokio::test]
 #[ignore = "requires Postgres and Redis"]
 async fn p7_one_alert_per_task_event_and_a_repeated_pass_or_a_rewound_cursor_makes_no_second() {

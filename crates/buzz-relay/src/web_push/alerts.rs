@@ -42,6 +42,9 @@ pub const AUDIENCE_MAX: usize = 2_000;
 const CUT_COUNT_MAX: i64 = 100_000;
 /// The most task rows one pass reads.
 pub const BATCH_ROWS: i64 = 200;
+/// The most task rows of one single block that a pass reads when that block alone is more than [`BATCH_ROWS`]. A block's
+/// logs are bounded by its gas, far below this; the bound is only a ceiling on what one pass holds in memory.
+pub const BLOCK_ROWS_MAX: i64 = 10_000;
 /// The alert's own lifetime: a row older than this on the chain's clock when it is picked up is dropped.
 pub const ALERT_LIFETIME_SECS: u64 = 24 * 3600;
 /// The most alerts without a link looked at again in one pass.
@@ -99,9 +102,18 @@ pub fn is_too_old(block_time: u64, as_of: u64) -> bool {
     as_of.saturating_sub(block_time) > ALERT_LIFETIME_SECS
 }
 
+/// The block that alone fills a cut batch: `Some(block)` when `limit` rows were asked for, more came back, and the first
+/// and the first unread row are in the same block. The cursor cannot name a place inside a block, so that block is read
+/// whole, on its own ([`next_cursor`] would otherwise step over its unread rows). Pure.
+pub fn oversized_block(blocks: &[u64], limit: usize) -> Option<u64> {
+    let (first, unread) = (blocks.first()?, blocks.get(limit)?);
+    (first == unread).then_some(*first)
+}
+
 /// Where the next batch starts after reading `rows` (their blocks, in order) when `limit` rows were asked for and `end`
 /// is the block the reader will read next: past everything when the batch was not cut, else at the first block that was
-/// not fully read (a block read twice is absorbed by the unique keys). It always moves forward. Pure.
+/// not fully read (a block read twice is absorbed by the unique keys). It always moves forward. A batch that one block
+/// fills is not asked of this: it is read whole first ([`oversized_block`]). Pure.
 pub fn next_cursor(from: u64, blocks: &[u64], limit: usize, end: u64) -> u64 {
     if blocks.len() <= limit {
         return end;
@@ -385,6 +397,39 @@ async fn withdrawn_before(
     .await
 }
 
+/// The task rows of this reader in the blocks `from` up to, not including, `to`, in order, at most `limit` of them.
+async fn read_task_rows(
+    pool: &sqlx::PgPool,
+    reader: &str,
+    from: u64,
+    to: u64,
+    limit: i64,
+) -> anyhow::Result<Vec<sqlx::postgres::PgRow>> {
+    sqlx::query(
+        "SELECT l.block_number, l.project_key, l.event, l.decoded->>'serial' AS serial, \
+                l.decoded->>'state' AS state, b.block_time \
+         FROM chain_logs l JOIN chain_blocks b ON b.reader = l.reader AND b.number = l.block_number \
+         WHERE l.reader = $1 AND l.role = 'tasks' AND l.project_key IS NOT NULL \
+           AND l.event IN ('TaskAnnounced', 'TaskTaken', 'TaskResolved') \
+           AND l.block_number >= $2 AND l.block_number < $3 \
+         ORDER BY l.block_number, l.log_index LIMIT $4",
+    )
+    .bind(reader)
+    .bind(i64::try_from(from).context("block")?)
+    .bind(i64::try_from(to).context("block")?)
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .context("read the task rows")
+}
+
+/// The block of each row, in order.
+fn block_numbers(rows: &[sqlx::postgres::PgRow]) -> anyhow::Result<Vec<u64>> {
+    rows.iter()
+        .map(|row| Ok(u64::try_from(row.try_get::<i64, _>("block_number")?).unwrap_or(0)))
+        .collect()
+}
+
 /// One pass: make the alerts for the task rows the reader has stored since the cursor. A failure leaves the cursor where it
 /// was, so the next pass makes the same alerts (a retry record that is the cursor itself).
 pub async fn make_alerts(
@@ -434,32 +479,30 @@ pub async fn make_alerts(
         return Ok(report);
     }
 
-    let rows = sqlx::query(
-        "SELECT l.block_number, l.project_key, l.event, l.decoded->>'serial' AS serial, \
-                l.decoded->>'state' AS state, b.block_time \
-         FROM chain_logs l JOIN chain_blocks b ON b.reader = l.reader AND b.number = l.block_number \
-         WHERE l.reader = $1 AND l.role = 'tasks' AND l.project_key IS NOT NULL \
-           AND l.event IN ('TaskAnnounced', 'TaskTaken', 'TaskResolved') \
-           AND l.block_number >= $2 AND l.block_number < $3 \
-         ORDER BY l.block_number, l.log_index LIMIT $4",
-    )
-    .bind(&reader)
-    .bind(i64::try_from(cursor).context("block")?)
-    .bind(i64::try_from(reader_next).context("block")?)
-    .bind(BATCH_ROWS + 1)
-    .fetch_all(pool)
-    .await
-    .context("read the task rows")?;
     let limit = usize::try_from(BATCH_ROWS).unwrap_or(usize::MAX);
-    let mut blocks = Vec::with_capacity(rows.len());
-    for row in &rows {
-        blocks.push(u64::try_from(row.try_get::<i64, _>("block_number")?).unwrap_or(0));
+    let mut rows = read_task_rows(pool, &reader, cursor, reader_next, BATCH_ROWS + 1).await?;
+    let mut blocks = block_numbers(&rows)?;
+    let mut new_cursor = next_cursor(cursor, &blocks, limit, reader_next);
+    let mut taken = limit;
+    // One block with more rows than a batch: the cursor holds no place inside a block, so that block is read whole
+    // (up to a ceiling) and the cursor goes past it.
+    if let Some(block) = oversized_block(&blocks, limit) {
+        rows = read_task_rows(pool, &reader, block, block + 1, BLOCK_ROWS_MAX + 1).await?;
+        blocks = block_numbers(&rows)?;
+        taken = usize::try_from(BLOCK_ROWS_MAX).unwrap_or(usize::MAX);
+        if blocks.len() > taken {
+            tracing::warn!(
+                block,
+                rows = blocks.len(),
+                "alerts: a block holds more task rows than one pass reads; the rest make no alert"
+            );
+        }
+        new_cursor = block + 1;
     }
-    let new_cursor = next_cursor(cursor, &blocks, limit, reader_next);
-    report.rows = rows.len().min(limit);
+    report.rows = rows.len().min(taken);
 
     let mut candidates = Vec::new();
-    for row in rows.iter().take(limit) {
+    for row in rows.iter().take(taken) {
         let event: String = row.try_get("event")?;
         let state_value: Option<u64> = row
             .try_get::<Option<String>, _>("state")?
@@ -820,6 +863,18 @@ mod tests {
         // Always forward, never past the reader.
         assert_eq!(next_cursor(10, &[10, 10, 10], 2, 40), 11);
         assert_eq!(next_cursor(10, &[39, 39, 39], 2, 12), 12);
+    }
+
+    #[test]
+    fn a_batch_that_one_block_fills_is_read_whole_and_no_other_is() {
+        // 2 asked for, 3 came back, all in block 12: read block 12 on its own.
+        assert_eq!(oversized_block(&[12, 12, 12], 2), Some(12));
+        // The first unread row is in a later block than the first row: the cursor goes there, nothing is skipped.
+        assert_eq!(oversized_block(&[11, 12, 12], 2), None);
+        assert_eq!(oversized_block(&[12, 12, 13], 2), None);
+        // Not cut, or nothing read.
+        assert_eq!(oversized_block(&[12, 12], 2), None);
+        assert_eq!(oversized_block(&[], 2), None);
     }
 
     #[test]
