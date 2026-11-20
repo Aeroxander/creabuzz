@@ -15,7 +15,8 @@ import {
   WORKER_WALLET,
 } from "../../../tests/helpers/plan-scene";
 import { timeText } from "../money/numbers";
-import { dollarsPhrase, UNKNOWN_TASK_WORDS } from "../tasks/chain/words";
+import { UNKNOWN_TASK_WORDS } from "../tasks/chain/words";
+import { exactDollarsText } from "./pot-words";
 import type { ChainTaskNow } from "../tasks/chain/types";
 import {
   describePotCall,
@@ -156,9 +157,24 @@ describe("pay for a task", () => {
     const t = words(call);
     expect(t.kind).toBe("accept-task");
     expect(t.words).toBe(
-      `Pay 12.50 dollars of the ${dollarsPhrase(taken.setAside)} set aside for task 6 to Pat (${WORKER_WALLET}). What is left goes back to the project and to those who took out while it was set aside.`,
+      `Pay 12.50 dollars of the ${exactDollarsText(taken.setAside)} dollars set aside for task 6 to Pat (${WORKER_WALLET}). What is left goes back to the project and to those who took out while it was set aside.`,
     );
     expect(t.names).toEqual([WORKER_WALLET]);
+  });
+
+  it("pays all of a set-aside amount with sub-cent digits: the sentence says it exactly, not rounded down", () => {
+    const all = acceptTaskCall({
+      treasury,
+      serial: 6n,
+      payDollars: 57_486_851n,
+    });
+    const t = words(
+      all,
+      facts({ taskFacts: () => ({ ...taken, setAside: 57_486_851n }) }),
+    );
+    expect(t.words).toContain(
+      "Pay 57.486851 dollars of the 57.486851 dollars set aside",
+    );
   });
 
   it("takes who is paid from the network, never from the call", () => {

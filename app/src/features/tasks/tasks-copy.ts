@@ -76,6 +76,50 @@ export const TASK_PROBLEM = {
     "The limits were not set. Only the wallet that runs this project can set them.",
 } as const;
 
+/**
+ * What the server says when a step on a task that has a plan on the network is refused, in the words a person reads. The server's
+ * own sentences carry a prefix for programs (`invalid:`, `restricted:`) that is not shown. `retry:` is not mapped: a caller reads
+ * it to try again. Null for any other message.
+ */
+export function taskRefusalWords(message: string): string | null {
+  const said = message.toLowerCase();
+  const table: readonly (readonly [string, string])[] = [
+    [
+      "name the wallet you will take it with",
+      "This task is planned on the network, so it is paid to a wallet you name. Connect a wallet and take it again.",
+    ],
+    [
+      "the plan on the network names another wallet",
+      "The team planned this task for another wallet, so it cannot be taken with this one.",
+    ],
+    [
+      "already taken on the network by another wallet",
+      "Someone else has already taken this task.",
+    ],
+    [
+      "plan has ended on the network",
+      "This task's plan has ended, so it cannot be taken any more.",
+    ],
+    [
+      "pay it on the network first",
+      "The payment is not on the network yet. Pay it there first, then save that it was paid.",
+    ],
+    [
+      "not the payment that paid this task",
+      "That is not the payment that paid this task.",
+    ],
+    [
+      "paid another wallet than the one the worker named",
+      "The network paid another wallet than the one the worker named, so this cannot be saved as paid.",
+    ],
+    [
+      "withdraw or send back the money on the network first",
+      "The money for this task is still set aside on the network. Withdraw the plan or send the money back first.",
+    ],
+  ];
+  return table.find(([tail]) => said.includes(tail))?.[1] ?? null;
+}
+
 /** "40 dollars", "1 dollar". */
 export function dollarsWords(usd: number): string {
   return `${usd.toLocaleString("en-US")} ${usd === 1 ? "dollar" : "dollars"}`;

@@ -13,6 +13,7 @@ import { publishAsUser, read } from "../../lib/relay";
 import type { Project } from "../project/project-record";
 import type { OwedTask } from "../pot/pair-terms";
 import { rawDollars } from "./task-calls";
+import { taskRefusalWords } from "./tasks-copy";
 import {
   payOwed,
   type ProjectTask,
@@ -172,7 +173,13 @@ export function useTaskWrite(project: Project) {
     }: {
       record: RecordTemplate;
       failure: string;
-    }) => publishAsUser(record, failure),
+    }) =>
+      publishAsUser(record, failure).catch((error: unknown) => {
+        // A refusal about the plan on the network is told in plain words, not in the server's own.
+        const words =
+          error instanceof Error ? taskRefusalWords(error.message) : null;
+        throw words === null ? error : new Error(words);
+      }),
     onSettled: () =>
       queryClient.invalidateQueries({
         queryKey: taskKeys.project(project.coordinate),

@@ -17,6 +17,7 @@ import {
   timeText,
 } from "../../money/numbers";
 import { dollarsPhrase, percentOfBps } from "../../money/pot-copy-tasks";
+import { exactDollarsText } from "../../pot/pot-words";
 import { TASK_PROBLEM } from "../tasks-copy";
 import type { Phase, Tie } from "./state";
 import type { ChainTask } from "./types";
@@ -143,7 +144,8 @@ export function plannedLines(input: {
     input.open
       ? `${head}. It can be taken until ${timeText(input.date)}.`
       : `${head}, from ${timeText(input.date)}.`,
-    `You can take your money out before then. ${dollarsPhrase(input.max)} is the most; it can be less if people take out first.`,
+    // Before it can be taken the date is the day to leave by; once it can be taken, leaving works on any day (the news says so too).
+    `${input.open ? "You can take your money out any time." : "You can take your money out before then."} ${dollarsPhrase(input.max)} is the most; it can be less if people take out first.`,
   ];
 }
 
@@ -270,14 +272,21 @@ export function announceTaskWords(input: {
   return `Plan a task: pay up to ${dollarsPhrase(input.max)} to ${input.who ?? "whoever takes it first"}, at most ${percentOfBps(input.shareBps)} of the project's money. Holders get ${input.notice} notice, so it can be taken from ${timeText(input.from)}; if nobody takes it within ${input.window} it lapses; once taken it is due ${input.due} later.`;
 }
 
-/** "Pay {pay} of the {set aside} set aside for task {serial} to {takenBy}..." */
+/** An amount exactly as a call carries it, never rounded: "1 dollar", "57.486851 dollars". */
+const exactPhrase = (raw: bigint): string =>
+  raw === 1_000_000n ? "1 dollar" : `${exactDollarsText(raw)} dollars`;
+
+/**
+ * "Pay {pay} of the {set aside} set aside for task {serial} to {takenBy}..." The amounts are exact: the other signer confirms
+ * what the call moves, so "pay it all" of 57.486851 dollars reads 57.486851, not a figure rounded down to the cent.
+ */
 export function acceptTaskWords(input: {
   pay: bigint;
   setAside: bigint;
   serial: bigint;
   who: string;
 }): string {
-  return `Pay ${dollarsPhrase(input.pay)} of the ${dollarsPhrase(input.setAside)} set aside for task ${input.serial} to ${input.who}. What is left goes back to the project and to those who took out while it was set aside.`;
+  return `Pay ${exactPhrase(input.pay)} of the ${exactPhrase(input.setAside)} set aside for task ${input.serial} to ${input.who}. What is left goes back to the project and to those who took out while it was set aside.`;
 }
 
 /** "Send task {serial}'s money back. Nobody is paid." */
