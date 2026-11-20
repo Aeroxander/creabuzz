@@ -84,6 +84,24 @@ export function shiftTimes(content: Json, delta: number): void {
   }
   const tasks = content.tasks as Json | null | undefined;
   if (tasks) shiftTasks(tasks, shift);
+  shiftSocial(content, shift);
+}
+
+/** The points in time of the step 3 keys: the feed's hours and items and the streak's last update (the windows are durations). */
+function shiftSocial(content: Json, shift: (o: Json, name: string) => void) {
+  const feed = content.feed as Json | null | undefined;
+  if (feed) {
+    for (const hour of (feed.hours as Json[] | undefined) ?? [])
+      shift(hour, "at");
+    for (const item of (feed.items as Json[] | undefined) ?? []) {
+      shift(item, "at");
+      shift(item, "date");
+    }
+  }
+  const updates = (content.streaks as Json | null | undefined)?.updates as
+    | Json
+    | undefined;
+  if (updates) shift(updates, "lastAt");
 }
 
 /** The points in time of a record's `tasks` section (the durations in `limits` and `cut` stay as they are). */
@@ -154,4 +172,51 @@ export function numbersV2Content(o: NumbersV2Options): Json {
   content.founder = FOUNDER_EVM;
   o.patch?.(content);
   return content;
+}
+
+export type SocialKey = "held" | "feed" | "streaks" | "established";
+
+/**
+ * A `patch` for one or more of the step 3 keys: a value replaces the example's, `null` is the server saying it could not
+ * work it out, and `"absent"` takes the key out (a record from an older server). A key not named stays as the example has it.
+ */
+export function withSocial(
+  parts: Partial<Record<SocialKey, Json | null | "absent">>,
+): (content: Json) => void {
+  return (content) => {
+    for (const [key, value] of Object.entries(parts)) {
+      if (value === "absent") delete content[key];
+      else content[key] = value === undefined ? null : value;
+    }
+  };
+}
+
+/**
+ * **SHAPE ONLY.** The ranking index (kind 39009, `d = explore`) as `RECORD-V2.md` section 11.6 says the server signs it. The
+ * fixture chain has no project whose id hashes to a coordinate, so the server has no real example of it: this one is built
+ * from that shape and from nothing else, and says so. An entry carries a coordinate, the project's chain key and the money
+ * and the people it ranks by (6 decimals, a count); nothing else.
+ */
+export interface ShapeOnlyEntry {
+  key: string;
+  a: string;
+  launchedAt: number;
+  windowSecs: number;
+  money: string;
+  accounts: number;
+  reached: boolean | null;
+}
+export function shapeOnlyIndexContent(
+  entries: readonly ShapeOnlyEntry[],
+  o: { now: number; extra?: Json },
+): Json {
+  return {
+    version: 1,
+    kind: "explore",
+    asOf: { block: 1000, time: o.now - 60 },
+    entries: entries.map((e) => ({ ...e })),
+    seen: entries.length,
+    cut: 0,
+    ...o.extra,
+  };
 }

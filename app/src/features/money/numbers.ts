@@ -13,6 +13,7 @@ import { KIND_PROJECT_NUMBERS } from "@creaton/core/kinds.ts";
 import { numbersBelongTo } from "@creaton/core/launchpad/project-chain.ts";
 
 import { BYTES32, isObject, obj, readBody, time } from "./numbers-read";
+import { readSocial } from "./numbers-social";
 import type {
   NumbersEvent,
   ProjectNumbers,
@@ -21,10 +22,17 @@ import type {
 } from "./numbers-types";
 
 export type {
+  EstablishedNumbers,
+  FeedHour,
+  FeedItem,
+  FeedItemKind,
+  FeedNumbers,
+  HeldNumbers,
   NumbersEvent,
   ProjectNumbers,
   QuietState,
   RemovedNumbers,
+  StreaksNumbers,
 } from "./numbers-types";
 
 /** Raw dollar units in one dollar, and raw Share units in one Share. */
@@ -81,7 +89,8 @@ export function parseNumbers(
       })
     )
       return null;
-    return readBody(body, d);
+    // The step 3 keys are read apart from the money: a wrong one is null for that part and never fails the record.
+    return { ...readBody(body, d), ...readSocial(body) };
   } catch {
     // Unreadable (a field that cannot be believed), or anything unforeseen: "cannot read", never a crash.
     return null;

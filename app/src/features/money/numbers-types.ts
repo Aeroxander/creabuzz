@@ -162,6 +162,88 @@ export interface ProjectNumbers {
    * when the server is older than step 2. Every task screen treats the last three as "no queue screens" (1.6).
    */
   tasks?: ChainTasks | null | "unreadable";
+  /**
+   * The step 3 keys (`numbers-social.ts`), each read on its own: a part that is absent or null is not known here, and a
+   * part that cannot be believed reads as null while the rest of the record stands.
+   */
+  held?: HeldNumbers | null;
+  feed?: FeedNumbers | null;
+  streaks?: StreaksNumbers | null;
+  established?: EstablishedNumbers | null;
+}
+
+/**
+ * What the step 3 keys of a record say once read (`numbers-social.ts`; `docs/next-version/RECORD-V2.md` section 11). Each
+ * is read apart from the money: absent (an older server) and null (the server could not work it out, or the key could
+ * not be believed here) both mean "not known here", never "none" and never zero.
+ */
+export interface HeldWindow {
+  /** Backer Shares held without a fall for the whole window (18 decimals). */
+  shares: bigint;
+  /** The part of all backer Shares that is, in ten-thousandths. */
+  bps: number;
+}
+export interface HeldNumbers {
+  windows: { rankSecs: number; badgeSecs: number };
+  /** The ranking's window (30 days); null when that window could not be counted. */
+  rank:
+    | (HeldWindow & {
+        /** What those Shares would get if taken out now (6 decimals): for lists and words. */
+        money: bigint;
+        /** Accounts holding at least the smallest Back at that lowest balance. */
+        accounts: number;
+      })
+    | null;
+  /** The badge's window (13 units); null when that window could not be counted. */
+  badge: HeldWindow | null;
+  /** Accounts that hold now at least the smallest Back. */
+  countedAccounts: number;
+}
+
+export interface FeedHour {
+  /** The hour's first second. */
+  at: number;
+  joins: number;
+  tookOut: number;
+  /** The net money in that hour, rounded to the feed's step: a direction and an absolute amount (0 when "even"). */
+  net: { dir: "in" | "out" | "even"; amount: bigint };
+}
+export type FeedItemKind =
+  | "task_planned"
+  | "task_taken"
+  | "task_paid"
+  | "task_ended"
+  | "task_withdrawn"
+  | "update";
+export interface FeedItem {
+  kind: FeedItemKind;
+  at: number;
+  serial: number | null;
+  /** When a planned task can first be taken, or when a taken one is due. */
+  date: number | null;
+}
+export interface FeedNumbers {
+  /** The step every amount is rounded to (100 dollars, 6 decimals). */
+  roundTo: bigint;
+  bucketSecs: number;
+  /** The last hours, oldest first (48 from the server). */
+  hours: FeedHour[];
+  /** Things that are not money flows, newest first. Kinds this app does not know are left out. */
+  items: FeedItem[];
+  cut: number;
+}
+
+export interface StreaksNumbers {
+  updates: { weeks: number; longest: number; lastAt: number | null };
+}
+
+export interface EstablishedNumbers {
+  rule: { minHeldBps: number; heldSecs: number; minAccounts: number };
+  heldBps: number | null;
+  accounts: number | null;
+  twoSigners: boolean;
+  /** The server's verdict; null when it could not be worked out. */
+  reached: boolean | null;
 }
 
 /** A launch that later left the chain: nothing about money is shown for it. */
