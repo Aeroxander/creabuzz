@@ -11,7 +11,13 @@ import { Card } from "../../ui/card";
 import { potProblem } from "../money/pot-copy";
 import { rememberStep } from "./own-history";
 import { PotSheet } from "./PotSheet";
-import { NOT_A_RETURN, sharesWords, smallDollarsText } from "./pot-words";
+import {
+  NOT_A_RETURN,
+  sharesWords,
+  smallDollarsText,
+  takeOutTaskWords,
+  WHERE_TO_CLAIM,
+} from "./pot-words";
 import {
   PORTION_WORDS,
   type Portion,
@@ -22,6 +28,17 @@ import type { MoneyTarget } from "./target";
 import type { Ready } from "./use-pot";
 
 const PORTIONS: Portion[] = ["all", "half", "quarter"];
+
+/**
+ * What the project page already holds about tasks, handed to the sheet as plain values (never read by the sheet): how long a
+ * task's money can stay set aside, and where a person goes to claim what they are owed. The press never waits for either.
+ */
+export interface TakeOutTaskInfo {
+  /** The record's limit, or null when the page has none. */
+  dueSecs: number | null;
+  /** Goes to the claims; the link is drawn only when the page can go there. */
+  onWhereToClaim?: () => void;
+}
 
 function Line({
   label,
@@ -54,6 +71,7 @@ export function TakeOutSheet({
   open,
   ready,
   onClose,
+  taskInfo,
 }: {
   target: MoneyTarget;
   projectName: string;
@@ -61,6 +79,7 @@ export function TakeOutSheet({
   open: boolean;
   ready: Ready;
   onClose: () => void;
+  taskInfo?: TakeOutTaskInfo;
 }) {
   const [portion, setPortion] = useState<Portion>("all");
   const team = kind === "team";
@@ -114,6 +133,13 @@ export function TakeOutSheet({
       </div>
     </fieldset>
   );
+
+  // Closing forgets the choice, so the next opening starts from "All of it".
+  const close = () => {
+    sawHeld.current = false;
+    setPortion("all");
+    onClose();
+  };
 
   let body: React.ReactNode;
   if (reading.isPending)
@@ -193,11 +219,28 @@ export function TakeOutSheet({
           </p>
         ) : null}
         {good.note > 0n ? (
-          <p className="text-sm" data-testid="takeout-note">
-            Part of the project's money is set aside for a task. You will be
-            owed up to {smallDollarsText(good.note)} dollars more if it is not
-            paid.
-          </p>
+          <div className="flex flex-col items-start gap-1">
+            <p className="text-sm" data-testid="takeout-note">
+              {takeOutTaskWords({
+                cash: good.cash,
+                note: good.note,
+                dueSecs: taskInfo?.dueSecs ?? null,
+              })}
+            </p>
+            {taskInfo?.onWhereToClaim ? (
+              <Button
+                data-testid="takeout-where-to-claim"
+                onClick={() => {
+                  close();
+                  taskInfo.onWhereToClaim?.();
+                }}
+                size="sm"
+                variant="ghost"
+              >
+                {WHERE_TO_CLAIM}
+              </Button>
+            ) : null}
+          </div>
         ) : null}
         <details className="text-sm">
           <summary className="min-h-11 cursor-pointer font-semibold">
@@ -250,11 +293,7 @@ export function TakeOutSheet({
           });
       }}
       onOpenChange={(next) => {
-        if (!next) {
-          sawHeld.current = false;
-          setPortion("all");
-          onClose();
-        }
+        if (!next) close();
       }}
       open={open}
       playMoney={target.playMoney}

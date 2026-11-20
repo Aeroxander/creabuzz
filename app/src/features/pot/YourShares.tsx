@@ -19,7 +19,7 @@ import {
   sharesWords,
   smallDollarsText,
 } from "./pot-words";
-import { TakeOutSheet } from "./TakeOutSheet";
+import { TakeOutSheet, type TakeOutTaskInfo } from "./TakeOutSheet";
 import type { MoneyTarget } from "./target";
 import { type Ready, WalletGate } from "./use-pot";
 
@@ -56,9 +56,12 @@ export async function readHolding(ready: Ready, target: MoneyTarget) {
 export function YourShares({
   target,
   projectName,
+  taskInfo,
 }: {
   target: MoneyTarget;
   projectName: string;
+  /** What the project page holds about tasks, for the Take out sheet's line (never read by the sheet). */
+  taskInfo?: TakeOutTaskInfo;
 }) {
   const titleId = useId();
   return (
@@ -73,7 +76,12 @@ export function YourShares({
       </h2>
       <WalletGate chainId={target.chainId} what="see your Shares">
         {(ready) => (
-          <Holding projectName={projectName} ready={ready} target={target} />
+          <Holding
+            projectName={projectName}
+            ready={ready}
+            target={target}
+            taskInfo={taskInfo}
+          />
         )}
       </WalletGate>
     </Card>
@@ -85,10 +93,12 @@ export function Holding({
   target,
   projectName,
   ready,
+  taskInfo,
 }: {
   target: MoneyTarget;
   projectName: string;
   ready: Ready;
+  taskInfo?: TakeOutTaskInfo;
 }) {
   const [sheet, setSheet] = useState<"backer" | "team" | null>(null);
   const reading = useQuery({
@@ -221,6 +231,7 @@ export function Holding({
         projectName={projectName}
         ready={ready}
         target={target}
+        taskInfo={taskInfo}
       />
     </div>
   );

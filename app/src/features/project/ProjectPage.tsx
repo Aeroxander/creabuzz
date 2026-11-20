@@ -19,6 +19,7 @@ import {
   useProjectNumbers,
   useWalletAddress,
 } from "../money/use-money";
+import { PlannedStrips } from "../tasks/chain/holder/PlannedStrips";
 import { JoinBox } from "./JoinBox";
 import { PeopleTab } from "./PeopleTab";
 import type { Project } from "./project-record";
@@ -172,6 +173,17 @@ function ProjectView({ project }: { project: Project }) {
         project={project}
         secondary={false}
       />
+
+      {/* Money is about to move for a planned task: every reader sees who gets how much at most, and from when. */}
+      {investing && numbers ? (
+        <PlannedStrips
+          address={walletAddress}
+          numbers={numbers}
+          onOpenMoney={() => setTab("money")}
+          onOpenTasks={() => setTab("tasks")}
+          project={project}
+        />
+      ) : null}
 
       <Tabs
         items={[

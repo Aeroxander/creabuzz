@@ -12,12 +12,14 @@ import { Card } from "../../ui/card";
 import type { ProjectNumbers } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { type BackRead, readBack } from "./back-read";
+import { plannedBackLine } from "./back-tasks";
 import { rememberStep } from "./own-history";
 import { senderKind } from "../money/wallet";
 import { PotSheet } from "./PotSheet";
 import type { Ready } from "./use-pot";
 import {
   NOT_A_RETURN,
+  backLockedWords,
   exactDollarsText,
   rateWords,
   sharesWords,
@@ -70,6 +72,8 @@ export function BackSheet({
 }) {
   const { treasury, shares } = numbers.contracts;
   const open = amount !== null;
+  // From the record's rows, which the page already holds: never a read of the sheet's own.
+  const planned = plannedBackLine(numbers);
   const reading = useQuery({
     queryKey: [
       "pot",
@@ -151,6 +155,11 @@ export function BackSheet({
           />
         </dl>
         <p className="text-sm text-muted">{NOT_A_RETURN}</p>
+        {planned ? (
+          <p className="text-sm" data-testid="back-planned">
+            {planned}
+          </p>
+        ) : null}
         {short ? (
           <p
             className="text-sm text-danger"
@@ -172,11 +181,7 @@ export function BackSheet({
               money a day.
             </li>
             <li data-testid="back-locked">
-              Money set aside for tasks:{" "}
-              {good.plan.quote.locked === 0n
-                ? "none"
-                : `${smallDollarsText(good.plan.quote.locked)} dollars`}
-              .
+              {backLockedWords(good.plan.quote.locked)}
             </li>
             <li data-testid="back-arriving">
               Money from outside still arriving:{" "}

@@ -3,6 +3,7 @@
  * dollars read, where a project stands (open, quiet, wound down) and what that means for a person, why the door is shut,
  * and the two lines every money sheet carries. Pure: no screen logic, so one test holds the sentences.
  */
+import { durationWords } from "../tasks/chain/duration";
 import {
   dayText,
   dollarsText,
@@ -192,4 +193,59 @@ export function quietWaitWords(numbers: ProjectNumbers): string {
   const secs = numbers.limits.windDownUnits * numbers.unit;
   const days = secs / 86_400;
   return days >= 150 && days <= 220 ? "about half a year" : spanOf(secs);
+}
+
+// --- Money set aside for tasks, on the Back and Take out sheets (plan section 5.10) -------------------------------------
+
+/** "1 dollar", "25 dollars", "0.43 dollars": an amount in a sentence. */
+function amountWords(raw: bigint): string {
+  return raw === 1_000_000n ? "1 dollar" : `${smallDollarsText(raw)} dollars`;
+}
+
+/**
+ * On the Back sheet, the line about money set aside for tasks: "none" as ever, and with money set aside, what that means for
+ * the price (the chain's own `locked` figure is what the quote counts at full value).
+ */
+export function backLockedWords(locked: bigint): string {
+  return locked === 0n
+    ? "Money set aside for tasks: none."
+    : `Money set aside for tasks: ${amountWords(locked)}. You pay for it at full value now. If the task is paid, that cost is shared by everyone who holds; if it is not, the money comes back to the project.`;
+}
+
+/**
+ * On the Back sheet, when the record shows a plan nobody can take yet or one that can be taken now: said from the record's
+ * rows, never from a read. `from` is when the earliest can be taken, or null when one can be taken now.
+ */
+export function backPlannedWords(input: {
+  /** The most the plan may set aside, or the sum of the most of every plan when there are several. */
+  max: bigint;
+  count: number;
+  from: number | null;
+}): string {
+  const what =
+    input.count === 1 ? "for a task" : `in all for ${input.count} tasks`;
+  const when =
+    input.from === null
+      ? "and it can be taken now"
+      : `from ${timeText(input.from)}`;
+  return `The team plans to pay up to ${amountWords(input.max)} ${what}, ${when}. You can take your money out any time.`;
+}
+
+/** The link on the Take out sheet to where an owed amount is claimed. */
+export const WHERE_TO_CLAIM = "Where you claim it";
+
+/**
+ * On the Take out sheet, when taking out now leaves money owed for a task: what you get now and what you could be owed later.
+ * Both numbers are the chain's own quote; `dueSecs` is the record's limit when the page has it (the sentence stands without).
+ */
+export function takeOutTaskWords(input: {
+  cash: bigint;
+  note: bigint;
+  dueSecs: number | null;
+}): string {
+  const aside =
+    input.dueSecs === null
+      ? "Part of the project's money is set aside for a task."
+      : `Part of the project's money is set aside for a task, for up to ${durationWords(input.dueSecs)}.`;
+  return `${aside} You get ${amountWords(input.cash)} now, and up to ${amountWords(input.note)} more if the task is not paid in full.`;
 }
