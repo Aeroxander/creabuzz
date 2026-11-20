@@ -166,6 +166,47 @@ export async function newestRecord(
     : null;
 }
 
+/** One task row of the record's `tasks` section (RECORD-V2 section 10): the parts a journey reads. Amounts are decimal strings. */
+export interface TaskRowJson {
+  serial: number;
+  what: string;
+  payee: string | null;
+  state: string;
+  shareBps: number;
+  maxDollars: string;
+  atMostNow: string | null;
+  announcedAt: number;
+  noticeEnd: number;
+  expiresAt: number;
+  takenBy: string | null;
+  takenAt: number | null;
+  deadline: number | null;
+  setAside: string;
+  stayerClaim: string;
+  noteFace: string;
+  pay: string;
+  returned: string;
+  notesLeft: string;
+  resolvedAt: number | null;
+  resolvedTx: string | null;
+  repeatOf: number | null;
+  notes: {
+    faceTotal: string;
+    holders: { account: string; face: string; claimable: string }[];
+  } | null;
+}
+
+/** The record's `tasks` section, as far as a journey reads it. */
+export interface TasksJson {
+  book: string;
+  bookBlock: number;
+  nextSerial: number;
+  openCount: number;
+  nextExpiry: number | null;
+  cap: { usedBps: number; roomBps: number };
+  list: TaskRowJson[];
+}
+
 /** The parts of a record (version 2) this journey reads. The whole record is checked by the checker script. */
 export interface NumbersJson {
   version: number;
@@ -184,6 +225,8 @@ export interface NumbersJson {
     arriving: string;
     feesOwed: string;
     held: string;
+    locked: string;
+    notesOwed: string;
   };
   shares: { backers: string; teamCounted: string };
   value: { leaveValue: string };
@@ -196,7 +239,10 @@ export interface NumbersJson {
     drawn: string;
     outside: string;
     tookOut: string;
+    paidToWorkers: string;
+    noteClaims: string;
   };
+  tasks?: TasksJson | null;
   holders: { account: string; shares: string }[];
 }
 
@@ -251,6 +297,18 @@ export async function publishSigned(
     throw new Error(
       `a record of kind ${event.kind} was not accepted (${status}): ${text}`,
     );
+}
+
+/**
+ * Post an event signed by `key` and say what the server answered, without judging it: a journey that wants a refusal reads the
+ * server's own words from `text` (the status is 200 for a refusal too; the words say which).
+ */
+export async function tryPublish(
+  event: ReturnType<typeof finalizeEvent>,
+  key: Uint8Array,
+): Promise<{ accepted: boolean; text: string }> {
+  const { text } = await post("/events", JSON.stringify(event), key);
+  return { accepted: /"accepted"\s*:\s*true/.test(text), text };
 }
 
 /**
@@ -309,10 +367,14 @@ export async function worldOnThisChain(): Promise<LiveWorld> {
   };
 }
 
-/** The one-line summaries of a failed checker run are the checker's own words; this runs it and returns how many checks it made. */
+/**
+ * The one-line summaries of a failed checker run are the checker's own words; this runs it and returns how many checks it made.
+ * With `stop` the checker compares what tasks and money can change (the frame, the money, the totals, the whole task section).
+ */
 export function checkAgainstContracts(
   record: unknown,
   expected: Record<string, unknown>,
+  stop = false,
 ): number {
   const dir = need("POT_STATE_DIR");
   const recordFile = resolve(dir, "record.json");
@@ -324,6 +386,7 @@ export function checkAgainstContracts(
     [
       "-I",
       resolve(need("POT_REPO_ROOT"), "scripts/chain-loop-pot-check.py"),
+      ...(stop ? ["--stop"] : []),
       need("POT_RPC_URL"),
       recordFile,
       expectedFile,
