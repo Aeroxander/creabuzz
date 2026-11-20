@@ -278,9 +278,22 @@ Five independent reviews of step 3 (record, room, page, social, fit) were taken.
 concerns `app/`, `packages/creaton-core/`, `scripts/pot-app-*` and `scripts/pot-full-loop.sh`. Server findings (the ranking index's
 window and cuts, dust and `held`, the index's re-signing, the room's grace and mute rules, push alerts, the sponsor, the visitor's
 signer check) are the other fixer's and are not repeated here. Commits: `c0d274917` (page, card, feed, ranking) and `ab021d62d`
-(room, wallet link, sign-out); the loops' spec text and this page follow. The reviewers' scratch files of this side
+(room, wallet link, sign-out); `7ea0d67c5` (the journeys' spec text and this page). The reviewers' scratch files of this side
 (`review-s3-*`, 13 files) are deleted; their useful cases are now ordinary tests (listed with each fix) and none remains, tracked
 or not. Each guard below was switched off once, alone, and a named test failed (section "Guards switched off", at the end).
+
+### What ran after the fixes (the app's side)
+
+- `tsc --noEmit`: clean. `biome check`: clean. `check:copy`, `check:px-text`: pass. `check:file-sizes` with `CHECK_FILE_SIZES_BASE=35ea0a894`: pass.
+  `node scripts/pot-app-abi.mjs --check`: "pot ABIs are current."
+- `vitest run`: 184 files, 1722 tests passed, 0 failed (it was 179 files, 1678 tests before; the reviewers' scratch files are gone).
+- The build with `CREATON_DEPLOYMENTS_FILE=contracts/pot/deployments/pot-31337.json`: the entry chunk is 417 KiB, inside its budget ("ok"); all scripts 1240 KiB.
+- `pnpm -C packages/creaton-core test`: 1240 tests, 1239 passed, 0 failed (one skipped). `cd web`: `pnpm check:unused` clean; its tests 3502, 3501 passed, 0 failed (shared code changed).
+- `scripts/pot-app-loop.sh`: 17 tests passed, 0 failed, 0 skipped, in 11 files. `scripts/phone-loop.sh`: 14 tests passed, 0 failed, in 3 files.
+- Playwright, project `smoke`, `--trace off`, one worker, a random port: 126 passed, 1 skipped, 0 failed; no spec failed, so none was re-run.
+- `scripts/pot-full-loop.sh` with the relay built from the server fixer's commits (`d6d30a8d1`), after those were in: all five worlds
+  passed, "4375 checks passed." (the same count as before the fixes). Two of the worlds had also been run earlier on the relay built
+  before the server's fixes (pot-room 300 checks, pot-seasons 1691 checks): the app's changes did not depend on the server's.
 
 ### Fixed
 
