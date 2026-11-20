@@ -15,7 +15,6 @@ export const PUSH_WORDS = {
   ended: "A task ended on a project you back.",
 } as const;
 
-
 export const PUSH_HEADING = "Alerts when you are away";
 export const PUSH_EXPLAINED =
   "Get a short message on this device when a task is planned, taken or ended on a project you back. It says nothing about amounts or names. Open the app to read the news.";

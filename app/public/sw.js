@@ -126,14 +126,14 @@ function readPush(data) {
   let message;
   try {
     message = data ? data.json() : null;
-  } catch (error) {
+  } catch (_error) {
     return null;
   }
   if (!message || typeof message !== "object" || Array.isArray(message))
     return null;
   const kind = message.k;
   if (message.v !== 1 || typeof kind !== "string") return null;
-  if (!Object.prototype.hasOwnProperty.call(PUSH_WORDS, kind)) return null;
+  if (!Object.hasOwn(PUSH_WORDS, kind)) return null;
   const link = message.r;
   if (typeof link !== "string" || !PROJECT_LINK.test(link)) return null;
   return { kind, link };
@@ -155,17 +155,21 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const wanted = event.notification.data && event.notification.data.url;
+  const wanted = event.notification.data?.url;
   // Only the app's own project pages: anything else opens Home.
   const url =
-    typeof wanted === "string" && wanted.startsWith("/p/") && !wanted.includes("//")
+    typeof wanted === "string" &&
+    wanted.startsWith("/p/") &&
+    !wanted.includes("//")
       ? wanted
       : "/";
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((windows) => {
-        const open = windows.find((w) => w.url.startsWith(self.location.origin));
+        const open = windows.find((w) =>
+          w.url.startsWith(self.location.origin),
+        );
         if (open) {
           return open
             .focus()
