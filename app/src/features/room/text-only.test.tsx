@@ -2,6 +2,13 @@
 // project's Updates tab. A script-looking or tag-looking line shows with its characters as written, and the page gets no `img`
 // and no `b` element from it. The test posts through the real components (the room, the Updates tab), so a change that sets
 // the words as markup fails here.
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from "@tanstack/react-router";
 import { cleanup, screen, within } from "@testing-library/react";
 import type { UseQueryResult } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -56,8 +63,9 @@ vi.mock("@tanstack/react-router", async (actual) => ({
   useRouterState: () => "/p",
 }));
 
-import { RoomTab } from "./RoomTab";
+import { DemoCard } from "../season/DemoCard";
 import { UpdatesTab } from "../project/UpdatesTab";
+import { RoomTab } from "./RoomTab";
 
 const IMG = "<img src=x onerror=alert(1)>";
 const BOLD = "<b>bold</b>";
@@ -181,6 +189,39 @@ describe("the project's Updates tab draws an update's words as text", () => {
     expect(within(cards[0]).getByRole("heading").textContent).toBe(BOLD);
     expect(cards[0].textContent).toContain(IMG);
     expect(cards[1].textContent).toContain(`${BOLD} ${IMG}`);
+    expectNoParts();
+  });
+});
+
+describe("the demo-day card draws the team's last update as text", () => {
+  it("a title and a body that look like tags show as written", async () => {
+    const root = createRootRoute({
+      component: () => (
+        <DemoCard
+          batch={0}
+          card={{
+            project,
+            numbers: null,
+            freshness: null,
+            update: { at: NOW - 60, title: BOLD, body: IMG },
+          }}
+        />
+      ),
+    });
+    const router = createRouter({
+      routeTree: root.addChildren([
+        createRoute({
+          getParentRoute: () => root,
+          path: "/p/$ref",
+          component: () => null,
+        }),
+      ]),
+      history: createMemoryHistory({ initialEntries: ["/"] }),
+    });
+    draw(<RouterProvider router={router} />);
+    const update = await screen.findByTestId("demo-update");
+    expect(update.textContent).toContain(BOLD);
+    expect(update.textContent).toContain(IMG);
     expectNoParts();
   });
 });
