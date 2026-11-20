@@ -3,6 +3,7 @@
  * example (moved to now, with its task queue), a task record in the shape the Tasks tab reads, and what the chain answers.
  * Nothing here is retyped from the example: a test reads a number from `numbers`, and changes a row through `withTasks`.
  */
+import { act } from "@testing-library/react";
 import type { AbiValue } from "../../../packages/creaton-core/src/launchpad/evmAbi.ts";
 import type { ProjectNumbers } from "../../src/features/money/numbers";
 import type {
@@ -176,4 +177,14 @@ export function plannedRowOf(numbers: ProjectNumbers): ChainTask {
   );
   if (!row) throw new Error("the scene has no planned row");
   return row;
+}
+
+/**
+ * Lets the wallet gate answer (it reads the connected account asynchronously, so a press inside it is not there on the first
+ * render): what is not on the screen after this really is not offered, and a test that expects an absence says so honestly.
+ */
+export async function settled(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  });
 }

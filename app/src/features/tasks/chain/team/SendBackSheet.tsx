@@ -48,7 +48,7 @@ export function SendBackSheet({
     action: "send-back-task",
     testId: "send-back-sheet",
     title: sendBackTitle(what),
-    description: "Nobody is paid",
+    description: "The money goes back to the project",
     press: SEND_BACK_PRESS,
     pairPress: PAY_PRESS_PAIR,
     look: SEND_BACK_LOOK,

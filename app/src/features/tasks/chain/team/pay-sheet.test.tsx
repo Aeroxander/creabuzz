@@ -36,6 +36,7 @@ import {
   handedInTask,
   queueOf,
   sceneAnswers,
+  settled,
   TAKEN_SERIAL,
   takenNumbers,
   takenRowOf,
@@ -193,19 +194,31 @@ describe("the card of a task that is taken on the network", () => {
     show({ task: handedInTask(numbers, { state: "working", handIn: null }) });
     await screen.findByTestId("send-back-open");
     expect(screen.queryByTestId("pay-open")).toBeNull();
+    cleanup();
+    // A record that says work was handed in but names no piece has nothing to pay against.
+    show({ task: handedInTask(numbers, { handIn: null }) });
+    await screen.findByTestId("send-back-open");
+    expect(screen.queryByTestId("pay-open")).toBeNull();
   });
 
   it("offers nothing to anyone who does not run the project", async () => {
     setup();
     show({ address: STRANGER_EVM });
+    await settled();
     expect(screen.queryByTestId("pay-presses")).toBeNull();
     expect(screen.queryByTestId("pay-open")).toBeNull();
+    expect(screen.queryByTestId("send-back-open")).toBeNull();
   });
 
   it("offers nothing once the deadline has passed: the network ends the task by itself", async () => {
     setup();
     const late = numbers.asOf.time + 30 * 86_400;
+    // Positive control: the same card before the deadline offers both.
+    show();
+    await screen.findByTestId("pay-open");
+    cleanup();
     show({ now: late });
+    await settled();
     expect(screen.queryByTestId("pay-presses")).toBeNull();
   });
 });
@@ -364,6 +377,10 @@ describe("what stops the pay press, in one sentence", () => {
     const blocked = screen.getByTestId("accept-blocked").textContent ?? "";
     expect(blocked).toContain(STRANGER_EVM);
     expect(blocked).toContain(WORKER_WALLET);
+    // The wallet shown as the one that took it is the network's, read now, not the record's row.
+    const taker = screen.getByTestId("accept-pay-to").textContent ?? "";
+    expect(taker).toContain(STRANGER_EVM);
+    expect(taker).not.toContain(WORKER_WALLET);
     expect(confirm().disabled).toBe(true);
     expect(screen.getByTestId("accept-send-back")).toBeTruthy();
   });
@@ -475,6 +492,18 @@ describe("looking again right before the send", () => {
     expect(chain.sent).toEqual([]);
   });
 
+  it("the deadline came too close meanwhile, though the task itself did not change: nothing is sent", async () => {
+    setup();
+    show();
+    await openSheet();
+    chain.blockTime = (takenRowOf(numbers).deadline ?? 0) - 30;
+    fireEvent.click(confirm());
+    expect((await screen.findByTestId("sheet-problem")).textContent).toMatch(
+      /too close to pay this safely/,
+    );
+    expect(chain.sent).toEqual([]);
+  });
+
   it("the account in the wallet changed: nothing is sent", async () => {
     setup();
     show();
@@ -538,6 +567,9 @@ describe("with two people running the project", () => {
         };
       },
     });
+    // A world where the chain already says paid after the proposal: the proposal alone still writes no record (only a payment
+    // that landed does).
+    chain.onSend = () => chainPays(setAside);
     show();
     await openSheet();
     expect(confirm().textContent).toBe("Ask the other signer");
@@ -558,6 +590,7 @@ describe("with two people running the project", () => {
         "Asked. It is paid when the other signer confirms.",
       ),
     ).toBeTruthy();
+    await settled();
     expect(published).toEqual([]);
   });
 });

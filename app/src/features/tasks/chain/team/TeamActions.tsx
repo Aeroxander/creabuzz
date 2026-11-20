@@ -1,7 +1,7 @@
 import { runnerRole } from "../../../money/runner";
 import { paidNotRecorded } from "../../paid-journal";
 import type { TaskSlotProps } from "../slot-props";
-import { canWithdraw, phaseOf, tieOf } from "../state";
+import { canWithdraw, tieOf } from "../state";
 import { DoorChoice } from "./DoorChoice";
 import { PayPresses } from "./PayPresses";
 import { SavePaidPress } from "./SavePaidPress";
@@ -26,9 +26,9 @@ export function TeamActions(props: TaskSlotProps) {
     recordOwed(task) &&
     tieOf(chain, task).ok &&
     (chain.state === "paid" || paidNotRecorded(task.id) !== null);
+  // A project that wound down has no one who runs it (`runnerRole`), so a plan closed by the sweep never reaches this line.
   const withdrawn =
     chain.state === "cancelled" &&
-    phaseOf(chain, now, numbers.windDown?.at ?? null) === "withdrawn" &&
     task.state !== "cancelled" &&
     task.state !== "accepted";
   return (

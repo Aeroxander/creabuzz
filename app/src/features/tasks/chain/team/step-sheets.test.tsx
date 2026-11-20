@@ -31,6 +31,7 @@ import {
   plannedRowOf,
   queueOf,
   sceneAnswers,
+  settled,
   TAKEN_SERIAL,
   takenNumbers,
   takenRowOf,
@@ -160,6 +161,19 @@ describe("send the money back", () => {
     const task = taken();
     wrap(<TeamActions {...props({ ...task, state: "given-up" })} />);
     expect(await screen.findByTestId("send-back-open")).toBeTruthy();
+  });
+
+  it("is not offered after the deadline by the card's clock either", async () => {
+    const task = taken();
+    const row = takenRowOf(numbers);
+    // Positive control: before the deadline it is offered.
+    wrap(<TeamActions {...props(task)} />);
+    await screen.findByTestId("send-back-open");
+    cleanup();
+    wrap(<TeamActions {...props(task, { now: (row.deadline ?? 0) + 1 })} />);
+    await settled();
+    expect(screen.queryByTestId("send-back-open")).toBeNull();
+    expect(screen.queryByTestId("pay-open")).toBeNull();
   });
 
   it("is not offered after the deadline, and the sheet says so if the deadline passes while it is open", async () => {
@@ -314,8 +328,25 @@ describe("withdraw a plan", () => {
   it("is not offered once the plan's time is up: it lapses by itself", async () => {
     const task = planned();
     const row = plannedRowOf(numbers);
+    // Positive control: before its end the same plan is offered for withdrawal.
+    wrap(<TeamActions {...props(task)} />);
+    await screen.findByTestId("withdraw-open");
+    cleanup();
     wrap(<TeamActions {...props(task, { now: row.expiresAt + 1 })} />);
+    await settled();
     expect(screen.queryByTestId("withdraw-open")).toBeNull();
+  });
+
+  it("says the plan's time is up if the chain's clock passed its end while the sheet was open, and sends nothing", async () => {
+    const task = planned();
+    wrap(<TeamActions {...props(task)} />);
+    chain.blockTime = (plannedRowOf(numbers).expiresAt ?? 0) + 5;
+    fireEvent.click(await screen.findByTestId("withdraw-open"));
+    expect((await screen.findByTestId("step-blocked")).textContent).toBe(
+      "The time for this plan is over, so it lapses by itself and nothing moves.",
+    );
+    expect(confirm().disabled).toBe(true);
+    expect(chain.sent).toEqual([]);
   });
 
   it("says a task that was taken meanwhile cannot be withdrawn, and sends nothing", async () => {
@@ -358,6 +389,7 @@ describe("withdraw a plan", () => {
   it("is not offered to someone who does not run the project", async () => {
     const task = planned();
     wrap(<TeamActions {...props(task, { address: STRANGER_EVM })} />);
+    await settled();
     expect(screen.queryByTestId("withdraw-open")).toBeNull();
   });
 
@@ -455,7 +487,12 @@ describe("a plan with no task record here", () => {
 
   it("nobody else is offered either, and nothing is offered after the end", async () => {
     planned();
+    // Positive control: the person who runs the project is offered it.
+    card(plannedRowOf(numbers));
+    await screen.findByTestId("withdraw-open");
+    cleanup();
     card(plannedRowOf(numbers), STRANGER_EVM);
+    await settled();
     expect(screen.queryByTestId("withdraw-open")).toBeNull();
     cleanup();
     wrap(
@@ -468,6 +505,7 @@ describe("a plan with no task record here", () => {
         windDownAt={null}
       />,
     );
+    await settled();
     expect(screen.queryByTestId("withdraw-open")).toBeNull();
   });
 });

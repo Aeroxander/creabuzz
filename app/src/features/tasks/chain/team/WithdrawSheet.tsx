@@ -51,7 +51,7 @@ export function WithdrawSheet({
     action: "withdraw-task",
     testId: "withdraw-sheet",
     title: withdrawTitle(what),
-    description: "No money moves",
+    description: "This takes the plan off the network",
     press: WITHDRAW_PRESS,
     pairPress: PAY_PRESS_PAIR,
     look: WITHDRAW_LOOK,

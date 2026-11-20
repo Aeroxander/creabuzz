@@ -9,6 +9,7 @@ import {
   acceptTaskCall,
   announceTaskCall,
   cancelTaskCall,
+  rejectTaskCall,
 } from "@creaton/core/pot/pot-calls.ts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -208,6 +209,21 @@ describe("task calls waiting for the second signer", () => {
     );
     expect(screen.queryByTestId("pair-review")).toBeNull();
     expect(screen.getByTestId("pair-cannot-confirm")).toBeTruthy();
+  });
+
+  it("a task call to another contract is unknown, and the network is not asked about its task", async () => {
+    setup([]);
+    const call = rejectTaskCall({
+      treasury: "0x00000000000000000000000000000000000000b2",
+      serial: BigInt(TAKEN_SERIAL),
+    });
+    chain.logs = [proposed(6, call, 12n)];
+    show();
+    expect((await screen.findByTestId("pair-terms")).textContent).toMatch(
+      /A call this app cannot read/,
+    );
+    expect(screen.queryByTestId("pair-review")).toBeNull();
+    expect(chain.reads.map((r) => r.name)).not.toContain("taskOf");
   });
 
   it("the work behind the pay is in the project's own words only when the task ties to a record here", async () => {

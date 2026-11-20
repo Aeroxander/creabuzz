@@ -26,6 +26,7 @@ import {
   handedInTask,
   queueOf,
   sceneAnswers,
+  settled,
   TAKEN_SERIAL,
   takenNumbers,
   takenRowOf,
@@ -207,7 +208,57 @@ describe("a task paid on the network that the team's list does not say is paid",
     await waitFor(() => expect(published).toHaveLength(1));
     expect(tag(published[0], "task-paid")).toBe(PAID_TX);
     await waitFor(() => expect(paidNotRecorded(TASK_ID)).toBeNull());
+  });
+
+  it("while a payment is waiting to be saved nothing that would pay or send back is offered beside it", async () => {
+    setup();
+    rememberPaid({
+      task: TASK_ID,
+      handIn: "ab".repeat(32),
+      txHash: PAID_TX,
+      at: numbers.asOf.time,
+    });
+    show(handedInTask(numbers));
+    await screen.findByTestId("save-paid-press");
     expect(screen.queryByTestId("pay-open")).toBeNull();
+    expect(screen.queryByTestId("send-back-open")).toBeNull();
+  });
+
+  it("is not offered when the plan on the network does not tie to the task as the team wrote it", async () => {
+    setup();
+    chainPays();
+    // The control: the same paid row, tying, is offered.
+    show(handedInTask(numbers), { chain: paidRow() });
+    await screen.findByTestId("save-paid-press");
+    cleanup();
+    show(handedInTask(numbers, { usd: 5 }), { chain: paidRow() });
+    await settled();
+    expect(screen.queryByTestId("save-paid")).toBeNull();
+  });
+
+  it("takes the transaction from this book's log of this task's number, whatever else the node answers", async () => {
+    setup();
+    chainPays();
+    const other = `0x${"e3".repeat(32)}`;
+    const mine = (chain.logs as { topics: string[] }[])[0];
+    chain.logs = [
+      mine,
+      // The log of another contract with the same topics, and one of this book for another task: both come after.
+      {
+        ...mine,
+        address: "0x00000000000000000000000000000000000000b2",
+        transactionHash: other,
+      },
+      {
+        ...mine,
+        topics: [RESOLVED, serialTopic(TAKEN_SERIAL + 1)],
+        transactionHash: other,
+      },
+    ];
+    show(handedInTask(numbers), { chain: paidRow() });
+    fireEvent.click(await screen.findByTestId("save-paid-press"));
+    await waitFor(() => expect(published).toHaveLength(1));
+    expect(tag(published[0], "task-paid")).toBe(PAID_TX);
   });
 
   it("keeps the payment when the record fails, and says what the server said when it has not read the payment yet", async () => {
@@ -251,15 +302,21 @@ describe("a task paid on the network that the team's list does not say is paid",
   it("is not offered once the team's list says paid, or to someone who does not run the project", async () => {
     setup();
     chainPays();
+    // The control: the same paid row with the pay not on the list is offered.
+    show(handedInTask(numbers), { chain: paidRow() });
+    await screen.findByTestId("save-paid");
+    cleanup();
     show(handedInTask(numbers, { state: "accepted", paidTx: OTHER_TX }), {
       chain: paidRow(),
     });
+    await settled();
     expect(screen.queryByTestId("save-paid")).toBeNull();
     cleanup();
     show(handedInTask(numbers), {
       chain: paidRow(),
       address: "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc",
     });
+    await settled();
     expect(screen.queryByTestId("save-paid")).toBeNull();
   });
 });
@@ -295,12 +352,18 @@ describe("stopping a task whose plan was withdrawn", () => {
 
   it("is not offered when the task is already stopped on the list, or the plan ended in another way", async () => {
     setup();
+    // The control: a withdrawn plan on a task still on the list is offered.
+    show(handedInTask(numbers, { state: "working" }), { chain: withdrawn() });
+    await screen.findByTestId("stop-task");
+    cleanup();
     show(handedInTask(numbers, { state: "cancelled" }), { chain: withdrawn() });
+    await settled();
     expect(screen.queryByTestId("stop-task")).toBeNull();
     cleanup();
     show(handedInTask(numbers, { state: "working" }), {
       chain: { ...withdrawn(), state: "lapsed" },
     });
+    await settled();
     expect(screen.queryByTestId("stop-task")).toBeNull();
   });
 });
