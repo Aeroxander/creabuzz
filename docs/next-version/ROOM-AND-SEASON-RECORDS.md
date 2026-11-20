@@ -190,3 +190,59 @@ not pass the project's public standing. A post the team or the operator removed 
   enters and leaves without end would fill the season's read).
 - **The audit row of a team removal** records the authority `board_moderator` (the closest value the table allows without a migration);
   the public log entry says `project_team`.
+- **Who is "the operator".** A key in `RELAY_OPERATOR_PUBKEYS`, or the relay's owner key (`RELAY_OWNER_PUBKEY`) when that list is
+  empty: the one rule `api::admin` uses (`is_config_backed_pubkey`), not a second list.
+- **The accounts of a wallet** are counted from the live kind 37017 bindings of that wallet (at most 64 read). A wallet with more than
+  5 live bindings stops writing for all of them, the first five included (only the wallet's owner can bind it, so a stranger cannot
+  do this to a holder).
+- **Public reads of a room** serve the newest 200 posts (kind 1) and 400 likes (kind 7) of one room; a season read serves at most 50
+  records; a lineup read serves the newest 700 records of one season. A room with more shows its newest.
+- **The wallet link is read as the app writes it**: `d` (lower-case address), `chain`, `content.revoked`,
+  `content.attestation.attestation.expires` and `content.attestation.domain.chain_id`. The wire test builds it with the app's own
+  `wallet-proof.ts` and an anvil key's signature.
+
+## 9. What was run
+
+| What | Result |
+|---|---|
+| `cargo test -p buzz-relay --lib -- handlers::room_write handlers::wallet_binding handlers::season_rules handlers::room_removal handlers::launch_update_authority handlers::home_moderation handlers::task_chain handlers::task_takes public_read --include-ignored --test-threads=1` | 149 passed, 0 failed (with Postgres and Redis) |
+| `cargo test -p buzz-relay --lib -- --skip mesh_demo` (no infrastructure) | 1867 passed, 0 failed |
+| `cargo test -p buzz-cli -p buzz-core` | 844 + 358 passed, 0 failed |
+| `scripts/room-loop.sh` (a real anvil chain, the real contracts, a real relay, signed records over `POST /events`, the real `buzz` command) | 55 checks passed |
+
+Each guard was switched off once and a named test failed:
+
+| Guard switched off | Failing test |
+|---|---|
+| the floor of 0.001 Share | `the_floor_is_in_shares_for_both_tokens_one_wei_short_is_no_seat_and_the_floor_is` |
+| `claimable` (read `vested` instead) | `r4_and_r5b_a_grant_counts_for_what_is_left_to_claim_and_not_for_what_vested`, `a_grant_counts_for_what_is_left_to_claim_not_for_what_vested` |
+| the end of the grace after taking out | `r6_a_leaver_writes_for_one_unit_on_the_chains_clock_and_is_then_read_only` |
+| an event that names a room post is a room event | `r12_r17_and_r24_whatever_answers_a_room_post_is_in_its_room_and_passes_its_rule` |
+| the mute follows the wallet | `r15_and_r25_a_team_mute_holds_until_it_ends_follows_the_wallet_and_can_be_lifted` |
+| text only | `r11_the_room_is_text_only_and_bounded` |
+| 5 accounts per wallet | `r14_at_most_five_accounts_write_through_one_wallet` |
+| the rates | `r13_the_hourly_limit_of_posts_and_the_daily_limit_of_events` |
+| a failed lookup refuses the write | `r21_a_lookup_that_fails_refuses_the_write_and_never_lets_it_pass` |
+| the operator's season record | `m1_only_an_operator_starts_a_season_its_dates_are_bound_and_a_later_record_replaces_it` |
+| the days entry is open | `m2_entry_is_open_from_the_start_up_to_demo_day` |
+| the bar of 3 counted accounts, the tie to the launch | `m4_the_project_must_be_launched_listed_not_removed_and_backed_by_enough_accounts` |
+| the operator's removal | `m5_a_project_is_in_once_can_leave_and_enter_again_and_the_operators_removal_wins` |
+| the lock on a season | `m6_600_entries_sent_at_once_store_exactly_500_and_no_project_twice` |
+| the mute's protected people and its 30 days | `a_mute_is_the_teams_alone_and_never_of_the_founder_a_server_operator_itself_or_over_30_days` |
+| the removal guard rails and the keepers' check | `r19_and_r20_the_team_removes_posts_in_its_own_room_with_a_public_reason_and_a_log_entry` |
+| the muted signer left out of a public room read | `r18_a_project_that_fails_standing_a_muted_signer_and_a_removed_post_are_not_served` |
+
+The check that a public room read names the project's own room tag is defence in depth: the query is already by that tag, so
+switching the check off changes no answer (nothing can be stored under a tag the project does not own).
+
+## 10. Chosen under the owner's standing go; the owner may overrule
+
+- Kind **37021** is taken: it is used nowhere in the tree, and `docs/v3-review/COLD-START-PROPOSAL.md` (lines 448 and 467) only says it
+  "looked free" for other records that no decision has been taken on. Moving it is one constant in `buzz-core` and `just regen-kinds`.
+- An `e` tag that names a stored post which is **not** in the event's own room makes the event "outside the room" (the plan said the
+  root must be a room post of this room; the same rule is applied to every `e` tag, so a quote of an outside post cannot be a way round it).
+- Rates: 12 posts an hour and 60 events a day, per account and per room (C24).
+- The team's removal is recorded in the audit row as the authority `board_moderator` (no migration), and in the public log as `project_team`.
+- A leave is accepted only while entry is (so the lineup cannot change on and after demo day except by the operator).
+- A project may change its place in a season (enter and leave) 12 times; the plan capped entries and not toggles.
+- A season record that replaces another must be signed in a later second than the one it replaces (a replaceable record is replaced by a newer one).
