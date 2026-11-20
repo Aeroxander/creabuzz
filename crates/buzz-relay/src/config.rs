@@ -2078,6 +2078,15 @@ impl Config {
     }
 }
 
+/// Mutex to serialize tests that mutate environment variables.
+///
+/// Parallel env-var mutation causes `defaults_are_valid` to see the invalid value set by
+/// `invalid_bind_addr_returns_error`, causing a flaky failure. `Config::from_env()` reads the NIP-FI variables too, so
+/// the tests of `nip_fi_config` that write those hold this mutex as well (after `NIP_FI_ENV_LOCK`, the order of
+/// `tests::env_guards`): otherwise a config test that holds only this mutex reads a half-written NIP-FI environment.
+#[cfg(test)]
+pub(crate) static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2092,11 +2101,6 @@ mod tests {
         assert!(debug.contains("[REDACTED]"));
         assert!(!debug.contains("private-klipy-key"));
     }
-
-    // Mutex to serialize tests that mutate environment variables.
-    // Parallel env-var mutation causes `defaults_are_valid` to see the invalid
-    // value set by `invalid_bind_addr_returns_error`, causing a flaky failure.
-    static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     /// Acquire both the FI env lock and the config-test env lock in a consistent
     /// order so concurrent FI writers never observe a partially-written env state.
