@@ -776,3 +776,88 @@ three source files compare equal to their backups by sha256). The index guard wa
 - The relay's `confirm` rule now needs the worker to have named the wallet on a `take` or `accept` step they signed, for a task whose plan the network paid. The app's own flows already do (the e2e helpers take naming the payee); any script that confirms a paid plan must, too.
 - `contracts/pot/deployments/pot-31337.json` is rewritten by every deploy; do not run two loops at once.
 - Commits of this section: `a2e433ae2` (the exact `quoteBack` lines), `f7fb96c7c` (the relay rules and migration 0072), `b009b97e4` (the boundary tests and this section).
+
+## Step 3, package P1: the record's social keys and the ranking index (server, 20 November 2026)
+
+The plan is `docs/next-version/STEP3-PLAN.md` (sections 2, 3 and 9.2); the spec is `RECORD-V2.md` section 11. Nothing in `contracts/pot` changed; the
+record stays version 2 with four new keys and one new signed index.
+
+### The two leftovers of step 2
+
+| What | Done |
+|---|---|
+| The ranking of ended rows with unclaimed notes (largest first, then newest) had no test that failed without it | `record_tasks::tests::past_24_rows_with_notes_the_largest_stay_and_a_tie_keeps_the_newest`: thirty ended rows with notes, the twenty largest on the oldest serials and ten equal small ones, a cap of 24: the twenty largest and the four newest of the equal ones stay, six are counted. With the size ranking taken out it fails; with the newest-first tie-break taken out it fails (both tried). |
+| `the_plan_reads_use_their_indexes_and_never_scan_every_block` failed once in thirteen runs | The primary key of `chain_logs` is dropped inside the test's transaction too (rolled back), so the planner can only use the partial indexes. A second, separate failure showed up after migration 0073 (five runs in a row after the chain tests had filled and emptied the table): with stale statistics the planner could serve the newest-block read from a new index on `chain_blocks` and a sort. Two fixes: the new index is `(reader, block_time)` (it holds no `number`, so it cannot compete for that read), and the test drops it for its transaction as well. Ten runs in a row pass, taken right after `chain_reader` and `task_chain` had run. |
+
+### What is built
+
+| Piece | Where |
+|---|---|
+| `held`: each account's lowest balance over a 30-day and a 13-unit window, counted by the database (one row per account, the row cap before the running sum, two caps: 500,000 rows and 20,000 accounts), the pure `lowest`, the in-memory `walk` the tests hold the SQL against | `chain_reader/held.rs` |
+| `feed`, `streaks`, `established`, the four record types, the checks (`check_held`, `check_feed`, `check_streaks`, `check_established`, the recount from the rows `check_feed_rows` and `check_streaks_rows`) and `fill` (builds the four keys, checks each, signs a failing one as `null`) | `chain_reader/record_social.rs` |
+| `Record` carries the four keys (always present, `null` when unknown); `validate` repeats the record-only checks; `facts_of` strips the four keys so they never make the server sign again alone | `record.rs`, `numbers.rs` |
+| `Ledger::excluded`: the one list of accounts nobody holds for, used by `holders` and by the held count | `ledger.rs` |
+| The ranking index (`explore_of`, the tie to a coordinate, the standing, `publish`) and the five columns written beside each signed record | `chain_reader/explore.rs`, `store.rs` (`RankingColumns`, one statement) |
+| `publish_project` counts the two windows (a database error leaves `held` null and is tried again at the next build), `publish_pass` builds the index at most every 600 s; the pass report gains `social_failed`, `held_cut`, `explore_signed`, `explore_failed` | `chain_reader/mod.rs` |
+| Migration 0073 and the desired-state files: `idx_chain_balance_changes_block (reader, project_key, token, block_number, log_index)`, `idx_chain_blocks_time (reader, block_time)`, five nullable columns on `chain_project_numbers` | `migrations/0073_chain_held_indexes.sql`, `schema/tables/public/{chain_balance_changes,chain_blocks,chain_project_numbers}.sql` |
+| The fixture run gains a dip (the second backer sends half its Shares to the first on day 41, the first sends them back on day 55) and a late buyer (the first backer gives 2 percent of its Shares to a third account on day 88); the example is regenerated | `scripts/chain-reader-fixture.py`, `testdata/pot-run.json`, `record-v2-example.json` |
+| An independent recomputation of the four keys from the raw logs and the chain's own balances, run on the example (222 checks) and at every stop of the loop | `scripts/chain-social-recompute.py`, used by `chain-reader-example-check.py` and `chain-loop-pot-check.py` |
+
+### Chosen under the owner's standing go; the owner may overrule
+
+- **The index on the changes holds `log_index` too** (the plan said `(reader, project_key, token, block_number)`): then `ORDER BY block_number, log_index` is the index's own order and the `LIMIT` stops the scan; with the plan's index the planner sorted every row of the window before the limit and the bound was not a bound (found by the test of section H9, which now fails without it).
+- **The window's first block is a scalar subquery**, not a join: the join form made the planner sort every row of the window (the same finding).
+- **The first-block index is `(reader, block_time)`** and not `(reader, block_time, number)`, for the reason in the first table above.
+- **`seen` of the ranking index counts the projects that passed the tie**; the standing (listed, not removed, founder not banned or muted) is asked down the sorted list until 20 are found, at most 100 asks, so a project that fails its standing is in `cut`, not in `entries`.
+- **No index is signed when there is nothing to list and none is live.**
+- **The window for a change at exactly the window's start**: a change counts as inside when its block's time is *later* than the start (a change at the start is part of the start balance).
+- **`TaskResolved` states**: paid is `task_paid`, cancelled is `task_withdrawn`, sent back, ran out and lapsed are `task_ended`.
+- **A database error in the held count is counted as a failed key** (`social_failed`) and logged with the project, like a failed check.
+
+### Guards switched off once (review rule 3)
+
+Each edit was made in the production file, the tests were run, and the file was put back (compared byte for byte with the saved copy).
+
+| Guard off | Tests that failed |
+|---|---|
+| ended rows with notes ranked by size | `past_24_rows_with_notes_the_largest_stay_and_a_tie_keeps_the_newest` |
+| the newest-first tie-break of that ranking | the same test |
+| the `LIMIT` of the window query moved after the running sum (written as a limit that never bites) | `h9_the_bound_is_real_on_a_table_of_a_million_rows` (the scan returned 5,000 rows, not 1,001) |
+| the block lower bound of the window query taken out | the same test (4,001 rows, not 1,000) |
+| the SQL's `rows_read > rows_max` cut | `h4_a_window_over_its_caps_is_cut_in_the_database` and the H9 test |
+| the walk's row cap | `h4_a_window_over_its_cap_is_cut_and_one_at_the_cap_is_not` |
+| rounding half up (one less than half a step) | `f2_the_net_is_rounded_once_per_hour_half_up` |
+| the open window being empty no longer skipped | `s1_to_s4_streaks_are_launch_aligned_and_do_not_slide` |
+| two signers: the same signer twice counts | `h5_the_badge_rule_on_its_inputs` |
+| `facts_of` not stripping the four keys | `v4_facts_of_strips_the_four_keys` |
+| `validate` not running the social checks | `v1_validate_refuses_a_verdict_that_contradicts_its_inputs` |
+| the `established` check removed | the same test |
+| the recount of the feed from the rows | **none failed at first** (the guard was not bound); `v2_the_recount_from_the_rows_catches_what_the_record_alone_cannot` was written and fails without it |
+| the tie of a project to its coordinate | `ix2_and_ix3_the_index_lists_tied_projects_and_is_signed_only_when_it_changes` |
+| the `NOT stale` of the ranking rows | the same test |
+
+### What ran
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo clippy -p buzz-relay --lib --tests -- -D warnings` | no warnings |
+| `cargo test -p buzz-relay --lib -- chain_reader task_chain --include-ignored --test-threads=1` (Postgres and Redis running) | **187 passed, 0 failed** (156 in `chain_reader` before the tests of this section grew to 158; 29 in `task_chain`) |
+| `cargo test -p buzz-relay --lib -- --skip mesh_demo` | 1848 passed, 0 failed, 628 ignored. `api::mesh_demo::tests::demo_join_forwarded_arm_round_trips_echo` fails here with a 504: it calls out to the network, which the sandbox's proxy does not allow; it is not touched by this work |
+| `cargo test -p buzz-db --lib -- migration chain_ desired --include-ignored --test-threads=1` (migration count 73, the 0073 text against the desired-state schema, the Postgres migration tests for 0073 in a migrated and a schema-made database) | 58 passed, 0 failed |
+| `node scripts/chain-reader-events.mjs --check` | match the contracts/pot build |
+| `python3 -I scripts/chain-reader-fixture.py --check`, twice | "is what a fresh run gives", both times |
+| `python3 -I scripts/chain-reader-example-check.py` | **416 checks passed** (222 are the four social keys, recomputed from the raw logs) |
+| `scripts/chain-loop-pot.sh` (a real relay on a real chain; the social check runs at every stop) | **2936 checks passed** (758 before) |
+| `scripts/check-postgres-test-discovery.py` over the reader and the buzz-db tests | validated |
+| the plan-reads test, ten runs in a row after `chain_reader` and `task_chain` | 10 passed |
+
+### For the next engineer
+
+- **Migration 0073 is new.** A database migrated by `buzz-admin migrate` or by the relay gets it by itself. The migration macro embeds the files at compile time: after adding a migration, touch `crates/buzz-db/src/runtime/migration.rs` or the migrator does not see it.
+- **The example changed** (the fixture gained transfers, so every block number moved and the example block is 91 now). Anything that read the old example by block number needs the new one; nothing is hand-copied. The app's strict parser test `numbers-hostile.test.ts` walks every path of the example and expects a null parse for a bad value: the four social keys must be left out of that walk (they are parsed apart and a bad one reads as `null` for that part only).
+- **The four keys are `null` or objects, never missing** in a record this server signs; a record from an older server has no such key at all (the app reads both as "not known here").
+- **`held.rank.accounts` and `held.countedAccounts` use `value.leaveValue` and `limits.minJoin` of the same record**; at a one-cent Share they carry the 6-decimal rounding of `leaveValue`.
+- **The ranking index is signed only when its entries change**, at most every 600 s, and not at all while nothing could be listed. A project is listed only once the reader has stored a project record whose coordinate hashes to the launch's `projectId`: on the fixture chain nothing hashes, so the ranking is empty there.
+- **Scratch databases:** the H4, H8, H9 and H10 tests create `held_<uuid>` databases and drop them at the end; one left behind after a crash is harmless and can be dropped by hand. H9 needs about 300 MB of disk for a moment.
+
