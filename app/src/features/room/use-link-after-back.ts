@@ -43,6 +43,8 @@ export function useLinkAfterBack(
   const toast = useToast();
   const queryClient = useQueryClient();
   return useCallback(async () => {
+    // The Back landed: what the room thinks the person holds is read again, whatever happens to the link.
+    void queryClient.invalidateQueries({ queryKey: ["room"] });
     if (!pubkey || !investingOn()) return "skipped";
     // A phone account's link is checked by the server on the network: a server that says it cannot would never count it.
     if (senderKind(wallet) === "passkey" && serverSmartAccountLinks() === false)

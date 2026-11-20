@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { seriousViolations } from "../../../tests/helpers/axe-dom";
 import { parsedExample } from "../../../tests/helpers/numbers-v2-parse";
 import { parseProject } from "../project/project-record";
+import { roomSeenAt } from "./room-seen";
 import {
   ANA,
   BO,
@@ -516,6 +517,24 @@ describe("the two lines under the writing standing", () => {
     expect(
       screen.getByLabelText("Write to the people who back this"),
     ).toBeTruthy();
+  });
+});
+
+describe("looking at the room", () => {
+  it("counts as seen up to the newest thing in it, an answer included, so the New dot goes", async () => {
+    world.standing = { kind: "not-holding" };
+    localStorage.clear();
+    const root = roomPost(ANA, "Question?", NOW - 500);
+    stored(
+      BO,
+      1,
+      [["e", root.id, "", "root"], ...roomTags],
+      "An answer",
+      NOW - 20,
+    );
+    room();
+    await screen.findByText("An answer");
+    await waitFor(() => expect(roomSeenAt(COORD)).toBe(NOW - 20));
   });
 });
 

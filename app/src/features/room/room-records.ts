@@ -14,7 +14,7 @@ import type { ReportChoice } from "./room-words";
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS = /^0x[0-9a-f]{40}$/;
 /** The most wallets a stop names, and the longest a stop may run (the server's bounds). */
-export const MUTE_WALLETS_MAX = 8;
+const MUTE_WALLETS_MAX = 8;
 export const MUTE_DAYS_MAX = 30;
 
 export interface Template {

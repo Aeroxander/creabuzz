@@ -37,7 +37,7 @@ const LIKES_READ = 500;
 /** The most stops on people the room's team has signed that are read. */
 const MUTES_READ = 200;
 
-export const roomKeys = {
+const roomKeys = {
   all: ["room"] as const,
   read: (coordinate: string, key: string) =>
     ["room", "read", coordinate, key] as const,

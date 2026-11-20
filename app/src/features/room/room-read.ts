@@ -16,7 +16,7 @@ import type { Engagement, SignedEvent } from "../posts/use-posts";
 /** How many top-level posts the room shows at first, and each time "Show earlier posts" is pressed. */
 export const PAGE = 30;
 
-export interface RoomPost {
+interface RoomPost {
   event: SignedEvent;
   engagement: Engagement;
   /** Replies, oldest first. */

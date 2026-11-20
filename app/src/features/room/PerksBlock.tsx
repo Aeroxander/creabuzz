@@ -17,7 +17,7 @@ import {
 } from "./room-words";
 import { useSavePerks } from "./perks-record";
 
-export function PerksSheet({
+function PerksSheet({
   project,
   open,
   onOpenChange,

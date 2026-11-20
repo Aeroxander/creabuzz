@@ -8,7 +8,6 @@ import {
   SERVER_FAILED_TEXT,
 } from "@creaton/core/client/refusal-text.ts";
 
-export const ROOM_TITLE = "Room";
 export const READ_LINE =
   "Anyone can read this room. Only people who back the project can write here.";
 /** Said where people post and vote: never hidden, never reworded. */
@@ -43,8 +42,6 @@ export const tookOutLine = (when: string, left: string) =>
   `You took out ${when}. You can write here for ${left} more, then this room is read only for you.`;
 export const mutedLine = (date: string) =>
   `The team has stopped you writing here until ${date}. You can still read, and you can take your money out any time.`;
-
-export const NEW_DOT = "New";
 
 /** The five plain choices of a report, and the record type each is sent as (the server's own types). */
 export const REPORT_CHOICES = [

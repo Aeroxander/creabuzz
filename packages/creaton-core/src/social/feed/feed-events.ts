@@ -75,7 +75,7 @@ export interface RoomRef {
 
 const CHAIN_KEY = /^0x[0-9a-f]{64}$/;
 /** The prefix of the room's `t` tag. A topic typed as `#word` cannot hold a `:`, so it can never look like it. */
-export const ROOM_TAG_PREFIX = "room:";
+const ROOM_TAG_PREFIX = "room:";
 
 /** The room's `t` tag value for a chain key. */
 export function roomTagValue(key: string): string {

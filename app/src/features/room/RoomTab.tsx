@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "../../lib/account";
-import { type ProfileMetadata, nameOf } from "../../lib/profiles";
+import { type ProfileMetadata, nameOf, useProfiles } from "../../lib/profiles";
 import { useMutes } from "../../lib/mutes";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Button } from "../../ui/button";
@@ -26,7 +26,7 @@ import { RoomPostCard, type RoomTools } from "./RoomPostCard";
 import { MuteSheet, RemoveSheet, ReportSheet } from "./RoomSheets";
 import { RoomStatus } from "./RoomStatus";
 import { type Notice, noticesOf } from "./room-notices";
-import { buildRoom, PAGE } from "./room-read";
+import { buildRoom, isOfRoom, PAGE } from "./room-read";
 import { markRoomSeen } from "./room-seen";
 import {
   COMPOSER_LABEL,
@@ -58,7 +58,7 @@ type Item =
 export function RoomTab({
   project,
   numbers,
-  profiles,
+  profiles: pageProfiles,
   team,
 }: {
   project: Project;
@@ -67,10 +67,18 @@ export function RoomTab({
   team: readonly string[];
 }) {
   const room = roomOf(project);
+  const events = useRoomEvents(room, project.coordinate);
   const { pubkey: me } = useAccount();
+  // The page knows the team's names; the people who write in the room are named here, from what was read.
+  const writers = useProfiles(
+    [...new Set((events.data?.notes ?? []).map((e) => e.pubkey))].slice(0, 100),
+  ).data;
+  const profiles = useMemo(
+    () => ({ ...writers, ...pageProfiles }),
+    [writers, pageProfiles],
+  );
   const requireAccount = useRequireAccount();
   const toast = useToast();
-  const events = useRoomEvents(room, project.coordinate);
   const activity = useProjectActivity(project);
   const tasks = useProjectTasks(project);
   const mutes = useMutes();
@@ -130,9 +138,13 @@ export function RoomTab({
   const shown = items.slice(0, PAGE * pages);
 
   // The room has been looked at up to its newest thing: the tab's "New" dot goes.
+  // Everything the room holds counts as seen, answers and the posts of people the reader hides included, so the dot is made from the
+  // same newest-post read it is cleared by.
   const newest = Math.max(
     pinned?.at ?? 0,
-    ...(view?.posts ?? []).map((p) => p.event.created_at),
+    ...(events.data?.notes ?? [])
+      .filter((e) => isOfRoom(e, project.coordinate, room?.key ?? ""))
+      .map((e) => e.created_at),
   );
   useEffect(() => {
     if (view && newest > 0) markRoomSeen(project.coordinate, newest);

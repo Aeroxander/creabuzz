@@ -3,7 +3,6 @@
  * read for teammates, so the runner can offer a seat or give Shares to an address only that person proved, and written
  * for the signed-in person by "Link this wallet" on You.
  */
-import { isValidKernelSignature } from "@creaton/core/aa/kernel-signature.ts";
 import {
   type ChainChecker,
   newWalletAttestation,
@@ -40,6 +39,10 @@ function chainChecker(wallet: MoneyWallet): ChainChecker | undefined {
   return async ({ account, chain, digest, signature }) => {
     if ((await wallet.chainId()) !== chain)
       throw new Error("The wallet is on another network.");
+    // Loaded only when a phone account's link has to be asked about: it is the account's own signature check, and heavy.
+    const { isValidKernelSignature } = await import(
+      "@creaton/core/aa/kernel-signature.ts"
+    );
     return isValidKernelSignature(
       (tx) => wallet.readCall(tx.to, tx.data),
       account,

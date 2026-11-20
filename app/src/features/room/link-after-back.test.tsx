@@ -90,6 +90,24 @@ describe("linking after a Back", () => {
     );
   });
 
+  it("has the room read what the person holds again, whatever becomes of the link", async () => {
+    const client = new QueryClient();
+    client.setQueryData(["room", "holding", "x"], { shares: 0n, team: 0n });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    );
+    world.signedIn = false;
+    const { result } = renderHook(() => useLinkAfterBack(wallet({}).stand), {
+      wrapper,
+    });
+    await result.current();
+    expect(client.getQueryState(["room", "holding", "x"])?.isInvalidated).toBe(
+      true,
+    );
+  });
+
   it("asks for nothing when the account is already linked to this wallet for a good while yet", async () => {
     world.events.push(
       linkedWalletRecord(

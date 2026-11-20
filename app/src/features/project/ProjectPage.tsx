@@ -19,7 +19,6 @@ import {
 } from "../money/use-money";
 import { useMarkProjectSeen } from "../alerts/use-news";
 import { ProjectFeed } from "../feed/ProjectFeed";
-import { RoomTab } from "../room/RoomTab";
 import { useRoomNews } from "../room/use-room-news";
 import { PlannedStrips } from "../tasks/chain/holder/PlannedStrips";
 import { JoinBox } from "./JoinBox";
@@ -42,6 +41,10 @@ const ProjectMoney = lazy(() =>
 // Opening a project to backers carries the launch call and the contract ABIs: it loads only for a founder who has not launched.
 const LaunchCard = lazy(() =>
   import("../launch/LaunchCard").then((m) => ({ default: m.LaunchCard })),
+);
+// The room carries the writing, the report, the team's tools and perks: it loads when its tab is opened.
+const RoomTab = lazy(() =>
+  import("../room/RoomTab").then((m) => ({ default: m.RoomTab })),
 );
 const LegacyProjectTop = lazy(() => import("../../legacy/LegacyProjectTop"));
 const LegacyMoneyTab = lazy(() => import("../../legacy/LegacyMoneyTab"));
@@ -296,12 +299,16 @@ function ProjectView({
                   label: "Room",
                   news: roomNews && tab !== "room",
                   content: (
-                    <RoomTab
-                      numbers={numbers}
-                      profiles={profiles}
-                      project={project}
-                      team={team}
-                    />
+                    <Suspense
+                      fallback={<Card className="h-24 animate-pulse" />}
+                    >
+                      <RoomTab
+                        numbers={numbers}
+                        profiles={profiles}
+                        project={project}
+                        team={team}
+                      />
+                    </Suspense>
                   ),
                 },
               ]

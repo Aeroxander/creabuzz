@@ -20,7 +20,7 @@ import {
 import { useDraft } from "./use-draft";
 
 /** How long a server that has not caught up is given before the one automatic second try. */
-export const RETRY_AFTER_MS = 30_000;
+const RETRY_AFTER_MS = 30_000;
 
 export function RoomComposer({
   draftKey,
