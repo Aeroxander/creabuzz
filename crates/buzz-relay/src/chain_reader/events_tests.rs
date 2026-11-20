@@ -109,7 +109,7 @@ fn the_table_is_the_forge_build() {
         }
     }
     assert_eq!(count, EVENTS.len(), "every table entry was checked once");
-    assert_eq!(count, 35, "the build names 35 (role, event) pairs");
+    assert_eq!(count, 42, "the build names 42 (role, event) pairs");
 }
 
 /// A few topics pinned from forge's own output (`forge inspect <contract>

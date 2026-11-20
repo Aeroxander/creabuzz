@@ -19,13 +19,14 @@ use std::collections::BTreeSet;
 use anyhow::{anyhow, bail, Context};
 use serde_json::Value;
 
-use super::ledger::{GrantState, Ledger, Stored as LedgerStored};
+use super::ledger::{GrantState, Ledger, Stored as LedgerStored, StoredBook};
 use super::record::{
     self, quiet_state, roll_forward, AgentRec, AllowanceRec, AsOfRec, ClockRec, ContractsRec,
     DoorRec, FeeRec, ForfeitRec, GrantKind, GrantRec, GrantStateRec, HolderRec, LedgerRec,
     LimitsRec, MoneyRec, PendingRec, QuietRec, Record, RunnerRec, SharesRec, Stored, TeamRec,
     TotalsRec, WindDownRec, WorthRec, DORMANT_UNITS, MAX_AGENTS, MAX_GRANTS, MAX_HOLDERS,
 };
+use super::record_tasks;
 use super::source::ChainSource;
 use super::views::{self, Views};
 use super::word::hex0x;
@@ -72,7 +73,7 @@ pub async fn derive(
     cadence: &Cadence,
     built_at: u64,
 ) -> anyhow::Result<Value> {
-    let read = views::read(source, as_of.launcher, ledger, as_of.block).await?;
+    let read = views::read(source, as_of.launcher, ledger, as_of.block, as_of.time).await?;
     super::note_play_money(read.test_network);
     let record = build(ledger, as_of, &read, cadence, built_at)?;
     serde_json::to_value(&record).context("write the record")
@@ -88,8 +89,27 @@ fn put(problems: &mut Vec<String>, field: &str, events: impl ToString, view: imp
 
 /// Where the events and the contracts' views must agree, beyond what the
 /// ledger already checks against the stored numbers.
-fn cross_check(ledger: &Ledger, v: &Views) -> anyhow::Result<Vec<String>> {
+fn cross_check(ledger: &Ledger, v: &Views, t: u64) -> anyhow::Result<Vec<String>> {
+    let unit = v.t64("unit")?;
+    let book = v
+        .book
+        .as_ref()
+        .map(|b| -> anyhow::Result<StoredBook> {
+            Ok(StoredBook {
+                open_count: b.open_count,
+                next_serial: b.next_serial,
+                window_sum_bps: b.window_sum_bps,
+                at: t,
+                span: b.cap_window_secs(unit)?,
+            })
+        })
+        .transpose()?;
     let stored = LedgerStored {
+        locked: v.t("locked")?,
+        notes_owed: v.t("notesOwed")?,
+        arrival_start: v.t64("arrivalStart")?,
+        arrival_total: v.t("arrivalTotal")?,
+        book,
         pot: v.t("pot")?,
         paid_in: v.t("paidIn")?,
         box_: v.t("box")?,
@@ -258,7 +278,7 @@ pub fn build(
         );
     }
     let t = as_of.time;
-    let bad = cross_check(ledger, v)?;
+    let bad = cross_check(ledger, v, t)?;
     if !bad.is_empty() {
         bail!(
             "the events and the contracts disagree, nothing is published: {}",
@@ -274,12 +294,16 @@ pub fn build(
         last_settle,
         active_end,
         arrival_end: v.t64("arrivalEnd")?,
+        arrival_start: v.t64("arrivalStart")?,
+        arrival_total: v.t("arrivalTotal")?,
         rate_ppm: rate,
         unit,
         pot: v.t("pot")?,
         box_: v.t("box")?,
         arriving: v.t("arriving")?,
         active_seconds: v.t("activeSeconds")?,
+        locked: v.t("locked")?,
+        due_c: v.book.as_ref().map_or(0, |b| b.due_c),
     };
     let settled = roll_forward(t, &stored)?;
     // The two views that are the contract's own settled numbers.
@@ -498,11 +522,12 @@ pub fn build(
         applicable_at: p.proposed_at.saturating_add(unit),
     });
     let accruing = rate > 0 && settled.pot > 0 && !wound && t < active_end;
-    let refresh = if accruing || settled.arriving != 0 {
-        cadence.active_secs
-    } else {
-        cadence.idle_secs
-    };
+    let refresh = refresh_every(
+        cadence,
+        accruing,
+        settled.arriving != 0,
+        ledger.tasks.open_count > 0,
+    );
     let in_vester = v.vester_team_balance;
     let counted = v.team_supply;
     let promised = v.v("committed")?;
@@ -540,7 +565,7 @@ pub fn build(
             arriving: settled.arriving.to_string(),
             arrival_end,
             fees_owed: v.t("feesOwed")?.to_string(),
-            locked: v.t("locked")?.to_string(),
+            locked: settled.locked.to_string(),
             notes_owed: v.t("notesOwed")?.to_string(),
             held: v.dollar_held.to_string(),
         },
@@ -620,19 +645,26 @@ pub fn build(
             took_out: ledger.totals.took_out.to_string(),
             drawn: ledger.totals.drawn.to_string(),
             outside: ledger.totals.outside.to_string(),
+            paid_to_workers: ledger.totals.paid_to_workers.to_string(),
+            note_claims: ledger.totals.note_claims.to_string(),
         },
         first_backed_at: ledger.first_backed_at,
         holders,
         holder_count,
         team_holder_count,
         truncated: holders_cut || agents_cut || unfinished > MAX_GRANTS,
+        tasks: record_tasks::build(ledger, v, t, settled.pot)?,
         ledger: LedgerRec {
             last_settle,
             pot: stored.pot.to_string(),
             box_: stored.box_.to_string(),
             arriving: stored.arriving.to_string(),
             arrival_end: (stored.arriving != 0).then_some(stored.arrival_end),
+            arrival_start: stored.arrival_start,
+            arrival_total: stored.arrival_total.to_string(),
             active_seconds: u64::try_from(stored.active_seconds).context("active seconds")?,
+            locked: stored.locked.to_string(),
+            notes_owed: v.t("notesOwed")?.to_string(),
         },
     };
     let problems = record::validate(&record);
@@ -645,12 +677,31 @@ pub fn build(
     Ok(record)
 }
 
+/// How often the server promises a fresh record: often while something moves
+/// with the clock, a heartbeat otherwise. The allowance accrues, outside money
+/// arrives, or a task is open (announced or taken): a notice ends, a window
+/// closes, room comes back in the cap, so what a holder is told about it is
+/// kept fresh.
+pub fn refresh_every(
+    cadence: &Cadence,
+    accruing: bool,
+    money_arriving: bool,
+    tasks_open: bool,
+) -> u64 {
+    if accruing || money_arriving || tasks_open {
+        cadence.active_secs
+    } else {
+        cadence.idle_secs
+    }
+}
+
 /// Paths of numbers that move with time, not with events: they change every
 /// block of a living project, so they say nothing about whether anything
 /// happened. `*` stands for every item of a list.
 const MOVES_WITH_TIME: &[&[&str]] = &[
     &["refreshEverySecs"],
     &["money", "pot"],
+    &["money", "locked"],
     &["money", "arriving"],
     &["money", "arrivalEnd"],
     &["money", "held"],
@@ -670,6 +721,10 @@ const MOVES_WITH_TIME: &[&[&str]] = &[
     &["agents", "*", "usdUsed"],
     &["agents", "*", "teamUsed"],
     &["ledger", "lastSettle"],
+    &["tasks", "list", "*", "atMostNow"],
+    &["tasks", "cap", "usedBps"],
+    &["tasks", "cap", "roomBps"],
+    &["tasks", "next"],
 ];
 
 fn strip(value: &mut Value, path: &[&str]) {

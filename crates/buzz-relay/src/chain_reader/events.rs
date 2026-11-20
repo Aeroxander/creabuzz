@@ -30,6 +30,9 @@ pub enum Role {
     Vester,
     /// A Pair runner (two signers), named by `Launcher.PairMade`.
     Pair,
+    /// A project's task queue (`TaskBook`), found from its Treasury's
+    /// `TasksReady` log.
+    Tasks,
     /// The dollar token (the play dollar on a test network). It is in the
     /// table so its events decode, but the reader does not follow it: every
     /// transfer of the dollar on the chain would be read for nothing, and the
@@ -47,6 +50,7 @@ impl Role {
             Role::Treasury => "treasury",
             Role::Vester => "vester",
             Role::Pair => "pair",
+            Role::Tasks => "tasks",
             Role::Dollar => "dollar",
         }
     }
@@ -60,6 +64,7 @@ impl Role {
             "treasury" => Role::Treasury,
             "vester" => Role::Vester,
             "pair" => Role::Pair,
+            "tasks" => Role::Tasks,
             "dollar" => Role::Dollar,
             _ => return None,
         })

@@ -13,7 +13,9 @@ use anyhow::{anyhow, bail, Context};
 use buzz_evm_allowance::abi::selector;
 
 use super::ledger::Ledger;
+use super::record_tasks::{self, Selection};
 use super::source::{ChainSource, ViewCall};
+use super::views_table::TASK_OF;
 use super::word::{hex0x, parse_fixed, Word};
 
 /// The most grants whose views are read in one record.
@@ -21,7 +23,7 @@ pub const MAX_GRANT_READS: usize = super::record::MAX_GRANTS;
 /// The most agent accounts whose views are read in one record.
 pub const MAX_AGENT_READS: usize = 100;
 
-const TREASURY_UINTS: [&str; 32] = [
+const TREASURY_UINTS: [&str; 35] = [
     "pot",
     "paidIn",
     "box",
@@ -54,6 +56,9 @@ const TREASURY_UINTS: [&str; 32] = [
     "MAX_RATE_PPM",
     "CHECK_IN_MULT",
     "WIND_MULT",
+    "arrivalStart",
+    "arrivalTotal",
+    "nextExpiry",
 ];
 const VESTER_UINTS: [&str; 7] = [
     "grantCount",
@@ -111,6 +116,95 @@ pub struct AgentView {
     pub team_used: u128,
 }
 
+/// One task as the book's `taskOf(serial)` gives it: the struct's words, named
+/// by the table generated from the contracts build ([`TASK_OF`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TaskView {
+    words: Vec<Word>,
+}
+
+impl TaskView {
+    fn word(&self, name: &str) -> anyhow::Result<&Word> {
+        let at = TASK_OF
+            .iter()
+            .position(|(n, _)| *n == name)
+            .ok_or_else(|| anyhow!("TaskBook.taskOf has no field {name}"))?;
+        self.words
+            .get(at)
+            .ok_or_else(|| anyhow!("TaskBook.taskOf field {name} was not read"))
+    }
+
+    /// A numeric field.
+    pub fn uint(&self, name: &str) -> anyhow::Result<u128> {
+        super::word::word_to_u128(self.word(name)?)
+            .ok_or_else(|| anyhow!("TaskBook.taskOf.{name} does not fit 128 bits"))
+    }
+
+    /// A numeric field that must fit 64 bits (a time).
+    pub fn uint64(&self, name: &str) -> anyhow::Result<u64> {
+        u64::try_from(self.uint(name)?)
+            .with_context(|| format!("TaskBook.taskOf.{name} is too large"))
+    }
+
+    /// An address field, lower-case `0x` text.
+    pub fn address(&self, name: &str) -> anyhow::Result<String> {
+        let w = self.word(name)?;
+        if w[..12].iter().any(|b| *b != 0) {
+            bail!("TaskBook.taskOf.{name} is not an address");
+        }
+        Ok(hex0x(&super::word::word_to_address(w)))
+    }
+
+    /// A 32-byte field, lower-case `0x` text.
+    pub fn bytes32(&self, name: &str) -> anyhow::Result<String> {
+        Ok(hex0x(self.word(name)?))
+    }
+}
+
+/// What the project's task book says, read at the one block.
+#[derive(Clone, Debug)]
+pub struct BookViews {
+    /// `Treasury.tasks()`.
+    pub address: String,
+    /// `book.openCount()`.
+    pub open_count: u128,
+    /// `book.nextSerial()`.
+    pub next_serial: u128,
+    /// `book.windowSumBps()`.
+    pub window_sum_bps: u128,
+    /// `book.takeRoomBps()`.
+    pub take_room_bps: u128,
+    /// `book.dueC(asOf.time)`.
+    pub due_c: u128,
+    /// `book.noticeFor(1)`: the shortest notice, the take window, the time to
+    /// the deadline (seconds).
+    pub notice_for_one: [u128; 3],
+    /// `book.MAX_OPEN()`.
+    pub max_open: u128,
+    /// `book.MAX_SHARE_BPS()`.
+    pub max_share_bps: u128,
+    /// `book.CAP_BPS()`.
+    pub cap_bps: u128,
+    /// `book.MIN_TASK()`.
+    pub min_task: u128,
+    /// `book.CAP_WINDOW_MULT()`.
+    pub cap_window_mult: u128,
+    /// The rows the record lists, as `taskOf` gives them.
+    pub tasks: BTreeMap<u64, TaskView>,
+    /// `noteOf(serial, holder)` for each listed holder.
+    pub note_of: BTreeMap<(u64, String), u128>,
+    /// `claimableNote(serial, holder)` for the largest holder of each row with notes.
+    pub claimable: BTreeMap<(u64, String), u128>,
+}
+
+impl BookViews {
+    /// The cap's window in seconds: `CAP_WINDOW_MULT x unit`.
+    pub fn cap_window_secs(&self, unit: u64) -> anyhow::Result<u64> {
+        u64::try_from(self.cap_window_mult.saturating_mul(u128::from(unit)))
+            .context("the cap's window is too large")
+    }
+}
+
 /// Everything read for one record, all at one block.
 #[derive(Clone, Debug)]
 pub struct Views {
@@ -142,6 +236,8 @@ pub struct Views {
     pub grants: Vec<GrantView>,
     /// The agent accounts the events named.
     pub agents: Vec<AgentView>,
+    /// The task book, when the project has one.
+    pub book: Option<BookViews>,
 }
 
 impl Views {
@@ -275,6 +371,22 @@ pub async fn read_test_network(
     answer.flag(0)
 }
 
+/// Where the answers of the task book's first batch are.
+struct BookAt {
+    tasks: usize,
+    open_count: usize,
+    next_serial: usize,
+    window_sum: usize,
+    room: usize,
+    due_c: usize,
+    notice: usize,
+    max_open: usize,
+    max_share: usize,
+    cap_bps: usize,
+    min_task: usize,
+    window_mult: usize,
+}
+
 /// The calls of one record, with where each answer goes.
 struct Plan {
     calls: Vec<ViewCall>,
@@ -327,16 +439,21 @@ fn address_of(text: &str, what: &str) -> anyhow::Result<[u8; 20]> {
     parse_fixed::<20>(text).ok_or_else(|| anyhow!("{what} is not an address: {text}"))
 }
 
-/// Read every view a record needs for `ledger` at block `block`.
+/// Read every view a record needs for `ledger` at block `block`, whose time is
+/// `time`.
 ///
 /// Grants whose events say they are finished are not read; at most
 /// [`MAX_GRANT_READS`] unfinished grants, by id, and [`MAX_AGENT_READS`] agent
-/// accounts are read (the record says when a list was cut).
+/// accounts are read (the record says when a list was cut). A project with a
+/// task book also has its book's views and the rows the record lists read, in a
+/// second batch at the same block (the cut of the rows needs the cap's window,
+/// which is a view).
 pub async fn read(
     source: &dyn ChainSource,
     launcher: [u8; 20],
     ledger: &Ledger,
     block: u64,
+    time: u64,
 ) -> anyhow::Result<Views> {
     let treasury = address_of(&ledger.contracts.treasury, "the Treasury")?;
     let vester = address_of(&ledger.contracts.vester, "the Vester")?;
@@ -403,6 +520,39 @@ pub async fn read(
         "isPair(address)",
         &[address_word(&runner)],
     );
+
+    // The task book: asked of the Treasury (its own address of the book) and of
+    // the book itself. A project with no `TasksReady` row has no book to ask.
+    let book_address = ledger
+        .contracts
+        .tasks
+        .as_deref()
+        .map(|b| address_of(b, "the task book"))
+        .transpose()?;
+    let book_at = book_address.map(|book| {
+        let tasks = plan.add("Treasury.tasks()".into(), treasury, "tasks()", &[]);
+        let mut one = |label: &str, signature: &str, args: &[Word]| {
+            plan.add(format!("TaskBook.{label}"), book, signature, args)
+        };
+        BookAt {
+            tasks,
+            open_count: one("openCount()", "openCount()", &[]),
+            next_serial: one("nextSerial()", "nextSerial()", &[]),
+            window_sum: one("windowSumBps()", "windowSumBps()", &[]),
+            room: one("takeRoomBps()", "takeRoomBps()", &[]),
+            due_c: one(
+                "dueC(asOf.time)",
+                "dueC(uint256)",
+                &[uint_word(u128::from(time))],
+            ),
+            notice: one("noticeFor(1)", "noticeFor(uint16)", &[uint_word(1)]),
+            max_open: one("MAX_OPEN()", "MAX_OPEN()", &[]),
+            max_share: one("MAX_SHARE_BPS()", "MAX_SHARE_BPS()", &[]),
+            cap_bps: one("CAP_BPS()", "CAP_BPS()", &[]),
+            min_task: one("MIN_TASK()", "MIN_TASK()", &[]),
+            window_mult: one("CAP_WINDOW_MULT()", "CAP_WINDOW_MULT()", &[]),
+        }
+    });
 
     let grant_ids = grants_to_read(ledger);
     let mut grants_at = Vec::new();
@@ -564,6 +714,124 @@ pub async fn read(
         None
     };
 
+    let book = match (book_address, &book_at) {
+        (Some(book_to), Some(b)) => {
+            let address = single(b.tasks)?.address(0)?;
+            if Some(address.as_str()) != ledger.contracts.tasks.as_deref() {
+                bail!(
+                    "the Treasury's task book is {address} but its TasksReady event named {}",
+                    ledger.contracts.tasks.as_deref().unwrap_or("none")
+                );
+            }
+            let notice = at(b.notice);
+            notice.expect_words(3)?;
+            let mut views = BookViews {
+                address,
+                open_count: single(b.open_count)?.uint(0)?,
+                next_serial: single(b.next_serial)?.uint(0)?,
+                window_sum_bps: single(b.window_sum)?.uint(0)?,
+                take_room_bps: single(b.room)?.uint(0)?,
+                due_c: single(b.due_c)?.uint(0)?,
+                notice_for_one: [notice.uint(0)?, notice.uint(1)?, notice.uint(2)?],
+                max_open: single(b.max_open)?.uint(0)?,
+                max_share_bps: single(b.max_share)?.uint(0)?,
+                cap_bps: single(b.cap_bps)?.uint(0)?,
+                min_task: single(b.min_task)?.uint(0)?,
+                cap_window_mult: single(b.window_mult)?.uint(0)?,
+                tasks: BTreeMap::new(),
+                note_of: BTreeMap::new(),
+                claimable: BTreeMap::new(),
+            };
+            // The rows the record lists, and the holders whose notes are read:
+            // chosen from the ledger alone, with the cap's window (a view) that
+            // the first batch answered. Read in a second batch at the same block.
+            let selection: Selection =
+                record_tasks::select(&ledger.tasks, time, views.cap_window_secs(ledger.unit)?);
+            let mut rows = Plan {
+                calls: Vec::new(),
+                labels: Vec::new(),
+            };
+            let mut task_at = Vec::new();
+            for serial in selection.serials() {
+                let arg = [uint_word(u128::from(serial))];
+                task_at.push((
+                    serial,
+                    rows.add(
+                        format!("TaskBook.taskOf({serial})"),
+                        book_to,
+                        "taskOf(uint64)",
+                        &arg,
+                    ),
+                ));
+            }
+            let mut note_at = Vec::new();
+            for (serial, holder) in selection.listed_holders(&ledger.tasks) {
+                let who = address_of(&holder, "a note holder")?;
+                let args = [uint_word(u128::from(serial)), address_word(&who)];
+                note_at.push((
+                    (serial, holder.clone()),
+                    rows.add(
+                        format!("TaskBook.noteOf({serial}, {holder})"),
+                        book_to,
+                        "noteOf(uint64,address)",
+                        &args,
+                    ),
+                ));
+            }
+            let mut claim_at = Vec::new();
+            for (serial, holder) in selection.largest_holders(&ledger.tasks) {
+                let who = address_of(&holder, "a note holder")?;
+                let args = [uint_word(u128::from(serial)), address_word(&who)];
+                claim_at.push((
+                    (serial, holder.clone()),
+                    rows.add(
+                        format!("TaskBook.claimableNote({serial}, {holder})"),
+                        book_to,
+                        "claimableNote(uint64,address)",
+                        &args,
+                    ),
+                ));
+            }
+            if !rows.calls.is_empty() {
+                let got = source
+                    .eth_call_batch(&rows.calls, block)
+                    .await
+                    .with_context(|| format!("read the task rows at block {block}"))?;
+                if got.len() != rows.calls.len() {
+                    bail!(
+                        "the node answered {} of {} calls",
+                        got.len(),
+                        rows.calls.len()
+                    );
+                }
+                let row = |i: usize| Answer {
+                    label: &rows.labels[i],
+                    bytes: &got[i],
+                };
+                for (serial, i) in &task_at {
+                    let a = row(*i);
+                    a.expect_words(TASK_OF.len())?;
+                    let words = (0..TASK_OF.len())
+                        .map(|w| a.word(w))
+                        .collect::<anyhow::Result<Vec<_>>>()?;
+                    views.tasks.insert(*serial, TaskView { words });
+                }
+                for (key, i) in note_at {
+                    let a = row(i);
+                    a.expect_words(1)?;
+                    views.note_of.insert(key, a.uint(0)?);
+                }
+                for (key, i) in claim_at {
+                    let a = row(i);
+                    a.expect_words(1)?;
+                    views.claimable.insert(key, a.uint(0)?);
+                }
+            }
+            Some(views)
+        }
+        _ => None,
+    };
+
     Ok(Views {
         block,
         treasury: treasury_views,
@@ -580,6 +848,7 @@ pub async fn read(
         signers,
         grants,
         agents,
+        book,
     })
 }
 

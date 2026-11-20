@@ -19,9 +19,15 @@ use super::fixture::{BookChain, Fixture};
 use super::ledger::Ledger;
 use super::numbers::{self, AsOf, Cadence};
 use super::record::{self, mul_div, Record};
+use super::record_tasks;
 use super::views;
 
 const EXAMPLE: &str = include_str!("../../../../docs/next-version/record-v2-example.json");
+/// Where the example lives, for the test that writes it (`UPDATE_EXAMPLE=1`).
+const EXAMPLE_PATH: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/next-version/record-v2-example.json"
+);
 
 fn example() -> Value {
     serde_json::from_str(EXAMPLE).expect("the example is JSON")
@@ -94,13 +100,53 @@ fn the_server_accepts_the_example_and_refuses_it_with_a_pot_one_unit_too_high() 
     wrong_state["quiet"]["state"] = json!("dormant");
     assert!(!record::validate(&serde_json::from_value(wrong_state).expect("parses")).is_empty());
     let mut door = value.clone();
-    door["door"]["openNow"] = json!(false);
+    door["door"]["openNow"] = json!(!value["door"]["openNow"].as_bool().expect("flag"));
     assert!(!record::validate(&serde_json::from_value(door).expect("parses")).is_empty());
     let mut shut = value;
     shut["version"] = json!(3);
     assert!(serde_json::from_value::<Record>(shut)
         .map(|r| !record::validate(&r).is_empty())
         .unwrap_or(true));
+}
+
+/// A14: the example is the server's own output for the run's project A at one named block,
+/// byte for byte. `UPDATE_EXAMPLE=1` rewrites it (and the next build of the tests reads the new file).
+#[tokio::test]
+async fn the_example_is_what_the_server_writes() {
+    let built = build_from("A_example").await.expect("builds");
+    let text = format!(
+        "{}\n",
+        serde_json::to_string_pretty(&built.record).expect("the record is written")
+    );
+    if std::env::var_os("UPDATE_EXAMPLE").is_some() {
+        std::fs::write(EXAMPLE_PATH, &text).expect("the example is written");
+    }
+    let on_disk = std::fs::read_to_string(EXAMPLE_PATH).expect("the example is read");
+    assert!(
+        on_disk == text,
+        "docs/next-version/record-v2-example.json is not what the server writes at the example block; \
+         run the tests with UPDATE_EXAMPLE=1 to rewrite it"
+    );
+    // The tasks section is there, with rows in each state the run plays.
+    let rows = built.value["tasks"]["list"].as_array().expect("rows");
+    let states: BTreeSet<&str> = rows
+        .iter()
+        .map(|r| r["state"].as_str().expect("state"))
+        .collect();
+    for want in [
+        "announced",
+        "taken",
+        "paid",
+        "rejected",
+        "returned",
+        "cancelled",
+        "lapsed",
+    ] {
+        assert!(
+            states.contains(want),
+            "the example shows a {want} task: {states:?}"
+        );
+    }
 }
 
 /// RECORD-V2 section 7.3, item by item, on the example, with the contracts'
@@ -138,6 +184,16 @@ fn the_example_obeys_every_rule_of_section_7_3() {
                                 | "dormant"
                                 | "may_wind_down"
                                 | "wound_down"
+                                | "taken"
+                                | "paid"
+                                | "rejected"
+                                | "returned"
+                                | "cancelled"
+                                | "lapsed"
+                                | "can_be_taken"
+                                | "lapses"
+                                | "due"
+                                | "cap_room"
                         ),
                     "{path}: {s:?} is neither an amount nor a word of the record"
                 );
@@ -158,17 +214,27 @@ fn the_example_obeys_every_rule_of_section_7_3() {
         last_settle: t(&l["lastSettle"]),
         active_end: t(&r["clock"]["activeUntil"]),
         arrival_end: l["arrivalEnd"].as_u64().unwrap_or(0),
+        arrival_start: t(&l["arrivalStart"]),
+        arrival_total: n(&l["arrivalTotal"]),
         rate_ppm: allowance["ratePpm"].as_u64().expect("rate") as u32,
         unit: t(&r["unit"]),
         pot: n(&l["pot"]),
         box_: n(&l["box"]),
         arriving: n(&l["arriving"]),
         active_seconds: u128::from(t(&l["activeSeconds"])),
+        locked: n(&l["locked"]),
+        due_c: r["tasks"]["list"].as_array().map_or(0, |rows| {
+            rows.iter()
+                .filter(|row| row["state"] == "taken" && t(&row["deadline"]) <= as_of)
+                .map(|row| n(&row["stayerClaim"]))
+                .sum()
+        }),
     };
     let settled = record::roll_forward(as_of, &stored).expect("settles");
     assert_eq!(settled.pot, n(&money["pot"]));
     assert_eq!(settled.box_, n(&allowance["box"]));
     assert_eq!(settled.arriving, n(&money["arriving"]));
+    assert_eq!(settled.locked, n(&money["locked"]));
     assert_eq!(
         settled.active_seconds,
         u128::from(t(&r["clock"]["activeSeconds"]))
@@ -209,6 +275,8 @@ fn the_example_obeys_every_rule_of_section_7_3() {
         n(&totals["fees"])
             + n(&totals["tookOut"])
             + n(&totals["drawn"])
+            + n(&totals["paidToWorkers"])
+            + n(&totals["noteClaims"])
             + pot
             + box_
             + arriving
@@ -325,6 +393,179 @@ fn the_example_obeys_every_rule_of_section_7_3() {
         t(&pending["proposedAt"]) + unit
     );
     assert!(t(&money["arrivalEnd"]) > as_of);
+
+    // 11. The task queue (step 2), by the contracts' rules, from the example alone.
+    let tasks = &r["tasks"];
+    let rows = tasks["list"].as_array().expect("rows");
+    let lim = &tasks["limits"];
+    let (serials, mut seen): (Vec<u64>, BTreeSet<u64>) = (
+        rows.iter().map(|row| t(&row["serial"])).collect(),
+        BTreeSet::new(),
+    );
+    assert!(
+        serials.iter().all(|s| seen.insert(*s)),
+        "serials are unique"
+    );
+    let open: Vec<&Value> = rows
+        .iter()
+        .filter(|row| matches!(row["state"].as_str(), Some("announced" | "taken")))
+        .collect();
+    assert_eq!(
+        open.len() as u64,
+        t(&tasks["openCount"]),
+        "the open rows are the open count"
+    );
+    assert!(open.len() as u64 <= t(&lim["maxOpen"]));
+    assert!(t(&tasks["nextSerial"]) > *serials.iter().max().expect("a row"));
+    // Open rows first by serial, then ended rows newest first.
+    let (open_part, ended_part) = rows.split_at(open.len());
+    assert!(open_part
+        .windows(2)
+        .all(|w| t(&w[0]["serial"]) < t(&w[1]["serial"])));
+    assert!(ended_part
+        .windows(2)
+        .all(|w| t(&w[0]["serial"]) > t(&w[1]["serial"])));
+    let window = t(&lim["capWindowSecs"]);
+    let mut used = 0u128;
+    let mut next: Option<(u64, u8, u64)> = None;
+    for row in rows {
+        let (state, set_aside) = (row["state"].as_str().expect("state"), n(&row["setAside"]));
+        let (stayer, note_face) = (n(&row["stayerClaim"]), n(&row["noteFace"]));
+        let (pay, returned) = (n(&row["pay"]), n(&row["returned"]));
+        assert!(
+            row["repeatOf"]
+                .as_u64()
+                .is_none_or(|first| first < t(&row["serial"])),
+            "a repeat points at an earlier plan"
+        );
+        match state {
+            "taken" => assert_eq!(set_aside, stayer + note_face, "C + N == L while taken"),
+            "paid" => assert_eq!(
+                pay + returned,
+                set_aside,
+                "pay plus what came back is what was set aside"
+            ),
+            "rejected" | "returned" => assert_eq!((pay, returned), (0, set_aside)),
+            "announced" | "cancelled" | "lapsed" => {
+                assert_eq!(
+                    (set_aside, stayer, note_face, pay, returned),
+                    (0, 0, 0, 0, 0)
+                )
+            }
+            other => panic!("a state the spec does not know: {other}"),
+        }
+        if state == "announced" && as_of < t(&row["expiresAt"]) {
+            let most = n(&row["maxDollars"])
+                .min(mul_div(pot, u128::from(t(&row["shareBps"])), 10_000).expect("fits"));
+            assert_eq!(row["atMostNow"].as_str(), Some(most.to_string().as_str()));
+        } else {
+            assert!(
+                row["atMostNow"].is_null(),
+                "atMostNow only while a take is possible"
+            );
+        }
+        // The cap: a take counts while it is inside the window, unless it is a taken task past
+        // its deadline (the next settle ends it unpaid and gives its share back).
+        let cap_bps = u128::from(t(&row["capBps"]));
+        if let Some(at) = row["takenAt"].as_u64() {
+            let pending = state == "taken" && t(&row["deadline"]) <= as_of;
+            if at + window > as_of && !pending {
+                used += cap_bps;
+            }
+        }
+        // The notes: the holders add up to the face unless the list is cut.
+        if let Some(notes) = row["notes"].as_object() {
+            assert_eq!(n(&notes["faceTotal"]), note_face);
+            let holders = notes["holders"].as_array().expect("holders");
+            if notes["holdersCut"] == false {
+                assert_eq!(
+                    holders.iter().map(|h| n(&h["face"])).sum::<u128>(),
+                    note_face
+                );
+            }
+            for h in holders {
+                let want = if matches!(state, "announced" | "taken") {
+                    0
+                } else {
+                    mul_div(n(&h["face"]), returned, set_aside).expect("fits")
+                };
+                assert_eq!(n(&h["claimable"]), want, "what a claim would pay");
+            }
+        } else {
+            assert_eq!(note_face, 0, "a row with notes says so");
+        }
+        // The next date, redone.
+        let mut offer = |at: u64, rank: u8, serial: u64| {
+            if at > as_of && next.is_none_or(|b| (at, rank, serial) < b) {
+                next = Some((at, rank, serial));
+            }
+        };
+        match state {
+            "announced" => {
+                offer(t(&row["noticeEnd"]), 0, t(&row["serial"]));
+                offer(t(&row["expiresAt"]), 1, t(&row["serial"]));
+            }
+            "taken" => offer(t(&row["deadline"]), 2, t(&row["serial"])),
+            _ => {}
+        }
+    }
+    let cap = &tasks["cap"];
+    assert_eq!(
+        u128::from(t(&cap["usedBps"])),
+        used,
+        "the takes counted in the window"
+    );
+    assert_eq!(t(&cap["usedBps"]) + t(&cap["roomBps"]), t(&lim["capBps"]));
+    let frees = cap["frees"].as_array().expect("frees");
+    assert!(frees.len() <= 16);
+    assert_eq!(
+        frees.iter().map(|f| u128::from(t(&f["bps"]))).sum::<u128>(),
+        used,
+        "the dates room comes back add up to what is used"
+    );
+    assert!(frees.windows(2).all(|w| t(&w[0]["at"]) <= t(&w[1]["at"])));
+    if let Some(first) = frees.first() {
+        let at = t(&first["at"]);
+        if at > as_of && next.is_none_or(|b| (at, 3, 0) < b) {
+            next = Some((at, 3, 0));
+        }
+    }
+    let want_next = next.map(|(at, rank, serial)| {
+        let kind = ["can_be_taken", "lapses", "due", "cap_room"][rank as usize];
+        json!({"at": at, "kind": kind, "serial": serial})
+    });
+    assert_eq!(
+        tasks["next"],
+        want_next.unwrap_or(Value::Null),
+        "what happens next"
+    );
+    // The money: what is set aside is the stayers' claims of the taken rows still running.
+    let running: u128 = rows
+        .iter()
+        .filter(|row| row["state"] == "taken" && t(&row["deadline"]) > as_of)
+        .map(|row| n(&row["stayerClaim"]))
+        .sum();
+    assert_eq!(
+        running,
+        n(&money["locked"]),
+        "money.locked is what the running tasks hold"
+    );
+    // Notes owed: the face of the notes against open tasks plus what is left to claim on ended ones.
+    let held: u128 = rows
+        .iter()
+        .map(|row| {
+            if matches!(row["state"].as_str(), Some("announced" | "taken")) {
+                n(&row["noteFace"])
+            } else {
+                n(&row["notesLeft"])
+            }
+        })
+        .sum();
+    assert_eq!(
+        held,
+        n(&money["notesOwed"]),
+        "money.notesOwed is what is held for the notes"
+    );
 }
 
 // ------------------------------------------------------ the builder, real run
@@ -336,7 +577,7 @@ struct Built {
 
 async fn build_from(name: &str) -> anyhow::Result<Built> {
     let (fx, ledger, as_of, chain) = load(name);
-    let read = views::read(&chain, fx.launcher, &ledger, as_of.block).await?;
+    let read = views::read(&chain, fx.launcher, &ledger, as_of.block, as_of.time).await?;
     let record = numbers::build(
         &ledger,
         &as_of,
@@ -532,13 +773,13 @@ async fn a_failed_read_is_an_error_and_never_a_record() {
         buzz_evm_allowance::abi::selector("pot()").to_vec(),
     );
     assert!(chain.answers.remove(&key).is_some());
-    let err = views::read(&chain, fx.launcher, &ledger, as_of.block)
+    let err = views::read(&chain, fx.launcher, &ledger, as_of.block, as_of.time)
         .await
         .expect_err("a missing answer fails the read");
     assert!(format!("{err:#}").contains("no captured answer"), "{err:#}");
     // The node cannot serve the block asked for.
     let (_, chain) = BookChain::load(&fx, "A_live");
-    let err = views::read(&chain, fx.launcher, &ledger, as_of.block + 1)
+    let err = views::read(&chain, fx.launcher, &ledger, as_of.block + 1, as_of.time)
         .await
         .expect_err("another block is not served");
     assert!(format!("{err:#}").contains("cannot serve"), "{err:#}");
@@ -565,7 +806,7 @@ async fn build_with(
     as_of: &AsOf,
     chain: &BookChain,
 ) -> anyhow::Result<Record> {
-    let read = views::read(chain, fx.launcher, ledger, as_of.block).await?;
+    let read = views::read(chain, fx.launcher, ledger, as_of.block, as_of.time).await?;
     numbers::build(ledger, as_of, &read, &Cadence::default(), as_of.time + 1)
 }
 
@@ -754,8 +995,14 @@ fn only_events_change_the_facts_and_time_changes_what_is_shown() {
     for (path, value) in [
         (vec!["totals", "joined"], json!("7000000001")),
         (vec!["clock", "lastCheckIn"], json!(1795003201u64)),
-        (vec!["team", "grantCount"], json!(4)),
-        (vec!["door", "switchOn"], json!(false)),
+        (
+            vec!["team", "grantCount"],
+            json!(base["team"]["grantCount"].as_u64().expect("count") + 1),
+        ),
+        (
+            vec!["door", "switchOn"],
+            json!(!base["door"]["switchOn"].as_bool().expect("flag")),
+        ),
         (vec!["allowance", "ratePpm"], json!(1200)),
         (vec!["money", "feesOwed"], json!("1")),
     ] {
@@ -833,5 +1080,516 @@ async fn an_event_value_one_unit_off_is_never_signed_into_a_record() {
     assert!(
         accepted.is_empty(),
         "a hostile event value one unit off was signed into a record: {accepted:?}"
+    );
+}
+
+// ---------------------------------------------------------- step 2: the stream and the tasks
+
+/// One account of the contract's stream: what a settle at `t` does to the stored numbers, by the
+/// formula the step 2 contracts use (`new_formula`) or the one step 1 used (`false`). No allowance
+/// accrues (rate zero), so only the stream moves.
+fn settle_stream(t: u64, s: &record::Stored, new_formula: bool) -> record::Stored {
+    let mut s = *s;
+    if s.arriving != 0 {
+        let released = if t >= s.arrival_end {
+            s.arriving
+        } else if new_formula {
+            let target = mul_div(
+                s.arrival_total,
+                u128::from(t - s.arrival_start),
+                u128::from(s.arrival_end - s.arrival_start),
+            )
+            .expect("fits");
+            target.saturating_sub(s.arrival_total - s.arriving)
+        } else {
+            mul_div(
+                s.arriving,
+                u128::from(t - s.last_settle),
+                u128::from(s.arrival_end - s.last_settle),
+            )
+            .expect("fits")
+        };
+        s.arriving -= released;
+        s.pot += released;
+    }
+    s.last_settle = t;
+    s
+}
+
+/// What a second payment does to the stream (`Treasury.addRevenue`): the new stream starts now with
+/// what had not arrived and the new money, and ends at the weighted time.
+fn add_outside(t: u64, s: &record::Stored, x: u128) -> record::Stored {
+    let mut s = settle_stream(t, s, true);
+    let old = s.arriving;
+    s.arrival_end = if old == 0 {
+        t + s.unit
+    } else {
+        let rem = u128::from(s.arrival_end - t);
+        let end = (old * rem + x * u128::from(s.unit)).div_ceil(old + x);
+        t + u64::try_from(end).expect("fits")
+    };
+    s.arrival_start = t;
+    s.arrival_total = old + x;
+    s.arriving = old + x;
+    s
+}
+
+/// A5b: settling every second gives what settling once gives, with outside money mid-stream, a
+/// second payment merged into it, and a settle inside. The step 1 formula fails the same test.
+#[test]
+fn settling_every_second_gives_the_pot_settling_once_gives() {
+    let base = record::Stored {
+        last_settle: 1_000,
+        active_end: 0,
+        arrival_end: 0,
+        arrival_start: 0,
+        arrival_total: 0,
+        rate_ppm: 0,
+        unit: 700,
+        pot: 5_000_000_000,
+        box_: 0,
+        arriving: 0,
+        active_seconds: 0,
+        locked: 0,
+        due_c: 0,
+    };
+    // Outside money at 1,000; a second payment merges into it at 1,300.
+    let first = add_outside(1_000, &base, 3_000_000_001);
+    let merged = add_outside(1_300, &first, 1_000_000_007);
+    for end in [1_150u64, 1_299, 1_300, 1_301, 1_650, 1_999, 2_100, 2_500] {
+        let from = if end < 1_300 { &first } else { &merged };
+        let once = record::roll_forward(end, from).expect("settles");
+        for new_formula in [true, false] {
+            // Settle at every second from the stream's own start, then read the numbers at `end`.
+            let mut s = *from;
+            let begin = from.last_settle;
+            for t in (begin + 1)..=end {
+                s = settle_stream(t, &s, new_formula);
+            }
+            if new_formula {
+                assert_eq!(
+                    (s.pot, s.arriving),
+                    (once.pot, once.arriving),
+                    "settling every second and settling once agree at {end}"
+                );
+            }
+        }
+    }
+    // The step 1 formula (`arriving x (t - last) / (end - last)`) does not: settled every second it
+    // releases less than the stream's own line, so the money is held back.
+    let (mut old, mut new) = (merged, merged);
+    for t in 1_301..=1_700 {
+        old = settle_stream(t, &old, false);
+        new = settle_stream(t, &new, true);
+    }
+    assert_ne!(old.pot, new.pot, "the step 1 formula gives another pot");
+    assert!(old.pot < new.pot, "and holds money back");
+}
+
+/// A5: a block where a task has run out and nobody has settled. The record's `money.pot` and
+/// `money.locked` are what a settle at that time gives: the run-out task's claim is back in the pot,
+/// and out of `locked`. The contract's own settled views agree (`leaveValue`, `boxCap`).
+#[tokio::test]
+async fn a_run_out_task_is_returned_in_the_settled_pot_and_locked() {
+    let built = build_from("A_overdue").await.expect("builds");
+    let (r, v) = (&built.record, &built.value);
+    let tasks = r.tasks.as_ref().expect("a book");
+    let over: Vec<_> = tasks
+        .list
+        .iter()
+        .filter(|row| {
+            row.state == record_tasks::TaskStateRec::Taken
+                && row.deadline.is_some_and(|d| d <= r.as_of.time)
+        })
+        .collect();
+    assert_eq!(
+        over.len(),
+        1,
+        "one task has run out and is still taken in the book"
+    );
+    let claim: u128 = over[0].stayer_claim.parse().expect("amount");
+    assert!(claim > 0);
+    let (stored_pot, stored_locked) = (n(&v["ledger"]["pot"]), n(&v["ledger"]["locked"]));
+    assert_eq!(
+        n(&v["money"]["locked"]),
+        stored_locked - claim,
+        "locked is what the running tasks hold"
+    );
+    // The pot is the stored pot rolled forward (allowance, arrival) plus the claim, last.
+    assert!(
+        n(&v["money"]["pot"]) > stored_pot,
+        "outside money arrived and the claim came back"
+    );
+    let settled_without_return = {
+        let (fx, ledger, as_of, mut chain) = load("A_overdue");
+        let book = address_of(ledger.contracts.tasks.as_deref().expect("a book"));
+        // A chain where the book says nothing ran out (`dueC` = 0): the pot is one claim lower.
+        let mut when = [0u8; 32];
+        when[24..].copy_from_slice(&as_of.time.to_be_bytes());
+        set_answer(&mut chain, &book, "dueC(uint256)", &[when], 0);
+        let read = views::read(&chain, fx.launcher, &ledger, as_of.block, as_of.time)
+            .await
+            .expect("reads");
+        // The contract's own settled views still include the claim, so a record that leaves it out
+        // is refused (A6, below); here only the roll-forward is compared.
+        let stored = record::Stored {
+            last_settle: r.ledger.last_settle,
+            active_end: r.clock.active_until.unwrap_or(0),
+            arrival_end: r.ledger.arrival_end.unwrap_or(0),
+            arrival_start: r.ledger.arrival_start,
+            arrival_total: n(&v["ledger"]["arrivalTotal"]),
+            rate_ppm: r.allowance.rate_ppm,
+            unit: r.unit,
+            pot: stored_pot,
+            box_: n(&v["ledger"]["box"]),
+            arriving: n(&v["ledger"]["arriving"]),
+            active_seconds: u128::from(r.ledger.active_seconds),
+            locked: stored_locked,
+            due_c: read.book.as_ref().expect("a book").due_c,
+        };
+        record::roll_forward(r.as_of.time, &stored)
+            .expect("settles")
+            .pot
+    };
+    assert_eq!(n(&v["money"]["pot"]) - claim, settled_without_return);
+    // The contract's own settled `leaveValue()` is made from the same pot.
+    assert_leave_value_is_made_from_the_pot(v);
+}
+
+/// A6: the box cap check holds with a returned task, and a record that drops the return is refused.
+#[tokio::test]
+async fn the_box_cap_check_still_holds_with_a_returned_task_and_fails_when_the_return_is_dropped() {
+    build_from("A_overdue")
+        .await
+        .expect("the honest numbers build");
+    let (fx, ledger, as_of, mut chain) = load("A_overdue");
+    let book = address_of(ledger.contracts.tasks.as_deref().expect("a book"));
+    let mut when = [0u8; 32];
+    when[24..].copy_from_slice(&as_of.time.to_be_bytes());
+    set_answer(&mut chain, &book, "dueC(uint256)", &[when], 0);
+    let err = build_with(&fx, &ledger, &as_of, &chain)
+        .await
+        .expect_err("a pot without the run-out task's money is refused");
+    let text = format!("{err:#}");
+    assert!(text.contains("boxCap"), "{text}");
+}
+
+/// A5c: the cap numbers of a block where a taken task has run out and nobody settled are what a settle
+/// then gives: its whole share is out of `usedBps` and out of `frees`, and the room is its share larger.
+#[tokio::test]
+async fn the_cap_numbers_free_the_share_of_a_taken_task_past_its_deadline() {
+    let built = build_from("A_overdue").await.expect("builds");
+    let r = &built.record;
+    let tasks = r.tasks.as_ref().expect("a book");
+    let over = tasks
+        .list
+        .iter()
+        .find(|row| {
+            row.state == record_tasks::TaskStateRec::Taken
+                && row.deadline.is_some_and(|d| d <= r.as_of.time)
+        })
+        .expect("a task has run out");
+    assert!(
+        over.cap_bps > 0,
+        "its take is still counted as the contract stores it"
+    );
+    let (load_fx, ledger, as_of, chain) = load("A_overdue");
+    let read = views::read(&chain, load_fx.launcher, &ledger, as_of.block, as_of.time)
+        .await
+        .expect("reads");
+    let view_sum = read.book.as_ref().expect("a book").window_sum_bps;
+    assert_eq!(
+        u128::from(tasks.cap.used_bps) + u128::from(over.cap_bps),
+        view_sum,
+        "the view counts the share the next settle gives back"
+    );
+    assert_eq!(
+        tasks.cap.used_bps + tasks.cap.room_bps,
+        tasks.limits.cap_bps
+    );
+    assert_eq!(
+        tasks
+            .cap
+            .frees
+            .iter()
+            .map(|f| u128::from(f.bps))
+            .sum::<u128>(),
+        u128::from(tasks.cap.used_bps),
+        "the dates add up to the used share, without the given-back take"
+    );
+    // With the pending give-back switched off the numbers would be the view's own.
+    let counted = ledger
+        .tasks
+        .window_sum(as_of.time, tasks.limits.cap_window_secs);
+    assert_eq!(counted, view_sum);
+}
+
+/// A project whose `TasksReady` row is not among the stored ones has `tasks: null`, and its record is
+/// otherwise exactly the record it would have: the book's rows are not its own and the reader never asks
+/// a book for views.
+#[tokio::test]
+async fn a_project_with_no_tasks_ready_has_tasks_null() {
+    // Project B never plans a task: with its `TasksReady` row gone it is a project with no book.
+    let fx = Fixture::load();
+    let (project, chain) = BookChain::load(&fx, "B_pair");
+    let rows: Vec<_> = fx
+        .rows(&project, chain.block)
+        .into_iter()
+        .filter(|r| r.event != "TasksReady")
+        .collect();
+    let ledger = Ledger::from_logs(&rows).expect("reads").expect("launched");
+    assert!(ledger.contracts.tasks.is_none() && ledger.tasks.tasks.is_empty());
+    let as_of = AsOf {
+        chain_id: 31337,
+        launcher: fx.launcher,
+        block: chain.block,
+        time: fx.time_of(chain.block),
+    };
+    // A chain that has no book to answer: every book view is removed from the answers.
+    let mut chain = chain;
+    let book = fx.projects[&project].tasks;
+    chain.answers.retain(|(to, _), _| *to != book);
+    let record = build_with(&fx, &ledger, &as_of, &chain)
+        .await
+        .expect("builds");
+    assert!(record.tasks.is_none());
+    let value = serde_json::to_value(&record).expect("written");
+    assert!(value["tasks"].is_null(), "the key is there and null");
+    assert!(record::validate(&record).is_empty());
+}
+
+/// A17: a book the Treasury does not name is never followed into a record.
+#[tokio::test]
+async fn a_tasks_book_that_differs_from_the_treasurys_publishes_nothing() {
+    let (fx, ledger, as_of, mut chain) = load("A_example");
+    let treasury = address_of(&ledger.contracts.treasury);
+    let selector = buzz_evm_allowance::abi::selector("tasks()").to_vec();
+    let mut other = vec![0u8; 32];
+    other[12..].copy_from_slice(&[0x77; 20]);
+    *chain
+        .answers
+        .get_mut(&(treasury, selector))
+        .expect("tasks() was captured") = other;
+    let err = build_with(&fx, &ledger, &as_of, &chain)
+        .await
+        .expect_err("a different book is refused");
+    assert!(format!("{err:#}").contains("task book"), "{err:#}");
+}
+
+/// A14: the example is refused with a row one unit off where a check stands on it: a running task's
+/// claim, which the money set aside is made of.
+#[test]
+fn the_server_accepts_the_example_and_refuses_it_with_a_row_one_unit_off() {
+    let value = example();
+    let record: Record = serde_json::from_value(value.clone()).expect("parses");
+    assert_eq!(record::validate(&record), Vec::<String>::new());
+    let mut off = value.clone();
+    let rows = off["tasks"]["list"].as_array_mut().expect("rows");
+    let running = rows
+        .iter_mut()
+        .find(|r| r["state"] == "taken")
+        .expect("a running task");
+    let claim = n(&running["stayerClaim"]);
+    running["stayerClaim"] = json!((claim + 1).to_string());
+    let bad = record::validate(&serde_json::from_value(off).expect("parses"));
+    assert!(
+        bad.iter().any(|b| b.contains("money.locked")),
+        "a claim one unit off must be named: {bad:?}"
+    );
+    // A task past its deadline whose claim is not returned: money.locked then disagrees with the
+    // stored numbers worked forward.
+    let mut late = value.clone();
+    let rows = late["tasks"]["list"].as_array_mut().expect("rows");
+    let running = rows
+        .iter_mut()
+        .find(|r| r["state"] == "taken")
+        .expect("running");
+    running["deadline"] = json!(t(&value["asOf"]["time"]) - 1);
+    let bad = record::validate(&serde_json::from_value(late).expect("parses"));
+    assert!(
+        !bad.is_empty(),
+        "a deadline in the past without the return is refused"
+    );
+}
+
+/// A13: the record is kept fresh while a task is open, and a heartbeat when nothing moves. Only a task's
+/// phase moving with the clock does not sign a new record.
+#[tokio::test]
+async fn refresh_is_600_while_a_task_is_open_and_3600_after() {
+    let cadence = Cadence::default();
+    // The rule, by each condition alone.
+    assert_eq!(numbers::refresh_every(&cadence, false, false, false), 3_600);
+    assert_eq!(numbers::refresh_every(&cadence, true, false, false), 600);
+    assert_eq!(numbers::refresh_every(&cadence, false, true, false), 600);
+    assert_eq!(
+        numbers::refresh_every(&cadence, false, false, true),
+        600,
+        "a task is open"
+    );
+    // The run: tasks open at the example block, none at the end of the run.
+    let open = build_from("A_example").await.expect("builds");
+    assert!(open.record.tasks.as_ref().expect("a book").open_count > 0);
+    assert_eq!(open.record.refresh_every_secs, 600);
+    let end = build_from("A_end").await.expect("builds");
+    assert_eq!(end.record.tasks.as_ref().expect("a book").open_count, 0);
+    assert_eq!(
+        end.record.refresh_every_secs, 3_600,
+        "nothing moves after the last task ended"
+    );
+}
+
+#[test]
+fn a_task_phase_change_alone_does_not_resign() {
+    let base = example();
+    let facts = |v: &Value| numbers::facts_of(v);
+    // What moves with the clock: a notice that ended and the room it left, the amount a take would set
+    // aside, the date that comes next, and the money set aside once a task ran out.
+    let mut later = base.clone();
+    let rows = later["tasks"]["list"].as_array_mut().expect("rows");
+    let announced = rows
+        .iter_mut()
+        .find(|r| r["state"] == "announced")
+        .expect("an announced task");
+    announced["atMostNow"] = json!("1");
+    later["tasks"]["cap"]["usedBps"] = json!(1);
+    later["tasks"]["cap"]["roomBps"] = json!(999);
+    later["tasks"]["next"] = json!({"at": 1, "kind": "due", "serial": 1});
+    later["money"]["locked"] = json!("1");
+    assert_eq!(
+        facts(&base),
+        facts(&later),
+        "the clock alone re-signs nothing"
+    );
+    // What an event changes: a task's state, the open count, a take in the cap's list.
+    for (path, value) in [
+        (vec!["tasks", "openCount"], json!(0)),
+        (vec!["tasks", "nextSerial"], json!(11)),
+        (vec!["tasks", "cap", "frees"], json!([])),
+        (vec!["tasks", "list"], json!([])),
+        (vec!["totals", "paidToWorkers"], json!("1")),
+    ] {
+        let mut changed = base.clone();
+        let mut at = &mut changed;
+        for key in &path[..path.len() - 1] {
+            at = &mut at[*key];
+        }
+        at[path[path.len() - 1]] = value;
+        assert_ne!(facts(&base), facts(&changed), "{path:?} is a fact");
+    }
+}
+
+/// What the contract's settled `leaveValue()` is made of: the record's pot.
+fn assert_leave_value_is_made_from_the_pot(v: &Value) {
+    let (pot, paid_in) = (n(&v["money"]["pot"]), n(&v["money"]["paidIn"]));
+    let (b, g) = (n(&v["shares"]["backers"]), n(&v["shares"]["teamCounted"]));
+    let a1 = pot.min(paid_in);
+    let one = 1_000_000_000_000_000_000u128;
+    assert_eq!(
+        n(&v["value"]["leaveValue"]),
+        mul_div(one, a1, b).expect("fits") + mul_div(one, pot - a1, b + g).expect("fits"),
+        "the contract's settled leave value is the one the record's pot gives"
+    );
+}
+
+/// A block inside the merged stream, a day after the last settle, where no Treasury call settled it. What has
+/// arrived since is only in the contract's formula (on the stream's own start and total), and the record's pot
+/// is the one the contract's own settled views (`boxCap`, `leaveValue`) are made from.
+#[tokio::test]
+async fn the_arrival_formula_is_the_contracts_with_a_settle_inside_the_stream() {
+    let built = build_from("A_stream").await.expect("builds");
+    let (r, v) = (&built.record, &built.value);
+    assert!(
+        r.ledger.arrival_start < r.ledger.last_settle && r.ledger.last_settle < r.as_of.time,
+        "the stream began, was settled, and time has passed since: {} {} {}",
+        r.ledger.arrival_start,
+        r.ledger.last_settle,
+        r.as_of.time
+    );
+    assert_ne!(r.money.arriving, "0");
+    assert!(
+        r.money.arrival_end.is_some_and(|e| e > r.as_of.time),
+        "still inside the stream"
+    );
+    assert!(
+        n(&v["money"]["pot"]) > n(&v["ledger"]["pot"]),
+        "money arrived since the last settle"
+    );
+    assert_leave_value_is_made_from_the_pot(v);
+}
+
+/// A5b, exact, on the real chain: at every settle the run made, the stored numbers the ledger held just before
+/// it, worked forward to the settle's time by `roll_forward`, are exactly the numbers the contract's own
+/// `Settled` event says it left (pot, box, arriving money, active seconds): the stream with its start and total,
+/// the allowance, and the claims of the tasks that ran out. The step 1 arrival formula differs by a few units at
+/// some of them (it rounds the time since the last settle, not the stream), so a record built on it would be
+/// signed with a pot a few units off that no view tells apart.
+#[test]
+fn every_settle_of_the_run_is_what_the_roll_forward_gives_from_the_state_before_it() {
+    let fx = Fixture::load();
+    let rows = fx.rows("A", fx.head());
+    let mut checked = 0;
+    let mut released_mid_stream = 0;
+    for (i, row) in rows.iter().enumerate() {
+        if row.role != super::events::Role::Treasury || row.event != "Settled" {
+            continue;
+        }
+        let before = Ledger::from_logs(&rows[..i])
+            .expect("reads")
+            .expect("launched");
+        let t: u64 = row.fields["time"]
+            .as_str()
+            .expect("time")
+            .parse()
+            .expect("number");
+        let active_end = if before.wind_down.is_some() {
+            0
+        } else {
+            before.last_check_in + 2 * before.unit
+        };
+        let due_c: u128 = before
+            .tasks
+            .tasks
+            .values()
+            .filter(|k| k.state == super::ledger_tasks::TaskState::Taken && k.expires_at <= t)
+            .map(|k| k.stayer)
+            .sum();
+        let stored = record::Stored {
+            last_settle: before.last_settle,
+            active_end,
+            arrival_end: before.arrival_end,
+            arrival_start: before.arrival_start,
+            arrival_total: before.arrival_total,
+            rate_ppm: before.rate_ppm,
+            unit: before.unit,
+            pot: before.pot,
+            box_: before.box_,
+            arriving: before.arriving,
+            active_seconds: before.active_seconds,
+            locked: before.locked,
+            due_c,
+        };
+        let got = record::roll_forward(t, &stored).expect("settles");
+        let at = format!("the settle of block {} (time {t})", row.block);
+        assert_eq!(got.pot.to_string(), row.fields["potAfter"], "{at}: pot");
+        assert_eq!(got.box_.to_string(), row.fields["boxAfter"], "{at}: box");
+        assert_eq!(
+            got.arriving.to_string(),
+            row.fields["arrivingAfter"],
+            "{at}: arriving"
+        );
+        assert_eq!(
+            got.active_seconds.to_string(),
+            row.fields["activeSecondsAfter"],
+            "{at}: active seconds"
+        );
+        checked += 1;
+        if before.arriving != 0 && row.fields["released"] != "0" && t < before.arrival_end {
+            released_mid_stream += 1;
+        }
+    }
+    assert!(checked > 20, "{checked} settles were compared");
+    assert!(
+        released_mid_stream >= 3,
+        "{released_mid_stream} settles released outside money inside a stream"
     );
 }

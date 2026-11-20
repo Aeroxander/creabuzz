@@ -111,14 +111,28 @@ fn topic_key(log: &RawLog, index: usize) -> Option<Word> {
     log.topics.get(index).copied()
 }
 
-/// Contracts a decoded Launcher log of project `key` in `block` reveals: a
-/// project's four contracts at its launch, and a Pair when one is made. The
-/// dollar (`Platform.quote`) is shared by every project and not followed.
-fn discovered(key: Word, block: u64, event: &str, decoded: &Value) -> Vec<Contract> {
+/// Contracts a decoded log of project `key` in `block` reveals, by the role of
+/// the contract that emitted it: from the Launcher, a project's four contracts
+/// at its launch and a Pair when one is made; from a project's Treasury, its task
+/// book (`TasksReady`, emitted once in the launch transaction). The dollar
+/// (`Platform.quote`) is shared by every project and not followed.
+fn discovered(role: Role, key: Word, block: u64, event: &str, decoded: &Value) -> Vec<Contract> {
     let addr = |v: Option<&Value>| v.and_then(Value::as_str).and_then(parse_fixed::<20>);
     let mut out = Vec::new();
-    match event {
-        "ProjectLaunched" => {
+    match (role, event) {
+        (Role::Treasury, "TasksReady") => {
+            // The book's own first event comes in a later transaction, so
+            // following it from this block loses nothing.
+            if let Some(address) = addr(decoded.get("book")) {
+                out.push(Contract {
+                    address,
+                    role: Role::Tasks,
+                    project_key: Some(key),
+                    from_block: block,
+                });
+            }
+        }
+        (Role::Launcher, "ProjectLaunched") => {
             for (name, role) in [
                 ("shares", Role::Shares),
                 ("team", Role::Team),
@@ -135,7 +149,7 @@ fn discovered(key: Word, block: u64, event: &str, decoded: &Value) -> Vec<Contra
                 }
             }
         }
-        "PairMade" => {
+        (Role::Launcher, "PairMade") => {
             if let Some(address) = addr(decoded.get("pair")) {
                 out.push(Contract {
                     address,
@@ -210,8 +224,8 @@ async fn scan_range(
     // from now on, and their logs from where they were named up to this range
     // are read too.
     let mut late: Vec<Contract> = Vec::new();
-    for (key, block, event, decoded) in store::launcher_reveals(pool, &s.reader, from).await? {
-        for c in discovered(key, block, &event, &decoded) {
+    for (role, key, block, event, decoded) in store::reveals(pool, &s.reader, from).await? {
+        for c in discovered(role, key, block, &event, &decoded) {
             if !known.contains_key(&c.address) && !late.iter().any(|l| l.address == c.address) {
                 late.push(c);
             }
@@ -272,16 +286,21 @@ async fn scan_range(
                 continue;
             }
             if let Some(c) = known.get(&log.address) {
-                if c.role == Role::Launcher {
-                    if let Some(def) = log
-                        .topics
-                        .first()
-                        .and_then(|t| events::lookup(Role::Launcher, t))
-                    {
+                // The Launcher's events name a project by their key topic; a
+                // Treasury's own `TasksReady` by the project it belongs to.
+                let revealing = match c.role {
+                    Role::Launcher => topic_key(&log, 1).map(|key| (Role::Launcher, key)),
+                    Role::Treasury => c.project_key.map(|key| (Role::Treasury, key)),
+                    _ => None,
+                };
+                if let Some((role, key)) = revealing {
+                    if let Some(def) = log.topics.first().and_then(|t| events::lookup(role, t)) {
                         let decoded = events::decode(def, &log.topics, &log.data);
-                        if let (Ok(decoded), Some(key)) = (decoded, topic_key(&log, 1)) {
-                            for c in discovered(key, log.block_number, def.name, &decoded) {
-                                if !known.contains_key(&c.address) {
+                        if let Ok(decoded) = decoded {
+                            for c in discovered(role, key, log.block_number, def.name, &decoded) {
+                                if !known.contains_key(&c.address)
+                                    && !found.iter().any(|f| f.address == c.address)
+                                {
                                     found.push(c);
                                 }
                             }

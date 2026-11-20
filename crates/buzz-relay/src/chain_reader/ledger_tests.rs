@@ -12,6 +12,7 @@ use serde_json::Value;
 use super::*;
 use crate::chain_reader::events::{self, EVENTS};
 use crate::chain_reader::fixture::Fixture;
+use crate::chain_reader::ledger::StoredBook;
 
 fn fx() -> Fixture {
     Fixture::load()
@@ -29,6 +30,24 @@ fn ledger_at(fx: &Fixture, project: &str, block: u64) -> Ledger {
     Ledger::from_logs(&fx.rows(project, block))
         .expect("the rows read")
         .expect("the project is launched")
+}
+
+/// `base` with the task-side numbers of a snapshot's views (`v`, taken at `block`).
+fn with_tasks(base: Stored, fx: &Fixture, v: &Value, block: u64) -> Stored {
+    Stored {
+        locked: n(v, "locked"),
+        notes_owed: n(v, "notesOwed"),
+        arrival_start: u64::try_from(n(v, "arrivalStart")).expect("time"),
+        arrival_total: n(v, "arrivalTotal"),
+        book: Some(StoredBook {
+            open_count: n(v, "openCount"),
+            next_serial: n(v, "nextSerial"),
+            window_sum_bps: n(v, "windowSumBps"),
+            at: fx.time_of(block),
+            span: fx.cap_window_secs(),
+        }),
+        ..base
+    }
 }
 
 /// The numbers a snapshot's views gave, as the ledger must hold them.
@@ -193,19 +212,25 @@ fn a_replay_of_the_logs_gives_the_numbers_the_views_gave_at_every_step() {
             // signed under (the Vester's Team balance is the ledger's own
             // here: it is read from the chain only at the end of the run).
             let v = &snap["views"];
-            let stored = Stored {
-                pot: n(v, "pot"),
-                paid_in: n(v, "paidIn"),
-                box_: n(v, "box"),
-                arriving: n(v, "arriving"),
-                fees_owed: n(v, "feesOwed"),
-                z: n(v, "Z"),
-                active_seconds: n(v, "activeSeconds"),
-                last_settle: u64::try_from(n(v, "lastSettle")).expect("time"),
-                shares_supply: n(v, "sharesSupply"),
-                team_supply: n(v, "teamSupply"),
-                vester_team_balance: l.vester_team_balance(),
-            };
+            let stored = with_tasks(
+                Stored {
+                    pot: n(v, "pot"),
+                    paid_in: n(v, "paidIn"),
+                    box_: n(v, "box"),
+                    arriving: n(v, "arriving"),
+                    fees_owed: n(v, "feesOwed"),
+                    z: n(v, "Z"),
+                    active_seconds: n(v, "activeSeconds"),
+                    last_settle: u64::try_from(n(v, "lastSettle")).expect("time"),
+                    shares_supply: n(v, "sharesSupply"),
+                    team_supply: n(v, "teamSupply"),
+                    vester_team_balance: l.vester_team_balance(),
+                    ..Stored::default()
+                },
+                &fx,
+                v,
+                block,
+            );
             assert_eq!(
                 l.mismatches(&stored),
                 vec![],
@@ -267,19 +292,25 @@ fn the_end_of_the_run_matches_the_contracts() {
             .get(hex0x(&fx.projects[name].vester))
             .map_or(0, |v| v.as_str().expect("amount").parse().expect("number"));
         let v = &fin["views"];
-        let stored = Stored {
-            pot: n(v, "pot"),
-            paid_in: n(v, "paidIn"),
-            box_: n(v, "box"),
-            arriving: n(v, "arriving"),
-            fees_owed: n(v, "feesOwed"),
-            z: n(v, "Z"),
-            active_seconds: n(v, "activeSeconds"),
-            last_settle: u64::try_from(n(v, "lastSettle")).expect("time"),
-            shares_supply: n(v, "sharesSupply"),
-            team_supply: n(v, "teamSupply"),
-            vester_team_balance: vester_balance,
-        };
+        let stored = with_tasks(
+            Stored {
+                pot: n(v, "pot"),
+                paid_in: n(v, "paidIn"),
+                box_: n(v, "box"),
+                arriving: n(v, "arriving"),
+                fees_owed: n(v, "feesOwed"),
+                z: n(v, "Z"),
+                active_seconds: n(v, "activeSeconds"),
+                last_settle: u64::try_from(n(v, "lastSettle")).expect("time"),
+                shares_supply: n(v, "sharesSupply"),
+                team_supply: n(v, "teamSupply"),
+                vester_team_balance: vester_balance,
+                ..Stored::default()
+            },
+            &fx,
+            v,
+            fx.head(),
+        );
         assert_eq!(l.mismatches(&stored), vec![], "{name}");
         assert!(
             vester_balance > 0
@@ -381,15 +412,25 @@ fn the_totals_identity_holds_at_the_end_of_each_project() {
         let held = n(&fx.json["final"][name], "dollarHeld");
         assert_eq!(
             held,
-            l.pot + l.box_ + l.arriving + l.fees_owed,
+            l.pot + l.box_ + l.arriving + l.fees_owed + l.locked + l.notes_owed,
             "{name}: held"
         );
-        // joined + outside = fees + took out + drawn + pot + box + arriving, up to what
-        // was collected: fees collected leave the Treasury (A collected its fees).
+        // joined + outside = fees + took out + drawn + paid to workers + note claims + pot + box
+        // + arriving + locked + notes owed, up to what was collected: fees collected leave the
+        // Treasury (A collected its fees).
         let collected = l.totals.fees - l.fees_owed;
         assert_eq!(
             l.totals.joined + l.totals.outside,
-            l.totals.fees + l.totals.took_out + l.totals.drawn + l.pot + l.box_ + l.arriving,
+            l.totals.fees
+                + l.totals.took_out
+                + l.totals.drawn
+                + l.totals.paid_to_workers
+                + l.totals.note_claims
+                + l.pot
+                + l.box_
+                + l.arriving
+                + l.locked
+                + l.notes_owed,
             "{name}: the totals identity (collected fees {collected})"
         );
     }
@@ -544,19 +585,25 @@ fn the_cross_check_names_each_number_that_differs() {
     let fx = fx();
     let l = ledger_at(&fx, "A", fx.head());
     let v = &fx.json["final"]["A"]["views"];
-    let good = Stored {
-        pot: n(v, "pot"),
-        paid_in: n(v, "paidIn"),
-        box_: n(v, "box"),
-        arriving: n(v, "arriving"),
-        fees_owed: n(v, "feesOwed"),
-        z: n(v, "Z"),
-        active_seconds: n(v, "activeSeconds"),
-        last_settle: u64::try_from(n(v, "lastSettle")).expect("time"),
-        shares_supply: n(v, "sharesSupply"),
-        team_supply: n(v, "teamSupply"),
-        vester_team_balance: l.vester_team_balance(),
-    };
+    let good = with_tasks(
+        Stored {
+            pot: n(v, "pot"),
+            paid_in: n(v, "paidIn"),
+            box_: n(v, "box"),
+            arriving: n(v, "arriving"),
+            fees_owed: n(v, "feesOwed"),
+            z: n(v, "Z"),
+            active_seconds: n(v, "activeSeconds"),
+            last_settle: u64::try_from(n(v, "lastSettle")).expect("time"),
+            shares_supply: n(v, "sharesSupply"),
+            team_supply: n(v, "teamSupply"),
+            vester_team_balance: l.vester_team_balance(),
+            ..Stored::default()
+        },
+        &fx,
+        v,
+        fx.head(),
+    );
     assert!(l.mismatches(&good).is_empty());
     let off = Stored {
         pot: good.pot + 1,
@@ -577,19 +624,25 @@ fn a_ledger_settle_later_than_the_views_is_a_mismatch_and_an_earlier_one_is_not(
     let fx = fx();
     let l = ledger_at(&fx, "A", fx.head());
     let v = &fx.json["final"]["A"]["views"];
-    let good = Stored {
-        pot: n(v, "pot"),
-        paid_in: n(v, "paidIn"),
-        box_: n(v, "box"),
-        arriving: n(v, "arriving"),
-        fees_owed: n(v, "feesOwed"),
-        z: n(v, "Z"),
-        active_seconds: n(v, "activeSeconds"),
-        last_settle: u64::try_from(n(v, "lastSettle")).expect("time"),
-        shares_supply: n(v, "sharesSupply"),
-        team_supply: n(v, "teamSupply"),
-        vester_team_balance: l.vester_team_balance(),
-    };
+    let good = with_tasks(
+        Stored {
+            pot: n(v, "pot"),
+            paid_in: n(v, "paidIn"),
+            box_: n(v, "box"),
+            arriving: n(v, "arriving"),
+            fees_owed: n(v, "feesOwed"),
+            z: n(v, "Z"),
+            active_seconds: n(v, "activeSeconds"),
+            last_settle: u64::try_from(n(v, "lastSettle")).expect("time"),
+            shares_supply: n(v, "sharesSupply"),
+            team_supply: n(v, "teamSupply"),
+            vester_team_balance: l.vester_team_balance(),
+            ..Stored::default()
+        },
+        &fx,
+        v,
+        fx.head(),
+    );
     assert!(l.last_settle > 0, "the fixture's ledger has a last settle");
     assert!(l.mismatches(&good).is_empty());
     // The view's last settle is earlier than the ledger's: the events show a settle the contract does not.

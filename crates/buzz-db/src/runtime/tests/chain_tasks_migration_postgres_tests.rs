@@ -52,7 +52,8 @@ async fn assert_role_and_index(pool: &PgPool, reader: &str) {
     .await
     .expect("the index on the books' rows exists");
     assert!(
-        def.contains("(reader, project_key, block_number)") && def.contains("WHERE (role = 'tasks'"),
+        def.contains("(reader, project_key, block_number)")
+            && def.contains("WHERE (role = 'tasks'"),
         "the index is partial on the books' rows: {def}"
     );
 }

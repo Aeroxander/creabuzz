@@ -2,10 +2,10 @@
   "version": 2,
   "chainId": 31337,
   "launcher": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
-  "key": "0x8134218e32fd9563039f476d7129e5a687dbec3dd4c4a55c6c95e25254d82ea4",
-  "projectId": "0x63726561746f6e2d64656d6f0000000000000000000000000000000000000000",
+  "key": "0xca652d2177d592074c713d70d242e9df49890b19e257daa26709cfccff5915f0",
+  "projectId": "0x616c706861000000000000000000000000000000000000000000000000000000",
   "founder": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
-  "launchedAt": 1785931200,
+  "launchedAt": 1795001000,
   "playMoney": true,
   "contracts": {
     "treasury": "0x75537828f2ce51be7289709686a69cbfdbb714f1",
@@ -16,65 +16,65 @@
     "pair": null
   },
   "asOf": {
-    "block": 41,
-    "time": 1795089600
+    "block": 88,
+    "time": 1803787880
   },
-  "builtAt": 1795089731,
+  "builtAt": 1803788011,
   "refreshEverySecs": 600,
   "unit": 604800,
   "fee": {
     "bps": 200
   },
   "money": {
-    "pot": "7322810944",
-    "paidIn": "6663871581",
-    "arriving": "2145838296",
-    "arrivalEnd": 1795522201,
-    "feesOwed": "140000000",
-    "locked": "0",
-    "notesOwed": "0",
-    "held": "9652623564"
+    "pot": "6375060409",
+    "paidIn": "4840150584",
+    "arriving": "2273078314",
+    "arrivalEnd": 1804146881,
+    "feesOwed": "150000000",
+    "locked": "57272731",
+    "notesOwed": "4511956",
+    "held": "8903035356"
   },
   "shares": {
-    "backers": "666561850392687662002152",
+    "backers": "485219269279133836439362",
     "teamCounted": "10000000000000000000000000",
-    "announcedBurn": "356040140415140415140416"
+    "announcedBurn": "356593406593406593406594"
   },
   "value": {
-    "leaveValue": "10058",
-    "teamValue": "61"
+    "leaveValue": "10121",
+    "teamValue": "146"
   },
   "allowance": {
     "ratePpm": 1000,
     "pending": {
       "ratePpm": 1500,
-      "proposedAt": 1794831000,
-      "applicableAt": 1795435800
+      "proposedAt": 1803641000,
+      "applicableAt": 1804245800
     },
-    "box": "43974324",
-    "boxCap": "51567496",
-    "drawnLastDay": "5000000"
+    "box": "43111946",
+    "boxCap": "44927206",
+    "drawnLastDay": "0"
   },
   "clock": {
-    "lastCheckIn": 1795003200,
-    "lastRecordHash": "0x545ef6fec679de3eab9f265591de241ce1e28e20a3d18579b862db9901df86f8",
-    "activeUntil": 1796212800,
-    "activeSeconds": 9158400
+    "lastCheckIn": 1803468200,
+    "lastRecordHash": "0xd38532b25d459a6e0a7a35390fa06c8e0d971c6fcc6be6ec8de3de21e936e50b",
+    "activeUntil": 1804677800,
+    "activeSeconds": 8786880
   },
   "door": {
     "switchOn": true,
     "openNow": true,
-    "shutsAt": 1796212800
+    "shutsAt": 1804677800
   },
   "quiet": {
     "state": "active",
-    "since": 1795003200,
-    "quietFrom": 1796212800,
-    "dormantFrom": 1802865600,
-    "windableFrom": 1810728000,
+    "since": 1803468200,
+    "quietFrom": 1804677800,
+    "dormantFrom": 1811330600,
+    "windableFrom": 1819193000,
     "next": {
       "state": "quiet",
-      "at": 1796212800
+      "at": 1804677800
     }
   },
   "windDown": null,
@@ -85,11 +85,11 @@
   },
   "team": {
     "pool": "10000000000000000000000000",
-    "inHands": "260893620268620268620268",
-    "inVester": "9739106379731379731379732",
-    "promised": "2239106379731379731379732",
-    "ungranted": "7500000000000000000000000",
-    "grantCount": 3,
+    "inHands": "260851648351648351648351",
+    "inVester": "9739148351648351648351649",
+    "promised": "2539148351648351648351649",
+    "ungranted": "7200000000000000000000000",
+    "grantCount": 4,
     "grants": [
       {
         "id": 0,
@@ -98,15 +98,15 @@
         "state": "live",
         "granted": "2000000000000000000000000",
         "keeps": "2000000000000000000000000",
-        "claimed": "260893620268620268620268",
-        "vested": "291094322344322344322344",
-        "claimable": "30200702075702075702076",
-        "startActive": 3600,
+        "claimed": "260851648351648351648351",
+        "vested": "279258241758241758241758",
+        "claimable": "18406593406593406593407",
+        "startActive": 4320,
         "cliff": {
           "passed": true,
           "endsAtIfActive": null
         },
-        "fullyVestedAtIfActive": 1848834000,
+        "fullyVestedAtIfActive": 1857904520,
         "forfeit": null
       },
       {
@@ -115,21 +115,39 @@
         "kind": "normal",
         "state": "announced",
         "granted": "400000000000000000000000",
-        "keeps": "43959859584859584859584",
+        "keeps": "43406593406593406593406",
         "claimed": "0",
-        "vested": "43959859584859584859584",
-        "claimable": "43959859584859584859584",
+        "vested": "43406593406593406593406",
+        "claimable": "43406593406593406593406",
         "startActive": 1728000,
         "cliff": null,
         "fullyVestedAtIfActive": null,
         "forfeit": {
-          "amount": "356040140415140415140416",
-          "burnAt": 1795176600,
+          "amount": "356593406593406593406594",
+          "burnAt": 1804159400,
           "byMember": true
         }
       },
       {
         "id": 2,
+        "member": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "kind": "normal",
+        "state": "live",
+        "granted": "300000000000000000000000",
+        "keeps": "300000000000000000000000",
+        "claimed": "0",
+        "vested": "0",
+        "claimable": "0",
+        "startActive": 2160000,
+        "cliff": {
+          "passed": false,
+          "endsAtIfActive": 1805023400
+        },
+        "fullyVestedAtIfActive": 1860060200,
+        "forfeit": null
+      },
+      {
+        "id": 3,
         "member": "0x14dc79964da2c08b23698b3d3cc7ca32193d9955",
         "kind": "normal",
         "state": "live",
@@ -138,26 +156,17 @@
         "claimed": "0",
         "vested": "0",
         "claimable": "0",
-        "startActive": 6048300,
+        "startActive": 6048000,
         "cliff": {
           "passed": false,
-          "endsAtIfActive": 1799841900
+          "endsAtIfActive": 1808911400
         },
-        "fullyVestedAtIfActive": 1854878700,
+        "fullyVestedAtIfActive": 1863948200,
         "forfeit": null
       }
     ]
   },
-  "agents": [
-    {
-      "agent": "0x976ea74026e726554db657fa54763abd0c3a0aa9",
-      "live": true,
-      "usdCap": "25000000",
-      "teamCap": "10000000000000000000000",
-      "usdUsed": "5000000",
-      "teamUsed": "0"
-    }
-  ],
+  "agents": [],
   "limits": {
     "minJoin": "1000000",
     "minOutsidePayment": "1000000",
@@ -172,39 +181,317 @@
     "agentTeamPerDay": "10000000000000000000000"
   },
   "totals": {
-    "joined": "7000000000",
-    "fees": "140000000",
-    "tookOut": "192376436",
-    "drawn": "155000000",
-    "outside": "3000000000"
+    "joined": "7500000000",
+    "fees": "150000000",
+    "tookOut": "2441065375",
+    "drawn": "60000000",
+    "outside": "4000000000",
+    "paidToWorkers": "78728416",
+    "noteClaims": "17170853"
   },
-  "firstBackedAt": 1785938400,
+  "firstBackedAt": 1795009760,
   "holders": [
     {
       "account": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
-      "shares": "490000000000000000000000",
+      "shares": "352800000000000000000000",
       "teamShares": "0"
     },
     {
       "account": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
-      "shares": "176561850392687662002152",
+      "shares": "132419269279133836439362",
       "teamShares": "0"
     },
     {
       "account": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
       "shares": "0",
-      "teamShares": "260893620268620268620268"
+      "teamShares": "260851648351648351648351"
     }
   ],
   "holderCount": 2,
   "teamHolderCount": 1,
   "truncated": false,
+  "tasks": {
+    "book": "0xb30daf0240261be564cea33260f01213c47aaa0d",
+    "bookBlock": 4,
+    "nextSerial": 10,
+    "openCount": 3,
+    "nextExpiry": 1804807401,
+    "limits": {
+      "maxOpen": 8,
+      "maxShareBps": 500,
+      "capBps": 1000,
+      "minTask": "1000000",
+      "capWindowSecs": 2419200,
+      "takeWindowSecs": 604800,
+      "dueSecs": 1209600
+    },
+    "cap": {
+      "usedBps": 300,
+      "roomBps": 700,
+      "frees": [
+        {
+          "at": 1803986601,
+          "bps": 200
+        },
+        {
+          "at": 1806017001,
+          "bps": 100
+        }
+      ]
+    },
+    "next": {
+      "at": 1803986601,
+      "kind": "cap_room",
+      "serial": 0
+    },
+    "list": [
+      {
+        "serial": 6,
+        "what": "0x65398842cb286b4ed464e41855e53048445f4a5f4648c7ebfaf0928a2bd06ffa",
+        "payee": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "state": "taken",
+        "shareBps": 100,
+        "maxDollars": "400000000",
+        "atMostNow": null,
+        "announcedAt": 1802345000,
+        "noticeEnd": 1803597800,
+        "expiresAt": 1804807401,
+        "takenBy": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "takenAt": 1803597801,
+        "deadline": 1804807401,
+        "setAside": "57486851",
+        "stayerClaim": "57272731",
+        "noteFace": "214120",
+        "pay": "0",
+        "returned": "0",
+        "notesLeft": "0",
+        "capBps": 100,
+        "resolvedAt": null,
+        "resolvedTx": null,
+        "repeatOf": null,
+        "notes": {
+          "faceTotal": "214120",
+          "holders": [
+            {
+              "account": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+              "face": "214120",
+              "claimable": "0"
+            }
+          ],
+          "holdersCut": false
+        }
+      },
+      {
+        "serial": 7,
+        "what": "0xb743763abc11852110bead57ede94be74cbb59a0853192d65ed76d1554505a28",
+        "payee": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "state": "announced",
+        "shareBps": 100,
+        "maxDollars": "400000000",
+        "atMostNow": "63750604",
+        "announcedAt": 1802967080,
+        "noticeEnd": 1804219880,
+        "expiresAt": 1804824680,
+        "takenBy": null,
+        "takenAt": null,
+        "deadline": null,
+        "setAside": "0",
+        "stayerClaim": "0",
+        "noteFace": "0",
+        "pay": "0",
+        "returned": "0",
+        "notesLeft": "0",
+        "capBps": 0,
+        "resolvedAt": null,
+        "resolvedTx": null,
+        "repeatOf": null,
+        "notes": null
+      },
+      {
+        "serial": 8,
+        "what": "0x670f2e551ee24939bc2e971e464fcabd2c10e2cf6593fed31a96044ceb517c9a",
+        "payee": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "state": "announced",
+        "shareBps": 100,
+        "maxDollars": "400000000",
+        "atMostNow": "63750604",
+        "announcedAt": 1803053480,
+        "noticeEnd": 1804306280,
+        "expiresAt": 1804911080,
+        "takenBy": null,
+        "takenAt": null,
+        "deadline": null,
+        "setAside": "0",
+        "stayerClaim": "0",
+        "noteFace": "0",
+        "pay": "0",
+        "returned": "0",
+        "notesLeft": "0",
+        "capBps": 0,
+        "resolvedAt": null,
+        "resolvedTx": null,
+        "repeatOf": 2,
+        "notes": null
+      },
+      {
+        "serial": 9,
+        "what": "0x882407dc3406341740b0a31d9425e32c229a8802b85ccf73e972fe122626f875",
+        "payee": "0x14dc79964da2c08b23698b3d3cc7ca32193d9955",
+        "state": "cancelled",
+        "shareBps": 100,
+        "maxDollars": "400000000",
+        "atMostNow": null,
+        "announcedAt": 1803122600,
+        "noticeEnd": 1804375400,
+        "expiresAt": 1804980200,
+        "takenBy": null,
+        "takenAt": null,
+        "deadline": null,
+        "setAside": "0",
+        "stayerClaim": "0",
+        "noteFace": "0",
+        "pay": "0",
+        "returned": "0",
+        "notesLeft": "0",
+        "capBps": 0,
+        "resolvedAt": 1803148520,
+        "resolvedTx": "0xf5cd9d082809aafa16ccd39f5f6bd5d2f36d34fbc3d134787566655a4d65917a",
+        "repeatOf": null,
+        "notes": null
+      },
+      {
+        "serial": 5,
+        "what": "0xd4ef50a2f8edb64a371320d80c3a873fc28749af8535693111acdb2f2b7a7e70",
+        "payee": "0x14dc79964da2c08b23698b3d3cc7ca32193d9955",
+        "state": "lapsed",
+        "shareBps": 100,
+        "maxDollars": "400000000",
+        "atMostNow": null,
+        "announcedAt": 1801092200,
+        "noticeEnd": 1802345000,
+        "expiresAt": 1802949800,
+        "takenBy": null,
+        "takenAt": null,
+        "deadline": null,
+        "setAside": "0",
+        "stayerClaim": "0",
+        "noteFace": "0",
+        "pay": "0",
+        "returned": "0",
+        "notesLeft": "0",
+        "capBps": 0,
+        "resolvedAt": 1802967080,
+        "resolvedTx": "0xbc04fb0bf0432c4b53571c29e9eb74d17b785b00c5a178f5f598c9094b3a0703",
+        "repeatOf": null,
+        "notes": null
+      },
+      {
+        "serial": 4,
+        "what": "0x1f883d86c6f5b98c611ac08f7c88a28290a6ce2989bc60775e3c5c42e1d04c33",
+        "payee": "0x14dc79964da2c08b23698b3d3cc7ca32193d9955",
+        "state": "returned",
+        "shareBps": 100,
+        "maxDollars": "400000000",
+        "atMostNow": null,
+        "announcedAt": 1800876200,
+        "noticeEnd": 1802129000,
+        "expiresAt": 1803338601,
+        "takenBy": "0x14dc79964da2c08b23698b3d3cc7ca32193d9955",
+        "takenAt": 1802129001,
+        "deadline": 1803338601,
+        "setAside": "55359914",
+        "stayerClaim": "0",
+        "noteFace": "4297836",
+        "pay": "0",
+        "returned": "55359914",
+        "notesLeft": "4297836",
+        "capBps": 0,
+        "resolvedAt": 1803381800,
+        "resolvedTx": "0x2f0f0ba1bcfe7205faf2ed96f6bee4b8453fd4a76729d6d6e55b37cf6c143d02",
+        "repeatOf": null,
+        "notes": {
+          "faceTotal": "4297836",
+          "holders": [
+            {
+              "account": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+              "face": "4297836",
+              "claimable": "4297836"
+            }
+          ],
+          "holdersCut": false
+        }
+      },
+      {
+        "serial": 3,
+        "what": "0xa1fa01d1b547292a6f5c397feba18656feaf0239cbe6e7b4bb46aaa6c9994bc4",
+        "payee": null,
+        "state": "rejected",
+        "shareBps": 100,
+        "maxDollars": "400000000",
+        "atMostNow": null,
+        "announcedAt": 1800357800,
+        "noticeEnd": 1801610600,
+        "expiresAt": 1802820201,
+        "takenBy": "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc",
+        "takenAt": 1801610601,
+        "deadline": 1802820201,
+        "setAside": "64304059",
+        "stayerClaim": "0",
+        "noteFace": "0",
+        "pay": "0",
+        "returned": "64304059",
+        "notesLeft": "0",
+        "capBps": 0,
+        "resolvedAt": 1801740200,
+        "resolvedTx": "0x2ee434694aebb1e38d79092d366011ef58ef59e451152dc371e0ab3069957bb4",
+        "repeatOf": null,
+        "notes": null
+      },
+      {
+        "serial": 2,
+        "what": "0x670f2e551ee24939bc2e971e464fcabd2c10e2cf6593fed31a96044ceb517c9a",
+        "payee": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "state": "paid",
+        "shareBps": 200,
+        "maxDollars": "400000000",
+        "atMostNow": null,
+        "announcedAt": 1800271400,
+        "noticeEnd": 1801567400,
+        "expiresAt": 1802777001,
+        "takenBy": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "takenAt": 1801567401,
+        "deadline": 1802777001,
+        "setAside": "131214028",
+        "stayerClaim": "0",
+        "noteFace": "0",
+        "pay": "78728416",
+        "returned": "52485612",
+        "notesLeft": "0",
+        "capBps": 200,
+        "resolvedAt": 1801913000,
+        "resolvedTx": "0x3801bb80b7d1f2ac4f368b7459167b23958c263bc720060436c2cdc71e45f61f",
+        "repeatOf": null,
+        "notes": null
+      }
+    ],
+    "cut": {
+      "maxEnded": 32,
+      "endedWithinSecs": 2419200,
+      "endedDropped": 0,
+      "notesRowsDropped": 0
+    },
+    "truncated": false
+  },
   "ledger": {
-    "lastSettle": 1795085200,
-    "pot": "7301357376",
-    "box": "43602496",
-    "arriving": "2167663692",
-    "arrivalEnd": 1795522201,
-    "activeSeconds": 9154000
+    "lastSettle": 1803787880,
+    "pot": "6375060409",
+    "box": "43111946",
+    "arriving": "2273078314",
+    "arrivalEnd": 1804146881,
+    "arrivalStart": 1803684260,
+    "arrivalTotal": "2929166667",
+    "activeSeconds": 8786880,
+    "locked": "57272731",
+    "notesOwed": "4511956"
   }
 }

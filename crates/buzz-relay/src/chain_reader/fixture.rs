@@ -31,6 +31,8 @@ pub struct FxProject {
     pub team: [u8; 20],
     /// The Vester.
     pub vester: [u8; 20],
+    /// Its task book.
+    pub tasks: [u8; 20],
     /// Its Pair, if one was made.
     pub pair: Option<[u8; 20]>,
 }
@@ -107,6 +109,7 @@ impl Fixture {
                         shares: addr(&p["shares"]),
                         team: addr(&p["team"]),
                         vester: addr(&p["vester"]),
+                        tasks: addr(&p["tasks"]),
                         pair: p.get("pair").map(addr),
                     },
                 )
@@ -132,6 +135,14 @@ impl Fixture {
         self.json["projects"][name]["launchBlock"]
             .as_u64()
             .expect("the run records each project's launch block")
+    }
+
+    /// The cap's window in seconds: four time units (`TaskBook.CAP_WINDOW_MULT`,
+    /// which `a_book_says_the_cap_window_is_four_units` reads from the run).
+    pub fn cap_window_secs(&self) -> u64 {
+        4 * self.json["unit"]
+            .as_u64()
+            .expect("the run records its unit")
     }
 
     /// The block the named book of view answers was taken at.
@@ -161,6 +172,7 @@ impl Fixture {
                 (p.shares, Role::Shares),
                 (p.team, Role::Team),
                 (p.vester, Role::Vester),
+                (p.tasks, Role::Tasks),
             ] {
                 if a == *address {
                     return Some((role, Some(name)));
@@ -205,6 +217,7 @@ impl Fixture {
                     block: log.block_number,
                     log_index: log.log_index,
                     time: self.time_of(log.block_number),
+                    tx: log.tx_hash,
                     role,
                     address: log.address,
                     event: def.name.to_owned(),

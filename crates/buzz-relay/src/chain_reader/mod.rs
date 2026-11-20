@@ -19,14 +19,17 @@ pub mod events;
 mod fixture;
 pub mod helper;
 pub mod ledger;
+pub mod ledger_tasks;
 pub mod numbers;
 pub mod publish;
 pub mod record;
+pub mod record_tasks;
 pub mod scan;
 mod settings;
 pub mod source;
 pub mod store;
 pub mod views;
+mod views_table;
 pub mod word;
 
 use std::collections::{HashMap, HashSet};

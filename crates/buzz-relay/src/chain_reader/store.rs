@@ -489,7 +489,7 @@ pub async fn project_logs(
     final_block: u64,
 ) -> anyhow::Result<Vec<LogRow>> {
     let rows = sqlx::query(
-        "SELECT l.block_number, l.log_index, b.block_time, l.role, l.address, l.event, l.decoded \
+        "SELECT l.block_number, l.log_index, b.block_time, l.tx_hash, l.role, l.address, l.event, l.decoded \
          FROM chain_logs l JOIN chain_blocks b ON b.reader = l.reader AND b.number = l.block_number \
          WHERE l.reader = $1 AND l.project_key = $2 AND l.block_number <= $3 AND l.decoded IS NOT NULL \
            AND NOT (l.role IN ('shares', 'team') AND l.event = 'Transfer') \
@@ -508,6 +508,7 @@ pub async fn project_logs(
                 block: u64_of(r.try_get("block_number")?)?,
                 log_index: u32::try_from(index).context("log index")?,
                 time: u64_of(r.try_get("block_time")?)?,
+                tx: word_of(r.try_get("tx_hash")?)?,
                 role: Role::parse(&role).with_context(|| format!("unknown role {role}"))?,
                 address: addr_of(r.try_get("address")?)?,
                 event: r.try_get("event")?,
@@ -686,19 +687,22 @@ pub async fn touch_source_block(
     Ok(())
 }
 
-/// The stored Launcher rows that name contracts (`ProjectLaunched`, a Pair) in
-/// blocks before `before`: project key, block, event and decoded fields. A reader that ran before a contract
-/// kind was followed finds those contracts here (review I2).
-pub async fn launcher_reveals(
+/// The stored rows that name contracts in blocks before `before`: the
+/// Launcher's `ProjectLaunched` and `PairMade`, and a Treasury's `TasksReady`
+/// (which names the project's task book). Each is the emitting role, the project
+/// key, the block, the event and its decoded fields. A reader that ran before a
+/// contract kind was followed finds those contracts here (review I2).
+pub async fn reveals(
     pool: &PgPool,
     reader: &str,
     before: u64,
-) -> anyhow::Result<Vec<(Word, u64, String, Value)>> {
-    let rows: Vec<(Vec<u8>, i64, String, Value)> = sqlx::query_as(
-        "SELECT project_key, block_number, event, decoded FROM chain_logs \
-         WHERE reader = $1 AND role = 'launcher' AND block_number < $2 \
+) -> anyhow::Result<Vec<(Role, Word, u64, String, Value)>> {
+    let rows: Vec<(String, Vec<u8>, i64, String, Value)> = sqlx::query_as(
+        "SELECT role, project_key, block_number, event, decoded FROM chain_logs \
+         WHERE reader = $1 AND block_number < $2 \
            AND project_key IS NOT NULL AND decoded IS NOT NULL \
-           AND event IN ('ProjectLaunched', 'PairMade') \
+           AND ((role = 'launcher' AND event IN ('ProjectLaunched', 'PairMade')) \
+             OR (role = 'treasury' AND event = 'TasksReady')) \
          ORDER BY block_number, log_index",
     )
     .bind(reader)
@@ -706,6 +710,14 @@ pub async fn launcher_reveals(
     .fetch_all(pool)
     .await?;
     rows.into_iter()
-        .map(|(key, block, event, decoded)| Ok((word_of(key)?, u64_of(block)?, event, decoded)))
+        .map(|(role, key, block, event, decoded)| {
+            Ok((
+                Role::parse(&role).with_context(|| format!("unknown role {role}"))?,
+                word_of(key)?,
+                u64_of(block)?,
+                event,
+                decoded,
+            ))
+        })
         .collect()
 }

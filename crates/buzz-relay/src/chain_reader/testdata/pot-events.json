@@ -605,6 +605,60 @@
           ]
         },
         {
+          "name": "TaskMoney",
+          "signature": "TaskMoney(uint8,uint64,address,uint256,uint256,uint256,uint256)",
+          "topic": "0xa8a793d4ef05cd17ee392b79ac50d425d771c845fc01e3b2f32791bcd3d533b4",
+          "inputs": [
+            {
+              "name": "kind",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "serial",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "potAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "lockedAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "notesOwedAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "TasksReady",
+          "signature": "TasksReady(address)",
+          "topic": "0x840a1824bd9ed5cd5ad57f64e199cfdfa2a7015ec77704dbd2062ad81f0cdaa3",
+          "inputs": [
+            {
+              "name": "book",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
           "name": "TeamLeft",
           "signature": "TeamLeft(address,address,uint256,uint256,uint256,uint256,uint256)",
           "topic": "0x46ed339907d93b5bc483f784a3a474e74e055793b2fecbe5ae3aed4ae00f33a9",
@@ -960,6 +1014,233 @@
             {
               "name": "value",
               "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    "TaskBook": {
+      "roles": [
+        "Tasks"
+      ],
+      "events": [
+        {
+          "name": "NoteClaimed",
+          "signature": "NoteClaimed(uint64,address,uint256,uint256,uint256,uint256)",
+          "topic": "0x9a8f1af319ef7a68a8c9cc36270243e6d09bcda39ddf2cc79a1eca6466fbfe55",
+          "inputs": [
+            {
+              "name": "serial",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "holder",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "paid",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "dustToPot",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "noteFaceAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "notesLeftAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "NoteMinted",
+          "signature": "NoteMinted(uint64,address,uint256,uint256,uint256)",
+          "topic": "0xc08e1b125fc5dbdd77afb024a1dbf5154f244e53796b3c76e63cd472f36918da",
+          "inputs": [
+            {
+              "name": "serial",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "holder",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "part",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "stayerAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "noteFaceAfter",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "TaskAnnounced",
+          "signature": "TaskAnnounced(uint64,bytes32,address,uint256,uint16,uint64,uint64,uint64,uint8)",
+          "topic": "0xb9d38fee3e28b68f5991d8032eb85336986a9386ff6b9153f72679e88d650137",
+          "inputs": [
+            {
+              "name": "serial",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "what",
+              "type": "bytes32",
+              "indexed": false
+            },
+            {
+              "name": "payee",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "maxDollars",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "shareBps",
+              "type": "uint16",
+              "indexed": false
+            },
+            {
+              "name": "announcedAt",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "noticeEnd",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "expiresAt",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "openAfter",
+              "type": "uint8",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "TaskResolved",
+          "signature": "TaskResolved(uint64,uint8,uint256,uint256,uint256,uint256,uint256,uint8,uint256)",
+          "topic": "0xcbc7e4187cd0ddff7a246c3e0ea9e422346cf26103425374b954e534a87b7244",
+          "inputs": [
+            {
+              "name": "serial",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "state",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "pay",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "returned",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "notesPool",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "potPart",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "noteFaceAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "openAfter",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "capGivenBack",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "TaskTaken",
+          "signature": "TaskTaken(uint64,address,uint256,uint256,uint64,uint64,uint256,uint8)",
+          "topic": "0xb9daf7b325d988efffee42b2bbecce432a7a2def208da71175e0ee032997c54d",
+          "inputs": [
+            {
+              "name": "serial",
+              "type": "uint64",
+              "indexed": true
+            },
+            {
+              "name": "takenBy",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "takeBps",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "takenAt",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "deadline",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "windowSumBpsAfter",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "openAfter",
+              "type": "uint8",
               "indexed": false
             }
           ]

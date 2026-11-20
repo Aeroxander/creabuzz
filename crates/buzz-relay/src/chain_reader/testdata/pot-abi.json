@@ -1,0 +1,73 @@
+{
+  "view": "TaskBook.taskOf(uint64)",
+  "fields": [
+    {
+      "name": "what",
+      "type": "bytes32"
+    },
+    {
+      "name": "payee",
+      "type": "address"
+    },
+    {
+      "name": "state",
+      "type": "uint8"
+    },
+    {
+      "name": "shareBps",
+      "type": "uint16"
+    },
+    {
+      "name": "ringIdx",
+      "type": "uint8"
+    },
+    {
+      "name": "takenBy",
+      "type": "address"
+    },
+    {
+      "name": "announcedAt",
+      "type": "uint64"
+    },
+    {
+      "name": "noticeEnd",
+      "type": "uint64"
+    },
+    {
+      "name": "expiresAt",
+      "type": "uint64"
+    },
+    {
+      "name": "takenAt",
+      "type": "uint64"
+    },
+    {
+      "name": "deadline",
+      "type": "uint64"
+    },
+    {
+      "name": "maxDollars",
+      "type": "uint128"
+    },
+    {
+      "name": "locked",
+      "type": "uint128"
+    },
+    {
+      "name": "stayer",
+      "type": "uint128"
+    },
+    {
+      "name": "noteFace",
+      "type": "uint128"
+    },
+    {
+      "name": "returned",
+      "type": "uint128"
+    },
+    {
+      "name": "notesLeft",
+      "type": "uint128"
+    }
+  ]
+}

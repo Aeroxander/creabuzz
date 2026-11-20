@@ -18,6 +18,8 @@
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 
+use super::record_tasks::{TaskStateRec, TasksRec};
+
 /// The record's version.
 pub const VERSION: u32 = 2;
 /// "Dormant" is a display state at this many units of quiet (section 9, S5):
@@ -72,6 +74,10 @@ pub struct Stored {
     pub active_end: u64,
     /// `arrivalEnd()`.
     pub arrival_end: u64,
+    /// `arrivalStart()`: when the current stream of outside money began.
+    pub arrival_start: u64,
+    /// `arrivalTotal()`: the size of the current stream.
+    pub arrival_total: u128,
     /// `ratePpm()`.
     pub rate_ppm: u32,
     /// `unit()`.
@@ -84,6 +90,12 @@ pub struct Stored {
     pub arriving: u128,
     /// `activeSeconds()`.
     pub active_seconds: u128,
+    /// `locked()`: the stayers' claims on taken tasks, as of the last settle.
+    pub locked: u128,
+    /// `book.dueC(asOf.time)`: the stayers' claims of taken tasks whose
+    /// deadline has passed, which the next settle returns to the pot (zero
+    /// when the project has no book).
+    pub due_c: u128,
 }
 
 /// The numbers after the roll-forward.
@@ -97,6 +109,9 @@ pub struct Settled {
     pub arriving: u128,
     /// Active seconds.
     pub active_seconds: u128,
+    /// Money set aside for tasks still running at the time: `locked()` less what
+    /// ran out.
+    pub locked: u128,
 }
 
 impl Settled {
@@ -131,33 +146,47 @@ pub fn roll_forward(t: u64, s: &Stored) -> anyhow::Result<Settled> {
         box_ = cap;
     }
     if arriving != 0 {
-        let released = if t >= s.arrival_end {
-            arriving
+        // What has arrived by `t` is one rounding of one formula on the stream's
+        // own start (`Treasury._settled()`), so that settling every second gives
+        // what settling once gives.
+        let target = if t >= s.arrival_end {
+            s.arrival_total
         } else {
-            // The span is positive: the end is after `t`, and `t` is not
-            // before the last settle.
             let span = s
                 .arrival_end
-                .checked_sub(s.last_settle)
+                .checked_sub(s.arrival_start)
                 .filter(|span| *span != 0)
                 .ok_or_else(|| {
-                    anyhow!("outside money is arriving but its end is not after the last settle")
+                    anyhow!("outside money is arriving but its end is not after its start")
                 })?;
-            mul_div(
-                arriving,
-                u128::from(t.saturating_sub(s.last_settle)),
-                u128::from(span),
-            )
-            .ok_or_else(overflow)?
+            let elapsed = t.checked_sub(s.arrival_start).ok_or_else(|| {
+                anyhow!("outside money is arriving but its stream starts after the record's time")
+            })?;
+            mul_div(s.arrival_total, u128::from(elapsed), u128::from(span)).ok_or_else(overflow)?
         };
-        arriving -= released;
+        let done = s
+            .arrival_total
+            .checked_sub(arriving)
+            .ok_or_else(|| anyhow!("more money is arriving than the stream holds"))?;
+        let released = target.saturating_sub(done);
+        arriving = arriving
+            .checked_sub(released)
+            .ok_or_else(|| anyhow!("more money was released than is arriving"))?;
         pot = pot.checked_add(released).ok_or_else(overflow)?;
     }
+    // Tasks that have run out come back last: the returned money is not charged
+    // allowance for the time it was not in the pot.
+    let locked = s
+        .locked
+        .checked_sub(s.due_c)
+        .ok_or_else(|| anyhow!("more money ran out of tasks than is set aside"))?;
+    pot = pot.checked_add(s.due_c).ok_or_else(overflow)?;
     Ok(Settled {
         pot,
         box_,
         arriving,
         active_seconds: s.active_seconds + u128::from(dt),
+        locked,
     })
 }
 
@@ -259,9 +288,11 @@ pub struct MoneyRec {
     pub arrival_end: Option<u64>,
     /// The platform's fee waiting to be collected.
     pub fees_owed: String,
-    /// Money set aside for a taken task (step 2).
+    /// Money set aside for taken tasks that are still running at `asOf.time`:
+    /// the stayers' claims, settled (what ran out is back in `pot`).
     pub locked: String,
-    /// Exit notes owed (step 2).
+    /// What is held for exit notes: the face of the notes against open tasks
+    /// plus what is left to claim on tasks that ended.
     pub notes_owed: String,
     /// Every dollar the Treasury holds.
     pub held: String,
@@ -538,19 +569,22 @@ pub struct LimitsRec {
 
 /// Sums of events.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TotalsRec {
     /// Everything ever paid in to Back.
     pub joined: String,
     /// The platform fee on those.
     pub fees: String,
     /// Everything paid out to Take out.
-    #[serde(rename = "tookOut")]
     pub took_out: String,
     /// Everything drawn from the allowance.
     pub drawn: String,
     /// Everything paid in from outside.
     pub outside: String,
+    /// Everything paid to workers for tasks.
+    pub paid_to_workers: String,
+    /// Everything paid out for claimed exit notes.
+    pub note_claims: String,
 }
 
 /// An account holding Shares or Team Shares in hand.
@@ -580,8 +614,17 @@ pub struct LedgerRec {
     pub arriving: String,
     /// When it ends (none when nothing is arriving).
     pub arrival_end: Option<u64>,
+    /// When the current stream of outside money started arriving (what it was
+    /// last set to; unchanged while nothing is arriving).
+    pub arrival_start: u64,
+    /// The size of the current stream (as above).
+    pub arrival_total: String,
     /// Stored active seconds.
     pub active_seconds: u64,
+    /// Stored money set aside for tasks (before what ran out is returned).
+    pub locked: String,
+    /// Stored money held for exit notes.
+    pub notes_owed: String,
 }
 
 /// The record.
@@ -653,6 +696,8 @@ pub struct Record {
     pub team_holder_count: u64,
     /// True when a list was cut at its cap.
     pub truncated: bool,
+    /// The task queue; null when the project has no task book.
+    pub tasks: Option<TasksRec>,
     /// The stored numbers, for checks only.
     pub ledger: LedgerRec,
 }
@@ -740,16 +785,52 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
 
     // The roll-forward from the stored numbers gives the settled ones.
     let l = &r.ledger;
+    // What ran out is the stayers' claims of the taken rows whose deadline has
+    // passed (every open row is listed, at most eight).
+    let mut due_c = 0u128;
+    if let Some(tasks) = &r.tasks {
+        for row in &tasks.list {
+            if row.state == TaskStateRec::Taken
+                && row.deadline.unwrap_or(row.expires_at) <= r.as_of.time
+            {
+                due_c = due_c
+                    .checked_add(amount(&row.stayer_claim, "task.stayerClaim")?)
+                    .ok_or_else(|| anyhow!("the claims of the tasks that ran out overflow"))?;
+            }
+        }
+    }
+    // The money set aside is what the running tasks hold: the stayers' claims of the
+    // taken rows that have not run out (every open row is listed).
+    if let Some(tasks) = &r.tasks {
+        let mut running = 0u128;
+        for row in &tasks.list {
+            if row.state == TaskStateRec::Taken
+                && row.deadline.unwrap_or(row.expires_at) > r.as_of.time
+            {
+                running = running
+                    .checked_add(amount(&row.stayer_claim, "task.stayerClaim")?)
+                    .ok_or_else(|| anyhow!("the claims of the running tasks overflow"))?;
+            }
+        }
+        rule(
+            running == locked,
+            format!("money.locked is {locked} but the running tasks hold {running}"),
+        );
+    }
     let stored = Stored {
         last_settle: l.last_settle,
         active_end: r.clock.active_until.unwrap_or(0),
         arrival_end: l.arrival_end.unwrap_or(0),
+        arrival_start: l.arrival_start,
+        arrival_total: amount(&l.arrival_total, "ledger.arrivalTotal")?,
         rate_ppm: r.allowance.rate_ppm,
         unit,
         pot: amount(&l.pot, "ledger.pot")?,
         box_: amount(&l.box_, "ledger.box")?,
         arriving: amount(&l.arriving, "ledger.arriving")?,
         active_seconds: u128::from(l.active_seconds),
+        locked: amount(&l.locked, "ledger.locked")?,
+        due_c,
     };
     rule(
         (stored.arriving == 0) == l.arrival_end.is_none(),
@@ -760,6 +841,7 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
         ("money.pot", pot, settled.pot),
         ("allowance.box", box_, settled.box_),
         ("money.arriving", arriving, settled.arriving),
+        ("money.locked", locked, settled.locked),
         (
             "clock.activeSeconds",
             u128::from(r.clock.active_seconds),
@@ -771,6 +853,10 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
             format!("{name} is {got} but the stored numbers worked forward give {want}"),
         );
     }
+    rule(
+        notes_owed == amount(&l.notes_owed, "ledger.notesOwed")?,
+        "money.notesOwed is not ledger.notesOwed (nothing moves it between events)".into(),
+    );
     rule(
         (arriving == 0) == m.arrival_end.is_none(),
         "money.arrivalEnd must be none exactly when money.arriving is zero".into(),
@@ -799,17 +885,30 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
         amount(&t.drawn, "totals.drawn")?,
         amount(&t.outside, "totals.outside")?,
     );
+    let (paid_to_workers, note_claims) = (
+        amount(&t.paid_to_workers, "totals.paidToWorkers")?,
+        amount(&t.note_claims, "totals.noteClaims")?,
+    );
     let (inflow, outflow) = (
         joined.checked_add(outside),
         [
-            fees, tookout, drawn, pot, box_, arriving, locked, notes_owed,
+            fees,
+            tookout,
+            drawn,
+            paid_to_workers,
+            note_claims,
+            pot,
+            box_,
+            arriving,
+            locked,
+            notes_owed,
         ]
         .iter()
         .try_fold(0u128, |a, b| a.checked_add(*b)),
     );
     rule(
         inflow.is_some() && inflow == outflow,
-        format!("joined + outside is {inflow:?} but fees + took out + drawn + pot + box + arriving + locked + owed is {outflow:?}"),
+        format!("joined + outside is {inflow:?} but fees + took out + drawn + paid to workers + note claims + pot + box + arriving + locked + owed is {outflow:?}"),
     );
 
     // Team Shares.
@@ -1016,12 +1115,16 @@ mod tests {
             last_settle: 1_000,
             active_end: 1_000_000,
             arrival_end: 0,
+            arrival_start: 0,
+            arrival_total: 0,
             rate_ppm: 1000,
             unit: 604_800,
             pot: 1_000_000_000,
             box_: 0,
             arriving: 0,
             active_seconds: 5,
+            locked: 0,
+            due_c: 0,
         };
         let day = 604_800 / 7;
         let got = roll_forward(1_000 + day, &s).expect("settles");
@@ -1046,6 +1149,8 @@ mod tests {
             &Stored {
                 arriving: 100,
                 arrival_end: 3_000,
+                arrival_start: 1_000,
+                arrival_total: 100,
                 last_settle: 1_000,
                 active_end: 0,
                 ..s

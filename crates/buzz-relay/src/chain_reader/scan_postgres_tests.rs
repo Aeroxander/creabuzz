@@ -285,6 +285,11 @@ fn stored_of(views: &Value, vester_team_balance: u128) -> Stored {
         shares_supply: n(views, "sharesSupply"),
         team_supply: n(views, "teamSupply"),
         vester_team_balance,
+        locked: n(views, "locked"),
+        notes_owed: n(views, "notesOwed"),
+        arrival_start: u64::try_from(n(views, "arrivalStart")).expect("time"),
+        arrival_total: n(views, "arrivalTotal"),
+        book: None,
     }
 }
 
@@ -946,4 +951,142 @@ async fn a_replica_without_the_writer_lock_reads_whether_the_dollar_is_play_mone
         "a local chain is a test network; the replica did not read it"
     );
     drop(other);
+}
+
+// ------------------------------------------------- step 2: the task book is found, forgotten, found late
+
+/// A10: each project's task book is found from its Treasury's own `TasksReady` log (nothing in the
+/// Launcher's events names it), followed from that block, and its events are stored under the project's key
+/// with the role `tasks`; the ledger the stored rows rebuild holds its tasks.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_book_is_found_from_tasks_ready_and_followed_from_that_block() {
+    let fx = Fixture::load();
+    let (reader, chain, _state) = setup(&fx).await;
+    read_all(&reader, &chain).await;
+    let pool = reader.state.db.pool();
+    let found = store::contracts(pool, reader.reader_id())
+        .await
+        .expect("contracts");
+    for (name, p) in &fx.projects {
+        let book = found
+            .iter()
+            .find(|c| c.address == p.tasks)
+            .unwrap_or_else(|| panic!("{name}: the book was not found"));
+        assert_eq!(book.role, Role::Tasks);
+        assert_eq!(book.project_key, Some(p.key));
+        assert_eq!(
+            book.from_block,
+            fx.launch_block(name),
+            "{name}: followed from the block of TasksReady, which is the launch transaction's"
+        );
+        let stored: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM chain_logs WHERE reader = $1 AND role = 'tasks' AND project_key = $2",
+        )
+        .bind(reader.reader_id())
+        .bind(p.key.as_slice())
+        .fetch_one(pool)
+        .await
+        .expect("count");
+        let real = fx.logs.iter().filter(|l| l.address == p.tasks).count() as i64;
+        assert_eq!(stored, real, "{name}: every log of the book is stored");
+        assert_eq!(stored > 0, name == "A", "only project A plans tasks");
+    }
+    let a = ledger_of(&reader, &fx.projects["A"].key, fx.head()).await;
+    assert_eq!(a.tasks.next_serial, 10, "nine tasks were planned");
+    assert_eq!(
+        a.contracts.tasks.as_deref(),
+        Some(hex0x(&fx.projects["A"].tasks).as_str())
+    );
+    let b = ledger_of(&reader, &fx.projects["B"].key, fx.head()).await;
+    assert_eq!((b.tasks.next_serial, b.tasks.tasks.len()), (1, 0));
+    assert!(
+        b.contracts.tasks.is_some(),
+        "a book with no task is still a book"
+    );
+}
+
+/// A10: a rollback past the block of `TasksReady` forgets the book as it forgets any contract, and with
+/// it the project's task events.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_rollback_past_it_forgets_it() {
+    let fx = Fixture::load();
+    let (reader, chain, _state) = setup(&fx).await;
+    read_all(&reader, &chain).await;
+    let b_launch = fx.launch_block("B");
+    // The chain forks just before project B was launched (and is longer than what it replaces).
+    let old_head = chain.head().await.expect("head");
+    chain.truncate(usize::try_from(b_launch).expect("block"));
+    while chain.head().await.expect("head") <= old_head + 1 {
+        chain.mine_empty(2);
+    }
+    let after = reader.pass().await.expect("a pass after the reorg").0;
+    assert!(
+        after.rolled_back_to.is_some_and(|f| f < b_launch),
+        "{after:?}"
+    );
+    for _ in 0..10 {
+        reader.pass().await.expect("a pass");
+    }
+    let pool = reader.state.db.pool();
+    let found = store::contracts(pool, reader.reader_id())
+        .await
+        .expect("contracts");
+    let (a, b) = (&fx.projects["A"], &fx.projects["B"]);
+    assert!(
+        !found
+            .iter()
+            .any(|c| c.address == b.tasks || c.project_key == Some(b.key)),
+        "project B and its book are forgotten"
+    );
+    assert!(
+        found
+            .iter()
+            .any(|c| c.address == a.tasks && c.role == Role::Tasks),
+        "project A's book stays"
+    );
+}
+
+/// A10: a reader that ran before books were followed finds them in the stored `TasksReady` rows, reads
+/// their logs from the block of `TasksReady`, and follows them on.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_stored_rows_reveal_a_book_the_reader_did_not_follow_yet() {
+    let fx = Fixture::load();
+    let (reader, chain, _state) = setup(&fx).await;
+    read_all(&reader, &chain).await;
+    let pool = reader.state.db.pool();
+    let id = reader.reader_id();
+    let before = ledger_of(&reader, &fx.projects["A"].key, fx.head()).await;
+    // The state of an older reader: no book followed, none of their rows stored.
+    sqlx::query("DELETE FROM chain_logs WHERE reader = $1 AND role = 'tasks'")
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("delete rows");
+    sqlx::query("DELETE FROM chain_contracts WHERE reader = $1 AND role = 'tasks'")
+        .bind(id)
+        .execute(pool)
+        .await
+        .expect("delete contracts");
+    // Two more empty blocks so that the reader has a range to read.
+    chain.mine_empty(3);
+    chain.mine_empty(4);
+    read_all(&reader, &chain).await;
+    let found = store::contracts(pool, id).await.expect("contracts");
+    for (name, p) in &fx.projects {
+        assert!(
+            found.iter().any(|c| c.address == p.tasks
+                && c.role == Role::Tasks
+                && c.project_key == Some(p.key)),
+            "{name}: the book is followed again"
+        );
+    }
+    let after = ledger_of(&reader, &fx.projects["A"].key, fx.head()).await;
+    assert_eq!(
+        after.tasks, before.tasks,
+        "the book's logs were read again from where it began"
+    );
+    assert_eq!(after.locked, before.locked);
 }

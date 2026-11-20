@@ -31,6 +31,7 @@ use anyhow::{anyhow, bail, Context};
 use serde_json::Value;
 
 use super::events::Role;
+use super::ledger_tasks::TaskLedger;
 use super::word::hex0x;
 
 /// One stored log of the project, with its block time.
@@ -42,6 +43,8 @@ pub struct LogRow {
     pub log_index: u32,
     /// Block time (unix seconds).
     pub time: u64,
+    /// The transaction that emitted it.
+    pub tx: [u8; 32],
     /// Emitting contract's role.
     pub role: Role,
     /// Emitting contract.
@@ -152,6 +155,10 @@ pub struct Totals {
     pub drawn: u128,
     /// Everything paid in from outside.
     pub outside: u128,
+    /// Everything paid to workers for tasks (`TaskResolved.pay`).
+    pub paid_to_workers: u128,
+    /// Everything paid out for claimed exit notes (`NoteClaimed.paid`).
+    pub note_claims: u128,
 }
 
 /// The addresses of a project's contracts (lower-case `0x` text).
@@ -167,6 +174,8 @@ pub struct Contracts {
     pub vester: String,
     /// The dollar token (`Platform.quote`).
     pub dollar: String,
+    /// The task book, once the Treasury's `TasksReady` has been read.
+    pub tasks: Option<String>,
 }
 
 /// An account holding Shares or Team Shares.
@@ -206,6 +215,31 @@ pub struct Stored {
     pub team_supply: u128,
     /// `team.balanceOf(vester)`.
     pub vester_team_balance: u128,
+    /// `Treasury.locked()`.
+    pub locked: u128,
+    /// `Treasury.notesOwed()`.
+    pub notes_owed: u128,
+    /// `Treasury.arrivalStart()`.
+    pub arrival_start: u64,
+    /// `Treasury.arrivalTotal()`.
+    pub arrival_total: u128,
+    /// The book's own numbers, when the project has a book.
+    pub book: Option<StoredBook>,
+}
+
+/// The numbers the task book's views give, as of the same block.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StoredBook {
+    /// `book.openCount()`.
+    pub open_count: u128,
+    /// `book.nextSerial()`.
+    pub next_serial: u128,
+    /// `book.windowSumBps()` as read.
+    pub window_sum_bps: u128,
+    /// The time the view was read at (the block's time).
+    pub at: u64,
+    /// The cap's window in seconds (`CAP_WINDOW_MULT x unit`).
+    pub span: u64,
 }
 
 /// One number on which the ledger and the contract's view disagree.
@@ -242,6 +276,15 @@ pub struct Ledger {
     pub unit: u64,
     /// The pot as of the last settle.
     pub pot: u128,
+    /// Money set aside for taken tasks (the stayers' claims) as of the last
+    /// settle.
+    pub locked: u128,
+    /// Money held for exit notes.
+    pub notes_owed: u128,
+    /// The block of the Treasury's `TasksReady` (the book's first possible log).
+    pub book_block: Option<u64>,
+    /// The task book's events.
+    pub tasks: TaskLedger,
     /// What backers put in and have not taken back (paid-in, A).
     pub paid_in: u128,
     /// Backer Shares in existence (B).
@@ -256,6 +299,11 @@ pub struct Ledger {
     pub arriving: u128,
     /// When the last of it arrives (0 when none ever came).
     pub arrival_end: u64,
+    /// When the current stream of outside money started arriving (the block
+    /// time of the last `RevenueAdded`; 0 when none ever came).
+    pub arrival_start: u64,
+    /// The size of the current stream (`RevenueAdded.arrivingAfter`).
+    pub arrival_total: u128,
     /// Active seconds as of the last settle.
     pub active_seconds: u128,
     /// The time of the last settle that moved something (its `Settled`
@@ -382,12 +430,17 @@ impl Ledger {
                 team: nested(row, "project", "team")?.to_owned(),
                 vester: nested(row, "project", "vester")?.to_owned(),
                 dollar: nested(row, "platform", "quote")?.to_owned(),
+                tasks: None,
             },
             pair: None,
             team_pool,
             fee_bps: u32::try_from(nested_num(row, "platform", "feeBps")?).context("feeBps")?,
             unit: u64::try_from(nested_num(row, "platform", "unit")?).context("unit")?,
             pot: 0,
+            locked: 0,
+            notes_owed: 0,
+            book_block: None,
+            tasks: TaskLedger::new(),
             paid_in: 0,
             shares: 0,
             team: team_pool,
@@ -395,6 +448,8 @@ impl Ledger {
             box_: 0,
             arriving: 0,
             arrival_end: 0,
+            arrival_start: 0,
+            arrival_total: 0,
             active_seconds: 0,
             last_settle: launched_at,
             fees_owed: 0,
@@ -424,6 +479,12 @@ impl Ledger {
             Role::Shares => &self.contracts.shares,
             Role::Team => &self.contracts.team,
             Role::Dollar => &self.contracts.dollar,
+            // The book is named by the Treasury's own `TasksReady`; before that
+            // nothing is its own.
+            Role::Tasks => match &self.contracts.tasks {
+                Some(book) => book,
+                None => return false,
+            },
             // The Launcher and a Pair are not named by the project's own
             // launch event; their rows are chosen by the store (the Launcher's
             // by key topic, a Pair by `PairMade`).
@@ -513,6 +574,11 @@ impl Ledger {
             (Role::Treasury, "RevenueAdded") => {
                 self.arriving = num(row, "arrivingAfter")?;
                 self.arrival_end = small(row, "arrivalEnd")?;
+                // The contract starts a new stream now with what had not yet
+                // arrived and the new money: what has arrived by any later second
+                // is one rounding of one formula on these two (RECORD-V2 section 3).
+                self.arrival_start = row.time;
+                self.arrival_total = self.arriving;
                 self.totals.outside = add(self.totals.outside, num(row, "amount")?, "outside")?;
             }
             (Role::Treasury, "RevenueReleased") => {
@@ -552,6 +618,38 @@ impl Ledger {
                 );
             }
             (Role::Treasury, "BurnAnnounced") => self.z = num(row, "zAfter")?,
+            (Role::Treasury, "TasksReady") => {
+                if self.contracts.tasks.is_none() {
+                    self.contracts.tasks = Some(address(row, "book")?);
+                    self.book_block = Some(row.block);
+                }
+            }
+            (Role::Treasury, "TaskMoney") => {
+                // The three buckets after the move, as `TaskLedger._applyTaskMoney` keeps them.
+                self.pot = num(row, "potAfter")?;
+                self.locked = num(row, "lockedAfter")?;
+                self.notes_owed = num(row, "notesOwedAfter")?;
+            }
+            (Role::Tasks, event) => {
+                let known = self.tasks.apply(row)?;
+                if known {
+                    match event {
+                        "TaskResolved" => {
+                            self.totals.paid_to_workers = add(
+                                self.totals.paid_to_workers,
+                                num(row, "pay")?,
+                                "paid to workers",
+                            )?;
+                        }
+                        "NoteClaimed" => {
+                            self.totals.note_claims =
+                                add(self.totals.note_claims, num(row, "paid")?, "note claims")?;
+                        }
+                        _ => {}
+                    }
+                }
+                return Ok(known);
+            }
             (Role::Vester, "GrantMade") => {
                 let id = small(row, "id")?;
                 let amount = num(row, "amount")?;
@@ -765,6 +863,31 @@ impl Ledger {
             }
         };
         check("pot", self.pot, view.pot);
+        check("locked", self.locked, view.locked);
+        check("notesOwed", self.notes_owed, view.notes_owed);
+        check(
+            "arrivalStart",
+            u128::from(self.arrival_start),
+            u128::from(view.arrival_start),
+        );
+        check("arrivalTotal", self.arrival_total, view.arrival_total);
+        if let Some(book) = &view.book {
+            check(
+                "openCount",
+                u128::from(self.tasks.open_count),
+                book.open_count,
+            );
+            check(
+                "nextSerial",
+                u128::from(self.tasks.next_serial),
+                book.next_serial,
+            );
+            check(
+                "windowSumBps",
+                self.tasks.window_sum(book.at, book.span),
+                book.window_sum_bps,
+            );
+        }
         check("paidIn", self.paid_in, view.paid_in);
         check("box", self.box_, view.box_);
         check("arriving", self.arriving, view.arriving);

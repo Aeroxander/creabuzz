@@ -14,7 +14,12 @@ a launch, a grant, a join in one transaction (transferAndCall) and in two (appro
 draws from the allowance, outside money arriving, a rate raise and its application, a lowered rate, the door switch, an
 agent (set, drawing, revoked), a member's own exit (announce, burn), the runner's exit of a grant, a Team Share claim and
 take-out, fees collected, a seat offered, withdrawn, offered again and taken, a wind-down by choice and the burns after
-it. Project B is launched by another founder, takes the seat through a Pair (both signers, a call executed, a call
+it. Between day 20 and day 101 it also plays the task queue (step 2): a task announced and withdrawn, one taken and paid in
+part with a leaver's note claimed by the leaver, an open task taken by a stranger and sent back (its note claimed for the
+leaver by the stranger), one that runs out and is returned by someone else's take-out (its note left unclaimed), one whose take
+window passes, the same task record announced twice, and three tasks still open at the example block (one in its notice, one
+taken with a note outstanding, one announced again), which the wind-down then sweeps. Outside money arrives twice, the second
+payment merging into the first stream. Project B is launched by another founder, takes the seat through a Pair (both signers, a call executed, a call
 cancelled), has one backer and is wound down through the Launcher. Last, the platform settings are changed and the admin
 seat is offered and taken.
 
@@ -23,7 +28,8 @@ Output: crates/buzz-relay/src/chain_reader/testdata/pot-run.json with
   - logs       every log of the chain, as the node returned them
   - projects   the addresses each project's Launcher event names (what the reader must find on its own)
   - snapshots  per project, the stored numbers the contract views gave right after each block that changed them
-  - books      per named block, the raw answers of every view the record builder calls (replayed by the record tests)
+  - books      per named block, the raw answers of every view the record builder calls (replayed by the record tests); the
+               block `A_example` is the one the example record (docs/next-version/record-v2-example.json) is built at
   - final      the views at the last block: the settled views, every holder's balances, every grant, the agents
 The Rust tests replay `logs` through the reader's own code and compare with `snapshots` and `final`.
 """
@@ -142,8 +148,21 @@ TREASURY_VIEWS = [
     ("feesOwed", "uint"), ("ratePpm", "uint"), ("pendingRatePpm", "uint"), ("pendingAt", "uint"),
     ("lastSettle", "uint"), ("lastCheckIn", "uint"), ("activeSeconds", "uint"), ("Z", "uint"),
     ("windDownKind", "uint"), ("windDownAt", "uint"), ("doorFlag", "bool"), ("runner", "addr"),
-    ("locked", "uint"), ("notesOwed", "uint"),
+    ("locked", "uint"), ("notesOwed", "uint"), ("arrivalStart", "uint"), ("arrivalTotal", "uint"), ("nextExpiry", "uint"),
 ]
+
+# The order of the fields of `TaskBook.taskOf`, read from the build, never typed here.
+with open(os.path.join(POT, "out", "TaskBook.sol", "TaskBook.json")) as _f:
+    _abi = json.load(_f)["abi"]
+TASK_FIELDS = [
+    c["name"]
+    for fn in _abi
+    if fn.get("type") == "function" and fn["name"] == "taskOf"
+    for c in fn["outputs"][0]["components"]
+]
+NOTE_MINTED = run(["cast", "keccak", "NoteMinted(uint64,address,uint256,uint256,uint256)"]).lower()
+# The accounts a note can belong to in this run (a take-out writes one for whoever leaves).
+NOTE_HOLDERS = lambda: [ADDR[BACKER1], ADDR[BACKER2], ADDR[PAYER], ADDR[FOUNDER_A]]
 
 
 def view_value(kind, result):
@@ -165,6 +184,23 @@ def snapshot(name, block):
     views["teamSupply"] = str(uint(eth_call(p["team"], "totalSupply()", block=at)))
     views["grantCount"] = str(uint(eth_call(p["vester"], "grantCount()", block=at)))
     views["committed"] = str(uint(eth_call(p["vester"], "committed()", block=at)))
+    # the task book: counts, the cap's window (it moves with the block's time) and every task's answer (the 17 words of `taskOf`, as the node gave them)
+    book = p["tasks"]
+    views["openCount"] = str(uint(eth_call(book, "openCount()", block=at)))
+    views["nextSerial"] = str(uint(eth_call(book, "nextSerial()", block=at)))
+    views["windowSumBps"] = str(uint(eth_call(book, "windowSumBps()", block=at)))
+    next_serial = int(views["nextSerial"])
+    views["tasks"] = {
+        str(serial): eth_call(book, "taskOf(uint64)", serial, block=at)
+        for serial in range(1, next_serial)
+    }
+    notes = {}
+    for serial in range(1, next_serial):
+        for holder in NOTE_HOLDERS():
+            n = uint(eth_call(book, "noteOf(uint64,address)", serial, holder, block=at))
+            if n:
+                notes[f"{serial}:{holder}"] = str(n)
+    views["notes"] = notes
     return views
 
 
@@ -196,15 +232,22 @@ TREASURY_UINTS = [
     "pot", "paidIn", "box", "arriving", "arrivalEnd", "feesOwed", "locked", "notesOwed", "ratePpm", "pendingRatePpm",
     "pendingAt", "lastSettle", "lastCheckIn", "activeSeconds", "activeEnd", "activeNow", "windDownKind", "windDownAt",
     "Z", "unit", "feeBps", "boxCap", "leaveValue", "teamValue", "agentUsd", "agentTeam", "agentEpoch", "MIN_JOIN",
-    "MIN_REVENUE", "MAX_RATE_PPM", "CHECK_IN_MULT", "WIND_MULT", "doorFlag", "doorOpenNow", "runner",
+    "MIN_REVENUE", "MAX_RATE_PPM", "CHECK_IN_MULT", "WIND_MULT", "arrivalStart", "arrivalTotal", "nextExpiry",
+    "doorFlag", "doorOpenNow", "runner",
 ]
+BOOK_CONSTANTS = ["MAX_OPEN", "MAX_SHARE_BPS", "CAP_BPS", "MIN_TASK", "CAP_WINDOW_MULT"]
+BOOK_COUNTS = ["openCount", "nextSerial", "windowSumBps", "takeRoomBps"]
 VESTER_UINTS = [
     "grantCount", "committed", "CLIFF_MULT", "VEST_MULT", "MIN_GRANT", "MAX_GRANTS_PER_MEMBER", "PROTECTED_LENGTH",
 ]
 
 
-def record_book(p, launcher, dollar, block):
-    """Every view the record builder calls, for project `p` at `block`: {"<to>:<calldata>": "<answer>"}."""
+def record_book(p, launcher, dollar, block, logs):
+    """Every view the record builder calls, for project `p` at `block`: {"<to>:<calldata>": "<answer>"}.
+
+    The task book is read whole: every serial's `taskOf`, and `noteOf` and `claimableNote` for every holder a `NoteMinted`
+    log names up to `block`. The server asks for fewer (its cut chooses the rows and the holders); it never needs more.
+    """
     at_b = hex(block)
     book = {}
 
@@ -234,6 +277,23 @@ def record_book(p, launcher, dollar, block):
     for a in ADDR:
         for sig in ("agents(address)", "agentEpochOf(address)", "agentUsdUsed(address)", "agentTeamUsed(address)"):
             get(t, sig, a)
+    # step 2: the task book
+    b = p["tasks"]
+    block_time = int(rpc("eth_getBlockByNumber", at_b, False)["timestamp"], 16)
+    get(t, "tasks()")
+    for name in BOOK_COUNTS + BOOK_CONSTANTS:
+        get(b, f"{name}()")
+    get(b, "dueC(uint256)", block_time)
+    get(b, "noticeFor(uint16)", 1)
+    for serial in range(1, uint(eth_call(b, "nextSerial()", block=at_b))):
+        get(b, "taskOf(uint64)", serial)
+    pairs = set()
+    for l in logs:
+        if l["address"] == b and l["topics"][0] == NOTE_MINTED and l["block"] <= block:
+            pairs.add((int(l["topics"][1], 16), "0x" + l["topics"][2][-40:]))
+    for serial, holder in sorted(pairs):
+        get(b, "noteOf(uint64,address)", serial, holder)
+        get(b, "claimableNote(uint64,address)", serial, holder)
     return book
 
 
@@ -302,7 +362,7 @@ def play(tmp):
         launch_block = int(rpc("eth_blockNumber"), 16)
         proj[name_of(project_id)] = dict(
             founder=f, shares=shares, team=team, treasury=treasury, vester=vester, key=key.lower(), projectId=pid.lower(),
-            launchBlock=launch_block,
+            launchBlock=launch_block, tasks=addr_of(eth_call(treasury, "tasks()")),
         )
         snap_all(launch_block)
 
@@ -359,6 +419,84 @@ def play(tmp):
         tx(DEPLOYER, dollar, "mint(address,uint256)", ADDR[PAYER], 5_000_000_000, after=60)
         tx(PAYER, dollar, "approve(address,uint256)", T, 3_000_000_000, after=60)
         tx(PAYER, T, "addRevenue(uint256)", 3_000_000_000, after=60)
+
+
+    # ---- the task queue (step 2) on project A, all at exact times on the real unit of 7 days
+    W1, W2, STRANGER = MEMBER1, MEMBER2, PAYER  # two named workers and a stranger with no stake
+    book = A["tasks"]
+    what = lambda label: run(["cast", "keccak", f"task record {label}"])
+    ZERO = "0x" + "00" * 20
+    serials = {}
+
+    def task(serial):
+        """The fields of task `serial` now, by name (the order is the build's)."""
+        w = words(eth_call(book, "taskOf(uint64)", serial))
+        return {name: int(w[i], 16) for i, name in enumerate(TASK_FIELDS)}
+
+    def announce(name, label, payee, share_bps, when, max_dollars=400_000_000):
+        tx(runner_of(), T, "announceTask(bytes32,address,uint256,uint16)", what(label), payee, max_dollars, share_bps, at=when)
+        serials[name] = uint(eth_call(book, "nextSerial()")) - 1
+
+    def take(name, who, extra=1):
+        """Take at the second after the notice ends."""
+        tx(who, T, "takeTask(uint64,uint256)", serials[name], 0, at=task(serials[name])["noticeEnd"] + extra)
+
+    def leave_part_block(who, parts, when):
+        n = uint(eth_call(A["shares"], "balanceOf(address)", ADDR[who])) // parts
+        return tx(who, T, "leave(uint256,uint256,address)", n, 0, ADDR[who], at=when)
+
+    leave_part = leave_part_block
+
+    at(20.2, lambda: announce("T1", "T1", ADDR[W1], 100, day(20.2)))
+    at(20.4, lambda: tx(runner_of(), T, "cancelTask(uint64)", serials["T1"], at=day(20.4)))
+    at(61, lambda: announce("T2", "T2", ADDR[W1], 200, day(61)))
+    at(62, lambda: announce("T3", "T3", ZERO, 100, day(62)))
+    at(68, lambda: announce("T4", "T4", ADDR[W2], 100, day(68)))
+    at(70.5, lambda: announce("T5", "T5", ADDR[W2], 100, day(70.5)))
+    at(76, lambda: take("T2", W1))
+    at(76.5, lambda: take("T3", STRANGER))
+    at(77.2, lambda: leave_part(BACKER1, 5, day(77.2)))
+    at(78, lambda: tx(runner_of(), T, "rejectTask(uint64)", serials["T3"], at=day(78)))
+    at(79, lambda: tx(STRANGER, T, "claimNote(uint64,address)", serials["T3"], ADDR[BACKER1], at=day(79)))
+    at(80, lambda: tx(runner_of(), T, "acceptTask(uint64,uint256)", serials["T2"], task(serials["T2"])["locked"] * 6 // 10, at=day(80)))
+    at(81.2, lambda: tx(BACKER1, T, "claimNote(uint64,address)", serials["T2"], ADDR[BACKER1], at=day(81.2)))
+    at(82.5, lambda: take("T4", W2))
+    at(83, lambda: leave_part(BACKER2, 4, day(83)))
+    at(85, lambda: announce("T7", "T7", ADDR[W1], 100, day(85)))
+
+    def third_holder_joins():
+        tx(DEPLOYER, dollar, "mint(address,uint256)", ADDR[PAYER], 500_000_000, at=day(90))
+        tx(PAYER, dollar, "approve(address,uint256)", T, 500_000_000, after=60)
+        tx(PAYER, T, "join(uint256,uint256,address)", 500_000_000, 0, ADDR[PAYER], after=60)
+
+    at(90, third_holder_joins)
+    at(92.2, lambda: announce("T6", "T6", ADDR[W1], 100, day(92.2)))
+    # the same task record planned a second time, left announced (the later row is a repeat of T2)
+    at(93.2, lambda: announce("T8", "T2", ADDR[W1], 100, day(93.2)))
+
+    # a task withdrawn inside the 28 days the example looks back over (the first, withdrawn on day 20, is older)
+    at(94, lambda: announce("T9", "T9", ADDR[W2], 100, day(94)))
+    at(94.3, lambda: tx(runner_of(), T, "cancelTask(uint64)", serials["T9"], at=day(94.3)))
+
+    def third_holder_leaves():
+        n = uint(eth_call(A["shares"], "balanceOf(address)", ADDR[PAYER]))
+        tx(PAYER, T, "leave(uint256,uint256,address)", n, 0, ADDR[PAYER], at=day(97))
+
+    # a block after T4's deadline that no Treasury call settles (the dollar's `approve`): the task has run out and is
+    # still `taken` in the book, so the settled numbers must count it as returned
+    at(96.8, lambda: marks.__setitem__("A_overdue", tx(PAYER, dollar, "approve(address,uint256)", T, 1, at=day(96.8))))
+    at(97, third_holder_leaves)
+    at(99.5, lambda: take("T7", W1))
+
+    def second_outside_money():
+        tx(PAYER, dollar, "approve(address,uint256)", T, 1_000_000_000, at=day(100.5))
+        tx(PAYER, T, "addRevenue(uint256)", 1_000_000_000, after=60)
+
+    at(100.5, second_outside_money)
+    at(101.7, lambda: marks.__setitem__("A_example", leave_part_block(BACKER1, 10, day(101.7))))
+    # a block inside the merged stream, a day after the last settle: no Treasury call settles it (the dollar's `approve`), so the
+    # money that has arrived since is only in the formula, not in the stored numbers
+    at(102.6, lambda: marks.__setitem__("A_stream", tx(PAYER, dollar, "approve(address,uint256)", T, 2, at=day(102.6))))
 
     at(98, outside_money)
     at(99, lambda: tx(MEMBER1, V, "announceForfeit(uint256)", 1, at=day(99)))
@@ -520,12 +658,19 @@ def play(tmp):
         }
     books = {}
     for name, project, block in (
+        ("A_example", "A", marks["A_example"]),
+        ("A_overdue", "A", marks["A_overdue"]),
+        ("A_stream", "A", marks["A_stream"]),
         ("A_live", "A", marks["A_live"]),
         ("B_pair", "B", marks["B_pair"]),
         ("A_end", "A", head),
         ("B_end", "B", head),
     ):
-        books[name] = {"project": project, "block": block, "calls": record_book(proj[project], launcher, dollar, block)}
+        books[name] = {
+            "project": project,
+            "block": block,
+            "calls": record_book(proj[project], launcher, dollar, block, logs),
+        }
     return {
         "about": "A real run of contracts/pot on anvil, played by scripts/chain-reader-fixture.py. Do not edit by hand.",
         "chainId": 31337,
