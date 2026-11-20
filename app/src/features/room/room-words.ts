@@ -27,6 +27,11 @@ export const MAY_NOT_WRITE =
   "Only people who back this project can write here.";
 export const NEED_LINK =
   "To tell that you back this project, the server needs this account confirmed.";
+/** What the wallet link makes public: said beside every press that makes it. */
+export const LINK_PUBLIC =
+  "This links your wallet to your account. Anyone on this server can see the link, and so can see how many Shares that wallet holds.";
+export const LINK_CHOICE = "Let me write in this project's room";
+export const LINK_CHOICE_HINT = `${LINK_PUBLIC} Leave it unticked to back without it: you can still take your money out any time.`;
 export const CONFIRM_LABEL = "Confirm this account backs the project";
 export const NO_PHONE_ROOMS =
   "Rooms are not switched on for phone accounts on this server.";
@@ -34,6 +39,9 @@ export const NOT_READY = "Not ready yet. Try again in a minute.";
 export const EMPTY =
   "Nothing here yet. People who back this project can write the first post.";
 export const READ_FAILED = "The room could not be read. Try again.";
+export const COULD_NOT_CHECK =
+  "We could not check right now whether you back this project. Your money is not affected.";
+export const TRY_AGAIN = "Try again";
 export const CHECKING = "Checking whether you back this project…";
 
 export const linkEnding = (date: string) =>
@@ -56,6 +64,10 @@ export const REPORT_DONE =
   "Thanks. The people who run this server will look at it.";
 
 export const REMOVE_REASON_MAX = 280;
+export const HIDES_UNKNOWN =
+  "Your list of hidden people could not be opened, so someone you hid may show here.";
+export const NOT_SAVED = "That was not saved. Try again.";
+export const LIKE_FAILED = "Your like was not sent. Try again.";
 export const REMOVE_FAILED = "The post was not removed. Try again.";
 export const MUTE_DAYS = [1, 7, 30] as const;
 

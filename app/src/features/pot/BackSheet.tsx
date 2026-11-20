@@ -7,13 +7,18 @@
 import { QUOTE_TOLERANCE_BPS } from "@creaton/core/pot/pot-plans.ts";
 import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import type { ProjectNumbers } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { type BackRead, readBack } from "./back-read";
 import { plannedBackLine } from "./back-tasks";
-import { useLinkAfterBack } from "../room/use-link-after-back";
+import { LINK_CHOICE, LINK_CHOICE_HINT } from "../room/room-words";
+import {
+  canLinkAfterBack,
+  useLinkAfterBack,
+} from "../room/use-link-after-back";
 import { rememberStep } from "./own-history";
 import { senderKind } from "../money/wallet";
 import { PotSheet } from "./PotSheet";
@@ -77,6 +82,9 @@ export function BackSheet({
   const planned = plannedBackLine(numbers);
   // The last step of a Back that landed: the account is linked to this wallet, so the project's room opens for it.
   const linkAfterBack = useLinkAfterBack(ready.wallet);
+  // The link makes the wallet public, so it is a choice in plain sight, made before the Back and never silently afterwards.
+  const [wantLink, setWantLink] = useState(true);
+  const offerLink = canLinkAfterBack(ready.wallet);
   const reading = useQuery({
     queryKey: [
       "pot",
@@ -174,6 +182,28 @@ export function BackSheet({
             taken. Get more play dollars on the project page, or enter less.
           </p>
         ) : null}
+        {offerLink ? (
+          <div className="flex flex-col gap-1">
+            <label className="flex min-h-11 cursor-pointer items-start gap-2 text-sm">
+              <input
+                aria-describedby="back-link-hint"
+                checked={wantLink}
+                className="mt-0.5 size-5 shrink-0 accent-current"
+                data-testid="back-link-choice"
+                onChange={(event) => setWantLink(event.target.checked)}
+                type="checkbox"
+              />
+              <span>{LINK_CHOICE}</span>
+            </label>
+            <p
+              className="text-sm text-muted"
+              data-testid="back-link-hint"
+              id="back-link-hint"
+            >
+              {LINK_CHOICE_HINT}
+            </p>
+          </div>
+        ) : null}
         <details className="text-sm">
           <summary className="min-h-11 cursor-pointer font-semibold">
             Details
@@ -250,7 +280,7 @@ export function BackSheet({
             shares: good.plan.quote.shares.toString(),
             txHash,
           });
-        void linkAfterBack();
+        void linkAfterBack(wantLink && offerLink);
       }}
       onOpenChange={(next) => {
         if (!next) onClose();

@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { seriousViolations } from "../../../tests/helpers/axe-dom";
 import { parsedExample } from "../../../tests/helpers/numbers-v2-parse";
 import { parseProject } from "../project/project-record";
-import { roomSeenAt } from "./room-seen";
+import { roomSeenAt, seenKey } from "./room-seen";
 import {
   ANA,
   BO,
@@ -534,7 +534,9 @@ describe("looking at the room", () => {
     );
     room();
     await screen.findByText("An answer");
-    await waitFor(() => expect(roomSeenAt(COORD)).toBe(NOW - 20));
+    await waitFor(() =>
+      expect(roomSeenAt(seenKey(world.me, COORD))).toBe(NOW - 20),
+    );
   });
 });
 

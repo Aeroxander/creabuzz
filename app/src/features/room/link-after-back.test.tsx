@@ -76,7 +76,7 @@ afterEach(() => {
 describe("linking after a Back", () => {
   it("links the account to the wallet with one signature and no other screen", async () => {
     const { stand, sign } = wallet({});
-    await expect(run(stand)()).resolves.toBe("linked");
+    await expect(run(stand)(true)).resolves.toBe("linked");
     expect(sign).toHaveBeenCalledTimes(1);
     expect(world.published).toHaveLength(1);
     const sent = world.published[0];
@@ -102,10 +102,17 @@ describe("linking after a Back", () => {
     const { result } = renderHook(() => useLinkAfterBack(wallet({}).stand), {
       wrapper,
     });
-    await result.current();
+    await result.current(true);
     expect(client.getQueryState(["room", "holding", "x"])?.isInvalidated).toBe(
       true,
     );
+  });
+
+  it("signs and publishes nothing when the person did not choose the link in the Back box, and still has the room read again", async () => {
+    const { stand, sign } = wallet({});
+    await expect(run(stand)(false)).resolves.toBe("skipped");
+    expect(sign).not.toHaveBeenCalled();
+    expect(world.published).toHaveLength(0);
   });
 
   it("asks for nothing when the account is already linked to this wallet for a good while yet", async () => {
@@ -117,7 +124,7 @@ describe("linking after a Back", () => {
       ) as never,
     );
     const { stand, sign } = wallet({});
-    await expect(run(stand)()).resolves.toBe("already");
+    await expect(run(stand)(true)).resolves.toBe("already");
     expect(sign).not.toHaveBeenCalled();
     expect(world.published).toHaveLength(0);
   });
@@ -131,24 +138,24 @@ describe("linking after a Back", () => {
       ) as never,
     );
     const { stand } = wallet({});
-    await expect(run(stand)()).resolves.toBe("linked");
+    await expect(run(stand)(true)).resolves.toBe("linked");
   });
 
   it("does nothing for nobody signed in, a sender that cannot sign, or a phone account on a server that cannot check it", async () => {
     world.signedIn = false;
-    expect(await run(wallet({}).stand)()).toBe("skipped");
+    expect(await run(wallet({}).stand)(true)).toBe("skipped");
     world.signedIn = true;
-    expect(await run(wallet({ signs: false }).stand)()).toBe("skipped");
+    expect(await run(wallet({ signs: false }).stand)(true)).toBe("skipped");
     applyServerSettings({
       investing: true,
       self: "http://s.invalid",
       smartAccountLinks: false,
     } as never);
     const phone = wallet({ kind: "passkey" });
-    expect(await run(phone.stand)()).toBe("skipped");
+    expect(await run(phone.stand)(true)).toBe("skipped");
     expect(phone.sign).not.toHaveBeenCalled();
     // The same server is no obstacle to an ordinary wallet.
-    expect(await run(wallet({}).stand)()).toBe("linked");
+    expect(await run(wallet({}).stand)(true)).toBe("linked");
   });
 
   it("a person who says no is not asked again, and the Back stands", async () => {
@@ -157,7 +164,7 @@ describe("linking after a Back", () => {
         throw new Error("You rejected the request in your wallet.");
       },
     });
-    await expect(run(stand)()).resolves.toBe("declined");
+    await expect(run(stand)(true)).resolves.toBe("declined");
     expect(sign).toHaveBeenCalledTimes(1);
     expect(world.published).toHaveLength(0);
   });
@@ -171,7 +178,7 @@ describe("linking after a Back", () => {
         });
       },
     });
-    await expect(run(stand)()).resolves.toBe("declined");
+    await expect(run(stand)(true)).resolves.toBe("declined");
     expect(sign).toHaveBeenCalledTimes(1);
   });
 
@@ -184,14 +191,14 @@ describe("linking after a Back", () => {
         return `0x${"11".repeat(65)}`;
       },
     });
-    await expect(run(flaky.stand)()).resolves.toBe("linked");
+    await expect(run(flaky.stand)(true)).resolves.toBe("linked");
     expect(flaky.sign).toHaveBeenCalledTimes(2);
     const broken = wallet({
       sign: async () => {
         throw new Error("The network is down.");
       },
     });
-    await expect(run(broken.stand)()).resolves.toBe("failed");
+    await expect(run(broken.stand)(true)).resolves.toBe("failed");
     expect(broken.sign).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(world.published).toHaveLength(1));
   });

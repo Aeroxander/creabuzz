@@ -242,7 +242,9 @@ describe("the team's tools", () => {
     );
     const sheet = await screen.findByTestId("remove-sheet");
     fireEvent.change(
-      within(sheet).getByLabelText("Say why. Everyone can see the reason."),
+      within(sheet).getByLabelText(
+        "Say why. The reason is kept in a public log.",
+      ),
       {
         target: { value: "Rude to others" },
       },
@@ -269,7 +271,9 @@ describe("the team's tools", () => {
     );
     const sheet = await screen.findByTestId("remove-sheet");
     fireEvent.change(
-      within(sheet).getByLabelText("Say why. Everyone can see the reason."),
+      within(sheet).getByLabelText(
+        "Say why. The reason is kept in a public log.",
+      ),
       { target: { value: "Why" } },
     );
     fireEvent.click(within(sheet).getByRole("button", { name: "Remove" }));
@@ -279,7 +283,7 @@ describe("the team's tools", () => {
     expect(
       (
         within(sheet).getByLabelText(
-          "Say why. Everyone can see the reason.",
+          "Say why. The reason is kept in a public log.",
         ) as HTMLTextAreaElement
       ).value,
     ).toBe("Why");

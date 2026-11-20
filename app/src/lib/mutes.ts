@@ -75,6 +75,8 @@ export function useMutes() {
     muted,
     /** Whether the list was read (or there is none): until then nobody can be told "you hid them". */
     ready: state.isSuccess,
+    /** The list could not be opened (a locked passkey, a refused signer): whoever was hidden may show until it can. */
+    failed: state.isError,
     /** The list was saved by another app in a form this one cannot read. */
     readable: state.data?.readable ?? true,
     hide: (target: string) => setMuted(target, true),

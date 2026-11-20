@@ -27,11 +27,13 @@ import { MuteSheet, RemoveSheet, ReportSheet } from "./RoomSheets";
 import { RoomStatus } from "./RoomStatus";
 import { type Notice, noticesOf } from "./room-notices";
 import { buildRoom, isOfRoom, PAGE } from "./room-read";
-import { markRoomSeen } from "./room-seen";
+import { markRoomSeen, seenKey } from "./room-seen";
 import {
   COMPOSER_LABEL,
   EMPTY,
   HIDE_DONE,
+  HIDES_UNKNOWN,
+  NOT_SAVED,
   PUBLIC_LINE,
   READ_FAILED,
   READ_LINE,
@@ -82,7 +84,11 @@ export function RoomTab({
   const activity = useProjectActivity(project);
   const tasks = useProjectTasks(project);
   const mutes = useMutes();
-  const { standing, mutes: stops } = useRoomStanding(project, numbers, team);
+  const {
+    standing,
+    mutes: stops,
+    retry,
+  } = useRoomStanding(project, numbers, team);
   const post = useRoomPost(room);
   const reply = useRoomReply(room);
   const like = useRoomLike(room);
@@ -147,8 +153,9 @@ export function RoomTab({
       .map((e) => e.created_at),
   );
   useEffect(() => {
-    if (view && newest > 0) markRoomSeen(project.coordinate, newest);
-  }, [view, newest, project.coordinate]);
+    if (view && newest > 0)
+      markRoomSeen(seenKey(me, project.coordinate), newest);
+  }, [view, newest, project.coordinate, me]);
 
   const tools: RoomTools = {
     me,
@@ -167,7 +174,7 @@ export function RoomTab({
         { person: event.pubkey, days: 0 },
         {
           onSuccess: () => toast(`${name} can write here again.`, "done"),
-          onError: () => toast("That was not saved. Try again.", "problem"),
+          onError: () => toast(NOT_SAVED, "problem"),
         },
       );
     else
@@ -188,10 +195,20 @@ export function RoomTab({
         </p>
         <p className="text-xs text-muted">{PUBLIC_LINE}</p>
       </div>
+      {mutes.failed ? (
+        <p className="text-sm text-muted" data-testid="room-hides-unknown">
+          {HIDES_UNKNOWN}
+        </p>
+      ) : null}
       <PerksBlock isFounder={me === project.author} project={project} />
-      <RoomStatus now={now} numbers={numbers} standing={standing}>
+      <RoomStatus
+        now={now}
+        numbers={numbers}
+        onRetry={retry}
+        standing={standing}
+      >
         <RoomComposer
-          draftKey={project.coordinate}
+          draftKey={`${me ?? ""}:${project.coordinate}`}
           label={COMPOSER_LABEL}
           send={(text) => post.mutateAsync({ text })}
         />
@@ -209,7 +226,8 @@ export function RoomTab({
               onClick={() => {
                 void mutes
                   .showAgain(justHidden.pubkey)
-                  .then(() => setJustHidden(null));
+                  .then(() => setJustHidden(null))
+                  .catch(() => toast(NOT_SAVED, "problem"));
               }}
               size="sm"
               variant="secondary"
@@ -334,7 +352,9 @@ export function RoomTab({
       <HiddenSheet
         hidden={[...mutes.muted]}
         onOpenChange={setHiddenOpen}
-        onShowAgain={(pubkey) => void mutes.showAgain(pubkey)}
+        onShowAgain={(pubkey) =>
+          void mutes.showAgain(pubkey).catch(() => toast(NOT_SAVED, "problem"))
+        }
         open={hiddenOpen}
         pending={mutes.pending}
       />

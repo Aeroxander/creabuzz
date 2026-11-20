@@ -9,7 +9,7 @@ import { Button } from "../../ui/button";
 import { useToast } from "../../ui/toast";
 import { potProblem } from "../money/pot-copy";
 import { useLinkWallet } from "../team/use-wallets";
-import { CONFIRM_LABEL } from "./room-words";
+import { CONFIRM_LABEL, LINK_PUBLIC } from "./room-words";
 
 export function ConfirmAccount({ label = CONFIRM_LABEL }: { label?: string }) {
   const { pubkey } = useAccount();
@@ -24,8 +24,13 @@ export function ConfirmAccount({ label = CONFIRM_LABEL }: { label?: string }) {
           {problem}
         </p>
       ) : null}
+      <p className="text-sm text-muted" id={`${noteId}-public`}>
+        {LINK_PUBLIC}
+      </p>
       <Button
-        aria-describedby={problem ? noteId : undefined}
+        aria-describedby={
+          problem ? `${noteId} ${noteId}-public` : `${noteId}-public`
+        }
         data-testid="room-confirm"
         disabled={link.isPending}
         onClick={() => {

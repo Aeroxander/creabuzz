@@ -153,7 +153,7 @@ export function RemoveSheet({
   };
   return (
     <Sheet
-      description="Everyone can see that it was removed and why."
+      description="The post leaves the room. The reason you give is kept in a public log."
       onOpenChange={close}
       open={post !== null}
       testId="remove-sheet"
@@ -162,7 +162,7 @@ export function RemoveSheet({
       <TextArea
         count={{ used: reason.length, max: REMOVE_REASON_MAX }}
         data-testid="remove-reason"
-        label="Say why. Everyone can see the reason."
+        label="Say why. The reason is kept in a public log."
         maxLength={REMOVE_REASON_MAX}
         onChange={(e) => setReason(e.target.value)}
         rows={3}

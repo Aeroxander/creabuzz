@@ -17,6 +17,8 @@ export interface StandingInput {
   me: string | null;
   /** What the account's wallets hold of this project's Shares and Team Shares: undefined while read, null when it cannot be read. */
   holds: { shares: bigint; team: bigint } | null | undefined;
+  /** The balance could not be read (the node refused, or the wallet is on another network): said so, never taken for "holds nothing". */
+  unreadable?: boolean;
   /** A Team Share grant of one of the account's wallets still has something to claim. */
   claimable: boolean;
   /** When the account last took its money out of this project (this device's own record), or null. */
@@ -36,6 +38,7 @@ export type Standing =
   | { kind: "signed-out" }
   | { kind: "checking" }
   | { kind: "not-holding" }
+  | { kind: "could-not-check" }
   | { kind: "phone-unsupported" }
   | { kind: "needs-link"; expired: boolean }
   | { kind: "muted"; until: number }
@@ -47,13 +50,16 @@ export type Standing =
       renewBy: number | null;
     };
 
+/** Whether a wallet's balances reach the floor in Shares or in Team Shares. */
+export function atFloor(held: { shares: bigint; team: bigint }): boolean {
+  return held.shares >= ROOM_MIN_SHARES || held.team >= ROOM_MIN_SHARES;
+}
+
 /** Whether the account holds now: Shares or Team Shares at the floor, or Team Shares still to claim. */
 function holdsNow(input: StandingInput): boolean {
   const { holds } = input;
   if (input.claimable) return true;
-  return Boolean(
-    holds && (holds.shares >= ROOM_MIN_SHARES || holds.team >= ROOM_MIN_SHARES),
-  );
+  return Boolean(holds && atFloor(holds));
 }
 
 /** When the unit after taking out ends, or null when the account did not take out within it. */
@@ -67,6 +73,7 @@ export function standingOf(input: StandingInput): Standing {
   if (!input.me) return { kind: "signed-out" };
   if (input.holds === undefined || input.link === undefined)
     return { kind: "checking" };
+  if (input.unreadable && !input.claimable) return { kind: "could-not-check" };
   const grace = holdsNow(input) ? null : graceEnd(input);
   if (!holdsNow(input) && grace === null) return { kind: "not-holding" };
   if (input.phoneUnsupported) return { kind: "phone-unsupported" };

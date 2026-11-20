@@ -32,6 +32,8 @@ export const world = {
   signedIn: true,
   standing: { kind: "write", graceEndsAt: null, renewBy: null } as Standing,
   stops: [] as RoomMute[],
+  /** How many times the room asked to read what the person holds again. */
+  retried: 0,
 };
 let counter = 0;
 export const nextId = () => (++counter).toString(16).padStart(64, "0");
@@ -44,6 +46,7 @@ export function reset() {
   world.signedIn = true;
   world.standing = { kind: "write", graceEndsAt: null, renewBy: null };
   world.stops = [];
+  world.retried = 0;
 }
 
 const has = (e: SignedEvent, name: string, values: unknown) =>
@@ -102,7 +105,13 @@ export const accountMock = {
 };
 
 export const standingMock = {
-  useRoomStanding: () => ({ standing: world.standing, mutes: world.stops }),
+  useRoomStanding: () => ({
+    standing: world.standing,
+    mutes: world.stops,
+    retry: () => {
+      world.retried += 1;
+    },
+  }),
 };
 
 /** A stored event. */

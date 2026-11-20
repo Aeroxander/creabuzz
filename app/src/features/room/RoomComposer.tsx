@@ -32,7 +32,7 @@ export function RoomComposer({
   autoFocus = false,
   lines = true,
 }: {
-  /** Where the unsent text is kept (per project for a post). Empty for an answer, whose text is kept in the box only. */
+  /** Where the unsent text is kept (per project for a post). For an answer it is the post's, so the words survive closing the box; empty keeps them in the box only. */
   draftKey: string;
   label: string;
   submit?: string;
@@ -53,6 +53,8 @@ export function RoomComposer({
   latest.current = { text, send };
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const retried = useRef(false);
+  // A post on its way: the keyboard and the button both wait for it (a held key must not post the same words again).
+  const inFlight = useRef(false);
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
@@ -66,12 +68,15 @@ export function RoomComposer({
   const attempt = async (automatic: boolean) => {
     const body = latest.current.text;
     if (!body.trim() || [...body.trim()].length > MAX_POST_CHARS) return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     setPending(true);
     try {
       await latest.current.send(body);
-      setText("");
+      // Words typed while the post was on its way are the person's: only what was sent is cleared.
+      if (latest.current.text === body) setText("");
       setRefusal(null);
       retried.current = false;
       toast("Posted", "done");
@@ -87,6 +92,7 @@ export function RoomComposer({
         timer.current = setTimeout(() => void attempt(true), RETRY_AFTER_MS);
       }
     } finally {
+      inFlight.current = false;
       setPending(false);
     }
   };
@@ -110,6 +116,7 @@ export function RoomComposer({
         onKeyDown={(e) => {
           if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
+            if (e.repeat) return;
             retried.current = false;
             void attempt(false);
           } else if (e.key === "Escape" && onCancel) {

@@ -54,6 +54,16 @@ describe("who is offered a place to write", () => {
     expect(of({ holds: null }).kind).toBe("not-holding");
   });
 
+  it("a balance that could not be read is said to be unknown, never 'not holding'", () => {
+    expect(of({ holds: null, unreadable: true }).kind).toBe("could-not-check");
+    // A grant with something to claim is known without the read.
+    expect(of({ holds: null, unreadable: true, claimable: true }).kind).toBe(
+      "write",
+    );
+    // Not signed in is still plain read-only.
+    expect(of({ me: null, unreadable: true }).kind).toBe("signed-out");
+  });
+
   it("a Team grant with something left to claim counts as holding; one with nothing left does not", () => {
     expect(of({ holds: { shares: 0n, team: 0n }, claimable: true }).kind).toBe(
       "write",

@@ -440,7 +440,7 @@ test("the team removes a post with a reason, stops a person writing by their wal
   await page.getByRole("button", { name: "Remove this post" }).tap();
   const sheet = page.getByTestId("remove-sheet");
   await sheet
-    .getByLabel("Say why. Everyone can see the reason.")
+    .getByLabel("Say why. The reason is kept in a public log.")
     .fill("Off topic");
   await expectAccessible(page, "the remove sheet");
   await sheet.getByRole("button", { name: "Remove" }).tap();

@@ -5,6 +5,11 @@
  */
 const KEY = "creaton.room.seen";
 
+/** What a room's "seen" is kept under: the account and the room, so one person looking never clears another's dot on a shared device. */
+export function seenKey(account: string | null, coordinate: string): string {
+  return `${account ?? ""}:${coordinate}`;
+}
+
 function readAll(): Record<string, number> {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(KEY) ?? "{}");

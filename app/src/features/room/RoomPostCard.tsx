@@ -4,13 +4,15 @@
  * More press only: the server would refuse the others, so they are not offered.
  */
 import { Heart, MessageCircle } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { nameOf, type ProfileMetadata } from "../../lib/profiles";
 import { cn } from "../../ui/cn";
+import { useToast } from "../../ui/toast";
 import { Byline, PostText } from "../posts/PostCard";
 import type { Engagement, SignedEvent } from "../posts/use-posts";
 import { type MenuChoice, PostMenu } from "./PostMenu";
 import { RoomComposer } from "./RoomComposer";
+import { LIKE_FAILED, roomRefusal } from "./room-words";
 
 /** What the viewer's tools in this room are, worked out once for the whole room. */
 export interface RoomTools {
@@ -53,6 +55,9 @@ export function RoomPostCard({
 }) {
   const name = nameOf(profiles, event.pubkey);
   const [replying, setReplying] = useState(false);
+  const toast = useToast();
+  // A like on its way: a second press waits for it (each like counts toward the room's hourly limit).
+  const liking = useRef(false);
   const liked = engagement.myVote === "+";
   const { me, founder, team } = tools;
   const mine = me === event.pubkey;
@@ -85,7 +90,21 @@ export function RoomPostCard({
             data-testid="room-like"
             // A like is kept once given; pressing it again changes nothing.
             onClick={() => {
-              if (!liked) void onLike(event).catch(() => undefined);
+              if (liked || liking.current) return;
+              liking.current = true;
+              onLike(event)
+                .catch((error: unknown) =>
+                  toast(
+                    roomRefusal(
+                      error instanceof Error ? error.message : String(error),
+                      LIKE_FAILED,
+                    ).words,
+                    "problem",
+                  ),
+                )
+                .finally(() => {
+                  liking.current = false;
+                });
             }}
             type="button"
           >
@@ -143,7 +162,7 @@ export function RoomPostCard({
       {replying ? (
         <RoomComposer
           autoFocus
-          draftKey=""
+          draftKey={`reply:${me ?? ""}:${event.id}`}
           label={`Reply to ${name}`}
           lines={false}
           onCancel={() => setReplying(false)}

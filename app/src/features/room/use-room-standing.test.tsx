@@ -43,12 +43,14 @@ const pot = {
   read: async () => "0x",
 };
 const balances = new Map<string, bigint>();
+const refuse = { read: false };
 let links: Record<string, TeamWallet> | undefined;
 
 vi.mock("../pot/use-pot", () => ({
   usePotWallet: () => ({
     ...pot,
     read: async (to: string, data: string) => {
+      if (refuse.read) throw new Error("the node refused the read");
       // balanceOf(address): the holder is the last word of the call.
       const holder = `0x${data.slice(-40)}`.toLowerCase();
       const value = balances.get(`${to.toLowerCase()}:${holder}`) ?? 0n;
@@ -93,6 +95,7 @@ const kind = (r: ReturnType<typeof standing>) => r.result.current.standing.kind;
 beforeEach(() => {
   reset();
   balances.clear();
+  refuse.read = false;
   localStorage.clear();
   pot.address = MINE;
   pot.onChain = true;
@@ -123,7 +126,7 @@ describe("what the room reads about a person", () => {
     await waitFor(() => expect(kind(r)).toBe("write"));
   });
 
-  it("reads the linked wallet even when the connected one holds nothing, and the most either holds", async () => {
+  it("reads the linked wallet even when the connected one holds nothing", async () => {
     pot.address = OTHER;
     links = {
       [world.me]: {
@@ -137,9 +140,41 @@ describe("what the room reads about a person", () => {
     await waitFor(() => expect(kind(r)).toBe("write"));
   });
 
-  it("cannot say when the wallet is on another network, and says so as not holding", async () => {
+  it("cannot say when the wallet is on another network, and says so (never as not holding)", async () => {
     give(numbers.contracts.shares, MINE, ROOM_MIN_SHARES);
     pot.onChain = false;
+    const r = standing();
+    await waitFor(() => expect(kind(r)).toBe("could-not-check"));
+  });
+
+  it("a balance read that fails says it could not check, never 'not holding', and the retry reads again", async () => {
+    give(numbers.contracts.shares, MINE, ROOM_MIN_SHARES * 5n);
+    refuse.read = true;
+    const r = standing();
+    await waitFor(() => expect(kind(r)).toBe("could-not-check"));
+    refuse.read = false;
+    r.result.current.retry();
+    await waitFor(() => expect(kind(r)).toBe("write"));
+  });
+
+  it("does not count a wallet the account is not linked to: Shares in the connected wallet only offer the confirm press", async () => {
+    pot.address = OTHER;
+    links = {
+      [world.me]: {
+        state: "linked",
+        address: MINE,
+        expires: NOW + 300 * 86_400,
+      },
+    };
+    give(numbers.contracts.shares, OTHER, ROOM_MIN_SHARES);
+    const r = standing();
+    await waitFor(() => expect(kind(r)).toBe("needs-link"));
+  });
+
+  it("the most either wallet holds no longer counts: the linked wallet alone decides when it holds", async () => {
+    pot.address = OTHER;
+    give(numbers.contracts.shares, MINE, ROOM_MIN_SHARES - 1n);
+    give(numbers.contracts.shares, OTHER, 0n);
     const r = standing();
     await waitFor(() => expect(kind(r)).toBe("not-holding"));
   });

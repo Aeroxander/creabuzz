@@ -282,7 +282,13 @@ export function parseNote(event: SignedEventLike): FeedNote | null {
   };
 }
 
-/** The text with the machine `nostr:naddr…` references removed for display. */
+/**
+ * The text with the machine `nostr:naddr…` references removed for display, and the characters that turn text around (the
+ * right-to-left overrides and isolates) taken out, so a post can never be made to read as something it is not.
+ */
 export function displayText(text: string): string {
-  return text.replace(/\n*nostr:naddr1[0-9a-z]+/g, "").trim();
+  return text
+    .replace(/\n*nostr:naddr1[0-9a-z]+/g, "")
+    .replace(/[\u202A-\u202E\u2066-\u2069]/g, "")
+    .trim();
 }

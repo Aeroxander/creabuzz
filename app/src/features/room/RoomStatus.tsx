@@ -11,6 +11,7 @@ import { ConfirmAccount } from "./ConfirmAccount";
 import type { Standing } from "./room-standing";
 import {
   CHECKING,
+  COULD_NOT_CHECK,
   leftText,
   linkEnded,
   linkEnding,
@@ -18,6 +19,7 @@ import {
   mutedLine,
   NEED_LINK,
   NO_PHONE_ROOMS,
+  TRY_AGAIN,
   tookOutLine,
 } from "./room-words";
 
@@ -38,11 +40,14 @@ export function RoomStatus({
   standing,
   numbers,
   now,
+  onRetry,
   children,
 }: {
   standing: Standing;
   numbers: ProjectNumbers | null;
   now: number;
+  /** Reads what the person backs again, offered when it could not be read. */
+  onRetry?: () => void;
   /** The composer, drawn when the person may write. */
   children: React.ReactNode;
 }) {
@@ -75,6 +80,26 @@ export function RoomStatus({
         </div>
       );
     }
+    case "could-not-check":
+      return (
+        <div className="flex flex-col gap-2" data-testid="room-could-not-check">
+          <p className="text-sm" role="status">
+            {COULD_NOT_CHECK}
+          </p>
+          {onRetry ? (
+            <div>
+              <Button
+                data-testid="room-retry"
+                onClick={onRetry}
+                size="sm"
+                variant="secondary"
+              >
+                {TRY_AGAIN}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      );
     case "phone-unsupported":
       return (
         <p className="text-sm" data-testid="room-phone-off">

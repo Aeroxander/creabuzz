@@ -26,6 +26,7 @@ import { ProjectCard } from "../home/ProjectCard";
 import { SenderChoice } from "../money/SenderChoice";
 import { NotificationsList } from "../notifications/NotificationsList";
 import { ProfileHead } from "../profile/ProfilePage";
+import { forgetRoomDrafts } from "../room/use-draft";
 import { useProjectsBy } from "../profile/use-own-projects";
 
 // What is planned, taken and finished on the projects this account holds, and what it is owed (the record only, no money call).
@@ -253,7 +254,32 @@ function EditProfileSheet({
   );
 }
 
+/** How long a sign-out waits for the server to forget the device before it goes on without it. */
+const STOP_ALERTS_WAIT_MS = 5_000;
+
+/**
+ * Turn this device's alerts off for the account that is leaving. It has to come first: the server's forgetting is a call
+ * the account signs, and the key is gone after sign-out. A browser that is no longer subscribed gets nothing more, so a
+ * shared phone is never left showing one person's news to the next. It never holds a sign-out up for long and never throws.
+ */
+async function stopAlertsBeforeSignOut(me: string | null): Promise<void> {
+  if (!me) return;
+  try {
+    const { alertsSavedBy, turnOff } = await import(
+      "../alerts/push/push-device"
+    );
+    if (!alertsSavedBy(me)) return;
+    await Promise.race([
+      turnOff(me),
+      new Promise((resolve) => setTimeout(resolve, STOP_ALERTS_WAIT_MS)),
+    ]);
+  } catch {
+    // Nothing more can be done here: the sign-out goes on.
+  }
+}
+
 function AccountTab() {
+  const { pubkey } = useAccount();
   const [showKey, setShowKey] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   return (
@@ -293,17 +319,20 @@ function AccountTab() {
           <Button
             data-testid="sign-out-confirm"
             onClick={() => {
-              clearPasskeySession();
-              if (hasPasskeyIdentity()) removePasskeyIdentity();
-              forgetIdentity();
-              try {
-                localStorage.removeItem(BACKED_UP_KEY);
-              } catch {
-                // Storage refused: there is nothing kept to remove.
-              }
-              // A full page load, as web/ does: it drops everything held in memory for this account (opened
-              // messages, notifications, follows), so nothing of it stays readable on a shared phone.
-              window.location.assign("/");
+              void stopAlertsBeforeSignOut(pubkey).then(() => {
+                clearPasskeySession();
+                if (hasPasskeyIdentity()) removePasskeyIdentity();
+                forgetIdentity();
+                forgetRoomDrafts();
+                try {
+                  localStorage.removeItem(BACKED_UP_KEY);
+                } catch {
+                  // Storage refused: there is nothing kept to remove.
+                }
+                // A full page load, as web/ does: it drops everything held in memory for this account (opened
+                // messages, notifications, follows), so nothing of it stays readable on a shared phone.
+                window.location.assign("/");
+              });
             }}
             variant="secondary"
           >

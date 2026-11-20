@@ -15,11 +15,16 @@ import {
   roomPost,
   world,
 } from "./room-harness";
-import { markRoomSeen } from "./room-seen";
+import { markRoomSeen, seenKey } from "./room-seen";
 
 vi.mock(
   "../../lib/relay",
   async () => (await import("./room-harness")).relayMock,
+);
+
+vi.mock(
+  "../../lib/account",
+  async () => (await import("./room-harness")).accountMock,
 );
 
 import { useRoomNews } from "./use-room-news";
@@ -79,12 +84,19 @@ describe("the New dot", () => {
     roomPost("2".repeat(64), "Hello", NOW - 100);
     const first = news(undefined);
     await waitFor(() => expect(first.result.current).toBe(true));
-    markRoomSeen(COORD, NOW - 100);
+    markRoomSeen(seenKey(world.me, COORD), NOW - 100);
     const second = news(undefined);
     await waitFor(() => expect(world.events).toHaveLength(1));
     // Let the read finish: still nothing new.
     await new Promise((r) => setTimeout(r, 30));
     expect(second.result.current).toBe(false);
+  });
+
+  it("is the account's own: another account looking at the room on the same device does not clear it", async () => {
+    roomPost("2".repeat(64), "Hello", NOW - 100);
+    markRoomSeen(seenKey("a".repeat(64), COORD), NOW - 100);
+    const mine = news(undefined);
+    await waitFor(() => expect(mine.result.current).toBe(true));
   });
 
   it("shows for a notice from the team too, and for nothing in an empty room", async () => {
@@ -93,7 +105,7 @@ describe("the New dot", () => {
     expect(quiet.result.current).toBe(false);
     const told = news(update(NOW - 50));
     await waitFor(() => expect(told.result.current).toBe(true));
-    markRoomSeen(COORD, NOW - 50);
+    markRoomSeen(seenKey(world.me, COORD), NOW - 50);
     const seen = news(update(NOW - 50));
     await new Promise((r) => setTimeout(r, 30));
     expect(seen.result.current).toBe(false);
@@ -104,7 +116,7 @@ describe("the New dot", () => {
     const off = news(undefined, false);
     await new Promise((r) => setTimeout(r, 30));
     expect(off.result.current).toBe(false);
-    markRoomSeen(COORD, NOW);
+    markRoomSeen(seenKey(world.me, COORD), NOW);
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("blocked");
     });

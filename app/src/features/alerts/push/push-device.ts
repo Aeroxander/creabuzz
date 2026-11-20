@@ -90,6 +90,11 @@ export async function readDeviceState(me: string): Promise<DeviceState> {
     : "off";
 }
 
+/** Whether this device's alerts were saved at the server by `me`. */
+export function alertsSavedBy(me: string): boolean {
+  return readSaved()?.account === me;
+}
+
 /** How turning alerts on ended. */
 export type TurnOnResult = "on" | "blocked" | "dismissed" | "failed";
 

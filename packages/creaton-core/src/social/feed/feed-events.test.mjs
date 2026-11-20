@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  displayText,
   buildPost,
   buildReply,
   buildVote,
@@ -70,16 +71,22 @@ test("a room reply and a room like carry the same two tags", () => {
 });
 
 test("a room reply never carries a second project tag from its root", () => {
-  const other = { ...root, tags: [...root.tags, ["a", `37001:${FOUNDER}:other`]] };
-  const reply = buildReply({ text: "Yes", root: other, parent: other, room: ROOM });
+  const other = {
+    ...root,
+    tags: [...root.tags, ["a", `37001:${FOUNDER}:other`]],
+  };
+  const reply = buildReply({
+    text: "Yes",
+    root: other,
+    parent: other,
+    room: ROOM,
+  });
   assert.equal(reply.tags.filter((t) => t[0] === "a").length, 1);
 });
 
 test("the room key must be a chain key", () => {
   assert.throws(() => roomTagValue("0xabc"));
-  assert.throws(() =>
-    buildPost({ text: "x", room: { ...ROOM, key: "room" } }),
-  );
+  assert.throws(() => buildPost({ text: "x", room: { ...ROOM, key: "room" } }));
 });
 
 test("the room of an event is read from its tag, and a topic never looks like it", () => {
@@ -88,4 +95,16 @@ test("the room of an event is read from its tag, and a topic never looks like it
   assert.equal(roomKeyOf({ tags: [["t", "room:nope"]] }), null);
   assert.equal(inAnyRoom({ tags: [["t", "room:nope"]] }), true);
   assert.equal(inAnyRoom({ tags: [["t", "lamps"]] }), false);
+});
+
+test("displayText takes out the machine references and the characters that turn text around, and keeps the words", () => {
+  assert.equal(displayText("Hello\n\nnostr:naddr1abc123"), "Hello");
+  assert.equal(
+    displayText("Say \u202Eevil\u202C and \u2066more\u2069"),
+    "Say evil and more",
+  );
+  assert.equal(
+    displayText("Plain words, naïve and مرحبا stay."),
+    "Plain words, naïve and مرحبا stay.",
+  );
 });

@@ -33,3 +33,15 @@ export function useDraft(key: string): [string, (text: string) => void] {
   );
   return [text, set];
 }
+
+/** Drops every unsent room post this tab kept, so the next person to sign in on it never sees the last one's words. */
+export function forgetRoomDrafts(): void {
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(PREFIX)) sessionStorage.removeItem(key);
+    }
+  } catch {
+    // No storage: nothing was kept.
+  }
+}
