@@ -238,6 +238,81 @@ and a half later, with nobody pressing: the full run, `scripts/pot-full-loop.sh 
 3. Press it. **Working:** "Season 1", "PROJECTS SHOWING WHAT THEY MADE", Beacon's card with "Open project", and "Being on this page is
    not advice and is not a promise."
 
+### 4.8 The holders' pause (a world made for it)
+
+The pause is **off unless the world is made with it**. Stop the world (Ctrl-C) and start it again with the switch in front of the
+same command: `WORLD_KIND=pause SERVE_HOST=<this computer's address> scripts/pot-full-loop.sh --serve` (the script runs the deploy
+script with `HOLDER_PAUSE=1`). Then do 4.1 to 4.3 again (Beacon, Abe, Bea, Cy) and come back here. Nothing below can be seen in a
+world made without the switch: the page then says nothing about a pause at all, and that is correct.
+
+1. **Fay, in 4.1, before she signs the launch:** the sheet "Launch Beacon" has the sentence "On this network holders can pause the
+   team's spending when a third of Shares are parked. You cannot turn this off for your project." (Said before she signs, because the
+   project is born with it for good.)
+2. **Cy, Money tab:** a card headed "Holders can pause the team's spending." says: "If a third of all backers' Shares are parked, the
+   team's daily allowance and new task plans pause one day later, for as long as that much stays parked. Parking does not move anyone's
+   money. You can take your money out any time.", then "None of backers' Shares are parked. A third is needed." with a meter, and
+   "More Shares joining can lower the parked share and end a pause." Under **Your Shares** there is the press **Park Shares**.
+3. **Cy presses "Park Shares".** **Working:** the sheet "Park Shares": "Parked Shares count toward pausing the team's spending. They
+   stay yours: take them back or take them out any day.", then (on a wallet) "Your wallet is asked twice: first to let the project hold
+   them, then to park." (on a phone with a passkey account: "In one press." and "Your passkey is asked once."), the choice "All of it",
+   "Half", "A quarter", and "You park 1,960 Shares. After this, 15.3% of backers' Shares are parked. At a third, the team's allowance
+   and new task plans pause one day later." (your numbers follow from what you backed with). Press "Park", sign twice. **Working:**
+   "Parked. You can take them back or take them out any time from Your Shares." and the line "1,960 of your 1,960 Shares are parked."
+   Your Shares still reads 1,960 Shares: **parked Shares are still yours**, and Take out still offers them.
+4. **Abe parks all of his, then Bea parks "A quarter" of hers.** After Bea's press the record needs up to a minute; reload the Money
+   tab. **Working:** "A third is parked. The team's allowance and new task plans pause on <a date and time> if it stays there." The
+   word "stopped" is not said yet. **Fay's Money tab, "The allowance":** "Holders have parked a third of all Shares. Your allowance and
+   new task plans pause on <the same time> if it stays there. Until then you can draw what the box holds." and "Draw from the box" still
+   works.
+5. **Move the clock past the day:** `cast rpc --rpc-url <the chain address> evm_increaseTime 87000`, wait two seconds, then up to a
+   minute for the server. **Working (Cy's card):** "Paused since <time>. The team cannot draw its allowance or plan new tasks while a
+   third stays parked. Tasks already planned go on. Everyone can still take their money out. It ends when <n> fewer Shares are
+   parked." **Fay's allowance card:** "Paused by holders since <time>. You cannot draw the allowance or plan a new task until fewer
+   than a third of Shares are parked. You can still check in, finish tasks already planned, grant Team Shares and hand over." and the
+   press "Draw from the box" is off, with that sentence as its description. In a plan's sheet the press is off with the same sentence.
+   (If a stale page lets a press through anyway, the chain refuses and the page says "The team's spending is paused by holders. Try
+   again when parked Shares fall below a third.")
+6. **Take back, one press:** Cy's Your Shares has **Take back**. Press it: no sheet opens, the line "Take back 1,960 Shares to your
+   wallet. Nothing is charged." appears with **Take back** and **Cancel**. Cancel sends nothing; Take back asks the wallet once.
+7. **Take out with Shares parked, one press:** Abe's Take out: the sheet says "You hold 980 Shares (980 parked).", "Taking out takes
+   your parked Shares back first, in the same press." and (on a wallet) "Your wallet is asked twice." Press the button once: his parked
+   Shares come back and are taken out. It works while the pause is on. **Working:** the parked share falls, and once it is under a
+   third the card says "<n>% of backers' Shares are parked. A third is needed." and Fay's "Draw from the box" is back (the server
+   needs up to a minute).
+
+**Not tried by anyone:** this on a real phone with a passkey account (the loop proves the one-press batch with a software passkey,
+`scripts/phone-loop.sh`); the same with real people over days; any real money. **Walked at 360 x 640** by the loop's journey
+(`scripts/pot-full-loop.sh pot-pause.spec`, checked for anything sticking out sideways and for the named parts being on the screen)
+in Chromium.
+
+### 4.9 The earlier backers' claim (a world made for it)
+
+Also **off unless the world is made with it**: `WORLD_KIND=earlier SERVE_HOST=<this computer's address> scripts/pot-full-loop.sh --serve`.
+The script makes an **invented** list of four rows from the chain's public accounts (no real person is in it, and nothing of it is
+kept after Ctrl-C), deploys with the six `EARLIER_*` settings, builds the app with the claim page's three settings and leaves the
+project "Project zero" on the chain. It prints a link `.../earlier-grant#...`: that is the link of account number 3's row (2,500
+Team Shares). Open it on the phone with the wallet on account 3.
+
+1. **Account 3:** **Working:** "Your grant: 2,500 Team Shares.", "They unlock evenly over 365 days counted from the day the project
+   began, with no waiting period at the start. The team cannot cancel or burn this grant: the contract has no call for it.", "Taking Team
+   Shares out pays only what the project holds above what backers put in. That can be nothing.", "The text you accept has the
+   fingerprint 0x....", "0 of 4 grants claimed." and the banner. The press "Accept the text and claim" is **off**.
+2. Tick "I have read the text with this fingerprint.": the press is still off ("Open the text first. The claim is offered once you have.").
+   Untick it, press **Read the text** (it opens the text in another tab: "An invented text for the test network ..."), tick the box again:
+   the press is on. Under it: "This records the fingerprint you name, from your account, on the network."
+3. Press it, sign once. **Working:** "Claimed. Your Team Shares unlock over time." The grant is then in the list of your Team Share
+   grants on the Project zero's Money tab, as a protected grant (it has no "give up" press): it counts from the project's birth, so
+   part of it may be unlocked at once.
+4. **A person with no row (account 6):** open the same link with account 6. **Working:** "This link is not for the account you are
+   using. Open it with the account it was made for." and no press. The link is a row's: it never shows another person's row, and
+   the page lists none.
+5. **Open the link again with account 3:** "This grant is already claimed. You can see it in Your Shares." and "1 of 4 grants claimed."
+6. **Without the settings:** the address `/earlier-grant` of any other world (and of the real app's own build) is the app's plain "not found".
+
+**Not tried by anyone:** the page on a real phone; counsel's text and words (the sentences about the text, the box and what the grant
+is are a provisional neutral placeholder in `app/src/features/earlier-grant/earlier-grant-consent.ts`); any real list. **Walked at
+360 x 640** by the loop's journey (`scripts/pot-full-loop.sh pot-earlier.spec`).
+
 ## 5. What cannot be tried without an `https` address
 
 A passkey, alerts when the app is closed, and the Copy and Share presses need a real certificate (the address of a test deployment:

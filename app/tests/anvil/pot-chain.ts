@@ -7,6 +7,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { encodeParameters } from "../../../packages/creaton-core/src/launchpad/evmAbi.ts";
+import { encodeCall } from "../../../packages/creaton-core/src/pot/abi-codec.ts";
+import { LAUNCHER_ABI } from "../../../packages/creaton-core/src/pot/abis.generated.ts";
 import {
   injectedWallet,
   type MoneyWallet,
@@ -32,6 +34,20 @@ export interface PotChain {
   launcher: string;
   /** The time unit in seconds (a multiple of 168 on a test chain). */
   unit: number;
+  /** The holder pause's code the Launcher gives every new project, when the deployment's switch was on. */
+  holderPause?: string;
+  /** The earlier backers' claim contract, when the deployment was given its settings. */
+  earlier?: string;
+}
+
+/** The earlier-grant settings of a deployment (`DeployPot.s.sol`'s six, as the contract takes them): invented rows only. */
+export interface EarlierSettings {
+  root: string;
+  textHash: string;
+  total: bigint;
+  rows: number;
+  /** `Launcher.keyOf(founder, projectId)` of project zero. */
+  key: string;
 }
 
 /** A sender as the app builds it for an account: the injected wallet, over anvil's own account. */
@@ -39,7 +55,11 @@ export const walletOf = (account: string): MoneyWallet =>
   injectedWallet(providerFor(account), { polls: 100, pollMs: 20 });
 
 /** Deploy the pot contracts from `admin`; `unit` seconds is the time unit (1,680 is 28 minutes). */
-export async function deployPot(admin: string, unit = 1680): Promise<PotChain> {
+export async function deployPot(
+  admin: string,
+  unit = 1680,
+  options: { pause?: boolean; earlier?: EarlierSettings } = {},
+): Promise<PotChain> {
   const deployFrom = async (
     name: string,
     types: Parameters<typeof encodeParameters>[0] = [],
@@ -61,5 +81,28 @@ export async function deployPot(admin: string, unit = 1680): Promise<PotChain> {
     ],
     [admin, [dollar, admin, 200n, BigInt(unit), 25_000_000n], parts],
   );
-  return { dollar, parts, launcher, unit };
+  const chain: PotChain = { dollar, parts, launcher, unit };
+  // The two switches of step 4, as `DeployPot.s.sol` does them: each deployed and bound before any project is launched.
+  if (options.pause) {
+    chain.holderPause = await deployFrom("HolderPause");
+    await send(
+      admin,
+      launcher,
+      encodeCall(LAUNCHER_ABI, "bindPause", [chain.holderPause]),
+    );
+  }
+  if (options.earlier) {
+    const e = options.earlier;
+    chain.earlier = await deployFrom(
+      "EarlierGrants",
+      ["address", "bytes32", "bytes32", "uint256", "uint32", "bytes32"],
+      [launcher, e.root, e.textHash, e.total, BigInt(e.rows), e.key],
+    );
+    await send(
+      admin,
+      launcher,
+      encodeCall(LAUNCHER_ABI, "bindEarlier", [chain.earlier]),
+    );
+  }
+  return chain;
 }

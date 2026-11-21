@@ -1,4 +1,5 @@
-import { writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { test } from "@playwright/test";
 import {
@@ -43,15 +44,31 @@ test.skip(
 test("leave a demo project for a person to try", async () => {
   const w = await worldOnThisChain();
   const stopMiner = startMiner();
-  const key = generateSecretKey();
+  // In the earlier-backers world the project is "Project zero", signed by the key that world's list was made for (a throwaway made
+  // from a public string, worth nothing): the claim contract was bound to that project's key at deploy.
+  const earlier =
+    process.env.POT_WORLD_KIND === "earlier" && process.env.POT_EARLIER_FILE
+      ? (JSON.parse(readFileSync(process.env.POT_EARLIER_FILE, "utf8")) as {
+          links: { index: number; fragment: string }[];
+        })
+      : null;
+  const key = earlier
+    ? createHash("sha256").update("creaton earlier-grant test world").digest()
+    : generateSecretKey();
   const pub = getPublicKey(key);
-  const id = "lantern";
+  const id = earlier ? "zero" : "lantern";
   const now = Math.floor(Date.now() / 1000);
-  const draft = {
-    name: "Lantern",
-    goal: "Solar lamps that ten night-market stalls use.",
-    how: "Ten stalls light up with them.",
-  };
+  const draft = earlier
+    ? {
+        name: "Project zero",
+        goal: "A first project, older than this network.",
+        how: "Its earlier backers are listed.",
+      }
+    : {
+        name: "Lantern",
+        goal: "Solar lamps that ten night-market stalls use.",
+        how: "Ten stalls light up with them.",
+      };
   const record = projectRecordTemplate(id, draft, now);
   await publishSigned(
     finalizeEvent(
@@ -132,7 +149,11 @@ test("leave a demo project for a person to try", async () => {
   ok("a task is planned on the chain and the server shows it");
   writeFileSync(
     resolve(RUN.stateDir, "serve.json"),
-    JSON.stringify({ link: `/p/${id}-${pub.slice(0, 16)}`, key: project.key }),
+    JSON.stringify({
+      link: `/p/${id}-${pub.slice(0, 16)}`,
+      key: project.key,
+      ...(earlier ? { earlierLinks: earlier.links } : {}),
+    }),
   );
   stopMiner();
 });

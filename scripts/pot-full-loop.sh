@@ -34,6 +34,19 @@
 #                 planned, and the stand-in receives the message the device decrypts; the real service worker shows its fixed sentence
 #                 for the same kind of news as the in-app alert; after Turn off the next task reaches nobody.
 #
+# Step 4's journeys (app/tests/e2e-pot-full/pot-pause.spec.ts and pot-earlier.spec.ts), each in a world of its own, deployed with
+# the settings step 4 adds (both are off in every other world, as in a default deployment):
+#   pot-pause     the deploy script is run with HOLDER_PAUSE=1: a founder launches in the app (and is told, before signing, that holders
+#                 can pause the team's spending); two holders park their Shares in the app until the line is passed; the chain's clock
+#                 moves past the warning day; the team's Draw is off and a plan is refused in the app's own words; a holder who has
+#                 Shares parked takes out in one press (un-park, then leave); the pause ends and the team's Draw is back; the record
+#                 equals the contracts' own views at each step (scripts/chain-loop-pot-check.py);
+#   pot-earlier   the deploy script is run with the six EARLIER_* settings for an INVENTED list (made here by
+#                 scripts/pot-earlier-list.mjs from anvil's public accounts; no list is kept anywhere) and the app is built with the
+#                 claim page's three settings: a listed account opens its own link and claims in two presses plus reading the text,
+#                 the Team Shares and the acceptance are on the chain and in the record, an account with no row is refused (in the app
+#                 and by the contract), and the same row is refused a second time.
+#
 # Prints one `ok` line per check from the journey and, at the end, "pot-full-loop: N checks passed." Stops everything it started
 # (anvil, the relay, a Redis or Postgres it had to start), drops its scratch database and removes its temporary files, whatever
 # the outcome. Never runs cargo: the relay must already be built (`cargo build -p buzz-relay`).
@@ -45,7 +58,7 @@
 # Linux and macOS (`timeout` and `hostname -I` are not needed). Uses anvil's well-known development accounts only; every amount
 # is play money.
 #
-# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all five journeys, each in a world of its own;
+# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all seven journeys, each in a world of its own;
 #                                                          with arguments (a file name such as pot-tasks.spec, a --grep): one world, those only
 #         scripts/pot-full-loop.sh --serve       the same world, left running for a person to try on a phone (see below)
 #         scripts/pot-full-loop.sh --hold        one world, left running for an engineer: it writes the environment a journey needs to
@@ -80,7 +93,11 @@ HOLD=""
 if [[ "${1:-}" == "--serve" ]]; then SERVE=1; shift; fi
 if [[ "${1:-}" == "--hold" ]]; then HOLD=1; shift; fi
 # With a journey named on the command line, the push world is the one that has the stand-in.
-for arg in "$@"; do [[ "$arg" == *pot-push* ]] && WORLD_PUSH=1; done
+for arg in "$@"; do
+  [[ "$arg" == *pot-push* ]] && WORLD_PUSH=1
+  [[ "$arg" == *pot-pause* ]] && WORLD_KIND=pause
+  [[ "$arg" == *pot-earlier* ]] && WORLD_KIND=earlier
+done
 [[ -n "${HOLD_PUSH:-}" ]] && WORLD_PUSH=1
 
 [[ -n "${FOUNDRY_BIN:-}" ]] && PATH="$FOUNDRY_BIN:$PATH"
@@ -133,6 +150,9 @@ ANVIL_PID=""
 STANDIN_PID=""
 STANDIN_URL=""
 WORLD_PUSH="${WORLD_PUSH:-}"
+# What the deployment of a world is given: "default" (neither of step 4's switches), "pause" (HOLDER_PAUSE=1) or "earlier" (the six
+# EARLIER_* settings for an invented list, and an app built with the claim page's three settings).
+WORLD_KIND="${WORLD_KIND:-default}"
 # The operator's key when the person gave one: kept out of every file and every line this script prints.
 GIVEN_OPERATOR_KEY="${OPERATOR_KEY:-}"
 unset OPERATOR_KEY
@@ -254,8 +274,31 @@ world_up() {
   MNEMONIC="test test test test test test test test test test test junk"
   K_DEPLOYER="$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index 0)"
   K_HELPER="$(cast wallet private-key --mnemonic "$MNEMONIC" --mnemonic-index 7)"
-  step "deploying contracts/pot with its own deploy script (a real week as the time unit)"
-  (cd "$POT" && forge script script/DeployPot.s.sol --rpc-url "$RPC" --broadcast --private-key "$K_DEPLOYER" >"$STATE/deploy.log" 2>&1) \
+  DEPLOY_ENV=()
+  EARLIER_FILE="$STATE/earlier-world.json"
+  rm -f "$EARLIER_FILE"
+  if [[ "$WORLD_KIND" == "pause" ]]; then
+    DEPLOY_ENV=(HOLDER_PAUSE=1)
+  elif [[ "$WORLD_KIND" == "earlier" ]]; then
+    # An INVENTED list: anvil's public accounts and amounts chosen here, a throwaway Nostr key made from a public string (it is worth
+    # nothing and is made again by the journey the same way), and a text of a few made-up words. Nothing real, nothing kept.
+    NOSTR_PUB="$(cd app && node --input-type=module -e "import {getPublicKey} from 'nostr-tools/pure'; import {createHash} from 'node:crypto'; console.log(getPublicKey(createHash('sha256').update('creaton earlier-grant test world').digest()))")" \
+      || fail "could not derive the earlier world's project key"
+    addr_of() { cast wallet address --mnemonic "$MNEMONIC" --mnemonic-index "$1" | tr 'A-F' 'a-f'; }
+    FOUNDER_ADDR="$(addr_of 1)"
+    node --experimental-strip-types scripts/pot-earlier-list.mjs --founder "$FOUNDER_ADDR" --nostr-pub "$NOSTR_PUB" --label zero \
+      --row "$(addr_of 4):1000" --row "$(addr_of 3):2500" --row "0x$(printf '22%.0s' {1..20}):40" --row "0x$(printf '33%.0s' {1..20}):12" \
+      >"$EARLIER_FILE" 2>"$STATE/earlier-list.log" || { cat "$STATE/earlier-list.log" >&2; fail "could not make the invented list"; }
+    printf 'An invented text for the test network. It is not a real text, and nobody wrote it for counsel.\n' >"$STATE/earlier-text.txt"
+    EARLIER_TEXT_HASH="$(cast keccak "$(cat "$STATE/earlier-text.txt")")"
+    DEPLOY_ENV=(
+      EARLIER_ROOT="$(jq -r .root "$EARLIER_FILE")" EARLIER_TEXT_HASH="$EARLIER_TEXT_HASH"
+      EARLIER_TOTAL="$(jq -r .total "$EARLIER_FILE")" EARLIER_ROWS="$(jq -r .rows "$EARLIER_FILE")"
+      EARLIER_FOUNDER="$FOUNDER_ADDR" EARLIER_PROJECT_ID="$(jq -r .projectId "$EARLIER_FILE")"
+    )
+  fi
+  step "deploying contracts/pot with its own deploy script (a real week as the time unit; world kind: $WORLD_KIND)"
+  (cd "$POT" && env ${DEPLOY_ENV[@]+"${DEPLOY_ENV[@]}"} forge script script/DeployPot.s.sol --rpc-url "$RPC" --broadcast --private-key "$K_DEPLOYER" >"$STATE/deploy.log" 2>&1) \
     || { tail -20 "$STATE/deploy.log" >&2; fail "the deploy script failed"; }
   # The file is shared by every run on this machine and is git-ignored: take our copy at once and read only that.
   cp "$POT/deployments/pot-31337.json" "$STATE/deployments.json" || fail "the deploy script wrote no deployments file"
@@ -264,23 +307,37 @@ world_up() {
   START_BLOCK="$(cast block-number --rpc-url "$RPC")"
   [[ "$(cast code --rpc-url "$RPC" "$LAUNCHER" | wc -c)" -gt 10 ]] || fail "no code at the Launcher $LAUNCHER"
   step "play dollar $USD, Launcher $LAUNCHER (block $START_BLOCK)"
+  if [[ "$WORLD_KIND" == "pause" ]]; then
+    [[ "$(jq -r .holderPause "$STATE/deployments.json")" != "0x0000000000000000000000000000000000000000" ]] || fail "HOLDER_PAUSE=1 gave no holder pause"
+  fi
+  PORT="$(free_port)"; HEALTH="$(free_port)"; METRICS="$(free_port)"
 
-  # ── the app, built for this chain: once, and again only if a later world's contracts landed elsewhere ─────────────────
-  if [[ "$BUILT_FOR" != "$LAUNCHER" ]]; then
+  # ── the app, built for this chain: once, and again only if a later world's contracts landed elsewhere (or the claim page's settings
+  # differ: the earlier world's build carries them, every other build has no such page) ─────────────────────────────────────────────
+  BUILD_ENV=()
+  BUILD_KEY="$LAUNCHER"
+  if [[ "$WORLD_KIND" == "earlier" ]]; then
+    EARLIER_ADDR="$(jq -r .earlierGrants "$STATE/deployments.json" | tr 'A-F' 'a-f')"
+    [[ "$EARLIER_ADDR" != "0x0000000000000000000000000000000000000000" ]] || fail "the earlier settings gave no claim contract"
+    BUILD_ENV=(VITE_CREATON_EARLIER_CONTRACT="$EARLIER_ADDR" VITE_CREATON_EARLIER_TEXT_HASH="$EARLIER_TEXT_HASH"
+      VITE_CREATON_EARLIER_TEXT_URL="http://$PUBLIC_HOST:$PORT/assets/earlier-text.txt")
+    BUILD_KEY="$LAUNCHER:$EARLIER_ADDR:$PORT"
+  fi
+  if [[ "$BUILT_FOR" != "$BUILD_KEY" ]]; then
     step "building the app for this chain into a temporary folder"
-    ( cd app && CREATON_DEPLOYMENTS_FILE="$STATE/deployments.json" VITE_CREATON_RPC_URL="$PUBLIC_RPC" \
+    ( cd app && env ${BUILD_ENV[@]+"${BUILD_ENV[@]}"} CREATON_DEPLOYMENTS_FILE="$STATE/deployments.json" VITE_CREATON_RPC_URL="$PUBLIC_RPC" \
         pnpm exec vite build --outDir "$APP_DIST" --emptyOutDir >"$STATE/app-build.log" 2>&1 ) \
       || { tail -30 "$STATE/app-build.log" >&2; fail "app build failed"; }
     [[ -f "$APP_DIST/index.html" ]] || fail "the app build has no index.html"
     grep -rqi "$LAUNCHER" "$APP_DIST/assets" || fail "the app build does not name the Launcher $LAUNCHER"
-    BUILT_FOR="$LAUNCHER"
+    BUILT_FOR="$BUILD_KEY"
   fi
+  [[ "$WORLD_KIND" == "earlier" ]] && cp "$STATE/earlier-text.txt" "$APP_DIST/assets/earlier-text.txt"
 
   # ── the relay: the chain reader and its helper on, serving the app ────────────────────────────────────────────────────
   psql "$ADMIN_URL" -qc "create database $DB" || fail "could not create the scratch database"
   DB_MADE=1
   [[ -x "$STATE/buzz-relay" ]] || ln "$RELAY_BIN" "$STATE/buzz-relay" 2>/dev/null || cp "$RELAY_BIN" "$STATE/buzz-relay" || fail "could not take a copy of $RELAY_BIN"
-  PORT="$(free_port)"; HEALTH="$(free_port)"; METRICS="$(free_port)"
   BASE="http://localhost:$PORT"
   PUBLIC_BASE="http://$PUBLIC_HOST:$PORT"
   # The platform's operator: the key in OPERATOR_KEY when the person gave one (read from the environment, never printed or written
@@ -343,6 +400,9 @@ world_up() {
     [[ -n "$public" ]] || fail "the relay does not carry a push key in its information"
     curl -fsS -X POST -d "{\"publicKey\":\"$public\"}" "$STANDIN_URL/_vapid" >/dev/null || fail "could not give the stand-in the operator's public key"
   fi
+  if [[ "$WORLD_KIND" == "earlier" ]]; then
+    curl -fsS -m 5 "$BASE/assets/earlier-text.txt" | cmp -s - "$STATE/earlier-text.txt" || fail "the server does not serve the earlier world's text at $BASE/assets/earlier-text.txt"
+  fi
   curl -fsS -m 5 -H 'Accept: text/html' "$BASE/welcome" >"$STATE/page.html" 2>&1 || true
   grep -q '<div id="root"' "$STATE/page.html" || fail "the relay does not serve the app's page"
 }
@@ -372,10 +432,23 @@ if [[ -n "$SERVE" ]]; then
   step "leaving a project on the chain for you to try"
   ( cd app && env BUZZ_REAL_RELAY_URL="$PUBLIC_BASE" POT_RPC_URL="$RPC" POT_DEPLOYMENTS_FILE="$STATE/deployments.json" \
       POT_STATE_DIR="$STATE" POT_CHECKS_FILE="$CHECKS_FILE" POT_REPO_ROOT="$REPO_ROOT" POT_DB_URL="$DB_URL" POT_SERVE=1 \
+      POT_WORLD_KIND="$WORLD_KIND" ${EARLIER_FILE:+POT_EARLIER_FILE="$EARLIER_FILE"} \
       "$BOUNDED" 300 node_modules/.bin/playwright test --config=playwright.pot-full.config.ts --reporter=line --trace off seed ) \
     || { tail -20 "$STATE/relay.log" >&2; fail "could not leave a project on the chain"; }
   LINK="$(jq -r .link "$STATE/serve.json")"
   [[ -n "${HOLD_ENV:-}" ]] && write_world_env "$HOLD_ENV"
+  STEP4_NOTE=""
+  if [[ "$WORLD_KIND" == "pause" ]]; then
+    STEP4_NOTE="  This world was deployed with HOLDER_PAUSE=1: the project has the holders' pause. The steps are in TRY-IT.md, part 4.8.
+"
+  elif [[ "$WORLD_KIND" == "earlier" ]]; then
+    EARLIER_LINK="$(jq -r '.earlierLinks[]? | select(.index == 1) | .fragment' "$STATE/serve.json")"
+    STEP4_NOTE="  This world was deployed with an invented earlier-backers list. The project is \"Project zero\". Open this on the phone with the
+  wallet account number 3 (the row's account); the page then shows its grant (TRY-IT.md, part 4.9):
+      $PUBLIC_BASE/earlier-grant$EARLIER_LINK
+
+"
+  fi
   # What starts a season: with a key given in OPERATOR_KEY the command names that variable (the key is never printed); with a key
   # made for this run (a throwaway: it only exists in this world) the ready-made command carries it.
   if [[ -n "$GIVEN_OPERATOR_KEY" ]]; then
@@ -413,7 +486,7 @@ The page is plain http on this network, so a passkey, alerts away from the app a
       BUZZ_RELAY_URL=$PUBLIC_BASE BUZZ_PRIVATE_KEY=$SEASON_KEY_WORDS $BUZZ_BIN launchpad seasons start --number 1
   $SEASON_KEY_NOTE
 
-${PUSH_NOTE}  The numbered steps, with what working looks like, are in docs/next-version/TRY-IT.md.
+${PUSH_NOTE}${STEP4_NOTE}  The numbered steps, with what working looks like, are in docs/next-version/TRY-IT.md.
 
 EOF
   while kill -0 "$RELAY_PID" 2>/dev/null && kill -0 "$ANVIL_PID" 2>/dev/null; do sleep 2; done
@@ -430,6 +503,7 @@ run_journey() {
       POT_STATE_DIR="$STATE" POT_CHECKS_FILE="$CHECKS_FILE" POT_REPO_ROOT="$REPO_ROOT" POT_DB_URL="$DB_URL" \
       POT_HELPER_ADDRESS="$(cast wallet address --private-key "$K_HELPER" | tr 'A-F' 'a-f')" \
       POT_OPERATOR_KEY="$OPERATOR_KEY" POT_BUZZ_BIN="$REPO_ROOT/$BUZZ_BIN" POT_STANDIN_URL="$STANDIN_URL" \
+      POT_WORLD_KIND="$WORLD_KIND" ${EARLIER_FILE:+POT_EARLIER_FILE="$EARLIER_FILE"} \
       ${SHOTS_DIR:+POT_SHOTS_DIR="$SHOTS_DIR"} \
       "$BOUNDED" "$RUN_TIMEOUT" node_modules/.bin/playwright test --config=playwright.pot-full.config.ts \
       --reporter=list --trace off "$@" )
@@ -466,11 +540,14 @@ elif [[ $# -gt 0 ]]; then
   run_journey "$@"
   world_down
 else
-  # Step 1's journey, step 2's task queue and step 3's three, each in a world of its own (the chain's clock is moved by days in
+  # Step 1's journey, step 2's task queue, step 3's three and step 4's two, each in a world of its own (the chain's clock is moved by days in
   # most of them, and a world that is days ahead of the server's clock cannot be reused). Only the push world has a stand-in.
-  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-seasons.spec pot-push.spec; do
+  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-seasons.spec pot-push.spec pot-pause.spec pot-earlier.spec; do
     WORLD_PUSH=""
+    WORLD_KIND=default
     [[ "$journey" == pot-push.spec ]] && WORLD_PUSH=1
+    [[ "$journey" == pot-pause.spec ]] && WORLD_KIND=pause
+    [[ "$journey" == pot-earlier.spec ]] && WORLD_KIND=earlier
     world_up
     run_journey "$journey"
     world_down

@@ -57,6 +57,24 @@ forge script script/DeployPot.s.sol --rpc-url sepolia --broadcast --account <you
 - The block the Launcher was deployed at is the lowest `blockNumber` in the broadcast file (hex; `cast to-dec <it>`). You need it
   in step 4.
 
+### 2b. Step 4's two switches (both off by default)
+
+The same script has two switches added in step 4. **Leave both alone and nothing about a deployment changes**: no holder pause, no
+claim contract, every earlier test and screen exactly as before. A switch cannot be turned on later for a deployment that is
+running (a project is born with the pause or without it for good), so set what you want before the first project is launched.
+
+| Setting | Default | What it does |
+|---|---|---|
+| `HOLDER_PAUSE` | `0` (off) | `1` also deploys the holder pause and binds it to the Launcher, so every project launched from then on has it. Holders park Shares; when parked Shares reach a third of the Shares backers hold, the team's draws from the allowance box and new task plans pause from one warning day later, for as long as a third stays parked. It never pays anyone, never moves money, and never stops or slows Take out. The founder is told so on the launch sheet, and it cannot be turned off for a project. The script prints the pause code's hash: publish it with your terms. |
+| `EARLIER_ROOT`, `EARLIER_TEXT_HASH`, `EARLIER_TOTAL`, `EARLIER_ROWS`, `EARLIER_FOUNDER`, `EARLIER_PROJECT_ID` | none of the six set (nothing is claimable) | **All six or none** (one set without the rest stops the script). They deploy the earlier backers' claim contract and bind it to the Launcher before any project can be launched; the project named by `EARLIER_FOUNDER` and `EARLIER_PROJECT_ID` (project zero) is born with a reserve of Team Shares for the list. `EARLIER_ROOT` is the list's one fingerprint (a Merkle root over rows of account and amount: the rows are never written down by this repository or the server), `EARLIER_TEXT_HASH` the fingerprint of the text a claimant accepts in the same call, `EARLIER_TOTAL` the pool in Team Share wei (the sum of the rows), `EARLIER_ROWS` the number of rows. The text, the consent words, the list and the pool's size are counsel's and the owner's: none is decided here. |
+| `EARLIER_ALLOW_LARGE` | `0` | A pool above the founder's own Team pool limit (100,000,000 Shares) is refused unless this is `1`. The pool dilutes backers (and keeps diluting them after a wind-down: unclaimed rows never expire), so set it on purpose. |
+
+The server needs **no setting** for either: it finds the pause and the claim contract from the Launcher's own events and writes
+what it reads into the signed numbers (null where a project has neither). To check: `cast call <Launcher> "holderPauseImpl()(address)"`
+is not the zero address with the first switch on; `cast call <Launcher> "earlier()(address)"` is not the zero address with the second.
+`scripts/pot-full-loop.sh pot-pause.spec` and `scripts/pot-full-loop.sh pot-earlier.spec` run each on a local chain end to end, the
+second with an invented list made by `scripts/pot-earlier-list.mjs`.
+
 ## 3. Make the server's secrets, once
 
 Follow `deploy/compose/README.md`, "First start", steps 1 to 3 (the host name in each setting) and step 2 (the secrets). They
@@ -137,6 +155,7 @@ These are read **when the app is built** and are public in the page. In `.env`:
 | `CREATON_DEPLOYMENTS_FILE` | Path from `deploy/compose` to the file from step 2, for example `../../contracts/pot/deployments/pot-11155111.json`. `run.sh` takes the three values below from it. |
 | `VITE_CREATON_CHAIN_ID`, `VITE_CREATON_LAUNCHER`, `VITE_CREATON_DOLLAR` | The chain, the Launcher and the play dollar. Set by hand instead of the file, or to override it (a value set by hand wins). The build refuses one of the first two without the other. |
 | `VITE_CREATON_RPC_URL` | The page's node ("What you need before you start"): called from every visitor's browser, so it must be a read-only node with a request limit. `run.sh build` asks it which network it is on and whether the Launcher has code, and stops if not. |
+| `VITE_CREATON_EARLIER_CONTRACT`, `VITE_CREATON_EARLIER_TEXT_HASH`, `VITE_CREATON_EARLIER_TEXT_URL` | The earlier backers' claim page (step 2b): the claim contract's address, the same text fingerprint the deploy was given, and an http or https address where a person can read that text (no name or password in it). **All three, or the page does not exist**: without them `/earlier-grant` is a plain "not found" and none of its code loads. A person is sent their own link, `<app>/earlier-grant#<their row>`, by whoever holds the list; the part after the `#` is never sent to any server. |
 | `VITE_CREATON_PASSKEY_ACCOUNT=1`, `VITE_CREATON_BUNDLER_URL`, `VITE_CREATON_SPONSOR_URL` | Phone accounts (step 7). The switch needs the chain, the page's node and the bundler. The sponsor address is optional (the fee is then asked at the bundler). |
 
 With none of these the app is built with no network and shows no money screens, whatever the server says.

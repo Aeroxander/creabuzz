@@ -589,6 +589,8 @@ export async function startAndLaunch(
   name: string,
   goal = "A shared repair shop for night-market stalls.",
   how = "Ten stalls bring their tools and share them.",
+  /** Run once the launch sheet is open and before the founder signs: what a journey reads on it. */
+  onLaunchSheet?: (page: Page) => Promise<void>,
 ): Promise<StartedProject> {
   await founder.goto("/start");
   await founder.getByTestId("start-name").fill(name);
@@ -606,6 +608,7 @@ export async function startAndLaunch(
   });
   await founder.getByTestId("launch-open").click();
   await expect(founder.getByTestId("launch-sheet")).toBeVisible();
+  if (onLaunchSheet) await onLaunchSheet(founder);
   await founder.getByTestId("sheet-confirm").click();
   await expect(founder.getByTestId("launch-sheet")).toBeHidden({
     timeout: 30_000,
@@ -678,4 +681,34 @@ export function dbCount(sql: string): number {
   if (out.status !== 0)
     throw new Error(`could not read the server's database: ${out.stderr}`);
   return Number(out.stdout.trim());
+}
+
+/**
+ * The screen as it is now, at the narrowest phone this app holds (360 x 640): nothing sticks out sideways (the page, and an open
+ * sheet inside it), and each of `ids` is on the screen. The page goes back to the journey's own size afterwards.
+ */
+export async function atNarrowPhone(
+  page: Page,
+  what: string,
+  ids: string[],
+): Promise<void> {
+  const before = page.viewportSize();
+  await page.setViewportSize({ width: 360, height: 640 });
+  // Let the layout settle (text wraps again at the new width).
+  await page.waitForTimeout(300);
+  const sideways = await page.evaluate(() => {
+    const widest = (el: Element | null) =>
+      el ? el.scrollWidth - el.clientWidth : 0;
+    return {
+      page: document.documentElement.scrollWidth - window.innerWidth,
+      sheet: widest(document.querySelector("[role='dialog']")),
+    };
+  });
+  check(
+    sideways.page <= 0 && sideways.sheet <= 0,
+    `${what}: nothing sticks out sideways at 360 px`,
+  );
+  for (const id of ids) await expect(page.getByTestId(id)).toBeVisible();
+  ok(`${what}: ${ids.join(", ")} are on the screen at 360 px`);
+  if (before) await page.setViewportSize(before);
 }
