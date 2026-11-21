@@ -18,7 +18,7 @@ export function lineWords(divisor: number): string {
 }
 
 /** The line's words at the start of a sentence: "A third", "1 in 5". */
-export function lineWordsCap(divisor: number): string {
+function lineWordsCap(divisor: number): string {
   const text = lineWords(divisor);
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
@@ -61,7 +61,7 @@ export function parkedPercent(
 }
 
 /** The sentence "{x} of backers' Shares are parked." with `x` as above. */
-export function parkedOfBackers(
+function parkedOfBackers(
   parked: bigint,
   backers: bigint,
   divisor: number,
@@ -74,7 +74,7 @@ export function parkedOfBackers(
 }
 
 /** "{n} Shares" for a whole number of Shares rounded up, so a part of a Share is never said as none. */
-export function sharesCeil(raw: bigint): string {
+function sharesCeil(raw: bigint): string {
   return sharesWords(((raw + SHARE - 1n) / SHARE) * SHARE);
 }
 
@@ -139,11 +139,6 @@ export function meterText(
     : `${x.startsWith("just") ? x : `${x} parked`}, ${lineWords(divisor)} needed`;
 }
 
-/** What a person with Shares parked reads in the card. */
-export function youParked(parked: bigint): string {
-  return `You have ${sharesWords(parked)} Shares parked.`;
-}
-
 // --- Your Shares ---------------------------------------------------------------------------------------------------------------
 
 export function parkedLine(parked: bigint, total: bigint): string {
@@ -180,8 +175,6 @@ export const PARK_DONE =
 export const PARK_CANNOT_READ =
   "The stop could not be read right now, so nothing can be parked. Your Shares and your Take out are not affected. Try again in a moment.";
 export const PARK_NONE = "You hold no Shares in your wallet to park.";
-export const PARK_FAILED =
-  "The network did not take it. Nothing moved. Try again.";
 
 export function parkSummary(input: {
   n: bigint;

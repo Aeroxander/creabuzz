@@ -38,7 +38,7 @@ export function claimedCount(claimed: number, rows: number): string {
 }
 
 /** The fingerprint cut for reading: "0xc82128c7…7e5f". */
-export function shortHash(hash: string): string {
+function shortHash(hash: string): string {
   return `${hash.slice(0, 10)}…${hash.slice(-4)}`;
 }
 

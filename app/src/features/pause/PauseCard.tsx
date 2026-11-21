@@ -19,7 +19,7 @@ import {
 } from "./pause-words";
 
 /** Whether the card shows (and not just the info line): something is parked, the line is reached, or the person holds Shares. */
-export function showsCard(pause: PauseNumbers, holds: boolean): boolean {
+function showsCard(pause: PauseNumbers, holds: boolean): boolean {
   return (
     pause.parkedTotal > 0n || pause.armedAt !== null || pause.paused || holds
   );

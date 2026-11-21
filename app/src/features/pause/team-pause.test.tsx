@@ -2,7 +2,7 @@
 // disabled Draw with that sentence as its description, the chain's own answer over an older record, one line for the helpers,
 // and nothing at all for a project with no pause.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SERVER, wrap } from "../../../tests/helpers/money-harness";
@@ -25,6 +25,8 @@ import {
 import type { ProjectNumbers } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { AllowanceSection } from "../pot/AllowanceSection";
+import { AllowanceSheets } from "../pot/AllowanceSheets";
+import { injectedWallet } from "../money/wallet";
 import { AgentCaps } from "../tasks/AgentCaps";
 
 vi.mock(
@@ -171,6 +173,46 @@ describe("the allowance card while the pause is on", () => {
     expect(
       (screen.getByTestId("allowance-draw") as HTMLButtonElement).disabled,
     ).toBe(false);
+  });
+});
+
+describe("Draw's own sheet", () => {
+  it("is blocked, with the team's sentence in it, when the chain says paused although the page was drawn before the pause began", async () => {
+    const numbers = armed();
+    setup(numbers, {
+      parked: 200_000n * S,
+      paused: true,
+      armedAt: numbers.pause?.armedAt ?? 0,
+    });
+    const wallet = injectedWallet();
+    wrap(
+      <AllowanceSheets
+        now={NOW}
+        numbers={numbers}
+        onClose={() => undefined}
+        ready={{
+          address: FOUNDER_EVM,
+          read: (to, data) => wallet.readCall(to, data),
+          wallet,
+        }}
+        sheet="draw"
+      />,
+    );
+    fireEvent.change(await screen.findByTestId("draw-to"), {
+      target: { value: `0x${"cd".repeat(20)}` },
+    });
+    fireEvent.change(screen.getByTestId("draw-amount"), {
+      target: { value: "0.1" },
+    });
+    // the terms line appears: the press would be sendable, were it not for the pause
+    expect(await screen.findByTestId("draw-terms")).toBeTruthy();
+    await waitFor(() =>
+      expect(screen.getByTestId("team-pause-paused")).toBeTruthy(),
+    );
+    expect(
+      (screen.getByTestId("sheet-confirm") as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(chain.sent.length).toBe(0);
   });
 });
 
