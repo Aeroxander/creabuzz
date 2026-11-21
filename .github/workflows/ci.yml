@@ -34,6 +34,9 @@ jobs:
       web: ${{ steps.selection.outputs.web }}
       mobile: ${{ steps.selection.outputs.mobile }}
       contracts: ${{ steps.filter.outputs.contracts }}
+      # The new app and the pot contracts pass through the raw paths-filter output, like contracts (they are not runtime suites).
+      app: ${{ steps.filter.outputs.app }}
+      pot: ${{ steps.filter.outputs.pot }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
@@ -106,6 +109,32 @@ jobs:
               - 'packages/creaton-core/src/launchpad/graduationArtifact*'
               - '.github/workflows/_ci-contracts.yml'
               - '.github/workflows/ci.yml'
+            app:
+              - 'app/**'
+              - 'packages/**'
+              - 'patches/**'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - 'knip.jsonc'
+              - 'scripts/check-file-sizes-core.mjs'
+              - 'scripts/check-copy-core.mjs'
+              - 'Dockerfile'
+              - 'deploy/**'
+              - 'Justfile'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/_ci-app.yml'
+            pot:
+              - 'contracts/pot/**'
+              - 'contracts/lib/**'
+              - '.gitmodules'
+              - 'scripts/ensure-solc.sh'
+              - 'scripts/pot-*.sh'
+              - 'scripts/chain-loop-pot-check.py'
+              - 'scripts/pot-app-abi.mjs'
+              - 'Justfile'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/_ci-app.yml'
             mobile:
               - 'mobile/**'
               - 'scripts/mobile-release.sh'
@@ -263,6 +292,15 @@ jobs:
       web: ${{ needs.changes.outputs.web == 'true' }}
       mobile: ${{ needs.changes.outputs.mobile == 'true' }}
       lane: required
+
+  app-domain:
+    name: App Domain
+    needs: [changes]
+    if: github.event_name == 'push' || needs.changes.outputs.app == 'true' || needs.changes.outputs.pot == 'true'
+    uses: ./.github/workflows/_ci-app.yml
+    with:
+      app: ${{ needs.changes.outputs.app == 'true' }}
+      pot: ${{ needs.changes.outputs.pot == 'true' }}
 
   mobile-swift-domain:
     name: Mobile Swift Domain
@@ -440,6 +478,48 @@ jobs:
         env:
           SELECTION_RESULT: ${{ needs.changes.result }}
           RESULT: ${{ needs.clients.outputs.web_result }}
+        run: test "$SELECTION_RESULT" = success && test "$RESULT" = success
+
+  app:
+    name: App
+    if: always() && (needs.changes.result != 'success' || ((github.event_name == 'push' || needs.changes.outputs.app == 'true')))
+    needs: [changes, app-domain]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check App result
+        env:
+          SELECTION_RESULT: ${{ needs.changes.result }}
+          RESULT: ${{ needs.app-domain.outputs.app_result }}
+        run: test "$SELECTION_RESULT" = success && test "$RESULT" = success
+
+  pot:
+    name: Pot Contracts
+    if: always() && (needs.changes.result != 'success' || ((github.event_name == 'push' || needs.changes.outputs.pot == 'true')))
+    needs: [changes, app-domain]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check Pot Contracts result
+        env:
+          SELECTION_RESULT: ${{ needs.changes.result }}
+          RESULT: ${{ needs.app-domain.outputs.pot_result }}
+        run: test "$SELECTION_RESULT" = success && test "$RESULT" = success
+
+  pot-loops:
+    name: Pot Loops
+    if: always() && (needs.changes.result != 'success' || ((github.event_name == 'push' || needs.changes.outputs.app == 'true' || needs.changes.outputs.pot == 'true')))
+    needs: [changes, app-domain]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check Pot Loops result
+        env:
+          SELECTION_RESULT: ${{ needs.changes.result }}
+          RESULT: ${{ needs.app-domain.outputs.pot_loops_result }}
         run: test "$SELECTION_RESULT" = success && test "$RESULT" = success
 
   mobile:

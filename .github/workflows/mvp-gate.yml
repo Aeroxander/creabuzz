@@ -190,3 +190,96 @@ jobs:
         run: |
           docker compose down -v --remove-orphans || true
           rm -f .env
+
+  # The new app's full loop (scripts/pot-full-loop.sh): the real relay with its chain reader and helper, Postgres, Redis, a local
+  # chain with contracts/pot deployed by its own script, and the app in Chromium on a phone-sized screen, five journeys, each in
+  # a world of its own (a project from its start to a Take out, the task queue, the holder room, seasons, alerts). About half an
+  # hour. Too heavy for a pull request, so it runs on the nightly schedule and on a manual run of the later or all set, the same
+  # places the later journeys above run. The cheap lanes (the app's checks and tests, the pot suite, the loops that need no
+  # server) are in ci.yml, on pull requests.
+  pot-full-loop:
+    name: Pot full loop
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.set != 'pilot')
+    runs-on: ubuntu-24.04 # Playwright 1.58 has no browsers for ubuntu-latest (26.04)
+    timeout-minutes: 120
+    env:
+      LOG_DIR: ${{ github.workspace }}/pot-full-loop-logs
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          submodules: recursive
+      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
+
+      - name: Tools the loop calls
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client redis-tools jq >/dev/null
+          for tool in node pnpm cargo curl openssl psql python3 redis-cli jq timeout; do
+            command -v "$tool" >/dev/null || { echo "missing: $tool"; exit 1; }
+          done
+
+      - name: Install Foundry
+        run: |
+          curl -sSfL https://github.com/foundry-rs/foundry/releases/download/stable/foundry_stable_linux_amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: The pinned compiler
+        run: scripts/ensure-solc.sh 0.8.37 && forge --version
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore pnpm store cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+      # The whole workspace: the loop's cross-check also uses web/'s tools.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install the browser
+        run: cd app && pnpm exec playwright install --with-deps chromium
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        with:
+          # Saved only from the nightly and manual runs (never from a pull request).
+          save-if: ${{ github.event_name != 'pull_request' }}
+      # The loop runs target/debug/buzz-relay and, for the seasons journey, target/debug/buzz, and builds neither.
+      - name: Build the server and the command line
+        run: cargo build -p buzz-relay -p buzz-cli
+      - name: Build the contracts
+        run: just pot-build
+
+      - name: Start Postgres and Redis
+        run: |
+          cp .env.example .env
+          docker compose up -d --wait postgres redis
+
+      - name: The full loop
+        env:
+          RELAY_LOG_COPY: ${{ github.workspace }}/pot-full-loop-logs/relay.log
+        run: |
+          mkdir -p "$LOG_DIR"
+          just pot-full-loop 2>&1 | tee "$LOG_DIR/pot-full-loop.log"
+          exit "${PIPESTATUS[0]}"
+
+      - name: Service logs
+        if: always()
+        run: |
+          mkdir -p "$LOG_DIR/services"
+          for service in postgres redis; do
+            docker compose logs --no-color "$service" >"$LOG_DIR/services/$service.log" 2>&1 || true
+          done
+      - name: Upload the loop's logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pot-full-loop-logs
+          path: ${{ env.LOG_DIR }}
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Clean up
+        if: always()
+        run: |
+          docker compose down -v --remove-orphans || true
+          rm -f .env

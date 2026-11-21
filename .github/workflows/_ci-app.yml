@@ -1,0 +1,150 @@
+name: CI / App
+on:
+  workflow_call:
+    inputs:
+      app:
+        required: true
+        type: boolean
+      pot:
+        required: true
+        type: boolean
+    outputs:
+      app_result:
+        value: ${{ jobs.results.outputs.app_result }}
+      pot_result:
+        value: ${{ jobs.results.outputs.pot_result }}
+      pot_loops_result:
+        value: ${{ jobs.results.outputs.pot_loops_result }}
+
+# The new phone-first app (app/) and the money contracts it talks to (contracts/pot). Before this lane no workflow ran the
+# app's checks, its tests, its build with the bundle budget, the pot contracts' tests or the loops that join them
+# (`web` ran web/ and packages/creaton-core only; `contracts` ran forge in contracts/ only).
+#   App          Biome, tsc, the copy / rem-only text / file size guards, the unused-exports scan, the deploy bundle's check of
+#                the app's settings, the unit tests, the build with its first-load budget (just app-check, app-deploy-check,
+#                app-test, app-build).
+#   Pot          contracts/pot's build and its whole forge suite (just pot-build, pot-test).
+#   Pot loops    the loops that need no server: the app's own money calls against the real contracts on a local chain
+#                (scripts/pot-app-loop.sh) and the whole loop with cast (scripts/pot-chain-loop.sh). The full loop with a relay,
+#                Postgres, Redis and a browser (scripts/pot-full-loop.sh) is too heavy for a pull request: .github/workflows/
+#                mvp-gate.yml runs it nightly and by hand.
+env:
+  CARGO_TERM_COLOR: always
+  # contracts/pot is not linted on build (the lane for contracts/ does the same): its warnings are not the gate.
+  FOUNDRY_LINT_LINT_ON_BUILD: "false"
+
+jobs:
+  app:
+    name: App
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name == 'push' || inputs.app
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # The file-size ratchet compares with the first parent (HEAD^1).
+          fetch-depth: 2
+      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore pnpm store cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+      - name: Install dependencies
+        run: just app-install
+      - name: App lint, types, copy and size guards, unused exports
+        run: just app-check
+      - name: Deploy bundle settings for the app
+        run: just app-deploy-check
+      - name: App unit tests
+        run: just app-test
+      - name: App build and bundle budget
+        run: just app-build
+      - name: Save pnpm store cache
+        if: github.event_name == 'push'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+  pot:
+    name: Pot contracts
+    runs-on: ubuntu-latest
+    # `forge test` runs the fuzz (1,000 runs) and invariant (256 runs of 200 steps) suites: minutes on a laptop, longer cold.
+    timeout-minutes: 60
+    if: github.event_name == 'push' || inputs.pot
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # contracts/pot/lib is a link to contracts/lib (forge-std and OpenZeppelin 5).
+          submodules: recursive
+      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
+      - name: Install Foundry
+        run: |
+          curl -sSfL https://github.com/foundry-rs/foundry/releases/download/stable/foundry_stable_linux_amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Install the pinned solc
+        # contracts/pot/foundry.toml pins solc 0.8.37, which some forge releases do not know: install it where forge looks.
+        run: scripts/ensure-solc.sh 0.8.37
+      - name: forge build
+        run: just pot-build
+      - name: forge test
+        run: just pot-test
+
+  pot-loops:
+    name: Pot loops
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: github.event_name == 'push' || inputs.app || inputs.pot
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          submodules: recursive
+      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
+      - name: Install Foundry
+        run: |
+          curl -sSfL https://github.com/foundry-rs/foundry/releases/download/stable/foundry_stable_linux_amd64.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Install the pinned solc
+        run: scripts/ensure-solc.sh 0.8.37
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Restore pnpm store cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+      - name: Install dependencies
+        run: just app-install
+      # The loops deploy the contracts from contracts/pot/out, which is built here and not saved anywhere.
+      - name: forge build
+        run: just pot-build
+      - name: The app's money calls on a local chain
+        run: just pot-app-loop
+      - name: The whole loop with cast
+        run: just pot-chain-loop
+
+  results:
+    name: Results
+    if: ${{ always() }}
+    needs: [app, pot, pot-loops]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      app_result: ${{ needs.app.result }}
+      pot_result: ${{ needs.pot.result }}
+      pot_loops_result: ${{ needs.pot-loops.result }}
+    steps:
+      - run: echo "Captured app job results"

@@ -123,7 +123,7 @@ build-release:
     cargo build --workspace --release
 
 # Run repo lint, formatting, and repository policy checks
-check: fmt-check clippy desktop-check desktop-tauri-fmt-check desktop-tauri-clippy web-check mobile-check security-review-check file-size-check majeur-fork-check
+check: fmt-check clippy desktop-check desktop-tauri-fmt-check desktop-tauri-clippy web-check app-check app-deploy-check mobile-check security-review-check file-size-check majeur-fork-check
 
 # The Majeur fork may differ from upstream only inside its marked patch
 # regions (docs/token-voting-design.md §7). Strip those and the copy must be
@@ -454,7 +454,7 @@ desktop-e2e-pre-push: _ensure-migrations
     cd {{desktop_dir}} && pnpm build:e2e && pnpm exec playwright test --only-changed=origin/main
 
 # Run all checks suitable for CI / pre-push (no infra needed)
-ci: check test-unit desktop-test desktop-build desktop-tauri-check desktop-tauri-test web-build mobile-test
+ci: check test-unit desktop-test desktop-build desktop-tauri-check desktop-tauri-test web-build app-test app-build mobile-test
 
 # ─── Test ─────────────────────────────────────────────────────────────────────
 
@@ -1083,6 +1083,56 @@ web-bundle-budget:
 # Run web browser smoke tests
 web-e2e-smoke:
     cd {{web_dir}} && pnpm test:e2e:smoke
+
+# ─── Creaton app (app/, the new phone-first app) ────────────────────────────
+
+app_dir := "app"
+
+# Install the app's dependencies (and those of the shared package it builds from)
+app-install:
+    pnpm install --frozen-lockfile --filter "@creaton/app..."
+
+# Run the app's checks: Biome, tsc, copy, rem-only text and file size guards, then the unused-exports scan (knip)
+app-check:
+    cd {{app_dir}} && pnpm check
+    pnpm exec knip --no-progress
+
+# Run the app's unit tests (vitest, jsdom: no browser, no relay, no chain)
+app-test:
+    cd {{app_dir}} && pnpm test
+
+# Build the app: tsc, vite build, then the first-load bundle budget
+app-build:
+    cd {{app_dir}} && pnpm build
+
+# The deploy bundle's own check of the app's settings: no Docker, no network (stand-ins for both)
+app-deploy-check:
+    bash deploy/compose/test-app-settings.sh
+
+# ─── Money contracts (contracts/pot, a separate Foundry project) ─────────────
+# Need Foundry on PATH and the pinned solc (scripts/ensure-solc.sh 0.8.37); the libraries are the submodules of contracts/lib.
+
+pot_dir := "contracts/pot"
+
+# Compile contracts/pot (the contract-size test in `forge test` binds the size limits)
+pot-build:
+    cd {{pot_dir}} && forge build
+
+# Run contracts/pot's tests: units, fuzz, invariants and model vectors (takes minutes)
+pot-test:
+    cd {{pot_dir}} && forge test
+
+# The app's money calls against the real contracts on a local chain (anvil only: no server, no browser); needs pot-build
+pot-app-loop:
+    ./scripts/pot-app-loop.sh
+
+# The whole loop with `cast` only (anvil, forge, cast, jq); needs pot-build
+pot-chain-loop:
+    ./scripts/pot-chain-loop.sh
+
+# The full loop (relay, Postgres, Redis, anvil, a browser; needs a built relay and buzz, about half an hour): CI runs it nightly
+pot-full-loop *ARGS:
+    ./scripts/pot-full-loop.sh {{ARGS}}
 
 # ─── Mobile ──────────────────────────────────────────────────────────────────
 
