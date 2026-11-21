@@ -276,9 +276,16 @@ world made without the switch: the page then says nothing about a pause at all, 
    wallet. Nothing is charged." appears with **Take back** and **Cancel**. Cancel sends nothing; Take back asks the wallet once.
 7. **Take out with Shares parked, one press:** Abe's Take out: the sheet says "You hold 980 Shares (980 parked).", "Taking out takes
    your parked Shares back first, in the same press." and (on a wallet) "Your wallet is asked twice." Press the button once: his parked
-   Shares come back and are taken out. It works while the pause is on. **Working:** the parked share falls, and once it is under a
-   third the card says "<n>% of backers' Shares are parked. A third is needed." and Fay's "Draw from the box" is back (the server
-   needs up to a minute).
+   Shares come back and are taken out. It works while the pause is on. **Working:** the parked share falls. With the walk's numbers it
+   is still above a third after Abe's take-out (4,410 of 11,760 are still parked), so the card still says "Paused": **Cy then takes
+   his parked Shares back** (step 6), and once the share is under a third the card says "<n>% of backers' Shares are parked. A third
+   is needed." and Fay's "Draw from the box" is back (the server needs up to a minute).
+8. **The warning day that did not start (only if you see it):** if the share parked is at a third but no warning day is running (a
+   join cleared it, or others took out, and nobody has parked or taken back since), the card says "A third is parked, but the
+   warning day has not started. Press "Start the day" and, if it stays there, the team's allowance and new task plans pause one day
+   later." with the press **Start the day**. Anyone may press it; it moves no money. It is hard to make on purpose in this walk
+   (a join that lowers the parked share clears the day, and a later take-out by others brings it back to the line); the app's tests
+   make it.
 
 **Not tried by anyone:** this on a real phone with a passkey account (the loop proves the one-press batch with a software passkey,
 `scripts/phone-loop.sh`); the same with real people over days; any real money. **Walked at 360 x 640** by the loop's journey
@@ -294,7 +301,7 @@ project "Project zero" on the chain. It prints a link `.../earlier-grant#...`: t
 Team Shares). Open it on the phone with the wallet on account 3.
 
 1. **Account 3:** **Working:** "Your grant: 2,500 Team Shares.", "They unlock evenly over 365 days counted from the day the project
-   began, with no waiting period at the start. The team cannot cancel or burn this grant: the contract has no call for it.", "Taking Team
+   began, with no waiting period at the start.", "Taking Team
    Shares out pays only what the project holds above what backers put in. That can be nothing.", "The text you accept has the
    fingerprint 0x....", "0 of 4 grants claimed." and the banner. The press "Accept the text and claim" is **off**.
 2. Tick "I have read the text with this fingerprint.": the press is still off ("Open the text first. The claim is offered once you have.").

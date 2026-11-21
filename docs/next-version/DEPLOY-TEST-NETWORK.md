@@ -60,8 +60,9 @@ forge script script/DeployPot.s.sol --rpc-url sepolia --broadcast --account <you
 ### 2b. Step 4's two switches (both off by default)
 
 The same script has two switches added in step 4. **Leave both alone and nothing about a deployment changes**: no holder pause, no
-claim contract, every earlier test and screen exactly as before. A switch cannot be turned on later for a deployment that is
-running (a project is born with the pause or without it for good), so set what you want before the first project is launched.
+claim contract, every earlier test and screen exactly as before. A switch can be turned on only by the deployer, once, inside the first hour after the
+deployment and before the first project is launched (a project is born with the pause or without it for good), so set what you want
+in the deploy script's own run; after that hour it cannot be turned on for that deployment.
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -155,7 +156,7 @@ These are read **when the app is built** and are public in the page. In `.env`:
 | `CREATON_DEPLOYMENTS_FILE` | Path from `deploy/compose` to the file from step 2, for example `../../contracts/pot/deployments/pot-11155111.json`. `run.sh` takes the three values below from it. |
 | `VITE_CREATON_CHAIN_ID`, `VITE_CREATON_LAUNCHER`, `VITE_CREATON_DOLLAR` | The chain, the Launcher and the play dollar. Set by hand instead of the file, or to override it (a value set by hand wins). The build refuses one of the first two without the other. |
 | `VITE_CREATON_RPC_URL` | The page's node ("What you need before you start"): called from every visitor's browser, so it must be a read-only node with a request limit. `run.sh build` asks it which network it is on and whether the Launcher has code, and stops if not. |
-| `VITE_CREATON_EARLIER_CONTRACT`, `VITE_CREATON_EARLIER_TEXT_HASH`, `VITE_CREATON_EARLIER_TEXT_URL` | The earlier backers' claim page (step 2b): the claim contract's address, the same text fingerprint the deploy was given, and an http or https address where a person can read that text (no name or password in it). **All three, or the page does not exist**: without them `/earlier-grant` is a plain "not found" and none of its code loads. A person is sent their own link, `<app>/earlier-grant#<their row>`, by whoever holds the list; the part after the `#` is never sent to any server. |
+| `VITE_CREATON_EARLIER_CONTRACT`, `VITE_CREATON_EARLIER_TEXT_HASH`, `VITE_CREATON_EARLIER_TEXT_URL` | The earlier backers' claim page (step 2b): the claim contract's address, the same text fingerprint the deploy was given, and an http or https address where a person can read that text (no name or password in it). **All three, or the page does not exist**: without them `/earlier-grant` is a plain "not found" and none of its code loads. **Not passed on by the compose files yet:** `deploy/compose/run.sh`, `compose.creaton.yml` and the Dockerfile do not list these three, so an image built the compose way has no claim page whatever `.env` says (it fails closed). Today only `scripts/pot-full-loop.sh pot-earlier.spec` builds the app with them, to prove the page. Adding the three names to those deploy files is a small change that belongs to whoever owns them. A person is sent their own link, `<app>/earlier-grant#<their row>`, by whoever holds the list; the part after the `#` is never sent to any server. |
 | `VITE_CREATON_PASSKEY_ACCOUNT=1`, `VITE_CREATON_BUNDLER_URL`, `VITE_CREATON_SPONSOR_URL` | Phone accounts (step 7). The switch needs the chain, the page's node and the bundler. The sponsor address is optional (the fee is then asked at the bundler). |
 
 With none of these the app is built with no network and shows no money screens, whatever the server says.
