@@ -10,7 +10,7 @@ import { MAX_POST_CHARS } from "./feed/feed-events.ts";
 /** Pictures in one post. */
 export const MAX_PICTURES = 4;
 /** The largest picture file taken in (a phone photo is a few megabytes); it is shrunk before it is sent. */
-export const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
+const MAX_SOURCE_BYTES = 25 * 1024 * 1024;
 /** The largest a picture may be once it has been shrunk, which is what is sent. */
 export const MAX_PICTURE_BYTES = 5 * 1024 * 1024;
 /** The longest side, in pixels, of a picture as sent. */
@@ -19,7 +19,7 @@ export const MAX_PICTURE_EDGE = 2048;
 export const MAX_ALT_CHARS = 300;
 
 /** Kinds of picture a person may pick. Whatever is picked is re-drawn, so what is sent is always a JPEG or a PNG. */
-export const PICTURE_SOURCE_TYPES = [
+const PICTURE_SOURCE_TYPES = [
   "image/jpeg",
   "image/png",
   "image/webp",
