@@ -8,7 +8,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useCallback, useState } from "react";
 import { potNetwork } from "../../lib/pot-network";
 import { Button } from "../../ui/button";
-import { moneyProblem } from "../money/money-copy";
+import {
+  ACCOUNT_MISMATCH_WORDS,
+  moneyProblem,
+  PASSKEY_WRONG_NETWORK_WORDS,
+} from "../money/money-copy";
 import { passkeyUnavailableSentence } from "../money/sender";
 import {
   useConnectWallet,
@@ -16,13 +20,21 @@ import {
   useWalletAddress,
   useWalletOnChain,
 } from "../money/use-money";
-import type { MoneyWallet } from "../money/wallet";
+import {
+  isAccountMismatch,
+  type MoneyWallet,
+  senderKind,
+} from "../money/wallet";
 
 /** The sender, its account and network, and a chain read, for one project's chain. */
 export interface PotWallet {
   wallet: MoneyWallet;
   /** The account the sender shows without asking, or null until the person connects. */
   address: string | null;
+  /** True while a passkey account's address is being read, and false once it is known or could not be. */
+  addressPending: boolean;
+  /** True when the server's address for a passkey account is not the one this phone works out: nothing is shown or sent. */
+  addressMismatch: boolean;
   /** True on the project's network, false on another, undefined while not known. */
   onChain: boolean | undefined;
   /** A read-only call through the sender. */
@@ -31,13 +43,21 @@ export interface PotWallet {
 
 export function usePotWallet(chainId: number | undefined): PotWallet {
   const wallet = useWallet();
-  const address = useWalletAddress().data ?? null;
+  const account = useWalletAddress();
+  const address = account.data ?? null;
   const onChain = useWalletOnChain(chainId);
   const read = useCallback<ReadCall>(
     (to, data) => wallet.readCall(to, data),
     [wallet],
   );
-  return { wallet, address, onChain, read };
+  return {
+    wallet,
+    address,
+    addressPending: account.isPending,
+    addressMismatch: isAccountMismatch(account.error),
+    onChain,
+    read,
+  };
 }
 
 /**
@@ -121,6 +141,43 @@ export function WalletGate({
       {problem}
     </p>
   ) : null;
+  const passkey = senderKind(pot.wallet) === "passkey";
+  if (!pot.address && pot.addressMismatch)
+    return (
+      <p
+        className="text-sm text-danger"
+        data-testid="pot-account-mismatch"
+        role="alert"
+      >
+        {ACCOUNT_MISMATCH_WORDS}
+      </p>
+    );
+  // A passkey account is read from the passkey, never connected: it says it is being read, or that it could not be.
+  if (!pot.address && passkey)
+    return (
+      <div className="flex flex-col gap-2" data-testid="pot-connect">
+        <p className="text-sm text-muted">
+          {pot.addressPending
+            ? `Reading your account to ${what}…`
+            : `Your account could not be read just now, so you cannot ${what} yet.`}
+        </p>
+        {note}
+        {pot.addressPending ? null : (
+          <Button
+            block
+            disabled={connect.isPending}
+            onClick={() =>
+              connect.mutate(undefined, {
+                onError: (error) => setProblem(moneyProblem(error, "connect")),
+              })
+            }
+            variant="secondary"
+          >
+            {connect.isPending ? "Reading your account…" : "Try again"}
+          </Button>
+        )}
+      </div>
+    );
   if (!pot.address)
     return (
       <div className="flex flex-col gap-2" data-testid="pot-connect">
@@ -141,6 +198,12 @@ export function WalletGate({
             : "Connect your wallet"}
         </Button>
       </div>
+    );
+  if (pot.onChain === false && passkey)
+    return (
+      <p className="text-sm text-muted" data-testid="pot-wrong-network">
+        {PASSKEY_WRONG_NETWORK_WORDS}
+      </p>
     );
   if (pot.onChain === false)
     return (

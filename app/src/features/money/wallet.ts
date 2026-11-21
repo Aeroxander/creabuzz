@@ -88,6 +88,7 @@ export class WalletStepError extends Error {
       | "no-wallet"
       | "not-set-up"
       | "no-passkey"
+      | "account-mismatch"
       | "not-known"
       | "wrong-network"
       | "reverted"
@@ -107,6 +108,13 @@ export class WalletStepError extends Error {
 
   /** Which sender stopped the step, set by the money send so the words fit it; absent from a sender's own error. */
   sender?: SenderKind;
+}
+
+/** Whether `error` is a passkey account's refusal because the server's address for it is not the one worked out on this phone. */
+export function isAccountMismatch(error: unknown): boolean {
+  return (
+    error instanceof WalletStepError && error.reason === "account-mismatch"
+  );
 }
 
 /**

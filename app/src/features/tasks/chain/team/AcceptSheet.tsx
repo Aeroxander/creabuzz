@@ -277,7 +277,7 @@ export function AcceptSheet({
             ? "Pay"
             : payPress(pay)
       }
-      description="The money goes only to the wallet that took the task"
+      description="The money goes only to the account that took the task"
       detail={detail}
       done={
         send?.through === "pair"

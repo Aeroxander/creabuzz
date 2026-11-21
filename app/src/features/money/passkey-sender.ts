@@ -169,11 +169,17 @@ export function createPasskeySender(
     capabilities: CAPABILITIES,
     isAvailable: () => availability().ok,
     connectedAddress: async () => {
-      // No prompt and no failure: a phone that cannot read its account yet shows none.
+      // No prompt and no failure: a phone that cannot read its account yet shows none. The one thing that is told, not hidden:
+      // a node whose address for the account is not the one worked out here (the impl throws it, nothing else).
       if (!availability().ok) return null;
       try {
         return await need((i) => i.connectedAddress());
-      } catch {
+      } catch (error) {
+        if (
+          error instanceof WalletStepError &&
+          error.reason === "account-mismatch"
+        )
+          throw error;
         return null;
       }
     },

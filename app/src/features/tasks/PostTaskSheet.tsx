@@ -30,7 +30,7 @@ export function PostTaskSheet({
   const moneyProblem = dollarsProblem(dollars);
   return (
     <Sheet
-      description="Anyone outside the team can take it. You pay from your wallet when you accept the work."
+      description="Anyone outside the team can take it. You pay when you accept the work."
       onOpenChange={onOpenChange}
       open={open}
       testId="post-task-sheet"

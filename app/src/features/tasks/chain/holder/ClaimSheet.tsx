@@ -22,7 +22,7 @@ import {
   CLAIM_LOOK,
   CLAIM_READ_FAILED,
   CLAIM_TO_YOU,
-  CLAIMED,
+  claimedWords,
   claimEndedWords,
   claimOverdueWords,
   claimPress,
@@ -166,7 +166,7 @@ export function ClaimSheet({
       }
       description="The money goes to your account"
       detail={detail}
-      done={CLAIMED}
+      done={claimedWords}
       landed={async (wallet, from) => {
         // A call replaced in the wallet may have landed under another hash: the claim is gone.
         if (!data) return false;

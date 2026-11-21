@@ -18,7 +18,7 @@ import {
   TREASURY_ABI,
   VESTER_ABI,
 } from "@creaton/core/pot/abis.generated.ts";
-import { moneyProblem } from "./money-copy";
+import { moneyProblem, passkeyClosedWords } from "./money-copy";
 import { dollarsText, timeText } from "./numbers";
 import {
   NEW_TASK_ERRORS,
@@ -130,6 +130,15 @@ const EARLIER_WORDS: Record<
   },
   Inconsistent: {
     any: "Something in the project's numbers did not add up, so nothing was done. Nothing changed. Try again in a moment.",
+  },
+  Paused: {
+    any: "The holders have paused the team's draws and new task plans for now. Nothing was sent. Taking out Shares still works, any day.",
+  },
+  BindClosed: {
+    any: "The one-time step to switch this on is closed. Nothing changed.",
+  },
+  NotDeployer: {
+    any: "Only the person who put these contracts on the network can do this. Nothing changed.",
   },
   NoOwner: {
     revenue:
@@ -386,7 +395,7 @@ const ACTION_WORDS: Record<PotAction, string> = {
   agent: "Changing the helper",
   seat: "The seat",
   launch: "Putting the project on the network",
-  link: "Linking your wallet",
+  link: "The link to your account",
   "wind-down": "Winding down",
   pair: "The call",
   ...TASK_ACTION_WORDS,
@@ -450,6 +459,8 @@ export function potProblem(error: unknown, action: PotAction): string {
     const words = ERROR_WORDS[refusal.name];
     return said(words[action] ?? words.any, refusal.args);
   }
+  const closed = passkeyClosedWords(error);
+  if (closed) return closed;
   if (error instanceof WalletStepError) {
     // The sender's own stops (no wallet, wrong network, still waiting, no network coin) read as they do everywhere.
     if (error.reason !== "reverted" && error.reason !== "failed")

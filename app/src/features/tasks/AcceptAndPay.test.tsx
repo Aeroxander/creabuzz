@@ -319,7 +319,7 @@ describe("accept and pay", () => {
       />,
     );
     expect(screen.getByTestId("task-accept-problem").textContent).toMatch(
-      /Only the wallet that runs this project/,
+      /Only the account that runs this project/,
     );
   });
 

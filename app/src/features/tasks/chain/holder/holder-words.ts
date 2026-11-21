@@ -130,7 +130,7 @@ export const TAKE_READ_FAILED =
 
 /** The wallet shows another account than the one the task is named for. */
 export function takeNotPayee(payee: string): string {
-  return `This task is named for the wallet ${shortAddress(payee)}. Your wallet shows another account, so it cannot take this task. Switch your wallet to that account.`;
+  return `This task is named for the account ${shortAddress(payee)}. You are using another account, so you cannot take this task here.`;
 }
 
 /** Where taking is stopped, one sentence each (the contract's own words where it has them). */

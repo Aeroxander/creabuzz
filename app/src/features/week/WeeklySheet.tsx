@@ -123,7 +123,7 @@ export function WeeklySheet({
     <Sheet
       description={
         checkIn
-          ? "Updates are public. Your wallet confirms the check-in."
+          ? `Updates are public. ${send.words.kind === "passkey" ? "Your passkey" : "Your wallet"} confirms the check-in.`
           : "Updates are public."
       }
       onOpenChange={(next) => {
@@ -175,7 +175,7 @@ export function WeeklySheet({
           {busy
             ? post.isPending
               ? "Posting…"
-              : "Waiting for your wallet…"
+              : send.words.waiting
             : posted
               ? "Check in again"
               : checkIn

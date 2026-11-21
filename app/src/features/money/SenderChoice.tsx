@@ -6,8 +6,13 @@ import {
   useSenders,
   writeSenderChoice,
 } from "./sender";
+import { ACCOUNT_MISMATCH_WORDS } from "./money-copy";
 import { useWalletAddress } from "./use-money";
-import { senderAvailability, type SenderKind } from "./wallet";
+import {
+  isAccountMismatch,
+  senderAvailability,
+  type SenderKind,
+} from "./wallet";
 
 /**
  * What a person who can back from more than one place needs to know, on You, and nothing when there is only one:
@@ -66,7 +71,10 @@ export function SenderChoice() {
           ))}
         </fieldset>
         {chosen.kind === "passkey" ? (
-          <PasskeyWords address={address.data} />
+          <PasskeyWords
+            address={address.data}
+            mismatch={isAccountMismatch(address.error)}
+          />
         ) : null}
       </Card>
     );
@@ -75,7 +83,10 @@ export function SenderChoice() {
   if (!walletHere && passkeyOk)
     return (
       <Card data-testid="sender-choice">
-        <PasskeyWords address={address.data} />
+        <PasskeyWords
+          address={address.data}
+          mismatch={isAccountMismatch(address.error)}
+        />
       </Card>
     );
 
@@ -89,7 +100,13 @@ export function SenderChoice() {
   ) : null;
 }
 
-function PasskeyWords({ address }: { address: string | null | undefined }) {
+function PasskeyWords({
+  address,
+  mismatch,
+}: {
+  address: string | null | undefined;
+  mismatch: boolean;
+}) {
   return (
     <div
       className="mt-3 flex flex-col gap-2 text-sm"
@@ -100,7 +117,15 @@ function PasskeyWords({ address }: { address: string | null | undefined }) {
         Your passkey is the only key to the money in this account: if you lose
         it, that money cannot be got back.
       </p>
-      {address ? (
+      {mismatch ? (
+        <p
+          className="text-danger"
+          data-testid="sender-address-mismatch"
+          role="alert"
+        >
+          {ACCOUNT_MISMATCH_WORDS}
+        </p>
+      ) : address ? (
         <p className="text-muted">
           Your account address:{" "}
           <span className="num break-all" data-testid="sender-address">

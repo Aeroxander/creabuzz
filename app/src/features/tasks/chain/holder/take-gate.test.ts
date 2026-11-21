@@ -84,7 +84,7 @@ describe("why a task cannot be taken, in order", () => {
     expect(ask(read({ payee: null }))).toMatch(/Open to anyone/);
     expect(
       ask(read(), { address: "0x00000000000000000000000000000000000000ee" }),
-    ).toMatch(/named for the wallet 0x0000…00cd/);
+    ).toMatch(/named for the account 0x0000…00cd/);
   });
 
   it("then the state, the notice, the take window and the team's check-in", () => {

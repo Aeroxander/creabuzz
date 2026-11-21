@@ -173,10 +173,10 @@ describe("grant Team Shares", () => {
     expect(decoded?.name).toBe("grantTeam");
     expect(decoded?.args).toEqual([BACKER_EVM, 1_500n * S]);
   });
-  it("someone who has not linked a wallet cannot be chosen, and says why", async () => {
+  it("someone who has not linked an account cannot be chosen, and says why", async () => {
     await open();
     const option = screen.getByRole("option", {
-      name: /Carl \(has not linked a wallet\)/,
+      name: /Carl \(has not linked an account\)/,
     }) as HTMLOptionElement;
     expect(option.disabled).toBe(true);
   });

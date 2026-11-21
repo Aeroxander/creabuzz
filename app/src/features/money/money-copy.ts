@@ -118,7 +118,7 @@ const REFUSAL_WORDS: Record<
     "check-in": "Only the person who runs the project can check in.",
     open: "Only the person who runs the project can open backing.",
     "take-out": "Only the backer can take out their own Shares.",
-    any: "This wallet may not do this. Nothing changed.",
+    any: "This account may not do this. Nothing changed.",
   },
   CannotOpen: {
     any: "A round could not open: one is already open, or what is left under the limit is too small.",
@@ -133,9 +133,9 @@ const REFUSAL_WORDS: Record<
     any: "The dollar token moved a different amount than asked, so nothing changed.",
   },
   NotRunner: {
-    open: "Only the wallet that runs this project can open backing. Nothing changed.",
-    "check-in": "Only the wallet that runs this project can check in.",
-    any: "Only the wallet that runs this project can do this. Nothing changed.",
+    open: "Only the account that runs this project can open backing. Nothing changed.",
+    "check-in": "Only the account that runs this project can check in.",
+    any: "Only the account that runs this project can do this. Nothing changed.",
   },
   NotEnoughDollars: {
     any: "Your wallet does not hold enough dollars for this. Nothing was taken.",
@@ -145,10 +145,20 @@ const REFUSAL_WORDS: Record<
   },
 };
 
+/**
+ * What a person reads when the server's address for their passkey account is not the one this phone works out from the
+ * passkey: no deposit address is shown and nothing is sent from it.
+ */
+export const ACCOUNT_MISMATCH_WORDS =
+  "The server gave an address for your account that does not match the one this phone works out from your passkey. No address is shown and nothing was sent. Do not send money to it. Try again later, or tell whoever runs this server.";
+
+/** What a passkey account says when it is set up for another network than the project's. */
+export const PASSKEY_WRONG_NETWORK_WORDS =
+  "This phone's account is set up for another network than this project's. Nothing was sent.";
+
 /** What an error says of the passkey account sending: the lines that name a wallet, said for a passkey account. */
 const PASSKEY_WORDS = {
-  "wrong-network":
-    "This phone's account is set up for another network than this project's. Nothing was sent.",
+  "wrong-network": PASSKEY_WRONG_NETWORK_WORDS,
   pending:
     "It was sent, but it has not landed yet. Press again in a few minutes to look for it: it is not sent a second time while it may still land.",
   replaced:
@@ -165,7 +175,7 @@ const ACTION_WORDS: Record<MoneyAction, string> = {
   "take-out": "Taking out your Shares",
   "check-in": "The check-in",
   open: "Opening backing",
-  connect: "Connecting your wallet",
+  connect: "Connecting to your account",
 };
 
 /** What a person reads when a money step stops. */
@@ -177,6 +187,7 @@ export function moneyProblem(error: unknown, action: MoneyAction): string {
       return "Backing from this phone is not switched on for this server yet. Open this page in a browser with a wallet to back now.";
     if (error.reason === "no-passkey")
       return "This browser does not hold the passkey for an account here, so it cannot back from one. Sign in with your passkey on the phone where you made it, or open this page in a browser with a wallet.";
+    if (error.reason === "account-mismatch") return ACCOUNT_MISMATCH_WORDS;
     if (error.reason === "not-known")
       return "This app will not send that from your passkey account: it is not one of this project's contracts. Nothing was sent.";
     const passkey = error.sender === "passkey";
@@ -199,8 +210,7 @@ export function moneyProblem(error: unknown, action: MoneyAction): string {
     }
     if (errorNamed(error.cause, "PaymasterDeniedError"))
       return "The free network fee was refused for this account, for example because today's free sends are used up. Nothing was sent. Try again tomorrow, or use a browser with a wallet.";
-    if (isPasskeyClosed(error.cause))
-      return "You closed the passkey prompt. Nothing was sent.";
+    if (isPasskeyClosed(error.cause)) return PASSKEY_CLOSED_WORDS;
     if (error.cause && isUserRejection(textsOf(error.cause).join(" ")))
       return rejected(action, error.landed);
     if (isRejectionCode(error.cause)) return rejected(action, error.landed);
@@ -216,6 +226,18 @@ export function moneyProblem(error: unknown, action: MoneyAction): string {
     return words[action] ?? words.any;
   }
   return `${ACTION_WORDS[action]} did not go through. Nothing changed. Try again.`;
+}
+
+/** What a person reads when they close the passkey prompt. */
+const PASSKEY_CLOSED_WORDS = "You closed the passkey prompt. Nothing was sent.";
+
+/** The sentence for a passkey step whose prompt was closed or timed out, or null when this is not that. */
+export function passkeyClosedWords(error: unknown): string | null {
+  return error instanceof WalletStepError &&
+    error.sender === "passkey" &&
+    isPasskeyClosed(error.cause)
+    ? PASSKEY_CLOSED_WORDS
+    : null;
 }
 
 /** The passkey prompt was closed or timed out (the browser's `NotAllowedError` or `AbortError`). */

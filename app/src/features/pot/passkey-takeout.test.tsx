@@ -53,7 +53,7 @@ afterEach(() => {
 });
 
 describe("the passkey account takes out through the Launcher alone", () => {
-  it("sends the take-out when the server's record cannot be read", async () => {
+  const setUp = (shown: { account: string }) => {
     installPotChain({
       account: BACKER_EVM,
       answers: {
@@ -83,8 +83,8 @@ describe("the passkey account takes out through the Launcher alone", () => {
           ownerKey: () => `04${"11".repeat(64)}`,
         },
         load: async () => ({
-          connectedAddress: async () => BACKER_EVM,
-          getAddress: async () => BACKER_EVM,
+          connectedAddress: async () => shown.account,
+          getAddress: async () => shown.account,
           readCall: (to, data) => inner.readCall(to, data),
           blockNumber: () => inner.blockNumber(),
           chainId: () => inner.chainId(),
@@ -113,10 +113,33 @@ describe("the passkey account takes out through the Launcher alone", () => {
         team={[]}
       />,
     );
+  };
+
+  it("sends the take-out when the server's record cannot be read, and says the money is in the account", async () => {
+    setUp({ account: BACKER_EVM });
     fireEvent.click(await screen.findByTestId("holding-take-out"));
     await screen.findByTestId("takeout-cash");
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(sentByPasskey.length).toBe(1));
     expect(screen.queryByTestId("sheet-problem")).toBeNull();
+    // The note that it landed names the account, not a wallet.
+    expect(
+      await screen.findByText("Taken out. The money is in your account."),
+    ).toBeTruthy();
+  });
+
+  it("refuses to send when the account behind the passkey is not the one the numbers were read for, in words with no wallet", async () => {
+    const shown = { account: BACKER_EVM };
+    setUp(shown);
+    fireEvent.click(await screen.findByTestId("holding-take-out"));
+    await screen.findByTestId("takeout-cash");
+    shown.account = `0x${"99".repeat(20)}`;
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    const problem = await screen.findByTestId("sheet-problem");
+    expect(problem.textContent).toMatch(
+      /The account behind your passkey is not the one these numbers were read for/,
+    );
+    expect(problem.textContent).not.toMatch(/wallet/i);
+    expect(sentByPasskey.length).toBe(0);
   });
 });

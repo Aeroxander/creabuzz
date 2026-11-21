@@ -3,6 +3,8 @@
 // seam between the step and the passkey sender: a Back is ONE operation of two calls, so a Back that timed out and
 // landed must never be sent again as its second call alone; the record of a sent operation is written at signing, not
 // when the wait ends; and the address shown is the sender's, not the other sender's.
+import { kernel033AddressLocal } from "@creaton/core/aa/kernel033-address.ts";
+import { parseR1PublicKey } from "@creaton/core/aa/kernel033.ts";
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { BundlerRpcError, BundlerTimeoutError } from "@creaton/core/aa/aa.ts";
 import { UserOpPendingError } from "@creaton/core/aa/zerodev.ts";
@@ -22,10 +24,11 @@ import { type MoneyWallet, WalletStepError } from "./wallet";
 
 const ROUNDS = `0x${"11".repeat(20)}`;
 const TOKEN = `0x${"22".repeat(20)}`;
-const FROM = `0x${"ab".repeat(20)}`;
 const HASH = `0x${"cd".repeat(32)}`;
 // The P-256 generator point: any valid uncompressed public key will do for the owner.
 const R1 = `04${"6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"}${"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"}`;
+/** The account of that key as this phone works it out: a remembered or node-given address must be this one. */
+const FROM = kernel033AddressLocal(parseR1PublicKey(R1));
 const SETTINGS: PasskeySettings = {
   chainId: 31337,
   rpcUrl: "http://rpc.invalid",

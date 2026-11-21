@@ -16,6 +16,7 @@ import {
 import { accruedOf, readGrant } from "@creaton/core/pot/pot-state.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useSenderWords } from "../money/use-money";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
@@ -88,6 +89,7 @@ export function MyGrants({
   ready: Ready;
 }) {
   const vester = numbers.contracts.vester;
+  const words = useSenderWords();
   const [step, setStep] = useState<Step>(null);
   const reading = useQuery({
     queryKey: ["pot", "grants", vester, ready.address],
@@ -218,7 +220,7 @@ export function MyGrants({
             ? "Announced. The notice has started."
             : step?.kind === "burn"
               ? "Done."
-              : "Claimed. The Team Shares are in your wallet."
+              : (own: string) => `Claimed. The Team Shares are in ${own}.`
         }
         lookLabel="Look for your step"
         onOpenChange={(next) => {
@@ -239,7 +241,7 @@ export function MyGrants({
         {grant && step?.kind === "claim" ? (
           <p className="text-sm" data-testid="claim-words">
             {sharesWords(grant.claimable)} Team Shares have unlocked and not
-            been claimed. Claiming sends them to your wallet.
+            been claimed. Claiming sends them to {words.own}.
           </p>
         ) : null}
         {grant && step?.kind === "exit" ? (

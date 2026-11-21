@@ -119,6 +119,12 @@ export function senderWords(sender: MoneyWallet): {
   waiting: string;
   /** What the person is asked for, as one sentence for a step of two calls (approve, then ask). */
   twoCalls: string;
+  /** Where the person's money and Shares are: "your wallet" for a wallet, "your account" for a passkey account. */
+  own: string;
+  /** The label of a press that looks for a step that may have landed. */
+  lookFor: string;
+  /** Which sender these words are for. */
+  kind: SenderKind;
 } {
   return senderKind(sender) === "passkey"
     ? {
@@ -126,12 +132,18 @@ export function senderWords(sender: MoneyWallet): {
         waiting: "Waiting for your passkey…",
         twoCalls:
           "Your passkey is asked once, for both steps. The server pays the network fee.",
+        own: "your account",
+        lookFor: "Look for it again",
+        kind: "passkey",
       }
     : {
         where: "in your wallet",
         waiting: "Waiting for your wallet…",
         twoCalls:
           "Your wallet asks twice: once to let the round take the dollars, once for the ask.",
+        own: "your wallet",
+        lookFor: "Look for it in your wallet",
+        kind: "wallet",
       };
 }
 

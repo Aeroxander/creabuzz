@@ -140,7 +140,7 @@ export async function linkWalletNow(
         attestation,
       }),
     },
-    "Your wallet was not linked. Try again.",
+    `Your ${senderKind(wallet) === "passkey" ? "account" : "wallet"} was not linked. Try again.`,
   );
   return address;
 }

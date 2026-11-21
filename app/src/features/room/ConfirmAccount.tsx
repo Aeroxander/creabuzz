@@ -8,12 +8,14 @@ import { useAccount } from "../../lib/account";
 import { Button } from "../../ui/button";
 import { useToast } from "../../ui/toast";
 import { potProblem } from "../money/pot-copy";
+import { useSenderWords } from "../money/use-money";
 import { useLinkWallet } from "../team/use-wallets";
-import { CONFIRM_LABEL, LINK_PUBLIC } from "./room-words";
+import { CONFIRM_LABEL, linkPublicFor } from "./room-words";
 
 export function ConfirmAccount({ label = CONFIRM_LABEL }: { label?: string }) {
   const { pubkey } = useAccount();
   const link = useLinkWallet(pubkey);
+  const words = useSenderWords();
   const toast = useToast();
   const [problem, setProblem] = useState<string | null>(null);
   const noteId = useId();
@@ -25,7 +27,7 @@ export function ConfirmAccount({ label = CONFIRM_LABEL }: { label?: string }) {
         </p>
       ) : null}
       <p className="text-sm text-muted" id={`${noteId}-public`}>
-        {LINK_PUBLIC}
+        {linkPublicFor(words.kind === "passkey")}
       </p>
       <Button
         aria-describedby={
@@ -43,7 +45,7 @@ export function ConfirmAccount({ label = CONFIRM_LABEL }: { label?: string }) {
         size="sm"
         variant="secondary"
       >
-        {link.isPending ? "Waiting for your wallet…" : label}
+        {link.isPending ? words.waiting : label}
       </Button>
     </div>
   );

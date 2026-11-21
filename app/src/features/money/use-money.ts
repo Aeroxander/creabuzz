@@ -30,6 +30,7 @@ import {
   type MoneyWallet,
   type SenderKind,
   type SentCall,
+  isAccountMismatch,
   senderCapabilities,
   senderKind,
   WalletStepError,
@@ -200,6 +201,11 @@ export function useWallet(): MoneyWallet {
   return useSender();
 }
 
+/** The words for the sender in use (`senderWords` of `useWallet()`): "your wallet" or "your account", and so on. */
+export function useSenderWords(): ReturnType<typeof senderWords> {
+  return senderWords(useWallet());
+}
+
 /** The wallet account this site may already see (no prompt), or null. Off with investing off. */
 export function useWalletAddress() {
   const wallet = useWallet();
@@ -207,6 +213,8 @@ export function useWalletAddress() {
     queryKey: moneyKeys.address(senderKind(wallet)),
     enabled: investingOn() && wallet.isAvailable(),
     staleTime: 60_000,
+    // An address the server got wrong (passkey account) is told once, not asked for again and again.
+    retry: (count, error) => !isAccountMismatch(error) && count < 1,
     queryFn: () => wallet.connectedAddress(),
   });
 }

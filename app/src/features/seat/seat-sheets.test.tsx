@@ -109,7 +109,7 @@ describe("hand over the seat", () => {
     expect(options).toEqual([
       ["Choose someone on the team", false],
       ["Anna", false],
-      ["Carl (has not linked a wallet)", true],
+      ["Carl (has not linked an account)", true],
       ["Dora", false],
     ]);
     expect(screen.getByLabelText("Hand it to")).toBe(select);
@@ -206,7 +206,7 @@ describe("hand over the seat", () => {
     ].map((o) => o.textContent);
     expect(names).toEqual([
       "Choose someone on the team",
-      "Carl (has not linked a wallet)",
+      "Carl (has not linked an account)",
       "Dora",
     ]);
     choose(DORA);

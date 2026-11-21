@@ -290,12 +290,12 @@ describe("acceptGate: Accept is offered only when the network and the record agr
 
   it("refuses when the sender is not the runner, and when the sender did the work", () => {
     expect(refused({ address: null }).sentence).toMatch(
-      /Only the wallet that runs this project/,
+      /Only the account that runs this project/,
     );
     expect(
       refused({ address: "0x00000000000000000000000000000000000000a1" })
         .sentence,
-    ).toMatch(/Only the wallet that runs this project/);
+    ).toMatch(/Only the account that runs this project/);
     // with a Pair, either signer may
     const signers = [
       "0x00000000000000000000000000000000000000a1",

@@ -38,7 +38,7 @@ export function offerLeftWords(endsAt: number, now: number): string {
 /** Offering the seat to one person: what happens and what does not, before the press. */
 export function handOverWords(name: string, address: string): string[] {
   return [
-    `${name} (${address}) can take the seat that runs the project's money, with their own wallet, until the offer ends.`,
+    `${name} (${address}) can take the seat that runs the project's money, with their own account, until the offer ends.`,
     "Until they take it you still run the project's money, and you can withdraw the offer.",
     "Once they take it you can no longer draw the allowance, change the rules, grant Team Shares or wind the project down. Helpers you set up stop working.",
   ];
@@ -51,7 +51,7 @@ export const FOUNDER_LEAVES_WORDS =
 /** Asking one person to run it together: what happens, before the press. */
 export function pairOfferWords(name: string, address: string): string[] {
   return [
-    `${name} (${address}) can accept the second seat, with their own wallet, until the offer ends. Until then you still run the project's money alone.`,
+    `${name} (${address}) can accept the second seat, with their own account, until the offer ends. Until then you still run the project's money alone.`,
     PAIR_MEANING,
   ];
 }

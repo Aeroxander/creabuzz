@@ -15,7 +15,7 @@ import { useToast } from "../../ui/toast";
 import { OwnershipLine } from "../money/OwnershipLine";
 import { type PotAction, potProblem } from "../money/pot-copy";
 import { type MoneySendInput, useMoneySend } from "../money/use-money";
-import type { MoneyWallet } from "../money/wallet";
+import { type MoneyWallet, senderKind } from "../money/wallet";
 import type { PendingSend } from "../money/pending-sends";
 import { PLAY_MONEY_WORDS, TAKE_OUT_BANNER } from "./pot-words";
 
@@ -43,8 +43,8 @@ export interface PotSheetProps {
   /** What a "waiting" call is looked for as: "Look for your backing". */
   lookLabel: string;
   problemAction: PotAction;
-  /** The note shown when it landed. */
-  done: string;
+  /** The note shown when it landed; a function gets where the person's money is ("your wallet" or "your account"). */
+  done: string | ((own: string) => string);
   /** Runs once it landed, with the hash and the `detail` of the press that landed (an earlier press's when it was looked up). */
   onLanded?: (txHash: string, detail: string | undefined) => void;
   /** The account the sheet's numbers were read for: the press is refused if the wallet shows another by then. */
@@ -89,7 +89,9 @@ export function PotSheet(props: PotSheetProps) {
     if (shown !== props.account.toLowerCase()) {
       setChecking(false);
       return setProblem(
-        "Your wallet now shows a different account than the one these numbers were read for. Nothing was sent. Close this and open it again.",
+        senderKind(wallet) === "passkey"
+          ? "The account behind your passkey is not the one these numbers were read for. Nothing was sent. Close this and open it again."
+          : "Your wallet now shows a different account than the one these numbers were read for. Nothing was sent. Close this and open it again.",
       );
     }
     if (props.recheck) {
@@ -119,7 +121,9 @@ export function PotSheet(props: PotSheetProps) {
           result.detail !== props.detail
             ? (props.doneEarlier ??
                 "Your earlier step landed. Nothing new was sent.")
-            : props.done,
+            : typeof props.done === "function"
+              ? props.done(send.words.own)
+              : props.done,
           "done",
         );
         void queryClient.invalidateQueries({ queryKey: ["pot"] });

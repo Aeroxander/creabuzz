@@ -387,7 +387,7 @@ function RefundSheet({
   const [problem, setProblem] = useState<string | null>(null);
   return (
     <Sheet
-      description="Nothing is sent until you say so here and in your wallet."
+      description={`Nothing is sent until you say so here and ${send.words.where}.`}
       onOpenChange={(next) => {
         if (!send.isPending) {
           setProblem(null);
@@ -433,7 +433,10 @@ function RefundSheet({
             },
             {
               onSuccess: () => {
-                toast("Your money is on its way back to your wallet.", "done");
+                toast(
+                  `Your money is on its way back to ${send.words.own}.`,
+                  "done",
+                );
                 onOpenChange(false);
               },
               onError: (error) => setProblem(moneyProblem(error, "refund")),
@@ -442,7 +445,7 @@ function RefundSheet({
         }}
       >
         {send.isPending
-          ? "Waiting for your wallet…"
+          ? send.words.waiting
           : send.waiting
             ? "Look for your refund"
             : `Take back ${dollarsText(refund.refundable)} dollars`}
@@ -486,7 +489,7 @@ function TakeOut({
         Take out released Shares of round {round}
       </Button>
       <Sheet
-        description="Nothing is sent until you say so here and in your wallet."
+        description={`Nothing is sent until you say so here and ${send.words.where}.`}
         onOpenChange={(next) => {
           if (!send.isPending) {
             setProblem(null);
@@ -531,7 +534,10 @@ function TakeOut({
               },
               {
                 onSuccess: () => {
-                  toast("Your released Shares are in your wallet.", "done");
+                  toast(
+                    `Your released Shares are in ${send.words.own}.`,
+                    "done",
+                  );
                   setOpen(false);
                 },
                 onError: (error) => setProblem(moneyProblem(error, "take-out")),
@@ -540,7 +546,7 @@ function TakeOut({
           }}
         >
           {send.isPending
-            ? "Waiting for your wallet…"
+            ? send.words.waiting
             : send.waiting
               ? "Look for your Shares"
               : "Take them out and end their refund"}

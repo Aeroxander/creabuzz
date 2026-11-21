@@ -26,6 +26,7 @@ import {
   type SenderCall,
 } from "@creaton/core/aa/sponsoredSender.ts";
 import { signKernelHash } from "@creaton/core/aa/kernel-signature.ts";
+import { kernel033AddressLocal } from "@creaton/core/aa/kernel033-address.ts";
 import { keccak256 } from "@creaton/core/aa/userop.ts";
 import {
   walletAttestationDigest,
@@ -218,29 +219,46 @@ export function createPasskeyImpl(
     }
   };
 
+  /**
+   * The account's address, worked out here from the passkey's own key and checked against what the node says (remembered per
+   * network and owner key after one match, so a reload makes no call). An address the two do not agree on is never used or
+   * shown: a node that lied about it could otherwise send a person's money, or a deposit, to an account nobody controls.
+   */
   const accountAddress = async (): Promise<string> => {
     const { r1, x, y } = owner();
-    const known = remembered(r1);
-    if (known) return known;
-    const address = (
+    const mine = kernel033AddressLocal({ pubKeyX: x, pubKeyY: y });
+    if (remembered(r1) === mine) return mine;
+    const said = (
       await getKernel033Sender({ pubKeyX: x, pubKeyY: y, rpc })
     ).toLowerCase();
+    if (said !== mine)
+      throw new WalletStepError(
+        "account-mismatch",
+        0,
+        new Error("The node's account address is not the one worked out here."),
+      );
     try {
       storage?.setItem(
         ACCOUNT_KEY,
-        JSON.stringify({ chainId: settings.chainId, r1, address }),
+        JSON.stringify({ chainId: settings.chainId, r1, address: mine }),
       );
     } catch {
-      // Storage is off: the account is derived again next time.
+      // Storage is off: the account is checked again next time.
     }
-    return address;
+    return mine;
   };
 
   return {
     connectedAddress: async () => {
       try {
         return await accountAddress();
-      } catch {
+      } catch (error) {
+        // A mismatch is told, never hidden as "no account yet"; any other failure shows none and is tried again.
+        if (
+          error instanceof WalletStepError &&
+          error.reason === "account-mismatch"
+        )
+          throw error;
         return null;
       }
     },

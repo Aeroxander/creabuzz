@@ -33,10 +33,17 @@ export const MAY_NOT_WRITE =
 export const NEED_LINK =
   "To tell that you back this project, the server needs this account confirmed.";
 /** What the wallet link makes public: said beside every press that makes it. */
-export const LINK_PUBLIC =
+const LINK_PUBLIC =
   "This links your wallet to your account. Anyone on this server can see the link, and so can see how many Shares that wallet holds.";
+/** The same line for a passkey account, which holds the person's Shares in place of a wallet. */
+const LINK_PUBLIC_PASSKEY =
+  "This links your passkey account, where your Shares are held, to your account. Anyone on this server can see the link, and so can see how many Shares that passkey account holds.";
+/** The line beside every press that makes the link, for the sender in use. */
+export const linkPublicFor = (passkey: boolean) =>
+  passkey ? LINK_PUBLIC_PASSKEY : LINK_PUBLIC;
 export const LINK_CHOICE = "Let me write in this project's room";
-export const LINK_CHOICE_HINT = `${LINK_PUBLIC} Leave it unticked to back without it: you can still take your money out any time.`;
+export const linkChoiceHint = (passkey: boolean) =>
+  `${linkPublicFor(passkey)} Leave it unticked to back without it: you can still take your money out any time.`;
 /** Said in the Back sheet in place of the box when nobody is signed in: a link needs an account, and Back does not. */
 export const LINK_NEEDS_ACCOUNT =
   "To write in this project's room you need an account first. You can back now without one.";
@@ -52,8 +59,8 @@ export const COULD_NOT_CHECK =
 export const TRY_AGAIN = "Try again";
 export const CHECKING = "Checking whether you back this project…";
 
-export const linkEnding = (date: string) =>
-  `Your wallet link ends on ${date}. Confirm it again to keep writing here.`;
+export const linkEnding = (date: string, passkey = false) =>
+  `Your ${passkey ? "passkey account" : "wallet"} link ends on ${date}. Confirm it again to keep writing here.`;
 export const tookOutLine = (when: string, left: string) =>
   `You took out ${when}. You can write here for ${left} more, then this room is read only for you.`;
 export const mutedLine = (date: string) =>
@@ -176,5 +183,5 @@ export function leftText(seconds: number): string {
   return `${days} days`;
 }
 
-export const linkEnded =
-  "Your wallet link has ended. Confirm this account again to write here.";
+export const linkEnded = (passkey = false) =>
+  `Your ${passkey ? "passkey account" : "wallet"} link has ended. Confirm this account again to write here.`;

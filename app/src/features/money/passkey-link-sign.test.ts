@@ -1,6 +1,8 @@
 // What a passkey account signs besides its money steps: the link that names the person's account, and nothing else. The
 // digest the passkey is asked about is the link's own EIP-712 digest wrapped for the account (the way the network's account
 // checks it), and a message that is not that link, or that names another account, is refused before any prompt.
+import { kernel033AddressLocal } from "@creaton/core/aa/kernel033-address.ts";
+import { parseR1PublicKey } from "@creaton/core/aa/kernel033.ts";
 import { kernelWrapHash } from "@creaton/core/aa/kernel-signature.ts";
 import {
   newWalletAttestation,
@@ -11,9 +13,10 @@ import { describe, expect, it, vi } from "vitest";
 import { createPasskeyImpl, walletLinkDigest } from "./passkey-sender-impl";
 import type { PasskeyProbe, PasskeySettings } from "./passkey-sender";
 
-const ACCOUNT = `0x${"ab".repeat(20)}`;
 const ME = "cd".repeat(32);
 const R1 = `04${"6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296"}${"4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5"}`;
+/** The account of that key as this phone works it out: the saved address must be this one. */
+const ACCOUNT = kernel033AddressLocal(parseR1PublicKey(R1));
 const SETTINGS: PasskeySettings = {
   chainId: 31337,
   rpcUrl: "http://rpc.invalid",

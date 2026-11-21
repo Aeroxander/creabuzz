@@ -330,7 +330,7 @@ describe("an accepted task whose pay is owed", () => {
   it("offers no press to a wallet that does not run the project, and says so", () => {
     card(accepted(), { address: PAYEE });
     expect(screen.getByTestId("task-pay-not-runner").textContent).toMatch(
-      /Only the wallet that runs this project/,
+      /Only the account that runs this project/,
     );
     expect(screen.queryByTestId("task-pay")).toBeNull();
   });

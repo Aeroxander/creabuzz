@@ -3,7 +3,11 @@ import { useId, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
-import { useWallet, useWalletAddress } from "../money/use-money";
+import {
+  useSenderWords,
+  useWallet,
+  useWalletAddress,
+} from "../money/use-money";
 import { senderCapabilities, senderKind } from "../money/wallet";
 import { potProblem } from "../money/pot-copy";
 import { useLinkWallet, useTeamWallets } from "./use-wallets";
@@ -14,6 +18,9 @@ import { useLinkWallet, useTeamWallets } from "./use-wallets";
  */
 export function LinkWallet({ me }: { me: string }) {
   const wallet = useWallet();
+  const words = useSenderWords();
+  /** "wallet" for a wallet, "account" for a passkey account: what the person links. */
+  const noun = words.kind === "passkey" ? "account" : "wallet";
   const address = useWalletAddress().data ?? null;
   const linked = useTeamWallets([me]).data?.[me];
   const link = useLinkWallet(me);
@@ -38,11 +45,11 @@ export function LinkWallet({ me }: { me: string }) {
       role="region"
     >
       <h2 className="font-semibold" id={titleId}>
-        Your wallet
+        {noun === "account" ? "Your account" : "Your wallet"}
       </h2>
       <p className="text-sm text-muted" data-testid="link-wallet-state">
         {current
-          ? `Linked: the wallet ending ${current.slice(-4)}. Teammates can offer you a seat or give you Shares there.`
+          ? `Linked: the ${noun} ending ${current.slice(-4)}. Teammates can offer you a seat or give you Shares there.`
           : "Not linked yet. Link it so teammates can offer you a seat or give you Shares."}
       </p>
       {problem ? (
@@ -57,7 +64,7 @@ export function LinkWallet({ me }: { me: string }) {
           onClick={() => {
             setProblem(null);
             link.mutate(undefined, {
-              onSuccess: () => toast("Your wallet is linked.", "done"),
+              onSuccess: () => toast(`Your ${noun} is linked.`, "done"),
               onError: (error) => setProblem(potProblem(error, "link")),
             });
           }}
@@ -65,10 +72,10 @@ export function LinkWallet({ me }: { me: string }) {
           variant="secondary"
         >
           {link.isPending
-            ? "Waiting for your wallet…"
+            ? words.waiting
             : current
-              ? "Link this wallet instead"
-              : "Link this wallet"}
+              ? `Link this ${noun} instead`
+              : `Link this ${noun}`}
         </Button>
       )}
     </Card>

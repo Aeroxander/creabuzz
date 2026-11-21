@@ -64,7 +64,7 @@ export const PAY_READ_FAILED =
 
 /** The task's money, in the Details fold: where the pay goes and that it cannot go anywhere else. */
 export const PAY_DETAILS =
-  "The money goes to the wallet that took the task on the network, and to no other. Whatever you do not pay goes back to the project and to the people who took out while it was set aside.";
+  "The money goes to the account that took the task on the network, and to no other. Whatever you do not pay goes back to the project and to the people who took out while it was set aside.";
 
 /** After the payment landed: the team's record could not be written (the next press writes the record only). */
 export const PAID_NOT_YET =

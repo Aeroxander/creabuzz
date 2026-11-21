@@ -180,7 +180,7 @@ describe("what stops the pay press, in one sentence", () => {
     // The card still thinks the signed-in person's wallet is the runner's; the sheet reads the wallet it has now.
     await openSheet();
     expect(screen.getByTestId("accept-blocked").textContent).toMatch(
-      /Only the wallet that runs this project/,
+      /Only the account that runs this project/,
     );
   });
 

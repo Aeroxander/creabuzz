@@ -49,7 +49,7 @@ export function SendSheet({
   const [problem, setProblem] = useState<string | null>(null);
   return (
     <Sheet
-      description="Nothing is sent until you say so here and in your wallet."
+      description={`Nothing is sent until you say so here and ${send.words.where}.`}
       onOpenChange={(next) => {
         if (!send.isPending) {
           setProblem(null);
@@ -94,9 +94,9 @@ export function SendSheet({
         }}
       >
         {send.isPending
-          ? "Waiting for your wallet…"
+          ? send.words.waiting
           : send.waiting
-            ? "Look for it in your wallet"
+            ? send.words.lookFor
             : confirmLabel}
       </Button>
     </Sheet>
@@ -159,9 +159,9 @@ export function SendButton({
         variant={variant}
       >
         {send.isPending
-          ? "Waiting for your wallet…"
+          ? send.words.waiting
           : send.waiting
-            ? "Look for it in your wallet"
+            ? send.words.lookFor
             : label}
       </Button>
       {problem ? (

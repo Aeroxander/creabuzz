@@ -166,7 +166,7 @@ export function OfferSheet({
           <option value="">Choose someone on the team</option>
           {choices.map((m) => (
             <option disabled={!m.address} key={m.pubkey} value={m.pubkey}>
-              {m.address ? m.name : `${m.name} (has not linked a wallet)`}
+              {m.address ? m.name : `${m.name} (has not linked an account)`}
             </option>
           ))}
         </select>

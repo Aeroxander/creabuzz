@@ -109,11 +109,11 @@ describe("why the press is off", () => {
     expect(confirm().disabled).toBe(false);
   });
 
-  it("the wallet shows another account than the one the task is named for", async () => {
+  it("another account is in use than the one the task is named for", async () => {
     const task = scene({ account: STRANGER_EVM });
     wrap(<TakeOffer {...props(task, { address: STRANGER_EVM })} />);
     await blockedBy(
-      /Your wallet shows another account, so it cannot take this task/,
+      /You are using another account, so you cannot take this task here/,
     );
   });
 });

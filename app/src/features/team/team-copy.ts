@@ -6,7 +6,11 @@
  */
 import { selectorOf } from "@creaton/core/launchpad/evmAbi.ts";
 import { isUserRejection } from "@creaton/core/launchpad/wallet-errors.ts";
-import { moneyProblem, refusalOf } from "../money/money-copy";
+import {
+  moneyProblem,
+  passkeyClosedWords,
+  refusalOf,
+} from "../money/money-copy";
 import { WalletStepError } from "../money/wallet";
 
 export type TeamAction =
@@ -42,11 +46,11 @@ const WORDS: Record<
     confirm:
       "Only the other signer can confirm this: the one who proposed it cannot confirm it too.",
     withdraw: "Only the signer who proposed this can withdraw it.",
-    "take-seat": "This wallet was not offered the seat. Nothing changed.",
+    "take-seat": "This account was not offered the seat. Nothing changed.",
     give: "Only the project's runner can give Shares. Nothing changed.",
     "hand-over":
       "Only the founder can mark that they are leaving. Nothing changed.",
-    any: "This wallet may not do this. Nothing changed.",
+    any: "This account may not do this. Nothing changed.",
   },
   BadTarget: {
     any: "A Pair can only call its own project's money and launch. Nothing changed.",
@@ -77,7 +81,7 @@ const WORDS: Record<
     any: "The network does not know this project. Nothing changed.",
   },
   NotRunner: {
-    any: "Only the wallet that runs this project can do this. Nothing changed.",
+    any: "Only the account that runs this project can do this. Nothing changed.",
   },
   WrongRunner: {
     "open-auction":
@@ -133,9 +137,9 @@ const WORDS: Record<
     any: "This project has already wound down. Nothing changed.",
   },
   BadInput: {
-    give: "Shares can only go to a person's own wallet, and the amount must be more than nothing.",
+    give: "Shares can only go to a person's own account, and the amount must be more than nothing.",
     "hand-over":
-      "The seat can only be offered to another wallet. Nothing changed.",
+      "The seat can only be offered to another account. Nothing changed.",
     any: "Something in this request does not fit. Nothing changed.",
   },
   // Finisher
@@ -188,10 +192,10 @@ const WORDS: Record<
     any: "What this link carries does not match the list. Ask for a new link. Nothing changed.",
   },
   BadHolder: {
-    any: "This line has no wallet to agree with yet. Nothing changed.",
+    any: "This line has no account to agree with yet. Nothing changed.",
   },
   Barred: {
-    any: "This wallet can no longer agree to this line, because a replacement is waiting. Nothing changed.",
+    any: "This account can no longer agree to this line, because a replacement is waiting. Nothing changed.",
   },
   EntryState: {
     consent: "This line was already agreed to. Nothing changed.",
@@ -203,14 +207,14 @@ const WORDS: Record<
   },
   BadSignature: {
     consent:
-      "Only the wallet this line was made for can agree to it. Nothing changed.",
-    any: "That signature does not match the wallet this line was made for. Nothing changed.",
+      "Only the account this line was made for can agree to it. Nothing changed.",
+    any: "That signature does not match the account this line was made for. Nothing changed.",
   },
   TextMoved: {
     any: "The agreement was updated while you were reading. Read it again, then agree. Nothing changed.",
   },
   BadReceiver: {
-    any: "Shares can go to your own wallet or to a wallet that already exists on this network, not to a project's own account. Choose another. Nothing changed.",
+    any: "Shares can go to your own account or to an account that already exists on this network, not to a project's own contracts. Choose another. Nothing changed.",
   },
   OverTotal: {
     any: "Agreeing to this would pass the total the list is owed. Nothing changed. Ask the team to look.",
@@ -335,7 +339,7 @@ const ACTION_WORDS: Record<TeamAction, string> = {
   "wind-down": "Winding down",
   spend: "Paying",
   launch: "Putting the project on the network",
-  link: "Linking your wallet",
+  link: "The link to your account",
   "open-round": "Opening backing",
   "open-auction": "Opening the auction",
   bid: "Your bid",
@@ -356,6 +360,8 @@ export function teamProblem(error: unknown, action: TeamAction): string {
     const words = WORDS[refusal];
     return words[action] ?? words.any;
   }
+  const closed = passkeyClosedWords(error);
+  if (closed) return closed;
   if (error instanceof WalletStepError) {
     // The wallet's own stops (no wallet, wrong network, still waiting, said no) read the same as for money.
     if (refusalOf(error.cause) === "NoGas") return moneyProblem(error, "back");

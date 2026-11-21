@@ -55,12 +55,12 @@ describe("money copy", () => {
     ).toBe("NotEnoughDollars");
   });
 
-  it("says only the wallet that runs the project can open backing (F5)", () => {
+  it("says only the account that runs the project can open backing (F5)", () => {
     for (const sig of ["NotRunner()", "WrongRunner(uint8)"]) {
       const error = new WalletStepError("failed", 0, revert(sig));
       expect(refusalOf(error.cause)).toBe("NotRunner");
       expect(moneyProblem(error, "open")).toBe(
-        "Only the wallet that runs this project can open backing. Nothing changed.",
+        "Only the account that runs this project can open backing. Nothing changed.",
       );
     }
   });

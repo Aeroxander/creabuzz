@@ -90,7 +90,8 @@ export function claimTitleOf(what: string | null): string {
 }
 
 export const CLAIM_LOOK = "Look for your claim";
-export const CLAIMED = "Claimed. The money is in your wallet.";
+/** Said when a claim landed: `own` is where the person's money is ("your wallet" or "your account"). */
+export const claimedWords = (own: string) => `Claimed. The money is in ${own}.`;
 
 /** What the Claim sheet says about an ended task: what was set aside, what came back, what is owed now. */
 export function claimEndedWords(input: {

@@ -17,7 +17,7 @@ import { type BackRead, readBack } from "./back-read";
 import { plannedBackLine } from "./back-tasks";
 import {
   LINK_CHOICE,
-  LINK_CHOICE_HINT,
+  linkChoiceHint,
   LINK_NEEDS_ACCOUNT,
 } from "../room/room-words";
 import {
@@ -217,7 +217,7 @@ export function BackSheet({
               data-testid="back-link-hint"
               id="back-link-hint"
             >
-              {LINK_CHOICE_HINT}
+              {linkChoiceHint(senderKind(ready.wallet) === "passkey")}
             </p>
           </div>
         ) : null}

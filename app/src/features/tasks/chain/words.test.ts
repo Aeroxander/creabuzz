@@ -262,7 +262,7 @@ describe("what a task is doing, in a few words, for a sentence about a change", 
   });
   it("the step 1 refusals are the ones the Tasks tab already says", () => {
     expect(OWN_WORK).toMatch(/done by you or by an agent you run/);
-    expect(NOT_RUNNER).toMatch(/Only the wallet that runs this project/);
+    expect(NOT_RUNNER).toMatch(/Only the account that runs this project/);
   });
 });
 

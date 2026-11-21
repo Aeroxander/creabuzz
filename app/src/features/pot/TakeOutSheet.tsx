@@ -269,7 +269,7 @@ export function TakeOutSheet({
       }
       description={`Taking out of ${projectName}`}
       detail={detail}
-      done="Taken out. The money is in your wallet."
+      done={(own) => `Taken out. The money is in ${own}.`}
       landed={async (wallet, from, earlier) => {
         // A call replaced in the wallet may have landed under another hash: fewer Shares held now say so.
         const [shares, before] = (earlier.detail ?? "").split(":");

@@ -63,9 +63,11 @@ export function OpenBacking({
       ) : null}
       {runner ? null : (
         <p className="text-sm" data-testid="open-backing-runner">
-          {address
-            ? "This wallet does not run this project. Switch your wallet to the account that put the project on the network to open backing."
-            : "Connect the wallet that runs this project to open backing."}
+          {send.words.kind === "passkey"
+            ? "This account does not run this project. Only the account that put the project on the network can open backing."
+            : address
+              ? "This wallet does not run this project. Switch your wallet to the account that put the project on the network to open backing."
+              : "Connect the wallet that runs this project to open backing."}
         </p>
       )}
       {runner ? (
@@ -89,7 +91,7 @@ export function OpenBacking({
           }}
         >
           {send.isPending
-            ? "Waiting for your wallet…"
+            ? send.words.waiting
             : send.waiting
               ? "Look for your round"
               : "Open backing"}

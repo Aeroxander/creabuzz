@@ -5,6 +5,7 @@
  */
 import { Button } from "../../ui/button";
 import { dayText, timeText } from "../money/numbers";
+import { useSenderWords } from "../money/use-money";
 import type { ProjectNumbers } from "../money/numbers";
 import { doorShutWords } from "../pot/pot-words";
 import { ConfirmAccount } from "./ConfirmAccount";
@@ -51,6 +52,7 @@ export function RoomStatus({
   /** The composer, drawn when the person may write. */
   children: React.ReactNode;
 }) {
+  const passkey = useSenderWords().kind === "passkey";
   switch (standing.kind) {
     case "checking":
       return (
@@ -109,7 +111,9 @@ export function RoomStatus({
     case "needs-link":
       return (
         <div className="flex flex-col gap-2" data-testid="room-needs-link">
-          <p className="text-sm">{standing.expired ? linkEnded : NEED_LINK}</p>
+          <p className="text-sm">
+            {standing.expired ? linkEnded(passkey) : NEED_LINK}
+          </p>
           <ConfirmAccount />
         </div>
       );
@@ -133,7 +137,9 @@ export function RoomStatus({
           ) : null}
           {standing.renewBy !== null ? (
             <div className="flex flex-col gap-2" data-testid="room-renew">
-              <p className="text-sm">{linkEnding(dayText(standing.renewBy))}</p>
+              <p className="text-sm">
+                {linkEnding(dayText(standing.renewBy), passkey)}
+              </p>
               <ConfirmAccount />
             </div>
           ) : null}
