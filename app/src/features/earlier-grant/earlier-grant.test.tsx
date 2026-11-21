@@ -281,7 +281,7 @@ describe("the claim page", () => {
       "Your grant: 2,500 Team Shares.",
     );
     expect(screen.getByTestId("claim-vesting").textContent).toBe(
-      "They unlock evenly over 365 days counted from the day the project began, with no waiting period at the start. The team cannot cancel or burn this grant: the contract has no call for it.",
+      "They unlock evenly over 365 days counted from the day the project began, with no waiting period at the start.",
     );
     expect(screen.getByTestId("claim-taking-out").textContent).toBe(
       "Taking Team Shares out pays only what the project holds above what backers put in. That can be nothing.",
@@ -519,7 +519,7 @@ describe("the claim page", () => {
     await screen.findByTestId("claim-grant");
     const text = document.body.textContent ?? "";
     expect(text).not.toMatch(
-      /for ever|forever|no end|never expires|cannot be undone|permanent|guarantee|profit|dividend|earn/i,
+      /for ever|forever|no end|never expires|cannot be undone|permanent|guarantee|profit|dividend|earn|cannot (cancel|burn|be taken)/i,
     );
     expect(S).toBeGreaterThan(0n);
   });

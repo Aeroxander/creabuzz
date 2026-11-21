@@ -7,7 +7,7 @@
 import { unparkCall } from "@creaton/core/pot/pot-calls.ts";
 import { parkedOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQueryClient } from "@tanstack/react-query";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "../../ui/button";
 import { useToast } from "../../ui/toast";
 import { potProblem } from "../money/pot-copy";
@@ -26,6 +26,7 @@ export function TakeBackButton({
   target,
   gate,
   parked,
+  onTakenBack,
 }: {
   ready: Ready;
   target: MoneyTarget;
@@ -33,8 +34,18 @@ export function TakeBackButton({
   gate: string;
   /** What this account has parked, as just read. */
   parked: bigint;
+  /** Called when the Shares are back, so the page can put the person's place somewhere that stays (this control goes away). */
+  onTakenBack?: () => void;
 }) {
   const [asking, setAsking] = useState(false);
+  const takeBackRef = useRef<HTMLButtonElement>(null);
+  const cancelled = useRef(false);
+  // Cancel unmounts the focused button: the place goes back to the press that opened the ask. (After a take-back the page
+  // decides where the place goes, because this control is about to go away.)
+  useEffect(() => {
+    if (!asking && cancelled.current) takeBackRef.current?.focus();
+    cancelled.current = false;
+  }, [asking]);
   const [problem, setProblem] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const wallet = useWallet();
@@ -81,6 +92,7 @@ export function TakeBackButton({
       {
         onSuccess: () => {
           toast(TAKE_BACK_DONE, "done");
+          onTakenBack?.();
           setAsking(false);
           void queryClient.invalidateQueries({ queryKey: ["pot"] });
         },
@@ -94,6 +106,7 @@ export function TakeBackButton({
       <div className="flex flex-col gap-2">
         <Button
           data-testid="take-back"
+          ref={takeBackRef}
           onClick={() => {
             setProblem(null);
             setAsking(true);
@@ -136,7 +149,10 @@ export function TakeBackButton({
         <Button
           data-testid="take-back-cancel"
           disabled={send.isPending}
-          onClick={() => setAsking(false)}
+          onClick={() => {
+            cancelled.current = true;
+            setAsking(false);
+          }}
           variant="ghost"
         >
           Cancel

@@ -15,6 +15,7 @@ import {
 import { Check, Copy, Download } from "lucide-react";
 import { useState } from "react";
 import { Button } from "../../ui/button";
+import { UnlockPress } from "./UnlockPress";
 
 /** Set once this account's recovery key was saved (the same key web/ uses). */
 export const BACKED_UP_KEY = "buzz.identity.backedUp";
@@ -127,15 +128,22 @@ export function RecoveryKeyPanel({ onSaved }: { onSaved: () => void }) {
           </Button>
         </>
       ) : (
-        <p
-          className="glass rounded-xl p-3 text-sm"
-          data-testid="backup-unavailable"
-          role="status"
-        >
-          {recovery.kind === "locked"
-            ? "Unlock with your passkey to show your recovery key."
-            : "Your recovery key can't be read in this browser, so there is nothing to save here. Stay signed in until you have it."}
-        </p>
+        <>
+          <p
+            className="glass rounded-xl p-3 text-sm"
+            data-testid="backup-unavailable"
+            role="status"
+          >
+            {recovery.kind === "locked"
+              ? "Unlock with your passkey to show your recovery key."
+              : "Your recovery key can't be read in this browser, so there is nothing to save here. Stay signed in until you have it."}
+          </p>
+          {recovery.kind === "locked" ? (
+            <div className="flex flex-wrap">
+              <UnlockPress testId="backup-unlock" />
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );

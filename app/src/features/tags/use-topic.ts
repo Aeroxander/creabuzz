@@ -1,5 +1,4 @@
 import { KIND_TEXT_NOTE } from "@creaton/core/kinds.ts";
-import { inAnyRoom } from "@creaton/core/social/feed/feed-events.ts";
 import { useQuery } from "@tanstack/react-query";
 import { read } from "../../lib/relay";
 import type { SignedEvent } from "../posts/use-posts";
@@ -18,12 +17,10 @@ export function useTopic(tag: string) {
           limit: TOPIC_LIMIT,
         })) as SignedEvent[]
       )
-        // Asked for by tag, checked again here: only a post that carries the topic belongs on its page, and a holder
-        // room's posts are read in that room only.
-        .filter(
-          (event) =>
-            !inAnyRoom(event) &&
-            event.tags.some((t) => t[0] === "t" && t[1]?.toLowerCase() === tag),
+        // Asked for by tag, checked again here: only a post that carries the topic belongs on its page. A holder room's
+        // posts are left out by the page's own filter (`visiblePosts`, tested with a room's post under the topic).
+        .filter((event) =>
+          event.tags.some((t) => t[0] === "t" && t[1]?.toLowerCase() === tag),
         )
         .sort((a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : -1)),
   });

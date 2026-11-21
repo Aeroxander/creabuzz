@@ -96,14 +96,23 @@ export function cardIntro(divisor: number, dayLength: number): string {
 export const JOIN_LOWERS =
   "More Shares joining can lower the parked share and end a pause.";
 
-/** Whether the pause is under the line, armed (a warning day running) or on, from the record's own numbers. */
-export type PauseStage = "under" | "armed" | "paused";
+/**
+ * Whether the pause is under the line, at the line with no warning day started yet ("reached": a join cleared the day, or
+ * people took out, and nobody has pressed since), armed (a warning day running) or on, from the record's own numbers.
+ */
+export type PauseStage = "under" | "reached" | "armed" | "paused";
 
 export function pauseStage(pause: {
   armedAt: number | null;
   paused: boolean;
+  parkedTotal: bigint;
+  line: bigint;
 }): PauseStage {
-  return pause.paused ? "paused" : pause.armedAt !== null ? "armed" : "under";
+  if (pause.paused) return "paused";
+  if (pause.armedAt !== null) return "armed";
+  return pause.line > 0n && pause.parkedTotal >= pause.line
+    ? "reached"
+    : "under";
 }
 
 /** The card's one state line. */
@@ -115,8 +124,12 @@ export function stateLine(pause: {
   pausesFrom: number | null;
   since: number | null;
   line: bigint;
+  /** The warning day in seconds (said in the "reached" line only). */
+  dayLength?: number;
 }): string {
   const d = pause.lineDivisor;
+  if (pause.stage === "reached")
+    return `${lineWordsCap(d)} is parked, but the warning day has not started. Press "${START_DAY}" and, if it stays there, the team's allowance and new task plans pause ${waitWords(pause.dayLength ?? 86_400)} later.`;
   if (pause.stage === "armed" && pause.pausesFrom !== null)
     return `${lineWordsCap(d)} is parked. The team's allowance and new task plans pause on ${timeText(pause.pausesFrom)} if it stays there.`;
   if (pause.stage === "paused") {
@@ -126,6 +139,11 @@ export function stateLine(pause: {
   }
   return `${parkedOfBackers(pause.parkedTotal, pause.backers, d)} ${lineWordsCap(d)} is needed.`;
 }
+
+/** The press that starts the warning day (anyone may press it; it only makes the contract look at the share parked now). */
+export const START_DAY = "Start the day";
+export const START_DAY_DONE =
+  "Started. The pause begins if that much stays parked.";
 
 /** The meter's text value (never colour alone). */
 export function meterText(
@@ -174,7 +192,9 @@ export const PARK_DONE =
   "Parked. You can take them back or take them out any time from Your Shares.";
 export const PARK_CANNOT_READ =
   "The stop could not be read right now, so nothing can be parked. Your Shares and your Take out are not affected. Try again in a moment.";
-export const PARK_NONE = "You hold no Shares in your wallet to park.";
+/** `own` is where the person's Shares are: "your wallet" or "your account" (`senderWords`). */
+export const parkNone = (own: string) =>
+  `You hold no Shares in ${own} to park.`;
 
 export function parkSummary(input: {
   n: bigint;

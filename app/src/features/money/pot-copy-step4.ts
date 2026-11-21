@@ -7,7 +7,7 @@
 import type { Text } from "./pot-copy-tasks";
 
 /** What a person was doing when a step 4 press stopped. */
-export type Step4Action = "park" | "take-back" | "earlier-claim";
+export type Step4Action = "park" | "take-back" | "start-day" | "earlier-claim";
 
 const NOTHING = "Nothing changed.";
 
@@ -77,6 +77,7 @@ export const STEP4_EXTENSIONS = {
 export const STEP4_ACTION_WORDS: Record<Step4Action, string> = {
   park: "Parking your Shares",
   "take-back": "Taking your Shares back",
+  "start-day": "Starting the day",
   "earlier-claim": "The claim",
 };
 

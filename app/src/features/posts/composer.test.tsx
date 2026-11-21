@@ -99,6 +99,29 @@ async function pick(...files: File[]) {
 const open = (props: Partial<Parameters<typeof ComposerSheet>[0]> = {}) =>
   draw(<ComposerSheet onOpenChange={() => undefined} open {...props} />);
 
+describe("a locked passkey account in the writing box", () => {
+  it("is told to unlock with a press inside the box, where the bar at the top is covered, and keeps what it typed", async () => {
+    world.passkeyLocked = true;
+    open();
+    fireEvent.change(await screen.findByTestId("composer-text"), {
+      target: { value: "Typed before the reload" },
+    });
+    expect(screen.getByTestId("composer-locked").textContent).toMatch(
+      /^Unlock with your passkey to post\. What you typed is kept\.Unlock$/,
+    );
+    expect(screen.getByTestId("composer-unlock")).toBeTruthy();
+    expect(
+      (screen.getByTestId("composer-text") as HTMLTextAreaElement).value,
+    ).toBe("Typed before the reload");
+  });
+
+  it("an unlocked account is told nothing", async () => {
+    open();
+    await screen.findByTestId("composer-text");
+    expect(screen.queryByTestId("composer-locked")).toBeNull();
+  });
+});
+
 describe("pictures in a post", () => {
   it("sends each picture clean: no location in the bytes that are uploaded, and the post carries the description", async () => {
     open();

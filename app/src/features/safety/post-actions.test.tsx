@@ -81,7 +81,7 @@ const moreOf = async (name: string) =>
 const menu = () => screen.findByTestId("post-menu");
 
 describe("someone else's post", () => {
-  it("offers Repost and Quote, and a repost is the post shared as it is", async () => {
+  it("offers Repost and Quote, and a repost names the post and carries no copy of it", async () => {
     const post = note(ANA, "Lit #lamps", NOW - 10, [["t", "lamps"]]);
     draw(<TopicPage tag="lamps" />);
     fireEvent.click(await moreOf("Ana"));
@@ -95,7 +95,8 @@ describe("someone else's post", () => {
       ["e", post.id],
       ["p", ANA],
     ]);
-    expect(JSON.parse(repost.content).id).toBe(post.id);
+    // It names the post and carries no copy of it, so deleting the post leaves no readable copy on the server.
+    expect(repost.content).toBe("");
     expect(
       await screen.findByText("Reposted to the people who follow you"),
     ).toBeTruthy();

@@ -187,7 +187,7 @@ test("a listed account claims its row, an account with no row is refused, and a 
     );
     ok("the listed account sees its own grant: 2,500 Team Shares");
     await expect(page.getByTestId("claim-vesting")).toContainText(
-      "They unlock evenly over 365 days counted from the day the project began, with no waiting period at the start. The team cannot cancel or burn this grant: the contract has no call for it.",
+      "They unlock evenly over 365 days counted from the day the project began, with no waiting period at the start.",
     );
     await expect(page.getByTestId("claim-taking-out")).toHaveText(
       "Taking Team Shares out pays only what the project holds above what backers put in. That can be nothing.",

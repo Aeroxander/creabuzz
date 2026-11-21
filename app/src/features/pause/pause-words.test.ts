@@ -5,6 +5,7 @@ import {
   launchSentence,
   lineWords,
   meterText,
+  parkNone,
   parkedPercent,
   parkSummary,
   stateLine,
@@ -159,6 +160,17 @@ describe("the state lines", () => {
   it("the launch sentence is said before launching", () => {
     expect(launchSentence(3)).toBe(
       "On this network holders can pause the team's spending when a third of Shares are parked. You cannot turn this off for your project.",
+    );
+  });
+});
+
+describe("the Park sheet's empty sentence", () => {
+  it("says where the Shares are for the person: a wallet or an account", () => {
+    expect(parkNone("your wallet")).toBe(
+      "You hold no Shares in your wallet to park.",
+    );
+    expect(parkNone("your account")).toBe(
+      "You hold no Shares in your account to park.",
     );
   });
 });

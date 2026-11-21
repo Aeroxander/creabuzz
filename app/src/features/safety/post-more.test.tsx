@@ -149,7 +149,7 @@ describe("hiding a person from a post", () => {
     expect(screen.getByText(/Hidden people/)).toBeTruthy();
   });
 
-  it("offers no Report or Hide on a person's own post, only Edit and Delete", async () => {
+  it("offers no Report or Hide on a person's own post, only Save, Edit and Delete", async () => {
     note(world.me, "Mine #lamps", NOW - 10, [["t", "lamps"]]);
     draw(<TopicPage tag="lamps" />);
     const card = await screen.findByTestId("post-card");
@@ -162,7 +162,22 @@ describe("hiding a person from a post", () => {
         .getAllByRole("button")
         .map((b) => b.textContent)
         .filter((t) => t && t !== "Close"),
-    ).toEqual(["Edit", "Delete"]);
+    ).toEqual(["Save this post", "Edit", "Delete"]);
+  });
+
+  it("does not offer Edit while the post's comments are unknown, and says why, so comments are never left behind", async () => {
+    note(world.me, "Mine #lamps", NOW - 10, [["t", "lamps"]]);
+    // The read of reactions, reposts and replies fails: the counts are unknown, which is not "no comments".
+    world.failKinds = [7];
+    draw(<TopicPage tag="lamps" />);
+    const card = await screen.findByTestId("post-card");
+    fireEvent.click(
+      await within(card).findByRole("button", { name: /More actions/ }),
+    );
+    const menu = await screen.findByTestId("post-menu");
+    const edit = within(menu).getByRole("button", { name: "Edit" });
+    expect((edit as HTMLButtonElement).disabled).toBe(true);
+    expect(menu.textContent).toContain("have not been read yet");
   });
 
   it("sends a signed-out person to make an account instead of opening the report", async () => {
@@ -178,44 +193,49 @@ describe("hiding a person from a post", () => {
 });
 
 describe("saving from a post", () => {
-  it("saves and unsaves with a press that says whose post it is", async () => {
+  it("saves and unsaves from the More menu, which says what the press does and that only the reader sees the list", async () => {
     note(ANA, "One #lamps", NOW - 10, [["t", "lamps"]]);
     draw(<TopicPage tag="lamps" />);
-    const press = await screen.findByRole("button", {
-      name: "Save Ana's post",
-    });
-    expect(press.getAttribute("aria-pressed")).toBe("false");
-    fireEvent.click(press);
-    const saved = await screen.findByRole("button", {
-      name: "Saved Ana's post",
-    });
-    expect(saved.getAttribute("aria-pressed")).toBe("true");
+    // There is no Save press on the post itself: it is in More.
+    await screen.findByTestId("post-card");
+    expect(screen.queryByTestId("post-save")).toBeNull();
+    fireEvent.click(await moreOfAna());
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save this post" }),
+    );
     await waitFor(() => expect(world.published.at(-1)?.kind).toBe(10003));
     expect(
       await screen.findByText(/Only you can see your saved posts/),
     ).toBeTruthy();
-    fireEvent.click(saved);
+    fireEvent.click(await moreOfAna());
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Remove from saved" }),
+    );
+    await waitFor(() => expect(world.published.at(-1)?.kind).toBe(10003));
     expect(
-      await screen.findByRole("button", { name: "Save Ana's post" }),
+      await screen.findByText(/Removed from your saved posts/),
+    ).toBeTruthy();
+    fireEvent.click(await moreOfAna());
+    expect(
+      await screen.findByRole("button", { name: "Save this post" }),
     ).toBeTruthy();
   });
 
-  it("says why when a save is refused, and the post is not shown as saved", async () => {
+  it("says why when a save is refused, and the menu still offers Save", async () => {
     note(ANA, "One #lamps", NOW - 10, [["t", "lamps"]]);
     draw(<TopicPage tag="lamps" />);
-    const press = await screen.findByRole("button", {
-      name: "Save Ana's post",
-    });
+    fireEvent.click(await moreOfAna());
     await waitFor(() =>
       expect(world.reads.some((f) => f.kinds?.includes(10003))).toBe(true),
     );
     world.refuse = "restricted: slow down";
-    fireEvent.click(press);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Save this post" }),
+    );
     expect(await screen.findByText(/slow down/)).toBeTruthy();
+    fireEvent.click(await moreOfAna());
     expect(
-      screen
-        .getByRole("button", { name: "Save Ana's post" })
-        .getAttribute("aria-pressed"),
-    ).toBe("false");
+      await screen.findByRole("button", { name: "Save this post" }),
+    ).toBeTruthy();
   });
 });

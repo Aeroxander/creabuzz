@@ -23,6 +23,8 @@ export const world = {
   published: [] as SignedEvent[],
   me: ME,
   signedIn: true,
+  /** A passkey account that needs its one tap after a reload (the app's own `useAccount().locked`). */
+  passkeyLocked: false,
   /** The person's key cannot be used (a locked passkey): opening a sealed list rejects. */
   locked: false,
   /** Words asked for with `search`, in order. */
@@ -53,6 +55,7 @@ export function reset() {
   world.published = [];
   world.me = ME;
   world.signedIn = true;
+  world.passkeyLocked = false;
   world.locked = false;
   world.searches = [];
   world.reads = [];
@@ -153,7 +156,7 @@ export const relayMock = {
 export const accountMock = {
   useAccount: () => ({
     pubkey: world.signedIn ? world.me : null,
-    locked: false,
+    locked: world.passkeyLocked,
   }),
 };
 

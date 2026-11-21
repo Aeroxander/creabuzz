@@ -10,10 +10,15 @@ import {
 } from "../features/earlier-grant/earlier-grant-settings";
 import { HomePage } from "../features/home/HomePage";
 import { legacyScreensOn } from "../lib/legacy";
-import { ProjectPage } from "../features/project/ProjectPage";
 import { Shell } from "./Shell";
 
 // Home and a project's page are in the first download; every other screen loads when it is first opened.
+// The project page is the biggest screen (its money, tasks and room are behind it): it loads when a project is opened, so
+// Home, the first screen, stays within the first-load budget.
+const ProjectPage = lazyRouteComponent(
+  () => import("../features/project/ProjectPage"),
+  "ProjectPage",
+);
 const SignUpPage = lazyRouteComponent(
   () => import("../features/account/SignUpPage"),
   "SignUpPage",

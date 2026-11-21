@@ -490,6 +490,15 @@ export function unparkCall(pause: string, amount: bigint): PotCall {
 }
 
 /**
+ * Start the warning day: anyone may ask the pause contract to look at the share parked now and arm or disarm. It changes
+ * nothing else and cannot fail for a reason that matters; it is the way back in when a join cleared the day and the share
+ * parked is at the line again without anyone parking or taking back.
+ */
+export function pokeCall(pause: string): PotCall {
+  return build(HOLDER_PAUSE_ABI, pause, "poke", []);
+}
+
+/**
  * Take out Shares that are partly parked: `unpark(parked)` first, then `leave(wallet + parked, minCash, to)`. The order is
  * the point: the Shares must be back in the wallet before `leave` burns them. A person with nothing parked gets the plain
  * `leave` and nothing else.

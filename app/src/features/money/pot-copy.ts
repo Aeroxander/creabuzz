@@ -476,8 +476,21 @@ function isRejectionCode(error: unknown): boolean {
   return code === 4001 || code === "ACTION_REJECTED";
 }
 
+/** "your wallet" said of a passkey account is "your account": the same sentence for the person it is about. */
+function forSender(text: string, error: unknown): string {
+  if (!(error instanceof WalletStepError) || error.sender !== "passkey")
+    return text;
+  return text
+    .replace(/\byour wallet\b/g, "your account")
+    .replace(/\bYour wallet\b/g, "Your account");
+}
+
 /** What a person reads when a money step of the join-and-leave design stops. */
 export function potProblem(error: unknown, action: PotAction): string {
+  return forSender(potProblemOf(error, action), error);
+}
+
+function potProblemOf(error: unknown, action: PotAction): string {
   const cause = error instanceof WalletStepError ? error.cause : error;
   const refusal = potRefusalOf(cause);
   if (refusal) {

@@ -78,6 +78,17 @@ describe("reading the brain", () => {
     ]);
   });
 
+  it("never draws a file name with direction marks in it: the name is cleaned, so no such file is read", async () => {
+    const spoof = "playbooks/a\u202Eb.md";
+    const { tools: t, state } = tools({
+      [spoof]: enc("looks like a picture"),
+      "playbooks/ok.md": enc("fine"),
+    });
+    const files = await readBrain(t, REPO);
+    expect(files.map((f) => f.path)).toEqual(["playbooks/ok.md"]);
+    expect(state.reads).not.toContain(spoof);
+  });
+
   it("is an empty list for a repository with no brain files", async () => {
     const { tools: t } = tools({ "src/main.rs": enc("fn main() {}") });
     expect(await readBrain(t, REPO)).toEqual([]);

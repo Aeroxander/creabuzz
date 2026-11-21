@@ -5,10 +5,9 @@ import {
   parseNote,
 } from "@creaton/core/social/feed/feed-events.ts";
 import { Link } from "@tanstack/react-router";
-import { Bookmark, Heart, MessageCircle } from "lucide-react";
+import { Heart, MessageCircle } from "lucide-react";
 import { postParts } from "@creaton/core/social/post-compose.ts";
 import { Fragment, lazy, Suspense, useMemo } from "react";
-import { useBookmarks } from "../../lib/bookmarks";
 import type { ProfileMetadata } from "../../lib/profiles";
 import { nameOf, pictureOf } from "../../lib/profiles";
 import { isServerPicture } from "../../lib/server-picture";
@@ -17,15 +16,16 @@ import { Avatar } from "../../ui/avatar";
 import { cn } from "../../ui/cn";
 import { useToast } from "../../ui/toast";
 
-import { SAVED_DONE, UNSAVED_DONE } from "../saved/saved-words";
 import { repostedBy as repostedByWords } from "./post-words";
-import { QuotedPost } from "./QuotedPost";
 import { type Engagement, type SignedEvent, useLike } from "./use-posts";
 
 // Fetching and drawing a picture (a signed read of this server) and the "More" menu load when a post that needs them is on
 // screen, not with the first screen.
 const PostPictures = lazy(() =>
   import("../pictures/PostPictures").then((m) => ({ default: m.PostPictures })),
+);
+const QuotedPost = lazy(() =>
+  import("./QuotedPost").then((m) => ({ default: m.QuotedPost })),
 );
 const PostMore = lazy(() =>
   import("../safety/PostMore").then((m) => ({ default: m.PostMore })),
@@ -113,7 +113,7 @@ export function PostText({
       {topicParts(displayText(text)).map((part) =>
         "topic" in part ? (
           <Link
-            className="link relative z-10 -my-2 inline-block py-2 font-semibold"
+            className="link relative z-10 -my-2 inline-block max-w-full break-all py-2 font-semibold"
             key={part.at}
             params={{ tag: part.topic }}
             to="/tag/$tag"
@@ -130,7 +130,7 @@ export function PostText({
 
 /**
  * A post's words, pictures and the post it quotes: what the post is made of, drawn in that order. The words open `#topics`;
- * the pictures come from this server only (a post never makes the phone ask another website for anything).
+ * the pictures in a post come from this server only (a post's own pictures never make the phone ask another website for anything; an author's profile picture, drawn beside the name, can be from any https address, which the owner decides on).
  */
 export function PostBody({
   event,
@@ -155,14 +155,25 @@ export function PostBody({
           <PostPictures pictures={parts.pictures} />
         </Suspense>
       ) : null}
-      {parts.quote ? <QuotedPost id={parts.quote.id} /> : null}
+      {parts.quote ? (
+        <Suspense
+          fallback={
+            <div
+              aria-hidden="true"
+              className="min-h-16 animate-pulse rounded-xl bg-white/10"
+            />
+          }
+        >
+          <QuotedPost id={parts.quote.id} />
+        </Suspense>
+      ) : null}
     </>
   );
 }
 
 /**
- * Like, comments, save and More for one post. The like is a press; the comments open the post; save keeps the post in the
- * person's private saved list; More offers Report and Hide. With the author's `name`, each press says whose post it is, so a
+ * Like, comments and More for one post. The like is a press; the comments open the post; More offers Save (to the person's
+ * private saved list), Repost, Quote, Report and Hide. With the author's `name`, each press says whose post it is, so a
  * screen reader hears one post's presses apart from another's.
  */
 export function PostActions({
@@ -226,7 +237,6 @@ export function PostActions({
         <MessageCircle aria-hidden="true" size={18} />
         <span className="num">{engagement.replies}</span>
       </Link>
-      <SaveButton event={event} name={name} />
       <Suspense
         fallback={
           <span aria-hidden="true" className="btn btn-ghost btn-sm min-w-10" />
@@ -239,42 +249,6 @@ export function PostActions({
         />
       </Suspense>
     </div>
-  );
-}
-
-/** Keep a post in the saved list (private to the person), or take it out again. */
-function SaveButton({ event, name }: { event: SignedEvent; name?: string }) {
-  const bookmarks = useBookmarks();
-  const requireAccount = useRequireAccount();
-  const toast = useToast();
-  const saved = bookmarks.isSaved(event.id);
-  const label = `${saved ? "Saved" : "Save"} ${name ? `${name}'s post` : "post"}`;
-  return (
-    <button
-      aria-label={label}
-      aria-pressed={saved}
-      className={cn(
-        "btn btn-ghost btn-sm",
-        saved ? "text-mint-ink" : "text-muted",
-      )}
-      data-testid="post-save"
-      onClick={() =>
-        requireAccount(() => {
-          const wanted = !saved;
-          (wanted ? bookmarks.save(event.id) : bookmarks.remove(event.id)).then(
-            () => toast(wanted ? SAVED_DONE : UNSAVED_DONE, "done"),
-            (error: Error) => toast(error.message, "problem"),
-          );
-        })
-      }
-      type="button"
-    >
-      <Bookmark
-        aria-hidden="true"
-        fill={saved ? "currentColor" : "none"}
-        size={18}
-      />
-    </button>
   );
 }
 

@@ -111,13 +111,13 @@ function Results({ query }: { query: string }) {
   if (topic)
     return (
       <Link
-        className="glass glass-text flex min-h-14 items-center gap-3 rounded-2xl px-4 font-semibold"
+        className="glass glass-text flex min-h-14 min-w-0 items-center gap-3 rounded-2xl px-4 font-semibold"
         data-testid="search-topic-link"
         params={{ tag: topic }}
         to="/tag/$tag"
       >
-        <Hash aria-hidden="true" className="text-mint-ink" size={20} />
-        {topicLink(topic)}
+        <Hash aria-hidden="true" className="shrink-0 text-mint-ink" size={20} />
+        <span className="min-w-0 break-all">{topicLink(topic)}</span>
       </Link>
     );
   if (!searchable(query)) return <Start />;
@@ -169,11 +169,11 @@ function Start() {
             {topics.map(({ tag, people }) => (
               <li key={tag}>
                 <Link
-                  className="glass glass-text inline-flex min-h-11 items-center gap-1.5 rounded-full px-4 text-sm font-semibold"
+                  className="glass glass-text inline-flex min-h-11 max-w-full items-center gap-1.5 rounded-full px-4 text-sm font-semibold"
                   params={{ tag }}
                   to="/tag/$tag"
                 >
-                  #{tag}
+                  <span className="min-w-0 break-all">#{tag}</span>
                   <span className="sr-only">
                     , {people} {people === 1 ? "person" : "people"}
                   </span>

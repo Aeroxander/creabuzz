@@ -3,7 +3,7 @@
  * Park Shares button (only where the record names a pause and the person holds Shares) and Take back (whenever something is
  * parked: never hidden by what a record says). The Park sheet loads when it is first opened.
  */
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Button } from "../../ui/button";
 import type { PauseNumbers } from "../money/numbers-types";
 import type { MoneyTarget } from "../pot/target";
@@ -41,11 +41,26 @@ export function PauseControls({
   parked: bigint;
 }) {
   const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  // The card's heading, kept while this control is on screen: it is where the place goes when this control goes away.
+  const heading = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const found = root.current
+      ?.closest("[role=region]")
+      ?.querySelector<HTMLElement>("h2");
+    // Kept once found: the control may be gone by the time the take-back lands.
+    if (found) heading.current = found;
+  });
   const total = wallet + parked;
-  const canPark = Boolean(pauseInfo?.contract) && total > 0n;
+  // Only Shares that sit in the wallet can be parked: a person who has parked everything is offered Take back, not Park.
+  const canPark = Boolean(pauseInfo?.contract) && wallet > 0n;
   if (!canPark && !(parked > 0n && gate)) return null;
   return (
-    <div className="flex flex-col gap-2" data-testid="pause-controls">
+    <div
+      className="flex flex-col gap-2"
+      data-testid="pause-controls"
+      ref={root}
+    >
       {parked > 0n ? (
         <p className="text-sm" data-testid="holding-parked">
           {parkedLine(parked, total)}
@@ -64,6 +79,7 @@ export function PauseControls({
         {parked > 0n && gate ? (
           <TakeBackButton
             gate={gate}
+            onTakenBack={() => heading.current?.focus()}
             parked={parked}
             ready={ready}
             target={target}

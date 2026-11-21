@@ -31,6 +31,7 @@ import { createPasskeySender } from "../money/passkey-sender";
 import { forgetSendTargets } from "../money/send-targets";
 import { injectedWallet } from "../money/wallet";
 import { YourShares } from "../pot/YourShares";
+import { PauseCard } from "./PauseCard";
 import type { PauseInfo } from "./PauseControls";
 import { targetOf } from "../pot/target";
 
@@ -193,6 +194,8 @@ describe("Park Shares", () => {
       "1,000 of your 1,000 Shares are parked.",
     );
     expect(screen.getByTestId("take-back")).toBeTruthy();
+    // Everything is parked: nothing is left in the wallet to park, so only Take back is offered.
+    expect(screen.queryByTestId("park-open")).toBeNull();
     expect(screen.getByTestId("holding-shares").textContent).toBe(
       "1,000 Shares",
     );
@@ -317,6 +320,8 @@ describe("Take back", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.click(screen.getByTestId("take-back-cancel"));
     expect(chain.sent.length).toBe(0);
+    // The place stays: Cancel removes the focused button, so focus goes back to the press that opened the ask.
+    expect(document.activeElement).toBe(screen.getByTestId("take-back"));
     fireEvent.click(screen.getByTestId("take-back"));
     fireEvent.click(screen.getByTestId("take-back-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
@@ -324,6 +329,8 @@ describe("Take back", () => {
     await waitFor(() =>
       expect(screen.queryByTestId("holding-parked")).toBeNull(),
     );
+    // Nothing is parked now and the control is gone: the place is the card's heading, not the page.
+    expect(document.activeElement?.textContent).toBe("Your Shares");
   });
 
   it("is offered whatever the record says: Shares parked can always be taken back", async () => {
@@ -422,5 +429,40 @@ describe("Take out of Shares that are parked", () => {
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
     expect(names()[0]?.[0]).toBe("leave");
+  });
+});
+
+describe("Start the day", () => {
+  const reached = numbersWithPause({ parked: 200_000n * S });
+  const showCard = () => {
+    if (!reached.pause) throw new Error("the record has no pause");
+    return wrap(
+      <PauseCard
+        holds
+        now={reached.builtAt + 100}
+        numbers={reached}
+        pause={reached.pause}
+      />,
+    );
+  };
+
+  it("sends one poke to the pause contract the Treasury names", async () => {
+    install({ wallet: 0n, parked: 0n });
+    showCard();
+    fireEvent.click(await screen.findByTestId("start-day"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    expect(names()).toEqual([["poke", PAUSE]]);
+    // Done: the press is gone, so a second press cannot be made on the old numbers.
+    await waitFor(() => expect(screen.queryByTestId("start-day")).toBeNull());
+  });
+
+  it("sends nothing to a pause the Treasury does not name the way the record does, and says what happened", async () => {
+    install({ wallet: 0n, parked: 0n }, { gate: "other" });
+    showCard();
+    fireEvent.click(await screen.findByTestId("start-day"));
+    expect((await screen.findByTestId("start-day-problem")).textContent).toBe(
+      "Starting the day did not go through. Nothing changed. Try again.",
+    );
+    expect(chain.sent.length).toBe(0);
   });
 });

@@ -63,6 +63,24 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("a conversation and the people a reader hid", () => {
+  it("draws no post until the hidden list has been read, so a hidden person's words never show for a moment", async () => {
+    const root = thread.note as Row;
+    thread.replies = [row(note(BO, "A rude comment", NOW - 50), root.event.id)];
+    hide(BO);
+    world.slow[10000] = 400;
+    draw(<PostPage id={root.event.id} />);
+    expect(
+      (await screen.findAllByTestId("folded-wait")).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText("A rude comment")).toBeNull();
+    expect(screen.queryByText("The post")).toBeNull();
+    expect((await screen.findByTestId("folded-post")).textContent).toContain(
+      "This is a post by someone you hid.",
+    );
+    expect(screen.queryByText("A rude comment")).toBeNull();
+    expect(await screen.findByText("The post")).toBeTruthy();
+  });
+
   it("folds a comment by a hidden person into one line and shows it on request", async () => {
     const root = thread.note as Row;
     thread.replies = [

@@ -641,6 +641,13 @@ test("unpark is one call with the amount", () => {
   assert.deepEqual([found.name, found.args[0]], ["unpark", 9n]);
 });
 
+test("poke is one call with no arguments, to the pause contract", () => {
+  const call = calls.pokeCall(PAUSE);
+  assert.equal(call.to, low(PAUSE));
+  assert.match(call.data, /^0x18178358$/); // cast sig "poke()"
+  assert.equal(read(HOLDER_PAUSE_ABI, call).name, "poke");
+});
+
 test("a take-out of parked Shares is unpark FIRST, then leave of wallet plus parked", () => {
   const list = calls.takeOutWithParkedCalls({
     treasury: TREASURY,

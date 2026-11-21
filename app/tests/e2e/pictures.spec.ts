@@ -9,7 +9,7 @@ import { FAY, READER, READER_KEY, seedSocial } from "./helpers/social-world";
 /**
  * Pictures in posts, at phone width (360), in a real browser: a photo that carries a location goes up with none of it in the
  * bytes (and with none of any other hidden detail), the picture is described for screen readers, drawn from this server with a
- * signed read, a failed upload loses nothing, a post's pictures can be hidden, and nothing is ever asked of another website.
+ * signed read, a failed upload loses nothing, a post's pictures can be hidden, and no picture in a post is ever asked of another website (an author's profile picture, drawn by the avatar, is a separate matter).
  */
 test.use({ viewport: { width: 360, height: 740 } });
 

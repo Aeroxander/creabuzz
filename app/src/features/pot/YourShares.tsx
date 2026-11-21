@@ -87,7 +87,7 @@ export function YourShares({
       data-testid="your-shares"
       role="region"
     >
-      <h2 className="headline text-xl" id={titleId}>
+      <h2 className="headline text-xl" id={titleId} tabIndex={-1}>
         Your Shares
       </h2>
       <WalletGate chainId={target.chainId} what="see your Shares">

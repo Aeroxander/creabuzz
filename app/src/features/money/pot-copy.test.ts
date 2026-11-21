@@ -69,6 +69,7 @@ const ACTIONS: PotAction[] = [
   "claim-note",
   "park",
   "take-back",
+  "start-day",
   "earlier-claim",
 ];
 
@@ -332,5 +333,23 @@ describe("dollarsPhrase", () => {
     expect(dollarsPhrase(1_000_000n)).toBe("1 dollar");
     expect(dollarsPhrase(1_009_999n)).toBe("1 dollar");
     expect(dollarsPhrase(2_000_000n)).toBe("2 dollars");
+  });
+});
+
+describe("the words for a passkey person's refusals", () => {
+  it("say 'your account' where a wallet person's say 'your wallet', and change nothing else", () => {
+    const item = ERRORS.find((e) => e.name === "InsufficientBalance");
+    if (!item) throw new Error("InsufficientBalance is gone from the ABIs");
+    const data = selectorOf(signatureOf(item));
+    const asWallet = refused(data);
+    const asPasskey = refused(data);
+    asPasskey.sender = "passkey";
+    asWallet.sender = "wallet";
+    expect(potProblem(asWallet, "park")).toContain("in your wallet");
+    const said = potProblem(asPasskey, "park");
+    expect(said).toContain("in your account");
+    expect(said).not.toMatch(/wallet/i);
+    for (const action of ACTIONS)
+      expect(potProblem(asPasskey, action), action).not.toMatch(/wallet/i);
   });
 });

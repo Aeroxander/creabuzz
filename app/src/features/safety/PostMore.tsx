@@ -6,10 +6,12 @@
  * everything the person writes; hiding is the reader's own and nothing is sent to the person.
  */
 import { postParts } from "@creaton/core/social/post-compose.ts";
+import { NO_ENGAGEMENT } from "@creaton/core/social/engagement.ts";
 import { parseNote } from "@creaton/core/social/feed/feed-events.ts";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { LazyComposer } from "../posts/LazyComposer";
 import { useAccount } from "../../lib/account";
+import { useBookmarks } from "../../lib/bookmarks";
 import { useMutes } from "../../lib/mutes";
 import { isServerPicture } from "../../lib/server-picture";
 import { useRequireAccount } from "../../lib/use-require-account";
@@ -28,6 +30,7 @@ import {
   DELETE_TITLE,
   DELETED_DONE,
   EDIT,
+  EDIT_COUNTS_UNKNOWN,
   EDIT_HAS_COMMENTS,
   QUOTE,
   REPOST,
@@ -43,6 +46,7 @@ import {
 } from "../posts/use-posts";
 import { type ExtraItem, type MenuChoice, PostMenu } from "../room/PostMenu";
 import { HIDE_DONE, NOT_SAVED } from "../room/room-words";
+import { SAVE, SAVED_DONE, UNSAVE, UNSAVED_DONE } from "../saved/saved-words";
 import { useReported } from "./reported";
 import { hideWords, REPORTED_HIDDEN } from "./safety-words";
 
@@ -67,6 +71,8 @@ export function PostMore({
   const mutes = useMutes();
   const reported = useReported();
   const hiddenPictures = useHiddenPictures();
+  const bookmarks = useBookmarks();
+  const saved = bookmarks.isSaved(event.id);
   const repost = useRepost();
   const remove = useDeletePost();
   const toast = useToast();
@@ -97,22 +103,31 @@ export function PostMore({
       .then(() => toast(hideWords(HIDE_DONE(name)), "done"))
       .catch((error: Error) => toast(error.message || NOT_SAVED, "problem"));
 
+  // Saving is for any post, the reader's own included: it is the first thing the menu offers.
+  const saveItem: ExtraItem = saved
+    ? { choice: "unsave", label: UNSAVE }
+    : { choice: "save", label: SAVE };
   const extra: ExtraItem[] = mine
     ? [
+        saveItem,
         ...(isReply
           ? []
           : [
               {
                 choice: "edit" as const,
                 label: EDIT,
-                ...((engagement?.replies ?? 0) > 0
-                  ? { unavailable: EDIT_HAS_COMMENTS }
-                  : {}),
+                // Comments not read yet (or not readable) are not "none": editing would leave real ones behind.
+                ...(!engagement || engagement === NO_ENGAGEMENT
+                  ? { unavailable: EDIT_COUNTS_UNKNOWN }
+                  : engagement.replies > 0
+                    ? { unavailable: EDIT_HAS_COMMENTS }
+                    : {}),
               },
             ]),
         { choice: "delete" as const, label: DELETE },
       ]
     : [
+        saveItem,
         myRepost
           ? { choice: "unrepost" as const, label: UNREPOST }
           : { choice: "repost" as const, label: REPOST },
@@ -134,6 +149,14 @@ export function PostMore({
         setReporting(event);
       });
     else if (choice === "hide") requireAccount(() => void hide());
+    else if (choice === "save" || choice === "unsave")
+      requireAccount(() => {
+        const wanted = choice === "save";
+        (wanted ? bookmarks.save(event.id) : bookmarks.remove(event.id)).then(
+          () => toast(wanted ? SAVED_DONE : UNSAVED_DONE, "done"),
+          (error: Error) => toast(error.message, "problem"),
+        );
+      });
     else if (choice === "quote") write("quote");
     else if (choice === "edit") write("edit");
     else if (choice === "delete") setConfirmingDelete(true);

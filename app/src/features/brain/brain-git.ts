@@ -13,8 +13,12 @@ import {
 import type { GitCopy, GitTools } from "./brain-read";
 import type { BrainRepo } from "./brain-repo";
 
-/** The most one download may bring (bytes). A brain is notes: a repository bigger than this is not a brain. */
-export const DOWNLOAD_MAX_BYTES = 5 * 1024 * 1024;
+/**
+ * The most one download may bring (bytes). A brain is notes: four text files and a few playbooks pack to a fraction of this,
+ * and a repository bigger than this is not a brain. The number also bounds the worst case of a crafted download: deflate
+ * expands at most about 1000 to 1, so a download at the cap inflates to about 1 GB at most.
+ */
+export const DOWNLOAD_MAX_BYTES = 1024 * 1024;
 
 /** The download went over {@link DOWNLOAD_MAX_BYTES}. */
 export class BrainTooBigError extends Error {
@@ -99,7 +103,14 @@ export const gitTools: GitTools = {
       fs = new LightningFS(STORE_NAME, { wipe: true });
       throw error;
     }
-    const oid = await git.resolveRef({ fs, dir: DIR, ref: "HEAD" });
+    let oid: string;
+    try {
+      oid = await git.resolveRef({ fs, dir: DIR, ref: "HEAD" });
+    } catch (error) {
+      // A copy that cannot be read is wiped like one that did not download.
+      fs = new LightningFS(STORE_NAME, { wipe: true });
+      throw error;
+    }
     return {
       async list(path) {
         try {

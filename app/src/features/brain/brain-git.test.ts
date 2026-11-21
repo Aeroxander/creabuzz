@@ -34,17 +34,17 @@ describe("the download cap", () => {
   });
 
   it("ends the read with a plain error when the replies add up to more than the cap", async () => {
-    const chunk = new Uint8Array(1024 * 1024);
-    const parts = Array.from({ length: 6 }, () => chunk);
+    const chunk = new Uint8Array(512 * 1024);
+    const parts = Array.from({ length: 3 }, () => chunk);
     await expect(drain(capped(replying(parts)))).rejects.toBeInstanceOf(
       BrainTooBigError,
     );
-    expect(DOWNLOAD_MAX_BYTES).toBe(5 * 1024 * 1024);
+    expect(DOWNLOAD_MAX_BYTES).toBe(1024 * 1024);
   });
 
   it("counts across the requests of one read, not one at a time", async () => {
-    const http = capped(replying([new Uint8Array(3 * 1024 * 1024)]));
-    expect(await drain(http)).toBe(3 * 1024 * 1024);
+    const http = capped(replying([new Uint8Array(700 * 1024)]));
+    expect(await drain(http)).toBe(700 * 1024);
     await expect(drain(http)).rejects.toBeInstanceOf(BrainTooBigError);
   });
 });

@@ -93,7 +93,8 @@ export async function readBrain(
     const entries = (await copy.list(BRAIN_PLAYBOOKS)) ?? [];
     const names = entries
       .filter((entry) => entry.file && PLAYBOOK_FILE.test(entry.name))
-      .map((entry) => entry.name)
+      // A name from the founder's repository is drawn as written: control and direction marks come out of it like out of text.
+      .map((entry) => plainText(entry.name))
       .sort((a, b) => a.localeCompare(b))
       .slice(0, PLAYBOOKS_MAX);
     for (const name of names) {

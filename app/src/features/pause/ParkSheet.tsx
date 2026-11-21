@@ -19,12 +19,12 @@ import {
   PARK_CANNOT_READ,
   PARK_DONE,
   PARK_FIRST,
-  PARK_NONE,
   PARK_ONE_PRESS,
   PARK_PASSKEY,
   PARK_SECOND,
   PARK_TITLE,
   PARK_WALLET,
+  parkNone,
   parkSummary,
 } from "./pause-words";
 import { PortionPicker } from "./PortionPicker";
@@ -94,7 +94,7 @@ export default function ParkSheet({
         ) : null}
         <p className="text-sm" data-testid={`park-${data.why}`}>
           {data.why === "none"
-            ? PARK_NONE
+            ? parkNone(words.own)
             : data.why === "tiny"
               ? "That part is too small to park. Choose a bigger part."
               : PARK_CANNOT_READ}

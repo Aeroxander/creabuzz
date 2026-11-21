@@ -19,6 +19,10 @@ export const repostedBy = (name: string) => `${name} reposted`;
 export const EDIT_HAS_COMMENTS =
   "Editing sends a new post, so the comments on this one would be left behind.";
 
+/** Why a post cannot be edited while its comments have not been read (editing would leave any comments behind). */
+export const EDIT_COUNTS_UNKNOWN =
+  "The comments on this post have not been read yet, so it cannot be edited yet. Try again in a moment.";
+
 /** What an edit does, said in the writing box before it is sent. */
 export const EDIT_EXPLAINED =
   "A post cannot be changed once it is sent. Saving sends your changed post and takes the old one down. Likes on the old one do not carry over.";
@@ -28,7 +32,7 @@ export const DELETE_TITLE = "Delete this post?";
 export const DELETE_CAN =
   "Deleting takes your post off this server, so it stops showing here, in lists and in search.";
 export const DELETE_CANNOT =
-  "It cannot take back copies. Anyone who already saw or saved it, and any other server that took a copy, may still have it. Pictures in it may stay stored on this server.";
+  "It cannot take back copies. Anyone who already saw or saved it, a repost made in another app, and any other server that took a copy may still have it. Pictures in it may stay stored on this server.";
 
 /** The words over the quoted post in the writing box. */
 export const QUOTING = "Quoting";

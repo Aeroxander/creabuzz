@@ -8,6 +8,7 @@ import { useId } from "react";
 import { Card } from "../../ui/card";
 import { freshnessOf, type ProjectNumbers } from "../money/numbers";
 import type { PauseNumbers } from "../money/numbers-types";
+import { targetOf } from "../pot/target";
 import {
   cardIntro,
   infoLine,
@@ -17,6 +18,7 @@ import {
   pauseStage,
   stateLine,
 } from "./pause-words";
+import { StartDayButton } from "./StartDayButton";
 
 /** Whether the card shows (and not just the info line): something is parked, the line is reached, or the person holds Shares. */
 function showsCard(pause: PauseNumbers, holds: boolean): boolean {
@@ -95,8 +97,12 @@ export function PauseCard({
               pausesFrom: pause.pausesFrom,
               since: pause.since,
               line: pause.line,
+              dayLength: pause.dayLength,
             })}
           </p>
+          {stage === "reached" && numbers.contracts.pause ? (
+            <StartDayButton target={targetOf(numbers)} />
+          ) : null}
         </>
       )}
       <p className="text-sm text-muted">{JOIN_LOWERS}</p>

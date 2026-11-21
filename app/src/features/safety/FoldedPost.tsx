@@ -20,6 +20,16 @@ export function FoldedPost({
   const hidden = useHidden();
   const [shown, setShown] = useState(false);
   const why = whyHidden(event, hidden.rules);
+  // Until the hidden list has been read (or could not be), a post is not drawn: a direct link must not show a hidden person's
+  // words for a moment and then take them away.
+  if (!shown && !hidden.ready)
+    return (
+      <div
+        aria-hidden="true"
+        className="min-h-12 animate-pulse rounded-2xl bg-white/10"
+        data-testid="folded-wait"
+      />
+    );
   if (shown || why === null || why === "room") return <>{children}</>;
   return (
     <div

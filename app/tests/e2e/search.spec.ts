@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { expectAccessible } from "../helpers/a11y";
 import { expectNoSidewaysScroll } from "../helpers/layout";
 import { createMockRelay } from "./mock-relay";
-import { install } from "./helpers/world";
+import { event, install, now } from "./helpers/world";
 import { FAY, MAX, READER_KEY, seedSocial } from "./helpers/social-world";
 
 /**
@@ -137,4 +137,27 @@ test("a topic nobody used says so, and a word that is not a topic says what a to
   );
   await page.goto("/tag/a");
   await expect(page.getByTestId("topic-bad")).toBeVisible();
+});
+
+test("a post with the longest topic the page allows never makes the screen scroll sideways", async ({
+  page,
+}) => {
+  const relay = createMockRelay();
+  seedSocial(relay);
+  const wide = "w".repeat(32);
+  const long = event(1, FAY, `Wide one #${wide}`, [["t", wide]], now() - 60);
+  relay.seed(long);
+  await install(page, relay, READER_KEY);
+  await page.goto("/");
+  await expect(page.getByRole("link", { name: `#${wide}` })).toBeVisible();
+  await expectNoSidewaysScroll(page, "Home with a very wide topic");
+  await page.goto(`/post/${long.id}`);
+  await expect(page.getByRole("link", { name: `#${wide}` })).toBeVisible();
+  await expectNoSidewaysScroll(page, "post page with a very wide topic");
+  await page.goto(`/tag/${wide}`);
+  await expect(page.getByTestId("topic-list")).toContainText("Wide one");
+  await expectNoSidewaysScroll(page, "topic page with a very wide topic");
+  await page.goto(`/search?q=%23${wide}`);
+  await expect(page.getByTestId("search-topic-link")).toBeVisible();
+  await expectNoSidewaysScroll(page, "search for a very wide topic");
 });

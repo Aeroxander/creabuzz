@@ -4,11 +4,13 @@ import { postParts, type QuoteRef } from "@creaton/core/social/post-compose.ts";
 import { relayHttpBaseUrl } from "@creaton/core/client/relay-url.ts";
 import { ImagePlus } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { useAccount } from "../../lib/account";
 import { isServerPicture } from "../../lib/server-picture";
 import { Button } from "../../ui/button";
 import { TextArea } from "../../ui/field";
 import { Sheet } from "../../ui/sheet";
 import { useToast } from "../../ui/toast";
+import { UnlockPress } from "../account/UnlockPress";
 import { PictureDrafts } from "../pictures/PictureDrafts";
 import { usePictureDrafts } from "../pictures/use-picture-drafts";
 import {
@@ -61,6 +63,7 @@ export function ComposerSheet({
   const [problem, setProblem] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const file = useRef<HTMLInputElement | null>(null);
+  const { locked } = useAccount();
   const publish = usePublishComposed();
   const toast = useToast();
   const quoting = quote ?? parts?.quote ?? null;
@@ -165,6 +168,15 @@ export function ComposerSheet({
             ? `Up to ${MAX_PICTURES} pictures`
             : "Add a picture"}
       </Button>
+      {locked ? (
+        <div
+          className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-sm"
+          data-testid="composer-locked"
+        >
+          <span>Unlock with your passkey to post. What you typed is kept.</span>
+          <UnlockPress testId="composer-unlock" />
+        </div>
+      ) : null}
       {problem ? (
         <p
           className="text-sm text-danger"

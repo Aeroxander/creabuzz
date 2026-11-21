@@ -19,7 +19,9 @@ export type MenuChoice =
   | "quote"
   | "edit"
   | "delete"
-  | "hide-pictures";
+  | "hide-pictures"
+  | "save"
+  | "unsave";
 
 /** An item a screen adds to the menu: its press, its words, and (when it cannot be pressed now) the reason in words. */
 export interface ExtraItem {

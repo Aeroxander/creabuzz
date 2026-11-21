@@ -1,5 +1,8 @@
 /** What saving a post says, in one place. */
 
+/** The two choices in a post's More menu. */
+export const SAVE = "Save this post";
+export const UNSAVE = "Remove from saved";
 export const SAVED_DONE = "Saved. Only you can see your saved posts.";
 export const UNSAVED_DONE = "Removed from your saved posts.";
 

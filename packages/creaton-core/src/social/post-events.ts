@@ -73,9 +73,13 @@ export function buildQuote(input: {
   });
 }
 
-/** NIP-18 repost of a kind 1 note, with the original embedded as `content`. */
+/**
+ * NIP-18 repost of a kind 1 note. The content is left empty on purpose: NIP-18 lets a repost carry a copy of the note, but a
+ * copy would outlive the note's deletion and keep its words readable on the server for anyone who asks for reposts. This
+ * app reads the original by its id (`timeline.ts`), so nothing is lost and a deleted post is gone everywhere here.
+ */
 export function buildRepost(
-  note: SignedEventLike & { sig?: string },
+  note: Pick<SignedEventLike, "id" | "pubkey">,
 ): EventTemplate {
   return {
     kind: KIND_REPOST,
@@ -83,7 +87,7 @@ export function buildRepost(
       ["e", note.id],
       ["p", note.pubkey],
     ],
-    content: JSON.stringify(note),
+    content: "",
   };
 }
 

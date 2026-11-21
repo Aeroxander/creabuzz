@@ -1,11 +1,12 @@
 // The project page's card about the holder pause: when it shows, what each state says, what it never says, and what an older
 // or unreadable record leads to. Records are the example changed through the app's real parser.
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   numbersWithPause,
   withPause,
 } from "../../../tests/helpers/pause-harness";
+import { wrap } from "../../../tests/helpers/money-harness";
 import { numbersFor, S } from "../../../tests/helpers/pot-harness";
 import { PauseCard } from "./PauseCard";
 
@@ -17,7 +18,7 @@ const show = (
   later = 100,
 ) => {
   if (!numbers.pause) throw new Error("the record has no pause");
-  return render(
+  return wrap(
     <PauseCard
       holds={holds}
       now={numbers.builtAt + later}
@@ -67,6 +68,30 @@ describe("the pause card", () => {
       /^A third is parked\. The team's allowance and new task plans pause on .* if it stays there\.$/,
     );
     expect(text).not.toMatch(/Paused/);
+  });
+
+  it("a line that is reached with no warning day running says so, and offers the one press that starts it", () => {
+    // The share parked is at the line, but a join cleared the day and nobody has pressed since.
+    const numbers = numbersWithPause({ parked: 200_000n * S });
+    expect(numbers.pause?.armedAt).toBeNull();
+    show(numbers);
+    const text = screen.getByTestId("pause-state-reached").textContent ?? "";
+    expect(text).toBe(
+      'A third is parked, but the warning day has not started. Press "Start the day" and, if it stays there, the team\'s allowance and new task plans pause one day later.',
+    );
+    expect(screen.queryByTestId("pause-state-under")).toBeNull();
+    expect(screen.getByTestId("start-day").textContent).toBe("Start the day");
+  });
+
+  it("under the line, armed or paused, there is no Start the day press", () => {
+    show(numbersWithPause({ parked: 1_000n * S }), true);
+    expect(screen.queryByTestId("start-day")).toBeNull();
+    cleanup();
+    show(numbersWithPause({ parked: 200_000n * S, armedAgo: 3_600 }));
+    expect(screen.queryByTestId("start-day")).toBeNull();
+    cleanup();
+    show(numbersWithPause({ parked: 200_000n * S, armedAgo: 2 * 86_400 }));
+    expect(screen.queryByTestId("start-day")).toBeNull();
   });
 
   it("a paused project says since when, that Take out is not held, and what ends it", () => {
