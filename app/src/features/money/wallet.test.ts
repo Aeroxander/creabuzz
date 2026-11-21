@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { backCalls } from "@creaton/core/pot/pot-calls.ts";
 import type { MoneyCall } from "./calls";
+import type { PotNetwork } from "@creaton/core/pot/network.ts";
 import { moneyProblem } from "./money-copy";
 import {
   addressFromWord,
@@ -138,6 +139,126 @@ describe("the injected wallet", () => {
       .catch((e: unknown) => e);
     expect((error as WalletStepError).reason).toBe("wrong-network");
     expect(sent).toHaveLength(0);
+  });
+
+  describe("a wallet that does not know the network", () => {
+    const known: PotNetwork = {
+      chainId: 31337,
+      name: "Local test network",
+      launcher: `0x${"1".repeat(40)}`,
+      dollar: null,
+      rpcUrl: "http://192.168.1.20:8545",
+      playMoney: true,
+    };
+
+    /** A wallet on mainnet that answers the switch with `refusal` until the network is added, and the add with `onAdd`. */
+    function walletThatKnowsNothing(
+      refusal: unknown,
+      onAdd: "yes" | "no" | "yes-without-moving" = "yes",
+    ) {
+      const asked: { method: string; params?: unknown[] }[] = [];
+      let chain = "0x1";
+      let added = false;
+      const p: Eip1193Provider = {
+        async request({ method, params }) {
+          asked.push({ method, params });
+          if (method === "eth_requestAccounts") return [FROM];
+          if (method === "eth_chainId") return chain;
+          if (method === "wallet_switchEthereumChain") {
+            if (!added) throw refusal;
+            chain = "0x7a69";
+            return null;
+          }
+          if (method === "wallet_addEthereumChain") {
+            if (onAdd === "no") throw { code: 4001, message: "rejected" };
+            added = true;
+            if (onAdd === "yes") chain = "0x7a69";
+            return null;
+          }
+          if (method === "eth_sendTransaction") return "0xhash0";
+          if (method === "eth_getTransactionReceipt") return { status: "0x1" };
+          throw new Error(`unexpected ${method}`);
+        },
+      };
+      return { p, asked };
+    }
+    const names = (asked: { method: string }[]) => asked.map((a) => a.method);
+
+    it("offers to add it with the network's name, node address and currency, then sends", async () => {
+      const { p, asked } = walletThatKnowsNothing({ code: 4902 });
+      await injectedWallet(p, { pollMs: 0 }, () => known).sendCalls(
+        calls.slice(0, 1),
+        31337,
+      );
+      const add = asked.find((a) => a.method === "wallet_addEthereumChain");
+      expect(add?.params).toEqual([
+        {
+          chainId: "0x7a69",
+          chainName: "Local test network",
+          rpcUrls: ["http://192.168.1.20:8545"],
+          nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+        },
+      ]);
+      expect(names(asked).indexOf("wallet_addEthereumChain")).toBeLessThan(
+        names(asked).indexOf("eth_sendTransaction"),
+      );
+    });
+
+    it("knows the unknown-network answer inside what a wallet app wraps it in", async () => {
+      const wrapped = Object.assign(new Error("internal"), {
+        code: -32603,
+        data: { originalError: { code: 4902 } },
+      });
+      const { p, asked } = walletThatKnowsNothing(wrapped);
+      await injectedWallet(p, { pollMs: 0 }, () => known).ensureChain(31337);
+      expect(names(asked)).toContain("wallet_addEthereumChain");
+    });
+
+    it("asks the wallet to switch when adding did not move it", async () => {
+      const { p, asked } = walletThatKnowsNothing(
+        { code: 4902 },
+        "yes-without-moving",
+      );
+      await injectedWallet(p, { pollMs: 0 }, () => known).ensureChain(31337);
+      expect(
+        names(asked).filter((m) => m === "wallet_switchEthereumChain"),
+      ).toHaveLength(2);
+    });
+
+    it("sends nothing when the person says no to adding it", async () => {
+      const { p, asked } = walletThatKnowsNothing({ code: 4902 }, "no");
+      const error = await injectedWallet(p, { pollMs: 0 }, () => known)
+        .sendCalls(calls, 31337)
+        .catch((e: unknown) => e);
+      expect((error as WalletStepError).reason).toBe("wrong-network");
+      expect(names(asked)).not.toContain("eth_sendTransaction");
+    });
+
+    it("does not offer a network it has no address for, nor one that is not the one asked for", async () => {
+      for (const net of [
+        { ...known, rpcUrl: null },
+        { ...known, chainId: 5 },
+      ]) {
+        const { p, asked } = walletThatKnowsNothing({ code: 4902 });
+        const error = await injectedWallet(p, { pollMs: 0 }, () => net)
+          .ensureChain(31337)
+          .catch((e: unknown) => e);
+        expect((error as WalletStepError).reason).toBe("wrong-network");
+        expect(names(asked)).not.toContain("wallet_addEthereumChain");
+      }
+    });
+
+    it("does not offer to add a network after a plain refusal to switch", async () => {
+      const { p, asked } = walletThatKnowsNothing({
+        code: 4001,
+        message: "rejected",
+      });
+      const error = await injectedWallet(p, { pollMs: 0 }, () => known)
+        .ensureChain(31337)
+        .catch((e: unknown) => e);
+      expect((error as WalletStepError).reason).toBe("wrong-network");
+      expect(names(asked)).not.toContain("wallet_addEthereumChain");
+    });
   });
 
   it("without a wallet, says so", async () => {

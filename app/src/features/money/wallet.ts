@@ -9,6 +9,11 @@
  * The phone path (a passkey account with sponsored fees) is the other sender, in `passkey-sender.ts`; `sender.ts` picks.
  */
 import { walletError } from "@creaton/core/launchpad/wallet-errors.ts";
+import {
+  addNetworkRequest,
+  type PotNetwork,
+} from "@creaton/core/pot/network.ts";
+import { potNetwork } from "../../lib/pot-network";
 import type { MoneyCall } from "./calls";
 
 /** A log as the network returns it (`eth_getLogs`). */
@@ -172,9 +177,23 @@ function browserProvider(): Eip1193Provider | undefined {
     : undefined;
 }
 
+/** Whether a wallet's refusal to switch says "I do not know this network" (EIP-3085's code, bare or inside what a wallet wraps it in). */
+function unknownNetwork(error: unknown): boolean {
+  const code = (value: unknown): unknown =>
+    value && typeof value === "object"
+      ? (value as { code?: unknown }).code
+      : undefined;
+  const inner = (value: unknown): unknown =>
+    value && typeof value === "object"
+      ? (value as { data?: { originalError?: unknown } }).data?.originalError
+      : undefined;
+  return code(error) === 4902 || code(inner(error)) === 4902;
+}
+
 export function injectedWallet(
   provider: Eip1193Provider | undefined = browserProvider(),
   timing: { polls?: number; pollMs?: number } = {},
+  network: () => PotNetwork | null = potNetwork,
 ): MoneyWallet {
   const polls = timing.polls ?? RECEIPT_POLLS;
   const pollMs = timing.pollMs ?? RECEIPT_POLL_MS;
@@ -201,12 +220,32 @@ export function injectedWallet(
   async function onChain(chainId: number) {
     const now = await ask("eth_chainId");
     if (typeof now === "string" && Number.parseInt(now, 16) === chainId) return;
+    const target = [{ chainId: `0x${chainId.toString(16)}` }];
     try {
-      await ask("wallet_switchEthereumChain", [
-        { chainId: `0x${chainId.toString(16)}` },
-      ]);
+      // Asked raw: the wallet's own error keeps its code, which says whether it knows the network at all.
+      await need().request({
+        method: "wallet_switchEthereumChain",
+        params: target,
+      });
     } catch (error) {
-      throw new WalletStepError("wrong-network", 0, error);
+      if (error instanceof WalletStepError) throw error;
+      // A wallet that has never heard of the network is offered it, with its name, node address and currency from the app's
+      // own settings; the person says yes or no in the wallet. Anything else (a no, a busy wallet) is a wrong network.
+      const known = network();
+      const request =
+        unknownNetwork(error) && known?.chainId === chainId
+          ? addNetworkRequest(known)
+          : null;
+      if (!request) throw new WalletStepError("wrong-network", 0, error);
+      try {
+        await ask("wallet_addEthereumChain", [request]);
+        // Most wallets move to a network they were just given; one that does not is asked to switch now that it knows it.
+        const after = await ask("eth_chainId");
+        if (typeof after !== "string" || Number.parseInt(after, 16) !== chainId)
+          await ask("wallet_switchEthereumChain", target);
+      } catch (added) {
+        throw new WalletStepError("wrong-network", 0, added);
+      }
     }
   }
 

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  addNetworkRequest,
   envFromDeployments,
   mustSayPlayMoney,
   parseDeployments,
@@ -98,4 +99,33 @@ test("money screens say play money unless the record says otherwise AND real mon
   assert.equal(mustSayPlayMoney(false), true); // step 1: the real-money switch is off
   assert.equal(mustSayPlayMoney(false, true), false);
   assert.equal(mustSayPlayMoney(true, true), true);
+});
+
+test("what a wallet is told to add the network: id, plain name, node address and currency from the build's own settings", () => {
+  const env = {
+    VITE_CREATON_CHAIN_ID: "31337",
+    VITE_CREATON_LAUNCHER: FILE.launcher,
+    VITE_CREATON_RPC_URL: " http://192.168.1.20:8545 ",
+  };
+  assert.deepEqual(addNetworkRequest(parsePotNetwork(env)), {
+    chainId: "0x7a69",
+    chainName: "Local test network",
+    rpcUrls: ["http://192.168.1.20:8545"],
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  });
+  assert.equal(
+    addNetworkRequest(
+      parsePotNetwork({ ...env, VITE_CREATON_CHAIN_ID: "11155111" }),
+    )?.chainName,
+    "Sepolia test network",
+  );
+});
+
+test("a build that names no node address cannot tell a wallet where the network is", () => {
+  const { VITE_CREATON_RPC_URL: _unused, ...env } = {
+    VITE_CREATON_CHAIN_ID: "31337",
+    VITE_CREATON_LAUNCHER: FILE.launcher,
+    VITE_CREATON_RPC_URL: "http://x",
+  };
+  assert.equal(addNetworkRequest(parsePotNetwork(env)), null);
 });

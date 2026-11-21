@@ -63,6 +63,27 @@ export function parsePotNetwork(
   };
 }
 
+/**
+ * What a wallet needs to add this network when it does not know it (`wallet_addEthereumChain`, EIP-3085): the chain's id, its
+ * plain name, the node address the build names and the currency the network's fees are paid in. Every network the play
+ * dollar can live on pays its fees in test ether. Null when the build names no node address: a wallet cannot be told where
+ * the network is, so the person adds it by hand.
+ */
+export function addNetworkRequest(network: PotNetwork): {
+  chainId: string;
+  chainName: string;
+  rpcUrls: string[];
+  nativeCurrency: { name: string; symbol: string; decimals: number };
+} | null {
+  if (network.rpcUrl === null) return null;
+  return {
+    chainId: `0x${network.chainId.toString(16)}`,
+    chainName: network.name,
+    rpcUrls: [network.rpcUrl],
+    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  };
+}
+
 /** What the deploy script writes (`contracts/pot/script/DeployPot.s.sol`), checked. */
 export interface Deployments {
   chainId: number;
