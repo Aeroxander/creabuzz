@@ -1,3 +1,4 @@
+// biome-ignore-all lint/style/noNonNullAssertion: each plan is asserted non-null on the line before it is used
 /**
  * The holder pause and the earlier backers' claim from a passkey account, on the real contracts: the account claims its row
  * of an invented list, parks Shares (approve and park in one operation), takes some back, parks again until the line is

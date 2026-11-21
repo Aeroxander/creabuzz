@@ -30,6 +30,7 @@ import {
   type Text,
 } from "./pot-copy-tasks";
 import {
+  PARK_FALLBACK,
   STEP4_ACTION_WORDS,
   STEP4_ERRORS,
   STEP4_EXTENSIONS,
@@ -426,6 +427,7 @@ const ACTION_WORDS: Record<PotAction, string> = {
 
 /** What `potProblem` says when it knows nothing more about an action; the test tells it from a sentence made for an error. */
 export function potFallback(action: PotAction): string {
+  if (action === "park") return PARK_FALLBACK;
   return `${ACTION_WORDS[action]} did not go through. Nothing changed. Try again.`;
 }
 

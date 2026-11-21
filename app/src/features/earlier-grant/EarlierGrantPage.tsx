@@ -48,6 +48,9 @@ import {
   clockWords,
   COULD_NOT_READ,
   CLAIMED,
+  COPY_FINGERPRINT,
+  FINGERPRINT_COPIED,
+  FINGERPRINT_NOT_COPIED,
   fingerprintLine,
   MUST_READ_FIRST,
   NOT_FOR_YOU,
@@ -96,6 +99,7 @@ function Claim({
   const [ticked, setTicked] = useState(false);
   const [done, setDone] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const wallet = useWallet();
   const words = useSenderWords();
@@ -272,6 +276,29 @@ function Claim({
       <div className="flex flex-col gap-2">
         <p className="text-sm" data-testid="claim-fingerprint">
           {fingerprintLine(settings.textHash)}
+        </p>
+        <Button
+          data-testid="claim-copy"
+          onClick={() => {
+            // A browser that will not copy (a plain http address, no permission) says so; the fingerprint is selectable below.
+            navigator.clipboard
+              ?.writeText(settings.textHash)
+              .then(() => setCopied(FINGERPRINT_COPIED))
+              .catch(() => setCopied(FINGERPRINT_NOT_COPIED)) ??
+              setCopied(FINGERPRINT_NOT_COPIED);
+          }}
+          size="sm"
+          variant="ghost"
+        >
+          {COPY_FINGERPRINT}
+        </Button>
+        <p
+          aria-live="polite"
+          className="break-all text-xs text-muted"
+          data-testid="claim-fingerprint-full"
+        >
+          {copied ? `${copied} ` : ""}
+          {settings.textHash}
         </p>
         <a
           className={buttonClass({ variant: "secondary" })}

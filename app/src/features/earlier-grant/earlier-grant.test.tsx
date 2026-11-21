@@ -316,6 +316,47 @@ describe("the claim page", () => {
     expect(press.disabled).toBe(true);
   });
 
+  it("the fingerprint can be copied, and a browser that will not copy says so (the whole fingerprint is on the page to select)", async () => {
+    serveRecord();
+    install();
+    show();
+    await screen.findByTestId("claim-copy");
+    const written: string[] = [];
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (text: string) => {
+          written.push(text);
+        },
+      },
+    });
+    fireEvent.click(screen.getByTestId("claim-copy"));
+    await waitFor(() =>
+      expect(screen.getByTestId("claim-fingerprint-full").textContent).toMatch(
+        /^Fingerprint copied\. 0xabab/,
+      ),
+    );
+    expect(written).toEqual([TEXT]);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async () => {
+          throw new Error("no");
+        },
+      },
+    });
+    fireEvent.click(screen.getByTestId("claim-copy"));
+    await waitFor(() =>
+      expect(screen.getByTestId("claim-fingerprint-full").textContent).toMatch(
+        /^Your browser would not copy it\. Select the fingerprint and copy it\. 0xabab/,
+      ),
+    );
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+  });
+
   it("opening the text with the middle button counts as opening it", async () => {
     serveRecord();
     install();

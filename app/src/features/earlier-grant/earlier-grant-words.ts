@@ -45,3 +45,8 @@ function shortHash(hash: string): string {
 export function fingerprintLine(hash: string): string {
   return `The text you accept has the fingerprint ${shortHash(hash)}.`;
 }
+
+export const COPY_FINGERPRINT = "Copy the fingerprint";
+export const FINGERPRINT_COPIED = "Fingerprint copied.";
+export const FINGERPRINT_NOT_COPIED =
+  "Your browser would not copy it. Select the fingerprint and copy it.";

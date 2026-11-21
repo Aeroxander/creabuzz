@@ -79,3 +79,7 @@ export const STEP4_ACTION_WORDS: Record<Step4Action, string> = {
   "take-back": "Taking your Shares back",
   "earlier-claim": "The claim",
 };
+
+/** What a park says when the network gave no reason: the plan's own sentence. */
+export const PARK_FALLBACK =
+  "The network did not take it. Nothing moved. Try again.";
