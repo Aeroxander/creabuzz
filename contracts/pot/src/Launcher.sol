@@ -10,7 +10,7 @@ import {Pair} from "./Pair.sol";
 import {TaskBook} from "./TaskBook.sol";
 import {Parts} from "./Parts.sol";
 import {HolderPause} from "./HolderPause.sol";
-import {IShares, ITreasuryClock, ITreasuryRunner, IPair, ITaskBook} from "./Interfaces.sol";
+import {IShares, ITreasuryClock, ITreasuryRunner, IPair, ITaskBook, IEarlierGrants} from "./Interfaces.sol";
 
 /// @notice What the Launcher reads of the dollar token: the number of decimals (every amount in the Treasury is in raw
 /// units of a 6-decimal token).
@@ -96,6 +96,12 @@ contract Launcher {
     /// @notice The holder pause every project launched from now on is born with (the code its clones copy); zero while the
     /// deployment's switch is off, which is the default. Set once, by the deployer, in the first hour; never changed.
     address public holderPauseImpl;
+    /// @notice The earlier backers' claim contract; zero while the deployment has none, which is the default. Set once, by the
+    /// deployer, in the first hour, and only before project `earlierKey` has launched; never changed.
+    address public earlier;
+    /// @notice The one project whose Team pool carries the earlier backers' reserve (the claim contract's own key); zero
+    /// while nothing is bound.
+    bytes32 public earlierKey;
 
     /// @notice True for a Pair this Launcher made. The Treasury asks it.
     mapping(address => bool) public isPair;
@@ -123,6 +129,11 @@ contract Launcher {
     /// @notice The deployment's holder pause switch was turned on: projects launched from now on are born with a clone of
     /// `impl`. `codehash` is the code hash of `impl`, to compare with the build.
     event HolderPauseBound(address impl, bytes32 codehash);
+    /// @notice The deployment's earlier backers' claim contract was bound: project `key` will be born with its reserve.
+    event EarlierBound(address earlier, bytes32 key);
+    /// @notice Project `key` was launched with `amount` Team Shares set aside in its Vester for the earlier backers, on top of
+    /// its own Team pool (`ProjectLaunched` carries that one).
+    event EarlierPoolFunded(bytes32 indexed key, address vester, uint256 amount);
 
     error ProjectExists();
     error UnknownProject();
@@ -184,6 +195,10 @@ contract Launcher {
         }
         if (terms.ratePpm > MAX_RATE_PPM || terms.teamPool > MAX_TEAM_POOL) revert BadTerms();
         Platform memory s = platform;
+        // the one project named by `earlierKey` is born with the earlier backers' reserve on top of its own pool
+        address claims = earlier;
+        uint256 earlierPool;
+        if (claims != address(0) && key == earlierKey) earlierPool = IEarlierGrants(claims).total();
         treasury = treasuryImpl.clone();
         shares = shareImpl.clone();
         team = shareImpl.clone();
@@ -192,8 +207,19 @@ contract Launcher {
         TaskBook(tasks).initialize(treasury, s.unit);
         ShareToken(shares).initialize(name, symbol, treasury, address(0), 0);
         ShareToken(team)
-            .initialize(string.concat(name, " Team"), string.concat(symbol, "-T"), treasury, vester, terms.teamPool);
-        Vester(vester).initialize(ITreasuryClock(treasury), IShares(team), terms.teamPool);
+            .initialize(
+                string.concat(name, " Team"),
+                string.concat(symbol, "-T"),
+                treasury,
+                vester,
+                terms.teamPool + earlierPool
+            );
+        if (earlierPool == 0) {
+            Vester(vester).initialize(ITreasuryClock(treasury), IShares(team), terms.teamPool);
+        } else {
+            Vester(vester)
+                .initializeWithEarlier(ITreasuryClock(treasury), IShares(team), terms.teamPool, claims, earlierPool);
+        }
         Treasury(treasury)
             .initialize(
                 Treasury.Setup({
@@ -216,6 +242,10 @@ contract Launcher {
             address gate = holderPauseImpl.clone();
             HolderPause(gate).initialize(IShares(shares), s.unit);
             Treasury(treasury).bindPause(gate);
+        }
+        if (earlierPool != 0) {
+            IEarlierGrants(claims).bind(vester);
+            emit EarlierPoolFunded(key, vester, earlierPool);
         }
         Project memory p = Project({
             founder: msg.sender,
@@ -278,9 +308,12 @@ contract Launcher {
     /// @notice A hash of the platform settings a project launched now would be born with. A founder's app reads it and
     /// passes it to `launch`.
     /// @dev With nothing bound the hash is `keccak256(abi.encode(platform))`, as before; a bound holder pause is added to it,
-    /// so a founder's launch is refused if the switch was turned on after they read it.
+    /// and a bound claim contract after that, so a founder's launch is refused if either switch was turned on after they read
+    /// it. (With only the pause bound it is `keccak256(abi.encode(platform, pause))`, as it was before the claim contract.)
     function settingsHash() public view returns (bytes32) {
         address pause = holderPauseImpl;
+        address claims = earlier;
+        if (claims != address(0)) return keccak256(abi.encode(platform, pause, claims));
         if (pause == address(0)) return keccak256(abi.encode(platform));
         return keccak256(abi.encode(platform, pause));
     }
@@ -303,6 +336,21 @@ contract Launcher {
         if (impl.code.length == 0) revert BadStack();
         holderPauseImpl = impl;
         emit HolderPauseBound(impl, impl.codehash);
+    }
+
+    /// @notice Bind the earlier backers' claim contract: the project it names (`EarlierGrants.key`) is born with a reserve of
+    /// Team Shares for it, on top of its own pool. Only the deployer, once, inside the first hour (the deploy script does it in
+    /// the same broadcast, before any launch), and only while that project has not launched (a project already launched could
+    /// never have the reserve). The claim contract must name this Launcher.
+    /// @param earlier_ The deployed `EarlierGrants`.
+    function bindEarlier(address earlier_) external {
+        if (msg.sender != deployer) revert NotDeployer();
+        if (earlier != address(0) || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();
+        if (earlier_.code.length == 0 || IEarlierGrants(earlier_).launcher() != address(this)) revert BadStack();
+        bytes32 k = IEarlierGrants(earlier_).key();
+        if (_projects[k].treasury != address(0)) revert BindClosed();
+        (earlier, earlierKey) = (earlier_, k);
+        emit EarlierBound(earlier_, k);
     }
 
     // ================================================ admin ==========================================================

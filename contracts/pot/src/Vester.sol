@@ -19,7 +19,8 @@ import {IShares, ITreasuryClock} from "./Interfaces.sol";
 ///    what has not been kept is burned (a wind-down by choice keeps what has accrued, a quiet one only what has vested).
 ///    The part of the pool nobody was granted burns the same way;
 ///  - a protected grant vests on calendar time over 365 days with no cliff and can never be forfeited, paused or burned.
-///    The Treasury makes none in step 1 (it passes `false`); the flag is the seam for the earlier backers' grant.
+///    The Treasury makes none (it passes `false`). The only protected grants are the earlier backers' (see EarlierGrants):
+///    they come out of a reserve that only the claim contract can spend, and their clock starts at the project's birth;
 /// Team Shares leave only from hands: this contract has no call into `leaveTeam`, so Shares still here are never paid out.
 /// @dev One copy per project, a minimal clone created and initialised by the Launcher in one transaction. No owner.
 contract Vester {
@@ -33,6 +34,9 @@ contract Vester {
     uint256 public constant MAX_GRANTS_PER_MEMBER = 8;
     /// @notice The smallest grant: one whole Team Share (1e18 wei).
     uint256 public constant MIN_GRANT = 1e18;
+    /// @notice The most earlier-backer grants one member can ever hold. They are counted apart from the grants of
+    /// `MAX_GRANTS_PER_MEMBER`, so nobody who may grant can fill a listed account's slots and keep it from claiming.
+    uint256 public constant MAX_PROTECTED_PER_MEMBER = 8;
 
     /// @notice A grant lives (vesting), is announced to forfeit, or is closed (what stays is fixed).
     enum State {
@@ -62,6 +66,15 @@ contract Vester {
     mapping(uint256 => Grant) private _grants;
     mapping(address => uint256[]) private _ids;
     bool private _born;
+    /// @notice The claim contract that may make protected grants out of the reserve; zero when this project has none.
+    address public earlier;
+    /// @notice When the project was born: the clock every earlier-backer grant starts at (zero without a claim contract).
+    uint64 public earlierStart;
+    /// @notice Team Shares held here for the earlier backers and not yet granted: never counted in `committed`, never
+    /// reachable by an ordinary grant, never burned.
+    uint256 public earlierReserve;
+    /// @dev How many of a member's `_ids` are earlier-backer grants. The ordinary count is `_ids.length` minus this one.
+    mapping(address => uint256) private _protectedCount;
 
     /// @notice Team Shares were set aside for `member`. `kind` is 0 for a normal grant and 1 for a protected one.
     event GrantMade(uint256 indexed id, address indexed member, uint256 amount, uint256 startActive, uint8 kind);
@@ -104,28 +117,64 @@ contract Vester {
     /// @param team_ The project's Team ShareToken.
     /// @param pool_ The Team pool set at birth; it must already be held here.
     function initialize(ITreasuryClock treasury_, IShares team_, uint256 pool_) external {
-        if (_born) revert AlreadyInitialized();
-        if (address(treasury_) == address(0) || team_.controller() != address(treasury_)) revert BadGrant();
-        if (team_.balanceOf(address(this)) != pool_) revert NotFunded();
-        _born = true;
-        (treasury, team) = (treasury_, team_);
+        _init(treasury_, team_, pool_);
+    }
+
+    /// @notice As `initialize`, for the one project whose Team token was also minted `earlierPool_` Shares for the earlier
+    /// backers: they sit here in a reserve that only `earlier_` can grant from, and the project's birth is the clock their
+    /// grants start at. The Launcher calls it, once, in the launch transaction.
+    /// @param treasury_ The project's Treasury.
+    /// @param team_ The project's Team ShareToken.
+    /// @param pool_ The ordinary Team pool; with `earlierPool_` it must already be held here.
+    /// @param earlier_ The claim contract: the only address that may make protected grants out of the reserve.
+    /// @param earlierPool_ The earlier backers' pool, in Team Share wei.
+    function initializeWithEarlier(
+        ITreasuryClock treasury_,
+        IShares team_,
+        uint256 pool_,
+        address earlier_,
+        uint256 earlierPool_
+    ) external {
+        if (earlier_ == address(0) || earlierPool_ == 0) revert BadGrant();
+        _init(treasury_, team_, pool_ + earlierPool_);
+        (earlier, earlierStart, earlierReserve) = (earlier_, uint64(block.timestamp), earlierPool_);
     }
 
     // ===================================================== grants ====================================================
 
-    /// @notice Set aside `amount` Team Shares for `member`, on a clock of its own that starts now. Only the Treasury (which
-    /// has checked the runner, or an agent's daily Team Share limit). The pool can never be passed: the Shares must be
-    /// here and not already promised. A grant is at least one whole Team Share, so dust grants cannot fill a member's 8
-    /// slots (an agent may grant inside its daily limit). A member can be given at most 8 grants.
-    /// @param protected_ A protected grant (calendar time over 365 days, no cliff, never forfeited or burned).
+    /// @notice Set aside `amount` Team Shares for `member`. Two callers.
+    ///  - The Treasury (which has checked the runner, or an agent's daily Team Share limit) makes an ordinary grant, on a clock
+    ///    of its own that starts now. The pool can never be passed: the Shares must be here, not already promised and not in
+    ///    the earlier backers' reserve. A grant is at least one whole Team Share, so dust grants cannot fill a member's 8
+    ///    slots (an agent may grant inside its daily limit). A member can be given at most 8 grants this way.
+    ///  - The earlier backers' claim contract (when the project has one) makes an earlier backer's grant out of the reserve:
+    ///    always protected, whatever `protected_` says, and vesting on calendar time over 365 days with no cliff, counted from
+    ///    the project's birth (`earlierStart`) and not from this call, so a claimant who comes late has more vested at once. A
+    ///    member can hold at most 8 of these, counted apart from the ordinary 8, so nobody who may grant can fill a listed
+    ///    account's slots and keep it from claiming. There is no wind-down check: a claim after a wind-down still works.
+    /// @param protected_ For the Treasury: a protected grant (calendar time over 365 days, no cliff, never forfeited or
+    /// burned). The Treasury passes false.
     /// @return id The grant's id.
-    function grant(address member, uint256 amount, bool protected_) external onlyTreasury returns (uint256 id) {
+    function grant(address member, uint256 amount, bool protected_) external returns (uint256 id) {
+        bool early = msg.sender == earlier;
+        if (!early && msg.sender != address(treasury)) revert NotAllowed();
         if (member == address(0) || amount < MIN_GRANT) revert BadGrant();
-        if (_ids[member].length >= MAX_GRANTS_PER_MEMBER) revert TooManyGrants();
-        if (team.balanceOf(address(this)) < committed + amount) revert NotFunded();
+        uint256 prot = _protectedCount[member];
+        uint256 start;
+        if (early) {
+            if (prot >= MAX_PROTECTED_PER_MEMBER) revert TooManyGrants();
+            uint256 reserve = earlierReserve;
+            if (amount > reserve) revert NotFunded();
+            earlierReserve = reserve - amount;
+            _protectedCount[member] = prot + 1;
+            (protected_, start) = (true, earlierStart);
+        } else {
+            if (_ids[member].length - prot >= MAX_GRANTS_PER_MEMBER) revert TooManyGrants();
+            if (team.balanceOf(address(this)) < committed + earlierReserve + amount) revert NotFunded();
+            start = protected_ ? block.timestamp : treasury.activeNow();
+        }
         committed += amount;
         id = grantCount++;
-        uint256 start = protected_ ? block.timestamp : treasury.activeNow();
         _grants[id] = Grant({
             member: member,
             protected_: protected_,
@@ -171,7 +220,7 @@ contract Vester {
     }
 
     /// @notice The hand-over trim: announce every live grant of `member` as an own exit. Only the Treasury. Grants with
-    /// nothing to burn, announced ones and protected ones are skipped. At most 8 grants.
+    /// nothing to burn, announced ones and protected ones are skipped. At most 16 grants (8 ordinary and 8 earlier-backer).
     function exitAll(address member) external onlyTreasury {
         uint256[] storage ids = _ids[member];
         for (uint256 i; i < ids.length; ++i) {
@@ -216,7 +265,8 @@ contract Vester {
     function burnUngrantedAfterWindDown() external returns (uint256 amount) {
         _requireNoticeOver();
         uint256 held = team.balanceOf(address(this));
-        amount = held > committed ? held - committed : 0;
+        uint256 kept = committed + earlierReserve; // the earlier backers' reserve is never burned
+        amount = held > kept ? held - kept : 0;
         if (amount == 0) revert NothingToBurn();
         treasury.burnAfterWindDown(amount);
         emit UngrantedBurned(amount, team.totalSupply());
@@ -253,6 +303,14 @@ contract Vester {
     }
 
     // ===================================================== plumbing ==================================================
+
+    function _init(ITreasuryClock treasury_, IShares team_, uint256 funded) private {
+        if (_born) revert AlreadyInitialized();
+        if (address(treasury_) == address(0) || team_.controller() != address(treasury_)) revert BadGrant();
+        if (team_.balanceOf(address(this)) != funded) revert NotFunded();
+        _born = true;
+        (treasury, team) = (treasury_, team_);
+    }
 
     function _get(uint256 id) private view returns (Grant storage g) {
         g = _grants[id];

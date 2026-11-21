@@ -10,7 +10,7 @@ git-ignored.
 `script/DeployPot.s.sol` deploys, in this order: the dollar (PlayDollar on a test network, or an existing 6-decimal token
 you name), `Parts` (the five implementations the Launcher clones: Treasury, Vester, Pair, the share token and the TaskBook), and the
 `Launcher` with the platform settings (the dollar, who receives the platform fee, the fee, the time unit, the default daily
-dollar limit of an agent), and, only when `HOLDER_PAUSE=1`, the holders' pause implementation bound to the Launcher. It writes `deployments/pot-<chainid>.json` with the addresses. Projects are then launched by
+dollar limit of an agent), and, only when `HOLDER_PAUSE=1`, the holders' pause implementation bound to the Launcher, and, only when the six `EARLIER_*` settings are all given, the earlier backers' claim contract bound to the Launcher. It writes `deployments/pot-<chainid>.json` with the addresses. Projects are then launched by
 founders through `Launcher.launch`; each gets its own Treasury, Vester, TaskBook (the task queue; its address is `Treasury.tasks()`) and two tokens.
 
 ## Settings (environment variables, all optional)
@@ -24,6 +24,9 @@ founders through `Launcher.launch`; each gets its own Treasury, Vester, TaskBook
 | `FEE_BPS` | `200` (2%) | The platform fee on a join. The contract ceiling is 500 (5%). |
 | `AGENT_USD` | `25000000` (25 dollars) | An agent's default daily dollar limit. |
 | `HOLDER_PAUSE` | `0` (off) | `1` turns on the holders' pause (step 4, `docs/next-version/STEP4-PLAN.md`): the script also deploys `HolderPause` and binds it to the Launcher (`bindPause`) **in the same broadcast as the Launcher's own deployment, before any project can be launched**. Every project launched from then on is born with its own pause (a clone), and keeps it. Anything other than 0 or 1 makes the script stop before it sends anything. |
+
+| `EARLIER_ROOT`, `EARLIER_TEXT_HASH`, `EARLIER_TOTAL`, `EARLIER_ROWS`, `EARLIER_FOUNDER`, `EARLIER_PROJECT_ID` | none of them set (nothing is claimable) | The earlier backers' claim (step 4, `STEP4-PLAN.md` section 3): **all six or none**. Together they make the script deploy `EarlierGrants` and bind it to the Launcher (`bindEarlier`) in the same broadcast as the Launcher's own deployment, before any project can be launched. The first two are fingerprints (bytes32): the list's Merkle root and the text a claimant accepts; the list and the text themselves are never in this repository. `EARLIER_TOTAL` is the pool in Team Share wei (the sum of the rows) and `EARLIER_ROWS` the number of rows. `EARLIER_FOUNDER` and `EARLIER_PROJECT_ID` (bytes32) name the one project, by who launches it and under which id, that is born with the pool. Any of them set without the others makes the script stop before it sends anything. |
+| `EARLIER_ALLOW_LARGE` | `0` | `1` allows `EARLIER_TOTAL` above 100,000,000 Shares (the founder's own Team pool limit); the claim contract itself caps it at 1,000,000,000. A pool that large is a stated choice. Anything other than 0 or 1 stops the script. |
 
 ### The holders' pause switch
 
@@ -43,6 +46,32 @@ old and the new build and compares the digest). It is a switch of the **deployme
   (solc 0.8.37, optimizer 200 runs, `via_ir`, `evm_version = cancun`, `bytecode_hash = none`): `0x968400a44b9da42191d6e20ab5f47532e161ee3255d508c807d49f82f0a3ccdf`.
 - The pause holds no dollar and has no owner. Its one effect is that `draw` and `announceTask` of that project's Treasury refuse
   while a third of the backers' Shares are parked and have been for a day; take-outs are never touched.
+
+### The earlier backers' claim
+
+Off by default: with none of the six settings given there is no claim contract, `Launcher.earlier()` is zero, project zero is born
+like any project, `settingsHash()` is the formula above, and nothing is claimable. A deployer who sets all six gets:
+
+- `EarlierGrants(launcher, root, textHash, total, rows, key)`, immutable: no owner, no admin, no way to change the list, the text
+  or the pool. A new text or list is a new contract. `key` is `Launcher.keyOf(EARLIER_FOUNDER, EARLIER_PROJECT_ID)`.
+- `Launcher.bindEarlier(claim)`: deployer only, once, inside the first hour, only while `key` has not launched, and only for a claim
+  contract that names this Launcher. `settingsHash()` then covers it (`keccak256(abi.encode(platform, holderPauseImpl, earlier))`,
+  with a zero where the pause is off), so a founder who read the hash earlier is refused at launch and reads it again. The Launcher
+  publishes `EarlierBound(earlier, key)`.
+- When the founder named in the settings launches under that id, the Team token is minted `teamPool + total` to the Vester (the
+  extra `total` is a reserve only the claim contract can spend), the Launcher ties the claim contract to the Vester and publishes
+  `EarlierPoolFunded(key, vester, total)`. The earlier pool counts in the Team supply from birth, claimed or not: it takes a slice
+  of every surplus whether or not anyone claims (`EarlierMoney.t.sol` prints the figure; the owner must see it before any real
+  network). It is **not** burned after a wind-down.
+- A listed account claims its row with `EarlierGrants.claim(index, amount, proof, acceptedText)`, sent by that account, naming the
+  fingerprint of the text it accepts. The row can be claimed once. The claim is a protected Team Share grant: 365 days of calendar
+  time counted from the project's birth, no cliff, never forfeited, trimmed or burned. Unclaimed rows stay claimable, also after a
+  wind-down; there is no end time and no sweep (what should happen to Shares nobody claims is counsel's and the owner's to decide).
+- The list never touches the repository: the tests use invented rows. A list builder asserts that indexes are unique and below
+  `EARLIER_ROWS` and that the amounts add up to `EARLIER_TOTAL`; the contract cannot check it.
+
+The script order, when both switches are on: Launcher, then `bindPause`, then the claim contract and `bindEarlier`, all in one
+broadcast. The Launcher's own code hash does not depend on either switch.
 
 The founder's two numbers (the allowance rate, at most 0.20% a day, and the Team pool) are chosen at launch and are not
 settings of the platform. A founder's launch is refused if the platform settings changed since the founder saw them
@@ -72,7 +101,7 @@ QUOTE=<token> PLATFORM=<fee receiver> ADMIN=<settings admin> forge script script
 ```
 
 After a deploy, read `deployments/pot-<chainid>.json` for the addresses (`holderPause` is the zero address, and
-`holderPauseCodehash` the zero hash, when the switch was off). To check the result: call `Launcher.settingsHash()` and
+`holderPauseCodehash` the zero hash, when the switch was off; `earlierGrants` and `earlierKey` are zero when no claim contract was bound). To check the result: call `Launcher.settingsHash()` and
 `Launcher.platform()` and compare them with what you meant; launch a throwaway project and take a play dollar through the
 faucet. `scripts/pot-chain-loop.sh` (repo root) does all of that against a local chain and is the reference for the calls.
 

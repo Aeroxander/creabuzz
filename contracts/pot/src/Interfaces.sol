@@ -28,14 +28,27 @@ interface IHolderPause {
 
 /// @notice What the Treasury asks of the project's Vester.
 interface IVester {
-    /// @notice Set aside `amount` Team Shares for `member` on a clock of its own; returns the grant's id. Only the Treasury.
-    /// A protected grant vests on calendar time over 365 days, with no cliff, and can never be forfeited or burned.
+    /// @notice Set aside `amount` Team Shares for `member`; returns the grant's id. Called by the Treasury (an ordinary grant on
+    /// a clock of its own) and by the earlier backers' claim contract (a protected grant out of the reserve, whatever the flag
+    /// says). A protected grant vests on calendar time over 365 days, with no cliff, and can never be forfeited or burned.
     function grant(address member, uint256 amount, bool protected_) external returns (uint256 id);
     /// @notice Both signers of a Pair runner announce the forfeit of grant `id` (the Treasury has checked them). Only the
     /// Treasury.
     function announceByRunner(uint256 id) external;
-    /// @notice A leaving founder's grants are all announced as an own exit (the hand-over trim). Bounded: at most 8 grants.
+    /// @notice A leaving founder's grants are all announced as an own exit (the hand-over trim). Bounded: at most 16 grants.
     function exitAll(address member) external;
+}
+
+/// @notice What the Launcher reads of the earlier backers' claim contract, and tells it.
+interface IEarlierGrants {
+    /// @notice The Launcher this claim contract serves.
+    function launcher() external view returns (address);
+    /// @notice The key (`Launcher.keyOf(founder, projectId)`) of the one project whose Team pool it funds.
+    function key() external view returns (bytes32);
+    /// @notice The pool in Team Share wei: the most the rows can claim in all.
+    function total() external view returns (uint256);
+    /// @notice Tie the claim contract to the project's Vester, once. Only the Launcher, in the launch transaction.
+    function bind(address vester) external;
 }
 
 /// @notice What the Vester reads of, and tells, the Treasury: the clock and the burn hooks.

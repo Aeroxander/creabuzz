@@ -7,6 +7,7 @@ import {PlayDollar} from "../src/PlayDollar.sol";
 import {Parts} from "../src/Parts.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {HolderPause} from "../src/HolderPause.sol";
+import {EarlierGrants} from "../src/EarlierGrants.sol";
 
 /// @notice Deploys the money contracts of one network: the dollar (PlayDollar on a test network, or an existing token whose
 /// address is given), the part implementations, and the Launcher with the platform settings. It holds no key and reads none:
@@ -27,15 +28,35 @@ import {HolderPause} from "../src/HolderPause.sol";
 ///              with a pause that holders can use (docs/next-version/STEP4-PLAN.md). It is a switch of the deployment: it cannot
 ///              be changed later, and a project is born with the pause or without it for good. Off by default.
 ///
+///   EARLIER_*  the earlier backers' claim (docs/next-version/STEP4-PLAN.md, section 3). All six or none; none is the default and
+///              then nothing is claimable. Set together they deploy `EarlierGrants` and bind it to the Launcher in the same
+///              broadcast, before any project can be launched; the project named by EARLIER_FOUNDER and EARLIER_PROJECT_ID is
+///              then born with an extra Team pool for the list. The list and the text are never in this repository: only their
+///              fingerprints are given here.
+///                EARLIER_ROOT         the list's fingerprint (a Merkle root, bytes32)
+///                EARLIER_TEXT_HASH    the fingerprint of the text a claimant accepts (bytes32)
+///                EARLIER_TOTAL        the pool in Team Share wei (the sum of the rows)
+///                EARLIER_ROWS         the number of rows
+///                EARLIER_FOUNDER      who will launch project zero
+///                EARLIER_PROJECT_ID   the id project zero is launched under (bytes32)
+///              A pool over the founder's Team pool limit (100,000,000 Shares) is refused unless EARLIER_ALLOW_LARGE=1, so a
+///              pool that large is a stated choice. Any setting set without the others reverts before anything is sent.
+///
 /// Example (a local test chain): `UNIT=1680 forge script script/DeployPot.s.sol --rpc-url anvil --broadcast
 /// --private-key <your key>`.
 contract DeployPot is Script {
+    /// @dev The founder's own Team pool limit (`Launcher.MAX_TEAM_POOL`): a larger earlier pool must be asked for on purpose.
+    uint256 internal constant FOUNDER_POOL_CAP = 100_000_000e18;
+    /// @dev The claim contract's own ceiling (`EarlierGrants.MAX_EARLIER_POOL`).
+    uint256 internal constant MAX_EARLIER_POOL = 1_000_000_000e18;
+
     /// @notice What was deployed.
     struct Deployed {
         address quote;
         address parts;
         address launcher;
         address holderPause;
+        address earlier;
         address admin;
         address platform;
         uint256 unit;
@@ -50,6 +71,14 @@ contract DeployPot is Script {
         uint256 holderPauseOn = vm.envOr("HOLDER_PAUSE", uint256(0));
         // every setting is checked before the broadcast starts, so a bad one sends nothing
         require(holderPauseOn <= 1, "HOLDER_PAUSE must be 0 or 1");
+        (
+            bool earlierOn,
+            bytes32 earlierKey,
+            bytes32 earlierRoot,
+            bytes32 earlierText,
+            uint256 earlierTotal,
+            uint256 earlierRows
+        ) = _earlierSettings();
 
         vm.startBroadcast();
         (, address sender,) = vm.readCallers();
@@ -83,6 +112,13 @@ contract DeployPot is Script {
             pauseImpl = new HolderPause();
             launcher.bindPause(address(pauseImpl));
         }
+        EarlierGrants claims;
+        if (earlierOn) {
+            claims = new EarlierGrants(
+                address(launcher), earlierRoot, earlierText, earlierTotal, uint32(earlierRows), earlierKey
+            );
+            launcher.bindEarlier(address(claims));
+        }
         vm.stopBroadcast();
 
         d = Deployed({
@@ -90,6 +126,7 @@ contract DeployPot is Script {
             parts: address(parts),
             launcher: address(launcher),
             holderPause: address(pauseImpl),
+            earlier: address(claims),
             admin: admin,
             platform: platform,
             unit: unit,
@@ -102,6 +139,7 @@ contract DeployPot is Script {
         console2.log("time unit (s)   ", unit);
         console2.log("holder pause    ", address(pauseImpl));
         if (address(pauseImpl) != address(0)) console2.logBytes32(address(pauseImpl).codehash);
+        console2.log("earlier grants  ", address(claims));
 
         string memory key = "deployed";
         vm.serializeUint(key, "chainId", block.chainid);
@@ -113,8 +151,37 @@ contract DeployPot is Script {
         vm.serializeUint(key, "feeBps", feeBps);
         vm.serializeAddress(key, "holderPause", address(pauseImpl));
         vm.serializeBytes32(key, "holderPauseCodehash", address(pauseImpl).codehash);
+        vm.serializeAddress(key, "earlierGrants", address(claims));
+        vm.serializeBytes32(key, "earlierKey", earlierOn ? earlierKey : bytes32(0));
         string memory out = vm.serializeAddress(key, "launcher", address(launcher));
         vm.createDir("deployments", true);
         vm.writeJson(out, string.concat("deployments/pot-", vm.toString(block.chainid), ".json"));
+    }
+
+    /// @dev The earlier-grant settings, all or none, checked before the broadcast starts. A setting left out reads as zero, so
+    /// "set" means non-zero; one set without the rest, or a pool over the founder cap without EARLIER_ALLOW_LARGE=1, reverts.
+    function _earlierSettings()
+        internal
+        view
+        returns (bool on, bytes32 key, bytes32 root, bytes32 text, uint256 total, uint256 rows)
+    {
+        root = vm.envOr("EARLIER_ROOT", bytes32(0));
+        text = vm.envOr("EARLIER_TEXT_HASH", bytes32(0));
+        total = vm.envOr("EARLIER_TOTAL", uint256(0));
+        rows = vm.envOr("EARLIER_ROWS", uint256(0));
+        address founder = vm.envOr("EARLIER_FOUNDER", address(0));
+        bytes32 projectId = vm.envOr("EARLIER_PROJECT_ID", bytes32(0));
+        uint256 allowLarge = vm.envOr("EARLIER_ALLOW_LARGE", uint256(0));
+        require(allowLarge <= 1, "EARLIER_ALLOW_LARGE must be 0 or 1");
+        uint256 given = (root != 0 ? 1 : 0) + (text != 0 ? 1 : 0) + (total != 0 ? 1 : 0) + (rows != 0 ? 1 : 0)
+            + (founder != address(0) ? 1 : 0) + (projectId != 0 ? 1 : 0);
+        require(given == 0 || given == 6, "EARLIER settings: give all six or none");
+        if (given == 0) return (false, 0, 0, 0, 0, 0);
+        require(rows <= type(uint32).max, "EARLIER_ROWS too big");
+        require(total <= MAX_EARLIER_POOL, "EARLIER_TOTAL is over the ceiling");
+        require(
+            total <= FOUNDER_POOL_CAP || allowLarge == 1, "EARLIER_TOTAL is over the founder cap: EARLIER_ALLOW_LARGE=1"
+        );
+        return (true, keccak256(abi.encode(founder, projectId)), root, text, total, rows);
     }
 }

@@ -7,7 +7,9 @@
   tasks       a changed rule or removed guard of the task queue (step 2) makes the test file that binds it fail;
   notes       the same for exit notes and their claims; a changed number moves the model vectors, a changed rule or order
               moves the unit tests, the cycled must-bind run or the ledger of events;
-  pause       a changed rule or removed guard of the holder pause (step 4, K1) makes the unit, attack or launcher tests fail.
+  pause       a changed rule or removed guard of the holder pause (step 4, K1) makes the unit, attack or launcher tests fail;
+  earlier     the same for the earlier backers' grants (step 4, K2): the claim contract, the Vester's reserve and counters, and the
+              Launcher's binding.
 
 A mutation with a seventh entry (a sentence) is an EQUIVALENT mutant: the change cannot alter what the contract does, the
 sentence says why, and the script requires that it survive (a mutant that was killed would mean the proof is wrong).
@@ -17,7 +19,7 @@ hole in the tests: the script prints it and exits 1. The real project is never t
 (`lib` is linked, not copied).
 
 Run from anywhere:   python3 contracts/pot/scripts/check-mutations.py [--only NAME] [--wait CMD] [--keep]
-  --only NAME   run one mutation (or several, comma separated)
+  --only NAME   run one mutation (or several, comma separated); only the tests those mutations name are compiled and run
   --wait CMD    a shell command to run before every forge call (for machines shared with other builds)
   --keep        keep the scratch folder and print its path
   --check       only check that every mutation's text occurs exactly once (no forge run)
@@ -55,6 +57,10 @@ HP = "test/HolderPause.t.sol"
 HA = "test/HolderPauseAttacks.t.sol"
 LP = "test/LauncherPause.t.sol"
 HI = "test/HolderPauseInvariants.t.sol"
+EG = "test/EarlierGrants.t.sol"
+EV = "test/EarlierVester.t.sol"
+EL = "test/EarlierLauncher.t.sol"
+EM = "test/EarlierMoney.t.sol"
 MUTATIONS = [
     # ---- formulas: the vectors must notice
     ("offset-dollar", "src/PotMath.sol", "OFFSET_USD = 1;", "OFFSET_USD = 1e6;", QO, "the virtual money in the quote grows to a dollar"),
@@ -212,10 +218,44 @@ MUTATIONS = [
     ("bind-zero-gate", "src/Treasury.sol", "if (pauseGate != address(0) || gate == address(0)) revert BadInput();", "if (pauseGate != address(0)) revert BadInput();", LP, "a Treasury accepts a zero gate (and keeps thinking it has none)"),
     ("launcher-bind-twice", "src/Launcher.sol", "if (holderPauseImpl != address(0) || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", "if (block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", LP, "the Launcher's pause switch can be set again"),
     ("bind-after-hour", "src/Launcher.sol", "if (holderPauseImpl != address(0) || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", "if (holderPauseImpl != address(0)) revert BindClosed();", LP, "the switch can be turned on after the first hour"),
-    ("bind-not-deployer", "src/Launcher.sol", "if (msg.sender != deployer) revert NotDeployer();", "", LP, "anyone can turn the pause on for new projects"),
+    ("bind-not-deployer", "src/Launcher.sol", "function bindPause(address impl) external {\n        if (msg.sender != deployer) revert NotDeployer();", "function bindPause(address impl) external {", LP, "anyone can turn the pause on for new projects"),
     ("bind-needs-code", "src/Launcher.sol", "if (impl.code.length == 0) revert BadStack();", "", LP, "the switch accepts an address with no code"),
     ("launch-no-bind", "src/Launcher.sol", "            Treasury(treasury).bindPause(gate);\n", "", LP, "a project is launched with a pause that its Treasury does not know"),
     ("settings-hash-no-pause", "src/Launcher.sol", "return keccak256(abi.encode(platform, pause));", "return keccak256(abi.encode(platform));", LP, "the founder's settings hash does not cover the pause switch"),
+    # ---- step 4, the earlier backers' grants (docs/next-version/STEP4-PLAN.md, K2): the claim, Vester and launcher tests must notice
+    ("no-text-check", "src/EarlierGrants.sol", "if (acceptedText != textHash) revert WrongText();", "", EG, "a claim goes through without naming the text it accepts"),
+    ("no-bitmap", "src/EarlierGrants.sol", "if (seen & bit != 0) revert AlreadyClaimed();", "", EG, "a row can be claimed again and again"),
+    ("no-double-hash", "src/EarlierGrants.sol", "bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(index, msg.sender, amount))));", "bytes32 leaf = keccak256(abi.encode(index, msg.sender, amount));", EG, "a leaf is a single hash, so an inner node of the tree could pass as a row"),
+    ("no-sender-in-leaf", "src/EarlierGrants.sol", "keccak256(abi.encode(index, msg.sender, amount))", "keccak256(abi.encode(index, tx.origin, amount))", EG, "the transaction's origin, not the sender, is tied to the row (a relay or contract could claim in someone's name)"),
+    ("no-index-bound", "src/EarlierGrants.sol", "if (index >= rows || proof.length > MAX_PROOF) revert BadRow();", "if (proof.length > MAX_PROOF) revert BadRow();", EG, "an index past the number of rows is not refused for its index"),
+    ("no-proof-depth", "src/EarlierGrants.sol", "if (index >= rows || proof.length > MAX_PROOF) revert BadRow();", "if (index >= rows) revert BadRow();", EG, "a proof of any depth is accepted"),
+    ("no-pool-bound", "src/EarlierGrants.sol", "if (sum > total) revert OverPool();", "", EG, "the rows claimed can pass the pool"),
+    ("no-min-row", "src/EarlierGrants.sol", "if (amount < MIN_ROW) revert RowTooSmall();", "", EG, "a row below one Share is not refused for its size"),
+    ("claim-bind-twice", "src/EarlierGrants.sol", "if (address(vester) != address(0)) revert AlreadyBound();", "", EG, "the claim contract can be tied to another Vester"),
+    ("claim-bind-anyone", "src/EarlierGrants.sol", "if (msg.sender != launcher) revert NotLauncher();", "", EG, "anyone can tie the claim contract to a Vester"),
+    ("acceptance-overwritten", "src/EarlierGrants.sol", "if (acceptedAt[msg.sender] == 0) acceptedAt[msg.sender] = uint64(block.timestamp);", "acceptedAt[msg.sender] = uint64(block.timestamp);", EG, "a later claim overwrites the first acceptance"),
+    ("no-acceptance", "src/EarlierGrants.sol", "if (acceptedAt[msg.sender] == 0) acceptedAt[msg.sender] = uint64(block.timestamp);", "", EG, "the acceptance is not recorded"),
+    ("grant-to-other", "src/EarlierGrants.sol", "grantId = v.grant(msg.sender, amount, true);", "grantId = v.grant(address(uint160(index + 1)), amount, true);", EG, "the grant goes to someone other than the row's account"),
+    ("reserve-ignored", "src/Vester.sol", "if (team.balanceOf(address(this)) < committed + earlierReserve + amount) revert NotFunded();", "if (team.balanceOf(address(this)) < committed + amount) revert NotFunded();", EV, "an ordinary grant can spend the earlier backers' reserve"),
+    ("reserve-burned-after-wind-down", "src/Vester.sol", "uint256 kept = committed + earlierReserve; // the earlier backers' reserve is never burned", "uint256 kept = committed; // the earlier backers' reserve is never burned", EV, "the ungranted burn after a wind-down burns the reserve too"),
+    ("start-at-claim", "src/Vester.sol", "(protected_, start) = (true, earlierStart);", "(protected_, start) = (true, block.timestamp);", EV, "an earlier grant's clock starts at the claim, not at the project's birth"),
+    ("cliff-on-protected", "src/Vester.sol", "if (!g.protected_ && _elapsed(g) < CLIFF_MULT * treasury.unit()) return 0;", "if (_elapsed(g) < CLIFF_MULT * treasury.unit()) return 0;", EV, "a protected grant has a cliff"),
+    ("protected-uses-ordinary-cap", "src/Vester.sol", "if (prot >= MAX_PROTECTED_PER_MEMBER) revert TooManyGrants();", "if (_ids[member].length >= MAX_GRANTS_PER_MEMBER) revert TooManyGrants();", EV, "the runner can fill a listed account's grant slots and lock it out of its claim"),
+    ("no-protected-cap", "src/Vester.sol", "if (prot >= MAX_PROTECTED_PER_MEMBER) revert TooManyGrants();", "", EV, "an account can claim without limit (the hand-over trim is unbounded)"),
+    ("ordinary-ignores-protected-count", "src/Vester.sol", "if (_ids[member].length - prot >= MAX_GRANTS_PER_MEMBER) revert TooManyGrants();", "if (_ids[member].length >= MAX_GRANTS_PER_MEMBER) revert TooManyGrants();", EV, "earlier grants use up an account's ordinary slots"),
+    ("earlier-grant-by-anyone", "src/Vester.sol", "if (!early && msg.sender != address(treasury)) revert NotAllowed();", "", EV, "anyone can grant Team Shares"),
+    ("reserve-not-spent", "src/Vester.sol", "earlierReserve = reserve - amount;", "", EV, "an earlier grant leaves the reserve whole, so the same Shares can be granted twice"),
+    ("funded-lower-bound", "src/Vester.sol", "if (team_.balanceOf(address(this)) != funded) revert NotFunded();", "if (team_.balanceOf(address(this)) < funded) revert NotFunded();", EV, "the Vester accepts a pool larger than the one it was told"),
+    ("earlier-bound-by-anyone", "src/Launcher.sol", "function bindEarlier(address earlier_) external {\n        if (msg.sender != deployer) revert NotDeployer();", "function bindEarlier(address earlier_) external {", EL, "anyone can bind a claim contract"),
+    ("bind-earlier-twice", "src/Launcher.sol", "if (earlier != address(0) || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", "if (block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", EL, "the claim contract can be bound again"),
+    ("bind-earlier-after-hour", "src/Launcher.sol", "if (earlier != address(0) || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", "if (earlier != address(0)) revert BindClosed();", EL, "a stolen key can bind a claim contract at any time"),
+    ("bind-after-launch", "src/Launcher.sol", "if (_projects[k].treasury != address(0)) revert BindClosed();", "", EL, "the claim contract is bound after project zero launched, which could never have its reserve"),
+    ("earlier-wrong-launcher", "src/Launcher.sol", "if (earlier_.code.length == 0 || IEarlierGrants(earlier_).launcher() != address(this)) revert BadStack();", "if (earlier_.code.length == 0) revert BadStack();", EL, "a claim contract made for another Launcher is accepted"),
+    ("launch-no-earlier-bind", "src/Launcher.sol", "            IEarlierGrants(claims).bind(vester);\n", "", EL, "project zero is launched with a reserve its claim contract is not tied to"),
+    ("launch-key-ignored", "src/Launcher.sol", "if (claims != address(0) && key == earlierKey) earlierPool", "if (claims != address(0)) earlierPool", EL, "every project is born with the earlier backers' reserve"),
+    ("launch-pool-unfunded", "src/Launcher.sol", "                vester,\n                terms.teamPool + earlierPool\n", "                vester,\n                terms.teamPool\n", EL, "the reserve is not minted with the Team pool"),
+    ("no-earlier-funded-event", "src/Launcher.sol", "            emit EarlierPoolFunded(key, vester, earlierPool);\n", "", EL, "the launch does not announce the reserve"),
+    ("settings-hash-no-earlier", "src/Launcher.sol", "if (claims != address(0)) return keccak256(abi.encode(platform, pause, claims));", "", EL, "the founder's settings hash does not cover the claim contract"),
 ]
 
 
@@ -255,16 +295,20 @@ def main():
         for f in ("foundry.toml", "remappings.txt"):
             shutil.copy(os.path.join(POT, f), work)
         os.symlink(os.path.realpath(os.path.join(POT, "lib")), os.path.join(work, "lib"))
+        # with --only, only the tests those mutations name are copied (the compile of the whole suite is the slow part)
         keep_tests = {"ModelVectors.t.sol"} | {os.path.basename(m[4]) for m in MUTATIONS}
+        if only:
+            keep_tests = {os.path.basename(m[4]) for m in MUTATIONS if m[0] in only}
         os.makedirs(os.path.join(work, "test"))
         for sub in ("helpers", "mocks"):
             shutil.copytree(os.path.join(POT, "test", sub), os.path.join(work, "test", sub))
         for name in keep_tests:
             shutil.copy(os.path.join(POT, "test", name), os.path.join(work, "test", name))
         env = dict(os.environ, FOUNDRY_INVARIANT_RUNS="64")
-        first = None if check_only else run(["forge", "test", "--match-path", "test/ModelVectors.t.sol"], work, env, wait)
+        baseline = ["forge", "test"] if only else ["forge", "test", "--match-path", "test/ModelVectors.t.sol"]
+        first = None if check_only else run(baseline, work, env, wait)
         if first is not None and first.returncode != 0:
-            print("the unchanged copy does not pass its own vector test:\n" + first.stdout[-3000:] + first.stderr[-2000:])
+            print("the unchanged copy does not pass its own tests:\n" + first.stdout[-3000:] + first.stderr[-2000:])
             return 2
         survivors = []
         ran = 0
