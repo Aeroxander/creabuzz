@@ -37,6 +37,20 @@ pub static EVENTS: &[EventDef] = &[
     },
     EventDef {
         role: Role::Launcher,
+        name: "EarlierBound",
+        params: &[p("earlier", Ty::Address), p("key", Ty::Bytes32)],
+    },
+    EventDef {
+        role: Role::Launcher,
+        name: "EarlierPoolFunded",
+        params: &[
+            ix("key", Ty::Bytes32),
+            p("vester", Ty::Address),
+            p("amount", U256),
+        ],
+    },
+    EventDef {
+        role: Role::Launcher,
         name: "HolderPauseBound",
         params: &[p("impl", Ty::Address), p("codehash", Ty::Bytes32)],
     },

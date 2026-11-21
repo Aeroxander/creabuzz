@@ -31,6 +31,45 @@
           ]
         },
         {
+          "name": "EarlierBound",
+          "signature": "EarlierBound(address,bytes32)",
+          "topic": "0x00eef9560cbe734465b2903143862cf263a44a1b9e373e4c192be74ae3f3f855",
+          "inputs": [
+            {
+              "name": "earlier",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "key",
+              "type": "bytes32",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "EarlierPoolFunded",
+          "signature": "EarlierPoolFunded(bytes32,address,uint256)",
+          "topic": "0x9f413750203abc1e5fb7fde0d7a6725fc2417b27c68b13fcb53db196a0413884",
+          "inputs": [
+            {
+              "name": "key",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "vester",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
           "name": "HolderPauseBound",
           "signature": "HolderPauseBound(address,bytes32)",
           "topic": "0x9ed3f2fe8ea5436eaa279181acc7106338cdffc97d6f5cd86cea3235d102a4cf",
