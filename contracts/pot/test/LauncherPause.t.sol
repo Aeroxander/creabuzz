@@ -47,6 +47,13 @@ contract LauncherPauseSwitchOffTest is StackBase {
         t.announceTask(bytes32(uint256(1)), address(0), 100e6, 10);
     }
 
+    function test_aTreasuryRefusesAZeroGateEvenFromTheLauncher() public {
+        vm.prank(address(launcher));
+        vm.expectRevert(Treasury.BadInput.selector);
+        t.bindPause(address(0));
+        assertEq(t.pauseGate(), address(0));
+    }
+
     function test_bindPauseByAStrangerOrTheAdminIsRefused() public {
         HolderPause impl = new HolderPause();
         vm.prank(stranger);

@@ -6,7 +6,8 @@
               and the handler would catch it);
   tasks       a changed rule or removed guard of the task queue (step 2) makes the test file that binds it fail;
   notes       the same for exit notes and their claims; a changed number moves the model vectors, a changed rule or order
-              moves the unit tests, the cycled must-bind run or the ledger of events.
+              moves the unit tests, the cycled must-bind run or the ledger of events;
+  pause       a changed rule or removed guard of the holder pause (step 4, K1) makes the unit, attack or launcher tests fail.
 
 A mutation with a seventh entry (a sentence) is an EQUIVALENT mutant: the change cannot alter what the contract does, the
 sentence says why, and the script requires that it survive (a mutant that was killed would mean the proof is wrong).
@@ -50,6 +51,10 @@ NT = "test/Notes.t.sol"
 NM = "test/NotesMustBind.t.sol"
 NF = "test/NotesFuzz.t.sol"
 TR = "test/TasksRebuild.t.sol"
+HP = "test/HolderPause.t.sol"
+HA = "test/HolderPauseAttacks.t.sol"
+LP = "test/LauncherPause.t.sol"
+HI = "test/HolderPauseInvariants.t.sol"
 MUTATIONS = [
     # ---- formulas: the vectors must notice
     ("offset-dollar", "src/PotMath.sol", "OFFSET_USD = 1;", "OFFSET_USD = 1e6;", QO, "the virtual money in the quote grows to a dollar"),
@@ -180,6 +185,37 @@ MUTATIONS = [
     ("vec-larger-of", "src/TaskBook.sol", "amount = Math.min(k.maxDollars, Math.mulDiv(pot, k.shareBps, BPS));", "amount = Math.max(k.maxDollars, Math.mulDiv(pot, k.shareBps, BPS));", V, "a take sets aside the larger of the dollars and the share"),
     ("vec-quote-no-stay", "src/Treasury.sol", "PotMath.quote(s.pot, s.arriving + s.stay, paidIn, b, ge)", "PotMath.quote(s.pot, s.arriving, paidIn, b, ge)", V, "a joiner is priced without the money set aside (the vectors join during a lock)"),
     ("vec-notes-first", "src/TaskBook.sol", "r.np = Math.mulDiv(r.n, rem, l);", "r.np = Math.min(r.n, rem);", V, "on a part payment the notes are repaid first, not pro rata"),
+    # ---- step 4, the holder pause (docs/next-version/STEP4-PLAN.md, K1): the unit, attack and launcher tests must notice
+    ("line-floor", "src/HolderPause.sol", "return b != 0 && parkedTotal * LINE_DIVISOR >= b;", "return b != 0 && parkedTotal >= b / LINE_DIVISOR;", HP, "the line is a third rounded DOWN, so a few wei under a third arms the pause"),
+    ("no-b-zero-guard", "src/HolderPause.sol", "return b != 0 && parkedTotal * LINE_DIVISOR >= b;", "return parkedTotal * LINE_DIVISOR >= b;", HP, "no Shares at all counts as a third (zero parked of zero) and pauses a project nobody backs"),
+    ("delay-zero", "src/HolderPause.sol", "if (a == 0 || block.timestamp < a + day) return false;", "if (a == 0 || block.timestamp < a) return false;", HP, "the pause starts the second the line is reached: no day of warning"),
+    ("no-hidden-dip-reset", "src/HolderPause.sol", "if (armedAt != 0 && !_reached(b)) armedAt = 0;", "", HP, "park and unpark do not look first, so a dip nobody saw keeps an old clock alive"),
+    ("no-disarm", "src/HolderPause.sol", "        } else if (a != 0) {\n            armedAt = a = 0;\n        }", "        }", HP, "the clock is not cleared when parked Shares fall under the line"),
+    ("arm-restarts", "src/HolderPause.sol", "if (a == 0) armedAt = a = uint64(block.timestamp);", "armedAt = a = uint64(block.timestamp);", HP, "parking more while armed restarts the day"),
+    ("park-from-origin", "src/HolderPause.sol", "transferFrom(msg.sender, address(this), n)", "transferFrom(tx.origin, address(this), n)", HP, "park pulls Shares from someone who did not call it"),
+    ("unpark-gated", "src/HolderPause.sol", "if (n > mine) revert TooMuch(n, mine);", "if (n > mine || (armedAt != 0 && block.timestamp >= uint256(armedAt) + day)) revert TooMuch(n, mine);", HA, "un-park is refused while the pause is on"),
+    ("count-donation", "src/HolderPause.sol", "return b != 0 && parkedTotal * LINE_DIVISOR >= b;", "return b != 0 && shares.balanceOf(address(this)) * LINE_DIVISOR >= b;", HP, "Shares sent straight to the pause count as parked"),
+    ("paused-not-live", "src/HolderPause.sol", "return _reached(shares.totalSupply());\n    }\n\n    /// @notice The fewest", "return true;\n    }\n\n    /// @notice The fewest", HP, "paused() stops reading the live ratio (killed only through a planted stale clock: with the join hook no reachable state differs)"),
+    ("park-zero", "src/HolderPause.sol", "function park(uint256 n) external {\n        if (n == 0) revert BadInput();", "function park(uint256 n) external {", HP, "parking zero is accepted"),
+    ("unpark-zero", "src/HolderPause.sol", "function unpark(uint256 n) external {\n        if (n == 0) revert BadInput();", "function unpark(uint256 n) external {", HP, "un-parking zero is accepted"),
+    ("unpark-over", "src/HolderPause.sol", "if (n > mine) revert TooMuch(n, mine);", "", HP, "a holder can take back more than they parked (the subtraction still reverts, with another error)"),
+    ("init-twice", "src/HolderPause.sol", "if (address(shares) != address(0)) revert AlreadyBorn();", "", HP, "a pause can be set up again"),
+    ("init-unit", "src/HolderPause.sol", "|| unit_ == 0 || unit_ % 168 != 0) revert BadInput();", "|| unit_ == 0) revert BadInput();", HP, "a unit that is not a multiple of 168 is accepted"),
+    ("park-false-ignored", "src/HolderPause.sol", "if (!IERC20(address(shares)).transferFrom(msg.sender, address(this), n)) revert TransferFailed();", "IERC20(address(shares)).transferFrom(msg.sender, address(this), n);", HP, "a Share token that answers false to a pull is believed"),
+    ("unpark-false-ignored", "src/HolderPause.sol", "if (!shares.transfer(msg.sender, n)) revert TransferFailed();", "shares.transfer(msg.sender, n);", HP, "a Share token that answers false to a send back is believed"),
+    ("draw-ungated", "src/Treasury.sol", "        _settle();\n        _notPaused();\n        if (\n            to == address(0)", "        _settle();\n        if (\n            to == address(0)", HA, "the team draws its allowance while the pause is on"),
+    ("announce-ungated", "src/Treasury.sol", "        _openWindow();\n        _notPaused();", "        _openWindow();", HA, "a task is announced while the pause is on"),
+    ("no-join-poke", "src/Treasury.sol", "        if (pauseGate != address(0)) IHolderPause(pauseGate).poke();\n", "", HA, "a join does not tell the pause to look, so a dip made by a join is unseen"),
+    ("gate-fails-open", "src/Treasury.sol", "if (g != address(0) && IHolderPause(g).paused()) revert Paused();", "if (g != address(0)) {\n            try IHolderPause(g).paused() returns (bool p) {\n                if (p) revert Paused();\n            } catch {}\n        }", HA, "a gate that reverts is ignored (swallowed)"),
+    ("bind-pause-anyone", "src/Treasury.sol", "function bindPause(address gate) external {\n        if (msg.sender != salePath) revert NotAllowed();", "function bindPause(address gate) external {", HP, "anyone can bind a gate to a Treasury"),
+    ("bind-twice", "src/Treasury.sol", "if (pauseGate != address(0) || gate == address(0)) revert BadInput();", "if (gate == address(0)) revert BadInput();", HP, "a Treasury's gate can be replaced"),
+    ("bind-zero-gate", "src/Treasury.sol", "if (pauseGate != address(0) || gate == address(0)) revert BadInput();", "if (pauseGate != address(0)) revert BadInput();", LP, "a Treasury accepts a zero gate (and keeps thinking it has none)"),
+    ("launcher-bind-twice", "src/Launcher.sol", "if (holderPauseImpl != address(0) || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", "if (block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", LP, "the Launcher's pause switch can be set again"),
+    ("bind-after-hour", "src/Launcher.sol", "if (holderPauseImpl != address(0) || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", "if (holderPauseImpl != address(0)) revert BindClosed();", LP, "the switch can be turned on after the first hour"),
+    ("bind-not-deployer", "src/Launcher.sol", "if (msg.sender != deployer) revert NotDeployer();", "", LP, "anyone can turn the pause on for new projects"),
+    ("bind-needs-code", "src/Launcher.sol", "if (impl.code.length == 0) revert BadStack();", "", LP, "the switch accepts an address with no code"),
+    ("launch-no-bind", "src/Launcher.sol", "            Treasury(treasury).bindPause(gate);\n", "", LP, "a project is launched with a pause that its Treasury does not know"),
+    ("settings-hash-no-pause", "src/Launcher.sol", "return keccak256(abi.encode(platform, pause));", "return keccak256(abi.encode(platform));", LP, "the founder's settings hash does not cover the pause switch"),
 ]
 
 
