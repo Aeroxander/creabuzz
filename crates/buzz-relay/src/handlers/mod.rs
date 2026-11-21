@@ -16,6 +16,9 @@ mod board_moderation_postgres_tests;
 mod board_report_postgres_tests;
 /// NIP-ORG budget enforcement — relay-side ingest gate.
 pub mod budget_enforcement;
+pub mod chain_agent_link;
+#[cfg(test)]
+mod chain_agent_link_postgres_tests;
 /// Pure NIP-29 channel membership-authority decisions (kinds 9000/9001/9022).
 pub mod channel_authz;
 /// Subscription close (CLOSE) handler.

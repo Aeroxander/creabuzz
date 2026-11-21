@@ -20,7 +20,8 @@ use uuid::Uuid;
 
 use super::ingest::{ingest_event, IngestAuth, IngestError};
 use super::task_chain::{
-    ANNOUNCED_SQL, AS_OF_SQL, LATER_SQL, NAME_WALLET, NOT_SEEN_YET, NOT_THAT_PAYMENT, OTHER_WALLET,
+    ALREADY_PAID, ANNOUNCED_SQL, AS_OF_SQL, BOX_OTHER_AMOUNT, BOX_OTHER_WALLET, LATER_SQL,
+    LOWER_CASE_TX, NAME_WALLET, NOT_SEEN_YET, NOT_SHOWN, NOT_THAT_PAYMENT, NO_WALLET, OTHER_WALLET,
     PAID_ELSEWHERE, PAY_FIRST, PLAN_ENDED, TAKEN_ELSEWHERE, WITHDRAW_FIRST,
 };
 use crate::api::manager::cost::project_id;
@@ -385,14 +386,20 @@ impl World {
         hex0x(&paid.2.tx)
     }
 
-    /// Add a block after the run's newest, `after` seconds after `time` (a later block the reader has read).
+    /// Add a block after the newest the reader has stored, with the time `time` (a later block the reader has read).
     async fn read_a_block_at(&self, time: u64) {
-        let head = self.fx.head();
+        let next: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(max(number), 0) + 1 FROM chain_blocks WHERE reader = $1",
+        )
+        .bind(&self.reader)
+        .fetch_one(self.state.db.pool())
+        .await
+        .expect("the newest block");
         sqlx::query(
             "INSERT INTO chain_blocks (reader, number, hash, parent_hash, block_time) VALUES ($1, $2, $3, $3, $4)",
         )
         .bind(&self.reader)
-        .bind(i64::try_from(head + 1).expect("block"))
+        .bind(next)
         .bind(vec![9u8; 32])
         .bind(i64::try_from(time).expect("time"))
         .execute(self.state.db.pool())
@@ -737,8 +744,15 @@ async fn a_task_with_no_plan_or_whose_plan_ended_unpaid_is_judged_as_in_step_1()
         .await;
     let paid_elsewhere = w.paid_tx(PAID);
 
-    // No plan: a confirm naming any payment, a take naming any wallet, a cancel.
+    // No plan: a confirm naming no payment, a take naming any wallet, a cancel. A confirm naming a payment is a box
+    // payment now (G7): it is believed only when the network shows it, and this one is another project's.
     w.accept(
+        step(&w.founder, &w.coordinate, "confirm", &none, &[]),
+        "a confirm of a task with no plan that names no payment",
+    )
+    .await;
+    w.read_past_now().await;
+    w.refuse(
         step(
             &w.founder,
             &w.coordinate,
@@ -746,7 +760,8 @@ async fn a_task_with_no_plan_or_whose_plan_ended_unpaid_is_judged_as_in_step_1()
             &none,
             &[&["task-paid", &paid_elsewhere]],
         ),
-        "a confirm of a task with no plan",
+        NOT_SHOWN,
+        "a confirm of a task with no plan that names a payment the network does not show for it",
     )
     .await;
     // Plans that ended unpaid bind nothing.
@@ -1139,7 +1154,10 @@ async fn a_plan_of_another_project_with_the_same_what_is_ignored() {
         "a take with the same what under another project",
     )
     .await;
-    w.accept(
+    // Project A's payment is not this project's: the plan of another project binds nothing here, and the payment is
+    // judged as a box payment of this one, which the network does not show.
+    w.read_past_now().await;
+    w.refuse(
         step(
             &w.founder,
             &w.coordinate,
@@ -1147,6 +1165,7 @@ async fn a_plan_of_another_project_with_the_same_what_is_ignored() {
             &task,
             &[&["task-paid", &w.paid_tx(PAID)]],
         ),
+        NOT_SHOWN,
         "a confirm with the same what under another project",
     )
     .await;
@@ -1274,4 +1293,316 @@ async fn a_task_record_dated_more_than_15_minutes_ahead_is_refused_with_words() 
     // Within the bound (a clock a little fast) it is stored.
     w.accept(ahead(14 * 60, "fourteen minutes"), "fourteen minutes ahead")
         .await;
+}
+
+// ------------------------------------------------------------------------------ a task paid out of the allowance box
+
+/// The first draw from project A's allowance box in the run: the transaction, who it paid and how much (raw dollars).
+fn first_draw(w: &World) -> ([u8; 32], String, u128) {
+    let (_, _, row) =
+        w.fx.decoded()
+            .into_iter()
+            .find(|(role, project, row)| {
+                *role == Role::Treasury
+                    && project.as_deref() == Some("A")
+                    && row.event == "AllowanceDrawn"
+                    && row.block <= w.live_block()
+            })
+            .expect("the run draws from the box");
+    let to = row.fields["to"].as_str().expect("a payee").to_lowercase();
+    let amount = row.fields["amount"]
+        .as_str()
+        .and_then(|a| a.parse().ok())
+        .expect("an amount");
+    (row.tx, to, amount)
+}
+
+impl World {
+    /// Store one `AllowanceDrawn` of a Treasury under the project key `key`, in the launch block's place `at` (a log
+    /// index no real row has).
+    async fn draw(&self, key: [u8; 32], tx: [u8; 32], to: &str, raw: u128, at: i32) {
+        let launch = i64::try_from(self.fx.launch_block("A")).expect("block");
+        sqlx::query(
+            "INSERT INTO chain_logs (reader, block_number, log_index, block_hash, tx_hash, address, role, \
+             project_key, event, topics, data, decoded) \
+             VALUES ($1, $2, $3, $4, $5, $6, 'treasury', $7, 'AllowanceDrawn', ARRAY[]::bytea[], ''::bytea, $8)",
+        )
+        .bind(&self.reader)
+        .bind(launch)
+        .bind(9_000 + at)
+        .bind([1u8; 32].as_slice())
+        .bind(tx.as_slice())
+        .bind(self.fx.projects["A"].treasury.as_slice())
+        .bind(key.as_slice())
+        .bind(json!({ "by": hex0x(&[0u8; 20]), "to": to, "amount": raw.to_string(), "boxAfter": "0" }))
+        .execute(self.state.db.pool())
+        .await
+        .expect("a draw");
+    }
+
+    /// The reader has stored a block an hour after the confirms the test writes: everything the worker could have been
+    /// paying for is read.
+    async fn read_past_now(&self) {
+        let now = Timestamp::now().as_secs();
+        self.read_a_block_at(now + 3_600).await;
+    }
+}
+
+/// A confirm of `task` naming the payment `tx` (a team member's, accepted by the founder).
+fn paid_confirm(w: &World, task: &Event, tx: &[u8; 32]) -> Event {
+    step(
+        &w.founder,
+        &w.coordinate,
+        "confirm",
+        task,
+        &[&["task-paid", &hex0x(tx)]],
+    )
+}
+
+/// G7: a box payment is believed only when the network shows it. A task with no plan, paid out of the allowance box:
+/// the confirm names a transaction that must hold a draw of this project's Treasury to the wallet the worker named, for
+/// what the task pays. Switch the check off (return `Ok` for the new branch) and the refusals below are accepted.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_box_payment_is_recorded_only_when_the_network_shows_it_to_the_workers_wallet_for_the_amount(
+) {
+    let w = world(true).await;
+    let task = open_task(&w.founder, &w.coordinate, "Paid from the box", "30");
+    w.accept(task.clone(), "the team posts a task").await;
+    let (tx, wallet, raw) = first_draw(&w);
+    assert_eq!(raw, 30_000_000, "the run's first draw is thirty dollars");
+    worker_takes(&w, &task, Some(&wallet)).await;
+    w.seed_run(&[]).await;
+    let key = w.fx.projects["A"].key;
+    w.draw(key, tx, &wallet, raw, 0).await;
+    w.read_past_now().await;
+
+    // A transaction the network does not show.
+    w.refuse(
+        paid_confirm(&w, &task, &[0x77; 32]),
+        NOT_SHOWN,
+        "a payment that never happened",
+    )
+    .await;
+    // The payment that paid the worker's wallet, for what the task pays.
+    w.accept(paid_confirm(&w, &task, &tx), "the real payment")
+        .await;
+    // A confirm that names no payment is untouched.
+    w.accept(
+        step(&w.founder, &w.coordinate, "confirm", &task, &[]),
+        "accepted without paying",
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_box_payment_to_another_wallet_for_another_amount_or_of_another_project_is_refused() {
+    // (what the worker named, what the task says it pays, the key the draw is stored under, the words)
+    let other_project = |w: &World| w.fx.projects["B"].key;
+    for (named, usd, other, expect, what) in [
+        (
+            Some("other"),
+            "30",
+            false,
+            BOX_OTHER_WALLET,
+            "another wallet",
+        ),
+        (None, "30", false, NO_WALLET, "the worker named no wallet"),
+        (
+            Some("paid"),
+            "31",
+            false,
+            BOX_OTHER_AMOUNT,
+            "another amount",
+        ),
+        (
+            Some("paid"),
+            "30",
+            true,
+            NOT_SHOWN,
+            "a draw of another project's Treasury",
+        ),
+    ] {
+        let w = world(true).await;
+        let task = open_task(&w.founder, &w.coordinate, "Paid from the box", usd);
+        w.accept(task.clone(), "the team posts a task").await;
+        let (tx, wallet, raw) = first_draw(&w);
+        let named = named.map(|n| {
+            if n == "paid" {
+                wallet.clone()
+            } else {
+                NOT_A_PLANNED_WALLET.to_owned()
+            }
+        });
+        worker_takes(&w, &task, named.as_deref()).await;
+        w.seed_run(&[]).await;
+        let key = if other {
+            other_project(&w)
+        } else {
+            w.fx.projects["A"].key
+        };
+        w.draw(key, tx, &wallet, raw, 0).await;
+        w.read_past_now().await;
+        w.refuse(paid_confirm(&w, &task, &tx), expect, what).await;
+    }
+}
+
+/// While the reader has not read past the confirm's own time the answer is "ask again", never "no": the payment may be
+/// in a block the server has not stored yet.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_box_payment_the_reader_may_not_have_read_yet_is_asked_again_not_refused_for_good() {
+    let w = world(true).await;
+    let task = open_task(&w.founder, &w.coordinate, "Paid from the box", "30");
+    w.accept(task.clone(), "the team posts a task").await;
+    let (tx, wallet, _) = first_draw(&w);
+    worker_takes(&w, &task, Some(&wallet)).await;
+    // The reader has stored the launch and nothing after it: the newest block is older than the confirm.
+    w.seed("A", &[], 0, w.fx.launch_block("A")).await;
+    w.refuse(
+        paid_confirm(&w, &task, &tx),
+        NOT_SEEN_YET,
+        "the reader has not caught up",
+    )
+    .await;
+    // A confirm dated minutes ahead of the clock keeps getting "ask again" even once the reader has read an hour on
+    // (it is judged by its own time plus a minute, never by the server's clock).
+    let id = task.id.to_hex();
+    let paid = hex0x(&tx);
+    let ahead = signed(
+        &w.founder,
+        KIND_LAUNCH_UPDATE,
+        &[
+            &["a", w.coordinate.as_str()],
+            &["l", "creaton-task"],
+            &["task-part", "confirm"],
+            &["e", id.as_str()],
+            &["task", id.as_str()],
+            &["task-paid", paid.as_str()],
+        ],
+        10 * 60,
+    );
+    let now = Timestamp::now().as_secs();
+    w.read_a_block_at(now + 120).await;
+    w.refuse(
+        ahead,
+        NOT_SEEN_YET,
+        "a confirm from the future is asked again",
+    )
+    .await;
+    // Once the reader has read past it, a payment that is not there is refused for good.
+    w.read_a_block_at(now + 3_600).await;
+    w.refuse(
+        paid_confirm(&w, &task, &tx),
+        NOT_SHOWN,
+        "the reader read past it and there is no draw",
+    )
+    .await;
+}
+
+/// One draw pays one task: two confirms of equal amount cannot name one payment. A transaction holding two draws to the
+/// worker's wallet pays two tasks and not three.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn one_box_payment_pays_one_task_and_a_batch_of_two_pays_two() {
+    let w = world(true).await;
+    let (tx, wallet, raw) = first_draw(&w);
+    let key = w.fx.projects["A"].key;
+    // Replay: two tasks of one worker, one draw.
+    let (one, two) = (
+        open_task(&w.founder, &w.coordinate, "First paid task", "30"),
+        open_task(&w.founder, &w.coordinate, "Second paid task", "30"),
+    );
+    for task in [&one, &two] {
+        w.accept(task.clone(), "the team posts a task").await;
+        worker_takes(&w, task, Some(&wallet)).await;
+    }
+    w.seed_run(&[]).await;
+    w.draw(key, tx, &wallet, raw, 0).await;
+    w.read_past_now().await;
+    w.accept(
+        paid_confirm(&w, &one, &tx),
+        "the first task names the payment",
+    )
+    .await;
+    w.refuse(
+        paid_confirm(&w, &two, &tx),
+        ALREADY_PAID,
+        "the second names the same draw",
+    )
+    .await;
+
+    // A batch: one transaction with two draws to the worker's wallet.
+    let batch = [0x42u8; 32];
+    w.draw(key, batch, &wallet, raw, 1).await;
+    w.draw(key, batch, &wallet, raw, 2).await;
+    let third = open_task(&w.founder, &w.coordinate, "Third paid task", "30");
+    let fourth = open_task(&w.founder, &w.coordinate, "Fourth paid task", "30");
+    for task in [&third, &fourth] {
+        w.accept(task.clone(), "the team posts a task").await;
+        worker_takes(&w, task, Some(&wallet)).await;
+    }
+    w.accept(
+        paid_confirm(&w, &two, &batch),
+        "the second task is paid by the batch",
+    )
+    .await;
+    w.accept(
+        paid_confirm(&w, &third, &batch),
+        "the third task is paid by the batch",
+    )
+    .await;
+    w.refuse(
+        paid_confirm(&w, &fourth, &batch),
+        ALREADY_PAID,
+        "a batch of two pays two",
+    )
+    .await;
+
+    // A batch that also pays someone else: the worker's draw is theirs, the other draw is another worker's.
+    let mixed = [0x43u8; 32];
+    w.draw(key, mixed, NOT_A_PLANNED_WALLET, raw, 3).await;
+    w.draw(key, mixed, &wallet, raw, 4).await;
+    let fifth = open_task(&w.founder, &w.coordinate, "Fifth paid task", "30");
+    w.accept(fifth.clone(), "the team posts a task").await;
+    worker_takes(&w, &fifth, Some(&wallet)).await;
+    w.accept(
+        paid_confirm(&w, &fifth, &mixed),
+        "the draw to the worker's wallet in a mixed batch",
+    )
+    .await;
+}
+
+/// The server counts a payment named twice in two spellings as two payments, so it asks for the one spelling it can
+/// count.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_payment_must_be_written_in_lower_case() {
+    let w = world(true).await;
+    let task = open_task(&w.founder, &w.coordinate, "Paid from the box", "30");
+    w.accept(task.clone(), "the team posts a task").await;
+    let (tx, wallet, raw) = first_draw(&w);
+    worker_takes(&w, &task, Some(&wallet)).await;
+    w.seed_run(&[]).await;
+    w.draw(w.fx.projects["A"].key, tx, &wallet, raw, 0).await;
+    w.read_past_now().await;
+    let upper = format!("0x{}", hex::encode(tx).to_uppercase());
+    w.refuse(
+        step(
+            &w.founder,
+            &w.coordinate,
+            "confirm",
+            &task,
+            &[&["task-paid", &upper]],
+        ),
+        LOWER_CASE_TX,
+        "the payment in capitals",
+    )
+    .await;
+    w.accept(
+        paid_confirm(&w, &task, &tx),
+        "the same payment in lower case",
+    )
+    .await;
 }

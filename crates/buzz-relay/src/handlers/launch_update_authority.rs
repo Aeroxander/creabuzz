@@ -101,7 +101,9 @@
 //! it, by `created_at` and then id, whose signer has not given the task up. A second take is refused while one is live,
 //! and someone who gave a task up cannot take it again. A task the team cancelled cannot be taken. The team's
 //! confirmation may carry the payment's transaction (`task-paid`); the money moves from the runner's own wallet in the
-//! app, never from the server or an agent, and the server does not check the transaction against the chain.
+//! app, never from the server or an agent. A payment the team names is believed only when the network shows it (see
+//! `task_chain`: a draw from the project's allowance box to the wallet the worker named, for what the task pays, not
+//! already named for another task).
 //!
 //! An account on record as a manager agent (its profile says `["agent-role", "manager"]`, see `agent_label`) signs no
 //! task step at all: it drafts for the founder and never takes, hands in or confirms work.
@@ -639,6 +641,22 @@ fn check_money_tags(money: &[(&str, &str)], part: Option<TaskPart>) -> Result<()
     Ok(())
 }
 
+/// What a task record offers, in whole dollars, when it is open to anyone: it names no helper and says what it pays.
+fn open_task_usd(event: &Event) -> Option<u64> {
+    let first = |name: &str| {
+        event.tags.iter().find_map(|tag| {
+            let fields = tag.as_slice();
+            (fields.first().map(String::as_str) == Some(name))
+                .then(|| fields.get(1).cloned())
+                .flatten()
+        })
+    };
+    if first("task-helper").is_some() {
+        return None;
+    }
+    first("task-usd").and_then(|usd| usd.parse().ok())
+}
+
 /// Hold a record a stranger signs for nothing (an ask to join, a take) to a small size.
 fn check_record_is_small(event: &Event, what: &str) -> Result<(), String> {
     if event.content.len() > JOIN_CONTENT_MAX {
@@ -744,6 +762,8 @@ pub(crate) struct TaskFacts {
     pub(crate) helper: Option<String>,
     /// For a task open to anyone, what its stored steps say about who has it (see [`TakeFacts`]).
     pub(crate) takes: TakeFacts,
+    /// What the task says it pays, in whole dollars (`task-usd`), when it says.
+    pub(crate) usd: Option<u64>,
 }
 
 /// What the stored steps of a task open to anyone say, read by the server before a step is decided.
@@ -812,6 +832,7 @@ pub(crate) fn task_facts(task: &Event) -> Option<TaskFacts> {
         coordinate: first("a")?,
         helper: first("task-helper"),
         takes: TakeFacts::default(),
+        usd: first("task-usd").and_then(|usd| usd.parse().ok()),
     })
 }
 
@@ -1115,9 +1136,19 @@ pub(crate) async fn enforce_launch_update_authority(
                 part,
                 task_id: &task_id,
                 worker: task.as_ref().and_then(TaskFacts::worker),
+                usd: task.as_ref().and_then(|task| task.usd),
             },
         )
         .await?;
+    }
+    if let Some((part, _)) = requirement.step {
+        // The chain's helper limits are tied to the server's labels through the wallets an account linked.
+        if let Some(key) = super::task_chain::chain_key_of(&record.event) {
+            let open_usd = (part == TaskPart::Task)
+                .then(|| open_task_usd(event))
+                .flatten();
+            super::chain_agent_link::enforce_step(state, community, &key, event, open_usd).await?;
+        }
     }
     if requirement.join {
         enforce_join_caps(state, community, event, &coordinate).await?;

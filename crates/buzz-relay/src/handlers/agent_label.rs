@@ -39,7 +39,8 @@
 //! role is set once: a profile of an account already labelled whose role
 //! differs from the stored one is refused, and so is a manager's profile that
 //! drops its label. An `agent-role` with any other value, or without the
-//! label, is refused.
+//! label, is refused. A manager's profile is also refused while a wallet the
+//! account has linked is a live helper on the network (see `chain_agent_link`).
 
 use std::sync::Arc;
 
@@ -229,6 +230,10 @@ pub(crate) async fn enforce_agent_label(
             })
         }
     };
+    // A manager account keeps clear of the network's helper limits: a wallet it linked may not be one.
+    if role_of(event) == Some(AgentRole::Manager) {
+        super::chain_agent_link::enforce_manager(state, community, event).await?;
+    }
     if crate::api::relay_members::materialize_nip_oa_owner(state, tenant, &event.pubkey, &operator)
         .await
     {

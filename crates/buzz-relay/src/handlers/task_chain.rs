@@ -4,6 +4,16 @@
 //! `chain_logs`, and it judges a record only against a plan it can see there. Its refusals are the early, honest ones;
 //! the app reads the chain itself before it offers any payment.
 //!
+//! # A task paid from the allowance box
+//!
+//! A task with no plan on the network (or whose plan ran out unpaid) is paid by a draw from the project's allowance
+//! box to the wallet the worker named. A `confirm` that names such a payment (`task-paid`) is stored only when the
+//! reader's rows show it (see [`decide_box`]): a draw of that transaction, on this project's Treasury, to the wallet
+//! the worker named under their own signature, for what the task says it pays, that no other task's confirm already
+//! names. The server never guesses: while the reader has not yet covered the blocks the worker could have been
+//! writing about (a minute past the confirm's own time) the answer is `retry:`, and after that `invalid:`. A confirm
+//! that names no payment is untouched.
+//!
 //! # The tie
 //!
 //! - The plan's `what` is the **id of the task record** (the signed `task-part = task` event), so nobody can change a
@@ -35,6 +45,7 @@
 
 use std::sync::Arc;
 
+use buzz_core::kind::KIND_LAUNCH_UPDATE;
 use buzz_core::tenant::CommunityId;
 use nostr::Event;
 use serde_json::Value;
@@ -68,6 +79,30 @@ pub(crate) const PAID_ELSEWHERE: &str =
 /// Said on a `cancel` while the plan still holds the task on the network.
 pub(crate) const WITHDRAW_FIRST: &str =
     "invalid: withdraw or send back the money on the network first";
+
+/// Said on a `confirm` that names a payment the network does not show, once the server has read past its time.
+pub(crate) const NOT_SHOWN: &str = "invalid: the network does not show that payment";
+/// Said on a `confirm` of a box payment when the worker never named a wallet.
+pub(crate) const NO_WALLET: &str = "invalid: the worker has not named a wallet to be paid at";
+/// Said on a `confirm` of a box payment that went to another wallet than the one the worker named.
+pub(crate) const BOX_OTHER_WALLET: &str =
+    "invalid: the payment went to another wallet than the one the worker named";
+/// Said on a `confirm` of a box payment that is not what the task pays.
+pub(crate) const BOX_OTHER_AMOUNT: &str = "invalid: the payment is not what the task pays";
+/// Said on a `confirm` of a box payment that another task's record already names.
+pub(crate) const ALREADY_PAID: &str = "invalid: that payment already paid another task";
+/// Said on a `confirm` whose payment is not written in lower case (the server cannot count a payment named twice in
+/// two spellings).
+pub(crate) const LOWER_CASE_TX: &str = "invalid: write the payment's transaction in lower case";
+/// How long after a `confirm`'s own time the reader must have stored blocks before the server says the network does not
+/// show a payment it names: the payment was made before the record was written, so every block it could be in is read.
+pub(crate) const BOX_SEEN_AFTER_SECS: u64 = 60;
+/// The most draws of one transaction read (a batch holds a few; past this the lookup fails and refuses the write).
+const BOX_DRAWS_READ: i64 = 64;
+/// The most other tasks read that name the same payment (past this the payment has paid enough tasks already).
+const BOX_CITERS_READ: i64 = 16;
+/// Dollars are kept in millionths (6 decimals), as the Treasury's `AllowanceDrawn` says them.
+const DOLLAR_RAW: u128 = 1_000_000;
 
 /// The most announced rows with one `what` that are judged: a task record is planned once, and a team that announces
 /// it again and again (each costs it gas) cannot make a take read an unbounded list. A record with more is not
@@ -341,6 +376,91 @@ fn is_judged(part: TaskPart, names: &StepNames) -> bool {
     }
 }
 
+/// What the reader's rows and the stored records say about a payment a `confirm` names, for a task paid from the box.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct BoxLookup {
+    /// The reader has stored this project's launch.
+    pub(crate) launched: bool,
+    /// Every `AllowanceDrawn` of the named transaction on this project's Treasury: `(to, amount)`, lower-case address
+    /// and raw dollars.
+    pub(crate) draws: Vec<(String, u128)>,
+    /// The time of the reader's newest stored block (unix seconds).
+    pub(crate) as_of: u64,
+    /// The other tasks whose stored confirms name the same transaction: for each, the wallet its own take or accept
+    /// steps name (`None` when they name none or two).
+    pub(crate) others: Vec<Option<String>>,
+}
+
+/// Decide a `confirm` that names a payment against what the network shows of it (see the module's words).
+///
+/// `names.paid` is the payment and `names.worker_pay_to` the wallet the worker named; `usd` is what the task says it
+/// pays, in whole dollars, when it says; `created_at` is the confirm's own time. Nothing is refused when no payment is
+/// named.
+///
+/// | refused | when |
+/// |---|---|
+/// | `retry:` | the reader has not stored the project's launch, or has stored no draw of the transaction and its newest block is less than a minute past the confirm |
+/// | `invalid:` not shown | no draw of the transaction on this project's Treasury, and the reader is a minute past the confirm |
+/// | `invalid:` no wallet | the worker named none (or two) |
+/// | `invalid:` another wallet | no draw of the transaction pays the wallet the worker named |
+/// | `invalid:` another amount | the task says what it pays and no draw to that wallet is that |
+/// | `invalid:` already paid | more tasks name the payment than there are draws to that wallet (for that amount) in it |
+pub(crate) fn decide_box(
+    names: &StepNames,
+    usd: Option<u64>,
+    lookup: &BoxLookup,
+    created_at: u64,
+) -> Result<(), &'static str> {
+    if names.paid.is_none() {
+        return Ok(());
+    }
+    if !lookup.launched {
+        return Err(NOT_SEEN_YET);
+    }
+    if lookup.draws.is_empty() {
+        return Err(
+            if lookup.as_of >= created_at.saturating_add(BOX_SEEN_AFTER_SECS) {
+                NOT_SHOWN
+            } else {
+                NOT_SEEN_YET
+            },
+        );
+    }
+    let Some(wallet) = names.worker_pay_to.as_deref() else {
+        return Err(NO_WALLET);
+    };
+    let to_wallet: Vec<u128> = lookup
+        .draws
+        .iter()
+        .filter(|(to, _)| to == wallet)
+        .map(|(_, amount)| *amount)
+        .collect();
+    if to_wallet.is_empty() {
+        return Err(BOX_OTHER_WALLET);
+    }
+    let matching = match usd {
+        Some(usd) => to_wallet
+            .iter()
+            .filter(|amount| **amount == u128::from(usd) * DOLLAR_RAW)
+            .count(),
+        None => to_wallet.len(),
+    };
+    if matching == 0 {
+        return Err(BOX_OTHER_AMOUNT);
+    }
+    // One draw pays one task: the tasks that name this payment (this one and the others that were paid at the same
+    // wallet or at one nobody knows) must not be more than the draws that could have paid them.
+    let citing = 1 + lookup
+        .others
+        .iter()
+        .filter(|other| other.as_deref().is_none_or(|other| other == wallet))
+        .count();
+    if citing > matching {
+        return Err(ALREADY_PAID);
+    }
+    Ok(())
+}
+
 /// Decide a step against what the reader says about its task's plan. The words are constants; the app reads their
 /// prefixes (`retry:` ask again soon, `invalid:`, `restricted:`) and never shows one.
 ///
@@ -418,6 +538,8 @@ pub(crate) struct StepOn<'a> {
     pub(crate) task_id: &'a [u8; 32],
     /// The account that does the task (hex), when it has one.
     pub(crate) worker: Option<&'a str>,
+    /// What the task record says it pays, in whole dollars, when it says (`task-usd`).
+    pub(crate) usd: Option<u64>,
 }
 
 /// Hold a task step against its plan on the network, with the reader's rows.
@@ -437,6 +559,7 @@ pub(crate) async fn enforce(
         part,
         task_id,
         worker,
+        usd,
     } = step;
     let mut names = StepNames::of(event);
     if !is_judged(part, &names) {
@@ -466,13 +589,188 @@ pub(crate) async fn enforce(
                 super::task_takes::stored_pay_to(state, community, task_id, worker).await?;
         }
     }
-    decide_chain(part, &names, &lookup).map_err(|reason| {
+    let refuse = |reason: &str| {
         if reason.starts_with("restricted:") {
             IngestError::AuthFailed(reason.into())
         } else {
             IngestError::Rejected(reason.into())
         }
+    };
+    decide_chain(part, &names, &lookup).map_err(refuse)?;
+    // A payment the team names for a task the network holds no plan for (or whose plan ran out unpaid) was made out of
+    // the allowance box: it is believed only when the network shows it.
+    let from_box = match &lookup {
+        ChainLookup::Absent => true,
+        ChainLookup::Plan(plan) => plan.state != PlanState::Paid && plan.is_over(),
+        ChainLookup::NoReader | ChainLookup::NotRead => false,
+    };
+    if part == TaskPart::Confirm && names.paid.is_some() && from_box {
+        let Some(reader) = reader.as_deref() else {
+            return Ok(());
+        };
+        if event_paid_tag(event).is_some_and(|raw| raw != raw.to_lowercase()) {
+            return Err(refuse(LOWER_CASE_TX));
+        }
+        names.worker_pay_to = match worker {
+            Some(worker) => {
+                super::task_takes::stored_pay_to(state, community, task_id, worker).await?
+            }
+            None => None,
+        };
+        let lookup = box_lookup(
+            state,
+            community,
+            reader,
+            &key,
+            &project_id(coordinate),
+            names.paid.as_deref().unwrap_or_default(),
+            task_id,
+        )
+        .await?;
+        decide_box(&names, usd, &lookup, event.created_at.as_secs()).map_err(refuse)?;
+    }
+    Ok(())
+}
+
+/// The `task-paid` tag of `event` as written (not lower-cased).
+fn event_paid_tag(event: &Event) -> Option<&str> {
+    event.tags.iter().find_map(|tag| match tag.as_slice() {
+        [name, value, ..] if name == "task-paid" => Some(value.as_str()),
+        _ => None,
     })
+}
+
+/// The `AllowanceDrawn` rows of one transaction on one project's Treasury, by log order. Served by the partial index
+/// `idx_chain_logs_box_draws` (migration 0076).
+pub(crate) const BOX_DRAWS_SQL: &str =
+    "SELECT decoded FROM chain_logs WHERE reader = $1 AND project_key = $2 AND tx_hash = $3 \
+         AND role = 'treasury' AND event = 'AllowanceDrawn' ORDER BY block_number, log_index LIMIT $4";
+
+/// Read what the network and the stored records say about the payment `paid` (a transaction, lower case) that a
+/// `confirm` of the task `task_id` names: the draws the reader stored for it, the reader's newest block time, and the
+/// other tasks whose confirms name the same payment. Every read is bounded; a read that fails is a server fault that
+/// refuses the write.
+async fn box_lookup(
+    state: &Arc<AppState>,
+    community: CommunityId,
+    reader: &str,
+    key: &[u8; 32],
+    project_id: &str,
+    paid: &str,
+    task_id: &[u8; 32],
+) -> Result<BoxLookup, IngestError> {
+    let pool = state.db.pool();
+    let fault = |e: sqlx::Error| internal("reading the payment on the network", e);
+    let launched = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT lower(decoded->>'projectId') FROM chain_logs WHERE reader = $1 AND project_key = $2 \
+             AND role = 'launcher' AND event = 'ProjectLaunched' ORDER BY block_number, log_index LIMIT 1",
+    )
+    .bind(reader)
+    .bind(key.as_slice())
+    .fetch_optional(pool)
+    .await
+    .map_err(fault)?
+    .flatten();
+    let Some(launched) = launched else {
+        return Ok(BoxLookup::default());
+    };
+    let as_of: Option<i64> = sqlx::query_scalar(AS_OF_SQL)
+        .bind(reader)
+        .fetch_optional(pool)
+        .await
+        .map_err(fault)?;
+    let mut lookup = BoxLookup {
+        launched: true,
+        as_of: u64::try_from(as_of.unwrap_or(0)).unwrap_or(0),
+        ..BoxLookup::default()
+    };
+    // A record that names another project's launch ties nothing: it has no draws here.
+    let Some(tx) = paid
+        .strip_prefix("0x")
+        .and_then(|digits| hex::decode(digits).ok())
+        .filter(|_| launched == project_id.to_lowercase())
+    else {
+        return Ok(lookup);
+    };
+    let rows: Vec<Value> = sqlx::query_scalar(BOX_DRAWS_SQL)
+        .bind(reader)
+        .bind(key.as_slice())
+        .bind(tx.as_slice())
+        .bind(BOX_DRAWS_READ + 1)
+        .fetch_all(pool)
+        .await
+        .map_err(fault)?;
+    if i64::try_from(rows.len()).is_ok_and(|read| read > BOX_DRAWS_READ) {
+        return Err(internal(
+            "reading the payment on the network",
+            sqlx::Error::Decode(
+                format!("the payment holds more than {BOX_DRAWS_READ} draws").into(),
+            ),
+        ));
+    }
+    for row in &rows {
+        let to = address(row, "to").unwrap_or_default();
+        let amount = row
+            .get("amount")
+            .and_then(Value::as_str)
+            .and_then(|text| text.parse::<u128>().ok())
+            .ok_or_else(|| {
+                fault(sqlx::Error::Decode(
+                    "a stored draw has no `amount`".to_owned().into(),
+                ))
+            })?;
+        lookup.draws.push((to, amount));
+    }
+    if lookup.draws.is_empty() {
+        return Ok(lookup);
+    }
+    // The other tasks that name this payment: the stored confirms that carry its `task-paid`.
+    let stored = state
+        .db
+        .query_events_for_event_write(&buzz_db::EventQuery {
+            kinds: Some(vec![KIND_LAUNCH_UPDATE as i32]),
+            tag_filters: vec![
+                ("task-part".to_string(), vec!["confirm".to_string()]),
+                ("task-paid".to_string(), vec![paid.to_string()]),
+            ],
+            global_only: true,
+            limit: Some(BOX_CITERS_READ * 4),
+            ..buzz_db::EventQuery::for_community(community)
+        })
+        .await
+        .map_err(|e| internal("reading the other tasks that name the payment", e))?;
+    let mine = hex::encode(task_id);
+    let mut others: Vec<String> = Vec::new();
+    for record in &stored {
+        let id = record
+            .event
+            .tags
+            .iter()
+            .find_map(|tag| match tag.as_slice() {
+                [name, value, ..] if name == "task" => Some(value.to_lowercase()),
+                _ => None,
+            });
+        if let Some(id) = id.filter(|id| *id != mine && !others.contains(id)) {
+            others.push(id);
+        }
+    }
+    let crowded = i64::try_from(stored.len()).is_ok_and(|read| read >= BOX_CITERS_READ * 4);
+    if crowded || i64::try_from(others.len()).is_ok_and(|read| read > BOX_CITERS_READ) {
+        // More tasks than a transaction could pay already name it: it has paid enough.
+        lookup.others = vec![None; usize::try_from(BOX_CITERS_READ + 1).unwrap_or(usize::MAX)];
+        return Ok(lookup);
+    }
+    for other in &others {
+        let wallet = match hex::decode(other)
+            .ok()
+            .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+        {
+            Some(id) => super::task_takes::stored_pay_to_of_anyone(state, community, &id).await?,
+            None => None,
+        };
+        lookup.others.push(wallet);
+    }
+    Ok(lookup)
 }
 
 #[cfg(test)]

@@ -159,6 +159,46 @@ pub(crate) async fn stored_pay_to(
     Ok(single_wallet(wallets.iter().map(String::as_str)))
 }
 
+/// The wallet named on the `take` and `accept` steps of the task `task_id` by anyone: the one wallet they all agree on,
+/// lower case, or `None` when they named none or two different ones. It is how the server tells which wallet another
+/// task's payment was meant for when it counts the tasks that name one payment (see `task_chain`); it is never the
+/// wallet a payment is judged against (that is [`stored_pay_to`], the worker's own).
+pub(crate) async fn stored_pay_to_of_anyone(
+    state: &Arc<AppState>,
+    community: CommunityId,
+    task_id: &[u8; 32],
+) -> Result<Option<String>, IngestError> {
+    let steps = state
+        .db
+        .query_events_for_event_write(&buzz_db::EventQuery {
+            kinds: Some(vec![KIND_LAUNCH_UPDATE as i32]),
+            tag_filters: vec![
+                ("task".to_string(), vec![hex::encode(task_id)]),
+                (
+                    "task-part".to_string(),
+                    vec!["take".to_string(), "accept".to_string()],
+                ),
+            ],
+            global_only: true,
+            limit: Some(PAY_TO_STEPS_READ),
+            ..buzz_db::EventQuery::for_community(community)
+        })
+        .await
+        .map_err(|e| internal("reading the wallet another task names", e))?;
+    let wallets: Vec<String> = steps
+        .iter()
+        .filter_map(|record| {
+            record.event.tags.iter().find_map(|tag| {
+                let fields = tag.as_slice();
+                (fields.first().map(String::as_str) == Some("task-pay-to"))
+                    .then(|| fields.get(1).cloned())
+                    .flatten()
+            })
+        })
+        .collect();
+    Ok(single_wallet(wallets.iter().map(String::as_str)))
+}
+
 /// Hold one account to `per_day` takes in 24 hours, counted by the server's receive time.
 pub(crate) async fn enforce_take_caps(
     state: &Arc<AppState>,
