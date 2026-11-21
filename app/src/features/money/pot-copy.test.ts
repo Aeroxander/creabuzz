@@ -8,6 +8,8 @@ import {
   signatureOf,
 } from "@creaton/core/pot/abi-codec.ts";
 import {
+  EARLIER_GRANTS_ABI,
+  HOLDER_PAUSE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
@@ -35,6 +37,8 @@ const ABIS = [
   PAIR_ABI,
   SHARE_TOKEN_ABI,
   PLAY_DOLLAR_ABI,
+  HOLDER_PAUSE_ABI,
+  EARLIER_GRANTS_ABI,
 ];
 
 const ACTIONS: PotAction[] = [
@@ -63,6 +67,9 @@ const ACTIONS: PotAction[] = [
   "withdraw-task",
   "return-task",
   "claim-note",
+  "park",
+  "take-back",
+  "earlier-claim",
 ];
 
 /** Every custom error in the seven ABIs, as the generated file has them. */

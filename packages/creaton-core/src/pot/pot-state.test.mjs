@@ -153,6 +153,7 @@ test("the launch offer reads the settings hash, the platform's limits and the tw
     MAX_TEAM_POOL: [100_000_000n * 10n ** 18n],
     AGENT_SHARE_DIV: [1000n],
     treasuryImpl: [VESTER],
+    holderPauseImpl: ["0x0000000000000000000000000000000000000000"],
     vesterImpl: [TREASURY],
     MIN_JOIN: [1_000_000n],
     CHECK_IN_MULT: [2n],
@@ -177,6 +178,7 @@ test("the launch offer reads the settings hash, the platform's limits and the tw
     feeBps: 200,
     unit: 1680,
     agentUsd: 25_000_000n,
+    holderPause: null,
     maxRatePpm: 2000,
     maxTeamPool: 100_000_000n * 10n ** 18n,
     agentShareDiv: 1000n,
@@ -187,6 +189,31 @@ test("the launch offer reads the settings hash, the platform's limits and the tw
       cliffUnits: 13,
       vestUnits: 104,
     },
+  });
+  // a deployment with the pause switched on gives every new project the pause's code: the founder is told before launching
+  const on = fakeChain({
+    settingsHash: [`0x${"ab".repeat(32)}`],
+    MAX_RATE_PPM: [2000n],
+    MAX_TEAM_POOL: [100_000_000n * 10n ** 18n],
+    AGENT_SHARE_DIV: [1000n],
+    treasuryImpl: [VESTER],
+    holderPauseImpl: [TREASURY],
+    LINE_DIVISOR: [3n],
+    vesterImpl: [TREASURY],
+    MIN_JOIN: [1_000_000n],
+    CHECK_IN_MULT: [2n],
+    WIND_MULT: [26n],
+    CLIFF_MULT: [13n],
+    VEST_MULT: [104n],
+  });
+  const withPause = await state.readLaunchOffer(
+    async (to, data) =>
+      data === PLATFORM_SELECTOR ? `0x${platformWords}` : on.read(to, data),
+    ME,
+  );
+  assert.deepEqual(withPause.holderPause, {
+    impl: TREASURY.toLowerCase(),
+    lineDivisor: 3,
   });
   await assert.rejects(() => state.readLaunchOffer(async () => "0x", ME));
   const short = fakeChain({ settingsHash: ["0x1234"] });

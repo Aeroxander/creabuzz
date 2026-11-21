@@ -698,3 +698,33 @@ export async function earlierIsBound(
   const [vester] = await ask(read, EARLIER_GRANTS_ABI, contract, "vester", []);
   return typeof vester === "string" && !/^0x0{40}$/i.test(vester);
 }
+
+/**
+ * The project's holder pause contract as the Treasury itself names it (`Treasury.pauseGate`), lower case, or null when the
+ * project has none. The chain is the only source for where Shares are approved to: a record is never trusted for it.
+ */
+export async function pauseGateOf(
+  read: ReadCall,
+  treasury: string,
+): Promise<string | null> {
+  const [gate] = await ask(read, TREASURY_ABI, treasury, "pauseGate", []);
+  if (typeof gate !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(gate))
+    throw new Error("The network gave an answer that is not readable.");
+  return /^0x0{40}$/.test(gate) ? null : gate.toLowerCase();
+}
+
+/** The pause contract's two fixed numbers: the warning period in seconds and the line's divisor (3: "a third"). */
+export async function pauseRules(
+  read: ReadCall,
+  pause: string,
+): Promise<{ dayLength: number; lineDivisor: number }> {
+  const [[day], [divisor]] = await Promise.all([
+    ask(read, HOLDER_PAUSE_ABI, pause, "day", []),
+    ask(read, HOLDER_PAUSE_ABI, pause, "LINE_DIVISOR", []),
+  ]);
+  const d = asBigint(day);
+  const v = asBigint(divisor);
+  if (d <= 0n || d > 365n * 86_400n || v < 2n || v > 100n)
+    throw new Error("The network gave an answer that is not readable.");
+  return { dayLength: Number(d), lineDivisor: Number(v) };
+}

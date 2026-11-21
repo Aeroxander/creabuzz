@@ -23,6 +23,8 @@ import { Field } from "../../ui/field";
 import { parseDollarAmount } from "../money/calls";
 import { dollarsPhrase } from "../money/pot-copy-tasks";
 import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
+import { TeamPauseLine } from "../pause/TeamPauseLine";
+import { useTeamPause } from "../pause/use-team-pause";
 import { PotSheet } from "./PotSheet";
 import { PAIR_WORDS, doneWords, runnerSend } from "./runner-calls";
 import { boxNow, rateWords, smallDollarsText } from "./pot-words";
@@ -73,6 +75,8 @@ function Failed({ retry }: { retry: () => void }) {
 
 function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
   const open = sheet === "draw";
+  const pause = useTeamPause(numbers, ready.read, open);
+  const paused = pause?.stage === "paused";
   const [to, setTo] = useState("");
   const [text, setText] = useState("");
   const state = useAllowanceState(numbers, ready, open);
@@ -117,7 +121,7 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
     <PotSheet
       account={ready.address}
       action={`draw:${numbers.chainId}:${numbers.contracts.treasury}`}
-      blocked={!send}
+      blocked={!send || paused}
       calls={send?.calls ?? null}
       chainId={numbers.chainId}
       confirmLabel={
@@ -150,6 +154,7 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
         <Failed retry={() => void state.refetch()} />
       ) : (
         <>
+          <TeamPauseLine pause={pause} />
           <p className="text-sm" data-testid="draw-box">
             The box holds about {smallDollarsText(box)} dollars now. You can
             draw up to that, to an account of your choice.

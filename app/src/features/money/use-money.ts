@@ -105,7 +105,11 @@ export function useProjectNumbers(project: Project | null | undefined) {
         if (numbers) {
           // The contracts a passkey send may go to: the ones this project's numbers name.
           if (!numbers.removed)
-            rememberSendTargets(Object.values(numbers.contracts));
+            rememberSendTargets([
+              ...Object.values(numbers.contracts),
+              // The earlier backers' claim contract, when the record names one (a passkey account may send to it).
+              numbers.earlierGrants?.contract,
+            ]);
           return numbers;
         }
       }

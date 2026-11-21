@@ -12,6 +12,8 @@ export function useHeldSince(
   ready: Ready,
   target: Pick<MoneyTarget, "shares" | "treasury">,
   holds: bigint,
+  /** The project's pause contract when it has one: what is parked there still counts as held. */
+  pause: string | null = null,
 ) {
   return useQuery<HeldSince | null>({
     queryKey: [
@@ -20,6 +22,7 @@ export function useHeldSince(
       target.treasury,
       ready.address.toLowerCase(),
       holds.toString(),
+      pause ?? "",
     ],
     enabled: holds > 0n,
     staleTime: 60_000,
@@ -29,6 +32,7 @@ export function useHeldSince(
         account: ready.address,
         shares: target.shares,
         treasury: target.treasury,
+        pause,
       }),
   });
 }

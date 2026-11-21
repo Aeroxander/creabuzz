@@ -61,6 +61,11 @@ export interface ProjectNumbers {
     dollar: string;
     /** The Pair, once a second person took the seat. */
     pair: string | null;
+    /**
+     * The project's holder pause contract (step 4): an address when the project has one and the record said so readably;
+     * null when it has none, or the key was not believed; left out of a record signed before step 4.
+     */
+    pause?: string | null;
   };
   /** The time unit in seconds (7 days on a real network); a "day" in every rate is a seventh of it. */
   unit: number;
@@ -124,6 +129,11 @@ export interface ProjectNumbers {
     ungranted: bigint;
     grantCount: number;
     grants: GrantNumbers[];
+    /**
+     * The earlier backers' pool and what of it is still unclaimed (step 4); null when the project has none or the two were not
+     * believed, left out of a record signed before step 4. `ungranted` already leaves the reserve out.
+     */
+    earlier?: { pool: bigint; reserve: bigint } | null;
   };
   agents: AgentNumbers[];
   limits: {
@@ -170,6 +180,47 @@ export interface ProjectNumbers {
   feed?: FeedNumbers | null;
   streaks?: StreaksNumbers | null;
   established?: EstablishedNumbers | null;
+  /**
+   * The step 4 keys (`numbers-step4.ts`), each read on its own: absent (a record signed before step 4) and null (none, or
+   * not believed) both mean "the app shows nothing about it"; `contracts.pause` set with `pause` null means "the stop exists
+   * and could not be read".
+   */
+  pause?: PauseNumbers | null;
+  earlierGrants?: EarlierGrantsNumbers | null;
+}
+
+/** The project's holder pause, from the record (RECORD-V2 section 13.1). Nothing here is per person. */
+export interface PauseNumbers {
+  contract: string;
+  /** Shares parked now (18 decimals). */
+  parkedTotal: bigint;
+  /** The parked Shares that make the line. */
+  line: bigint;
+  /** The warning period in seconds. */
+  dayLength: number;
+  /** The line is one this-many-th of the backers' Shares; the words say "a third" only when this is 3. */
+  lineDivisor: number;
+  armedAt: number | null;
+  pausesFrom: number | null;
+  /** At the record's own time: whether the team's draws and new task plans are refused. */
+  paused: boolean;
+  since: number | null;
+  /** How many accounts have Shares parked: a count, never a name. */
+  parkerCount: number;
+}
+
+/** The earlier backers' claim contract, from the record (RECORD-V2 section 13.2). Never a row. */
+export interface EarlierGrantsNumbers {
+  contract: string;
+  /** Tied to the project's Vester: claims can start. */
+  bound: boolean;
+  root: string;
+  textHash: string;
+  total: bigint;
+  rows: number;
+  claimedRows: number;
+  claimedTotal: bigint;
+  clockSecs: number;
 }
 
 /**

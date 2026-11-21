@@ -10,6 +10,8 @@ import type { DecodedValue } from "@creaton/core/launchpad/evmAbi.ts";
 import { isUserRejection } from "@creaton/core/launchpad/wallet-errors.ts";
 import { type Abi, decodeRevert } from "@creaton/core/pot/abi-codec.ts";
 import {
+  EARLIER_GRANTS_ABI,
+  HOLDER_PAUSE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
@@ -27,6 +29,12 @@ import {
   type TaskAction,
   type Text,
 } from "./pot-copy-tasks";
+import {
+  STEP4_ACTION_WORDS,
+  STEP4_ERRORS,
+  STEP4_EXTENSIONS,
+  type Step4Action,
+} from "./pot-copy-step4";
 import { WalletStepError } from "./wallet";
 
 /** What a person was doing when a step stopped; some refusals read better said for one of them. */
@@ -49,6 +57,7 @@ export type PotAction =
   | "link"
   | "wind-down"
   | "pair"
+  | Step4Action
   | TaskAction;
 
 const ABIS: readonly Abi[] = [
@@ -59,6 +68,8 @@ const ABIS: readonly Abi[] = [
   PAIR_ABI,
   SHARE_TOKEN_ABI,
   PLAY_DOLLAR_ABI,
+  HOLDER_PAUSE_ABI,
+  EARLIER_GRANTS_ABI,
 ];
 
 type ErrorItem<T> = T extends { type: "error"; name: infer N } ? N : never;
@@ -70,7 +81,9 @@ export type PotErrorName =
   | ErrorItem<(typeof LAUNCHER_ABI)[number]>
   | ErrorItem<(typeof PAIR_ABI)[number]>
   | ErrorItem<(typeof SHARE_TOKEN_ABI)[number]>
-  | ErrorItem<(typeof PLAY_DOLLAR_ABI)[number]>;
+  | ErrorItem<(typeof PLAY_DOLLAR_ABI)[number]>
+  | ErrorItem<(typeof HOLDER_PAUSE_ABI)[number]>
+  | ErrorItem<(typeof EARLIER_GRANTS_ABI)[number]>;
 
 type Words = { any: Text } & Partial<Record<PotAction, Text>>;
 
@@ -88,7 +101,10 @@ const dollarsPhrase = (raw: bigint): string =>
  * action. The errors new with the task book, and what the older ones say for a task step, are in `pot-copy-tasks.ts`.
  */
 const EARLIER_WORDS: Record<
-  Exclude<PotErrorName, keyof typeof NEW_TASK_ERRORS>,
+  Exclude<
+    PotErrorName,
+    keyof typeof NEW_TASK_ERRORS | keyof typeof STEP4_ERRORS
+  >,
   Words
 > = {
   // The Treasury
@@ -132,7 +148,8 @@ const EARLIER_WORDS: Record<
     any: "Something in the project's numbers did not add up, so nothing was done. Nothing changed. Try again in a moment.",
   },
   Paused: {
-    any: "The holders have paused the team's draws and new task plans for now. Nothing was sent. Taking out Shares still works, any day.",
+    // The contract's line is one third (a constant of the pause contract this build is made for).
+    any: "The team's spending is paused by holders. Try again when parked Shares fall below a third.",
   },
   BindClosed: {
     any: "The one-time step to switch this on is closed. Nothing changed.",
@@ -369,11 +386,16 @@ const EARLIER_WORDS: Record<
 /** Every error's sentences: the earlier ones with what they say for a task step, and the task book's own. */
 const ERROR_WORDS: Record<PotErrorName, Words> = (() => {
   const merged: Record<string, Words> = { ...EARLIER_WORDS };
-  for (const [name, more] of Object.entries(TASK_EXTENSIONS)) {
-    const earlier = merged[name];
-    if (earlier) merged[name] = { ...earlier, ...more };
-  }
-  return { ...merged, ...NEW_TASK_ERRORS } as Record<PotErrorName, Words>;
+  for (const extensions of [TASK_EXTENSIONS, STEP4_EXTENSIONS])
+    for (const [name, more] of Object.entries(extensions)) {
+      const earlier = merged[name];
+      if (earlier) merged[name] = { ...earlier, ...more };
+    }
+  return {
+    ...merged,
+    ...NEW_TASK_ERRORS,
+    ...STEP4_ERRORS,
+  } as Record<PotErrorName, Words>;
 })();
 
 /** The names the sentences above are keyed by (the test walks them against the ABIs). */
@@ -399,6 +421,7 @@ const ACTION_WORDS: Record<PotAction, string> = {
   "wind-down": "Winding down",
   pair: "The call",
   ...TASK_ACTION_WORDS,
+  ...STEP4_ACTION_WORDS,
 };
 
 /** What `potProblem` says when it knows nothing more about an action; the test tells it from a sentence made for an error. */

@@ -14,6 +14,7 @@ import { numbersBelongTo } from "@creaton/core/launchpad/project-chain.ts";
 
 import { BYTES32, isObject, obj, readBody, time } from "./numbers-read";
 import { readSocial } from "./numbers-social";
+import { readStep4 } from "./numbers-step4";
 import type {
   NumbersEvent,
   ProjectNumbers,
@@ -84,14 +85,32 @@ export function parseNumbers(
       return null;
     // The step 3 keys are read apart from the money: a wrong one is null for that part and never fails the record.
     const money = readBody(body, d);
+    // The step 4 keys the same way: a wrong one is null for that key and never fails the record.
+    const step4 = readStep4(body, {
+      asOfTime: money.asOf.time,
+      unit: money.unit,
+      backers: money.shares.backers,
+    });
     return {
       ...money,
+      contracts:
+        step4.contractsPause === undefined
+          ? money.contracts
+          : { ...money.contracts, pause: step4.contractsPause },
+      team:
+        step4.earlier === undefined
+          ? money.team
+          : { ...money.team, earlier: step4.earlier },
       ...readSocial(body, {
         asOfTime: money.asOf.time,
         launchedAt: money.launchedAt,
         unit: money.unit,
         pot: money.money.pot,
       }),
+      ...(step4.pause === undefined ? {} : { pause: step4.pause }),
+      ...(step4.earlierGrants === undefined
+        ? {}
+        : { earlierGrants: step4.earlierGrants }),
     };
   } catch {
     // Unreadable (a field that cannot be believed), or anything unforeseen: "cannot read", never a crash.

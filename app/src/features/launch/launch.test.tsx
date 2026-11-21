@@ -71,6 +71,7 @@ function launcherAnswers() {
     MAX_TEAM_POOL: [100_000_000n * S],
     AGENT_SHARE_DIV: [1000n],
     treasuryImpl: [numbers.contracts.treasury],
+    holderPauseImpl: ["0x0000000000000000000000000000000000000000"],
     vesterImpl: [numbers.contracts.vester],
     MIN_JOIN: [1_000_000n],
     CHECK_IN_MULT: [2n],

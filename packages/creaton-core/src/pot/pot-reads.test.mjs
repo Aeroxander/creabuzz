@@ -807,3 +807,23 @@ test("a take-out with nothing parked asks one quote and sends the plain leave; o
     }),
   );
 });
+
+test("the pause contract is the one the Treasury names, or none; its two rules are read and bounded", async () => {
+  const { read } = fakeChain({
+    pauseGate: [PAUSE.toUpperCase().replace("0X", "0x")],
+  });
+  assert.equal(await reads.pauseGateOf(read, TREASURY), PAUSE);
+  const { read: none } = fakeChain({
+    pauseGate: ["0x0000000000000000000000000000000000000000"],
+  });
+  assert.equal(await reads.pauseGateOf(none, TREASURY), null);
+  const { read: rules } = fakeChain({ day: [86_400n], LINE_DIVISOR: [3n] });
+  assert.deepEqual(await reads.pauseRules(rules, PAUSE), {
+    dayLength: 86_400,
+    lineDivisor: 3,
+  });
+  const { read: odd } = fakeChain({ day: [0n], LINE_DIVISOR: [3n] });
+  await assert.rejects(() => reads.pauseRules(odd, PAUSE));
+  const { read: wide } = fakeChain({ day: [60n], LINE_DIVISOR: [1n] });
+  await assert.rejects(() => reads.pauseRules(wide, PAUSE));
+});

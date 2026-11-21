@@ -3,7 +3,8 @@
  * what you paid in from this browser, a Take out button while you hold any, and the history of your own Backs and
  * Take outs. Reachable whatever the door, the allowance or the project's state is: it stands on the chain alone.
  */
-import { balanceOf, quoteTakeOut } from "@creaton/core/pot/pot-reads.ts";
+import { quoteParkedTakeOut } from "@creaton/core/pot/pot-plans.ts";
+import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { Button } from "../../ui/button";
@@ -11,6 +12,8 @@ import { Card } from "../../ui/card";
 import { dayText } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { rememberSendTargets } from "../money/send-targets";
+import { readParked } from "../pause/parked-read";
+import { PauseControls, type PauseInfo } from "../pause/PauseControls";
 import { FaucetCard } from "./FaucetCard";
 import { heldLine } from "./held-since";
 import { ownSteps, paidInFromHere } from "./own-history";
@@ -39,19 +42,27 @@ export async function readHolding(ready: Ready, target: MoneyTarget) {
     target.vester,
     target.dollar,
   ]);
-  const shares = await balanceOf(ready.read, target.shares, ready.address);
+  const wallet = await balanceOf(ready.read, target.shares, ready.address);
+  // What is parked in the project's pause is still the person's: it counts in what they hold, and Take out takes it back.
+  const { gate, parked } = await readParked(ready.read, target, ready.address);
+  rememberSendTargets([gate]);
+  const shares = wallet + parked;
   const [teamShares, dollars, quote] = await Promise.all([
     balanceOf(ready.read, target.team, ready.address).catch(() => null),
     target.dollar
       ? balanceOf(ready.read, target.dollar, ready.address).catch(() => null)
       : Promise.resolve(null),
     shares > 0n
-      ? quoteTakeOut(ready.read, target.treasury, ready.address, shares).catch(
-          () => null,
-        )
+      ? quoteParkedTakeOut(ready.read, {
+          treasury: target.treasury,
+          pause: gate,
+          holder: ready.address,
+          walletShares: wallet,
+          parkedShares: parked,
+        }).catch(() => null)
       : Promise.resolve(null),
   ]);
-  return { shares, teamShares, dollars, quote };
+  return { shares, wallet, parked, gate, teamShares, dollars, quote };
 }
 
 /** Your Shares behind the sender's gate: connect, switch network, then the holding. */
@@ -59,11 +70,14 @@ export function YourShares({
   target,
   projectName,
   taskInfo,
+  pauseInfo,
 }: {
   target: MoneyTarget;
   projectName: string;
   /** What the project page holds about tasks, for the Take out sheet's line (never read by the sheet). */
   taskInfo?: TakeOutTaskInfo;
+  /** What the record says about the project's pause (step 4); absent where there is no record. */
+  pauseInfo?: PauseInfo;
 }) {
   const titleId = useId();
   return (
@@ -80,6 +94,7 @@ export function YourShares({
         {(ready) => (
           <Holding
             projectName={projectName}
+            pauseInfo={pauseInfo}
             ready={ready}
             target={target}
             taskInfo={taskInfo}
@@ -96,11 +111,13 @@ export function Holding({
   projectName,
   ready,
   taskInfo,
+  pauseInfo,
 }: {
   target: MoneyTarget;
   projectName: string;
   ready: Ready;
   taskInfo?: TakeOutTaskInfo;
+  pauseInfo?: PauseInfo;
 }) {
   const [sheet, setSheet] = useState<"backer" | "team" | null>(null);
   const reading = useQuery({
@@ -109,7 +126,12 @@ export function Holding({
     retry: false,
     queryFn: () => readHolding(ready, target),
   });
-  const held = useHeldSince(ready, target, reading.data?.shares ?? 0n);
+  const held = useHeldSince(
+    ready,
+    target,
+    reading.data?.shares ?? 0n,
+    reading.data?.gate ?? null,
+  );
   if (reading.isPending)
     return (
       <Card className="h-24 animate-pulse" data-testid="holding-reading" />
@@ -126,7 +148,8 @@ export function Holding({
         </Button>
       </div>
     );
-  const { shares, teamShares, dollars, quote } = reading.data;
+  const { shares, wallet, parked, gate, teamShares, dollars, quote } =
+    reading.data;
   const paidIn = paidInFromHere(ready.address, target.key);
   const steps = ownSteps(ready.address, target.key);
   return (
@@ -184,6 +207,15 @@ export function Holding({
           {heldLine(held.data)}
         </p>
       ) : null}
+      <PauseControls
+        gate={gate}
+        parked={parked}
+        pauseInfo={pauseInfo}
+        projectName={projectName}
+        ready={ready}
+        target={target}
+        wallet={wallet}
+      />
       {shares > 0n ? (
         <>
           <p className="text-sm text-muted">{NOT_A_RETURN}</p>

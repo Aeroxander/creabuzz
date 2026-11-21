@@ -61,13 +61,26 @@ describe("a record that cannot be read is null, never a crash and never a defaul
     return out;
   }
   const SOCIAL = new Set(["held", "feed", "streaks", "established"]);
+  // The step 4 keys are read apart the same way (`numbers-step4.ts`, walked by `numbers-step4.test.ts`): a broken one makes only
+  // that key null, and a record signed before step 4 leaves them out.
+  const STEP4 = new Set([
+    "pause",
+    "earlierGrants",
+    "contracts.pause",
+    "team.earlierPool",
+    "team.earlierReserve",
+  ]);
   const ALL_PATHS = leafPaths(raw());
   const PATHS = ALL_PATHS.filter(
     // `key` is checked against the d tag, and the signers/holders lists are exercised by their own elements. The task
     // queue is read apart (C21), and so are the four step 3 keys: a broken leaf of those makes only that part null, and
     // `numbers-social.test.ts` walks them.
     (p) =>
-      p.join(".") !== "key" && p[0] !== "tasks" && !SOCIAL.has(String(p[0])),
+      p.join(".") !== "key" &&
+      p[0] !== "tasks" &&
+      !SOCIAL.has(String(p[0])) &&
+      !STEP4.has(p.join(".")) &&
+      !STEP4.has(String(p[0])),
   );
   // The two totals a step 2 server adds: a record from an older server leaves them out, and is still read.
   const MAY_BE_ABSENT = new Set(["totals.paidToWorkers", "totals.noteClaims"]);

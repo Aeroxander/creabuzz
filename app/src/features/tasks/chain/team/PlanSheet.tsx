@@ -28,6 +28,7 @@ import { doorFor, shareFor } from "../door";
 import { nowOf, openCountAt } from "../state";
 import type { ChainTasks } from "../types";
 import { dollarsPhrase } from "../words";
+import { useTeamPause } from "../../../pause/use-team-pause";
 import { planBlock } from "./plan-gate";
 import { SheetLine } from "./SheetLine";
 import {
@@ -97,6 +98,7 @@ export function PlanSheet({
     queryFn: () => readPlan(ready, treasury, share, clock),
   });
   const data = reading.data;
+  const pause = useTeamPause(numbers, ready.read, open);
   const door = data
     ? doorFor({
         usd: usd ?? 0,
@@ -122,6 +124,10 @@ export function PlanSheet({
           now: clock,
           workerName,
           boxPaid: paidNotRecorded(task.id) !== null,
+          paused:
+            pause?.stage === "paused"
+              ? { divisor: pause.divisor, since: pause.since }
+              : null,
         })
       : null;
   // The call is built from the numbers on the sheet whenever they make one; whether it may be pressed is the block's say.

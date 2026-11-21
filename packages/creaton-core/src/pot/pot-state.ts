@@ -6,6 +6,7 @@
  */
 import type { Abi } from "./abi-codec.ts";
 import {
+  HOLDER_PAUSE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
@@ -266,6 +267,11 @@ export interface LaunchOffer {
   agentUsd: bigint;
   /** The most the allowance rate may be, in parts per million of the project's money a day. */
   maxRatePpm: number;
+  /**
+   * The holder pause's code this deployment gives every new project (`Launcher.holderPauseImpl`), lower case, or null when the
+   * deployment's switch is off. A project is born with the pause or without it for good, so a founder is told before launching.
+   */
+  holderPause: { impl: string; lineDivisor: number } | null;
   /** The most Team Shares a founder may ask for at birth, in raw units (18 decimals). */
   maxTeamPool: bigint;
   /** A Team Share helper's daily limit is the pool divided by this. */
@@ -289,16 +295,25 @@ export async function readLaunchOffer(
   read: ReadCall,
   launcher: string,
 ): Promise<LaunchOffer> {
-  const [hash, platform, maxRate, maxPool, agentDiv, treasuryImpl, vesterImpl] =
-    await Promise.all([
-      one(read, LAUNCHER_ABI, launcher, "settingsHash"),
-      ask(read, LAUNCHER_ABI, launcher, "platform", []),
-      one(read, LAUNCHER_ABI, launcher, "MAX_RATE_PPM"),
-      one(read, LAUNCHER_ABI, launcher, "MAX_TEAM_POOL"),
-      one(read, LAUNCHER_ABI, launcher, "AGENT_SHARE_DIV"),
-      one(read, LAUNCHER_ABI, launcher, "treasuryImpl"),
-      one(read, LAUNCHER_ABI, launcher, "vesterImpl"),
-    ]);
+  const [
+    hash,
+    platform,
+    maxRate,
+    maxPool,
+    agentDiv,
+    treasuryImpl,
+    vesterImpl,
+    pauseImpl,
+  ] = await Promise.all([
+    one(read, LAUNCHER_ABI, launcher, "settingsHash"),
+    ask(read, LAUNCHER_ABI, launcher, "platform", []),
+    one(read, LAUNCHER_ABI, launcher, "MAX_RATE_PPM"),
+    one(read, LAUNCHER_ABI, launcher, "MAX_TEAM_POOL"),
+    one(read, LAUNCHER_ABI, launcher, "AGENT_SHARE_DIV"),
+    one(read, LAUNCHER_ABI, launcher, "treasuryImpl"),
+    one(read, LAUNCHER_ABI, launcher, "vesterImpl"),
+    one(read, LAUNCHER_ABI, launcher, "holderPauseImpl"),
+  ]);
   const treasuryCode = asAddress(treasuryImpl);
   const vesterCode = asAddress(vesterImpl);
   const [minJoin, checkIn, windDown, cliff, vest] = await Promise.all([
@@ -310,6 +325,17 @@ export async function readLaunchOffer(
   ]);
   if (typeof hash !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(hash))
     throw new Error("A settings hash was expected.");
+  // The pause's line is a constant of its code: read it, so the words a founder reads are the contract's own.
+  const pauseCode = asAddress(pauseImpl).toLowerCase();
+  let holderPause: LaunchOffer["holderPause"] = null;
+  if (!/^0x0{40}$/.test(pauseCode)) {
+    const divisor = asNumber(
+      await one(read, HOLDER_PAUSE_ABI, pauseCode, "LINE_DIVISOR"),
+    );
+    if (divisor < 2 || divisor > 100)
+      throw new Error("The network gave an answer that is not readable.");
+    holderPause = { impl: pauseCode, lineDivisor: divisor };
+  }
   const [quote, , feeBps, unit, agentUsd] = platform;
   return {
     settingsHash: hash.toLowerCase(),
@@ -317,6 +343,7 @@ export async function readLaunchOffer(
     feeBps: asNumber(feeBps),
     unit: asNumber(unit),
     agentUsd: asBigint(agentUsd),
+    holderPause,
     maxRatePpm: asNumber(maxRate),
     maxTeamPool: asBigint(maxPool),
     agentShareDiv: asBigint(agentDiv),

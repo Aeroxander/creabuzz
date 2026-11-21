@@ -4,6 +4,10 @@ import {
   createRouter,
   lazyRouteComponent,
 } from "@tanstack/react-router";
+import {
+  type EarlierGrantSettings,
+  earlierGrantSettings,
+} from "../features/earlier-grant/earlier-grant-settings";
 import { HomePage } from "../features/home/HomePage";
 import { legacyScreensOn } from "../lib/legacy";
 import { ProjectPage } from "../features/project/ProjectPage";
@@ -19,6 +23,10 @@ const ConversationPage = lazyRouteComponent(
   "ConversationPage",
 );
 // The earlier backers' page belongs to the old design: its route exists only with the legacy-screens flag.
+const EarlierGrantPage = lazyRouteComponent(
+  () => import("../features/earlier-grant/EarlierGrantPage"),
+  "EarlierGrantPage",
+);
 const EarlierPage = lazyRouteComponent(
   () => import("../legacy/LegacyEarlier"),
   "default",
@@ -144,6 +152,19 @@ const earlier = createRoute({
   path: "/earlier",
   component: EarlierPage,
 });
+/**
+ * The earlier backers' claim page (step 4): its route is in the tree only for a build given its three settings, so without them
+ * its address is the app's plain "not found" and no code of the page is ever loaded.
+ */
+function earlierGrantRoute(settings: EarlierGrantSettings) {
+  return createRoute({
+    getParentRoute: () => root,
+    path: "/earlier-grant",
+    component: function EarlierGrantRoute() {
+      return <EarlierGrantPage settings={settings} />;
+    },
+  });
+}
 const messages = createRoute({
   getParentRoute: () => root,
   path: "/you/messages",
@@ -218,7 +239,10 @@ const welcome = createRoute({
  * The app's router. With `legacy` off (the default) the earlier backers' route is not in the tree at all, so its address
  * shows the app's "not found" and its code is never loaded.
  */
-export function createAppRouter(legacy: boolean = legacyScreensOn()) {
+export function createAppRouter(
+  legacy: boolean = legacyScreensOn(),
+  earlierGrant: EarlierGrantSettings | null = earlierGrantSettings(),
+) {
   const routeTree = root.addChildren([
     home,
     project,
@@ -228,6 +252,7 @@ export function createAppRouter(legacy: boolean = legacyScreensOn()) {
     week,
     you,
     ...(legacy ? [earlier] : []),
+    ...(earlierGrant ? [earlierGrantRoute(earlierGrant)] : []),
     messages,
     conversation,
     saved,
