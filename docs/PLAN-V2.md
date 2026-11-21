@@ -1,3 +1,16 @@
+> **Note, 21 November 2026: the money model of this plan was replaced.** The owner's direction of 19 November 2026 is
+> written in `docs/next-version/JOIN-LEAVE-DESIGN.md` (the design and build spec, read its sections 8 and 9 first).
+> It replaces what this plan says about **rounds, stages, the auction and the pool, the personal refund, the votes
+> and the Council** with one pot: people back a project and take their money out any day, the team reaches the pot by
+> a small daily allowance and by planned tasks announced ahead, and nobody votes. Section 9 of the design says
+> exactly which parts of this plan are replaced, which stay and which are open. What stays here: the product idea, the
+> legal line, the chain reader and the signed project numbers (now record version 2), the app's shell and sign-up,
+> the Team, the agent limits and manager, and seasons. The status table in section 9 below says, milestone by
+> milestone, what was built, what was replaced, and what is not built. The reports are in `docs/next-version/`
+> (`STEP1-REPORT.md`, `STEP2-SERVER-APP-REPORT.md`, `STEP3-REPORT.md` and the milestone reports they name).
+> The "Status" line just below and the old status sentence in section 9 are out of date; the plan text itself is kept
+> as it was written.
+
 # Creaton: plan, version 2
 
 Status: a plan. **Nothing in it is built, and nothing will be built until the owner says go.** Written 17 November 2026
@@ -311,8 +324,8 @@ job closes rounds, delivers Shares, finishes sales and collects fees; every call
 
 ## 9. Build order
 
-**All NOT STARTED. Nothing is built until the owner says go.** Sizes are (estimate) for one experienced builder; each
-runs on Sepolia.
+**Status: the table "Where each milestone stands" below replaces the sentence that used to be here ("All NOT STARTED").**
+Sizes are (estimate) for one experienced builder; each runs on Sepolia.
 
 | # | Milestone | Size | Proves | Tested by |
 |---|---|---|---|---|
@@ -326,6 +339,21 @@ runs on Sepolia.
 
 In parallel: 5 beside 4 once the events are agreed; 6 beside 5; 8 beside 7; the design options page any time. About
 five to six months in all (estimate).
+
+**Where each milestone stands (21 November 2026; replaces "All NOT STARTED").** Everything below runs on a local chain
+or a test network with play dollars; no person has tried the new app yet (each report says so), and nothing is on a real
+network. Not legal or tax advice. The new model is `docs/next-version/JOIN-LEAVE-DESIGN.md`; its section 9 says what it
+replaces here. Report names are in `docs/next-version/`.
+
+| # | Built | Replaced by the new model | Declined or not built | Report |
+|---|---|---|---|---|
+| 4 Money rules | Rounds, the Launcher rewrite, Treasury, Vester, MinBid, Pair and Parts in `contracts/next` | The money rules are now the pot contracts in `contracts/pot` (back, take out, the daily allowance, planned tasks with exit notes, Team Shares that vest). The `contracts/next` sources stay in the repository, parked: the server and app no longer read them, and the app's old screens sit behind one build flag | The backing round, the personal refund, the stage caps, the auction and its pool are not carried over (design section 3, "Removed"). The earlier backers' claim contract is parked; its new terms wait for counsel (design 12.10) | `PLANV2-M4-REPORT.md` (built); `POT-STEP1A-REPORT.md`, `POT-STEP2-REPORT.md` (replacement) |
+| 5 Server | The chain reader, the signed project numbers (kind 39009) and the helper job | Rebuilt on the pot contracts: record version 2, the Rounds, receipts, bids and refund parts dropped, the helper's calls changed | Auction bids, pool trades and the liquidity fees are not indexed. The AI manager's cost rule is keyed to the first join; the hosted manager stays off until the operator sets a floor | `PLANV2-M5-REPORT.md`, `PLANV2-M5P2-REPORT.md` (built); `READER-V2-REPORT.md`, `RECORD-V2.md` (replacement) |
+| 6 App | The phone-first app: shell, passkey sign-up, Start, project page, This week, installable | Back and Take out sheets replace the Back box, stage line and receipts. A phone with no wallet app can back from a passkey account with the network fee paid by the server | The budgets of section 6 were not measured by a person on a phone. The passkey path ran against stand-ins for the bundler and sponsor, never a real phone | `PLANV2-M6-REPORT.md` (built); `APP-POT-REPORT.md`, `STEP1-REPORT.md`, `PHONE-PATH-REPORT.md` |
+| 7 Team and auction | Pair, hand over, wind down, launch from the app; bid, finish, trade and hand-back screens | The Team part stays, except the Pair's one-signer lane. Give Shares became Grant Team Shares | The auction, pool and hand-back screens are parked behind the flag; Buy and Sell were only ever proven by calldata and screens, not against a real router | `PLANV2-M7-REPORT.md`; `POT-STEP1A-REPORT.md` |
+| 8 Tasks, agents, manager | Tasks, agent daily limits, the AI manager, the project brain | Tasks became a queue: announced with notice, money set aside when a worker takes one, an exit note for a holder who takes out meanwhile. Agent limits and the manager stay | The real-model eval was not run. The app cannot show the brain's files to the manager. The hosted manager is off until a floor is set | `PLANV2-M8-REPORT.md` (built); `POT-STEP2-REPORT.md`, `STEP2-SERVER-APP-REPORT.md` (replacement) |
+| 9 Votes, Council, reserve sale | Nothing | The new model has nothing to vote on: the notice and taking out replace a vote, and any holder can end a project that has gone quiet for 182 days (design section 9, C11) | HolderVote, the Council and the progressive-decentralization requirement below are not built; whether no vote is enough "governance" is a question for counsel (design 12.4) | `JOIN-LEAVE-DESIGN.md` sections 9, 11 and 12 |
+| 10 Seasons, demo day, Creaton | Seasons and demo day, the holder room, the live feed, the Established badge, the ranking, alerts | Fees as CREATE's floor needs rethinking: the platform's only fee is now 2% of money backing a project (design 9, 10) | CREATE as project zero is not built (project zero is born without the earlier backers' claim on the test network, design C21). No special code was built for Creaton backing other projects. The week-long public test has not run | `STEP3-REPORT.md`, `ROOM-AND-SEASON-RECORDS.md` |
 
 **Milestone 9 requirement: progressive decentralization of project zero** (added 18 November 2026, owner's decision 5).
 Creaton starts centrally managed: its runner is the DAO LLC's manager. Holders take powers over in steps, and every

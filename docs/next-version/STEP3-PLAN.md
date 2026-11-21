@@ -885,6 +885,8 @@ the buttons.
 | 10 | Planned tasks with a countdown | the existing strips (`PlannedStrips`), unchanged: "The team plans to pay up to … from {date}. You can take your money out before then." | tasks section (step 2) |
 | 11 | Details (one fold) | "As of {time}"; the allowance ("The team may take up to {rate} of the project's money a day. Taken in the last day: {amount}.", `allowanceWords`); the door's words when shut (`doorShutWords`); "What “Established” means" | record |
 
+**Note (21 November 2026):** row 9 above gives the planned words "Last update" and "Updates: n weeks in a row"; the words as built are "Last check-in" and "Check-ins: n weeks in a row" (and "No check-in yet."), set in the follow-up round of `STEP3-REPORT.md`, item A2.
+
 `{window}` is the held window in plain words from `held.windows.rankSecs` (`spanWords`: "30 days"; on a test network with a short unit it reads in
 minutes or hours, which is the point). `{when}` is `relativeTime`. An amount is `dollarsText`. Money figures follow the record's age rules (2.7 and
 RECORD-V2 section 6): "(as of 14:05)" past 3 refresh periods, hidden past 24 hours with the existing sentence "We have not been able to refresh this
