@@ -130,7 +130,129 @@ WEB_SETTINGS=(
   VITE_COURTS VITE_PAYOUTS_FACTORIES VITE_REMIX_BONDS
   VITE_ZERODEV_PROJECT_ID VITE_ZERODEV_CHAIN_ID VITE_ZERODEV_API_KEY VITE_BUNDLER_URL
   VITE_ERROR_REPORT_URL VITE_APP_RELEASE VITE_RELAY_URL VITE_COMMUNITY_API_ORIGIN
+  VITE_CREATON_CHAIN_ID VITE_CREATON_LAUNCHER VITE_CREATON_DOLLAR VITE_CREATON_RPC_URL
+  VITE_CREATON_PASSKEY_ACCOUNT VITE_CREATON_BUNDLER_URL VITE_CREATON_SPONSOR_URL
 )
+
+# What the image carries: `runtime-creaton` (the Creaton app, the default) or `runtime` (the old web app), by
+# CREATON_IMAGE_TARGET in the shell or .env (compose.creaton.yml reads the same name).
+image_target() {
+  local target
+  target="$(build_setting CREATON_IMAGE_TARGET)"
+  printf '%s' "${target:-runtime-creaton}"
+}
+
+# The app's network from the file the deploy script wrote (contracts/pot/deployments/pot-<chain>.json), named by
+# CREATON_DEPLOYMENTS_FILE in .env (a path from this folder). It fills in VITE_CREATON_CHAIN_ID, _LAUNCHER and _DOLLAR where
+# the shell and .env name nothing: a value set by hand wins, as it does for the app's own build. A file that is named but
+# is not one stops here, loudly: an app built with no network shows no money at all.
+export_deployments_settings() {
+  local file chain launcher dollar
+  file="$(build_setting CREATON_DEPLOYMENTS_FILE)"
+  [[ -n "$file" ]] || return 0
+  [[ -f "$file" ]] || {
+    echo "CREATON_DEPLOYMENTS_FILE=$file: no such file (paths are from deploy/compose)." >&2
+    exit 1
+  }
+  chain="$(grep -oE '"chainId"[[:space:]]*:[[:space:]]*"?[0-9]+' "$file" | grep -oE '[0-9]+$' | head -n 1 || true)"
+  launcher="$(grep -oE '"launcher"[[:space:]]*:[[:space:]]*"0x[0-9a-fA-F]{40}"' "$file" | grep -oE '0x[0-9a-fA-F]{40}' | head -n 1 || true)"
+  dollar="$(grep -oE '"quote"[[:space:]]*:[[:space:]]*"0x[0-9a-fA-F]{40}"' "$file" | grep -oE '0x[0-9a-fA-F]{40}' | head -n 1 || true)"
+  if [[ -z "$chain" || -z "$launcher" || -z "$dollar" ]]; then
+    echo "CREATON_DEPLOYMENTS_FILE=$file is not a deployments file: it needs a chainId, a launcher and a quote (the file contracts/pot/script/DeployPot.s.sol writes)." >&2
+    exit 1
+  fi
+  [[ -n "$(build_setting VITE_CREATON_CHAIN_ID)" ]] || export VITE_CREATON_CHAIN_ID="$chain"
+  [[ -n "$(build_setting VITE_CREATON_LAUNCHER)" ]] || export VITE_CREATON_LAUNCHER="$launcher"
+  [[ -n "$(build_setting VITE_CREATON_DOLLAR)" ]] || export VITE_CREATON_DOLLAR="$dollar"
+}
+
+app_refused() {
+  {
+    echo "$1"
+    echo "Fix the Creaton app's settings in .env (docs/next-version/DEPLOY-TEST-NETWORK.md), then run ./run.sh build again."
+  } >&2
+  exit 1
+}
+
+# The Creaton app's settings (VITE_CREATON_*), checked before the long build the way the image checks them again: a
+# launcher without its chain, a passkey switch without its bundler, an address with a key in it. Prints what the app will
+# offer. With the old web app as the image's target (CREATON_IMAGE_TARGET=runtime) it says so and checks nothing.
+check_app_settings() {
+  local chain launcher dollar rpc passkey bundler sponsor name value
+  if [[ "$(image_target)" != runtime-creaton ]]; then
+    echo "The image carries the old web app (CREATON_IMAGE_TARGET=$(image_target)): the VITE_CREATON_* settings are not read."
+    return 0
+  fi
+  chain="$(build_setting VITE_CREATON_CHAIN_ID)"
+  launcher="$(build_setting VITE_CREATON_LAUNCHER)"
+  dollar="$(build_setting VITE_CREATON_DOLLAR)"
+  rpc="$(build_setting VITE_CREATON_RPC_URL)"
+  passkey="$(build_setting VITE_CREATON_PASSKEY_ACCOUNT)"
+  bundler="$(build_setting VITE_CREATON_BUNDLER_URL)"
+  sponsor="$(build_setting VITE_CREATON_SPONSOR_URL)"
+  if [[ -n "$chain$launcher$dollar" ]]; then
+    [[ -n "$chain" && -n "$launcher" ]] ||
+      app_refused "VITE_CREATON_CHAIN_ID and VITE_CREATON_LAUNCHER go together (VITE_CREATON_DOLLAR with them): one without the other builds an app with no money screens."
+    [[ "$chain" =~ ^[1-9][0-9]*$ ]] || app_refused "VITE_CREATON_CHAIN_ID=$chain is not a network number."
+    [[ "$launcher" =~ ^0x[0-9a-fA-F]{40}$ ]] || app_refused "VITE_CREATON_LAUNCHER is not a 0x address of 40 hex digits."
+    [[ -z "$dollar" || "$dollar" =~ ^0x[0-9a-fA-F]{40}$ ]] || app_refused "VITE_CREATON_DOLLAR is not a 0x address of 40 hex digits."
+  fi
+  for name in VITE_CREATON_RPC_URL VITE_CREATON_BUNDLER_URL VITE_CREATON_SPONSOR_URL; do
+    value="$(build_setting "$name")"
+    [[ -z "$value" ]] && continue
+    [[ "$value" =~ ^https?://[^[:space:]@]+$ ]] || app_refused "$name must be an http(s) address with no name, password or space in it."
+    if grep -Eiq '[?&][^=&]*(key|token|secret|auth|password)' <<<"$value"; then
+      app_refused "$name carries a key in its address, and every setting is public in the page: put the key in a proxy and name the proxy."
+    fi
+  done
+  if [[ "$passkey" == 1 ]]; then
+    [[ -n "$chain" && -n "$rpc" && -n "$bundler" ]] ||
+      app_refused "VITE_CREATON_PASSKEY_ACCOUNT=1 needs VITE_CREATON_CHAIN_ID, VITE_CREATON_RPC_URL and VITE_CREATON_BUNDLER_URL: without all three the phone account cannot send."
+  elif [[ -n "$passkey" ]]; then
+    app_refused "VITE_CREATON_PASSKEY_ACCOUNT is 1 or left out (got: $passkey)."
+  fi
+  echo "This build of the Creaton app:"
+  if [[ -n "$launcher" ]]; then
+    echo "  Network: $chain, Launcher $launcher${dollar:+, dollar $dollar}"
+  else
+    echo "  Network: none (no money screens: the app is the social part alone)"
+  fi
+  echo "  Chain node for the page: ${rpc:-none}"
+  if [[ "$passkey" == 1 ]]; then
+    echo "  Phone accounts send with a passkey: bundler $bundler, fees ${sponsor:+asked at $sponsor}${sponsor:-asked at the bundler}"
+  else
+    echo "  Phone accounts: off (people send from a wallet in their browser)"
+  fi
+  [[ -n "$launcher" && -z "$rpc" ]] && echo "  Note: no VITE_CREATON_RPC_URL, so the page cannot read the chain itself."
+  return 0
+}
+
+# With the network named, the page's node must answer for that network and hold the Launcher: a node on another network or an
+# address with nothing at it would be built into the page and found by the first person who opens a project. Bounded waits.
+check_app_node() {
+  local chain launcher rpc answer got code
+  [[ "$(image_target)" == runtime-creaton ]] || return 0
+  chain="$(build_setting VITE_CREATON_CHAIN_ID)"
+  launcher="$(build_setting VITE_CREATON_LAUNCHER)"
+  rpc="$(build_setting VITE_CREATON_RPC_URL)"
+  if [[ -z "$launcher" || -z "$rpc" ]]; then
+    echo "The app's chain node is not checked (it needs VITE_CREATON_LAUNCHER and VITE_CREATON_RPC_URL)."
+    return 0
+  fi
+  echo "Checking the page's chain node (network $chain, Launcher $launcher)..."
+  answer="$(node_call "$rpc" '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}')" ||
+    app_refused "VITE_CREATON_RPC_URL: no answer within 15 seconds to a request for its network (curl says why above)."
+  got="$(sed -nE 's/.*"result"[[:space:]]*:[[:space:]]*"(0x[0-9a-fA-F]+)".*/\1/p' <<<"$answer")"
+  [[ -n "$got" ]] || app_refused "VITE_CREATON_RPC_URL did not say which network it is. It answered: ${answer:0:300}"
+  ((got == chain)) || app_refused "VITE_CREATON_RPC_URL is on network $((got)), but the build is for network $chain."
+  answer="$(node_call "$rpc" "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"eth_getCode\",\"params\":[\"$launcher\",\"latest\"]}")" ||
+    app_refused "VITE_CREATON_RPC_URL: no answer within 15 seconds to a request for the Launcher's code (curl says why above)."
+  code="$(sed -nE 's/.*"result"[[:space:]]*:[[:space:]]*"(0x[0-9a-fA-F]*)".*/\1/p' <<<"$answer")"
+  [[ -n "$code" ]] || app_refused "VITE_CREATON_RPC_URL did not answer a request for the Launcher's code. It answered: ${answer:0:300}"
+  [[ "$code" != 0x && "$code" != 0x0 ]] ||
+    app_refused "Nothing is deployed at the Launcher $launcher on network $chain, as that node sees it: wrong address, wrong network or a node that is behind."
+  echo "The chain node answers on network $chain and holds the Launcher."
+}
 
 # The settings check the image runs first (web/scripts/check-deploy-env.mjs), run here on the same settings before the
 # long build: a half-set trial block (a market factory without VITE_TRADING_TRIAL, or the reverse), a half-set investing
@@ -351,6 +473,9 @@ case "${1:-help}" in
   build)
     require_env_file
     require_page_settings
+    export_deployments_settings
+    check_app_settings
+    check_app_node
     check_web_settings
     check_chain_node
     BUZZ_SOURCE_SHA="$(git -C ../.. rev-parse --short HEAD 2>/dev/null || echo unknown)" compose build relay
@@ -360,6 +485,9 @@ case "${1:-help}" in
     warn_missing_policies
     if creaton_on; then
       # The settings first, so a half-set one stops it before the backup and the long build.
+      export_deployments_settings
+      check_app_settings
+      check_app_node
       check_web_settings
       # A backup first: an upgrade can run database migrations that an older image cannot undo.
       ./backup.sh backup
@@ -533,6 +661,10 @@ Environment switches (in the shell, or in .env for TLS and Creaton):
   BUZZ_COMPOSE_CREATON=true
                           Include compose.creaton.yml (README.md, "Creaton")
   BUZZ_COMPOSE_DEV=true   Include compose.dev.yml for local admin ports/tools
+  CREATON_IMAGE_TARGET=runtime
+                          Build the old web app into the Creaton image (default: runtime-creaton, the new app)
+  CREATON_DEPLOYMENTS_FILE=<path>
+                          The deploy script's file for the app's network (paths from this folder), read by build and upgrade
 MSG
     ;;
   *)

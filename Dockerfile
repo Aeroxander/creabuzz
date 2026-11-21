@@ -86,10 +86,10 @@ RUN strip target/release/buzz-relay \
     && strip target/release/buzz-admin \
     && strip target/release/buzz-pair-relay
 
-# ─── Stage 4: web bundle (pnpm + vite) ──────────────────────────────────────
-# Independent of the Rust layers so a CSS change doesn't bust Rust cache and
-# vice versa.
-FROM node:${NODE_VERSION}-${DEBIAN_VERSION}-slim AS web-builder
+# ─── Stage 4a: node, pnpm and the optional proxy CA / npm mirror ────────────
+# The set-up both bundles below start from (the old web app and the new Creaton
+# app). Nothing is built here.
+FROM node:${NODE_VERSION}-${DEBIAN_VERSION}-slim AS node-base
 WORKDIR /build
 # Trust an optional corporate-proxy CA so corepack + pnpm can fetch over an
 # intercepting TLS gateway (no-op if EXTRA_CA_CERTS is unset).
@@ -117,6 +117,13 @@ RUN if [ -n "${NPM_REGISTRY}" ]; then \
     fi
 ENV COREPACK_INTEGRITY_KEYS=${NPM_REGISTRY:+0}
 RUN corepack enable
+
+# ─── Stage 4b: web bundle (pnpm + vite) ─────────────────────────────────────
+# The old web app (web/) and the admin bundle: what the upstream image
+# (target `runtime`) serves. Independent of the Rust layers so a CSS change
+# doesn't bust Rust cache and vice versa. The Creaton image (target
+# `runtime-creaton`) does not use this stage; it serves the app below.
+FROM node-base AS web-builder
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches/ patches/
 # The web app's shared logic (@creaton/core) is a workspace package: install it
@@ -198,6 +205,84 @@ RUN set -eu; \
     node --experimental-strip-types web/scripts/check-deploy-env.mjs; \
     pnpm -C web build && pnpm -C admin-web build
 
+# ─── Stage 4c: the Creaton app (pnpm + vite) ────────────────────────────────
+# The new phone-first app (app/, package @creaton/app): what the Creaton image (target `runtime-creaton`) serves, in place
+# of web/. Its network settings are read when it is built and are public in the page. Unset is off: with none of them the
+# app shows no money screens. They are the app's own names (app/src/lib/pot-network.ts, features/money/passkey-sender.ts):
+#   VITE_CREATON_CHAIN_ID, VITE_CREATON_LAUNCHER, VITE_CREATON_DOLLAR   the test network and its contracts: the three values
+#                                                                      of contracts/pot/deployments/pot-<chain>.json
+#   VITE_CREATON_RPC_URL                                               a node the page reads from (public in the page)
+#   VITE_CREATON_PASSKEY_ACCOUNT=1, VITE_CREATON_BUNDLER_URL,          fee-paid sending from a passkey account; the bundler
+#   VITE_CREATON_SPONSOR_URL (optional)                                and the sponsor sit behind addresses that hold their
+#                                                                      own keys (a key in the address is refused)
+# docs/next-version/DEPLOY-TEST-NETWORK.md says where each comes from.
+FROM node-base AS app-builder
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches/ patches/
+# The app's shared logic (@creaton/core) is a workspace package: `@creaton/app...` takes the app and its workspace
+# dependencies.
+COPY packages/creaton-core/package.json packages/creaton-core/
+COPY app/package.json app/
+RUN pnpm install --frozen-lockfile --filter "@creaton/app..."
+COPY packages/creaton-core/ packages/creaton-core/
+COPY app/ app/
+ARG VITE_CREATON_CHAIN_ID=
+ARG VITE_CREATON_LAUNCHER=
+ARG VITE_CREATON_DOLLAR=
+ARG VITE_CREATON_RPC_URL=
+ARG VITE_CREATON_PASSKEY_ACCOUNT=
+ARG VITE_CREATON_BUNDLER_URL=
+ARG VITE_CREATON_SPONSOR_URL=
+# An empty argument reaches the build as no setting at all. Settings that do not fit together stop the build here, with the
+# reason, rather than build an app that quietly shows no money (a launcher without its chain, a passkey switch without its
+# bundler). The build ends by checking its own output: the page, its manifest, the service worker, and the Launcher inside
+# the code when one was named.
+RUN set -eu; \
+    for name in VITE_CREATON_CHAIN_ID VITE_CREATON_LAUNCHER VITE_CREATON_DOLLAR VITE_CREATON_RPC_URL \
+                VITE_CREATON_PASSKEY_ACCOUNT VITE_CREATON_BUNDLER_URL VITE_CREATON_SPONSOR_URL; do \
+        eval "value=\${$name:-}"; \
+        if [ -z "$value" ]; then unset "$name"; fi; \
+        case "$value" in *CHANGE_ME*) echo "$name still holds CHANGE_ME: put the real value in, then build again." >&2; exit 1 ;; esac; \
+    done; \
+    address='^0x[0-9a-fA-F]{40}$'; \
+    if [ -n "${VITE_CREATON_CHAIN_ID:-}${VITE_CREATON_LAUNCHER:-}${VITE_CREATON_DOLLAR:-}" ]; then \
+        [ -n "${VITE_CREATON_CHAIN_ID:-}" ] && [ -n "${VITE_CREATON_LAUNCHER:-}" ] \
+            || { echo "The app needs VITE_CREATON_CHAIN_ID and VITE_CREATON_LAUNCHER together (VITE_CREATON_DOLLAR with them): one without the other builds an app with no money screens." >&2; exit 1; }; \
+        printf '%s' "$VITE_CREATON_CHAIN_ID" | grep -Eq '^[1-9][0-9]*$' \
+            || { echo "VITE_CREATON_CHAIN_ID must be a whole number (got: $VITE_CREATON_CHAIN_ID)." >&2; exit 1; }; \
+        printf '%s' "$VITE_CREATON_LAUNCHER" | grep -Eq "$address" \
+            || { echo "VITE_CREATON_LAUNCHER must be a 0x address of 40 hex digits." >&2; exit 1; }; \
+        if [ -n "${VITE_CREATON_DOLLAR:-}" ]; then \
+            printf '%s' "$VITE_CREATON_DOLLAR" | grep -Eq "$address" \
+                || { echo "VITE_CREATON_DOLLAR must be a 0x address of 40 hex digits." >&2; exit 1; }; \
+        fi; \
+    fi; \
+    for name in VITE_CREATON_RPC_URL VITE_CREATON_BUNDLER_URL VITE_CREATON_SPONSOR_URL; do \
+        eval "value=\${$name:-}"; \
+        if [ -n "$value" ]; then \
+            printf '%s' "$value" | grep -Eq '^https?://[^[:space:]@]+$' \
+                || { echo "$name must be an http(s) address with no name, password or space in it." >&2; exit 1; }; \
+            ! printf '%s' "$value" | grep -Eiq '[?&][^=&]*(key|token|secret|auth|password)' \
+                || { echo "$name carries a key in its address, and every setting is public in the page: put the key in a proxy and name the proxy." >&2; exit 1; }; \
+        fi; \
+    done; \
+    if [ "${VITE_CREATON_PASSKEY_ACCOUNT:-}" = "1" ]; then \
+        [ -n "${VITE_CREATON_CHAIN_ID:-}" ] && [ -n "${VITE_CREATON_RPC_URL:-}" ] && [ -n "${VITE_CREATON_BUNDLER_URL:-}" ] \
+            || { echo "VITE_CREATON_PASSKEY_ACCOUNT=1 needs VITE_CREATON_CHAIN_ID, VITE_CREATON_RPC_URL and VITE_CREATON_BUNDLER_URL: without all three the phone account cannot send." >&2; exit 1; }; \
+    elif [ -n "${VITE_CREATON_PASSKEY_ACCOUNT:-}" ]; then \
+        echo "VITE_CREATON_PASSKEY_ACCOUNT is 1 or left out (got: $VITE_CREATON_PASSKEY_ACCOUNT)." >&2; exit 1; \
+    fi; \
+    pnpm -C app build; \
+    for file in index.html sw.js assets/manifest.webmanifest; do \
+        [ -f "app/dist/$file" ] || { echo "The app build has no $file." >&2; exit 1; }; \
+    done; \
+    grep -q '/assets/manifest.webmanifest' app/dist/index.html \
+        || { echo "The app's page does not name its manifest." >&2; exit 1; }; \
+    if [ -n "${VITE_CREATON_LAUNCHER:-}" ]; then \
+        grep -rqi "$VITE_CREATON_LAUNCHER" app/dist/assets \
+            || { echo "The app build does not name the Launcher $VITE_CREATON_LAUNCHER." >&2; exit 1; }; \
+    fi
+
 # ─── Stage 5: shared runtime ────────────────────────────────────────────────
 FROM debian:${DEBIAN_VERSION}-slim AS runtime-base
 
@@ -222,9 +307,9 @@ RUN apt-get update \
     && useradd  --system --uid 1000 --gid 1000 --home-dir /var/lib/buzz \
                 --create-home --shell /usr/sbin/nologin buzz
 
-COPY --from=web-builder /build/web/dist                 /srv/buzz/web
-COPY --from=web-builder /build/admin-web/dist           /srv/buzz/admin-web
-
+# The web bundle is copied by the final targets below (runtime and runtime-debug carry the old web app and the admin
+# bundle; runtime-creaton carries the Creaton app), so a target does not build a bundle it does not ship.
+#
 # The invite landing page is always served from the bundled web UI. Repository
 # browser routes require the separate BUZZ_SERVE_GIT_WEB_GUI=true opt-in. The
 # admin bundle is inert until BUZZ_ADMIN_HOST is configured.
@@ -246,13 +331,28 @@ ENTRYPOINT ["/usr/local/bin/buzz-relay"]
 # Published under debug-* tags; runtime behavior otherwise matches the normal
 # image exactly.
 FROM runtime-base AS runtime-debug
+COPY --from=web-builder /build/web/dist                 /srv/buzz/web
+COPY --from=web-builder /build/admin-web/dist           /srv/buzz/admin-web
 COPY --from=builder /build/target/release/buzz-relay /usr/local/bin/buzz-relay
 COPY --from=builder /build/target/release/buzz-admin /usr/local/bin/buzz-admin
 COPY --from=builder /build/target/release/buzz-pair-relay /usr/local/bin/buzz-pair-relay
 
+# The Creaton image (deploy/compose/compose.creaton.yml builds it): the same stripped binaries with the Creaton app
+# (app/) as the web bundle, and no admin bundle (the Creaton stack does not serve an admin host; BUZZ_ADMIN_WEB_DIR is
+# emptied so a server that sets BUZZ_ADMIN_HOST later still starts). The old web app is not built for this target.
+FROM runtime-base AS runtime-creaton
+COPY --from=app-builder /build/app/dist                 /srv/buzz/web
+ENV BUZZ_ADMIN_WEB_DIR=
+COPY --from=stripped-binaries /build/target/release/buzz-relay /usr/local/bin/buzz-relay
+COPY --from=stripped-binaries /build/target/release/buzz-admin /usr/local/bin/buzz-admin
+COPY --from=stripped-binaries /build/target/release/buzz-pair-relay /usr/local/bin/buzz-pair-relay
+
 # Keep the stripped runtime as the final/default Dockerfile target so existing
-# `docker build .` callers and release tags retain their current behavior.
+# `docker build .` callers and release tags retain their current behavior (the
+# old web app and the admin bundle). This stays the last stage on purpose.
 FROM runtime-base AS runtime
+COPY --from=web-builder /build/web/dist                 /srv/buzz/web
+COPY --from=web-builder /build/admin-web/dist           /srv/buzz/admin-web
 COPY --from=stripped-binaries /build/target/release/buzz-relay /usr/local/bin/buzz-relay
 COPY --from=stripped-binaries /build/target/release/buzz-admin /usr/local/bin/buzz-admin
 COPY --from=stripped-binaries /build/target/release/buzz-pair-relay /usr/local/bin/buzz-pair-relay

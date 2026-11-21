@@ -67,37 +67,47 @@ server as well as changing its registry.
 
 ## Creaton
 
-The upstream image (`ghcr.io/block/buzz`) serves Buzz: it has neither the Creaton web app nor Creaton's database
-migrations. A Creaton server builds its own image from this checkout, through `compose.creaton.yml`:
+The upstream image (`ghcr.io/block/buzz`) serves Buzz: it has neither the Creaton app nor Creaton's database
+migrations. A Creaton server builds its own image from this checkout, through `compose.creaton.yml`. The image carries
+the new phone-first app (`app/`, built by the Dockerfile's `app-builder` stage into target `runtime-creaton`), not the old
+web app (`web/`); `CREATON_IMAGE_TARGET=runtime` in `.env` builds the old one instead, for someone who still runs it. To put
+the app on a public test network (Sepolia), follow
+[docs/next-version/DEPLOY-TEST-NETWORK.md](../../docs/next-version/DEPLOY-TEST-NETWORK.md), step by step.
 
 ```bash
 cd deploy/compose
 cat .env.example .env.creaton.example > .env
 $EDITOR .env               # every CHANGE_ME; the Creaton part says what each setting does
-./run.sh build             # builds creaton-relay:local (the relay, the web app inside it)
+./run.sh build             # builds creaton-relay:local (the relay, the Creaton app inside it)
 ./run.sh start             # BUZZ_COMPOSE_CREATON=true in .env adds compose.creaton.yml to every command
 ```
 
-- The image's build prints what the web app will offer (network, chain node, contributor projects, sponsored gas,
-  error reports) and stops on settings that do not fit together (`web/scripts/check-deploy-env.mjs`). The first release
-  offers contributor projects only: the image takes no setting for test raises, nor the mainnet switch.
-- Contributor-only is one build setting, `VITE_CONTRIBUTOR_ONLY=1`, which the repository's `Dockerfile` sets for this
-  image. The web app reads it through `raisesOffered()` (`web/src/features/launchpad/lib/raises-offered.ts`), and it is
-  the hosted MVP's switch for more than money: it also decides what Start, Discover, Your work and the side rails offer.
-  Every other build (a developer's, the mocked browser suite, CI) leaves it off and offers raises
-  (`docs/v3-review/STATUS.md`, "The hosted build").
-- The image is contributor-only, and its people act from passkey accounts alone, so with contributor projects on the
-  build stops unless the ZeroDev settings (`VITE_ZERODEV_PROJECT_ID`, a UUID, and `VITE_ZERODEV_CHAIN_ID`) are set. Any
-  `VITE_*` value still holding `CHANGE_ME` stops it too: `./run.sh build` refuses before Docker starts, and the image's
-  own check refuses again. The server's secrets may still be `CHANGE_ME` at a first build; `start` refuses those.
-- Contributor projects need the addresses `scripts/sepolia-deploy.sh --broadcast` prints (`docs/sepolia-testnet.md`).
-  Without them the server is the social app alone. With them, `./run.sh build` first asks `VITE_CHAIN_RPC_URL` which
-  network it is on and for the contributor kit's history from `VITE_HISTORY_FROM_BLOCKS` (15 seconds at most each), and
-  stops with the reason when it is on another network, does not answer, or refuses that history. A node that takes only
-  a small range is allowed (the page reads in pages); the build says so, and section 3 of `docs/sepolia-testnet.md` says
-  how to check that its range lasts. The image's own check then warns when `VITE_ERROR_REPORT_URL` is empty: the build
-  goes on, but nobody is told when a step fails for people. Changing them, or any other `VITE_*` setting, means `./run.sh build`
-  and then `./run.sh restart`: they are read when the app is built, and `restart` alone keeps serving the old page.
+- The app's network settings (`VITE_CREATON_*` in `.env.creaton.example`) are read when the app is built and are public in
+  the page. With none of them the app shows no money screens, and the server's own switch (`BUZZ_INVESTING`, off unless
+  `.env` says `true`) must be on as well before anyone sees one. `./run.sh build` checks them before Docker starts (a
+  Launcher without its chain, a phone-account switch without its bundler, a key in an address, a `CHANGE_ME`), asks the
+  page's node (`VITE_CREATON_RPC_URL`) which network it is on and whether the Launcher has code (15 seconds at most each),
+  and prints what the app will offer. The image's own build checks the same settings again, then checks its output (the page,
+  its manifest, the service worker, and the Launcher inside the code). `CREATON_DEPLOYMENTS_FILE` names the file the deploy
+  script wrote, and `run.sh` takes the chain id, Launcher and dollar from it; a value set by hand wins. Changing any
+  `VITE_*` setting means `./run.sh build` and then `./run.sh restart`: they are read when the app is built, and `restart`
+  alone keeps serving the old page.
+- The image has no admin bundle: the Creaton stack does not serve an admin host (the old web app's Moderation list is
+  `./run.sh reports` here). `BUZZ_ADMIN_WEB_DIR` is empty in this image, so a server that sets `BUZZ_ADMIN_HOST` still starts.
+- **The old web app** (`CREATON_IMAGE_TARGET=runtime`): the settings below that mention contributor projects, the weekly-sale
+  trial block, investing, the `VITE_ZERODEV_*` lines and `VITE_CONTRIBUTOR_ONLY` belong to it, not to the new app. Its build
+  prints what that web app will offer and stops on settings that do not fit together (`web/scripts/check-deploy-env.mjs`);
+  `./run.sh build` runs that check on every build and says so. Contributor-only is one build setting,
+  `VITE_CONTRIBUTOR_ONLY=1`, which the repository's `Dockerfile` sets for the old web app's build
+  (`raisesOffered()` in `web/src/features/launchpad/lib/raises-offered.ts`; `docs/v3-review/STATUS.md`, "The hosted
+  build"). It is contributor-only, and its people act from passkey accounts alone, so with contributor projects on the build
+  stops unless `VITE_ZERODEV_PROJECT_ID` (a UUID) and `VITE_ZERODEV_CHAIN_ID` are set. Its contributor projects need the
+  addresses `scripts/sepolia-deploy.sh --broadcast` prints (`docs/sepolia-testnet.md`); with them `./run.sh build` first asks
+  `VITE_CHAIN_RPC_URL` which network it is on and for the contributor kit's history from `VITE_HISTORY_FROM_BLOCKS`, and
+  stops with the reason when it is on another network, does not answer, or refuses that history. A node that takes only a
+  small range is allowed (the page reads in pages); section 3 of `docs/sepolia-testnet.md` says how to check that its range
+  lasts. Any `VITE_*` value still holding `CHANGE_ME` stops the build, for either app. The server's secrets may still be
+  `CHANGE_ME` at a first build; `start` refuses those.
 - The server turns on read state (`BUZZ_V1_ENABLED`, unread markers) and the app's page routes (`BUZZ_WEB_SPA=full`),
   and shows the terms and privacy note named by `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` at sign-up. `run.sh` refuses
   a policy file that still has a draft's `[placeholders]`.
@@ -142,7 +152,7 @@ $EDITOR .env               # every CHANGE_ME; the Creaton part says what each se
 - Taking down a post and its pictures, illegal content, and a person's request to see or delete their data:
   [docs/operator-takedown-and-data-requests.md](../../docs/operator-takedown-and-data-requests.md).
 
-### The weekly-sale trial block
+### The weekly-sale trial block (old web app only)
 
 Trading is off in this image unless `.env` sets both `VITE_SECONDARY_MARKET_FACTORY` and `VITE_TRADING_TRIAL=1`; the block
 in `.env.creaton.example` (and everything after it: `VITE_TEST_QUOTE_TOKENS`, the work and open bounties, test CREATE and
@@ -151,7 +161,7 @@ all of it out. `./run.sh build` and `./run.sh upgrade` run the web app's setting
 with Node.js 22.6 or newer on the machine; without it they say so and the image's own build runs the check) and refuse a
 half-set block before Docker starts. The image stays contributor-only. `docs/sepolia-testnet.md` ("Trading") has the steps.
 
-### The investing switch
+### The investing switch (old web app only)
 
 Investing is off unless `.env` sets `VITE_INVESTING=1` together with `VITE_BACKING_POOL_FACTORY`, `VITE_CONTRIBUTOR_KIT_V3` and
 `VITE_BACKING_QUOTE_TOKEN`; the lines are in `.env.creaton.example`. The settings check refuses a half-set block before Docker
@@ -270,7 +280,7 @@ On the server, with the host name's DNS pointing at it and ports 80 and 443 open
    (`https://<host>`). `start` refuses while any of them still says `CHANGE_ME_HOST`, or `buzz.example.com` (an older
    example's host). The three `BUZZ_EVM_*` lines (a Sepolia node) are commented out in `.env.creaton.example`: leave them
    so for the founders' pilot, which needs no chain (docs/v3-review/PILOT-RUNBOOK.md, "Pilot A"), and uncomment them,
-   with a node in `BUZZ_EVM_RPC_URL`, only for contributor projects.
+   with a node in `BUZZ_EVM_RPC_URL`, only for contributor projects or for phone accounts on a test network.
 4. `mkdir -p policies && cp ../../docs/policies/TERMS-DRAFT.md policies/terms.md && cp
    ../../docs/policies/PRIVACY-DRAFT.md policies/privacy.md`, fill in every `[placeholder]` (the privacy note's log
    and backup periods should match "Logs" and "Backups" below), and set `BUZZ_TERMS_FILE=policies/terms.md` and

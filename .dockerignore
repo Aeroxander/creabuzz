@@ -11,6 +11,10 @@ mobile/
 node_modules/
 **/node_modules/
 web/dist/
+# The Creaton app's host build and test output (the image builds the app itself; a stale one would only travel in the context)
+app/dist/
+app/test-results/
+app/playwright-report/
 
 # VCS, IDE, scratch
 .git/
