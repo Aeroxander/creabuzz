@@ -13,21 +13,55 @@ interface OverlayPaneProps {
   testId?: string;
 }
 
+/** Whether focus can be given back to `element`: it is still on the page, not turned off and not hidden. */
+function canTakeFocus(element: HTMLElement | null): element is HTMLElement {
+  return (
+    element !== null &&
+    element.isConnected &&
+    !(element as HTMLButtonElement).disabled &&
+    element.getAttribute("aria-hidden") !== "true" &&
+    !element.closest("[hidden], [inert]")
+  );
+}
+
+/**
+ * Where focus goes when what opened the pane is gone (a press that took itself off the page, such as the last of a person's
+ * Shares taken out): the page's own heading, so a keyboard or screen-reader user lands at the top of what they were reading and
+ * not on nothing.
+ */
+function focusThePage(): void {
+  let place: HTMLElement | null = null;
+  for (const selector of ["main h1", "h1", "[role='main']", "main"]) {
+    place = document.querySelector<HTMLElement>(selector);
+    if (place) break;
+  }
+  if (!place) return;
+  if (!place.hasAttribute("tabindex")) place.setAttribute("tabindex", "-1");
+  place.focus({ preventScroll: true });
+}
+
 /**
  * Gives focus back to what had it when the pane opened. Radix returns focus to a `Trigger` only; these panes are opened
- * from state (a button that sets `open`), so without this focus is lost to the page when the pane closes.
+ * from state (a button that sets `open`), so without this focus is lost to the page when the pane closes. When that
+ * element is no longer there to take it, focus goes to the page's heading instead.
  */
 function useReturnFocus() {
   const from = useRef<HTMLElement | null>(null);
   return {
     onOpenAutoFocus: () => {
       const active = document.activeElement;
-      from.current = active instanceof HTMLElement ? active : null;
+      // The page itself is no place to go back to (a press that took no focus, as on Safari): the heading is.
+      from.current =
+        active instanceof HTMLElement && active !== document.body
+          ? active
+          : null;
     },
     onCloseAutoFocus: (event: Event) => {
       event.preventDefault();
-      from.current?.focus();
+      const back = from.current;
       from.current = null;
+      if (canTakeFocus(back)) back.focus();
+      else focusThePage();
     },
   };
 }

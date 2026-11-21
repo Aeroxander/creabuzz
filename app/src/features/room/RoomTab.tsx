@@ -6,6 +6,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "../../lib/account";
+import { displayText } from "@creaton/core/social/feed/feed-events.ts";
 import { type ProfileMetadata, nameOf, useProfiles } from "../../lib/profiles";
 import { useMutes } from "../../lib/mutes";
 import { REPORTED_HIDDEN } from "../safety/safety-words";
@@ -14,7 +15,7 @@ import { useRequireAccount } from "../../lib/use-require-account";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
-import type { ProjectNumbers } from "../money/numbers";
+import { dayText, type ProjectNumbers } from "../money/numbers";
 import type { SignedEvent } from "../posts/use-posts";
 import type { Project } from "../project/project-record";
 import { projectUpdates, useProjectActivity } from "../project/use-project";
@@ -35,17 +36,26 @@ import {
   EMPTY,
   HIDE_DONE,
   HIDES_UNKNOWN,
+  NO_EARLIER,
   NOT_SAVED,
   PUBLIC_LINE,
+  READ_CUT,
   READ_FAILED,
   READ_LINE,
   READ_LINE_OPEN,
+  REMOVED_CUT,
+  REMOVED_HEADING,
+  removedLine,
+  STOPS_CUT,
 } from "./room-words";
 import {
+  NOTES_READ,
   roomOf,
   useRoomEvents,
   useRoomLike,
+  useRoomMutesCut,
   useRoomPost,
+  useRoomRemovals,
   useRoomReply,
   useStopWriting,
 } from "./use-room";
@@ -73,6 +83,11 @@ export function RoomTab({
 }) {
   const room = roomOf(project);
   const events = useRoomEvents(room, project.coordinate);
+  const removals = useRoomRemovals(
+    room,
+    project.coordinate,
+    events.data?.notes,
+  );
   const { pubkey: me } = useAccount();
   // The page knows the team's names; the people who write in the room are named here, from what was read.
   const writers = useProfiles(
@@ -93,6 +108,7 @@ export function RoomTab({
     mutes: stops,
     retry,
   } = useRoomStanding(project, numbers, team);
+  const stopsCut = useRoomMutesCut(project.coordinate, team);
   const post = useRoomPost(room);
   const reply = useRoomReply(room);
   const like = useRoomLike(room);
@@ -331,6 +347,33 @@ export function RoomTab({
           )}
         </ul>
       )}
+      {stopsCut && me && (me === project.author || team.includes(me)) ? (
+        <p className="text-xs text-muted" data-testid="room-stops-cut">
+          {STOPS_CUT}
+        </p>
+      ) : null}
+      {removals.data && removals.data.shown.length > 0 ? (
+        <section
+          aria-labelledby="room-removed-heading"
+          className="flex flex-col gap-2"
+          data-testid="room-removed"
+        >
+          <h3 className="text-sm font-semibold" id="room-removed-heading">
+            {REMOVED_HEADING}
+          </h3>
+          <ul className="flex flex-col gap-1.5">
+            {removals.data.shown.map((r) => (
+              <li className="text-sm text-muted" key={r.target}>
+                {removedLine(displayText(r.reason))}{" "}
+                <span className="text-xs">{dayText(r.at)}</span>
+              </li>
+            ))}
+          </ul>
+          {removals.data.cut ? (
+            <p className="text-xs text-muted">{REMOVED_CUT}</p>
+          ) : null}
+        </section>
+      ) : null}
       {items.length > shown.length ? (
         <div>
           <Button
@@ -342,6 +385,14 @@ export function RoomTab({
             Show earlier posts
           </Button>
         </div>
+      ) : (events.data?.notes.length ?? 0) >= NOTES_READ ? (
+        <p className="text-sm text-muted" data-testid="room-read-cut">
+          {READ_CUT}
+        </p>
+      ) : pages > 1 ? (
+        <p className="text-sm text-muted" data-testid="room-no-more">
+          {NO_EARLIER}
+        </p>
       ) : null}
       <ReportSheet
         afterSent={() => (

@@ -9,6 +9,7 @@ import type { TaskSlotProps } from "../slot-props";
 import type { ChainTask } from "../types";
 import { SAVE_PAID, SAVE_PAID_WORDS } from "./pay-words";
 import { useSavePaid } from "./use-save-paid";
+import { pressName } from "../../tasks-copy";
 
 export function SavePaidPress(props: TaskSlotProps & { chain: ChainTask }) {
   const { chain, task, numbers, now } = props;
@@ -37,6 +38,7 @@ export function SavePaidPress(props: TaskSlotProps & { chain: ChainTask }) {
           <Button
             block
             data-testid="save-paid-press"
+            aria-label={pressName(save.busy ? "Saving…" : SAVE_PAID, task.what)}
             disabled={save.busy}
             onClick={() => void save.save(ready)}
           >

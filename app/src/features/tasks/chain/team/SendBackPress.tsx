@@ -9,6 +9,7 @@ import { WalletGate } from "../../../pot/use-pot";
 import type { ChainTask } from "../types";
 import { SEND_BACK_OPEN } from "./pay-words";
 import { SendBackSheet } from "./SendBackSheet";
+import { pressName } from "../../tasks-copy";
 
 export function SendBackPress({
   numbers,
@@ -27,6 +28,7 @@ export function SendBackPress({
           <Button
             block
             data-testid="send-back-open"
+            aria-label={pressName(SEND_BACK_OPEN, what)}
             onClick={() => setOpen(true)}
             variant="secondary"
           >

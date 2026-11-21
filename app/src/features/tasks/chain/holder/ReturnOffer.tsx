@@ -13,6 +13,7 @@ import type { ChainTask } from "../types";
 import { RETURN_PRESS, returnLine } from "./holder-words";
 import { tiedWords } from "./plan-names";
 import { ReturnSheet } from "./ReturnSheet";
+import { pressName } from "../../tasks-copy";
 
 export function ReturnOffer({
   chain,
@@ -41,6 +42,7 @@ export function ReturnOffer({
             <Button
               block
               data-testid="return-open"
+              aria-label={pressName(RETURN_PRESS, task?.what)}
               onClick={() => setOpen(true)}
               variant="secondary"
             >

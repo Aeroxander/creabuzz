@@ -9,6 +9,7 @@ import { cancelRecord } from "../../task-record";
 import { useTaskWrite } from "../../use-tasks";
 import type { TaskSlotProps } from "../slot-props";
 import { STOP_DONE, STOP_NOTE, STOP_OPEN, STOP_WORDS } from "./pay-words";
+import { pressName } from "../../tasks-copy";
 
 export function StopTaskPress({ project, task }: TaskSlotProps) {
   const write = useTaskWrite(project);
@@ -28,6 +29,10 @@ export function StopTaskPress({ project, task }: TaskSlotProps) {
       ) : null}
       <Button
         data-testid="stop-task-press"
+        aria-label={pressName(
+          write.isPending ? "Stopping…" : STOP_OPEN,
+          task.what,
+        )}
         disabled={write.isPending}
         onClick={() => {
           setProblem(null);

@@ -65,6 +65,7 @@ function query(filter: Filter): SignedEvent[] {
         has(e, "a", filter["#a"]) &&
         has(e, "t", filter["#t"]) &&
         has(e, "e", filter["#e"]) &&
+        has(e, "p", filter["#p"]) &&
         has(e, "d", filter["#d"]),
     )
     .sort((a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : -1))

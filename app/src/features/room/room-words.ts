@@ -84,6 +84,23 @@ export const HIDES_UNKNOWN =
 export const NOT_SAVED = "That was not saved. Try again.";
 export const LIKE_FAILED = "Your like was not sent. Try again.";
 export const REMOVE_FAILED = "The post was not removed. Try again.";
+/** The heading over the reasons the team gave for taking posts out of this room. */
+export const REMOVED_HEADING = "Removed by the team";
+/** One removed post and why: the team's own words, or that it gave none. */
+export const removedLine = (reason: string) =>
+  reason
+    ? `A post was removed here. Reason: ${reason}`
+    : "A post was removed here. The team gave no reason.";
+/** Said under the list when the room has more removals than it lists. */
+export const REMOVED_CUT = "Only the newest removals are listed here.";
+/** Said to the team when the read of its stops on people took as many records as it takes at once. */
+export const STOPS_CUT =
+  "Only the newest 200 team records are read here, so an older stop on a person may not show as a stop.";
+/** Said when the room has run out of earlier posts to show: nothing was left out. */
+export const NO_EARLIER = "That is every post this room has.";
+/** Said when the room read as many posts as it takes at once: older ones are not read here. */
+export const READ_CUT =
+  "This page shows the newest posts only. Older ones are not read here.";
 export const MUTE_DAYS = [1, 7, 30] as const;
 
 export const HIDE_DONE = (name: string) =>

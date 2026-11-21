@@ -202,3 +202,17 @@ export function limitsProblem(error: unknown): string {
     ? TASK_PROBLEM.agentLimits
     : words;
 }
+
+/**
+ * The accessible name of a press on one task of a list: the press's own words, then which task. Two cards' presses with the
+ * same words would otherwise be told apart by nothing a screen reader says. The visible words come first, so the name always
+ * contains what is on the button.
+ */
+export function pressName(
+  label: string,
+  what: string | null | undefined,
+): string {
+  const words = (what ?? "").replace(/\s+/g, " ").trim();
+  if (!words) return label;
+  return `${label}: ${words.length > 60 ? `${words.slice(0, 59)}…` : words}`;
+}

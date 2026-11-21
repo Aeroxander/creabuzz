@@ -9,6 +9,7 @@ import { WalletGate } from "../../../pot/use-pot";
 import type { ChainTask } from "../types";
 import { WITHDRAW_OPEN } from "./pay-words";
 import { WithdrawSheet } from "./WithdrawSheet";
+import { pressName } from "../../tasks-copy";
 
 export function WithdrawPress({
   numbers,
@@ -28,6 +29,7 @@ export function WithdrawPress({
           <Button
             block
             data-testid="withdraw-open"
+            aria-label={pressName(WITHDRAW_OPEN, what)}
             onClick={() => setOpen(true)}
             variant="secondary"
           >

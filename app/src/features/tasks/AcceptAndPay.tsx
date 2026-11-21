@@ -21,6 +21,7 @@ import {
   dollarsWords,
   payProblem,
   TASK_PROBLEM,
+  pressName,
 } from "./tasks-copy";
 import { freshTask, useTaskWrite } from "./use-tasks";
 
@@ -260,6 +261,7 @@ export function AcceptAndPay({
         <Button
           block
           data-testid="task-accept"
+          aria-label={pressName(busy ? "Waiting…" : label, task.what)}
           disabled={busy}
           onClick={() => void press()}
           variant={unpaid ? "secondary" : "primary"}

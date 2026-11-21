@@ -8,21 +8,24 @@ import { useState } from "react";
 import { useRequireAccount } from "../../../../lib/use-require-account";
 import { Button } from "../../../../ui/button";
 import { useToast } from "../../../../ui/toast";
-import { useConnectWallet } from "../../../money/use-money";
+import { useConnectWallet, useWallet } from "../../../money/use-money";
+import { senderKind } from "../../../money/wallet";
 import { useTaskWrite } from "../../use-tasks";
 import type { TaskSlotProps } from "../slot-props";
 import {
   AGREE_DONE,
   AGREE_FAILED,
-  AGREE_NO_WALLET,
-  AGREE_PRESS,
-  AGREE_WORDS,
+  agreeNoWallet,
+  agreePress,
+  agreeWords,
 } from "./agree-words";
 import { agreeRecord, offersAgree } from "./agree-record";
+import { pressName } from "../../tasks-copy";
 
 export function AgreeButton({ project, task, me }: TaskSlotProps) {
   const write = useTaskWrite(project);
   const connect = useConnectWallet();
+  const passkey = senderKind(useWallet()) === "passkey";
   const requireAccount = useRequireAccount();
   const toast = useToast();
   const [problem, setProblem] = useState<string | null>(null);
@@ -33,7 +36,7 @@ export function AgreeButton({ project, task, me }: TaskSlotProps) {
     try {
       account = await connect.mutateAsync();
     } catch {
-      return setProblem(AGREE_NO_WALLET);
+      return setProblem(agreeNoWallet(passkey));
     }
     write.mutate(
       {
@@ -49,7 +52,7 @@ export function AgreeButton({ project, task, me }: TaskSlotProps) {
   return (
     <div className="flex flex-col gap-2" data-testid="agree">
       <p className="text-sm" data-testid="agree-words">
-        {AGREE_WORDS}
+        {agreeWords(passkey)}
       </p>
       {problem ? (
         <p className="text-sm text-danger" role="alert">
@@ -59,10 +62,14 @@ export function AgreeButton({ project, task, me }: TaskSlotProps) {
       <Button
         block
         data-testid="agree-press"
+        aria-label={pressName(
+          write.isPending ? "Saving…" : agreePress(passkey),
+          task.what,
+        )}
         disabled={write.isPending || connect.isPending}
         onClick={() => requireAccount(() => void agree())}
       >
-        {write.isPending ? "Saving…" : AGREE_PRESS}
+        {write.isPending ? "Saving…" : agreePress(passkey)}
       </Button>
     </div>
   );

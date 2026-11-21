@@ -28,6 +28,7 @@ import {
   payProblem,
   payTermsWords,
   TASK_PROBLEM,
+  pressName,
 } from "./tasks-copy";
 import { freshTask, useTaskWrite } from "./use-tasks";
 
@@ -284,6 +285,10 @@ export function PayFromBox({
         <Button
           block
           data-testid="task-pay-save"
+          aria-label={pressName(
+            busy ? "Waiting…" : "Save that it was paid",
+            task.what,
+          )}
           disabled={busy}
           onClick={() => {
             setProblem(null);
@@ -303,6 +308,10 @@ export function PayFromBox({
         <Button
           block
           data-testid="task-pay-save"
+          aria-label={pressName(
+            busy ? "Waiting…" : "Save that it was paid",
+            task.what,
+          )}
           disabled={busy}
           onClick={() => save(offered.txHash, piece)}
         >
@@ -310,6 +319,7 @@ export function PayFromBox({
         </Button>
         <Button
           data-testid="task-pay-elsewhere"
+          aria-label={pressName("That was for something else", task.what)}
           onClick={() => setElsewhere(true)}
           size="sm"
           variant="ghost"

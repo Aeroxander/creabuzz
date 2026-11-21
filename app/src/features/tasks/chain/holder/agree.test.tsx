@@ -22,7 +22,9 @@ import { offersAgree } from "./agree-record";
 const written: { record: { tags: string[][]; content: string } }[] = [];
 let connect: () => Promise<string>;
 
+const sender = vi.hoisted(() => ({ kind: "wallet" as "wallet" | "passkey" }));
 vi.mock("../../../money/use-money", () => ({
+  useWallet: () => ({ kind: sender.kind }),
   useConnectWallet: () => ({
     isPending: false,
     mutateAsync: () => connect(),
@@ -73,6 +75,7 @@ function props(task: ProjectTask, me: string | null = WORKER): TaskSlotProps {
 }
 
 beforeEach(() => {
+  sender.kind = "wallet";
   written.length = 0;
   connect = async () => WORKER_WALLET;
 });
@@ -84,9 +87,38 @@ describe("the named helper's yes", () => {
     expect(screen.getByTestId("agree-words").textContent).toBe(
       "This task is for you. Say yes and the wallet you connect is where you will be paid. Nothing is paid or moved by this.",
     );
+    // The press names the task after its own words, so two cards' presses are told apart.
     expect(
-      screen.getByRole("button", { name: "Agree and name my wallet" }),
+      screen.getByRole("button", {
+        name: "Agree and name my wallet: Translate the guide",
+      }),
     ).toBeTruthy();
+  });
+
+  it("says account, never wallet, to a person who signed in with a passkey", async () => {
+    sender.kind = "passkey";
+    connect = async () => WORKER_WALLET;
+    wrap(<AgreeButton {...props(named())} />);
+    expect(screen.getByTestId("agree-words").textContent).toBe(
+      "This task is for you. Say yes and your account is where you will be paid. Nothing is paid or moved by this.",
+    );
+    expect(
+      screen.getByRole("button", {
+        name: "Agree and name my account: Translate the guide",
+      }),
+    ).toBeTruthy();
+    cleanup();
+    connect = async () => {
+      throw new Error("not read");
+    };
+    wrap(<AgreeButton {...props(named())} />);
+    fireEvent.click(screen.getByTestId("agree-press"));
+    expect(
+      await screen.findByText(
+        "Your account could not be read, so nothing was saved. Try again.",
+      ),
+    ).toBeTruthy();
+    expect(written).toHaveLength(0);
   });
 
   it("connects the wallet and writes their own accept step carrying it, and nothing else", async () => {

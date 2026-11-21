@@ -30,6 +30,7 @@ import {
   payProblem,
   STATE_WORDS,
   TASK_PROBLEM,
+  pressName,
 } from "./tasks-copy";
 import { useTaskWrite } from "./use-tasks";
 
@@ -264,6 +265,10 @@ function TakeButton({
       <Button
         block
         data-testid="task-take"
+        aria-label={pressName(
+          write.isPending ? "Taking…" : "Take this task",
+          task.what,
+        )}
         disabled={write.isPending || connect.isPending}
         onClick={() => requireAccount(() => void take())}
         variant="secondary"
@@ -285,6 +290,7 @@ function HandIn({ project, task }: { project: Project; task: ProjectTask }) {
       <Button
         block
         data-testid="task-hand-in"
+        aria-label={pressName("Hand in the work", task.what)}
         onClick={() => setOpen(true)}
         variant="secondary"
       >

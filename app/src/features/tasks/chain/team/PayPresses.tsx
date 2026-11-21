@@ -15,6 +15,7 @@ import { AcceptSheet } from "./AcceptSheet";
 import { PAY_OPEN, SEND_BACK_OPEN } from "./pay-words";
 import { SendBackSheet } from "./SendBackSheet";
 import { useSavePaid } from "./use-save-paid";
+import { pressName } from "../../tasks-copy";
 
 type Which = "accept" | "send-back" | null;
 
@@ -61,6 +62,7 @@ export function PayPresses(props: TaskSlotProps & { chain: ChainTask }) {
             <Button
               block
               data-testid="pay-open"
+              aria-label={pressName(PAY_OPEN, task.what)}
               onClick={() => setWhich("accept")}
             >
               {PAY_OPEN}
@@ -70,6 +72,7 @@ export function PayPresses(props: TaskSlotProps & { chain: ChainTask }) {
             <Button
               block
               data-testid="send-back-open"
+              aria-label={pressName(SEND_BACK_OPEN, task.what)}
               onClick={() => setWhich("send-back")}
               variant="secondary"
             >
