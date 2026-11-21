@@ -38,10 +38,12 @@
 # (anvil, the relay, a Redis or Postgres it had to start), drops its scratch database and removes its temporary files, whatever
 # the outcome. Never runs cargo: the relay must already be built (`cargo build -p buzz-relay`).
 #
-# Needs: anvil, cast, forge (FOUNDRY_BIN or PATH), psql, a Postgres and a Redis (started here when they are not running),
-# node with web/node_modules (the checker's tools), pnpm, jq, openssl, python3, Playwright's Chromium (the one app/ already
-# uses; this script installs nothing), and a built relay. Uses anvil's well-known development accounts only; every amount is
-# play money.
+# Needs: anvil, cast, forge (FOUNDRY_BIN or PATH), psql and redis-cli, a Postgres and a Redis (started here when they are not
+# running; `docker compose up -d postgres redis` gives the defaults below), node with web/node_modules (the checker's tools), pnpm,
+# jq, openssl, python3, curl, Playwright's Chromium (the one app/ already uses; this script installs nothing), and a built relay.
+# The tools are checked first and every missing one is named with how to get it (docs/next-version/TRY-IT.md, part 1). Works on
+# Linux and macOS (`timeout` and `hostname -I` are not needed). Uses anvil's well-known development accounts only; every amount
+# is play money.
 #
 # Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all five journeys, each in a world of its own;
 #                                                          with arguments (a file name such as pot-tasks.spec, a --grep): one world, those only
@@ -56,8 +58,12 @@
 #   this computer's network address (SERVE_HOST, default: its first address) and prints the addresses and the steps. It runs
 #   until you press Ctrl-C, then stops everything it started. The chain's development accounts are public and unlocked, so
 #   anyone on the same network can send play-money transactions to it while it runs: use a network you trust. It also leaves one
-#   planned task on the project (see the words it prints).
-# Env:    BUZZ_BIN (the `buzz` command, default target/debug/buzz, for the season journey), SERVE_HOST (with --serve: the address a phone reaches this computer at), POSTGRES_ADMIN_URL (default postgres://buzz:buzz_dev@127.0.0.1:5432/postgres), REDIS_URL, RELAY_BIN, FOUNDRY_BIN,
+#   planned task on the project (see the words it prints). With WORLD_PUSH=1 (and SERVE_HOST=localhost, a secure address on this
+#   computer) the server also has web push switched on, with a key made for the run, so a desktop browser can be tried with alerts.
+# Env:    OPERATOR_KEY (the platform's operator key, 64 hex characters, read from the environment and never printed or written to a
+#         file: with it set, the server's owner is that key's account, so you can start a season yourself; with --serve and none
+#         given, a throwaway key is made for the run and the ready-made season command is printed),
+#         BUZZ_BIN (the `buzz` command, default target/debug/buzz, for the season journey), SERVE_HOST (with --serve: the address a phone reaches this computer at), POSTGRES_ADMIN_URL (default postgres://buzz:buzz_dev@127.0.0.1:5432/postgres), REDIS_URL, RELAY_BIN, FOUNDRY_BIN,
 #         RUN_TIMEOUT (seconds for the browser run, default 900), KEEP_DB=1 (keep the scratch database),
 #         RELAY_LOG_COPY=<file>, PW_CHROMIUM_PATH / PW_CHROMIUM_EXTRA_ARGS (a Chromium other than Playwright's pinned one),
 #         SHOTS_DIR=<folder> (keep the journey's screenshots there).
@@ -78,12 +84,24 @@ for arg in "$@"; do [[ "$arg" == *pot-push* ]] && WORLD_PUSH=1; done
 [[ -n "${HOLD_PUSH:-}" ]] && WORLD_PUSH=1
 
 [[ -n "${FOUNDRY_BIN:-}" ]] && PATH="$FOUNDRY_BIN:$PATH"
-for tool in anvil cast forge psql curl node jq openssl python3 pnpm; do
-  command -v "$tool" >/dev/null 2>&1 || fail "$tool is not on PATH"
+# Every tool this script needs, checked at once: each missing one is named in a plain sentence with how to get it.
+missing=0
+lack() { printf '\033[31m[pot-full-loop] %s\033[0m\n' "$*" >&2; missing=1; }
+for tool in anvil cast forge; do
+  command -v "$tool" >/dev/null 2>&1 || lack "Foundry is missing ($tool): install it with 'curl -L https://foundry.paradigm.xyz | bash' and then 'foundryup', or put its folder in FOUNDRY_BIN."
 done
-BOUNDED="$(command -v timeout || command -v gtimeout || true)"
-[[ -n "$BOUNDED" ]] || fail "missing tool: timeout (or gtimeout, from coreutils)"
-
+command -v psql >/dev/null 2>&1 || lack "psql is missing: on a Mac 'brew install libpq && brew link --force libpq', on Ubuntu 'sudo apt install postgresql-client'."
+command -v redis-cli >/dev/null 2>&1 || lack "redis-cli is missing: on a Mac 'brew install redis', on Ubuntu 'sudo apt install redis-tools'."
+command -v jq >/dev/null 2>&1 || lack "jq is missing: on a Mac 'brew install jq', on Ubuntu 'sudo apt install jq'."
+command -v openssl >/dev/null 2>&1 || lack "openssl is missing: on a Mac 'brew install openssl', on Ubuntu 'sudo apt install openssl'."
+command -v python3 >/dev/null 2>&1 || lack "python3 is missing: on a Mac 'brew install python', on Ubuntu 'sudo apt install python3'."
+command -v curl >/dev/null 2>&1 || lack "curl is missing: on a Mac 'brew install curl', on Ubuntu 'sudo apt install curl'."
+command -v node >/dev/null 2>&1 || lack "Node is missing: run '. ./bin/activate-hermit' in this folder, or install Node 22 from nodejs.org."
+command -v pnpm >/dev/null 2>&1 || lack "pnpm is missing: run '. ./bin/activate-hermit' in this folder, or 'npm install -g pnpm'."
+[[ -d app/node_modules && -d web/node_modules ]] || lack "The app's libraries are not installed: run 'pnpm install' in this folder (and 'git submodule update --init --recursive' once)."
+[[ -x "${RELAY_BIN:-target/debug/buzz-relay}" && -x "${BUZZ_BIN:-target/debug/buzz}" ]] || lack "The server or the buzz command is not built: run 'cargo build -p buzz-relay -p buzz-cli' once (this script never builds)."
+[[ -f contracts/pot/out/Launcher.sol/Launcher.json ]] || lack "The contracts are not built: run 'scripts/ensure-solc.sh 0.8.37' and then 'forge build' in contracts/pot."
+[[ $missing -eq 0 ]] || exit 2
 ADMIN_URL="${POSTGRES_ADMIN_URL:-postgres://buzz:buzz_dev@127.0.0.1:5432/postgres}"
 REDIS_URL="${REDIS_URL:-redis://127.0.0.1:6379}"
 RELAY_BIN="${RELAY_BIN:-target/debug/buzz-relay}"
@@ -93,11 +111,34 @@ POT="$REPO_ROOT/contracts/pot"
 DB=""
 DB_URL=""
 STATE="$(mktemp -d)"
+# A command that stops another after a time: GNU timeout, Homebrew's gtimeout, or (on a Mac without coreutils) a small stand-in.
+BOUNDED="$(command -v timeout || command -v gtimeout || true)"
+if [[ -z "$BOUNDED" ]]; then
+  BOUNDED="$STATE/bounded"
+  cat >"$BOUNDED" <<'SH'
+#!/usr/bin/env bash
+secs="$1"; shift
+"$@" &
+pid=$!
+( sleep "$secs"; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+watcher=$!
+wait "$pid"; code=$?
+if kill -0 "$watcher" 2>/dev/null; then pkill -P "$watcher" 2>/dev/null; kill "$watcher" 2>/dev/null; else code=124; fi
+exit "$code"
+SH
+  chmod +x "$BOUNDED"
+fi
 APP_DIST="$STATE/app-dist"
 ANVIL_PID=""
 STANDIN_PID=""
 STANDIN_URL=""
 WORLD_PUSH="${WORLD_PUSH:-}"
+# The operator's key when the person gave one: kept out of every file and every line this script prints.
+GIVEN_OPERATOR_KEY="${OPERATOR_KEY:-}"
+unset OPERATOR_KEY
+if [[ -n "$GIVEN_OPERATOR_KEY" && ! "$GIVEN_OPERATOR_KEY" =~ ^[0-9a-fA-F]{64}$ ]]; then
+  fail "OPERATOR_KEY must be 64 hexadecimal characters (the operator's secret key); it is not printed here."
+fi
 RELAY_PID=""
 REDIS_PID=""
 PG_CLUSTER=""
@@ -111,8 +152,15 @@ WORLD=0
 BIND_HOST="127.0.0.1"
 PUBLIC_HOST="localhost"
 if [[ -n "$SERVE" ]]; then
-  PUBLIC_HOST="${SERVE_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
-  [[ -n "$PUBLIC_HOST" ]] || fail "cannot tell this computer's network address: set SERVE_HOST"
+  # This computer's address on the network: `hostname -I` on Linux, `ipconfig getifaddr` on a Mac (Wi-Fi, then the cable).
+  lan_address() {
+    local found
+    found="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    [[ -n "$found" ]] || found="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || true)"
+    printf '%s' "$found"
+  }
+  PUBLIC_HOST="${SERVE_HOST:-$(lan_address)}"
+  [[ -n "$PUBLIC_HOST" ]] || fail "I cannot tell this computer's address on your network: run it again with SERVE_HOST=<the address>. On a Mac it is under System Settings, Wi-Fi, Details (or run 'ipconfig getifaddr en0'); on Linux run 'hostname -I'. The phone must be on the same network."
   BIND_HOST="0.0.0.0"
 fi
 
@@ -167,16 +215,16 @@ redis_ready() { [[ "$(redis-cli -u "$REDIS_URL" ping 2>/dev/null)" == "PONG" ]];
 step "Postgres and Redis"
 if ! pg_ready >/dev/null 2>&1; then
   command -v pg_ctlcluster >/dev/null 2>&1 && command -v pg_lsclusters >/dev/null 2>&1 \
-    || fail "Postgres is not answering at $ADMIN_URL and there is no pg_ctlcluster to start it with"
+    || fail "Postgres is not answering at $ADMIN_URL. Start one: 'docker compose up -d postgres redis' in this folder gives the defaults this script uses (or set POSTGRES_ADMIN_URL to one you run)."
   cluster="$(pg_lsclusters -h | awk '$4 == "down" { print $1, $2; exit }')"
-  [[ -n "$cluster" ]] || fail "Postgres is not answering at $ADMIN_URL and no stopped cluster was found to start"
+  [[ -n "$cluster" ]] || fail "Postgres is not answering at $ADMIN_URL. Start one: 'docker compose up -d postgres redis' in this folder gives the defaults this script uses (or set POSTGRES_ADMIN_URL to one you run)."
   # shellcheck disable=SC2086
   pg_ctlcluster $cluster start || fail "could not start the Postgres cluster $cluster"
   PG_CLUSTER="$cluster"
   wait_for 30 pg_ready || fail "Postgres was started but does not answer at $ADMIN_URL"
 fi
 if ! redis_ready; then
-  command -v redis-server >/dev/null 2>&1 || fail "Redis is not answering at $REDIS_URL and there is no redis-server to start"
+  command -v redis-server >/dev/null 2>&1 || fail "Redis is not answering at $REDIS_URL. Start one: 'docker compose up -d postgres redis' in this folder gives the defaults this script uses (or set REDIS_URL to one you run)."
   redis_port="$(python3 -c 'import sys,urllib.parse;print(urllib.parse.urlparse(sys.argv[1]).port or 6379)' "$REDIS_URL")"
   redis-server --port "$redis_port" --bind 127.0.0.1 --save "" --appendonly no >"$STATE/redis.log" 2>&1 &
   REDIS_PID=$!
@@ -235,15 +283,20 @@ world_up() {
   PORT="$(free_port)"; HEALTH="$(free_port)"; METRICS="$(free_port)"
   BASE="http://localhost:$PORT"
   PUBLIC_BASE="http://$PUBLIC_HOST:$PORT"
-  # The platform's operator: a key made for this run (never written to a file). Its public half is the server's owner; the season
+  # The platform's operator: the key in OPERATOR_KEY when the person gave one (read from the environment, never printed or written
+  # to a file), else a key made for this run (also never written to a file). Its public half is the server's owner; the season
   # journey signs with the key through the real `buzz` command.
-  OPERATOR_KEY="$(openssl rand -hex 32)"
+  if [[ -n "$GIVEN_OPERATOR_KEY" ]]; then
+    OPERATOR_KEY="$GIVEN_OPERATOR_KEY"
+  else
+    OPERATOR_KEY="$(openssl rand -hex 32)"
+  fi
   OPERATOR_PUB="$(cd app && node --input-type=module -e "import {getPublicKey} from 'nostr-tools/pure'; import {hexToBytes} from 'nostr-tools/utils'; console.log(getPublicKey(hexToBytes(process.argv[1])))" "$OPERATOR_KEY")" \
     || fail "could not derive the operator's public key"
   PUSH_ENV=()
   if [[ -n "$WORLD_PUSH" ]]; then
     local vapid_key
-    vapid_key="$(openssl ecparam -name prime256v1 -genkey -noout -out /dev/stdout 2>/dev/null | openssl ec -outform DER 2>/dev/null | tail -c +8 | head -c 32 | basenc --base64url | tr -d '=')"
+    vapid_key="$(openssl ecparam -name prime256v1 -genkey -noout -out /dev/stdout 2>/dev/null | openssl ec -outform DER 2>/dev/null | tail -c +8 | head -c 32 | openssl base64 -A | tr '+/' '-_' | tr -d '=')"
     [[ ${#vapid_key} -eq 43 ]] || fail "could not make a push key for this run"
     local standin_port
     standin_port="$(free_port)"
@@ -294,6 +347,23 @@ world_up() {
   grep -q '<div id="root"' "$STATE/page.html" || fail "the relay does not serve the app's page"
 }
 
+# Writes the environment a journey needs (what `--hold` and, when HOLD_ENV is set, `--serve` leave for an engineer). The operator's
+# key is never in it.
+write_world_env() {
+  cat >"$1" <<EOF
+BUZZ_REAL_RELAY_URL=$BASE
+POT_RPC_URL=$RPC
+POT_DEPLOYMENTS_FILE=$STATE/deployments.json
+POT_STATE_DIR=$STATE
+POT_CHECKS_FILE=$CHECKS_FILE
+POT_REPO_ROOT=$REPO_ROOT
+POT_DB_URL=$DB_URL
+POT_HELPER_ADDRESS=$(cast wallet address --private-key "$K_HELPER" | tr 'A-F' 'a-f')
+POT_BUZZ_BIN=$REPO_ROOT/$BUZZ_BIN
+POT_STANDIN_URL=$STANDIN_URL
+EOF
+}
+
 # ── --serve: leave the world running for a person ───────────────────────────────────────────────────────────────────
 if [[ -n "$SERVE" ]]; then
   world_up
@@ -305,33 +375,45 @@ if [[ -n "$SERVE" ]]; then
       "$BOUNDED" 300 node_modules/.bin/playwright test --config=playwright.pot-full.config.ts --reporter=line --trace off seed ) \
     || { tail -20 "$STATE/relay.log" >&2; fail "could not leave a project on the chain"; }
   LINK="$(jq -r .link "$STATE/serve.json")"
+  [[ -n "${HOLD_ENV:-}" ]] && write_world_env "$HOLD_ENV"
+  # What starts a season: with a key given in OPERATOR_KEY the command names that variable (the key is never printed); with a key
+  # made for this run (a throwaway: it only exists in this world) the ready-made command carries it.
+  if [[ -n "$GIVEN_OPERATOR_KEY" ]]; then
+    SEASON_KEY_WORDS='"$OPERATOR_KEY"'
+    SEASON_KEY_NOTE="(the key you gave in OPERATOR_KEY is the server's operator; set it in the window where you run this, it is not printed)"
+  else
+    SEASON_KEY_WORDS="$OPERATOR_KEY"
+    SEASON_KEY_NOTE="(a key made up for this run: the server's operator in this world, worth nothing outside it)"
+  fi
+  PUSH_NOTE=""
+  [[ -n "$WORLD_PUSH" ]] && PUSH_NOTE="  Alerts away from the app: this server has a push key made for this run. Open the app at an address that is secure (http://localhost
+  on this computer counts) in a desktop browser with a network connection, turn alerts on from You, and plan a task.
+
+"
   cat <<EOF
 
 [pot-full-loop] READY. Everything here is a local test chain and play money. Leave this window open; press Ctrl-C to stop it all.
+The page is plain http on this network, so a passkey, alerts away from the app and the Copy press cannot be tried on it (TRY-IT.md, part 1).
 
   The app (open this on the phone):   $PUBLIC_BASE$LINK
-  The chain, for the phone's wallet:  network name "Creaton test", RPC $PUBLIC_RPC, chain id 31337, symbol ETH
-  An account to import in the wallet: anvil's public development account number 2. Its key is printed by
+  The chain, for the phone's wallet:  network "Local test network", RPC $PUBLIC_RPC, chain id 31337, symbol ETH
+      (the app offers to add it when the wallet does not know it; a phone wallet may refuse an http address)
+  Accounts for the wallet: anvil's public development accounts, counted from 0. Use 2, 3, 6, 8, 9, 10 ... and leave 0, 1, 4, 5 and 7
+      alone (the contracts, the first backer, the demo's worker and the server's helper use them). The key of account 2 is printed by
       cast wallet private-key --mnemonic "test test test test test test test test test test test junk" --mnemonic-index 2
-  (it is public and worth nothing: never import a real account's key anywhere near this)
+  They are public and worth nothing: never import a real account's key anywhere near this.
 
-  Then: open the Money tab; Get play dollars; type 25 and press Back, then the button in the sheet; later press Take out, then the
-  sheet's button. Each asks the wallet once.
+  The chain's clock (to try the notice before a task, the worker's step and the room after taking out): move it, then wait two seconds
+  for the next block:
+      cast rpc --rpc-url $PUBLIC_RPC evm_increaseTime 1500000
+  The server and the page keep their own clocks, so after a jump the project's record reads as old and Back waits until the next
+  record. Move the clock only when TRY-IT.md says.
 
-  The project also has one planned task ("Paint the lamp shades", up to 2 play dollars, for the wallet of development account
-  number 5). A holder reads it above the project's tabs and on You. Its notice is long (14 days on this chain's real week), so to
-  try the worker's side, move the chain's clock from this computer and wait for the next block:
-      cast rpc --rpc-url $RPC evm_increaseTime 1300000
-  then, with account number 5 in the wallet, open the project's Tasks tab and press "Set the money aside". The team's side (plan,
-  pay, send back, withdraw) needs a project of your own: see docs/next-version/STEP2-SERVER-APP-REPORT.md.
+  To start a season (Home then offers a founder to enter a project) run this on this computer, in this folder:
+      BUZZ_RELAY_URL=$PUBLIC_BASE BUZZ_PRIVATE_KEY=$SEASON_KEY_WORDS $BUZZ_BIN launchpad seasons start --number 1
+  $SEASON_KEY_NOTE
 
-  Step 3 on the same project: the page opens on the name, the money with "This can go up or down. It is not a return.", the
-  banner and Back; Share gives the link and a picture; after you Back, the Room tab asks you once to confirm that your account is
-  the wallet's (one signature) and then you can write; "Lately" shows joins and take-outs with rounded amounts and no names. The
-  room's "one time unit after taking out" is a real week on this chain: move the chain's clock from this computer
-  (cast rpc --rpc-url $RPC evm_increaseTime 700000) and the server will say the room is read only for someone who took out.
-  Alerts away from the app and seasons are not in this mode: a phone needs a secure address for alerts (see
-  docs/next-version/STEP3-REPORT.md, section 9), and a season is started by the operator's key, which only the full run holds.
+${PUSH_NOTE}  The numbered steps, with what working looks like, are in docs/next-version/TRY-IT.md.
 
 EOF
   while kill -0 "$RELAY_PID" 2>/dev/null && kill -0 "$ANVIL_PID" 2>/dev/null; do sleep 2; done
@@ -375,18 +457,7 @@ run_journey() {
 if [[ -n "$HOLD" ]]; then
   world_up
   HOLD_ENV="${HOLD_ENV:-$STATE/world.env}"
-  cat >"$HOLD_ENV" <<EOF
-BUZZ_REAL_RELAY_URL=$BASE
-POT_RPC_URL=$RPC
-POT_DEPLOYMENTS_FILE=$STATE/deployments.json
-POT_STATE_DIR=$STATE
-POT_CHECKS_FILE=$CHECKS_FILE
-POT_REPO_ROOT=$REPO_ROOT
-POT_DB_URL=$DB_URL
-POT_HELPER_ADDRESS=$(cast wallet address --private-key "$K_HELPER" | tr 'A-F' 'a-f')
-POT_BUZZ_BIN=$REPO_ROOT/$BUZZ_BIN
-POT_STANDIN_URL=$STANDIN_URL
-EOF
+  write_world_env "$HOLD_ENV"
   echo "[pot-full-loop] HOLDING world $WORLD. Environment for a journey: $HOLD_ENV. The relay log: $STATE/relay.log. Press Ctrl-C to stop it all."
   while kill -0 "$RELAY_PID" 2>/dev/null && kill -0 "$ANVIL_PID" 2>/dev/null; do sleep 2; done
   fail "the chain or the server stopped"
