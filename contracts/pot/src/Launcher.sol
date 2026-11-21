@@ -9,6 +9,7 @@ import {Vester} from "./Vester.sol";
 import {Pair} from "./Pair.sol";
 import {TaskBook} from "./TaskBook.sol";
 import {Parts} from "./Parts.sol";
+import {HolderPause} from "./HolderPause.sol";
 import {IShares, ITreasuryClock, ITreasuryRunner, IPair, ITaskBook} from "./Interfaces.sol";
 
 /// @notice What the Launcher reads of the dollar token: the number of decimals (every amount in the Treasury is in raw
@@ -88,6 +89,13 @@ contract Launcher {
     address public immutable vesterImpl;
     address public immutable pairImpl;
     address public immutable tasksImpl;
+    /// @notice Who deployed this Launcher. Only they may bind the holder pause, and only inside the first hour.
+    address public immutable deployer;
+    /// @notice When this Launcher was deployed.
+    uint64 public immutable deployedAt;
+    /// @notice The holder pause every project launched from now on is born with (the code its clones copy); zero while the
+    /// deployment's switch is off, which is the default. Set once, by the deployer, in the first hour; never changed.
+    address public holderPauseImpl;
 
     /// @notice True for a Pair this Launcher made. The Treasury asks it.
     mapping(address => bool) public isPair;
@@ -112,6 +120,9 @@ contract Launcher {
     event AdminChanged(address indexed admin);
     /// @notice The admin offered the seat to `next`.
     event AdminOffered(address indexed next);
+    /// @notice The deployment's holder pause switch was turned on: projects launched from now on are born with a clone of
+    /// `impl`. `codehash` is the code hash of `impl`, to compare with the build.
+    event HolderPauseBound(address impl, bytes32 codehash);
 
     error ProjectExists();
     error UnknownProject();
@@ -122,6 +133,10 @@ contract Launcher {
     error BadStack();
     error SettingsMoved();
     error NotRunner();
+    /// @notice Only the deployer may do this.
+    error NotDeployer();
+    /// @notice The one-time, first-hour binding is closed (done already, or the hour is over).
+    error BindClosed();
 
     /// @param admin_ Who may change the settings for new projects.
     /// @param initial The first platform settings.
@@ -134,6 +149,7 @@ contract Launcher {
                 || pairImpl.code.length == 0 || tasksImpl.code.length == 0
         ) revert BadStack();
         testNetwork = block.chainid == 31_337 || block.chainid == 11_155_111;
+        (deployer, deployedAt) = (msg.sender, uint64(block.timestamp));
         admin = admin_;
         _set(initial);
         emit AdminChanged(admin_);
@@ -196,6 +212,11 @@ contract Launcher {
                     tasks: ITaskBook(tasks)
                 })
             );
+        if (holderPauseImpl != address(0)) {
+            address gate = holderPauseImpl.clone();
+            HolderPause(gate).initialize(IShares(shares), s.unit);
+            Treasury(treasury).bindPause(gate);
+        }
         Project memory p = Project({
             founder: msg.sender,
             shares: shares,
@@ -256,13 +277,32 @@ contract Launcher {
 
     /// @notice A hash of the platform settings a project launched now would be born with. A founder's app reads it and
     /// passes it to `launch`.
+    /// @dev With nothing bound the hash is `keccak256(abi.encode(platform))`, as before; a bound holder pause is added to it,
+    /// so a founder's launch is refused if the switch was turned on after they read it.
     function settingsHash() public view returns (bytes32) {
-        return keccak256(abi.encode(platform));
+        address pause = holderPauseImpl;
+        if (pause == address(0)) return keccak256(abi.encode(platform));
+        return keccak256(abi.encode(platform, pause));
     }
 
     /// @notice The key a project is stored under.
     function keyOf(address founder, bytes32 projectId) public pure returns (bytes32) {
         return keccak256(abi.encode(founder, projectId));
+    }
+
+    // ================================================ the pause switch ===============================================
+
+    /// @notice Turn the holder pause on for every project launched from now on: they are born with a clone of `impl` and
+    /// keep it. Only the deployer, once, inside the first hour after deployment (the deploy script does it in the same
+    /// broadcast, before any launch), so a key stolen later cannot turn it on. `impl` must have code. A project launched
+    /// before this call has no pause, by design. The event carries the code hash, to compare with the build.
+    /// @param impl The deployed `HolderPause` implementation.
+    function bindPause(address impl) external {
+        if (msg.sender != deployer) revert NotDeployer();
+        if (holderPauseImpl != address(0) || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();
+        if (impl.code.length == 0) revert BadStack();
+        holderPauseImpl = impl;
+        emit HolderPauseBound(impl, impl.codehash);
     }
 
     // ================================================ admin ==========================================================

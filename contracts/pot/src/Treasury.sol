@@ -5,7 +5,7 @@ import {IERC20} from "oz5/token/ERC20/IERC20.sol";
 import {IERC1363Receiver} from "oz5/interfaces/IERC1363Receiver.sol";
 import {SafeERC20} from "oz5/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "oz5/utils/math/Math.sol";
-import {IShares, IVester, ILauncherPairs, IPairSigners, IPair, ITaskBook} from "./Interfaces.sol";
+import {IShares, IVester, ILauncherPairs, IPairSigners, IPair, ITaskBook, IHolderPause} from "./Interfaces.sol";
 import {PotMath} from "./PotMath.sol";
 import {RollingCap} from "./RollingCap.sol";
 
@@ -156,6 +156,11 @@ contract Treasury {
     /// @notice The size of the current stream; released so far is `arrivalTotal - arriving`.
     uint256 public arrivalTotal;
 
+    // ---- step 4: the holder pause (appended after the step 2 fields; none of those moved)
+    /// @notice The project's holder pause (see HolderPause); zero when the deployment's switch was off at launch. When set,
+    /// `draw` and `announceTask` refuse while it says paused, and every join tells it to look at the ratio.
+    address public pauseGate;
+
     bool private transient _locked;
 
     /// @notice Someone backed the project. `paid` includes the platform `fee`; `shares` were minted to `to`; `credit` counts as
@@ -223,6 +228,8 @@ contract Treasury {
     );
     /// @notice The project's task queue, once, at birth.
     event TasksReady(address book);
+    /// @notice The project's holder pause, once, in the launch transaction (only when the deployment's switch is on).
+    event PauseReady(address gate);
     /// @notice Money moved between the pot and the money set aside for tasks. `kind`: 1 a task was taken (`amount` is what
     /// was set aside, `who` the taker), 2 a task was paid (`amount` the payment, `who` the worker), 3 a task was rejected
     /// (`amount` came back to the pot), 4 tasks ran out or were returned by a wind-down (`serial` 0, `amount` back to the
@@ -270,6 +277,9 @@ contract Treasury {
     error ProjectQuiet();
     /// @notice The book returned something that does not add up (fails closed).
     error Inconsistent();
+    /// @notice The holders' pause is on: the team cannot draw its allowance or announce a task until fewer than a third of
+    /// the backers' Shares are parked.
+    error Paused();
 
     modifier nonReentrant() {
         if (_locked) revert Reentrancy();
@@ -311,6 +321,16 @@ contract Treasury {
         (lastSettle, lastCheckIn, doorFlag) = (uint64(block.timestamp), uint64(block.timestamp), true);
         tasks = s.tasks;
         emit TasksReady(address(s.tasks));
+    }
+
+    /// @notice Tie the project's holder pause to it, once. Only the Launcher (`salePath`), in the launch transaction, and
+    /// only when the deployment's switch is on. A project is born with a pause or without one and keeps it.
+    /// @param gate The project's `HolderPause` clone.
+    function bindPause(address gate) external {
+        if (msg.sender != salePath) revert NotAllowed();
+        if (pauseGate != address(0) || gate == address(0)) revert BadInput();
+        pauseGate = gate;
+        emit PauseReady(gate);
     }
 
     // ================================================= join and leave ================================================
@@ -499,6 +519,7 @@ contract Treasury {
         if (byAgent) a = _liveAgent(msg.sender);
         else if (!_isRunnerBothSigned()) revert NotAllowed();
         _settle();
+        _notPaused();
         if (
             to == address(0) || to == address(this) || to == address(quote) || to == address(shares)
                 || to == address(team) || to == vester
@@ -604,6 +625,7 @@ contract Treasury {
     {
         _settle();
         _openWindow();
+        _notPaused();
         if (
             payee == address(this) || payee == address(quote) || payee == address(shares) || payee == address(team)
                 || payee == vester || payee == address(tasks)
@@ -847,6 +869,13 @@ contract Treasury {
 
     // =================================================== plumbing ====================================================
 
+    /// @dev Refuses while the holders' pause is on. Fails closed: a gate that reverts stops the call (and, because a join
+    /// calls `poke`, joins), never leaving.
+    function _notPaused() private view {
+        address g = pauseGate;
+        if (g != address(0) && IHolderPause(g).paused()) revert Paused();
+    }
+
     function _gate(uint256 amount) private view {
         if (!doorOpenNow()) revert DoorShut();
         if (amount < MIN_JOIN) revert BelowMinimum(MIN_JOIN, amount);
@@ -879,6 +908,8 @@ contract Treasury {
         paidIn += credit;
         shares.mint(to, n);
         emit Joined(payer, to, a, fee, n, credit, pot, paidIn, b + n);
+        // the one place backer Shares are minted: tell the pause to look, so a join that lowers the parked share is seen
+        if (pauseGate != address(0)) IHolderPause(pauseGate).poke();
     }
 
     /// @dev Work out the allowance, the box cap and the arriving release up to now, without writing.

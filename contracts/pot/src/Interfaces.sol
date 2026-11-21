@@ -18,6 +18,14 @@ interface IShares {
     function burnFor(address from, uint256 value) external;
 }
 
+/// @notice What the Treasury asks of the project's holder pause (see HolderPause): one question and one nudge.
+interface IHolderPause {
+    /// @notice True while `draw` and `announceTask` must refuse.
+    function paused() external view returns (bool);
+    /// @notice Look at the ratio of parked to all backer Shares and re-arm or disarm. Anyone may call it.
+    function poke() external;
+}
+
 /// @notice What the Treasury asks of the project's Vester.
 interface IVester {
     /// @notice Set aside `amount` Team Shares for `member` on a clock of its own; returns the grant's id. Only the Treasury.
