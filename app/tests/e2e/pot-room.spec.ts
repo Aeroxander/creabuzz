@@ -307,7 +307,7 @@ test("a holder writes, likes and answers, by keyboard and by touch, and the room
   await context.close();
 });
 
-test("Back ends by linking the account, so the room opens for a person who has just backed, with no extra screen", async ({
+test("Back ends by linking the account when the person ticked the box (it starts unticked), so the room opens with no extra screen", async ({
   page,
 }) => {
   const w = world.get();
@@ -328,6 +328,10 @@ test("Back ends by linking the account, so the room opens for a person who has j
   await expect(amount).toBeFocused();
   await amount.fill("25");
   await page.getByTestId("backing-review").click();
+  // The box that links the account to the wallet starts unticked; this person ticks it.
+  const choice = page.getByTestId("back-link-choice");
+  await expect(choice).not.toBeChecked();
+  await choice.check();
   await page.getByTestId("sheet-confirm").click();
   await expect(page.getByTestId("back-sheet")).toBeHidden({ timeout: 30_000 });
   // The last step of Back: the account is linked to the wallet that made it, and the room's composer is there.
@@ -351,6 +355,60 @@ test("Back ends by linking the account, so the room opens for a person who has j
   await page.getByTestId("room-composer-send").click();
   await expect(page.getByTestId("room-list")).toContainText(
     "Just backed, and I can write.",
+    { timeout: 20_000 },
+  );
+});
+
+test("a person who leaves the box unticked links nothing when they Back, and meets the same link as one press where the writing box would be", async ({
+  page,
+}) => {
+  const w = world.get();
+  const project = await launchProject(w, "roomunticked", FOUNDER_NOSTR);
+  await backFor(w, project, w.who.backer, 100n);
+  const { relay, holders, wallet } = await openRoom(page, w, project, {
+    account: w.who.second,
+    key: SECOND_KEY,
+  });
+  await page.getByRole("button", { name: "Back this project" }).first().click();
+  await giveDollars(w, w.who.second);
+  const amount = page.getByTestId("backing-amount");
+  await expect(amount).toBeFocused();
+  await amount.fill("25");
+  await page.getByTestId("backing-review").click();
+  const choice = page.getByTestId("back-link-choice");
+  await expect(choice).not.toBeChecked();
+  // The sentence beside the box says what the link makes public.
+  await expect(page.getByTestId("back-link-hint")).toContainText(
+    "Anyone on this server can see the link",
+  );
+  await page.getByTestId("sheet-confirm").click();
+  await expect(page.getByTestId("back-sheet")).toBeHidden({ timeout: 30_000 });
+  expect(wallet.sent).toHaveLength(1);
+  // Nothing about the wallet was published: the Back went out and that is all.
+  await page.waitForTimeout(1_500);
+  expect(
+    relay.events.filter((e: any) => e.kind === 37017 && e.pubkey === SECOND),
+  ).toHaveLength(0);
+  // The server has read the Back. The room offers no writing box yet, but the sentence and the one press for the link.
+  holders.add(SECOND);
+  const needs = page.getByTestId("room-needs-link");
+  await expect(needs).toBeVisible({ timeout: 30_000 });
+  await expect(composer(page)).toHaveCount(0);
+  await expect(needs).toContainText("Anyone on this server can see the link");
+  await needs.getByTestId("room-confirm").click();
+  await expect
+    .poll(
+      () =>
+        relay.events.filter((e: any) => e.kind === 37017 && e.pubkey === SECOND)
+          .length,
+      { timeout: 30_000 },
+    )
+    .toBe(1);
+  await expect(composer(page)).toBeVisible({ timeout: 30_000 });
+  await composer(page).fill("Linked in the room, and I can write.");
+  await page.getByTestId("room-composer-send").click();
+  await expect(page.getByTestId("room-list")).toContainText(
+    "Linked in the room, and I can write.",
     { timeout: 20_000 },
   );
 });
