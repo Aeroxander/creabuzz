@@ -403,4 +403,73 @@ contract EarlierGrantsTest is EarlierBase {
         assertLe(earlier.claimedTotal(), earlier.total());
         assertEq(v.earlierReserve() + got, earlier.total(), "the reserve is what the claims left");
     }
+
+    // ---------------------------------------------------------------- the claim bitmap, the row floor, rows that can never be claimed
+
+    /// @dev Rows 0 and 128 must not share a bit: the claimed flags are 256 to a word, and the shift is by the low eight bits
+    /// of the index. A mask of seven bits would lock row 128 once row 0 was claimed.
+    function test_theClaimedBitsAreExactAcrossWordsAndBeyondRow128() public {
+        Row[] memory r = new Row[](300);
+        for (uint256 i; i < 300; ++i) r[i] = Row(i, i % 2 == 0 ? row1 : row2, 5e18);
+        r[0].account = row1;
+        r[127].account = row2;
+        r[128].account = row3;
+        r[129].account = row4;
+        r[255].account = makeAddr("x255");
+        r[256].account = makeAddr("x256");
+        r[299].account = makeAddr("x299");
+        _setupWith(r, 0);
+        uint256[7] memory pick = [uint256(0), 127, 128, 129, 255, 256, 299];
+        for (uint256 k; k < pick.length; ++k) {
+            assertFalse(earlier.isClaimed(pick[k]), "free before its own claim");
+            _claim(pick[k]);
+            for (uint256 j; j < pick.length; ++j) {
+                assertEq(earlier.isClaimed(pick[j]), j <= k, "every bit exact");
+            }
+        }
+        assertFalse(earlier.isClaimed(1));
+        assertFalse(earlier.isClaimed(130));
+        assertFalse(earlier.isClaimed(257));
+    }
+
+    /// @dev The floor is one whole Share: exactly 1e18 claims, one wei less does not.
+    function test_aRowOfExactlyOneShareClaimsAndOneWeiLessDoesNot() public {
+        Row[] memory r = new Row[](2);
+        r[0] = Row(0, row1, 1e18);
+        r[1] = Row(1, row2, 1e18 - 1);
+        _setupWith(r, 0);
+        _claim(0);
+        bytes32[] memory p = _proofOf(r, 1);
+        vm.prank(row2);
+        vm.expectRevert(EarlierGrants.RowTooSmall.selector);
+        earlier.claim(1, 1e18 - 1, p, TEXT);
+        assertFalse(earlier.isClaimed(1));
+    }
+
+    /// @dev A limit of the list, pinned: the contract cannot see it, the builder must. A row below one Share is never
+    /// claimable, so its amount stays in the reserve for good.
+    function test_aRowBelowOneShareLeavesItsAmountInTheReserveForGood() public {
+        for (uint256 i; i < rows_.length; ++i) {
+            if (rows_[i].amount >= 1e18) _claim(i);
+        }
+        assertEq(v.earlierReserve(), 0.5e18, "the half Share stays");
+        assertEq(earlier.claimedTotal(), poolTotal - 0.5e18);
+        assertFalse(earlier.isClaimed(3));
+    }
+
+    /// @dev A limit of the list, pinned: one account holds at most eight protected grants, so a ninth row of the same
+    /// account reverts in the Vester, leaves its flag free and its amount in the reserve for good.
+    function test_aNinthRowOfOneAccountCannotBeClaimedAndKeepsItsAmountInTheReserve() public {
+        Row[] memory r = new Row[](9);
+        for (uint256 i; i < 9; ++i) r[i] = Row(i, row1, 10e18);
+        _setupWith(r, 0);
+        for (uint256 i; i < 8; ++i) _claim(i);
+        bytes32[] memory p = _proofOf(r, 8);
+        vm.prank(row1);
+        vm.expectRevert(Vester.TooManyGrants.selector);
+        earlier.claim(8, 10e18, p, TEXT);
+        assertFalse(earlier.isClaimed(8));
+        assertEq(v.earlierReserve(), 10e18);
+        assertEq(earlier.claimedTotal(), 80e18);
+    }
 }

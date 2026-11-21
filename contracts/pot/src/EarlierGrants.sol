@@ -110,21 +110,21 @@ contract EarlierGrants {
     }
 
     /// @notice Claim your row: a protected grant of `amount` Team Shares for the caller. The caller names, in
-    /// `acceptedText`, the fingerprint of the text they accept; the acceptance is recorded. Only the account in the row can
+    /// `accepted`, the fingerprint of the text they accept; the acceptance is recorded. Only the account in the row can
     /// claim it, once. Checks, in this order: the contract is bound; the text; the row's index and the proof's depth; not
     /// claimed before; the proof; the row is at least one whole Team Share; the pool.
     /// @param index The row's index in the list.
     /// @param amount The row's amount in Team Share wei.
     /// @param proof The Merkle proof of the row.
-    /// @param acceptedText The fingerprint of the text the caller accepts; it must equal `textHash`.
+    /// @param accepted The fingerprint of the text the caller accepts; it must equal `textHash`.
     /// @return grantId The id of the protected grant in the Vester.
-    function claim(uint256 index, uint256 amount, bytes32[] calldata proof, bytes32 acceptedText)
+    function claim(uint256 index, uint256 amount, bytes32[] calldata proof, bytes32 accepted)
         external
         returns (uint256 grantId)
     {
         IVester v = vester;
         if (address(v) == address(0)) revert NotBound();
-        if (acceptedText != textHash) revert WrongText();
+        if (accepted != textHash) revert WrongText();
         if (index >= rows || proof.length > MAX_PROOF) revert BadRow();
         uint256 word = index >> 8;
         uint256 bit = 1 << (index & 255);
@@ -143,7 +143,7 @@ contract EarlierGrants {
         claimedRows = count;
         if (acceptedAt[msg.sender] == 0) acceptedAt[msg.sender] = uint64(block.timestamp);
         grantId = v.grant(msg.sender, amount, true);
-        emit Claimed(index, msg.sender, amount, grantId, acceptedText, count, sum);
+        emit Claimed(index, msg.sender, amount, grantId, accepted, count, sum);
     }
 
     /// @notice Whether row `index` was claimed.

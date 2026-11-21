@@ -208,6 +208,11 @@ contract DeployPotSettingsTest is Test {
         assertEq(EarlierGrants(d.earlier).total(), 1_000_000_000e18);
         _expectEarlierRefusal2(1_000_000_000e18 + 1, 1, "EARLIER_TOTAL is over the ceiling");
         _expectEarlierRefusal2(1000e18, 2, "EARLIER_ALLOW_LARGE must be 0 or 1");
+        // more rows than a uint32 holds is refused, not cut down to the low bits
+        _expectEarlierRefusal(ROOT, TXT, 5000e18, uint256(type(uint32).max) + 6, zeroFounder, ZID, "EARLIER_ROWS too big");
+        _earlierSettings(ROOT, TXT, 5000e18, type(uint32).max, zeroFounder, ZID, 0);
+        d = _run(); // exactly the largest count is allowed
+        assertEq(uint256(EarlierGrants(d.earlier).rows()), uint256(type(uint32).max));
 
         // ---- leave nothing behind
         _earlierSettings(0, 0, 0, 0, address(0), 0, 0);

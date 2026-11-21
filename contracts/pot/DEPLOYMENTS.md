@@ -68,7 +68,11 @@ like any project, `settingsHash()` is the formula above, and nothing is claimabl
   time counted from the project's birth, no cliff, never forfeited, trimmed or burned. Unclaimed rows stay claimable, also after a
   wind-down; there is no end time and no sweep (what should happen to Shares nobody claims is counsel's and the owner's to decide).
 - The list never touches the repository: the tests use invented rows. A list builder asserts that indexes are unique and below
-  `EARLIER_ROWS` and that the amounts add up to `EARLIER_TOTAL`; the contract cannot check it.
+  `EARLIER_ROWS` and that the amounts add up to `EARLIER_TOTAL`; the contract cannot check it. Two more assertions are the
+  builder's, because a row that can never be claimed keeps its share of the pool in the Team supply for good (the reserve is
+  never burned, so it dilutes backers forever): **at most 8 rows per account** (one account holds at most eight protected
+  grants, so a ninth row reverts and its flag stays free) and **every row at least 1e18** (one whole Team Share; a smaller
+  row reverts and stays unclaimed). `EARLIER_ROWS` can be at most 4,294,967,295; more stops the script.
 
 The script order, when both switches are on: Launcher, then `bindPause`, then the claim contract and `bindEarlier`, all in one
 broadcast. The Launcher's own code hash does not depend on either switch.
