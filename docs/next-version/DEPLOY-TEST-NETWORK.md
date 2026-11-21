@@ -65,7 +65,7 @@ must not change later. The three keys of this guide, and where each comes from:
 | Key | Setting | Where it comes from |
 |---|---|---|
 | The server's signing key | `BUZZ_RELAY_PRIVATE_KEY` | `openssl rand -hex 32`, once. It signs everything the server publishes, including the numbers on every project page. Lose it and the server is a different server. |
-| The operator's key | `RELAY_OWNER_PUBKEY` (the public half only) | Made with the built image: `docker run --rm --entrypoint buzz-admin <image> generate-key` (First start, step 6). The secret half stays on your own computer, in a password manager, never on the server. It signs in as the owner and starts seasons (`buzz launchpad seasons start`, with the key in the command's environment only). |
+| The operator's key | `RELAY_OWNER_PUBKEY` (the public half only) | Made with the built image, so after step 8 has built it and before step 12 starts the server: `docker run --rm --entrypoint buzz-admin <image> generate-key` (First start, step 6). The secret half stays on your own computer, in a password manager, never on the server. It signs in as the owner and starts seasons (`buzz launchpad seasons start`, with the key in the command's environment only). |
 | The helper key | `BUZZ_CHAIN_HELPER_KEY` | A new key made for this, never one that holds anything else (step 5). |
 
 ## 4. Tell the server which chain to read
@@ -86,8 +86,16 @@ The server refuses to start on a half-set group (a chain setting without the nod
 
 ## 5. The helper key
 
-The helper sends two calls anyone may make on a project: collect the platform's fee, and settle money that has arrived. It
-never checks in, takes out, draws or claims for anyone (a test lists every call it must never be able to send).
+The helper sends five calls anyone may make on a project: collect the platform's fee, settle money that has arrived, apply a
+proposed allowance rate once its wait has ended, close a team grant's notice once its time has come (`Vester.execute`), and
+burn a grant after a wind-down (`Vester.burnAfterWindDown`). It never checks in, takes out, draws, claims or winds a project
+down for anyone: winding down a quiet project is a person's press (a test lists every call it must never be able to send).
+
+Each call is simulated against the chain first and sent only if it will succeed. The last three are held to tighter limits so
+that a stranger who opens projects cannot make the helper spend its gas: 3 failed attempts end a job, at most 3 of them are
+looked at in a pass, at most 8 are sent for one project in a day, and together they may use at most 20% of the daily gas and
+spend caps, so the fee and the settle keep their room. A failure is recorded in `chain_helper_jobs.last_error` and in the
+`buzz_chain_helper_failed_total` counter.
 
 1. Make a new key (`cast wallet new`), put its secret in `.env` as `BUZZ_CHAIN_HELPER_KEY`, and send its address a little Sepolia
    ether (0.05 lasts a long time; its daily spend is capped by `BUZZ_CHAIN_HELPER_DAILY_SPEND_WEI`, default 0.01 ether, and

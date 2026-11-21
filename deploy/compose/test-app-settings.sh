@@ -27,6 +27,9 @@ cp "${SCRIPT_DIR}/run.sh" "${SCRIPT_DIR}/compose-env.sh" "${COMPOSE_DIR}/"
 cat >"${TEST_DIR}/bin/docker" <<'STUB'
 #!/usr/bin/env bash
 echo "$*" >>"${DOCKER_LOG}"
+# IMAGE_MISSING=1: the image was never built.
+[[ "$1 $2" == "image inspect" && "${IMAGE_MISSING:-}" == "1" ]] && exit 1
+exit 0
 STUB
 # The page's node: NODE_CHAIN is its network (hex), NODE_CODE the code it holds at the Launcher ("0x" is none), NODE_DOWN=1
 # does not answer at all.
@@ -167,6 +170,17 @@ grep -q "^FROM .* AS runtime\$" "${REPO_ROOT}/Dockerfile" || fail "the Dockerfil
 # `runtime` stays the Dockerfile's last stage: docker build with no --target (and the published image) get the old web app.
 [[ "$(grep '^FROM ' "${REPO_ROOT}/Dockerfile" | tail -n 1)" == *" AS runtime" ]] || fail "runtime is no longer the Dockerfile's last stage"
 
+# 8. A start with no built image is refused (compose would build it itself and skip the checks above) and does not call
+#    compose up; with the image there it goes on to the usual checks.
+env_with
+: >"${DOCKER_LOG}"
+if (cd "${COMPOSE_DIR}" && IMAGE_MISSING=1 ./run.sh start) >"${TEST_DIR}/out" 2>&1; then fail "start went on with no image built"; fi
+grep -q "Build it first with ./run.sh build" "${TEST_DIR}/out" || fail "start does not say to build first"
+if grep -q " up " "${DOCKER_LOG}"; then fail "compose up was called with no image built"; fi
+: >"${DOCKER_LOG}"
+(cd "${COMPOSE_DIR}" && ./run.sh start) >"${TEST_DIR}/out" 2>&1 || true
+if grep -q "Build it first" "${TEST_DIR}/out"; then fail "start refused although the image is there"; fi
+
 echo "PASS: run.sh build checks the Creaton app's settings before compose is called (none set: no money screens; half-set, malformed,"
 echo "      keyed and CHANGE_ME settings refused), reads the deploy script's file, asks the page's node for its network and the Launcher,"
-echo "      leaves the old web app to its own checks; compose.creaton.yml and the Dockerfile agree on the app's settings and target"
+echo "      leaves the old web app to its own checks; a start with no built image is refused; compose.creaton.yml and the Dockerfile agree on the app's settings and target"

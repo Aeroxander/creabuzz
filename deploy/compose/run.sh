@@ -447,8 +447,25 @@ escalated_reports() {
   compose exec -T relay /usr/local/bin/buzz-admin reports ${which[@]+"${which[@]}"} "$@"
 }
 
+# Creaton's image is built here. A start with no image would make compose build it on its own, skipping the checks of the
+# app's settings that `./run.sh build` makes (a deployments file would be ignored and the app built with no money screens).
+require_image_built() {
+  creaton_on || return 0
+  local image="${CREATON_IMAGE:-}"
+  [[ -n "$image" ]] || image="$(env_value CREATON_IMAGE)"
+  image="${image:-creaton-relay:local}"
+  if ! docker image inspect "$image" >/dev/null 2>&1; then
+    cat >&2 <<MSG
+There is no image to start yet (${image}).
+Build it first with ./run.sh build: it checks the app's settings before the long build.
+MSG
+    exit 1
+  fi
+}
+
 case "${1:-help}" in
   start|up)
+    require_image_built
     require_env
     warn_missing_policies
     compose up -d --wait
