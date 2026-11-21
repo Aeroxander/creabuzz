@@ -641,6 +641,76 @@ async fn the_first_two_calls_are_not_held_to_the_optional_bounds() {
     assert!(store::job(pool, settle).await.expect("job").attempts == 0);
 }
 
+/// Strangers' projects can make the optional calls due in numbers; together they
+/// may use only their own slice of the day's caps, and the settle (which returns
+/// a task's money) is still looked at afterwards, not put off for the day.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_optional_calls_together_keep_to_their_own_slice_of_the_day() {
+    let state = crate::test_support::test_state().await;
+    let pool = state.db.pool();
+    let case = &cases()[1];
+    let reader = reader(pool).await;
+    // Twelve projects, each with one due burn: the per-project cap is nowhere near.
+    let mut ids = Vec::new();
+    for n in 0..12u64 {
+        let mut project = [0x50; 32];
+        project[0] = u8::try_from(n).expect("small");
+        ids.push(add_job(pool, &reader, grant_call(n), project).await);
+    }
+    let node = node_for(case, false, false);
+    // 1,000,000 gas a day: the optional slice (20%) is 200,000, the routine share 500,000.
+    let wallet = Wallet::from_private_key_hex(DEV_KEY).expect("a key");
+    let mut config = HelperConfig::with_key(wallet);
+    config.daily_gas = 1_000_000;
+    let helper = Helper::new(node.clone(), config);
+    let head = (10, case.due_time);
+    let mut sent = 0;
+    for _ in 0..5 {
+        sent += helper
+            .pass(pool, &reader, head, None)
+            .await
+            .expect("a pass")
+            .sent;
+        for id in &ids {
+            skip_the_wait(pool, *id).await;
+        }
+    }
+    // 50,000 gas each when mined; the next would be reserved at its limit and pass 200,000.
+    assert!(
+        (1..=4).contains(&sent),
+        "the slice lets a few through and no more: {sent}"
+    );
+    assert_eq!(node.sent().len(), sent as usize);
+    let mut waiting = 0;
+    for id in &ids {
+        let row = store::job(pool, *id).await.expect("job");
+        if row.state == "pending" {
+            waiting += 1;
+            assert_eq!(row.attempts, 0, "held back, not failed");
+        }
+    }
+    assert_eq!(waiting, 12 - sent as usize);
+    // The settle is not held back by what the optional calls used: it is looked
+    // at (this node does not answer its view, so the node puts it off).
+    let settle = add_job(
+        pool,
+        &reader,
+        HelperCall::TreasurySettleTasks {
+            treasury: TREASURY,
+            expiry: 1_000,
+        },
+        PROJECT,
+    )
+    .await;
+    let report = helper
+        .pass(pool, &reader, head, None)
+        .await
+        .expect("a pass");
+    assert_eq!(report.node_errors, 1, "{report:?}");
+    assert_eq!(store::job(pool, settle).await.expect("job").attempts, 0);
+}
+
 impl store::JobRow {
     /// The job's recorded reason (tests).
     async fn last_error_text(&self, pool: &sqlx::PgPool) -> String {

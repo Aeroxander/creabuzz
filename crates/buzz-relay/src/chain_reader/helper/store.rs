@@ -442,6 +442,35 @@ pub async fn used_last_day(pool: &PgPool, reader: &str) -> anyhow::Result<Used> 
     })
 }
 
+/// Gas and wei used in the last 24 hours by the optional calls alone (the
+/// same measure as [`used_last_day`], for the jobs of `calls::OPTIONAL_NAMES`).
+pub async fn optional_used_last_day(pool: &PgPool, reader: &str) -> anyhow::Result<Used> {
+    let names: Vec<String> = super::calls::OPTIONAL_NAMES
+        .iter()
+        .map(|n| (*n).to_owned())
+        .collect();
+    let row = sqlx::query(
+        "SELECT coalesce(sum(coalesce(s.gas_used, s.gas_limit)), 0)::text AS gas, \
+                coalesce(sum(coalesce(s.spent_wei, s.reserved_wei)), 0)::text AS wei \
+         FROM chain_helper_sends s \
+         JOIN chain_helper_jobs j ON j.id = s.job_id \
+         WHERE s.reader = $1 AND j.reader = $1 AND j.call = ANY($2) \
+           AND s.sent_at > now() - interval '24 hours'",
+    )
+    .bind(reader)
+    .bind(&names)
+    .fetch_one(pool)
+    .await?;
+    let number = |name: &str| -> anyhow::Result<u128> {
+        let text: String = row.try_get(name)?;
+        text.parse().with_context(|| format!("{name} used"))
+    };
+    Ok(Used {
+        gas: number("gas")?,
+        wei: number("wei")?,
+    })
+}
+
 /// Gas and wei that the sends of one job at `nonce` still reserve in the last
 /// 24 hours (the part of [`used_last_day`] that is in flight at that nonce).
 /// Only one of them can mine, so a replacement is checked against the caps

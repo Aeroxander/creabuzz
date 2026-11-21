@@ -135,6 +135,13 @@ pub const OPTIONAL_PER_PASS: usize = 3;
 /// 24 hours at most (a replacement of a stuck one is not a new one).
 pub const OPTIONAL_PER_PROJECT_PER_DAY: i64 = 8;
 
+/// The share of the daily gas and spend caps the optional calls may use
+/// together, across every project (a smaller slice inside
+/// [`ROUTINE_SHARE_PERCENT`]). A stranger who launches projects of their own
+/// can make these calls due; whatever they use, the settle that returns a task
+/// and the platform's fee still have the rest of the routine share.
+pub const OPTIONAL_SHARE_PERCENT: u128 = 20;
+
 /// Whether a stored call name is one of the optional calls.
 pub fn is_optional(name: &str) -> bool {
     OPTIONAL_NAMES.contains(&name)

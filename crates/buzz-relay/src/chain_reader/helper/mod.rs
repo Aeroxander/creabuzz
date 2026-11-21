@@ -24,8 +24,10 @@
 //! - **A tighter rule for the last three calls** (rate, the two burns): a
 //!   stranger can open projects and announce grants, so these are limited to
 //!   [`calls::MAX_OPTIONAL_ATTEMPTS`] failed attempts, [`calls::OPTIONAL_PER_PASS`]
-//!   looked at in one pass and [`calls::OPTIONAL_PER_PROJECT_PER_DAY`] sent for
-//!   one project in 24 hours.
+//!   looked at in one pass, [`calls::OPTIONAL_PER_PROJECT_PER_DAY`] sent for
+//!   one project in 24 hours, and together at most
+//!   [`calls::OPTIONAL_SHARE_PERCENT`] of the daily gas and spend caps across
+//!   every project, so the settle and the fee always keep their room.
 
 pub mod calls;
 pub mod plan;
@@ -161,6 +163,38 @@ fn view(signature: &str, args: &[Word]) -> Vec<u8> {
         out.extend_from_slice(a);
     }
     out
+}
+
+/// The reason when `gas` and `reserve` wei would pass the optional calls' own
+/// slice of the daily caps after `used`, else `None`.
+fn optional_share_hit(
+    config: &HelperConfig,
+    used: store::Used,
+    gas: u128,
+    reserve: u128,
+) -> Option<String> {
+    let share = |cap: u128| cap / 100 * calls::OPTIONAL_SHARE_PERCENT;
+    let (gas_share, wei_share) = (share(config.daily_gas), share(config.daily_spend_wei));
+    let over = |used: u128, more: u128, cap: u128| {
+        if more == 0 {
+            used >= cap
+        } else {
+            used.saturating_add(more) > cap
+        }
+    };
+    if over(used.gas, gas, gas_share) {
+        return Some(format!(
+            "the optional calls' share of the daily gas cap ({gas_share}) is reached: {} used",
+            used.gas
+        ));
+    }
+    if over(used.wei, reserve, wei_share) {
+        return Some(format!(
+            "the optional calls' share of the daily spend cap ({wei_share} wei) is reached: {} used",
+            used.wei
+        ));
+    }
+    None
 }
 
 fn margin(estimate: u64) -> u64 {
@@ -517,6 +551,15 @@ impl Helper {
             report.postponed += 1;
             return Ok(Outcome::Next);
         }
+        // The optional calls have a smaller slice of their own: they cannot
+        // use the room the settle and the fee need.
+        if calls::is_optional(&job.call) {
+            if let Some(reason) = self.over_optional_share(pool, reader, 0, 0).await? {
+                store::postpone(pool, job.id, &reason, CAP_PAUSE_SECS).await?;
+                report.postponed += 1;
+                return Ok(Outcome::Next);
+            }
+        }
         let call = match self.check(call, head.1).await {
             Ok(Check::Due(call)) => call,
             Ok(Check::Nothing(reason)) => {
@@ -617,6 +660,18 @@ impl Helper {
                 return Ok(Outcome::Next);
             }
         }
+        if calls::is_optional(&job.call) {
+            let reserve = u128::from(gas_limit).saturating_mul(fees.max_fee_per_gas);
+            if let Some(reason) = self
+                .over_optional_share(pool, reader, gas_limit, reserve)
+                .await?
+            {
+                store::postpone(pool, job.id, &reason, CAP_PAUSE_SECS).await?;
+                report.postponed += 1;
+                tracing::info!(job = %job.key, "chain helper: {reason}; put off");
+                return Ok(Outcome::Next);
+            }
+        }
         let nonce = match self.writer.nonce().await {
             Ok(n) => n,
             Err(e) => return self.node_failed(pool, job, "nonce", e, report).await,
@@ -643,6 +698,26 @@ impl Helper {
         let used = store::used_last_day(pool, reader).await?;
         let reserve = u128::from(gas).saturating_mul(fee);
         Ok(self.cap_hit(used, u128::from(gas), reserve, false))
+    }
+
+    /// `None` when `gas` at a reserve of `reserve` wei fits the optional
+    /// calls' own slice of today's caps (`calls::OPTIONAL_SHARE_PERCENT`),
+    /// else the reason. With nothing asked (`gas` 0) a slice used up exactly
+    /// has no room left.
+    async fn over_optional_share(
+        &self,
+        pool: &PgPool,
+        reader: &str,
+        gas: u64,
+        reserve: u128,
+    ) -> anyhow::Result<Option<String>> {
+        let used = store::optional_used_last_day(pool, reader).await?;
+        Ok(optional_share_hit(
+            &self.config,
+            used,
+            u128::from(gas),
+            reserve,
+        ))
     }
 
     /// `None` when `gas` more and `reserve` more wei fit the caps after
