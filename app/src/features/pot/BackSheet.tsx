@@ -8,13 +8,18 @@ import { QUOTE_TOLERANCE_BPS } from "@creaton/core/pot/pot-plans.ts";
 import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { useAccount } from "../../lib/account";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import type { ProjectNumbers } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import { type BackRead, readBack } from "./back-read";
 import { plannedBackLine } from "./back-tasks";
-import { LINK_CHOICE, LINK_CHOICE_HINT } from "../room/room-words";
+import {
+  LINK_CHOICE,
+  LINK_CHOICE_HINT,
+  LINK_NEEDS_ACCOUNT,
+} from "../room/room-words";
 import {
   canLinkAfterBack,
   useLinkAfterBack,
@@ -85,7 +90,10 @@ export function BackSheet({
   // The link makes the wallet public, so it is a choice in plain sight, made before the Back and never silently afterwards. The
   // box starts unticked (a box that is already ticked is not consent); the room offers the same link as one press where it is needed.
   const [wantLink, setWantLink] = useState(false);
-  const offerLink = canLinkAfterBack(ready.wallet);
+  const { pubkey } = useAccount();
+  // The room link needs an account; with none the box is not offered (a ticked box would do nothing), and one sentence says why.
+  const canLink = canLinkAfterBack(ready.wallet);
+  const offerLink = canLink && pubkey !== null;
   const reading = useQuery({
     queryKey: [
       "pot",
@@ -181,6 +189,14 @@ export function BackSheet({
             You hold {smallDollarsText(good.dollars)} play dollars, which is
             less than the {exactDollarsText(amount)} this needs. Nothing was
             taken. Get more play dollars on the project page, or enter less.
+          </p>
+        ) : null}
+        {canLink && !offerLink ? (
+          <p
+            className="text-sm text-muted"
+            data-testid="back-link-needs-account"
+          >
+            {LINK_NEEDS_ACCOUNT}
           </p>
         ) : null}
         {offerLink ? (

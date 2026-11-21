@@ -173,6 +173,18 @@ describe("draw to an address", () => {
     fireEvent.click(await screen.findByTestId("allowance-draw"));
     await screen.findByTestId("draw-box");
   }
+  it("says one dollar as 'goes', never '1 dollars go'", async () => {
+    await open();
+    fireEvent.change(screen.getByLabelText("Draw to which account?"), {
+      target: { value: TO },
+    });
+    fireEvent.change(screen.getByLabelText("How many dollars?"), {
+      target: { value: "1" },
+    });
+    expect(screen.getByTestId("draw-terms").textContent).toBe(
+      `1 dollar goes from the box to ${TO}.`,
+    );
+  });
   it("sends the account and amount shown, and says them in a sentence first", async () => {
     await open();
     fireEvent.change(screen.getByLabelText("Draw to which account?"), {

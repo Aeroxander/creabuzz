@@ -37,6 +37,9 @@ export const LINK_PUBLIC =
   "This links your wallet to your account. Anyone on this server can see the link, and so can see how many Shares that wallet holds.";
 export const LINK_CHOICE = "Let me write in this project's room";
 export const LINK_CHOICE_HINT = `${LINK_PUBLIC} Leave it unticked to back without it: you can still take your money out any time.`;
+/** Said in the Back sheet in place of the box when nobody is signed in: a link needs an account, and Back does not. */
+export const LINK_NEEDS_ACCOUNT =
+  "To write in this project's room you need an account first. You can back now without one.";
 export const CONFIRM_LABEL = "Confirm this account backs the project";
 export const NO_PHONE_ROOMS =
   "Rooms are not switched on for phone accounts on this server.";

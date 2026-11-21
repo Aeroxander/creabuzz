@@ -204,9 +204,12 @@ test(`Post a task: ${PLAN_V2_BUDGETS.postTask.presses} presses and ${PLAN_V2_BUD
   const stranger = await phone(browser);
   await openTasks(stranger, relay, project, READER_KEY, w.who.stranger);
   await stranger.getByTestId("task-take").click({ timeout: 20_000 });
-  await expect(stranger.getByTestId("task-worker")).toContainText("You", {
-    timeout: 20_000,
-  });
+  await expect(stranger.getByTestId("task-worker")).toContainText(
+    "You have it.",
+    {
+      timeout: 20_000,
+    },
+  );
   expect(tagOf(stepsOf(relay, "take")[0], "task-pay-to")?.toLowerCase()).toBe(
     w.who.stranger,
   );

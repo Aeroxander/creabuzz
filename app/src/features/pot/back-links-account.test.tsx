@@ -22,8 +22,9 @@ vi.mock(
   "../../lib/relay",
   async () => (await import("../../../tests/helpers/money-harness")).relayMock,
 );
+const who = vi.hoisted(() => ({ pubkey: "b".repeat(64) as string | null }));
 vi.mock("../../lib/account", () => ({
-  useAccount: () => ({ pubkey: "b".repeat(64), locked: false }),
+  useAccount: () => ({ pubkey: who.pubkey, locked: false }),
 }));
 vi.mock("@tanstack/react-router", async (actual) => ({
   ...(await actual<object>()),
@@ -40,6 +41,7 @@ const NOW = numbers.builtAt + 100;
 let chain: PotChain;
 
 beforeEach(() => {
+  who.pubkey = "b".repeat(64);
   linked.mockClear();
   applyServerSettings({ investing: true, self: SERVER });
   nameTheNetwork(numbers);
@@ -93,6 +95,20 @@ describe("a Back that lands links the account", () => {
       screen.getByText("Let me write in this project's room"),
     ).toBeTruthy();
     // Left as it was: the Back goes out, and the link is not asked for.
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    await waitFor(() => expect(linked).toHaveBeenCalledTimes(1));
+    expect(linked).toHaveBeenCalledWith(false);
+  });
+
+  it("offers no box to a person with no account, says why in one sentence, and the Back still goes out without a link", async () => {
+    who.pubkey = null;
+    await back();
+    // A ticked box would do nothing for someone with no account: it is not offered, and the sheet says what is needed.
+    expect(screen.queryByTestId("back-link-choice")).toBeNull();
+    expect(screen.getByTestId("back-link-needs-account").textContent).toBe(
+      "To write in this project's room you need an account first. You can back now without one.",
+    );
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(1));
     await waitFor(() => expect(linked).toHaveBeenCalledTimes(1));

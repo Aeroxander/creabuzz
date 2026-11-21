@@ -21,6 +21,7 @@ import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { Field } from "../../ui/field";
 import { parseDollarAmount } from "../money/calls";
+import { dollarsPhrase } from "../money/pot-copy-tasks";
 import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
 import { PotSheet } from "./PotSheet";
 import { PAIR_WORDS, doneWords, runnerSend } from "./runner-calls";
@@ -173,8 +174,9 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
           />
           {send && parsed.ok ? (
             <p className="text-sm" data-testid="draw-terms">
-              {smallDollarsText(parsed.raw)} dollars go from the box to {target}
-              .
+              {dollarsPhrase(parsed.raw)}{" "}
+              {smallDollarsText(parsed.raw) === "1" ? "goes" : "go"} from the
+              box to {target}.
             </p>
           ) : null}
           {send?.through === "pair" ? (

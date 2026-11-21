@@ -145,7 +145,11 @@ export function TaskCard({
               Agent
             </span>
           ) : null}
-          {task.state === "accepted" ? " did this." : " has it."}
+          {task.state === "accepted"
+            ? " did this."
+            : task.worker === me
+              ? " have it."
+              : " has it."}
         </p>
       ) : null}
       {task.handIn && task.state !== "open" ? (
