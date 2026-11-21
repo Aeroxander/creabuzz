@@ -33,6 +33,8 @@ pub struct JobRow {
     pub sent_secs_ago: Option<f64>,
     /// A repeating job (its key names its period).
     pub repeats: bool,
+    /// The project it was built for.
+    pub project_key: Option<Word>,
 }
 
 /// One transaction to remember before it is broadcast.
@@ -81,12 +83,19 @@ fn job_of(r: &sqlx::postgres::PgRow) -> anyhow::Result<JobRow> {
             .transpose()?,
         sent_secs_ago: r.try_get("sent_secs_ago")?,
         repeats: r.try_get("repeats")?,
+        project_key: r
+            .try_get::<Option<Vec<u8>>, _>("project_key")?
+            .map(|k| {
+                k.try_into()
+                    .map_err(|_| anyhow!("stored project key is not 32 bytes"))
+            })
+            .transpose()?,
     })
 }
 
 macro_rules! columns {
     () => {
-        "id, job_key, call, target, args, state, attempts, nonce, tx_hash, repeats, \
+        "id, job_key, call, target, args, state, attempts, nonce, tx_hash, repeats, project_key, \
          extract(epoch FROM now() - sent_at)::float8 AS sent_secs_ago"
     };
 }
@@ -459,6 +468,32 @@ pub async fn reserved_at_nonce(
         gas.parse().context("gas reserved at the nonce")?,
         wei.parse().context("wei reserved at the nonce")?,
     ))
+}
+
+/// Transactions of the optional calls (`calls::OPTIONAL_NAMES`) sent for one
+/// project in the last 24 hours. A replacement at the same nonce is the same
+/// transaction; a send that failed or vanished still counts (it cost gas, or
+/// could have).
+pub async fn optional_sends_last_day(
+    pool: &PgPool,
+    reader: &str,
+    project_key: &Word,
+) -> anyhow::Result<i64> {
+    let names: Vec<String> = super::calls::OPTIONAL_NAMES
+        .iter()
+        .map(|n| (*n).to_owned())
+        .collect();
+    Ok(sqlx::query_scalar(
+        "SELECT count(DISTINCT (s.job_id, s.nonce)) FROM chain_helper_sends s \
+         JOIN chain_helper_jobs j ON j.id = s.job_id \
+         WHERE s.reader = $1 AND j.reader = $1 AND j.project_key = $2 AND j.call = ANY($3) \
+           AND s.sent_at > now() - interval '24 hours'",
+    )
+    .bind(reader)
+    .bind(project_key.as_slice())
+    .bind(&names)
+    .fetch_one(pool)
+    .await?)
 }
 
 /// Forget ended repeating jobs older than five weeks (their period is long

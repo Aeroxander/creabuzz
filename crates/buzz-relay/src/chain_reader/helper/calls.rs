@@ -7,18 +7,27 @@
 //! design (and pinned by the tests): a check-in (the runner's sign of life
 //! must be the runner's), a Take out for anyone, a refund, a draw from the
 //! allowance, a claim of a member's Team Shares, a join, a grant, a rate
-//! change, a wind-down, anything a runner, a Pair or the Launcher's admin signs.
+//! proposal or a lowering, a wind-down (ending a project is a person's press,
+//! also once the quiet time has passed), the burn of the Team Shares nobody
+//! was granted, anything a runner, a Pair or the Launcher's admin signs.
 //! The seven calls of the task book (`announceTask`, `takeTask`, `acceptTask`,
 //! `rejectTask`, `cancelTask`, `returnTask`, `claimNote`) are never here either:
 //! a task that ran out is returned by a plain `settle()`, which moves no one's
 //! money to anyone.
 //!
 //! The stored names (`chain_helper_jobs.call`, whose list the database closes,
-//! migration 0070) are `treasury.collectFees` and `treasury.settle`. A migration
-//! that widens the list is what lets the other calls anyone may make
-//! (`applyRate()`, `Vester.execute(id)`, `Vester.burnAfterWindDown(id)`,
-//! `Treasury.windDown()` after 26 quiet units) be added here: see
-//! `docs/next-version/READER-V2-REPORT.md`.
+//! migrations 0070 and 0075) are `treasury.collectFees`, `treasury.settle`,
+//! `treasury.applyRate`, `vester.execute` and `vester.burnAfterWindDown`.
+//!
+//! The last three close a notice that was already public, once its time has
+//! run and a person has had ten minutes to do it themselves: a proposed
+//! allowance rate (`Treasury.applyRate()`), the announced part of a grant
+//! (`Vester.execute(id)`), and what a grant does not keep after a wind-down
+//! (`Vester.burnAfterWindDown(id)`). A stranger must not be able to make the
+//! helper pay for failing transactions, so these three are held to a tighter
+//! rule than the first two: [`MAX_OPTIONAL_ATTEMPTS`] failed attempts,
+//! [`OPTIONAL_PER_PASS`] looked at in a pass and [`OPTIONAL_PER_PROJECT_PER_DAY`]
+//! sent for one project in a day (see `super::Helper`).
 
 use anyhow::bail;
 use buzz_evm_allowance::abi::selector;
@@ -52,16 +61,94 @@ pub enum HelperCall {
         /// (`TaskBook` `expiresAt`).
         expiry: u64,
     },
+    /// `Treasury.applyRate()`: a proposed rise of the allowance rate whose
+    /// wait of one time unit has ended takes effect (the Treasury settles
+    /// first, at the old rate). Stored as `treasury.applyRate`.
+    TreasuryApplyRate {
+        /// The project's Treasury.
+        treasury: [u8; 20],
+    },
+    /// `Vester.execute(id)`: the part of grant `id` that was announced to burn
+    /// burns, once its notice has run. Stored as `vester.execute`.
+    VesterExecute {
+        /// The project's Vester.
+        vester: [u8; 20],
+        /// The grant's id in the Vester.
+        grant: u64,
+    },
+    /// `Vester.burnAfterWindDown(id)`: after a wind-down and one more time
+    /// unit, what grant `id` does not keep burns. Stored as
+    /// `vester.burnAfterWindDown`.
+    VesterBurnAfterWindDown {
+        /// The project's Vester.
+        vester: [u8; 20],
+        /// The grant's id in the Vester.
+        grant: u64,
+    },
 }
 
 /// Every function signature the helper may call, and nothing else. The tests
 /// compare the selectors [`HelperCall`] can produce with this list exactly.
-pub const ALLOWED: [&str; 2] = ["collectFees()", "settle()"];
+pub const ALLOWED: [&str; 5] = [
+    "collectFees()",
+    "settle()",
+    "applyRate()",
+    "execute(uint256)",
+    "burnAfterWindDown(uint256)",
+];
 
 /// The names stored in `chain_helper_jobs.call` (the database's CHECK list,
-/// migration 0070, allows exactly these and the retired names of the old
+/// migration 0075, allows exactly these and the retired names of the old
 /// contracts' calls, which are only history).
-pub const NAMES: [&str; 2] = ["treasury.collectFees", "treasury.settle"];
+pub const NAMES: [&str; 5] = [
+    "treasury.collectFees",
+    "treasury.settle",
+    "treasury.applyRate",
+    "vester.execute",
+    "vester.burnAfterWindDown",
+];
+
+/// The stored names of the three calls that are optional in the sense that
+/// nobody's money waits on them (a notice closes, a rate takes effect, a
+/// burn runs): these are held to the tighter rule of this module.
+pub const OPTIONAL_NAMES: [&str; 3] = [
+    "treasury.applyRate",
+    "vester.execute",
+    "vester.burnAfterWindDown",
+];
+
+/// How long after a notice has run (a proposed rate's wait, a grant's burn
+/// time, the notice after a wind-down) the helper acts, in seconds (ten
+/// minutes): whoever is there has had that time to do it themselves.
+pub const NOTICE_GRACE_SECS: u64 = 600;
+
+/// Failed attempts after which a job of an optional call ends `failed`
+/// (the first two calls use the configured limit, 8 by default). Each attempt
+/// is checked against the contract's views, `eth_call` and `eth_estimateGas`
+/// before anything is sent, so a failure is a race, not a routine.
+pub const MAX_OPTIONAL_ATTEMPTS: u32 = 3;
+
+/// Jobs of the optional calls looked at in one helper pass at most.
+pub const OPTIONAL_PER_PASS: usize = 3;
+
+/// Transactions of the optional calls the helper sends for one project in any
+/// 24 hours at most (a replacement of a stuck one is not a new one).
+pub const OPTIONAL_PER_PROJECT_PER_DAY: i64 = 8;
+
+/// Whether a stored call name is one of the optional calls.
+pub fn is_optional(name: &str) -> bool {
+    OPTIONAL_NAMES.contains(&name)
+}
+
+/// The failed attempts after which a job of `name` ends `failed`, given the
+/// configured limit.
+pub fn max_attempts_for(name: &str, configured: u32) -> u32 {
+    if is_optional(name) {
+        configured.min(MAX_OPTIONAL_ATTEMPTS)
+    } else {
+        configured
+    }
+}
 
 /// How long after a task's time the helper settles it, in seconds (ten
 /// minutes): the team or a holder who is there has had that time to do it
@@ -77,6 +164,8 @@ pub const ROUTINE_SHARE_PERCENT: u128 = 50;
 pub fn priority_of(name: &str) -> u8 {
     match name {
         "treasury.settle" => 0,
+        "treasury.applyRate" => 2,
+        "vester.execute" | "vester.burnAfterWindDown" => 3,
         _ => 1,
     }
 }
@@ -92,6 +181,21 @@ fn encode(signature: &str) -> Vec<u8> {
     selector(signature).to_vec()
 }
 
+/// The selector of `signature` followed by one `uint256` argument.
+fn encode_id(signature: &str, id: u64) -> Vec<u8> {
+    let mut out = selector(signature).to_vec();
+    out.extend_from_slice(&[0u8; 24]);
+    out.extend_from_slice(&id.to_be_bytes());
+    out
+}
+
+/// The grant id a stored Vester job carries.
+fn grant_of(args: &Value) -> anyhow::Result<u64> {
+    args.get("grant")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| anyhow::anyhow!("grant is not a number"))
+}
+
 impl HelperCall {
     /// The stored name (`<contract>.<function>`).
     pub fn name(&self) -> &'static str {
@@ -100,6 +204,9 @@ impl HelperCall {
             HelperCall::TreasurySettle { .. } | HelperCall::TreasurySettleTasks { .. } => {
                 "treasury.settle"
             }
+            HelperCall::TreasuryApplyRate { .. } => "treasury.applyRate",
+            HelperCall::VesterExecute { .. } => "vester.execute",
+            HelperCall::VesterBurnAfterWindDown { .. } => "vester.burnAfterWindDown",
         }
     }
 
@@ -110,6 +217,9 @@ impl HelperCall {
             HelperCall::TreasurySettle { .. } | HelperCall::TreasurySettleTasks { .. } => {
                 "settle()"
             }
+            HelperCall::TreasuryApplyRate { .. } => "applyRate()",
+            HelperCall::VesterExecute { .. } => "execute(uint256)",
+            HelperCall::VesterBurnAfterWindDown { .. } => "burnAfterWindDown(uint256)",
         }
     }
 
@@ -118,14 +228,23 @@ impl HelperCall {
         match self {
             HelperCall::TreasuryCollectFees { treasury }
             | HelperCall::TreasurySettle { treasury }
-            | HelperCall::TreasurySettleTasks { treasury, .. } => *treasury,
+            | HelperCall::TreasurySettleTasks { treasury, .. }
+            | HelperCall::TreasuryApplyRate { treasury } => *treasury,
+            HelperCall::VesterExecute { vester, .. }
+            | HelperCall::VesterBurnAfterWindDown { vester, .. } => *vester,
         }
     }
 
-    /// The calldata: the selector of [`HelperCall::signature`] (both calls
-    /// take no arguments).
+    /// The calldata: the selector of [`HelperCall::signature`], and for the
+    /// two Vester calls the grant's id as the one argument.
     pub fn calldata(&self) -> Vec<u8> {
-        encode(self.signature())
+        match self {
+            HelperCall::VesterExecute { grant, .. }
+            | HelperCall::VesterBurnAfterWindDown { grant, .. } => {
+                encode_id(self.signature(), *grant)
+            }
+            _ => encode(self.signature()),
+        }
     }
 
     /// The arguments as stored (`chain_helper_jobs.args`); the target is kept
@@ -133,7 +252,11 @@ impl HelperCall {
     pub fn args(&self) -> Value {
         match self {
             HelperCall::TreasurySettleTasks { expiry, .. } => json!({ "taskExpiry": expiry }),
-            _ => json!({}),
+            HelperCall::VesterExecute { grant, .. }
+            | HelperCall::VesterBurnAfterWindDown { grant, .. } => json!({ "grant": grant }),
+            HelperCall::TreasuryCollectFees { .. }
+            | HelperCall::TreasurySettle { .. }
+            | HelperCall::TreasuryApplyRate { .. } => json!({}),
         }
     }
 
@@ -150,6 +273,15 @@ impl HelperCall {
                         .as_u64()
                         .ok_or_else(|| anyhow::anyhow!("taskExpiry is not a second"))?,
                 },
+            },
+            "treasury.applyRate" => HelperCall::TreasuryApplyRate { treasury: target },
+            "vester.execute" => HelperCall::VesterExecute {
+                vester: target,
+                grant: grant_of(args)?,
+            },
+            "vester.burnAfterWindDown" => HelperCall::VesterBurnAfterWindDown {
+                vester: target,
+                grant: grant_of(args)?,
             },
             other => bail!("unknown helper call {other:?}"),
         })
@@ -168,6 +300,12 @@ impl HelperCall {
         match self {
             HelperCall::TreasuryCollectFees { .. } => &["NothingToPay()"],
             HelperCall::TreasurySettle { .. } | HelperCall::TreasurySettleTasks { .. } => &[],
+            // Another caller applied it, or the project was wound down, since
+            // the views were read (a proposal pending was just seen).
+            HelperCall::TreasuryApplyRate { .. } => &["AlreadyWoundDown()", "BadInput()"],
+            // Someone else burned it first.
+            HelperCall::VesterExecute { .. } => &["WrongState()"],
+            HelperCall::VesterBurnAfterWindDown { .. } => &["WrongState()", "ProtectedGrant()"],
         }
     }
 }

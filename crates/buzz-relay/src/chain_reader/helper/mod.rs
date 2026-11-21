@@ -1,6 +1,9 @@
 //! The helper job: sends the calls anyone may make so that nobody has to
-//! press them: collecting the platform's fee, and settling a project once the
-//! outside money paid in has all arrived.
+//! press them: collecting the platform's fee, settling a project once the
+//! outside money paid in has all arrived (or a task has run out), applying a
+//! proposed allowance rate once its wait has ended, and burning what a grant
+//! does not keep once its notice has run (announced, or after a wind-down).
+//! Winding a project down is never sent: that is a person's press.
 //!
 //! - **What:** a closed list of calls ([`calls::HelperCall`]), among them the
 //!   settle of a task that ran out ten minutes ago; never a
@@ -18,6 +21,11 @@
 //!   mined), a growing pause after each failed attempt and a terminal
 //!   `failed` state after the limit. Only the replica holding the writer lock
 //!   runs it (see `ChainReader::pass`).
+//! - **A tighter rule for the last three calls** (rate, the two burns): a
+//!   stranger can open projects and announce grants, so these are limited to
+//!   [`calls::MAX_OPTIONAL_ATTEMPTS`] failed attempts, [`calls::OPTIONAL_PER_PASS`]
+//!   looked at in one pass and [`calls::OPTIONAL_PER_PROJECT_PER_DAY`] sent for
+//!   one project in 24 hours.
 
 pub mod calls;
 pub mod plan;
@@ -40,7 +48,7 @@ use plan::PlanContext;
 use store::{JobRow, SendRow, Used};
 use writer::{CallError, ChainWriter, Fees, Receipt, SendError, TxRequest};
 
-use super::word::{hex0x, word_to_u128, Word};
+use super::word::{hex0x, word_to_address, word_to_u128, Word};
 
 /// Jobs checked per pass at most.
 pub const JOBS_PER_PASS: usize = 10;
@@ -136,6 +144,17 @@ fn uint(data: &[u8], index: usize) -> anyhow::Result<u128> {
         .ok_or_else(|| anyhow!("view answer too short or too large"))
 }
 
+/// The Vester's `State::Live` and `State::Announced`, as `grantOf` answers.
+const GRANT_LIVE: u128 = 0;
+const GRANT_ANNOUNCED: u128 = 1;
+
+/// One `uint256` argument.
+fn id_word(id: u64) -> Word {
+    let mut w = [0u8; 32];
+    w[24..].copy_from_slice(&id.to_be_bytes());
+    w
+}
+
 fn view(signature: &str, args: &[Word]) -> Vec<u8> {
     let mut out = selector(signature).to_vec();
     for a in args {
@@ -203,12 +222,49 @@ impl Helper {
 
         // Ordered in SQL (the settle before the fee).
         let due = store::due_jobs(pool, reader, JOBS_PER_PASS as i64).await?;
+        let mut optional = 0;
         for job in due {
+            // The optional calls are looked at a few at a time; the rest wait
+            // for the next pass (they stay pending, nothing is counted).
+            if calls::is_optional(&job.call) {
+                if optional >= calls::OPTIONAL_PER_PASS {
+                    continue;
+                }
+                // A project that has had its calls for the day is put off
+                // without using one of the pass's few places.
+                if self.project_has_had_its_share(pool, reader, &job).await? {
+                    store::postpone(
+                        pool,
+                        job.id,
+                        "this project has had its calls of this kind for the day",
+                        CAP_PAUSE_SECS,
+                    )
+                    .await?;
+                    report.postponed += 1;
+                    continue;
+                }
+                optional += 1;
+            }
             if let Outcome::Stop = self.run(pool, reader, &job, head, &mut report).await? {
                 break;
             }
         }
         Ok(report)
+    }
+
+    /// Whether `calls::OPTIONAL_PER_PROJECT_PER_DAY` transactions of the
+    /// optional calls were sent for the job's project in the last 24 hours.
+    async fn project_has_had_its_share(
+        &self,
+        pool: &PgPool,
+        reader: &str,
+        job: &JobRow,
+    ) -> anyhow::Result<bool> {
+        let Some(project) = &job.project_key else {
+            return Ok(false);
+        };
+        let sent = store::optional_sends_last_day(pool, reader, project).await?;
+        Ok(sent >= calls::OPTIONAL_PER_PROJECT_PER_DAY)
     }
 
     async fn build(
@@ -232,19 +288,42 @@ impl Helper {
         store::upsert_jobs(pool, reader, &jobs, block).await
     }
 
+    async fn view_answer(&self, target: &[u8; 20], data: Vec<u8>) -> Result<Vec<u8>, Failure> {
+        match self.writer.call(target, &data).await {
+            Ok(answer) => Ok(answer),
+            Err(CallError::Reverted(d)) => {
+                Err(Failure::Job(format!("a view reverted: {}", short(&d))))
+            }
+            Err(CallError::Unavailable(e)) => Err(Failure::Node(e)),
+        }
+    }
+
     async fn view_uint(
         &self,
         target: &[u8; 20],
         data: Vec<u8>,
         index: usize,
     ) -> Result<u128, Failure> {
-        match self.writer.call(target, &data).await {
-            Ok(answer) => uint(&answer, index).map_err(job_failure),
-            Err(CallError::Reverted(d)) => {
-                Err(Failure::Job(format!("a view reverted: {}", short(&d))))
-            }
-            Err(CallError::Unavailable(e)) => Err(Failure::Node(e)),
-        }
+        let answer = self.view_answer(target, data).await?;
+        uint(&answer, index).map_err(job_failure)
+    }
+
+    /// Whether the Treasury at `treasury` was wound down and one more time unit
+    /// with ten minutes of grace has passed at `head_time` (the Vester's own
+    /// rule, `_requireNoticeOver`, plus the grace).
+    async fn wind_down_notice_over(
+        &self,
+        treasury: &[u8; 20],
+        head_time: u64,
+    ) -> Result<bool, Failure> {
+        let kind = self
+            .view_uint(treasury, view("windDownKind()", &[]), 0)
+            .await?;
+        let at = self
+            .view_uint(treasury, view("windDownAt()", &[]), 0)
+            .await?;
+        let unit = self.view_uint(treasury, view("unit()", &[]), 0).await?;
+        Ok(kind != 0 && u128::from(head_time) >= at + unit + u128::from(calls::NOTICE_GRACE_SECS))
     }
 
     /// Whether the call would still do something at the head, read from the
@@ -274,6 +353,62 @@ impl Helper {
                     Check::Due(call.clone())
                 } else {
                     Check::Nothing("no outside money has finished arriving".into())
+                }
+            }
+            // A rate proposed and not applied, whose wait ended ten minutes
+            // ago, in a project not wound down.
+            HelperCall::TreasuryApplyRate { .. } => {
+                let kind = self
+                    .view_uint(&target, view("windDownKind()", &[]), 0)
+                    .await?;
+                let at = self.view_uint(&target, view("pendingAt()", &[]), 0).await?;
+                let unit = self.view_uint(&target, view("unit()", &[]), 0).await?;
+                if kind == 0
+                    && at != 0
+                    && u128::from(head_time) >= at + unit + u128::from(calls::NOTICE_GRACE_SECS)
+                {
+                    Check::Due(call.clone())
+                } else {
+                    Check::Nothing("no proposed rate has waited its time out".into())
+                }
+            }
+            // A grant announced to burn whose notice ran out ten minutes ago.
+            // `grantOf` is a static struct: member, protected, state, burnAt,
+            // total, claimed, start, burn.
+            HelperCall::VesterExecute { grant, .. } => {
+                let answer = self
+                    .view_answer(&target, view("grantOf(uint256)", &[id_word(*grant)]))
+                    .await?;
+                let state = uint(&answer, 2).map_err(job_failure)?;
+                let burn_at = uint(&answer, 3).map_err(job_failure)?;
+                if state == GRANT_ANNOUNCED
+                    && u128::from(head_time) >= burn_at + u128::from(calls::NOTICE_GRACE_SECS)
+                {
+                    Check::Due(call.clone())
+                } else {
+                    Check::Nothing("the grant has no announced burn that is due".into())
+                }
+            }
+            // A grant still live and not protected, in a project wound down
+            // more than a time unit ago.
+            HelperCall::VesterBurnAfterWindDown { grant, .. } => {
+                let answer = self
+                    .view_answer(&target, view("grantOf(uint256)", &[id_word(*grant)]))
+                    .await?;
+                let protected = uint(&answer, 1).map_err(job_failure)?;
+                let state = uint(&answer, 2).map_err(job_failure)?;
+                if state != GRANT_LIVE || protected != 0 {
+                    Check::Nothing("the grant is closed, announced or protected".into())
+                } else {
+                    let treasury = self.view_answer(&target, view("treasury()", &[])).await?;
+                    let treasury = word(&treasury, 0)
+                        .map(|w| word_to_address(&w))
+                        .ok_or_else(|| job_failure(anyhow!("treasury() answered too short")))?;
+                    if self.wind_down_notice_over(&treasury, head_time).await? {
+                        Check::Due(call.clone())
+                    } else {
+                        Check::Nothing("the wind-down notice has not run out".into())
+                    }
                 }
             }
             // A task still open whose time ran out ten minutes ago: the
@@ -307,7 +442,7 @@ impl Helper {
             job.id,
             error,
             pause_after(job.attempts),
-            self.config.max_attempts,
+            calls::max_attempts_for(&job.call, self.config.max_attempts),
         )
         .await?;
         if ended {
@@ -813,5 +948,7 @@ impl Helper {
     }
 }
 
+#[cfg(test)]
+mod optional_postgres_tests;
 #[cfg(test)]
 mod postgres_tests;

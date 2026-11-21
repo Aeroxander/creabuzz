@@ -22,6 +22,15 @@ pub(crate) fn every_call() -> Vec<HelperCall> {
             treasury: T,
             expiry: 1_800_000_000,
         },
+        HelperCall::TreasuryApplyRate { treasury: T },
+        HelperCall::VesterExecute {
+            vester: T,
+            grant: 3,
+        },
+        HelperCall::VesterBurnAfterWindDown {
+            vester: T,
+            grant: 7,
+        },
     ]
 }
 
@@ -29,14 +38,18 @@ fn exhaustive(call: &HelperCall) {
     match call {
         HelperCall::TreasuryCollectFees { .. }
         | HelperCall::TreasurySettle { .. }
-        | HelperCall::TreasurySettleTasks { .. } => {}
+        | HelperCall::TreasurySettleTasks { .. }
+        | HelperCall::TreasuryApplyRate { .. }
+        | HelperCall::VesterExecute { .. }
+        | HelperCall::VesterBurnAfterWindDown { .. } => {}
     }
 }
 
 /// Calls the helper must never be able to send: the check-in (the runner's
 /// sign of life), a take-out, a refund, a draw from the allowance, a claim of
-/// Team Shares for a member, joining, granting, forfeits, the rate, the door,
-/// the seat, a wind-down, the agents, a Pair's calls, the Launcher admin's,
+/// Team Shares for a member, joining, granting, announcing a forfeit, proposing
+/// or lowering the rate, the door, the seat, a wind-down, the burn of Team
+/// Shares nobody was granted, the agents, a Pair's calls, the Launcher admin's,
 /// and plain token moves. Each of these is a call of contracts/pot.
 pub(crate) const FORBIDDEN: &[&str] = &[
     "checkIn(bytes32)",
@@ -47,11 +60,8 @@ pub(crate) const FORBIDDEN: &[&str] = &[
     "claim(uint256)",
     "grantTeam(address,uint256)",
     "announceForfeit(uint256)",
-    "execute(uint256)",
-    "burnAfterWindDown(uint256)",
     "burnUngrantedAfterWindDown()",
     "proposeRate(uint32)",
-    "applyRate()",
     "setRate(uint32)",
     "setDoor(bool)",
     "setAgent(address,uint128,uint128)",
@@ -99,7 +109,8 @@ fn the_calls_produce_exactly_the_allowed_selectors() {
     let produced: BTreeSet<[u8; 4]> = calls.iter().map(selector_of).collect();
     let allowed: BTreeSet<[u8; 4]> = ALLOWED.iter().map(|s| selector(s)).collect();
     assert_eq!(produced, allowed);
-    // Each call's selector is its own signature's, and takes no arguments.
+    // Each call's selector is its own signature's; the Vester's two take one
+    // number (the grant), the other three none.
     for call in &calls {
         assert_eq!(
             selector_of(call),
@@ -107,10 +118,11 @@ fn the_calls_produce_exactly_the_allowed_selectors() {
             "{}",
             call.name()
         );
+        let takes_grant = call.signature().ends_with("(uint256)");
         assert_eq!(
             call.calldata().len(),
-            4,
-            "{} takes no arguments",
+            if takes_grant { 36 } else { 4 },
+            "{}",
             call.name()
         );
     }
@@ -131,8 +143,71 @@ fn no_call_moves_money_by_choice_checks_in_or_signs_for_a_runner() {
         );
         assert!(!ALLOWED.contains(signature), "{signature} is allowed");
     }
-    // The two it may send are the only two, and they are the ones nobody's money waits on.
-    assert_eq!(ALLOWED, ["collectFees()", "settle()"]);
+    // These five are the only ones, and they are the ones nobody's money waits on.
+    assert_eq!(
+        ALLOWED,
+        [
+            "collectFees()",
+            "settle()",
+            "applyRate()",
+            "execute(uint256)",
+            "burnAfterWindDown(uint256)"
+        ]
+    );
+    // Ending a project is a person's press, also once the quiet time has passed.
+    assert!(FORBIDDEN.contains(&"windDown()"));
+    assert!(FORBIDDEN.contains(&"burnUngrantedAfterWindDown()"));
+}
+
+/// The grant's id is one 32-byte number after the selector, and a stored job
+/// reads back to the same call; a stored job without a number ends instead of
+/// sending a call on grant zero.
+#[test]
+fn the_two_vester_calls_carry_the_grant_as_one_number_and_read_back() {
+    let call = HelperCall::VesterExecute {
+        vester: T,
+        grant: 0x0102,
+    };
+    let data = call.calldata();
+    assert_eq!(&data[..4], selector("execute(uint256)").as_slice());
+    assert_eq!(data[4..34], [0u8; 30]);
+    assert_eq!((data[34], data[35]), (0x01, 0x02));
+    assert_eq!(call.args(), json!({ "grant": 258u64 }));
+    for bad in [json!({}), json!({"grant": "3"}), json!({"grant": -1})] {
+        for name in ["vester.execute", "vester.burnAfterWindDown"] {
+            assert!(HelperCall::parse(name, T, &bad).is_err(), "{name} {bad}");
+        }
+    }
+    assert_eq!(
+        HelperCall::parse("vester.burnAfterWindDown", T, &json!({"grant": 7})).expect("reads"),
+        HelperCall::VesterBurnAfterWindDown {
+            vester: T,
+            grant: 7
+        }
+    );
+}
+
+/// The three optional calls are the ones held to the tighter rule, and only
+/// those: the limit on failed attempts cannot be raised above it by a setting.
+#[test]
+fn the_optional_calls_have_the_tighter_attempt_limit() {
+    for call in every_call() {
+        let optional = matches!(
+            call,
+            HelperCall::TreasuryApplyRate { .. }
+                | HelperCall::VesterExecute { .. }
+                | HelperCall::VesterBurnAfterWindDown { .. }
+        );
+        assert_eq!(is_optional(call.name()), optional, "{}", call.name());
+        assert_eq!(
+            max_attempts_for(call.name(), 8),
+            if optional { MAX_OPTIONAL_ATTEMPTS } else { 8 },
+            "{}",
+            call.name()
+        );
+    }
+    // A setting below the limit is kept.
+    assert_eq!(max_attempts_for("vester.execute", 2), 2);
 }
 
 /// The forbidden list names real functions of contracts/pot (an entry that is
@@ -256,6 +331,7 @@ fn stored_calls_read_back_and_unknown_ones_are_refused() {
         ("treasury.checkIn", json!({})),
         ("treasury.draw", json!({})),
         ("treasury.leave", json!({})),
+        ("treasury.windDown", json!({})),
         ("raw", json!({"data": "0x12345678"})),
     ] {
         let err = HelperCall::parse(name, T, &args).expect_err("unknown call");

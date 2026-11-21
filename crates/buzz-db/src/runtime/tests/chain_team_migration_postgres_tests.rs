@@ -241,6 +241,32 @@ async fn migration_0070_gives_the_team_token_its_role_balances_their_token_and_t
         ))
         .await
     );
+    // Migration 0075: the three more calls anyone may make are written by the helper; ending a
+    // project (`Treasury.windDown()`) is a person's press and is never a stored call.
+    for (n, call) in [
+        "treasury.applyRate",
+        "vester.execute",
+        "vester.burnAfterWindDown",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        assert!(
+            accepted(format!(
+                "INSERT INTO chain_helper_jobs (reader, job_key, call, target, args, due_block) \
+                 VALUES ('r3', 'more{n}', '{call}', {launcher}, '{{}}', 1)"
+            ))
+            .await,
+            "{call} is a call the helper may store"
+        );
+    }
+    assert!(
+        !accepted(format!(
+            "INSERT INTO chain_helper_jobs (reader, job_key, call, target, args, due_block) \
+             VALUES ('r3', 'k3', 'treasury.windDown', {launcher}, '{{}}', 1)"
+        ))
+        .await
+    );
 
     drop_scratch_db(&admin, pool, &name).await;
 }
