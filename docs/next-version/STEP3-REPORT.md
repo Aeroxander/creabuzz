@@ -25,7 +25,7 @@ Companion pages: the plan (`STEP3-PLAN.md`), the record's one specification (`RE
 | Server: alerts and the fee limit (P3) | web push, off unless the operator sets a key and a contact: subscriptions kept by a signed call, an alert maker that starts at the chain's position (never the history), a sender with backoff, a terminal state and a pause when the service refuses the operator's key; encryption per RFC 8291 and 8292 proved against the RFCs' own vectors; a daily limit on sponsored fees that never counts or refuses a way out | `crates/buzz-relay/src/web_push`, `api/sponsor*` |
 | App: the page (A1) | the banner "You can take your money out any time. Nothing here promises a profit." on every page and sheet, once; the project page in the order name, money with "This can go up or down. It is not a return.", what taking out now would give, play money, banner, then Back and Share; the share sheet and a picture drawn on the device; the Established chip and its sheet; "Money that stayed" on Home from the server's one index | `app/src/features/{project,home,money,pot}`, `app/src/app` |
 | App: the feed (A2) | "Lately": the team's items, "Last 2 days: 2 backed, 1 took out.", one net sentence, hours behind a press; and "You have held it for N weeks", worked out on the device from the person's own transfers | `app/src/features/{feed,pot}` |
-| App: the room (A3) | the room tab (anyone reads; who may write is shown from the same rules the server applies), composer with "Posts and votes are public.", cards with author-named actions, report, hide with Undo and "Hidden people", team remove and stop, perks, the "New" dot, and Back ending by linking the account to the wallet (a phone account signs the link with its passkey) | `app/src/features/{room,posts,team}` |
+| App: the room (A3) | the room tab (anyone reads; who may write is shown from the same rules the server applies), composer with "Posts and votes are public.", cards with author-named actions, report, hide with Undo and "Hidden people", team remove and stop, perks, the "New" dot, and the wallet link: a box in Back (unticked until the person ticks it) or one press in the room, each signed by the wallet (a phone account signs it with its passkey) (changed in the follow-up round) | `app/src/features/{room,posts,team}` |
 | App: seasons and alerts (A4) | the season band on Home (enter and leave by the team), the demo day page (24 at a time, a hash order that is never money), the alerts card on You, the worker's three fixed sentences | `app/src/features/{season,alerts}`, `app/public/sw.js` |
 | This package (A5) | the three joined-up journeys against a real relay and a real chain, the cross-language check, the passkey link proven on the real account contract, this report | `app/tests/e2e-pot-full`, `scripts` |
 
@@ -35,8 +35,7 @@ Companion pages: the plan (`STEP3-PLAN.md`), the record's one specification (`RE
    with no account and no wallet opens its link: name, "This can go up or down. It is not a return." under the money, what taking out now
    would give for each Share, the play-money line, the banner once word for word, exactly one Back box, all in view on the first phone
    screen; Share gives the project's own link and a picture whose description has no amount or gain; the server's own link preview names
-   the project and carries no amount. Two people back it in the app (each Back ends by linking the account to its wallet with no extra
-   screen) and one takes out. The feed reads "Last 2 days: 2 backed, 1 took out." and "About 100 dollars more came in than went out.";
+   the project and carries no amount. Two people back it in the app (one ticks the box that links the account to the wallet, the other leaves it unticked and meets the same link as one press in the room; changed in the follow-up round) and one takes out. The feed reads "Last 2 days: 2 backed, 1 took out." and "About 100 dollars more came in than went out.";
    every amount in the record is a whole 100 dollars; no name, no address, no "volume"; joins and take-outs have the very same classes.
    An account with no linked wallet and a stranger are refused in the server's own words; the two holders write (Control+Enter), a
    visitor reads both, the team removes one post (the server stops serving it) and sets perks (every other tag of the project record
@@ -101,6 +100,8 @@ built from HEAD's Rust (the binary is newer than every Rust source except one te
 | `packages/creaton-core`: `pnpm test` (not changed by this package) | 1,239 tests, 1,238 passed, 0 failed, 1 skipped |
 | `cd web && pnpm check:unused` (knip) | no findings |
 | Playwright `smoke` project, `--trace off`, a random port, the real anvil | 127 listed, **126 passed, 0 failed, 1 skipped** (`pot-phone`, which skips in this build), in 8.8 minutes |
+
+(These are the first package's numbers; the follow-up round's are in "Follow-up round".)
 
 Not run in this package: `cargo` anything (no Rust file was changed here; the relay and `buzz` binaries are those built from HEAD's Rust, and
 the Rust test counts are in the server reports above), `just ci`.
@@ -222,10 +223,8 @@ What you need on the computer: Foundry (`anvil`, `cast`, `forge`), Node and pnpm
    network and the dollars are play money, the banner "You can take your money out any time. Nothing here promises a profit.", and a box
    "Back this project" with an amount and a Back button, all without scrolling on a phone. Press **Share**: the project's link, a Copy press
    and a picture with the name and nothing about money.
-4. Open the **Room** tab: "Anyone can read this room. Only people who back the project can write here." and no place to write.
-5. Sign up, get play dollars, Back with 25. After the second press, wait a few seconds: the app asks the wallet to sign **once more** (this
-   confirms that your account is the wallet's) and then the Room tab offers a place to write under "Posts and votes are public." Write
-   something. Another browser with no account can read it.
+4. Open the **Room** tab: "Anyone can read this room." and, once, "Only people who back this project can write here." with a Back press, and no place to write.
+5. Sign up, get play dollars, Back with 25. In the Back sheet the box "Let me write in this project's room" starts **unticked**. Tick it and press Back: after the second press, wait a few seconds: the app asks the wallet to sign **once more** (this confirms that your account is the wallet's) and then the Room tab offers a place to write under "Posts and votes are public." Write something. Another browser with no account can read it. (Leave the box unticked instead and the Room tab shows, where the writing box would be, the sentence that says the link is public and one press, "Confirm this account backs the project"; the wallet signs once and the writing box opens.)
 6. Under the money, **Lately** reads "Last 2 days: N backed, M took out." (N counts the project's first backing too) and a sentence about
    how much more came in than went out, with "Amounts are rounded to the nearest 100 dollars. No names are shown." Nobody is named.
 7. Press **Take out**. The room still lets you write for one time unit ("You took out ... You can write here for ... more"). A unit is a
@@ -305,7 +304,7 @@ The page's top, card, feed, ranking (reviews "page" and "fit"):
   short plain number such as "Studio 54"; a line may keep none). A name that fails is drawn as "A new project", and the system-share
   title and text use the same filtered name. `share-card.ts`; tests in `share-card.test.ts` (eight hostile names, seven hostile lines,
   the plain ones kept).
-- **A stale record's run of updates on the picture (page I1).** The run is only said for a record not past a day. Test: a 90-day-old
+- **A stale record's run of check-ins on the picture (page I1; called "updates" until the follow-up round).** The run is only said for a record not past a day. Test: a 90-day-old
   record gives no fact.
 - **"About as much came in as went out" (page I2, fit R3).** The server rounds each hour on its own, so the sum of the hours is not a
   net. When any hour with a join or a take-out rounded to nothing, the line now says "Some amounts were too small to show, so there is no
@@ -318,10 +317,10 @@ The page's top, card, feed, ranking (reviews "page" and "fit"):
 - **The "Open to back" chip against the Back box (page I5).** The chip asks the same question as the box, for the same moment
   (`doorChip(numbers, now)`).
 - **"weeks" said for any unit (page I6).** `unitCount` says weeks only for a 604,800-second unit and otherwise the unit's own length
-  ("14 periods of 28 minutes"), on the page's update line and the card.
+  ("14 periods of 28 minutes"), on the page's check-in line and the card.
 - **"The link shows no amounts" (page I7).** The server's preview carries the founder's own words, so the sheet now says "The link shows
   only what the founder wrote."
-- **Cross-checks of the four keys (page O1).** A run of updates longer than the project has lived, money that stayed above all of the
+- **Cross-checks of the four keys (page O1).** A run of check-ins longer than the project has lived, money that stayed above all of the
   project's money, a badge whose inputs are not `held`'s own figures, and (Home) an index whose entries have different windows are each
   not believed (the part is null; the money is untouched). Tests in `numbers-social.test.ts` and `ranking.test.ts`.
 - **A planned task's "You can take your money out first" after its date (page O3).** Said only while the notice runs.
@@ -363,7 +362,7 @@ The room, the link and sign-out (reviews "social" and "fit"):
   the kept line was reworded by I3; the rest is taste and changes nothing the design asks for.
 - **Held-since line says "weeks" for any unit (page I6, third place).** Step 2 decided and tested on the real chain that a unit is "the
   project's week" in that one line (`held-since.test.ts`, `tests/anvil/held-since.test.ts`, `pot-feed.spec.ts`); the new step 3
-  sentences (the update line and the card) use the exact unit. The two now differ on a test network; changing the older one is a copy
+  sentences (the check-in line and the card) use the exact unit. The two now differ on a test network; changing the older one is a copy
   decision for the owner.
 - **Social O4** (the worker drops a malformed push without showing): the server's messages are well formed, the plan fixes the three
   sentences, and a worker that showed a notice for an unreadable message would turn any garbage into an alert; a test holds the drop.
@@ -390,8 +389,7 @@ The room, the link and sign-out (reviews "social" and "fit"):
 
 ### Chosen under the owner's standing go; the owner may overrule
 
-- **The wallet link tick box starts ticked.** Back is as fast as before, and the sentence is next to the box, but the default
-  publishes a link. Unticked by default would be the safest; the cost is one more press in the room for most holders.
+- **The wallet link tick box starts ticked.** (Overruled by the follow-up round: the box now starts unticked, and the room offers the link as one press; see "Follow-up round".) Back is as fast as before, and the sentence is next to the box, but the default publishes a link. Unticked by default would be the safest; the cost is one more press in the room for most holders.
 - **Money that stayed is "about N dollars", to the nearest 100, on the page and on Home**, so a one-person project says nothing exact.
   A project with less than 50 dollars kept says "under 100 dollars".
 - **A feed with any other rounding than 100 dollars is not drawn at all** (a constant in the app; a server that changes it needs the app changed).
@@ -406,11 +404,170 @@ Each line was removed alone, the named tests run, and the file put back; every o
 - Counting the linked wallet before the connected one (2 of 11): `use-room-standing.test.tsx`. The "could not check" standing (3 of 22): `room-standing.test.ts`, `use-room-standing.test.tsx`.
 - The like's in-flight check (1 of 9), the account in the draft's key (1 of 9), the hide-list notice (1 of 9): `room-fixes.test.tsx`. The account in the "New" key (2 of 4): `use-room-news.test.tsx`.
 - Turning the device's alerts off before sign-out (1 of 2): `sign-out-alerts.test.tsx`. Passing the person's tick to the link (1 of 3): `back-links-account.test.tsx`.
-- The filtered name on the card (1 of 10), the freshness of the run of updates (2 of 10), the money-and-multiple words (2 of 10): `share-card.test.ts`.
+- The filtered name on the card (1 of 10), the freshness of the run of check-ins (2 of 10), the money-and-multiple words (2 of 10): `share-card.test.ts`.
 - The "no total" sentence (3 of 21), the date of a planned task (1 of 8): `feed-words.test.ts`, `ProjectFeed.test.tsx`.
 - The feed's 100-dollar rounding (1 of 22), one bucket apart (1 of 22), the run longer than the project's life (1 of 22), the badge's inputs equal to `held` (1 of 22): `numbers-social.test.ts`.
 - The chip agreeing with the box (1 of 20), the rounded kept money (2 of 20), the unit's own length (2 of 20): `project-top-words.test.ts`. One window per ranking index (1 of 12): `ranking.test.ts`.
 - The chunk boundary around the Back box (1 of 1): `chunk-failed.test.tsx`.
+
+## Follow-up round (the verifiers' "important" findings, A1 to A6)
+
+Branch `v6`, 20 and 21 November 2026. Two independent verifiers read steps 1 to 3 (pushed at `693ef69c2`) and found no blocker; this
+round closes their "important" findings and nothing else (no new feature). It is the app engineer's (TypeScript only: `app/`, one
+loop script). Nothing is pushed. **No person has tested any of this; every run below was made by an agent, and the human test of
+section 9 is still the owner's** (its steps 4 and 5 are corrected in place). The relay binary the loops used was built at 23:38 on 20
+November from the working tree of that moment (HEAD's Rust at the time, `4fd556785`, plus the server engineer's uncommitted edits to
+three `crates/buzz-relay` files, which no app journey touches). The legal line, quoted as it stands: "Buyers acquire ownership only:
+governance and exit. No dividends or revenue share, ever, unless they contribute and earn one."
+
+### What was closed
+
+**A1. The news line on You.** "News shows here when you open the app; nothing is sent to your phone yet." is now said only where the
+server offers no alerts (no push key). Where it does, You says only "A planned task waits at least 14 days before any money can move,
+so open the app at least every 7 days." (`NEWS_NOT_SENT` and `NEWS_WEEK` in `alert-words.ts`; `NewsSection.tsx`). Two tests, one for
+each server (`news-section.test.tsx`). Commit `221cbb20f`.
+
+**A2. "Update" meant two things.** Read from the record and the code: the project page's "Last update just now. Updates: 1 week in a
+row." counts the team's **check-ins on the network** (`clock.lastCheckIn`, `streaks.updates.{lastAt,weeks}`: the weekly mark that keeps
+the door open), while the demo-day card's "No update yet." and the Updates tab count what the team **wrote** (kind 47003 posts by
+people who speak for the project, not asks, answers, goals, season entries or room stops). They are linked (the weekly press in This
+week writes an update and checks in together, and the check-in carries that update's id) but not the same: a check-in can carry none,
+and a post needs no check-in. So the bug was in the words of the first, not in the card. Now: the check-in is called a **check-in**
+everywhere (the Money tab and the allowance already said so): "Last check-in just now. Check-ins: 1 week in a row." and "No check-in
+yet." on the page, "N weeks of check-ins in a row" on the share card, "The team checked in." in Lately, and "This task cannot be taken
+unless the team checks in before ..." (it said "weekly update (its check-in)"); and **update** is only the written one: the Updates tab,
+the demo-day card ("Last update ...", "No update yet."), the room's team notices. Home shows neither. A test holds that no check-in
+line says "update" (`project-top-words.test.ts`); copy tests and the specs' expected words follow. Commit `f7881c0ea`.
+
+**A3. The joined-up season journey (found, not a longer wait).** See "A3 in detail" below. Commits `ba7c18c56` (the journeys' own
+helper), `b9376983b` (the band's list and the loop script).
+
+**A4. Three guards that no test held.** Each now has a test on the production path, and each was switched off once and its test
+failed (table below). Commits `fecef5f97`, `1825c24df`.
+- a) The banner "You can take your money out any time. Nothing here promises a profit." and "This can go up or down. It is not a
+  return." are compared with their literal words (`app/tests/helpers/legal-words.ts`) on the shell's banner, a money sheet, the
+  project page's top, Home's ranking, the demo-day page and the feed's page, and the share picture (the tests compared the constant
+  with itself).
+- b) `text-only.test.tsx`: "<img src=x onerror=alert(1)>" and "<b>bold</b>" posted as a room post, an answer, a team notice, an
+  update on the Updates tab and the demo-day card's update show as written, and the document has no `img`, `b` or `script` element.
+  (The Lately feed draws no written text of anyone: its sentences are fixed.)
+- c) `numbers-social.test.ts`: a feed with one hour missing, or with the first twenty hours half a bucket early (one pair one and a
+  half buckets apart, the order, the last hour and every amount right), is not believed; the same list with every pair exact is.
+
+**A5. The wallet-link box starts unticked.** `BackSheet.tsx`: `useState(false)`; the box's sentence and its hint are unchanged word
+for word. Linking later is possible with what is built: a holder who did not tick it meets, where the writing box would be, "To tell
+that you back this project, the server needs this account confirmed.", the sentence that says the link is public, and one press
+("Confirm this account backs the project") that works for a wallet that already holds Shares (the room counts the connected wallet
+for that offer, and a linked wallet once it is linked). Tests: `back-links-account.test.tsx` (starts unticked; Back without the tick
+links nothing; with it, once), `unticked-path.test.tsx` (the real room, a wallet that holds the floor of Shares, no link: sentence,
+press, press, writing box). The loops: the journeys' Back helper (`backInApp`) checks the box starts unticked and ticks it unless
+told not to; in `pot-room.spec.ts` (real relay, real chain) Hana ticks it and Ben does not: Ben's Back publishes no link, he meets
+the press in the room, the server refuses his raw post until he presses it, and after it his composer opens; the mock-bridge
+`tests/e2e/pot-room.spec.ts` has the same two paths. Commit `ba7c18c56`.
+
+**A6. Small, at 360 px.** (a) The tab strip: side padding of a tab is 6 px below 380 px (10 px above), text size unchanged; the five
+tabs fit with the last, "Room", whole. A check in the 360 px room spec measures that the strip needs no scroll and every tab lies
+inside it. (b) The room says "Anyone can read this room." on top and "Only people who back this project can write here." once below
+it, where the person may not write; where nothing else says who may write (a holder, someone who has to confirm the account) the top
+line stays whole. (c) "This can go up or down. It is not a return." is not repeated inside Lately; it stays under the money card
+directly above it, and in the Money tab. Commit `359251806`.
+
+### A3 in detail
+
+*What failed.* After the founder entered Alpha in the Seasons band ("is in" showed), the button "Enter Beta" was not there for 30
+seconds (once inside the full run; 5 of 5 alone).
+
+*What I looked at first and ruled out.* The band's own code: the list of the founder's projects (`useMyProjects`) is read once when
+Home opens, no entry invalidates it (an entry invalidates only the entries), and the row keys are the projects' addresses; the
+failing run's relay log shows exactly one read by the founder after Alpha's entry (the entries) and none of the list.
+
+*What it was.* A temporary journey (not committed) did the same steps in a loop on one world: a fresh founder per round starts Alpha,
+Beta and Gamma in the app and launches each, three holders back each, then Home, enter Alpha, enter Beta. **With the journeys' old
+helper it failed in both of the two runs that got past their first steps** (round 4 at Beta, then round 1 at Alpha: 2 failures in 7
+rounds; my first two attempts failed earlier on mistakes of the probe itself), and always on one of the first two projects, never
+the last. A temporary log in the page showed why: the founder's own read of their
+project records returned, for the missing project, the record **without** its `chain-key` tag (`created_at` 1795217117, tag absent;
+the other two had it), so the list, which offers only launched projects, correctly left it out. The cause is in the journey, not in
+the band: the helper that starts and launches a project returned when the Launch sheet closed. The sheet closes when the launch lands;
+the app writes the founder's own record that names the launch (`chain-key`) a moment later ("Linking..."), and the journey's next step
+(`goto("/start")` for the next project) left the page in that moment and aborted the write. The project stayed launched on the
+network and not tied to its page (the page offers "Finish linking" on the next visit: this recovery is the app's design and works).
+The last project is never hit because its next step is nine chain calls long. In the full run the machine was busy, which widens the
+window. After the helper waits for the app's own sign that the page is tied (the launch card is gone), **the same temporary journey
+passed 14 of 14 rounds**.
+
+*What is changed.* (1) `startAndLaunch` waits for the launch card to be gone (the page is tied) before it returns. This is a wait on
+the app's own signal, not a longer wait. (2) While looking I found a real, smaller defect in the product that the journey does not
+reach (each `goto` reloads the app): the band's list was believed for 30 seconds, so a founder who launches and ties a project and is
+back on Home inside 30 seconds in the same session was not offered it. `useMyProjects` now reads again each time Home opens
+(`refetchOnMount: "always"`); the test `season-band.test.tsx` ("a project launched and tied a moment ago is offered when Home opens
+again in the same session") fails without it (switched off once: 1 of 15 failed). (3) `scripts/pot-full-loop.sh`: when a journey
+failed with no check lines it printed "0\n0" and stopped on an arithmetic error instead of the relay's last lines (the first failure
+of this round hid its own report); fixed in the two places it was counted.
+
+*Not changed, said plainly.* A founder who leaves the project page in the second between the launch landing and the link being
+written still has to press "Finish linking" on that page. I did not make the app finish it silently on the next visit (it publishes
+a record, and the press is the person's yes); say so if you want it automatic. The evidence is the page's own read at the failure and
+the 2-failures-in-7-rounds / 14-of-14 loop; I did not keep the relay's view at the failure (the run that would have printed it was restarted), so
+"lost, not late" rests on the page's read being made at least ten seconds after the launch and on the loop result.
+
+*The runs asked for.* `scripts/pot-full-loop.sh` in full, twice: ****4,377 checks passed both times** (five worlds each time; the browser times were 37 s, 1.3 min, 1.1 min, 5.3 min and 42 s the first time, 43 s, 1.3 min, 1.1 min, 5.3 min and 47 s the second; the reader never refused to sign in any world; two more checks than the 4,375 of the first package, from the room journey's unticked path). The first package's full run had failed once in this journey; neither of these did.**. The seasons journey alone five times: ****5 of 5 passed**, 1,691 checks each, 5.3 minutes each.**.
+
+### Guards switched off once each (this round)
+
+Each line was changed alone, the named tests run, and the file put back (`git checkout`); the count is failed of run.
+
+| Guard | Switched off by | Result |
+|---|---|---|
+| A1 the line only where there is no push key | always say it | `news-section.test.tsx` 1 of 22 |
+| A2 check-in is not called update | "Last update" for the check-in | `project-top-words.test.ts` 4 of 21 |
+| A4a the banner's words | "gain" for "profit" | 18 of 65 in `banner.test.tsx` (14), `project-top.test.tsx` (2), `share-card.test.ts`, `demo-day.test.tsx` |
+| A4a "It is not a return." | "It is no return." | 4 of 50: `ranked-section`, `ProjectPage`, `project-top`, `demo-day` tests |
+| A4b a post drawn as text | the post's words set as markup | `text-only.test.tsx` 1 of 2 |
+| A4b the Updates tab | the update's body set as markup | 1 of 2 |
+| A4b a team notice | its title set as markup | 1 of 2 |
+| A4b the demo-day card | its body set as markup | 1 of 3 |
+| A4c hours one bucket apart | "later than the one before" only | `numbers-social.test.ts` 2 of 23 (the old test and the new isolated one) |
+| A5 unticked | `useState(true)` | `back-links-account.test.tsx` 2 of 3 |
+| A5 the press in the room | the Confirm press taken out of the room's needs-link state | `unticked-path.test.tsx` 1 of 1 |
+| A6 the sentence once | the top line always whole | `room-tab.test.tsx` 2 of 25 |
+| A6 not repeated in Lately | the line put back in the feed | `ProjectFeed.test.tsx` and `ProjectPage.test.tsx` 2 of 17 |
+| A3 the band's list read again | `refetchOnMount` taken out | `season-band.test.tsx` 1 of 15 |
+
+The tab strip's fit (A6a) and the journeys' own changes are held by the browser specs only (the strip's check in the 360 px room spec;
+the room journey's two paths), not by a unit test: layout cannot be measured in jsdom. I did not switch the strip's padding back to
+see the spec fail.
+
+### What ran
+
+- `tsc --noEmit`: clean. `biome check .`: clean, 598 files. `check:copy`, `check:px-text`: pass. `check:file-sizes` with `CHECK_FILE_SIZES_BASE=35ea0a894`: pass. `node scripts/pot-app-abi.mjs --check`: "pot ABIs are current."
+- `vitest run --maxWorkers=2`: 186 files, **1,732 tests passed**, 0 failed (it was 184 files, 1,722 tests). `pnpm build` with `CREATON_DEPLOYMENTS_FILE=contracts/pot/deployments/pot-31337.json`: entry chunk 417 KiB, inside its budget ("ok"); all scripts 1,240 KiB.
+- `cd web && pnpm check:unused` (knip): no findings (exit 0). `pnpm -C packages/creaton-core test`: 1,240 tests, 1,239 passed, 0 failed, 1 skipped (not changed by this round).
+- `scripts/pot-app-loop.sh`: 17 tests passed, 0 failed, 0 skipped, in 11 files. `scripts/phone-loop.sh`: 14 tests passed in 3 files, 35 claims proven.
+- Playwright, project `smoke`, `--trace off`, one worker, a random port, `CREATON_DEPLOYMENTS_FILE` set: the first run of this round had **125 passed, 1 failed, 1 skipped** (the failure was the mock-bridge room spec that expected a Back with no choice made to link the account: it was written for the ticked default, and is now two tests, one for each path; the 8 tests of that file then passed, 8 of 8). The whole project again on the final tree: 128 listed, **127 passed, 0 failed, 1 skipped** (`pot-phone`, which skips in this build), in 8.9 minutes. The new 360 px strip check is inside it.
+- `scripts/pot-full-loop.sh` in full, twice: 4,377 checks passed each time. `scripts/pot-full-loop.sh pot-seasons.spec` five times: 5 of 5 passed, 1,691 checks each. (The relay was rebuilt first with `cargo build -p buzz-relay` after the loop's `waitbusy`, `CARGO_BUILD_JOBS=2 CARGO_INCREMENTAL=0`; the `buzz` command is the one built earlier, which the journeys use only to start a season.)
+- The temporary probe journey of A3 (not committed, deleted): 7 rounds over two runs before the helper changed (2 failures), 14 of 14 after.
+- Not run: `cargo test` of any kind (no Rust file was changed here), `just ci`, the mobile app.
+
+### Chosen under the owner's standing go; the owner may overrule
+
+- **A1.** The first sentence is said only when the server has no push key. Where the server has one but a person's device cannot show alerts, it is not said either (the card there says what the device cannot do).
+- **A2.** Two names: "check-in" for the weekly mark on the network (the word the Money tab and the allowance already use) and "update" for what the team wrote. The record's own key names (`streaks.updates`) stay as the server writes them. The older plan sentence "Last update {when}." for the project page is replaced, not kept.
+- **A4b.** "The feed's update text" is read as the places that show an update's words: the Updates tab, the room's team notices and the demo-day card. The Lately feed draws no one's written words.
+- **A5.** The Back helper of the journeys ticks the box by default (only the room journey and the mock-bridge room spec leave it unticked), so the loops that need a linked account (the alerts world, the room) keep working; the box's sentence and its hint are unchanged ("Leave it unticked to back without it" now describes the default).
+- **A6.** The strip is fitted by padding, not given a scroll hint; it still scrolls if a sixth tab is ever added. The room keeps the status line (it sits by the Back press) and shortens the top line, not the other way round. The feed loses its copy of the line, the money card keeps its own.
+- **A3.** The journey waits for the launch card to be gone, and the band reads the list again on each visit; the app does not finish the link by itself.
+
+### What stays open
+
+- The A3 cause is in the journeys; the app's own recovery ("Finish linking") is a press. An automatic finish is the owner's call.
+- The first human test (section 9, steps 4 and 5 corrected above) is still to do and still must cover a phone account in the room against a relay with the chain connection on.
+- Everything in section 12 that is not named here is as it was. F1 and F2 (the server's) are the server engineer's; this round did not touch `crates/`.
+- The human tests of the pull request checklist are not done and are not marked.
+
+### Commits of this round
+
+`221cbb20f` (A1), `f7881c0ea` (A2, with the literal-words helper), `fecef5f97` (A4), `359251806` (A6), `ba7c18c56` (A5, and the journeys' wait for a tied page), `b9376983b` (A3: the band's list, the loop script), `1825c24df` (A4: the demo-day card), `45d1b0bdc` (the mock-bridge room spec's two paths); this page, and nothing else, is in the last commit.
 
 ## 13. Commits
 
