@@ -360,7 +360,7 @@
         "notesLeft": "0",
         "capBps": 0,
         "resolvedAt": 1803148520,
-        "resolvedTx": "0xb2309025630b1c3dc04fa1646c364fd8c98cda8f331475ba392d66b6942f69c8",
+        "resolvedTx": "0x592e6adeb09ac954555a1ddc42a253dcbcd6f2f88d9cf6aacfdab96012dcc712",
         "repeatOf": null,
         "notes": null
       },
@@ -386,7 +386,7 @@
         "notesLeft": "0",
         "capBps": 0,
         "resolvedAt": 1802967080,
-        "resolvedTx": "0x463763c36cc466297ad218133f99115076e6d43e7601b1efd57d1163e66fb0c2",
+        "resolvedTx": "0x42fe16fa07b01d306a5e9835ecb18a93b18a03009a74ccb7619f89b600506f88",
         "repeatOf": null,
         "notes": null
       },
@@ -412,7 +412,7 @@
         "notesLeft": "4297836",
         "capBps": 0,
         "resolvedAt": 1803381800,
-        "resolvedTx": "0x20c3eb21cad5ffdd4529321f4455286167f44bb452fae1ead671b8230d4c8fee",
+        "resolvedTx": "0xd4c5de88cfe6114948d88a2df153d9fa2d0ab8e1cb9e16495fa049097cc4cb09",
         "repeatOf": null,
         "notes": {
           "faceTotal": "4297836",
@@ -448,7 +448,7 @@
         "notesLeft": "0",
         "capBps": 0,
         "resolvedAt": 1801740200,
-        "resolvedTx": "0xe255a64b80e8e6551d421b1cc123471a92615a2a33d94cf95d67294f601a2c9b",
+        "resolvedTx": "0x20977c1a22ebccff73a6910385bc4b2e4b575c221604bf10fd8b062412ef4369",
         "repeatOf": null,
         "notes": null
       },
@@ -474,7 +474,7 @@
         "notesLeft": "0",
         "capBps": 200,
         "resolvedAt": 1801913000,
-        "resolvedTx": "0xaf3a8315468209462a5e54db3de1ad779a4e89984220a099091dcc896cb7d624",
+        "resolvedTx": "0x634e3aaaa3e8a35dcc6f38cc9760031382fba6c2b0e713dd45b85cdd4fb91123",
         "repeatOf": null,
         "notes": null
       }

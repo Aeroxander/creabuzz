@@ -31,6 +31,23 @@
           ]
         },
         {
+          "name": "HolderPauseBound",
+          "signature": "HolderPauseBound(address,bytes32)",
+          "topic": "0x9ed3f2fe8ea5436eaa279181acc7106338cdffc97d6f5cd86cea3235d102a4cf",
+          "inputs": [
+            {
+              "name": "impl",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "codehash",
+              "type": "bytes32",
+              "indexed": false
+            }
+          ]
+        },
+        {
           "name": "PairMade",
           "signature": "PairMade(bytes32,address,address,address)",
           "topic": "0xf4054ab4627b2a70f20619d603381659a88dd1b5164a61d82e14a70b8ad22f78",
@@ -431,6 +448,18 @@
             {
               "name": "sharesAfter",
               "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "PauseReady",
+          "signature": "PauseReady(address)",
+          "topic": "0x2c8d02ae5c511c4a618be08289069c3fef2b096751f2be08bcb205da351bc621",
+          "inputs": [
+            {
+              "name": "gate",
+              "type": "address",
               "indexed": false
             }
           ]

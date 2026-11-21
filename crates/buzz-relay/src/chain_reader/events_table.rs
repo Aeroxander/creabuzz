@@ -37,6 +37,11 @@ pub static EVENTS: &[EventDef] = &[
     },
     EventDef {
         role: Role::Launcher,
+        name: "HolderPauseBound",
+        params: &[p("impl", Ty::Address), p("codehash", Ty::Bytes32)],
+    },
+    EventDef {
+        role: Role::Launcher,
         name: "PairMade",
         params: &[
             ix("key", Ty::Bytes32),
@@ -140,6 +145,11 @@ pub static EVENTS: &[EventDef] = &[
             p("paidInAfter", U256),
             p("sharesAfter", U256),
         ],
+    },
+    EventDef {
+        role: Role::Treasury,
+        name: "PauseReady",
+        params: &[p("gate", Ty::Address)],
     },
     EventDef {
         role: Role::Treasury,
