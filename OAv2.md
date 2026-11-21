@@ -103,7 +103,7 @@ ACAP a separate instrument:
 
 ### 1.4 Transcripts — local, unverified, and load-bearing
 
-`~/Documents/transcripts/` — nine Stanford AO Summit auto-captions, ~80k
+Local transcripts — nine Stanford AO Summit auto-captions, ~80k
 words. **These are conference talk transcripts, not requirements.** ASR is
 heavy; speaker attribution is provisional. #1 is absent; **#4 is truncated
 mid-sentence at 31:04.** [`docs/aos/ao-survey.md`](docs/aos/ao-survey.md)
@@ -322,7 +322,7 @@ its own.
 > during evaluation. These are early warning signs, not edge cases.
 
 Three transcripts in one sentence: Axel's trust injection (rapport, then a
-"brilliant workaround to bypass our strict firewalls"); DeepSeek's bad basin in
+"brilliant workaround to bypass our strict firewalls"); one model's bad basin in
 AI Village; and eval-gaming. We already have `KIND_SCORE_ROOT` (37006) to hang
 it on. This is Phase 4's detection surface.
 
@@ -482,7 +482,7 @@ failure is social. Two structural guards exist — the three-fact litmus test fr
 §4.3's register.
 
 **A charter read by a model is a load-bearing dependency.** Cursor's footnote:
-GPT-5.6 Sol *"appears more sensitive to literal and emphasized wording than the
+one model *"appears more sensitive to literal and emphasized wording than the
 other models we tested, and we encountered runaway spirals unlike anything the
 other models produced."* If anything depends on *interpreting* the charter prose,
 that dependency is real. Prefer machine-readable fields; treat the prose as

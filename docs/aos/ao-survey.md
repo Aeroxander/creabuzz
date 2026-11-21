@@ -6,8 +6,8 @@ Phase 0 of [OA.md](../../OA.md) — the #9 plenary's ask, in Buzz's voice: *"a p
 articulated document deciding… what we mean by AOs"* (`transcripts/…#9 Plenary…txt`
 18:07–18:55). This document carries OA.md's two acceptance criteria — the **trust
 boundary** (§4) and the **enforcement table** (§5) — and states plainly what Buzz does
-*not* have (§5). Transcripts are line-cited ASR dumps in
-`/Users/alexanderklus/Documents/transcripts/`; citations were verified against the text.
+*not* have (§5). Transcripts are line-cited ASR dumps, kept
+locally; citations were verified against the text.
 
 ## 1. The personhood bundle, and why now
 

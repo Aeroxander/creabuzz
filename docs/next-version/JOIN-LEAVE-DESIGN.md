@@ -779,7 +779,7 @@ Each finding from the three reviews was either fixed above or declined here with
 `PLANV2-M8-REPORT.md`, `DIRECTION-REVIEW.md`, `EARLIER-BACKERS.md`; `contracts/next/src/*.sol` (line counts by `loc.py`, test
 families by `fam.py`); `crates/buzz-relay/src/handlers/launch_update_authority.rs`, `task_takes.rs`,
 `api/manager/cost.rs`; `crates/buzz-relay/src/chain_reader/`; `app/src/features/`.
-**Simulations** (none in the repo), all under `/tmp/claude-0/-home-user-creabuzz/760bbfe4-cd00-52d2-a0ba-d5904ad4bed9/scratchpad/v3/`:
+**Simulations** (none in the repo), all kept in a scratch folder outside the repository (a `v3/` folder there):
 the revised rules are `v4_model.py` (exact-decimal model and the 1,000-seed fuzz, output `v4_fuzz_output.txt`),
 `v4_attacks.py` (output `v4_attacks_output.txt`: serial notes, outside-payment sandwiches, forfeit, Team and later joins,
 early joiners, round trips, locks, sleeper and looker tables, offset run, worked quotes), `v4_team.py` (output

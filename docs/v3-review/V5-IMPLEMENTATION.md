@@ -302,7 +302,7 @@ remain separate open gates. No public deployment or activation occurred.
 
 ### Resumed verification (2026-11-02, later)
 
-The user switched the specialist models to DeepSeek V4.1 Flash, so the lanes
+The user switched the specialist models, so the lanes
 were resumed. Everything below is a command result the parent ran or
 reproduced, not an author report.
 
