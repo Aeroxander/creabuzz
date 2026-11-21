@@ -221,6 +221,51 @@ if not STOP:
     check("every holder is listed (Shares)", sum(int(h["shares"]) for h in rec["holders"]), uint(SH, "totalSupply()(uint256)"))
     check("the lists are whole", rec["truncated"], False)
 
+# ---- step 4: the holder pause and the earlier backers' claim contract (RECORD-V2 section 13). Present only on a deployment whose
+# switches are on; on any other the keys are null and the contracts say there is nothing (the Treasury has no gate, the Launcher no
+# claim contract for this project).
+NO_ADDRESS = "0x" + "00" * 20
+gate = address(T, "pauseGate()(address)")
+check("contracts.pause is the Treasury's own pauseGate (none when the deployment's switch was off)", rec["contracts"].get("pause") or NO_ADDRESS, gate)
+if rec.get("pause") is None:
+    check("no pause key when the Treasury has no gate", gate, NO_ADDRESS)
+else:
+    pz = rec["pause"]
+    check("pause.contract", pz["contract"], gate)
+    check("pause.parkedTotal", pz["parkedTotal"], uint(gate, "parkedTotal()(uint256)"))
+    check("pause.line", pz["line"], uint(gate, "line()(uint256)"))
+    check("pause.line is the backers' Shares over the divisor, rounded up", pz["line"], -(-int(rec["shares"]["backers"]) // pz["lineDivisor"]))
+    check("pause.dayLength", pz["dayLength"], uint(gate, "day()(uint32)"))
+    check("pause.dayLength is a seventh of the unit", pz["dayLength"], rec["unit"] // 7)
+    check("pause.lineDivisor", pz["lineDivisor"], uint(gate, "LINE_DIVISOR()(uint256)"))
+    check("pause.armedAt", pz["armedAt"], uint(gate, "armedAt()(uint64)") or None)
+    check("pause.pausesFrom", pz["pausesFrom"], uint(gate, "pausesFrom()(uint256)") or None)
+    check("pause.paused (the contract's own answer at the record's block)", pz["paused"], boolean(gate, "paused()(bool)"))
+    check("pause.since", pz["since"], pz["pausesFrom"] if pz["paused"] else None)
+    check("pause.parkerCount is zero exactly when nothing is parked", pz["parkerCount"] == 0, int(pz["parkedTotal"]) == 0)
+earlier_key = first(cast(LAUNCHER, "earlierKey()(bytes32)")).lower()
+claims = address(LAUNCHER, "earlier()(address)")
+mine = earlier_key == rec["key"].lower() and claims != NO_ADDRESS
+if rec.get("earlierGrants") is None:
+    check("no earlierGrants key unless this project is the one the claim contract names", mine, False)
+    check("no earlier pool or reserve", [rec["team"].get("earlierPool"), rec["team"].get("earlierReserve")], [None, None])
+else:
+    eg = rec["earlierGrants"]
+    check("earlierGrants: this project is the one the claim contract names", mine, True)
+    check("earlierGrants.contract", eg["contract"], claims)
+    check("earlierGrants.bound", eg["bound"], address(claims, "vester()(address)") != NO_ADDRESS)
+    check("earlierGrants.root", eg["root"], first(cast(claims, "root()(bytes32)")).lower())
+    check("earlierGrants.textHash", eg["textHash"], first(cast(claims, "textHash()(bytes32)")).lower())
+    check("earlierGrants.total", eg["total"], uint(claims, "total()(uint256)"))
+    check("earlierGrants.rows", eg["rows"], uint(claims, "rows()(uint32)"))
+    check("earlierGrants.claimedRows", eg["claimedRows"], uint(claims, "claimedRows()(uint32)"))
+    check("earlierGrants.claimedTotal", eg["claimedTotal"], uint(claims, "claimedTotal()(uint256)"))
+    check("earlierGrants.clockSecs", eg["clockSecs"], uint(V, "PROTECTED_LENGTH()(uint256)"))
+    check("team.earlierPool is the claim contract's pool", rec["team"]["earlierPool"], eg["total"])
+    check("team.earlierReserve is the Vester's own", rec["team"]["earlierReserve"], uint(V, "earlierReserve()(uint256)"))
+    check("team.earlierReserve is the pool less the claims", rec["team"]["earlierReserve"], int(eg["total"]) - int(eg["claimedTotal"]))
+    check("team.ungranted leaves the reserve out", rec["team"]["ungranted"], int(rec["team"]["inVester"]) - int(rec["team"]["promised"]) - int(rec["team"]["earlierReserve"]))
+
 # ---- the task queue: the book, its limits, every row against `taskOf`, every listed note against `noteOf`
 STATES = ["none", "announced", "taken", "paid", "rejected", "returned", "cancelled", "lapsed"]
 ZERO = "0x" + "00" * 20
@@ -387,19 +432,25 @@ def node(method, *params):
 spec = importlib.util.spec_from_file_location("chain_social_recompute", os.path.join(os.path.dirname(os.path.abspath(__file__)), "chain-social-recompute.py"))
 social = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(social)
-mine = {T.lower(), SH.lower()} | ({BOOK.lower()} if BOOK else set())
+PAUSE = (rec["contracts"].get("pause") or "").lower() or None
+mine = {T.lower(), SH.lower()} | ({BOOK.lower()} if BOOK else set()) | ({PAUSE} if PAUSE else set())
 raw = [
     {"block": int(l["blockNumber"], 16), "index": int(l["logIndex"], 16), "address": l["address"], "topics": l["topics"], "data": l["data"]}
     for l in node("eth_getLogs", {"fromBlock": "0x0", "toBlock": hex(int(BLOCK)), "address": sorted(mine)})
 ]
 times = {b: int(node("eth_getBlockByNumber", hex(b), False)["timestamp"], 16) for b in {l["block"] for l in raw}}
 logs = social.decode(raw, times, mine, int(BLOCK))
-excluded = {social.ZERO, T.lower(), V.lower(), SH.lower(), TM.lower(), USD.lower(), LAUNCHER.lower()}
-balance_of = lambda account: uint(SH, "balanceOf(address)(uint256)", account)
+excluded = {social.ZERO, T.lower(), V.lower(), SH.lower(), TM.lower(), USD.lower(), LAUNCHER.lower()} | ({PAUSE} if PAUSE else set())
+# a holding is what an account has in hand and what it parked; the pause contract holds nobody's Shares but what was sent to it by a
+# plain transfer, which is what is left of its balance when the parked ones are taken out
+balance_of = lambda account: uint(SH, "balanceOf(address)(uint256)", account) + (uint(PAUSE, "parkedOf(address)(uint256)", account) if PAUSE else 0)
+in_excluded = sum(balance_of(e) for e in excluded if e not in (social.ZERO, PAUSE))
+if PAUSE:
+    in_excluded += uint(SH, "balanceOf(address)(uint256)", PAUSE) - uint(PAUSE, "parkedTotal()(uint256)")
 ctx = {
-    "treasury": T.lower(), "shares": SH.lower(), "excluded": excluded, "candidates": [],
+    "treasury": T.lower(), "shares": SH.lower(), "excluded": excluded, "candidates": [], "pause": PAUSE,
     "balance": balance_of, "supply": uint(SH, "totalSupply()(uint256)"),
-    "in_excluded": sum(balance_of(e) for e in excluded if e != social.ZERO),
+    "in_excluded": in_excluded,
     "leave": uint(T, "leaveValue()(uint256)"), "min_join": uint(T, "MIN_JOIN()(uint256)"),
 }
 before = count

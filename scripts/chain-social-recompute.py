@@ -22,6 +22,9 @@ SIG = {
     "TaskAnnounced": "TaskAnnounced(uint64,bytes32,address,uint256,uint16,uint64,uint64,uint64,uint8)",
     "TaskTaken": "TaskTaken(uint64,address,uint256,uint256,uint64,uint64,uint256,uint8)",
     "TaskResolved": "TaskResolved(uint64,uint8,uint256,uint256,uint256,uint256,uint256,uint8,uint256)",
+    # step 4: a holder pause (the project's, when its deployment's switch is on)
+    "Parked": "Parked(address,uint256,uint256,uint256,uint256,uint64)",
+    "Unparked": "Unparked(address,uint256,uint256,uint256,uint256,uint64)",
 }
 ZERO = "0x" + "00" * 20
 
@@ -55,7 +58,10 @@ def check_social(r, logs, now, ctx, same):
     """Compare the record's four social keys with what the raw logs and the chain say.
 
     `ctx`: treasury, shares (the token), excluded (accounts nobody holds for), candidates (accounts that may hold),
-    balance(account), supply, in_excluded, leave (the per-Share figure), min_join.
+    balance(account), supply, in_excluded, leave (the per-Share figure), min_join; and, when the project has a holder pause,
+    `pause` (its address): a parked Share is its owner's, so `balance(account)` is what the account holds in hand plus what it
+    parked, the pause is excluded, and a park (or an un-park) is one change of the holding: the Shares' own `Transfer` and the
+    pause's `Parked` (or `Unparked`) of the same Shares in the same block are put at one place and add up there.
     """
     unit, launched = r["unit"], r["launchedAt"]
     t, shares_token = ctx["treasury"], ctx["shares"]
@@ -73,6 +79,27 @@ def check_social(r, logs, now, ctx, same):
             moves.setdefault(frm, []).append((blk, idx, time, -words[0]))
         if to != ZERO:
             moves.setdefault(to, []).append((blk, idx, time, words[0]))
+    pause = ctx.get("pause")
+    if pause:
+        transfers = [
+            (blk, idx, "0x" + topics[1][-40:], "0x" + topics[2][-40:], words[0])
+            for time, blk, idx, name, addr, topics, words in logs
+            if name == "Transfer" and addr == shares_token
+        ]
+        used = set()
+        for time, blk, idx, name, addr, topics, words in logs:
+            if name not in ("Parked", "Unparked") or addr != pause:
+                continue
+            who, amount = "0x" + topics[1][-40:], words[0]
+            frm, to = (who, pause) if name == "Parked" else (pause, who)
+            at = max(
+                (t for t in transfers if t[0] == blk and t[1] < idx and (t[0], t[1]) not in used and t[2] == frm and t[3] == to and t[4] == amount),
+                default=None,
+                key=lambda t: t[1],
+            )
+            place = (at[0], at[1]) if at else (blk, idx)
+            used.add(place)
+            moves.setdefault(who, []).append((place[0], place[1], time, amount if name == "Parked" else -amount))
     holders = {}
     for account in set(moves) | set(ctx["candidates"]):
         balance = ctx["balance"](account)
@@ -84,7 +111,11 @@ def check_social(r, logs, now, ctx, same):
         start = now - window
         out = {}
         for account, balance in holders.items():
-            history = sorted(moves.get(account, []))
+            # one change per account and place (a park's Transfer and its Parked are one)
+            places = {}
+            for blk, idx, tm, d in moves.get(account, []):
+                places[(blk, idx, tm)] = places.get((blk, idx, tm), 0) + d
+            history = sorted((blk, idx, tm, d) for (blk, idx, tm), d in places.items())
             at_start = sum(d for _, _, tm, d in history if tm <= start)
             low = running = at_start
             for _, _, tm, d in history:

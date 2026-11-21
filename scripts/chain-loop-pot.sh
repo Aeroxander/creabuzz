@@ -23,6 +23,11 @@
 # as scripts/run-tests.sh does), node with web/node_modules (nostr-tools), jq, openssl, python3, and a built relay
 # (`cargo build -p buzz-relay`). Uses anvil's well-known development keys only; every amount is play money.
 #
+# STEP4=1 turns both step 4 switches on in the deployment (the holder pause and the earlier backers' claim contract, over a two-row
+# INVENTED list built by scripts/chain-loop-earlier-list.py) and adds a last phase: a row is claimed, a holder parks to the line, the
+# warning day passes, the team's draw is refused, the holder un-parks; at each stop the signed `pause` and `earlierGrants` keys are
+# compared with the contracts. Without it the deployment has neither and the loop shows that every one of those keys is null.
+#
 # Env: POSTGRES_ADMIN_URL (default postgres://buzz:buzz_dev@127.0.0.1:5432/postgres), REDIS_URL, RELAY_BIN,
 #      FOUNDRY_BIN, KEEP_DB=1 (keep the scratch database), RELAY_LOG_COPY=<file>.
 set -uo pipefail
@@ -119,8 +124,16 @@ block_time() { cast block "$1" --rpc-url "$RPC" -f timestamp; }
 expect_eq() { [[ "$2" == "$3" ]] || fail "$1: got $2, expected $3"; }
 
 # ── deploy contracts/pot with its own deploy script ─────────────────────────────────────────────────────────────────
-step "deploying contracts/pot on anvil :$CHAIN_PORT"
-(cd "$POT" && forge script script/DeployPot.s.sol --rpc-url "$RPC" --broadcast --private-key "$K_DEPLOYER" >"$STATE/deploy.log" 2>&1) \
+PROJECT_ID="$(cast format-bytes32-string loop-pot)"
+DEPLOY_ENV=()
+if [[ "${STEP4:-}" == "1" ]]; then
+  python3 -I scripts/chain-loop-earlier-list.py "$BACKER2" "$MEMBER" >"$STATE/earlier-list.json" || fail "the invented earlier list could not be made"
+  DEPLOY_ENV=(HOLDER_PAUSE=1 EARLIER_ROOT="$(jq -r .root "$STATE/earlier-list.json")" EARLIER_TEXT_HASH="$(jq -r .textHash "$STATE/earlier-list.json")"
+    EARLIER_TOTAL="$(jq -r .total "$STATE/earlier-list.json")" EARLIER_ROWS="$(jq -r .rows "$STATE/earlier-list.json")"
+    EARLIER_FOUNDER="$FOUNDER" EARLIER_PROJECT_ID="$PROJECT_ID")
+fi
+step "deploying contracts/pot on anvil :$CHAIN_PORT${STEP4:+ with the holder pause and the earlier grants on}"
+(cd "$POT" && env "${DEPLOY_ENV[@]}" forge script script/DeployPot.s.sol --rpc-url "$RPC" --broadcast --private-key "$K_DEPLOYER" >"$STATE/deploy.log" 2>&1) \
   || { tail -20 "$STATE/deploy.log" >&2; fail "the deploy script failed"; }
 DEPLOY_JSON="$POT/deployments/pot-31337.json"
 USD="$(jq -r .quote "$DEPLOY_JSON" | tr 'A-F' 'a-f')"; LAUNCHER="$(jq -r .launcher "$DEPLOY_JSON" | tr 'A-F' 'a-f')"
@@ -155,7 +168,6 @@ grep -q '"chain reader started"\|chain reader started' "$STATE/relay.log" || fai
 ok "the relay is up and its chain reader reads $LAUNCHER"
 
 # ── one project, played through ─────────────────────────────────────────────────────────────────────────────────────
-PROJECT_ID="$(cast format-bytes32-string loop-pot)"
 HASH="$(call "$LAUNCHER" "settingsHash()(bytes32)")"
 POOL="10000000000000000000000000" # 10,000,000 Team Shares
 send "$K_FOUNDER" "$LAUNCHER" "launch(bytes32,string,string,(uint32,uint256),bytes32)" "$PROJECT_ID" "Loop Project" "LOOP" "(1000,$POOL)" "$HASH"
@@ -224,6 +236,14 @@ AS_OF="$(jq -r .asOf.block "$STATE/record.json")"
 [[ "$AS_OF" -ge "$TAKE_BLOCK" ]] || fail "the record is of block $AS_OF, before the take-out in $TAKE_BLOCK"
 [[ "$(echo "$RECORD" | jq -r '.event.pubkey | length')" == 64 ]] || fail "the record is not signed"
 ok "the relay signed the record: version $(jq -r .version "$STATE/record.json"), block $AS_OF (take-out in $TAKE_BLOCK, head $(cast block-number --rpc-url "$RPC"))"
+if [[ "${STEP4:-}" != "1" ]]; then
+  jq -e '.contracts.pause == null and .pause == null and .earlierGrants == null and .team.earlierPool == null and .team.earlierReserve == null' "$STATE/record.json" >/dev/null \
+    || fail "a deployment with the step 4 switches off must carry null for every step 4 key"
+  ok "the deployment has no holder pause and no claim contract: contracts.pause, pause, earlierGrants, team.earlierPool and team.earlierReserve are all null"
+else
+  [[ "$(jq -r .pause.contract "$STATE/record.json")" == "$(call "$T" "pauseGate()(address)" | tr 'A-F' 'a-f')" ]] || fail "the record's pause is not the Treasury's pauseGate"
+  ok "the deployment has both switches on: the record names the project's holder pause and the claim contract's pool (checked field by field below)"
+fi
 expect_eq "refreshEverySecs" "$(jq -r .refreshEverySecs "$STATE/record.json")" 5
 ok "it promises a fresh record every 5 s while the allowance accrues (the settings say 5)"
 
@@ -497,6 +517,58 @@ CLAIM3="$(calc "$(usd "$BACKER3") - $LEAVER3_BEFORE")"
 NOTE_CLAIMS=$((NOTE_CLAIMS + CLAIM3))
 task_stop claimed '{"2":"paid","3":"rejected","4":"lapsed","5":"returned"}'
 ok "the leaver claimed their own note on the returned task ($CLAIM3); the record equals the contracts"
+
+# ── step 4: the holder pause and the earlier backers' claim (STEP4=1) ──────────────────────────────────────────────────
+if [[ "${STEP4:-}" == "1" ]]; then
+  PAUSE="$(call "$T" "pauseGate()(address)" | tr 'A-F' 'a-f')"; CLAIMS="$(call "$LAUNCHER" "earlier()(address)" | tr 'A-F' 'a-f')"
+  [[ "$PAUSE" != "$ZERO_ADDRESS" && "$CLAIMS" != "$ZERO_ADDRESS" ]] || fail "the deployment has no pause or no claim contract"
+  TEXT_HASH="$(jq -r .textHash "$STATE/earlier-list.json")"; ROW0="$(jq -r '.amounts[0]' "$STATE/earlier-list.json")"
+  # one row is claimed, by the account the invented list names, with a proof, accepting the text in the same call
+  send "$K_BACKER2" "$CLAIMS" "claim(uint256,uint256,bytes32[],bytes32)" 0 "$ROW0" "[$(jq -r '.proofs[0] | join(",")' "$STATE/earlier-list.json")]" "$TEXT_HASH"
+  expect_eq "rows claimed" "$(call "$CLAIMS" "claimedRows()(uint32)")" 1
+  expect_eq "the claim's text was recorded" "$(call "$CLAIMS" "acceptedText(address)(bytes32)" "$BACKER2" | tr 'A-F' 'a-f')" "$TEXT_HASH"
+  # a holder parks up to the line: a third of the backers' Shares
+  LINE="$(call "$PAUSE" "line()(uint256)")"; N3="$(call "$SHARES" "balanceOf(address)(uint256)" "$BACKER3")"
+  [[ "$(calc "$N3 >= $LINE")" == True ]] || fail "the third backer holds $N3 and the line is $LINE: the loop's own numbers changed"
+  send "$K_BACKER3" "$SHARES" "approve(address,uint256)" "$PAUSE" "$LINE"
+  send "$K_BACKER3" "$PAUSE" "park(uint256)" "$LINE"
+  expect_eq "the pause's armedAt is set once the line is reached" "$([[ "$(call "$PAUSE" "armedAt()(uint64)")" -gt 0 ]] && echo yes)" yes
+  expect_eq "the pause's parked Shares are the line" "$(call "$PAUSE" "parkedTotal()(uint256)")" "$LINE"
+  task_stop armed '{"2":"paid","3":"rejected","4":"lapsed","5":"returned"}'
+  [[ "$(jq -r '.pause.paused' "$STATE/record-armed.json")" == false && "$(jq -r '.pause.armedAt' "$STATE/record-armed.json")" != null ]] \
+    || fail "the record should show the line reached and the pause not yet on"
+  [[ "$(jq -r '.team.earlierPool' "$STATE/record-armed.json")" == "$(jq -r .total "$STATE/earlier-list.json")" ]] || fail "the record's earlier pool is not the claim contract's"
+  [[ "$(jq -r '.earlierGrants.claimedRows' "$STATE/record-armed.json")" == 1 ]] || fail "the record should show one row claimed"
+  ok "a row was claimed and a holder parked to the line: the record shows the line reached, one row claimed, the pool and its reserve; it equals the contracts"
+  # a day later: the pause is on, the team's draw is refused, and a take out is not
+  warp 90000; mine 2
+  if cast call --rpc-url "$RPC" --from "$FOUNDER" "$T" "draw(address,uint256)" "$FOUNDER" 1 >/dev/null 2>&1; then
+    fail "the team drew from the allowance while the pause was on"
+  fi
+  task_stop paused '{"2":"paid","3":"rejected","4":"lapsed","5":"returned"}'
+  [[ "$(jq -r '.pause.paused' "$STATE/record-paused.json")" == true && "$(jq -r '.pause.since' "$STATE/record-paused.json")" == "$(jq -r '.pause.pausesFrom' "$STATE/record-paused.json")" ]] \
+    || fail "the record should show the pause on since its start"
+  ok "a day later the pause is on (the team's draw is refused) and the record says so, since the moment it began; it equals the contracts"
+  must_fail_pause() { # what is wrong, a jq filter that makes it wrong
+    jq "$2" "$STATE/record-paused.json" >"$STATE/tampered.json" || fail "the filter for \"$1\" is wrong"
+    if python3 -I scripts/chain-loop-pot-check.py --stop "$RPC" "$STATE/tampered.json" "$STATE/expected-paused.json" >"$STATE/tamper.out" 2>"$STATE/tamper.err"; then
+      fail "the check accepted a record that is wrong: $1"
+    fi
+    grep -q '^FAIL' "$STATE/tamper.err" || { cat "$STATE/tamper.err" >&2; fail "the check did not name the difference for: $1"; }
+    ok "the check refuses a record that is wrong: $1"
+  }
+  must_fail_pause "a pause shown as not on" '.pause.paused = false'
+  must_fail_pause "a claim that did not happen" '.earlierGrants.claimedRows += 1'
+  must_fail_pause "a reserve one unit too large" '.team.earlierReserve |= ((tonumber + 1) | tostring)'
+  # the holder takes the Shares back with no delay: the pause ends in the same block
+  PARKED_BY="$(call "$PAUSE" "parkedOf(address)(uint256)" "$BACKER3")"
+  send "$K_BACKER3" "$PAUSE" "unpark(uint256)" "$PARKED_BY"
+  expect_eq "the holder has the Shares back" "$(call "$SHARES" "balanceOf(address)(uint256)" "$BACKER3")" "$N3"
+  task_stop unparked '{"2":"paid","3":"rejected","4":"lapsed","5":"returned"}'
+  [[ "$(jq -r '.pause.paused' "$STATE/record-unparked.json")" == false && "$(jq -r '.pause.parkedTotal' "$STATE/record-unparked.json")" == 0 ]] \
+    || fail "the record should show nothing parked and the pause off"
+  ok "the holder took the Shares back at once and the pause ended; the record equals the contracts"
+fi
 
 # What the helper did during the walk: its settle, and nothing it must not send
 expect_eq "helper jobs that settle a task" "$(psql "$DB_URL" -Atc "select count(*) from chain_helper_jobs where job_key like 'settle-task:%'")" 1
