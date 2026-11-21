@@ -29,6 +29,11 @@ export default defineConfig({
         "**/a11y.spec.ts",
         "**/passkey.spec.ts",
         "**/manager.spec.ts",
+        // Search and topics, saved posts, hidden people and reports (the mock server, 360 wide).
+        "**/search.spec.ts",
+        "**/bookmarks.spec.ts",
+        "**/mutes.spec.ts",
+        "**/report.spec.ts",
         // The pot contracts on a real local chain (they start their own anvil; skipped without one).
         "**/pot-*.spec.ts",
       ],

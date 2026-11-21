@@ -135,6 +135,53 @@ export function matches(filter: Filter, event: StoredEvent): boolean {
   return true;
 }
 
+/**
+ * A NIP-50 word search as the server's index answers it: only a kind the index covers, and every word of the search in the
+ * record's content. A filter with no search lets everything through.
+ */
+export function searchAllows(
+  filter: Filter,
+  event: StoredEvent,
+  indexed: readonly number[],
+): boolean {
+  if (typeof filter.search !== "string") return true;
+  if (!indexed.includes(event.kind)) return false;
+  const words = filter.search.toLowerCase().split(/\s+/).filter(Boolean);
+  const text = event.content.toLowerCase();
+  return words.length > 0 && words.every((word) => text.includes(word));
+}
+
+/**
+ * What the real server refuses in a report (kind 1984, `buzz-relay/src/handlers/report.rs`): exactly one `p` tag, one of the
+ * seven types, and a post it holds when it names one.
+ */
+export function reportRefusal(
+  event: StoredEvent,
+  events: readonly StoredEvent[],
+): string | null {
+  if (event.kind !== 1984) return null;
+  const people = event.tags.filter((tag) => tag[0] === "p");
+  if (people.length !== 1)
+    return "invalid: report must include exactly one p tag";
+  const target = event.tags.find((tag) => tag[0] === "e");
+  if (target && !events.some((stored) => stored.id === target[1]))
+    return "invalid: report target event not found";
+  const type = (target ?? people[0])[2];
+  if (
+    ![
+      "illegal",
+      "nudity",
+      "malware",
+      "spam",
+      "impersonation",
+      "profanity",
+      "other",
+    ].includes(type ?? "")
+  )
+    return "invalid: report type is not one the server takes";
+  return null;
+}
+
 const tagOf = (event: StoredEvent, name: string): string | undefined =>
   event.tags.find((tag) => tag[0] === name)?.[1];
 
@@ -441,6 +488,11 @@ export interface MockRelayOptions {
    * that sends something the server refuses fails here too. Seeded records are not checked, as stored ones are not.
    */
   enforceRecordRules?: boolean;
+  /**
+   * The kinds the server's word index covers, as a fresh server's is: profiles only. A `search` filter matches only these
+   * (every word in the record's content), so a spec can see that posts are found another way. Default: profiles only.
+   */
+  searchKinds?: number[];
 }
 
 export function createMockRelay({
@@ -453,6 +505,7 @@ export function createMockRelay({
   applyDeletions = false,
   loseAnswer,
   enforceRecordRules = true,
+  searchKinds = [0],
 }: MockRelayOptions = {}) {
   const events: StoredEvent[] = [];
   const sockets = new Set<Socket>();
@@ -595,7 +648,8 @@ export function createMockRelay({
               (enforceRecordRules
                 ? (launchRecordRefusal(event) ??
                   projectRecordRefusal(event, events) ??
-                  deletionRefusal(event, events))
+                  deletionRefusal(event, events) ??
+                  reportRefusal(event, events))
                 : null);
             if (reason) {
               // Rejected writes are not stored and not fanned out: a client
@@ -685,6 +739,7 @@ export function createMockRelay({
           const replay = (candidate: Filter) =>
             events
               .filter((event) => matches(candidate, event))
+              .filter((event) => searchAllows(candidate, event, searchKinds))
               .sort((a, b) => b.created_at - a.created_at)
               .slice(0, candidate.limit ?? events.length);
           if (authenticated && refusedWhileUnauthenticated) {
