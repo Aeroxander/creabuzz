@@ -11,7 +11,7 @@ import { TextArea } from "../../ui/field";
 import { useToast } from "../../ui/toast";
 import { BackHeader } from "../../app/BackHeader";
 import { FoldedPost } from "../safety/FoldedPost";
-import { Byline, PostActions, PostText } from "./PostCard";
+import { Byline, PostActions, PostBody } from "./PostCard";
 import {
   engagementOf,
   type Row,
@@ -111,8 +111,8 @@ export function PostPage({ id }: { id: string }) {
                   profiles={profiles}
                   pubkey={row.event.pubkey}
                 />
-                <div className="mt-2 text-sm">
-                  <PostText text={row.event.content} />
+                <div className="mt-2 flex flex-col gap-2 text-sm">
+                  <PostBody event={row.event} />
                 </div>
               </Card>
             </FoldedPost>
@@ -127,7 +127,7 @@ export function PostPage({ id }: { id: string }) {
                 profiles={profiles}
                 pubkey={note.event.pubkey}
               />
-              <PostText large text={note.event.content} />
+              <PostBody event={note.event} large />
               <PostActions
                 engagement={engagementOf(engagement, note.event.id)}
                 event={note.event}
@@ -155,7 +155,7 @@ export function PostPage({ id }: { id: string }) {
                         profiles={profiles}
                         pubkey={row.event.pubkey}
                       />
-                      <PostText text={row.event.content} />
+                      <PostBody event={row.event} />
                       <PostActions
                         engagement={engagementOf(engagement, row.event.id)}
                         event={row.event}

@@ -189,6 +189,8 @@ describe("the banner on every sheet that shows money", () => {
     "features/room/PostMenu.tsx": "a list of presses on a post, no money",
     "features/room/RoomSheets.tsx":
       "report, remove and stop-writing forms, no money",
+    "features/safety/PostMore.tsx":
+      "the question before deleting a post, no money",
     "features/tasks/PostTaskSheet.tsx": "the old task board: not mounted",
     "features/tasks/TaskCard.tsx": "the old task board: not mounted",
     "features/team/SendSheet.tsx":

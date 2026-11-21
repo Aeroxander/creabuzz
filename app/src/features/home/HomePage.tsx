@@ -1,7 +1,7 @@
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { APP_NAME } from "@creaton/core/brand.ts";
 import { PenLine, Search, Sprout } from "lucide-react";
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { Mark } from "../../app/Mark";
 import { useAccount } from "../../lib/account";
 import { useFollows } from "../../lib/follows";
@@ -11,14 +11,16 @@ import { useRequireAccount } from "../../lib/use-require-account";
 import { Button, ButtonLink } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
-import { ComposerSheet } from "../posts/Composer";
+import { LazyComposer } from "../posts/LazyComposer";
 import { PostCard } from "../posts/PostCard";
 import {
   engagementOf,
+  feedRows,
   useEngagement,
   useRecentPosts,
+  useReposts,
 } from "../posts/use-posts";
-import { useVisiblePosts } from "../safety/use-hidden";
+import { useVisibleRows } from "../safety/use-hidden";
 import { SeasonBand } from "../season/SeasonBand";
 import { ProjectCard } from "./ProjectCard";
 import { RankedSection } from "./RankedSection";
@@ -49,17 +51,28 @@ export function HomePage() {
   const posts = useRecentPosts(
     followedPeople.length > 0 ? followedPeople : null,
   );
+  // Reposts are extra: a read that fails leaves the posts as they are.
+  const reposts = useReposts(followedPeople.length > 0 ? followedPeople : null);
   const all = projects.data ?? [];
   const followed = all.filter((p) => follows?.projects.has(p.coordinate));
   const shipping = all
     .filter((p) => !follows?.projects.has(p.coordinate))
     .slice(0, 12);
   // Posts of people this person hid, and posts they reported, are left out here as everywhere.
-  const visible = useVisiblePosts(posts.data);
-  const postEvents = visible.shown.slice(0, 20);
+  const rows = useMemo(
+    () => feedRows(posts.data, reposts.data),
+    [posts.data, reposts.data],
+  );
+  const visible = useVisibleRows(rows);
+  const postRows = visible.shown.slice(0, 20);
+  const postEvents = postRows.map((row) => row.event);
   const profiles = useProfiles([
     ...all.map((p) => p.author),
-    ...postEvents.map((e) => e.pubkey),
+    ...postRows.flatMap((row) =>
+      row.repostedBy
+        ? [row.event.pubkey, row.repostedBy.pubkey]
+        : [row.event.pubkey],
+    ),
   ]).data;
   const engagement = useEngagement(postEvents.map((e) => e.id)).data;
 
@@ -207,18 +220,19 @@ export function HomePage() {
         ) : postEvents.length === 0 ? (
           <p className="px-1 text-sm text-muted">No posts yet.</p>
         ) : (
-          postEvents.map((event) => (
+          postRows.map((row) => (
             <PostCard
-              engagement={engagementOf(engagement, event.id)}
-              event={event}
-              key={event.id}
+              engagement={engagementOf(engagement, row.event.id)}
+              event={row.event}
+              key={row.event.id}
               profiles={profiles}
+              repostedBy={row.repostedBy}
             />
           ))
         )}
       </Section>
 
-      <ComposerSheet onOpenChange={setComposing} open={composing} />
+      <LazyComposer onOpenChange={setComposing} open={composing} />
     </main>
   );
 }

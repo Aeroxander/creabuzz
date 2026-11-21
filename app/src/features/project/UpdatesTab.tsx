@@ -8,7 +8,7 @@ import { nameOf, type ProfileMetadata } from "../../lib/profiles";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
-import { ComposerSheet } from "../posts/Composer";
+import { LazyComposer } from "../posts/LazyComposer";
 import type { Project } from "./project-record";
 import { type ProjectActivity, projectUpdates } from "./use-project";
 
@@ -36,7 +36,7 @@ export function UpdatesTab({
         <PenLine aria-hidden="true" size={18} />
         Post an update
       </Button>
-      <ComposerSheet
+      <LazyComposer
         launch={{ pubkey: project.author, id: project.id }}
         onOpenChange={setComposing}
         open={composing}

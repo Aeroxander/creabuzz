@@ -6,17 +6,30 @@ import {
 } from "@creaton/core/social/feed/feed-events.ts";
 import { Link } from "@tanstack/react-router";
 import { Bookmark, Heart, MessageCircle } from "lucide-react";
-import { Fragment } from "react";
+import { postParts } from "@creaton/core/social/post-compose.ts";
+import { Fragment, lazy, Suspense, useMemo } from "react";
 import { useBookmarks } from "../../lib/bookmarks";
 import type { ProfileMetadata } from "../../lib/profiles";
 import { nameOf, pictureOf } from "../../lib/profiles";
+import { isServerPicture } from "../../lib/server-picture";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Avatar } from "../../ui/avatar";
 import { cn } from "../../ui/cn";
 import { useToast } from "../../ui/toast";
-import { PostMore } from "../safety/PostMore";
+
 import { SAVED_DONE, UNSAVED_DONE } from "../saved/saved-words";
+import { repostedBy as repostedByWords } from "./post-words";
+import { QuotedPost } from "./QuotedPost";
 import { type Engagement, type SignedEvent, useLike } from "./use-posts";
+
+// Fetching and drawing a picture (a signed read of this server) and the "More" menu load when a post that needs them is on
+// screen, not with the first screen.
+const PostPictures = lazy(() =>
+  import("../pictures/PostPictures").then((m) => ({ default: m.PostPictures })),
+);
+const PostMore = lazy(() =>
+  import("../safety/PostMore").then((m) => ({ default: m.PostMore })),
+);
 
 /** Who wrote it and when, as one link to their profile. */
 export function Byline({
@@ -116,6 +129,38 @@ export function PostText({
 }
 
 /**
+ * A post's words, pictures and the post it quotes: what the post is made of, drawn in that order. The words open `#topics`;
+ * the pictures come from this server only (a post never makes the phone ask another website for anything).
+ */
+export function PostBody({
+  event,
+  large = false,
+}: {
+  event: SignedEvent;
+  large?: boolean;
+}) {
+  const parts = useMemo(() => postParts(event, isServerPicture), [event]);
+  return (
+    <>
+      {parts.text ? <PostText large={large} text={parts.text} /> : null}
+      {parts.pictures.length > 0 ? (
+        <Suspense
+          fallback={
+            <div
+              aria-hidden="true"
+              className="min-h-32 animate-pulse rounded-xl bg-white/10"
+            />
+          }
+        >
+          <PostPictures pictures={parts.pictures} />
+        </Suspense>
+      ) : null}
+      {parts.quote ? <QuotedPost id={parts.quote.id} /> : null}
+    </>
+  );
+}
+
+/**
  * Like, comments, save and More for one post. The like is a press; the comments open the post; save keeps the post in the
  * person's private saved list; More offers Report and Hide. With the author's `name`, each press says whose post it is, so a
  * screen reader hears one post's presses apart from another's.
@@ -182,7 +227,17 @@ export function PostActions({
         <span className="num">{engagement.replies}</span>
       </Link>
       <SaveButton event={event} name={name} />
-      <PostMore event={event} name={name ?? "this person"} />
+      <Suspense
+        fallback={
+          <span aria-hidden="true" className="btn btn-ghost btn-sm min-w-10" />
+        }
+      >
+        <PostMore
+          engagement={engagement}
+          event={event}
+          name={name ?? "this person"}
+        />
+      </Suspense>
     </div>
   );
 }
@@ -231,10 +286,13 @@ export function PostCard({
   event,
   profiles,
   engagement,
+  repostedBy,
 }: {
   event: SignedEvent;
   profiles: Record<string, ProfileMetadata> | undefined;
   engagement: Engagement;
+  /** Set when the post is shown because someone reposted it. */
+  repostedBy?: { pubkey: string } | null;
 }) {
   const reply = parseNote(event)?.rootId != null;
   return (
@@ -242,9 +300,14 @@ export function PostCard({
       className="plain relative flex flex-col gap-2.5 rounded-2xl p-4"
       data-testid="post-card"
     >
+      {repostedBy ? (
+        <p className="text-xs text-muted" data-testid="post-reposted-by">
+          {repostedByWords(nameOf(profiles, repostedBy.pubkey))}
+        </p>
+      ) : null}
       <Byline at={event.created_at} profiles={profiles} pubkey={event.pubkey} />
       {reply ? <p className="text-xs text-muted">Reply</p> : null}
-      <PostText text={event.content} />
+      <PostBody event={event} />
       <PostActions
         engagement={engagement}
         event={event}

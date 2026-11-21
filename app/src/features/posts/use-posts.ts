@@ -9,7 +9,6 @@ import {
   NO_ENGAGEMENT,
 } from "@creaton/core/social/engagement.ts";
 import {
-  buildPost,
   buildReply,
   buildVote,
   inAnyRoom,
@@ -17,8 +16,19 @@ import {
   parseNote,
   type RoomRef,
 } from "@creaton/core/social/feed/feed-events.ts";
+import {
+  buildComposedPost,
+  type QuoteRef,
+} from "@creaton/core/social/post-compose.ts";
+import type { PostPicture } from "@creaton/core/social/pictures.ts";
+import { buildRepost, buildUndo } from "@creaton/core/social/post-events.ts";
 import { fetchThread } from "@creaton/core/social/thread-read.ts";
-import type { Row, SignedEvent } from "@creaton/core/social/timeline.ts";
+import {
+  buildRows,
+  repostTargetIds,
+  type Row,
+  type SignedEvent,
+} from "@creaton/core/social/timeline.ts";
 import { relayWsUrl } from "@creaton/core/client/relay-url.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount } from "../../lib/account";
@@ -62,6 +72,46 @@ export function useRecentPosts(authors: readonly string[] | null) {
         }),
       ),
   });
+}
+
+const REPOST_LIMIT = 20;
+
+/**
+ * The newest reposts by `authors` (everyone when null) and the posts they share, which the server answers for itself: a
+ * repost carries a copy of the post, but the copy outlives the post, so a repost of a post its author deleted is never shown.
+ */
+export function useReposts(authors: readonly string[] | null) {
+  return useQuery({
+    queryKey: ["posts", "reposts", authors?.join(",") ?? "everyone"] as const,
+    staleTime: 15_000,
+    queryFn: async () => {
+      const reposts = await read({
+        kinds: [KIND_REPOST],
+        ...(authors && authors.length > 0 ? { authors: [...authors] } : {}),
+        limit: REPOST_LIMIT,
+      });
+      const ids = repostTargetIds(reposts as SignedEvent[]);
+      const originals =
+        ids.length > 0
+          ? await read({ ids, kinds: [KIND_TEXT_NOTE], limit: ids.length })
+          : [];
+      return { reposts, originals };
+    },
+  });
+}
+
+/**
+ * Home's rows: the newest posts and the reposts of posts, newest activity first, each post once (at its newest). A repost
+ * of a reply, or of a post in a holder room, is left out, as those posts are everywhere.
+ */
+export function feedRows(
+  posts: readonly NostrEvent[] | undefined,
+  reposted: { reposts: NostrEvent[]; originals: NostrEvent[] } | undefined,
+): Row[] {
+  return buildRows(
+    [...(posts ?? []), ...(reposted?.reposts ?? [])] as SignedEvent[],
+    new Map((reposted?.originals ?? []).map((e) => [e.id, e as SignedEvent])),
+  ).filter((row) => row.rootId === null && !inAnyRoom(row.event));
 }
 
 /** A person's own top-level posts, for their profile. */
@@ -116,16 +166,85 @@ export function useThread(id: string) {
   });
 }
 
-/** Write a post, about a project when one is given (or in its holder room when `room` is given). */
-export function usePublishPost() {
+/** What a post that replaces another says when the old one could not be taken down (the new one is up). */
+export const OLD_NOT_REMOVED =
+  "Your changed post is up, but the old one could not be taken down. Delete the old one from its page.";
+
+/**
+ * Write a post with words, pictures, a project and a quote (the writing box), or an edited post: a post cannot be changed
+ * once it is sent, so an edit sends the changed post first and then takes the old one down. If taking the old one down fails
+ * the new post is still up and the answer says so, so neither is lost.
+ */
+export function usePublishComposed() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (input: {
+    mutationFn: async (input: {
       text: string;
+      pictures: readonly PostPicture[];
       launch?: LaunchRef | null;
-      room?: RoomRef | null;
-    }) => publishAsUser(buildPost(input), "Your post was not sent. Try again."),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: postKeys.all }),
+      quote?: QuoteRef | null;
+      /** The post this one replaces (an edit). */
+      replaces?: SignedEvent | null;
+    }): Promise<{ oldRemoved: boolean }> => {
+      await publishAsUser(
+        buildComposedPost(input),
+        "Your post was not sent. Try again.",
+      );
+      if (!input.replaces) return { oldRemoved: true };
+      try {
+        await publishAsUser(
+          buildUndo(input.replaces.id, KIND_TEXT_NOTE),
+          OLD_NOT_REMOVED,
+        );
+        return { oldRemoved: true };
+      } catch {
+        return { oldRemoved: false };
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: postKeys.all });
+      void queryClient.invalidateQueries({ queryKey: ["search", "posts"] });
+    },
+  });
+}
+
+/** Ask the server to stop showing one of the person's own posts (it is not deleted from copies others made). */
+export function useDeletePost() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (post: SignedEvent) =>
+      publishAsUser(
+        buildUndo(post.id, post.kind),
+        "Your post was not deleted. Try again.",
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: postKeys.all });
+      void queryClient.invalidateQueries({ queryKey: ["search", "posts"] });
+    },
+  });
+}
+
+/** Share a post with the person's own followers, as it is (a repost), or take the repost back. */
+export function useRepost() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      post,
+      undoId,
+    }: {
+      post: SignedEvent;
+      /** The id of the person's own repost to take back; when given, the post is not shared again. */
+      undoId?: string | null;
+    }) =>
+      publishAsUser(
+        undoId ? buildUndo(undoId, KIND_REPOST) : buildRepost(post),
+        undoId
+          ? "Your repost was not taken back. Try again."
+          : "Your repost was not sent. Try again.",
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: postKeys.all });
+    },
   });
 }
 

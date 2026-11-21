@@ -149,13 +149,20 @@ describe("hiding a person from a post", () => {
     expect(screen.getByText(/Hidden people/)).toBeTruthy();
   });
 
-  it("offers no Report or Hide on a person's own post", async () => {
+  it("offers no Report or Hide on a person's own post, only Edit and Delete", async () => {
     note(world.me, "Mine #lamps", NOW - 10, [["t", "lamps"]]);
     draw(<TopicPage tag="lamps" />);
     const card = await screen.findByTestId("post-card");
+    fireEvent.click(
+      await within(card).findByRole("button", { name: /More actions/ }),
+    );
+    const menu = await screen.findByTestId("post-menu");
     expect(
-      within(card).queryByRole("button", { name: /More actions/ }),
-    ).toBeNull();
+      within(menu)
+        .getAllByRole("button")
+        .map((b) => b.textContent)
+        .filter((t) => t && t !== "Close"),
+    ).toEqual(["Edit", "Delete"]);
   });
 
   it("sends a signed-out person to make an account instead of opening the report", async () => {

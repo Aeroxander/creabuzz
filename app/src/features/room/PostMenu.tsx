@@ -8,7 +8,26 @@ import { useState } from "react";
 import { Button } from "../../ui/button";
 import { Sheet } from "../../ui/sheet";
 
-export type MenuChoice = "report" | "hide" | "remove" | "stop" | "allow";
+export type MenuChoice =
+  | "report"
+  | "hide"
+  | "remove"
+  | "stop"
+  | "allow"
+  | "repost"
+  | "unrepost"
+  | "quote"
+  | "edit"
+  | "delete"
+  | "hide-pictures";
+
+/** An item a screen adds to the menu: its press, its words, and (when it cannot be pressed now) the reason in words. */
+export interface ExtraItem {
+  choice: MenuChoice;
+  label: string;
+  /** Why it cannot be used now: the item is shown but not pressable, with this under it. */
+  unavailable?: string;
+}
 
 export function PostMenu({
   name,
@@ -17,8 +36,14 @@ export function PostMenu({
   teamCanStop,
   stopped,
   onChoose,
+  extra = [],
+  sheetTitle,
 }: {
   name: string;
+  /** Items put before the rest (repost, quote, edit, delete). */
+  extra?: readonly ExtraItem[];
+  /** The sheet's title when it is not `<name>'s post` (the viewer's own post). */
+  sheetTitle?: string;
   /** The post is the viewer's own: nothing to report or hide. */
   mine: boolean;
   teamCanRemove: boolean;
@@ -32,7 +57,8 @@ export function PostMenu({
     setOpen(false);
     onChoose(choice);
   };
-  const items: { choice: MenuChoice; label: string }[] = [
+  const items: ExtraItem[] = [
+    ...extra,
     ...(mine
       ? []
       : [
@@ -67,18 +93,32 @@ export function PostMenu({
         onOpenChange={setOpen}
         open={open}
         testId="post-menu"
-        title={`${name}'s post`}
+        title={sheetTitle ?? `${name}'s post`}
       >
         <div className="flex flex-col gap-2">
           {items.map((item) => (
-            <Button
-              block
-              key={item.choice}
-              onClick={() => choose(item.choice)}
-              variant="secondary"
-            >
-              {item.label}
-            </Button>
+            <div className="flex flex-col gap-1" key={item.choice}>
+              <Button
+                aria-describedby={
+                  item.unavailable ? `menu-why-${item.choice}` : undefined
+                }
+                block
+                data-testid={`menu-${item.choice}`}
+                disabled={Boolean(item.unavailable)}
+                onClick={() => choose(item.choice)}
+                variant="secondary"
+              >
+                {item.label}
+              </Button>
+              {item.unavailable ? (
+                <p
+                  className="px-1 text-xs text-muted"
+                  id={`menu-why-${item.choice}`}
+                >
+                  {item.unavailable}
+                </p>
+              ) : null}
+            </div>
           ))}
         </div>
       </Sheet>

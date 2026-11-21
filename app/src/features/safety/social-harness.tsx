@@ -66,7 +66,7 @@ export function reset() {
   localStorage.clear();
 }
 
-const REPLACEABLE = [0, 3, 10000, 10003];
+const REPLACEABLE = [0, 3, 10000, 10003, 10050];
 
 const has = (e: SignedEvent, name: string, values: unknown) =>
   !Array.isArray(values) ||
@@ -163,6 +163,13 @@ const open = (sealed: string) => atob(sealed.slice(4));
 export const sealed = seal;
 export const unsealed = open;
 export const identityMock = {
+  signAsUser: async (template: object) => ({
+    ...template,
+    id: nextId(),
+    pubkey: world.me,
+    sig: "",
+  }),
+  existingUserPubkey: () => (world.signedIn ? world.me : null),
   nip44EncryptAsUser: async (_peer: string, plain: string) => {
     if (world.locked) throw new Error("Your passkey is locked.");
     return seal(plain);

@@ -29,7 +29,7 @@ import { Field, TextArea } from "../../ui/field";
 import { Dialog, Sheet } from "../../ui/sheet";
 import { Tabs } from "../../ui/tabs";
 import { useToast } from "../../ui/toast";
-import { BACKED_UP_KEY, RecoveryKeyPanel } from "../account/RecoveryKeySheet";
+import { BACKED_UP_KEY, RecoveryKeyPanel } from "../account/RecoveryKeyPanel";
 import { ProjectCard } from "../home/ProjectCard";
 import { SenderChoice } from "../money/SenderChoice";
 import { NotificationsList } from "../notifications/NotificationsList";
@@ -37,6 +37,7 @@ import { ProfileHead } from "../profile/ProfilePage";
 import { HiddenSheet } from "../room/HiddenSheet";
 import { NOT_SAVED } from "../room/room-words";
 import { forgetRoomDrafts } from "../room/use-draft";
+import { forgetAllHiddenPictures } from "../pictures/hidden-pictures";
 import { forgetAllReported } from "../safety/reported";
 import { useProjectsBy } from "../profile/use-own-projects";
 
@@ -367,6 +368,7 @@ function AccountTab() {
                 forgetIdentity();
                 forgetRoomDrafts();
                 forgetAllReported();
+                forgetAllHiddenPictures();
                 try {
                   localStorage.removeItem(BACKED_UP_KEY);
                 } catch {

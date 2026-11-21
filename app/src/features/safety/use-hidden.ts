@@ -7,7 +7,7 @@
 import { useMemo } from "react";
 import { useAccount } from "../../lib/account";
 import { useMutes } from "../../lib/mutes";
-import { type HideRules, visiblePosts } from "./visible";
+import { type HideRules, visiblePosts, whyHidden } from "./visible";
 import { useReported } from "./reported";
 
 export function useHidden() {
@@ -37,4 +37,30 @@ export function useVisiblePosts<
     [posts, hidden.rules],
   );
   return { ...result, ready: hidden.ready, unknown: hidden.unknown };
+}
+
+/**
+ * `rows` (posts, and posts someone reposted) as this reader sees them: a post is left out by the same rule as everywhere,
+ * and so is a repost by someone the reader hid, whoever wrote the post.
+ */
+export function useVisibleRows<
+  T extends {
+    event: { id: string; pubkey: string; tags: readonly string[][] };
+    repostedBy?: { pubkey: string };
+  },
+>(rows: readonly T[]) {
+  const hidden = useHidden();
+  const shown = useMemo(
+    () =>
+      rows.filter(
+        (row) =>
+          whyHidden(row.event, hidden.rules) === null &&
+          !(
+            row.repostedBy &&
+            hidden.rules.muted.has(row.repostedBy.pubkey.toLowerCase())
+          ),
+      ),
+    [rows, hidden.rules],
+  );
+  return { shown, ready: hidden.ready, unknown: hidden.unknown };
 }

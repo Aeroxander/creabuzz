@@ -9,6 +9,7 @@ import { Avatar } from "../../ui/avatar";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { EmptyState } from "../../ui/empty-state";
+import { MessageServerCard } from "./MessageServerCard";
 import { useConversations } from "./use-messages";
 
 /** Private conversations, newest first. Only the two people in one can read it. */
@@ -20,6 +21,7 @@ export function MessagesPage() {
   return (
     <main className="screen mx-auto flex max-w-lg flex-col gap-4">
       <BackHeader title="Messages" />
+      {pubkey ? <MessageServerCard /> : null}
       {!pubkey ? (
         <EmptyState title="Sign up to send messages" />
       ) : locked ? (
