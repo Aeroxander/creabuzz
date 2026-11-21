@@ -9,6 +9,7 @@ import { useRequireAccount } from "../../lib/use-require-account";
 import { Button } from "../../ui/button";
 import { Field, TextArea } from "../../ui/field";
 import { useToast } from "../../ui/toast";
+import { BrainOffer } from "../brain/BrainOffer";
 import { projectRef } from "../project/project-record";
 import {
   EMPTY_START,
@@ -44,6 +45,26 @@ function loadDraft(): StartDraft {
   return EMPTY_START;
 }
 
+/** The yes to the project brain is kept for this visit too, with the answers. */
+const BRAIN_KEY = "creaton.app.start-brain";
+
+function loadBrain(): boolean {
+  try {
+    return window.sessionStorage.getItem(BRAIN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveBrain(wanted: boolean) {
+  try {
+    if (wanted) window.sessionStorage.setItem(BRAIN_KEY, "1");
+    else window.sessionStorage.removeItem(BRAIN_KEY);
+  } catch {
+    // Storage refused: the choice lives as long as the screen.
+  }
+}
+
 function saveDraft(draft: StartDraft | null) {
   try {
     if (draft) window.sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
@@ -59,6 +80,7 @@ function saveDraft(draft: StartDraft | null) {
  */
 export function StartPage() {
   const [draft, setDraft] = useState<StartDraft>(loadDraft);
+  const [brain, setBrain] = useState(loadBrain);
   const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const requireAccount = useRequireAccount();
@@ -66,6 +88,7 @@ export function StartPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   useEffect(() => saveDraft(draft), [draft]);
+  useEffect(() => saveBrain(brain), [brain]);
   // After a press with answers missing, each empty box says what it needs, and the first one takes the focus.
   const [tried, setTried] = useState(0);
   const formRef = useRef<HTMLFormElement>(null);
@@ -116,11 +139,14 @@ export function StartPage() {
         );
       }
       saveDraft(null);
+      saveBrain(false);
       setDraft(EMPTY_START);
       await queryClient.invalidateQueries();
       void navigate({
         to: "/p/$ref",
         params: { ref: projectRef({ id, author: me }) },
+        // A yes to the project brain opens its steps on the new project; no changes nothing.
+        ...(brain ? { search: { brain: "setup" as const } } : {}),
       });
     } catch (error) {
       setProblem(
@@ -183,6 +209,7 @@ export function StartPage() {
           rows={2}
           value={draft.how}
         />
+        <BrainOffer checked={brain} onChange={setBrain} />
         {problem ? (
           <p className="text-sm text-danger" role="alert">
             {problem}

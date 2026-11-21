@@ -179,6 +179,10 @@ describe("the banner on every sheet that shows money", () => {
     "features/project/EstablishedSheet.tsx": OWN_BANNER,
     "features/project/ShareSheet.tsx": OWN_BANNER,
     "features/account/RecoveryKeySheet.tsx": "a secret key, no money",
+    "features/brain/BrainReader.tsx":
+      "the project's plain notes, read only, no money",
+    "features/brain/BrainSetup.tsx":
+      "steps for keeping the project's notes, no money",
     "features/account/TermsAgainHost.tsx": "the terms, no money",
     "features/money/BackBox.tsx": "the old design's rounds: legacy flag only",
     "features/money/Receipts.tsx": "the old design's rounds: legacy flag only",

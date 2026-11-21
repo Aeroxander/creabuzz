@@ -76,12 +76,24 @@ const project = createRoute({
   getParentRoute: () => root,
   path: "/p/$ref",
   // `?tab=money` opens the Money tab (the news on You sends a holder there to take their money out).
-  validateSearch: (search: Record<string, unknown>): { tab?: "money" } =>
-    search.tab === "money" ? { tab: "money" } : {},
+  // `?brain=setup` opens the steps for keeping a project brain (a founder who said yes to it in Start).
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { tab?: "money"; brain?: "setup" } => ({
+    ...(search.tab === "money" ? { tab: "money" as const } : {}),
+    ...(search.brain === "setup" ? { brain: "setup" as const } : {}),
+  }),
   component: function ProjectRoute() {
     const { ref } = project.useParams();
-    const { tab } = project.useSearch();
-    return <ProjectPage key={ref} projectRef={ref} initialTab={tab} />;
+    const { tab, brain } = project.useSearch();
+    return (
+      <ProjectPage
+        brainSetup={brain === "setup"}
+        initialTab={tab}
+        key={ref}
+        projectRef={ref}
+      />
+    );
   },
 });
 
