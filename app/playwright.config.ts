@@ -34,6 +34,9 @@ export default defineConfig({
         "**/bookmarks.spec.ts",
         "**/mutes.spec.ts",
         "**/report.spec.ts",
+        // Pictures in posts, editing and deleting, reposts and quotes, message servers and the recovery key (the mock server).
+        "**/pictures.spec.ts",
+        "**/messages-key.spec.ts",
         // The pot contracts on a real local chain (they start their own anvil; skipped without one).
         "**/pot-*.spec.ts",
       ],
