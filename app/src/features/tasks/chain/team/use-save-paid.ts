@@ -10,7 +10,7 @@ import type { Project } from "../../../project/project-record";
 import type { Ready } from "../../../pot/use-pot";
 import { forgetPaid, paidNotRecorded, rememberPaid } from "../../paid-journal";
 import { acceptRecord, type ProjectTask, payRecord } from "../../task-record";
-import { TASK_PROBLEM } from "../../tasks-copy";
+import { recordProblem, TASK_PROBLEM } from "../../tasks-copy";
 import { useTaskWrite } from "../../use-tasks";
 import type { ChainTask } from "../types";
 import {
@@ -107,12 +107,9 @@ export function useSavePaid(input: {
           failure: TASK_PROBLEM.recordAfterPay,
         });
       } catch (error) {
-        // The server has not read the payment yet: its own "try again in a minute".
-        setProblem(
-          error instanceof Error && error.message.startsWith("retry:")
-            ? PAID_RETRY
-            : TASK_PROBLEM.recordAfterPay,
-        );
+        // The server has not read the payment yet ("try again in a minute"), or the network does not show it paying this task:
+        // said in words, and the task is not marked paid.
+        setProblem(recordProblem(error, PAID_RETRY));
         return false;
       }
       forgetPaid(task.id);

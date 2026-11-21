@@ -12,6 +12,7 @@ import {
 import { useMoneySend, useWallet } from "../money/use-money";
 import { PLAY_MONEY_WORDS, boxNow } from "../pot/pot-words";
 import { planOfRecord } from "./chain/team/plan-read";
+import { PAID_RETRY } from "./chain/team/pay-words";
 import type { Project } from "../project/project-record";
 import { forgetPaid, paidNotRecorded, rememberPaid } from "./paid-journal";
 import { drawForTaskCall, rawDollars } from "./task-calls";
@@ -20,6 +21,7 @@ import {
   boxShortWords,
   dollarsWords,
   payProblem,
+  recordProblem,
   TASK_PROBLEM,
   pressName,
 } from "./tasks-copy";
@@ -157,7 +159,7 @@ export function AcceptAndPay({
           );
         },
         onError: (error) =>
-          setProblem(txHash ? TASK_PROBLEM.recordAfterPay : error.message),
+          setProblem(txHash ? recordProblem(error, PAID_RETRY) : error.message),
       },
     );
 

@@ -7,6 +7,8 @@ import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parsedExample } from "../../../tests/helpers/numbers-v2-parse";
+import { encodeCall } from "@creaton/core/pot/abi-codec.ts";
+import { TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
 import type { ProjectNumbers } from "../money/numbers";
 import type { MoneyWallet } from "../money/wallet";
 import { rememberStep } from "../pot/own-history";
@@ -34,6 +36,13 @@ vi.mock(
 );
 
 const numbers: ProjectNumbers = parsedExample();
+/** The same project, with a pause the record names (Shares parked there are still their owner's). */
+const PAUSE_AT = `0x${"61".repeat(20)}`;
+const withPause: ProjectNumbers = {
+  ...numbers,
+  contracts: { ...numbers.contracts, pause: PAUSE_AT },
+};
+const PAUSE_GATE = encodeCall(TREASURY_ABI, "pauseGate", []);
 const MINE = `0x${"11".repeat(20)}`;
 const OTHER = `0x${"22".repeat(20)}`;
 const pot = {
@@ -51,6 +60,8 @@ vi.mock("../pot/use-pot", () => ({
     ...pot,
     read: async (to: string, data: string) => {
       if (refuse.read) throw new Error("the node refused the read");
+      if (data === PAUSE_GATE)
+        return `0x${PAUSE_AT.slice(2).padStart(64, "0")}`;
       // balanceOf(address): the holder is the last word of the call.
       const holder = `0x${data.slice(-40)}`.toLowerCase();
       const value = balances.get(`${to.toLowerCase()}:${holder}`) ?? 0n;
@@ -81,14 +92,14 @@ const project = parsed;
 const give = (token: string, holder: string, amount: bigint) =>
   balances.set(`${token.toLowerCase()}:${holder.toLowerCase()}`, amount);
 
-function standing(team = [FOUNDER]) {
+function standing(team = [FOUNDER], record: ProjectNumbers = numbers) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
-  return renderHook(() => useRoomStanding(project, numbers, team), { wrapper });
+  return renderHook(() => useRoomStanding(project, record, team), { wrapper });
 }
 const kind = (r: ReturnType<typeof standing>) => r.result.current.standing.kind;
 
@@ -107,6 +118,35 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   applyServerSettings(null);
+});
+
+describe("Shares parked in the project's pause", () => {
+  it("are still held: a person who parked all of theirs still writes in the room", async () => {
+    give(numbers.contracts.shares, MINE, 0n);
+    give(PAUSE_AT, MINE, ROOM_MIN_SHARES);
+    const parked = standing([FOUNDER], withPause);
+    await waitFor(() => expect(kind(parked)).toBe("write"));
+    cleanup();
+    // the wallet's part and the parked part are added, and one wei short of the floor in all is not enough
+    give(numbers.contracts.shares, MINE, ROOM_MIN_SHARES / 2n);
+    give(PAUSE_AT, MINE, ROOM_MIN_SHARES / 2n - 1n);
+    const short = standing([FOUNDER], withPause);
+    await waitFor(() => expect(kind(short)).toBe("not-holding"));
+  });
+
+  it("a record that says the project has no pause asks nothing about one", async () => {
+    give(numbers.contracts.shares, MINE, 0n);
+    give(PAUSE_AT, MINE, ROOM_MIN_SHARES);
+    const none = standing();
+    await waitFor(() => expect(kind(none)).toBe("not-holding"));
+  });
+
+  it("a pause that cannot be read is 'could not check', never 'does not hold'", async () => {
+    give(numbers.contracts.shares, MINE, 0n);
+    refuse.read = true;
+    const failed = standing([FOUNDER], withPause);
+    await waitFor(() => expect(kind(failed)).not.toBe("not-holding"));
+  });
 });
 
 describe("what the room reads about a person", () => {

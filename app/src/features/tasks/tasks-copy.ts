@@ -80,6 +80,21 @@ export const TASK_PROBLEM = {
  * own sentences carry a prefix for programs (`invalid:`, `restricted:`) that is not shown. `retry:` is not mapped: a caller reads
  * it to try again. Null for any other message.
  */
+/** A refusal by the server that has been put in plain words: its message is what a person reads. */
+export class TaskRefusal extends Error {}
+
+/**
+ * What a person reads when the record of a payment could not be saved: the server's refusal in plain words, the "not read it
+ * yet" sentence for a `retry:`, and otherwise the generic one. A payment the network does not show, or shows paying another
+ * account or another amount, never leaves a task marked paid.
+ */
+export function recordProblem(error: unknown, retryWords: string): string {
+  if (error instanceof TaskRefusal) return error.message;
+  if (error instanceof Error && error.message.startsWith("retry:"))
+    return retryWords;
+  return TASK_PROBLEM.recordAfterPay;
+}
+
 export function taskRefusalWords(message: string): string | null {
   const said = message.toLowerCase();
   const table: readonly (readonly [string, string])[] = [
@@ -110,6 +125,31 @@ export function taskRefusalWords(message: string): string | null {
     [
       "paid another account than the one the worker named",
       "The network paid another account than the one the worker named, so this cannot be saved as paid.",
+    ],
+    // The checks of a task paid out of the allowance box (the network must show the payment, to that worker, for that pay).
+    [
+      "the network does not show that payment",
+      "The network does not show that payment. Nothing is saved as paid. Check the payment's transaction and try again.",
+    ],
+    [
+      "has not named a wallet to be paid at",
+      "The worker has not named an account to be paid at, so nothing can be saved as paid.",
+    ],
+    [
+      "the payment went to another wallet than the one the worker named",
+      "The payment went to another account than the one the worker named, so it is not saved as this task's pay.",
+    ],
+    [
+      "the payment is not what the task pays",
+      "The payment is not the amount this task pays, so it is not saved as this task's pay.",
+    ],
+    [
+      "that payment already paid another task",
+      "That payment already paid another task, so it is not saved for this one.",
+    ],
+    [
+      "write the payment's transaction in lower case",
+      "The payment's transaction could not be read the way the server needs it. Nothing is saved. Try again.",
     ],
     [
       "withdraw or send back the money on the network first",

@@ -16,6 +16,7 @@ import { forgetPaid, paidNotRecorded, rememberPaid } from "./paid-journal";
 import type { ProjectTask } from "./task-record";
 import { drawForTaskCall } from "./task-calls";
 import { TaskCard } from "./TaskCard";
+import { TaskRefusal } from "./tasks-copy";
 
 const FOUNDER = "f".repeat(64);
 const MATE = "e".repeat(64);
@@ -40,6 +41,8 @@ let fresh: ProjectTask | null;
 let chainBox: bigint | null = null;
 let logs: unknown[] = [];
 let recordFails = false;
+let recordError: Error | null = null;
+let sentHash = TX;
 let logsFail = false;
 let head = 100;
 let startTime: number | null = null;
@@ -52,7 +55,7 @@ vi.mock("../money/use-money", () => ({
       options?: { onSuccess?: (r: unknown) => void },
     ) => {
       sent.push(input);
-      options?.onSuccess?.({ txHash: TX });
+      options?.onSuccess?.({ txHash: sentHash });
     },
   }),
   useConnectWallet: () => ({ isPending: false, mutateAsync: async () => null }),
@@ -83,7 +86,8 @@ vi.mock("./use-tasks", () => ({
       options?: { onSuccess?: () => void; onError?: (e: Error) => void },
     ) => {
       written.push(input);
-      if (recordFails) options?.onError?.(new Error("The server is away."));
+      if (recordFails || recordError)
+        options?.onError?.(recordError ?? new Error("The server is away."));
       else options?.onSuccess?.();
     },
   }),
@@ -176,6 +180,8 @@ beforeEach(() => {
   chainBox = null;
   logs = [];
   recordFails = false;
+  recordError = null;
+  sentHash = TX;
   logsFail = false;
   head = 100;
   startTime = null;
@@ -263,6 +269,44 @@ describe("an accepted task whose pay is owed", () => {
     expect(tagOf("task-paid", 1)).toBe(TX);
     expect(tagOf("task-evidence", 1)).toBe(PIECE);
     expect(paidNotRecorded(accepted().id)).toBeNull();
+  });
+
+  it("a payment the server will not tie to this task (the network shows another amount, another account, or another task's payment) leaves the task unpaid, in words", async () => {
+    recordError = new TaskRefusal(
+      "The payment is not the amount this task pays, so it is not saved as this task's pay.",
+    );
+    card(accepted());
+    fireEvent.click(await screen.findByTestId("task-pay"));
+    await waitFor(() => expect(written).toHaveLength(1));
+    expect(screen.getByTestId("task-pay-problem").textContent).toBe(
+      "The payment is not the amount this task pays, so it is not saved as this task's pay.",
+    );
+    // the payment is kept, so the record is retried and nothing is paid twice; the task is not marked paid
+    expect(paidNotRecorded(accepted().id)?.txHash).toBe(TX);
+    expect(screen.queryByText(/^Paid /)).toBeNull();
+    expect(sent).toHaveLength(1);
+  });
+
+  it("a payment the server has not read yet says to press again in a few minutes, and keeps the payment", async () => {
+    recordError = new Error(
+      "retry: the network has not shown this payment to the server yet; try again in a minute",
+    );
+    card(accepted());
+    fireEvent.click(await screen.findByTestId("task-pay"));
+    await waitFor(() => expect(written).toHaveLength(1));
+    expect(screen.getByTestId("task-pay-problem").textContent).toMatch(
+      /The server has not read it yet, so the record is not saved\. Press again in a few minutes: nothing is paid twice\./,
+    );
+    expect(paidNotRecorded(accepted().id)?.txHash).toBe(TX);
+  });
+
+  it("writes the payment's transaction in lower case, as the server counts payments", async () => {
+    sentHash = `0x${"AB".repeat(32)}`;
+    card(accepted());
+    fireEvent.click(await screen.findByTestId("task-pay"));
+    await waitFor(() => expect(written).toHaveLength(1));
+    expect(tagOf("task-paid")).toBe(TX.toLowerCase());
+    expect(tagOf("task-paid")).toMatch(/^0x[0-9a-f]{64}$/);
   });
 
   it("with the box short offers no press, and says how much it holds", async () => {

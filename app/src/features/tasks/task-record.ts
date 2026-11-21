@@ -422,7 +422,9 @@ export function acceptRecord(
   paidTx: string | null,
 ): RecordTemplate {
   const extra: string[][] = [["task-evidence", handIn]];
-  if (paidTx && TX.test(paidTx)) extra.push(["task-paid", paidTx]);
+  // The server counts one payment named in two spellings as two, so the transaction is always written in lower case.
+  if (paidTx && TX.test(paidTx))
+    extra.push(["task-paid", paidTx.toLowerCase()]);
   return stepRecord(coordinate, task, "confirm", "Work accepted", extra);
 }
 
@@ -438,7 +440,7 @@ export function payRecord(
 ): RecordTemplate {
   return stepRecord(coordinate, task, "confirm", "Pay recorded", [
     ["task-evidence", handIn],
-    ["task-paid", paidTx],
+    ["task-paid", paidTx.toLowerCase()],
   ]);
 }
 

@@ -76,9 +76,14 @@ function useBalances(
       queryFn: async (): Promise<boolean> => {
         const { balanceOf } = await import("@creaton/core/pot/pot-reads.ts");
         const read = (to: string, data: string) => wallet.readCall(to, data);
+        const { parkedHeld } = await import("../pause/parked-read");
         const [shares, team] = await withTimeout(
           Promise.all([
-            balanceOf(read, numbers.contracts.shares, address as string),
+            // Shares parked in the project's pause are still the account's.
+            Promise.all([
+              balanceOf(read, numbers.contracts.shares, address as string),
+              parkedHeld(read, numbers, address as string),
+            ]).then(([wallet, parked]) => wallet + parked),
             balanceOf(read, numbers.contracts.team, address as string),
           ]),
           BALANCE_READ_MS,

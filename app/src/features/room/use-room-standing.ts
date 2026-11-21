@@ -6,6 +6,7 @@
  */
 import { serverSmartAccountLinks } from "@creaton/core/client/server-settings.ts";
 import { balanceOf } from "@creaton/core/pot/pot-reads.ts";
+import { parkedHeld } from "../pause/parked-read";
 import { useQuery } from "@tanstack/react-query";
 import { useAccount } from "../../lib/account";
 import type { ProjectNumbers } from "../money/numbers";
@@ -75,11 +76,10 @@ export function useRoomStanding(
       await Promise.all(
         addresses.map(async (address) => {
           held[address] = {
-            shares: await balanceOf(
-              pot.read,
-              numbers.contracts.shares,
-              address,
-            ),
+            // What is parked in the project's pause is still the account's: parking never takes anyone out of the room.
+            shares:
+              (await balanceOf(pot.read, numbers.contracts.shares, address)) +
+              (await parkedHeld(pot.read, numbers, address)),
             team: await balanceOf(pot.read, numbers.contracts.team, address),
           };
         }),

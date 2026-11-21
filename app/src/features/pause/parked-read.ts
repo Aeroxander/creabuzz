@@ -34,3 +34,28 @@ export async function readParked(
   if (!gate) return { gate: null, parked: 0n };
   return { gate, parked: await parkedOf(read, gate, account) };
 }
+
+/**
+ * What `account` has parked in the project the record `numbers` is about, for the readers that only need "how many Shares does
+ * this account hold" (the room's rights, the alerts). A record that says the project has no pause (`contracts.pause` null) asks
+ * nothing; an older record that says nothing asks the chain once; a record that names one makes a failed read a failure.
+ */
+export async function parkedHeld(
+  read: ReadCall,
+  numbers: {
+    contracts: { treasury: string; pause?: string | null };
+  },
+  account: string,
+): Promise<bigint> {
+  if (numbers.contracts.pause === null) return 0n;
+  return (
+    await readParked(
+      read,
+      {
+        treasury: numbers.contracts.treasury,
+        pauseHint: numbers.contracts.pause ?? null,
+      },
+      account,
+    )
+  ).parked;
+}

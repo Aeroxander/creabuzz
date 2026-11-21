@@ -79,3 +79,39 @@ describe("a refusal about a plan on the network", () => {
       expect(taskRefusalWords(`invalid: this task ${tail}`)).not.toBeNull();
   });
 });
+
+describe("a refusal about a task paid out of the allowance box", () => {
+  const cases: [string, RegExp][] = [
+    [
+      "invalid: the network does not show that payment",
+      /^The network does not show that payment\. Nothing is saved as paid\./,
+    ],
+    [
+      "invalid: the worker has not named a wallet to be paid at",
+      /^The worker has not named an account to be paid at/,
+    ],
+    [
+      "invalid: the payment went to another wallet than the one the worker named",
+      /^The payment went to another account than the one the worker named/,
+    ],
+    [
+      "invalid: the payment is not what the task pays",
+      /^The payment is not the amount this task pays/,
+    ],
+    [
+      "invalid: that payment already paid another task",
+      /^That payment already paid another task/,
+    ],
+    [
+      "invalid: write the payment's transaction in lower case",
+      /could not be read the way the server needs it/,
+    ],
+  ];
+  for (const [message, words] of cases)
+    it(`is told in plain words: ${message.slice(9, 50)}`, async () => {
+      const said = await refusedWith(message);
+      expect(said).toMatch(words);
+      expect(said).not.toMatch(/invalid:|wallet/i);
+      expect(taskRefusalWords(message)).toBe(said);
+    });
+});

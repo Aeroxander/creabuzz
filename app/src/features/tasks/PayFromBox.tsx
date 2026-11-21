@@ -18,6 +18,7 @@ import {
   paidNotRecorded,
   rememberPaid,
 } from "./paid-journal";
+import { PAID_RETRY } from "./chain/team/pay-words";
 import { findPayment, PaymentSearchShort } from "./pay-lookup";
 import { drawForTaskCall, rawDollars } from "./task-calls";
 import { type ProjectTask, payRecord } from "./task-record";
@@ -27,6 +28,7 @@ import {
   foundWords,
   payProblem,
   payTermsWords,
+  recordProblem,
   TASK_PROBLEM,
   pressName,
 } from "./tasks-copy";
@@ -134,7 +136,7 @@ export function PayFromBox({
           forgetPaid(task.id);
           toast(`Paid ${dollarsWords(usd)}.`, "done");
         },
-        onError: () => setProblem(TASK_PROBLEM.recordAfterPay),
+        onError: (error) => setProblem(recordProblem(error, PAID_RETRY)),
       },
     );
   /** A payment found on the chain, or one whose record failed: remembered first, so the record is retried and never paid twice. */
