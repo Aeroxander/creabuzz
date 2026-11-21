@@ -16,7 +16,8 @@
 //!
 //! - **An exit is never refused by a limit and never counted against a person or the server.** The call data is read
 //!   ([`calldata`]) and an operation is an exit when every call in it goes to a Treasury this reader follows and is
-//!   `leave` or `leaveTeam`. Exits count only against one generous per-address cap, which an attacker spends on their own
+//!   `leave` or `leaveTeam`, or takes parked Shares back first (`unpark` of a holder pause this reader follows, at most
+//!   one per pause, and at least one `leave` or `leaveTeam` in the batch). Exits count only against one generous per-address cap, which an attacker spends on their own
 //!   address. The operator's own sponsor keeps its own spend cap as the last backstop.
 //! - **The request is pinned.** Only the method `zd_sponsorUserOperation`, on this reader's chain, one operation per
 //!   request, a body of at most 32 KB, no batch. Without this the path would be an open proxy to a keyed upstream.
@@ -184,6 +185,8 @@ pub struct Allowed {
     pub targets: HashSet<[u8; 20]>,
     /// The Treasuries (an exit goes to one of them).
     pub treasuries: Vec<[u8; 20]>,
+    /// The projects' holder pauses (an exit may take Shares back from one of them first: `unpark`).
+    pub pauses: Vec<[u8; 20]>,
 }
 
 /// How long the allow-list is kept before it is read again.
@@ -219,8 +222,10 @@ pub async fn read_allowed(
     for (address, role) in rows {
         if let Ok(address) = <[u8; 20]>::try_from(address.as_slice()) {
             allowed.targets.insert(address);
-            if role == "treasury" {
-                allowed.treasuries.push(address);
+            match role.as_str() {
+                "treasury" => allowed.treasuries.push(address),
+                "pause" => allowed.pauses.push(address),
+                _ => {}
             }
         }
     }
@@ -305,7 +310,7 @@ pub fn classify(
         .ok_or_else(|| fail(NOT_ALLOWED))?;
     // Call data that cannot be read is refused: the allow-list could not be applied to it.
     let calls = calldata::decode(&call_data).map_err(|_| fail(NOT_ALLOWED))?;
-    if calldata::is_exit(&calls, &allowed.treasuries) {
+    if calldata::is_exit(&calls, &allowed.treasuries, &allowed.pauses) {
         return Ok(Parsed {
             id,
             sender,
@@ -557,6 +562,7 @@ mod tests {
         Allowed {
             targets: HashSet::from([address(1), address(2), address(3)]),
             treasuries: vec![address(1)],
+            pauses: vec![address(2)],
         }
     }
 
@@ -605,6 +611,43 @@ mod tests {
             classify(&upper, 31337, &allowed()).expect("passes").sender,
             text(&address(0xab))
         );
+    }
+
+    /// A Take out of parked Shares is one press that takes them back first: `[unpark, leave]` is an exit (never refused by
+    /// a limit, never counted), and `unpark` alone is an ordinary operation that counts like any other.
+    #[test]
+    fn an_unpark_then_a_take_out_is_an_exit_and_an_unpark_alone_is_not() {
+        let unpark = |to: [u8; 20]| {
+            let mut data = calldata::selector(calldata::UNPARK_SIGNATURE).to_vec();
+            data.extend_from_slice(&[0u8; 32]);
+            calldata::Call {
+                to,
+                value: [0u8; 32],
+                data,
+            }
+        };
+        let press = |calls: &[calldata::Call]| {
+            request(METHOD, json!([operation(&text(&address(9)), calls)]))
+        };
+        let both = press(&[
+            unpark(address(2)),
+            call(address(1), calldata::LEAVE_SIGNATURE),
+        ]);
+        assert!(
+            classify(&both, 31337, &allowed()).expect("passes").exit,
+            "a take out of parked Shares"
+        );
+        let alone = press(&[unpark(address(2))]);
+        assert!(
+            !classify(&alone, 31337, &allowed()).expect("passes").exit,
+            "an unpark alone counts like any other operation"
+        );
+        let twice = press(&[
+            unpark(address(2)),
+            unpark(address(2)),
+            call(address(1), calldata::LEAVE_SIGNATURE),
+        ]);
+        assert!(!classify(&twice, 31337, &allowed()).map_or(false, |parsed| parsed.exit));
     }
 
     /// K9 (the pins): a method other than the one, a batch array, a body over 32 KB, another chain, two operations, and

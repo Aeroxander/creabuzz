@@ -15,6 +15,9 @@ pub const EXECUTE_SIGNATURE: &str = "execute(bytes32,bytes)";
 pub const LEAVE_SIGNATURE: &str = "leave(uint256,uint256,address)";
 /// `leaveTeam(uint256,uint256,address)` of the Treasury: take out Team Shares.
 pub const LEAVE_TEAM_SIGNATURE: &str = "leaveTeam(uint256,uint256,address)";
+/// `unpark(uint256)` of a project's holder pause: take parked Shares back (the first call of a Take out of Shares that
+/// are parked).
+pub const UNPARK_SIGNATURE: &str = "unpark(uint256)";
 /// The most calls a batch may hold (the app's decoder has the same bound).
 pub const BATCH_MAX: usize = 64;
 
@@ -207,18 +210,39 @@ pub fn decode(call_data: &[u8]) -> Result<Vec<Call>, DecodeError> {
     Ok(calls)
 }
 
-/// Whether every call in the operation is an exit: a call to one of `treasuries` with no native value whose function is
-/// `leave` or `leaveTeam`. An operation of no calls is not one.
-pub fn is_exit(calls: &[Call], treasuries: &[[u8; 20]]) -> bool {
-    let (leave, leave_team) = (selector(LEAVE_SIGNATURE), selector(LEAVE_TEAM_SIGNATURE));
-    !calls.is_empty()
-        && calls.iter().all(|call| {
-            treasuries.contains(&call.to)
-                && call.is_zero_value()
-                && call
-                    .selector()
-                    .is_some_and(|s| s == leave || s == leave_team)
-        })
+/// Whether the operation is an exit: every call goes to a followed contract with no native value, and the calls are
+/// `leave` or `leaveTeam` of one of `treasuries`, or `unpark(uint256)` of one of `pauses` (at most one `unpark` of each
+/// pause), with **at least one `leave` or `leaveTeam`**. A holder whose Shares are parked takes out in one press that
+/// takes them back first (`[unpark, leave]`); an `unpark` alone is not an exit (it moves no money out of the project, so
+/// it counts like any other operation), and a batch of `unpark`s cannot be made to burn the sponsor's fee on a `leave`
+/// that is not there. An operation of no calls is not one.
+pub fn is_exit(calls: &[Call], treasuries: &[[u8; 20]], pauses: &[[u8; 20]]) -> bool {
+    let (leave, leave_team, unpark) = (
+        selector(LEAVE_SIGNATURE),
+        selector(LEAVE_TEAM_SIGNATURE),
+        selector(UNPARK_SIGNATURE),
+    );
+    let mut leaves = 0usize;
+    let mut unparked: Vec<[u8; 20]> = Vec::new();
+    for call in calls {
+        if !call.is_zero_value() {
+            return false;
+        }
+        let Some(called) = call.selector() else {
+            return false;
+        };
+        if treasuries.contains(&call.to) && (called == leave || called == leave_team) {
+            leaves += 1;
+        } else if pauses.contains(&call.to) && called == unpark && call.data.len() == 36 {
+            if unparked.contains(&call.to) {
+                return false;
+            }
+            unparked.push(call.to);
+        } else {
+            return false;
+        }
+    }
+    leaves > 0
 }
 
 #[cfg(test)]
@@ -355,44 +379,111 @@ mod tests {
         };
         let treasury = rows("a take out")[0].to;
         let followed = [treasury];
-        assert!(is_exit(&rows("a take out"), &followed));
-        assert!(is_exit(&rows("a take out of Team Shares"), &followed));
+        assert!(is_exit(&rows("a take out"), &followed, &[]));
+        assert!(is_exit(&rows("a take out of Team Shares"), &followed, &[]));
         assert!(
-            is_exit(&rows("two take outs in one batch"), &followed),
+            is_exit(&rows("two take outs in one batch"), &followed, &[]),
             "all calls are exits"
         );
         assert!(
             !is_exit(
                 &rows("a take out and something else in one batch"),
-                &followed
+                &followed,
+                &[]
             ),
             "one call that is not an exit makes the whole operation not one"
         );
-        assert!(!is_exit(&rows("a single call with data"), &followed));
+        assert!(!is_exit(&rows("a single call with data"), &followed, &[]));
         assert!(
-            !is_exit(&rows("a take out"), &[]),
+            !is_exit(&rows("a take out"), &[], &[]),
             "a treasury this reader does not follow"
         );
-        assert!(!is_exit(&rows("a take out"), &[[7u8; 20]]));
+        assert!(!is_exit(&rows("a take out"), &[[7u8; 20]], &[]));
         assert!(
-            !is_exit(&[], &followed),
+            !is_exit(&[], &followed, &[]),
             "an operation of no calls is not an exit"
         );
         let mut with_value = rows("a take out");
         with_value[0].value[31] = 1;
         assert!(
-            !is_exit(&with_value, &followed),
+            !is_exit(&with_value, &followed, &[]),
             "a call that sends value is not an exit"
         );
         let mut other_function = rows("a take out");
         other_function[0].data[0] ^= 0xff;
-        assert!(!is_exit(&other_function, &followed));
+        assert!(!is_exit(&other_function, &followed, &[]));
         let mut short = rows("a take out");
         short[0].data.truncate(3);
         assert!(
-            !is_exit(&short, &followed),
+            !is_exit(&short, &followed, &[]),
             "call data too short to hold a selector"
         );
+    }
+
+    fn unpark(to: [u8; 20], value: u8) -> Call {
+        let mut data = selector(UNPARK_SIGNATURE).to_vec();
+        data.extend_from_slice(&[0u8; 31]);
+        data.push(value);
+        Call {
+            to,
+            value: [0u8; 32],
+            data,
+        }
+    }
+
+    /// A holder whose Shares are parked takes out in one press that takes them back first: `[unpark, leave]` is an
+    /// exit and is never charged; `[unpark]` alone, a second `unpark` of one pause, an `unpark` of a pause this reader
+    /// does not follow, one that sends value, and one with extra data are not. (Guard: `is_exit`'s pause rule.)
+    #[test]
+    fn an_unpark_before_a_take_out_is_part_of_the_exit_and_an_unpark_alone_is_not() {
+        let vectors = vectors();
+        let leave = calls_of(
+            vectors["valid"]
+                .as_array()
+                .expect("rows")
+                .iter()
+                .find(|r| r["name"] == "a take out")
+                .expect("the vectors have a take out"),
+        )
+        .remove(0);
+        let (treasuries, pause, other) = ([leave.to], [0x55u8; 20], [0x66u8; 20]);
+        let pauses = [pause];
+        assert!(is_exit(
+            &[unpark(pause, 5), leave.clone()],
+            &treasuries,
+            &pauses
+        ));
+        assert!(
+            !is_exit(&[unpark(pause, 5)], &treasuries, &pauses),
+            "an unpark alone moves no money out and is not an exit"
+        );
+        assert!(
+            !is_exit(
+                &[unpark(pause, 5), unpark(pause, 6), leave.clone()],
+                &treasuries,
+                &pauses
+            ),
+            "two unparks of one pause"
+        );
+        assert!(
+            !is_exit(&[unpark(other, 5), leave.clone()], &treasuries, &pauses),
+            "a pause this reader does not follow"
+        );
+        assert!(!is_exit(
+            &[unpark(pause, 5), leave.clone()],
+            &treasuries,
+            &[]
+        ));
+        let mut with_value = unpark(pause, 5);
+        with_value.value[31] = 1;
+        assert!(!is_exit(&[with_value, leave.clone()], &treasuries, &pauses));
+        let mut long = unpark(pause, 5);
+        long.data.push(0);
+        assert!(!is_exit(&[long, leave.clone()], &treasuries, &pauses));
+        // Another function of the pause is not an exit's call.
+        let mut park = unpark(pause, 5);
+        park.data[..4].copy_from_slice(&selector("park(uint256)"));
+        assert!(!is_exit(&[park, leave], &treasuries, &pauses));
     }
 
     #[test]
