@@ -220,7 +220,7 @@ describe("a task with a live plan on the network", () => {
     show(numbers, record);
     expect(screen.getByTestId("task-chain-state")).toBeTruthy();
     expect(screen.getByTestId("task-chain-tie").textContent).toMatch(
-      /not for this task as it is written here .*wallet/,
+      /not for this task as it is written here .*account/,
     );
   });
 

@@ -26,7 +26,7 @@ export const TASK_PROBLEM = {
   recordAfterPay:
     "The money was sent, but the record that the work was accepted was not saved. Press again to save it: nothing is paid twice.",
   noPayee:
-    "The person who took this named no wallet to be paid at, so nothing can be sent. If you accept it now, nothing is paid and this app has no way to pay it later.",
+    "The person who took this named no account to be paid at, so nothing can be sent. If you accept it now, nothing is paid and this app has no way to pay it later.",
   noPayeeSure:
     "Press again to accept it. It will show as accepted, pay owed, and nothing can be sent from here.",
   pairSure:
@@ -35,7 +35,7 @@ export const TASK_PROBLEM = {
     'Press again to accept it now. It will show as accepted, pay owed, and the task offers "Pay from the box" as soon as the box holds enough.',
   /** On an accepted task whose worker named no wallet. */
   owedNoPayee:
-    "The person who did this named no wallet to be paid at, so the pay cannot be sent from here.",
+    "The person who did this named no account to be paid at, so the pay cannot be sent from here.",
   /** After a Pair's signer asked for the pay: nothing moved yet. */
   asked:
     "Asked. The pay goes out when the other signer confirms it on the Money tab. Then come back here and save that it was paid.",
@@ -84,15 +84,15 @@ export function taskRefusalWords(message: string): string | null {
   const said = message.toLowerCase();
   const table: readonly (readonly [string, string])[] = [
     [
-      "name the wallet you will take it with",
-      "This task is planned on the network, so it is paid to a wallet you name. Connect a wallet and take it again.",
+      "name the account you will take it with",
+      "This task is planned on the network, so it is paid to an account you name. Connect your account and take it again.",
     ],
     [
-      "the plan on the network names another wallet",
-      "The team planned this task for another wallet, so it cannot be taken with this one.",
+      "the plan on the network names another account",
+      "The team planned this task for another account, so it cannot be taken with this one.",
     ],
     [
-      "already taken on the network by another wallet",
+      "already taken on the network by another account",
       "Someone else has already taken this task.",
     ],
     [
@@ -108,8 +108,8 @@ export function taskRefusalWords(message: string): string | null {
       "That is not the payment that paid this task.",
     ],
     [
-      "paid another wallet than the one the worker named",
-      "The network paid another wallet than the one the worker named, so this cannot be saved as paid.",
+      "paid another account than the one the worker named",
+      "The network paid another account than the one the worker named, so this cannot be saved as paid.",
     ],
     [
       "withdraw or send back the money on the network first",
@@ -171,7 +171,7 @@ export function boxShortWords(
 
 /** The sentence beside "Pay from the box": what goes where. */
 export function payTermsWords(usd: number, payee: string): string {
-  return `${dollarsWords(usd)} go from the allowance box to ${payee}, the wallet the worker named.`;
+  return `${dollarsWords(usd)} go from the allowance box to ${payee}, the account the worker named.`;
 }
 
 /** The payment found on the chain, in words. */

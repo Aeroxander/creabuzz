@@ -201,8 +201,8 @@ const TIE_REASON: Record<TieWhy, string> = {
   closed: "the task was stopped or given up here",
   "already-paid": "it was already paid here",
   amount: "the pay is not the same",
-  payee: "the wallet it names is not the one the worker named",
-  taker: "the wallet that took it is not the one the worker named",
+  payee: "the account it names is not the one the worker named",
+  taker: "the account that took it is not the one the worker named",
   repeat: "it was planned more than once",
   "worker-left": "the person who took it gave it up",
   "not-taken": "nobody has agreed to do it here yet",
@@ -227,7 +227,7 @@ export function deadlinePassed(deadline: number, now: number): string {
 
 /** The wallet that took the task on the network is not the one the worker named here. */
 export function takerDiffers(onNetwork: string, named: string | null): string {
-  return `The network says this task was taken by ${onNetwork}, but the person who took it here named ${named ?? "no wallet"} to be paid. Nothing can be paid until they match. You can send the money back.`;
+  return `The network says this task was taken by ${onNetwork}, but the person who took it here named ${named ?? "no account"} to be paid. Nothing can be paid until they match. You can send the money back.`;
 }
 
 /** A plan that does not tie in some other way. */

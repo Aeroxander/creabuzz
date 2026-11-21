@@ -15,9 +15,8 @@ interface OverlayPaneProps {
 
 /** Whether focus can be given back to `element`: it is still on the page, not turned off and not hidden. */
 function canTakeFocus(element: HTMLElement | null): element is HTMLElement {
+  if (!element?.isConnected) return false;
   return (
-    element !== null &&
-    element.isConnected &&
     !(element as HTMLButtonElement).disabled &&
     element.getAttribute("aria-hidden") !== "true" &&
     !element.closest("[hidden], [inert]")

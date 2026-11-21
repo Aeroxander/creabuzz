@@ -46,7 +46,7 @@ async function refusedWith(message: string): Promise<string> {
 describe("a refusal about a plan on the network", () => {
   it("is told in plain words, without the server's prefix", async () => {
     const said = await refusedWith(
-      "invalid: this task is planned on the network: name the wallet you will take it with",
+      "invalid: this task is planned on the network: name the account you will take it with",
     );
     expect(said).toMatch(/^This task is planned on the network, so it is paid/);
     expect(said).not.toMatch(/invalid:/);
@@ -67,13 +67,13 @@ describe("a refusal about a plan on the network", () => {
 
   it("every sentence the server's plan rules give has a plain one", () => {
     for (const tail of [
-      "name the wallet you will take it with",
-      "the plan on the network names another wallet",
-      "already taken on the network by another wallet",
+      "name the account you will take it with",
+      "the plan on the network names another account",
+      "already taken on the network by another account",
       "plan has ended on the network",
       "pay it on the network first",
       "not the payment that paid this task",
-      "paid another wallet than the one the worker named",
+      "paid another account than the one the worker named",
       "withdraw or send back the money on the network first",
     ])
       expect(taskRefusalWords(`invalid: this task ${tail}`)).not.toBeNull();

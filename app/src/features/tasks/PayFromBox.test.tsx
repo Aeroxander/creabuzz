@@ -343,10 +343,10 @@ describe("an accepted task whose pay is owed", () => {
     expect(screen.queryByTestId("task-pay-section")).toBeNull();
   });
 
-  it("says when the worker named no wallet that nothing can be sent", () => {
+  it("says when the worker named no account that nothing can be sent", () => {
     card(accepted({ payTo: null }));
     expect(screen.getByTestId("task-pay-no-payee").textContent).toMatch(
-      /named no wallet/,
+      /named no account/,
     );
     expect(screen.queryByTestId("task-pay")).toBeNull();
   });

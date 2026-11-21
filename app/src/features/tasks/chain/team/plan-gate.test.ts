@@ -89,11 +89,11 @@ describe("what stops a plan", () => {
     expect(planBlock(input(numbers, { boxPaid: false }))).toBeNull();
   });
 
-  it("a pay-to of the zero address (open to anyone on the network) is no wallet, so nothing is planned", () => {
+  it("a pay-to of the zero address (open to anyone on the network) is no account, so nothing is planned", () => {
     const numbers = scene();
     const task = planTask({ payTo: `0x${"0".repeat(40)}` });
     expect(planBlock(input(numbers, { task }))?.sentence).toMatch(
-      /has not named a wallet/,
+      /has not named an account/,
     );
   });
 
@@ -182,7 +182,7 @@ describe("what stops a plan", () => {
     const say = (task: ReturnType<typeof planTask>) =>
       planBlock(input(numbers, { task }))?.sentence;
     expect(say(planTask({ payTo: null }))).toBe(
-      "Sam has not named a wallet to be paid at, so this cannot be planned. Ask them to agree to the task first.",
+      "Sam has not named an account to be paid at, so this cannot be planned. Ask them to agree to the task first.",
     );
     expect(say(planTask({ state: "cancelled" }))).toMatch(
       /stopped or given up/,
@@ -193,7 +193,7 @@ describe("what stops a plan", () => {
     ).toMatch(/already paid here/);
     expect(say(planTask({ usd: null }))).toBe(PLAN_BLOCK.noPay);
     expect(say(planTask({ state: "open", worker: null, payTo: null }))).toMatch(
-      /^Sam has not named a wallet/,
+      /^Sam has not named an account/,
     );
     expect(say(planTask({ state: "offered" }))).toMatch(
       /Nobody has taken or agreed/,

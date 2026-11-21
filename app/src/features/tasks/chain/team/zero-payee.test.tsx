@@ -66,7 +66,7 @@ describe("a pay-to that the network reads as 'anyone'", () => {
     );
     // The card says the wallet is missing and offers no plan press at all.
     expect((await screen.findByTestId("door-waiting")).textContent).toMatch(
-      /wallet/,
+      /account/,
     );
     expect(screen.queryByTestId("door-plan")).toBeNull();
     expect(chain.sent).toEqual([]);

@@ -189,7 +189,7 @@ export function PlanSheet({
           <SheetLine label="Pay to" testId="plan-pay-to">
             {workerName}
             <span className="num block text-sm text-muted">
-              {task.payTo ?? "no wallet named"}
+              {task.payTo ?? "no account named"}
             </span>
           </SheetLine>
           <SheetLine label="Up to" testId="plan-max">

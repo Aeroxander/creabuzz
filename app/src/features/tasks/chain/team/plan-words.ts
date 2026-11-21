@@ -114,7 +114,7 @@ export const PLAN_BLOCK = {
 
 /** The worker named no wallet to be paid at. */
 function noWallet(name: string): string {
-  return `${name} has not named a wallet to be paid at, so this cannot be planned. Ask them to agree to the task first.`;
+  return `${name} has not named an account to be paid at, so this cannot be planned. Ask them to agree to the task first.`;
 }
 
 /** The same task is already on the network. */
@@ -157,7 +157,7 @@ export const PLAN_READ_FAILED =
 
 /** The line on the card before a plan: a worker has the task but named no wallet. */
 export function waitingForWallet(name: string): string {
-  return `${name} has not named a wallet to be paid at, so the team cannot plan the pay yet. Ask them to agree to the task first.`;
+  return `${name} has not named an account to be paid at, so the team cannot plan the pay yet. Ask them to agree to the task first.`;
 }
 
 /** The price of the plan in a button: "Plan the pay of 40 dollars". */
