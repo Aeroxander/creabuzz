@@ -228,7 +228,7 @@ Chosen under the owner's standing go; the owner may overrule
     address is never a wallet's, so a record cannot be read by the wrong sender.
 11. **The plan's `SendResult` / `Sender` names were not introduced.** `MoneyWallet` kept its name and the new members are
     optional, so no screen or stand-in changed. `sendCalls` gained an optional third argument and an optional `userOpHash`.
-12. **I added `app/.env.example`** (there was none for the app) to document the settings, and `app/playwright.phone.config.ts`
+12. **I added `app/.env.example`** (there was none for the app) to document the settings, and `app/playwright.pot-phone.config.ts`
     plus two scripts for the phone proofs. I did not touch the root `knip.jsonc` (outside this track), and so typed the
     software passkey inside the app's tests rather than adding a declaration file the scan would flag.
 13. **Wording on the Back sheet** (`BackBox.tsx`, three strings and the press label) now depends on the sender: a call-site

@@ -115,7 +115,9 @@ two seconds of waiting for the next block. A "week" in this world is a real week
 record reads as old: the page says "as of ... This may be out of date: the server has not refreshed this project since." and Back
 waits ("The door to new backing is shut right now. Look again in a moment.") until the team checks in again and the server has read the
 block (up to a minute). The feed rounds to 100 dollars, so small Backs read "Some amounts were too small to show, so there is no
-total." Never move the clock when a step does not ask for it.
+total." After a move the **This week** card can also say "No check-in yet." and an old "Last check-in" date for a short while after a
+check-in (the page's own clock, and the old record). The terms and privacy note this world serves are the operator's drafts with
+bracketed items for counsel: that is expected on a test world. Never move the clock when a step does not ask for it.
 
 ### 4.1 Launch (Fay, profile 1)
 
@@ -123,15 +125,19 @@ total." Never move the clock when a step does not ask for it.
    Terms of use and have read the Privacy note. Posts and votes are public.", then "Create without a passkey" on plain http).
 2. Press **Start**. **Working:** "Start a project" and "Three answers. You can change them later, and nothing costs anything." Name it
    Beacon, answer "What will you make?" and "How will people know it worked?", press "Start".
-3. On Beacon's page press "Connect your wallet" (account 2), then "Open Beacon to backers". **Working:** the sheet "Launch Beacon" with
-   "Daily allowance, percent a day" (0.10) and "Team pool, Team Shares" (10,000,000). Press "Launch Beacon"; the wallet asks once.
+3. On Beacon's page press "Connect your wallet" (account 2). The card headed "Open Beacon to backers" then has the press "Launch".
+   **Working:** the sheet "Launch Beacon" with "Daily allowance, percent a day" (0.10) and "Team pool, Team Shares" (10,000,000).
+   Press its button "Launch Beacon"; the wallet asks once.
    **Working:** "It is on the network. Tying your page to it now." and then "Your project is open to backers." Until the server has read
    the block the Money tab says "No numbers yet" and shows no figure.
 
 ### 4.2 Backers, and the room both ways
 
+The other profiles find Beacon on **Home**, where the new project is listed (or paste the address from Fay's address bar).
+
 1. **Abe, on the phone, signed out:** open Beacon's address, Money tab, connect account 3 (he already has play dollars from part 3: the
-   faucet gives them once per account), Back 10. **Working:** no box in the sheet, only "To write in this project's room you need an account first. You can back now without one."
+   faucet gives them once per account), Back 10. (Two presses are called "Back" on a project's page: the one with the arrow at the top left
+   goes to the last page; the one you want sits under "How many dollars?".) **Working:** no box in the sheet, only "To write in this project's room you need an account first. You can back now without one."
 2. **Bea, profile 2:** sign up, open Beacon, connect account 6, "Get play dollars", Back 100. In the sheet the box "Let me write in
    this project's room" starts unticked, with "This links your wallet to your account. Anyone on this server can see the link, and so
    can see how many Shares that wallet holds." Tick it and press "Back with 100 dollars". **Working:** the wallet asks twice (the Back,
@@ -147,7 +153,8 @@ total." Never move the clock when a step does not ask for it.
 1. **Fay:** **This week**. **Working:** "Ten minutes a week: say what you did, and check in." Press "Post this week's update and check in",
    write a line, press "Post and check in" and sign once. "Updated today" shows.
 2. **Start a season** with the command the script printed under "To start a season" (run it in this folder, in a second terminal). If
-   you gave the script an `OPERATOR_KEY` in the environment, the command names `$OPERATOR_KEY` and the key is never printed; if not, the
+   you gave the script an `OPERATOR_KEY` in the environment, the command names `$OPERATOR_KEY` and the key is never printed: set
+   `OPERATOR_KEY` again in the second terminal before you run it (`export OPERATOR_KEY=<the same 64 hex characters>`); if not, the
    script made up a key for this world and printed the whole command. **Working:** it prints "Season 1", three dates, and
    `{"accepted":true,...`.
 3. **Fay:** Home. **Working:** "Season 1 is open. Projects can enter until demo day on" a date six weeks away, and "Enter Beacon". Press it.
@@ -185,13 +192,20 @@ total." Never move the clock when a step does not ask for it.
 4. **Wes**, Tasks tab: **working:** "Can be taken now, until" a date, then the press "Set the money aside" on each task. Press it; the
    sheet "Set the money aside for “Translate the stall guide”" says "You are named for this task: 4 dollars at most.", "Set aside now,
    about", and the box "Take it only if the whole 4 dollars is set aside" ("Nothing is taken if less would be set aside."). The wallet
-   asks once. **Working:** "Taken, due" a date 14 days away and "4 dollars are set aside for it." Do both tasks. Press "Hand in the
+   asks once. **Working:** "Taken, due" a date 14 days away and "4 dollars are set aside for it." Do both tasks. **On the second task, untick the box** "Take it only if the whole 3 dollars is set aside": the first one
+   lowered the project's money a little, so the whole 3 dollars is no longer available (the sheet says "about 2.93 dollars today", the
+   amount follows from your numbers), and with the box ticked the app answers "The project's money moved, so only 2.93 dollars would
+   be set aside, less than the 3 dollars you asked for. Nothing was taken. Look again and press again." every time. Unticked, it
+   says "2.93 dollars are set aside for it." (about; yours follows from the project's money). Press "Hand in the
    work" on the first, write what you did under "What you did", and send it.
 5. **The allowance draw (Fay):** Money tab, section "The allowance", whose first line says what the team can take a day and how much the box "holds"
    now. Press "Draw from the box". **Working:** the sheet "Draw from the allowance box" with "The box holds about ... now.
-   You can draw up to that". Put your own address (account 2) in "Draw to which account?" and an amount a little under what the sheet says
-   the box holds in "How many dollars?" (1 when it holds more than that), press "Draw" and sign once: "Drawn from the allowance box." The
-   box fills at 0.10% a day of the project's money and stops at a cap, so it never holds more than the sheet says.
+   You can draw up to that". Put your own address (account 2) in "Draw to which account?" and an amount clearly under what the sheet says
+   the box holds, and under "The box holds at most" on the Money tab (0.5 is safe; money set aside for tasks has just lowered that
+   cap), in "How many dollars?". The press then reads "Draw" and the amount (for 0.5, "Draw 0.50 dollars"); press it and sign once:
+   "Drawn from the allowance box." If you ask for more than the box holds the sheet says "That is more than the allowance box holds
+   right now. Draw less, or wait: the box fills a little each day. Nothing was sent." The box fills at 0.10% a day of the project's
+   money and stops at a cap, so it never holds more than the Money tab says.
 6. **Bea takes out while money is set aside:** Money tab, "Take out". **Working:** besides the usual sheet, "Part of the project's money
    is set aside for a task, for up to 14 days. You get ... dollars now, and up to ... dollars more if the task is not paid in full." and
    "Where you claim it". Press the button, sign once. Her Money tab then lists "Money you can claim".
@@ -202,15 +216,16 @@ total." Never move the clock when a step does not ask for it.
    paid on the network, but the record on the team's list does not say so yet." press "Save that it was paid" (nothing is paid twice).
 8. **Bea claims (exit note):** Money tab, "Money you can claim": "you took out while 4 dollars were set aside for it. The task is
    ended." and the press "Claim" with an amount. Press it. **Working:** the sheet "Claim" with the amount for “Translate the stall guide”, with "Set aside
-   when you took out", "Came back from it", "Your part of what came back", then "Claimed. The money is in your wallet." (In my walk
-   the press read "Claim 0.50 dollars": her part of the 1 dollar that came back. Yours follows from who still held Shares.)
+   when you took out", "Came back from it", "Your part of what came back", then "Claimed. The money is in your wallet." (The press reads "Claim" and an amount: her part of what came back. In one walk it was about 0.50 dollars, in another about
+   0.83; yours follows from who still held Shares, so do not expect these figures.)
 
 ### 4.6 The task that runs out
 
 Nobody pays the second task ("Paint the shop sign"). Move the clock past its due date (14 days after it was taken):
-`cast rpc --rpc-url <the chain address> evm_increaseTime 1300000`, wait two seconds. **Bea's Money tab** (in my walk): "This task ran out. You can
-claim 1.50 dollars now; claiming returns the money first." with the press "Claim 1.50 dollars" (your amount follows from who still
-held Shares); press it and sign once. **Fay's Tasks
+`cast rpc --rpc-url <the chain address> evm_increaseTime 1300000`, wait two seconds. **Bea's Money tab:** either "This task ran out. You can
+claim 1.50 dollars now; claiming returns the money first." with the press "Claim 1.50 dollars", or, if the server's helper has already
+returned the money, "The task is ended. You can claim 2.44 dollars now." with "Claim 2.44 dollars" (the amounts are from two walks; yours
+follow from who still held Shares, so read them as "about"); press it and sign once. **Fay's Tasks
 tab** says "“Paint the shop sign” ran out. Nothing was paid; the money went back." and under "Ended plans" the first one:
 "Paid 3 dollars of the 4 dollars set aside; the rest went back." (The server's helper also returns the money by itself about a minute
 and a half later, with nobody pressing: the full run, `scripts/pot-full-loop.sh pot-tasks.spec`, proves that.)
@@ -227,7 +242,8 @@ and a half later, with nobody pressing: the full run, `scripts/pot-full-loop.sh 
 
 A passkey, alerts when the app is closed, and the Copy and Share presses need a real certificate (the address of a test deployment:
 `docs/next-version/DEPLOY-TEST-NETWORK.md`). A laptop browser on `http://localhost` is secure enough for alerts in principle. Tried
-here, in Chromium with no connection to a push service: you sign up, back, open **You** (the server has a push key when you start the
+here, in Chromium with no connection to a push service: you sign up, back with the room box ticked (or press "Confirm this account backs the project" in the room: alerts are offered only to an account
+linked to its wallet; before that the **You** page says "To tell which projects you back, the server needs this account confirmed."), open **You** (the server has a push key when you start the
 script with `WORLD_PUSH=1 SERVE_HOST=localhost`), and under "Alerts when you are away" press "Turn on alerts". **What I saw:** the
 press ended with "Alerts could not be turned on. Try again." because a test browser has no push service. In a desktop Chrome with a
 connection it is **not tried by anyone yet**. The server's side of alerts (the message, its encryption, the three fixed sentences) is
