@@ -17,6 +17,7 @@ use super::ledger::Ledger;
 use super::numbers::{self, AsOf, Cadence};
 use super::record::{self, Record};
 use super::record_social::{SocialInput, SocialReport};
+use super::record_step4;
 use super::record_tests::Built;
 use super::views;
 use super::word::hex0x;
@@ -499,6 +500,246 @@ async fn the_records_own_check_refuses_ungranted_shares_that_count_the_reserve()
     early["pause"]["since"] = early["pause"]["pausesFrom"].clone();
     let bad = record::validate(&serde_json::from_value(early).expect("parses"));
     assert!(bad.iter().any(|b| b.contains("pause.paused")), "{bad:?}");
+}
+
+// ------------------------------------------------------------------------------------------ each rule of a key
+
+/// The book's ledger, the views read at its block and the block's time (the real run, untouched).
+async fn read_at(name: &str) -> (Ledger, views::Views, u64) {
+    let (fx, ledger, as_of, chain) = load(name);
+    let read = views::read(&chain, fx.launcher, &ledger, as_of.block, as_of.time)
+        .await
+        .expect("the views read");
+    (ledger, read, as_of.time)
+}
+
+/// Every rule `pause_from` holds the contract's numbers to, one at a time: break it and the key is `null` with the
+/// words that name the rule (and the rest of the record is signed, as RECORD-V2 section 13 says). Remove a rule from
+/// `pause_from` and its row fails here; the unbroken book gives the key.
+#[tokio::test]
+async fn each_rule_of_the_pause_key_leaves_it_null_when_broken() {
+    let (ledger, read, time) = read_at("Z_paused").await;
+    let (rec, why) = record_step4::pause(&ledger, &read, time);
+    assert!(
+        rec.is_some() && why.is_none(),
+        "the real run gives the key: {why:?}"
+    );
+    let backers = read.shares_supply;
+    type Break = Box<dyn Fn(&mut Ledger, &mut views::PauseViews)>;
+    let cases: Vec<(&str, &str, Break)> = vec![
+        (
+            "another contract's read",
+            "not the one the Treasury named",
+            Box::new(|_, p| p.address = "0x0000000000000000000000000000000000000001".into()),
+        ),
+        (
+            "parked Shares the events do not add up to",
+            "the events add up to",
+            Box::new(|_, p| p.parked_total += 1),
+        ),
+        (
+            "backer Shares the token does not say",
+            "the Share token says",
+            Box::new(|_, p| p.backer_shares += 1),
+        ),
+        (
+            "more parked than there are backer Shares",
+            "more than the",
+            Box::new(move |l, p| {
+                l.pause_seen.parked_total = backers + 1;
+                p.parked_total = backers + 1;
+            }),
+        ),
+        (
+            "a divisor of one",
+            "is outside",
+            Box::new(|_, p| p.line_divisor = 1),
+        ),
+        (
+            "a divisor of 101",
+            "is outside",
+            Box::new(|_, p| p.line_divisor = 101),
+        ),
+        (
+            "a line that is not backers over the divisor",
+            "give",
+            Box::new(|_, p| p.line += 1),
+        ),
+        (
+            "a warning day that is not a seventh of the unit",
+            "warning period",
+            Box::new(|_, p| p.day += 1),
+        ),
+        (
+            "a warning day of nothing",
+            "warning period",
+            Box::new(|_, p| p.day = 0),
+        ),
+        (
+            "an armedAt the events do not say",
+            "the events say it was armed",
+            Box::new(|_, p| p.armed_at += 1),
+        ),
+        (
+            "an armedAt after the block",
+            "is after the block's time",
+            Box::new(move |l, p| {
+                l.pause_seen.armed_at = time + 1;
+                p.armed_at = time + 1;
+            }),
+        ),
+        (
+            "a pausesFrom that is not armedAt plus the day",
+            "pausesFrom is",
+            Box::new(|_, p| p.pauses_from += 1),
+        ),
+        (
+            "parked Shares with no parker",
+            "accounts have",
+            Box::new(|l, _| l.pause_seen.parked_by.clear()),
+        ),
+    ];
+    for (what, words, broken) in cases {
+        let (mut ledger, mut read, _) = (ledger.clone(), read.clone(), ());
+        let mut p = read.pause.clone().expect("a pause").expect("read");
+        broken(&mut ledger, &mut p);
+        read.pause = Some(Ok(p));
+        let (rec, why) = record_step4::pause(&ledger, &read, time);
+        assert!(rec.is_none(), "{what}: the key should be null");
+        let why = why.unwrap_or_default();
+        assert!(
+            why.contains(words),
+            "{what}: left null for another reason: {why}"
+        );
+    }
+}
+
+/// The same for the claim key's rules.
+#[tokio::test]
+async fn each_rule_of_the_claim_key_leaves_it_null_when_broken() {
+    let (ledger, read, _) = read_at("Z_paused").await;
+    let (rec, why) = record_step4::earlier(&ledger, &read);
+    assert!(
+        rec.is_some() && why.is_none(),
+        "the real run gives the key: {why:?}"
+    );
+    let other = "0x0000000000000000000000000000000000000002";
+    type Break = Box<dyn Fn(&mut Ledger, &mut views::EarlierViews)>;
+    let cases: Vec<(&str, &str, Break)> = vec![
+        (
+            "no earlier pool funded",
+            "no earlier pool",
+            Box::new(|l, _| l.earlier_pool = None),
+        ),
+        (
+            "another claim contract",
+            "not the one the Launcher named",
+            Box::new(move |_, e| e.address = other.into()),
+        ),
+        (
+            "a pool that is not the funded one",
+            "the Launcher funded",
+            Box::new(|_, e| e.total += 1),
+        ),
+        (
+            "an empty pool",
+            "is outside 1 to",
+            Box::new(|l, e| {
+                l.earlier_pool = Some(0);
+                e.total = 0;
+            }),
+        ),
+        (
+            "a pool past its bound",
+            "is outside 1 to",
+            Box::new(|l, e| {
+                l.earlier_pool = Some(record_step4::MAX_EARLIER_POOL + 1);
+                e.total = record_step4::MAX_EARLIER_POOL + 1;
+            }),
+        ),
+        (
+            "a list with no rows",
+            "rows is outside",
+            Box::new(|_, e| e.rows = 0),
+        ),
+        (
+            "a list with too many rows",
+            "rows is outside",
+            Box::new(|_, e| e.rows = u128::from(u32::MAX) + 1),
+        ),
+        (
+            "more rows claimed than there are",
+            "more than the list holds",
+            Box::new(|_, e| e.claimed_rows = e.rows + 1),
+        ),
+        (
+            "more claimed than the pool",
+            "more than the list holds",
+            Box::new(|_, e| e.claimed_total = e.total + 1),
+        ),
+        (
+            "claims the events do not add up to",
+            "the events add up to",
+            Box::new(|l, _| l.earlier_claimed.1 += 1),
+        ),
+        (
+            "bound to a Vester the events never bound",
+            "events say bound is",
+            Box::new(|l, _| l.earlier_bound = false),
+        ),
+        (
+            "tied to a Vester that is not the project's",
+            "not to the project's Vester",
+            Box::new(move |_, e| e.vester = other.into()),
+        ),
+    ];
+    for (what, words, broken) in cases {
+        let (mut ledger, mut read) = (ledger.clone(), read.clone());
+        let mut e = read
+            .earlier
+            .clone()
+            .expect("a claim contract")
+            .expect("read");
+        broken(&mut ledger, &mut e);
+        read.earlier = Some(Ok(e));
+        let (rec, why) = record_step4::earlier(&ledger, &read);
+        assert!(rec.is_none(), "{what}: the key should be null");
+        let why = why.unwrap_or_default();
+        assert!(
+            why.contains(words),
+            "{what}: left null for another reason: {why}"
+        );
+    }
+}
+
+/// A `Parked`, `Unparked` or `Observed` event of the pause that does not agree with what the events before it add up to
+/// is an error, never a skip: the ledger refuses the whole read. (Guards: the sum check of `apply_park` and the
+/// `Observed` check in the ledger.)
+#[test]
+fn a_pause_event_that_disagrees_with_the_events_before_it_is_refused() {
+    let fx = Fixture::load_pause();
+    let rows = fx.rows("Z", fx.book_block("Z_end"));
+    assert!(Ledger::from_logs(&rows).is_ok(), "the real rows read");
+    for (event, field, words) in [
+        ("Parked", "parkedBy", "events add up to"),
+        ("Parked", "parkedTotal", "events add up to"),
+        ("Unparked", "parkedBy", "events add up to"),
+        ("Unparked", "parkedTotal", "events add up to"),
+        ("Observed", "parkedTotal", "the pause says"),
+    ] {
+        let mut broken = rows.clone();
+        let row = broken
+            .iter_mut()
+            .find(|r| r.role == Role::Pause && r.event == event)
+            .unwrap_or_else(|| panic!("the run holds a {event}"));
+        let was = amount(&row.fields[field]);
+        row.fields[field] = json!((was + 1).to_string());
+        let err = Ledger::from_logs(&broken).expect_err(&format!("{event}.{field} is held"));
+        assert!(
+            format!("{err:#}").contains(words),
+            "{event}.{field}: refused for another reason: {err:#}"
+        );
+    }
 }
 
 // ------------------------------------------------------------------------------------------ the second example

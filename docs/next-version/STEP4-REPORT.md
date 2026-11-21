@@ -285,3 +285,52 @@ Five reviewers (money, server, social, phone, fit) read `1fed95002..50f4beaf0`. 
 - The app no longer writes a copy of the post into a repost. Nothing on the server needs to change; a server that deletes reposts of a deleted post would close the same gap for other apps' reposts.
 - **`deploy/compose/run.sh`, `deploy/compose/compose.creaton.yml` and the Dockerfile** need `VITE_CREATON_EARLIER_CONTRACT`, `_TEXT_HASH` and `_TEXT_URL` added to their setting lists (outside every path of this round). The guide says so.
 - The money and server reviewers' findings (G7 race, helper-limit padding, test coverage of the new server guards) are not in the app's paths and were not touched.
+
+## 8. Review fixes (contracts and server)
+
+By the contracts and server fixer, against the five reviewers' findings. **Nothing in `contracts/pot` changed and no ABI, event, migration, record key or generated file changed**, so nothing was regenerated and `forge test` was not run (no `.sol` file is touched). Every change is in `crates/buzz-relay`. For the app fixer: no ABI or record field to follow. Two new refusal sentences can reach the app, both through prefixes it already reads: `invalid: this account has linked more wallets than the server can check against the helpers on the network; unlink the ones you do not use to clear this` (a manager's profile or a task step, `chain_agent_link::TOO_MANY_WALLETS`), and, when two confirms of one payment arrive together, the loser can get `retry: this season is busy; try again in a moment` (the existing `season_rules::BUSY` words, `retry:` prefix, after about 7 seconds of waiting for the other one to be stored). Show both through the existing prefix handling.
+
+### 8.1 Closed
+
+| Finding | What changed | Test that fails without it |
+|---|---|---|
+| Money I1 / Server I1: two confirms naming one box payment, sent together, both passed (G7 race) | `task_chain::enforce` takes an advisory lock on the project and the payment (`creaton-box:<project>:<tx>`, the season lock's own helper) before it counts the other tasks naming the payment, and returns it; `launch_update_authority` returns it to `ingest_event`, which keeps it until the record is stored | `task_chain_postgres_tests::two_confirms_sent_together_cannot_both_be_paid_by_one_draw` (three confirms of three tasks, one draw, `tokio::join!`, six rounds: exactly one accepted, two `already paid`). With the lock dropped before the store it fails; restored it passes |
+| Server I2: the helper-limit rules looked at 8 wallets in address order, so 8 lower throwaway wallets hid a helper wallet | new `wallet_binding::all_linked_wallets` (every live wallet read, up to 20 records, and whether the read reached the end); rules 1, 2 and 3 use it. An account whose records fill the read (20 or more, revoked ones count) is refused (`TOO_MANY_WALLETS`) because a live helper wallet could be past the read. `linked_wallets` (room, web push, the take caps) is unchanged and still returns 8 | `chain_agent_link_postgres_tests::a_helper_wallet_cannot_be_hidden_among_eight_lower_throwaway_wallets` (rules 1, 2 and 3 each with the helper wallet behind 8 lower ones) and `an_account_with_more_wallet_records_than_one_read_holds_is_refused_not_trusted`. Both fail with the cut back to 8 and with `decide_complete` returning `Ok` |
+| Server optional 4: a phone with a slow clock got the final "not shown" while the reader had not stored the draw's block | the confirm is judged by the later of its own time and the server's time | `a_confirm_from_a_slow_clock_is_asked_again_until_the_reader_is_a_minute_past_its_arrival` (fails with the server time dropped) |
+| Server I3: guards no test protected | see 8.2 | each row of 8.2 |
+
+### 8.2 Guards that now have a test (each switched off once, the named test failed)
+
+| Guard | Test |
+|---|---|
+| `from_box` for a plan past its deadline and unpaid | `task_chain_postgres_tests::a_payment_named_for_a_plan_that_ran_out_unpaid_is_held_to_the_network_too` |
+| `launched == project_id` filter in `box_lookup` | `a_draw_is_not_counted_under_a_launch_made_for_another_record` |
+| `decide_box`: launch not stored, no draw (ask again, then not shown), no wallet, other wallet, other amount, one draw one task, a batch of two pays two | `task_chain::tests::a_box_payment_is_judged_by_the_launch_the_draws_the_wallet_the_amount_and_the_other_tasks` (a pure test; the `!lookup.launched` arm fails it) |
+| every rule of `record_step4::pause_from` (13 rows: reads of another contract, parked total, backer Shares, parked over backers, divisor 1 and 101, line, day, zero day, armedAt against the events and against the block, pausesFrom, parkers) | `record_step4_tests::each_rule_of_the_pause_key_leaves_it_null_when_broken` (each broken row gives `None` with the rule's words; the unbroken run gives the key). Removing the day, `armedAt`-after-block and `pausesFrom` rules failed it |
+| every rule of `record_step4::earlier_from` (12 rows: no pool, other claim contract, pool not the funded one, empty pool, pool past its bound, 0 rows, too many rows, claimed rows over rows, claimed over pool, events against contract, bound against events, Vester not the project's) | `each_rule_of_the_claim_key_leaves_it_null_when_broken` (removing the Vester rule and the rows rule failed it) |
+| `apply_park` sum check and the `Observed` check | `a_pause_event_that_disagrees_with_the_events_before_it_is_refused` (five bent events; both checks off fail it) |
+| sponsor `read_allowed` `"pause"` arm (without it `[unpark, leave]` is not an exit on a live server) | `sponsor_postgres_tests::the_allow_list_has_the_treasuries_and_the_pauses_of_the_reader_and_no_others` (reads real `chain_contracts` rows; checks another reader's rows are not used; checks `[unpark, leave]` is an exit with the lists it read) |
+| `store::reveals` returning `PauseReady` (late discovery of the pause) | `scan_pause_postgres_tests::the_stored_rows_that_name_the_pause_and_the_claim_contract_are_found_again` (with `PauseReady` out of the query it fails) |
+
+### 8.3 What ran
+
+- `cargo fmt -p buzz-relay --check`: clean. `cargo clippy -p buzz-relay --all-targets -- -D warnings`: clean.
+- The relay tests of every module touched, with the Postgres ones (`--include-ignored --test-threads=1`, filters `task_chain chain_agent_link sponsor scan_pause room_ season launch_update wallet_binding record_step4 ledger calldata chain_reader`): **376 passed, 0 failed**.
+- The whole relay lib without the Postgres tests: 1946 passed, 1 failed, 742 ignored. The failure is `api::mesh_demo::tests::demo_join_forwarded_arm_round_trips_echo` (HTTP 504 from the sandbox's outbound proxy; the file is not in this round, and the server reviewer saw the same).
+- Not re-run: the anvil loops (`chain-loop-pot.sh`, `pot-chain-loop.sh`): nothing they exercise changed (no contract, no record field, no migration, and a record with no box payment takes the same path).
+
+### 8.4 Declined or left, with the reason
+
+- **Money I2 (a disarmed pause has no way back; the card says the wrong thing).** Not fixed in a contract, on purpose: `leave` must never read the pause (the rule that Take out cannot be slowed), so `leave` does not poke it. The app fixer built the press ("Start the day", `HolderPause.poke()`), which closes the gap for people. Two facts for it: `poke()` is permissionless and cannot revert; and the sponsor needs no entry for it: its allow list is by contract address, every contract the reader follows (the pause included) is on it, so a passkey account's `poke` is sponsored, counted against the per-account, per-address and server-wide daily limits like any non-exit call. The keeper's `pause.poke` job (the role is allowed by migration 0076, no code builds it) was **not built**: it needs a new `HelperCall`, a planner rule, a head check and their tests in the helper, a larger change than the finding asks for, and a missed arm costs no one money; it is the next step if the owner wants the day to start without anyone pressing.
+- **G7 draw not tied to the task's own time (Money and Server optional).** Not built. A draw made before the worker took the task can be cited for a later task of the same wallet and amount. Each draw is cited by one task only, only the team signs a confirm, and nothing is paid by it; fixing it needs the take's time against the draw's block time. For the owner.
+- **No reader configured: box payments are not checked** (Server optional 6). Unchanged (the module says so); a start-up log line was not added.
+- **The `crowded` guard of `box_lookup`** (64 stored confirms read means "paid enough") has no test: it needs 64 stored confirms for one payment. Left.
+- **The 1,000,000-parker bound** of the pause key has no test: it needs a million-entry map. Left (the rule is one comparison).
+- **Rule 1 looks at live helpers in every project the reader follows** (Server optional 7): a founder can `setAgent` a wallet a manager has linked. Left, as the reviewer rated it low harm; the refusal says how to clear it.
+- **A failed pause or claim read signs the key as `null`; a stream that disagrees (`apply_park`, `Observed`) fails the project's record** (Server optional 8). As RECORD-V2 13.7 says; noted only.
+- **Unclaimed earlier rows dilute backers' surplus for ever, also after a wind-down** (Money optional): plan D7, the owner's decision before a real network.
+
+### 8.5 Chosen under the owner's standing go; the owner may overrule
+
+- An account whose binding records fill one read (20 or more, revoked ones included, because a revoked record is still a record and cannot be removed) is refused for a manager profile and for every task step in a chain-following project, rather than trusted. A real person has a handful. The other choice was to ask the network the other way round (which accounts hold each live helper wallet) and refuse nobody; it needs a read per helper and was not cheap.
+- The lock on a box payment waits as the season lock does (up to about 7 seconds) and then answers with the season lock's `retry:` words. A confirm that names no payment, or one for a task with a plan the network paid, takes no lock.

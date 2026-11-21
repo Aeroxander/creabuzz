@@ -111,6 +111,29 @@ pub(crate) async fn linked_wallets(
     community: CommunityId,
     pubkey: &[u8],
 ) -> Result<Vec<Wallet>, DbError> {
+    let mut wallets = all_linked_wallets(state, community, pubkey).await?.wallets;
+    wallets.truncate(WALLETS_USED);
+    Ok(wallets)
+}
+
+/// Every live wallet of one account that a rule which must not miss one can use.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct AllWallets {
+    /// The live wallets in address order (at most [`WALLETS_READ`]).
+    pub(crate) wallets: Vec<Wallet>,
+    /// Whether the account's binding records were all read: `false` when the read stopped at [`WALLETS_READ`] records,
+    /// so a live wallet may be among the ones not read.
+    pub(crate) complete: bool,
+}
+
+/// The wallets `pubkey` has bound that are live now, all of those read (no cut at [`WALLETS_USED`]), and whether the
+/// read reached the end of the account's records. A rule that asks "does this account hold any wallet that is X" uses
+/// this one: an account must not be able to hide a wallet by linking more throwaway wallets than a rule looks at.
+pub(crate) async fn all_linked_wallets(
+    state: &AppState,
+    community: CommunityId,
+    pubkey: &[u8],
+) -> Result<AllWallets, DbError> {
     let records = state
         .db
         .query_events_for_event_write(&buzz_db::EventQuery {
@@ -121,6 +144,7 @@ pub(crate) async fn linked_wallets(
             ..buzz_db::EventQuery::for_community(community)
         })
         .await?;
+    let complete = i64::try_from(records.len()).is_ok_and(|read| read < WALLETS_READ);
     let now = u64::try_from(chrono::Utc::now().timestamp()).unwrap_or(0);
     let chain = reader_chain(state);
     let mut wallets: Vec<Wallet> = records
@@ -129,8 +153,7 @@ pub(crate) async fn linked_wallets(
         .collect();
     wallets.sort_unstable();
     wallets.dedup();
-    wallets.truncate(WALLETS_USED);
-    Ok(wallets)
+    Ok(AllWallets { wallets, complete })
 }
 
 /// The accounts that have bound any of `wallets` and whose binding is live now, as `(wallet, account pubkey)` pairs,

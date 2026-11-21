@@ -1501,6 +1501,58 @@ async fn a_box_payment_the_reader_may_not_have_read_yet_is_asked_again_not_refus
     .await;
 }
 
+/// A confirm dated minutes in the past (a phone whose clock runs slow) is judged by the server's time: the reader has
+/// not read a minute past the moment it arrived, so the answer is "ask again", not the final "not shown". Judge it by
+/// its own time alone and the first refusal below is the final one.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_confirm_from_a_slow_clock_is_asked_again_until_the_reader_is_a_minute_past_its_arrival()
+{
+    let w = world(true).await;
+    let task = open_task(&w.founder, &w.coordinate, "Paid from the box", "30");
+    w.accept(task.clone(), "the team posts a task").await;
+    let (tx, wallet, _) = first_draw(&w);
+    worker_takes(&w, &task, Some(&wallet)).await;
+    w.seed_run(&[]).await;
+    let (id, paid) = (task.id.to_hex(), hex0x(&tx));
+    let slow = || {
+        let tags: [&[&str]; 6] = [
+            &["a", w.coordinate.as_str()],
+            &["l", "creaton-task"],
+            &["task-part", "confirm"],
+            &["e", id.as_str()],
+            &["task", id.as_str()],
+            &["task-paid", paid.as_str()],
+        ];
+        let tags: Vec<Tag> = tags
+            .iter()
+            .map(|fields| Tag::parse(fields.to_vec()).expect("tag"))
+            .collect();
+        EventBuilder::new(Kind::Custom(KIND_LAUNCH_UPDATE as u16), "{}")
+            .tags(tags)
+            .allow_self_tagging()
+            .custom_created_at(Timestamp::from(Timestamp::now().as_secs() - 10 * 60))
+            .sign_with_keys(&w.founder)
+            .expect("sign")
+    };
+    // The reader has read to a minute and a half ago: past the slow confirm's own time plus a minute, not past now.
+    let now = Timestamp::now().as_secs();
+    w.read_a_block_at(now - 90).await;
+    w.refuse(
+        slow(),
+        NOT_SEEN_YET,
+        "a slow clock is not told the payment is not shown",
+    )
+    .await;
+    w.read_a_block_at(now + 3_600).await;
+    w.refuse(
+        slow(),
+        NOT_SHOWN,
+        "once the reader is past the arrival there is no draw",
+    )
+    .await;
+}
+
 /// One draw pays one task: two confirms of equal amount cannot name one payment. A transaction holding two draws to the
 /// worker's wallet pays two tasks and not three.
 #[tokio::test]
@@ -1570,6 +1622,107 @@ async fn one_box_payment_pays_one_task_and_a_batch_of_two_pays_two() {
     w.accept(
         paid_confirm(&w, &fifth, &mixed),
         "the draw to the worker's wallet in a mixed batch",
+    )
+    .await;
+}
+
+/// Review fix (G7 race): two confirms for two tasks of one worker that name one draw and arrive at the same moment
+/// must not both be stored. The count of the other tasks that name the payment and the store of the record are one
+/// step under a lock on the payment. Take the lock out (return `None` from the box branch of `enforce`) and, with the
+/// two sent together, both are accepted and this test fails.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn two_confirms_sent_together_cannot_both_be_paid_by_one_draw() {
+    // A few rounds, each with a draw of its own: the race is a matter of timing, the lock removes it.
+    for round in 0u8..6 {
+        let w = world(true).await;
+        let (tx, wallet, raw) = first_draw(&w);
+        let key = w.fx.projects["A"].key;
+        let tasks: Vec<Event> = ["First of two", "Second of two", "Third of three"]
+            .iter()
+            .map(|what| open_task(&w.founder, &w.coordinate, &format!("{what} {round}"), "30"))
+            .collect();
+        for task in &tasks {
+            w.accept(task.clone(), "the team posts a task").await;
+            worker_takes(&w, task, Some(&wallet)).await;
+        }
+        w.seed_run(&[]).await;
+        w.draw(key, tx, &wallet, raw, 0).await;
+        w.read_past_now().await;
+        let (a, b, c) = (
+            ingest(&w.state, &w.tenant, paid_confirm(&w, &tasks[0], &tx)),
+            ingest(&w.state, &w.tenant, paid_confirm(&w, &tasks[1], &tx)),
+            ingest(&w.state, &w.tenant, paid_confirm(&w, &tasks[2], &tx)),
+        );
+        let (a, b, c) = tokio::join!(a, b, c);
+        let results = [a, b, c];
+        let accepted = results.iter().filter(|r| r.is_ok()).count();
+        assert_eq!(
+            accepted, 1,
+            "round {round}: one draw pays one task, got {results:?}"
+        );
+        for refused in results.iter().filter_map(|r| r.as_ref().err()) {
+            assert!(
+                refused.contains(ALREADY_PAID),
+                "round {round}: refused for the wrong reason: {refused}"
+            );
+        }
+    }
+}
+
+/// A task whose plan ran out unpaid (past its deadline, nobody settled it yet) was paid, if at all, out of the allowance
+/// box: a confirm that names a payment for it is held to what the network shows, like one for a task with no plan.
+/// Make `from_box` false for a plan that is over and unpaid and the invented payment is accepted.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_payment_named_for_a_plan_that_ran_out_unpaid_is_held_to_the_network_too() {
+    let w = world(true).await;
+    let task = open_task(&w.founder, &w.coordinate, "Ran out", "30");
+    w.accept(task.clone(), "the team posts a task").await;
+    worker_takes(&w, &task, Some(NOT_A_PLANNED_WALLET)).await;
+    w.seed_run(&[(TAKEN, &task)]).await;
+    // The reader reads past the plan's deadline and past the confirm (an hour on).
+    let deadline: u64 = w.book_row("TaskTaken", TAKEN).2["deadline"]
+        .as_str()
+        .and_then(|s| s.parse().ok())
+        .expect("a deadline");
+    w.read_a_block_at(deadline.max(Timestamp::now().as_secs() + 3_600))
+        .await;
+    w.refuse(
+        paid_confirm(&w, &task, &[0x78; 32]),
+        NOT_SHOWN,
+        "a payment that never happened, for a plan that ran out",
+    )
+    .await;
+}
+
+/// A draw is counted only under this project's own launch: a record that names another launch has no draws here, so a
+/// confirm naming a transaction that holds a draw (of the key the record names) is not shown. Drop the
+/// `launched == project_id` filter in `box_lookup` and the payment below is accepted.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_draw_is_not_counted_under_a_launch_made_for_another_record() {
+    let w = world(true).await;
+    let task = open_task(&w.founder, &w.coordinate, "Paid from the box", "30");
+    w.accept(task.clone(), "the team posts a task").await;
+    let (tx, wallet, raw) = first_draw(&w);
+    worker_takes(&w, &task, Some(&wallet)).await;
+    w.seed_run(&[]).await;
+    w.draw(w.fx.projects["A"].key, tx, &wallet, raw, 0).await;
+    sqlx::query(
+        "UPDATE chain_logs SET decoded = jsonb_set(decoded, '{projectId}', to_jsonb($2::text)) \
+         WHERE reader = $1 AND role = 'launcher' AND event = 'ProjectLaunched'",
+    )
+    .bind(&w.reader)
+    .bind(project_id("37001:somebody-else:orbit"))
+    .execute(w.state.db.pool())
+    .await
+    .expect("another launch");
+    w.read_past_now().await;
+    w.refuse(
+        paid_confirm(&w, &task, &tx),
+        NOT_SHOWN,
+        "a draw under a launch made for another record",
     )
     .await;
 }

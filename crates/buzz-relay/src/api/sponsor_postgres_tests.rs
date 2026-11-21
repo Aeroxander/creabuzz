@@ -529,3 +529,71 @@ async fn k9_a_stranger_can_use_up_a_victims_day_but_never_the_victims_exit() {
         "but the victim can still take their money out: {leaving:?}"
     );
 }
+
+/// The allow-list is read from the reader's own contract rows: a Treasury is an exit target and a holder pause is where
+/// an exit may first take Shares back (`unpark`). Remove the `"pause"` arm of `read_allowed` and the pause is missing,
+/// so a call sequence `[unpark, leave]` would no longer count as an exit on a live server.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_allow_list_has_the_treasuries_and_the_pauses_of_the_reader_and_no_others() {
+    let state = crate::test_support::test_state().await;
+    let pool = state.db.pool();
+    let reader = format!("sponsor-allowed-{}", uuid::Uuid::new_v4().simple());
+    let other = format!("sponsor-allowed-{}", uuid::Uuid::new_v4().simple());
+    for (reader, address, role) in [
+        (&reader, [0x11u8; 20], "treasury"),
+        (&reader, [0x22u8; 20], "pause"),
+        (&reader, [0x33u8; 20], "shares"),
+        (&other, [0x44u8; 20], "pause"),
+    ] {
+        sqlx::query(
+            "INSERT INTO chain_contracts (reader, address, role, project_key, from_block) VALUES ($1, $2, $3, NULL, 0)",
+        )
+        .bind(reader)
+        .bind(address.as_slice())
+        .bind(role)
+        .execute(pool)
+        .await
+        .expect("a contract row");
+    }
+    let launcher = [0x99u8; 20];
+    let allowed = super::read_allowed(pool, &reader, &launcher)
+        .await
+        .expect("the allow-list reads");
+    assert_eq!(allowed.treasuries, vec![[0x11u8; 20]]);
+    assert_eq!(allowed.pauses, vec![[0x22u8; 20]]);
+    assert!(allowed.targets.contains(&launcher));
+    for address in [[0x11u8; 20], [0x22u8; 20], [0x33u8; 20]] {
+        assert!(allowed.targets.contains(&address));
+    }
+    assert!(
+        !allowed.targets.contains(&[0x44u8; 20]),
+        "another reader's contract is not this reader's"
+    );
+    // An unpark of that pause followed by a leave is the one exit that may begin with another call.
+    let calls = [
+        Call {
+            to: [0x22u8; 20],
+            value: [0u8; 32],
+            data: {
+                let mut data = calldata::selector(calldata::UNPARK_SIGNATURE).to_vec();
+                data.extend_from_slice(&[0u8; 32]);
+                data
+            },
+        },
+        Call {
+            to: [0x11u8; 20],
+            value: [0u8; 32],
+            data: {
+                let mut data = calldata::selector(calldata::LEAVE_SIGNATURE).to_vec();
+                data.extend_from_slice(&[0u8; 96]);
+                data
+            },
+        },
+    ];
+    assert!(calldata::is_exit(
+        &calls,
+        &allowed.treasuries,
+        &allowed.pauses
+    ));
+}

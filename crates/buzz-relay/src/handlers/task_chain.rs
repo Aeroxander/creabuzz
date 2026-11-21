@@ -394,7 +394,8 @@ pub(crate) struct BoxLookup {
 /// Decide a `confirm` that names a payment against what the network shows of it (see the module's words).
 ///
 /// `names.paid` is the payment and `names.worker_pay_to` the wallet the worker named; `usd` is what the task says it
-/// pays, in whole dollars, when it says; `created_at` is the confirm's own time. Nothing is refused when no payment is
+/// pays, in whole dollars, when it says; `created_at` is the time the confirm is judged by (its own, or the server's
+/// when that is later). Nothing is refused when no payment is
 /// named.
 ///
 /// | refused | when |
@@ -547,6 +548,9 @@ pub(crate) struct StepOn<'a> {
 /// `project_record` is the project's stored record (it names the chain key), `coordinate` its address, `event` the step
 /// being written and `step` which step it is (see [`StepOn`]). Runs after the signer is judged. No reader, no chain key, or a step that moves no money
 /// leaves the record as it was; a read that fails refuses the write.
+///
+/// A `confirm` that names a box payment is judged under a lock on that payment, which is returned: the caller keeps it
+/// until the record is stored, so two confirms that arrive together cannot both count the same draw as unused.
 pub(crate) async fn enforce(
     state: &Arc<AppState>,
     community: CommunityId,
@@ -554,7 +558,7 @@ pub(crate) async fn enforce(
     coordinate: &str,
     event: &Event,
     step: StepOn<'_>,
-) -> Result<(), IngestError> {
+) -> Result<Option<super::season_rules::SeasonLock>, IngestError> {
     let StepOn {
         part,
         task_id,
@@ -563,7 +567,7 @@ pub(crate) async fn enforce(
     } = step;
     let mut names = StepNames::of(event);
     if !is_judged(part, &names) {
-        return Ok(());
+        return Ok(None);
     }
     let reader = state
         .config
@@ -571,7 +575,7 @@ pub(crate) async fn enforce(
         .as_ref()
         .map(|reader| reader.reader_id());
     let Some(key) = chain_key_of(project_record) else {
-        return Ok(());
+        return Ok(None);
     };
     let lookup = chain_task_of(
         state.db.pool(),
@@ -606,11 +610,22 @@ pub(crate) async fn enforce(
     };
     if part == TaskPart::Confirm && names.paid.is_some() && from_box {
         let Some(reader) = reader.as_deref() else {
-            return Ok(());
+            return Ok(None);
         };
         if event_paid_tag(event).is_some_and(|raw| raw != raw.to_lowercase()) {
             return Err(refuse(LOWER_CASE_TX));
         }
+        // Which tasks name this payment is counted and the record stored as one step: the lock is on the payment (in
+        // the project's own words), and the caller lets go of it once the record is stored.
+        let lock = super::season_rules::SeasonLock::acquire_named(
+            state.db.pool(),
+            format!(
+                "creaton-box:{}:{}",
+                project_id(coordinate),
+                names.paid.as_deref().unwrap_or_default()
+            ),
+        )
+        .await?;
         names.worker_pay_to = match worker {
             Some(worker) => {
                 super::task_takes::stored_pay_to(state, community, task_id, worker).await?
@@ -627,9 +642,14 @@ pub(crate) async fn enforce(
             task_id,
         )
         .await?;
-        decide_box(&names, usd, &lookup, event.created_at.as_secs()).map_err(refuse)?;
+        // The confirm is judged by the later of its own time and the server's: a phone whose clock runs slow must not
+        // be told "not shown" before the reader has read a minute past the moment the confirm arrived.
+        let now = u64::try_from(chrono::Utc::now().timestamp()).unwrap_or(0);
+        let judged_at = event.created_at.as_secs().max(now);
+        decide_box(&names, usd, &lookup, judged_at).map_err(refuse)?;
+        return Ok(Some(lock));
     }
-    Ok(())
+    Ok(None)
 }
 
 /// The `task-paid` tag of `event` as written (not lower-cased).
@@ -1174,6 +1194,91 @@ mod tests {
             serde_json::json!({ "serial": "2" }),
             vec![0; 32],
         )
+    }
+
+    fn lookup(draws: &[(&str, u128)], others: &[Option<&str>]) -> BoxLookup {
+        BoxLookup {
+            launched: true,
+            draws: draws.iter().map(|(to, a)| ((*to).to_owned(), *a)).collect(),
+            as_of: 5_000,
+            others: others.iter().map(|o| o.map(str::to_owned)).collect(),
+        }
+    }
+
+    /// A confirm of a box payment, judged by `decide_box` on its own (the stored rows are read elsewhere).
+    #[test]
+    fn a_box_payment_is_judged_by_the_launch_the_draws_the_wallet_the_amount_and_the_other_tasks() {
+        let paid = format!("0x{}", "11".repeat(32));
+        let step = StepNames {
+            paid: Some(paid),
+            worker_pay_to: Some(WALLET.to_owned()),
+            ..StepNames::default()
+        };
+        let thirty = 30 * DOLLAR_RAW;
+        let draws = [(WALLET, thirty)];
+        // Nothing is named: nothing is judged.
+        assert_eq!(
+            decide_box(&StepNames::default(), Some(30), &BoxLookup::default(), 0),
+            Ok(())
+        );
+        // The launch is not stored yet: ask again, whatever else the lookup holds.
+        let mut unlaunched = lookup(&draws, &[]);
+        unlaunched.launched = false;
+        assert_eq!(
+            decide_box(&step, Some(30), &unlaunched, 1_000),
+            Err(NOT_SEEN_YET)
+        );
+        // No draw: ask again until the reader is a minute past the confirm, then it is not shown.
+        let none = lookup(&[], &[]);
+        assert_eq!(decide_box(&step, Some(30), &none, 4_990), Err(NOT_SEEN_YET));
+        assert_eq!(decide_box(&step, Some(30), &none, 4_940), Err(NOT_SHOWN));
+        // The worker named no wallet, another wallet, or the task pays another amount.
+        let no_wallet = StepNames {
+            paid: step.paid.clone(),
+            ..StepNames::default()
+        };
+        assert_eq!(
+            decide_box(&no_wallet, Some(30), &lookup(&draws, &[]), 1_000),
+            Err(NO_WALLET)
+        );
+        assert_eq!(
+            decide_box(&step, Some(30), &lookup(&[(OTHER, thirty)], &[]), 1_000),
+            Err(BOX_OTHER_WALLET)
+        );
+        assert_eq!(
+            decide_box(&step, Some(31), &lookup(&draws, &[]), 1_000),
+            Err(BOX_OTHER_AMOUNT)
+        );
+        // A task that names no amount takes any draw to the wallet.
+        assert_eq!(decide_box(&step, None, &lookup(&draws, &[]), 1_000), Ok(()));
+        assert_eq!(
+            decide_box(&step, Some(30), &lookup(&draws, &[]), 1_000),
+            Ok(())
+        );
+        // One draw pays one task: another task at the same wallet (or at none anyone knows) uses it up; a task at
+        // another wallet does not.
+        assert_eq!(
+            decide_box(&step, Some(30), &lookup(&draws, &[Some(WALLET)]), 1_000),
+            Err(ALREADY_PAID)
+        );
+        assert_eq!(
+            decide_box(&step, Some(30), &lookup(&draws, &[None]), 1_000),
+            Err(ALREADY_PAID)
+        );
+        assert_eq!(
+            decide_box(&step, Some(30), &lookup(&draws, &[Some(OTHER)]), 1_000),
+            Ok(())
+        );
+        // Two draws pay two tasks and not three.
+        let two = [(WALLET, thirty), (WALLET, thirty)];
+        assert_eq!(
+            decide_box(&step, Some(30), &lookup(&two, &[Some(WALLET)]), 1_000),
+            Ok(())
+        );
+        assert_eq!(
+            decide_box(&step, Some(30), &lookup(&two, &[Some(WALLET), None]), 1_000),
+            Err(ALREADY_PAID)
+        );
     }
 
     #[test]

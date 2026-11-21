@@ -188,3 +188,29 @@ async fn the_signed_record_of_the_second_run_is_the_one_the_pure_builder_gives()
         .iter()
         .all(|h| h["account"] != hex0x(&z.pause.expect("pause"))));
 }
+
+/// A reader that ran before the pause existed in its list finds the pause (and the claim contract) again from the stored
+/// rows that name them: `store::reveals` returns the Treasury's `PauseReady` and the Launcher's `EarlierBound`. Take
+/// `PauseReady` out of its query and the late discovery of a pause never happens.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_stored_rows_that_name_the_pause_and_the_claim_contract_are_found_again() {
+    let fx = Fixture::load_pause();
+    let (reader, chain, _state) = setup(&fx).await;
+    chain.serve_books(&fx, &["Z_end"]);
+    read_all(&reader, &chain).await;
+    let after = fx.book_block("Z_end") + 1;
+    let found = store::reveals(reader.state.db.pool(), reader.reader_id(), after)
+        .await
+        .expect("the stored rows that name contracts");
+    let z = &fx.projects["Z"];
+    let named = |role: Role, event: &str| {
+        found
+            .iter()
+            .filter(|(r, key, _, e, _)| *r == role && key == &z.key && e == event)
+            .count()
+    };
+    assert_eq!(named(Role::Treasury, "PauseReady"), 1);
+    assert_eq!(named(Role::Launcher, "EarlierBound"), 1);
+    assert_eq!(named(Role::Launcher, "ProjectLaunched"), 1);
+}

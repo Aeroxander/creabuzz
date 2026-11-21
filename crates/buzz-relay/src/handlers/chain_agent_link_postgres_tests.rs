@@ -5,11 +5,14 @@
 //! `cargo test -p buzz-relay --lib -- chain_agent_link_postgres_tests --include-ignored --test-threads=1`.
 
 use buzz_core::kind::{KIND_LAUNCH_UPDATE, KIND_PROFILE};
+use k256::ecdsa::SigningKey;
 use nostr::{Event, Keys};
 use serde_json::json;
 
-use super::chain_agent_link::{ABOVE_HELPER_LIMIT, MANAGER_HAS_LIMITS, UNLABELLED_HELPER};
-use super::room_support::{anvil, ingest, room_world, signed, tag, RoomWorld};
+use super::chain_agent_link::{
+    ABOVE_HELPER_LIMIT, MANAGER_HAS_LIMITS, TOO_MANY_WALLETS, UNLABELLED_HELPER,
+};
+use super::room_support::{anvil, binding, ingest, room_world, signed, tag, RoomWorld};
 
 /// The run's account whose wallet the tests use as the helper wallet.
 const HELPER_WALLET: usize = 5;
@@ -253,6 +256,124 @@ async fn a_helper_posts_an_open_task_for_no_more_than_its_wallets_daily_limit() 
     w.accepts(
         w.open_task(&w.mate, "after", "41"),
         "the same task after unlinking the wallet",
+    )
+    .await;
+}
+
+/// A throwaway wallet's key and address, made from a number (a key anyone could make: it holds nothing).
+fn throwaway(n: u8) -> (SigningKey, String) {
+    let key = SigningKey::from_slice(&[n; 32]).expect("a key");
+    let address = buzz_evm_auth::EvmAddress::from_verifying_key(key.verifying_key()).to_hex();
+    (key, address.to_lowercase())
+}
+
+impl RoomWorld {
+    /// `who` links the throwaway wallet `n` (valid for an hour).
+    async fn link_throwaway(&self, who: &Keys, n: u8) {
+        let (key, address) = throwaway(n);
+        let expires = nostr::Timestamp::now().as_secs() + 3_600;
+        ingest(
+            &self.state,
+            &self.tenant,
+            binding(&self.fx, who, &key, &address, expires, false),
+        )
+        .await
+        .expect("links a throwaway wallet");
+    }
+
+    /// `who` links the helper wallet and then eight throwaway wallets whose addresses sort before it: the eight the
+    /// rules used to look at, and nothing else.
+    async fn pad_with_lower_wallets(&self, who: &Keys) {
+        let (_, helper) = anvil(&self.fx, HELPER_WALLET);
+        self.link(who, HELPER_WALLET, 3_600).await.expect("links");
+        let lower: Vec<u8> = (1u8..=60)
+            .filter(|n| throwaway(*n).1 < helper)
+            .take(8)
+            .collect();
+        assert_eq!(
+            lower.len(),
+            8,
+            "eight throwaway addresses sort below the helper wallet"
+        );
+        for n in lower {
+            self.link_throwaway(who, n).await;
+        }
+    }
+}
+
+/// Review fix: an account cannot hide its helper wallet among eight throwaway wallets that sort before it. Every rule
+/// asks about all the wallets the account has linked, not the first eight in address order. Cut the list back to eight
+/// (`truncate(WALLETS_USED)` in `all_linked_wallets`) and the three refusals below are accepted.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_helper_wallet_cannot_be_hidden_among_eight_lower_throwaway_wallets() {
+    // Rule 1: a manager's profile.
+    let w = room_world(true).await;
+    let (manager, operator) = (w.account().await, w.account().await);
+    w.pad_with_lower_wallets(&manager).await;
+    w.agent_set(w.key, HELPER_WALLET, true, 40_000_000, 1).await;
+    w.refuses(
+        label(&manager, &operator, true, 0),
+        MANAGER_HAS_LIMITS,
+        "a manager with the helper wallet behind eight others",
+    )
+    .await;
+
+    // Rule 2: an unlabelled account's task step.
+    let w = room_world(true).await;
+    w.pad_with_lower_wallets(&w.founder).await;
+    w.agent_set(w.key, HELPER_WALLET, true, 40_000_000, 1).await;
+    w.refuses(
+        w.open_task(&w.founder, "hidden", "10"),
+        UNLABELLED_HELPER,
+        "an unlabelled helper behind eight other wallets",
+    )
+    .await;
+
+    // Rule 3: a labelled helper's open task above the limit.
+    let w = room_world(true).await;
+    let operator = w.account().await;
+    w.accepts(
+        label(&w.mate, &operator, false, 0),
+        "the team member is labelled a helper",
+    )
+    .await;
+    w.pad_with_lower_wallets(&w.mate).await;
+    w.agent_set(w.key, HELPER_WALLET, true, 40_000_000, 1).await;
+    w.refuses(
+        w.open_task(&w.mate, "above", "41"),
+        ABOVE_HELPER_LIMIT,
+        "a task above the limit of a helper wallet behind eight others",
+    )
+    .await;
+}
+
+/// An account whose binding records were not all read (it links more wallets than one read holds) cannot be shown to
+/// hold no live helper wallet: its manager profile and its task steps are refused, with the words that say what to do.
+/// Treat an incomplete read as complete (`decide_complete` returning `Ok`) and both are accepted.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn an_account_with_more_wallet_records_than_one_read_holds_is_refused_not_trusted() {
+    let w = room_world(true).await;
+    let (manager, operator) = (w.account().await, w.account().await);
+    for n in 1u8..=21 {
+        w.link_throwaway(&manager, n).await;
+    }
+    w.refuses(
+        label(&manager, &operator, true, 0),
+        TOO_MANY_WALLETS,
+        "a manager that links twenty-one wallets",
+    )
+    .await;
+    // The same account writing a task step in the project (the founder here, who is the account that links them).
+    let w = room_world(true).await;
+    for n in 1u8..=21 {
+        w.link_throwaway(&w.founder, n).await;
+    }
+    w.refuses(
+        w.open_task(&w.founder, "padded", "10"),
+        TOO_MANY_WALLETS,
+        "a task step from an account that links twenty-one wallets",
     )
     .await;
 }

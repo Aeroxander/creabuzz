@@ -26,7 +26,7 @@ use sqlx::PgPool;
 
 use super::ingest::IngestError;
 use super::launch_update_authority::internal;
-use super::wallet_binding::{linked_wallets, wallet_text, Wallet};
+use super::wallet_binding::{all_linked_wallets, wallet_text, AllWallets, Wallet};
 use crate::state::AppState;
 
 /// Said on a manager profile whose account has linked a wallet that is a live helper on the network (rule 1).
@@ -35,6 +35,9 @@ pub(crate) const MANAGER_HAS_LIMITS: &str = "invalid: a manager account cannot a
 pub(crate) const UNLABELLED_HELPER: &str = "restricted: this wallet is set as a helper on the network; label this account as a helper, or unlink the wallet from this account, to clear this";
 /// Said on an open task above what the network lets the signer's helper wallet spend in a day (rule 3).
 pub(crate) const ABOVE_HELPER_LIMIT: &str = "invalid: that is more than the daily limit the network gives the helper that uses this account's wallet; offer less, or unlink that wallet from this account, to clear this";
+
+/// Said when an account has linked more wallets than can be read at once, so the network cannot be asked about all of them.
+pub(crate) const TOO_MANY_WALLETS: &str = "invalid: this account has linked more wallets than the server can check against the helpers on the network; unlink the ones you do not use to clear this";
 
 /// The most helper rows read for one account's wallets.
 const LIVE_READ: i64 = 64;
@@ -131,6 +134,16 @@ pub(crate) fn decide_step(
     }
 }
 
+/// An account whose records were not all read cannot be shown to hold no live helper wallet: it is refused (rules 1
+/// and 2 never trust an account that links more wallets than a read holds).
+pub(crate) fn decide_complete(all: &AllWallets) -> Result<(), &'static str> {
+    if all.complete {
+        Ok(())
+    } else {
+        Err(TOO_MANY_WALLETS)
+    }
+}
+
 /// Rule 1 on a manager's profile: refuse it when a wallet the account has linked is a live helper anywhere.
 pub(crate) async fn enforce_manager(
     state: &Arc<AppState>,
@@ -140,13 +153,15 @@ pub(crate) async fn enforce_manager(
     let Some(reader) = reader_of(state) else {
         return Ok(());
     };
-    let wallets = linked_wallets(state, community, &event.pubkey.to_bytes())
+    let all = all_linked_wallets(state, community, &event.pubkey.to_bytes())
         .await
         .map_err(|e| internal("reading the wallets the account linked", e))?;
-    let live = live_helpers(state.db.pool(), &reader, &wallets, None)
+    let live = live_helpers(state.db.pool(), &reader, &all.wallets, None)
         .await
         .map_err(|e| internal("reading the helpers on the network", e))?;
-    decide_manager(&live).map_err(|reason| IngestError::Rejected(reason.into()))
+    decide_manager(&live)
+        .and_then(|()| decide_complete(&all))
+        .map_err(|reason| IngestError::Rejected(reason.into()))
 }
 
 /// Rules 2 and 3 on a task step: `signer` writes `event` in the project whose chain key is `key`.
@@ -161,13 +176,15 @@ pub(crate) async fn enforce_step(
         return Ok(());
     };
     let signer = event.pubkey.to_bytes();
-    let wallets = linked_wallets(state, community, &signer)
+    let all = all_linked_wallets(state, community, &signer)
         .await
         .map_err(|e| internal("reading the wallets the account linked", e))?;
-    if wallets.is_empty() {
+    // A read that stopped short may have missed a helper wallet: an account cannot hide one among throwaway wallets.
+    decide_complete(&all).map_err(|reason| IngestError::Rejected(reason.into()))?;
+    if all.wallets.is_empty() {
         return Ok(());
     }
-    let live = live_helpers(state.db.pool(), &reader, &wallets, Some(key))
+    let live = live_helpers(state.db.pool(), &reader, &all.wallets, Some(key))
         .await
         .map_err(|e| internal("reading the helpers on the network", e))?;
     if live.is_empty() {
@@ -232,7 +249,12 @@ mod tests {
 
     #[test]
     fn every_refusal_says_how_to_clear_it() {
-        for words in [MANAGER_HAS_LIMITS, UNLABELLED_HELPER, ABOVE_HELPER_LIMIT] {
+        for words in [
+            MANAGER_HAS_LIMITS,
+            UNLABELLED_HELPER,
+            ABOVE_HELPER_LIMIT,
+            TOO_MANY_WALLETS,
+        ] {
             assert!(words.contains("unlink"), "{words}");
         }
         assert!(UNLABELLED_HELPER.contains("label this account"));

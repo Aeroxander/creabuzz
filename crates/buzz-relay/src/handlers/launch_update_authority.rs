@@ -1125,8 +1125,10 @@ pub(crate) async fn enforce_launch_update_authority(
         }
     })?;
 
+    // A confirm that names a box payment holds a lock on that payment until its record is stored.
+    let mut payment_lock = None;
     if let Some((part, Some(task_id))) = requirement.step {
-        super::task_chain::enforce(
+        payment_lock = super::task_chain::enforce(
             state,
             community,
             &record.event,
@@ -1174,7 +1176,8 @@ pub(crate) async fn enforce_launch_update_authority(
             )
             .await
         }
-        None => Ok(None),
+        // A season record is nothing else (see `classify`), so at most one of the two locks is held.
+        None => Ok(payment_lock),
     }
 }
 
