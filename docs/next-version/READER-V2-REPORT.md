@@ -49,10 +49,11 @@ report is in git at `561a12e7d`; what it built is kept short here.
    look dead). `facts_of` strips `asOf`, `builtAt` and every number that moves with time (pot, arriving, box, box cap, value, door
    `openNow`, active seconds, the quiet state, vesting, agents' use, `ledger.lastSettle`); `without_as_of` strips `asOf` and `builtAt`.
 3. **The chain helper** (`helper/`). The Rounds and Finisher calls, the earlier backers' delivery, the pool collect, `Vester.claim`
-   and the batch halving are gone. It sends two calls anyone may make on a project's Treasury: `collectFees()` (the platform's fee
-   goes to the platform) and `settle()` (once outside money has all arrived and is still stored as arriving). It never checks in,
-   takes out, refunds, draws or claims for anyone. The planner (`plan.rs`) builds a weekly fee job when fees are owed and a settle
-   job when arrived money waits.
+   and the batch halving are gone. It sends five calls anyone may make: `Treasury.collectFees()` (the platform's fee
+   goes to the platform), `settle()` (once outside money has all arrived and is still stored as arriving, or a task ran out), and,
+   since the launch round (see "The helper's three more calls" at the end), `Treasury.applyRate()`, `Vester.execute(id)` and
+   `Vester.burnAfterWindDown(id)`. It never checks in, takes out, refunds, draws, winds a project down or claims for anyone. The
+   planner (`plan.rs`) builds a weekly fee job when fees are owed, a settle job when arrived money waits, and the three more.
 4. **The manager's cost rules** (`api/manager/cost.rs`, `mod.rs`, `config.rs`).
    - The "free while the founder posts weekly" gate and the hosted allowance key on the project's first `Joined` with money in it
      (`first_backing`, still checked against the launch row's `projectId`).
@@ -94,8 +95,8 @@ The tests that bind the points of the brief:
 - **Heartbeat**: on Postgres, both projects are signed from stored rows and the real answers, the record kept is the typed record
   true for the last block, an unchanged project is not signed before its promised refresh and is signed again, with a later
   `builtAt`, once it is due (`scan_postgres_tests::the_reader_signs_records_and_signs_them_again_when_the_refresh_is_due`).
-- **The helper's rule**: `helper::calls::tests` lists 35 calls the helper must never be able to send (check-in, take-out, join, draw,
-  claim, grant, forfeits, rate, door, agents, seat, wind-down, the Pair's and the admin's calls, token moves) and fails if any is in the
+- **The helper's rule**: `helper::calls::tests` lists 39 calls the helper must never be able to send (check-in, take-out, join, draw,
+  claim, grant, announcing a forfeit, proposing or lowering the rate, door, agents, seat, wind-down, the Pair's and the admin's calls, token moves) and fails if any is in the
   allow-list or can be produced; it also checks every listed signature is a real function in the contracts' compiled ABIs, so a rename
   cannot turn the rule into nothing. Adding a call to the allow-list fails a test.
 - **The manager**: `cost::tests::play_dollars_count_for_nothing_unless_the_operator_sets_a_floor` (pure) and, on Postgres,
@@ -118,8 +119,8 @@ token stored with role `shares`; see "Closing the step 1 checks" below); the dol
 the view; Pair events followed. Pass B's:
 
 1. **Helper stored names.** *(Done in migration 0070, see below: the two calls are stored as `treasury.collectFees` and
-   `treasury.settle`.)* The other calls anyone may make (`applyRate()`, `Vester.execute(id)`, `Vester.burnAfterWindDown(id)`,
-   `Treasury.windDown()` after 26 quiet units) are **not built**: they are a decision for the owner, not a database limit any more.
+   `treasury.settle`.)* *(The launch round added `applyRate()`, `Vester.execute(id)` and `Vester.burnAfterWindDown(id)` in migration 0075; `Treasury.windDown()`
+   stays a person's press. See the end of this file.)*
    `Vester.claim` is left out on purpose (the lead said the helper never claims). The helper never checks in: it could not before
    either.
 2. **Play dollars and the manager.** "The cap is zero with play dollars" is read from the Launcher's own `testNetwork()` (noted by
@@ -260,7 +261,7 @@ migration count asserted by `crates/buzz-db` raised from 69 to 70.
   key)` and `balance_key` are gone). The migration moves Team change rows to the real key, adds change rows for Team Transfers that
   have none (the way 0068 did for backer Shares), and rebuilds every balance as the sum of its changes, which it always is (0068,
   0069). Zero balances are kept, as 0069 says they must be.
-- **Helper names.** `chain_helper_jobs.call` allows `treasury.collectFees` and `treasury.settle`; the helper writes only those. Rows of
+- **Helper names.** `chain_helper_jobs.call` allowed `treasury.collectFees` and `treasury.settle` (migration 0075 added `treasury.applyRate`, `vester.execute` and `vester.burnAfterWindDown`); the helper writes only those five. Rows of
   a reader that follows contracts/pot (it has a Team token) are renamed from `treasury.sweepFees` and `treasury.release`.
 - **Tests.** A behavioural one in `crates/buzz-db` (`chain_team_migration_postgres_tests`): a scratch database migrated through 0069
   is filled with the old shapes (both tokens stored as `shares`, Team balances under a derived key, a Team Transfer with no change
@@ -312,8 +313,8 @@ The helper section of that report now says, at its top and at the settings table
 3. **Agents' cut rule:** "probably live" comes from events (on, set after the last change of runner); the contract's views still decide
    `live`. Grants stay cut by id, as the spec had it.
 4. **Refresh floor stays 5 seconds**, ceiling 43200 (half a day, since round four; it was 86400, the app's range).
-5. **The other four calls anyone may make** (`applyRate()`, `Vester.execute`, `Vester.burnAfterWindDown`, `Treasury.windDown()`) are
-   still not built: with the database list no longer in the way, adding them is a product decision (who pays for gas for what).
+5. **The other four calls anyone may make** (`applyRate()`, `Vester.execute`, `Vester.burnAfterWindDown`, `Treasury.windDown()`) were
+   not built in this round. *(Three are built in the launch round, see the end of this file; `Treasury.windDown()` is not.)*
 
 ### What ran
 
@@ -391,8 +392,8 @@ for the server side too. The lead decided each; nothing else changed.
 
 - `PLANV2-M5-REPORT.md` (another track's file) still lists the old range for `BUZZ_CHAIN_REFRESH_SECS`; this report and `RECORD-V2.md` are the
   current word.
-- The four calls anyone may make that the helper does not build (`applyRate()`, `Vester.execute`, `Vester.burnAfterWindDown`,
-  `Treasury.windDown()`): a product decision (as before).
+- The four calls anyone may make that the helper did not build (`applyRate()`, `Vester.execute`, `Vester.burnAfterWindDown`,
+  `Treasury.windDown()`): three are built in the launch round (end of this file); `Treasury.windDown()` stays a person's press.
 
 ### What ran in round four
 
@@ -1150,3 +1151,103 @@ A short round on the two verifiers' "important" findings of step 3. Nothing new 
 | `node scripts/chain-reader-events.mjs --check` | the four generated files match the contracts build |
 | `python3 -I scripts/chain-reader-fixture.py --check` | "is what a fresh run gives" |
 | `python3 -I scripts/chain-reader-example-check.py` | all 416 checks passed |
+
+## Launch round: the helper's three more calls (21 November 2026)
+
+The server's helper sent two calls (`Treasury.collectFees()`, `Treasury.settle()`). Three more calls that anyone may make were pressed by no
+one unless a person did. They are now sent by the helper, and `Treasury.windDown()` is, on purpose, not.
+
+### What the helper sends now
+
+| Call | Stored name | When it is built (`helper/plan.rs`, from final rows) | Checked again at the head (`helper/mod.rs::check`) | One job per |
+|---|---|---|---|---|
+| `Treasury.applyRate()` | `treasury.applyRate` | a raise is pending (`RateProposed`, no `RateSet` since), the project is not wound down, and `applicableAt` plus ten minutes has passed | `windDownKind() == 0`, `pendingAt() != 0`, head time at least `pendingAt() + unit() + 600` | proposal (key names the second it became applicable) |
+| `Vester.execute(id)` | `vester.execute` | a grant is announced to burn (`ForfeitAnnounced`, no `Forfeited` since) and `burnAt` plus ten minutes has passed | `grantOf(id)`: state is announced and head time at least `burnAt + 600` | grant |
+| `Vester.burnAfterWindDown(id)` | `vester.burnAfterWindDown` | the project is wound down, `windDownAt + unit + 600` has passed, and the grant is still live and not protected | `grantOf(id)`: live and not protected; the Treasury (read from the Vester's `treasury()`): `windDownKind() != 0` and head time at least `windDownAt() + unit() + 600` | grant |
+
+The ten minutes (`calls::NOTICE_GRACE_SECS`) are the same grace the task settle already has: whoever is there has had that time to press it
+themselves. Each call is also asked of the node with `eth_call` and `eth_estimateGas` from the helper's address before it is sent, as the first two
+are; a revert that means "someone did it first" (`AlreadyWoundDown()` or `BadInput()` for the rate, `WrongState()` for the burns, `ProtectedGrant()`)
+drops the job without counting an attempt. The three are the last in a pass (after the settle and the fee), so they never hold back the first two.
+
+### The bounds (a stranger cannot make the helper pay for failing transactions)
+
+Anyone can open a project and announce grants, so these three are held to a tighter rule than the first two, in addition to the daily gas and spend
+caps (the calls' half of the day) that all calls share:
+
+- **3 failed attempts** and the job ends `failed` for good (`calls::MAX_OPTIONAL_ATTEMPTS`; the first two calls keep the configured 8). The pause
+  between attempts doubles from a minute as before; a failure is recorded in `chain_helper_jobs.last_error`, the metric
+  `buzz_chain_helper_failed_total{call}` and the log line, where the first two record theirs.
+- **3 jobs of these kinds looked at per pass** (`OPTIONAL_PER_PASS`); the rest stay pending for the next pass, with no attempt counted.
+- **8 transactions per project in 24 hours** (`OPTIONAL_PER_PROJECT_PER_DAY`, counted from `chain_helper_sends`, a replacement at the same nonce
+  counting once, a reverted one counting). A project that has had them is put off for an hour without using one of the pass's places and without an
+  attempt.
+- **16 jobs per project per kind** are built in one build (`MAX_GRANT_JOBS_PER_PROJECT`), the earliest first.
+
+### What is not sent, on purpose
+
+- **`Treasury.windDown()` after 26 quiet units is not sent.** `JOIN-LEAVE-DESIGN.md` says "any holder can announce a wind-down" at 182 days
+  quiet (line 353) and `windDown()` is "anyone after 26N quiet" (line 634); it never says the server does it, and ending a project is not a routine. It stays in
+  the forbidden list of `calls_tests.rs`, and the database does not allow a stored `treasury.windDown`. The app already offers that press to anyone
+  who is not the project's runner or Pair once the quiet time has passed: `app/src/features/seat/SeatSection.tsx` (`canQuietWindDown`, the
+  `seat-quiet` block, lines 120 and 206), opening `app/src/features/seat/WindDownSheet.tsx`, whose "quiet" mode sends `Treasury.windDown()` from
+  the person's own wallet (`treasuryWindDownCall`).
+- `Vester.burnUngrantedAfterWindDown()` (the Team Shares nobody was granted, after a wind-down and a unit) is not in this round either; it is
+  another call anyone may make, was not asked for, and stays forbidden to the helper.
+- The app still has its own press for the rate (`app/src/features/pot/AllowanceSheets.tsx`, `applyRateCall`); the helper only does it when nobody has.
+
+### Chosen under the owner's standing go; the owner may overrule
+
+1. **Migration 0075, with the desired-state schema file.** The stored call names are closed by a database list, so the three names needed a
+   migration (`migrations/0075_chain_helper_more_calls.sql`) and the same line in `schema/tables/public/chain_helper_jobs.sql`; the buzz-db
+   migration test count is 75 and its 0070 test now also checks the three names are accepted and `treasury.windDown` is refused. These are outside
+   `crates/`; the number 0075 was the next free one when taken, and another engineer who adds a migration meanwhile will have to renumber one.
+2. **Grace of ten minutes for all three** (the same as the task settle), not none: the runner or a holder who is there presses it first.
+3. **The three burns and the rate are built for a wound-down project only where the contracts allow it**: no rate after a wind-down; `execute` for
+   an announced grant at any time; the after-wind-down burn only for live, unprotected grants (a grant announced before the wind-down is burned by
+   its own `execute`). A grant the wind-down left nothing to burn from is still sent once (the call then closes the grant); the cost is one
+   transaction, bounded as above.
+4. **Numbers**: 3 attempts, 3 per pass, 8 per project per day, 16 jobs per project per kind. They are constants in `calls.rs` and `plan.rs`, not
+   settings (a setting that raised them would be the thing a stranger wants).
+5. **`scripts/chain-loop-pot.sh` is not edited** (not this package's). See below.
+
+### What ran
+
+| Command | Result |
+|---|---|
+| `cargo fmt --check` | clean |
+| `cargo clippy -p buzz-relay --lib --tests -- -D warnings` | clean |
+| `cargo test -p buzz-relay --lib chain_reader -- --include-ignored --test-threads=1` (a scratch database migrated through 0075) | 181 passed, 0 failed (the earlier run of the same command in the section above: 164) |
+| `cargo test -p buzz-db --lib -- chain_team embedded_migrator desired schema_matches chain_helper --include-ignored --test-threads=1` | 17 passed, 0 failed |
+| `scripts/chain-loop-pot.sh`, unchanged | **fails at its last helper check**: "helper jobs of any other call: got 1, expected 0". That one job is the `treasury.applyRate` for the rate the loop proposes early (1500) and never applies by hand, which the helper now applies a week and ten minutes later. Every check before it passed (2,934). |
+| the same script with three lines changed in a copy outside the repository (`'treasury.applyRate'` added to the two allowed-call lists, `applyRate()` added to the selectors it accepts, and five new checks: one done `treasury.applyRate` job, sent from the helper's address, one `RateSet` raised, rate 1500, nothing pending) | **2,937 checks passed**; the helper sent 4 transactions in the whole run (the fee, a settle of outside money, the settle of the task that ran out, the rate), nobody pressing |
+
+The three edits the script itself needs (lines 255 and 504 and 507 of `scripts/chain-loop-pot.sh`): add `'treasury.applyRate'` to the two `call not in (...)` lists,
+and `$(cast sig 'applyRate()')` to `SIGS`; and its closing `ok` line says "every one a settle or a fee collection".
+
+### Guards switched off once, each by one test
+
+Each was run with the whole `chain_reader::helper` suite (database tests included); the named test failed and nothing else did.
+
+| Guard switched off | Failing test |
+|---|---|
+| the ten minutes before applying a rate (planner) | `plan::tests::a_proposed_rate_is_applied_ten_minutes_after_its_wait_and_once` |
+| no rate for a wound-down project (planner) | `plan::tests::a_rate_waiting_in_a_wound_down_project_is_not_applied` |
+| the ten minutes before an announced burn (planner) | `plan::tests::an_announced_burn_is_executed_ten_minutes_after_its_notice_and_once` |
+| protected grants left out of the burn after a wind-down (planner) | `plan::tests::a_grant_that_is_protected_announced_or_in_a_live_project_gets_no_burn_job` |
+| 16 jobs per project per kind | `plan::tests::one_project_gets_a_bounded_number_of_grant_jobs_earliest_first` |
+| the unit after the wind-down (planner) | `plan::tests::after_a_wind_down_and_a_unit_each_live_grant_gets_one_burn_job` |
+| the head check "not wound down" (rate) | `optional_postgres_tests::a_call_is_not_sent_when_the_chain_no_longer_wants_it` |
+| the head check "announced" (execute) | the same test |
+| the head check "not protected" (burn after a wind-down) | the same test |
+| the ten minutes at the head (rate) | `optional_postgres_tests::each_optional_call_is_left_alone_a_second_before_its_time` |
+| 3 attempts instead of the configured 8 | `an_optional_call_that_keeps_reverting_ends_failed_after_three_attempts` and `an_optional_call_whose_transaction_keeps_reverting_is_sent_three_times_at_most` |
+| 3 jobs per pass | `optional_postgres_tests::a_pass_sends_at_most_three_optional_calls` |
+| 8 per project per day | `optional_postgres_tests::one_project_gets_at_most_eight_optional_calls_a_day` |
+| "someone did it first" dropped, not failed (execute) | `optional_postgres_tests::a_call_someone_else_made_first_is_dropped_not_failed` |
+
+The run-through of the three in the Postgres tests uses a fake node, a real database and the real pass: sent when due (the exact target and calldata),
+not sent a second before, not sent when the chain says otherwise (eight changes), dropped when someone was first, not repeated when it keeps
+reverting (never sent, failed on the third attempt) or when its transaction keeps reverting (sent three times, then failed), and the fee and the
+settle are not held to the bounds. The planner is tested on the real run (`testdata/pot-run.json`: project A's pending rate, announced burn and
+wind-down; project B's), and on grants made up for the cases the run has none of.

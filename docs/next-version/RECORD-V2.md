@@ -120,7 +120,7 @@ it is `quoteTakeOut` read from the chain at the moment of the sheet (section 5).
 | `allowance.pending` | object or null | A raise that was announced and has not been applied; null when there is none. | views `pendingRatePpm()`, `pendingAt()` |
 | `allowance.pending.ratePpm` | int | The rate it will become. | `pendingRatePpm()` |
 | `allowance.pending.proposedAt` | int | When it was announced. | `pendingAt()` |
-| `allowance.pending.applicableAt` | int | The first moment anyone may apply it: `proposedAt + unit`. | arithmetic on two views (equals `RateProposed.applicableAt`) |
+| `allowance.pending.applicableAt` | int | The first moment anyone may apply it: `proposedAt + unit`. The server's helper applies it ten minutes later when nobody has (`Treasury.applyRate()`). | arithmetic on two views (equals `RateProposed.applicableAt`) |
 | `allowance.drawnLastDay` | amount | What was drawn from the box in the last day (`unit / 7` seconds before `asOf.time`), by the runner and by agents. | event `AllowanceDrawn.amount`, summed by block time |
 
 ### 2.7 The weekly check-in, the door and the quiet states
@@ -148,6 +148,7 @@ null, `door.openNow` is false, `allowance.box` is `"0"` (it went back to the pot
 The app does not store the state: it keeps the three times and works out the state at its own clock for words only:
 `windDown ? wound_down : now < quietFrom ? active : now < dormantFrom ? quiet : now < windableFrom ? dormant : may_wind_down`.
 What the door and the allowance actually do is decided by the chain, and the sheets ask it (section 5).
+The server's helper never winds a project down, also in `may_wind_down`: that is a person's press (the Treasury lets anyone make it). After a wind-down and one more unit it does burn what a grant does not keep (`Vester.burnAfterWindDown`), and it burns an announced forfeit when its notice has run (`Vester.execute`).
 
 ### 2.8 Who runs it
 
