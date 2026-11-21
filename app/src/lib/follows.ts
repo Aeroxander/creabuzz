@@ -8,6 +8,7 @@ import {
 } from "@creaton/core/social/feed/lists.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAccount } from "./account";
+import { listScope, listWriter } from "./lists";
 import { publishAsUser, read } from "./relay";
 
 const followKeys = {
@@ -32,7 +33,12 @@ export function useFollows() {
         limit: 10,
       });
       const people = latestList(events, KIND_CONTACT_LIST, me);
-      const projects = latestList(events, KIND_BOOKMARK_LIST, me);
+      // A read that began before one of this tab's own changes landed must not bring the older list back.
+      const projects = listWriter.newest(
+        listScope(me),
+        KIND_BOOKMARK_LIST,
+        latestList(events, KIND_BOOKMARK_LIST, me),
+      );
       return {
         peopleList: people,
         projectList: projects,
@@ -43,23 +49,24 @@ export function useFollows() {
   });
 }
 
-/** Follow or stop following a project. The list is read fresh first so a change made elsewhere is not lost. */
+/**
+ * Follow or stop following a project. It goes through the list queue (`./lists`), which reads the newest copy of the list
+ * first and keeps whatever else the list holds (saved posts, other apps' entries), so a change made elsewhere is not lost.
+ */
 export function useFollowProject() {
   const { pubkey } = useAccount();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { coordinate: string; follow: boolean }) => {
+    mutationFn: (input: { coordinate: string; follow: boolean }) => {
       const me = pubkey as string;
-      const events = await read({
-        kinds: [KIND_BOOKMARK_LIST],
-        authors: [me],
-        limit: 5,
+      return listWriter.enqueue({
+        scope: listScope(me),
+        author: me,
+        kind: KIND_BOOKMARK_LIST,
+        target: input.coordinate,
+        follow: input.follow,
+        apply: (latest) => withLaunch(latest, input.coordinate, input.follow),
       });
-      const list = latestList(events, KIND_BOOKMARK_LIST, me);
-      return publishAsUser(
-        withLaunch(list, input.coordinate, input.follow),
-        "Your follow was not saved. Try again.",
-      );
     },
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: followKeys.mine(pubkey) }),
