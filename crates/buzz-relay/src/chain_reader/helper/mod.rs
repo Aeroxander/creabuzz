@@ -1027,3 +1027,5 @@ impl Helper {
 mod optional_postgres_tests;
 #[cfg(test)]
 mod postgres_tests;
+#[cfg(test)]
+mod share_tests;

@@ -6,6 +6,7 @@
 //! Ignored without a migrated database; run with
 //! `cargo test -p buzz-relay --lib chain_reader::helper::optional_postgres_tests -- --ignored`.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -47,6 +48,8 @@ struct Node {
     /// The transaction mines and reverts.
     tx_fails: bool,
     sent: Mutex<Vec<([u8; 20], Vec<u8>)>>,
+    /// How many reads of the chain the helper made (`eth_call`).
+    views: AtomicUsize,
 }
 
 impl Node {
@@ -61,6 +64,7 @@ impl ChainWriter for Node {
         [0x11; 20]
     }
     async fn call(&self, _to: &[u8; 20], data: &[u8]) -> Result<Vec<u8>, CallError> {
+        self.views.fetch_add(1, Ordering::SeqCst);
         let is = |sig: &str| data.starts_with(selector(sig).as_slice());
         if is("windDownKind()") {
             return Ok(word_of(self.wind_kind));
@@ -192,6 +196,7 @@ fn node(call_reverts: bool, tx_fails: bool) -> Arc<Node> {
         call_reverts,
         tx_fails,
         sent: Mutex::new(Vec::new()),
+        views: AtomicUsize::new(0),
     })
 }
 
@@ -676,11 +681,13 @@ async fn the_optional_calls_together_keep_to_their_own_slice_of_the_day() {
             skip_the_wait(pool, *id).await;
         }
     }
-    // 50,000 gas each when mined; the next would be reserved at its limit and pass 200,000.
-    assert!(
-        (1..=4).contains(&sent),
-        "the slice lets a few through and no more: {sent}"
-    );
+    // Each send reserves its gas limit (60,000 estimated, plus a fifth and
+    // 10,000: 82,000) and uses 50,000 when mined. Two fit one pass (82,000,
+    // 164,000), the third would reach 246,000 and waits; once those mine
+    // (100,000 used) a third fits (182,000), and from 150,000 used the next
+    // would reach 232,000, over the slice of 200,000. Exactly three: with the
+    // check that reserves the call's gas limit off, a fourth goes out.
+    assert_eq!(sent, 3, "the slice lets exactly three through");
     assert_eq!(node.sent().len(), sent as usize);
     let mut waiting = 0;
     for id in &ids {
@@ -709,6 +716,59 @@ async fn the_optional_calls_together_keep_to_their_own_slice_of_the_day() {
         .expect("a pass");
     assert_eq!(report.node_errors, 1, "{report:?}");
     assert_eq!(store::job(pool, settle).await.expect("job").attempts, 0);
+}
+
+/// A slice used up exactly is looked at before the node is asked anything: a
+/// stranger's due calls cost the helper no reads once the slice is gone, and
+/// the jobs wait without a failed attempt.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_used_up_slice_puts_the_call_off_before_the_node_is_asked() {
+    let state = crate::test_support::test_state().await;
+    let pool = state.db.pool();
+    let case = &cases()[1];
+    let reader = reader(pool).await;
+    // An earlier optional send of today that used the whole slice (20% of
+    // 1,000,000 gas).
+    let earlier = add_job(pool, &reader, grant_call(100), [0x61; 32]).await;
+    let hash = [0xcd; 32];
+    store::record_send(
+        pool,
+        &reader,
+        store::SendRow {
+            job_id: earlier,
+            tx_hash: &hash,
+            nonce: 0,
+            gas_limit: 200_000,
+            max_fee_per_gas: 2_000_000_000,
+            max_priority_fee_per_gas: 1_000_000_000,
+        },
+        &serde_json::json!({}),
+    )
+    .await
+    .expect("a send");
+    store::settle_send(pool, &reader, &hash, 200_000, 200_000_000_000_000)
+        .await
+        .expect("settled");
+    let due = add_job(pool, &reader, grant_call(101), [0x62; 32]).await;
+    let node = node_for(case, false, false);
+    let wallet = Wallet::from_private_key_hex(DEV_KEY).expect("a key");
+    let mut config = HelperConfig::with_key(wallet);
+    config.daily_gas = 1_000_000;
+    let helper = Helper::new(node.clone(), config);
+    let report = helper
+        .pass(pool, &reader, (10, case.due_time), None)
+        .await
+        .expect("a pass");
+    assert_eq!(report.sent, 0, "{report:?}");
+    assert_eq!(report.postponed, 1, "{report:?}");
+    assert_eq!(node.views.load(Ordering::SeqCst), 0, "no read of the chain");
+    let row = store::job(pool, due).await.expect("job");
+    assert_eq!((row.state.as_str(), row.attempts), ("pending", 0));
+    assert!(row
+        .last_error_text(pool)
+        .await
+        .contains("optional calls' share"));
 }
 
 impl store::JobRow {
