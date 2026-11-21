@@ -3,7 +3,7 @@
 Branch `v6`, 19 November 2026. This is the report of the joined-up run: `scripts/pot-full-loop.sh` starts a local chain, deploys
 `contracts/pot`, starts the real server (relay) with its chain reader and helper on that chain, builds the app for it and lets the server
 serve it, and walks one project through everything step 1 offers, in Chromium. Nothing is pushed. **No person has tested any of
-this: every run below was made by an agent. The human test is the owner's and is still to do (the steps are in section 5).** This is
+this: every run below was made by an agent. The human test is the owner's and is still to do (the steps are in `TRY-IT.md`).** This is
 not legal or tax advice, and no figure here is a promise of any result for anyone. Every amount is play money on a local test chain.
 
 Companion pages: the contracts (`contracts/pot/README.md`, `POT-STEP1A-REPORT.md`), the one specification of the record both sides
@@ -163,43 +163,9 @@ Other things the joined-up run showed that are not disagreements:
   wallet, the faucet and a Back of 25 play dollars worked: 2 wallet prompts in all, 2,450 Shares). Whether the phone reaches the
   computer is for the owner's network to say.
 
-## 5. Try it on a phone (the human test is yours; nothing below was done on a phone)
+## 5. Try it by hand
 
-What you need on the computer: Foundry (`anvil`, `cast`, `forge`), Node and pnpm, Postgres and Redis, the relay built once
-(`cargo build -p buzz-relay`; the script never builds), `contracts/pot` built once (`forge build` in `contracts/pot`), and a phone on
-the same network with a **browser that has a wallet** (a wallet app's own browser). A passkey account needs `https` and a bundler and
-sponsor, so it cannot be tried this way.
-
-1. In the repository: `. ./bin/activate-hermit`, then `scripts/pot-full-loop.sh --serve`. Add `SERVE_HOST=<the computer's address on
-   your network>` if its first address is not the one the phone reaches. It takes about two minutes, then prints the app's address
-   (for example `http://192.168.1.20:45835/p/lantern-…`), the chain's address, and the account to import. It leaves one project,
-   "Lantern", with 50 play dollars in it. Leave the window open: Ctrl-C stops and removes everything.
-   The chain's development accounts are public and unlocked, so anyone on that network can send play-money transactions to it while
-   it runs: use a network you trust.
-2. In the phone's wallet add a network: any name, the printed RPC address, chain id 31337, symbol ETH. Import account number 2 of the
-   development accounts: the script prints the command that shows its key (run it on the computer; the key is public and worth
-   nothing; never put a real account's key anywhere near this).
-3. Open the printed app address in the wallet's browser.
-   **What working looks like:** the project page opens; the Money tab's first line says this is a test network and the dollars are play
-   money; it shows "The project's money" (about 49, a little less each minute as the allowance flows out), "What one Share gives if
-   taken out now" (about 0.01), "Where it stands: Open", "This can go up or down. It is not a return." and the legal line word for word.
-4. Press **Get play dollars**, then the sheet's button. The wallet asks **once**. "Play dollars you hold" shows 1,000.
-5. Type 25, press **Back**. The sheet shows: you pay 25 dollars, the fee to the platform (0.5), you get about 2,450 Shares, and
-   "Taking out right now would give you" about 24.5 dollars. Press the sheet's button. The wallet asks **once**. The sheet closes and
-   "You hold" shows about 2,450 Shares, with "What you would get if you took out now" about 24.5 dollars.
-6. Reload after a few seconds: "The project's money" has grown by what you paid in, less the fee (about 73 now).
-7. Press **Take out**, then the sheet's button. The wallet asks **once**. You get back about 24.5 dollars (the fee is not returned), and
-   "You hold no Shares in this project yet." shows.
-8. Optional: with a second wallet account, Back the same project and see that the first account's Shares do not change; stop the
-   script's server (not the chain) and reload: the page says the numbers could not be read and still lets you take your Shares out.
-
-9. Optional, as a founder: sign up on the phone's browser, press **Start** and answer the three questions, then on the project's page
-   press **Open <name> to backers**, read the sheet (two numbers, the limits, what cannot be changed later) and press its button. The
-   wallet asks **once**. The page then moves to the Money tab and says "No numbers yet" until the server has read the block (a few
-   seconds on this chain, about half a minute with 12-second blocks); no figure shows until then. The account must be one the wallet
-   holds with play dollars on this network; the sheet says plainly that the dollars are play money.
-
-If something differs from what is written here, that is a finding: write down the step and what the screen said.
+See **`docs/next-version/TRY-IT.md`**: it is the one guide for trying this by hand, and the steps that used to be here were wrong in places (they are replaced, not repeated). Its part 3 is this step's look on a phone (the demo project "Lantern": a visitor with no wallet, Connect your wallet, play dollars, Back, Take out) and its part 4.1 launches a project of your own from Start. Nothing in it was done on a phone or in a real wallet app: it was walked in Chromium at 360 px with the test wallet the journeys use, and the steps that need a phone say so.
 
 ## 6. What a test-network launch still needs that no engineer here can do
 
@@ -226,7 +192,7 @@ If something differs from what is written here, that is a finding: write down th
 cargo build -p buzz-relay                 # once; the script never builds
 ( cd contracts/pot && forge build )       # once
 scripts/pot-full-loop.sh                  # the journey; prints "pot-full-loop: N checks passed."
-scripts/pot-full-loop.sh --serve          # the same world left running for a phone (section 5)
+scripts/pot-full-loop.sh --serve          # the same world left running for a phone (TRY-IT.md)
 # helpful: FOUNDRY_BIN=<folder with anvil, cast, forge>  SHOTS_DIR=<folder for the journey's screenshots>  RELAY_LOG_COPY=<file>
 ```
 
@@ -251,7 +217,7 @@ Gates, as run: see the end of `APP-POT-REPORT.md` ("Review fixes, round four", "
    signed a new one meanwhile), then the record to equal the contracts.
 5. **`--serve` still launches the project for the person** (a throwaway founder key made in memory and never printed or stored) so a
    phone starts with a project to look at; the browser journey itself launches from the app. A person can also start and launch a
-   project of their own from the phone (section 5, step 9).
+   project of their own from the phone (`TRY-IT.md`, part 4.1).
 6. **The app's refresh floor moved to the server's** (section 3, item 1) rather than the server's floor up to the app's, because the
    specification names no floor and the server's setting is what the owner's operator sees.
 7. **The one `Chosen` item I did not decide:** whether the platform's fee should be collected per join instead of per week

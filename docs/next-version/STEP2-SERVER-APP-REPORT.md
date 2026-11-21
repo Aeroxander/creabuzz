@@ -6,7 +6,7 @@ notice before any money moves, a worker takes it and the money is set aside, a h
 the team pays all or part of it or sends it back, and anyone returns the money of a task that ran out. The server reads it all from the
 chain and signs it into the project's numbers record (version 2, a new `tasks` section); the app reads that record for lists and the
 chain for every press. Step 2 is pushed on branch v6 (since 20 November 2026, commit 35ea0a894). **No person has tested any of this: every run below was made by an agent. The human test is the
-owner's and is still to do (the steps are in section 7).** This is not legal or tax advice, and no figure here is a promise of any
+owner's and is still to do (the steps are in `TRY-IT.md`).** This is not legal or tax advice, and no figure here is a promise of any
 result for anyone. Every amount is play money on a local test chain. The legal line, quoted as it stands: "Buyers acquire ownership only:
 governance and exit. No dividends or revenue share, ever, unless they contribute and earn one."
 
@@ -236,7 +236,7 @@ Gathered from every report of this step (each is also in its own report):
 
 ### 6.5 Still open
 
-- **No person has tried it.** The steps are in section 7. The pull request checklist's third step (a human tests it) is not done and is not marked.
+- **No person has tried it.** The steps are in `TRY-IT.md`. The pull request checklist's third step (a human tests it) is not done and is not marked.
 - **The whole `buzz-relay` suite** has one test that failed in 2 of 3 runs for the relay engineer and has nothing to do with this work
   (`api::mesh_demo::tests::demo_join_forwarded_arm_round_trips_echo`, a 504); `planted_eval_against_a_real_model` fails without the
   settings of a real model, as it always does. Neither was run again here.
@@ -248,65 +248,9 @@ Gathered from every report of this step (each is also in its own report):
 - **Contracts:** two owner decisions stay open in `POT-STEP2-REPORT.md` (the part-payment band and the arriving-stream stretch), untouched here.
 
 
-## 7. Try it on a phone on a local network (the human test is yours; nothing below was done on a phone)
+## 7. Try it by hand
 
-What you need on the computer: Foundry (`anvil`, `cast`, `forge`), Node and pnpm, Postgres and Redis, the relay built once
-(`cargo build -p buzz-relay`; the scripts never build), `contracts/pot` built once (`forge build` in `contracts/pot`), and a phone on the
-same network with a **browser that has a wallet** (a wallet app's own browser). A passkey account needs `https` and a bundler and
-sponsor, so it cannot be tried this way. The wallet needs several accounts for step 2: the chain's development accounts are public,
-and the wallet can import more than one (or use two phones, or a phone and a computer browser with a wallet).
-
-**Part A: what a holder and a worker read (about ten minutes).**
-
-1. In the repository: `. ./bin/activate-hermit`, then `scripts/pot-full-loop.sh --serve`. Add `SERVE_HOST=<the computer's address on
-   your network>` if its first address is not the one the phone reaches. It takes about two minutes, then prints the app's address, the
-   chain's address and the words below. It leaves one project, "Lantern", with 50 play dollars in it and **one planned task** ("Paint the
-   lamp shades", up to 2 play dollars, for the wallet of development account number 5). Leave the window open: Ctrl-C stops and removes
-   everything. The chain's development accounts are public and unlocked, so anyone on that network can send play-money transactions to
-   it while it runs: use a network you trust.
-2. In the phone's wallet add the network the script prints (chain id 31337, symbol ETH) and import development account number 2 (the
-   script prints the command that shows its key; it is public and worth nothing; never put a real account's key anywhere near this).
-3. Open the printed app address in the wallet's browser. **What working looks like:** above the project's tabs a strip says "The team
-   plans to pay up to 2 dollars to Demo worker for “Paint the lamp shades”, from {a date 14 days or so away}." and under it "You can
-   take your money out before then. 2 dollars is the most; it can be less if people take out first.", then what would be set aside today
-   and "This can go up or down. It is not a return.", and the line that this is a test network and the dollars are play money. Signed
-   out, the same two lines show.
-4. Get play dollars and Back with 25 dollars (as in `STEP1-REPORT.md`, section 5). Open **You**: "News about your projects" has one row
-   about the plan, with "You can take your money out before {date}" and a "Take out of Lantern before {date}" press. The dot on You is
-   lit until you have read it.
-5. The Money tab has a section "Planned and running tasks" with the money set aside (none yet) and the room left for tasks.
-6. To try the worker's side, move the chain's clock from the computer, then wait two seconds for the next block:
-   `cast rpc --rpc-url <the printed chain address> evm_increaseTime 1300000`. The page will say "(as of {date}, may be out of date)"
-   because the chain's clock is now far ahead of the server's: that is expected on this test chain. Import development account number 5,
-   reload the project's Tasks tab and press **Set the money aside**. The sheet says who is named and the most, "Take it only if the whole
-   2 dollars is set aside" is ticked, and it is play money. The wallet asks **once**. "Taken. Hand your work in on the task." follows.
-7. With account number 2 (who backed), press **Take out**: the sheet now says part of the project's money is set aside for a task and
-   where to claim what you are owed. One wallet prompt.
-8. Nobody on this demo project can pay or send the task back (its team is a key nobody holds), so let it run out: move the chain's clock by
-   the same amount once more, mine a block by waiting two seconds, and wait about a minute and a half. The server's helper returns the money
-   (it acts ten minutes of the chain's clock after the deadline, which the jump covers). The Money tab's "Money you can claim" then
-   offers **Claim {amount}** for account 2: one prompt, and exactly that amount arrives. The strip and the news on You now say the task
-   ran out and nothing was paid.
-
-**Part B: the team's side (needs a project of your own; about twenty minutes).** The demo project's team is a throwaway key nobody holds,
-so the team's presses need your own project:
-
-1. Sign up on the phone's browser, press **Start**, answer the three questions, then press **Open <name> to backers** and its sheet's
-   button (the wallet asks once; the account must hold play dollars on this network). Back it with 100 play dollars from a second account
-   so there is money in it, and press **This week** then check in (the plan needs a recent check-in).
-2. On the Tasks tab press the plus, type what needs doing and 4 dollars, post it. With a second account in another browser, sign up,
-   open the project and press **Take this task** (the wallet is asked for its account, nothing is signed).
-3. As the team, on the task: **Plan the pay of 4 dollars**. The sheet shows who is paid, the most, the share of the project's money, when
-   it can be taken and until when, and that holders get notice first. The wallet asks once. The card then reads "Planned. Can be taken from
-   {date}." and offers **Withdraw the plan**.
-4. Move the chain's clock as in Part A step 6, check in again from This week, and have the worker press **Set the money aside**. The team's
-   card reads "Taken, due {date}." and offers **Pay for the work** and **Send the money back**.
-5. Press **Pay for the work**, choose **Pay part**, type 3, press the sheet's button (one prompt). The worker is paid 3 dollars, the rest goes
-   back. The card reads "Paid 3 dollars." and "Paid 3 dollars of the 4 dollars set aside; the rest went back." If the server has not read the
-   payment yet it says so and offers **Save that it was paid**: press it a little later; nothing is paid twice.
-
-If something differs from what is written here, that is a finding: write down the step and what the screen said.
-
+See **`docs/next-version/TRY-IT.md`**: it is the one guide for trying this by hand, and the steps that used to be here were wrong in places (they are replaced, not repeated). Its parts 4.4 to 4.6 are this step's test on a project of your own: two tasks planned with their notice, a holder who takes out before the notice, the clock moved 1,500,000 seconds with a new check-in by the team, the worker setting the money aside, paying part, the exit note and its claim, and the task that runs out. The demo project's team is a key nobody holds, so the demo shows only the two lines and the news; it cannot be used for the worker's side.
 
 ## 8. How to run it again
 
@@ -318,7 +262,7 @@ scripts/pot-app-loop.sh                   # the app's own builders and readers o
 scripts/pot-full-loop.sh                  # both journeys; prints "pot-full-loop: N checks passed."
 scripts/pot-full-loop.sh pot-tasks        # only the task journey (one world)
 scripts/pot-full-loop.sh --hold           # one world left running; the script prints the environment a journey needs
-scripts/pot-full-loop.sh --serve          # the same world left running for a phone (section 7)
+scripts/pot-full-loop.sh --serve          # the same world left running for a phone (TRY-IT.md)
 scripts/chain-loop-pot.sh                 # the server's loop: the record equals the contracts at nine stops
 scripts/pot-chain-loop.sh                 # the contracts, with cast only
 scripts/phone-loop.sh                     # the passkey path

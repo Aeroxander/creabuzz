@@ -6,7 +6,7 @@ can be understood on one phone screen** (with a share link, a share picture and 
 people who hold it**, **a ranking of the money that has stayed 30 days or more and seasons with a demo day**, and **short alerts on a
 phone that is away from the app**. The server (P1 to P3) reads it all from the chain and the relay's own rules; the app (A1 to A4) draws
 it. Everything is committed on local branch `v6`; **nothing is pushed**. **No person has tested any of this: every run below was made by
-an agent. The human test is the owner's and is still to do (the steps are in section 9).** This is not legal or tax advice, and no figure
+an agent. The human test is the owner's and is still to do (the steps are in `TRY-IT.md`).** This is not legal or tax advice, and no figure
 here is a promise of any result for anyone. Every amount is play money on a local test chain; nothing here changes a contract or a money
 rule. The legal line, quoted as it stands: "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever,
 unless they contribute and earn one."
@@ -119,7 +119,7 @@ journey takes about ten minutes because the server looks at its ranking index ev
 
 ## 6. What the loops showed
 
-**F1. The first ranking can come ten minutes late (server, P1; not fixed).** The first run of the seasons journey failed with "the server
+**F1. The first ranking can come ten minutes late (server, P1; closed by commit `73a404fe1`, which came after this report: the reader now looks again soon while the last build found nothing).** The first run of the seasons journey failed with "the server
 never signed its ranking index" after waiting two minutes for it. The reader looks at the index every 600 seconds and spends that turn
 even when nothing could be listed yet (`chain_reader/mod.rs`, `explore_after`), so on a new server the first index appears up to ten
 minutes after the first money has stayed 30 days, and after a change the next one waits ten minutes (this is the plan's own pace). On a real
@@ -127,7 +127,7 @@ network that is invisible; in a loop it is the longest wait. The journey now wai
 look again soon (say a minute) while the last build found nothing; it is a few lines in `mod.rs` and a change to the test of the schedule
 (IX3), and needs a Rust build and the Postgres tests, which this package did not run, so it is left to P1 or P2.
 
-**F2. An unchanged ranking index is never signed again, so it hides after a day (server, P1; not fixed; found by A1, confirmed here by
+**F2. An unchanged ranking index is never signed again, so it hides after a day (server, P1; closed by commit `73a404fe1`: the index is signed again at twelve hours; found by A1, confirmed here by
 reading the code).** `explore::publish` returns at once when the entries are the same as the live index's. Home hides an index older than 24
 hours. On a quiet network the ranking therefore disappears after a day. The fix (sign again when the live index is older than about
 twelve hours even if the entries are the same, and change IX3) is about five lines; it was not made for the same reason as F1. The loops
@@ -205,38 +205,9 @@ The sheet's own corner Close is the visible Close (form sheets also have "Not no
 *A4 (seasons and alerts)*
 A press on the alert opens the project (the plan says You); the device shows the three fixed sentences, not the in-app words; the band shows demo day first, then open entry, then the next start, then the last season that ended; demo-day order is a 53-bit hash of the season and the project's address (it can be ground by choosing a project id: one position on one page that carries no money rule); the first pass over entries is a candidate rule and the second is the exact check, so the first batch of 24 can hold fewer than 24 cards while "Show more" is still offered; the band offers at most 5 of a person's projects; visible "Leave" and "Open project" with longer accessible names that contain them; turning alerts off stops the browser first and a server that cannot be reached is remembered and retried; the device is saved again after 30 days when the app is opened (no `pushsubscriptionchange` handler, because the worker cannot sign); "needs a link" applies only when the link is none or expired; on Show more the keyboard goes to the first new card; the demo card shows the pot as the project's page does and nothing for a record older than a day; where investing is off, `/season/$n` says seasons are not shown here and reads nothing.
 
-## 9. Try it on a phone on a local network (the human test is yours; nothing below was done on a phone)
+## 9. Try it by hand
 
-What you need on the computer: Foundry (`anvil`, `cast`, `forge`), Node and pnpm, Postgres and Redis, the relay and the `buzz` command built once
-(`cargo build -p buzz-relay -p buzz-cli`; the scripts never build), `contracts/pot` built once, and a phone on the same network with a
-**browser that has a wallet** (a wallet app's own browser). Part A uses the step 2 script and its Lantern project.
-
-**Part A: the page, the feed and the room (about fifteen minutes).**
-
-1. In the repository: `. ./bin/activate-hermit`, then `scripts/pot-full-loop.sh --serve` (add `SERVE_HOST=<the computer's address on your
-   network>` if its first address is not the one the phone reaches). It takes about two minutes and prints the app's address, the chain's
-   address and the steps. Leave the window open: Ctrl-C stops and removes everything. Use a network you trust (the chain's accounts are public).
-2. In the phone's wallet add the network the script prints (chain id 31337) and import development account number 2 (the script prints the
-   command that shows its key; it is public and worth nothing).
-3. Open the app's address in the wallet's browser **without signing up**. **What working looks like:** the project's name, then its money
-   with "This can go up or down. It is not a return.", "Taking out now would give {an amount} for each Share.", a line that this is a test
-   network and the dollars are play money, the banner "You can take your money out any time. Nothing here promises a profit.", and a box
-   "Back this project" with an amount and a Back button, all without scrolling on a phone. Press **Share**: the project's link, a Copy press
-   and a picture with the name and nothing about money.
-4. Open the **Room** tab: "Anyone can read this room." and, once, "Only people who back this project can write here." with a Back press, and no place to write.
-5. Sign up, get play dollars, Back with 25. In the Back sheet the box "Let me write in this project's room" starts **unticked**. Tick it and press Back: after the second press, wait a few seconds: the app asks the wallet to sign **once more** (this confirms that your account is the wallet's) and then the Room tab offers a place to write under "Posts and votes are public." Write something. Another browser with no account can read it. (Leave the box unticked instead and the Room tab shows, where the writing box would be, the sentence that says the link is public and one press, "Confirm this account backs the project"; the wallet signs once and the writing box opens.)
-6. Under the money, **Lately** reads "Last 2 days: N backed, M took out." (N counts the project's first backing too) and a sentence about
-   how much more came in than went out, with "Amounts are rounded to the nearest 100 dollars. No names are shown." Nobody is named.
-7. Press **Take out**. The room still lets you write for one time unit ("You took out ... You can write here for ... more"). A unit is a
-   week on this chain: from the computer run `cast rpc --rpc-url <the printed chain address> evm_increaseTime 700000`, wait two seconds,
-   and reload: the room is read only for you ("Only people who back this project can write here.") and the server refuses a post.
-
-**Part B: what you cannot try this way, and the full run.** A season needs the operator's key and ten accounts, an alert needs a secure
-address (a service worker and a push service need `https`), and a passkey account needs a bundler and a sponsor: none of these can be
-tried on a local network from a phone. The full run, `scripts/pot-full-loop.sh`, does them with a stand-in for the push service and the
-real server, chain and app in a computer's browser; section 10 says how to run it again. Seasons are only in the full run (the operator's key is made inside the run and is never written down).
-
-If something differs from what is written here, that is a finding: write down the step and what the screen said.
+See **`docs/next-version/TRY-IT.md`**: it is the one guide for trying this by hand, and the steps that used to be here were wrong in places (they are replaced, not repeated). Its parts 4.2, 4.3 and 4.7 are this step's test: the room both ways (the box ticked in Back, and the one press in the room), the season started with the operator's key and entered from Home, and demo day. Part 5 says what only an `https` address can show (passkeys, alerts on a phone, Copy and Share).
 
 ## 10. How to run it again
 
@@ -258,11 +229,11 @@ If something differs from what is written here, that is a finding: write down th
 - **`state != closed` for Team grants.** A closed grant with something left to claim is still the member's Shares.
 - **Points, an airdrop, a ranking by price or volume, anything unlocked by a streak, money tied to live attention, a prize or a matching pot in a season**: the design's limits, held.
 - **Making the push words the in-app words**: the push carries no amount, name or date by design.
-- **Fixing F1 and F2 in this package**: each needs a Rust build and the Postgres tests of the reader, which this package did not have the room to run on a shared machine with about 4 GB free.
+- **Fixing F1 and F2 in this package** (they were closed afterwards, by the server engineer's commit `73a404fe1`): each needed a Rust build and the Postgres tests of the reader, which this package did not have the room to run on a shared machine with about 4 GB free.
 
 ## 12. Still open
 
-- **F1 and F2** (section 6): the first ranking can be ten minutes late, and an unchanged ranking disappears after a day. Both are small and in `chain_reader/explore.rs` and `mod.rs`.
+- ~~**F1 and F2** (section 6): the first ranking can be ten minutes late, and an unchanged ranking disappears after a day.~~ Both are closed: commit `73a404fe1` (`chain_reader/explore.rs` and `mod.rs`). The seasons journey's own wait was not shortened here.
 - **No real push service and no real device** was used anywhere: headless Chromium here refuses to show a notification, so the real worker file is run in an isolated context, and the browser's push manager is a fake. The first human test on Chrome, Firefox and Apple is still to do, and it needs an `https` address.
 - **A passkey account in the room and in alerts against a real relay** is not run end to end: the account's link is proven on the real contract (section 2, item 6) but the relay's own ERC-1271 check (`BUZZ_EVM_AUTH`, `BUZZ_EVM_RPC_URL`) is not switched on in these worlds, so a phone account's wallet link is refused there ("`smartAccountLinks` false") exactly as the plan says.
 - **What the app says when its read-only judgement and the server's disagree** (the app judges the unit by the page's clock; the server by the chain's): in the journey they agree; a person whose device clock is far wrong could be offered a composer and told "Not ready yet". Not tried.
@@ -415,7 +386,7 @@ Each line was removed alone, the named tests run, and the file put back; every o
 Branch `v6`, 20 and 21 November 2026. Two independent verifiers read steps 1 to 3 (pushed at `693ef69c2`) and found no blocker; this
 round closes their "important" findings and nothing else (no new feature). It is the app engineer's (TypeScript only: `app/`, one
 loop script). Nothing is pushed. **No person has tested any of this; every run below was made by an agent, and the human test of
-section 9 is still the owner's** (its steps 4 and 5 are corrected in place). The relay binary the loops used was built at 23:38 on 20
+`TRY-IT.md` (the hand test) is still the owner's**. The relay binary the loops used was built at 23:38 on 20
 November from the working tree of that moment (HEAD's Rust at the time, `4fd556785`, plus the server engineer's uncommitted edits to
 three `crates/buzz-relay` files, which no app journey touches). The legal line, quoted as it stands: "Buyers acquire ownership only:
 governance and exit. No dividends or revenue share, ever, unless they contribute and earn one."
@@ -561,8 +532,8 @@ see the spec fail.
 ### What stays open
 
 - The A3 cause is in the journeys; the app's own recovery ("Finish linking") is a press. An automatic finish is the owner's call.
-- The first human test (section 9, steps 4 and 5 corrected above) is still to do and still must cover a phone account in the room against a relay with the chain connection on.
-- Everything in section 12 that is not named here is as it was. F1 and F2 (the server's) are the server engineer's; this round did not touch `crates/`.
+- The first human test (`TRY-IT.md`) is still to do and still must cover a phone account in the room against a relay with the chain connection on.
+- Everything in section 12 that is not named here is as it was. F1 and F2 (the server's) were closed afterwards by commit `73a404fe1`; this round did not touch `crates/`.
 - The human tests of the pull request checklist are not done and are not marked.
 
 ### Commits of this round

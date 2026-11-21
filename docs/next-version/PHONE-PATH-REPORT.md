@@ -29,7 +29,7 @@ In a build where passkey sending is off, a phone with no wallet sees exactly wha
 | `8813c2562` | App: one sender interface (wallet or passkey account), the passkey sender (small shell in the first download, the rest a lazy chunk), the You choice, the copy, `app/.env.example`. |
 | `c16798cbe` | `scripts/phone-loop.sh` and the anvil scenarios: the passkey account sends on a local chain through EntryPoint. |
 | `ce676e4be` | One set of expectations run against both senders on a real chain. |
-| `2fd1ff14a` | `scripts/phone-e2e.sh`: a real browser signs up with a passkey and backs a project on the local chain; the You choice by keyboard and touch. |
+| `2fd1ff14a` | `scripts/pot-app-phone-e2e.sh`: a real browser signs up with a passkey and backs a project on the local chain; the You choice by keyboard and touch. |
 | `32c88e9bd` | The Back sheet speaks of the passkey, not of a wallet, when the passkey account sends. |
 | `23fe05c8f` | Keep the unused-exports scan clean. |
 
@@ -94,7 +94,7 @@ signs in the production way (the sign-up ceremony, then real assertions). The ac
 the hash check, the signature wrapping and the validator's check of the signature are the production code and the deployed
 contracts.
 
-Result of the last run (`bash scripts/phone-loop.sh`): 3 test files, 11 tests passed, 0 failed, 31 claims:
+Result of the last run (`bash scripts/phone-loop.sh`): 3 test files, 14 tests passed, 0 failed, 35 claims (it was 31 when this report was first written and 33 after its review fixes; later work added the rest):
 
 ```
 PASS a real Back (approve the round, then ask 25 dollars) from a passkey account changed the round's own record of the ask
@@ -128,13 +128,13 @@ PASS the passkey sender finds a landed send as landed
 PASS the passkey sender finds a hash the network never saw as unknown
 PASS the passkey sender reports a revert as reverted with the contract's reason
 PASS the passkey sender's batch that reverts: nothing is kept (all or nothing)
-phone-loop: 31 claims proven
+phone-loop: 35 claims proven
 ```
 
-(The loop runs in about 4 seconds on this machine once anvil is up. `scripts/m7-chain-loop.sh`, which runs the same folder with
+(The loop runs in about 4 seconds on this machine once anvil is up. `scripts/pot-app-loop.sh`, which runs the same folder with
 the platform loop, passes with these files in it: 8 files, 18 tests.)
 
-`scripts/phone-e2e.sh` runs the same path in a real browser (Chromium with its virtual authenticator, which signs real
+`scripts/pot-app-phone-e2e.sh` runs the same path in a real browser (Chromium with its virtual authenticator, which signs real
 WebAuthn assertions the deployed validator checks): it builds the app with the phone settings, starts anvil, signs up with a
 passkey, mints play dollars to the account shown on You, and backs a project whose contracts are the platform's real ones.
 Last run: 2 tests passed, 0 failed.
@@ -148,7 +148,7 @@ passkey prompts for the Back: 1
 
 | | Presses | Typed fields | Passkey prompts (signatures) | Wallet confirmations | Operations sent |
 |---|---|---|---|---|---|
-| Back from a passkey account (measured: `phone-e2e.sh`, real browser, real contracts) | 2 (Back, Back with 25 dollars) | 1 (the amount) | 1 | 0 | 1 |
+| Back from a passkey account (measured: `pot-app-phone-e2e.sh`, real browser, real contracts) | 2 (Back, Back with 25 dollars) | 1 (the amount) | 1 | 0 | 1 |
 | Back from a wallet (existing `money.spec.ts`, same sheet) | 2 | 1 | 0 | 2 (approve, ask), the wallet's own | 2 |
 
 The measured Back is today's: approve the round, then ask, which is the real-dollar path (two calls). It lands as **one**
@@ -281,7 +281,7 @@ Chosen under the owner's standing go; the owner may overrule
   `earlier`, `passkey`, `a11y`): 73 tests, 73 passed, 0 failed (4.9 minutes). The `passkey` sign-up spec failed once in an
   earlier partial run under load (its 20 second wait for the unlock bar) and passed on a rerun alone and in the full run; I
   did not change it.
-- `scripts/phone-loop.sh` 31 claims; `scripts/phone-e2e.sh` 2 tests passed; `scripts/m7-chain-loop.sh` 8 files, 18 tests passed.
+- `scripts/phone-loop.sh` 31 claims then, 35 now; `scripts/pot-app-phone-e2e.sh` 2 tests passed; `scripts/pot-app-loop.sh` 8 files, 18 tests passed.
 
 Rules held: no secret, key or service URL with a key is in the repo (settings by name only; the local scripts use this run's
 own loopback addresses); no names, amounts or wallets of real people (the fixtures are contract bytecode and anvil's public
@@ -341,8 +341,8 @@ reproduced, fixed, and pinned by a test that fails without the fix (checked by p
     dollar token comes from the configured node).
 
 **Added proof.** `phone-loop.sh`: 33 claims (two new: the fee is asked at the sponsor's address and the operation sent to the
-bundler's; an operation signed by a key the account does not know is refused by the validator and nothing changes).
-`phone-e2e.sh` now runs the browser against the same two addresses. Two older core test fixtures gave receipts with a
+bundler's; an operation signed by a key the account does not know is refused by the validator and nothing changes; the loop proves 35 now).
+`pot-app-phone-e2e.sh` now runs the browser against the same two addresses. Two older core test fixtures gave receipts with a
 placeholder `userOpHash`; they now name the operation, as a real receipt does.
 
 **Declined or left, with the reason**
@@ -384,5 +384,5 @@ placeholder `userOpHash`; they now name the operation, as a real receipt does.
 - `app`: `vitest run` 280 tests in 44 files, 280 passed, 0 failed (it was 263 in 42 files);
   `tsc --noEmit` clean; `biome check .` clean; `check:copy`, `check:px-text` pass; `check:file-sizes` passes with
   `CHECK_FILE_SIZES_BASE`; `pnpm build` passes the bundle budget (entry chunk 436,474 bytes of 450,000).
-- `scripts/phone-loop.sh`: 3 files, 13 tests passed, 33 claims. `scripts/phone-e2e.sh`: 2 passed (1 passkey prompt, 2
+- `scripts/phone-loop.sh`: 3 files, 13 tests passed, 33 claims (3 files, 14 tests, 35 claims now). `scripts/pot-app-phone-e2e.sh`: 2 passed (1 passkey prompt, 2
   presses, 1 typed field).
