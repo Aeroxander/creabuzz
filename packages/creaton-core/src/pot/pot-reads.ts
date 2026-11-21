@@ -7,6 +7,8 @@
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { decodeParameters, selectorOf } from "../launchpad/evmAbi.ts";
 import {
+  EARLIER_GRANTS_ABI,
+  HOLDER_PAUSE_ABI,
   PLAY_DOLLAR_ABI,
   SHARE_TOKEN_ABI,
   TASK_BOOK_ABI,
@@ -601,4 +603,98 @@ export async function scanNotes(
     high = low - 1;
   }
   return { serials, reachedBlock: reached, done: high < bookBlock };
+}
+
+// --- The holder pause and the earlier backers' claim (step 4) ------------------------------------------------------------
+
+/** How many Shares `holder` has parked in the project's pause contract. */
+export async function parkedOf(
+  read: ReadCall,
+  pause: string,
+  holder: string,
+): Promise<bigint> {
+  const [parked] = await ask(read, HOLDER_PAUSE_ABI, pause, "parkedOf", [
+    holder,
+  ]);
+  return asBigint(parked);
+}
+
+/** What the project's pause contract says now, in one read (`HolderPause.state`). */
+export interface PauseNow {
+  /** Shares parked in all. */
+  parked: bigint;
+  /** The backers' Shares (parked ones included). */
+  backerShares: bigint;
+  /** The parked Shares that reach the line now. */
+  line: bigint;
+  /** When the line was first seen reached in an unbroken run; 0 when it is not. */
+  armedAt: number;
+  /** When the pause starts if the line stays reached; 0 when not armed. */
+  pausesFrom: number;
+  /** Whether the team's draws and new task plans are refused now. */
+  paused: boolean;
+}
+
+/** `HolderPause.state()` at the chain's latest block. Throws when the answer is not readable; never guesses. */
+export async function pauseState(
+  read: ReadCall,
+  pause: string,
+): Promise<PauseNow> {
+  const [parked, backerShares, line, armed, pausesAt, isPaused] = await ask(
+    read,
+    HOLDER_PAUSE_ABI,
+    pause,
+    "state",
+    [],
+  );
+  if (typeof isPaused !== "boolean")
+    throw new Error("The network gave an answer that is not readable.");
+  const secs = (value: unknown): number => {
+    const n = asBigint(value);
+    if (n > BigInt(Number.MAX_SAFE_INTEGER))
+      throw new Error("The network gave an answer that is not readable.");
+    return Number(n);
+  };
+  return {
+    parked: asBigint(parked),
+    backerShares: asBigint(backerShares),
+    line: asBigint(line),
+    armedAt: secs(armed),
+    pausesFrom: secs(pausesAt),
+    paused: isPaused,
+  };
+}
+
+/** Whether row `index` of the earlier backers' list was claimed (`EarlierGrants.isClaimed`). */
+export async function earlierRowClaimed(
+  read: ReadCall,
+  contract: string,
+  index: bigint,
+): Promise<boolean> {
+  const [claimed] = await ask(read, EARLIER_GRANTS_ABI, contract, "isClaimed", [
+    index,
+  ]);
+  if (typeof claimed !== "boolean")
+    throw new Error("The network gave an answer that is not readable.");
+  return claimed;
+}
+
+/** The text fingerprint the claim contract holds now (`EarlierGrants.textHash`), lower case. */
+export async function earlierTextHash(
+  read: ReadCall,
+  contract: string,
+): Promise<string> {
+  const [hash] = await ask(read, EARLIER_GRANTS_ABI, contract, "textHash", []);
+  if (typeof hash !== "string" || !/^0x[0-9a-f]{64}$/i.test(hash))
+    throw new Error("The network gave an answer that is not readable.");
+  return hash.toLowerCase();
+}
+
+/** Whether the claim contract is tied to the project's Vester, so claims can start (`EarlierGrants.vester` is not zero). */
+export async function earlierIsBound(
+  read: ReadCall,
+  contract: string,
+): Promise<boolean> {
+  const [vester] = await ask(read, EARLIER_GRANTS_ABI, contract, "vester", []);
+  return typeof vester === "string" && !/^0x0{40}$/i.test(vester);
 }

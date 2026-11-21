@@ -24,6 +24,8 @@ export const CONTRACTS = [
   { name: "Pair", constant: "PAIR_ABI" },
   { name: "ShareToken", constant: "SHARE_TOKEN_ABI" },
   { name: "PlayDollar", constant: "PLAY_DOLLAR_ABI" },
+  { name: "HolderPause", constant: "HOLDER_PAUSE_ABI" },
+  { name: "EarlierGrants", constant: "EARLIER_GRANTS_ABI" },
 ];
 
 export const GENERATED_FILE = resolve(

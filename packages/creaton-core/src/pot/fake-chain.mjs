@@ -3,6 +3,8 @@
 import { encodeParameters } from "../launchpad/evmAbi.ts";
 import { abiTypeOf, decodeCall, functionOf } from "./abi-codec.ts";
 import {
+  EARLIER_GRANTS_ABI,
+  HOLDER_PAUSE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
@@ -22,6 +24,8 @@ const ABIS = [
   PLAY_DOLLAR_ABI,
   PAIR_ABI,
   LAUNCHER_ABI,
+  HOLDER_PAUSE_ABI,
+  EARLIER_GRANTS_ABI,
 ];
 
 /** `answers[name]` is the values to return, or a function of the decoded args that returns them. */

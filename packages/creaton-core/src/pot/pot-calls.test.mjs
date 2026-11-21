@@ -6,9 +6,12 @@ import test from "node:test";
 import { decodeParameters } from "../launchpad/evmAbi.ts";
 import { decodeCall } from "./abi-codec.ts";
 import {
+  EARLIER_GRANTS_ABI,
+  HOLDER_PAUSE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
+  SHARE_TOKEN_ABI,
   TREASURY_ABI,
   VESTER_ABI,
 } from "./abis.generated.ts";
@@ -604,5 +607,114 @@ test("a bad task argument never becomes calldata", () => {
   assert.throws(
     () => calls.announceTaskCall({ ...ok, payee: "0x12", shareBps: 1 }),
     /invalid address/,
+  );
+});
+
+// --- Step 4: the holder pause and the earlier backers' claim ---------------------------------------------------------------
+
+const PAUSE = "0x61Ef99673A65bee0512b8D1eb1AA656866D24296";
+const SHARES = "0x5eb3Bc0a489C5A8288765d2336659EbCA68FCd00";
+const CLAIMS = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+
+test("park is approve then park, in that order, to the Shares and then the pause", () => {
+  const list = calls.parkCalls({ shares: SHARES, pause: PAUSE, amount: 7n });
+  assert.equal(list.length, 2);
+  assert.equal(list[0].to, low(SHARES));
+  assert.equal(list[1].to, low(PAUSE));
+  // cast calldata "approve(address,uint256)" <pause> 7 ; cast calldata "park(uint256)" 7
+  assert.match(list[0].data, /^0x095ea7b3/);
+  assert.match(list[1].data, /^0x07afe492/); // cast sig "park(uint256)"
+  const approve = read(SHARE_TOKEN_ABI, list[0]);
+  assert.deepEqual(
+    [approve.name, approve.args[0], approve.args[1]],
+    ["approve", low(PAUSE), 7n],
+  );
+  const park = read(HOLDER_PAUSE_ABI, list[1]);
+  assert.deepEqual([park.name, park.args[0]], ["park", 7n]);
+});
+
+test("unpark is one call with the amount", () => {
+  const call = calls.unparkCall(PAUSE, 9n);
+  assert.equal(call.to, low(PAUSE));
+  assert.match(call.data, /^0xa32f1031/); // cast sig "unpark(uint256)"
+  const found = read(HOLDER_PAUSE_ABI, call);
+  assert.deepEqual([found.name, found.args[0]], ["unpark", 9n]);
+});
+
+test("a take-out of parked Shares is unpark FIRST, then leave of wallet plus parked", () => {
+  const list = calls.takeOutWithParkedCalls({
+    treasury: TREASURY,
+    pause: PAUSE,
+    walletShares: 5n,
+    parkedShares: 3n,
+    minCash: 11n,
+    to: ME,
+  });
+  assert.equal(list.length, 2);
+  assert.equal(read(HOLDER_PAUSE_ABI, list[0]).name, "unpark");
+  assert.equal(read(HOLDER_PAUSE_ABI, list[0]).args[0], 3n);
+  const leave = read(TREASURY_ABI, list[1]);
+  assert.equal(leave.name, "leave");
+  assert.deepEqual(leave.args, [8n, 11n, low(ME)]);
+});
+
+test("nothing parked is the plain leave and nothing else; parked Shares without a pause are refused", () => {
+  const plain = calls.takeOutWithParkedCalls({
+    treasury: TREASURY,
+    pause: null,
+    walletShares: 5n,
+    parkedShares: 0n,
+    minCash: 1n,
+    to: ME,
+  });
+  assert.equal(plain.length, 1);
+  assert.equal(read(TREASURY_ABI, plain[0]).name, "leave");
+  assert.throws(() =>
+    calls.takeOutWithParkedCalls({
+      treasury: TREASURY,
+      pause: null,
+      walletShares: 5n,
+      parkedShares: 1n,
+      minCash: 1n,
+      to: ME,
+    }),
+  );
+});
+
+test("the earlier claim carries the row, the proof and the text fingerprint", () => {
+  const proof = [`0x${"01".repeat(32)}`, `0x${"02".repeat(32)}`];
+  const call = calls.earlierClaimCall({
+    contract: CLAIMS,
+    index: 4n,
+    amount: 10n ** 18n,
+    proof,
+    accepted: HASH,
+  });
+  assert.equal(call.to, low(CLAIMS));
+  const found = read(EARLIER_GRANTS_ABI, call);
+  assert.equal(found.name, "claim");
+  assert.deepEqual(found.args, [4n, 10n ** 18n, proof, HASH]);
+  // cast calldata "claim(uint256,uint256,bytes32[],bytes32)" 4 1e18 "[0x01..,0x02..]" 0xab..: byte for byte
+  assert.equal(
+    call.data,
+    `0x60dc1175${"04".padStart(64, "0")}${"0de0b6b3a7640000".padStart(64, "0")}${"80".padStart(64, "0")}${"ab".repeat(32)}${"02".padStart(64, "0")}${"01".repeat(32)}${"02".repeat(32)}`,
+  );
+  // an empty proof (a one-row list) is a call too; a bad hash never becomes calldata
+  const one = calls.earlierClaimCall({
+    contract: CLAIMS,
+    index: 0n,
+    amount: 10n ** 18n,
+    proof: [],
+    accepted: HASH,
+  });
+  assert.deepEqual(read(EARLIER_GRANTS_ABI, one).args[2], []);
+  assert.throws(() =>
+    calls.earlierClaimCall({
+      contract: CLAIMS,
+      index: 0n,
+      amount: 1n,
+      proof: ["0x12"],
+      accepted: HASH,
+    }),
   );
 });

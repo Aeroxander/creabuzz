@@ -8,9 +8,12 @@
  */
 import { type AbiValue, encodeParameters } from "../launchpad/evmAbi.ts";
 import {
+  EARLIER_GRANTS_ABI,
+  HOLDER_PAUSE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
+  SHARE_TOKEN_ABI,
   TREASURY_ABI,
   VESTER_ABI,
 } from "./abis.generated.ts";
@@ -458,4 +461,76 @@ export function pairCancelCall(pair: string, id: string): PotCall {
 /** Wind the project down on the Treasury itself: the runner by choice, or anyone after a long quiet (`Treasury.windDown`). */
 export function treasuryWindDownCall(treasury: string): PotCall {
   return build(TREASURY_ABI, treasury, "windDown", []);
+}
+
+// --- The holder pause (step 4; only on a deployment that has switched it on) ---------------------------------------------
+
+/**
+ * Park `amount` backer Shares: the sender lets the project's pause contract take them (`approve` on the Shares), then parks
+ * them. Two calls, in that order; a sender that cannot batch lets the first land before it sends the second. The Shares stay
+ * the sender's: `unparkCall` takes them back at any time.
+ */
+export function parkCalls(input: {
+  shares: string;
+  pause: string;
+  amount: bigint;
+}): PotCall[] {
+  return [
+    build(SHARE_TOKEN_ABI, input.shares, "approve", [
+      input.pause,
+      input.amount,
+    ]),
+    build(HOLDER_PAUSE_ABI, input.pause, "park", [input.amount]),
+  ];
+}
+
+/** Take `amount` of the sender's parked Shares back to the sender's wallet. One call, no condition, no fee. */
+export function unparkCall(pause: string, amount: bigint): PotCall {
+  return build(HOLDER_PAUSE_ABI, pause, "unpark", [amount]);
+}
+
+/**
+ * Take out Shares that are partly parked: `unpark(parked)` first, then `leave(wallet + parked, minCash, to)`. The order is
+ * the point: the Shares must be back in the wallet before `leave` burns them. A person with nothing parked gets the plain
+ * `leave` and nothing else.
+ */
+export function takeOutWithParkedCalls(input: {
+  treasury: string;
+  pause: string | null;
+  walletShares: bigint;
+  parkedShares: bigint;
+  minCash: bigint;
+  to: string;
+}): PotCall[] {
+  const leave = leaveCall({
+    treasury: input.treasury,
+    shares: input.walletShares + input.parkedShares,
+    minCash: input.minCash,
+    to: input.to,
+  });
+  if (input.parkedShares === 0n) return [leave];
+  if (!input.pause)
+    throw new Error("Parked Shares need the project's pause contract");
+  return [unparkCall(input.pause, input.parkedShares), leave];
+}
+
+// --- The earlier backers' claim (step 4; only where the build is given its settings) -----------------------------------
+
+/**
+ * Claim a row of the earlier backers' list: the row's index and amount, its Merkle proof (32-byte hashes) and the fingerprint of
+ * the text the claimant accepts, which the contract compares with its own. The row's account is the sender.
+ */
+export function earlierClaimCall(input: {
+  contract: string;
+  index: bigint;
+  amount: bigint;
+  proof: readonly string[];
+  accepted: string;
+}): PotCall {
+  return build(EARLIER_GRANTS_ABI, input.contract, "claim", [
+    input.index,
+    input.amount,
+    input.proof,
+    input.accepted,
+  ]);
 }

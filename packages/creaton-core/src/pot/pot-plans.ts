@@ -9,6 +9,7 @@ import {
   leaveCall,
   leaveTeamCall,
   type PotCall,
+  takeOutWithParkedCalls,
   ZERO_ADDRESS,
 } from "./pot-calls.ts";
 import {
@@ -153,6 +154,76 @@ export async function planTeamTakeOut(
     call: leaveTeamCall({
       treasury: input.treasury,
       shares: input.shares,
+      minCash,
+      to: input.to,
+    }),
+  };
+}
+
+/** A take-out of Shares that may be partly parked, ready to send as one batch. */
+export interface ParkedTakeOutPlan {
+  /** The two quotes added: the wallet's part and the parked part. */
+  quote: TakeOutQuote;
+  /** The least cash the whole press accepts. */
+  minCash: bigint;
+  /** `[unpark, leave]` when something is parked; just `[leave]` when nothing is. */
+  calls: PotCall[];
+}
+
+/**
+ * Plan taking `walletShares` (in the wallet) and `parkedShares` (in the pause contract) out in one press: the quote is the
+ * sum of two chain quotes (`Treasury.quoteTakeOut` reads only that its holder holds the Shares, so the wallet part is quoted
+ * for the holder and the parked part for the pause contract, which holds them), the guard is the usual tolerance under that
+ * sum, and the calls are `unpark` then `leave` of everything. Refused (`null`) when the sum is zero.
+ */
+export async function planTakeOutParked(
+  read: ReadCall,
+  input: {
+    treasury: string;
+    pause: string | null;
+    holder: string;
+    walletShares: bigint;
+    parkedShares: bigint;
+    to: string;
+  },
+): Promise<ParkedTakeOutPlan | null> {
+  if (input.parkedShares > 0n && !input.pause)
+    throw new Error("Parked Shares need the project's pause contract");
+  const none: TakeOutQuote = { cashNow: 0n, note: 0n, arrivingLeftBehind: 0n };
+  const wallet =
+    input.walletShares > 0n
+      ? await quoteTakeOut(
+          read,
+          input.treasury,
+          input.holder,
+          input.walletShares,
+        )
+      : none;
+  const parked =
+    input.parkedShares > 0n && input.pause
+      ? await quoteTakeOut(
+          read,
+          input.treasury,
+          input.pause,
+          input.parkedShares,
+        )
+      : none;
+  const quote: TakeOutQuote = {
+    cashNow: wallet.cashNow + parked.cashNow,
+    note: wallet.note + parked.note,
+    arrivingLeftBehind: wallet.arrivingLeftBehind + parked.arrivingLeftBehind,
+  };
+  if (quote.cashNow === 0n) return null;
+  const guard = withTolerance(quote.cashNow, QUOTE_TOLERANCE_BPS);
+  const minCash = guard === 0n ? 1n : guard;
+  return {
+    quote,
+    minCash,
+    calls: takeOutWithParkedCalls({
+      treasury: input.treasury,
+      pause: input.pause,
+      walletShares: input.walletShares,
+      parkedShares: input.parkedShares,
       minCash,
       to: input.to,
     }),

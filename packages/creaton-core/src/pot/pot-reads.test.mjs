@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { decodeCall } from "./abi-codec.ts";
 import {
+  HOLDER_PAUSE_ABI,
   PLAY_DOLLAR_ABI,
   TASK_BOOK_ABI,
   TREASURY_ABI,
@@ -15,6 +16,7 @@ import {
   QUOTE_TOLERANCE_BPS,
   planBack,
   planTakeOut,
+  planTakeOutParked,
   planTeamTakeOut,
   teamCashEstimate,
   withTolerance,
@@ -664,5 +666,144 @@ test("a look that starts below the first block of the book has nothing to read a
   assert.equal(
     (await reads.scanNotes(logNode([], { latest: 10 }), BOOK, 50, ME)).done,
     true,
+  );
+});
+
+// --- Step 4 ----------------------------------------------------------------------------------------------------------------
+
+const PAUSE = "0x61ef99673a65bee0512b8d1eb1aa656866d24296";
+const CLAIMS = "0x0165878a594ca255338adfa4d48449f69242eb8f";
+
+test("parkedOf and pauseState read the pause contract and say what they cannot read", async () => {
+  const { read, seen } = fakeChain({
+    parkedOf: [42n],
+    state: [10n, 30n, 10n, 1_000n, 87_400n, false],
+  });
+  assert.equal(await reads.parkedOf(read, PAUSE, ME), 42n);
+  assert.deepEqual(seen[0], { to: PAUSE, name: "parkedOf", args: [ME] });
+  assert.deepEqual(await reads.pauseState(read, PAUSE), {
+    parked: 10n,
+    backerShares: 30n,
+    line: 10n,
+    armedAt: 1_000,
+    pausesFrom: 87_400,
+    paused: false,
+  });
+  // an answer too short is a throw, never a guess
+  await assert.rejects(() => reads.pauseState(async () => "0x01", PAUSE));
+  // a time that cannot be a number here is not believed
+  const { read: huge } = fakeChain({
+    state: [1n, 3n, 1n, 2n ** 80n, 0n, false],
+  });
+  await assert.rejects(() => reads.pauseState(huge, PAUSE));
+});
+
+test("the earlier claim's reads", async () => {
+  const { read } = fakeChain({
+    isClaimed: (i) => [i === 2n],
+    textHash: [`0x${"AB".repeat(32)}`],
+    vester: [DOLLAR],
+  });
+  assert.equal(await reads.earlierRowClaimed(read, CLAIMS, 2n), true);
+  assert.equal(await reads.earlierRowClaimed(read, CLAIMS, 3n), false);
+  assert.equal(
+    await reads.earlierTextHash(read, CLAIMS),
+    `0x${"ab".repeat(32)}`,
+  );
+  assert.equal(await reads.earlierIsBound(read, CLAIMS), true);
+  const { read: unbound } = fakeChain({
+    vester: ["0x0000000000000000000000000000000000000000"],
+  });
+  assert.equal(await reads.earlierIsBound(unbound, CLAIMS), false);
+});
+
+test("a take-out with parked Shares quotes the wallet part for the holder and the parked part for the pause, and adds them", async () => {
+  const { read, seen } = fakeChain({
+    quoteTakeOut: (holder, n) =>
+      holder === ME ? [n * 10n, 3n, 1n] : [n * 10n + 1n, 2n, 4n],
+  });
+  const plan = await planTakeOutParked(read, {
+    treasury: TREASURY,
+    pause: PAUSE,
+    holder: ME,
+    walletShares: 100n,
+    parkedShares: 50n,
+    to: ME,
+  });
+  assert.ok(plan);
+  assert.deepEqual(plan.quote, {
+    cashNow: 1_000n + 501n,
+    note: 5n,
+    arrivingLeftBehind: 5n,
+  });
+  assert.equal(plan.minCash, withTolerance(1_501n, QUOTE_TOLERANCE_BPS));
+  assert.deepEqual(
+    seen.map((s) => [s.name, s.args[0]]),
+    [
+      ["quoteTakeOut", ME],
+      ["quoteTakeOut", PAUSE],
+    ],
+  );
+  assert.equal(plan.calls.length, 2);
+  const [unpark, leave] = plan.calls.map((c) =>
+    decodeCall(c.to === PAUSE ? HOLDER_PAUSE_ABI : TREASURY_ABI, c.data),
+  );
+  assert.equal(unpark.name, "unpark");
+  assert.equal(unpark.args[0], 50n);
+  assert.equal(leave.name, "leave");
+  assert.equal(leave.args[0], 150n);
+  assert.equal(leave.args[1], plan.minCash);
+});
+
+test("a take-out with nothing parked asks one quote and sends the plain leave; only parked Shares ask only the pause", async () => {
+  const { read, seen } = fakeChain({
+    quoteTakeOut: (_h, n) => [n * 10n, 0n, 0n],
+  });
+  const plain = await planTakeOutParked(read, {
+    treasury: TREASURY,
+    pause: null,
+    holder: ME,
+    walletShares: 7n,
+    parkedShares: 0n,
+    to: ME,
+  });
+  assert.equal(plain.calls.length, 1);
+  assert.equal(seen.length, 1);
+  seen.length = 0;
+  const onlyParked = await planTakeOutParked(read, {
+    treasury: TREASURY,
+    pause: PAUSE,
+    holder: ME,
+    walletShares: 0n,
+    parkedShares: 7n,
+    to: ME,
+  });
+  assert.equal(onlyParked.calls.length, 2);
+  assert.deepEqual(
+    seen.map((s) => s.args[0]),
+    [PAUSE],
+  );
+  // nothing to pay is refused; parked Shares with no pause contract throw
+  const { read: zero } = fakeChain({ quoteTakeOut: [0n, 0n, 0n] });
+  assert.equal(
+    await planTakeOutParked(zero, {
+      treasury: TREASURY,
+      pause: PAUSE,
+      holder: ME,
+      walletShares: 1n,
+      parkedShares: 1n,
+      to: ME,
+    }),
+    null,
+  );
+  await assert.rejects(() =>
+    planTakeOutParked(read, {
+      treasury: TREASURY,
+      pause: null,
+      holder: ME,
+      walletShares: 1n,
+      parkedShares: 1n,
+      to: ME,
+    }),
   );
 });
