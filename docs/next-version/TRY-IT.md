@@ -166,7 +166,7 @@ The other profiles find Beacon on **Home**, where the new project is listed (or 
 1. **Fay**, Tasks tab: "Post a task", "What needs doing" `Translate the stall guide`, "It pays (dollars)" 4, "Post". Again:
    `Paint the shop sign`, 3.
 2. **Wes, profile 4:** sign up, connect account 8, open Beacon's Tasks tab and press "Take this task" on each. **Working:** each
-   reads "Being worked on" and "You have it." (it names the wallet you pay at).
+   reads "Being worked on" and "You have it." and the card offers "Hand in the work".
 3. **Fay**, Tasks tab, press "Plan the pay of 4 dollars". **Working:** the sheet "Plan the pay for “Translate the stall guide”" says
    "Nothing moves yet. Holders get notice first.", who is paid ("Pay to", Wes's address), "Up to 4 dollars", the notice ("Holders get 15
    days"), "If nobody takes it within 7 days, it lapses and nothing moves.", "Once taken, it is due 14 days later." and "The last
@@ -203,8 +203,8 @@ The other profiles find Beacon on **Home**, where the new project is listed (or 
    You can draw up to that". Put your own address (account 2) in "Draw to which account?" and an amount clearly under what the sheet says
    the box holds, and under "The box holds at most" on the Money tab (0.5 is safe; money set aside for tasks has just lowered that
    cap), in "How many dollars?". The press then reads "Draw" and the amount (for 0.5, "Draw 0.50 dollars"); press it and sign once:
-   "Drawn from the allowance box." If you ask for more than the box holds the sheet says "That is more than the allowance box holds
-   right now. Draw less, or wait: the box fills a little each day. Nothing was sent." The box fills at 0.10% a day of the project's
+   "Drawn from the allowance box." If you type more than the box holds, the sheet says "The box holds about ... dollars now. Draw that
+   or less." and the "Draw" press stays disabled, so nothing can be sent. The box fills at 0.10% a day of the project's
    money and stops at a cap, so it never holds more than the Money tab says.
 6. **Bea takes out while money is set aside:** Money tab, "Take out". **Working:** besides the usual sheet, "Part of the project's money
    is set aside for a task, for up to 14 days. You get ... dollars now, and up to ... dollars more if the task is not paid in full." and
