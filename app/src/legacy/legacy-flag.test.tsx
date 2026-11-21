@@ -26,6 +26,11 @@ vi.mock("../lib/account", () => ({
 vi.mock("@tanstack/react-router", async (actual) => ({
   ...(await actual<object>()),
   Link: ({ children }: { children: ReactNode }) => <a href="/p">{children}</a>,
+  // The buttons that look like links (Search in the header): a plain anchor here.
+  createLink: () =>
+    function ButtonLinkStub({ children }: { children: ReactNode }) {
+      return <a href="/p">{children}</a>;
+    },
   useNavigate: () => () => undefined,
   useRouter: () => ({ history: { back: () => undefined }, navigate: vi.fn() }),
   useRouterState: () => ({ location: { pathname: "/", search: "" } }),

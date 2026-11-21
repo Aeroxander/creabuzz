@@ -43,7 +43,7 @@ export function isOfRoom(
 const newest = (a: SignedEvent, b: SignedEvent) =>
   b.created_at - a.created_at || (a.id < b.id ? 1 : -1);
 
-/** The room from its posts (kind 1) and likes (kind 7), for the viewer `me`, without the people in `hidden`. */
+/** The room from its posts (kind 1) and likes (kind 7), for the viewer `me`, without the people in `hidden` or the posts they reported. */
 export function buildRoom(input: {
   notes: readonly SignedEvent[];
   likes: readonly SignedEvent[];
@@ -51,10 +51,14 @@ export function buildRoom(input: {
   key: string;
   me: string | null;
   hidden: ReadonlySet<string>;
+  /** Posts the viewer reported (ids): hidden for them, with the replies that hang under one. */
+  reportedPosts?: ReadonlySet<string>;
 }): RoomView {
-  const { coordinate, key, hidden } = input;
+  const { coordinate, key, hidden, reportedPosts } = input;
   const keep = (e: SignedEvent) =>
-    isOfRoom(e, coordinate, key) && !hidden.has(e.pubkey.toLowerCase());
+    isOfRoom(e, coordinate, key) &&
+    !hidden.has(e.pubkey.toLowerCase()) &&
+    !reportedPosts?.has(e.id);
   const notes = input.notes.filter(keep);
   const likes = input.likes.filter(keep);
   const tops: SignedEvent[] = [];

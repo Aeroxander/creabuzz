@@ -19,7 +19,7 @@ import {
   readMuteState,
 } from "@creaton/core/social/mute/mute-list.ts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useAccount } from "./account";
 import { publishAsUser, readLatest } from "./relay";
 
@@ -64,7 +64,11 @@ export function useMutes() {
     onSettled: () =>
       queryClient.invalidateQueries({ queryKey: muteKeys.mine(pubkey) }),
   });
-  const muted = state.data ? mutedInState(state.data) : NOBODY;
+  // One set until the list changes, so what is built from it (a filtered list of posts) is not rebuilt on every draw.
+  const muted = useMemo(
+    () => (state.data ? mutedInState(state.data) : NOBODY),
+    [state.data],
+  );
   const setMuted = useCallback(
     (target: string, hidden: boolean) =>
       change.mutateAsync({ pubkey: target, muted: hidden }),

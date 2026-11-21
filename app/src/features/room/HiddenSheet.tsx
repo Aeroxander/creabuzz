@@ -5,6 +5,7 @@
 import { Button } from "../../ui/button";
 import { Sheet } from "../../ui/sheet";
 import { nameOf, useProfiles } from "../../lib/profiles";
+import { HIDES_UNKNOWN } from "./room-words";
 
 export function HiddenSheet({
   open,
@@ -12,12 +13,15 @@ export function HiddenSheet({
   hidden,
   onShowAgain,
   pending,
+  unknown = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   hidden: readonly string[];
   onShowAgain: (pubkey: string) => void;
   pending: boolean;
+  /** The list could not be opened: it is not empty, it is not known. */
+  unknown?: boolean;
 }) {
   const profiles = useProfiles(open ? hidden : []).data;
   return (
@@ -28,7 +32,11 @@ export function HiddenSheet({
       testId="hidden-sheet"
       title="Hidden people"
     >
-      {hidden.length === 0 ? (
+      {unknown && hidden.length === 0 ? (
+        <p className="text-sm text-muted" data-testid="hidden-unknown">
+          {HIDES_UNKNOWN}
+        </p>
+      ) : hidden.length === 0 ? (
         <p className="text-sm text-muted">You have not hidden anyone.</p>
       ) : (
         <ul className="flex flex-col gap-1">

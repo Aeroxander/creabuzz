@@ -3,7 +3,7 @@
  * post, the team's removal of a post, and the team's stop on a person writing. Each says in plain words what it does, what it
  * costs nobody, and what to do when it fails; none of them shows money.
  */
-import { useId, useState } from "react";
+import { type ReactNode, useId, useState } from "react";
 import { Button } from "../../ui/button";
 import { TextArea } from "../../ui/field";
 import { Sheet } from "../../ui/sheet";
@@ -59,15 +59,22 @@ function Choices<T extends string | number>({
 export function ReportSheet({
   post,
   onOpenChange,
+  onSent,
+  afterSent,
 }: {
   post: SignedEvent | null;
   onOpenChange: (open: boolean) => void;
+  /** Called with the post when the sheet closes after the report was sent (not when it is closed unsent). */
+  onSent?: (post: SignedEvent) => void;
+  /** Shown under the thanks once the report is sent (what else can be done about the person); it is given the way to close the sheet. */
+  afterSent?: (close: () => void) => ReactNode;
 }) {
   const report = useReportPost();
   const [choice, setChoice] = useState<ReportChoice | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const close = (open: boolean) => {
     if (!open) {
+      if (report.isSuccess && post) onSent?.(post);
       setChoice(null);
       setProblem(null);
       report.reset();
@@ -87,6 +94,7 @@ export function ReportSheet({
           <p className="text-sm" data-testid="report-done" role="status">
             {REPORT_DONE}
           </p>
+          {afterSent?.(() => close(false))}
           <Button onClick={() => close(false)} variant="secondary">
             Done
           </Button>

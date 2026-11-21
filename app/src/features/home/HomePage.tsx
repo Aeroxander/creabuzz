@@ -1,6 +1,6 @@
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { APP_NAME } from "@creaton/core/brand.ts";
-import { PenLine, Sprout } from "lucide-react";
+import { PenLine, Search, Sprout } from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { Mark } from "../../app/Mark";
 import { useAccount } from "../../lib/account";
@@ -18,6 +18,7 @@ import {
   useEngagement,
   useRecentPosts,
 } from "../posts/use-posts";
+import { useVisiblePosts } from "../safety/use-hidden";
 import { SeasonBand } from "../season/SeasonBand";
 import { ProjectCard } from "./ProjectCard";
 import { RankedSection } from "./RankedSection";
@@ -53,7 +54,9 @@ export function HomePage() {
   const shipping = all
     .filter((p) => !follows?.projects.has(p.coordinate))
     .slice(0, 12);
-  const postEvents = (posts.data ?? []).slice(0, 20);
+  // Posts of people this person hid, and posts they reported, are left out here as everywhere.
+  const visible = useVisiblePosts(posts.data);
+  const postEvents = visible.shown.slice(0, 20);
   const profiles = useProfiles([
     ...all.map((p) => p.author),
     ...postEvents.map((e) => e.pubkey),
@@ -69,16 +72,27 @@ export function HomePage() {
             {APP_NAME}
           </span>
         </div>
-        <Button
-          aria-label="Write a post"
-          data-testid="home-compose"
-          onClick={() => requireAccount(() => setComposing(true))}
-          size="sm"
-          variant="secondary"
-        >
-          <PenLine aria-hidden="true" size={16} />
-          Post
-        </Button>
+        <div className="flex items-center gap-2">
+          <ButtonLink
+            aria-label="Search"
+            data-testid="home-search"
+            size="sm"
+            to="/search"
+            variant="secondary"
+          >
+            <Search aria-hidden="true" size={16} />
+          </ButtonLink>
+          <Button
+            aria-label="Write a post"
+            data-testid="home-compose"
+            onClick={() => requireAccount(() => setComposing(true))}
+            size="sm"
+            variant="secondary"
+          >
+            <PenLine aria-hidden="true" size={16} />
+            Post
+          </Button>
+        </div>
       </header>
 
       {pubkey ? <h1 className="sr-only">Home</h1> : null}
@@ -177,7 +191,7 @@ export function HomePage() {
             : "Recent posts"
         }
       >
-        {posts.isPending ? (
+        {posts.isPending || !visible.ready ? (
           <Card className="h-24 animate-pulse" tone="plain" />
         ) : posts.isError ? (
           <EmptyState

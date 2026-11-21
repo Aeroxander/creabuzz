@@ -2,7 +2,7 @@ import { MAX_POST_CHARS } from "@creaton/core/social/feed/feed-events.ts";
 import { readFailureWords } from "@creaton/core/client/readable-error.ts";
 import { useState } from "react";
 import { useAccount } from "../../lib/account";
-import { useProfiles } from "../../lib/profiles";
+import { nameOf, useProfiles } from "../../lib/profiles";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
@@ -10,6 +10,7 @@ import { EmptyState } from "../../ui/empty-state";
 import { TextArea } from "../../ui/field";
 import { useToast } from "../../ui/toast";
 import { BackHeader } from "../../app/BackHeader";
+import { FoldedPost } from "../safety/FoldedPost";
 import { Byline, PostActions, PostText } from "./PostCard";
 import {
   engagementOf,
@@ -103,55 +104,66 @@ export function PostPage({ id }: { id: string }) {
       ) : (
         <>
           {ancestors.map((row) => (
-            <Card className="opacity-80" key={row.event.id} tone="plain">
-              <Byline
-                at={row.event.created_at}
-                profiles={profiles}
-                pubkey={row.event.pubkey}
-              />
-              <div className="mt-2 text-sm">
-                <PostText text={row.event.content} />
-              </div>
-            </Card>
+            <FoldedPost event={row.event} key={row.event.id}>
+              <Card className="opacity-80" tone="plain">
+                <Byline
+                  at={row.event.created_at}
+                  profiles={profiles}
+                  pubkey={row.event.pubkey}
+                />
+                <div className="mt-2 text-sm">
+                  <PostText text={row.event.content} />
+                </div>
+              </Card>
+            </FoldedPost>
           ))}
-          <article
-            className="plain flex flex-col gap-3 rounded-2xl p-4"
-            data-testid="post-focus"
-          >
-            <Byline
-              at={note.event.created_at}
-              profiles={profiles}
-              pubkey={note.event.pubkey}
-            />
-            <PostText large text={note.event.content} />
-            <PostActions
-              engagement={engagementOf(engagement, note.event.id)}
-              event={note.event}
-            />
-          </article>
+          <FoldedPost event={note.event}>
+            <article
+              className="plain flex flex-col gap-3 rounded-2xl p-4"
+              data-testid="post-focus"
+            >
+              <Byline
+                at={note.event.created_at}
+                profiles={profiles}
+                pubkey={note.event.pubkey}
+              />
+              <PostText large text={note.event.content} />
+              <PostActions
+                engagement={engagementOf(engagement, note.event.id)}
+                event={note.event}
+                name={nameOf(profiles, note.event.pubkey)}
+              />
+            </article>
+          </FoldedPost>
           <ReplyBox note={note} root={ancestors[0] ?? note} />
           <section aria-label="Comments" className="flex flex-col gap-2">
             {below.length === 0 ? (
               <p className="px-1 text-sm text-muted">No comments yet.</p>
             ) : (
               below.map(({ row, depth }) => (
-                <article
-                  className="plain flex flex-col gap-2 rounded-2xl p-3"
-                  data-testid="comment"
+                <div
                   key={row.event.id}
                   style={{ marginLeft: `${depth * 0.875}rem` }}
                 >
-                  <Byline
-                    at={row.event.created_at}
-                    profiles={profiles}
-                    pubkey={row.event.pubkey}
-                  />
-                  <PostText text={row.event.content} />
-                  <PostActions
-                    engagement={engagementOf(engagement, row.event.id)}
-                    event={row.event}
-                  />
-                </article>
+                  <FoldedPost event={row.event}>
+                    <article
+                      className="plain flex flex-col gap-2 rounded-2xl p-3"
+                      data-testid="comment"
+                    >
+                      <Byline
+                        at={row.event.created_at}
+                        profiles={profiles}
+                        pubkey={row.event.pubkey}
+                      />
+                      <PostText text={row.event.content} />
+                      <PostActions
+                        engagement={engagementOf(engagement, row.event.id)}
+                        event={row.event}
+                        name={nameOf(profiles, row.event.pubkey)}
+                      />
+                    </article>
+                  </FoldedPost>
+                </div>
               ))
             )}
           </section>

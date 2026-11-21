@@ -266,11 +266,11 @@ describe("a person who may write", () => {
     fireEvent.change(box, { target: { value: "First words #lamps" } });
     fireEvent.click(screen.getByRole("button", { name: "Post" }));
     await waitFor(() => expect(world.published).toHaveLength(1));
-    expect(
-      await within(await screen.findByTestId("room-list")).findByText(
-        "First words #lamps",
-      ),
-    ).toBeTruthy();
+    // The #topic is a link of its own inside the post's words.
+    const posted = await within(
+      await screen.findByTestId("room-list"),
+    ).findByTestId("room-post");
+    expect(posted.textContent).toContain("First words #lamps");
     const sent = world.published[0];
     expect(sent.kind).toBe(1);
     expect(sent.tags).toContainEqual(["a", COORD]);

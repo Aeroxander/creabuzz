@@ -11,6 +11,10 @@ import { useToast } from "../../ui/toast";
 import { ProjectCard } from "../home/ProjectCard";
 import { PostCard } from "../posts/PostCard";
 import { engagementOf, useEngagement, usePostsBy } from "../posts/use-posts";
+import { useMutes } from "../../lib/mutes";
+import { HIDE_DONE, HIDES_UNKNOWN, NOT_SAVED } from "../room/room-words";
+import { hideWords } from "../safety/safety-words";
+import { useVisiblePosts } from "../safety/use-hidden";
 import { useProjectsBy } from "./use-own-projects";
 
 /** The head of a profile: picture, name, about. The name is the screen's h1 unless the screen has its own. */
@@ -47,7 +51,12 @@ export function ProfileHead({
 export function ProfilePage({ pubkey }: { pubkey: string }) {
   const { pubkey: me } = useAccount();
   const projects = useProjectsBy(pubkey).data ?? [];
-  const posts = usePostsBy(pubkey).data ?? [];
+  const postsRead = usePostsBy(pubkey);
+  const mutes = useMutes();
+  const hiddenPerson = mutes.muted.has(pubkey);
+  // A person this reader hid has no posts shown; the reader's reported posts are left out too.
+  const visible = useVisiblePosts(postsRead.data);
+  const posts = visible.shown;
   const profiles = useProfiles([pubkey]).data;
   const engagement = useEngagement(posts.map((p) => p.id)).data;
   const follows = useFollows().data;
@@ -93,6 +102,46 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
           </ButtonLink>
         </div>
       )}
+      {self ? null : (
+        <div className="flex flex-col items-start gap-1">
+          <Button
+            aria-pressed={hiddenPerson}
+            data-testid="profile-hide"
+            disabled={mutes.pending || !mutes.ready}
+            onClick={() =>
+              requireAccount(() => {
+                const name = nameOf(profiles, pubkey);
+                (hiddenPerson ? mutes.showAgain(pubkey) : mutes.hide(pubkey))
+                  .then(() =>
+                    toast(
+                      hiddenPerson
+                        ? `You will see posts by ${name} again.`
+                        : hideWords(HIDE_DONE(name)),
+                      "done",
+                    ),
+                  )
+                  .catch((error: Error) =>
+                    toast(error.message || NOT_SAVED, "problem"),
+                  );
+              })
+            }
+            size="sm"
+            variant="ghost"
+          >
+            {hiddenPerson
+              ? `Show ${nameOf(profiles, pubkey)}'s posts again`
+              : `Hide ${nameOf(profiles, pubkey)}'s posts`}
+          </Button>
+          {mutes.failed ? (
+            <p
+              className="px-1 text-xs text-muted"
+              data-testid="profile-hides-unknown"
+            >
+              {HIDES_UNKNOWN}
+            </p>
+          ) : null}
+        </div>
+      )}
       {projects.length > 0 ? (
         <section
           aria-labelledby="profile-projects"
@@ -120,9 +169,28 @@ export function ProfilePage({ pubkey }: { pubkey: string }) {
         >
           Posts
         </h2>
-        {posts.length === 0 ? (
+        {hiddenPerson ? (
+          <Card data-testid="profile-hidden-note" tone="plain">
+            <p className="text-sm text-muted">
+              You hid this person, so their posts are not shown. Only you stop
+              seeing them.
+            </p>
+          </Card>
+        ) : postsRead.isPending || !visible.ready ? (
+          <Card className="h-16 animate-pulse" tone="plain" />
+        ) : postsRead.isError ? (
           <Card tone="plain">
-            <p className="text-sm text-muted">No posts yet.</p>
+            <p className="text-sm text-muted">
+              Their posts could not be read right now.
+            </p>
+          </Card>
+        ) : posts.length === 0 ? (
+          <Card tone="plain">
+            <p className="text-sm text-muted">
+              {visible.hidden > 0
+                ? "Their posts are hidden for you: you reported them."
+                : "No posts yet."}
+            </p>
           </Card>
         ) : (
           posts.map((event) => (

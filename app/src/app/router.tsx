@@ -35,6 +35,18 @@ const ProfilePage = lazyRouteComponent(
   () => import("../features/profile/ProfilePage"),
   "ProfilePage",
 );
+const SavedPage = lazyRouteComponent(
+  () => import("../features/saved/SavedPage"),
+  "SavedPage",
+);
+const SearchPage = lazyRouteComponent(
+  () => import("../features/search/SearchPage"),
+  "SearchPage",
+);
+const TopicPage = lazyRouteComponent(
+  () => import("../features/tags/TopicPage"),
+  "TopicPage",
+);
 const SeasonPage = lazyRouteComponent(
   () => import("../features/season/SeasonPage"),
   "SeasonPage",
@@ -133,6 +145,32 @@ const conversation = createRoute({
     return <ConversationPage key={peer} peer={peer} />;
   },
 });
+/** Search; the words typed are kept in the address (`?q=`), so Back returns to the same results. */
+const search = createRoute({
+  getParentRoute: () => root,
+  path: "/search",
+  validateSearch: (s: Record<string, unknown>): { q?: string } =>
+    typeof s.q === "string" && s.q !== "" ? { q: s.q.slice(0, 100) } : {},
+  component: function SearchRoute() {
+    const { q } = search.useSearch();
+    return <SearchPage q={q ?? ""} />;
+  },
+});
+/** Every post under one topic (`#lamps`). */
+const topic = createRoute({
+  getParentRoute: () => root,
+  path: "/tag/$tag",
+  component: function TopicRoute() {
+    const { tag } = topic.useParams();
+    return <TopicPage key={tag} tag={tag} />;
+  },
+});
+/** The posts this person saved. */
+const saved = createRoute({
+  getParentRoute: () => root,
+  path: "/you/saved",
+  component: SavedPage,
+});
 const post = createRoute({
   getParentRoute: () => root,
   path: "/post/$id",
@@ -180,6 +218,9 @@ export function createAppRouter(legacy: boolean = legacyScreensOn()) {
     ...(legacy ? [earlier] : []),
     messages,
     conversation,
+    saved,
+    search,
+    topic,
     post,
     person,
     welcome,

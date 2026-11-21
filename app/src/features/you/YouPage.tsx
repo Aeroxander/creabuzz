@@ -7,12 +7,20 @@ import {
 import { forgetIdentity } from "@creaton/core/client/identity.ts";
 import { serverWebPushKey } from "@creaton/core/client/server-settings.ts";
 import { Link } from "@tanstack/react-router";
-import { ChevronRight, KeyRound, LogOut, MessageSquare } from "lucide-react";
+import {
+  Bookmark,
+  ChevronRight,
+  EyeOff,
+  KeyRound,
+  LogOut,
+  MessageSquare,
+} from "lucide-react";
 import { lazy, Suspense, useState } from "react";
 import { ScreenHeader } from "../../app/BackHeader";
 import { useAccount } from "../../lib/account";
 import { nameOf, useProfiles } from "../../lib/profiles";
 import { saveProfile } from "../../lib/profile-save";
+import { useMutes } from "../../lib/mutes";
 import { legacyScreensOn } from "../../lib/legacy";
 import { investingOn } from "../../lib/server";
 import { Button, ButtonLink } from "../../ui/button";
@@ -26,7 +34,10 @@ import { ProjectCard } from "../home/ProjectCard";
 import { SenderChoice } from "../money/SenderChoice";
 import { NotificationsList } from "../notifications/NotificationsList";
 import { ProfileHead } from "../profile/ProfilePage";
+import { HiddenSheet } from "../room/HiddenSheet";
+import { NOT_SAVED } from "../room/room-words";
 import { forgetRoomDrafts } from "../room/use-draft";
+import { forgetAllReported } from "../safety/reported";
 import { useProjectsBy } from "../profile/use-own-projects";
 
 // What is planned, taken and finished on the projects this account holds, and what it is owed (the record only, no money call).
@@ -116,6 +127,15 @@ function SignedIn({ me }: { me: string }) {
       >
         <MessageSquare aria-hidden="true" className="text-mint-ink" size={20} />
         <span className="flex-1 font-semibold">Messages</span>
+        <ChevronRight aria-hidden="true" className="text-muted" size={20} />
+      </Link>
+      <Link
+        className="glass glass-text flex min-h-14 items-center gap-3 rounded-2xl px-4"
+        data-testid="you-saved"
+        to="/you/saved"
+      >
+        <Bookmark aria-hidden="true" className="text-mint-ink" size={20} />
+        <span className="flex-1 font-semibold">Saved posts</span>
         <ChevronRight aria-hidden="true" className="text-muted" size={20} />
       </Link>
       {legacyScreensOn() ? (
@@ -282,8 +302,30 @@ function AccountTab() {
   const { pubkey } = useAccount();
   const [showKey, setShowKey] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
+  const mutes = useMutes();
+  const toast = useToast();
   return (
     <div className="flex flex-col gap-3" data-testid="account-tab">
+      <Button
+        block
+        data-testid="you-hidden"
+        onClick={() => setHiddenOpen(true)}
+        variant="secondary"
+      >
+        <EyeOff aria-hidden="true" size={18} />
+        {mutes.ready ? `Hidden people (${mutes.muted.size})` : "Hidden people"}
+      </Button>
+      <HiddenSheet
+        hidden={[...mutes.muted]}
+        onOpenChange={setHiddenOpen}
+        onShowAgain={(pubkey) =>
+          void mutes.showAgain(pubkey).catch(() => toast(NOT_SAVED, "problem"))
+        }
+        open={hiddenOpen}
+        pending={mutes.pending}
+        unknown={mutes.failed}
+      />
       <Button block onClick={() => setShowKey(true)} variant="secondary">
         <KeyRound aria-hidden="true" size={18} />
         Save your recovery key
@@ -324,6 +366,7 @@ function AccountTab() {
                 if (hasPasskeyIdentity()) removePasskeyIdentity();
                 forgetIdentity();
                 forgetRoomDrafts();
+                forgetAllReported();
                 try {
                   localStorage.removeItem(BACKED_UP_KEY);
                 } catch {

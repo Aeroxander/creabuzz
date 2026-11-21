@@ -8,6 +8,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useAccount } from "../../lib/account";
 import { type ProfileMetadata, nameOf, useProfiles } from "../../lib/profiles";
 import { useMutes } from "../../lib/mutes";
+import { REPORTED_HIDDEN } from "../safety/safety-words";
+import { useReported } from "../safety/reported";
 import { useRequireAccount } from "../../lib/use-require-account";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
@@ -85,6 +87,7 @@ export function RoomTab({
   const activity = useProjectActivity(project);
   const tasks = useProjectTasks(project);
   const mutes = useMutes();
+  const reported = useReported();
   const {
     standing,
     mutes: stops,
@@ -115,9 +118,10 @@ export function RoomTab({
             key: room.key,
             me,
             hidden: mutes.muted,
+            reportedPosts: reported.reported,
           })
         : null,
-    [events.data, room, project.coordinate, me, mutes.muted],
+    [events.data, room, project.coordinate, me, mutes.muted, reported.reported],
   );
   const notices = useMemo(
     () =>
@@ -340,7 +344,11 @@ export function RoomTab({
         </div>
       ) : null}
       <ReportSheet
+        afterSent={() => (
+          <p className="text-sm text-muted">{REPORTED_HIDDEN}</p>
+        )}
         onOpenChange={(open) => !open && setReport(null)}
+        onSent={(post) => reported.add(post.id)}
         post={report}
       />
       <RemoveSheet
@@ -361,6 +369,7 @@ export function RoomTab({
         }
         open={hiddenOpen}
         pending={mutes.pending}
+        unknown={mutes.failed}
       />
     </div>
   );

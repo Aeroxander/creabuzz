@@ -16,6 +16,8 @@ import {
 } from "@creaton/core/social/notifications.ts";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { useMutes } from "../../lib/mutes";
+import { withoutMuted } from "./without-muted";
 import { useAccount } from "../../lib/account";
 import { readMulti } from "../../lib/relay";
 import { useUnseenNews } from "../alerts/use-news";
@@ -42,7 +44,14 @@ const POLL_MS = 30_000;
  */
 export function useNotifications() {
   const { pubkey } = useAccount();
+  // What people the reader hid did is not shown, nor counted on the tab's dot.
+  const { muted } = useMutes();
+  const hideMuted = useCallback(
+    (data: Notifications) => withoutMuted(data, muted),
+    [muted],
+  );
   return useQuery({
+    select: hideMuted,
     queryKey: notificationKeys.mine(pubkey),
     enabled: pubkey !== null,
     staleTime: 15_000,
