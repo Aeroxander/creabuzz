@@ -1092,7 +1092,7 @@ app_dir := "app"
 app-install:
     pnpm install --frozen-lockfile --filter "@creaton/app..."
 
-# Run the app's checks: Biome, tsc, copy, rem-only text and file size guards, then the unused-exports scan (knip)
+# Run the app's checks: Biome, tsc, copy, rem-only text and file size guards, then the unused-exports scan (knip). Needs a full `pnpm install` (knip loads the web and desktop configs), not only `just app-install`.
 app-check:
     cd {{app_dir}} && pnpm check
     pnpm exec knip --no-progress

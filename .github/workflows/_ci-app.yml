@@ -56,7 +56,10 @@ jobs:
           key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
           restore-keys: pnpm-${{ runner.os }}-
       - name: Install dependencies
-        run: just app-install
+        # A full install, as the web lane does: the unused-exports scan (knip) reads the root knip.jsonc, which loads the
+        # web and desktop configs too, and those need their own modules. The filtered `just app-install` is enough for the
+        # loops job below, which does not run knip.
+        run: pnpm install --frozen-lockfile
       - name: App lint, types, copy and size guards, unused exports
         run: just app-check
       - name: Deploy bundle settings for the app
