@@ -28,6 +28,7 @@ use super::record::{
     TotalsRec, WindDownRec, WorthRec, DORMANT_UNITS, MAX_AGENTS, MAX_GRANTS, MAX_HOLDERS,
 };
 use super::record_social::{self, SocialInput, SocialReport};
+use super::record_step4;
 use super::record_tasks;
 use super::source::ChainSource;
 use super::views::{self, Views};
@@ -233,6 +234,13 @@ fn cross_check(ledger: &Ledger, v: &Views, t: u64) -> anyhow::Result<Vec<String>
         );
     }
     bad.extend(numbers_tasks::cross_check(ledger, v, t)?);
+    // The earlier backers' reserve: what the Launcher funded less what claims granted, in the Vester's own words.
+    if let (Some(pool), Some(reserve)) = (ledger.earlier_pool, v.earlier_reserve) {
+        let left = pool.saturating_sub(ledger.earlier_claimed.1);
+        if reserve != left {
+            put(&mut bad, "earlierReserve", left, reserve);
+        }
+    }
     for g in &v.grants {
         let Some(l) = ledger.grants.get(&g.id) else {
             bad.push(format!(
@@ -570,10 +578,17 @@ pub fn build(
         applicable_at: p.proposed_at.saturating_add(unit),
     });
     let accruing = rate > 0 && settled.pot > 0 && !wound && t < active_end;
+    // While the holders' line is reached (armed) or the pause is on, a start or an end is a thing to see soon:
+    // the promise is the short one (RECORD-V2 section 13).
+    let pause_moving = v
+        .pause
+        .as_ref()
+        .and_then(|read| read.as_ref().ok())
+        .is_some_and(|p| p.armed_at != 0 || p.paused);
     let refresh = refresh_every(
         cadence,
         accruing,
-        settled.arriving != 0,
+        settled.arriving != 0 || pause_moving,
         ledger.tasks.open_count > 0,
     );
     let in_vester = v.vester_team_balance;
@@ -596,6 +611,7 @@ pub fn build(
             vester: ledger.contracts.vester.clone(),
             dollar: ledger.contracts.dollar.clone(),
             pair: ledger.pair.clone(),
+            pause: ledger.contracts.pause.clone(),
         },
         as_of: AsOfRec {
             block: as_of.block,
@@ -658,6 +674,8 @@ pub fn build(
         },
         team: TeamRec {
             pool: ledger.team_pool.to_string(),
+            earlier_pool: ledger.earlier_pool.map(|pool| pool.to_string()),
+            earlier_reserve: v.earlier_reserve.map(|reserve| reserve.to_string()),
             in_hands: counted
                 .checked_sub(in_vester)
                 .ok_or_else(|| anyhow!("the Vester holds {in_vester} Team Shares of {counted}"))?
@@ -666,8 +684,12 @@ pub fn build(
             promised: promised.to_string(),
             ungranted: in_vester
                 .checked_sub(promised)
+                .and_then(|left| left.checked_sub(v.earlier_reserve.unwrap_or(0)))
                 .ok_or_else(|| {
-                    anyhow!("the Vester holds {in_vester} Team Shares but promised {promised}")
+                    anyhow!(
+                        "the Vester holds {in_vester} Team Shares but promised {promised} and holds back {} for the earlier backers",
+                        v.earlier_reserve.unwrap_or(0)
+                    )
                 })?
                 .to_string(),
             grant_count: v.v64("grantCount")?,
@@ -702,6 +724,8 @@ pub fn build(
         team_holder_count,
         truncated: holders_cut || agents_cut || unfinished > MAX_GRANTS,
         tasks: record_tasks::build(ledger, v, t, settled.pot)?,
+        pause: None,
+        earlier_grants: None,
         held: None,
         feed: None,
         streaks: None,
@@ -719,7 +743,14 @@ pub fn build(
             notes_owed: v.t("notesOwed")?.to_string(),
         },
     };
-    let report = record_social::fill(&mut record, social, &holder_balances);
+    let mut report = record_social::fill(&mut record, social, &holder_balances);
+    // The two step 4 keys: each is `null` with a line to log when it could not be worked out or did not agree.
+    let (pause, why) = record_step4::pause(ledger, v, t);
+    record.pause = pause;
+    report.failed.extend(why);
+    let (earlier, why) = record_step4::earlier(ledger, v);
+    record.earlier_grants = earlier;
+    report.failed.extend(why);
     let problems = record::validate(&record);
     if !problems.is_empty() {
         bail!(
@@ -781,6 +812,9 @@ const MOVES_WITH_TIME: &[&[&str]] = &[
     &["tasks", "cap", "usedBps"],
     &["tasks", "cap", "roomBps"],
     &["tasks", "next"],
+    // Whether the pause is on is a thing of the clock (the day passes without an event); the events that move it
+    // already change a field of the key above (`armedAt`, `parkedTotal`).
+    &["pause", "paused"],
     // The social keys move with the clock (a window slides, an hour passes) and every event that changes one
     // already changes a field above (RECORD-V2 section 11): they alone never make the server sign again.
     &["held"],

@@ -218,7 +218,7 @@ refusal wording, the panel's founder-only rule and its copy of "What happened" o
 3. **Brain files in the app.** The server is sent `facts.md`, `decisions.md` and `voice.md` as text by whoever asks; the
    app has no git reader, so its panel reads the record and the founder's one line only. Step B2 (the manager reading
    the brain) works through the command line or an agent. Steps B3 and B4 of MANAGEMENT-LAYER section 9 are not built.
-4. **Chain limits and the server's labels are not tied.** An agent's daily limits bind an address on the chain; the
+4. **Closed in step 4 (package S1): chain limits and the server's labels are now tied through the wallets an account linked** (`crates/buzz-relay/src/handlers/chain_agent_link.rs`: the three rules and their words are in its module doc). What follows is the open item as it stood. **Chain limits and the server's labels are not tied.** An agent's daily limits bind an address on the chain; the
    worker and manager labels bind a Nostr key on the server. Nothing links the two, so "a manager account must be distinct
    from worker agents, or the limits do not bind it" is enforced as a label rule only. `MANAGER-LOOP.md` section 1 tells
    the runner to keep them apart by hand.

@@ -433,4 +433,57 @@ pub static EVENTS: &[EventDef] = &[
             p("openAfter", Ty::Uint("uint8")),
         ],
     },
+    // ── Pause (HolderPause)
+    EventDef {
+        role: Role::Pause,
+        name: "Observed",
+        params: &[
+            p("parkedTotal", U256),
+            p("backerShares", U256),
+            p("armedAt", U64),
+        ],
+    },
+    EventDef {
+        role: Role::Pause,
+        name: "Parked",
+        params: &[
+            ix("who", Ty::Address),
+            p("amount", U256),
+            p("parkedBy", U256),
+            p("parkedTotal", U256),
+            p("backerShares", U256),
+            p("armedAt", U64),
+        ],
+    },
+    EventDef {
+        role: Role::Pause,
+        name: "Unparked",
+        params: &[
+            ix("who", Ty::Address),
+            p("amount", U256),
+            p("parkedBy", U256),
+            p("parkedTotal", U256),
+            p("backerShares", U256),
+            p("armedAt", U64),
+        ],
+    },
+    // ── Earlier (EarlierGrants)
+    EventDef {
+        role: Role::Earlier,
+        name: "Bound",
+        params: &[p("vester", Ty::Address)],
+    },
+    EventDef {
+        role: Role::Earlier,
+        name: "Claimed",
+        params: &[
+            ix("index", U256),
+            ix("account", Ty::Address),
+            p("amount", U256),
+            p("grantId", U256),
+            p("textHash", Ty::Bytes32),
+            p("claimedRows", Ty::Uint("uint32")),
+            p("claimedTotal", U256),
+        ],
+    },
 ];

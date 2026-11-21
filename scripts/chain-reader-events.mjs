@@ -8,7 +8,7 @@
 //
 // Four files are written, all under crates/buzz-relay/src/chain_reader:
 //
-//   testdata/pot-events.json  every event of the six contracts the reader follows: name, canonical signature, the topic
+//   testdata/pot-events.json  every event of the contracts the reader follows: name, canonical signature, the topic
 //                             forge itself reports (`forge inspect <contract> events --json`), and each parameter's name,
 //                             type and whether it is indexed (structs with their fields).
 //   events_table.rs           the Rust table of those events (`EVENTS`), so no topic or field layout is ever typed by hand.
@@ -46,6 +46,10 @@ const CONTRACTS = [
   { contract: "PlayDollar", roles: ["Dollar"] },
   // A project's task queue (step 2); its address comes from the Treasury's TasksReady log.
   { contract: "TaskBook", roles: ["Tasks"] },
+  // Step 4: a project's holder pause (its address comes from the Treasury's PauseReady log) and the deployment's earlier
+  // backers' claim contract (its address comes from the Launcher's EarlierBound log).
+  { contract: "HolderPause", roles: ["Pause"] },
+  { contract: "EarlierGrants", roles: ["Earlier"] },
 ];
 // Allowances are not read.
 const SKIPPED = new Set(["ShareToken.Approval", "PlayDollar.Approval"]);

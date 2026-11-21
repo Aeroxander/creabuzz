@@ -783,7 +783,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 75);
+        assert_eq!(migrations.len(), 76);
         assert_eq!(migrations[55].version, 56);
         assert!(migrations[55]
             .sql
@@ -1854,6 +1854,30 @@ mod postgres_tests {
         ] {
             assert!(desired_schema.contains(text), "schema.sql must say {text}");
             assert!(migration.contains(text), "migration 0073 must say {text}");
+        }
+        assert!(!migration.to_ascii_lowercase().contains("community_id"));
+        assert!(!migration.contains("attach_community_write_fence"));
+    }
+
+    /// Migration 0076 gives the holder pause its role and the helper its one more call. The desired-state schema must
+    /// say the same, and the migration must stay clear of community scoping (operator-global chain facts).
+    #[test]
+    fn chain_pause_role_migration_matches_the_desired_schema() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[75].version, 76);
+        let migration = migrations[75].sql.as_str();
+        let desired_schema = crate::test_support::desired_state_schema_sql();
+        for text in [
+            "'holder', 'pool_manager', 'pause'",
+            "'earlier.deliverMany', 'pause.poke'",
+            "CREATE INDEX idx_chain_logs_box_draws ON chain_logs (reader, project_key, tx_hash)",
+            "WHERE role = 'treasury' AND event = 'AllowanceDrawn'",
+            "CREATE INDEX idx_chain_logs_agent_set ON chain_logs (reader, (lower(decoded->>'agent')))",
+            "WHERE role = 'treasury' AND event = 'AgentSet'",
+        ] {
+            assert!(desired_schema.contains(text), "schema.sql must say {text}");
+            assert!(migration.contains(text), "migration 0076 must say {text}");
         }
         assert!(!migration.to_ascii_lowercase().contains("community_id"));
         assert!(!migration.contains("attach_community_write_fence"));

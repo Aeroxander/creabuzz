@@ -1314,6 +1314,170 @@
           ]
         }
       ]
+    },
+    "HolderPause": {
+      "roles": [
+        "Pause"
+      ],
+      "events": [
+        {
+          "name": "Observed",
+          "signature": "Observed(uint256,uint256,uint64)",
+          "topic": "0x96c454b6092472ee526c8e3979d5d4b05e39019602845b2ba85e6ff88940096e",
+          "inputs": [
+            {
+              "name": "parkedTotal",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "backerShares",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "armedAt",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Parked",
+          "signature": "Parked(address,uint256,uint256,uint256,uint256,uint64)",
+          "topic": "0xe10e6864ea310fb3bde8bb04a147383a4c98d2ab6e5e6799bbb5cc09f39b0e49",
+          "inputs": [
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "parkedBy",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "parkedTotal",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "backerShares",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "armedAt",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Unparked",
+          "signature": "Unparked(address,uint256,uint256,uint256,uint256,uint64)",
+          "topic": "0xbb456a131232649a83ed6c75b123d8556c67e9c99f1ee3d7260b0eb3844edc69",
+          "inputs": [
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "parkedBy",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "parkedTotal",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "backerShares",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "armedAt",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    "EarlierGrants": {
+      "roles": [
+        "Earlier"
+      ],
+      "events": [
+        {
+          "name": "Bound",
+          "signature": "Bound(address)",
+          "topic": "0x453252f51cf66f2c547ca2ed4b477a448496fc868fe3692f98620a683fe38cde",
+          "inputs": [
+            {
+              "name": "vester",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Claimed",
+          "signature": "Claimed(uint256,address,uint256,uint256,bytes32,uint32,uint256)",
+          "topic": "0xc30e61169f307d1a05e96da5c0fbc05bb17396df07cf75f7eedc598780833184",
+          "inputs": [
+            {
+              "name": "index",
+              "type": "uint256",
+              "indexed": true
+            },
+            {
+              "name": "account",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "grantId",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "textHash",
+              "type": "bytes32",
+              "indexed": false
+            },
+            {
+              "name": "claimedRows",
+              "type": "uint32",
+              "indexed": false
+            },
+            {
+              "name": "claimedTotal",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ]
     }
   }
 }

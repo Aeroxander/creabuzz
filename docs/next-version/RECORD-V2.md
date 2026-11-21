@@ -21,7 +21,8 @@ owner may overrule any of them. This is not legal or tax advice, and no figure h
   content hash to that key (`numbersBelongTo`, unchanged from version 1).
 - **`version` is the number 2.** The app ignores any record whose version it does not know (it shows "no numbers yet", never a half
   parse), exactly as version 1's parser ignored everything but 1. A version 1 record is never read by the new parser.
-- **Adding a field never changes the version** (a reader ignores fields it does not know). Removing a field, renaming one, or
+- **Adding a field never changes the version** (a reader ignores fields it does not know; a reader meeting an older record that lacks a
+  field it knows reads it as `null`, section 13.9). Removing a field, renaming one, or
   changing what one means is version 3. Step 2 (tasks, notice, exit notes) only adds fields (section 8).
 - **Types.** Amounts are **decimal strings** of whole numbers in the smallest unit, never JSON numbers (as in version 1). Dollars
   have **6 decimals** (1 dollar = `"1000000"`). Shares and Team Shares have **18 decimals** (1 Share = `"1000000000000000000"`).
@@ -62,6 +63,7 @@ checked against views on every build).
 | `contracts.vester` | address | The contract that holds and unlocks the Team pool. | `project.vester` |
 | `contracts.dollar` | address | The dollar token (6 decimals). | `ProjectLaunched.platform.quote` |
 | `contracts.pair` | address or null | The project's Pair, once a second person accepted the seat; the first `PairMade` for this key. | event `Launcher.PairMade` |
+| `contracts.pause` | address or null | The project's holder pause, when its deployment's pause switch was on at launch; `null` otherwise (step 4, section 13). | event `Treasury.PauseReady` |
 | `unit` | int | The time unit N in seconds: 604,800 (7 days) on a real network, a multiple of 168 on a test network. A "day" in every rate is `unit / 7` seconds. | view `Treasury.unit()` |
 | `fee.bps` | int | The platform fee on money going in, in ten-thousandths (200 = 2%). Nothing is charged on taking out. | view `Treasury.feeBps()` |
 
@@ -164,11 +166,13 @@ A seat offer, a Pair's waiting calls and the agent screen's form stay chain read
 
 | Field | Type | Meaning | From |
 |---|---|---|---|
-| `team.pool` | amount (18 dec) | The Team pool set at birth. | event `ProjectLaunched.terms.teamPool` |
+| `team.pool` | amount (18 dec) | The founder's Team pool set at birth (the earlier backers' pool, when there is one, is `team.earlierPool`). | event `ProjectLaunched.terms.teamPool` |
+| `team.earlierPool` | amount or null | The Team Shares the Launcher set aside at birth for the earlier backers, on top of `pool`; `null` for a project with no such pool (step 4, section 13). | event `Launcher.EarlierPoolFunded` |
+| `team.earlierReserve` | amount or null | What is left of that pool: Team Shares only the claim contract can grant, never the runner; `null` without a pool (step 4, section 13). | view `Vester.earlierReserve()` |
 | `team.inHands` | amount | Team Shares already sent to members (claimed): `teamCounted - inVester`. | views |
 | `team.inVester` | amount | Team Shares still held by the Vester: unvested, unclaimed, announced to burn, or not yet granted. | view `team.balanceOf(vester)` |
 | `team.promised` | amount | Of those, what is promised to someone and not yet sent or burned. | view `Vester.committed()` |
-| `team.ungranted` | amount | The rest of the pool nobody was granted: `inVester - promised`. | arithmetic on two views |
+| `team.ungranted` | amount | The rest of the pool nobody was granted and the runner can grant: `inVester - promised - earlierReserve` (the reserve is `0` when there is none). | arithmetic on views |
 | `team.grantCount` | int | Grants made so far, for life. | view `Vester.grantCount()` |
 | `team.grants` | array | Every grant that is not finished (below), by id, at most 200. | below |
 
@@ -940,3 +944,140 @@ JSON-RPC error answered with HTTP 200 whose message is `daily limit exceeded` (a
 32 KB, call data that cannot be read, or a target that is not a contract the server follows), both of which hold a word the app turns into plain
 words (`exceed`, `not allowed`). Said plainly, one limit stays: because the `sender` in the request is not authenticated, ten requests naming a
 victim's address use up that person's day for a Back and the like (not for taking out).
+
+## 13. Step 4 additions: the holder pause and the earlier backers' grants (`pause`, `earlierGrants`, two team fields)
+
+Step 4 (`docs/next-version/STEP4-PLAN.md`) adds two contracts to a deployment that turns them on: a **holder pause** per project
+(holders park Shares; when a third of the backers' Shares are parked, the team's draws and new task plans pause, starting a warning day
+later, for as long as that stays true) and the **earlier backers' claim contract** (one fingerprint of a list; each listed account claims
+its row once, with a proof, and in the same call accepts a text whose fingerprint is a deploy setting). Both are **off by default**: a
+deployment that does not set them has neither, and every record of it carries `null` for every key below. The record stays version 2
+(section 1: adding a field never changes the version); nothing above changed meaning except `team.ungranted` (which leaves the reserve
+out, and the reserve is `0` where there is none).
+
+The keys are **always present**, `null` when the project has none, and a key that could not be worked out (a view that failed, a number
+that disagreed with the events or with the rule's arithmetic) is signed `null` with one error line in the server's log naming the
+project and the key; the rest of the record is signed. Nothing below is per person.
+
+### 13.1 `pause`: the project's holder pause
+
+`null` unless the project has a holder pause (`contracts.pause` is then set too).
+
+| Field | Type | Meaning | From | Bound (the server signs `null` outside it) |
+|---|---|---|---|---|
+| `pause.contract` | address | The project's pause contract. | event `Treasury.PauseReady` | equals `contracts.pause` |
+| `pause.parkedTotal` | amount (18 dec) | Shares parked now. | view `parkedTotal()` | at most `shares.backers`; equals what the pause's own events add up to |
+| `pause.line` | amount (18 dec) | The parked Shares that make the line: `ceil(shares.backers / lineDivisor)`. | view `line()` | at most `shares.backers`; equals the arithmetic |
+| `pause.dayLength` | int seconds | The warning period: a seventh of `unit` (24 hours on a real network). | view `day()` | equals `unit / 7` |
+| `pause.lineDivisor` | int | The line is one this-many-th of the backers' Shares (3: "a third"). The app says "a third" only when this is `3`. | view `LINE_DIVISOR()` | 2 to 100 |
+| `pause.armedAt` | int or null | When the line was first seen reached in an unbroken run; `null` when it is not armed. | view `armedAt()` | at most `asOf.time`; equals the last `Parked`, `Unparked` or `Observed` |
+| `pause.pausesFrom` | int or null | When the pause starts if the line stays reached: `armedAt + dayLength`; `null` when not armed. | view `pausesFrom()` | equals that sum |
+| `pause.paused` | bool | Whether the team's draws and new task plans are refused at `asOf.time`. | view `paused()` at the block | equals the rule worked out from the numbers above (`armedAt` set, `asOf.time >= pausesFrom`, `parkedTotal x lineDivisor >= shares.backers`) |
+| `pause.since` | int or null | When the pause began: `pausesFrom` while `paused`; `null` otherwise. | arithmetic | |
+| `pause.parkerCount` | int | How many accounts have Shares parked: a count only, never a name. | events | at most 1,000,000; `0` exactly when `parkedTotal` is `0` |
+
+No address of a parker, no per-person amount, no list. `shares.backers` includes parked Shares. A pause never stops Take out: `leave`,
+`leaveTeam` and `unpark` read nothing of it; it stops `draw` and `announceTask` only, and what a join does to it is in the contracts'
+notes (a join lowers the parked share and can lift it). **The words for a person must not say that parking stops a loss, or that
+backers cannot lose the stop**: the pause can be lifted by Backing, by anyone, for the fee on the money that lifts it.
+
+**Holdings.** A parked Share stays its owner's: an account's holding in `holders[]`, `holderCount`, the held-for-a-window figures, the
+Established badge and the room's write rule is `balance + parked`. A park or an un-park is not a join or a take-out, never moves a
+"held since" date and never appears in `feed`. The pause contract itself is never a holder (Shares sent to it by a plain transfer are
+nobody's and are left out of every list); the sum of the holdings is `shares.backers` less those. The reader keeps this by cancelling, in
+its own tables, the token transfer that a park or an un-park makes (the two logs are one act in one transaction), so the holding never
+dips in the middle of a block.
+
+### 13.2 `earlierGrants`: the earlier backers' claim contract
+
+`null` unless this project is the one the deployment's claim contract names (the Launcher's `EarlierBound` key).
+
+| Field | Type | Meaning | From | Bound |
+|---|---|---|---|---|
+| `earlierGrants.contract` | address | The claim contract. | event `Launcher.EarlierBound` | |
+| `earlierGrants.bound` | bool | The contract is tied to the project's Vester (claims can start). | view `vester()` and event `Bound` | agree |
+| `earlierGrants.root` | bytes32 | The list's fingerprint (a Merkle root). The rows themselves are not on the server, in the record or anywhere else it serves. | view `root()` | |
+| `earlierGrants.textHash` | bytes32 | The fingerprint of the text a claimant accepts in the same call. | view `textHash()` | |
+| `earlierGrants.total` | amount (18 dec) | The pool: the most the rows can claim in all. | view `total()` | at most 1e27; equals `team.earlierPool` |
+| `earlierGrants.rows` | int | How many rows the list has. | view `rows()` | 1 to 2^32 - 1 |
+| `earlierGrants.claimedRows` | int | How many rows were claimed. | view `claimedRows()` | at most `rows`; equals the events |
+| `earlierGrants.claimedTotal` | amount (18 dec) | The Team Shares granted by claims. | view `claimedTotal()` | at most `total`; equals the events |
+| `earlierGrants.clockSecs` | int seconds | How long a claimed grant takes to vest: calendar time, counted from the project's birth, so a late claimant has more vested at once. | view `Vester.PROTECTED_LENGTH()` | |
+
+Unclaimed rows never expire (also not after a wind-down) and stay in the Vester's reserve, which counts in the Team supply and dilutes
+the backers; a row under one whole Share, or a ninth row of one account, can never be claimed and keeps its amount in the reserve for
+good. The app's words for the end of the claim period are counsel's, not the record's: the record carries no end date.
+
+**What "never a row" means.** The server never holds the list, so no row that has not claimed appears anywhere: not in the record, the
+feed, the ranking index, an alert or any page it serves. A **claimed** row is a public chain fact and appears only where any holding or
+grant appears: the claimant's Team Shares in `holders[]` (as for anyone) and its protected grant in `team.grants[]` (as for any grant;
+`kind: "protected"`, the record's own identity `promised = what the listed grants owe` needs it). `Claimed` logs are kept in the
+reader's table of chain logs and are never copied into the record.
+
+### 13.3 The team's two fields
+
+`team.earlierPool` and `team.earlierReserve` (section 2.9): both `null` for a project with no earlier pool. `team.pool` stays the
+founder's pool. The reserve falls by each claim and is held against the Vester's own `earlierReserve()` at the block (a difference
+refuses the whole record: the Team Shares the runner can grant depend on it). The grant sheet reads `team.ungranted`, which leaves the
+reserve out.
+
+### 13.4 The Team supply of the project that has a pool
+
+The Launcher mints `teamPool + earlierPool` to the Vester at that project's launch; `ProjectLaunched.terms.teamPool` is the first part
+only. The reader adds the second from the launch transaction's `EarlierPoolFunded`, so `shares.teamCounted` and the supply checks hold.
+
+### 13.5 Which events the reader follows for these
+
+| Role | Contract | Found from | Events |
+|---|---|---|---|
+| `pause` | a project's holder pause | the Treasury's `PauseReady(gate)` | `Parked`, `Unparked`, `Observed` |
+| `earlier` | the deployment's claim contract | the Launcher's `EarlierBound(earlier, key)`, tied to that project | `Bound`, `Claimed` |
+
+Also decoded: Launcher `HolderPauseBound`, `EarlierBound`, `EarlierPoolFunded`; Treasury `PauseReady`. The tables are generated from the
+contracts' build (`scripts/chain-reader-events.mjs`), never typed by hand. Migration 0076 lets the reader store the `pause` role.
+
+### 13.6 How fresh
+
+While the line is reached (`pause.armedAt` set) or the pause is on, the record promises a fresh one every `refreshEverySecs = 600`, so
+the start (and the end) of a pause shows within ten minutes; otherwise the cadence is as before. `pause.paused` moves with the clock
+(the warning day passes without an event) and is left out of the facts that decide whether to sign again; `pause.since` is not, so
+the record is signed again when the pause begins.
+
+### 13.7 What the server checks before it signs these keys
+
+- Both keys are read in a batch of their own at `asOf.block`; one that cannot be read, or fails a bound or an agreement in the tables above,
+  is `null` and logged, the rest is signed. `team.earlierReserve` is part of the main batch and a disagreement refuses the record.
+- `record::validate` (every record): `pause.line` is the backer Shares over `lineDivisor`, rounded up; `pausesFrom = armedAt + dayLength`;
+  `since` is `pausesFrom` exactly while `paused`; `paused` is not on before its start or under the line; `parkerCount` and `parkedTotal`
+  agree about whether anything is parked; `earlierGrants.total` is `team.earlierPool`; `team.earlierReserve = team.earlierPool -
+  earlierGrants.claimedTotal`; `team.ungranted = team.inVester - team.promised - team.earlierReserve`.
+
+### 13.8 The sponsored fee and a Take out of parked Shares
+
+A holder with parked Shares takes out in one press that takes them back first: the batch `[unpark(p), leave(w + p, minCash, to)]`. The
+server's sponsor treats a batch as an exit when every call is `leave` or `leaveTeam` of a followed Treasury, or `unpark(uint256)` (exactly
+36 bytes, no value) of a followed pause with **at most one `unpark` per pause and at least one `leave` or `leaveTeam`**; an `unpark` alone
+or `park` is an ordinary operation that counts like any other.
+
+### 13.9 What the app must show when a key is absent, `null` or old
+
+| What the app meets | What it shows |
+|---|---|
+| A record with no `pause` key (signed before step 4) or `pause: null` | No stop card, no Park button. The app does not guess that the project has a pause: only `contracts.pause` and `pause` together say so. |
+| `contracts.pause` set but `pause: null` | On the holder's own park sheet: "the stop could not be read right now" and no Park press; elsewhere nothing. A Take out is never held back by it. |
+| `pause.paused` false, `armedAt` null | "Not paused." |
+| `pause.armedAt` set, `paused` false | The time the pause would start (`pausesFrom`) and the figures, in plain words; never "stopped". |
+| `pause.paused` true | That the team's draws and new plans are on hold since `since`, that Take out is not, and how many Shares more or fewer end it. |
+| `pause.lineDivisor` not `3` | The figures, never the words "a third". |
+| No `earlierGrants` key, `earlierGrants: null` | No claim page, no claim link. |
+| `earlierGrants` set, `bound` false | The claim page says claims have not started. |
+| `team.earlierPool` / `team.earlierReserve` missing or `null` | The grant sheet reads `team.ungranted` as it always did. |
+| An old record (without any of these) | Reads as all `null`. The record's age is judged by `asOf` and `refreshEverySecs` as before (section 6). |
+
+### 13.10 The second example
+
+`docs/next-version/record-v2-example-pause.json` is the server's own output for the second real run (`testdata/pot-run-pause.json`: the
+deployment with both switches on) at the block where the pause is on and one row is claimed. The first example
+(`record-v2-example.json`) is the deployment with both switches off and differs from the previous one only by the added keys, all
+`null`. Both are written by the Rust test `the_example_is_what_the_server_writes` and `the_second_example_is_what_the_server_writes`
+(`UPDATE_EXAMPLE=1`), and checked field by field against the contracts by `scripts/chain-reader-example-check.py`.

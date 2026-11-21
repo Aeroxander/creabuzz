@@ -19,6 +19,7 @@ use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 
 use super::record_social::{EstablishedRec, FeedRec, HeldRec, StreaksRec};
+use super::record_step4::{EarlierGrantsRec, PauseRec};
 use super::record_tasks::{TaskStateRec, TasksRec};
 
 /// The record's version.
@@ -255,6 +256,8 @@ pub struct ContractsRec {
     pub dollar: String,
     /// The project's Pair, once there is one.
     pub pair: Option<String>,
+    /// The project's holder pause; none for a project of a deployment whose pause switch is off.
+    pub pause: Option<String>,
 }
 
 /// The block every number is true for.
@@ -506,15 +509,21 @@ pub struct GrantRec {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TeamRec {
-    /// The pool set at birth.
+    /// The founder's pool set at birth.
     pub pool: String,
+    /// The Team Shares set aside at birth for the earlier backers, on top of `pool`; none for a project that has
+    /// no such pool.
+    pub earlier_pool: Option<String>,
+    /// What is left of that pool: Team Shares only the claim contract can grant; none when there is no pool.
+    pub earlier_reserve: Option<String>,
     /// Sent to members.
     pub in_hands: String,
     /// Still held by the Vester.
     pub in_vester: String,
     /// Promised and not yet sent or burned.
     pub promised: String,
-    /// Nobody was granted.
+    /// The Team Shares the runner can still grant: the Vester's holding less what is promised and less the earlier
+    /// reserve.
     pub ungranted: String,
     /// Grants made for life.
     pub grant_count: u64,
@@ -699,6 +708,11 @@ pub struct Record {
     pub truncated: bool,
     /// The task queue; null when the project has no task book.
     pub tasks: Option<TasksRec>,
+    /// The holder pause (step 4); null when the project has none, or when it could not be read.
+    pub pause: Option<PauseRec>,
+    /// The earlier backers' claim contract (step 4); null unless this is the project it names, and when it could not
+    /// be read.
+    pub earlier_grants: Option<EarlierGrantsRec>,
     /// How long money has stayed (step 3); null when it could not be counted.
     pub held: Option<HeldRec>,
     /// Joins and take-outs by the hour, and what else happened (step 3); null when it could not be built.
@@ -932,9 +946,16 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
         in_hands.checked_add(in_vester) == Some(counted),
         format!("team.inHands {in_hands} + team.inVester {in_vester} is not shares.teamCounted {counted}"),
     );
+    let reserve = r
+        .team
+        .earlier_reserve
+        .as_deref()
+        .map(|text| amount(text, "team.earlierReserve"))
+        .transpose()?
+        .unwrap_or(0);
     rule(
-        in_vester.checked_sub(promised) == Some(ungranted),
-        format!("team.ungranted {ungranted} is not team.inVester {in_vester} less team.promised {promised}"),
+        in_vester.checked_sub(promised).and_then(|left| left.checked_sub(reserve)) == Some(ungranted),
+        format!("team.ungranted {ungranted} is not team.inVester {in_vester} less team.promised {promised} less the earlier reserve {reserve}"),
     );
 
     // Holders (a cut list says nothing about the rest).
@@ -1084,6 +1105,8 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
 
     // The task queue, on its own rules.
     super::record_tasks_rules::check(r, bad)?;
+    // The two step 4 keys and the team's two additive fields, on their own rules.
+    super::record_step4::check(r, bad)?;
     // The social keys (step 3), on their own rules: each is present and sound, or `null`.
     super::record_social::check_record(r, bad);
     Ok(())

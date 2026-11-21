@@ -23,34 +23,85 @@ const ZERO: &str = "0x0000000000000000000000000000000000000000";
 
 // ------------------------------------------------------------------------------------------ helpers
 
-/// The balance changes of a project's backer Shares, read from its `Transfer` rows, with the time of each.
+/// The balance changes of a project's backer Shares, read from its `Transfer` rows, with the time of each, the way the
+/// reader stores them: a park or an un-park gives back what its own `Transfer` moved, at that `Transfer`'s place, so
+/// the two are one change of the holding, and changes at one place of one account are one row.
 pub(super) fn changes_of(rows: &[LogRow]) -> Vec<(u64, Change)> {
-    let mut out = Vec::new();
+    use std::collections::BTreeMap;
+    let text = |row: &LogRow, name: &str| row.fields[name].as_str().expect("a field").to_owned();
+    let mut merged: BTreeMap<(u64, u32, String), (u64, i128)> = BTreeMap::new();
+    let mut add = |time: u64, block: u64, log_index: u32, account: String, delta: i128| {
+        let slot = merged
+            .entry((block, log_index, account))
+            .or_insert((time, 0));
+        slot.1 += delta;
+    };
     for row in rows
         .iter()
         .filter(|r| r.role == Role::Shares && r.event == "Transfer")
     {
-        let text = |name: &str| row.fields[name].as_str().expect("a field").to_owned();
-        let (from, to) = (text("from"), text("to"));
-        let value: i128 = text("value").parse().expect("an amount");
+        let (from, to) = (text(row, "from"), text(row, "to"));
+        let value: i128 = text(row, "value").parse().expect("an amount");
         if from == to {
             continue;
         }
         for (account, delta) in [(from, -value), (to, value)] {
             if account != ZERO {
-                out.push((
-                    row.time,
-                    Change {
-                        block: row.block,
-                        log_index: row.log_index,
-                        account,
-                        delta,
-                    },
-                ));
+                add(row.time, row.block, row.log_index, account, delta);
             }
         }
     }
-    out
+    let mut used: BTreeSet<(u64, u32)> = BTreeSet::new();
+    for row in rows
+        .iter()
+        .filter(|r| r.role == Role::Pause && matches!(r.event.as_str(), "Parked" | "Unparked"))
+    {
+        let parked = row.event == "Parked";
+        let (who, pause) = (text(row, "who"), hex0x(&row.address));
+        let amount: i128 = text(row, "amount").parse().expect("an amount");
+        let (from, to) = if parked {
+            (who.clone(), pause.clone())
+        } else {
+            (pause.clone(), who.clone())
+        };
+        let at = rows
+            .iter()
+            .filter(|t| {
+                t.role == Role::Shares
+                    && t.event == "Transfer"
+                    && t.tx == row.tx
+                    && t.log_index < row.log_index
+                    && !used.contains(&(t.block, t.log_index))
+                    && text(t, "from") == from
+                    && text(t, "to") == to
+                    && text(t, "value") == amount.to_string()
+            })
+            .map(|t| t.log_index)
+            .max()
+            .unwrap_or(row.log_index);
+        used.insert((row.block, at));
+        let (owner, custody) = if parked {
+            (amount, -amount)
+        } else {
+            (-amount, amount)
+        };
+        add(row.time, row.block, at, who, owner);
+        add(row.time, row.block, at, pause, custody);
+    }
+    merged
+        .into_iter()
+        .map(|((block, log_index, account), (time, delta))| {
+            (
+                time,
+                Change {
+                    block,
+                    log_index,
+                    account,
+                    delta,
+                },
+            )
+        })
+        .collect()
 }
 
 /// The rank window and the badge window counted from the rows in memory, as the query counts them in Postgres.

@@ -176,6 +176,29 @@ pub struct Contracts {
     pub dollar: String,
     /// The task book, once the Treasury's `TasksReady` has been read.
     pub tasks: Option<String>,
+    /// The holder pause, once the Treasury's `PauseReady` has been read (only a project of a deployment whose
+    /// pause switch is on has one).
+    pub pause: Option<String>,
+    /// The earlier backers' claim contract, once the Launcher's `EarlierBound` for this project has been read.
+    pub earlier: Option<String>,
+}
+
+/// What the holder pause's events say: who parked how much, and when the line was last seen reached.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PauseSeen {
+    /// What each account has parked now (accounts with nothing parked are not kept).
+    pub parked_by: BTreeMap<String, u128>,
+    /// The sum of those (`HolderPause.parkedTotal()`).
+    pub parked_total: u128,
+    /// `armedAt` as the last event of the pause said (0 when it is not armed).
+    pub armed_at: u64,
+}
+
+impl PauseSeen {
+    /// How many accounts have Shares parked now.
+    pub fn parker_count(&self) -> u64 {
+        self.parked_by.len() as u64
+    }
 }
 
 /// An account holding Shares or Team Shares.
@@ -268,8 +291,17 @@ pub struct Ledger {
     pub contracts: Contracts,
     /// The first Pair the Launcher made for it, if any.
     pub pair: Option<String>,
-    /// The Team pool set at birth.
+    /// The Team pool set at birth (the founder's pool only).
     pub team_pool: u128,
+    /// The Team Shares the Launcher set aside at birth for the earlier backers (`EarlierPoolFunded`), on top of
+    /// `team_pool`; none for a project that is not the one the claim contract names.
+    pub earlier_pool: Option<u128>,
+    /// The claim contract was tied to this project's Vester (`EarlierGrants.Bound`).
+    pub earlier_bound: bool,
+    /// Rows claimed and Team Shares claimed so far, as the claim contract's last `Claimed` said (running totals).
+    pub earlier_claimed: (u32, u128),
+    /// The holder pause's events.
+    pub pause_seen: PauseSeen,
     /// The platform fee in ten-thousandths, as at birth.
     pub fee_bps: u32,
     /// The time unit in seconds, as at birth.
@@ -341,6 +373,62 @@ pub struct Ledger {
     seen: HashSet<(u64, u32)>,
 }
 
+/// The Shares `Transfer`s of `rows` that are the other half of a park or an un-park: for each `Parked` or `Unparked`
+/// row, the `Transfer` of the same Shares between the account and the pause in the same transaction with the greatest log
+/// index below it (each used once), as `(block, log_index)`. `park` pulls the Shares and then says so; `unpark` sends them
+/// and then says so. The same rule the store applies to the balances it keeps.
+fn park_acts(rows: &[LogRow]) -> HashSet<(u64, u32)> {
+    let text = |row: &LogRow, name: &str| {
+        row.fields
+            .get(name)
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    // The reader's own rows carry no `Transfer`s (the store keeps the balances), so there is nothing to look for.
+    let mut by_tx: HashMap<[u8; 32], Vec<&LogRow>> = HashMap::new();
+    for row in rows
+        .iter()
+        .filter(|r| r.role == Role::Shares && r.event == "Transfer")
+    {
+        by_tx.entry(row.tx).or_default().push(row);
+    }
+    let mut used = HashSet::new();
+    if by_tx.is_empty() {
+        return used;
+    }
+    for row in rows
+        .iter()
+        .filter(|r| r.role == Role::Pause && matches!(r.event.as_str(), "Parked" | "Unparked"))
+    {
+        let (Some(who), Some(amount)) = (text(row, "who"), text(row, "amount")) else {
+            continue;
+        };
+        let pause = hex0x(&row.address);
+        let (from, to) = if row.event == "Parked" {
+            (who, pause)
+        } else {
+            (pause, who)
+        };
+        let found = by_tx
+            .get(&row.tx)
+            .into_iter()
+            .flatten()
+            .filter(|t| {
+                t.block == row.block
+                    && t.log_index < row.log_index
+                    && !used.contains(&(t.block, t.log_index))
+                    && text(t, "from").as_deref() == Some(from.as_str())
+                    && text(t, "to").as_deref() == Some(to.as_str())
+                    && text(t, "value").as_deref() == Some(amount.as_str())
+            })
+            .max_by_key(|t| t.log_index);
+        if let Some(t) = found {
+            used.insert((t.block, t.log_index));
+        }
+    }
+    used
+}
+
 fn text<'a>(row: &'a LogRow, name: &str) -> anyhow::Result<&'a str> {
     row.fields
         .get(name)
@@ -405,8 +493,12 @@ impl Ledger {
             return Ok(None);
         };
         let mut ledger = Self::launched(launch)?;
+        let acts = park_acts(rows);
         for row in rows {
-            ledger.apply(row)?;
+            // A park (or an un-park) is one act: its `Transfer` is not a movement of anyone's holding.
+            if !acts.contains(&(row.block, row.log_index)) {
+                ledger.apply(row)?;
+            }
         }
         Ok(Some(ledger))
     }
@@ -431,9 +523,15 @@ impl Ledger {
                 vester: nested(row, "project", "vester")?.to_owned(),
                 dollar: nested(row, "platform", "quote")?.to_owned(),
                 tasks: None,
+                pause: None,
+                earlier: None,
             },
             pair: None,
             team_pool,
+            earlier_pool: None,
+            earlier_bound: false,
+            earlier_claimed: (0, 0),
+            pause_seen: PauseSeen::default(),
             fee_bps: u32::try_from(nested_num(row, "platform", "feeBps")?).context("feeBps")?,
             unit: u64::try_from(nested_num(row, "platform", "unit")?).context("unit")?,
             pot: 0,
@@ -483,6 +581,16 @@ impl Ledger {
             // nothing is its own.
             Role::Tasks => match &self.contracts.tasks {
                 Some(book) => book,
+                None => return false,
+            },
+            // The pause is named by the Treasury's own `PauseReady`, the claim contract by the Launcher's
+            // `EarlierBound`; before that nothing is theirs.
+            Role::Pause => match &self.contracts.pause {
+                Some(pause) => pause,
+                None => return false,
+            },
+            Role::Earlier => match &self.contracts.earlier {
+                Some(earlier) => earlier,
                 None => return false,
             },
             // The Launcher and a Pair are not named by the project's own
@@ -624,6 +732,52 @@ impl Ledger {
                     self.book_block = Some(row.block);
                 }
             }
+            (Role::Treasury, "PauseReady") => {
+                if self.contracts.pause.is_none() {
+                    self.contracts.pause = Some(address(row, "gate")?);
+                }
+            }
+            (Role::Launcher, "EarlierBound") => {
+                if self.contracts.earlier.is_none() {
+                    self.contracts.earlier = Some(address(row, "earlier")?);
+                }
+            }
+            (Role::Launcher, "EarlierPoolFunded") => {
+                // The Launcher minted the pool to the Vester on top of `teamPool`, so the Team supply is both.
+                if self.earlier_pool.is_none() {
+                    let amount = num(row, "amount")?;
+                    self.earlier_pool = Some(amount);
+                    self.team = add(self.team, amount, "the Team supply")?;
+                }
+            }
+            (Role::Earlier, "Bound") => self.earlier_bound = true,
+            (Role::Earlier, "Claimed") => {
+                let (rows, total) = (
+                    u32::try_from(num(row, "claimedRows")?).context("Claimed.claimedRows")?,
+                    num(row, "claimedTotal")?,
+                );
+                let (rows_before, total_before) = self.earlier_claimed;
+                let amount = num(row, "amount")?;
+                if rows != rows_before + 1 || total != add(total_before, amount, "claimed")? {
+                    bail!(
+                        "a claim says {rows} rows and {total} claimed after {rows_before} and {total_before} and {amount} more"
+                    );
+                }
+                self.earlier_claimed = (rows, total);
+            }
+            (Role::Pause, event @ ("Parked" | "Unparked")) => {
+                self.apply_park(row, event == "Parked")?
+            }
+            (Role::Pause, "Observed") => {
+                if num(row, "parkedTotal")? != self.pause_seen.parked_total {
+                    bail!(
+                        "the pause says {} parked, the events add up to {}",
+                        num(row, "parkedTotal")?,
+                        self.pause_seen.parked_total
+                    );
+                }
+                self.pause_seen.armed_at = small(row, "armedAt")?;
+            }
             (Role::Treasury, "TaskMoney") => {
                 // The three buckets after the move, as `TaskLedger._applyTaskMoney` keeps them.
                 self.pot = num(row, "potAfter")?;
@@ -727,6 +881,43 @@ impl Ledger {
         Ok(true)
     }
 
+    /// A `Parked` or `Unparked` row: the account's parked Shares and the pause's total move to the numbers the
+    /// event says (each is checked against what the events before it add up to). The Shares stay the account's
+    /// holding: the token's own `Transfer` that moved them is not counted ([`Ledger::from_logs`] leaves it out, and
+    /// the store, which keeps the reader's balances, cancels it, see `store::park_anchors`).
+    fn apply_park(&mut self, row: &LogRow, parked: bool) -> anyhow::Result<()> {
+        let who = address(row, "who")?;
+        let amount = num(row, "amount")?;
+        let (by, total) = (num(row, "parkedBy")?, num(row, "parkedTotal")?);
+        let seen = &mut self.pause_seen;
+        let before = seen.parked_by.get(&who).copied().unwrap_or(0);
+        let (want_by, want_total) = if parked {
+            (
+                add(before, amount, "parked Shares")?,
+                add(seen.parked_total, amount, "parked Shares")?,
+            )
+        } else {
+            (
+                sub(before, amount, "parked Shares")?,
+                sub(seen.parked_total, amount, "parked Shares")?,
+            )
+        };
+        if by != want_by || total != want_total {
+            bail!(
+                "{} says {by} and {total} parked after it, the events add up to {want_by} and {want_total}",
+                row.event
+            );
+        }
+        if by == 0 {
+            seen.parked_by.remove(&who);
+        } else {
+            seen.parked_by.insert(who.clone(), by);
+        }
+        seen.parked_total = total;
+        seen.armed_at = small(row, "armedAt")?;
+        Ok(())
+    }
+
     fn grant(&mut self, id: u64, event: &str) -> anyhow::Result<&mut Grant> {
         self.grants
             .get_mut(&id)
@@ -788,8 +979,8 @@ impl Ledger {
     }
 
     /// The accounts that are not holders: the zero address, the Treasury, the
-    /// Vester, the two tokens and the dollar (Shares sent there are stuck, and
-    /// nobody holds them), and `also` (the Launcher). The one list that
+    /// Vester, the two tokens, the dollar and the holder pause (Shares sent
+    /// there are stuck, and nobody holds them), and `also` (the Launcher). The one list that
     /// [`Ledger::holders`] and the held-for-a-window count both leave out.
     pub fn excluded(&self, also: &BTreeSet<String>) -> BTreeSet<String> {
         let mut skip: BTreeSet<String> = also.clone();
@@ -802,6 +993,11 @@ impl Ledger {
             &self.contracts.dollar,
         ] {
             skip.insert(a.clone());
+        }
+        // The pause holds parked Shares for their owners (the holdings already count them for the owner) and
+        // any Shares sent to it by a plain transfer; nobody holds those.
+        if let Some(pause) = &self.contracts.pause {
+            skip.insert(pause.clone());
         }
         skip
     }

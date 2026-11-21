@@ -208,6 +208,50 @@ impl BookViews {
     }
 }
 
+/// What a project's holder pause says, read at the one block (`HolderPause.state()` and two constants).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PauseViews {
+    /// The pause contract.
+    pub address: String,
+    /// `parkedTotal()`: Shares parked.
+    pub parked_total: u128,
+    /// `shares.totalSupply()` as the pause read it.
+    pub backer_shares: u128,
+    /// `line()`: the parked Shares that make the line.
+    pub line: u128,
+    /// `armedAt()`: when the line was first seen reached in an unbroken run, 0 when not armed.
+    pub armed_at: u64,
+    /// `pausesFrom()`: `armedAt + day`, 0 when not armed.
+    pub pauses_from: u64,
+    /// `paused()` at the block's own time.
+    pub paused: bool,
+    /// `day()`: the warning period in seconds.
+    pub day: u64,
+    /// `LINE_DIVISOR()`: the line is one this-many-th of the backers' Shares.
+    pub line_divisor: u128,
+}
+
+/// What the deployment's earlier backers' claim contract says, read at the one block.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EarlierViews {
+    /// The claim contract.
+    pub address: String,
+    /// `vester()`: zero until it is tied to the project's Vester.
+    pub vester: String,
+    /// `root()`: the list's fingerprint.
+    pub root: String,
+    /// `textHash()`: the text's fingerprint.
+    pub text_hash: String,
+    /// `total()`: the pool.
+    pub total: u128,
+    /// `rows()`: the number of rows.
+    pub rows: u128,
+    /// `claimedRows()`.
+    pub claimed_rows: u128,
+    /// `claimedTotal()`.
+    pub claimed_total: u128,
+}
+
 /// Everything read for one record, all at one block.
 #[derive(Clone, Debug)]
 pub struct Views {
@@ -246,6 +290,14 @@ pub struct Views {
     pub agents: Vec<AgentView>,
     /// The task book, when the project has one.
     pub book: Option<BookViews>,
+    /// `Vester.earlierReserve()`, read only for a project whose launch funded an earlier pool. Part of the main
+    /// batch: the Team Shares the runner can grant (`team.ungranted`) depend on it.
+    pub earlier_reserve: Option<u128>,
+    /// The project's holder pause, when it has one: what it said, or why it could not be read (the key is then
+    /// `null` in the record and the reason is logged; nothing else depends on it).
+    pub pause: Option<Result<PauseViews, String>>,
+    /// The earlier backers' claim contract, when this project is the one it names: as above.
+    pub earlier: Option<Result<EarlierViews, String>>,
 }
 
 impl Views {
@@ -509,6 +561,14 @@ pub async fn read(
         );
         vester_at.push((name, at));
     }
+    let reserve_at = ledger.earlier_pool.map(|_| {
+        plan.add(
+            "Vester.earlierReserve()".into(),
+            vester,
+            "earlierReserve()",
+            &[],
+        )
+    });
     let shares_supply = plan.add("Shares.totalSupply()".into(), shares, "totalSupply()", &[]);
     let team_supply = plan.add("Team.totalSupply()".into(), team, "totalSupply()", &[]);
     let vester_team = plan.add(
@@ -849,6 +909,28 @@ pub async fn read(
         _ => None,
     };
 
+    let earlier_reserve = reserve_at
+        .map(|i| single(i).and_then(|a| a.uint(0)))
+        .transpose()?;
+    // The two step 4 keys are read apart from everything above, each in a batch of its own: a project whose
+    // pause or claim contract cannot be read still gets its record, with that key `null` (RECORD-V2 section 13).
+    let pause = match ledger.contracts.pause.as_deref() {
+        Some(gate) => Some(
+            read_pause(source, gate, block)
+                .await
+                .map_err(|e| format!("{e:#}")),
+        ),
+        None => None,
+    };
+    let earlier = match (ledger.contracts.earlier.as_deref(), ledger.earlier_pool) {
+        (Some(contract), Some(_)) => Some(
+            read_earlier(source, contract, block)
+                .await
+                .map_err(|e| format!("{e:#}")),
+        ),
+        _ => None,
+    };
+
     Ok(Views {
         block,
         treasury: treasury_views,
@@ -868,6 +950,121 @@ pub async fn read(
         grants,
         agents,
         book,
+        earlier_reserve,
+        pause,
+        earlier,
+    })
+}
+
+/// A holder pause's views: `state()` (six words), `day()` and `LINE_DIVISOR()`, in one batch at `block`.
+async fn read_pause(
+    source: &dyn ChainSource,
+    gate: &str,
+    block: u64,
+) -> anyhow::Result<PauseViews> {
+    let to = address_of(gate, "the holder pause")?;
+    let mut plan = Plan {
+        calls: Vec::new(),
+        labels: Vec::new(),
+    };
+    let state = plan.add("HolderPause.state()".into(), to, "state()", &[]);
+    let day = plan.add("HolderPause.day()".into(), to, "day()", &[]);
+    let divisor = plan.add(
+        "HolderPause.LINE_DIVISOR()".into(),
+        to,
+        "LINE_DIVISOR()",
+        &[],
+    );
+    let answers = source
+        .eth_call_batch(&plan.calls, block)
+        .await
+        .with_context(|| format!("read the holder pause at block {block}"))?;
+    if answers.len() != plan.calls.len() {
+        bail!(
+            "the node answered {} of {} calls",
+            answers.len(),
+            plan.calls.len()
+        );
+    }
+    let at = |i: usize| Answer {
+        label: &plan.labels[i],
+        bytes: &answers[i],
+    };
+    let s = at(state);
+    s.expect_words(6)?;
+    let one = |i: usize| -> anyhow::Result<Answer<'_>> {
+        let a = at(i);
+        a.expect_words(1)?;
+        Ok(a)
+    };
+    Ok(PauseViews {
+        address: gate.to_owned(),
+        parked_total: s.uint(0)?,
+        backer_shares: s.uint(1)?,
+        line: s.uint(2)?,
+        armed_at: u64::try_from(s.uint(3)?).context("armedAt is too large")?,
+        pauses_from: u64::try_from(s.uint(4)?).context("pausesFrom is too large")?,
+        paused: s.flag(5)?,
+        day: u64::try_from(one(day)?.uint(0)?).context("day is too large")?,
+        line_divisor: one(divisor)?.uint(0)?,
+    })
+}
+
+/// The earlier backers' claim contract's views, in one batch at `block`.
+async fn read_earlier(
+    source: &dyn ChainSource,
+    contract: &str,
+    block: u64,
+) -> anyhow::Result<EarlierViews> {
+    let to = address_of(contract, "the earlier backers' claim contract")?;
+    let mut plan = Plan {
+        calls: Vec::new(),
+        labels: Vec::new(),
+    };
+    for name in [
+        "vester",
+        "root",
+        "textHash",
+        "total",
+        "rows",
+        "claimedRows",
+        "claimedTotal",
+    ] {
+        plan.add(
+            format!("EarlierGrants.{name}()"),
+            to,
+            &format!("{name}()"),
+            &[],
+        );
+    }
+    let answers = source
+        .eth_call_batch(&plan.calls, block)
+        .await
+        .with_context(|| format!("read the earlier backers' claim contract at block {block}"))?;
+    if answers.len() != plan.calls.len() {
+        bail!(
+            "the node answered {} of {} calls",
+            answers.len(),
+            plan.calls.len()
+        );
+    }
+    let at = |i: usize| -> anyhow::Result<Answer<'_>> {
+        let a = Answer {
+            label: &plan.labels[i],
+            bytes: &answers[i],
+        };
+        a.expect_words(1)?;
+        Ok(a)
+    };
+    Ok(EarlierViews {
+        address: contract.to_owned(),
+        vester: at(0)?.address(0)?,
+        root: hex0x(&at(1)?.word(0)?),
+        text_hash: hex0x(&at(2)?.word(0)?),
+        total: at(3)?.uint(0)?,
+        rows: at(4)?.uint(0)?,
+        claimed_rows: at(5)?.uint(0)?,
+        claimed_total: at(6)?.uint(0)?,
     })
 }
 

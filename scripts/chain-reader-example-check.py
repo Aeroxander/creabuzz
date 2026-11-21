@@ -2,6 +2,7 @@
 """Checks the example record against the contracts, field by field, with `cast call` at the record's own block.
 
     python3 -I scripts/chain-reader-example-check.py [record.json]
+    python3 -I scripts/chain-reader-example-check.py --pause [record.json]   # the second example (the holder pause and the earlier grants on)
 
 It plays the same run the chain reader's fixture is made from (scripts/chain-reader-fixture.py, on a fresh anvil: the chain's clock is
 fixed, so the same run gives the same blocks and addresses), keeps the chain, and then asks the contracts again, with `cast call --block`,
@@ -36,7 +37,11 @@ _social_spec = importlib.util.spec_from_file_location("chain_social_recompute", 
 social = importlib.util.module_from_spec(_social_spec)
 _social_spec.loader.exec_module(social)
 
-EXAMPLE = sys.argv[1] if len(sys.argv) > 1 else os.path.join(fx.REPO, "docs", "next-version", "record-v2-example.json")
+PAUSE_RUN = "--pause" in sys.argv[1:]
+_args = [a for a in sys.argv[1:] if a != "--pause"]
+EXAMPLE = _args[0] if _args else os.path.join(
+    fx.REPO, "docs", "next-version", "record-v2-example-pause.json" if PAUSE_RUN else "record-v2-example.json"
+)
 STATES = {"announced": 1, "taken": 2, "paid": 3, "rejected": 4, "returned": 5, "cancelled": 6, "lapsed": 7}
 ZERO = "0x" + "00" * 20
 TASK_OF_TYPES = (
@@ -90,8 +95,12 @@ def main():
             except Exception:
                 time.sleep(0.2)
         fx.rpc("anvil_setBlockTimestampInterval", 1)
-        played = fx.play(tmp)
-        check(example, block, now, played)
+        if PAUSE_RUN:
+            played = fx.play_pause(tmp)
+            check_pause(example, block, now, played)
+        else:
+            played = fx.play(tmp)
+            check(example, block, now, played)
     finally:
         anvil.terminate()
         anvil.wait()
@@ -145,6 +154,14 @@ def check(r, block, now, played):
     one = 10**18
     same("value.leaveValue is made from the settled pot", r["value"]["leaveValue"], num(block, t, "leaveValue()(uint256)"))
     same("the settled pot gives leaveValue", one * a1 // backers + one * (pot - a1) // (backers + counted), num(block, t, "leaveValue()(uint256)"))
+    # Step 4: this deployment has neither switch on, so the Treasury has no gate and every step 4 key is null.
+    same("contracts.pause is null: the Treasury has no pause", r["contracts"]["pause"], None)
+    same("the Treasury's pauseGate() is zero", lower(cast(block, t, "pauseGate()(address)")[0]), ZERO)
+    same("pause is null", r["pause"], None)
+    same("earlierGrants is null", r["earlierGrants"], None)
+    same("team.earlierPool is null", r["team"]["earlierPool"], None)
+    same("team.earlierReserve is null", r["team"]["earlierReserve"], None)
+    same("the Launcher has no claim contract", lower(cast(block, r["launcher"], "earlier()(address)")[0]), ZERO)
     print(f"the Treasury, the stream and the settled numbers: {checks} checks so far")
 
     # The task section.
@@ -214,6 +231,75 @@ def check(r, block, now, played):
     start = checks
     check_social(r, block, now, played)
     print(f"the four social keys, recomputed from the raw logs: {checks - start} checks")
+
+
+def check_pause(r, block, now, played):
+    """The second example against the contracts: the frame, the holder pause, the claim contract, the team's two fields and the
+    holdings (a parked Share is its owner's)."""
+    z = played["projects"]["Z"]
+    t, v, sh, tm = z["treasury"], z["vester"], z["shares"], z["team"]
+    pause, claims = z["pause"], z["earlier"]
+    same("the example block", block, played["books"]["Z_paused"]["block"])
+    same("asOf.time", now, int(fx.rpc("eth_getBlockByNumber", hex(block), False)["timestamp"], 16))
+    same("project key", r["key"], z["key"])
+    same("contracts.pause is the Treasury's pauseGate()", r["contracts"]["pause"], lower(cast(block, t, "pauseGate()(address)")[0]))
+    same("contracts.pause is the run's pause", r["contracts"]["pause"], pause)
+    p = r["pause"]
+    same("pause.contract", p["contract"], pause)
+    same("pause.parkedTotal", p["parkedTotal"], num(block, pause, "parkedTotal()(uint256)"))
+    same("pause.line", p["line"], num(block, pause, "line()(uint256)"))
+    same("pause.line is a third of the backers' Shares, rounded up", p["line"], -(-num(block, sh, "totalSupply()(uint256)") // 3))
+    same("pause.dayLength", p["dayLength"], num(block, pause, "day()(uint32)"))
+    same("pause.dayLength is a seventh of the unit", p["dayLength"], r["unit"] // 7)
+    same("pause.lineDivisor", p["lineDivisor"], num(block, pause, "LINE_DIVISOR()(uint256)"))
+    armed = num(block, pause, "armedAt()(uint64)")
+    same("pause.armedAt", p["armedAt"], armed or None)
+    same("pause.pausesFrom", p["pausesFrom"], num(block, pause, "pausesFrom()(uint256)") or None)
+    same("pause.paused (the contract's own answer at the block)", p["paused"], cast(block, pause, "paused()(bool)")[0] == "true")
+    same("pause.since", p["since"], p["pausesFrom"] if p["paused"] else None)
+    same("the pause is on in the example", p["paused"], True)
+    same("shares.backers", r["shares"]["backers"], num(block, sh, "totalSupply()(uint256)"))
+    same("shares.teamCounted includes the earlier pool", r["shares"]["teamCounted"], num(block, tm, "totalSupply()(uint256)"))
+    # The parkers: how many accounts have Shares parked (a count only; the contract has no list, so the accounts of the run are asked).
+    parkers = [a for a in played["accounts"].values() if num(block, pause, "parkedOf(address)(uint256)", a) > 0]
+    same("pause.parkerCount", p["parkerCount"], len(parkers))
+    # The claim contract.
+    e = r["earlierGrants"]
+    same("earlierGrants.contract", e["contract"], claims)
+    same("earlierGrants.bound", e["bound"], lower(cast(block, claims, "vester()(address)")[0]) == v)
+    same("earlierGrants.root", e["root"], cast(block, claims, "root()(bytes32)")[0].lower())
+    same("earlierGrants.textHash", e["textHash"], cast(block, claims, "textHash()(bytes32)")[0].lower())
+    same("earlierGrants.textHash is the run's text", e["textHash"], played["textHash"])
+    same("earlierGrants.total", e["total"], num(block, claims, "total()(uint256)"))
+    same("earlierGrants.rows", e["rows"], num(block, claims, "rows()(uint32)"))
+    same("earlierGrants.claimedRows", e["claimedRows"], num(block, claims, "claimedRows()(uint32)"))
+    same("earlierGrants.claimedTotal", e["claimedTotal"], num(block, claims, "claimedTotal()(uint256)"))
+    same("earlierGrants.clockSecs", e["clockSecs"], num(block, v, "PROTECTED_LENGTH()(uint256)"))
+    same("the Launcher's claim contract", lower(cast(block, r["launcher"], "earlier()(address)")[0]), claims)
+    same("the Launcher's claim key is this project", cast(block, r["launcher"], "earlierKey()(bytes32)")[0].lower(), r["key"])
+    # The team's fields.
+    T = r["team"]
+    same("team.pool is the founder's pool only", T["pool"], str(10_000_000 * 10**18))
+    same("team.earlierPool", T["earlierPool"], e["total"])
+    same("team.earlierReserve is the Vester's own", T["earlierReserve"], num(block, v, "earlierReserve()(uint256)"))
+    same("team.earlierReserve is the pool less the claims", int(T["earlierReserve"]), int(e["total"]) - int(e["claimedTotal"]))
+    same("team.inVester", T["inVester"], num(block, tm, "balanceOf(address)(uint256)", v))
+    same("team.promised", T["promised"], num(block, v, "committed()(uint256)"))
+    same("team.ungranted leaves the reserve out", int(T["ungranted"]), int(T["inVester"]) - int(T["promised"]) - int(T["earlierReserve"]))
+    same("the claimed grants are protected and listed", sorted(g["kind"] for g in T["grants"]), ["protected"] * int(e["claimedRows"]))
+    for g in T["grants"]:
+        member, protected, state, *_ = cast(block, v, "grantOf(uint256)(address,bool,uint8,uint64,uint256,uint256,uint256,uint256)", g["id"])
+        same(f"grant {g['id']} is protected", protected, "true")
+        same(f"grant {g['id']} is for the account that claimed", g["member"], member.lower())
+    # The holdings: a parked Share is its owner's; the pause contract holds no one's Shares.
+    for h in r["holders"]:
+        owned = num(block, sh, "balanceOf(address)(uint256)", h["account"]) + num(block, pause, "parkedOf(address)(uint256)", h["account"])
+        same(f"holding of {h['account'][:8]} is its balance and what it parked", h["shares"], owned)
+    same("the pause contract is no holder", any(h["account"] == pause for h in r["holders"]), False)
+    donated = num(block, sh, "balanceOf(address)(uint256)", pause) - num(block, pause, "parkedTotal()(uint256)")
+    same("the holdings add up to the supply less what was sent to the pause by a plain transfer",
+         sum(int(h["shares"]) for h in r["holders"]), num(block, sh, "totalSupply()(uint256)") - donated)
+    same("no list was cut", r["truncated"], False)
 
 
 def check_social(r, block, now, played):

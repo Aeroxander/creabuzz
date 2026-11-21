@@ -13,7 +13,8 @@
     "team": "0x5392a33f7f677f59e833febf4016cddd88ff9e67",
     "vester": "0xa783cdc72e34a174cca57a6d9a74904d0bec05a9",
     "dollar": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-    "pair": null
+    "pair": null,
+    "pause": null
   },
   "asOf": {
     "block": 91,
@@ -85,6 +86,8 @@
   },
   "team": {
     "pool": "10000000000000000000000000",
+    "earlierPool": null,
+    "earlierReserve": null,
     "inHands": "260851648351648351648351",
     "inVester": "9739148351648351648351649",
     "promised": "2539148351648351648351649",
@@ -487,6 +490,8 @@
     },
     "truncated": false
   },
+  "pause": null,
+  "earlierGrants": null,
   "held": {
     "windows": {
       "rankSecs": 2592000,

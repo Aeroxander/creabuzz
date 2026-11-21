@@ -1,0 +1,694 @@
+{
+  "version": 2,
+  "chainId": 31337,
+  "launcher": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+  "key": "0x1c21a33a993b67b760251bdf52b3e8d63636d36444a50ccd95a92a282920e28b",
+  "projectId": "0x7a65726f00000000000000000000000000000000000000000000000000000000",
+  "founder": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+  "launchedAt": 1795001000,
+  "playMoney": true,
+  "contracts": {
+    "treasury": "0x75537828f2ce51be7289709686a69cbfdbb714f1",
+    "shares": "0xe451980132e65465d0a498c53f0b5227326dd73f",
+    "team": "0x5392a33f7f677f59e833febf4016cddd88ff9e67",
+    "vester": "0xa783cdc72e34a174cca57a6d9a74904d0bec05a9",
+    "dollar": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+    "pair": null,
+    "pause": "0x61ef99673a65bee0512b8d1eb1aa656866d24296"
+  },
+  "asOf": {
+    "block": 30,
+    "time": 1795251560
+  },
+  "builtAt": 1795251691,
+  "refreshEverySecs": 600,
+  "unit": 604800,
+  "fee": {
+    "bps": 200
+  },
+  "money": {
+    "pot": "10755042006",
+    "paidIn": "10780000000",
+    "arriving": "0",
+    "arrivalEnd": null,
+    "feesOwed": "220000000",
+    "locked": "0",
+    "notesOwed": "0",
+    "held": "11000000000"
+  },
+  "shares": {
+    "backers": "1078519940566510624293469",
+    "teamCounted": "10003540500000000000000000",
+    "announcedBurn": "0"
+  },
+  "value": {
+    "leaveValue": "9972",
+    "teamValue": "0"
+  },
+  "allowance": {
+    "ratePpm": 1000,
+    "pending": null,
+    "box": "24957994",
+    "boxCap": "75460000",
+    "drawnLastDay": "0"
+  },
+  "clock": {
+    "lastCheckIn": 1795001000,
+    "lastRecordHash": null,
+    "activeUntil": 1796210600,
+    "activeSeconds": 250560
+  },
+  "door": {
+    "switchOn": true,
+    "openNow": true,
+    "shutsAt": 1796210600
+  },
+  "quiet": {
+    "state": "active",
+    "since": 1795001000,
+    "quietFrom": 1796210600,
+    "dormantFrom": 1802863400,
+    "windableFrom": 1810725800,
+    "next": {
+      "state": "quiet",
+      "at": 1796210600
+    }
+  },
+  "windDown": null,
+  "runner": {
+    "address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    "isPair": false,
+    "signers": null
+  },
+  "team": {
+    "pool": "10000000000000000000000000",
+    "earlierPool": "3540500000000000000000",
+    "earlierReserve": "2540500000000000000000",
+    "inHands": "0",
+    "inVester": "10003540500000000000000000",
+    "promised": "1000000000000000000000",
+    "ungranted": "10000000000000000000000000",
+    "grantCount": 1,
+    "grants": [
+      {
+        "id": 0,
+        "member": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+        "kind": "protected",
+        "state": "live",
+        "granted": "1000000000000000000000",
+        "keeps": "1000000000000000000000",
+        "claimed": "0",
+        "vested": "7945205479452054794",
+        "claimable": "7945205479452054794",
+        "startActive": 1795001000,
+        "cliff": null,
+        "fullyVestedAtIfActive": 1826537000,
+        "forfeit": null
+      }
+    ]
+  },
+  "agents": [],
+  "limits": {
+    "minJoin": "1000000",
+    "minOutsidePayment": "1000000",
+    "maxRatePpm": 2000,
+    "checkInWindowUnits": 2,
+    "windDownUnits": 26,
+    "cliffUnits": 13,
+    "vestUnits": 104,
+    "minGrant": "1000000000000000000",
+    "maxGrantsPerMember": 8,
+    "agentUsdPerDay": "25000000",
+    "agentTeamPerDay": "10000000000000000000000"
+  },
+  "totals": {
+    "joined": "11000000000",
+    "fees": "220000000",
+    "tookOut": "0",
+    "drawn": "0",
+    "outside": "0",
+    "paidToWorkers": "0",
+    "noteClaims": "0"
+  },
+  "firstBackedAt": 1795009760,
+  "holders": [
+    {
+      "account": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+      "shares": "490480728803380701772520",
+      "teamShares": "0"
+    },
+    {
+      "account": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+      "shares": "490000000000000000000000",
+      "teamShares": "0"
+    },
+    {
+      "account": "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc",
+      "shares": "98038211763129922520949",
+      "teamShares": "0"
+    }
+  ],
+  "holderCount": 3,
+  "teamHolderCount": 0,
+  "truncated": false,
+  "tasks": {
+    "book": "0xb30daf0240261be564cea33260f01213c47aaa0d",
+    "bookBlock": 8,
+    "nextSerial": 1,
+    "openCount": 0,
+    "nextExpiry": null,
+    "limits": {
+      "maxOpen": 8,
+      "maxShareBps": 500,
+      "capBps": 1000,
+      "minTask": "1000000",
+      "capWindowSecs": 2419200,
+      "takeWindowSecs": 604800,
+      "dueSecs": 1209600
+    },
+    "cap": {
+      "usedBps": 0,
+      "roomBps": 1000,
+      "frees": []
+    },
+    "next": null,
+    "list": [],
+    "cut": {
+      "maxEnded": 32,
+      "endedWithinSecs": 2419200,
+      "endedDropped": 0,
+      "notesRowsDropped": 0
+    },
+    "truncated": false
+  },
+  "pause": {
+    "contract": "0x61ef99673a65bee0512b8d1eb1aa656866d24296",
+    "parkedTotal": "359506646855503541431157",
+    "line": "359506646855503541431157",
+    "dayLength": 86400,
+    "lineDivisor": 3,
+    "armedAt": 1795156580,
+    "pausesFrom": 1795242980,
+    "paused": true,
+    "since": 1795242980,
+    "parkerCount": 1
+  },
+  "earlierGrants": {
+    "contract": "0x5fc8d32690cc91d4c39d9d3abcbd16989f875707",
+    "bound": true,
+    "root": "0x4fe5ac32f18c4b6528d621b8d4224d3b67a0c2e2a67a477ed78ade0ea72614e8",
+    "textHash": "0xc82128c7d2d238cb05774043aa3059fac7a27aae54f245802ed04d1726617e5f",
+    "total": "3540500000000000000000",
+    "rows": 4,
+    "claimedRows": 1,
+    "claimedTotal": "1000000000000000000000",
+    "clockSecs": 31536000
+  },
+  "held": {
+    "windows": {
+      "rankSecs": 2592000,
+      "badgeSecs": 7862400
+    },
+    "rank": {
+      "shares": "0",
+      "bps": 0,
+      "money": "0",
+      "accounts": 0
+    },
+    "badge": {
+      "shares": "0",
+      "bps": 0
+    },
+    "countedAccounts": 3
+  },
+  "feed": {
+    "roundTo": "100000000",
+    "bucketSecs": 3600,
+    "hours": [
+      {
+        "at": 1795078800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795082400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795086000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795089600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795093200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795096800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795100400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795104000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795107600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795111200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795114800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795118400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795122000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795125600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795129200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795132800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795136400,
+        "joins": 1,
+        "tookOut": 0,
+        "net": {
+          "dir": "in",
+          "amount": "2900000000"
+        }
+      },
+      {
+        "at": 1795140000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795143600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795147200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795150800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795154400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795158000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795161600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795165200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795168800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795172400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795176000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795179600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795183200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795186800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795190400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795194000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795197600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795201200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795204800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795208400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795212000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795215600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795219200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795222800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795226400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795230000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795233600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795237200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795240800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795244400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1795248000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      }
+    ],
+    "items": [],
+    "cut": 0
+  },
+  "streaks": {
+    "updates": {
+      "weeks": 0,
+      "longest": 0,
+      "lastAt": null
+    }
+  },
+  "established": {
+    "rule": {
+      "minHeldBps": 6000,
+      "heldSecs": 7862400,
+      "minAccounts": 10
+    },
+    "heldBps": 0,
+    "accounts": 3,
+    "twoSigners": false,
+    "reached": false
+  },
+  "ledger": {
+    "lastSettle": 1795139360,
+    "pot": "10769026783",
+    "box": "10973217",
+    "arriving": "0",
+    "arrivalEnd": null,
+    "arrivalStart": 0,
+    "arrivalTotal": "0",
+    "activeSeconds": 138360,
+    "locked": "0",
+    "notesOwed": "0"
+  }
+}

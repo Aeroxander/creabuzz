@@ -114,8 +114,11 @@ fn topic_key(log: &RawLog, index: usize) -> Option<Word> {
 /// Contracts a decoded log of project `key` in `block` reveals, by the role of
 /// the contract that emitted it: from the Launcher, a project's four contracts
 /// at its launch and a Pair when one is made; from a project's Treasury, its task
-/// book (`TasksReady`, emitted once in the launch transaction). The dollar
-/// (`Platform.quote`) is shared by every project and not followed.
+/// book (`TasksReady`, emitted once in the launch transaction) and its holder
+/// pause (`PauseReady`, the same way, only when the deployment's switch is
+/// on); from the Launcher, also the deployment's earlier backers' claim
+/// contract (`EarlierBound`), tied to the one project that event names. The
+/// dollar (`Platform.quote`) is shared by every project and not followed.
 fn discovered(role: Role, key: Word, block: u64, event: &str, decoded: &Value) -> Vec<Contract> {
     let addr = |v: Option<&Value>| v.and_then(Value::as_str).and_then(parse_fixed::<20>);
     let mut out = Vec::new();
@@ -128,6 +131,34 @@ fn discovered(role: Role, key: Word, block: u64, event: &str, decoded: &Value) -
                     address,
                     role: Role::Tasks,
                     project_key: Some(key),
+                    from_block: block,
+                });
+            }
+        }
+        (Role::Treasury, "PauseReady") => {
+            // The pause clone is initialised before it is bound, so it has no
+            // log before this one.
+            if let Some(address) = addr(decoded.get("gate")) {
+                out.push(Contract {
+                    address,
+                    role: Role::Pause,
+                    project_key: Some(key),
+                    from_block: block,
+                });
+            }
+        }
+        (Role::Launcher, "EarlierBound") => {
+            // The claim contract's own project is named in the event's data
+            // (the key is not a topic), not by the caller.
+            let named = decoded
+                .get("key")
+                .and_then(Value::as_str)
+                .and_then(parse_fixed::<32>);
+            if let (Some(address), Some(named)) = (addr(decoded.get("earlier")), named) {
+                out.push(Contract {
+                    address,
+                    role: Role::Earlier,
+                    project_key: Some(named),
                     from_block: block,
                 });
             }
@@ -164,15 +195,25 @@ fn discovered(role: Role, key: Word, block: u64, event: &str, decoded: &Value) -
     out
 }
 
+/// The key `EarlierBound` names: its second data word (`earlier` is the first;
+/// the key is not a topic).
+fn earlier_bound_key(log: &RawLog) -> Option<Word> {
+    log.data
+        .get(32..64)
+        .and_then(|bytes| <Word>::try_from(bytes).ok())
+}
+
 /// The project a log belongs to: the follower's project, or for the Launcher
-/// the `key` topic of the events that carry one (`ProjectLaunched`, `PairMade`
-/// and `WoundDown`; the settings and admin events belong to no project).
+/// the `key` topic of the events that carry one (`ProjectLaunched`, `PairMade`,
+/// `WoundDown` and `EarlierPoolFunded`), or the key `EarlierBound` carries in
+/// its data; the settings and admin events belong to no project.
 fn project_of(role: Role, contract_key: Option<Word>, event: &str, log: &RawLog) -> Option<Word> {
     if role != Role::Launcher {
         return contract_key;
     }
     match event {
-        "ProjectLaunched" | "PairMade" | "WoundDown" => topic_key(log, 1),
+        "ProjectLaunched" | "PairMade" | "WoundDown" | "EarlierPoolFunded" => topic_key(log, 1),
+        "EarlierBound" => earlier_bound_key(log),
         _ => None,
     }
 }
@@ -289,7 +330,9 @@ async fn scan_range(
                 // The Launcher's events name a project by their key topic; a
                 // Treasury's own `TasksReady` by the project it belongs to.
                 let revealing = match c.role {
-                    Role::Launcher => topic_key(&log, 1).map(|key| (Role::Launcher, key)),
+                    Role::Launcher => topic_key(&log, 1)
+                        .or_else(|| earlier_bound_key(&log))
+                        .map(|key| (Role::Launcher, key)),
                     Role::Treasury => c.project_key.map(|key| (Role::Treasury, key)),
                     _ => None,
                 };

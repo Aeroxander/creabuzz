@@ -33,6 +33,14 @@ pub enum Role {
     /// A project's task queue (`TaskBook`), found from its Treasury's
     /// `TasksReady` log.
     Tasks,
+    /// A project's holder pause (`HolderPause`), found from its Treasury's
+    /// `PauseReady` log. Only projects launched by a deployment whose pause
+    /// switch is on have one.
+    Pause,
+    /// The deployment's earlier backers' claim contract (`EarlierGrants`),
+    /// found from the Launcher's `EarlierBound` log and tied to the one
+    /// project that log names.
+    Earlier,
     /// The dollar token (the play dollar on a test network). It is in the
     /// table so its events decode, but the reader does not follow it: every
     /// transfer of the dollar on the chain would be read for nothing, and the
@@ -51,6 +59,8 @@ impl Role {
             Role::Vester => "vester",
             Role::Pair => "pair",
             Role::Tasks => "tasks",
+            Role::Pause => "pause",
+            Role::Earlier => "earlier",
             Role::Dollar => "dollar",
         }
     }
@@ -65,6 +75,8 @@ impl Role {
             "vester" => Role::Vester,
             "pair" => Role::Pair,
             "tasks" => Role::Tasks,
+            "pause" => Role::Pause,
+            "earlier" => Role::Earlier,
             "dollar" => Role::Dollar,
             _ => return None,
         })

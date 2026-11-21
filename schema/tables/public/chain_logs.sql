@@ -25,3 +25,11 @@ CREATE INDEX idx_chain_logs_task_what ON chain_logs (reader, project_key, (lower
     WHERE role = 'tasks' AND event = 'TaskAnnounced';
 CREATE INDEX idx_chain_logs_task_serial ON chain_logs (reader, project_key, (decoded->>'serial'))
     WHERE role = 'tasks' AND event IN ('TaskTaken', 'TaskResolved');
+-- The draws of one transaction on one project's Treasury: the relay's check that a task named as paid out of the
+-- allowance box was paid on the network (migration 0076).
+CREATE INDEX idx_chain_logs_box_draws ON chain_logs (reader, project_key, tx_hash)
+    WHERE role = 'treasury' AND event = 'AllowanceDrawn';
+-- The helpers the network has set, by wallet: the relay's tie between the network's helper limits and the server's labels
+-- (migration 0076).
+CREATE INDEX idx_chain_logs_agent_set ON chain_logs (reader, (lower(decoded->>'agent')))
+    WHERE role = 'treasury' AND event = 'AgentSet';

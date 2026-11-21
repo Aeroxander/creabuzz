@@ -272,7 +272,8 @@ pub async fn commit_range(pool: &PgPool, reader: &str, w: RangeWrite<'_>) -> any
     // to where they began (review I2 / I1). A row already stored is kept, and
     // the projects they belong to are worked out and signed again.
     let mut earlier_projects: Vec<Vec<u8>> = Vec::new();
-    for l in w.logs {
+    let anchors = park_anchors(w.logs);
+    for (n, l) in w.logs.iter().enumerate() {
         let earlier = l.block_number < w.expected_next;
         if earlier {
             if let Some(k) = l.project_key {
@@ -313,16 +314,21 @@ pub async fn commit_range(pool: &PgPool, reader: &str, w: RangeWrite<'_>) -> any
         if inserted == 0 {
             continue;
         }
-        if let Some((key, token, moves)) = balance_moves(l) {
+        if let Some((key, token, moves)) = balance_moves(l).or_else(|| park_moves(l)) {
+            // A park's compensation sits at its own Transfer's place, so the two are one change of the holding
+            // (never a dip inside the block); a change that meets another at the same place is added to it.
+            let at = anchors.get(&n).copied().unwrap_or(l.log_index);
             for (account, delta) in moves {
                 sqlx::query(
                     "INSERT INTO chain_balance_changes \
                          (reader, block_number, log_index, account, project_key, token, delta) \
-                     VALUES ($1, $2, $3, $4, $5, $6, $7::numeric)",
+                     VALUES ($1, $2, $3, $4, $5, $6, $7::numeric) \
+                     ON CONFLICT (reader, block_number, log_index, account) \
+                     DO UPDATE SET delta = chain_balance_changes.delta + EXCLUDED.delta",
                 )
                 .bind(reader)
                 .bind(i64_of(l.block_number)?)
-                .bind(i32::try_from(l.log_index).context("log index")?)
+                .bind(i32::try_from(at).context("log index")?)
                 .bind(account.as_slice())
                 .bind(key.as_slice())
                 .bind(token)
@@ -551,6 +557,83 @@ fn balance_moves(l: &StoredLog) -> Option<BalanceMoves> {
     Some((key, l.role.as_str(), moves))
 }
 
+/// The holding changes a park or an un-park makes, for the pause contract that emitted it: a parked Share
+/// stays its owner's (the owner's holding does not fall, the pause contract's does not rise), so the log gives
+/// back what the token's own `Transfer` just moved (`Parked`: to the owner and from the pause; `Unparked`: the
+/// other way). Only the Shares token has holdings to give back.
+fn park_moves(l: &StoredLog) -> Option<BalanceMoves> {
+    if l.role != Role::Pause || !matches!(l.event.as_str(), "Parked" | "Unparked") {
+        return None;
+    }
+    let key = l.project_key?;
+    let who = l
+        .decoded
+        .get("who")
+        .and_then(Value::as_str)
+        .and_then(super::word::parse_fixed::<20>)?;
+    let amount = l.decoded.get("amount").and_then(Value::as_str)?.to_owned();
+    if amount == "0" {
+        return None;
+    }
+    let (owner, pause) = if l.event == "Parked" {
+        (amount.clone(), format!("-{amount}"))
+    } else {
+        (format!("-{amount}"), amount)
+    };
+    Some((key, "shares", vec![(who, owner), (l.address, pause)]))
+}
+
+/// For each `Parked` or `Unparked` log of `logs` (by its place in the slice), the log index of the Shares
+/// `Transfer` that moved the same Shares in the same transaction just before it (the greatest such index, each
+/// `Transfer` used once). `park` pulls the Shares and then says so; `unpark` sends them and then says so: the two
+/// logs are one act, and the holding changes they make are put at the `Transfer`'s place, where they cancel. A
+/// log with no such `Transfer` in the batch (the pause was followed late, after the token's log was stored) is
+/// not in the map and keeps its own place.
+fn park_anchors(logs: &[StoredLog]) -> HashMap<usize, u32> {
+    let text = |l: &StoredLog, name: &str| -> Option<String> {
+        l.decoded
+            .get(name)
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    let mut used: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut out = HashMap::new();
+    for (n, l) in logs.iter().enumerate() {
+        if l.role != Role::Pause || !matches!(l.event.as_str(), "Parked" | "Unparked") {
+            continue;
+        }
+        let (Some(who), Some(amount)) = (text(l, "who"), text(l, "amount")) else {
+            continue;
+        };
+        let pause = super::word::hex0x(&l.address);
+        let (from, to) = if l.event == "Parked" {
+            (who, pause)
+        } else {
+            (pause, who)
+        };
+        let found = logs
+            .iter()
+            .enumerate()
+            .filter(|(i, t)| {
+                !used.contains(i)
+                    && t.role == Role::Shares
+                    && t.event == "Transfer"
+                    && t.tx_hash == l.tx_hash
+                    && t.block_number == l.block_number
+                    && t.log_index < l.log_index
+                    && text(t, "from").as_deref() == Some(from.as_str())
+                    && text(t, "to").as_deref() == Some(to.as_str())
+                    && text(t, "value").as_deref() == Some(amount.as_str())
+            })
+            .max_by_key(|(_, t)| t.log_index);
+        if let Some((i, t)) = found {
+            used.insert(i);
+            out.insert(n, t.log_index);
+        }
+    }
+    out
+}
+
 /// A project's token balances per account as of `final_block` (lower-case `0x`
 /// text), for the backer Shares (`Role::Shares`) or the Team Shares
 /// (`Role::Team`): the running balances, less any change stored past that
@@ -715,8 +798,9 @@ pub async fn touch_source_block(
 }
 
 /// The stored rows that name contracts in blocks before `before`: the
-/// Launcher's `ProjectLaunched` and `PairMade`, and a Treasury's `TasksReady`
-/// (which names the project's task book). Each is the emitting role, the project
+/// Launcher's `ProjectLaunched`, `PairMade` and `EarlierBound`, and a
+/// Treasury's `TasksReady` and `PauseReady` (which name the project's task
+/// book and holder pause). Each is the emitting role, the project
 /// key, the block, the event and its decoded fields. A reader that ran before a
 /// contract kind was followed finds those contracts here (review I2).
 pub async fn reveals(
@@ -728,8 +812,8 @@ pub async fn reveals(
         "SELECT role, project_key, block_number, event, decoded FROM chain_logs \
          WHERE reader = $1 AND block_number < $2 \
            AND project_key IS NOT NULL AND decoded IS NOT NULL \
-           AND ((role = 'launcher' AND event IN ('ProjectLaunched', 'PairMade')) \
-             OR (role = 'treasury' AND event = 'TasksReady')) \
+           AND ((role = 'launcher' AND event IN ('ProjectLaunched', 'PairMade', 'EarlierBound')) \
+             OR (role = 'treasury' AND event IN ('TasksReady', 'PauseReady'))) \
          ORDER BY block_number, log_index",
     )
     .bind(reader)
@@ -747,4 +831,118 @@ pub async fn reveals(
             ))
         })
         .collect()
+}
+
+#[cfg(test)]
+mod park_tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::chain_reader::word::hex0x;
+
+    const PAUSE: [u8; 20] = [0xdd; 20];
+    const ALICE: [u8; 20] = [0xa1; 20];
+    const BOB: [u8; 20] = [0xb2; 20];
+
+    fn log(
+        index: u32,
+        tx: u8,
+        role: Role,
+        address: [u8; 20],
+        event: &str,
+        decoded: Value,
+    ) -> StoredLog {
+        StoredLog {
+            block_number: 7,
+            log_index: index,
+            block_hash: [1; 32],
+            tx_hash: [tx; 32],
+            address,
+            role,
+            project_key: Some([9; 32]),
+            event: event.to_owned(),
+            topics: Vec::new(),
+            data: Vec::new(),
+            decoded,
+        }
+    }
+
+    fn transfer(index: u32, tx: u8, from: [u8; 20], to: [u8; 20], value: &str) -> StoredLog {
+        log(
+            index,
+            tx,
+            Role::Shares,
+            [0xcc; 20],
+            "Transfer",
+            json!({"from": hex0x(&from), "to": hex0x(&to), "value": value}),
+        )
+    }
+
+    fn park(index: u32, tx: u8, who: [u8; 20], amount: &str, parked: bool) -> StoredLog {
+        log(
+            index,
+            tx,
+            Role::Pause,
+            PAUSE,
+            if parked { "Parked" } else { "Unparked" },
+            json!({"who": hex0x(&who), "amount": amount}),
+        )
+    }
+
+    #[test]
+    fn a_park_is_put_at_its_own_transfers_place() {
+        let logs = vec![
+            transfer(3, 1, ALICE, PAUSE, "100"),
+            park(4, 1, ALICE, "100", true),
+        ];
+        assert_eq!(park_anchors(&logs), HashMap::from([(1, 3)]));
+        // And an un-park at the `Transfer` that sent the Shares back.
+        let logs = vec![
+            transfer(5, 2, PAUSE, ALICE, "40"),
+            park(6, 2, ALICE, "40", false),
+        ];
+        assert_eq!(park_anchors(&logs), HashMap::from([(1, 5)]));
+    }
+
+    #[test]
+    fn a_donation_before_a_park_of_the_same_size_is_not_taken_for_the_park() {
+        // The same account sends 50 to the pause by a plain transfer, then parks 50, in one transaction: the park's own
+        // `Transfer` is the later one.
+        let logs = vec![
+            transfer(1, 1, ALICE, PAUSE, "50"),
+            transfer(2, 1, ALICE, PAUSE, "50"),
+            park(3, 1, ALICE, "50", true),
+        ];
+        assert_eq!(park_anchors(&logs), HashMap::from([(2, 2)]));
+    }
+
+    #[test]
+    fn a_transfer_of_another_transaction_or_another_account_is_never_the_one() {
+        let logs = vec![
+            transfer(1, 1, ALICE, PAUSE, "100"),
+            transfer(2, 2, BOB, PAUSE, "100"),
+            park(3, 2, ALICE, "100", true),
+            park(4, 1, ALICE, "100", true),
+        ];
+        // The first park (tx 2, Alice) has no `Transfer` of Alice's in its own transaction; the second (tx 1) finds index 1.
+        assert_eq!(park_anchors(&logs), HashMap::from([(3, 1)]));
+    }
+
+    #[test]
+    fn the_moves_of_a_park_cancel_the_transfers_and_an_unpark_does_the_same_the_other_way() {
+        let moves = |l: &StoredLog| park_moves(l).expect("a move").2;
+        let parked = moves(&park(4, 1, ALICE, "100", true));
+        assert_eq!(
+            parked,
+            vec![(ALICE, "100".to_owned()), (PAUSE, "-100".to_owned())]
+        );
+        let back = moves(&park(6, 2, ALICE, "40", false));
+        assert_eq!(
+            back,
+            vec![(ALICE, "-40".to_owned()), (PAUSE, "40".to_owned())]
+        );
+        // Only a log of the pause is a park.
+        let other = log(1, 1, Role::Treasury, [1; 20], "Parked", json!({}));
+        assert!(park_moves(&other).is_none());
+    }
 }

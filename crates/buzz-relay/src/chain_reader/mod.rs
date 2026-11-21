@@ -27,6 +27,7 @@ mod numbers_tasks;
 pub mod publish;
 pub mod record;
 pub mod record_social;
+pub mod record_step4;
 pub mod record_tasks;
 mod record_tasks_rules;
 pub mod scan;
@@ -1067,7 +1068,11 @@ mod mul_div_tests;
 #[cfg(test)]
 mod record_social_tests;
 #[cfg(test)]
+mod record_step4_tests;
+#[cfg(test)]
 mod record_tests;
+#[cfg(test)]
+mod scan_pause_postgres_tests;
 #[cfg(test)]
 mod scan_postgres_tests;
 #[cfg(test)]

@@ -229,14 +229,16 @@ async fn excluded_of(
     launcher: &[u8; 20],
     final_block: u64,
 ) -> anyhow::Result<Vec<Vec<u8>>> {
-    // Only the launch names the contracts, so only the launch is replayed (the task rows are none of this step's business).
+    // Only the launch and the pause's `PauseReady` name the accounts that are not holders, so only those are replayed
+    // (the task rows are none of this step's business).
     let launch: Vec<_> = crate::chain_reader::store::project_logs(pool, reader, key, final_block)
         .await
         .context("read the project's rows")?
         .into_iter()
         .filter(|row| {
-            row.role == crate::chain_reader::events::Role::Launcher
-                && row.event == "ProjectLaunched"
+            use crate::chain_reader::events::Role;
+            (row.role == Role::Launcher && row.event == "ProjectLaunched")
+                || (row.role == Role::Treasury && row.event == "PauseReady")
         })
         .collect();
     let Some(ledger) = Ledger::from_logs(&launch)? else {

@@ -17,6 +17,9 @@ use super::source::{ChainSource, Header, RawLog};
 use super::word::{parse_bytes, parse_fixed, Word};
 
 const RUN: &str = include_str!("testdata/pot-run.json");
+/// The second run: a deployment with the holder pause and the earlier backers' claim contract on
+/// (`scripts/chain-reader-fixture.py --pause`).
+const RUN_PAUSE: &str = include_str!("testdata/pot-run-pause.json");
 
 /// A project's contracts in the run.
 #[derive(Clone, Debug)]
@@ -35,6 +38,10 @@ pub struct FxProject {
     pub tasks: [u8; 20],
     /// Its Pair, if one was made.
     pub pair: Option<[u8; 20]>,
+    /// Its holder pause, when the deployment's switch was on.
+    pub pause: Option<[u8; 20]>,
+    /// The deployment's earlier backers' claim contract, when this is the project it names.
+    pub earlier: Option<[u8; 20]>,
 }
 
 /// The run.
@@ -64,7 +71,16 @@ fn word(v: &Value) -> Word {
 impl Fixture {
     /// Load the run.
     pub fn load() -> Self {
-        let json: Value = serde_json::from_str(RUN).expect("the fixture is JSON");
+        Self::from_text(RUN)
+    }
+
+    /// Load the second run (both step 4 switches on).
+    pub fn load_pause() -> Self {
+        Self::from_text(RUN_PAUSE)
+    }
+
+    fn from_text(text: &str) -> Self {
+        let json: Value = serde_json::from_str(text).expect("the fixture is JSON");
         let blocks = json["blocks"]
             .as_array()
             .expect("blocks")
@@ -111,6 +127,8 @@ impl Fixture {
                         vester: addr(&p["vester"]),
                         tasks: addr(&p["tasks"]),
                         pair: p.get("pair").map(addr),
+                        pause: p.get("pause").map(addr),
+                        earlier: p.get("earlier").map(addr),
                     },
                 )
             })
@@ -181,6 +199,12 @@ impl Fixture {
             if p.pair == Some(*address) {
                 return Some((Role::Pair, Some(name)));
             }
+            if p.pause == Some(*address) {
+                return Some((Role::Pause, Some(name)));
+            }
+            if p.earlier == Some(*address) {
+                return Some((Role::Earlier, Some(name)));
+            }
         }
         None
     }
@@ -202,6 +226,17 @@ impl Fixture {
             // The Launcher's events carry the project's key as their first
             // topic argument.
             let project = match (role, project) {
+                // `EarlierBound` names its project in its data, not in a topic.
+                (Role::Launcher, _) if def.name == "EarlierBound" => fields
+                    .get("key")
+                    .and_then(Value::as_str)
+                    .and_then(parse_fixed::<32>)
+                    .and_then(|k| {
+                        self.projects
+                            .iter()
+                            .find(|(_, p)| p.key == k)
+                            .map(|(n, _)| n.as_str())
+                    }),
                 (Role::Launcher, _) => log.topics.get(1).and_then(|k| {
                     self.projects
                         .iter()
@@ -237,6 +272,18 @@ impl Fixture {
             .map(|(_, _, r)| r)
             .collect()
     }
+}
+
+/// The events a deployment with both step 4 switches off never emits (the first run is one; the second has them all).
+pub fn only_with_the_switches_on(role: Role, name: &str) -> bool {
+    matches!(role, Role::Pause | Role::Earlier)
+        || matches!(
+            (role, name),
+            (
+                Role::Launcher,
+                "EarlierBound" | "EarlierPoolFunded" | "HolderPauseBound"
+            ) | (Role::Treasury, "PauseReady")
+        )
 }
 
 /// The raw answers of a book: `(contract, calldata)` to the answer.

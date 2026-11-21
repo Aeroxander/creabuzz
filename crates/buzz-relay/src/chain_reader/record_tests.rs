@@ -581,6 +581,7 @@ fn the_example_obeys_every_rule_of_section_7_3() {
 
 // ------------------------------------------------------ the builder, real run
 
+#[derive(Debug)]
 pub(super) struct Built {
     pub(super) record: Record,
     pub(super) value: Value,

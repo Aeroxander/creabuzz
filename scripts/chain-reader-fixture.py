@@ -3,6 +3,8 @@
 
     python3 -I scripts/chain-reader-fixture.py            # run anvil, play the run, rewrite the fixture
     python3 -I scripts/chain-reader-fixture.py --check    # play it again and fail if the file is not what it gives
+    python3 -I scripts/chain-reader-fixture.py --pause    # the second, small run (the holder pause and the earlier grants on)
+    python3 -I scripts/chain-reader-fixture.py --pause --check
 
 Needs `anvil`, `cast` and `forge` (FOUNDRY_BIN, a folder holding them, or PATH) and a contracts/pot build. It uses the public
 anvil development mnemonic only (the keys are derived at run time; none is written here), picks a free port, and stops anvil
@@ -33,6 +35,13 @@ Output: crates/buzz-relay/src/chain_reader/testdata/pot-run.json with
                block `A_example` is the one the example record (docs/next-version/record-v2-example.json) is built at
   - final      the views at the last block: the settled views, every holder's balances, every grant, the agents
 The Rust tests replay `logs` through the reader's own code and compare with `snapshots` and `final`.
+
+The second run (`--pause`, `testdata/pot-run-pause.json`) is a deployment with both step 4 switches on, on a chain of its own: the
+holder pause (`HOLDER_PAUSE=1`) and the earlier backers' claim contract (`EARLIER_*`, a list of four INVENTED rows made here from
+anvil's public accounts; the list itself is never written to the file, only the claims that were made). One project, `Z`, launched
+under the id the claim contract names: backers join, park Shares, reach the line, join again so that the line is lost, reach it
+again, wait out the warning day and are paused, claim rows, send Shares to the pause by a plain transfer, un-park and take out.
+The first run is the deployment with the switches off and is not changed by this one.
 """
 
 import json
@@ -48,6 +57,7 @@ import urllib.request
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 POT = os.path.join(REPO, "contracts", "pot")
 OUT = os.path.join(REPO, "crates", "buzz-relay", "src", "chain_reader", "testdata", "pot-run.json")
+OUT_PAUSE = os.path.join(REPO, "crates", "buzz-relay", "src", "chain_reader", "testdata", "pot-run-pause.json")
 
 if os.environ.get("FOUNDRY_BIN"):
     os.environ["PATH"] = os.environ["FOUNDRY_BIN"] + os.pathsep + os.environ["PATH"]
@@ -243,6 +253,10 @@ VESTER_UINTS = [
 ]
 
 
+PAUSE_VIEWS = ["state()", "day()", "LINE_DIVISOR()"]
+EARLIER_VIEWS = ["vester()", "root()", "textHash()", "total()", "rows()", "claimedRows()", "claimedTotal()"]
+
+
 def record_book(p, launcher, dollar, block, logs):
     """Every view the record builder calls, for project `p` at `block`: {"<to>:<calldata>": "<answer>"}.
 
@@ -279,6 +293,14 @@ def record_book(p, launcher, dollar, block, logs):
     for a in ADDR:
         for sig in ("agents(address)", "agentEpochOf(address)", "agentUsdUsed(address)", "agentTeamUsed(address)"):
             get(t, sig, a)
+    # step 4: the holder pause and the claim contract, and the Vester's reserve, when the project has them
+    if p.get("pause"):
+        for sig in PAUSE_VIEWS:
+            get(p["pause"], sig)
+    if p.get("earlier"):
+        for sig in EARLIER_VIEWS:
+            get(p["earlier"], sig)
+        get(v, "earlierReserve()")
     # step 2: the task book
     b = p["tasks"]
     block_time = int(rpc("eth_getBlockByNumber", at_b, False)["timestamp"], 16)
@@ -301,6 +323,8 @@ def record_book(p, launcher, dollar, block, logs):
 
 def main():
     check = "--check" in sys.argv
+    pause_run = "--pause" in sys.argv
+    out_file = OUT_PAUSE if pause_run else OUT
     tmp = tempfile.mkdtemp(prefix="chain-reader-fixture-")
     anvil = subprocess.Popen(
         ["anvil", "--port", str(PORT), "--silent", "--timestamp", str(GENESIS)],
@@ -315,21 +339,22 @@ def main():
             except Exception:
                 time.sleep(0.2)
         rpc("anvil_setBlockTimestampInterval", 1)
-        result = play(tmp)
+        result = play_pause(tmp) if pause_run else play(tmp)
     finally:
         anvil.terminate()
         anvil.wait()
         shutil.rmtree(tmp, ignore_errors=True)
     text = json.dumps(result, indent=1, sort_keys=True) + "\n"
     if check:
-        current = open(OUT).read() if os.path.exists(OUT) else ""
+        current = open(out_file).read() if os.path.exists(out_file) else ""
+        name = os.path.basename(out_file)
         if current != text:
-            sys.exit("pot-run.json is not what a fresh run gives: run python3 -I scripts/chain-reader-fixture.py")
-        print("pot-run.json is what a fresh run gives")
+            sys.exit(f"{name} is not what a fresh run gives: run python3 -I scripts/chain-reader-fixture.py{' --pause' if pause_run else ''}")
+        print(f"{name} is what a fresh run gives")
         return
-    with open(OUT, "w") as f:
+    with open(out_file, "w") as f:
         f.write(text)
-    print(f"wrote {OUT} ({len(text)} bytes, {len(result['logs'])} logs, {len(result['blocks'])} blocks)")
+    print(f"wrote {out_file} ({len(text)} bytes, {len(result['logs'])} logs, {len(result['blocks'])} blocks)")
 
 
 def play(tmp):
@@ -709,6 +734,178 @@ def play(tmp):
         "snapshots": snapshots,
         "books": books,
         "final": final,
+    }
+
+
+# ---- the second run: both step 4 switches on
+
+def keccak(data):
+    return run(["cast", "keccak", data]).lower()
+
+
+def invented_list(rows):
+    """The Merkle tree of an invented list `rows` = [(index, account, amount)] (a power of two of them), the way the claim contract
+    checks it: leaf = keccak(keccak(abi.encode(index, account, amount))), sorted-pair nodes. Returns (root, proofs by index)."""
+    level = []
+    for i, a, v in rows:
+        enc = run(["cast", "abi-encode", "f(uint256,address,uint256)", str(i), a, str(v)])
+        level.append(keccak(keccak(enc)))
+    if len(level) & (len(level) - 1):
+        sys.exit("chain-reader-fixture: the invented list must have a power of two rows")
+    proofs = [[] for _ in rows]
+    groups = [[i] for i in range(len(rows))]
+    while len(level) > 1:
+        up, up_groups = [], []
+        for n in range(0, len(level), 2):
+            left, right = level[n], level[n + 1]
+            for i in groups[n]:
+                proofs[i].append(right)
+            for i in groups[n + 1]:
+                proofs[i].append(left)
+            a, b = sorted([left, right])
+            up.append(keccak("0x" + a[2:] + b[2:]))
+            up_groups.append(groups[n] + groups[n + 1])
+        level, groups = up, up_groups
+    return level[0], proofs
+
+
+def play_pause(tmp):
+    """One project on a deployment with the holder pause and the earlier backers' claim contract on."""
+    rows = [
+        (0, ADDR[BACKER2], 1000 * 10**18),
+        (1, ADDR[MEMBER1], 2500 * 10**18),
+        (2, ADDR[MEMBER2], 40 * 10**18),
+        (3, ADDR[PAYER], 5 * 10**17),  # under one whole Share: never claimable, its amount stays in the reserve
+    ]
+    root, proofs = invented_list(rows)
+    text_hash = keccak("0x" + b"an invented text, version one".hex())
+    pid = run(["cast", "format-bytes32-string", "zero"])
+    total = sum(r[2] for r in rows)
+    env = dict(
+        os.environ, UNIT=str(UNIT), HOLDER_PAUSE="1", EARLIER_ROOT=root, EARLIER_TEXT_HASH=text_hash,
+        EARLIER_TOTAL=str(total), EARLIER_ROWS=str(len(rows)), EARLIER_FOUNDER=ADDR[FOUNDER_A], EARLIER_PROJECT_ID=pid,
+    )
+    subprocess.run(
+        ["forge", "script", "script/DeployPot.s.sol", "--rpc-url", RPC, "--broadcast", "--slow", "--private-key",
+         KEYS[DEPLOYER]],
+        cwd=POT, env=env, check=True, capture_output=True,
+    )
+    with open(os.path.join(POT, "deployments", "pot-31337.json")) as f:
+        dep = json.load(f)
+    launcher, dollar, claims = dep["launcher"].lower(), dep["quote"].lower(), dep["earlierGrants"].lower()
+    assert int(dep["unit"]) == UNIT and int(dep["earlierKey"], 16) != 0 and int(dep["holderPause"], 16) != 0
+
+    h = run(["cast", "call", "--rpc-url", RPC, launcher, "settingsHash()(bytes32)"])
+    tx(FOUNDER_A, launcher, "launch(bytes32,string,string,(uint32,uint256),bytes32)", pid, "Zero Project", "ZERO",
+       f"(1000,{10_000_000 * 10**18})", h, at=day(0))
+    out = run(["cast", "call", "--rpc-url", RPC, launcher, "project(address,bytes32)((address,address,address,address,address,uint64))", ADDR[FOUNDER_A], pid])
+    f, shares, team, treasury, vester, _ = [x.split()[0].lower() for x in out.strip("()").split(",")]
+    key = run(["cast", "call", "--rpc-url", RPC, launcher, "keyOf(address,bytes32)(bytes32)", ADDR[FOUNDER_A], pid]).lower()
+    assert key == dep["earlierKey"].lower(), "the project launched is the one the claim contract names"
+    pause = addr_of(eth_call(treasury, "pauseGate()"))
+    proj["Z"] = dict(
+        founder=f, shares=shares, team=team, treasury=treasury, vester=vester, key=key, projectId=pid.lower(),
+        launchBlock=int(rpc("eth_blockNumber"), 16), tasks=addr_of(eth_call(treasury, "tasks()")), pause=pause, earlier=claims,
+    )
+    snapshots.pop("A", None), snapshots.pop("B", None)
+    snapshots["Z"] = []
+    snap_all(proj["Z"]["launchBlock"])
+    T, SH, V = treasury, shares, vester
+    marks = {}
+
+    def back(who, dollars, when):
+        raw = dollars * 10**6
+        tx(DEPLOYER, dollar, "mint(address,uint256)", ADDR[who], raw, at=when)
+        tx(who, dollar, "approve(address,uint256)", T, raw, after=60)
+        tx(who, T, "join(uint256,uint256,address)", raw, 0, ADDR[who], after=60)
+
+    def supply():
+        return uint(eth_call(SH, "totalSupply()"))
+
+    def line():
+        return uint(eth_call(pause, "line()"))
+
+    def parked():
+        return uint(eth_call(pause, "parkedTotal()"))
+
+    def park(who, n, when):
+        tx(who, SH, "approve(address,uint256)", pause, n, at=when)
+        tx(who, pause, "park(uint256)", n, after=60)
+
+    back(BACKER1, 5000, day(0.1))
+    back(BACKER2, 2000, day(0.3))
+    back(PAYER, 1000, day(0.5))
+    # a tenth of the Shares parked: under the line, nothing armed
+    park(BACKER1, supply() // 10, day(1))
+    # up to the line: armed
+    park(BACKER1, line() - parked(), day(1.2))
+    # a claim by an earlier backer (row 0) while the line is armed
+    tx(BACKER2, claims, "claim(uint256,uint256,bytes32[],bytes32)", rows[0][0], rows[0][2],
+       "[" + ",".join(proofs[0]) + "]", text_hash, at=day(1.3))
+    # a Back that lowers the parked share under the line: the clock is cleared
+    back(BACKER2, 3000, day(1.6))
+    # up to the line again: a new day starts
+    park(BACKER1, line() - parked(), day(1.8))
+    # Shares sent to the pause by a plain transfer are nobody's: not parked, not a holder
+    tx(PAYER, SH, "transfer(address,uint256)", pause, 10**18, at=day(2.2))
+    tx(PAYER, dollar, "approve(address,uint256)", T, 1, at=day(2.5))
+    marks["Z_armed"] = int(rpc("eth_blockNumber"), 16)
+    # a claim of the second row on a day the project is paused: claims are not stopped
+    tx(PAYER, dollar, "approve(address,uint256)", T, 2, at=day(2.9))
+    marks["Z_paused"] = int(rpc("eth_blockNumber"), 16)
+    tx(MEMBER1, claims, "claim(uint256,uint256,bytes32[],bytes32)", rows[1][0], rows[1][2],
+       "[" + ",".join(proofs[1]) + "]", text_hash, at=day(3))
+    # a holder un-parks and takes out in turn: the pause ends
+    tx(BACKER1, pause, "unpark(uint256)", parked(), at=day(3.2))
+    n = uint(eth_call(SH, "balanceOf(address)", ADDR[BACKER1])) // 4
+    tx(BACKER1, T, "leave(uint256,uint256,address)", n, 0, ADDR[BACKER1], after=60)
+    tx(PAYER, dollar, "approve(address,uint256)", T, 3, at=day(4))
+    marks["Z_end"] = int(rpc("eth_blockNumber"), 16)
+
+    head = int(rpc("eth_blockNumber"), 16)
+    blocks = []
+    for k in range(head + 1):
+        b = rpc("eth_getBlockByNumber", hex(k), False)
+        blocks.append({"number": k, "hash": b["hash"], "parent": b["parentHash"], "time": int(b["timestamp"], 16)})
+    raw = rpc("eth_getLogs", {"fromBlock": "0x0", "toBlock": hex(head)})
+    logs = [
+        {
+            "block": int(l["blockNumber"], 16), "index": int(l["logIndex"], 16), "blockHash": l["blockHash"],
+            "txHash": l["transactionHash"], "address": l["address"].lower(), "topics": l["topics"], "data": l["data"],
+        }
+        for l in raw
+    ]
+    logs.sort(key=lambda l: (l["block"], l["index"]))
+    p = proj["Z"]
+    at_b = hex(head)
+    final = {"block": head, "time": blocks[-1]["time"]}
+    balances = {"shares": {}, "team": {}}
+    for hld in list(ADDR) + [T, V, pause]:
+        for tok, k2 in ((SH, "shares"), (team, "team")):
+            b = uint(eth_call(tok, "balanceOf(address)", hld, block=at_b))
+            if b:
+                balances[k2][hld] = str(b)
+    final["Z"] = {
+        "views": snapshot("Z", head), "balances": balances,
+        "pause": {
+            "state": [str(uint(eth_call(pause, "state()", block=at_b), i)) for i in range(6)],
+            "parkedOf": {a: str(uint(eth_call(pause, "parkedOf(address)", a, block=at_b))) for a in ADDR},
+        },
+        "earlier": {
+            "claimedRows": str(uint(eth_call(claims, "claimedRows()", block=at_b))),
+            "claimedTotal": str(uint(eth_call(claims, "claimedTotal()", block=at_b))),
+            "reserve": str(uint(eth_call(V, "earlierReserve()", block=at_b))),
+        },
+        "dollarHeld": str(uint(eth_call(dollar, "balanceOf(address)", T, block=at_b))),
+    }
+    books = {}
+    for name, block in (("Z_armed", marks["Z_armed"]), ("Z_paused", marks["Z_paused"]), ("Z_end", marks["Z_end"])):
+        books[name] = {"project": "Z", "block": block, "calls": record_book(p, launcher, dollar, block, logs)}
+    return {
+        "about": "A real run of contracts/pot on anvil with the holder pause and the earlier grants on, played by scripts/chain-reader-fixture.py --pause. Do not edit by hand.",
+        "chainId": 31337, "unit": UNIT, "launcher": launcher, "dollar": dollar, "earlierGrants": claims,
+        "textHash": text_hash, "accounts": {f"account{i}": a for i, a in enumerate(ADDR)}, "projects": proj, "blocks": blocks,
+        "logs": logs, "snapshots": snapshots, "books": books, "final": final,
     }
 
 
