@@ -291,7 +291,7 @@ world_up() {
   else
     OPERATOR_KEY="$(openssl rand -hex 32)"
   fi
-  OPERATOR_PUB="$(cd app && node --input-type=module -e "import {getPublicKey} from 'nostr-tools/pure'; import {hexToBytes} from 'nostr-tools/utils'; console.log(getPublicKey(hexToBytes(process.argv[1])))" "$OPERATOR_KEY")" \
+  OPERATOR_PUB="$(cd app && OPERATOR_KEY="$OPERATOR_KEY" node --input-type=module -e "import {getPublicKey} from 'nostr-tools/pure'; import {hexToBytes} from 'nostr-tools/utils'; console.log(getPublicKey(hexToBytes(process.env.OPERATOR_KEY)))")" \
     || fail "could not derive the operator's public key"
   PUSH_ENV=()
   if [[ -n "$WORLD_PUSH" ]]; then
@@ -313,7 +313,7 @@ world_up() {
     BUZZ_HEALTH_PORT="$HEALTH" BUZZ_METRICS_PORT="$METRICS" \
     BUZZ_WEB_DIR="$APP_DIST" BUZZ_WEB_SPA=full BUZZ_MEDIA_BASE_URL="http://$PUBLIC_HOST:$PORT/media" \
     BUZZ_REQUIRE_RELAY_MEMBERSHIP=false BUZZ_GIT_CONFORMANCE_PROBE=false \
-    BUZZ_INVESTING=true RELAY_OWNER_PUBKEY="$OPERATOR_PUB" "${PUSH_ENV[@]}" \
+    BUZZ_INVESTING=true RELAY_OWNER_PUBKEY="$OPERATOR_PUB" ${PUSH_ENV[@]+"${PUSH_ENV[@]}"} \
     BUZZ_TERMS_OF_SERVICE_MARKDOWN="$(cat docs/policies/TERMS-DRAFT.md)" \
     BUZZ_PRIVACY_POLICY_MARKDOWN="$(cat docs/policies/PRIVACY-DRAFT.md)" \
     BUZZ_AGE_ATTESTATION_REQUIRED=true \

@@ -66,8 +66,16 @@ cast chain-id --rpc-url "$RPC" >/dev/null 2>&1 || fail "anvil did not start (see
 
 # ---- helpers
 send() { # send <key> <to> <signature> [args...]
-  local k="$1" to="$2"; shift 2
-  cast send --rpc-url "$RPC" --private-key "$k" --json "$to" "$@" >"$TMP/last.json" 2>"$TMP/last.err" || {
+  local k="$1" to="$2" est from; shift 2
+  # cast sends with exactly the estimate, but what a call costs depends on the second it is mined in (a first write of the box
+  # or of the pot's clock costs 15,000 more than a rewrite). On a busy machine the estimate and the mining fall in different
+  # seconds and the call ran out of gas. A limit that is never reached costs nothing: unused gas is not charged.
+  local limit=()
+  from="$(cast wallet address --private-key "$k")"
+  if est="$(cast estimate --rpc-url "$RPC" --from "$from" "$to" "$@" 2>/dev/null)" && [[ "$est" =~ ^[0-9]+$ ]]; then
+    limit=(--gas-limit "$((est * 2 + 100000))")
+  fi
+  cast send --rpc-url "$RPC" --private-key "$k" --json ${limit[@]+"${limit[@]}"} "$to" "$@" >"$TMP/last.json" 2>"$TMP/last.err" || {
     cat "$TMP/last.err" >&2; return 1; }
   [[ "$(jq -r .status "$TMP/last.json")" == "0x1" ]] || { echo "transaction reverted: $(jq -r .transactionHash "$TMP/last.json")" >&2; return 1; }
 }

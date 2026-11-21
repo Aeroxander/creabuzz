@@ -251,14 +251,14 @@ done
 FEE_TX="$(psql "$DB_URL" -Atc "select '0x' || encode(tx_hash, 'hex') from chain_helper_jobs where call = 'treasury.collectFees' and state in ('sent','done') order by id limit 1")"
 [[ "$(cast tx --rpc-url "$RPC" "$FEE_TX" from | tr 'A-F' 'a-f')" == "$HELPER" ]] || fail "the fee was not collected from the helper's address"
 ok "the helper collected the platform's fee (3 play dollars) from its own address, with nobody pressing"
-# It never sent anything it must not: only its two allowed calls are in its jobs, and every transaction from its address is one of them.
-WRONG="$(psql "$DB_URL" -Atc "select count(*) from chain_helper_jobs where call not in ('treasury.collectFees', 'treasury.settle')")"
+# It never sent anything it must not: only its allowed calls are in its jobs, and every transaction from its address is one of them.
+WRONG="$(psql "$DB_URL" -Atc "select count(*) from chain_helper_jobs where call not in ('treasury.collectFees', 'treasury.settle', 'treasury.applyRate')")"
 expect_eq "jobs of any other call" "$WRONG" 0
 SENT="$(psql "$DB_URL" -Atc "select count(*) from chain_helper_sends")"
 expect_eq "transactions from the helper's address" "$(cast nonce --rpc-url "$RPC" "$HELPER")" "$SENT"
 expect_eq "check-ins by the helper" "$(psql "$DB_URL" -Atc "select count(*) from chain_logs where event = 'CheckedIn' and lower(decoded->>'by') = '$HELPER'")" 0
 expect_eq "failed helper jobs" "$(psql "$DB_URL" -Atc "select count(*) from chain_helper_jobs where state = 'failed'")" 0
-ok "the helper sent $SENT transaction(s), all of its two calls (collect the fee, settle); it checked in for nobody and no job failed"
+ok "the helper sent $SENT transaction(s), only calls it is allowed (collect the fee, settle, apply a rate); it checked in for nobody and no job failed"
 
 # ── freshness: signed again at its promised cadence ─────────────────────────────────────────────────────────────────
 BUILT="$(jq -r .builtAt "$STATE/record.json")"
@@ -501,15 +501,15 @@ ok "the leaver claimed their own note on the returned task ($CLAIM3); the record
 # What the helper did during the walk: its settle, and nothing it must not send
 expect_eq "helper jobs that settle a task" "$(psql "$DB_URL" -Atc "select count(*) from chain_helper_jobs where job_key like 'settle-task:%'")" 1
 expect_eq "helper jobs that failed" "$(psql "$DB_URL" -Atc "select count(*) from chain_helper_jobs where state = 'failed'")" 0
-expect_eq "helper jobs of any other call" "$(psql "$DB_URL" -Atc "select count(*) from chain_helper_jobs where call not in ('treasury.collectFees', 'treasury.settle')")" 0
+expect_eq "helper jobs of any other call" "$(psql "$DB_URL" -Atc "select count(*) from chain_helper_jobs where call not in ('treasury.collectFees', 'treasury.settle', 'treasury.applyRate')")" 0
 SENT="$(psql "$DB_URL" -Atc "select count(*) from chain_helper_sends")"
 expect_eq "transactions from the helper's address" "$(cast nonce --rpc-url "$RPC" "$HELPER")" "$SENT"
-SIGS="$(cast sig 'settle()') $(cast sig 'collectFees()')"
+SIGS="$(cast sig 'settle()') $(cast sig 'collectFees()') $(cast sig 'applyRate()')"
 for h in $(psql "$DB_URL" -Atc "select '0x' || encode(tx_hash, 'hex') from chain_helper_sends"); do
-  [[ " $SIGS " == *" $(cast tx --rpc-url "$RPC" "$h" input) "* ]] || fail "the helper sent a transaction that is neither a settle nor a fee collection: $h"
+  [[ " $SIGS " == *" $(cast tx --rpc-url "$RPC" "$h" input) "* ]] || fail "the helper sent a transaction that is not a settle, a fee collection or a rate application: $h"
 done
 expect_eq "check-ins by the helper" "$(psql "$DB_URL" -Atc "select count(*) from chain_logs where event = 'CheckedIn' and lower(decoded->>'by') = '$HELPER'")" 0
-ok "the helper sent $SENT transaction(s) in the whole run, every one a settle or a fee collection; exactly one settled a task (nobody pressed it)"
+ok "the helper sent $SENT transaction(s) in the whole run, every one a settle, a fee collection or the application of the proposed rate; exactly one settled a task (nobody pressed it)"
 
 kill -0 "$RELAY_PID" 2>/dev/null || fail "the relay stopped"
 if grep -qi "numbers not signed" "$STATE/relay.log"; then
