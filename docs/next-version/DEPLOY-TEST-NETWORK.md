@@ -1,0 +1,225 @@
+# Putting Creaton on a public test network (Sepolia)
+
+For the person who runs the server. Plain numbered steps, in the order to do them. Everything here is **play money on a test
+network**: the play dollar can be deployed only on chain 31337 (a local chain) or 11155111 (Sepolia), and its contract refuses
+any other. Nothing here is legal or tax advice, and no figure in the app is a promise of any result.
+
+No key, token or address of a real deployment is written in this repository, and none is written here. Every name below in
+`<angle brackets>` is yours to fill in; every setting is named, never valued.
+
+## What you need before you start
+
+- A server with a host name of its own (DNS pointing at it), ports 80 and 443 open, Docker Compose v2.24.4 or newer, and room
+  to build the image (several GB of memory and about 15 GB of disk for Docker; `deploy/compose/README.md`, "Creaton").
+- A computer of your own for the contract deploy, with [Foundry](https://book.getfoundry.sh) (`forge`, `cast`) and this checkout.
+- Sepolia test ether for two keys: the deploy key (a few hundredths is plenty) and the helper key (step 5). Any Sepolia faucet.
+- Two Sepolia nodes: one for the page (every visitor's browser calls it) and one for the server (only your server calls it).
+  Use your provider's request limits. They must not be the node your deploy key uses.
+- For people who have no wallet app (a passkey account on a phone): an ERC-4337 bundler for EntryPoint 0.7 and a sponsor that
+  pays the network fee, each behind an address that holds its own key (step 7). Leave this out and people send from a wallet in
+  their browser.
+- Your own finished terms and privacy note (step 10).
+
+## 1. Get the code and the settings file
+
+```bash
+git clone <this repository> && cd <it>
+cd deploy/compose
+cat .env.example .env.creaton.example > .env       # one settings file for the server; keep it private (mode 0600)
+```
+
+`.env` is read only by your server and by `run.sh`. It is git-ignored and is never copied into the image (`.dockerignore`).
+The lines for this guide are in the section "The Creaton app on a test network" of `.env.creaton.example`; they are commented
+out. Leave them out and the server is the social app alone, with no money screens (investing is off by default).
+
+## 2. Deploy contracts/pot with your own key
+
+`contracts/pot/DEPLOYMENTS.md` is the reference for what is deployed and the settings. In short:
+
+```bash
+scripts/ensure-solc.sh 0.8.37                  # the compiler the contracts are pinned to
+cd contracts/pot
+forge build
+cast wallet import <your keystore name> --interactive      # asks for the deploy key once and keeps it encrypted in your keystore
+export SEPOLIA_RPC_URL=<your deploy node>
+forge script script/DeployPot.s.sol --rpc-url sepolia --broadcast --account <your keystore name>     # or --ledger
+```
+
+- The key stays in your keystore or hardware wallet. Never paste it into a file or a command line, and never into this repository.
+- On Sepolia the defaults are right for a trial: a new play dollar (6 decimals, a faucet of 1,000 once per account), a time unit
+  of 7 days, a 2% platform fee. The sender is the platform's fee receiver and the settings admin; set `PLATFORM` and `ADMIN`
+  to other addresses if you want that. Keep the 7 days for a public trial, so what people see is what a real project would do
+  (`UNIT`, any multiple of 168 seconds, is allowed on a test network for a private try-out).
+- It writes `contracts/pot/deployments/pot-11155111.json` (the chain id, the Launcher, the play dollar and the settings; git-ignored)
+  and `contracts/pot/broadcast/DeployPot.s.sol/11155111/run-latest.json` (git-ignored). Keep both.
+- Check the result as `DEPLOYMENTS.md` says: read `Launcher.platform()` and `Launcher.settingsHash()` and compare them with what
+  you meant. `scripts/pot-chain-loop.sh` does the whole walk on a local chain and is the reference for the calls.
+- The block the Launcher was deployed at is the lowest `blockNumber` in the broadcast file (hex; `cast to-dec <it>`). You need it
+  in step 4.
+
+## 3. Make the server's secrets, once
+
+Follow `deploy/compose/README.md`, "First start", steps 1 to 3 (the host name in each setting) and step 2 (the secrets). They
+must not change later. The three keys of this guide, and where each comes from:
+
+| Key | Setting | Where it comes from |
+|---|---|---|
+| The server's signing key | `BUZZ_RELAY_PRIVATE_KEY` | `openssl rand -hex 32`, once. It signs everything the server publishes, including the numbers on every project page. Lose it and the server is a different server. |
+| The operator's key | `RELAY_OWNER_PUBKEY` (the public half only) | Made with the built image: `docker run --rm --entrypoint buzz-admin <image> generate-key` (First start, step 6). The secret half stays on your own computer, in a password manager, never on the server. It signs in as the owner and starts seasons (`buzz launchpad seasons start`, with the key in the command's environment only). |
+| The helper key | `BUZZ_CHAIN_HELPER_KEY` | A new key made for this, never one that holds anything else (step 5). |
+
+## 4. Tell the server which chain to read
+
+In `.env`, uncomment and fill in. These are read by the running server and are **not** built into the page.
+
+| Setting | Value and where it comes from |
+|---|---|
+| `BUZZ_INVESTING` | `true`. The money screens need this and the build's network (step 8). Off unless you say `true`; `false` turns them off whatever the build says, with no rebuild. |
+| `BUZZ_CHAIN_RPC_URL` | Your server's node (an `https://` address). It must serve `eth_chainId`, `eth_blockNumber`, `eth_getBlockByNumber`, `eth_getLogs` over a range of `BUZZ_CHAIN_LOG_RANGE` blocks (default 2,000; set it lower if the node refuses), `eth_call` at a block a few blocks behind the head, and, for the helper, `eth_getTransactionCount`, `eth_estimateGas`, `eth_maxPriorityFeePerGas`, `eth_sendRawTransaction`, `eth_getTransactionByHash` and `eth_getTransactionReceipt`. A free public node usually refuses large log ranges and past-block calls: use a provider key and a request limit. The address holds a key, so it stays in `.env` and out of the page. |
+| `BUZZ_CHAIN_ID` | `11155111`. |
+| `BUZZ_CHAIN_LAUNCHER` | The `launcher` in `deployments/pot-11155111.json`. |
+| `BUZZ_CHAIN_START_BLOCK` | The deploy block from step 2. Left out, the server starts at block 0 and reads the whole chain first. |
+| `BUZZ_CHAIN_CONFIRMATIONS` | Optional, default 12: how many blocks old a log must be before the numbers count it. |
+| `RELAY_URL` | Already set in step 3 (`wss://<host>`). The numbers are signed into the community of that host; `BUZZ_CHAIN_COMMUNITY_HOST` names another if you need one. |
+
+The server refuses to start on a half-set group (a chain setting without the node, a launcher that is not an address).
+
+## 5. The helper key
+
+The helper sends two calls anyone may make on a project: collect the platform's fee, and settle money that has arrived. It
+never checks in, takes out, draws or claims for anyone (a test lists every call it must never be able to send).
+
+1. Make a new key (`cast wallet new`), put its secret in `.env` as `BUZZ_CHAIN_HELPER_KEY`, and send its address a little Sepolia
+   ether (0.05 lasts a long time; its daily spend is capped by `BUZZ_CHAIN_HELPER_DAILY_SPEND_WEI`, default 0.01 ether, and
+   `BUZZ_CHAIN_HELPER_DAILY_GAS`).
+2. The key is read from the server's environment and from nowhere else; it is never logged. Do not reuse a key that holds
+   anything. Left out, the helper is off and fees are collected only when somebody calls `collectFees` by hand.
+
+## 6. Wallet links for phone accounts
+
+A passkey account is a contract, so the server asks the chain to check its signature when a person links their account to the
+wallet that backs. In `.env`, uncomment the three lines in "Wallet links": `BUZZ_EVM_AUTH=1`, `BUZZ_EVM_CHAIN_ID=11155111`
+and `BUZZ_EVM_RPC_URL` (a node; it may be the server's node from step 4). They also switch on the server's sign-in with an
+Ethereum wallet, so set them only for phone accounts. Without them the app says plainly that the room and
+alerts are not switched on for phone accounts. Needed only when you turn phone accounts on (step 7).
+
+## 7. Phone accounts: the bundler and the sponsor
+
+Skip this step and people with a wallet in their browser can still back; a phone with no wallet app cannot.
+
+- **Bundler** (`VITE_CREATON_BUNDLER_URL`): an ERC-4337 bundler for EntryPoint 0.7 (`eth_sendUserOperation`,
+  `eth_getUserOperationReceipt`, `eth_getUserOperationByHash`). The account is Kernel 0.3.3.
+- **Sponsor**: pays the network fee, so a new account needs no ether. It must speak `zd_sponsorUserOperation`.
+- **Both addresses end up in the page every visitor downloads**, so neither may hold a key, a password or a token (the app and
+  the build refuse an address that does). Put each behind a small proxy of yours that adds its key. This repository ships no such
+  proxy; its tests use a stand-in.
+- The server has a daily limit built in, in front of your sponsor: set `BUZZ_SPONSOR_UPSTREAM_URL` to the real sponsor's
+  address (in `.env`, never in the build), and point `VITE_CREATON_SPONSOR_URL` at `https://<your host>/sponsor`, which carries no
+  key. Limits (all optional): `BUZZ_SPONSOR_PER_ACCOUNT_PER_DAY` (10), `BUZZ_SPONSOR_TOTAL_PER_DAY` (1,000),
+  `BUZZ_SPONSOR_PER_IP_PER_DAY` (40), `BUZZ_SPONSOR_EXIT_PER_IP_PER_DAY` (200). A way out (taking money out) is never refused by
+  the per-account or server limit. The sponsor needs the chain reader (step 4); the server refuses to start with one and not the
+  other. Fund the sponsor's paymaster with test ether and set its own spending cap there as well.
+
+## 8. Build settings for the app
+
+These are read **when the app is built** and are public in the page. In `.env`:
+
+| Setting | Meaning |
+|---|---|
+| `CREATON_DEPLOYMENTS_FILE` | Path from `deploy/compose` to the file from step 2, for example `../../contracts/pot/deployments/pot-11155111.json`. `run.sh` takes the three values below from it. |
+| `VITE_CREATON_CHAIN_ID`, `VITE_CREATON_LAUNCHER`, `VITE_CREATON_DOLLAR` | The chain, the Launcher and the play dollar. Set by hand instead of the file, or to override it (a value set by hand wins). The build refuses one of the first two without the other. |
+| `VITE_CREATON_RPC_URL` | The page's node ("What you need before you start"): called from every visitor's browser, so it must be a read-only node with a request limit. `run.sh build` asks it which network it is on and whether the Launcher has code, and stops if not. |
+| `VITE_CREATON_PASSKEY_ACCOUNT=1`, `VITE_CREATON_BUNDLER_URL`, `VITE_CREATON_SPONSOR_URL` | Phone accounts (step 7). The switch needs the chain, the page's node and the bundler. The sponsor address is optional (the fee is then asked at the bundler). |
+
+With none of these the app is built with no network and shows no money screens, whatever the server says.
+
+Then:
+
+```bash
+./run.sh build        # checks the settings, asks the page's node, then builds creaton-relay:local (the relay, with the app inside it)
+```
+
+`build` refuses before Docker starts on a half-set network, a malformed address, a key in an address, a phone-account switch
+without its bundler, and any `VITE_*` value still holding `CHANGE_ME`. The image's own build checks the same again and then
+checks its output: the page, its manifest, the service worker, and the Launcher inside the code. The old web app
+(`web/`) is not built into this image; `CREATON_IMAGE_TARGET=runtime` builds it instead.
+
+## 9. Alerts away from the app (optional)
+
+Needs the chain reader (step 4) and https (step 11). Make your own key and put your own contact beside it
+(`docs/web-push-deployment.md` has the command and what is stored about a device): `BUZZ_WEB_PUSH_VAPID_PRIVATE_KEY` (43
+characters; a secret that stays in `.env`) and `BUZZ_WEB_PUSH_SUBJECT` (`mailto:<your address>`). Both or neither. Without them
+there are no alerts and the app shows none.
+
+## 10. The terms and the privacy note
+
+People see both at sign-up, with the box "I am 18 years of age or older" (`BUZZ_AGE_ATTESTATION_REQUIRED`, on by default; leave it
+on unless counsel says otherwise). They must be **your** finished text, reviewed by your own counsel, before anyone outside your
+team is invited. `docs/policies/` has drafts to start from; they are drafts, not advice. Put your copies in
+`deploy/compose/policies/` and set `BUZZ_TERMS_FILE` and `BUZZ_PRIVACY_FILE` to their paths. The app shows the text word for word;
+nothing in it is hidden or reworded.
+
+`run.sh` refuses (for `start`, `restart`, `upgrade` and the other commands that run the server):
+
+- a file that is named but not there;
+- a file that still has a draft's `[placeholders]` or a stray bracket (it lists each line);
+- a file with no `Last updated: <date>` line, or with no date on it;
+- a file whose text changed under the same date, and a file with no stamp or a new date with no new stamp. Once the approved text
+  is in and its `Last updated` date is right, run `./run.sh policy-stamp`.
+
+If neither file is set, `start` still works and prints a red warning every time: that is for a private test only. Do not invite
+anyone to a public test network with either missing.
+
+## 11. https and the host name
+
+Passkeys and alerts work only over https. `BUZZ_COMPOSE_TLS=true` (already in `.env.creaton.example`) puts Caddy in front with a
+certificate for `BUZZ_DOMAIN`; `start` refuses a published relay port beside it.
+
+## 12. Start
+
+```bash
+./run.sh start
+```
+
+Then follow the rest of `deploy/compose/README.md`, "First start", from step 7 (sign in as the owner on your own device), the
+backup key (step 9) and the first backup (step 10).
+
+## 13. What to check after the start
+
+1. `./run.sh status` shows every service healthy. `curl -fsS https://<host>/health` answers `ok`.
+2. `curl -fsS https://<host>/info` (it is the server's information document). It says `"investing": true`, and, when you set
+   them, `"webPush": {"publicKey": ...}` and `"smartAccountLinks": true`.
+3. `./run.sh logs relay` has the line `chain reader started` (with the reader's name, `11155111:<the Launcher>`) and, with a helper
+   key, `chain helper on` with the helper's address. A line saying the node refused a range means `BUZZ_CHAIN_LOG_RANGE` is too
+   large for it. A message at start that names a setting is a half-set group: fix it and `./run.sh restart`.
+4. The app's files: `curl -sI https://<host>/sw.js` answers 200 with a JavaScript type; `https://<host>/assets/manifest.webmanifest`
+   answers 200; a page that is not a file, `https://<host>/welcome`, answers the app's page (not a 404).
+5. In a phone's browser, open `https://<host>`: sign-up shows your terms and privacy note and the age box; once signed in the
+   banner "You can take your money out any time. Nothing here promises a profit." is on every page.
+6. With a founder account: start a project and launch it (one wallet signature, or one passkey prompt). Open its link from
+   another account that is signed out: the page shows the name and the numbers the server signed.
+7. With a second account: get play dollars (the faucet), Back, and a minute later see the Shares and the pot move on the page
+   (the server reads the block after `BUZZ_CHAIN_CONFIRMATIONS`). Take out and see the money come back. Each step is one press
+   and one signature.
+8. `./run.sh backup`, and practise the restore on another machine before you rely on it.
+
+## 14. Changing something later
+
+| You changed | You do |
+|---|---|
+| Anything built into the page (`VITE_CREATON_*`, the network) | `./run.sh build`, then `./run.sh restart`. `restart` alone keeps serving the old page. |
+| Anything the server reads (`BUZZ_CHAIN_*`, `BUZZ_INVESTING`, the helper, the sponsor, push, the policies) | `./run.sh restart`. No rebuild. |
+| A new deploy of the contracts | A new Launcher means a new network for the app: step 8 again (a new build), step 4 for the server, and the old projects stay on the old Launcher. |
+| The code | `./run.sh upgrade` (it backs up first, then builds and restarts). |
+
+## What was proven here, and what was not
+
+- The app's build stage was proven by running the same commands outside Docker, in a folder holding only what the Dockerfile
+  copies: `pnpm install --frozen-lockfile --filter "@creaton/app..."`, then the stage's own checks and `pnpm -C app build` (type check,
+  Vite build, the bundle budget), with no settings, with a whole set of settings for a local chain, and with each refused
+  combination. The output had `index.html`, `sw.js` and `assets/manifest.webmanifest`, and the Launcher inside the code when one
+  was named.
+- **The Docker image itself was not built here** (there was no Docker daemon, and no room for one). The `COPY` paths were read one
+  by one against the tree. Build it once on your server (`./run.sh build`) before you rely on it.
+- `deploy/compose/test-app-settings.sh` checks `run.sh`'s part with stand-ins for Docker and the node.
+- Nothing was deployed to Sepolia from here, and no bundler, sponsor or push service was used outside tests.
