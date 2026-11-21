@@ -647,7 +647,7 @@ mod tests {
             unpark(address(2)),
             call(address(1), calldata::LEAVE_SIGNATURE),
         ]);
-        assert!(!classify(&twice, 31337, &allowed()).map_or(false, |parsed| parsed.exit));
+        assert!(!classify(&twice, 31337, &allowed()).is_ok_and(|parsed| parsed.exit));
     }
 
     /// K9 (the pins): a method other than the one, a batch array, a body over 32 KB, another chain, two operations, and
