@@ -2,6 +2,13 @@
 
 Last updated: [date]
 
+[Change note, 21 November 2026, for the operator and counsel; delete this note before launch. Counsel has not reviewed any of these changes. This draft was brought in line with the product as built for the test network: Back, Take out, the team's daily allowance, planned tasks, Team Shares and ending a quiet project. Every passage that states a legal position is in brackets for counsel; nothing in the draft decides a legal question.]
+- [Replaced: the section "Projects, money and tokens" now describes Back (with the 2% fee), Take out (no fee, at what the Shares are worth then, which can be less than was paid in), the allowance and its limit, planned tasks with notice, exit notes, Team Shares, outside money and ending a quiet project, and carries the play-money statement, the legal line and the two plain lines about profit and return.]
+- [Replaced: "Work for projects" and "Automatic checks and rules" no longer speak of reviewers, settlement or holders voting to freeze a reward or lapse a submission; they describe the team accepting a task and the rules that run by themselves. The line about new Shares counting in votes only after about a week is removed, because there is no vote on money.]
+- [Added: what is public on the network and on the page (holdings, the wallet link if the person ticks the box, rounded figures and no names in the feed, rankings and badge).]
+- [Kept as they were: the account, age, posting, takedown, copyright, appeals, liability, changes and contact sections, and every bracket in them.]
+- [Open for counsel, listed in HANDOVER-TO-COUNSEL.md under "The live questions": whether the pot fits the legal line, whether Team Shares are a revenue share to the team, the 2% fee, no vote, outside money reaching the project's money, the quiet wind-down, the play-money statement.]
+
 These terms are an agreement between you and [operator name and legal form] ("we"), who runs this Creaton server at [address]. You agree to them by ticking the box when you create an account, whether you use a passkey, a wallet or a key, and by posting. If you do not agree, do not use the service.
 
 ## Your account
@@ -16,6 +23,7 @@ These terms are an agreement between you and [operator name and legal form] ("we
 - Posts, replies, votes, boards you start, your profile and who you follow are public. Each is signed with your key, so anyone can check it came from you.
 - Other servers and apps that speak the same open protocol (Nostr) may copy what you post. When you delete something we stop showing it here, but we cannot remove copies other people or servers already have.
 - You keep the rights to what you post. You give us a non-exclusive, worldwide, free permission to store it, show it and send it to other people and servers so the service works. Work you submit to a project is covered by the section "Work for projects" below.
+- Posts and votes are public. What you do on the network is public too: backing a project, taking out, the Shares you hold and the wallet address you used can be seen by anyone and cannot be deleted by anyone, including us. If you tick the box that links your account to your wallet, anyone on this server can see the link, and so how many Shares that wallet holds. If you leave the box unticked, we do not publish that link. [Whether the wallet link, the holdings list on a project and the signed project numbers need a notice or a basis under data protection law: counsel to confirm; the privacy note, in "What is public", has the same item.]
 - A post cannot be recalled once it is sent. It can be copied by other servers and apps, and it is kept in our backups. If you delete it, we stop showing it on this server, but we cannot pull back copies held elsewhere, and a backup keeps it until the backup expires.
 
 ## Rules
@@ -51,19 +59,74 @@ Community owners and moderators can remove posts and ban people from their commu
 ## Projects, money and tokens
 
 - Projects, boards and communities are run by their members, not by us. We do not check, endorse or guarantee any project, its team or what it promises.
-- On-chain features on this server use a test network. Test tokens, test Shares and test money have no value and may not carry over to a real network.
+- This is a test network. The dollars are play money, not real money. Play dollars, Shares and Team Shares have no value, cannot be sold or cashed out for real money through this service, and may be reset or not carry over to a real network. Play dollars come from a faucet in the app. [The play-money statement and whether a test network with play dollars avoids securities, money-transmission and consumer rules for now: counsel to confirm, and to say what changes at the first real-money launch.]
 - Nothing here is investment, legal or tax advice.
-- This service does not yet pay anyone money, and Shares cannot yet be sold or bought through it. Both need their own separate terms, which you must agree to first. Until those exist, do not treat any project here as paying money or as a place to sell Shares.
+- This service does not yet take real money or pay anyone real money, and Shares cannot yet be sold or bought for real money through it. Both need their own separate terms, which you must agree to first. Until those exist, do not treat any project here as a place to put real money or to sell Shares.
+- The app shows two lines on its money pages and sheets: "You can take your money out any time. Nothing here promises a profit." and, under every live number, "This can go up or down. It is not a return." No result is promised to anyone. A number on a page is what taking out would give at that moment, and it can fall as well as rise.
+
+### What Shares are
+
+- The app states what a buyer gets in these words, and these terms do not change them: "Buyers acquire ownership only: governance and exit. No dividends or revenue share, ever, unless they contribute and earn one."
+- A Share is a slice of the project's money that you can take out any day (see "Taking out"). Holders do not vote on how the project's money is spent: their say is the notice the team must give before a task, and the right to take their slice out first.
+- [Earlier backers of Creaton itself: their signed terms are separate from these terms and this draft does not change them; whether a new text and a new consent are needed before real money: counsel to confirm.]
+- [Whether a pro-rata cash claim on a shared pot, open any day, with no vote and with outside money able to reach the pot, fits the line quoted above, and whether the notice and the right to take out are "governance": counsel to confirm. Nothing in this draft decides it.]
+
+### Backing a project (Back)
+
+- To back a project you pay play dollars (at least 1). We keep a fee of 2% of what you pay in. The rest goes into the project's money. We take no fee when you take out. [Whether taking 2% of the money paid in makes us a seller of an investment in some places: counsel to confirm.]
+- You receive Shares at the price the project's money sets at that moment: it is what your slice would give you if you took it out right then. So nobody gets a better price for being early. Before the final press the sheet shows what you pay, the fee, the Shares you get and what taking out right now would give.
+- The founder can close the door to new backers. The door also closes by itself after 14 days with no weekly check-in, and when a project has been ended. On a test network these times may be shorter.
+
+### Taking out
+
+- On any day you can press Take out. Your Shares are given up and you are paid your slice of the project's money that can be reached at that moment. No fee, no vote, no one's permission. The sheet shows the amount before you press.
+- What you get can be less than what you paid in. It goes up or down with the project's money, which shrinks when the team uses its allowance or is paid for tasks and grows when outside money arrives.
+- Some money cannot be reached while you take out: money set aside for a task a worker has taken (for at most 14 days), money from outside that is still arriving (it arrives over 7 days), money in the team's allowance box (at most a week of the allowance), and fees owed. The sheet says so when it applies.
+- If you take out while money is set aside for a task, you are paid now from the rest and you are left an exit note. If the task is not paid in full, you can claim your part of the money that comes back, later. If it is paid in full, the note has no value. [Whether an exit note is a separate kind of claim or interest: counsel to confirm.]
+- The network asks for a small fee to send each step. On a phone account without a wallet app the server pays it, within daily limits per account and for the whole server. [Taking out is not refused by the per-account or whole-server limit on paid fees, and only a high cap per connection address applies to it: operator to confirm the live setting, and whether to say so here.]
+
+### The team's daily allowance and its limit
+
+- A project's team may take a small slice of the project's money each day, so it can work. The founder sets the slice: from nothing up to 0.20% of the project's money a day, 0.10% if left alone. It is a share of what is left, so it gets smaller as money leaves. The page shows it. Raising it is announced a week before it applies; lowering it applies at once.
+- The allowance builds up only while the team checks in at least every 14 days, and at most a week of it can be waiting at any time. A quiet project stops drawing it.
+- With every limit used, a backer who never looks can lose a large part of what they put in within months. The protection is the notice, the limits and taking out, and all three depend on someone looking. [How this weakness is to be disclosed to people, in the app and here: counsel to confirm.]
+
+### Planned tasks
+
+- For larger work the team announces a task: who may take it, the most it may cost in dollars, and its share of the project's money. A task costs at most 5% of the project's money, the team may take at most 10% of the project's money in any 28 days, and at most 8 tasks can be open at once. These limits are the same for every project and for every team, however many people sign.
+- After it is announced, a task waits at least 14 days plus 12 hours for each 1% of the project's money before any money moves. The page shows the plan, holders in the app get an alert, and anyone who disagrees can take their slice out first. There is no vote on a task. [Whether notice plus the right to take out is acceptable disclosure for a team spending backers' money, with no vote: counsel to confirm.]
+- When a worker takes the task, the smaller of the stated dollars and the stated share of the project's money is set aside for up to 14 days. The team pays all or part of it when it accepts the work, or sends it back, and money not paid returns to the project's money. A task nobody takes costs nothing.
+- Holders are told about planned tasks by an alert in the app, and on a device that has switched alerts on. The privacy note says what we keep for that.
+
+### Team Shares
+
+- A project's founder and team are given Team Shares from a pool the founder sets once, when the project starts. They unlock bit by bit over about two years of active work, and none unlocks in the first three months or so. Time with no weekly check-in does not count. Anyone who leaves keeps what had unlocked.
+- A Team Share claims only the money in the project above what backers put in and have not taken back. Backers are paid first. In a project with no outside money a Team Share is therefore usually worth nothing, and it cannot take a backer's own money.
+- A grant that has not unlocked can be cancelled by the member leaving, or by both signers after a public notice of a week. [Whether a Team Share that can be taken out is a revenue share to the team (allowed for contributors under the line), pay, or another kind of interest: counsel to confirm.]
+
+### Money from outside
+
+- Anyone can pay money into a project from outside (for example a customer). It goes into the project's money and arrives over 7 days, so it raises what every holder can take out. Someone who takes out while it is still arriving gets less than the full amount; the sheet says how much is still arriving. [Whether money rising in the project's money when outside payments arrive behaves like a revenue share to buyers, which the line quoted above forbids: counsel to confirm. It is the one place the design may conflict with the line; real money must not start until counsel has ruled.]
+- [Whether someone who knows an outside payment is coming, joins first and stays the 7 days, is a problem, and what notice or rule should stop it: counsel to confirm.]
+
+### A project that has gone quiet
+
+- With no weekly check-in for 14 days, the allowance and unlocking stop and the door closes. Taking out stays open. After 91 days the page says the project is dormant.
+- After about six months (182 days) with no check-in, any holder can end the project. The door stays shut, the allowance stops, open tasks are returned to the project's money, and taking out stays open. Team Shares that have not unlocked are burned after a week's notice. [Whether letting any holder end a quiet project, with no vote, is acceptable, and whether the project's money should then be shared out rather than left to be taken out: counsel to confirm.]
+
+### What the pages show
+
+- The project page, the live feed, the ranking and the "Established" badge show rounded figures and no names. The feed says how many backed and took out and the net money in, not volume. The ranking counts money that has stayed in a project for 30 days or more. The badge is a hint: it is display only, it unlocks nothing, and it can be faked at the cost of the 2% fee (nothing, with play dollars). Treat none of them as advice or as a promise.
 
 ## Work for projects
 
-- Work you submit to a project (a guide, a design, code, a screenshot, a bug report) is voluntary. You are not employed by us or by the project. In this pilot the only reward a project can award is Shares, and on a test network Shares have no value. Whether work is approved and whether Shares are awarded is decided by the project's reviewers and holders under the project's rules, not by us.
+- Work you submit to a project (a guide, a design, code, a screenshot, a bug report) is voluntary. You are not employed by us or by the project. A project's team may pay for a task out of the project's money (in play dollars on a test network), or give Team Shares to a member. A task is paid only to the person who took it, and only after the team accepts the work; if it is not accepted by its deadline the money returns to the project's money. Whether work is accepted and whether anything is paid is decided by the project's team (its runner, or both signers when it has two), under the rules in the section above, not by us and not by a vote of holders. On a test network play dollars and Shares have no value. [Whether a payment for a task or a grant of Team Shares makes someone an employee, a contractor or neither, and what tax follows: counsel to confirm; left for the real-money terms.]
 - By submitting work you give the project and its members a non-exclusive, worldwide, perpetual and irrevocable licence to use, copy, change, publish and pass on the work for the project's purposes. The licence is free, and the project may sublicense it to its members so they can work on it. It cannot be taken back, because the project and others build on the work, copies have already passed to other servers, and the permanent record on the blockchain (a fingerprint and a status, not the work itself) cannot be pulled back. You keep the rest of your rights in the work.
 - Some countries (for example France and Germany) do not let authors give up certain personal rights in their work, such as the right to be named. Where that is so, you keep those rights, and the licence applies as far as your law allows. [Moral rights: counsel to choose between a permission only, or an agreement not to assert those rights where the law allows, once the governing law is chosen.]
 - Submit only work that is yours to give, and say so when it includes someone else's. You are responsible for the work you submit.
-- If work you submitted turns out to infringe someone's rights, we may stop showing it on this server, and the person who runs the server removes pictures by hand. [Our commitment to take infringing work down: operator and counsel to confirm.] The record on the blockchain (a fingerprint and a status) stays, because nobody can delete it. Before a reward is paid out, holders of the project can vote to freeze it.
-- [Once Shares have been paid out, the project contracts as built today give no one, neither us nor a vote of holders, a way to take them back: owner to confirm that the live pilot uses the contract kit with the no-burn rule, then remove this bracket.]
-- [Shares already paid out for work that infringes: counsel to choose between no remedy beyond removal, if the contracts cannot take Shares back, or a duty on the person who submitted to give the Shares up, enforced outside the system.]
+- If work you submitted turns out to infringe someone's rights, we may stop showing it on this server, and the person who runs the server removes pictures by hand. [Our commitment to take infringing work down: operator and counsel to confirm.] The record on the blockchain (a fingerprint and a status) stays, because nobody can delete it. Before a task is paid, the team has to accept the work, and a task that is not accepted is returned unpaid.
+- [Money already paid out for a task, and Team Shares already unlocked, cannot be taken back by us or by anyone through the contracts; only a grant that has not unlocked can be cancelled (see "Team Shares"): owner to confirm this against the contracts the test network uses, then remove this bracket.]
+- [Money or Team Shares already paid out for work that infringes: counsel to choose between no remedy beyond removal, if the contracts cannot take them back, or a duty on the person who submitted to give them up, enforced outside the system.]
 - [Express promise by the person who submitted to cover the cost of claims about infringing work: counsel to choose between including it, including it with a limit, or leaving it out.]
 
 ### How a project's terms fit with these terms
@@ -74,19 +137,18 @@ Community owners and moderators can remove posts and ban people from their commu
 
 ## Automatic checks and rules
 
-People decide your reward, your Shares, your standing and your access on this server. Some rules then run without a person looking each time. These are the ones that exist:
+People on a project's team decide who is paid for a task, and what you are paid. Some rules then run without a person looking each time. These are the ones that exist:
 
 - **AI helpers** (only if this server has an AI service switched on) give advice before you submit: they list what looks missing, draft questions or a summary. They decide nothing. Only you see the answer until you choose to use it.
 - **Work check records** are made by a contributor on their own computer and signed by them. Reviewers read them beside the work. They decide nothing.
-- **Review and settlement.** Reviewers (people) approve or turn down a submission. Once enough of them agree and the waiting period ends, during which holders can still vote to freeze it, anyone can trigger settlement, and the contract then pays the agreed Shares. [Rewards agreed in advance that settle by rule: owner to confirm they are live on the test network, or remove this line.] Plain awards, with no agreed reward, are decided by a vote of holders. A submission that nobody settles in time lapses, nothing is awarded and you can submit again under a new title.
-- **New Shares and votes.** In projects set up with the newer rules, Shares you have just received count in votes only after about a week.
-- **Limits.** Everyone is limited in how fast they can post and call the service, and some file types (programs and scripts) cannot be uploaded. Passkey steps are paid for through a sponsor with a spending limit, and steps can be refused when it is reached.
-- **Ordering.** Votes from newer accounts may count for less when posts are ordered. This changes order only, never rewards.
-- **Scores for sales.** Weekly Share sales are not part of this pilot. If they open, a published member score could decide who may bid. That will be set out in the separate terms for sales before it happens.
+- **Money rules in the contracts.** The team's allowance and its limit, the notice before a task, the limits on tasks, the 7 days over which outside money arrives, the closing of the door after 14 days without a check-in, the unlocking of Team Shares, and any holder's right to end a project that has been quiet for about six months all run by themselves, in the same way for everyone. A task that nobody takes, or that the team does not accept by its deadline, lapses and its money returns to the project's money. Nobody votes on any of this.
+- **Limits.** Everyone is limited in how fast they can post and call the service, and some file types (programs and scripts) cannot be uploaded. Passkey steps are paid for through a sponsor with a spending limit, per account and for the whole server, and steps can be refused when it is reached.
+- **Ordering.** Votes from newer accounts may count for less when posts are ordered. This changes order only, never money.
+- [Scores for sales: weekly Share sales and a published member score belong to an older design and are not part of this product. Owner to confirm and delete this line, or to keep it and say what is promised if weekly sales return.]
 
 [Whether any of these rules is a decision based only on automated processing with a legal or similar effect: counsel to confirm; the privacy note leaves the same question open.]
 
-To ask a person to look at any of this, write to [email]. [A person reads each request and answers within a set number of days: owner to decide if this can be promised; no process for it exists yet.] The person who runs the server can ban or unban an account and remove a picture by hand. Limits on posting are the same for everyone, and a refused file type has no override. We cannot change what a project's contracts did, but we will tell you who can: reviewers and holders vote. There is no appeal inside the service for a submission that was turned down or lapsed. You can fix it and submit again, or ask on the project's board.
+To ask a person to look at any of this, write to [email]. [A person reads each request and answers within a set number of days: owner to decide if this can be promised; no process for it exists yet.] The person who runs the server can ban or unban an account and remove a picture by hand. Limits on posting are the same for everyone, and a refused file type has no override. We cannot change what a project's contracts did, but we will tell you who can: the project's team. There is no appeal inside the service for a task the team did not accept, or one that lapsed. You can ask the team in the project's room, or submit again.
 
 ## No guarantees
 

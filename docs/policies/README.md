@@ -6,6 +6,8 @@ its section "Counsel's second round" (counsel's leans and preliminary views are 
 final text). Hand that file back with the drafts. It also lists what is still open, who owns each item, and the order to
 settle things in.
 
+**Update, 21 November 2026.** Both drafts were brought in line with the join-and-leave product (back, take out, the daily allowance, planned tasks, Team Shares). Each now starts with a bracketed change note that says counsel has not reviewed the changes; the start guard refuses the file until it is deleted, so the note cannot be served by mistake. `HANDOVER-TO-COUNSEL.md` has a new section, "The live questions", with the questions to answer first.
+
 Two kinds of bracket are left on purpose. The guard that refuses to start while a bracket is left is in the compose
 start script only (see below); a direct run of the server serves brackets as they are. Deal with both kinds before
 launch:

@@ -8,6 +8,8 @@ refuses to run when the policy files are named in `.env` (`BUZZ_TERMS_FILE`, `BU
 bracket; if they are not named it only warns. The relay program itself has no check, so a direct run serves brackets
 as they are. That is the intended guard, and it covers the compose start only.
 
+**Note, 21 November 2026:** this page answers the lawyer's two reviews of the drafts as they stood on 6 November 2026, which described an older product (holders voting to freeze rewards, reviewers and settlement). The drafts were since brought in line with the join-and-leave product; counsel has not reviewed that change. Where a row below speaks of reviewers, votes, settlement or Shares paid as a reward, read it as history; the live list is the section "The live questions" in `HANDOVER-TO-COUNSEL.md`.
+
 "Owner" means the operator who decides business and hosting facts. "Counsel" means the lawyer. "Code" means a software
 change.
 
