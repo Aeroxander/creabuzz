@@ -221,6 +221,27 @@ describe("draw to an address", () => {
     ).toBe(true);
     expect(chain.sent).toEqual([]);
   });
+  it("never offers more than the box holds at most: money set aside for a task lowers that cap before the box's figure moves", async () => {
+    setup(FOUNDER_EVM, { box: [700n * D], boxCap: [600n * D] });
+    show();
+    fireEvent.click(await screen.findByTestId("allowance-draw"));
+    await screen.findByTestId("draw-box");
+    expect(screen.getByTestId("draw-box").textContent).toContain(
+      "holds about 600 dollars",
+    );
+    fireEvent.change(screen.getByLabelText("Draw to which account?"), {
+      target: { value: TO },
+    });
+    fireEvent.change(screen.getByLabelText("How many dollars?"), {
+      target: { value: "650" },
+    });
+    expect(
+      screen.getByText(/The box holds about 600 dollars now/, {
+        selector: "p[role=alert]",
+      }),
+    ).not.toBeNull();
+    expect(chain.sent).toEqual([]);
+  });
   it("something that is not an account address says what an address looks like", async () => {
     await open();
     fireEvent.change(screen.getByLabelText("Draw to which account?"), {

@@ -70,7 +70,7 @@ function Inner({
       </div>
     );
   const a = state.data;
-  const box = boxNow(numbers, a.box);
+  const box = boxNow(numbers, a.box, a.boxCap);
   const wound = numbers.windDown !== null;
   const due = a.pending !== null && a.pending.applicableAt <= now;
   const lapseAt = a.activeEnd > 0 ? a.activeEnd : null;

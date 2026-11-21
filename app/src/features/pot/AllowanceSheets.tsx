@@ -78,7 +78,9 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
   const state = useAllowanceState(numbers, ready, open);
   const parsed = parseDollarAmount(text, 1n);
   const target = to.trim().toLowerCase();
-  const box = state.data ? boxNow(numbers, state.data.box) : 0n;
+  const box = state.data
+    ? boxNow(numbers, state.data.box, state.data.boxCap)
+    : 0n;
   const toProblem =
     to.trim() === ""
       ? null

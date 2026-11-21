@@ -5,6 +5,7 @@ import { numbersFor, S } from "../../../tests/helpers/pot-harness";
 import { allowancePerDay, dollarsText } from "../money/numbers";
 import {
   allowanceWords,
+  boxNow,
   doorShutWords,
   exactDollarsText,
   rateWords,
@@ -72,6 +73,22 @@ describe("the allowance and the Team's part", () => {
     expect(words).toContain(
       `It holds ${dollarsText(numbers.allowance.box)} dollars now`,
     );
+  });
+  it("the box is never said to hold more than the Treasury's own cap on it", () => {
+    const stale = {
+      ...numbers,
+      allowance: { ...numbers.allowance, box: 800_000n },
+    };
+    expect(boxNow(stale, 0n, 775_000n)).toBe(775_000n);
+    expect(boxNow(stale, 900_000n, 775_000n)).toBe(775_000n);
+    expect(boxNow(stale, 500n, 775_000n)).toBe(775_000n);
+    const roomy = {
+      ...numbers,
+      allowance: { ...numbers.allowance, box: 100n },
+    };
+    expect(boxNow(roomy, 500n, 775_000n)).toBe(500n);
+    // With no cap read, nothing is cut down.
+    expect(boxNow(stale, 0n)).toBe(800_000n);
   });
   it("an allowance switched off says nothing goes into the box", () => {
     const off = { ...numbers, allowance: { ...numbers.allowance, ratePpm: 0 } };

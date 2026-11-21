@@ -169,10 +169,18 @@ export function whenWords(seconds: number): string {
 /**
  * What the allowance box holds now, as well as it can be known: the Treasury keeps the box as of its last settle (a draw settles
  * first, so it can then hold more), and the server's record works it forward to its own time. The larger of the two is what
- * the screens say; the chain decides when a draw is sent.
+ * the screens say. When the Treasury's own cap on the box is known (`onChainCap`, read with the box), the figure is never more
+ * than that: money set aside for a task lowers the cap before the box's own figure catches up, and a sheet must not offer more
+ * than the Money tab says the box holds at most. The chain decides when a draw is sent.
  */
-export function boxNow(numbers: ProjectNumbers, onChain: bigint): bigint {
-  return onChain > numbers.allowance.box ? onChain : numbers.allowance.box;
+export function boxNow(
+  numbers: ProjectNumbers,
+  onChain: bigint,
+  onChainCap?: bigint,
+): bigint {
+  const larger =
+    onChain > numbers.allowance.box ? onChain : numbers.allowance.box;
+  return onChainCap !== undefined && larger > onChainCap ? onChainCap : larger;
 }
 
 /** A span of seconds for a sentence: minutes or hours on a test network's short unit, days on a real one. */
