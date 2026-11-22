@@ -223,7 +223,7 @@ MUTATIONS = [
     ("launch-no-bind", "src/Launcher.sol", "            Treasury(treasury).bindPause(gate);\n", "", LP, "a project is launched with a pause that its Treasury does not know"),
     ("settings-hash-no-pause", "src/Launcher.sol", "return keccak256(abi.encode(platform, pause));", "return keccak256(abi.encode(platform));", LP, "the founder's settings hash does not cover the pause switch"),
     # ---- step 4, the earlier backers' grants (docs/next-version/STEP4-PLAN.md, K2): the claim, Vester and launcher tests must notice
-    ("no-text-check", "src/EarlierGrants.sol", "if (acceptedText != textHash) revert WrongText();", "", EG, "a claim goes through without naming the text it accepts"),
+    ("no-text-check", "src/EarlierGrants.sol", "if (accepted != textHash) revert WrongText();", "", EG, "a claim goes through without naming the text it accepts"),
     ("no-bitmap", "src/EarlierGrants.sol", "if (seen & bit != 0) revert AlreadyClaimed();", "", EG, "a row can be claimed again and again"),
     ("no-double-hash", "src/EarlierGrants.sol", "bytes32 leaf = keccak256(bytes.concat(keccak256(abi.encode(index, msg.sender, amount))));", "bytes32 leaf = keccak256(abi.encode(index, msg.sender, amount));", EG, "a leaf is a single hash, so an inner node of the tree could pass as a row"),
     ("no-sender-in-leaf", "src/EarlierGrants.sol", "keccak256(abi.encode(index, msg.sender, amount))", "keccak256(abi.encode(index, tx.origin, amount))", EG, "the transaction's origin, not the sender, is tied to the row (a relay or contract could claim in someone's name)"),
