@@ -164,6 +164,19 @@ describe("a link is read strictly", () => {
   });
 });
 
+describe("the bounds of a link", () => {
+  // Made by the page's own link maker, so only the bound can be what refuses it (a hand-made padded string is refused for its shape).
+  const link = (index: bigint, amount: bigint) =>
+    earlierLinkFragment({ index, amount, proof: [] });
+  it("the largest place and amount the contract holds are readable; one past either is no link", () => {
+    const top = readEarlierLink(link(2n ** 32n - 1n, 2n ** 128n - 1n));
+    expect(top?.index).toBe(2n ** 32n - 1n);
+    expect(top?.amount).toBe(2n ** 128n - 1n);
+    expect(readEarlierLink(link(2n ** 32n, 5n))).toBeNull();
+    expect(readEarlierLink(link(1n, 2n ** 128n))).toBeNull();
+  });
+});
+
 describe("what the page decides to show", () => {
   const record = { bound: true, root: tree.root, textHash: TEXT };
   const chain = { textHash: TEXT, bound: true, claimed: false };
@@ -456,6 +469,18 @@ describe("the claim page", () => {
     show();
     expect(await screen.findByTestId("claim-not-open")).toBeTruthy();
     expect(screen.queryByTestId("claim-grant")).toBeNull();
+  });
+
+  it("a record that names another claim contract than the build's is never used: claims are not open, and no row shows", async () => {
+    serveRecord((g) => {
+      g.contract = `0x${"c2".repeat(20)}`;
+    });
+    install();
+    show();
+    expect(await screen.findByTestId("claim-not-open")).toBeTruthy();
+    expect(screen.queryByTestId("claim-grant")).toBeNull();
+    expect(screen.queryByTestId("claim-press")).toBeNull();
+    expect(chain.sent.length).toBe(0);
   });
 
   it("a page whose text is not the network's refuses, says do not accept, and offers no press", async () => {

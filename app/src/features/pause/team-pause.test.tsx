@@ -176,6 +176,24 @@ describe("the allowance card while the pause is on", () => {
   });
 });
 
+describe("a record that names a pause but no pause contract", () => {
+  it("shows nothing about it and reads nothing about it, even where the chain would say paused", async () => {
+    // The record says paused, but the project's contract list names no pause contract: the page never guesses where it is.
+    const n = paused();
+    const noContract = { ...n, contracts: { ...n.contracts, pause: null } };
+    expect(noContract.pause).toBeTruthy();
+    setup(noContract, { parked: 200_000n * S, paused: true });
+    show(noContract);
+    await screen.findByTestId("allowance-box");
+    expect(screen.queryByTestId("team-pause-paused")).toBeNull();
+    expect(screen.queryByTestId("team-pause-armed")).toBeNull();
+    expect(chain.reads.some((r) => r.name === "pauseGate")).toBe(false);
+    expect(
+      (screen.getByTestId("allowance-draw") as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+});
+
 describe("Draw's own sheet", () => {
   it("is blocked, with the team's sentence in it, when the chain says paused although the page was drawn before the pause began", async () => {
     const numbers = armed();

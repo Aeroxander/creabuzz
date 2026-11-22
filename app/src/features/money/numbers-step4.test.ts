@@ -149,6 +149,21 @@ describe("the step 4 keys: a key that cannot be believed is null and the record 
       },
     ],
     [
+      "paused with a since that is not the start (only the since rule is wrong)",
+      (r) => {
+        r.pause.since = r.pause.pausesFrom + 1;
+      },
+    ],
+    [
+      "armed and not yet paused, with a since set (only the since rule is wrong)",
+      (r) => {
+        r.pause.armedAt = r.asOf.time;
+        r.pause.pausesFrom = r.asOf.time + r.pause.dayLength;
+        r.pause.paused = false;
+        r.pause.since = r.pause.pausesFrom;
+      },
+    ],
+    [
       "a start that is not armedAt plus a day",
       (r) => {
         r.pause.pausesFrom = r.pause.armedAt + 1;

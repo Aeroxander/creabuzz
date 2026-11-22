@@ -138,6 +138,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   localStorage.clear();
   applyServerSettings(null);
@@ -345,6 +346,56 @@ describe("Take back", () => {
     expect(await screen.findByTestId("take-back")).toBeTruthy();
   });
 
+  it("a wallet that shows another account by the time of the second press sends nothing and says so", async () => {
+    install({ wallet: 600n * S, parked: 400n * S });
+    show();
+    fireEvent.click(await screen.findByTestId("take-back"));
+    // The numbers were read for the signed-in account; the wallet is switched before the press.
+    chain.account = `0x${"99".repeat(20)}`;
+    fireEvent.click(screen.getByTestId("take-back-confirm"));
+    expect(
+      (await screen.findByTestId("take-back-problem")).textContent,
+    ).toMatch(
+      /^Your wallet now shows a different account than the one these numbers were read for\. Nothing was sent\./,
+    );
+    expect(chain.sent.length).toBe(0);
+    // The press is kept, and a wallet back on the right account sends it.
+    chain.account = BACKER_EVM;
+    fireEvent.click(screen.getByTestId("take-back-confirm"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+  });
+
+  it("a take-back that went out and was replaced without landing is sent again; one that landed under another hash is not sent twice", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    install({ wallet: 600n * S, parked: 400n * S });
+    // The call goes out and the network never applies it: 400 are still parked.
+    chain.onSend = null;
+    chain.holdReceipts = true;
+    show();
+    fireEvent.click(await screen.findByTestId("take-back"));
+    fireEvent.click(screen.getByTestId("take-back-confirm"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200_000);
+    });
+    await screen.findByTestId("take-back-problem");
+    // Still 400 parked: the earlier call did not land, so the press sends a new one.
+    fireEvent.click(screen.getByTestId("take-back-confirm"));
+    await waitFor(() => expect(chain.sent.length).toBe(2));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200_000);
+    });
+    await screen.findByTestId("take-back-problem");
+    // The earlier call landed under another hash after all: fewer Shares are parked now, so nothing is sent a third time.
+    world.wallet = 1_000n * S;
+    world.parked = 0n;
+    fireEvent.click(screen.getByTestId("take-back-confirm"));
+    await waitFor(() =>
+      expect(screen.queryByTestId("holding-parked")).toBeNull(),
+    );
+    expect(chain.sent.length).toBe(2);
+  }, 30_000);
+
   it("a refusal says what happened in words and keeps the press", async () => {
     install({ wallet: 0n, parked: 400n * S });
     show();
@@ -410,6 +461,35 @@ describe("Take out of Shares that are parked", () => {
     // that were held, but 600 and 400 parked are not less. It is not found, so a new call is sent.
     fireEvent.click(screen.getByTestId("sheet-confirm"));
     await waitFor(() => expect(chain.sent.length).toBe(2));
+  }, 20_000);
+
+  it("a take-out that went out and was replaced, and landed under another hash (wallet and parked both smaller), is not sent twice", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    install({ wallet: 600n * S, parked: 400n * S });
+    chain.onSend = null;
+    chain.holdReceipts = true;
+    show();
+    fireEvent.click(await screen.findByTestId("holding-take-out"));
+    await screen.findByTestId("takeout-cash");
+    fireEvent.click(screen.getByTestId("takeout-portion-quarter"));
+    await waitFor(() =>
+      expect(screen.getByTestId("takeout-shares").textContent).toBe(
+        "250 Shares",
+      ),
+    );
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200_000);
+    });
+    await screen.findByTestId("sheet-problem");
+    // The call landed after all, under another hash: 250 fewer Shares are held, wallet and parked together.
+    world.wallet = 350n * S;
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(chain.sent.length).toBe(1);
   }, 20_000);
 
   it("a part that the wallet covers does not touch what is parked", async () => {
