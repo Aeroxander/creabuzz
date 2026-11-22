@@ -76,6 +76,7 @@ contract HolderPause {
     /// @param n Shares to park.
     function park(uint256 n) external {
         if (n == 0) revert BadInput();
+        _beforeChange(msg.sender);
         uint256 b = shares.totalSupply();
         _clearIfUnder(b);
         uint256 by = parkedOf[msg.sender] + n;
@@ -91,6 +92,7 @@ contract HolderPause {
     /// @param n Shares to take back.
     function unpark(uint256 n) external {
         if (n == 0) revert BadInput();
+        _beforeChange(msg.sender);
         uint256 mine = parkedOf[msg.sender];
         if (n > mine) revert TooMuch(n, mine);
         uint256 b = shares.totalSupply();
@@ -100,6 +102,7 @@ contract HolderPause {
         uint256 total = parkedTotal - n;
         parkedTotal = total;
         if (!shares.transfer(msg.sender, n)) revert TransferFailed();
+        _afterUnpark(msg.sender, by);
         uint64 a = _arm(b); // clears when the line is no longer reached
         emit Unparked(msg.sender, n, by, total, b, a);
     }
@@ -162,6 +165,15 @@ contract HolderPause {
     }
 
     // =================================================== plumbing ====================================================
+
+    /// @dev Called before a park or an unpark changes `parkedOf[who]`. Empty here: the vote contract (a clone of this one
+    /// in a deployment whose Council switch is on) keeps its snapshot in it, so a Share can never leave the custody without
+    /// the count hearing of it.
+    function _beforeChange(address) internal virtual {}
+
+    /// @dev Called after an unpark, with the Shares `who` still has parked. Empty here: the vote contract lowers the weight
+    /// cast if it has to.
+    function _afterUnpark(address, uint256) internal virtual {}
 
     function _reached(uint256 b) private view returns (bool) {
         return b != 0 && parkedTotal * LINE_DIVISOR >= b;

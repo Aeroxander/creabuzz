@@ -11,7 +11,15 @@ import {TaskBook} from "./TaskBook.sol";
 import {Parts} from "./Parts.sol";
 import {HolderPause} from "./HolderPause.sol";
 import {Council} from "./Council.sol";
-import {IShares, ITreasuryClock, ITreasuryRunner, IPair, ITaskBook, IEarlierGrants} from "./Interfaces.sol";
+import {
+    IShares,
+    ITreasuryClock,
+    ITreasuryRunner,
+    IPair,
+    ITaskBook,
+    IEarlierGrants,
+    IHolderVote
+} from "./Interfaces.sol";
 
 /// @notice What the Launcher reads of the dollar token: the number of decimals (every amount in the Treasury is in raw
 /// units of a 6-decimal token).
@@ -169,6 +177,10 @@ contract Launcher {
     error NoCouncil();
     /// @notice A seat was named that is one of the project's own contracts, or another runner contract: it could never act.
     error BadSeatHolder(address who);
+    /// @notice The bound holder pause is not also a vote contract (a Council can only be bound beside a `HolderVote`).
+    error NotVote();
+    /// @notice A Council by vote may be made only by the project's own vote contract (its pause).
+    error NotVoteCaller();
 
     /// @param admin_ Who may change the settings for new projects.
     /// @param initial The first platform settings.
@@ -264,6 +276,9 @@ contract Launcher {
             address gate = pauseImpl.clone();
             HolderPause(gate).initialize(IShares(shares), s.unit);
             Treasury(treasury).bindPause(gate);
+            // with the Council switch on the pause is a vote contract, and it needs its project (the Treasury, the key and
+            // this Launcher) before anyone can vote. Bound in the launch transaction, once.
+            if (councilBound) IHolderVote(gate).bindProject(ITreasuryRunner(treasury), key);
         }
         if (earlierPool != 0) {
             IEarlierGrants(claims).bind(vester);
@@ -326,6 +341,30 @@ contract Launcher {
     /// @notice The address the Council of `members` with `salt` for project `key` will have.
     function councilAddress(bytes32 key, address[5] calldata members, bytes32 salt) external view returns (address) {
         return councilImpl.predictDeterministicAddress(_councilSalt(key, members, salt));
+    }
+
+    /// @notice Make the Council that won a replace vote: the project's own vote contract (`Treasury.pauseGate()`) names the five
+    /// accounts the ballot chose, and the Council is born in the vote path's own address space (salted by the ballot, so the
+    /// same five can be elected again, and no hand-over salt can produce the address). It is seated by the vote contract in the
+    /// same transaction (`Treasury.seatByVote`); it does not take an offered seat.
+    /// @param key The project.
+    /// @param members The five accounts the ballot chose.
+    /// @param ballotId The ballot's id (it keeps two ballots from making the same address).
+    /// @return council The new Council, one transaction away from the runner seat.
+    function councilByVote(bytes32 key, address[5] calldata members, uint256 ballotId)
+        external
+        returns (address council)
+    {
+        if (!councilBound) revert NoCouncil();
+        Project memory p = _project(key);
+        if (msg.sender != Treasury(p.treasury).pauseGate()) revert NotVoteCaller();
+        for (uint256 i; i < 5; ++i) {
+            if (_isProjectAccount(p, members[i])) revert BadSeatHolder(members[i]);
+        }
+        council = councilImpl.cloneDeterministic(_voteCouncilSalt(key, members, ballotId));
+        runnerKindOf[council] = 2;
+        Council(council).initialize(ITreasuryRunner(p.treasury), address(this), members, false);
+        emit CouncilMade(key, council, true);
     }
 
     /// @notice True when `who` is one of project `key`'s own contracts (its Treasury, Vester, task queue, both Share tokens, its
@@ -422,6 +461,10 @@ contract Launcher {
         if (msg.sender != deployer) revert NotDeployer();
         if (councilBound || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();
         if (impl.code.length == 0 || holderPauseImpl == address(0)) revert BadStack();
+        // the pause the deployment bound must also be the vote contract, or a project would get a Council and no way to elect
+        // or replace it. A plain HolderPause has no such view, so the call fails and the binding is refused.
+        (bool ok, bytes memory ret) = holderPauseImpl.staticcall(abi.encodeCall(IHolderVote.isVote, ()));
+        if (!ok || !abi.decode(ret, (bool))) revert NotVote();
         (councilBound, councilImpl) = (true, impl);
         emit CouncilBound(impl, impl.codehash);
     }
@@ -479,6 +522,16 @@ contract Launcher {
 
     function _councilSalt(bytes32 key, address[5] calldata members, bytes32 salt) private pure returns (bytes32) {
         return keccak256(abi.encode(key, "council", members, salt));
+    }
+
+    /// @dev The vote path's own address space: a different tag, and the ballot's id in place of a salt, so a hand-over salt can
+    /// never produce it and the same five accounts can be elected in another ballot.
+    function _voteCouncilSalt(bytes32 key, address[5] calldata members, uint256 ballotId)
+        private
+        pure
+        returns (bytes32)
+    {
+        return keccak256(abi.encode(key, "council-vote", members, ballotId));
     }
 
     function _isProjectAccount(Project memory p, address who) private view returns (bool) {

@@ -10,7 +10,7 @@ git-ignored.
 `script/DeployPot.s.sol` deploys, in this order: the dollar (PlayDollar on a test network, or an existing 6-decimal token
 you name), `Parts` (the five implementations the Launcher clones: Treasury, Vester, Pair, the share token and the TaskBook), and the
 `Launcher` with the platform settings (the dollar, who receives the platform fee, the fee, the time unit, the default daily
-dollar limit of an agent), and, only when `HOLDER_PAUSE=1`, the holders' pause implementation bound to the Launcher, and, only when `COUNCIL=1`, the `Council` implementation bound to the Launcher, and, only when the six `EARLIER_*` settings are all given, the earlier backers' claim contract bound to the Launcher. It writes `deployments/pot-<chainid>.json` with the addresses. Projects are then launched by
+dollar limit of an agent), and, only when `HOLDER_PAUSE=1`, the holders' pause implementation bound to the Launcher, and, only when `COUNCIL=1`, a `HolderVote` as the pause implementation (so every project launched from then on counts its holders' votes in the pause's own custody, and gets a `HolderVote` clone as its pause) and the `Council` implementation, both bound to the Launcher, and, only when the six `EARLIER_*` settings are all given, the earlier backers' claim contract bound to the Launcher. It writes `deployments/pot-<chainid>.json` with the addresses. Projects are then launched by
 founders through `Launcher.launch`; each gets its own Treasury, Vester, TaskBook (the task queue; its address is `Treasury.tasks()`) and two tokens.
 
 ## Settings (environment variables, all optional)
@@ -66,14 +66,32 @@ Council. It is a switch of the **deployment**:
   every limit of the Treasury binds it. `Launcher.makeCouncil(key, members, salt)` makes the one the runner offered the seat to
   (`Treasury.handOver(Launcher.councilAddress(key, members, salt), false)` first); the Launcher registers it as runner kind 2
   (`runnerKindOf`), and publishes `CouncilMade(key, council, false)` (the five accounts are in the Council's own `SeatsSet`, emitted in the same transaction).
-- The expected code hash of the `Council` implementation, from the build at this commit (solc 0.8.37, optimizer 200 runs,
-  `via_ir`, `evm_version = cancun`, `bytecode_hash = none`; `forge inspect Council deployedBytecode | cast keccak`):
-  `0x4acf0462b41421ef2ed413fbe8e824a30036bb60cc53441785698ca0bcb5a849`. `HolderPause` is unchanged by this round
-  (`0x968400a4...ccdf`, above).
+- **The vote contract replaces the pause.** With `COUNCIL=1` the deployment binds `HolderVote` as `holderPauseImpl`, so every
+  project launched from then on has a `HolderVote` clone as its pause (`Treasury.pauseGate()`): it *is* the pause (the Treasury
+  asks it `paused()` and `poke()` exactly as before, and taking out is never slowed) and it *also* holds the ballots. The Launcher
+  checks it answers `isVote()` before it binds a Council, so a Council can never be bound beside a plain `HolderPause` (there would
+  be no way to elect or replace it). `bindCouncil` therefore needs `HOLDER_PAUSE=1`; the script stops before it sends anything
+  otherwise.
+- **The replace vote and the seat elections.** A parked holder opens a replace vote with its own list (`openReplace`); a seat
+  election is opened by anyone when the Council says two seats are due (`openSeats`, normally by the helper). Votes count only
+  Shares parked in the pause from the second the ballot opened. A won result waits the Treasury's longest task notice (16.5 days
+  at a 7-day unit), then anyone may carry it out (`carryOut`, no press in the app): the Launcher makes the Council of the winning
+  five (`councilByVote`, only the project's own vote contract) and the Treasury seats it (`seatByVote`, only the pause gate, only
+  a kind-2 address), both or neither. `finish` records the result; `lapse` lets go of a won result nobody carried out within two
+  time units after it was due.
+- The expected code hashes of the implementations, from the build at this commit (solc 0.8.37, optimizer 200 runs, `via_ir`,
+  `evm_version = cancun`, `bytecode_hash = none`; `forge inspect <C> deployedBytecode | cast keccak`):
+  `HolderVote` `0xe168c82949a33b8d26e8eb7c3f8a86c91310a27bb43224e4b2653ac18a0005f1`,
+  `Council` `0x4acf0462b41421ef2ed413fbe8e824a30036bb60cc53441785698ca0bcb5a849`. **`HolderPause` is byte-identical to the
+  code before this round** (`0x968400a4...ccdf`, above): its three hook calls and two empty internal functions compile to nothing
+  (`git diff` on `src/HolderPause.sol` shows only those five lines), and the whole pause suite is re-run on a `HolderVote` clone to
+  prove the vote contract is the pause.
+- The deployment JSON gains `holderVote` (and `holderVoteCodehash` when on), `null` when the switch is off; `holderPause` names the
+  pause implementation, which is the `HolderVote` when the switch is on and the `HolderPause` when it is off.
 - Events to check after a deployment with it on: `CouncilBound` on the Launcher (one), and on a made Council `SeatsSet` (the five
-  seats), the Treasury's `RunnerChanged` and the Launcher's `CouncilMade`. A project launched before the switch has no Council
-  and cannot get one unless its runner hands the seat to a Council: that works on any project of a deployment that has the switch
-  on, whenever it was launched.
+  seats), the Treasury's `RunnerChanged` and the Launcher's `CouncilMade`; on a ballot, `BallotOpened`, `Stood`, `Voted`,
+  `BallotFinished`, `BallotCarriedOut`. A project launched before the switch has a plain pause and no vote contract, and cannot get
+  one; a project of a deployment that has the switch on can hand its seat to a Council by hand-over whenever it was launched.
 
 ### The earlier backers' claim
 

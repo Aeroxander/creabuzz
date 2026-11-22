@@ -10,6 +10,7 @@ import {QuoteToken} from "./mocks/QuoteToken.sol";
 import {Council} from "../src/Council.sol";
 import {EarlierGrants} from "../src/EarlierGrants.sol";
 import {HolderPause} from "../src/HolderPause.sol";
+import {HolderVote} from "../src/HolderVote.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {Parts} from "../src/Parts.sol";
 import {Treasury} from "../src/Treasury.sol";
@@ -79,7 +80,7 @@ contract LauncherCouncilTest is CouncilBase {
         address impl = address(new Council());
         vm.expectRevert(Launcher.BadStack.selector); // the pause must be bound first
         l.bindCouncil(impl);
-        l.bindPause(address(new HolderPause()));
+        l.bindPause(address(new HolderVote()));
         vm.expectRevert(Launcher.NotDeployer.selector);
         vm.prank(admin);
         l.bindCouncil(impl);
@@ -105,7 +106,7 @@ contract LauncherCouncilTest is CouncilBase {
 
     function test_theBindingClosesAfterTheFirstHour() public {
         Launcher l = _fresh();
-        l.bindPause(address(new HolderPause()));
+        l.bindPause(address(new HolderVote()));
         address impl = address(new Council());
         _warp(1 hours + 1);
         vm.expectRevert(Launcher.BindClosed.selector);
@@ -115,7 +116,7 @@ contract LauncherCouncilTest is CouncilBase {
 
     function test_theBindingIsOpenAtTheLastSecondOfTheFirstHour() public {
         Launcher l = _fresh();
-        l.bindPause(address(new HolderPause()));
+        l.bindPause(address(new HolderVote()));
         _warp(1 hours);
         l.bindCouncil(address(new Council()));
         assertTrue(l.councilBound());
@@ -125,7 +126,7 @@ contract LauncherCouncilTest is CouncilBase {
 
     function test_theFourthFormOfTheSettingsHashHasTheCouncilInIt() public {
         Launcher l = _fresh();
-        address pauseImpl = address(new HolderPause());
+        address pauseImpl = address(new HolderVote());
         l.bindPause(pauseImpl);
         bytes32 before = l.settingsHash();
         address impl = address(new Council());
@@ -147,7 +148,7 @@ contract LauncherCouncilTest is CouncilBase {
         EarlierGrants e =
             new EarlierGrants(address(l), keccak256("root"), keccak256("text"), 1000e18, 4, l.keyOf(founder, "zero"));
         l.bindEarlier(address(e));
-        address pauseImpl = address(new HolderPause());
+        address pauseImpl = address(new HolderVote());
         l.bindPause(pauseImpl);
         address impl = address(new Council());
         l.bindCouncil(impl);

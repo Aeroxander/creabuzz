@@ -6,13 +6,15 @@ import {Clones} from "oz5/proxy/Clones.sol";
 import {StackBase, Proj} from "./StackBase.sol";
 import {Council} from "../../src/Council.sol";
 import {HolderPause} from "../../src/HolderPause.sol";
+import {HolderVote} from "../../src/HolderVote.sol";
 import {Launcher} from "../../src/Launcher.sol";
 import {Parts} from "../../src/Parts.sol";
 import {Treasury} from "../../src/Treasury.sol";
 import {ITreasuryRunner} from "../../src/Interfaces.sol";
 import {QuoteToken} from "../mocks/QuoteToken.sol";
 
-/// @notice The real stack with the Council switch ON: the Launcher is bound to a real `HolderPause` and a real `Council`
+/// @notice The real stack with the Council switch ON: the Launcher is bound to a real `HolderVote` (the pause that is
+/// also the vote contract) and a real `Council`
 /// implementation before any launch, as the deploy script does it. The default project is run by its founder; `_makeCouncil`
 /// hands its seat to a Council of the five accounts `s1` to `s5`. Time moves through `clock` (a storage copy of the block
 /// time), because `vm.warp(block.timestamp + x)` is unreliable under the optimizer inside one test function.
@@ -35,7 +37,7 @@ abstract contract CouncilBase is StackBase {
         usd = new QuoteToken();
         parts = new Parts();
         launcher = new Launcher(admin, _platform(UNIT), parts);
-        launcher.bindPause(address(new HolderPause()));
+        launcher.bindPause(address(new HolderVote()));
         councilImpl = new Council();
         launcher.bindCouncil(address(councilImpl));
         _use(_launch(founder, "p1", 1000, POOL));

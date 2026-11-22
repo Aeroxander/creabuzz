@@ -7,6 +7,7 @@ import {Proj} from "./helpers/StackBase.sol";
 import {QuoteToken} from "./mocks/QuoteToken.sol";
 import {Council} from "../src/Council.sol";
 import {HolderPause} from "../src/HolderPause.sol";
+import {HolderVote} from "../src/HolderVote.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {ShareToken} from "../src/ShareToken.sol";
 import {Treasury} from "../src/Treasury.sol";
@@ -34,7 +35,7 @@ contract OffIsOffCouncilDiffTest is Journey {
         Launcher.Platform memory p = _platform(UNIT);
         p.quote = IERC20(address(usdOn));
         launcherOn = new Launcher(admin, p, parts);
-        launcherOn.bindPause(address(new HolderPause()));
+        launcherOn.bindPause(address(new HolderVote()));
         launcherOn.bindCouncil(address(new Council()));
         bytes32 h = launcherOn.settingsHash();
         vm.prank(founder);

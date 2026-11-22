@@ -70,6 +70,15 @@ CS = "test/CouncilSeats.t.sol"
 LC = "test/LauncherCouncil.t.sol"
 SV = "test/SeatByVote.t.sol"
 CE = "test/CouncilEventsRebuild.t.sol"
+HV = "test/HolderVote.t.sol"
+HC = "test/HolderVoteCount.t.sol"
+HB = "test/HolderVoteBoundary.t.sol"
+HR = "test/HolderVoteResults.t.sol"
+HA = "test/HolderVoteAttacks.t.sol"
+LV = "test/LauncherVote.t.sol"
+DV = "test/DeployVoteSettings.t.sol"
+OV = "test/OffIsOffVote.t.sol"
+PV = "test/HolderPauseOnVote.t.sol"
 MUTATIONS = [
     # ---- formulas: the vectors must notice
     ("offset-dollar", "src/PotMath.sol", "OFFSET_USD = 1;", "OFFSET_USD = 1e6;", QO, "the virtual money in the quote grows to a dollar"),
@@ -327,10 +336,10 @@ MUTATIONS = [
     ("launcher-bindcouncil-after-hour", "src/Launcher.sol", "if (councilBound || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", "if (councilBound) revert BindClosed();", LC, "a stolen key can turn the Council on at any time"),
     ("launcher-bindcouncil-no-pause", "src/Launcher.sol", "if (impl.code.length == 0 || holderPauseImpl == address(0)) revert BadStack();", "if (impl.code.length == 0) revert BadStack();", LC, "a Council can be bound with no pause beside it"),
     ("launcher-bindcouncil-needs-code", "src/Launcher.sol", "if (impl.code.length == 0 || holderPauseImpl == address(0)) revert BadStack();", "if (holderPauseImpl == address(0)) revert BadStack();", LC, "an address with no code can be bound"),
-    ("launcher-makecouncil-no-switch", "src/Launcher.sol", "        if (!councilBound) revert NoCouncil();\n", "", LC, "a Council can be made with the switch off"),
-    ("launcher-makecouncil-kind", "src/Launcher.sol", "        runnerKindOf[council] = 2;", "        runnerKindOf[council] = 1;", LC, "a Council is registered as a Pair"),
+    ("launcher-makecouncil-no-switch", "src/Launcher.sol", "    function makeCouncil(bytes32 key, address[5] calldata members, bytes32 salt) external returns (address council) {\n        if (!councilBound) revert NoCouncil();", "    function makeCouncil(bytes32 key, address[5] calldata members, bytes32 salt) external returns (address council) {", LC, "a Council can be made with the switch off"),
+    ("launcher-makecouncil-kind", "src/Launcher.sol", "        runnerKindOf[council] = 2;\n        Council(council).initialize(ITreasuryRunner(p.treasury), address(this), members, true);", "        runnerKindOf[council] = 1;\n        Council(council).initialize(ITreasuryRunner(p.treasury), address(this), members, true);", LC, "a Council is registered as a Pair"),
     ("launcher-council-salt-members", "src/Launcher.sol", "return keccak256(abi.encode(key, \"council\", members, salt));", "return keccak256(abi.encode(key, \"council\", salt));", LC, "the Council's address does not commit to its five accounts"),
-    ("launcher-council-member-project-account", "src/Launcher.sol", "            if (_isProjectAccount(p, members[i])) revert BadSeatHolder(members[i]);\n", "", LC, "a project account is accepted as a seat"),
+    ("launcher-council-member-project-account", "src/Launcher.sol", "        for (uint256 i; i < 5; ++i) {\n            if (_isProjectAccount(p, members[i])) revert BadSeatHolder(members[i]);\n        }\n        council = impl.cloneDeterministic(_councilSalt(key, members, salt));", "        for (uint256 i; i < 5; ++i) {\n        }\n        council = impl.cloneDeterministic(_councilSalt(key, members, salt));", LC, "a project account is accepted as a seat"),
     ("launcher-isprojectaccount-runner", "src/Launcher.sol", " || runnerKindOf[who] != 0;", ";", LC, "a runner contract can be a seat"),
     ("launcher-isprojectaccount-tasks", "src/Launcher.sol", " || who == address(Treasury(p.treasury).tasks())", "", LC, "the project's task queue can be a seat"),
     ("launcher-isprojectaccount-gate", "src/Launcher.sol", " || who == Treasury(p.treasury).pauseGate()", "", LC, "the project's pause can be a seat"),
@@ -339,6 +348,44 @@ MUTATIONS = [
     ("settingshash-council-missing", "src/Launcher.sol", "        if (pause != address(0) && councilBound) return keccak256(abi.encode(platform, pause, claims, councilImpl));\n", "", LC, "the founder's settings hash does not cover the Council switch"),
     ("settingshash-council-after-claims", "src/Launcher.sol", "        if (pause != address(0) && councilBound) return keccak256(abi.encode(platform, pause, claims, councilImpl));\n        if (claims != address(0)) return keccak256(abi.encode(platform, pause, claims));", "        if (claims != address(0)) return keccak256(abi.encode(platform, pause, claims));\n        if (pause != address(0) && councilBound) return keccak256(abi.encode(platform, pause, claims, councilImpl));", LC, "with claims and a Council bound the hash has no Council in it (the Council test is after the claims branch)"),
     ("settingshash-council-no-claims", "src/Launcher.sol", "keccak256(abi.encode(platform, pause, claims, councilImpl))", "keccak256(abi.encode(platform, pause, councilImpl))", LC, "the fourth form leaves the claim contract out"),
+    # ---- the Council round, part 2 (K2): the vote's counting, results, fates and the Launcher's vote path
+    ('snapshot-missing', 'src/HolderVote.sol', '        if (uint32(s >> 96) == id) return uint96(s);\n        return parkedOf[who];', '        return parkedOf[who];', 'test/HolderVoteCount.t.sol', 'a park after the ballot opened counts (the snapshot is not kept)'),
+    ('low-not-min', 'src/HolderVote.sol', '        if (newParked < low) {', '        if (newParked < low && false) {', 'test/HolderVoteCount.t.sol', 'an unpark does not lower the fewest-since-snapshot, so a re-park restores the weight'),
+    ('fall-not-applied', 'src/HolderVote.sol', '        _cast[id] -= fall;\n        _tally[id][option] -= fall;', '', 'test/HolderVoteAttacks.t.sol', 'a Share taken back during the vote stays counted in the tallies'),
+    ('hook-after-end', 'src/HolderVote.sol', 'if (id != 0 && block.timestamp >= ballots[id].voteEnd) return 0;', 'if (id != 0 && block.timestamp >= type(uint64).max) return 0;', 'test/HolderVoteBoundary.t.sol', 'the hooks and castVote run after voteEnd, so the tallies are not frozen'),
+    ('floor-low', 'src/HolderVote.sol', 'uint256 floor = Math.ceilDiv(supply, LINE_DIVISOR);', 'uint256 floor = Math.ceilDiv(supply, LINE_DIVISOR + 1);', 'test/HolderVoteResults.t.sol', 'the turnout floor is a quarter, not a third'),
+    ('floor-not-snapshot', 'src/HolderVote.sol', 'if (cast < b.floor) return (OUTCOME_SHORT, 0, 0);', 'if (cast < Math.ceilDiv(shares.totalSupply(), LINE_DIVISOR)) return (OUTCOME_SHORT, 0, 0);', 'test/HolderVoteResults.t.sol', 'the floor is read at the result, not at the snapshot (a late buyer can raise it)'),
+    ('majority-half-inclusive', 'src/HolderVote.sol', 'if (_tally[id][i] * 2 > cast) return (OUTCOME_MOVED, i, 0);', 'if (_tally[id][i] * 2 >= cast) return (OUTCOME_MOVED, i, 0);', 'test/HolderVoteResults.t.sol', 'exactly half of the cast Shares moves the seat'),
+    ('seat-beats-keep-inclusive', 'src/HolderVote.sol', 'if (t < MIN_VOTE || t <= keep) continue;', 'if (t < MIN_VOTE || t < keep) continue;', 'test/HolderVoteResults.t.sol', 'a person tied with keep takes the seat'),
+    ('keep-missing-in-seats', 'src/HolderVote.sol', 'uint256 keep = _tally[id][0];', 'uint256 keep;', 'test/HolderVoteResults.t.sol', 'keep is not counted against a person in a seat election'),
+    ('opener-list-missing', 'src/HolderVote.sol', '        _standList(id, ballots[id], members, recordHash, msg.sender);\n', '', 'test/HolderVote.t.sol', 'a replace ballot opens with nothing to choose between'),
+    ('displace-by-wrong-end', 'src/HolderVote.sol', '                if (s < smallest) {', '                if (s > smallest) {', 'test/HolderVoteAttacks.t.sol', 'a larger stake displaces by the wrong end (the largest place, not the smallest)'),
+    ('displace-on-equal', 'src/HolderVote.sol', 'if (w <= smallest) revert NoRoom();', 'if (w < smallest) revert NoRoom();', 'test/HolderVoteAttacks.t.sol', 'an equal stake displaces the smallest place'),
+    ('cooldown-after-short', 'src/HolderVote.sol', 'if (b.kind == KIND_REPLACE && o == OUTCOME_KEPT && _cast[id] >= b.floor) {', 'if (b.kind == KIND_REPLACE && (o == OUTCOME_KEPT || o == OUTCOME_SHORT) && _cast[id] >= b.floor) {', 'test/HolderVoteResults.t.sol', 'a ballot that fell short starts the replace cooldown'),
+    ('cooldown-after-moved', 'src/HolderVote.sol', 'if (b.kind == KIND_REPLACE && o == OUTCOME_KEPT && _cast[id] >= b.floor) {', 'if (b.kind == KIND_REPLACE && (o == OUTCOME_KEPT || o == OUTCOME_MOVED) && _cast[id] >= b.floor) {', 'test/HolderVoteResults.t.sol', 'a ballot that moved the seat starts the replace cooldown'),
+    ('cooldown-missing', 'src/HolderVote.sol', '        if (b.kind == KIND_REPLACE && o == OUTCOME_KEPT && _cast[id] >= b.floor) {\n            uint64 until = uint64(uint256(b.voteEnd) + COOLDOWN_UNITS * _unit());\n            if (until > nextReplaceAt) nextReplaceAt = until;\n        }\n', '', 'test/HolderVoteResults.t.sol', 'a kept replace ballot with the floor met leaves no cooldown'),
+    ('wait-zero', 'src/HolderVote.sol', 'uint64 effectiveAt = uint64(uint256(voteEnd) + wait);', 'uint64 effectiveAt = voteEnd;', 'test/HolderVoteResults.t.sol', 'a won result takes effect at voteEnd (no wait)'),
+    ('carryout-before-effective', 'src/HolderVote.sol', '        if (block.timestamp < b.effectiveAt) revert TooEarly(b.effectiveAt);\n', '', 'test/HolderVoteBoundary.t.sol', 'a won result is carried out before its wait is over'),
+    ('open-floor-missing', 'src/HolderVote.sol', '        if (parkedTotal * OPEN_DIVISOR < supply) revert NotEligible();\n', '', 'test/HolderVoteAttacks.t.sol', 'a replace vote opens without the parked fifth'),
+    ('stand-stake-missing', 'src/HolderVote.sol', 'if (_weightNow(id, msg.sender) * STAND_DIVISOR < b.supply) revert NotEligible();', '', 'test/HolderVoteAttacks.t.sol', 'a person stands with no stake at all'),
+    ('min-vote-missing', 'src/HolderVote.sol', 'if (w < MIN_VOTE) revert NotEligible();', '', 'test/HolderVoteCount.t.sol', 'a dust account can cast (and fill the logs)'),
+    ('list-duplicate-members', 'src/HolderVote.sol', '            for (uint256 j = i + 1; j < 5; ++j) {\n                if (members[i] == members[j]) revert BadMembers();\n            }\n', '', 'test/HolderVoteAttacks.t.sol', 'a list may name the same account twice'),
+    ('list-project-account', 'src/HolderVote.sol', '            if (launcher.isProjectAccount(key, members[i])) revert ProjectAccount();\n', '', 'test/HolderVoteAttacks.t.sol', 'a project account can be on a list'),
+    ('double-seat-winner', 'src/HolderVote.sol', '        if (_stood[msg.sender] == id) revert AlreadyStood();\n', '', 'test/HolderVoteResults.t.sol', 'one account stands twice in a seat ballot and can take both seats'),
+    ('winner-takes-wrong-seat', 'src/HolderVote.sol', 'ICouncilVote(b.council).seat(b.upA, b.upB, _seatWinner(id, b.winner), _seatWinner(id, b.winnerB));', 'ICouncilVote(b.council).seat(b.upA, b.upB, _seatWinner(id, b.winnerB), _seatWinner(id, b.winner));', 'test/HolderVoteResults.t.sol', 'the second winner takes the lower seat'),
+    ('tie-takes-the-seat', 'src/HolderVote.sol', 'if (secondAt != 0 && second < best) return (OUTCOME_SEATED, bestAt, secondAt);', 'if (secondAt != 0 && second <= best) return (OUTCOME_SEATED, bestAt, secondAt);', 'test/HolderVoteResults.t.sol', 'a tie for the last seat takes it'),
+    ('finish-twice', 'src/HolderVote.sol', '        if (b.finished) revert AlreadyFinished();\n', '', 'test/HolderVoteBoundary.t.sol', "a ballot's result can be recorded twice"),
+    ('lapse-early', 'src/HolderVote.sol', '        if (!late && !wound && !councilGone) revert NotLapsable();\n', '', 'test/HolderVoteBoundary.t.sol', 'a won result can be let go before it is due'),
+    ('late-stand', 'src/HolderVote.sol', '        if (b.kind != KIND_SEATS) revert BadKind();\n        if (block.timestamp >= b.standEnd) revert StandingClosed();', '        if (b.kind != KIND_SEATS) revert BadKind();', 'test/HolderVoteBoundary.t.sol', 'names may be put forward after the stand window'),
+    ('vote-before-standend', 'src/HolderVote.sol', '        if (block.timestamp < b.standEnd) revert VotingClosed();\n', '', 'test/HolderVoteBoundary.t.sol', 'a ballot is voted in before the stand window closes'),
+    ('vote-at-voteend', 'src/HolderVote.sol', 'if (id != 0 && block.timestamp >= ballots[id].voteEnd) return 0;', 'if (id != 0 && block.timestamp > ballots[id].voteEnd) return 0;', 'test/HolderVoteBoundary.t.sol', 'a vote cast in the second the ballot ends still counts'),
+    ('cast-twice-overcounts', 'src/HolderVote.sol', '            _tally[id][fromOption] = fromTally;\n            _cast[id] -= old;\n', '', 'test/HolderVoteCount.t.sol', 'a moved vote leaves its old weight counted (the cast total doubles)'),
+    ('voted-from-fields-missing', 'src/HolderVote.sol', 'emit Voted(id, msg.sender, option, w, t, _cast[id], fromOption, fromTally);', 'emit Voted(id, msg.sender, option, w, t, _cast[id], 255, 0);', 'test/VoteEventsRebuild.t.sol', 'the event does not carry the option the vote left (a ledger cannot rebuild a moved vote)'),
+    ('carryout-not-atomic', 'src/HolderVote.sol', '            treasury.seatByVote(council);\n', '', 'test/HolderVoteAttacks.t.sol', 'a replace result makes the Council but never seats it (half the change)'),
+    ('bind-project-twice', 'src/HolderVote.sol', '        if (address(treasury) != address(0)) revert AlreadyBound();\n', '', 'test/DeployVoteSettings.t.sol', 'a vote clone can be bound to a second project'),
+    ('vote-salt-missing', 'src/Launcher.sol', 'return keccak256(abi.encode(key, "council-vote", members, ballotId));', 'return keccak256(abi.encode(key, "council-vote", members));', 'test/LauncherVote.t.sol', "the vote path's address does not commit to the ballot, so the same five cannot be elected twice"),
+    ('isvote-missing', 'src/Launcher.sol', '        (bool ok, bytes memory ret) = holderPauseImpl.staticcall(abi.encodeCall(IHolderVote.isVote, ()));\n        if (!ok || !abi.decode(ret, (bool))) revert NotVote();\n', '', 'test/LauncherVote.t.sol', 'a Council is bound beside a plain pause (no vote contract to elect or replace it)'),
+    ('hook-underflow-unchecked', 'src/HolderVote.sol', '        _cast[id] -= fall;\n        _tally[id][option] -= fall;', '        unchecked {\n            _cast[id] -= fall;\n            _tally[id][option] -= fall;\n        }', 'test/HolderVoteAttacks.t.sol', 'the hook checked-subtracts; the guard is the invariant that a tally is the sum of the weights cast on it', 'never reachable: `fall` is `w - low`; `w` is the weight cast on this option and the invariant that the tallies add up to the cast total holds on every handler step, so the tally is at least `w`; `unchecked` changes no reachable behaviour.'),
 ]
 
 
@@ -386,7 +433,10 @@ def main():
         for sub in ("helpers", "mocks"):
             shutil.copytree(os.path.join(POT, "test", sub), os.path.join(work, "test", sub))
         for name in keep_tests:
-            shutil.copy(os.path.join(POT, "test", name), os.path.join(work, "test", name))
+            # --check reads the sources only; a mutation that names a test file not written yet still applies its text check
+            path = os.path.join(POT, "test", name)
+            if os.path.exists(path):
+                shutil.copy(path, os.path.join(work, "test", name))
         env = dict(os.environ, FOUNDRY_INVARIANT_RUNS="64")
         baseline = ["forge", "test"] if only else ["forge", "test", "--match-path", "test/ModelVectors.t.sol"]
         first = None if check_only else run(baseline, work, env, wait)

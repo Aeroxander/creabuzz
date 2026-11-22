@@ -7,6 +7,7 @@ import {PlayDollar} from "../src/PlayDollar.sol";
 import {Parts} from "../src/Parts.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {HolderPause} from "../src/HolderPause.sol";
+import {HolderVote} from "../src/HolderVote.sol";
 import {Council} from "../src/Council.sol";
 import {EarlierGrants} from "../src/EarlierGrants.sol";
 
@@ -62,6 +63,7 @@ contract DeployPot is Script {
         address parts;
         address launcher;
         address holderPause;
+        address holderVote;
         address earlier;
         address council;
         address admin;
@@ -118,8 +120,15 @@ contract DeployPot is Script {
         // the switch is bound in the same broadcast as the Launcher's deployment: the Launcher accepts it from its deployer only,
         // once, in its first hour, so no project can have been launched before it
         HolderPause pauseImpl;
+        HolderVote voteImpl;
         if (holderPauseOn == 1) {
-            pauseImpl = new HolderPause();
+            // with the Council switch on the project's pause is the vote contract (it is the custody the votes are counted in)
+            if (councilOn == 1) {
+                voteImpl = new HolderVote();
+                pauseImpl = HolderPause(address(voteImpl));
+            } else {
+                pauseImpl = new HolderPause();
+            }
             launcher.bindPause(address(pauseImpl));
         }
         Council councilImpl;
@@ -141,6 +150,7 @@ contract DeployPot is Script {
             parts: address(parts),
             launcher: address(launcher),
             holderPause: address(pauseImpl),
+            holderVote: address(voteImpl),
             earlier: address(claims),
             council: address(councilImpl),
             admin: admin,
@@ -155,6 +165,7 @@ contract DeployPot is Script {
         console2.log("time unit (s)   ", unit);
         console2.log("holder pause    ", address(pauseImpl));
         if (address(pauseImpl) != address(0)) console2.logBytes32(address(pauseImpl).codehash);
+        console2.log("holder vote     ", address(voteImpl));
         console2.log("earlier grants  ", address(claims));
         console2.log("council         ", address(councilImpl));
         if (address(councilImpl) != address(0)) console2.logBytes32(address(councilImpl).codehash);
@@ -169,6 +180,10 @@ contract DeployPot is Script {
         vm.serializeUint(key, "feeBps", feeBps);
         vm.serializeAddress(key, "holderPause", address(pauseImpl));
         vm.serializeBytes32(key, "holderPauseCodehash", address(pauseImpl).codehash);
+        vm.serializeAddress(key, "holderVote", address(voteImpl));
+        if (address(voteImpl) != address(0)) {
+            vm.serializeBytes32(key, "holderVoteCodehash", address(voteImpl).codehash);
+        }
         vm.serializeAddress(key, "council", address(councilImpl));
         vm.serializeBytes32(key, "councilCodehash", address(councilImpl).codehash);
         vm.serializeAddress(key, "earlierGrants", address(claims));

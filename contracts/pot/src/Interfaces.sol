@@ -119,6 +119,58 @@ interface ICouncilVote {
     function seat(uint8 upA, uint8 upB, address winnerA, address winnerB) external;
     /// @notice True when `who` holds a seat.
     function isSeat(address who) external view returns (bool);
+    /// @notice When two seats next come up for a vote.
+    function nextElection() external view returns (uint64);
+    /// @notice The project's vote contract; only it may open an election or put winners in seats.
+    function vote() external view returns (address);
+    /// @notice Seat `i`: who holds it (zero when open), and when it was taken and last came up.
+    function seatOf(uint8 i) external view returns (address who, uint64 seatedAt, uint64 lastUp);
+}
+
+/// @notice What the project's vote contract asks of its Treasury: where the seat is now, and the numbers a ballot fixes at
+/// opening. Nothing here writes a number a ballot did not fix at opening.
+interface IVoteTreasury {
+    /// @notice The time unit N in seconds.
+    function unit() external view returns (uint32);
+    /// @notice Who holds the runner seat now.
+    function runner() external view returns (address);
+    /// @notice The project's pause (this vote contract); zero when the project has none.
+    function pauseGate() external view returns (address);
+    /// @notice 0 while the project runs; 1 for a wind-down by choice, 2 for one by a quiet project. A ballot of a wound-down
+    /// project cannot be carried out (`lapse` says so).
+    function windDownKind() external view returns (uint8);
+    /// @notice The notice a task of `shareBps` gets: its first value is the warning a won vote waits (the longest, 500).
+    function noticeFor(uint16 shareBps)
+        external
+        view
+        returns (uint256 noticeSecs, uint256 takeWindowSecs, uint256 dueSecs);
+    /// @notice Move the runner seat to `council`, a Council the Launcher made for this project's winning list.
+    function seatByVote(address council) external;
+}
+
+/// @notice What the project's vote contract asks of the Launcher: make the Council a won replace vote chose.
+interface IVoteLauncher {
+    /// @notice Make the Council of `members` that won ballot `ballotId` of project `key`; only the project's vote contract.
+    function councilByVote(bytes32 key, address[5] calldata members, uint256 ballotId)
+        external
+        returns (address council);
+    /// @notice True when `who` is one of the project's own contracts: such an account can never hold a seat.
+    function isProjectAccount(bytes32 key, address who) external view returns (bool);
+    /// @notice What kind of runner contract `who` is: 0 none, 1 a Pair, 2 a Council.
+    function runnerKindOf(address who) external view returns (uint8);
+}
+
+/// @notice What the Launcher, the Council and the app ask of a project's pause: whether it is also a vote contract, and which
+/// project it was bound to.
+interface IHolderVote {
+    /// @notice True for the vote contract (a `HolderVote`), false for a plain pause.
+    function isVote() external view returns (bool);
+    /// @notice Bind the clone to its project; the Launcher, once, in the launch transaction.
+    function bindProject(ITreasuryRunner treasury_, bytes32 key_) external;
+    /// @notice The project's Treasury.
+    function treasury() external view returns (IVoteTreasury);
+    /// @notice The project's key.
+    function key() external view returns (bytes32);
 }
 
 /// @notice What the Treasury asks of the project's TaskBook (the task queue). Every call that changes the book comes from the
