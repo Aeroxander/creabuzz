@@ -6,6 +6,8 @@
 //!   never overwrites, and never leaves half a brain behind.
 //! - `buzz launchpad brain check --dir <checkout>` reads the brain's files and refuses any that look like they hold a
 //!   key or a password, which must never sit in a repository (it may be public).
+//! - `buzz launchpad brain skill --dir <checkout> --recording <notes> --job <name>` (step B4, in
+//!   `launchpad_brain_skill.rs`) drafts `playbooks/<name>.md` from a recorded run written as text.
 //!
 //! Both are local: no server, no key. Where the repository lives and who can read it is a channel question (see the
 //! milestone 8 report): an unbound repository is unreadable by everyone, its author included.
@@ -15,6 +17,7 @@ use std::path::{Path, PathBuf};
 use clap::Subcommand;
 use serde_json::json;
 
+use super::launchpad_brain_skill as skill;
 use crate::error::CliError;
 
 /// The JSON name of every brain command's output.
@@ -40,7 +43,7 @@ or personal data in them; `buzz launchpad brain check` looks for keys.";
 /// The most bytes of one brain file `check` reads.
 const MAX_FILE_BYTES: u64 = 1 << 20;
 /// The most playbook files `check` reads.
-const MAX_PLAYBOOKS: usize = 200;
+pub(crate) const MAX_PLAYBOOKS: usize = 200;
 
 /// The project brain: plain files agents read first
 #[derive(Subcommand)]
@@ -57,6 +60,28 @@ pub enum BrainCmd {
         #[arg(long)]
         dir: PathBuf,
     },
+    /// Draft one playbook (`playbooks/<job>.md`) from notes or a transcript of a job done once. Not yet tried by real
+    /// founders
+    #[command(
+        after_help = "The recording is a text file you write or paste: a transcript or notes of doing one job once while saying what you do. Put it under headings: the ones that name a section (When to use it, Steps, Checks, Mistakes to avoid) are copied into that section word for word; any other heading goes under \"Not sorted yet\" for you to place; a section the notes did not cover is left empty and listed. There is no AI service in this command and nothing is sent anywhere: no audio is read and no recording is uploaded. Without --save the draft is only printed, so you can read it first; with --save it is written as a new file and never over an existing one. A recording that looks like it holds a key or a password is refused. One recording, one job, one file. Not yet tried by real founders.\n\nExample:\n  buzz launchpad brain skill --dir ./brain --recording ./notes.md --job order-samples\n  buzz launchpad brain skill --dir ./brain --recording ./notes.md --job order-samples --save"
+    )]
+    Skill {
+        /// The project's repository checkout holding the brain
+        #[arg(long)]
+        dir: PathBuf,
+        /// The notes or transcript, a text file
+        #[arg(long)]
+        recording: PathBuf,
+        /// The job's name: lower-case words joined by hyphens, like order-samples
+        #[arg(long)]
+        job: String,
+        /// Who adds it (written in the file). Default: the founder
+        #[arg(long, default_value = "the founder")]
+        by: String,
+        /// Write the playbook. Without it the draft is only printed
+        #[arg(long)]
+        save: bool,
+    },
 }
 
 pub fn dispatch(cmd: &BrainCmd) -> Result<(), CliError> {
@@ -68,6 +93,24 @@ pub fn dispatch(cmd: &BrainCmd) -> Result<(), CliError> {
                 "{}",
                 json!({ "schema": SCHEMA, "written": written, "note": PUBLIC_NOTE })
             );
+            Ok(())
+        }
+        BrainCmd::Skill {
+            dir,
+            recording,
+            job,
+            by,
+            save,
+        } => {
+            let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+            let outcome = skill::run(dir, recording, job, by, &today, *save)?;
+            let (json, words) = skill::report(&outcome, SCHEMA);
+            eprintln!("{}\n", outcome.draft.text);
+            for left in &outcome.draft.left_for_founder {
+                eprintln!("Left for you: {left}");
+            }
+            eprintln!("{words}");
+            println!("{json}");
             Ok(())
         }
         BrainCmd::Check { dir } => {

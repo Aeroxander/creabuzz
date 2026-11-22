@@ -1,6 +1,6 @@
 # A management layer for Creaton
 
-Status: proposal for the owner, nothing built. Branch v4-governance-rework, written 2026-11-16. Section 9 (the project brain) was added the same day after the owner shared a list of AI-company practices; it needs the owner's yes before any build.
+Status: proposal for the owner. Built since: the brain's steps B1, B2 and B4 (B4, the recorded-run skill, on 2026-11-22 ahead of its own gate of five to ten founders; not yet tried by real founders; `buzz launchpad brain skill`, no AI service called). The rest is not built. Branch v4-governance-rework, written 2026-11-16. Section 9 (the project brain) was added the same day after the owner shared a list of AI-company practices; it needs the owner's yes before any build.
 
 **Read this first.** I did not have the six books. Nothing here is quoted from them, and I cannot say what they contain beyond your one-line descriptions. Two of them carry dates of 2026 and 2027 that I could not check, so I did not rely on them. Everything marked "outside knowledge" is well-known general practice (Drucker's five habits, PMBOK, stage gates, risk lists, management of change, tech operating cadence). It is not verified against any source in this session. What Creaton already does comes from reading the code on this branch.
 
@@ -130,7 +130,7 @@ Biggest uncovered areas for "all aspects of an onchain YC", in order: getting th
 1. **B1, text and one command.** Write the five templates; a `buzz` command that scaffolds the folder into a project's repository; verify the channel binding question above. Test: the scaffold creates exactly these files and refuses to overwrite.
 2. **B2, the manager reads it.** Extend the brief fetch to include the three files; extend the honesty eval with planted records so a claim absent from `facts.md` is dropped and a claim present passes.
 3. **B3, Start offers it.** One optional line on the first-week card ("Keep a project brain"), no new field, inside the press and field budgets.
-4. **B4, the recorded-run skill.** After a founder does a job once while explaining it (voice note or text), the manager drafts a `playbooks/<job>.md`. Only after 5 to 10 founders have used B1 to B3 by hand.
+4. **B4, the recorded-run skill.** After a founder does a job once while explaining it (voice note or text), the manager drafts a `playbooks/<job>.md`. Only after 5 to 10 founders have used B1 to B3 by hand. *Status 2026-11-22: built ahead of that gate, on the lead's decision, for text only: `buzz launchpad brain skill` turns notes under headings into a skeleton the founder reads before `--save`; no AI service is called and no audio is read. Not yet tried by real founders.*
 
 **Risks, plainly.**
 - A stale facts file makes the manager quietly wrong. Each fact carries a date, and the quiet line also shows "facts last checked N days ago".

@@ -147,6 +147,18 @@ buzz launchpad brain init --dir ./brain
 buzz launchpad brain check --dir ./brain
 ```
 
+A playbook for one job comes from notes or a transcript of doing it once, written as text under headings (When to use
+it, Steps, Checks, Mistakes to avoid). The command copies what sits under those headings into `playbooks/<job>.md`,
+keeps any other heading under "Not sorted yet", leaves a section the notes did not cover empty and lists it, and prints
+the draft without saving. Running it again with `--save` writes the file, never over an existing one. It calls no AI
+service, sends nothing anywhere, reads no audio and refuses notes that look like they hold a key. Not yet tried by real
+founders.
+
+```bash
+buzz launchpad brain skill --dir ./brain --recording ./notes.md --job order-samples
+buzz launchpad brain skill --dir ./brain --recording ./notes.md --job order-samples --save
+```
+
 The repository must be bound to a channel or nobody can read it, its author included. Starting a project makes no
 channel and no repository today, so the founder does this once by hand:
 
