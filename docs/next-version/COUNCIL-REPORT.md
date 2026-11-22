@@ -295,13 +295,20 @@ All of it is additive inside record version 2.
   gains `council`, `chain_helper_jobs` the four vote jobs, `web_push_alerts` the two kinds), with the `schema/tables/public` files and
   a Postgres-lane migration test.
 
-**Server checks.** `node scripts/chain-reader-events.mjs --check`, `node scripts/pot-app-abi.mjs --check`, all three fixture runs
-(`--check` for the default, the pause and the new council run) and the two older examples pass; `app/src/features/alerts/push/push-sw.test.ts`
-is 32/32 with the five words. The third example (`record-v2-example-council.json`) is written by a Rust test with `UPDATE_EXAMPLE=1`
-and was still pending, as were `cargo fmt --all -- --check`, clippy and the Rust test lanes: the shared cargo target directory was
-under a cold third-party build for over an hour with two agents queued behind it, so this report states them as **not yet run**
-rather than as passed. Postgres and a local Redis were started for the `--ignored` lane, which also did not reach a result. Nothing
-of the server is verified by a run yet beyond the generated-file checks above.
+**Server checks (run).** The generated files first: `node scripts/chain-reader-events.mjs --check`, `node scripts/pot-app-abi.mjs
+--check`, all three fixture runs (`--check` for the default, the pause and the new council run) pass. The three example records were
+regenerated with `UPDATE_EXAMPLE=1` and then checked against a fresh anvil replay `cast call` by field: **423 checks** for the default
+example, **48** for the pause one and **71** for the Council one, all passing (the council path needed one fix in
+`chain-reader-example-check.py`: the block argument was passed as a decimal string and must be hex).
+`cargo fmt --all -- --check` exits 0 (after `cargo fmt --all` with the repo's hermit toolchain, which also reverted a stray
+2024-style reformat of 44 untouched files). The Rust unit lanes, from the built test binary: **chain_reader 187, web_push 33,
+launch_update 26, agent_label 6, sponsor 14 — 266 passed, 0 failed** (45/36/16/6/11 ignored: the Postgres lane). The Postgres lane,
+after applying migrations 0065–0077 to the shared local database (it was at 64): **agent_label 6, sponsor 11, chain-reader helper 16**
+pass, and the two remaining tests were fixed as *test-setup* faults, not production ones — the candidacy rate test's "eleventh on a
+ballot" setup only had seven stored on that ballot, and the moved-alert test's ledger had no `Stood` row so the derived result was
+"kept"; both were fixed in the tests, and the rerun was waiting on the rebuild that `cargo clippy` held. `cargo clippy -p buzz-relay
+--all-targets -- -D warnings` was still building its own check profile when this report was written; the `buzz-db` migration tests
+were not run. The app-side push-words equality test is 32/32.
 
 ---
 
