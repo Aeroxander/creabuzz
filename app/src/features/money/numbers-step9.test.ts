@@ -33,13 +33,14 @@ const cases: BallotCase[] = [
 ];
 
 describe("the milestone 9 keys: a project with neither shows nothing new (6.6 row 1)", () => {
-  it("the ordinary example leaves runner.kind, council and vote out; Pair behaviour is unchanged", () => {
+  it("the ordinary example carries runner.kind single and a null Council and vote; nothing new shows", () => {
     const n = councilPlain();
-    expect(n.vote).toBeUndefined();
-    expect(n.council).toBeUndefined();
-    expect("vote" in n).toBe(false);
-    expect("council" in n).toBe(false);
-    expect(n.runner.kind).toBeUndefined();
+    // The record always carries these keys now; on a project with neither they are null and nothing draws.
+    expect(n.vote).toBeNull();
+    expect(n.council).toBeNull();
+    expect("vote" in n).toBe(true);
+    expect("council" in n).toBe(true);
+    expect(n.runner.kind).toBe("single");
     expect(n.runner.isPair).toBe(false);
     // the money and the step 4 keys are exactly what they were
     expect(n.money.pot).toBe(councilPlain().money.pot);
@@ -47,7 +48,16 @@ describe("the milestone 9 keys: a project with neither shows nothing new (6.6 ro
   });
 
   it("an older record signed without these keys keeps its undecoded keys and reads as before", () => {
-    const n = councilPlain();
+    // A record from before the round: no runner.kind, no seats, no council, no vote.
+    const n = councilRecord("voting", (r: any) => {
+      delete r.vote;
+      delete r.council;
+      delete r.runner.kind;
+      delete r.runner.seats;
+    });
+    expect(n.vote).toBeUndefined();
+    expect(n.council).toBeUndefined();
+    expect(n.runner.kind).toBeUndefined();
     // The keys are kept as signed by `numbers.ts`, and read by `withStepKeys` only with the lazy screens.
     const again = withStepKeys(n);
     expect("vote" in again).toBe(false);

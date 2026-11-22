@@ -70,6 +70,9 @@ describe("a record that cannot be read is null, never a crash and never a defaul
     "team.earlierPool",
     "team.earlierReserve",
   ]);
+  // The milestone 9 keys are read by their own lazy parser, which nulls a hostile value and keeps the rest (6.6); an older
+  // record simply has none of them, so their absence or a wrong kind never makes the whole record unreadable.
+  const STEP9 = new Set(["runner.kind", "runner.seats", "council", "vote"]);
   const ALL_PATHS = leafPaths(raw());
   const PATHS = ALL_PATHS.filter(
     // `key` is checked against the d tag, and the signers/holders lists are exercised by their own elements. The task
@@ -80,6 +83,7 @@ describe("a record that cannot be read is null, never a crash and never a defaul
       p[0] !== "tasks" &&
       !SOCIAL.has(String(p[0])) &&
       !STEP4.has(p.join(".")) &&
+      !STEP9.has(p.join(".")) &&
       !STEP4.has(String(p[0])),
   );
   // The two totals a step 2 server adds: a record from an older server leaves them out, and is still read.

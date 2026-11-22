@@ -207,8 +207,12 @@ describe("the Council: the section's state, seats and waiting actions", () => {
   it("a record signed before the runner kind existed still reads as a Pair or a founder", () => {
     const plain = councilPlain();
     expect(runnerKindOf(plain)).toBe("single");
-    expect(
-      runnerKindOf({ ...plain, runner: { ...plain.runner, isPair: true } }),
-    ).toBe("pair");
+    // Before the round there was no runner.kind: the app reads the Pair flag as it always did.
+    const older = { ...plain, runner: { ...plain.runner, isPair: true } };
+    delete (older.runner as { kind?: string }).kind;
+    expect(runnerKindOf(older)).toBe("pair");
+    const founder = { ...plain, runner: { ...plain.runner, isPair: false } };
+    delete (founder.runner as { kind?: string }).kind;
+    expect(runnerKindOf(founder)).toBe("single");
   });
 });
