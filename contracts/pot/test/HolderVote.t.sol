@@ -68,6 +68,17 @@ contract HolderVoteTest is VoteBase {
         vote.openReplace(_list(), keccak256("x"));
     }
 
+    function test_theOpenersOwnStakeIsNotEnoughWithoutTheCrowd() public {
+        // enough for the opener's own thousandth (and no more): the parked total is under the twentieth
+        uint256 supply = shares.totalSupply();
+        uint256 own = (supply + 999) / 1000;
+        _park(alice, own);
+        assertLt(vote.parkedTotal() * 20, supply, "the crowd is under the open floor");
+        vm.prank(alice);
+        vm.expectRevert(HolderVote.NotEligible.selector);
+        vote.openReplace(_list(), keccak256("x"));
+    }
+
     function test_aListIsFiveDistinctNonZeroAccountsAndNoneOfTheProjectsOwn() public {
         _park(alice, 10_000_000e18);
         address[5] memory repeated = [s1, s1, s2, s3, s4];
@@ -341,6 +352,17 @@ contract HolderVoteTest is VoteBase {
         vote.finish(id);
     }
 
+    function test_aPersonWithNoParkedSharesCannotStand() public {
+        _makeCouncil();
+        _warpTo(uint256(Council(t.runner()).nextElection()));
+        uint32 id = _openSeats();
+        // stranger holds Shares but has parked none, and none before the ballot opened either
+        vm.prank(stranger);
+        vm.expectRevert(HolderVote.NotEligible.selector);
+        vote.stand(keccak256("stranger"));
+        id;
+    }
+
     function test_theFloorIsTheSnapshotNotTheSupplyAtTheResult() public {
         _park(alice, 10_000_000e18);
         _park(bob, 6_000_000e18);
@@ -392,6 +414,42 @@ contract HolderVoteTest is VoteBase {
         v.bindProject(ITreasuryRunner(address(fake)), key);
         vm.expectRevert(HolderVote.AlreadyBound.selector);
         v.bindProject(ITreasuryRunner(address(fake)), key);
+    }
+
+    function test_aLargerStakeCanDisplaceAPersonPlaceWhenAllAreFull() public {
+        _makeCouncil();
+        address[14] memory p;
+        for (uint256 i; i < 14; ++i) {
+            p[i] = makeAddr(string(abi.encodePacked("person", i)));
+            _join(p[i], i == 12 ? 20_000e6 : 10_000e6);
+        }
+        _park(p[0], 500_000e18);
+        for (uint256 i = 1; i < 12; ++i) {
+            _park(p[i], 900_000e18);
+        }
+        _park(p[12], 1_200_000e18);
+        _park(p[13], 900_000e18);
+        _warpTo(uint256(Council(t.runner()).nextElection()));
+        uint32 id = _openSeats();
+        for (uint256 i; i < 12; ++i) {
+            vm.prank(p[i]);
+            vote.stand(keccak256(abi.encodePacked("text", i)));
+        }
+        assertEq(vote.optionCount(id), 13, "keep and twelve people");
+        // the thirteenth has a strictly larger stake than the smallest, so it takes the first stood's place
+        vm.prank(p[12]);
+        uint8 option = vote.stand(keccak256("text 12"));
+        (HolderVote.Option memory o1,) = vote.optionOf(id, option);
+        assertEq(o1.proposer, p[12], "the larger stake took the place");
+        assertEq(option, 1, "the smallest place, the first one stood");
+        // the displaced account may not stand again in this ballot
+        vm.prank(p[0]);
+        vm.expectRevert(HolderVote.AlreadyStood.selector);
+        vote.stand(keccak256("again"));
+        // an equal stake never displaces: p[13] has exactly what the smallest remaining stander has
+        vm.prank(p[13]);
+        vm.expectRevert(HolderVote.NoRoom.selector);
+        vote.stand(keccak256("equal stake"));
     }
 
     // ------------------------------------------------------------- helpers
