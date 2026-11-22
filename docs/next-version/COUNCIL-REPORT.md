@@ -244,6 +244,60 @@ the vote and Council addresses now join it).
 
 ---
 
+### The server (S1)
+
+All of it is additive inside record version 2.
+
+- **Reader.** `scripts/chain-reader-events.mjs` regenerates the events table from the contracts build (never hand-edited): the
+  pause role now decodes a `HolderVote` (its pause events plus `BallotOpened`, `Stood`, `Voted` with the new option's absolute tally
+  and, for a move, the old option's, `Fell`, `BallotFinished`, `BallotCarriedOut`, `BallotLapsed`), and a new `council` role is
+  found from `Launcher.CouncilMade` and decodes `Proposed`, `Agreed`, `Withdrawn`, `Executed`, `Cancelled`, `SeatsSet`, `Resigned`.
+  An unknown topic at a vote address is ignored, never an error. The ledger **sets** tallies from the absolute numbers in the
+  events and keeps **no per-voter state**; a `Stood` naming a displaced proposer replaces that option's entry.
+- **Record.** `runner.kind` ("single"/"pair"/"council"), `runner.seats`, the `council` block (contract, the five seats with
+  `seatedAt`, `needed`, `generation`, `nextElection`, `upSeats`, the waiting actions by kind with a bound) and the `vote` block
+  (contract, `rule` with every number a sentence needs, the open ballot's kind/phase/four times/supply/floor/cast/options/result,
+  and the next-times) are always present and null when absent; a failed check signs that key null, logs one line naming the
+  project and the key, and signs the rest. The checks are plan 5.2's: the tallies add up; the times are in order; `cast ≤
+  parkedTotal` only while the vote runs and `cast ≤ supply` always; `effectiveAt − voteEnd` equals the Treasury's longest notice at
+  the same block; the floor equals the rule; the derived result equals a recorded `BallotFinished` (else `vote: null`). **No voter
+  address and no per-voter amount is ever in a record, an explore row, a feed row or an alert** (a planted-voter test), and a vote
+  stays in the record through the whole wait even after every winner has taken their Shares out.
+- **The result from the frozen tallies (V34).** The reader derives the same result the contract does, from `voteEnd` on, so the card
+  and the alert show a moved or seated result with nobody pressing `finish`; `BallotFinished` only confirms it. The refresh drops to
+  `min(600 s, standSecs/4)` while a ballot is live or a result waits.
+- **The candidate's text (5.4).** A new `candidacy` family of kind 47003: the plan's tags, content at most 280 characters and
+  1,024 bytes, signed by any signed-in account whose live linked wallet is the proposer, never by an account the server marks as an
+  agent, at most 3 a day per account and 10 per ballot, one expiration at most 30 days out. The relay does not read the chain at
+  write; the app and the server show a text only when its id equals the hash the chain stored at `Stood` and the proposer/candidate
+  tags match.
+- **The helper (5.5).** Four permissionless jobs — `vote.openSeats`, `vote.finish`, `vote.carryOut`, `vote.lapse` — inside the
+  existing bounds (at most 3 per pass, a project's own pace of 10 minutes or a quarter of the stand window when smaller, at most 6 a
+  day, backoff, and five failures in a row leave that project alone for 24 hours and log it), never opening a replace vote, with the
+  closed list pinned by a test. The helper reads `canCarryOut`/`canOpenSeats` in its head check (a pure planner has no node, so that
+  is a stated deviation).
+- **Alerts (5.6).** Two new push kinds: `vote` for either ballot's opening (urgent until it ends; at most one per project per time
+  unit, so a stream of junk ballots cannot become a stream of pushes) and `moved` for a moved or seated result, made from the
+  reader's derived result by the first pass after `voteEnd` and once per (project, ballot, kind), with the plan's words held equal
+  between `web_push/mod.rs` and `app/public/sw.js` by a test. Sponsor follows the Council and the vote contract, so a passkey
+  account's presses are ordinary sponsored operations; the exit rule (`[unpark, leave]`) is unchanged and still tested with a ballot
+  live.
+- **Established (5.8).** `two_signers` also holds for a Council with at least three distinct non-zero live seats; the key keeps its
+  name and now means "the project is run by more than one account".
+- **One migration.** `migrations/0077_chain_council_role.sql` widens the three check lists the new rows write into (`chain_contracts`
+  gains `council`, `chain_helper_jobs` the four vote jobs, `web_push_alerts` the two kinds), with the `schema/tables/public` files and
+  a Postgres-lane migration test.
+
+**Server checks.** `node scripts/chain-reader-events.mjs --check`, `node scripts/pot-app-abi.mjs --check`, all three fixture runs
+(`--check` for the default, the pause and the new council run) and the two older examples pass; `app/src/features/alerts/push/push-sw.test.ts`
+is 32/32 with the five words. The third example (`record-v2-example-council.json`) is written by a Rust test with `UPDATE_EXAMPLE=1`
+and was still pending, as were `cargo fmt --all -- --check`, clippy and the Rust test lanes: the shared cargo target directory was
+under a cold third-party build for over an hour with two agents queued behind it, so this report states them as **not yet run**
+rather than as passed. Postgres and a local Redis were started for the `--ignored` lane, which also did not reach a result. Nothing
+of the server is verified by a run yet beyond the generated-file checks above.
+
+---
+
 ## 3. Choices, deviations and findings
 
 - The plan's four seat-tie cases are implemented exactly: two tied at the top take both seats; a tie for the second seat
