@@ -8,7 +8,7 @@ import { checkRefusalOf, SOMEONE_ELSE_CHECKS } from "./solo-refusal.ts";
 const OWN_WORK =
   "restricted: a task's work must be confirmed by someone other than its helper";
 const AGENT_LIMIT =
-  "restricted: an agent account cannot check work, grant more time, or sign goals and promises; a person on the team must";
+  "restricted: an agent account cannot check work, grant more time, sign goals and promises, or stand for a seat; a person must";
 
 test("the server's two refusals of a check are told apart from every other failure", () => {
   assert.equal(checkRefusalOf(new Error(OWN_WORK)), "own-work");

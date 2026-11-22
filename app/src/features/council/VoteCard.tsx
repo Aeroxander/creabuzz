@@ -104,7 +104,7 @@ function candidacyOf(event: {
 }
 
 /** Every candidacy a project carries, by the id the chain stored for it. */
-export function candidaciesOf(
+function candidaciesOf(
   events: readonly { id: string; tags: string[][]; content: string }[],
 ): Map<string, Candidacy> {
   const out = new Map<string, Candidacy>();

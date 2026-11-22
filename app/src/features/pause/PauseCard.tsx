@@ -34,7 +34,7 @@ const StandSheet = lazy(() =>
  * open, the parked Shares at or over its floor, and the cooldown after a "kept" result over. The person's own parked Shares
  * are read from the chain beside this, so the line shows only to someone who could press.
  */
-export function mayAskHolders(
+function mayAskHolders(
   vote: VoteNumbers | null | undefined,
   pause: PauseNumbers,
   now: number,

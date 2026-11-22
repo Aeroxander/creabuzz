@@ -182,10 +182,7 @@ const VOTE_OUTCOMES = [
  * money screens, and this module is in the first download. It reads only the fields the two sentences need; the vote card
  * itself reads the whole key through the lazy parser.
  */
-export function voteNewsOf(
-  numbers: ProjectNumbers,
-  now: number,
-): VoteNews | null {
+function voteNewsOf(numbers: ProjectNumbers, now: number): VoteNews | null {
   const step = numbers.step;
   if (!isObject(step) || !("vote" in step)) return null;
   if (step.vote === null) return null;

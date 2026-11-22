@@ -13,7 +13,7 @@ export type CheckRefusal = "own-work" | "agent";
 const OWN_WORK =
   /^restricted: a task's work must be confirmed by someone other than its helper$/;
 const AGENT_LIMIT =
-  /^restricted: an agent account cannot check work, grant more time, or sign goals and promises; a person on the team must$/;
+  /^restricted: an agent account cannot check work, grant more time, sign goals and promises, or stand for a seat; a person must$/;
 
 /** What a failed check was refused for, or null when it was refused for something else (or not refused). */
 export function checkRefusalOf(error: unknown): CheckRefusal | null {

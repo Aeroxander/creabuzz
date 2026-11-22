@@ -386,6 +386,33 @@ and by the mock-server Playwright journey (`app/tests/e2e/pot-council.spec.ts`, 
 the contract and reader phases by the record itself here. The alert push for a moved result and the passkey path
 (`scripts/phone-loop.sh`) remain open in the loop.
 
+### The wider verification run at this commit
+
+Everything below was run on this branch at the commit that carries this report (the independent verifier's pass is still a
+separate, required step):
+
+- **Contracts:** `forge test` **1,065 passed / 110 suites**; `check-mutations.py --check` exits 0; `scripts/pot-chain-loop.sh`
+  **24 checks passed** (the whole join-and-leave loop against the deployed bytecode, with real receipt gas); the deploy script ran
+  on a local chain with both switches on.
+- **Server:** the unit lanes **266**, the Postgres lanes **66**, the `buzz-db` migration tests **2**, the three example records
+  field-checked against a fresh anvil replay (**423 + 48 + 71** checks); `cargo clippy -p buzz-relay --all-targets -D warnings`
+  exits 0 and `cargo fmt --all -- --check` exits 0; all six guard-off experiments are killed by their named tests; the whole relay
+  lib suite is 1,980 passed with the one `api::mesh_demo` failure recorded as a sandbox condition in the M5 and M8 reports.
+- **App:** `pnpm check` (biome, tsc, copy, px-text, file-sizes) exits 0; **2,251** vitest tests pass; the production build passes
+  (entry chunk 393 KiB, 47,570 B under budget); the Playwright **mock smoke project** passes **55/55** (the smoke project also
+  lists the live-chain `pot-*` specs, which by design refuse an app built without a `CREATON_DEPLOYMENTS_FILE`; those are the ones
+  `scripts/pot-full-loop.sh` runs, and all of them pass — see the table above); the mock-server `pot-council.spec.ts` is 7/7.
+- **`web/` (the older web client) and the shared core package:** `web/` `pnpm check` exits 0 (biome, kinds, templates, knip) and
+  `web/` tests **3,502 passed, 0 failed**; `packages/creaton-core` **1,292 passed**.
+- **Loops and scripts:** `pot-chain-loop.sh` 24 checks; `pot-app-loop.sh` **17 tests in 11 files**; `phone-loop.sh` **52 claims
+  proven** (passkey accounts against the real contracts); `m8-agent-week.sh` **49 checks**.
+- **Two integration issues this wider run found and fixed:** the older web client matches the server's AGENT_LIMIT sentence by
+  text, and the server's sentence gained "or stand for a seat" for candidacies (web's matcher and its test updated); and knip
+  reported eight app exports that nothing outside their module uses (now internal, so `web/`'s check passes).
+
+**Still not run:** the two brain items the plan lists as built-but-never-independently-checked (the reader's unpack bound and
+the recorded-run skill), and the independent verification pass itself, which is not mine to make.
+
 ## 3. Choices, deviations and findings
 
 - The plan's four seat-tie cases are implemented exactly: two tied at the top take both seats; a tie for the second seat

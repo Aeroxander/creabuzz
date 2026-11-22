@@ -67,7 +67,7 @@ const ACTION_KINDS = [
 ] as const;
 
 /** What the keys are checked against: all from the money part of the same record. */
-export interface Step9Context {
+interface Step9Context {
   asOfTime: number;
   /** The record's time unit in seconds. */
   unit: number;
@@ -82,7 +82,7 @@ export interface Step9Context {
 }
 
 /** What the milestone 9 keys of one record say; a field left out here was missing from the record. */
-export interface Step9Keys {
+interface Step9Keys {
   runnerKind?: RunnerKind | null;
   runnerSeats?: number | null;
   council?: CouncilNumbers | null;
@@ -200,11 +200,7 @@ function apart<T>(read: () => T): T | null {
  * The milestone 9 keys of a record's body: a key that is missing is left out of the result, one that is null or cannot be
  * believed is null. Never throws and never touches the money.
  */
-export function readStep9(
-  raw: Json,
-  ctx: Step9Context,
-  isPair: boolean,
-): Step9Keys {
+function readStep9(raw: Json, ctx: Step9Context, isPair: boolean): Step9Keys {
   const out: Step9Keys = {};
   if (!isObject(raw)) return out;
   const runner =

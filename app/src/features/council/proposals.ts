@@ -38,10 +38,7 @@ const HEX32 = /^0x[0-9a-f]{64}$/;
  * (`team/pair.ts`) decodes the same event; it is behind the old-screens flag, so this live module carries its own copy of
  * the two things it needs (this decoder and the sentences for a hand-over and a wind-down), word for word the same.
  */
-export function proposalOf(
-  log: ChainLog,
-  council: string,
-): CouncilProposal | null {
+function proposalOf(log: ChainLog, council: string): CouncilProposal | null {
   if (log.address.toLowerCase() !== council.toLowerCase()) return null;
   const [topic, id, by] = log.topics.map((t) => t.toLowerCase());
   if (topic !== PROPOSED_TOPIC || !id || !by) return null;

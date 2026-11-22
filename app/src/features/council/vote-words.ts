@@ -64,7 +64,7 @@ function capped(text: string): string {
  * A span of time in the contract's own days: `standSecs` is one day (the plan fixes it), so "one day", "three days",
  * "16.5 days". Never the real-world words "24 hours": a test network's day is 240 seconds.
  */
-export function spanWords(seconds: number, daySecs: number): string {
+function spanWords(seconds: number, daySecs: number): string {
   const days = daySecs > 0 ? seconds / daySecs : 0;
   if (days === 1) return "one day";
   const shown = Number.isInteger(days) ? countWord(days) : days.toFixed(1);
