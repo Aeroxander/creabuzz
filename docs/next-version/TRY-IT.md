@@ -357,9 +357,16 @@ project with no Council and no open vote, nothing new shows anywhere.
 7. **The switch off.** A world deployed without `COUNCIL=1` shows none of this on any project, including one whose numbers have the
    milestone-9 keys absent: no card, no section, no sheet, no press, no alert.
 
-**Not tried by anyone:** the whole of this part on a real phone; the Council world in `scripts/pot-full-loop.sh` and the phone loop are
-**not built this round** (the plan's A1 lists them; they are open work), so the checks here are the app's own tests and the Playwright
-`pot-council.spec.ts` (7 tests at 390 x 840 and 360 x 640 with axe), plus the contracts' own suites.
+**Run it for yourself on a local chain:** `scripts/pot-full-loop.sh pot-council.spec` starts the chain, deploys with
+`HOLDER_PAUSE=1 COUNCIL=1`, builds the app for it, starts the real server with its chain reader, and runs the journey (a founder
+launches, hands the seat to five accounts, the Money tab's Council section appears, a seat proposes a check-in, the seat holder's
+page lists it with "Posts and votes are public.", three of five agree and the record keeps up). It passes 23 checks; `--serve`
+leaves the same world running for a person to try on a phone. The *replace vote* world (park, open a vote, stand a list, vote, the
+planned-change card, a take out during the wait, carry out) and the same presses from a passkey account in `scripts/phone-loop.sh`
+are **not built this round**; the vote's screens are covered by the app's own tests and by `app/tests/e2e/pot-council.spec.ts`
+(7 checks at 390 x 840 and 360 x 640 with axe), plus the contracts' own suites.
+
+**Not tried by anyone:** the whole of this part on a real phone.
 
 ## 5. What cannot be tried without an `https` address
 

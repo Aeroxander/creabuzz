@@ -234,7 +234,7 @@ no open vote**, and nothing shows with the switch off: every new component retur
   against the contracts' own ABI.
 
 **App checks:** `pnpm check` (biome, `tsc --noEmit`, check:copy, check:px-text, check:file-sizes) exits 0; `pnpm test` **243 files,
-2,250 tests, 0 failed**; `pnpm build` passes, entry chunk **402,430 B (393 KiB)** against the 450,000 budget — **47,570 B under**,
+2,251 tests, 0 failed**; `pnpm build` passes, entry chunk **402,430 B (393 KiB)** against the 450,000 budget — **47,570 B under**,
 but **1,600 B larger than this tree's own start (400,830 B)** because 6.7's alert kinds live in `alerts.ts`, which is in the entry
 chunk. The plan's "281 bytes to spare / 449,719" is stale for this tree. `core` tests 1,292 pass. Playwright
 `pot-council.spec.ts`: **7/7** at 390×844 with axe (card in standing, voting, waiting and ended states; both sheets) plus a
@@ -327,6 +327,34 @@ the full app suite is again **2,250 passed, 0 failed**, with `pnpm check` and `p
 budget).
 
 ---
+
+### The joined-up loop (the Council world)
+
+`scripts/pot-full-loop.sh` gains a **Council world** (deployed with `HOLDER_PAUSE=1 COUNCIL=1`, so the vote contract is the
+project's pause and a Council implementation is bound) and its own journey, `app/tests/e2e-pot-full/pot-council.spec.ts`. Against
+the real server, its chain reader and the app's own build in Chromium it: launches a project from the app; backs it from two
+anvil accounts; has the runner offer the seat to five accounts and anyone make the Council; checks the Treasury's runner, the
+Council's own seats and the Launcher's kind 2 on the chain; waits for the record to say `runner.kind` is `council` with five live
+seats and three needed; checks the Money tab's Council section (five seats, "3 of them must agree", the next election, the plan's
+last line); has one seat propose a check-in; finds the record's waiting count at 1 and the seat holder's page listing the
+waiting action with "Posts and votes are public."; has two more seats agree on the chain; then sees the record's waiting count
+back to zero and an `Executed` log on the chain; and checks the section does not scroll sideways at 360×640. **The world passes
+23 checks, twice in a row** (`pot-full-loop: 23 checks passed`).
+
+**The loop found two defects that the unit tests could not:**
+1. **Server:** in the transaction that makes a Council, the Council's own `SeatsSet` (which carries `nextElection`) is logged
+   before the Launcher's `CouncilMade` names it, so the reader's single replay pass skipped it as "not ours yet"; the record's
+   consistency check then nulled the whole council block ("the events say the next election is at 0, the Council says …"). Fixed
+   in `ledger.rs`: the newest `CouncilMade` address is learned before the replay. (The unit fixtures could not see it because
+   their ledgers name the Council before replaying its events.)
+2. **App:** a freshly proposed call was hidden from the seat holder's list, because the list counted only `Agreed` events and
+   the proposer's own agreement is not one. Fixed in `proposals.ts`: a proposal with no tally yet counts its proposer's
+   agreement; `Withdrawn` still carries the real count after it. A unit test pins it. This is the case a real proposal always
+   starts in, which is why the mock journeys missed it.
+
+**Still open in the loop:** the *replace* world (park, open a vote, stand a list, vote, the planned-change card and alert, a take
+out during the wait, carry out, the new Council) and the same presses from a passkey account in `scripts/phone-loop.sh`. The
+Council world here covers the hand-over, the Council section and a three-of-five action.
 
 ## 3. Choices, deviations and findings
 
