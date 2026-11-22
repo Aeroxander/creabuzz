@@ -122,9 +122,11 @@ contract HolderVote is HolderPause {
     mapping(uint32 => mapping(uint8 => Option)) private _options;
     mapping(uint32 => mapping(uint8 => uint256)) private _tally;
     mapping(uint32 => uint256) private _cast;
-    /// @dev Per account: `(ballot id << 96) | low`, the fewest Shares parked since that ballot opened. One slot.
+    /// @dev Per account: `(ballot id << 128) | low`, the fewest Shares parked since that ballot opened. One slot. The weight
+    /// is 128 bits: an account can park up to `MAX_SHARES` (1e30 wei), which is over 2^96, and a narrower field would carry
+    /// the low bits into the id.
     mapping(address => uint256) private _snap;
-    /// @dev Per account: `(ballot id << 104) | (option << 96) | weight` of a vote cast, or zero. One slot.
+    /// @dev Per account: `(ballot id << 136) | (option << 128) | weight` of a vote cast, or zero. One slot.
     mapping(address => uint256) private _castOf;
     /// @dev The ballot an account stood in (as a person or as a list's proposer).
     mapping(address => uint32) private _stood;
@@ -272,7 +274,7 @@ contract HolderVote is HolderPause {
     function _beforeChange(address who) internal override {
         uint32 id = _liveVote();
         if (id == 0) return;
-        if (uint32(_snap[who] >> 96) != id) _snap[who] = (uint256(id) << 96) | parkedOf[who];
+        if (uint32(_snap[who] >> 128) != id) _snap[who] = (uint256(id) << 128) | parkedOf[who];
     }
 
     /// @inheritdoc HolderPause
@@ -282,21 +284,21 @@ contract HolderVote is HolderPause {
         uint32 id = _liveVote();
         if (id == 0) return;
         uint256 s = _snap[who];
-        if (uint32(s >> 96) != id) return;
-        uint256 low = uint96(s);
+        if (uint32(s >> 128) != id) return;
+        uint256 low = uint128(s);
         if (newParked < low) {
             low = newParked;
-            _snap[who] = (uint256(id) << 96) | low;
+            _snap[who] = (uint256(id) << 128) | low;
         }
         uint256 c = _castOf[who];
-        if (uint32(c >> 104) != id) return;
-        uint256 w = uint96(c);
+        if (uint32(c >> 136) != id) return;
+        uint256 w = uint128(c);
         if (w <= low) return;
-        uint8 option = uint8(c >> 96);
+        uint8 option = uint8(c >> 128);
         uint256 fall = w - low;
         _cast[id] -= fall;
         _tally[id][option] -= fall;
-        _castOf[who] = (uint256(id) << 104) | (uint256(option) << 96) | low;
+        _castOf[who] = (uint256(id) << 136) | (uint256(option) << 128) | low;
         emit Fell(id, who, option, low, _tally[id][option], _cast[id]);
     }
 
@@ -414,9 +416,9 @@ contract HolderVote is HolderPause {
         uint256 c = _castOf[msg.sender];
         uint8 fromOption = 255;
         uint256 fromTally;
-        if (uint32(c >> 104) == id) {
-            fromOption = uint8(c >> 96);
-            uint256 old = uint96(c);
+        if (uint32(c >> 136) == id) {
+            fromOption = uint8(c >> 128);
+            uint256 old = uint128(c);
             fromTally = _tally[id][fromOption] - old;
             _tally[id][fromOption] = fromTally;
             _cast[id] -= old;
@@ -424,7 +426,7 @@ contract HolderVote is HolderPause {
         uint256 t = _tally[id][option] + w;
         _tally[id][option] = t;
         _cast[id] += w;
-        _castOf[msg.sender] = (uint256(id) << 104) | (uint256(option) << 96) | w;
+        _castOf[msg.sender] = (uint256(id) << 136) | (uint256(option) << 128) | w;
         emit Voted(id, msg.sender, option, w, t, _cast[id], fromOption, fromTally);
     }
 
@@ -531,9 +533,9 @@ contract HolderVote is HolderPause {
         id = _liveVote();
         if (id == 0) return (0, 0, 0, 0);
         uint256 c = _castOf[who];
-        if (uint32(c >> 104) == id) {
-            option = uint8(c >> 96);
-            weight = uint96(c);
+        if (uint32(c >> 136) == id) {
+            option = uint8(c >> 128);
+            weight = uint128(c);
         }
         eligible = _weightNow(id, who);
     }
@@ -586,7 +588,7 @@ contract HolderVote is HolderPause {
     /// touched the account (nothing could have changed it, or the hook would have stamped it).
     function _weightNow(uint32 id, address who) private view returns (uint256) {
         uint256 s = _snap[who];
-        if (uint32(s >> 96) == id) return uint96(s);
+        if (uint32(s >> 128) == id) return uint128(s);
         return parkedOf[who];
     }
 

@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {VoteBase} from "./helpers/VoteBase.sol";
+import {FakeTreasury} from "./helpers/CouncilBase.sol";
 import {Council} from "../src/Council.sol";
 import {HolderVote} from "../src/HolderVote.sol";
 import {ITreasuryRunner} from "../src/Interfaces.sol";
@@ -309,6 +310,88 @@ contract HolderVoteTest is VoteBase {
         uint8 hi = b.upA < b.upB ? b.upB : b.upA;
         assertEq(seats[lo], alice, "the first winner takes the lower seat");
         assertEq(seats[hi], bob, "the second takes the other");
+    }
+
+    // ---------------------------------------------------- the wait, twice, the floor
+
+    function test_aWonResultWaitsTheLongestTaskNotice() public {
+        _park(alice, 10_000_000e18);
+        _park(bob, 6_000_000e18);
+        _park(carol, 4_000_000e18);
+        uint32 id = _openReplace(alice, _list());
+        HolderVote.Ballot memory b = _ballotAt(id);
+        (uint256 wait,,) = t.noticeFor(500);
+        assertEq(uint256(b.effectiveAt), uint256(b.voteEnd) + wait, "the wait is the longest task notice");
+        _toStandEnd(id);
+        _cast(alice, 1);
+        _cast(bob, 1);
+        _cast(carol, 1);
+        _toVoteEnd(id);
+        vote.finish(id);
+        vm.expectRevert(abi.encodeWithSelector(HolderVote.TooEarly.selector, b.effectiveAt));
+        vote.carryOut(id); // the wait has not even started
+    }
+
+    function test_aResultCannotBeRecordedTwice() public {
+        _park(alice, 10_000_000e18);
+        uint32 id = _replaceVote(alice, _list());
+        _toVoteEnd(id);
+        vote.finish(id);
+        vm.expectRevert(HolderVote.AlreadyFinished.selector);
+        vote.finish(id);
+    }
+
+    function test_theFloorIsTheSnapshotNotTheSupplyAtTheResult() public {
+        _park(alice, 10_000_000e18);
+        _park(bob, 6_000_000e18);
+        _park(carol, 4_000_000e18);
+        uint32 id = _openReplace(alice, _list());
+        HolderVote.Ballot memory b = _ballotAt(id);
+        uint256 supply = b.supply;
+        // a large join after the ballot opened: the live supply's third would now be far above the cast total
+        _join(stranger, 500_000e6);
+        assertGt(shares.totalSupply(), supply + supply / 2, "the supply moved a lot");
+        _toStandEnd(id);
+        _cast(alice, 1);
+        _cast(bob, 1);
+        _cast(carol, 1);
+        _toVoteEnd(id);
+        vote.finish(id);
+        (uint8 outcome,,) = vote.resultOf(id);
+        assertEq(outcome, vote.OUTCOME_MOVED(), "the floor is the one fixed at the snapshot");
+    }
+
+    function test_aPersonCannotStandAfterTheStandWindow() public {
+        _makeCouncil();
+        _park(alice, 10_000_000e18);
+        _park(bob, 7_000_000e18);
+        _warpTo(uint256(Council(t.runner()).nextElection()));
+        uint32 id = _openSeats();
+        HolderVote.Ballot memory b = _ballotAt(id);
+        _warpTo(uint256(b.standEnd));
+        vm.prank(alice);
+        vm.expectRevert(HolderVote.StandingClosed.selector);
+        vote.stand(keccak256("alice"));
+    }
+
+    function test_aPersonCannotStandTwiceInOneBallot() public {
+        _makeCouncil();
+        _park(alice, 10_000_000e18);
+        _warpTo(uint256(Council(t.runner()).nextElection()));
+        _openSeats();
+        vm.prank(alice);
+        vote.stand(keccak256("alice"));
+        vm.prank(alice);
+        vm.expectRevert(HolderVote.AlreadyStood.selector);
+        vote.stand(keccak256("alice again"));
+    }
+
+    function test_aVoteCloneCannotBeBoundToASecondProject() public {
+        HolderVote v = new HolderVote();
+        FakeTreasury fake = new FakeTreasury(UNIT, address(v));
+        v.bindProject(ITreasuryRunner(address(fake)), key);
+        vm.expectRevert(HolderVote.AlreadyBound.selector);
+        v.bindProject(ITreasuryRunner(address(fake)), key);
     }
 
     // ------------------------------------------------------------- helpers
