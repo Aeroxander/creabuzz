@@ -186,6 +186,13 @@ report states the differences rather than hiding them. The plan's estimates were
 - `python3 contracts/pot/scripts/check-mutations.py --check` exits 0 (every entry's text occurs exactly once); the script now
   copies `script/` too, so a deployment test that imports the deploy script can be a mutation's witness, and `--check` no longer
   needs test files that are not written yet.
+- `forge fmt --check` on every Solidity file the round touched exits 0. The plan's whole-tree command
+  (`forge fmt --check src script test`) reports two diffs in `test/EarlierGrants.t.sol`, a `v6` file this round did not edit
+  (confirmed against `4c36f73d6`); it is a pre-existing condition, left alone rather than editing an old test for formatting.
+- One run of the deploy script on a local chain (`anvil`, chain 31337, `COUNCIL=1 HOLDER_PAUSE=1 UNIT=1680`) succeeded: it
+  deployed the dollar, `Parts`, the Launcher, a `HolderVote` as the pause (its hash in the JSON is the vote's), and a `Council`;
+  `deployments/pot-31337.json` carries `holderPause`, `holderVote`, `council` and their code hashes, and the `Council` hash is the
+  one in `DEPLOYMENTS.md`.
 
 ---
 
