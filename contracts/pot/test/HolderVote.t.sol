@@ -343,6 +343,26 @@ contract HolderVoteTest is VoteBase {
         vote.carryOut(id); // the wait has not even started
     }
 
+    function test_canOpenReplaceSaysNoInTheSecondAKeptBallotEnds() public {
+        _park(alice, 10_000_000e18);
+        _park(bob, 6_000_000e18);
+        _park(carol, 4_000_000e18);
+        uint32 id = _openReplace(alice, _list());
+        _toStandEnd(id);
+        _cast(alice, 1);
+        _cast(bob, 0);
+        _cast(carol, 0); // kept: the floor is met, no list has half
+        _toVoteEnd(id);
+        // nobody has finished it yet, so nextReplaceAt is still zero: the view must still refuse
+        assertFalse(vote.canOpenReplace(), "finishing this ballot now would start the cooldown");
+        vm.prank(alice);
+        vm.expectRevert();
+        vote.openReplace(_list(), keccak256("x"));
+        vote.finish(id);
+        assertEq(vote.nextReplaceAt(), _ballotAt(id).voteEnd + 4 * 7 days);
+        assertFalse(vote.canOpenReplace());
+    }
+
     function test_aResultCannotBeRecordedTwice() public {
         _park(alice, 10_000_000e18);
         uint32 id = _replaceVote(alice, _list());

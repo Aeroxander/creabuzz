@@ -492,6 +492,15 @@ contract HolderVote is HolderPause {
     /// @notice True when a replace vote may open now (no ballot live, no cooldown, the project runs).
     function canOpenReplace() external view returns (bool) {
         if (current != 0 && !_freeSettled(current)) return false;
+        // a ballot whose vote has ended but whose result nobody has finished yet: if finishing it now would set the
+        // cooldown, opening is refused in the same transaction, so the view must say no here too
+        if (current != 0) {
+            Ballot storage b = ballots[current];
+            if (!b.finished && block.timestamp >= b.voteEnd) {
+                (uint8 o,,) = _compute(current);
+                if (b.kind == KIND_REPLACE && o == OUTCOME_KEPT && _cast[current] >= b.floor) return false;
+            }
+        }
         if (block.timestamp < nextReplaceAt) return false;
         if (address(treasury) == address(0) || treasury.windDownKind() != 0) return false;
         uint256 supply = shares.totalSupply();
