@@ -5,6 +5,7 @@
  */
 import {
   checkInCall,
+  councilProposeCall,
   type PotCall,
   pairCheckInCall,
   pairProposeCall,
@@ -74,4 +75,25 @@ export function asRunner(
       through: "pair",
     };
   return null;
+}
+
+/**
+ * A Council seat's version of a runner-only call: a proposal to the other seats, which runs when enough of them agree
+ * (COUNCIL-PLAN.md 6.4). Null for anyone who does not hold a seat of a Council runner, so nothing is offered that the
+ * contract would refuse. A Council is the runner itself, so a seat is never the runner and never signs alone.
+ */
+export function asSeat(
+  numbers: ProjectNumbers,
+  me: string | null,
+  inner: PotCall,
+): { call: PotCall; through: "council" } | null {
+  if (numbers.windDown) return null;
+  const council = numbers.council;
+  if (numbers.runner.kind !== "council" || !council || !me) return null;
+  const who = me.toLowerCase();
+  if (!council.seats.some((seat) => seat.account === who)) return null;
+  return {
+    call: councilProposeCall(council.contract, inner.to, inner.data),
+    through: "council",
+  };
 }

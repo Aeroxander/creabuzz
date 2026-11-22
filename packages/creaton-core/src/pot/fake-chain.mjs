@@ -3,8 +3,10 @@
 import { encodeParameters } from "../launchpad/evmAbi.ts";
 import { abiTypeOf, decodeCall, functionOf } from "./abi-codec.ts";
 import {
+  COUNCIL_ABI,
   EARLIER_GRANTS_ABI,
   HOLDER_PAUSE_ABI,
+  HOLDER_VOTE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
@@ -26,6 +28,9 @@ const ABIS = [
   LAUNCHER_ABI,
   HOLDER_PAUSE_ABI,
   EARLIER_GRANTS_ABI,
+  // The vote answers the pause's own names the same way (it is the pause), and adds the ballot's.
+  HOLDER_VOTE_ABI,
+  COUNCIL_ABI,
 ];
 
 /** `answers[name]` is the values to return, or a function of the decoded args that returns them. */

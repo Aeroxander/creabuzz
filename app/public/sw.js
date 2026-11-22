@@ -117,6 +117,9 @@ const PUSH_WORDS = {
     "A task was planned on a project you back. You can take your money out first.",
   taken: "A task was started on a project you back.",
   ended: "A task ended on a project you back.",
+  vote: "A vote on who runs a project you back is open. You can take your money out any time.",
+  moved:
+    "Holders voted to change who runs a project you back. You can take your money out first.",
 };
 /** A project's link: its id, then the first 16 hex characters of its founder (the part of /p/<link> after /p/). */
 const PROJECT_LINK = /^[A-Za-z0-9._~-]{1,120}-[0-9a-f]{16}$/;

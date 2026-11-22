@@ -17,6 +17,7 @@ import {
   parseNumbers as parseNumbersV2,
   type ProjectNumbers as ProjectNumbersV2,
 } from "../../src/features/money/numbers";
+import { withStepKeys } from "../../src/features/money/numbers-step9";
 import { ToastProvider } from "../../src/ui/toast";
 import { BACKER_EVM, CONTRACTS, chainIdentity } from "./numbers-fixture";
 import { chainIdentityV2 } from "./numbers-v2-fixture";
@@ -149,7 +150,8 @@ export function numbersV2Of(
     chainKey: chainIdentityV2(COORDINATE).key,
   });
   if (!parsed || parsed.removed) throw new Error("not parsed");
-  return parsed;
+  // The step 4 and milestone 9 keys are read by the lazy parser, as the screens that show them do.
+  return withStepKeys(parsed);
 }
 
 export function numbersOf(content: Record<string, unknown>): ProjectNumbers {

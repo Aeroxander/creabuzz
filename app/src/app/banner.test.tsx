@@ -176,6 +176,7 @@ describe("the banner on every sheet that shows money", () => {
   // Every other sheet is named here, with why it needs none: a sheet that is added without a line fails this test.
   const OWN_BANNER = "carries the banner itself";
   const OTHER_SHEETS: Record<string, string> = {
+    "features/council/StandSheet.tsx": OWN_BANNER,
     "features/project/EstablishedSheet.tsx": OWN_BANNER,
     "features/project/ShareSheet.tsx": OWN_BANNER,
     "features/account/RecoveryKeySheet.tsx": "a secret key, no money",

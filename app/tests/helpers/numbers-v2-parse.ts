@@ -9,6 +9,7 @@ import {
   parseNumbers,
   type ProjectNumbers,
 } from "../../src/features/money/numbers";
+import { withStepKeys } from "../../src/features/money/numbers-step9";
 import { chainIdentityV2 } from "./numbers-v2-fixture";
 
 export type Json = Record<string, unknown>;
@@ -45,5 +46,6 @@ export function exampleEvent(content: unknown = raw()): NumbersEvent {
 export function parsedExample(): ProjectNumbers {
   const numbers = parseNumbers(exampleEvent(), SERVER);
   if (!numbers || numbers.removed) throw new Error("the example did not parse");
-  return numbers;
+  // The step 4 and milestone 9 keys load with the lazy parser, as the screens that show them do.
+  return withStepKeys(numbers);
 }

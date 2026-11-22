@@ -4,9 +4,11 @@
  * to one person, asking one person to run it together, withdrawing an offer, and winding the project down; for anyone, winding it
  * down once the team has been quiet long enough. Everything that sends reads the chain when its sheet opens.
  */
-import { useId, useState } from "react";
+import { lazy, Suspense, useId, useState } from "react";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
+import { proposeAskLine } from "../council/council-words";
+import { seatOf } from "../council/use-council";
 import { quietStateAt, type ProjectNumbers } from "../money/numbers";
 import { quietWaitWords } from "../pot/pot-words";
 import { runnerRole } from "../money/runner";
@@ -24,10 +26,19 @@ import {
 } from "./seat-words";
 import { useSeat } from "./use-seat";
 
+// The Council's own hand-over sheet (five accounts, then the two steps) loads only when it is first chosen: it is not in
+// the first download, and a project with no Council never asks for it.
+const HandOverCouncilSheet = lazy(() =>
+  import("../council/HandOverCouncilSheet").then((m) => ({
+    default: m.HandOverCouncilSheet,
+  })),
+);
+
 type Open =
   | null
   | "hand-over"
   | "pair"
+  | "council"
   | "withdraw"
   | "take"
   | "accept"
@@ -83,11 +94,18 @@ function Actions({
   ready,
 }: Props & { ready: Ready }) {
   const [open, setOpen] = useState<Open>(null);
+  // Once the Council choice is taken, its sheet stays mounted so a retry offers the same address.
+  const [councilSeen, setCouncilSeen] = useState(false);
   const memberAddresses = members.flatMap((m) =>
     m.address ? [m.address] : [],
   );
   const view = useSeat(numbers, ready, memberAddresses);
   const role = runnerRole(numbers, ready.address).kind;
+  // A Council seat is not the runner (the Council is), but its hand-over is a proposal the other seats agree to.
+  const seatHeld =
+    numbers.runner.kind === "council" && numbers.council
+      ? seatOf(numbers.council, ready.address)
+      : null;
   const close = () => setOpen(null);
   if (view.isPending) return <Card className="h-12 animate-pulse" />;
   if (view.isError || !view.data)
@@ -153,7 +171,7 @@ function Actions({
           </Button>
         </div>
       ) : null}
-      {role !== "none" ? (
+      {role !== "none" || seatHeld ? (
         <div className="flex flex-col gap-2" data-testid="seat-runner">
           {seat.offeredTo ? (
             <p className="text-sm" data-testid="seat-offer-open">
@@ -163,14 +181,16 @@ function Actions({
             </p>
           ) : null}
           {live ? (
-            <Button
-              block
-              data-testid="seat-withdraw"
-              onClick={() => setOpen("withdraw")}
-              variant="secondary"
-            >
-              Withdraw the offer
-            </Button>
+            role !== "none" ? (
+              <Button
+                block
+                data-testid="seat-withdraw"
+                onClick={() => setOpen("withdraw")}
+                variant="secondary"
+              >
+                Withdraw the offer
+              </Button>
+            ) : null
           ) : (
             <>
               <Button
@@ -191,16 +211,26 @@ function Actions({
                   Run it together with someone
                 </Button>
               ) : null}
+              {role !== "none" ? (
+                <Button
+                  block
+                  data-testid="seat-wind-down"
+                  onClick={() => setOpen("wind-down")}
+                  variant="secondary"
+                >
+                  Wind down
+                </Button>
+              ) : null}
             </>
           )}
-          <Button
-            block
-            data-testid="seat-wind-down"
-            onClick={() => setOpen("wind-down")}
-            variant="secondary"
-          >
-            Wind down
-          </Button>
+          {seatHeld && numbers.council ? (
+            <p className="text-sm text-muted" data-testid="seat-proposal-line">
+              {proposeAskLine(
+                numbers.council.needed,
+                numbers.council.seats.length,
+              )}
+            </p>
+          ) : null}
         </div>
       ) : null}
       {canQuietWindDown ? (
@@ -221,15 +251,33 @@ function Actions({
       ) : null}
       {(["hand-over", "pair"] as const).map((mode: OfferMode) => (
         <OfferSheet
+          councilChoice={
+            mode === "hand-over" && Boolean(numbers.vote) && !seatHeld
+          }
           key={mode}
           members={members}
           mode={mode}
           numbers={numbers}
+          onChooseCouncil={() => {
+            setCouncilSeen(true);
+            setOpen("council");
+          }}
           onClose={close}
           open={open === mode}
           ready={ready}
         />
       ))}
+      {councilSeen ? (
+        <Suspense fallback={null}>
+          <HandOverCouncilSheet
+            members={members}
+            numbers={numbers}
+            onClose={close}
+            open={open === "council"}
+            ready={ready}
+          />
+        </Suspense>
+      ) : null}
       <WithdrawSheet
         numbers={numbers}
         onClose={close}

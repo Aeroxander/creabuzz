@@ -9,7 +9,7 @@ import { asRunner } from "../money/runner";
 
 export interface RunnerSend {
   calls: PotCall[];
-  through: "alone" | "pair";
+  through: "alone" | "pair" | "council";
 }
 
 export function runnerSend(
@@ -25,9 +25,13 @@ export function runnerSend(
 export const PAIR_WORDS =
   "This project is run by two. Pressing asks the other signer: nothing happens until they confirm the same step.";
 
-/** The note shown when it landed. */
-export function doneWords(through: "alone" | "pair", done: string): string {
-  return through === "pair"
-    ? "Asked. It happens when the other signer confirms."
-    : done;
+/** The note shown when it landed: who has to say yes next. */
+export function doneWords(
+  through: RunnerSend["through"],
+  done: string,
+): string {
+  if (through === "pair")
+    return "Asked. It happens when the other signer confirms.";
+  if (through === "council") return "Asked. It runs when enough seats agree.";
+  return done;
 }

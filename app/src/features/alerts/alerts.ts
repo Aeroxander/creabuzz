@@ -8,12 +8,28 @@
  * that nobody settled is `ran-out`, a task that ended and moved money is `ended`; a row that lists the person as owed money adds a
  * `claim`. A plan that was withdrawn or lapsed moved nothing and makes none. A project the person does not hold makes none
  * (but what they are owed still shows: a leaver holds no Shares).
+ *
+ * Two more kinds come from the record's vote and from nothing else (`COUNCIL-PLAN.md` 6.7): `vote` while a ballot is live,
+ * urgent until it ends, and `moved` once its frozen result changes the runner or the seats, urgent until the change takes
+ * effect. Both are derived, so they show at `voteEnd` even if nobody has recorded the result. **They are read from the
+ * record's own `step.vote` here, not through the lazy milestone 9 parser**: this module is in the first download, and
+ * loading that parser here would make it larger (plan 6.8). The slice read is strict: a value that cannot be believed gives
+ * no vote news, and the rest of the record's news stands.
  */
 import {
   freshnessOf,
   type ProjectNumbers,
   type Freshness,
 } from "../money/numbers";
+import {
+  COUNT_LIMIT,
+  isObject,
+  obj,
+  oneOf,
+  time,
+  timeOrNull,
+  whole,
+} from "../money/numbers-strict";
 import type { ProjectTask } from "../tasks/task-record";
 import { nowOf, phaseOf, recordWordsOf, tieOf } from "../tasks/chain/state";
 import type { ChainTask } from "../tasks/chain/types";
@@ -22,23 +38,33 @@ import {
   ageSuffix,
   claimWords,
   endedWords,
+  movedWords,
   plainName,
   plannedWords,
   ranOutWords,
   takenWords,
+  voteOpenWords,
   withProject,
 } from "./alert-words";
 
 /** What an alert is about. */
-type AlertKind = "planned" | "taken" | "ran-out" | "ended" | "claim";
+type AlertKind =
+  | "planned"
+  | "taken"
+  | "ran-out"
+  | "ended"
+  | "claim"
+  | "vote"
+  | "moved";
 
-/** One piece of news about a task, for one project. */
+/** One piece of news about a task or a vote, for one project. */
 export interface TaskAlert {
-  /** `${chainKey}:${serial}:${kind}`: a changed state is a new id, so it is unseen again. */
+  /** `${chainKey}:${serial}:${kind}`: a changed state is a new id, so it is unseen again. A vote's id names its ballot. */
   id: string;
   kind: AlertKind;
   chainKey: string;
   projectName: string | null;
+  /** The task's number; 0 for a vote, which has none. */
   serial: bigint;
   /** When it happened: announced, taken, ended (a lapsed plan: when it ran out), or the task's end for a claim. */
   at: number;
@@ -127,6 +153,79 @@ const byUrgency = (a: TaskAlert, b: TaskAlert) => {
   return byAtDescending(a, b);
 };
 
+/** The two vote kinds' records, before they are given a project's words. */
+type VoteNews =
+  | { kind: "vote"; at: number; endsAt: number; id: string }
+  | {
+      kind: "moved";
+      at: number;
+      effectiveAt: number;
+      seated: boolean;
+      id: string;
+    };
+
+const VOTE_OUTCOMES = [
+  "short",
+  "kept",
+  "moved",
+  "seated",
+  "unchanged",
+] as const;
+
+/**
+ * The news a record's own ballot gives (plan 6.7), from the slice of `step.vote` this screen needs: a ballot live now is
+ * `vote` (urgent until it ends), and a ballot whose frozen result moves the runner or seats is `moved` (urgent until it
+ * takes effect, and not once it has been carried out). Nothing for a ballot that ended without changing anything, and
+ * nothing that a value which cannot be believed claims: a hostile or missing vote gives null here and the task news stands.
+ *
+ * This is deliberately a small reader of its own rather than the milestone 9 parser: that parser is loaded only by the lazy
+ * money screens, and this module is in the first download. It reads only the fields the two sentences need; the vote card
+ * itself reads the whole key through the lazy parser.
+ */
+export function voteNewsOf(
+  numbers: ProjectNumbers,
+  now: number,
+): VoteNews | null {
+  const step = numbers.step;
+  if (!isObject(step) || !("vote" in step)) return null;
+  if (step.vote === null) return null;
+  try {
+    const vote = obj(step.vote, "vote");
+    const open = obj(vote.open, "vote.open");
+    const id = whole(open.id, "vote.open.id", COUNT_LIMIT);
+    const openedAt = time(open.openedAt, "vote.open.openedAt");
+    const voteEnd = time(open.voteEnd, "vote.open.voteEnd");
+    const effectiveAt = time(open.effectiveAt, "vote.open.effectiveAt");
+    const carriedOutAt = timeOrNull(
+      open.carriedOutAt,
+      "vote.open.carriedOutAt",
+    );
+    if (now < voteEnd)
+      return {
+        kind: "vote",
+        at: openedAt,
+        endsAt: voteEnd,
+        id: `${numbers.key}:vote:${id}`,
+      };
+    if (carriedOutAt !== null || now >= effectiveAt) return null;
+    if (open.result === null) return null;
+    const result = obj(open.result, "vote.open.result");
+    const outcome = oneOf(result.outcome, VOTE_OUTCOMES, "vote.open.result");
+    if (outcome !== "moved" && outcome !== "seated") return null;
+    return {
+      kind: "moved",
+      at: voteEnd,
+      effectiveAt,
+      seated: outcome === "seated",
+      // The kind is in the id, and the ballot it belongs to: a new state is unseen again, and two ballots never share one.
+      id: `${numbers.key}:moved:${id}`,
+    };
+  } catch {
+    // A vote key that cannot be believed says nothing here; the task news of the same record is unaffected.
+    return null;
+  }
+}
+
 /**
  * The news for these projects, in the order it shows: planned and taken first (a plan in its notice, soonest end first, then the
  * rest newest first), then claims, then ended, each newest first
@@ -141,9 +240,6 @@ export function alertsResult(input: AlertsInput): AlertsResult {
   const moreEnded: MoreEnded[] = [];
   const unknownHeld: { key: string; at: number }[] = [];
   for (const numbers of input.numbers) {
-    const queue =
-      typeof numbers.tasks === "object" && numbers.tasks ? numbers.tasks : null;
-    if (!queue) continue;
     const key = numbers.key;
     const projectName = input.names.get(key) ?? null;
     const project = plainName(projectName);
@@ -152,110 +248,142 @@ export function alertsResult(input: AlertsInput): AlertsResult {
     const age = ageOf(freshness);
     const suffix = ageSuffix(age, numbers.asOf.time);
     const held = input.held(key);
-    const records = input.tasksOf(key);
-    const windDownAt = numbers.windDown?.at ?? null;
-    const endedWithin = queue.cut.endedWithinSecs || ENDED_WITHIN_FALLBACK;
+    const queue =
+      typeof numbers.tasks === "object" && numbers.tasks ? numbers.tasks : null;
     const mine: TaskAlert[] = [];
     let newest = 0;
-    const make = (
-      row: ChainTask,
-      kind: AlertKind,
-      at: number,
-      said: string,
-      extra: { urgent?: boolean; before?: number | null } = {},
-    ): TaskAlert => ({
-      id: `${key}:${row.serial}:${kind}`,
-      kind,
-      chainKey: key,
-      projectName,
-      serial: row.serial,
-      at,
-      urgent: extra.urgent ?? false,
-      before: extra.before ?? null,
-      stale: age !== "fresh",
-      old: age === "old",
-      words: withProject(project, `${said}${suffix}`),
-      said: `${said}${suffix}`,
-    });
-    for (const row of queue.list) {
-      const task = recordOf(row, records);
-      const phase = phaseOf(row, now, windDownAt);
-      // What the person is owed is theirs whether or not they hold Shares: a leaver holds none.
-      const owed = row.notes?.holders.find(
-        (h) => me.has(h.account.toLowerCase()) && h.claimable > 0n,
-      );
-      if (owed) {
-        const at = row.resolvedAt ?? row.takenAt ?? row.announcedAt;
-        claims.push(
-          make(
-            row,
-            "claim",
-            at,
-            claimWords({
-              what: recordWordsOf(row, task),
-              claimable: owed.claimable,
-            }),
-          ),
+    // A ballot's own news comes from the record's vote, whether or not the record carries a task queue.
+    const voteNews = voteNewsOf(numbers, now);
+    if (voteNews) {
+      const said =
+        voteNews.kind === "vote"
+          ? voteOpenWords(voteNews.endsAt)
+          : movedWords({
+              effectiveAt: voteNews.effectiveAt,
+              seated: voteNews.seated,
+            });
+      const alert: TaskAlert = {
+        id: voteNews.id,
+        kind: voteNews.kind,
+        chainKey: key,
+        projectName,
+        serial: 0n,
+        at: voteNews.at,
+        urgent: true,
+        before:
+          voteNews.kind === "vote" ? voteNews.endsAt : voteNews.effectiveAt,
+        stale: age !== "fresh",
+        old: age === "old",
+        words: withProject(project, `${said}${suffix}`),
+        said: `${said}${suffix}`,
+      };
+      mine.push(alert);
+      newest = alert.at;
+    }
+    if (queue) {
+      const records = input.tasksOf(key);
+      const windDownAt = numbers.windDown?.at ?? null;
+      const endedWithin = queue.cut.endedWithinSecs || ENDED_WITHIN_FALLBACK;
+      const make = (
+        row: ChainTask,
+        kind: AlertKind,
+        at: number,
+        said: string,
+        extra: { urgent?: boolean; before?: number | null } = {},
+      ): TaskAlert => ({
+        id: `${key}:${row.serial}:${kind}`,
+        kind,
+        chainKey: key,
+        projectName,
+        serial: row.serial,
+        at,
+        urgent: extra.urgent ?? false,
+        before: extra.before ?? null,
+        stale: age !== "fresh",
+        old: age === "old",
+        words: withProject(project, `${said}${suffix}`),
+        said: `${said}${suffix}`,
+      });
+      for (const row of queue.list) {
+        const task = recordOf(row, records);
+        const phase = phaseOf(row, now, windDownAt);
+        // What the person is owed is theirs whether or not they hold Shares: a leaver holds none.
+        const owed = row.notes?.holders.find(
+          (h) => me.has(h.account.toLowerCase()) && h.claimable > 0n,
         );
-      }
-      let alert: TaskAlert | null = null;
-      if (phase === "notice" || phase === "open") {
-        const notice = phase === "notice";
-        alert = make(
-          row,
-          "planned",
-          row.announcedAt,
-          plannedWords({
-            max: row.maxDollars,
-            what: tiedOnly(row, task),
-            from: notice ? row.noticeEnd : null,
-            until: row.expiresAt,
-          }),
-          { urgent: notice, before: notice ? row.noticeEnd : null },
-        );
-      } else if (phase === "working") {
-        alert = make(
-          row,
-          "taken",
-          row.takenAt ?? row.announcedAt,
-          takenWords({
-            what: tiedOnly(row, task),
-            setAside: row.setAside,
-            deadline: row.deadline ?? row.expiresAt,
-          }),
-        );
-      } else if (phase === "overdue") {
-        // Its own kind, so its own id: a holder who read "was taken" is told again when it ran out.
-        alert = make(
-          row,
-          "ran-out",
-          row.deadline ?? row.expiresAt,
-          ranOutWords(tiedOnly(row, task)),
-        );
-      } else if (
-        phase === "paid" ||
-        phase === "sent-back" ||
-        phase === "ran-out" ||
-        (phase === "wound-down" && row.setAside > 0n)
-      ) {
-        const at = row.resolvedAt ?? row.takenAt ?? row.announcedAt;
-        // Old news is not news: a task that ended before the record's own window is left to the Tasks tab.
-        if (at >= now - endedWithin)
+        if (owed) {
+          const at = row.resolvedAt ?? row.takenAt ?? row.announcedAt;
+          claims.push(
+            make(
+              row,
+              "claim",
+              at,
+              claimWords({
+                what: recordWordsOf(row, task),
+                claimable: owed.claimable,
+              }),
+            ),
+          );
+        }
+        let alert: TaskAlert | null = null;
+        if (phase === "notice" || phase === "open") {
+          const notice = phase === "notice";
           alert = make(
             row,
-            "ended",
-            at,
-            endedWords({
-              what: recordWordsOf(row, task),
-              paid: phase === "paid",
-              pay: row.pay,
+            "planned",
+            row.announcedAt,
+            plannedWords({
+              max: row.maxDollars,
+              what: tiedOnly(row, task),
+              from: notice ? row.noticeEnd : null,
+              until: row.expiresAt,
+            }),
+            { urgent: notice, before: notice ? row.noticeEnd : null },
+          );
+        } else if (phase === "working") {
+          alert = make(
+            row,
+            "taken",
+            row.takenAt ?? row.announcedAt,
+            takenWords({
+              what: tiedOnly(row, task),
               setAside: row.setAside,
+              deadline: row.deadline ?? row.expiresAt,
             }),
           );
-      }
-      if (alert) {
-        mine.push(alert);
-        newest = Math.max(newest, alert.at);
+        } else if (phase === "overdue") {
+          // Its own kind, so its own id: a holder who read "was taken" is told again when it ran out.
+          alert = make(
+            row,
+            "ran-out",
+            row.deadline ?? row.expiresAt,
+            ranOutWords(tiedOnly(row, task)),
+          );
+        } else if (
+          phase === "paid" ||
+          phase === "sent-back" ||
+          phase === "ran-out" ||
+          (phase === "wound-down" && row.setAside > 0n)
+        ) {
+          const at = row.resolvedAt ?? row.takenAt ?? row.announcedAt;
+          // Old news is not news: a task that ended before the record's own window is left to the Tasks tab.
+          if (at >= now - endedWithin)
+            alert = make(
+              row,
+              "ended",
+              at,
+              endedWords({
+                what: recordWordsOf(row, task),
+                paid: phase === "paid",
+                pay: row.pay,
+                setAside: row.setAside,
+              }),
+            );
+        }
+        if (alert) {
+          mine.push(alert);
+          newest = Math.max(newest, alert.at);
+        }
       }
     }
     if (held === "unknown" && mine.length > 0)

@@ -8,6 +8,7 @@ import {
   raw,
 } from "../../../tests/helpers/numbers-v2-parse";
 import { parseNumbers } from "./numbers";
+import { withStepKeys } from "./numbers-step9";
 
 const pausePath = resolve(
   __dirname,
@@ -22,7 +23,8 @@ const parse = (content: unknown) => {
     "f".repeat(64),
   );
   if (!n || n.removed) throw new Error("the record did not parse");
-  return n;
+  // The step 4 keys are read by the lazy parser now; the record keeps them undecoded.
+  return withStepKeys(n);
 };
 /** The pause example with `change` applied to a copy (the example itself is the server's output and is never retyped). */
 const with4 = (change: (r: Record<string, any>) => void) => {

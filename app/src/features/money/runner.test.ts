@@ -1,5 +1,9 @@
 import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
-import { PAIR_ABI, TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
+import {
+  COUNCIL_ABI,
+  PAIR_ABI,
+  TREASURY_ABI,
+} from "@creaton/core/pot/abis.generated.ts";
 import { drawCall } from "@creaton/core/pot/pot-calls.ts";
 import { describe, expect, it } from "vitest";
 import {
@@ -9,7 +13,8 @@ import {
 } from "../../../tests/helpers/numbers-v2-fixture";
 import { parsedExample } from "../../../tests/helpers/numbers-v2-parse";
 import type { ProjectNumbers } from "./numbers";
-import { asRunner, checkInFor, mayCheckIn, runnerRole } from "./runner";
+import { councilRecord } from "../../../tests/helpers/council-v2-parse";
+import { asRunner, asSeat, checkInFor, mayCheckIn, runnerRole } from "./runner";
 
 const PAIR = `0x${"9".repeat(40)}`;
 const HASH = `0x${"ab".repeat(32)}`;
@@ -86,5 +91,61 @@ describe("who sends what for a project", () => {
     });
     expect(asRunner(parsedExample(), STRANGER_EVM, inner)).toBeNull();
     expect(asRunner(pairRun(), STRANGER_EVM, inner)).toBeNull();
+  });
+});
+
+describe("a Council seat's runner-only call", () => {
+  /** The example run by a Council of five accounts (milestone 9), read through the lazy parser. */
+  const councilRun = () => {
+    const numbers = councilRecord("voting");
+    if (!numbers.council) throw new Error("the record has no Council");
+    return numbers;
+  };
+
+  it("is a proposal to the other seats, sent to the Council, and nobody who holds no seat gets one", () => {
+    const numbers = councilRun();
+    const council = numbers.council;
+    if (!council) throw new Error("no Council");
+    const inner = drawCall({
+      treasury: numbers.contracts.treasury,
+      to: STRANGER_EVM,
+      amount: 1_000_000n,
+    });
+    const seat = council.seats[1]?.account;
+    if (!seat) throw new Error("the second seat is open");
+    const sent = asSeat(numbers, seat, inner);
+    expect(sent?.through).toBe("council");
+    expect(sent?.call.to).toBe(council.contract);
+    expect(decodeCall(COUNCIL_ABI, sent?.call.data ?? "")).toMatchObject({
+      name: "propose",
+      args: [numbers.contracts.treasury, inner.data],
+    });
+    // A stranger, and the Council's own address (a contract, not a seat holder), send nothing.
+    expect(
+      asSeat(numbers, "0x000000000000000000000000000000000000dead", inner),
+    ).toBeNull();
+    expect(asSeat(numbers, council.contract, inner)).toBeNull();
+    expect(asSeat(numbers, null, inner)).toBeNull();
+    // A Council seat is not the runner: it never signs alone.
+    expect(runnerRole(numbers, seat)).toEqual({ kind: "none" });
+    expect(asRunner(numbers, seat, inner)).toBeNull();
+  });
+
+  it("nothing is proposed on a project that has wound down", () => {
+    const numbers = councilRun();
+    const seat = numbers.council?.seats[1]?.account;
+    if (!seat) throw new Error("the second seat is open");
+    const wound = { ...numbers, windDown: { kind: 1 as const, at: 1 } };
+    expect(
+      asSeat(
+        wound,
+        seat,
+        drawCall({
+          treasury: numbers.contracts.treasury,
+          to: STRANGER_EVM,
+          amount: 1n,
+        }),
+      ),
+    ).toBeNull();
   });
 });

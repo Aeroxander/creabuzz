@@ -7,8 +7,11 @@
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { decodeParameters, selectorOf } from "../launchpad/evmAbi.ts";
 import {
+  COUNCIL_ABI,
   EARLIER_GRANTS_ABI,
   HOLDER_PAUSE_ABI,
+  HOLDER_VOTE_ABI,
+  LAUNCHER_ABI,
   PLAY_DOLLAR_ABI,
   SHARE_TOKEN_ABI,
   TASK_BOOK_ABI,
@@ -22,6 +25,7 @@ import {
   functionOf,
   signatureOf,
 } from "./abi-codec.ts";
+import { councilAddressData } from "./pot-calls.ts";
 
 /** A read-only call: the node's raw answer as hex. The sender's `readCall` has this shape. */
 export type ReadCall = (to: string, data: string) => Promise<string>;
@@ -727,4 +731,110 @@ export async function pauseRules(
   if (d <= 0n || d > 365n * 86_400n || v < 2n || v > 100n)
     throw new Error("The network gave an answer that is not readable.");
   return { dayLength: Number(d), lineDivisor: Number(v) };
+}
+
+// --- The vote and the Council (milestone 9; only on a deployment that switches them on) ---------------------------------
+
+/** One Council seat as the Council itself answers it (`Council.seatOf`): an account and when it took the seat. */
+export interface CouncilSeatNow {
+  account: string | null;
+  seatedAt: number | null;
+}
+
+/**
+ * The Council's five seats, in order (`Council.seatOf` five times). The contract's own `seatList()` returns two fixed-size
+ * arrays, which the shared decoder does not read; `seatOf` answers the same seats one at a time. A seat with no account is
+ * open. Throws when an answer is not readable; never guesses.
+ */
+export async function councilSeats(
+  read: ReadCall,
+  council: string,
+): Promise<CouncilSeatNow[]> {
+  const seats = await Promise.all(
+    Array.from({ length: 5 }, (_, i) =>
+      ask(read, COUNCIL_ABI, council, "seatOf", [BigInt(i)]),
+    ),
+  );
+  return seats.map(([who, seatedAt]) => {
+    if (typeof who !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(who))
+      throw new Error("The network gave an answer that is not readable.");
+    const empty = /^0x0{40}$/.test(who);
+    const at = asBigint(seatedAt);
+    if (at > BigInt(Number.MAX_SAFE_INTEGER))
+      throw new Error("The network gave an answer that is not readable.");
+    return {
+      account: empty ? null : who.toLowerCase(),
+      seatedAt: empty ? null : Number(at),
+    };
+  });
+}
+
+/** The weight `holder` may vote with now, in Shares (18 decimals): the fewest parked since the ballot opened. */
+export async function weightOf(
+  read: ReadCall,
+  vote: string,
+  holder: string,
+): Promise<bigint> {
+  const [weight] = await ask(read, HOLDER_VOTE_ABI, vote, "weightOf", [holder]);
+  return asBigint(weight);
+}
+
+/** What `holder` did in the ballot open now (`HolderVote.ballotOf`): the ballot's number and their own place in it. */
+export interface BallotNow {
+  /** The ballot open now; 0 when none is. */
+  id: number;
+  /** The option this account chose, or null when it has cast nothing (0 is a choice, "keep"). */
+  option: number | null;
+  /** The weight it cast in this ballot (18 decimals). */
+  weight: bigint;
+  /** The weight it may cast now (18 decimals): the fewest parked since the ballot opened. */
+  eligible: bigint;
+}
+
+/** `HolderVote.ballotOf(holder)`: the voter's own place in the ballot open now. Throws when the answer is not readable. */
+export async function ballotOf(
+  read: ReadCall,
+  vote: string,
+  holder: string,
+): Promise<BallotNow> {
+  const [id, option, weight, eligible] = await ask(
+    read,
+    HOLDER_VOTE_ABI,
+    vote,
+    "ballotOf",
+    [holder],
+  );
+  const secs = (value: unknown): number => {
+    const n = asBigint(value);
+    if (n > BigInt(Number.MAX_SAFE_INTEGER))
+      throw new Error("The network gave an answer that is not readable.");
+    return Number(n);
+  };
+  const cast = asBigint(weight);
+  return {
+    id: secs(id),
+    // No weight cast reads as option 0 in the contract, which is also a real choice ("keep"): only weight tells them apart.
+    option: cast === 0n ? null : secs(option),
+    weight: cast,
+    eligible: asBigint(eligible),
+  };
+}
+
+/**
+ * The address `Launcher.councilAddress(key, members, salt)` names, lower case: where a hand-over would make the Council.
+ * Throws when the answer is not readable, so an offer is never sent to a guessed address.
+ */
+export async function councilAddressOf(
+  read: ReadCall,
+  launcher: string,
+  input: { key: string; members: readonly string[]; salt: string },
+): Promise<string> {
+  const answer = await read(launcher, councilAddressData(input));
+  if (typeof answer !== "string" || !/^0x([0-9a-fA-F]{2})*$/.test(answer))
+    throw new Error("The network gave an answer that is not readable.");
+  // The node answers with an ABI word (32 bytes), as every view here does; the ABI turns it into the address.
+  const [address] = decodeReturn(LAUNCHER_ABI, "councilAddress", answer, 3);
+  if (typeof address !== "string" || !/^0x[0-9a-f]{40}$/.test(address))
+    throw new Error("The network gave an answer that is not readable.");
+  return address;
 }

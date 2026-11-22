@@ -25,6 +25,9 @@ import {
   type RemovedNumbers,
 } from "../money/numbers";
 import { OwnershipLine } from "../money/OwnershipLine";
+import { withStepKeys } from "../money/numbers-step9";
+import { CouncilSection } from "../council/CouncilSection";
+import { VoteCard } from "../council/VoteCard";
 import { PauseCard } from "../pause/PauseCard";
 import { AllowanceSection } from "./AllowanceSection";
 import { ChainOnlyShares } from "./ChainOnlyShares";
@@ -141,11 +144,14 @@ export function ProjectMoney({
         <OwnershipLine className="text-sm text-muted" />
       </div>
     );
-  const stale = freshnessOf(numbers, now).level === "stale";
-  const target = targetOf(numbers);
+  // The step 4 and milestone 9 keys are read by the lazy parser this tab already carries (`numbers-step9.ts`): the record
+  // keeps them undecoded so the first download is not larger, and they are read here, when this tab opens.
+  const record = withStepKeys(numbers);
+  const stale = freshnessOf(record, now).level === "stale";
+  const target = targetOf(record);
   // What the page already holds about tasks, handed to the Take out sheet as plain values: the sheet never reads it.
   const queue =
-    typeof numbers.tasks === "object" && numbers.tasks ? numbers.tasks : null;
+    typeof record.tasks === "object" && record.tasks ? record.tasks : null;
   const taskInfo = {
     dueSecs: queue?.limits.dueSecs ?? null,
     ...(queue ? { onWhereToClaim: () => goToClaims() } : {}),
@@ -154,27 +160,40 @@ export function ProjectMoney({
     <div className="flex flex-col gap-3" data-testid="project-money">
       {mustSayPlayMoney(numbers.playMoney) ? <PlayMoneyLine /> : null}
       {stale ? (
-        <StaleMoney numbers={numbers} />
+        <StaleMoney numbers={record} />
       ) : (
-        <MoneyFacts now={now} numbers={numbers} />
+        <MoneyFacts now={now} numbers={record} />
       )}
       {/* Step 4: only a record with a readable stop draws the card; an older one or none draws nothing about it. */}
-      {numbers.pause ? (
+      {record.pause ? (
         <PauseCard
           holds={
             wallet.address
-              ? holdingHint(numbers, [wallet.address]).listed
+              ? holdingHint(record, [wallet.address]).listed
               : false
           }
+          nameOf={nameOfAddress}
           now={now}
-          numbers={numbers}
-          pause={numbers.pause}
+          numbers={record}
+          pause={record.pause}
+          projectCoordinate={project?.coordinate ?? null}
         />
       ) : null}
+      {/* Milestone 9: the card draws only when the record carries an open ballot (or a result still on show). */}
+      <VoteCard
+        address={wallet.address}
+        holds={
+          wallet.address ? holdingHint(record, [wallet.address]).listed : false
+        }
+        nameOf={nameOfAddress}
+        now={now}
+        numbers={record}
+        projectCoordinate={project?.coordinate ?? null}
+      />
       <YourShares
         pauseInfo={{
-          contract: numbers.contracts.pause ?? null,
-          record: numbers.pause,
+          contract: record.contracts.pause ?? null,
+          record: record.pause,
         }}
         projectName={projectName}
         target={target}
@@ -182,35 +201,42 @@ export function ProjectMoney({
       />
       <PlannedSection
         now={now}
-        numbers={numbers}
+        numbers={record}
         profiles={profiles}
         project={project ?? null}
       />
       {queue ? (
         <NotesCard
           anchor
-          numbers={numbers}
+          numbers={record}
           project={project ?? null}
           projectKey={numbers.key}
         />
       ) : null}
-      <AllowanceSection address={wallet.address} now={now} numbers={numbers} />
+      {/* Milestone 9: the Council section sits above the runner presses, and draws only for a Council runner. */}
+      <CouncilSection
+        address={wallet.address}
+        nameOf={nameOfAddress}
+        now={now}
+        numbers={record}
+      />
+      <AllowanceSection address={wallet.address} now={now} numbers={record} />
       <TeamSharesSection
         address={wallet.address}
         members={members}
-        numbers={numbers}
+        numbers={record}
       />
       <SeatSection
         members={members}
         nameOf={nameOfAddress}
         now={now}
-        numbers={numbers}
+        numbers={record}
         projectName={projectName}
       />
       <PairWaiting
         address={wallet.address}
         nameOf={nameOfAddress}
-        numbers={numbers}
+        numbers={record}
         taskWordsOf={(what) =>
           tasksRead.data?.tasks.find((t) => `0x${t.id}` === what.toLowerCase())
             ?.what ?? null

@@ -21,11 +21,12 @@ import {
 } from "../../../tests/helpers/numbers-v2-fixture";
 import type { ChainTask, ChainTasks } from "../tasks/chain/types";
 import { parseNumbers } from "./numbers";
+import { withStepKeys } from "./numbers-step9";
 
 const parse = (content: unknown) => {
   const n = parseNumbers(exampleEvent(content), SERVER);
   if (!n || n.removed) throw new Error("the record was not read");
-  return n;
+  return withStepKeys(n);
 };
 const tasksOf = (content: unknown) => parse(content).tasks;
 const rec = () => raw() as Record<string, any>;

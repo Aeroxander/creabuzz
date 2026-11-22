@@ -73,6 +73,31 @@ export function endedWords(input: {
     : `${what} was paid ${dollarsPhrase(input.pay)}.`;
 }
 
+// --- A vote, and a vote that moves who runs the project (COUNCIL-PLAN.md section 6.7) ---------------------------
+
+/**
+ * A vote is open on one of the person's projects. The list's row names the project once (as every alert's row does), so
+ * the sentence says "this project" rather than naming it a second time; the row's urgent line carries the take-out
+ * sentence, so it is not repeated here.
+ */
+export function voteOpenWords(endsAt: number): string {
+  return `a vote on who runs this project is open. It ends ${timeText(endsAt)}.`;
+}
+
+/**
+ * The result that takes effect: a new Council, or the seats a seat election changed. The row's urgent line already says
+ * the money can leave before the date, so this sentence does not say it a second time.
+ */
+export function movedWords(input: {
+  effectiveAt: number;
+  /** A seat election: the Council stays, the seats on it change. */
+  seated: boolean;
+}): string {
+  return input.seated
+    ? `holders voted to change who sits on the Council. On ${timeText(input.effectiveAt)} the elected accounts take their seats.`
+    : `holders voted to change who runs this project. On ${timeText(input.effectiveAt)} a new Council takes over.`;
+}
+
 /** A leaver's claim on a task that ended after they took out. */
 export function claimWords(input: {
   what: string | null;

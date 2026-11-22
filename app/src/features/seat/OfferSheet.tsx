@@ -4,11 +4,17 @@
  * is said before the press. The call sent is exactly the person and the choice on the sheet; for a pair the address is the one
  * the Launcher gives for the two of them. With a Pair as runner a hand-over is a proposal the other signer confirms.
  */
-import { handOverCall } from "@creaton/core/pot/pot-calls.ts";
+import {
+  councilProposeCall,
+  handOverCall,
+} from "@creaton/core/pot/pot-calls.ts";
 import { pairAddressOf, readSeatState } from "@creaton/core/pot/pot-state.ts";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
+import { HAND_OVER_COUNCIL, proposeAskLine } from "../council/council-words";
+import { seatOf } from "../council/use-council";
 import type { ProjectNumbers } from "../money/numbers";
 import type { GrantMember } from "../pot/GrantSheet";
 import { PotSheet } from "../pot/PotSheet";
@@ -30,6 +36,13 @@ interface Props {
   members: GrantMember[];
   open: boolean;
   onClose: () => void;
+  /**
+   * Whether the "Hand over" sheet also offers the third choice, handing the seat to a Council: only where the project's
+   * record carries the vote (the Council is switched on for its network), and never from a Council that already runs it.
+   */
+  councilChoice?: boolean;
+  /** Opens the Council's own hand-over sheet: the third choice beside handing the seat to one person. */
+  onChooseCouncil?: () => void;
 }
 
 const TITLES: Record<OfferMode, string> = {
@@ -44,6 +57,8 @@ export function OfferSheet({
   members,
   open,
   onClose,
+  councilChoice = false,
+  onChooseCouncil,
 }: Props) {
   const [who, setWho] = useState("");
   const [leaves, setLeaves] = useState(false);
@@ -89,7 +104,18 @@ export function OfferSheet({
           founderLeaves,
         })
       : null;
-  const send = inner ? runnerSend(numbers, ready.address, inner) : null;
+  // A Council seat's hand-over is a proposal to the other seats (nothing runs until enough agree); anyone else's is the
+  // runner's own call, or a Pair's proposal, as before.
+  const seat = numbers.runner.kind === "council" ? numbers.council : null;
+  const holds = seat ? seatOf(seat, ready.address) : null;
+  const send = inner
+    ? holds && seat
+      ? {
+          calls: [councilProposeCall(seat.contract, inner.to, inner.data)],
+          through: "council" as const,
+        }
+      : runnerSend(numbers, ready.address, inner)
+    : null;
   const lasts = useQuery({
     queryKey: ["pot", "seat-lasts", numbers.contracts.treasury],
     enabled: open,
@@ -109,11 +135,13 @@ export function OfferSheet({
       calls={send?.calls ?? null}
       chainId={numbers.chainId}
       confirmLabel={
-        member
-          ? mode === "pair"
-            ? `Ask ${member.name} to run it with you`
-            : `Offer the seat to ${member.name}`
-          : TITLES[mode]
+        holds
+          ? "Ask the seats to offer it"
+          : member
+            ? mode === "pair"
+              ? `Ask ${member.name} to run it with you`
+              : `Offer the seat to ${member.name}`
+            : TITLES[mode]
       }
       description={
         mode === "pair"
@@ -214,6 +242,23 @@ export function OfferSheet({
       ) : null}
       {send?.through === "pair" ? (
         <p className="text-sm text-muted">{PAIR_WORDS}</p>
+      ) : null}
+      {send?.through === "council" && seat ? (
+        <p className="text-sm text-muted" data-testid="offer-proposal">
+          {proposeAskLine(seat.needed, seat.seats.length)}
+        </p>
+      ) : null}
+      {mode === "hand-over" && councilChoice && onChooseCouncil ? (
+        <Button
+          data-testid="offer-council"
+          onClick={() => {
+            onClose();
+            onChooseCouncil();
+          }}
+          variant="secondary"
+        >
+          {HAND_OVER_COUNCIL}
+        </Button>
       ) : null}
     </PotSheet>
   );

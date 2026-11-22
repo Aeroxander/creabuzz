@@ -120,6 +120,13 @@ export interface ProjectNumbers {
     address: string;
     isPair: boolean;
     signers: [string, string] | null;
+    /**
+     * The kind of runner (milestone 9, `numbers-step9.ts`): "single", "pair" or "council". Absent in a record signed
+     * before the key existed, and null when it could not be believed: the screens then read `isPair` as before.
+     */
+    kind?: RunnerKind | null;
+    /** For a Council, the number of distinct non-zero live seats. */
+    seats?: number | null;
   };
   team: {
     pool: bigint;
@@ -187,6 +194,18 @@ export interface ProjectNumbers {
    */
   pause?: PauseNumbers | null;
   earlierGrants?: EarlierGrantsNumbers | null;
+  /**
+   * The milestone 9 keys (`numbers-step9.ts`), each read on its own exactly as the step 4 keys are: nothing shows on a
+   * project with no Council and no open vote, and a key that cannot be believed is null while the rest stands.
+   */
+  council?: CouncilNumbers | null;
+  vote?: VoteNumbers | null;
+  /**
+   * The step 4 and milestone 9 keys as the record signed them, kept undecoded so their parser (`numbers-step9.ts`) loads
+   * only with the screens that read them: the first download stays as small as it was. Absent from a record signed before
+   * those keys existed.
+   */
+  step?: Record<string, unknown>;
 }
 
 /** The project's holder pause, from the record (RECORD-V2 section 13.1). Nothing here is per person. */
@@ -310,4 +329,177 @@ export interface NumbersEvent {
   created_at: number;
   tags: string[][];
   content: string;
+}
+
+// --- The Council runner, the vote and the Council (milestone 9; RECORD-V2 section 14, COUNCIL-PLAN.md 5.2) ---------------
+
+export type RunnerKind = "single" | "pair" | "council";
+
+export type VoteKind = "seats" | "replace";
+
+/** Where a ballot stands. `waiting` starts at `voteEnd` whether or not anyone has recorded the result; `ended` is a
+ * result that changes nothing (short, kept or unchanged). */
+export type VotePhase =
+  | "standing"
+  | "voting"
+  | "counting"
+  | "waiting"
+  | "carried-out"
+  | "ended"
+  | "lapsed";
+
+export type VoteOutcome = "short" | "kept" | "moved" | "seated" | "unchanged";
+
+export type VoteOptionKind = "keep" | "list" | "person";
+
+/** Every number a vote sentence needs: the contract's own constants and views, never typed in a word file. */
+export interface VoteRule {
+  /** The stand window, in seconds (one day). */
+  standSecs: number;
+  /** The vote length, in seconds (three days). */
+  voteSecs: number;
+  /** The wait before a won result takes effect: the Treasury's longest task notice. */
+  waitSecs: number;
+  /** The turnout floor is one this-many-th of the snapshot's Shares. */
+  floorDivisor: number;
+  /** To open a replace vote, the Shares parked in all must be one this-many-th of the Shares. */
+  openDivisor: number;
+  /** To stand, an account needs one this-many-th of the snapshot's Shares. */
+  standDivisor: number;
+  /** The replace cooldown after a "kept" result that met the floor, in seconds. */
+  cooldownSecs: number;
+  /** Two seats come up every this many seconds. */
+  seatsEverySecs: number;
+  /** A Council proposal lives this long, in seconds. */
+  proposalTtlSecs: number;
+  /** How many Council seats must agree to an action. */
+  needed: number;
+  /** The number of Council seats (five). */
+  seats: number;
+  /** The most lists a replace ballot offers. */
+  maxLists: number;
+  /** The most people a seat ballot offers. */
+  maxPeople: number;
+  /** The smallest weight that can be cast, in Shares (18 decimals). */
+  minVote: bigint;
+}
+
+/** One choice on the open ballot; option 0 is always "keep". */
+export interface VoteOptionNumbers {
+  index: number;
+  kind: VoteOptionKind;
+  /** The list's five accounts, or the one person; empty for "keep". */
+  members: string[];
+  /** Who put it forward; null for "keep". */
+  proposer: string | null;
+  /** The signed text's id; null for "keep". */
+  recordHash: string | null;
+  /** Its Shares (18 decimals). */
+  tally: bigint;
+}
+
+/** The result the frozen tallies give, from `voteEnd` on. */
+export interface VoteResultNumbers {
+  outcome: VoteOutcome;
+  /** The winning option numbers (at most two). */
+  winners: number[];
+  /** True once the result is recorded on the network; it must agree with the tallies. */
+  recorded: boolean;
+}
+
+/** The newest ballot worth showing. */
+export interface VoteOpenNumbers {
+  id: number;
+  kind: VoteKind;
+  phase: VotePhase;
+  openedAt: number;
+  standEnd: number;
+  voteEnd: number;
+  effectiveAt: number;
+  /** The backers' Shares at the snapshot (18 decimals). */
+  supply: bigint;
+  /** The Shares that must be cast (18 decimals). */
+  floor: bigint;
+  /** The Shares cast so far (18 decimals). */
+  cast: bigint;
+  options: VoteOptionNumbers[];
+  /** Null before `voteEnd`. */
+  result: VoteResultNumbers | null;
+  carriedOutAt: number | null;
+}
+
+/** What the next ballots allow. */
+export interface VoteNextNumbers {
+  /** When two seats may be opened, or null when there is no Council. */
+  seatsAt: number | null;
+  /** When a replace vote may next open (the cooldown's end, or the present time). */
+  replaceFrom: number | null;
+  /** The parked Shares needed to open a replace vote now (one in `openDivisor` of the supply). */
+  openFloor: bigint;
+}
+
+/** The project's vote contract (the project's pause). Null for a project with no vote contract, or one not believed. */
+export interface VoteNumbers {
+  contract: string;
+  rule: VoteRule;
+  open: VoteOpenNumbers | null;
+  next: VoteNextNumbers;
+}
+
+export interface CouncilSeatNumbers {
+  /** The account, or null for an open seat. */
+  account: string | null;
+  seatedAt: number | null;
+}
+
+/** The kinds of waiting Council action, as the record counts them. */
+export type CouncilActionKind =
+  | "draw"
+  | "checkIn"
+  | "rate"
+  | "door"
+  | "plan"
+  | "accept"
+  | "reject"
+  | "cancel"
+  | "grant"
+  | "helper"
+  | "handOver"
+  | "windDown"
+  | "other";
+
+export interface CouncilWaitingKind {
+  kind: CouncilActionKind;
+  count: number;
+}
+
+/** The Council's open proposals, counted: never their bytes or amounts. */
+export interface CouncilWaitingNumbers {
+  count: number;
+  kinds: CouncilWaitingKind[];
+  /** True when more proposals wait than the count allows: "none" is never said about a cut list. */
+  truncated: boolean;
+}
+
+/** The project's Council (COUNCIL-PLAN.md 5.2). */
+export interface CouncilNumbers {
+  contract: string;
+  /** The five seats in order; null for an open seat. */
+  seats: [
+    CouncilSeatNumbers,
+    CouncilSeatNumbers,
+    CouncilSeatNumbers,
+    CouncilSeatNumbers,
+    CouncilSeatNumbers,
+  ];
+  /** How many seats must agree. */
+  needed: number;
+  /** Goes up whenever any seat changes. */
+  generation: number;
+  /** When two seats next come up. */
+  nextElection: number;
+  /** Which two seats come up. */
+  upSeats: [number, number];
+  /** Null when the server could not count them (the section then says nothing about waiting actions). */
+  waiting: CouncilWaitingNumbers | null;
 }

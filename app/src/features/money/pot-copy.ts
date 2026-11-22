@@ -10,8 +10,10 @@ import type { DecodedValue } from "@creaton/core/launchpad/evmAbi.ts";
 import { isUserRejection } from "@creaton/core/launchpad/wallet-errors.ts";
 import { type Abi, decodeRevert } from "@creaton/core/pot/abi-codec.ts";
 import {
+  COUNCIL_ABI,
   EARLIER_GRANTS_ABI,
   HOLDER_PAUSE_ABI,
+  HOLDER_VOTE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
@@ -36,6 +38,7 @@ import {
   STEP4_EXTENSIONS,
   type Step4Action,
 } from "./pot-copy-step4";
+import { VOTE_ERRORS, VOTE_EXTENSIONS } from "./pot-copy-vote";
 import { WalletStepError } from "./wallet";
 
 /** What a person was doing when a step stopped; some refusals read better said for one of them. */
@@ -71,6 +74,10 @@ const ABIS: readonly Abi[] = [
   PLAY_DOLLAR_ABI,
   HOLDER_PAUSE_ABI,
   EARLIER_GRANTS_ABI,
+  // The vote contract is the project's pause with ballots, and the Council is the runner: their refusals read here too,
+  // so no refusal reaches a person as a name. The vote and Council flows' own sentences are in `features/council`.
+  HOLDER_VOTE_ABI,
+  COUNCIL_ABI,
 ];
 
 type ErrorItem<T> = T extends { type: "error"; name: infer N } ? N : never;
@@ -84,7 +91,9 @@ export type PotErrorName =
   | ErrorItem<(typeof SHARE_TOKEN_ABI)[number]>
   | ErrorItem<(typeof PLAY_DOLLAR_ABI)[number]>
   | ErrorItem<(typeof HOLDER_PAUSE_ABI)[number]>
-  | ErrorItem<(typeof EARLIER_GRANTS_ABI)[number]>;
+  | ErrorItem<(typeof EARLIER_GRANTS_ABI)[number]>
+  | ErrorItem<(typeof HOLDER_VOTE_ABI)[number]>
+  | ErrorItem<(typeof COUNCIL_ABI)[number]>;
 
 type Words = { any: Text } & Partial<Record<PotAction, Text>>;
 
@@ -104,7 +113,9 @@ const dollarsPhrase = (raw: bigint): string =>
 const EARLIER_WORDS: Record<
   Exclude<
     PotErrorName,
-    keyof typeof NEW_TASK_ERRORS | keyof typeof STEP4_ERRORS
+    | keyof typeof NEW_TASK_ERRORS
+    | keyof typeof STEP4_ERRORS
+    | keyof typeof VOTE_ERRORS
   >,
   Words
 > = {
@@ -387,7 +398,7 @@ const EARLIER_WORDS: Record<
 /** Every error's sentences: the earlier ones with what they say for a task step, and the task book's own. */
 const ERROR_WORDS: Record<PotErrorName, Words> = (() => {
   const merged: Record<string, Words> = { ...EARLIER_WORDS };
-  for (const extensions of [TASK_EXTENSIONS, STEP4_EXTENSIONS])
+  for (const extensions of [TASK_EXTENSIONS, STEP4_EXTENSIONS, VOTE_EXTENSIONS])
     for (const [name, more] of Object.entries(extensions)) {
       const earlier = merged[name];
       if (earlier) merged[name] = { ...earlier, ...more };
@@ -396,6 +407,7 @@ const ERROR_WORDS: Record<PotErrorName, Words> = (() => {
     ...merged,
     ...NEW_TASK_ERRORS,
     ...STEP4_ERRORS,
+    ...VOTE_ERRORS,
   } as Record<PotErrorName, Words>;
 })();
 

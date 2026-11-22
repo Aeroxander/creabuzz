@@ -1,3 +1,5 @@
+import type { ProjectNumbers } from "./numbers";
+
 /**
  * The contracts this app knows a send may go to: the ones a project's numbers name, the dollar token its rounds take,
  * and the build's own Launcher and Router. The passkey account only sends to these. It catches this app's own mistakes and
@@ -36,6 +38,21 @@ export function knownSendTargets(
   env: Record<string, unknown> = import.meta.env,
 ): ReadonlySet<string> {
   return new Set([...known, ...builtTargets(env).map((a) => a.toLowerCase())]);
+}
+
+/**
+ * Every contract a project's record names, so a passkey account may send to it: the money, the pause, the earlier
+ * backers' claim, the vote contract and the Council. The vote and Council keys are read by the lazy parser, so this is
+ * called where those keys are read (`use-vote.ts`, `use-council.ts`) and the addresses are present.
+ */
+export function rememberProjectTargets(numbers: ProjectNumbers): void {
+  rememberSendTargets([
+    ...Object.values(numbers.contracts),
+    numbers.earlierGrants?.contract,
+    numbers.pause?.contract,
+    numbers.vote?.contract,
+    numbers.council?.contract,
+  ]);
 }
 
 /** Forget what was remembered (a test, or another community's contracts). */

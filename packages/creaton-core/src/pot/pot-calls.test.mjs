@@ -3,10 +3,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { decodeParameters } from "../launchpad/evmAbi.ts";
-import { decodeCall } from "./abi-codec.ts";
+import { decodeParameters, selectorOf } from "../launchpad/evmAbi.ts";
+import { decodeCall, functionOf, signatureOf } from "./abi-codec.ts";
 import {
+  COUNCIL_ABI,
   EARLIER_GRANTS_ABI,
+  HOLDER_VOTE_ABI,
   HOLDER_PAUSE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
@@ -722,6 +724,157 @@ test("the earlier claim carries the row, the proof and the text fingerprint", ()
       amount: 1n,
       proof: ["0x12"],
       accepted: HASH,
+    }),
+  );
+});
+
+// --- The vote and the Council (milestone 9) ---------------------------------------------------------------------------
+
+const VOTE = "0x0165878A594ca255338adfa4d48449f69242Eb8F";
+const COUNCIL = "0xa513E6E4b8a2f1c6c1f0E0e5b9b0a5B8dE9c2b41";
+const FIVE = [
+  "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+  "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+  "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65",
+  "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc",
+];
+
+/** The words after a selector, split into 32-byte words (bare hex). */
+function wordsOf(data) {
+  const body = data.slice(10);
+  assert.equal(body.length % 64, 0, "the calldata is whole words");
+  return body.match(/.{64}/g);
+}
+
+test("a list's five accounts are written in order, and the selector is the contract's own", () => {
+  const call = calls.openReplaceCall({
+    vote: VOTE,
+    members: FIVE,
+    recordHash: HASH,
+  });
+  assert.equal(call.to, low(VOTE));
+  assert.equal(call.value, "0x0");
+  // The selector is the one the ABI's own signature hashes to: no signature is typed in the builder.
+  const fn = functionOf(HOLDER_VOTE_ABI, "openReplace", 2);
+  assert.equal(signatureOf(fn), "openReplace(address[5],bytes32)");
+  assert.equal(call.data.slice(0, 10), selectorOf(signatureOf(fn)));
+  const words = wordsOf(call.data);
+  assert.equal(words.length, 6);
+  FIVE.forEach((member, i) => {
+    assert.equal(words[i], member.slice(2).toLowerCase().padStart(64, "0"));
+  });
+  assert.equal(words[5], HASH.slice(2));
+});
+
+test("standing a list is the same five words; standing a person and a vote are plain calls", () => {
+  const list = calls.standListCall({
+    vote: VOTE,
+    members: FIVE,
+    recordHash: HASH,
+  });
+  assert.equal(
+    list.data.slice(0, 10),
+    selectorOf("standList(address[5],bytes32)"),
+  );
+  assert.deepEqual(
+    wordsOf(list.data).slice(0, 5),
+    wordsOf(
+      calls.openReplaceCall({ vote: VOTE, members: FIVE, recordHash: HASH })
+        .data,
+    ).slice(0, 5),
+  );
+  const stand = read(HOLDER_VOTE_ABI, calls.standCall(VOTE, HASH));
+  assert.equal(stand.name, "stand");
+  assert.deepEqual(stand.args, [HASH]);
+  const vote = read(HOLDER_VOTE_ABI, calls.castVoteCall(VOTE, 3));
+  assert.equal(vote.name, "castVote");
+  assert.deepEqual(vote.args, [3n]);
+});
+
+test("the seat election and the three permissionless ballot calls", () => {
+  assert.equal(
+    read(HOLDER_VOTE_ABI, calls.openSeatsCall(VOTE)).name,
+    "openSeats",
+  );
+  for (const [builder, name] of [
+    [calls.finishCall, "finish"],
+    [calls.carryOutCall, "carryOut"],
+    [calls.lapseCall, "lapse"],
+  ]) {
+    const found = read(HOLDER_VOTE_ABI, builder(VOTE, 7n));
+    assert.equal(found.name, name);
+    assert.deepEqual(found.args, [7n]);
+  }
+  assert.throws(() => calls.finishCall(VOTE, 0n));
+  assert.throws(() => calls.finishCall(VOTE, 2n ** 32n));
+});
+
+test("a Council's propose, agree, withdraw and resign read back with their exact arguments", () => {
+  const propose = read(
+    COUNCIL_ABI,
+    calls.councilProposeCall(COUNCIL, TREASURY, "0x1234"),
+  );
+  assert.equal(propose.name, "propose");
+  assert.deepEqual(propose.args, [low(TREASURY), "0x1234"]);
+  const agree = read(
+    COUNCIL_ABI,
+    calls.councilAgreeCall(COUNCIL, TREASURY, "0x1234", 5n),
+  );
+  assert.equal(agree.name, "agree");
+  assert.deepEqual(agree.args, [low(TREASURY), "0x1234", 5n]);
+  const withdraw = read(COUNCIL_ABI, calls.councilWithdrawCall(COUNCIL, HASH));
+  assert.equal(withdraw.name, "withdraw");
+  assert.deepEqual(withdraw.args, [HASH]);
+  assert.equal(read(COUNCIL_ABI, calls.resignCall(COUNCIL)).name, "resign");
+});
+
+test("making a Council writes the key, the five accounts and the salt, in the Launcher's own order", () => {
+  const call = calls.makeCouncilCall({
+    launcher: LAUNCHER,
+    key: KEY,
+    members: FIVE,
+    salt: HASH,
+  });
+  assert.equal(call.to, low(LAUNCHER));
+  assert.equal(
+    call.data.slice(0, 10),
+    selectorOf("makeCouncil(bytes32,address[5],bytes32)"),
+  );
+  const words = wordsOf(call.data);
+  assert.equal(words.length, 7);
+  assert.equal(words[0], KEY.slice(2));
+  FIVE.forEach((member, i) => {
+    assert.equal(words[1 + i], member.slice(2).toLowerCase().padStart(64, "0"));
+  });
+  assert.equal(words[6], HASH.slice(2));
+  // The address a hand-over offers is computed by the same contract: its data is the same shape with `councilAddress`.
+  const data = calls.councilAddressData({
+    key: KEY,
+    members: FIVE,
+    salt: HASH,
+  });
+  assert.equal(
+    data.slice(0, 10),
+    selectorOf("councilAddress(bytes32,address[5],bytes32)"),
+  );
+  assert.deepEqual(wordsOf(data), words);
+});
+
+test("a list of four accounts is refused here, before it reaches a wallet", () => {
+  assert.throws(() =>
+    calls.openReplaceCall({
+      vote: VOTE,
+      members: FIVE.slice(0, 4),
+      recordHash: HASH,
+    }),
+  );
+  assert.throws(() =>
+    calls.makeCouncilCall({
+      launcher: LAUNCHER,
+      key: KEY,
+      members: FIVE.slice(0, 4),
+      salt: HASH,
     }),
   );
 });

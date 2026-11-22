@@ -14,7 +14,6 @@ import { numbersBelongTo } from "@creaton/core/launchpad/project-chain.ts";
 
 import { BYTES32, isObject, obj, readBody, time } from "./numbers-read";
 import { readSocial } from "./numbers-social";
-import { readStep4 } from "./numbers-step4";
 import type {
   NumbersEvent,
   ProjectNumbers,
@@ -85,37 +84,48 @@ export function parseNumbers(
       return null;
     // The step 3 keys are read apart from the money: a wrong one is null for that part and never fails the record.
     const money = readBody(body, d);
-    // The step 4 keys the same way: a wrong one is null for that key and never fails the record.
-    const step4 = readStep4(body, {
-      asOfTime: money.asOf.time,
-      unit: money.unit,
-      backers: money.shares.backers,
-    });
+    // The step 4 and milestone 9 keys are kept as signed, never decoded here: their parser (`numbers-step9.ts`) is loaded
+    // only with the screens that read them, so the first download stays as small as it was.
+    const step = stepKeysOf(body);
     return {
       ...money,
-      contracts:
-        step4.contractsPause === undefined
-          ? money.contracts
-          : { ...money.contracts, pause: step4.contractsPause },
-      team:
-        step4.earlier === undefined
-          ? money.team
-          : { ...money.team, earlier: step4.earlier },
       ...readSocial(body, {
         asOfTime: money.asOf.time,
         launchedAt: money.launchedAt,
         unit: money.unit,
         pot: money.money.pot,
       }),
-      ...(step4.pause === undefined ? {} : { pause: step4.pause }),
-      ...(step4.earlierGrants === undefined
-        ? {}
-        : { earlierGrants: step4.earlierGrants }),
+      ...(step === undefined ? {} : { step }),
     };
   } catch {
     // Unreadable (a field that cannot be believed), or anything unforeseen: "cannot read", never a crash.
     return null;
   }
+}
+
+/**
+ * The step 4 and milestone 9 keys exactly as the record signed them, and nothing else, for the parser that loads later
+ * (`numbers-step9.ts`): `withStepKeys` reads them. A key the record does not carry is left out, so an older record keeps
+ * reading as it did (absent and null stay apart, as they are for the pause).
+ */
+function stepKeysOf(
+  body: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const step: Record<string, unknown> = {};
+  const contracts = isObject(body.contracts) ? body.contracts : {};
+  const team = isObject(body.team) ? body.team : {};
+  const runner = isObject(body.runner) ? body.runner : {};
+  if ("pause" in contracts) step.contracts = { pause: contracts.pause };
+  if ("earlierPool" in team || "earlierReserve" in team)
+    step.team = {
+      earlierPool: team.earlierPool,
+      earlierReserve: team.earlierReserve,
+    };
+  if ("kind" in runner || "seats" in runner)
+    step.runner = { kind: runner.kind, seats: runner.seats };
+  for (const key of ["pause", "earlierGrants", "council", "vote"])
+    if (key in body) step[key] = body[key];
+  return Object.keys(step).length === 0 ? undefined : step;
 }
 
 // --- What the screens ask of a record -----------------------------------------------------------------------------

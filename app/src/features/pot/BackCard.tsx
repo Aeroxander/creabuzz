@@ -27,10 +27,12 @@ function BackForm({
   numbers,
   projectName,
   ready,
+  now,
 }: {
   numbers: ProjectNumbers;
   projectName: string;
   ready: Ready;
+  now: number;
 }) {
   const [text, setText] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
@@ -72,6 +74,7 @@ function BackForm({
       </form>
       <BackSheet
         amount={amount}
+        now={now}
         numbers={numbers}
         onClose={() => {
           setAmount(null);
@@ -122,6 +125,7 @@ export function BackCard({
         <WalletGate chainId={numbers.chainId} what="back this project">
           {(ready) => (
             <BackForm
+              now={now}
               numbers={numbers}
               projectName={projectName}
               ready={ready}

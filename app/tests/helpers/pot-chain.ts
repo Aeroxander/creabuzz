@@ -74,6 +74,11 @@ const SUPPORTS_INTERFACE = selectorOf("supportsInterface(bytes4)");
 export function installPotChain(options: {
   account: string;
   answers: Record<string, Answer>;
+  /**
+   * Answers by 4-byte selector, returning the raw hex a node would (a call whose arguments a fixed-size array makes
+   * undecodable here: `Launcher.councilAddress(bytes32,address[5],bytes32)`). The selector is lower case.
+   */
+  answersBySelector?: Record<string, (data: string) => string>;
   /** Does the dollar have pay-and-call (one signature)? Default yes. */
   payAndCall?: boolean;
   chain?: string;
@@ -112,6 +117,9 @@ export function installPotChain(options: {
       if (method === "eth_call") {
         const { to, data } = params?.[0] as { to: string; data: string };
         if (chain.chain !== "0x7a69") return "0x";
+        const bySelector =
+          options.answersBySelector?.[data.slice(0, 10).toLowerCase()];
+        if (bySelector) return bySelector(data);
         if (data.startsWith(SUPPORTS_INTERFACE)) {
           if (options.payAndCall === false)
             return encodeParameters(["bool"], [false]);

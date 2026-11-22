@@ -160,9 +160,22 @@ export function establishedRows(
             met: false,
             text: `Not yet: at least ${e.rule.minAccounts} people need to back it, and ${e.accounts} do now.`,
           };
-  const run = e.twoSigners
-    ? { met: true, text: "Two people run it." }
-    : { met: false, text: "One person runs it. Not yet: it needs two." };
+  // A Council is "Several accounts", never "two people": the record's own runner kind when the milestone 9 keys were read,
+  // and otherwise the two answers a record signed before that key carries (only a Council is run by more than one account
+  // without being a Pair). A Pair's and a single founder's words do not change.
+  const kind = numbers.runner.kind;
+  const council =
+    kind === "council" ||
+    ((kind === undefined || kind === null) &&
+      e.twoSigners &&
+      !numbers.runner.isPair);
+  const run = council
+    ? e.twoSigners
+      ? { met: true, text: "Several accounts run it." }
+      : { met: false, text: "Not yet: several accounts need to run it." }
+    : e.twoSigners
+      ? { met: true, text: "Two people run it." }
+      : { met: false, text: "One person runs it. Not yet: it needs two." };
   return [stayed, people, run];
 }
 

@@ -18,6 +18,7 @@ import { buttonClass, Button } from "../../ui/button";
 import { Card } from "../../ui/card";
 import { useToast } from "../../ui/toast";
 import { parseNumbers, type NumbersEvent } from "../money/numbers";
+import { withStepKeys } from "../money/numbers-step9";
 import { potProblem } from "../money/pot-copy";
 import {
   useMoneySend,
@@ -72,9 +73,9 @@ function useClaimRecord(settings: EarlierGrantSettings) {
       if (
         numbers &&
         !numbers.removed &&
-        numbers.earlierGrants?.contract === settings.contract
+        withStepKeys(numbers).earlierGrants?.contract === settings.contract
       )
-        return numbers;
+        return withStepKeys(numbers);
     }
     return null;
   }, [recent.data, signer, settings.contract]);

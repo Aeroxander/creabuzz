@@ -86,11 +86,13 @@ describe("the alerts the worker shows", () => {
     const { exports } = worker();
     expect(exports.PUSH_TITLE).toBe(PUSH_TITLE);
     expect(exports.PUSH_WORDS).toEqual(PUSH_WORDS);
-    // The three kinds are the in-app news's planned, taken and ended; no other.
+    // The five kinds are the in-app news's planned, taken, ended, vote and moved; no other.
     expect(Object.keys(exports.PUSH_WORDS).sort()).toEqual([
       "ended",
+      "moved",
       "planned",
       "taken",
+      "vote",
     ]);
   });
 
@@ -98,6 +100,8 @@ describe("the alerts the worker shows", () => {
     "planned",
     "taken",
     "ended",
+    "vote",
+    "moved",
   ] as const)("%s shows its sentence and opens the project", async (kind) => {
     const w = worker();
     await w.push({ v: 1, k: kind, r: LINK });

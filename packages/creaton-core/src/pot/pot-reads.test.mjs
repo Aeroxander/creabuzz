@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { encodeParameters } from "../launchpad/evmAbi.ts";
 import { decodeCall } from "./abi-codec.ts";
 import {
   HOLDER_PAUSE_ABI,
@@ -21,6 +22,7 @@ import {
   teamCashEstimate,
   withTolerance,
 } from "./pot-plans.ts";
+import * as calls from "./pot-calls.ts";
 import * as reads from "./pot-reads.ts";
 
 const DOLLAR = "0x5fbdb2315678afecb367f032d93f642f64180aa3";
@@ -826,4 +828,100 @@ test("the pause contract is the one the Treasury names, or none; its two rules a
   await assert.rejects(() => reads.pauseRules(odd, PAUSE));
   const { read: wide } = fakeChain({ day: [60n], LINE_DIVISOR: [1n] });
   await assert.rejects(() => reads.pauseRules(wide, PAUSE));
+});
+
+// --- The vote and the Council (milestone 9) ---------------------------------------------------------------------------
+
+const VOTE = "0x0165878a594ca255338adfa4d48449f69242eb8f";
+const COUNCIL = "0xa513e6e4b8a2f1c6c1f0e0e5b9b0a5b8de9c2b41";
+
+test("weightOf and ballotOf read a holder's own place in the live ballot", async () => {
+  const { read, seen } = fakeChain({
+    weightOf: [42n],
+    ballotOf: [3n, 2n, 42n, 50n],
+  });
+  assert.equal(await reads.weightOf(read, VOTE, ME), 42n);
+  assert.deepEqual(seen[0], { to: VOTE, name: "weightOf", args: [ME] });
+  assert.deepEqual(await reads.ballotOf(read, VOTE, ME), {
+    id: 3,
+    option: 2,
+    weight: 42n,
+    eligible: 50n,
+  });
+  // Nothing cast reads as no choice: option 0 is a real choice ("keep"), so only the weight tells them apart.
+  const { read: fresh } = fakeChain({ ballotOf: [3n, 0n, 0n, 50n] });
+  assert.deepEqual(await reads.ballotOf(fresh, VOTE, ME), {
+    id: 3,
+    option: null,
+    weight: 0n,
+    eligible: 50n,
+  });
+  // No ballot open: nothing to say.
+  const { read: none } = fakeChain({ ballotOf: [0n, 0n, 0n, 0n] });
+  assert.deepEqual(await reads.ballotOf(none, VOTE, ME), {
+    id: 0,
+    option: null,
+    weight: 0n,
+    eligible: 0n,
+  });
+  await assert.rejects(() => reads.ballotOf(async () => "0x01", VOTE, ME));
+});
+
+test("councilSeats asks seatOf five times, in order, and reads an open seat as none", async () => {
+  const seats = [ME, YOU, `0x${"00".repeat(20)}`, ME, `0x${"00".repeat(20)}`];
+  const { read, seen } = fakeChain({
+    seatOf: (i) => [seats[Number(i)], 1_000n + BigInt(i), 0n],
+  });
+  const five = await reads.councilSeats(read, COUNCIL);
+  assert.equal(five.length, 5);
+  assert.deepEqual(
+    seen.map((s) => s.args),
+    [[0n], [1n], [2n], [3n], [4n]],
+  );
+  assert.deepEqual(five[0], { account: ME, seatedAt: 1_000 });
+  assert.deepEqual(five[2], { account: null, seatedAt: null });
+  assert.deepEqual(five[4], { account: null, seatedAt: null });
+  // An answer that is not an address is never believed.
+  const { read: bad } = fakeChain({ seatOf: () => ["0x1234", 0n, 0n] });
+  await assert.rejects(() => reads.councilSeats(bad, COUNCIL));
+});
+
+test("councilAddressOf asks the Launcher the same question a hand-over would, and never guesses", async () => {
+  const five = [
+    "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+    "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+    "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+    "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+    "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc",
+  ];
+  const seen = [];
+  // A node answers a view with an ABI word: 32 bytes, the address in the low 20 (as every other read here decodes).
+  const read = async (to, data) => {
+    seen.push({ to, data });
+    return encodeParameters(["address"], [`0x${"ab".repeat(20)}`]);
+  };
+  const address = await reads.councilAddressOf(read, DOLLAR, {
+    key: `0x${"11".repeat(32)}`,
+    members: five,
+    salt: `0x${"22".repeat(32)}`,
+  });
+  assert.equal(address, `0x${"ab".repeat(20)}`);
+  assert.equal(seen[0].to, DOLLAR);
+  // The question is the contract's own `councilAddress`, built by the call module (no signature typed here).
+  assert.equal(
+    seen[0].data,
+    calls.councilAddressData({
+      key: `0x${"11".repeat(32)}`,
+      members: five,
+      salt: `0x${"22".repeat(32)}`,
+    }),
+  );
+  // A short or non-hex answer is never believed.
+  await assert.rejects(() =>
+    reads.councilAddressOf(async () => "0x01", DOLLAR, {
+      key: `0x${"11".repeat(32)}`,
+      members: five,
+      salt: `0x${"22".repeat(32)}`,
+    }),
+  );
 });

@@ -3,6 +3,8 @@
 // from the parsed record and never typed; a case that needs the record to say something else changes the example's own fields.
 import { describe, expect, it } from "vitest";
 import { parseNumbers } from "../money/numbers";
+import { councilRecord } from "../../../tests/helpers/council-v2-parse";
+import { BACKER_EVM, FOUNDER_EVM } from "../../../tests/helpers/pot-harness";
 import {
   exampleEvent,
   parsedExample,
@@ -243,6 +245,13 @@ describe("what Established means, line by line, from the record's own rule", () 
       e.accounts = e.rule.minAccounts;
       e.twoSigners = true;
       e.reached = true;
+      // "Two people run it" is about a Pair: the record's runner is one (the server only says `twoSigners` of a Pair
+      // with two different, non-zero signers, or of a Council).
+      c.runner = {
+        address: "0x9a0000000000000000000000000000000000a1b2",
+        isPair: true,
+        signers: [FOUNDER_EVM, BACKER_EVM],
+      };
       // The badge's inputs are the record's own `held` (a badge built on other figures is not believed).
       c.held.badge.bps = e.heldBps;
       c.held.countedAccounts = e.accounts;
@@ -281,5 +290,55 @@ describe("what Established means, line by line, from the record's own rule", () 
     expect(
       establishedRows(parsedWith((c) => (c.established = null))),
     ).toBeNull();
+  });
+});
+
+describe("the badge's line about who runs it, for a Council", () => {
+  it("says several accounts run it, and a Pair and a founder keep their own words", () => {
+    const council = councilRecord("voting", (r) => {
+      r.established.twoSigners = true;
+    });
+    expect(council.runner.kind).toBe("council");
+    const rows = establishedRows(council);
+    expect(rows?.[2]).toEqual({ met: true, text: "Several accounts run it." });
+    // A Council the badge does not count yet says what is missing, and never "one person".
+    const short = councilRecord("voting", (r) => {
+      r.established.twoSigners = false;
+    });
+    expect(establishedRows(short)?.[2]).toEqual({
+      met: false,
+      text: "Not yet: several accounts need to run it.",
+    });
+  });
+
+  it("a Pair's and a single founder's words do not change", () => {
+    const pair = parsedWith((c) => {
+      c.runner = {
+        address: "0x9a0000000000000000000000000000000000a1b2",
+        isPair: true,
+        signers: [FOUNDER_EVM, BACKER_EVM],
+      };
+      c.established.twoSigners = true;
+    });
+    expect(establishedRows(pair)?.[2]).toEqual({
+      met: true,
+      text: "Two people run it.",
+    });
+    const single = parsedWith((c) => {
+      c.established.twoSigners = false;
+    });
+    expect(establishedRows(single)?.[2]).toEqual({
+      met: false,
+      text: "One person runs it. Not yet: it needs two.",
+    });
+  });
+
+  it("a record whose runner kind was not read still knows a Council by its two own answers", () => {
+    // The project top passes the record as signed (the milestone 9 keys unread), so the badge line must not need them.
+    const unread = parsedWith((c) => {
+      c.established.twoSigners = true;
+    });
+    expect(unread.runner.kind).toBeUndefined();
+    expect(establishedRows(unread)?.[2].text).toBe("Several accounts run it.");
   });
 });

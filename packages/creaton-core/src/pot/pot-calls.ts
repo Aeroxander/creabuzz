@@ -8,8 +8,10 @@
  */
 import { type AbiValue, encodeParameters } from "../launchpad/evmAbi.ts";
 import {
+  COUNCIL_ABI,
   EARLIER_GRANTS_ABI,
   HOLDER_PAUSE_ABI,
+  HOLDER_VOTE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
@@ -17,7 +19,8 @@ import {
   TREASURY_ABI,
   VESTER_ABI,
 } from "./abis.generated.ts";
-import { type Abi, encodeCall } from "./abi-codec.ts";
+import { type Abi, encodeCall, functionOf, signatureOf } from "./abi-codec.ts";
+import { selectorOf } from "../launchpad/evmAbi.ts";
 
 /** One call for a sender: always carries a zero native value. */
 export interface PotCall {
@@ -541,5 +544,190 @@ export function earlierClaimCall(input: {
     input.amount,
     input.proof,
     input.accepted,
+  ]);
+}
+
+// --- The vote and the Council (milestone 9; only on a deployment that switches them on) --------------------------------
+
+/**
+ * Five accounts as the contracts take them: exactly five, each an address. The contracts have the last word (distinct,
+ * non-zero, none of the project's own); a wrong count is refused here instead of reaching a wallet.
+ */
+function fiveAccounts(members: readonly string[]): string[] {
+  if (members.length !== 5) throw new Error("A list names five accounts");
+  for (const member of members)
+    if (!/^0x[0-9a-fA-F]{40}$/.test(member))
+      throw new Error("A list names five accounts");
+  return members.map((member) => member.toLowerCase());
+}
+
+/** One argument of a call written by hand: a fixed-size `address[5]`, or one 32-byte word (an address, a hash, a number). */
+type StaticArg =
+  | { readonly seats: readonly string[] }
+  | { readonly word: string | bigint };
+
+/**
+ * A call whose arguments are fixed-size values the shared encoder has no type for: it supports no fixed-size arrays
+ * (`Lib5` is `address[5]` in the vote and Launcher calls), so the words are written here. The selector and the
+ * signature still come from the ABI, so the call cannot drift from the contract, and `pot-calls.test.mjs` reads the words
+ * back one by one.
+ */
+function staticData(
+  abi: Abi,
+  name: string,
+  args: readonly StaticArg[],
+): string {
+  const fn = functionOf(abi, name, args.length);
+  const words = args.map((arg) => {
+    if ("seats" in arg)
+      return fiveAccounts(arg.seats)
+        .map((member) => encodeParameters(["address"], [member]).slice(2))
+        .join("");
+    return typeof arg.word === "bigint"
+      ? encodeParameters(["uint256"], [arg.word]).slice(2)
+      : encodeParameters(
+          [/^0x[0-9a-fA-F]{40}$/.test(arg.word) ? "address" : "bytes32"],
+          [arg.word],
+        ).slice(2);
+  });
+  return selectorOf(signatureOf(fn)) + words.join("");
+}
+
+function staticCall(
+  abi: Abi,
+  to: string,
+  name: string,
+  args: readonly StaticArg[],
+): PotCall {
+  return {
+    to: to.toLowerCase(),
+    data: staticData(abi, name, args),
+    value: "0x0",
+  };
+}
+
+/** A ballot's number: a whole number that fits a uint32. */
+function ballotNumber(id: bigint): bigint {
+  if (typeof id !== "bigint" || id < 1n || id > 0xffff_ffffn)
+    throw new Error("A ballot's number is a whole number from 1");
+  return id;
+}
+
+/**
+ * Open a replace vote with the sender's own list, in one call (`HolderVote.openReplace`). Sender: a parked holder. The
+ * contract decides whether enough Shares are parked and whether a ballot or a cooldown stands in the way.
+ */
+export function openReplaceCall(input: {
+  vote: string;
+  members: readonly string[];
+  recordHash: string;
+}): PotCall {
+  return staticCall(HOLDER_VOTE_ABI, input.vote, "openReplace", [
+    { seats: input.members },
+    { word: input.recordHash },
+  ]);
+}
+
+/** Open the seat election that is due (`HolderVote.openSeats`). Anyone may; the helper does. */
+export function openSeatsCall(vote: string): PotCall {
+  return build(HOLDER_VOTE_ABI, vote, "openSeats", []);
+}
+
+/** Stand the sender for a seat that came up, with the hash of its signed text (`HolderVote.stand`). */
+export function standCall(vote: string, recordHash: string): PotCall {
+  return build(HOLDER_VOTE_ABI, vote, "stand", [recordHash]);
+}
+
+/** Stand a list of five accounts for a replace vote, with the hash of its signed text (`HolderVote.standList`). */
+export function standListCall(input: {
+  vote: string;
+  members: readonly string[];
+  recordHash: string;
+}): PotCall {
+  return staticCall(HOLDER_VOTE_ABI, input.vote, "standList", [
+    { seats: input.members },
+    { word: input.recordHash },
+  ]);
+}
+
+/** Put the sender's whole eligible weight on one option, or move it (`HolderVote.castVote`); option 0 is "keep". */
+export function castVoteCall(vote: string, option: number): PotCall {
+  if (!Number.isInteger(option) || option < 0 || option > 255)
+    throw new Error("A choice is one of the ballot's options");
+  return build(HOLDER_VOTE_ABI, vote, "castVote", [BigInt(option)]);
+}
+
+/** Record a ballot's result on the network once its vote has ended (`HolderVote.finish`). Anyone, once. */
+export function finishCall(vote: string, id: bigint): PotCall {
+  return build(HOLDER_VOTE_ABI, vote, "finish", [ballotNumber(id)]);
+}
+
+/** Put a won result in once its wait is over (`HolderVote.carryOut`). Anyone. */
+export function carryOutCall(vote: string, id: bigint): PotCall {
+  return build(HOLDER_VOTE_ABI, vote, "carryOut", [ballotNumber(id)]);
+}
+
+/** Let a won result nobody carried out lapse (`HolderVote.lapse`). Anyone, two time units after it was due. */
+export function lapseCall(vote: string, id: bigint): PotCall {
+  return build(HOLDER_VOTE_ABI, vote, "lapse", [ballotNumber(id)]);
+}
+
+/** Ask the Council's other seats to agree to a call (`Council.propose`); it runs when enough have. Sender: a seat. */
+export function councilProposeCall(
+  council: string,
+  target: string,
+  data: string,
+): PotCall {
+  return build(COUNCIL_ABI, council, "propose", [target, data]);
+}
+
+/** Agree to the same call another seat proposed (`Council.agree`), and run it once enough have. Sender: a seat. */
+export function councilAgreeCall(
+  council: string,
+  target: string,
+  data: string,
+  nonce: bigint,
+): PotCall {
+  return build(COUNCIL_ABI, council, "agree", [target, data, nonce]);
+}
+
+/** Take the sender's agreement back (`Council.withdraw`). Sender: a seat that agreed. */
+export function councilWithdrawCall(council: string, id: string): PotCall {
+  return build(COUNCIL_ABI, council, "withdraw", [id]);
+}
+
+/** Give up the sender's own seat (`Council.resign`). Sender: a seat holder. */
+export function resignCall(council: string): PotCall {
+  return build(COUNCIL_ABI, council, "resign", []);
+}
+
+/**
+ * Make the Council of five accounts the runner offered the seat to (`Launcher.makeCouncil`). Anyone may send it; the
+ * address commits to the key, the five accounts and the salt (`councilAddressOf`), so nobody can change who they are.
+ */
+export function makeCouncilCall(input: {
+  launcher: string;
+  key: string;
+  members: readonly string[];
+  salt: string;
+}): PotCall {
+  // The Launcher's own argument order: the key, then the five accounts, then the salt.
+  return staticCall(LAUNCHER_ABI, input.launcher, "makeCouncil", [
+    { word: input.key },
+    { seats: input.members },
+    { word: input.salt },
+  ]);
+}
+
+/** The data of `Launcher.councilAddress(key, members, salt)`: the address a hand-over to those five would make. */
+export function councilAddressData(input: {
+  key: string;
+  members: readonly string[];
+  salt: string;
+}): string {
+  return staticData(LAUNCHER_ABI, "councilAddress", [
+    { word: input.key },
+    { seats: input.members },
+    { word: input.salt },
   ]);
 }

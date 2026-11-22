@@ -8,8 +8,10 @@ import {
   signatureOf,
 } from "@creaton/core/pot/abi-codec.ts";
 import {
+  COUNCIL_ABI,
   EARLIER_GRANTS_ABI,
   HOLDER_PAUSE_ABI,
+  HOLDER_VOTE_ABI,
   LAUNCHER_ABI,
   PAIR_ABI,
   PLAY_DOLLAR_ABI,
@@ -39,6 +41,9 @@ const ABIS = [
   PLAY_DOLLAR_ABI,
   HOLDER_PAUSE_ABI,
   EARLIER_GRANTS_ABI,
+  // The vote contract is the pause with ballots, and the Council is the runner: their refusals read here too.
+  HOLDER_VOTE_ABI,
+  COUNCIL_ABI,
 ];
 
 const ACTIONS: PotAction[] = [
@@ -122,7 +127,8 @@ describe("the words for every refusal of the money contracts", () => {
         expect(sentence, where).not.toContain("undefined");
         expect(sentence, where).not.toContain("NaN");
       }
-  });
+    // Every error of the two new contracts too: the walk grew by a third, so it gets its own time.
+  }, 30_000);
 
   it("reads each error back from its own data", () => {
     for (const item of ERRORS)
