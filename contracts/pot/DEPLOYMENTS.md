@@ -81,7 +81,7 @@ Council. It is a switch of the **deployment**:
   time units after it was due.
 - The expected code hashes of the implementations, from the build at this commit (solc 0.8.37, optimizer 200 runs, `via_ir`,
   `evm_version = cancun`, `bytecode_hash = none`; `forge inspect <C> deployedBytecode | cast keccak`):
-  `HolderVote` `0xe168c82949a33b8d26e8eb7c3f8a86c91310a27bb43224e4b2653ac18a0005f1`,
+  `HolderVote` `0x259b7c445ffd6096568bb5bd8ec38340c4897e6e0ea92a0eac17c26f0cdae2a3`,
   `Council` `0x4acf0462b41421ef2ed413fbe8e824a30036bb60cc53441785698ca0bcb5a849`. **`HolderPause` is byte-identical to the
   code before this round** (`0x968400a4...ccdf`, above): its three hook calls and two empty internal functions compile to nothing
   (`git diff` on `src/HolderPause.sol` shows only those five lines), and the whole pause suite is re-run on a `HolderVote` clone to

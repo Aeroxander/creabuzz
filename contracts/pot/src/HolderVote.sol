@@ -312,13 +312,31 @@ contract HolderVote is HolderPause {
         Ballot storage b = ballots[id];
         if (b.kind != KIND_SEATS) revert BadKind();
         if (block.timestamp >= b.standEnd) revert StandingClosed();
-        if (_stood[msg.sender] == id) revert AlreadyStood();
-        if (b.optionCount - 1 >= MAX_PEOPLE) revert NoRoom();
-        if (_weightNow(id, msg.sender) * STAND_DIVISOR < b.supply) revert NotEligible();
+        if (_stood[msg.sender] == id || _displaced[msg.sender] == id) revert AlreadyStood();
+        uint256 w = _weightNow(id, msg.sender);
+        if (w * STAND_DIVISOR < b.supply) revert NotEligible();
         if (_holdsSeatNotUp(b, msg.sender)) revert HoldsSeat();
         if (launcher.isProjectAccount(key, msg.sender)) revert ProjectAccount();
+        address displaced = address(0);
+        if (b.optionCount - 1 < MAX_PEOPLE) {
+            option = b.optionCount++;
+        } else {
+            // every person place is taken: a strictly larger stake takes the smallest one's place, as a list does
+            option = 255;
+            uint256 smallest = type(uint256).max;
+            for (uint8 i = 1; i < b.optionCount; ++i) {
+                if (_options[id][i].kind != OPTION_PERSON) continue;
+                uint256 other = _weightNow(id, _options[id][i].proposer);
+                if (other < smallest) {
+                    smallest = other;
+                    option = i;
+                }
+            }
+            if (w <= smallest) revert NoRoom();
+            displaced = _options[id][option].proposer;
+            _displaced[displaced] = id;
+        }
         _stood[msg.sender] = id;
-        option = b.optionCount++;
         Option storage o = _options[id][option];
         o.kind = OPTION_PERSON;
         o.proposer = msg.sender;
@@ -326,7 +344,7 @@ contract HolderVote is HolderPause {
         o.recordHash = recordHash;
         address[5] memory ms;
         ms[0] = msg.sender;
-        emit Stood(id, option, msg.sender, ms, 1, recordHash, address(0));
+        emit Stood(id, option, msg.sender, ms, 1, recordHash, displaced);
     }
 
     /// @notice Stand a list of five accounts for a replace vote, with the hash of its signed text. Needs a thousandth of the
@@ -738,9 +756,15 @@ contract HolderVote is HolderPause {
             }
         }
         if (bestAt == 0) return (OUTCOME_UNCHANGED, 0, 0);
-        // a tie for the last seat leaves that seat as it is: the second winner needs strictly fewer votes than the first
-        if (secondAt != 0 && second < best) return (OUTCOME_SEATED, bestAt, secondAt);
-        return (OUTCOME_SEATED, bestAt, 0);
+        if (secondAt == 0) return (OUTCOME_SEATED, bestAt, 0);
+        // a tie for the last seat leaves that seat as it is: the second place must be strictly alone. A tie with the *first*
+        // place is fine, because then the two tied are the top two.
+        for (uint8 i = 1; i < b.optionCount; ++i) {
+            if (i == bestAt || i == secondAt) continue;
+            uint256 t = _tally[id][i];
+            if (t >= MIN_VOTE && t > keep && t == second) return (OUTCOME_SEATED, bestAt, 0);
+        }
+        return (OUTCOME_SEATED, bestAt, secondAt);
     }
 
     /// @dev The derived result, for the blocking rules (no stored outcome yet).
