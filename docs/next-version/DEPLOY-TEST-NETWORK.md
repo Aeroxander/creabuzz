@@ -220,6 +220,7 @@ backup key (step 9) and the first backup (step 10).
 3. `./run.sh logs relay` has the line `chain reader started` (with the reader's name, `11155111:<the Launcher>`) and, with a helper
    key, `chain helper on` with the helper's address. A line saying the node refused a range means `BUZZ_CHAIN_LOG_RANGE` is too
    large for it. A message at start that names a setting is a half-set group: fix it and `./run.sh restart`.
+   The "Paid" check on a task paid out of the allowance box (the server looks for that payment on the network before it saves it) only works where this chain reader is on; with no reader the server cannot check and saves the payment as the team wrote it.
 4. The app's files: `curl -sI https://<host>/sw.js` answers 200 with a JavaScript type; `https://<host>/assets/manifest.webmanifest`
    answers 200; a page that is not a file, `https://<host>/welcome`, answers the app's page (not a 404).
 5. In a phone's browser, open `https://<host>`: sign-up shows your terms and privacy note and the age box; once signed in the
