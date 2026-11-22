@@ -643,7 +643,7 @@ test("a task that names its helper: until they say yes and name their wallet the
   await page.setViewportSize(PHONE_360);
   await openTasks(page, relay, project, FOUNDER_KEY, w.who.founder);
   await expect(page.getByTestId("door-waiting")).toContainText(
-    "has not named a wallet to be paid at",
+    "has not named an account to be paid at",
     { timeout: 20_000 },
   );
   await expect(page.getByTestId("door-plan")).toHaveCount(0);
