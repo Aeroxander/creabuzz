@@ -229,6 +229,21 @@ describe("the waiting list: what the events say still waits", () => {
     proposalLog(id(9), TREASURY, draw, 0n, OTHER),
   ];
 
+  it("a fresh proposal waits at once: the proposer's own agreement is the first", () => {
+    // Only the `Proposed` log exists: no seat has agreed yet, and the proposer's agreement is the one it was made with.
+    const logs = [
+      proposalLog(id(1), TREASURY, encodeCall(TREASURY_ABI, "checkIn", [HASH])),
+    ];
+    const waiting = proposals.waitingActions({
+      logs,
+      council: COUNCIL,
+      nameOf,
+    });
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]?.agreed).toBe(1);
+    expect(waiting[0]?.words).toBe("Check in for the project");
+  });
+
   it("lists what still waits, with how many seats agreed, newest first", () => {
     const waiting = proposals.waitingActions({
       logs,

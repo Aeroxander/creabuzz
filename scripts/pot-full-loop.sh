@@ -34,6 +34,10 @@
 #                 planned, and the stand-in receives the message the device decrypts; the real service worker shows its fixed sentence
 #                 for the same kind of news as the in-app alert; after Turn off the next task reaches nobody.
 #
+# The Council round's journey (app/tests/e2e-pot-full/pot-council.spec.ts) in a world of its own, deployed with HOLDER_PAUSE=1
+# COUNCIL=1 (the vote contract is the pause and a Council implementation is bound; off in every other world): the hand-over, the
+# Council section, a seat's proposal and three-of-five agreement, all read from the real server's record.
+#
 # Step 4's journeys (app/tests/e2e-pot-full/pot-pause.spec.ts and pot-earlier.spec.ts), each in a world of its own, deployed with
 # the settings step 4 adds (both are off in every other world, as in a default deployment):
 #   pot-pause     the deploy script is run with HOLDER_PAUSE=1: a founder launches in the app (and is told, before signing, that holders
@@ -58,7 +62,7 @@
 # Linux and macOS (`timeout` and `hostname -I` are not needed). Uses anvil's well-known development accounts only; every amount
 # is play money.
 #
-# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all seven journeys, each in a world of its own;
+# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all eight journeys, each in a world of its own;
 #                                                          with arguments (a file name such as pot-tasks.spec, a --grep): one world, those only
 #         scripts/pot-full-loop.sh --serve       the same world, left running for a person to try on a phone (see below)
 #         scripts/pot-full-loop.sh --hold        one world, left running for an engineer: it writes the environment a journey needs to
@@ -150,8 +154,9 @@ ANVIL_PID=""
 STANDIN_PID=""
 STANDIN_URL=""
 WORLD_PUSH="${WORLD_PUSH:-}"
-# What the deployment of a world is given: "default" (neither of step 4's switches), "pause" (HOLDER_PAUSE=1) or "earlier" (the six
-# EARLIER_* settings for an invented list, and an app built with the claim page's three settings).
+# What the deployment of a world is given: "default" (none of the switches), "pause" (HOLDER_PAUSE=1), "council" (HOLDER_PAUSE=1
+# and COUNCIL=1: the vote contract as the pause, and a Council implementation bound) or "earlier" (the six EARLIER_* settings for an
+# invented list, and an app built with the claim page's three settings).
 WORLD_KIND="${WORLD_KIND:-default}"
 # The operator's key when the person gave one: kept out of every file and every line this script prints.
 GIVEN_OPERATOR_KEY="${OPERATOR_KEY:-}"
@@ -279,6 +284,8 @@ world_up() {
   rm -f "$EARLIER_FILE"
   if [[ "$WORLD_KIND" == "pause" ]]; then
     DEPLOY_ENV=(HOLDER_PAUSE=1)
+  elif [[ "$WORLD_KIND" == "council" ]]; then
+    DEPLOY_ENV=(HOLDER_PAUSE=1 COUNCIL=1)
   elif [[ "$WORLD_KIND" == "earlier" ]]; then
     # An INVENTED list: anvil's public accounts and amounts chosen here, a throwaway Nostr key made from a public string (it is worth
     # nothing and is made again by the journey the same way), and a text of a few made-up words. Nothing real, nothing kept.
@@ -307,8 +314,12 @@ world_up() {
   START_BLOCK="$(cast block-number --rpc-url "$RPC")"
   [[ "$(cast code --rpc-url "$RPC" "$LAUNCHER" | wc -c)" -gt 10 ]] || fail "no code at the Launcher $LAUNCHER"
   step "play dollar $USD, Launcher $LAUNCHER (block $START_BLOCK)"
-  if [[ "$WORLD_KIND" == "pause" ]]; then
+  if [[ "$WORLD_KIND" == "pause" || "$WORLD_KIND" == "council" ]]; then
     [[ "$(jq -r .holderPause "$STATE/deployments.json")" != "0x0000000000000000000000000000000000000000" ]] || fail "HOLDER_PAUSE=1 gave no holder pause"
+  fi
+  if [[ "$WORLD_KIND" == "council" ]]; then
+    [[ "$(jq -r .holderVote "$STATE/deployments.json")" == "$(jq -r .holderPause "$STATE/deployments.json")" ]] || fail "COUNCIL=1 did not deploy the vote contract as the pause"
+    [[ "$(jq -r .council "$STATE/deployments.json")" != "0x0000000000000000000000000000000000000000" ]] || fail "COUNCIL=1 gave no Council implementation"
   fi
   PORT="$(free_port)"; HEALTH="$(free_port)"; METRICS="$(free_port)"
 
@@ -438,7 +449,10 @@ if [[ -n "$SERVE" ]]; then
   LINK="$(jq -r .link "$STATE/serve.json")"
   [[ -n "${HOLD_ENV:-}" ]] && write_world_env "$HOLD_ENV"
   STEP4_NOTE=""
-  if [[ "$WORLD_KIND" == "pause" ]]; then
+  if [[ "$WORLD_KIND" == "council" ]]; then
+    STEP4_NOTE="  This world was deployed with HOLDER_PAUSE=1 COUNCIL=1: a runner can hand the seat to a Council of five, and holders can vote. The steps are in TRY-IT.md, part 4.10.
+"
+  elif [[ "$WORLD_KIND" == "pause" ]]; then
     STEP4_NOTE="  This world was deployed with HOLDER_PAUSE=1: the project has the holders' pause. The steps are in TRY-IT.md, part 4.8.
 "
   elif [[ "$WORLD_KIND" == "earlier" ]]; then
@@ -536,17 +550,19 @@ if [[ -n "$HOLD" ]]; then
   while kill -0 "$RELAY_PID" 2>/dev/null && kill -0 "$ANVIL_PID" 2>/dev/null; do sleep 2; done
   fail "the chain or the server stopped"
 elif [[ $# -gt 0 ]]; then
+  [[ "$1" == pot-council.spec ]] && WORLD_KIND=council
   world_up
   run_journey "$@"
   world_down
 else
   # Step 1's journey, step 2's task queue, step 3's three and step 4's two, each in a world of its own (the chain's clock is moved by days in
   # most of them, and a world that is days ahead of the server's clock cannot be reused). Only the push world has a stand-in.
-  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-seasons.spec pot-push.spec pot-pause.spec pot-earlier.spec; do
+  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-seasons.spec pot-push.spec pot-pause.spec pot-council.spec pot-earlier.spec; do
     WORLD_PUSH=""
     WORLD_KIND=default
     [[ "$journey" == pot-push.spec ]] && WORLD_PUSH=1
     [[ "$journey" == pot-pause.spec ]] && WORLD_KIND=pause
+    [[ "$journey" == pot-council.spec ]] && WORLD_KIND=council
     [[ "$journey" == pot-earlier.spec ]] && WORLD_KIND=earlier
     world_up
     run_journey "$journey"

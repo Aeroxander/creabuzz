@@ -500,6 +500,18 @@ impl Ledger {
             return Ok(None);
         };
         let mut ledger = Self::launched(launch)?;
+        // A Council's own `SeatsSet` is logged inside the transaction that makes it, *before* the Launcher's
+        // `CouncilMade` names it; the single pass below would skip it as "not ours yet" and the events would say the
+        // next election is at 0. The newest `CouncilMade` names the Council the project has now, so learn it first.
+        if let Some(made) = rows
+            .iter()
+            .rev()
+            .find(|r| r.role == Role::Launcher && r.event == "CouncilMade")
+        {
+            let council = address(made, "council")?;
+            ledger.contracts.council = Some(council.clone());
+            ledger.council.contract = Some(council);
+        }
         let acts = park_acts(rows);
         for row in rows {
             // A park (or an un-park) is one act: its `Transfer` is not a movement of anyone's holding.

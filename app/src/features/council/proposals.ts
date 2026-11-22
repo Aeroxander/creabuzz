@@ -386,14 +386,18 @@ export function waitingActions(input: {
   for (const proposal of councilProposals(input.logs, input.council)) {
     const tally = counts.get(proposal.id);
     if (tally?.gone) continue;
-    if ((tally?.agreed ?? 0) === 0) continue;
+    // A proposal counts its proposer's own agreement from the moment it is made: `Proposed` says it, and no `Agreed`
+    // event is written for that first agreement. A later `Withdrawn` carries the count after it, so a real zero still
+    // takes the call off the list.
+    const agreed = tally?.agreed ?? 1;
+    if (agreed === 0) continue;
     const described = councilProposalWords(proposal.data, input.nameOf);
     waiting.push({
       ...proposal,
       kind: described.kind,
       words: described.words,
       names: described.names,
-      agreed: tally?.agreed ?? 0,
+      agreed,
     });
   }
   return input.limit === undefined ? waiting : waiting.slice(0, input.limit);
