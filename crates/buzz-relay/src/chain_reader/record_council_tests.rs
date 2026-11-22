@@ -400,12 +400,13 @@ async fn a_wait_that_is_not_the_treasurys_notice_signs_vote_null() {
 #[tokio::test]
 async fn a_recorded_result_that_differs_from_the_frozen_tallies_signs_vote_null() {
     let (_, mut ledger, as_of, _, read) = read_of("C_waiting").await;
+    let cast = ledger.vote.ballots[&2].cast;
     ledger.vote.ballots.get_mut(&2).expect("ballot 2").finished =
         Some(super::ledger_council::Finished {
             outcome: 3,
             winner: 1,
             winner_b: 0,
-            cast_total: ledger.vote.ballots[&2].cast,
+            cast_total: cast,
         });
     let (vote, why) = super::record_council::vote(&ledger, &read, as_of.time);
     assert!(vote.is_none());

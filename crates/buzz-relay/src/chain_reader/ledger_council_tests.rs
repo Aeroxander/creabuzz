@@ -135,8 +135,10 @@ fn four_hundred_random_votes_moves_and_unparks_leave_the_contracts_tallies() {
                 let r = fell_row(voter, old_option, keep, t, cast);
                 apply_vote(&r, &mut seen).expect("a Fell applies");
             }
-            Some((old_option, old_weight)) if old_option != option => {
-                // A move: the old option's absolute tally and the new one's, as the contract emits them.
+            Some((old_option, old_weight)) if old_option != option && old_weight > 0 => {
+                // A move: the weight is what the voter may cast *now* (a fall may have lowered it); the old option's
+                // absolute tally and the new one's, as the contract emits them.
+                let weight = old_weight;
                 cast -= old_weight;
                 let from_tally = tally.get(&old_option).copied().unwrap_or(0) - old_weight;
                 if from_tally == 0 {
