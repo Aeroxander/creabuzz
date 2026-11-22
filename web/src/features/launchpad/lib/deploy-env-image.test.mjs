@@ -15,10 +15,38 @@ const compose = readFileSync(
 
 const sorted = (names) => [...new Set(names)].sort();
 
-function dockerArgs() {
+// The Dockerfile has two web bundles, each in its own stage: the old web app (web-builder) and the new Creaton app
+// (app-builder, VITE_CREATON_* names). Each stage's arguments must be the names its own loop unsets, and nothing of the
+// other app's: a name in the wrong stage reaches no build.
+function stage(name) {
+  const start = dockerfile.search(new RegExp(`^FROM .* AS ${name}\\n`, "m"));
+  assert.ok(start >= 0, `the Dockerfile's ${name} stage`);
+  const rest = dockerfile.slice(start + 1);
+  const next = rest.search(/^FROM /m);
+  return next < 0 ? rest : rest.slice(0, next);
+}
+
+function argsOf(text) {
   return sorted(
-    [...dockerfile.matchAll(/^ARG (VITE_[A-Z0-9_]+)=/gm)].map((m) => m[1]),
+    [...text.matchAll(/^ARG (VITE_[A-Z0-9_]+)=/gm)].map((m) => m[1]),
   );
+}
+
+function unsetLoopOf(text) {
+  const loops = [
+    ...text.matchAll(
+      /for name in ([^;]+); do \\\n\s*eval "value=[^\n]*\n\s*if \[ -z "\$value" \]; then unset/g,
+    ),
+  ];
+  assert.equal(loops.length, 1, "one loop over the stage's settings");
+  return sorted(loops[0][1].match(/VITE_[A-Z0-9_]+/g) ?? []);
+}
+
+function dockerArgs() {
+  return sorted([
+    ...argsOf(stage("web-builder")),
+    ...argsOf(stage("app-builder")),
+  ]);
 }
 
 // Every loop that turns an empty setting into an unset one: the old web app's names and the new app's names are two loops.
@@ -45,6 +73,20 @@ test("the image's web settings are one list in the Dockerfile and in compose", (
   const args = dockerArgs();
   assert.ok(args.length > 5, args.join(" "));
   assert.deepEqual(dockerUnsetLoop(), args);
+  // Per stage: the old app's list holds no new-app name, the new app's list holds only new-app names.
+  const web = argsOf(stage("web-builder"));
+  const app = argsOf(stage("app-builder"));
+  assert.ok(web.length > 5 && app.length > 5);
+  assert.deepEqual(unsetLoopOf(stage("web-builder")), web);
+  assert.deepEqual(unsetLoopOf(stage("app-builder")), app);
+  assert.ok(
+    web.every((n) => !n.startsWith("VITE_CREATON_")),
+    web.join(" "),
+  );
+  assert.ok(
+    app.every((n) => n.startsWith("VITE_CREATON_")),
+    app.join(" "),
+  );
   // compose may leave out what only a build of your own sets (VITE_RELAY_URL: the image is served by its own relay).
   const fromEnv = composeArgs();
   for (const name of fromEnv) {
