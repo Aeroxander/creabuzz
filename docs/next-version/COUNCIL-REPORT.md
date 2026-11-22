@@ -314,9 +314,13 @@ chain-Council migration tests pass (`2 passed`, including the schema-match test)
 751 ignored, 1 failed**: the failure is `api::mesh_demo::tests::demo_join_forwarded_arm_round_trips_echo`, which answers 504 where
 200 is expected; that file is untouched by this round and the same failure is recorded in `PLANV2-M5-REPORT.md` and
 `PLANV2-M8-REPORT.md` as a sandbox/network condition (it opens two local QUIC endpoints), so it is not this round's. The app-side
-push-words equality test is 32/32. **One item of S1's check list is still open:** the six guard-off experiments (turn each new
-server rule off once and show its named test fails) were not run — each needs a rebuild and this machine serialises cargo invocations
-for tens of minutes, so they remain for the verifier. After the example records were regenerated, five app tests that had been written
+push-words equality test is 32/32. **The six guard-off experiments were run, one at a time with the file restored after each, and each was killed by its named
+test**: the candidacy wallet binding (always true → `a_candidacy_wallet_must_be_one_the_signer_linked` fails), the agent limit
+(candidacy out of `needs_a_person` → `a_candidacy_has_exactly_the_plans_shape` fails), the helper's closed list (an allowed entry
+swapped for `openReplace` → `no_call_moves_money_by_choice_checks_in_or_signs_for_a_runner` fails), the push classification (the
+`BallotOpened` arm removed → `a_ballot_that_opened_is_a_vote_alert_and_nothing_else_of_the_pause_is` fails), the one-push-per-unit
+rule (`within_one_unit` false → `at_most_one_vote_push_is_kept_for_a_project_within_one_unit` fails), and the push words (one word
+changed → `the_push_words_are_the_ones_in_the_apps_service_worker` fails). After the example records were regenerated, five app tests that had been written
 against the older records were updated (the ordinary example now carries `runner.kind: "single"` with null `council`/`vote`; an older
 record without the keys still reads as before; the milestone-9 keys are left to their own lazy parser in the strict hostile walk) and
 the full app suite is again **2,250 passed, 0 failed**, with `pnpm check` and `pnpm build` green (entry chunk 393 KiB, 47,570 B under
