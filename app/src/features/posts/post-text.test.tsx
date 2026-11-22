@@ -49,4 +49,12 @@ describe("the topics in a post", () => {
     render(<PostText text="issue#12 and # alone and #a" />);
     expect(screen.queryAllByRole("link")).toHaveLength(0);
   });
+
+  it("draws what was written as text: markup in a post is shown, never run", () => {
+    const text =
+      '<img src=x onerror="alert(1)"><script>window.x=1</script> #lamps';
+    const { container } = render(<PostText text={text} />);
+    expect(container.textContent).toBe(text);
+    expect(container.querySelector("img, script")).toBeNull();
+  });
 });

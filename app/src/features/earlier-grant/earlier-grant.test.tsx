@@ -35,6 +35,7 @@ import { numbersV2Content } from "../../../tests/helpers/numbers-v2-fixture";
 import { createAppRouter } from "../../app/router";
 import { forgetSendTargets } from "../money/send-targets";
 import { EarlierGrantPage } from "./EarlierGrantPage";
+import { NOT_FOR_YOU } from "./earlier-grant-words";
 import {
   type EarlierGrantSettings,
   earlierGrantSettings,
@@ -388,6 +389,23 @@ describe("the claim page", () => {
     expect((await screen.findByTestId("claim-done")).textContent).toBe(
       "Claimed. Your Team Shares unlock over time.",
     );
+  });
+
+  it("a wallet that shows another account by the time of the press sends nothing and says the link is not for it", async () => {
+    serveRecord();
+    install();
+    show();
+    const link = await screen.findByTestId("claim-read-text");
+    link.addEventListener("click", (e) => e.preventDefault());
+    fireEvent.click(link);
+    fireEvent.click(screen.getByTestId("claim-tick"));
+    // The page was made for the signed-in account; the wallet is switched before the press.
+    chain.account = `0x${"99".repeat(20)}`;
+    fireEvent.click(screen.getByTestId("claim-press"));
+    expect((await screen.findByTestId("claim-problem")).textContent).toBe(
+      NOT_FOR_YOU,
+    );
+    expect(chain.sent).toEqual([]);
   });
 
   it("a link that is another account's reads as not for this account, and never shows whose or what", async () => {

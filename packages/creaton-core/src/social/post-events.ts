@@ -7,8 +7,8 @@
  * - A reply uses NIP-10 marked `e` tags (the feed's `buildReply`).
  * - A quote post is a kind 1 note with a `q` tag and a `nostr:nevent…` link in
  *   the text (NIP-18).
- * - A repost is kind 6 with the original embedded (NIP-18); undoing one is a
- *   NIP-09 deletion.
+ * - A repost is kind 6 with empty content and an `e` tag naming the original
+ *   (NIP-18); undoing one is a NIP-09 deletion.
  * - A vote is the NIP-25 reaction the feed builds (`feed-events.ts` `buildVote`).
  *
  * Pure and alias-free: `social.test.mjs` drives it under `node --test`.

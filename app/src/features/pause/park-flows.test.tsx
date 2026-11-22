@@ -8,7 +8,13 @@ import {
   SHARE_TOKEN_ABI,
   TREASURY_ABI,
 } from "@creaton/core/pot/abis.generated.ts";
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SERVER, wrap } from "../../../tests/helpers/money-harness";
@@ -378,6 +384,33 @@ describe("Take out of Shares that are parked", () => {
     expect(second?.[0]).toBe("leave");
     expect(second?.[2]).toBe(1_000n * S);
   });
+
+  it("a take-out that went out and was replaced without landing is not taken for landed because the wallet part is smaller (parked Shares count as held)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    install({ wallet: 600n * S, parked: 400n * S });
+    // The call goes out and the network never applies it: what is held, wallet and parked together, is still 1,000.
+    chain.onSend = null;
+    chain.holdReceipts = true;
+    show();
+    fireEvent.click(await screen.findByTestId("holding-take-out"));
+    await screen.findByTestId("takeout-cash");
+    fireEvent.click(screen.getByTestId("takeout-portion-quarter"));
+    await waitFor(() =>
+      expect(screen.getByTestId("takeout-shares").textContent).toBe(
+        "250 Shares",
+      ),
+    );
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200_000);
+    });
+    await screen.findByTestId("sheet-problem");
+    // The press again: the earlier call is gone under its hash ("replaced"), and the wallet's 600 is less than the 1,000
+    // that were held, but 600 and 400 parked are not less. It is not found, so a new call is sent.
+    fireEvent.click(screen.getByTestId("sheet-confirm"));
+    await waitFor(() => expect(chain.sent.length).toBe(2));
+  }, 20_000);
 
   it("a part that the wallet covers does not touch what is parked", async () => {
     install({ wallet: 600n * S, parked: 400n * S });

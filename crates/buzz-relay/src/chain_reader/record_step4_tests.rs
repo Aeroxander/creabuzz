@@ -565,15 +565,32 @@ async fn each_rule_of_the_pause_key_leaves_it_null_when_broken() {
             "give",
             Box::new(|_, p| p.line += 1),
         ),
+        // The day rule's own words ("a seventh of the"): the pausesFrom rule says "warning period" too, so these cases move
+        // pausesFrom with the day, and only the day rule can refuse them.
         (
             "a warning day that is not a seventh of the unit",
-            "warning period",
-            Box::new(|_, p| p.day += 1),
+            "a seventh of the",
+            Box::new(|_, p| {
+                p.day += 1;
+                p.pauses_from += 1;
+            }),
         ),
         (
             "a warning day of nothing",
-            "warning period",
-            Box::new(|_, p| p.day = 0),
+            "a seventh of the",
+            Box::new(|_, p| {
+                p.day = 0;
+                p.pauses_from = p.armed_at;
+            }),
+        ),
+        (
+            "a warning day of nothing on a unit too short to have a seventh",
+            "a seventh of the",
+            Box::new(|l, p| {
+                l.unit = 0;
+                p.day = 0;
+                p.pauses_from = p.armed_at;
+            }),
         ),
         (
             "an armedAt the events do not say",

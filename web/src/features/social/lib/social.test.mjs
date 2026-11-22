@@ -176,7 +176,7 @@ describe("post events", () => {
     assert.throws(() => buildQuote({ text: "  ", quoted }), /Write something/);
   });
 
-  it("a repost embeds the original; an undo is a NIP-09 deletion", () => {
+  it("a repost names the original and carries no copy of it; an undo is a NIP-09 deletion", () => {
     const note = ev({ id: hex("6"), kind: 1, pubkey: ALICE, content: "hi" });
     const repost = buildRepost(note);
     assert.equal(repost.kind, 6);
@@ -184,7 +184,7 @@ describe("post events", () => {
       ["e", hex("6")],
       ["p", ALICE],
     ]);
-    assert.equal(JSON.parse(repost.content).id, hex("6"));
+    assert.equal(repost.content, "");
     assert.deepEqual(buildUndo(hex("9"), 6), {
       kind: 5,
       tags: [

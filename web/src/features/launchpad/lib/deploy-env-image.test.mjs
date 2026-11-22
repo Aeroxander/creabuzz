@@ -21,10 +21,16 @@ function dockerArgs() {
   );
 }
 
+// Every loop that turns an empty setting into an unset one: the old web app's names and the new app's names are two loops.
+// (A loop that only checks a value, with no unset in its first lines, is not one of them.)
 function dockerUnsetLoop() {
-  const loop = /for name in ([^;]+); do/.exec(dockerfile);
-  assert.ok(loop, "the Dockerfile's loop over the web settings");
-  return sorted(loop[1].match(/VITE_[A-Z0-9_]+/g) ?? []);
+  const loops = [
+    ...dockerfile.matchAll(
+      /for name in ([^;]+); do \\\n\s*eval "value=[^\n]*\n\s*if \[ -z "\$value" \]; then unset/g,
+    ),
+  ];
+  assert.ok(loops.length >= 2, "the Dockerfile's loops over the web settings");
+  return sorted(loops.flatMap((m) => m[1].match(/VITE_[A-Z0-9_]+/g) ?? []));
 }
 
 function composeArgs() {

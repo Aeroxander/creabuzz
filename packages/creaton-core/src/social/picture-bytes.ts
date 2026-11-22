@@ -6,7 +6,6 @@
  * allowlist, run here as the last check before an upload. Pure and alias-free: `pictures.test.mjs` drives it under `node --test`.
  */
 
-
 const JFIF_APP0 = Uint8Array.of(
   0xff,
   0xe0,

@@ -37,7 +37,7 @@ pub(crate) const UNLABELLED_HELPER: &str = "restricted: this wallet is set as a 
 pub(crate) const ABOVE_HELPER_LIMIT: &str = "invalid: that is more than the daily limit the network gives the helper that uses this account's wallet; offer less, or unlink that wallet from this account, to clear this";
 
 /// Said when an account has linked more wallets than can be read at once, so the network cannot be asked about all of them.
-pub(crate) const TOO_MANY_WALLETS: &str = "invalid: this account has linked more wallets than the server can check against the helpers on the network; unlink the ones you do not use to clear this";
+pub(crate) const TOO_MANY_WALLETS: &str = "invalid: this account has linked more wallets than the server can check against the helpers on the network; use another account for this";
 
 /// The most helper rows read for one account's wallets.
 const LIVE_READ: i64 = 64;
@@ -249,14 +249,12 @@ mod tests {
 
     #[test]
     fn every_refusal_says_how_to_clear_it() {
-        for words in [
-            MANAGER_HAS_LIMITS,
-            UNLABELLED_HELPER,
-            ABOVE_HELPER_LIMIT,
-            TOO_MANY_WALLETS,
-        ] {
+        for words in [MANAGER_HAS_LIMITS, UNLABELLED_HELPER, ABOVE_HELPER_LIMIT] {
             assert!(words.contains("unlink"), "{words}");
         }
+        // Too many linked wallets cannot be cleared by unlinking (a revoked record cannot be removed): it says what works.
+        assert!(TOO_MANY_WALLETS.contains("use another account"));
+        assert!(!TOO_MANY_WALLETS.contains("unlink"));
         assert!(UNLABELLED_HELPER.contains("label this account"));
     }
 }

@@ -227,7 +227,8 @@ describe("the step 4 keys: a key that cannot be believed is null and the record 
     [
       "a pool that is not the team's earlier pool",
       (r) => {
-        r.earlierGrants.total = "1";
+        // Above what was claimed, so only the pool check can refuse it (a total of 1 would fail the claimed-total check first).
+        r.earlierGrants.total = (BigInt(r.team.earlierPool) + 1n).toString();
       },
     ],
     [

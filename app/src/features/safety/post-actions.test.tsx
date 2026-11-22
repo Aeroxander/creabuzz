@@ -393,6 +393,24 @@ describe("a quote of a post", () => {
     );
   });
 
+  it("shows the quoted post's words as text, never as markup", async () => {
+    const quoted = note(
+      ANA,
+      "<img src=x onerror=alert(1)><b>bold</b> original",
+      NOW - 100,
+    );
+    note(ANA, "Agreed #lamps", NOW - 10, [
+      ["t", "lamps"],
+      ["q", quoted.id, "", ANA],
+    ]);
+    draw(<TopicPage tag="lamps" />);
+    const card = await screen.findByTestId("quoted-post");
+    expect(card.textContent).toContain(
+      "<img src=x onerror=alert(1)><b>bold</b> original",
+    );
+    expect(card.querySelector("img, b, script")).toBeNull();
+  });
+
   it("does not show a quoted post by someone the reader hid", async () => {
     const quoted = note(ANA, "Original words", NOW - 100);
     const { hide } = await import("./social-harness");

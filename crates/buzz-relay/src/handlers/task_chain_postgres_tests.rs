@@ -1630,11 +1630,13 @@ async fn one_box_payment_pays_one_task_and_a_batch_of_two_pays_two() {
 /// must not both be stored. The count of the other tasks that name the payment and the store of the record are one
 /// step under a lock on the payment. Take the lock out (return `None` from the box branch of `enforce`) and, with the
 /// two sent together, both are accepted and this test fails.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires Postgres and Redis"]
 async fn two_confirms_sent_together_cannot_both_be_paid_by_one_draw() {
-    // A few rounds, each with a draw of its own: the race is a matter of timing, the lock removes it.
-    for round in 0u8..6 {
+    // Rounds, each with a draw of its own, the three confirms on separate threads: the race is a matter of timing (one
+    // round without the lock can pass), so a single green run is weak evidence and the lock removes the race, not the
+    // rounds. Run it a few times when the lock is touched.
+    for round in 0u8..32 {
         let w = world(true).await;
         let (tx, wallet, raw) = first_draw(&w);
         let key = w.fx.projects["A"].key;
@@ -1649,13 +1651,18 @@ async fn two_confirms_sent_together_cannot_both_be_paid_by_one_draw() {
         w.seed_run(&[]).await;
         w.draw(key, tx, &wallet, raw, 0).await;
         w.read_past_now().await;
-        let (a, b, c) = (
-            ingest(&w.state, &w.tenant, paid_confirm(&w, &tasks[0], &tx)),
-            ingest(&w.state, &w.tenant, paid_confirm(&w, &tasks[1], &tx)),
-            ingest(&w.state, &w.tenant, paid_confirm(&w, &tasks[2], &tx)),
-        );
-        let (a, b, c) = tokio::join!(a, b, c);
-        let results = [a, b, c];
+        let sent: Vec<_> = tasks
+            .iter()
+            .map(|task| {
+                let (state, tenant) = (w.state.clone(), w.tenant.clone());
+                let confirm = paid_confirm(&w, task, &tx);
+                tokio::spawn(async move { ingest(&state, &tenant, confirm).await })
+            })
+            .collect();
+        let mut results = Vec::new();
+        for handle in sent {
+            results.push(handle.await.expect("the ingest task ran"));
+        }
         let accepted = results.iter().filter(|r| r.is_ok()).count();
         assert_eq!(
             accepted, 1,

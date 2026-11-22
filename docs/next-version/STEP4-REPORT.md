@@ -281,14 +281,14 @@ Five reviewers (money, server, social, phone, fit) read `1fed95002..50f4beaf0`. 
 
 ### 7.4 What the contracts and server fixer, and the lead, must know
 
-- `HolderPause.poke()` is now called by the app ("Start the day"). If the contracts fixer makes `leave` poke the pause as well, the "reached" state will rarely show and the press stays valid; **do not change `poke()`'s signature**. The sponsor's allow list has no entry for `poke` (it was not needed before): a passkey account's press is sponsored only if the operator's list allows it; a wallet person pays the network fee.
+- `HolderPause.poke()` is now called by the app ("Start the day"). If the contracts fixer makes `leave` poke the pause as well, the "reached" state will rarely show and the press stays valid; **do not change `poke()`'s signature**. The sponsor's allow list is by contract address and the pause is on it, so a passkey account's `poke` is sponsored (section 8.4); a wallet person pays the network fee.
 - The app no longer writes a copy of the post into a repost. Nothing on the server needs to change; a server that deletes reposts of a deleted post would close the same gap for other apps' reposts.
-- **`deploy/compose/run.sh`, `deploy/compose/compose.creaton.yml` and the Dockerfile** need `VITE_CREATON_EARLIER_CONTRACT`, `_TEXT_HASH` and `_TEXT_URL` added to their setting lists (outside every path of this round). The guide says so.
+- **`deploy/compose/run.sh`, `deploy/compose/compose.creaton.yml` and the Dockerfile** needed `VITE_CREATON_EARLIER_CONTRACT`, `_TEXT_HASH` and `_TEXT_URL` added to their setting lists: done in the second fix round (section 9).
 - The money and server reviewers' findings (G7 race, helper-limit padding, test coverage of the new server guards) are not in the app's paths and were not touched.
 
 ## 8. Review fixes (contracts and server)
 
-By the contracts and server fixer, against the five reviewers' findings. **Nothing in `contracts/pot` changed and no ABI, event, migration, record key or generated file changed**, so nothing was regenerated and `forge test` was not run (no `.sol` file is touched). Every change is in `crates/buzz-relay`. For the app fixer: no ABI or record field to follow. Two new refusal sentences can reach the app, both through prefixes it already reads: `invalid: this account has linked more wallets than the server can check against the helpers on the network; unlink the ones you do not use to clear this` (a manager's profile or a task step, `chain_agent_link::TOO_MANY_WALLETS`), and, when two confirms of one payment arrive together, the loser can get `retry: this season is busy; try again in a moment` (the existing `season_rules::BUSY` words, `retry:` prefix, after about 7 seconds of waiting for the other one to be stored). Show both through the existing prefix handling.
+By the contracts and server fixer, against the five reviewers' findings. **Nothing in `contracts/pot` changed and no ABI, event, migration, record key or generated file changed**, so nothing was regenerated and `forge test` was not run (no `.sol` file is touched). Every change is in `crates/buzz-relay`. For the app fixer: no ABI or record field to follow. Two new refusal sentences can reach the app, both through prefixes it already reads: `invalid: this account has linked more wallets than the server can check against the helpers on the network; use another account for this` (a manager's profile or a task step, `chain_agent_link::TOO_MANY_WALLETS`), and, when two confirms of one payment arrive together, the loser can get `retry: this season is busy; try again in a moment` (the existing `season_rules::BUSY` words, `retry:` prefix, after about 7 seconds of waiting for the other one to be stored). Show both through the existing prefix handling.
 
 ### 8.1 Closed
 
@@ -334,3 +334,44 @@ By the contracts and server fixer, against the five reviewers' findings. **Nothi
 
 - An account whose binding records fill one read (20 or more, revoked ones included, because a revoked record is still a record and cannot be removed) is refused for a manager profile and for every task step in a chain-following project, rather than trusted. A real person has a handful. The other choice was to ask the network the other way round (which accounts hold each live helper wallet) and refuse nobody; it needs a read per helper and was not cheap.
 - The lock on a box payment waits as the season lock does (up to about 7 seconds) and then answers with the season lock's `retry:` words. A confirm that names no payment, or one for a task with a plan the network paid, takes no lock.
+
+## 9. The second fix round (all languages, one engineer)
+
+Against the verifiers' second review: two blockers and the important items that were cheap and safe. No contract, ABI, event, migration, record field or generated file changed, so nothing was regenerated and `forge test` was not run (no `.sol` file is touched).
+
+### 9.1 Closed, each with a test that fails without it
+
+| Finding | What changed | Test, and the result of switching the guard off once |
+|---|---|---|
+| Blocker: the web test of a repost still parsed an embedded copy | `web/.../social.test.mjs` now asserts an empty content and the `e` and `p` tags; the stale header line of `packages/creaton-core/src/social/post-events.ts` says so | that test (a repost that writes a copy of the post back into the content fails it) |
+| Blocker: `biome check` in `packages/creaton-core` failed | `picture-bytes.ts` formatted (one blank line) | `pnpm check` there exits 0 |
+| Pre-existing: the image's web settings test failed | the test read only the first of the Dockerfile's two loops that unset an empty setting; it now reads both (the old app's and the new app's) | with a name taken out of the second loop it fails; restored it passes |
+| The claim page's three settings were not passed on by the deploy files | the Dockerfile (ARG and the unset loop), `compose.creaton.yml` and `run.sh`'s list now carry `VITE_CREATON_EARLIER_CONTRACT`, `_TEXT_HASH` and `_TEXT_URL`; the guide says so; `deploy/compose/test-app-settings.sh` passes | the same image-settings test (the three names are in its one list); not built as an image (no docker here) |
+| App guard: the claim list's total must equal the team's earlier pool | the existing test set a total of 1, which the claimed-total check refused first; it now sets a total above the claims, so only the pool check can refuse | `numbers-step4.test.ts`: with the pool check out, 1 of 31 fails |
+| App guard: Take out of parked Shares looked up after a replaced call counts the parked Shares | `park-flows.test.tsx`: a take-out goes out, is replaced and does not land; wallet 600 and parked 400 are still 1,000 held, so it is not taken for landed and a new call is sent | with the parked term multiplied by zero, that test fails |
+| App guard: the claim page re-checks the wallet's account before it sends | `earlier-grant.test.tsx`: the wallet shows another account at the press; nothing is sent and the page says the link is not for it | with the re-check out, that test fails |
+| App guard: a brain copy that downloaded but cannot be read is wiped | new `brain-git-wipe.test.ts` (the git library and the file store are stand-ins that count) | with the wipe out, the test fails |
+| Text, not markup, on posts | `post-text.test.tsx` (a post with an image tag and a script tag is drawn as its own characters) and `post-actions.test.tsx` (the same in a quoted post). The search, topic and saved lists draw posts with the same component | with `dangerouslySetInnerHTML` in `PostText` the new test fails (biome's rule `noDangerouslySetInnerHtml` also refuses it) |
+| Server guard: the warning-day rule of `record_step4::pause_from` was caught by no test | three rows in `each_rule_of_the_pause_key_leaves_it_null_when_broken`: a day that is not a seventh of the unit with `pausesFrom` moved with it; a day of nothing with `pausesFrom` moved with it; a day of nothing on a unit of 0. The rows now match the day rule's own words ("a seventh of the"); the pausesFrom rule also says "warning period", which is why the old rows passed with the day rule out | with `p.day != ledger.unit / 7` out the test fails; with `p.day == 0` out it fails; both with the unbroken book giving the key |
+| Server test: the box-payment lock test was timing dependent | the three confirms now run on separate threads (`multi_thread`, `tokio::spawn`) for 32 rounds, not three futures on one task for 6 | with the lock released before the lookup (no lock at all) it fails in the first round, twice in two runs. With the lock released only just before the record is stored (the narrowest window), 16 rounds failed in 2 of 3 runs: a single green run is weak evidence for that mutation, and the test says so in its comment; run it a few times when the lock is touched |
+| A refusal that gave advice that cannot work | `TOO_MANY_WALLETS` said "unlink the ones you do not use", but a revoked record cannot be removed. It now says "use another account for this". Tests use the constant | the tests that name it |
+
+### 9.2 What ran
+
+- `app`: `biome check .` clean, `tsc --noEmit` clean, `check:copy`, `check:px-text` and `check:file-sizes` (with `CHECK_FILE_SIZES_BASE` set, because this sandbox has no `origin/main`) pass; **vitest: 227 files, 2,092 tests, all passed**.
+- `web`: `biome check .` clean (0 errors); **`pnpm test`: 3,502 tests, 3,501 passed, 0 failed, 1 skipped** (the failing image-settings test and the repost test now pass).
+- `packages/creaton-core`: `pnpm check` exits 0; **`pnpm test`: 1,283 tests, 1,282 passed, 0 failed, 1 skipped**.
+- `deploy/compose/test-app-settings.sh`: PASS.
+- `buzz-relay`: `cargo fmt --check` clean; `cargo clippy -p buzz-relay --all-targets -- -D warnings` clean. The relay tests of every module touched, with the Postgres ones (`--include-ignored --test-threads=1`, filters `task_chain chain_agent_link sponsor scan_pause season launch_update wallet_binding record_step4 ledger calldata chain_reader`): 334 passed and 1 failed: `chain_agent_link::tests::every_refusal_says_how_to_clear_it`, which required the word "unlink" in the changed sentence. It now requires "unlink" in the three sentences it is true for and "use another account" (and no "unlink") in `TOO_MANY_WALLETS`; `chain_agent_link` was run again: its 4 non-Postgres tests pass (its Postgres tests were in the 334). The lock test alone, on the final code: passed twice in a row (36 seconds each, 32 rounds).
+
+### 9.3 Not built, and why (for the owner)
+
+- **The brain download's inflation bound.** The download is capped at 1 MiB, but nothing bounds what a crafted pack inflates to in the viewer's browser tab (up to about 1 GB by the format's own ratio). It happens only after a person presses to open a project's brain and only if the server serves a hostile repository; the result is a tab that crashes, not lost money or data. The real fix is a size-limited read on the server (or a pack-stream bound in the library); neither is small. Open.
+- **Avatars.** Unchanged: an https avatar makes the viewer's phone ask that website for it. The owner chooses between server-only avatars and saying it in the privacy text (section 7.3).
+- **An account with 20 or more wallet binding records** (revoked ones count) is refused for a manager profile and for every task step in a chain-following project, and cannot clear it (a revoked record cannot be removed). The sentence no longer says it can; a cleanup path (or asking the network the other way round) is the owner's choice. A real person has a handful.
+
+### 9.4 Chosen under the owner's standing go; the owner may overrule
+
+- The second loop of the Dockerfile is read by the image-settings test as a second list of the same kind, rather than the two loops being merged into one: the old app's names and the new app's names stay in their own stages.
+- The claim page's three settings are passed on without the Dockerfile checking them (the app checks them itself and fails closed: a wrong or half-set value means no claim page, with no message at build time). Checking them in the Dockerfile too would be a second copy of the rule.
+- The sentence for too many linked wallets tells the person to use another account, the one remedy that works.
