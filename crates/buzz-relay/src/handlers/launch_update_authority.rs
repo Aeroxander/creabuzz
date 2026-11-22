@@ -694,7 +694,9 @@ fn read_candidacy(
     topics: &[&str],
     expirations: &[&str],
 ) -> Result<Candidacy, String> {
-    let bad = || BAD_CANDIDACY.to_owned();
+    fn bad() -> String {
+        BAD_CANDIDACY.to_owned()
+    }
     let [ballot] = candidacies else {
         return Err(bad());
     };
@@ -752,7 +754,9 @@ pub(crate) fn candidacy_expiration_ok(until: u64, now: u64) -> bool {
 /// Check a candidacy's content: `{"v":1,"text":"..."}`, the text at most 280 characters, the content at most 1,024
 /// bytes and nothing else in it (the plan's exact shape, COUNCIL-PLAN.md section 5.4).
 fn check_candidacy_text(event: &Event) -> Result<(), String> {
-    let bad = || BAD_CANDIDACY_TEXT.to_owned();
+    fn bad() -> String {
+        BAD_CANDIDACY_TEXT.to_owned()
+    }
     if event.content.len() > CANDIDACY_CONTENT_MAX {
         return Err(bad());
     }
