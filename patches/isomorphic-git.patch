@@ -21,3 +21,187 @@ index 330b0513126e2ace570d8ba5664b49a2903a9b37..46e5b3e5fa7297e2cd6c47eb8eb4f4de
        }
      },
      "./http/node": {
+diff --git a/index.cjs b/index.cjs
+index f25de4a7498b3e994f85a08a5a54afed34d9d3ce..6427587b0651e11c43fe881f29c67b9ba3ae66b1 100644
+--- a/index.cjs
++++ b/index.cjs
+@@ -2713,6 +2713,30 @@ async function readObjectLoose({ fs, gitdir, oid }) {
+   return { object: file, format: 'deflated', source }
+ }
+ 
++/**
++ * Optional bound on what a download may unpack to (Creaton). A caller that reads a repository it does not trust sets
++ * `globalThis[Symbol.for('creaton.isomorphic-git.unpackLimits')] = { object, total, produced: 0 }` for the length of one
++ * fetch: `object` is the most one object may unpack to (bytes), `total` the most the whole pack may (bytes) and `produced`
++ * counts the bytes actually unpacked so far. Unset (the default) nothing is limited. A pack over a limit is stopped while it
++ * inflates (at most one 16 KiB chunk past the limit is ever produced) and throws an error whose `code` is 'UnpackLimitError'.
++ */
++const UNPACK_LIMITS = Symbol.for('creaton.isomorphic-git.unpackLimits');
++
++function unpackLimits() {
++  return globalThis[UNPACK_LIMITS] || null
++}
++
++function unpackLimitError(what) {
++  const error = new Error(`The download unpacks to more than the limit (${what}).`);
++  error.code = 'UnpackLimitError';
++  return error
++}
++
++function countUnpacked(limits, bytes) {
++  limits.produced += bytes;
++  if (limits.produced > limits.total) throw unpackLimitError('total')
++}
++
+ /**
+  * @param {Buffer} delta
+  * @param {Buffer} source
+@@ -2728,6 +2752,8 @@ function applyDelta(delta, source) {
+     )
+   }
+   const targetSize = readVarIntLE(reader);
++  const limits = unpackLimits();
++  if (limits && targetSize > limits.object) throw unpackLimitError('object')
+   let target;
+ 
+   const firstOp = readOp(reader, source);
+@@ -2747,6 +2773,11 @@ function applyDelta(delta, source) {
+       const op = readOp(reader, source);
+       chunks.push(op);
+       tell += op.byteLength;
++      if (tell > targetSize) {
++        throw new InternalError(
++          `applyDelta expected target buffer to be ${targetSize} bytes but the resulting buffer was longer`
++        )
++      }
+     }
+ 
+     if (targetSize !== tell) {
+@@ -2756,6 +2787,7 @@ function applyDelta(delta, source) {
+     }
+     target = Buffer.concat(chunks, targetSize);
+   }
++  if (limits) countUnpacked(limits, target.byteLength);
+   return target
+ }
+ 
+@@ -2990,7 +3022,19 @@ async function listpack(stream, onData) {
+   while (!reader.eof() && numObjects--) {
+     const offset = reader.tell();
+     const { type, length, ofs, reference } = await parseHeader(reader);
++    const limits = unpackLimits();
++    if (limits && length > limits.object) throw unpackLimitError('object')
+     const inflator = new pako.Inflate();
++    if (limits) {
++      let objectBytes = 0;
++      const keep = inflator.onData;
++      inflator.onData = function (chunk) {
++        objectBytes += chunk.length;
++        if (objectBytes > length) throw unpackLimitError('stated')
++        countUnpacked(limits, chunk.length);
++        keep.call(this, chunk);
++      };
++    }
+     while (!inflator.result) {
+       const chunk = await reader.chunk();
+       if (!chunk) break
+@@ -3285,6 +3329,7 @@ class GitPackIndex {
+         offsets.set(oid, offset);
+         crcs[oid] = o.crc;
+       } catch (err) {
++        if (err && err.code === 'UnpackLimitError') throw err
+         continue
+       }
+     }
+diff --git a/index.js b/index.js
+index adea705f2c8b75f9f0a13a97d2405dd9968f3db3..a3cbb052954fef795bcbf1b26d3d7ec7d538417c 100644
+--- a/index.js
++++ b/index.js
+@@ -2706,6 +2706,30 @@ async function readObjectLoose({ fs, gitdir, oid }) {
+   return { object: file, format: 'deflated', source }
+ }
+ 
++/**
++ * Optional bound on what a download may unpack to (Creaton). A caller that reads a repository it does not trust sets
++ * `globalThis[Symbol.for('creaton.isomorphic-git.unpackLimits')] = { object, total, produced: 0 }` for the length of one
++ * fetch: `object` is the most one object may unpack to (bytes), `total` the most the whole pack may (bytes) and `produced`
++ * counts the bytes actually unpacked so far. Unset (the default) nothing is limited. A pack over a limit is stopped while it
++ * inflates (at most one 16 KiB chunk past the limit is ever produced) and throws an error whose `code` is 'UnpackLimitError'.
++ */
++const UNPACK_LIMITS = Symbol.for('creaton.isomorphic-git.unpackLimits');
++
++function unpackLimits() {
++  return globalThis[UNPACK_LIMITS] || null
++}
++
++function unpackLimitError(what) {
++  const error = new Error(`The download unpacks to more than the limit (${what}).`);
++  error.code = 'UnpackLimitError';
++  return error
++}
++
++function countUnpacked(limits, bytes) {
++  limits.produced += bytes;
++  if (limits.produced > limits.total) throw unpackLimitError('total')
++}
++
+ /**
+  * @param {Buffer} delta
+  * @param {Buffer} source
+@@ -2721,6 +2745,8 @@ function applyDelta(delta, source) {
+     )
+   }
+   const targetSize = readVarIntLE(reader);
++  const limits = unpackLimits();
++  if (limits && targetSize > limits.object) throw unpackLimitError('object')
+   let target;
+ 
+   const firstOp = readOp(reader, source);
+@@ -2740,6 +2766,11 @@ function applyDelta(delta, source) {
+       const op = readOp(reader, source);
+       chunks.push(op);
+       tell += op.byteLength;
++      if (tell > targetSize) {
++        throw new InternalError(
++          `applyDelta expected target buffer to be ${targetSize} bytes but the resulting buffer was longer`
++        )
++      }
+     }
+ 
+     if (targetSize !== tell) {
+@@ -2749,6 +2780,7 @@ function applyDelta(delta, source) {
+     }
+     target = Buffer.concat(chunks, targetSize);
+   }
++  if (limits) countUnpacked(limits, target.byteLength);
+   return target
+ }
+ 
+@@ -2983,7 +3015,19 @@ async function listpack(stream, onData) {
+   while (!reader.eof() && numObjects--) {
+     const offset = reader.tell();
+     const { type, length, ofs, reference } = await parseHeader(reader);
++    const limits = unpackLimits();
++    if (limits && length > limits.object) throw unpackLimitError('object')
+     const inflator = new pako.Inflate();
++    if (limits) {
++      let objectBytes = 0;
++      const keep = inflator.onData;
++      inflator.onData = function (chunk) {
++        objectBytes += chunk.length;
++        if (objectBytes > length) throw unpackLimitError('stated')
++        countUnpacked(limits, chunk.length);
++        keep.call(this, chunk);
++      };
++    }
+     while (!inflator.result) {
+       const chunk = await reader.chunk();
+       if (!chunk) break
+@@ -3278,6 +3322,7 @@ class GitPackIndex {
+         offsets.set(oid, offset);
+         crcs[oid] = o.crc;
+       } catch (err) {
++        if (err && err.code === 'UnpackLimitError') throw err
+         continue
+       }
+     }

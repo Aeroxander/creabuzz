@@ -9,7 +9,7 @@ overrides:
   linkify-it: ^5.0.2
 
 patchedDependencies:
-  isomorphic-git: e9b414a60d4cf1d8aa18f7a779483984e821989967c235662566e94ef0238d3f
+  isomorphic-git: 20b1c9cc082dc4db980745a6e0687535cc239a1576bbed05fc95c4dba20aebe6
   virtua@0.49.3: 30a7a92b94800ec37be8d36546ea98c04a05dcd0637f9fac27a06f016ba2eff4
 
 importers:
@@ -101,7 +101,7 @@ importers:
         version: 6.0.3
       isomorphic-git:
         specifier: ^1.38.3
-        version: 1.38.10(patch_hash=e9b414a60d4cf1d8aa18f7a779483984e821989967c235662566e94ef0238d3f)
+        version: 1.38.10(patch_hash=20b1c9cc082dc4db980745a6e0687535cc239a1576bbed05fc95c4dba20aebe6)
       lucide-react:
         specifier: ^1.0.0
         version: 1.16.0(react@19.2.8)
@@ -487,7 +487,7 @@ importers:
         version: 2.1.1
       isomorphic-git:
         specifier: ^1.38.3
-        version: 1.38.10(patch_hash=e9b414a60d4cf1d8aa18f7a779483984e821989967c235662566e94ef0238d3f)
+        version: 1.38.10(patch_hash=20b1c9cc082dc4db980745a6e0687535cc239a1576bbed05fc95c4dba20aebe6)
       lucide-react:
         specifier: ^1.0.0
         version: 1.16.0(react@19.2.8)
@@ -7467,7 +7467,7 @@ snapshots:
 
   isexe@2.0.0: {}
 
-  isomorphic-git@1.38.10(patch_hash=e9b414a60d4cf1d8aa18f7a779483984e821989967c235662566e94ef0238d3f):
+  isomorphic-git@1.38.10(patch_hash=20b1c9cc082dc4db980745a6e0687535cc239a1576bbed05fc95c4dba20aebe6):
     dependencies:
       async-lock: 1.4.1
       clean-git-ref: 2.0.1

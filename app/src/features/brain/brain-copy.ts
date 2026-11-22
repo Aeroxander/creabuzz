@@ -49,7 +49,7 @@ export function brainFailureWords(error: unknown): string {
     return "The server did not answer in time. Check your connection and try again.";
   const name = (error as { name?: unknown } | null)?.name;
   if (name === "BrainTooBigError")
-    return "The project's files are too big to read here.";
+    return "The project's notes are too big to show here.";
   const status = (error as { data?: { statusCode?: unknown } } | null)?.data
     ?.statusCode;
   if (status === 401) return "Sign in to read the notes, then try again.";

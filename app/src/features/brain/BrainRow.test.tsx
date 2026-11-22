@@ -244,6 +244,22 @@ describe("the project's brain on its page", () => {
     await waitFor(() => expect(opened).toBe(2));
   });
 
+  it("says in plain words that a brain too big to unpack is too big to show", async () => {
+    announced = BOUND;
+    copy = async () => {
+      throw Object.assign(new Error("over the limit"), {
+        name: "BrainTooBigError",
+      });
+    };
+    wrap(<BrainRow isFounder={false} project={lantern()} />);
+    fireEvent.click(await screen.findByTestId("brain-open"));
+    const alert = await screen.findByTestId("brain-failure");
+    expect(alert.textContent).toContain(
+      "The project's notes are too big to show here.",
+    );
+    expect(alert.textContent).not.toMatch(/limit|unpack|inflate|pack/i);
+  });
+
   it("tells a founder whose repository is not attached to a room why nobody can read it", async () => {
     announced = [{ tags: [["d", `brain-${ID}`]] }];
     wrap(<BrainRow isFounder project={lantern()} />);

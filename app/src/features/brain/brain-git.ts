@@ -15,17 +15,77 @@ import type { BrainRepo } from "./brain-repo";
 
 /**
  * The most one download may bring (bytes). A brain is notes: four text files and a few playbooks pack to a fraction of this,
- * and a repository bigger than this is not a brain. The number also bounds the worst case of a crafted download: deflate
- * expands at most about 1000 to 1, so a download at the cap inflates to about 1 GB at most.
+ * and a repository bigger than this is not a brain. What the download unpacks to is bounded separately, by
+ * {@link UNPACK_TOTAL_MAX_BYTES}.
  */
 export const DOWNLOAD_MAX_BYTES = 1024 * 1024;
 
-/** The download went over {@link DOWNLOAD_MAX_BYTES}. */
+/**
+ * The most one object of the download may unpack to (bytes). A brain file is shown only up to 200 000 bytes (a longer one
+ * is said to be too long), so one object over this is not a note.
+ */
+export const UNPACK_OBJECT_MAX_BYTES = 1024 * 1024;
+
+/**
+ * The most the whole download may unpack to (bytes): the four fixed files, up to twenty playbooks and the folders that hold
+ * them fit well inside it. This, not the size of the download, is what bounds a tab's memory: deflate expands about 1000 to 1,
+ * so a download at {@link DOWNLOAD_MAX_BYTES} could otherwise unpack to about 1 GB.
+ */
+export const UNPACK_TOTAL_MAX_BYTES = 8 * 1024 * 1024;
+
+/** The download went over {@link DOWNLOAD_MAX_BYTES}, or would unpack to more than {@link UNPACK_TOTAL_MAX_BYTES}. */
 export class BrainTooBigError extends Error {
   constructor() {
-    super("The project's files are too big to read here.");
+    super("The project's notes are too big to show here.");
     this.name = "BrainTooBigError";
   }
+}
+
+/**
+ * What the git library (as patched in `patches/isomorphic-git.patch`) reads from `globalThis` under this key while a
+ * download unpacks: `object` and `total` are the limits, `produced` counts the bytes the library has unpacked so far. A
+ * download over a limit is stopped while it inflates (at most one 16 KiB chunk past it) with an error coded
+ * `UnpackLimitError`.
+ */
+export interface UnpackLimits {
+  object: number;
+  total: number;
+  produced: number;
+}
+
+const UNPACK_LIMITS_KEY = Symbol.for("creaton.isomorphic-git.unpackLimits");
+
+/** The reads that wait their turn: the limits are the library's one setting, so two downloads never overlap. */
+let unpackTurn: Promise<unknown> = Promise.resolve();
+
+/**
+ * Runs one download with the unpack limits set, and takes them off again however it ends. A stop at a limit comes out as
+ * {@link BrainTooBigError}. Downloads run one at a time, so one read never counts another's bytes. `limits` is for tests
+ * (they read `produced` afterwards).
+ */
+export function withUnpackLimits<T>(
+  run: () => Promise<T>,
+  limits: UnpackLimits = {
+    object: UNPACK_OBJECT_MAX_BYTES,
+    total: UNPACK_TOTAL_MAX_BYTES,
+    produced: 0,
+  },
+): Promise<T> {
+  const scope = globalThis as { [UNPACK_LIMITS_KEY]?: UnpackLimits };
+  const result = unpackTurn.then(async () => {
+    scope[UNPACK_LIMITS_KEY] = limits;
+    try {
+      return await run();
+    } catch (error) {
+      if ((error as { code?: unknown } | null)?.code === "UnpackLimitError")
+        throw new BrainTooBigError();
+      throw error;
+    } finally {
+      delete scope[UNPACK_LIMITS_KEY];
+    }
+  });
+  unpackTurn = result.catch(() => undefined);
+  return result;
 }
 
 /** The name of the browser file store the copy is made in. */
@@ -87,17 +147,19 @@ export const gitTools: GitTools = {
     // A fresh, empty store for this read; wiped again when it ends.
     let fs = new LightningFS(STORE_NAME, { wipe: true });
     try {
-      await withGitDeadline((http) =>
-        git.clone({
-          fs,
-          http: capped(http),
-          dir: DIR,
-          url,
-          depth: 1,
-          singleBranch: true,
-          noTags: true,
-          headers,
-        }),
+      await withUnpackLimits(() =>
+        withGitDeadline((http) =>
+          git.clone({
+            fs,
+            http: capped(http),
+            dir: DIR,
+            url,
+            depth: 1,
+            singleBranch: true,
+            noTags: true,
+            headers,
+          }),
+        ),
       );
     } catch (error) {
       fs = new LightningFS(STORE_NAME, { wipe: true });
