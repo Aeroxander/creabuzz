@@ -78,8 +78,12 @@
   "runner": {
     "address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
     "isPair": false,
-    "signers": null
+    "signers": null,
+    "kind": "single",
+    "seats": null
   },
+  "council": null,
+  "vote": null,
   "team": {
     "pool": "10000000000000000000000000",
     "earlierPool": "3540500000000000000000",

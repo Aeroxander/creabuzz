@@ -1,1 +1,809 @@
-{}
+{
+  "version": 2,
+  "chainId": 31337,
+  "launcher": "0x9fe46736679d2d9a65f0992f2272de9f3c7fa6e0",
+  "key": "0x8849fd8dcd83d68b5966c429cbc2e1abdb479d68c84c1f45d3c9676bb1c816db",
+  "projectId": "0x67616d6d61000000000000000000000000000000000000000000000000000000",
+  "founder": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+  "launchedAt": 1795001000,
+  "playMoney": true,
+  "contracts": {
+    "treasury": "0x75537828f2ce51be7289709686a69cbfdbb714f1",
+    "shares": "0xe451980132e65465d0a498c53f0b5227326dd73f",
+    "team": "0x5392a33f7f677f59e833febf4016cddd88ff9e67",
+    "vester": "0xa783cdc72e34a174cca57a6d9a74904d0bec05a9",
+    "dollar": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+    "pair": null,
+    "pause": "0x61ef99673a65bee0512b8d1eb1aa656866d24296"
+  },
+  "asOf": {
+    "block": 68,
+    "time": 1813015520
+  },
+  "builtAt": 1813015651,
+  "refreshEverySecs": 600,
+  "unit": 604800,
+  "fee": {
+    "bps": 200
+  },
+  "money": {
+    "pot": "10704540000",
+    "paidIn": "10780000000",
+    "arriving": "0",
+    "arrivalEnd": null,
+    "feesOwed": "220000000",
+    "locked": "0",
+    "notesOwed": "0",
+    "held": "11000000000"
+  },
+  "shares": {
+    "backers": "1079470777582123002115628",
+    "teamCounted": "10000000000000000000000000",
+    "announcedBurn": "0"
+  },
+  "value": {
+    "leaveValue": "9916",
+    "teamValue": "0"
+  },
+  "allowance": {
+    "ratePpm": 1000,
+    "pending": null,
+    "box": "75460000",
+    "boxCap": "75460000",
+    "drawnLastDay": "0"
+  },
+  "clock": {
+    "lastCheckIn": 1796124200,
+    "lastRecordHash": "0x0d3eb61dcaad1bb758464ef8f05f91f845dbf4baf1d6976ca0fac30dcccb0656",
+    "activeUntil": 1797333800,
+    "activeSeconds": 2332800
+  },
+  "door": {
+    "switchOn": true,
+    "openNow": false,
+    "shutsAt": 1797333800
+  },
+  "quiet": {
+    "state": "may_wind_down",
+    "since": 1811849000,
+    "quietFrom": 1797333800,
+    "dormantFrom": 1803986600,
+    "windableFrom": 1811849000,
+    "next": null
+  },
+  "windDown": null,
+  "runner": {
+    "address": "0xd60f5c186497992c05df42882c84243c8d06b7b3",
+    "isPair": false,
+    "signers": null,
+    "kind": "council",
+    "seats": 5
+  },
+  "council": {
+    "contract": "0xd60f5c186497992c05df42882c84243c8d06b7b3",
+    "seats": [
+      {
+        "account": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+        "seatedAt": 1796858660
+      },
+      {
+        "account": "0x14dc79964da2c08b23698b3d3cc7ca32193d9955",
+        "seatedAt": 1796858660
+      },
+      {
+        "account": "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc",
+        "seatedAt": 1796858660
+      },
+      {
+        "account": "0x976ea74026e726554db657fa54763abd0c3a0aa9",
+        "seatedAt": 1796858660
+      },
+      {
+        "account": "0x23618e81e3f5cdf7f54c3d65f7fbc0abf5b21e8f",
+        "seatedAt": 1796858660
+      }
+    ],
+    "needed": 3,
+    "generation": 0,
+    "nextElection": 1828308320,
+    "upSeats": [
+      2,
+      3
+    ],
+    "waiting": {
+      "count": 0,
+      "kinds": [],
+      "truncated": false
+    }
+  },
+  "vote": {
+    "contract": "0x61ef99673a65bee0512b8d1eb1aa656866d24296",
+    "rule": {
+      "standSecs": 86400,
+      "voteSecs": 259200,
+      "waitSecs": 1425600,
+      "floorDivisor": 3,
+      "openDivisor": 20,
+      "standDivisor": 1000,
+      "cooldownSecs": 2419200,
+      "seatsEverySecs": 15724800,
+      "proposalTtlSecs": 1209600,
+      "needed": 3,
+      "seats": 5,
+      "maxLists": 4,
+      "maxPeople": 12,
+      "minVote": "1000000000000000000"
+    },
+    "open": {
+      "id": 2,
+      "kind": "seats",
+      "phase": "waiting",
+      "openedAt": 1812583520,
+      "standEnd": 1812669920,
+      "voteEnd": 1812929120,
+      "effectiveAt": 1814354720,
+      "supply": "1079470777582123002115628",
+      "floor": "359823592527374334038543",
+      "cast": "814850194349175381171380",
+      "options": [
+        {
+          "index": 0,
+          "kind": "keep",
+          "members": [],
+          "proposer": null,
+          "recordHash": null,
+          "tally": "0"
+        },
+        {
+          "index": 1,
+          "kind": "person",
+          "members": [
+            "0x70997970c51812dc3a010c7d01b50e0d17dc79c8"
+          ],
+          "proposer": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+          "recordHash": "0xa0f42d88e2239b8465fc5f1a1196090824b7150898fbf771d4adaf0af9272661",
+          "tally": "539732818398851305292662"
+        },
+        {
+          "index": 2,
+          "kind": "person",
+          "members": [
+            "0xa0ee7a142d267c1f36714e4a8f75612f20a79720"
+          ],
+          "proposer": "0xa0ee7a142d267c1f36714e4a8f75612f20a79720",
+          "recordHash": "0x3191ec4b58f14d9c018a85edb3fe57ef93cfead488eae306ae04a9447dd6005d",
+          "tally": "225764692235810120403478"
+        },
+        {
+          "index": 3,
+          "kind": "person",
+          "members": [
+            "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266"
+          ],
+          "proposer": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+          "recordHash": "0x1847d9ac6907c400bcf6e9da495dc680e81cc7151bd1d9585d37e06cb4bcbb68",
+          "tally": "49352683714513955475240"
+        }
+      ],
+      "result": {
+        "outcome": "seated",
+        "winners": [
+          1,
+          2
+        ],
+        "recorded": false
+      },
+      "carriedOutAt": null
+    },
+    "next": {
+      "seatsAt": 1828308320,
+      "replaceFrom": 1813015520,
+      "openFloor": "53973538879106150105782"
+    }
+  },
+  "team": {
+    "pool": "10000000000000000000000000",
+    "earlierPool": null,
+    "earlierReserve": null,
+    "inHands": "0",
+    "inVester": "10000000000000000000000000",
+    "promised": "0",
+    "ungranted": "10000000000000000000000000",
+    "grantCount": 0,
+    "grants": []
+  },
+  "agents": [],
+  "limits": {
+    "minJoin": "1000000",
+    "minOutsidePayment": "1000000",
+    "maxRatePpm": 2000,
+    "checkInWindowUnits": 2,
+    "windDownUnits": 26,
+    "cliffUnits": 13,
+    "vestUnits": 104,
+    "minGrant": "1000000000000000000",
+    "maxGrantsPerMember": 8,
+    "agentUsdPerDay": "25000000",
+    "agentTeamPerDay": "10000000000000000000000"
+  },
+  "totals": {
+    "joined": "11000000000",
+    "fees": "220000000",
+    "tookOut": "0",
+    "drawn": "0",
+    "outside": "0",
+    "paidToWorkers": "0",
+    "noteClaims": "0"
+  },
+  "firstBackedAt": 1795009760,
+  "holders": [
+    {
+      "account": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+      "shares": "490000000000000000000000",
+      "teamShares": "0"
+    },
+    {
+      "account": "0x90f79bf6eb2c4f870365e785982e1f101e93b906",
+      "shares": "196019601960192018801840",
+      "teamShares": "0"
+    },
+    {
+      "account": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
+      "shares": "98698513010605270385586",
+      "teamShares": "0"
+    },
+    {
+      "account": "0x15d34aaf54267db7d7c367839aaf71a00a2c6a65",
+      "shares": "98029405875911431708718",
+      "teamShares": "0"
+    },
+    {
+      "account": "0x9965507d1a55bcc2695c58ba16fb37d819b0a4dc",
+      "shares": "98019602940388619303596",
+      "teamShares": "0"
+    },
+    {
+      "account": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+      "shares": "49352683714513955475240",
+      "teamShares": "0"
+    },
+    {
+      "account": "0xa0ee7a142d267c1f36714e4a8f75612f20a79720",
+      "shares": "49350970080511706440648",
+      "teamShares": "0"
+    }
+  ],
+  "holderCount": 7,
+  "teamHolderCount": 0,
+  "truncated": false,
+  "tasks": {
+    "book": "0xb30daf0240261be564cea33260f01213c47aaa0d",
+    "bookBlock": 8,
+    "nextSerial": 1,
+    "openCount": 0,
+    "nextExpiry": null,
+    "limits": {
+      "maxOpen": 8,
+      "maxShareBps": 500,
+      "capBps": 1000,
+      "minTask": "1000000",
+      "capWindowSecs": 2419200,
+      "takeWindowSecs": 604800,
+      "dueSecs": 1209600
+    },
+    "cap": {
+      "usedBps": 0,
+      "roomBps": 1000,
+      "frees": []
+    },
+    "next": null,
+    "list": [],
+    "cut": {
+      "maxEnded": 32,
+      "endedWithinSecs": 2419200,
+      "endedDropped": 0,
+      "notesRowsDropped": 0
+    },
+    "truncated": false
+  },
+  "pause": {
+    "contract": "0x61ef99673a65bee0512b8d1eb1aa656866d24296",
+    "parkedTotal": "716151681338570110785794",
+    "line": "359823592527374334038543",
+    "dayLength": 86400,
+    "lineDivisor": 3,
+    "armedAt": 1795052900,
+    "pausesFrom": 1795139300,
+    "paused": true,
+    "since": 1795139300,
+    "parkerCount": 5
+  },
+  "earlierGrants": null,
+  "held": {
+    "windows": {
+      "rankSecs": 2592000,
+      "badgeSecs": 7862400
+    },
+    "rank": {
+      "shares": "1079470777582123002115628",
+      "bps": 10000,
+      "money": "10704032230",
+      "accounts": 7
+    },
+    "badge": {
+      "shares": "1079470777582123002115628",
+      "bps": 10000
+    },
+    "countedAccounts": 7
+  },
+  "feed": {
+    "roundTo": "100000000",
+    "bucketSecs": 3600,
+    "hours": [
+      {
+        "at": 1812844800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812848400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812852000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812855600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812859200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812862800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812866400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812870000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812873600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812877200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812880800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812884400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812888000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812891600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812895200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812898800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812902400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812906000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812909600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812913200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812916800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812920400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812924000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812927600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812931200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812934800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812938400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812942000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812945600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812949200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812952800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812956400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812960000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812963600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812967200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812970800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812974400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812978000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812981600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812985200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812988800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812992400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812996000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1812999600,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1813003200,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1813006800,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1813010400,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      },
+      {
+        "at": 1813014000,
+        "joins": 0,
+        "tookOut": 0,
+        "net": {
+          "dir": "even",
+          "amount": "0"
+        }
+      }
+    ],
+    "items": [],
+    "cut": 0
+  },
+  "streaks": {
+    "updates": {
+      "weeks": 0,
+      "longest": 1,
+      "lastAt": 1796124200
+    }
+  },
+  "established": {
+    "rule": {
+      "minHeldBps": 6000,
+      "heldSecs": 7862400,
+      "minAccounts": 10
+    },
+    "heldBps": 10000,
+    "accounts": 7,
+    "twoSigners": true,
+    "reached": false
+  },
+  "ledger": {
+    "lastSettle": 1796868320,
+    "pot": "10717566730",
+    "box": "62433270",
+    "arriving": "0",
+    "arrivalEnd": null,
+    "arrivalStart": 0,
+    "arrivalTotal": "0",
+    "activeSeconds": 1867320,
+    "locked": "0",
+    "notesOwed": "0"
+  }
+}

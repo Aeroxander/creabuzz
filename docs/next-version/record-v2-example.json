@@ -82,8 +82,12 @@
   "runner": {
     "address": "0x70997970c51812dc3a010c7d01b50e0d17dc79c8",
     "isPair": false,
-    "signers": null
+    "signers": null,
+    "kind": "single",
+    "seats": null
   },
+  "council": null,
+  "vote": null,
   "team": {
     "pool": "10000000000000000000000000",
     "earlierPool": null,
@@ -363,7 +367,7 @@
         "notesLeft": "0",
         "capBps": 0,
         "resolvedAt": 1803148520,
-        "resolvedTx": "0x5d43fda41a88553fafc73118f8f80897e4c5612b02f044156bde63e5000190bc",
+        "resolvedTx": "0xf7c3c050e8d996af024a5fb71431dfce442e6161692cf32e1ec41d44e23f7d5e",
         "repeatOf": null,
         "notes": null
       },
@@ -389,7 +393,7 @@
         "notesLeft": "0",
         "capBps": 0,
         "resolvedAt": 1802967080,
-        "resolvedTx": "0x430d861d66e6c2eae0017baba332a0ce459c83420ac9e92c3e97c2d0029d70f7",
+        "resolvedTx": "0x8242ef1af755b4f97e0f9733c19d622767688f07b9bdbc658d856b54844bd872",
         "repeatOf": null,
         "notes": null
       },
@@ -415,7 +419,7 @@
         "notesLeft": "4297836",
         "capBps": 0,
         "resolvedAt": 1803381800,
-        "resolvedTx": "0xc165213b149364e82d17626c619f72362230782a703960b8f44749342e1135c6",
+        "resolvedTx": "0x62e0a8b8dcbf0fc9d46608e593e22a15ee580d86642e3b9e8205cde2d309212c",
         "repeatOf": null,
         "notes": {
           "faceTotal": "4297836",
@@ -451,7 +455,7 @@
         "notesLeft": "0",
         "capBps": 0,
         "resolvedAt": 1801740200,
-        "resolvedTx": "0xab8c194dd043a3ddb67b14d8e0e70deed702f1ce0619a65131d89e80fb057211",
+        "resolvedTx": "0x29e41da83327bb1ca50ecb20d5936ee47c85a772cb9757978eacf6380d703764",
         "repeatOf": null,
         "notes": null
       },
@@ -477,7 +481,7 @@
         "notesLeft": "0",
         "capBps": 200,
         "resolvedAt": 1801913000,
-        "resolvedTx": "0x0d11c0d127e1901c023a2d6ba85909f9446f3295537f427dec185ed7a21c1f82",
+        "resolvedTx": "0x14a811b78249f7023cf65e96927d73664c67342619066f95036515429618a4a2",
         "repeatOf": null,
         "notes": null
       }
