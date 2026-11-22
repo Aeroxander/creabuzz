@@ -328,6 +328,25 @@ budget).
 
 ---
 
+### The whole joined-up loop
+
+At this commit **all nine worlds of `scripts/pot-full-loop.sh` pass** against the real server, chain reader and app builds:
+
+| Journey | Checks |
+|---|---|
+| `pot-full.spec` (the main journey) | 707 |
+| `pot-tasks.spec` (the task queue and its record) | 1,681 |
+| `pot-room.spec` (the room) | 306 |
+| `pot-seasons.spec` (seasons) | 1,715 |
+| `pot-push.spec` (alerts, with the push stand-in) | 28 |
+| `pot-pause.spec` (step 4's freeze) | 868 |
+| `pot-earlier.spec` (step 4's claim) | 580 |
+| **`pot-council.spec`** (new: hand-over, the section, three of five) | **23** |
+| **`pot-replace.spec`** (new: a replace vote end to end) | **19** |
+
+That is a regression run of every earlier journey on the new record (the record gains `runner.kind`, `council` and `vote` additively)
+as well as the two new ones.
+
 ### The joined-up loop (the Council world)
 
 `scripts/pot-full-loop.sh` gains a **Council world** (deployed with `HOLDER_PAUSE=1 COUNCIL=1`, so the vote contract is the
