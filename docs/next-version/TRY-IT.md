@@ -360,10 +360,11 @@ project with no Council and no open vote, nothing new shows anywhere.
 **Run it for yourself on a local chain:** `scripts/pot-full-loop.sh pot-council.spec` starts the chain, deploys with
 `HOLDER_PAUSE=1 COUNCIL=1`, builds the app for it, starts the real server with its chain reader, and runs the journey (a founder
 launches, hands the seat to five accounts, the Money tab's Council section appears, a seat proposes a check-in, the seat holder's
-page lists it with "Posts and votes are public.", three of five agree and the record keeps up). It passes 23 checks; `--serve`
-leaves the same world running for a person to try on a phone. The *replace vote* world (park, open a vote, stand a list, vote, the
-planned-change card, a take out during the wait, carry out) and the same presses from a passkey account in `scripts/phone-loop.sh`
-are **not built this round**; the vote's screens are covered by the app's own tests and by `app/tests/e2e/pot-council.spec.ts`
+page lists it with "Posts and votes are public.", three of five agree and the record keeps up). It passes 23 checks;
+`scripts/pot-full-loop.sh pot-replace.spec` runs the **replace vote** in the same world: two backers park, one opens a vote with a
+list of five, both vote, the record derives the result with nobody pressing anything, a holder takes out during the wait, anyone
+carries the result out and the new Council runs the project (19 checks). `--serve` leaves the world running for a person to try on
+a phone. The same presses from a passkey account in `scripts/phone-loop.sh` are **not built this round**; the vote's screens are covered by the app's own tests and by `app/tests/e2e/pot-council.spec.ts`
 (7 checks at 390 x 840 and 360 x 640 with axe), plus the contracts' own suites.
 
 **Not tried by anyone:** the whole of this part on a real phone.

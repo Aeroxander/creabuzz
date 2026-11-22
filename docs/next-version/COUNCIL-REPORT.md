@@ -352,9 +352,20 @@ back to zero and an `Executed` log on the chain; and checks the section does not
    agreement; `Withdrawn` still carries the real count after it. A unit test pins it. This is the case a real proposal always
    starts in, which is why the mock journeys missed it.
 
-**Still open in the loop:** the *replace* world (park, open a vote, stand a list, vote, the planned-change card and alert, a take
-out during the wait, carry out, the new Council) and the same presses from a passkey account in `scripts/phone-loop.sh`. The
-Council world here covers the hand-over, the Council section and a three-of-five action.
+**The replace world** (`pot-replace.spec.ts`, deployed with the same switches) runs a replace vote end to end against the real
+record: two backers back and park; one opens a replace vote with a list of five; the record says standing and the app's card
+says what is being decided; after the stand window both parked holders vote on the chain; the record moves to voting and counts
+the cast weight; after the vote's end the record derives `moved` from the frozen tallies with nobody pressing `finish`; a holder
+takes out during the wait and the planned change stands; after the wait anyone carries it out; the record's runner becomes the
+new Council with the winning list's five seats; and a fresh page shows the Council section with no vote card. **It passes 19
+checks, twice in a row.**
+
+The card's *mid-vote* states (voting, planned change in the browser) are not asserted in this world: the page has to be put on
+the chain's clock to read a phase weeks ahead, and a page reloaded on that clock cannot re-authenticate to the relay (the auth
+event is dated in the future and refused), while a page left open keeps its old record. They are covered by the app's unit tests
+and by the mock-server Playwright journey (`app/tests/e2e/pot-council.spec.ts`, 7 checks, which patches the record's phase), and
+the contract and reader phases by the record itself here. The alert push for a moved result and the passkey path
+(`scripts/phone-loop.sh`) remain open in the loop.
 
 ## 3. Choices, deviations and findings
 

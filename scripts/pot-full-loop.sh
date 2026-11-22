@@ -62,7 +62,7 @@
 # Linux and macOS (`timeout` and `hostname -I` are not needed). Uses anvil's well-known development accounts only; every amount
 # is play money.
 #
-# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all eight journeys, each in a world of its own;
+# Usage:  scripts/pot-full-loop.sh [playwright args]     with no arguments: all nine journeys, each in a world of its own;
 #                                                          with arguments (a file name such as pot-tasks.spec, a --grep): one world, those only
 #         scripts/pot-full-loop.sh --serve       the same world, left running for a person to try on a phone (see below)
 #         scripts/pot-full-loop.sh --hold        one world, left running for an engineer: it writes the environment a journey needs to
@@ -155,7 +155,8 @@ STANDIN_PID=""
 STANDIN_URL=""
 WORLD_PUSH="${WORLD_PUSH:-}"
 # What the deployment of a world is given: "default" (none of the switches), "pause" (HOLDER_PAUSE=1), "council" (HOLDER_PAUSE=1
-# and COUNCIL=1: the vote contract as the pause, and a Council implementation bound) or "earlier" (the six EARLIER_* settings for an
+# and COUNCIL=1: the vote contract as the pause, and a Council implementation bound), "replace" (the same switches, and a journey
+# that runs a replace vote end to end) or "earlier" (the six EARLIER_* settings for an
 # invented list, and an app built with the claim page's three settings).
 WORLD_KIND="${WORLD_KIND:-default}"
 # The operator's key when the person gave one: kept out of every file and every line this script prints.
@@ -284,7 +285,7 @@ world_up() {
   rm -f "$EARLIER_FILE"
   if [[ "$WORLD_KIND" == "pause" ]]; then
     DEPLOY_ENV=(HOLDER_PAUSE=1)
-  elif [[ "$WORLD_KIND" == "council" ]]; then
+  elif [[ "$WORLD_KIND" == "council" || "$WORLD_KIND" == "replace" ]]; then
     DEPLOY_ENV=(HOLDER_PAUSE=1 COUNCIL=1)
   elif [[ "$WORLD_KIND" == "earlier" ]]; then
     # An INVENTED list: anvil's public accounts and amounts chosen here, a throwaway Nostr key made from a public string (it is worth
@@ -317,7 +318,7 @@ world_up() {
   if [[ "$WORLD_KIND" == "pause" || "$WORLD_KIND" == "council" ]]; then
     [[ "$(jq -r .holderPause "$STATE/deployments.json")" != "0x0000000000000000000000000000000000000000" ]] || fail "HOLDER_PAUSE=1 gave no holder pause"
   fi
-  if [[ "$WORLD_KIND" == "council" ]]; then
+  if [[ "$WORLD_KIND" == "council" || "$WORLD_KIND" == "replace" ]]; then
     [[ "$(jq -r .holderVote "$STATE/deployments.json")" == "$(jq -r .holderPause "$STATE/deployments.json")" ]] || fail "COUNCIL=1 did not deploy the vote contract as the pause"
     [[ "$(jq -r .council "$STATE/deployments.json")" != "0x0000000000000000000000000000000000000000" ]] || fail "COUNCIL=1 gave no Council implementation"
   fi
@@ -449,7 +450,7 @@ if [[ -n "$SERVE" ]]; then
   LINK="$(jq -r .link "$STATE/serve.json")"
   [[ -n "${HOLD_ENV:-}" ]] && write_world_env "$HOLD_ENV"
   STEP4_NOTE=""
-  if [[ "$WORLD_KIND" == "council" ]]; then
+  if [[ "$WORLD_KIND" == "council" || "$WORLD_KIND" == "replace" ]]; then
     STEP4_NOTE="  This world was deployed with HOLDER_PAUSE=1 COUNCIL=1: a runner can hand the seat to a Council of five, and holders can vote. The steps are in TRY-IT.md, part 4.10.
 "
   elif [[ "$WORLD_KIND" == "pause" ]]; then
@@ -551,18 +552,20 @@ if [[ -n "$HOLD" ]]; then
   fail "the chain or the server stopped"
 elif [[ $# -gt 0 ]]; then
   [[ "$1" == pot-council.spec ]] && WORLD_KIND=council
+  [[ "$1" == pot-replace.spec ]] && WORLD_KIND=replace
   world_up
   run_journey "$@"
   world_down
 else
   # Step 1's journey, step 2's task queue, step 3's three and step 4's two, each in a world of its own (the chain's clock is moved by days in
   # most of them, and a world that is days ahead of the server's clock cannot be reused). Only the push world has a stand-in.
-  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-seasons.spec pot-push.spec pot-pause.spec pot-council.spec pot-earlier.spec; do
+  for journey in pot-full.spec pot-tasks.spec pot-room.spec pot-seasons.spec pot-push.spec pot-pause.spec pot-council.spec pot-replace.spec pot-earlier.spec; do
     WORLD_PUSH=""
     WORLD_KIND=default
     [[ "$journey" == pot-push.spec ]] && WORLD_PUSH=1
     [[ "$journey" == pot-pause.spec ]] && WORLD_KIND=pause
     [[ "$journey" == pot-council.spec ]] && WORLD_KIND=council
+    [[ "$journey" == pot-replace.spec ]] && WORLD_KIND=replace
     [[ "$journey" == pot-earlier.spec ]] && WORLD_KIND=earlier
     world_up
     run_journey "$journey"
