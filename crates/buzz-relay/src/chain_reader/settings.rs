@@ -110,7 +110,7 @@ impl ChainReaderConfig {
                 _ => {
                     return Err(format!(
                         "BUZZ_CHAIN_ID must be a positive integer chain id (got \"{raw}\")"
-                    ))
+                    ));
                 }
             },
         };

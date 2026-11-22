@@ -371,7 +371,7 @@ def check_council(r, block, now, played):
     o = vote["open"]
     ballot_id = num(block, pause, "current()(uint32)")
     same("vote.open.id is the current ballot", o["id"], ballot_id)
-    w = [int(x, 16) for x in fx.words(fx.eth_call(pause, "ballot(uint32)", ballot_id, block=str(block)))]
+    w = [int(x, 16) for x in fx.words(fx.eth_call(pause, "ballot(uint32)", ballot_id, block=hex(block)))]
     names = ["kind", "outcome", "finished", "carried", "lapsed", "upA", "upB", "winner", "winnerB", "optionCount",
              "openedAt", "standEnd", "voteEnd", "effectiveAt", "supply", "floor", "council"]
     b = dict(zip(names, w))
@@ -384,7 +384,7 @@ def check_council(r, block, now, played):
     same("vote.open.carriedOutAt", o["carriedOutAt"], None)
     tally = []
     for i in range(b["optionCount"]):
-        option_words = fx.words(fx.eth_call(pause, "optionOf(uint32,uint8)", ballot_id, i, block=str(block)))
+        option_words = fx.words(fx.eth_call(pause, "optionOf(uint32,uint8)", ballot_id, i, block=hex(block)))
         tally.append(int(option_words[8], 16))
         same(f"option {i} tally", int(o["options"][i]["tally"]), tally[-1])
     same("the tallies add up to the cast", sum(tally), int(o["cast"]))

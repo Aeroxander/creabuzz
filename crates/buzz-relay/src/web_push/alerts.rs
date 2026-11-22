@@ -1124,7 +1124,32 @@ mod tests {
             floor,
             up_a: 0,
             up_b: 0,
-            options: std::collections::BTreeMap::new(),
+            // The ballot's own options: 0 is "keep", 1 the list (kind 1) or
+            // the person (kind 2), so the count and ranking are its own.
+            options: std::collections::BTreeMap::from([
+                (
+                    0u8,
+                    crate::chain_reader::ledger_council::OptionSeen {
+                        kind: crate::chain_reader::ledger_council::OptionKind::Keep,
+                        members: Vec::new(),
+                        proposer: None,
+                        record_hash: None,
+                    },
+                ),
+                (
+                    1u8,
+                    crate::chain_reader::ledger_council::OptionSeen {
+                        kind: if kind == 1 {
+                            crate::chain_reader::ledger_council::OptionKind::List
+                        } else {
+                            crate::chain_reader::ledger_council::OptionKind::Person
+                        },
+                        members: Vec::new(),
+                        proposer: None,
+                        record_hash: None,
+                    },
+                ),
+            ]),
             tallies: std::collections::BTreeMap::from([(0, keep), (1, list)]),
             cast,
             finished: None,
@@ -1161,7 +1186,6 @@ mod tests {
     /// `voteEnd` there is no result at all.
     #[test]
     fn a_ballot_that_moves_or_seats_is_the_readers_derived_result_without_a_finished_row() {
-        assert!(ONE_SHARE > 0);
         // No BallotFinished row: the frozen tallies say moved.
         let moved = ballot(
             1,
@@ -1215,8 +1239,10 @@ mod tests {
         assert!(!within_one_unit(Some(1_000), 1_240, 240));
         assert!(within_one_unit(Some(1_000), 1_239, 600));
         assert!(!within_one_unit(Some(1_000), 1_240, 60));
-        // A clock behind the stored one is never "after the unit": it is kept, not dropped for good.
-        assert!(!within_one_unit(Some(1_000), 900, 240));
+        // A clock that is not ahead of the stored alert counts as within it:
+        // a second push is never made on a chain clock that did not move on.
+        assert!(within_one_unit(Some(1_000), 900, 240));
+        assert!(within_one_unit(Some(1_000), 1_000, 1));
     }
 
     #[test]

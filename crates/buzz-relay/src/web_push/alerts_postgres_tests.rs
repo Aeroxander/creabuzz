@@ -11,8 +11,8 @@ use sqlx::Row;
 
 use super::alerts::{audience_of, make_alerts, ALERT_LIFETIME_SECS};
 use super::test_support::{
-    add_block, add_pause_ready, add_task_row, ballot_opened, push_world, set_reader_next,
-    subscribed, task_event, voted, PushWorld, VOTE_GATE,
+    add_block, add_pause_ready, add_task_row, add_vote_row, ballot_opened, push_world,
+    set_reader_next, subscribed, task_event, voted, PushWorld, VOTE_GATE,
 };
 use crate::handlers::room_write::ROOM_MIN_SHARES;
 
@@ -860,11 +860,33 @@ async fn the_moved_alert_is_made_from_the_derived_result_with_no_ballot_finished
         floor,
     )
     .await;
-    // A list with 600 of the 1,000 Shares cast: more than half, so the result moves the runner.
-    voted(
+    // The list stood (a real ballot's options are what `Stood` says, not what a tally implies): five accounts in seat
+    // order. Then 600 of the 1,000 Shares cast on it: more than half, so the result moves the runner.
+    let members: Vec<String> = (0..5)
+        .map(|i| format!("0x{}", format!("{:02x}", 0x60 + i).repeat(20)))
+        .collect();
+    add_vote_row(
         &pw.w,
         head + 2,
         1,
+        "pause",
+        VOTE_GATE,
+        "Stood",
+        serde_json::json!({
+            "id": "1",
+            "option": "1",
+            "count": "5",
+            "members": members,
+            "recordHash": format!("0x{}", "ab".repeat(32)),
+            "by": format!("0x{}", "aa".repeat(20)),
+            "displaced": format!("0x{}", "00".repeat(20)),
+        }),
+    )
+    .await;
+    voted(
+        &pw.w,
+        head + 2,
+        2,
         VOTE_GATE,
         1,
         1,

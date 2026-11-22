@@ -823,7 +823,7 @@ impl Helper {
         match self.writer.call(&call.target(), &call.calldata()).await {
             Ok(_) => {}
             Err(CallError::Unavailable(e)) => {
-                return self.node_failed(pool, job, "eth_call", e, report).await
+                return self.node_failed(pool, job, "eth_call", e, report).await;
             }
             Err(CallError::Reverted(detail)) => {
                 let lower = detail.to_ascii_lowercase();
@@ -868,7 +868,7 @@ impl Helper {
             Err(CallError::Unavailable(e)) => {
                 return self
                     .node_failed(pool, job, "eth_estimateGas", e, report)
-                    .await
+                    .await;
             }
         };
         let gas_limit = margin(estimate);

@@ -442,6 +442,7 @@ pub(crate) async fn add_pause_ready(w: &RoomWorld, block: u64) {
 
 /// One `BallotOpened` of project A's vote contract at `gate`, with the ballot's times and numbers (all strings, as the
 /// reader stores them).
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn ballot_opened(
     w: &RoomWorld,
     block: u64,
@@ -478,6 +479,7 @@ pub(crate) async fn ballot_opened(
 }
 
 /// One `Voted` row: the absolute tally of `option` and the cast total after it (no voter is named anywhere).
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn voted(
     w: &RoomWorld,
     block: u64,

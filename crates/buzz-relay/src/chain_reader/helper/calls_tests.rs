@@ -265,6 +265,15 @@ fn every_forbidden_call_is_a_real_function_of_the_contracts() {
         "Pair",
         "ShareToken",
         "PlayDollar",
+        // The Council round: `openSeats`/`finish`/`carryOut`/`lapse` and the
+        // holder vote's one opening that is a person's press (`openReplace`).
+        "HolderVote",
+        "HolderPause",
+        "Council",
+        // The task book's calls are in the forbidden list: a task that ran out
+        // is returned by a plain `settle()`, never by one of them.
+        "TaskBook",
+        "EarlierGrants",
     ] {
         let path = root.join(format!("{contract}.sol/{contract}.json"));
         let Ok(text) = std::fs::read_to_string(&path) else {

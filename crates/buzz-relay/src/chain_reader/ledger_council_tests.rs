@@ -103,7 +103,7 @@ fn four_hundred_random_votes_moves_and_unparks_leave_the_contracts_tallies() {
     let mut seen = VoteSeen::default();
     open(&mut seen);
     // The model (the test's own, not the reader's): 20 voters with fixed weights, the same state a contract would keep.
-    let weights: Vec<u128> = (0..20).map(|i| 1_000_000 + u128::from(i) * 7_777).collect();
+    let weights: Vec<u128> = (0..20).map(|i| 1_000_000 + (i as u128) * 7_777).collect();
     let mut cast_of: Vec<Option<(u8, u128)>> = vec![None; 20];
     let mut tally: BTreeMap<u8, u128> = BTreeMap::new();
     let mut cast: u128 = 0;

@@ -608,7 +608,7 @@ impl ChainReader {
             )?;
             match publish::publish(&self.state, tenant, tags, &key_hex, &content, created).await? {
                 publish::Outcome::Stored(id) => {
-                    return Ok((id, i64::try_from(created).context("time too large")?))
+                    return Ok((id, i64::try_from(created).context("time too large")?));
                 }
                 publish::Outcome::Superseded(at) => {
                     tracing::warn!(project = %key_hex, stored_at = at, "chain reader: a newer record is stored; signing after it");
@@ -1066,17 +1066,17 @@ mod helper_block_tests {
 #[cfg(test)]
 mod held_postgres_tests;
 #[cfg(test)]
+mod ledger_council_tests;
+#[cfg(test)]
 mod mul_div_tests;
 #[cfg(test)]
-mod record_social_tests;
-#[cfg(test)]
 mod record_council_tests;
+#[cfg(test)]
+mod record_social_tests;
 #[cfg(test)]
 mod record_step4_tests;
 #[cfg(test)]
 mod record_tests;
-#[cfg(test)]
-mod ledger_council_tests;
 #[cfg(test)]
 mod scan_pause_postgres_tests;
 #[cfg(test)]

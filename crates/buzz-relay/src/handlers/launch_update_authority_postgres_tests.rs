@@ -1433,22 +1433,26 @@ async fn three_candidacies_a_day_for_one_account_and_ten_for_one_ballot() {
         "a fourth candidacy in the day",
     )
     .await;
-    // Two more accounts sign three each (nine on the ballot in all), and one more reaches the ballot's ten.
+    // Ballot 1 already holds the founder's first text. Two more accounts each sign three on it (seven in all), and the
+    // fourth signs three: the tenth is stored, and the eleventh -- from an account whose own day is still free -- is
+    // refused for the ballot alone.
     for (who, wallet, other) in [
         (&p.mate, &mate, &stranger),
         (&p.stranger, &stranger, &helper),
+        (&p.helper, &helper, &founder),
     ] {
         for _ in 0..3 {
             let event = one(who, wallet, 1, other);
-            accept(&state, &tenant, event, "a ballot's ninth").await;
+            accept(&state, &tenant, event, "a text on the ballot").await;
         }
     }
-    let tenth = one(&p.helper, &helper, 1, &founder);
-    accept(&state, &tenant, tenth, "a ballot's tenth").await;
+    // One account more, with a wallet of its own: its day is free, and the ballot is full.
+    let extra = Keys::generate();
+    let extra_wallet = link(&state, &tenant, &extra, 4).await;
     refuse(
         &state,
         &tenant,
-        one(&p.helper, &helper, 1, &founder),
+        one(&extra, &extra_wallet, 1, &founder),
         CANDIDACY_BALLOT_FULL,
         "an eleventh on one ballot",
     )

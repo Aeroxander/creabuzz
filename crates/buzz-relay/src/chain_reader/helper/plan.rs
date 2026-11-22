@@ -929,6 +929,26 @@ mod tests {
     /// are picked from it.
     const UNIT: u64 = 7 * 86_400;
 
+    /// The vote contract's address as `VOTE` parses: `0x` and 40 hex digits,
+    /// the last two `aa`.
+    fn vote_addr() -> [u8; 20] {
+        let mut out = [0u8; 20];
+        out[19] = 0xaa;
+        out
+    }
+
+    /// One option on the ballot, as a `Stood` would leave it.
+    fn option(
+        kind: crate::chain_reader::ledger_council::OptionKind,
+    ) -> crate::chain_reader::ledger_council::OptionSeen {
+        crate::chain_reader::ledger_council::OptionSeen {
+            kind,
+            members: Vec::new(),
+            proposer: None,
+            record_hash: None,
+        }
+    }
+
     /// One ballot with everything the planner reads, the given fields left as
     /// the call sets them (opened at 1_000, a day of standing, three of voting).
     fn ballot(id: u32, kind: u8, opened_at: u64) -> BallotSeen {
@@ -944,7 +964,22 @@ mod tests {
             floor: 334 * ONE_SHARE,
             up_a: 0,
             up_b: 1,
-            options: std::collections::BTreeMap::new(),
+            // Option 0 is "keep" and option 1 the list or person: the count
+            // and the ranking the contract's `_compute` walks (`optionCount`).
+            options: std::collections::BTreeMap::from([
+                (
+                    0u8,
+                    option(crate::chain_reader::ledger_council::OptionKind::Keep),
+                ),
+                (
+                    1u8,
+                    if kind == 1 {
+                        option(crate::chain_reader::ledger_council::OptionKind::List)
+                    } else {
+                        option(crate::chain_reader::ledger_council::OptionKind::Person)
+                    },
+                ),
+            ]),
             tallies: std::collections::BTreeMap::new(),
             cast: 0,
             finished: None,
@@ -1036,7 +1071,10 @@ mod tests {
         // built on the Council's seats row.
         let jobs = at(50_000);
         assert_eq!(jobs.len(), 1, "{jobs:?}");
-        assert_eq!(jobs[0].call, HelperCall::VoteOpenSeats { vote: [0xaa; 20] });
+        assert_eq!(
+            jobs[0].call,
+            HelperCall::VoteOpenSeats { vote: vote_addr() }
+        );
         assert_eq!(jobs[0].key, format!("vote-open-seats:{VOTE}:50000"));
         assert_eq!(jobs[0].due_block, rows[seats_row].block);
         assert!(!jobs[0].repeats);
@@ -1079,7 +1117,7 @@ mod tests {
         assert_eq!(
             due[0].call,
             HelperCall::VoteFinish {
-                vote: [0xaa; 20],
+                vote: vote_addr(),
                 ballot: 7
             }
         );
@@ -1135,7 +1173,7 @@ mod tests {
         assert_eq!(
             due[0].call,
             HelperCall::VoteCarryOut {
-                vote: [0xaa; 20],
+                vote: vote_addr(),
                 ballot: 3
             }
         );
@@ -1153,7 +1191,7 @@ mod tests {
         assert_eq!(
             late[0].call,
             HelperCall::VoteLapse {
-                vote: [0xaa; 20],
+                vote: vote_addr(),
                 ballot: 3
             }
         );
@@ -1202,7 +1240,7 @@ mod tests {
         assert_eq!(
             jobs[0].call,
             HelperCall::VoteCarryOut {
-                vote: [0xaa; 20],
+                vote: vote_addr(),
                 ballot: 5
             }
         );

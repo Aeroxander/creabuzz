@@ -941,7 +941,9 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
     );
     rule(
         inflow.is_some() && inflow == outflow,
-        format!("joined + outside is {inflow:?} but fees + took out + drawn + paid to workers + note claims + pot + box + arriving + locked + owed is {outflow:?}"),
+        format!(
+            "joined + outside is {inflow:?} but fees + took out + drawn + paid to workers + note claims + pot + box + arriving + locked + owed is {outflow:?}"
+        ),
     );
 
     // Team Shares.
@@ -954,7 +956,9 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
     );
     rule(
         in_hands.checked_add(in_vester) == Some(counted),
-        format!("team.inHands {in_hands} + team.inVester {in_vester} is not shares.teamCounted {counted}"),
+        format!(
+            "team.inHands {in_hands} + team.inVester {in_vester} is not shares.teamCounted {counted}"
+        ),
     );
     let reserve = r
         .team
@@ -964,8 +968,13 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
         .transpose()?
         .unwrap_or(0);
     rule(
-        in_vester.checked_sub(promised).and_then(|left| left.checked_sub(reserve)) == Some(ungranted),
-        format!("team.ungranted {ungranted} is not team.inVester {in_vester} less team.promised {promised} less the earlier reserve {reserve}"),
+        in_vester
+            .checked_sub(promised)
+            .and_then(|left| left.checked_sub(reserve))
+            == Some(ungranted),
+        format!(
+            "team.ungranted {ungranted} is not team.inVester {in_vester} less team.promised {promised} less the earlier reserve {reserve}"
+        ),
     );
 
     // Holders (a cut list says nothing about the rest).

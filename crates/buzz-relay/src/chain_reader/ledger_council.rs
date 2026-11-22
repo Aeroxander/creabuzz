@@ -252,7 +252,7 @@ fn selector_bytes(row: &LogRow) -> anyhow::Result<[u8; 4]> {
 }
 
 /// The word for a call's selector (COUNCIL-PLAN.md section 5.2: the waiting proposals' kinds).
-pub fn call_kind(selector: [u8; 4]) -> &'static str {
+pub fn call_kind(sel: [u8; 4]) -> &'static str {
     use buzz_evm_allowance::abi::selector;
     for (signature, kind) in [
         ("draw(address,uint256)", "draw"),
@@ -272,7 +272,7 @@ pub fn call_kind(selector: [u8; 4]) -> &'static str {
         ("windDown()", "windDown"),
         ("windDown(bytes32)", "windDown"),
     ] {
-        if selector(signature) == selector {
+        if selector(signature) == sel {
             return kind;
         }
     }
@@ -594,7 +594,3 @@ fn set_move_tally(ballot: &mut BallotSeen, from: u8, from_tally: u128) -> anyhow
     ballot.tallies.insert(from, from_tally);
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "ledger_council_tests.rs"]
-mod tests;

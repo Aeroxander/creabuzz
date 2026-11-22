@@ -79,23 +79,40 @@ async fn read_of(name: &str) -> (Fixture, Ledger, AsOf, BookChain, Views) {
     (fx, ledger, as_of, chain, read)
 }
 
+/// The answer of one exact call `signature` (with no arguments) at `to`, as the book captured it.
 fn answer_uint(chain: &BookChain, to: [u8; 20], signature: &str) -> u128 {
     let data = buzz_evm_allowance::abi::selector(signature).to_vec();
-    let bytes = chain
-        .answers
-        .get(&(to, data))
-        .unwrap_or_else(|| panic!("the book holds no answer for {signature}"));
-    word_to_u128(&bytes[..32]).expect("a number")
+    answer_words(chain, to, &data).0
 }
 
-fn answer_uint_any(chain: &BookChain, signature: &str) -> u128 {
-    let data = buzz_evm_allowance::abi::selector(signature).to_vec();
-    let (_, bytes) = chain
+/// The answer of `signature` with one `uint256` argument, at `to`.
+fn answer_uint_arg(chain: &BookChain, to: [u8; 20], signature: &str, arg: u128) -> u128 {
+    let mut data = buzz_evm_allowance::abi::selector(signature).to_vec();
+    let mut word = [0u8; 32];
+    word[16..].copy_from_slice(&arg.to_be_bytes());
+    data.extend_from_slice(&word);
+    answer_words(chain, to, &data).0
+}
+
+/// The answer address of `signature` (no arguments) at `to`.
+fn answer_address(chain: &BookChain, to: [u8; 20], signature: &str) -> [u8; 20] {
+    let bytes = chain
         .answers
-        .iter()
-        .find(|((_, d), _)| d.starts_with(&data))
-        .unwrap_or_else(|| panic!("the book holds no answer for {signature}"));
-    word_to_u128(&bytes[..32]).expect("a number")
+        .get(&(to, buzz_evm_allowance::abi::selector(signature).to_vec()))
+        .unwrap_or_else(|| panic!("the book holds no answer for {signature} at {to:?}"));
+    bytes[12..32].try_into().expect("an address")
+}
+
+/// The 32-byte words of one exact call's answer, in order.
+fn answer_words(chain: &BookChain, to: [u8; 20], data: &[u8]) -> (u128, Vec<u8>) {
+    let bytes = chain.answers.get(&(to, data.to_vec())).unwrap_or_else(|| {
+        panic!(
+            "the book holds no answer for {} at {to:?}",
+            hex::encode(data)
+        )
+    });
+    let first = word_to_u128(bytes[..32].try_into().expect("32 bytes")).expect("a number");
+    (first, bytes.clone())
 }
 
 // ------------------------------------------------------------------------------------------ the fixture
@@ -274,6 +291,12 @@ async fn the_vote_rule_is_the_built_contracts_constants() {
     let pause_addr = super::word::parse_fixed::<20>(pause).expect("an address");
     let unit = built.record.unit;
     let day = answer_uint(&chain, pause_addr, "day()");
+    // The Council's own constants are read from the implementation the Launcher names (`councilImpl()`), exactly as the
+    // server reads them; never by a looser search.
+    let launcher = fx.launcher;
+    let council_impl = answer_address(&chain, launcher, "councilImpl()");
+    let council_uint = |signature: &str| answer_uint(&chain, council_impl, signature);
+    let treasurer = super::word::parse_fixed::<20>(&ledger.contracts.treasury).expect("an address");
     assert_eq!(
         u128::from(rule.stand_secs),
         answer_uint(&chain, pause_addr, "STAND_DAYS()") * day
@@ -284,7 +307,7 @@ async fn the_vote_rule_is_the_built_contracts_constants() {
     );
     assert_eq!(
         u128::from(rule.wait_secs),
-        answer_uint_any(&chain, "noticeFor(uint16)")
+        answer_uint_arg(&chain, treasurer, "noticeFor(uint16)", 500)
     );
     assert_eq!(
         u128::from(rule.floor_divisor),
@@ -304,17 +327,14 @@ async fn the_vote_rule_is_the_built_contracts_constants() {
     );
     assert_eq!(
         u128::from(rule.seats_every_secs),
-        answer_uint_any(&chain, "ELECTION_UNITS()") * u128::from(unit)
+        council_uint("ELECTION_UNITS()") * u128::from(unit)
     );
     assert_eq!(
         u128::from(rule.proposal_ttl_secs),
-        answer_uint_any(&chain, "PROPOSAL_UNITS()") * u128::from(unit)
+        council_uint("PROPOSAL_UNITS()") * u128::from(unit)
     );
-    assert_eq!(
-        u128::from(rule.needed),
-        answer_uint_any(&chain, "THRESHOLD()")
-    );
-    assert_eq!(u128::from(rule.seats), answer_uint_any(&chain, "SEATS()"));
+    assert_eq!(u128::from(rule.needed), council_uint("THRESHOLD()"));
+    assert_eq!(u128::from(rule.seats), council_uint("SEATS()"));
     assert_eq!(
         u128::from(rule.max_lists),
         answer_uint(&chain, pause_addr, "MAX_LISTS()")
@@ -334,7 +354,7 @@ async fn the_vote_rule_is_the_built_contracts_constants() {
         .expect("a vote read")
         .as_ref()
         .expect("read");
-    assert_eq!(rule.stand_secs, views_stand(&vote_views));
+    assert_eq!(rule.stand_secs, views_stand(vote_views));
     let _ = as_of;
 }
 

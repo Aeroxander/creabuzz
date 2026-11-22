@@ -32,9 +32,6 @@ pub const WAITING_KINDS: [&str; 13] = [
 ];
 /// How long a ballot that ended without effect stays in the record, in days (`unit / 7` seconds each).
 pub const ENDED_DAYS: u64 = 3;
-/// One whole Share in wei (`HolderVote.MIN_VOTE`), the smallest tally a person needs to take a seat.
-const ONE_SHARE: u128 = 1_000_000_000_000_000_000;
-
 /// One seat of the Council section.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]

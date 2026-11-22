@@ -306,9 +306,15 @@ launch_update 26, agent_label 6, sponsor 14 — 266 passed, 0 failed** (45/36/16
 after applying migrations 0065–0077 to the shared local database (it was at 64): **agent_label 6, sponsor 11, chain-reader helper 16**
 pass, and the two remaining tests were fixed as *test-setup* faults, not production ones — the candidacy rate test's "eleventh on a
 ballot" setup only had seven stored on that ballot, and the moved-alert test's ledger had no `Stood` row so the derived result was
-"kept"; both were fixed in the tests, and the rerun was waiting on the rebuild that `cargo clippy` held. `cargo clippy -p buzz-relay
---all-targets -- -D warnings` was still building its own check profile when this report was written; the `buzz-db` migration tests
-were not run. The app-side push-words equality test is 32/32.
+"kept"; both were fixed in the tests, and the rerun was waiting on the rebuild that `cargo clippy` held. **`cargo clippy -p buzz-relay --all-targets -- -D warnings` exits 0** (six lint findings in the new code were fixed: a
+`contains` over `iter().any`, one needless reference, a constant assertion left in a test, and three test scaffolding functions
+over the argument-count lint, allowed by name). The two Postgres tests above were then rerun after the rebuild and pass:
+launch_update 16, agent_label 6, sponsor 11, web_push alerts 17, chain-reader helper 16 — **66 passed, 0 failed**. The `buzz-db`
+chain-Council migration tests pass (`2 passed`, including the schema-match test). The whole relay lib suite is **1,980 passed,
+751 ignored, 1 failed**: the failure is `api::mesh_demo::tests::demo_join_forwarded_arm_round_trips_echo`, which answers 504 where
+200 is expected; that file is untouched by this round and the same failure is recorded in `PLANV2-M5-REPORT.md` and
+`PLANV2-M8-REPORT.md` as a sandbox/network condition (it opens two local QUIC endpoints), so it is not this round's. The app-side
+push-words equality test is 32/32.
 
 ---
 

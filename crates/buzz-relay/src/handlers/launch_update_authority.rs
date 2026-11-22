@@ -714,7 +714,7 @@ fn read_candidacy(
     }
     // The plan's list is five accounts in the list's seat order: five different ones, and no zero address.
     let distinct: BTreeSet<[u8; 20]> = candidates.iter().copied().collect();
-    if distinct.len() != candidates.len() || candidates.iter().any(|who| *who == [0u8; 20]) {
+    if distinct.len() != candidates.len() || candidates.contains(&[0u8; 20]) {
         return Err(bad());
     }
     // One topic, and it is the vote's own: `vote:<chain key>:<ballot id>`.
@@ -769,7 +769,8 @@ fn check_candidacy_text(event: &Event) -> Result<(), String> {
         return Err(bad());
     }
     let text = body["text"].as_str().ok_or_else(bad)?;
-    if text.chars().count() > CANDIDACY_TEXT_MAX {
+    // A candidacy is a short text about who should run the project: empty is no text at all.
+    if text.is_empty() || text.chars().count() > CANDIDACY_TEXT_MAX {
         return Err(bad());
     }
     Ok(())
@@ -2969,6 +2970,7 @@ mod tests {
 
     /// A `candidacy` record with the plan's tags: the ballot, the `vote:` topic, the proposer wallet, the candidates in
     /// seat order and an end; `body` is the JSON content.
+    #[allow(clippy::too_many_arguments)]
     fn candidacy(
         w: &World,
         who: &Keys,
