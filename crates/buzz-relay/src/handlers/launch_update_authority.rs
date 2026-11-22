@@ -1574,6 +1574,26 @@ mod tests {
             .expect("sign")
     }
 
+    /// A task is "open" (its pay is held to the signer's helper limit) only when it names no helper: a task that names one
+    /// is that helper's alone and offers nothing to anyone else. Remove the early return and the named task offers its pay.
+    #[test]
+    fn only_a_task_that_names_no_helper_offers_its_pay_to_the_helper_limit() {
+        let w = World::new();
+        let open = |extra: &[&[&str]]| {
+            let mut tags: Vec<&[&str]> = vec![&["l", "creaton-task"], &["task-part", "task"]];
+            tags.extend_from_slice(extra);
+            w.record(&w.founder, &tags)
+        };
+        let helper = w.helper.public_key().to_hex();
+        assert_eq!(open_task_usd(&open(&[&["task-usd", "30"]])), Some(30));
+        assert_eq!(
+            open_task_usd(&open(&[&["task-usd", "30"], &["task-helper", &helper]])),
+            None
+        );
+        assert_eq!(open_task_usd(&open(&[])), None);
+        assert_eq!(open_task_usd(&open(&[&["task-usd", "lots"]])), None);
+    }
+
     #[test]
     fn a_record_that_says_nothing_about_itself_is_the_teams() {
         let w = World::new();

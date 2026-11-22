@@ -647,9 +647,53 @@ pub(crate) async fn enforce(
         let now = u64::try_from(chrono::Utc::now().timestamp()).unwrap_or(0);
         let judged_at = event.created_at.as_secs().max(now);
         decide_box(&names, usd, &lookup, judged_at).map_err(refuse)?;
+        // Tests only: a pause between the count and the store, inside the lock (see `box_seam`).
+        #[cfg(test)]
+        box_seam::counted(names.paid.as_deref().unwrap_or_default()).await;
         return Ok(Some(lock));
     }
     Ok(None)
+}
+
+/// A seam for the tests of the lock on a box payment (compiled for tests only, so the lock itself is untouched in the
+/// server). A test names a payment and a number of confirms; each confirm for that payment waits here, after its count
+/// of the other tasks and before its record is stored, until all of them are here (or a second has passed). With the
+/// lock in place only one confirm can be here at a time, so the others never arrive and the wait runs out; without it
+/// all of them arrive together, every one has counted before any is stored, and each is accepted: the race is made to
+/// happen every time instead of when the timing allows it.
+#[cfg(test)]
+pub(crate) mod box_seam {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, OnceLock};
+    use std::time::Duration;
+
+    use tokio::sync::Barrier;
+
+    fn table() -> &'static Mutex<HashMap<String, Arc<Barrier>>> {
+        static TABLE: OnceLock<Mutex<HashMap<String, Arc<Barrier>>>> = OnceLock::new();
+        TABLE.get_or_init(Mutex::default)
+    }
+
+    /// Hold the confirms of `paid` (a lower-case transaction) at the count until `parties` of them are there.
+    pub(crate) fn meet_at_count(paid: &str, parties: usize) {
+        if let Ok(mut table) = table().lock() {
+            table.insert(paid.to_owned(), Arc::new(Barrier::new(parties)));
+        }
+    }
+
+    /// Let the confirms of `paid` through again.
+    pub(crate) fn release(paid: &str) {
+        if let Ok(mut table) = table().lock() {
+            table.remove(paid);
+        }
+    }
+
+    pub(crate) async fn counted(paid: &str) {
+        let barrier = table().lock().ok().and_then(|t| t.get(paid).cloned());
+        if let Some(barrier) = barrier {
+            let _ = tokio::time::timeout(Duration::from_secs(1), barrier.wait()).await;
+        }
+    }
 }
 
 /// The `task-paid` tag of `event` as written (not lower-cased).

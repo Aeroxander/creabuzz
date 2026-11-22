@@ -613,6 +613,30 @@ mod tests {
         );
     }
 
+    /// "Start the day" (`poke()` of a holder pause) by a passkey account: the pause is a contract the reader follows, so the
+    /// call is on the allow-list by its address and is let through; it is an ordinary operation, not an exit, so it counts
+    /// against the per-account, per-address and whole-server daily limits like a Back does. A poke to a contract the reader
+    /// does not follow is refused.
+    #[test]
+    fn a_start_the_day_poke_is_allowed_and_counts_like_any_other_operation() {
+        let press = |to: [u8; 20]| {
+            request(
+                METHOD,
+                json!([operation(&text(&address(9)), &[call(to, "poke()")])]),
+            )
+        };
+        let parsed = classify(&press(address(2)), 31337, &allowed()).expect("a poke to the pause");
+        assert!(!parsed.exit, "a poke is not an exit");
+        let config = SponsorConfig::for_test("http://127.0.0.1:1/");
+        assert!(
+            counters(&config, &parsed, "203.0.113.5", "reader")
+                .iter()
+                .any(|(key, _)| key.starts_with("acct:")),
+            "it counts against the account's day"
+        );
+        assert!(classify(&press(address(7)), 31337, &allowed()).is_err());
+    }
+
     /// A Take out of parked Shares is one press that takes them back first: `[unpark, leave]` is an exit (never refused by
     /// a limit, never counted), and `unpark` alone is an ordinary operation that counts like any other.
     #[test]

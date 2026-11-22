@@ -1626,54 +1626,122 @@ async fn one_box_payment_pays_one_task_and_a_batch_of_two_pays_two() {
     .await;
 }
 
+/// Store `count` confirms of `task` that name the payment `paid`, as if they had been accepted earlier (each a second
+/// apart, so each is its own record).
+async fn store_confirms_of(w: &World, task: &Event, paid: &str, count: u64) {
+    let (id, coordinate) = (task.id.to_hex(), w.coordinate.clone());
+    for second in 1..=count {
+        // Each is signed by a key of its own and stored directly: a new account may save only 60 project records a day.
+        let confirm = signed(
+            &Keys::generate(),
+            KIND_LAUNCH_UPDATE,
+            &[
+                &["a", &coordinate],
+                &["l", "creaton-task"],
+                &["task-part", "confirm"],
+                &["e", &id],
+                &["task", &id],
+                &["task-paid", paid],
+            ],
+            second,
+        );
+        w.state
+            .db
+            .insert_event(w.tenant.community(), &confirm, None)
+            .await
+            .expect("a stored confirm");
+    }
+}
+
+/// The lookup reads at most 64 confirms that name a payment. A payment that 64 confirms already name has paid enough: a
+/// 65th is refused even when the confirms it could read all name one task that was paid elsewhere (so the other-task
+/// count alone would let it through). Take the `crowded` guard out of `box_lookup` and the last confirm below is accepted;
+/// at 63 stored confirms the same confirm is accepted.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_payment_that_sixty_four_confirms_already_name_has_paid_enough() {
+    let w = world(true).await;
+    let (tx, wallet, raw) = first_draw(&w);
+    let key = w.fx.projects["A"].key;
+    // The crowd's task was taken by another wallet: its confirms never count against the draw to `wallet`.
+    let crowd = open_task(&w.founder, &w.coordinate, "The crowd's task", "30");
+    w.accept(crowd.clone(), "the team posts the crowd's task")
+        .await;
+    worker_takes(&w, &crowd, Some(NOT_A_PLANNED_WALLET)).await;
+    let (just_under, full) = (
+        open_task(&w.founder, &w.coordinate, "Under the limit", "30"),
+        open_task(&w.founder, &w.coordinate, "At the limit", "30"),
+    );
+    for task in [&just_under, &full] {
+        w.accept(task.clone(), "the team posts a task").await;
+        worker_takes(&w, task, Some(&wallet)).await;
+    }
+    w.seed_run(&[]).await;
+    let other_tx = [0x51u8; 32];
+    w.draw(key, tx, &wallet, raw, 0).await;
+    w.draw(key, other_tx, &wallet, raw, 1).await;
+    w.read_past_now().await;
+    store_confirms_of(&w, &crowd, &hex0x(&tx), 63).await;
+    w.accept(
+        paid_confirm(&w, &just_under, &tx),
+        "63 confirms named the payment, all of one task paid elsewhere: the read holds them all",
+    )
+    .await;
+    store_confirms_of(&w, &crowd, &hex0x(&other_tx), 64).await;
+    w.refuse(
+        paid_confirm(&w, &full, &other_tx),
+        ALREADY_PAID,
+        "64 confirms name the payment: the read is full, so it is taken as paid enough",
+    )
+    .await;
+}
+
 /// Review fix (G7 race): two confirms for two tasks of one worker that name one draw and arrive at the same moment
 /// must not both be stored. The count of the other tasks that name the payment and the store of the record are one
-/// step under a lock on the payment. Take the lock out (return `None` from the box branch of `enforce`) and, with the
-/// two sent together, both are accepted and this test fails.
+/// step under a lock on the payment. The test makes the moment certain instead of hoping for it: each of the three
+/// confirms waits at `box_seam::counted` (after its count, before its store) until all three are there. With the lock
+/// only one can be there, so the wait runs out (a second) and the others are then refused as paid; take the lock out
+/// (give each confirm a lock of its own) and all three arrive together, every one has counted nobody else, all three are
+/// stored and this test fails, every time.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "requires Postgres and Redis"]
 async fn two_confirms_sent_together_cannot_both_be_paid_by_one_draw() {
-    // Rounds, each with a draw of its own, the three confirms on separate threads: the race is a matter of timing (one
-    // round without the lock can pass), so a single green run is weak evidence and the lock removes the race, not the
-    // rounds. Run it a few times when the lock is touched.
-    for round in 0u8..32 {
-        let w = world(true).await;
-        let (tx, wallet, raw) = first_draw(&w);
-        let key = w.fx.projects["A"].key;
-        let tasks: Vec<Event> = ["First of two", "Second of two", "Third of three"]
-            .iter()
-            .map(|what| open_task(&w.founder, &w.coordinate, &format!("{what} {round}"), "30"))
-            .collect();
-        for task in &tasks {
-            w.accept(task.clone(), "the team posts a task").await;
-            worker_takes(&w, task, Some(&wallet)).await;
-        }
-        w.seed_run(&[]).await;
-        w.draw(key, tx, &wallet, raw, 0).await;
-        w.read_past_now().await;
-        let sent: Vec<_> = tasks
-            .iter()
-            .map(|task| {
-                let (state, tenant) = (w.state.clone(), w.tenant.clone());
-                let confirm = paid_confirm(&w, task, &tx);
-                tokio::spawn(async move { ingest(&state, &tenant, confirm).await })
-            })
-            .collect();
-        let mut results = Vec::new();
-        for handle in sent {
-            results.push(handle.await.expect("the ingest task ran"));
-        }
-        let accepted = results.iter().filter(|r| r.is_ok()).count();
-        assert_eq!(
-            accepted, 1,
-            "round {round}: one draw pays one task, got {results:?}"
+    let w = world(true).await;
+    let (tx, wallet, raw) = first_draw(&w);
+    let key = w.fx.projects["A"].key;
+    let tasks: Vec<Event> = ["First of three", "Second of three", "Third of three"]
+        .iter()
+        .map(|what| open_task(&w.founder, &w.coordinate, what, "30"))
+        .collect();
+    for task in &tasks {
+        w.accept(task.clone(), "the team posts a task").await;
+        worker_takes(&w, task, Some(&wallet)).await;
+    }
+    w.seed_run(&[]).await;
+    w.draw(key, tx, &wallet, raw, 0).await;
+    w.read_past_now().await;
+    let paid = hex0x(&tx);
+    super::task_chain::box_seam::meet_at_count(&paid, tasks.len());
+    let sent: Vec<_> = tasks
+        .iter()
+        .map(|task| {
+            let (state, tenant) = (w.state.clone(), w.tenant.clone());
+            let confirm = paid_confirm(&w, task, &tx);
+            tokio::spawn(async move { ingest(&state, &tenant, confirm).await })
+        })
+        .collect();
+    let mut results = Vec::new();
+    for handle in sent {
+        results.push(handle.await.expect("the ingest task ran"));
+    }
+    super::task_chain::box_seam::release(&paid);
+    let accepted = results.iter().filter(|r| r.is_ok()).count();
+    assert_eq!(accepted, 1, "one draw pays one task, got {results:?}");
+    for refused in results.iter().filter_map(|r| r.as_ref().err()) {
+        assert!(
+            refused.contains(ALREADY_PAID),
+            "refused for the wrong reason: {refused}"
         );
-        for refused in results.iter().filter_map(|r| r.as_ref().err()) {
-            assert!(
-                refused.contains(ALREADY_PAID),
-                "round {round}: refused for the wrong reason: {refused}"
-            );
-        }
     }
 }
 
