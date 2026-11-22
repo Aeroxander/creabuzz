@@ -27,6 +27,7 @@ use super::record::{
     LimitsRec, MoneyRec, PendingRec, QuietRec, Record, RunnerRec, SharesRec, Stored, TeamRec,
     TotalsRec, WindDownRec, WorthRec, DORMANT_UNITS, MAX_AGENTS, MAX_GRANTS, MAX_HOLDERS,
 };
+use super::record_council;
 use super::record_social::{self, SocialInput, SocialReport};
 use super::record_step4;
 use super::record_tasks;
@@ -585,11 +586,30 @@ pub fn build(
         .as_ref()
         .and_then(|read| read.as_ref().ok())
         .is_some_and(|p| p.armed_at != 0 || p.paused);
+    // The Council runner's keys: `runner.kind`/`runner.seats`, `council` and `vote`, each `null` (with one line for the
+    // log) when it could not be worked out or failed a check of COUNCIL-PLAN.md section 5.2.
+    let (runner_kind, runner_seats) = record_council::runner(v);
+    let (council, council_why) = record_council::council(ledger, v, t);
+    let (vote, vote_why) = record_council::vote(ledger, v, t);
+    // A live ballot or a result waiting makes the record promise a fresh one sooner: the smaller of ten minutes and a
+    // quarter of the stand window (COUNCIL-PLAN.md section 5.3).
+    let vote_moving = vote
+        .as_ref()
+        .and_then(|v| v.open.as_ref())
+        .is_some_and(|o| {
+            matches!(
+                o.phase.as_str(),
+                "standing" | "voting" | "waiting" | "counting"
+            )
+        });
+    let stand_secs = vote.as_ref().map(|v| v.rule.stand_secs);
     let refresh = refresh_every(
         cadence,
         accruing,
         settled.arriving != 0 || pause_moving,
         ledger.tasks.open_count > 0,
+        vote_moving,
+        stand_secs,
     );
     let in_vester = v.vester_team_balance;
     let counted = v.team_supply;
@@ -671,7 +691,11 @@ pub fn build(
             address: v.runner.clone(),
             is_pair: v.is_pair,
             signers: v.signers.clone(),
+            kind: runner_kind,
+            seats: runner_seats,
         },
+        council,
+        vote,
         team: TeamRec {
             pool: ledger.team_pool.to_string(),
             earlier_pool: ledger.earlier_pool.map(|pool| pool.to_string()),
@@ -744,6 +768,8 @@ pub fn build(
         },
     };
     let mut report = record_social::fill(&mut record, social, &holder_balances);
+    report.failed.extend(council_why);
+    report.failed.extend(vote_why);
     // The two step 4 keys: each is `null` with a line to log when it could not be worked out or did not agree.
     let (pause, why) = record_step4::pause(ledger, v, t);
     record.pause = pause;
@@ -771,8 +797,15 @@ pub fn refresh_every(
     accruing: bool,
     money_arriving: bool,
     tasks_open: bool,
+    vote_moving: bool,
+    stand_secs: Option<u64>,
 ) -> u64 {
-    let secs = if accruing || money_arriving || tasks_open {
+    let secs = if vote_moving {
+        // A vote opening, ending or being carried out must show within ten minutes on a real network, and within a
+        // quarter of the stand window on a test network with a short one.
+        let quarter = stand_secs.map_or(cadence.active_secs, |s| (s / 4).max(1));
+        quarter.min(600)
+    } else if accruing || money_arriving || tasks_open {
         cadence.active_secs
     } else {
         cadence.idle_secs
@@ -815,6 +848,12 @@ const MOVES_WITH_TIME: &[&[&str]] = &[
     // Whether the pause is on is a thing of the clock (the day passes without an event); the events that move it
     // already change a field of the key above (`armedAt`, `parkedTotal`).
     &["pause", "paused"],
+    // A ballot's phase and its derived result move with the clock (the vote ends without an event), and the next
+    // replace time is "now" while no cooldown runs; the events that change a ballot are above.
+    &["vote", "open", "phase"],
+    &["vote", "open", "result"],
+    &["vote", "next", "replaceFrom"],
+    &["council", "waiting"],
     // The social keys move with the clock (a window slides, an hour passes) and every event that changes one
     // already changes a field above (RECORD-V2 section 11): they alone never make the server sign again.
     &["held"],

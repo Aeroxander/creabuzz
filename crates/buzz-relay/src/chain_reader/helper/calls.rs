@@ -16,8 +16,16 @@
 //! money to anyone.
 //!
 //! The stored names (`chain_helper_jobs.call`, whose list the database closes,
-//! migrations 0070 and 0075) are `treasury.collectFees`, `treasury.settle`,
-//! `treasury.applyRate`, `vester.execute` and `vester.burnAfterWindDown`.
+//! migrations 0070, 0075 and 0077) are `treasury.collectFees`, `treasury.settle`,
+//! `treasury.applyRate`, `vester.execute`, `vester.burnAfterWindDown`,
+//! `vote.openSeats`, `vote.finish`, `vote.carryOut` and `vote.lapse`.
+//!
+//! The four vote calls are the Council round's (`COUNCIL-PLAN.md` section 5.5):
+//! the seat election that is due, the result of a ballot whose vote has ended,
+//! a won result's wait being carried out, and a won result nobody carried out
+//! being let go. Each is a call anyone may make, moves no money, and never
+//! opens a replace vote (that is a holder's press): `HolderVote.openReplace` is
+//! not here. They are held to their own pace and caps (see [`VOTE_NAMES`]).
 //!
 //! The last three close a notice that was already public, once its time has
 //! run and a person has had ten minutes to do it themselves: a proposed
@@ -85,27 +93,75 @@ pub enum HelperCall {
         /// The grant's id in the Vester.
         grant: u64,
     },
+    /// `HolderVote.openSeats()`: the seat election the Council says is due
+    /// opens (anyone may open it; the helper does). Stored as `vote.openSeats`.
+    VoteOpenSeats {
+        /// The project's vote contract (its pause).
+        vote: [u8; 20],
+    },
+    /// `HolderVote.finish(id)`: the result of ballot `id`, whose vote has
+    /// ended, is recorded (anyone, once). Stored as `vote.finish`.
+    VoteFinish {
+        /// The project's vote contract (its pause).
+        vote: [u8; 20],
+        /// The ballot's id.
+        ballot: u32,
+    },
+    /// `HolderVote.carryOut(id)`: a won result of ballot `id` takes effect
+    /// once its wait has run. Stored as `vote.carryOut`.
+    VoteCarryOut {
+        /// The project's vote contract (its pause).
+        vote: [u8; 20],
+        /// The ballot's id.
+        ballot: u32,
+    },
+    /// `HolderVote.lapse(id)`: a won result of ballot `id` that nobody carried
+    /// out is let go two time units after it was due. Stored as `vote.lapse`.
+    VoteLapse {
+        /// The project's vote contract (its pause).
+        vote: [u8; 20],
+        /// The ballot's id.
+        ballot: u32,
+    },
 }
 
 /// Every function signature the helper may call, and nothing else. The tests
 /// compare the selectors [`HelperCall`] can produce with this list exactly.
-pub const ALLOWED: [&str; 5] = [
+pub const ALLOWED: [&str; 9] = [
     "collectFees()",
     "settle()",
     "applyRate()",
     "execute(uint256)",
     "burnAfterWindDown(uint256)",
+    "openSeats()",
+    "finish(uint32)",
+    "carryOut(uint32)",
+    "lapse(uint32)",
 ];
 
 /// The names stored in `chain_helper_jobs.call` (the database's CHECK list,
-/// migration 0075, allows exactly these and the retired names of the old
+/// migration 0077, allows exactly these and the retired names of the old
 /// contracts' calls, which are only history).
-pub const NAMES: [&str; 5] = [
+pub const NAMES: [&str; 9] = [
     "treasury.collectFees",
     "treasury.settle",
     "treasury.applyRate",
     "vester.execute",
     "vester.burnAfterWindDown",
+    "vote.openSeats",
+    "vote.finish",
+    "vote.carryOut",
+    "vote.lapse",
+];
+
+/// The four vote calls: each anyone may make, none moves money, none opens a
+/// replace vote. They are held to their own pace, per-project day and pass
+/// bounds (see `super`).
+pub const VOTE_NAMES: [&str; 4] = [
+    "vote.openSeats",
+    "vote.finish",
+    "vote.carryOut",
+    "vote.lapse",
 ];
 
 /// The stored names of the three calls that are optional in the sense that
@@ -128,6 +184,15 @@ pub const NOTICE_GRACE_SECS: u64 = 600;
 /// before anything is sent, so a failure is a race, not a routine.
 pub const MAX_OPTIONAL_ATTEMPTS: u32 = 3;
 
+/// Failed attempts after which a job of a vote call ends `failed`: five
+/// failures in a row leave that project's vote calls alone for 24 hours and
+/// log it (`COUNCIL-PLAN.md` section 5.5).
+pub const MAX_VOTE_ATTEMPTS: u32 = 5;
+
+/// How long a project whose vote calls failed five times in a row is left
+/// alone, in seconds (24 hours).
+pub const VOTE_PROJECT_COOLDOWN_SECS: u64 = 24 * 3_600;
+
 /// Jobs of the optional calls looked at in one helper pass at most.
 pub const OPTIONAL_PER_PASS: usize = 3;
 
@@ -147,11 +212,19 @@ pub fn is_optional(name: &str) -> bool {
     OPTIONAL_NAMES.contains(&name)
 }
 
+/// Whether a stored call name is one of the four vote calls.
+pub fn is_vote(name: &str) -> bool {
+    VOTE_NAMES.contains(&name)
+}
+
 /// The failed attempts after which a job of `name` ends `failed`, given the
-/// configured limit.
+/// configured limit: the tighter limit of the optional calls, and five for the
+/// vote calls.
 pub fn max_attempts_for(name: &str, configured: u32) -> u32 {
     if is_optional(name) {
         configured.min(MAX_OPTIONAL_ATTEMPTS)
+    } else if is_vote(name) {
+        configured.min(MAX_VOTE_ATTEMPTS)
     } else {
         configured
     }
@@ -171,8 +244,11 @@ pub const ROUTINE_SHARE_PERCENT: u128 = 50;
 pub fn priority_of(name: &str) -> u8 {
     match name {
         "treasury.settle" => 0,
-        "treasury.applyRate" => 2,
-        "vester.execute" | "vester.burnAfterWindDown" => 3,
+        // The result of a ballot whose vote has ended is recorded before
+        // anything reads it, as the contract's own calls all finish it first.
+        "vote.finish" => 1,
+        "treasury.applyRate" | "vote.openSeats" | "vote.carryOut" => 2,
+        "vester.execute" | "vester.burnAfterWindDown" | "vote.lapse" => 3,
         _ => 1,
     }
 }
@@ -203,6 +279,15 @@ fn grant_of(args: &Value) -> anyhow::Result<u64> {
         .ok_or_else(|| anyhow::anyhow!("grant is not a number"))
 }
 
+/// The ballot id a stored vote job carries (`HolderVote`'s ballots are `uint32`).
+fn ballot_of(args: &Value) -> anyhow::Result<u32> {
+    let id = args
+        .get("ballot")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| anyhow::anyhow!("ballot is not a number"))?;
+    u32::try_from(id).map_err(|_| anyhow::anyhow!("ballot {id} is past the contract's uint32"))
+}
+
 impl HelperCall {
     /// The stored name (`<contract>.<function>`).
     pub fn name(&self) -> &'static str {
@@ -214,6 +299,10 @@ impl HelperCall {
             HelperCall::TreasuryApplyRate { .. } => "treasury.applyRate",
             HelperCall::VesterExecute { .. } => "vester.execute",
             HelperCall::VesterBurnAfterWindDown { .. } => "vester.burnAfterWindDown",
+            HelperCall::VoteOpenSeats { .. } => "vote.openSeats",
+            HelperCall::VoteFinish { .. } => "vote.finish",
+            HelperCall::VoteCarryOut { .. } => "vote.carryOut",
+            HelperCall::VoteLapse { .. } => "vote.lapse",
         }
     }
 
@@ -227,6 +316,10 @@ impl HelperCall {
             HelperCall::TreasuryApplyRate { .. } => "applyRate()",
             HelperCall::VesterExecute { .. } => "execute(uint256)",
             HelperCall::VesterBurnAfterWindDown { .. } => "burnAfterWindDown(uint256)",
+            HelperCall::VoteOpenSeats { .. } => "openSeats()",
+            HelperCall::VoteFinish { .. } => "finish(uint32)",
+            HelperCall::VoteCarryOut { .. } => "carryOut(uint32)",
+            HelperCall::VoteLapse { .. } => "lapse(uint32)",
         }
     }
 
@@ -239,16 +332,26 @@ impl HelperCall {
             | HelperCall::TreasuryApplyRate { treasury } => *treasury,
             HelperCall::VesterExecute { vester, .. }
             | HelperCall::VesterBurnAfterWindDown { vester, .. } => *vester,
+            HelperCall::VoteOpenSeats { vote }
+            | HelperCall::VoteFinish { vote, .. }
+            | HelperCall::VoteCarryOut { vote, .. }
+            | HelperCall::VoteLapse { vote, .. } => *vote,
         }
     }
 
     /// The calldata: the selector of [`HelperCall::signature`], and for the
-    /// two Vester calls the grant's id as the one argument.
+    /// Vester calls the grant's id, for the ballot calls the ballot's id, as
+    /// the one argument (both are `uint` padded to one 32-byte word).
     pub fn calldata(&self) -> Vec<u8> {
         match self {
             HelperCall::VesterExecute { grant, .. }
             | HelperCall::VesterBurnAfterWindDown { grant, .. } => {
                 encode_id(self.signature(), *grant)
+            }
+            HelperCall::VoteFinish { ballot, .. }
+            | HelperCall::VoteCarryOut { ballot, .. }
+            | HelperCall::VoteLapse { ballot, .. } => {
+                encode_id(self.signature(), u64::from(*ballot))
             }
             _ => encode(self.signature()),
         }
@@ -261,9 +364,13 @@ impl HelperCall {
             HelperCall::TreasurySettleTasks { expiry, .. } => json!({ "taskExpiry": expiry }),
             HelperCall::VesterExecute { grant, .. }
             | HelperCall::VesterBurnAfterWindDown { grant, .. } => json!({ "grant": grant }),
+            HelperCall::VoteFinish { ballot, .. }
+            | HelperCall::VoteCarryOut { ballot, .. }
+            | HelperCall::VoteLapse { ballot, .. } => json!({ "ballot": ballot }),
             HelperCall::TreasuryCollectFees { .. }
             | HelperCall::TreasurySettle { .. }
-            | HelperCall::TreasuryApplyRate { .. } => json!({}),
+            | HelperCall::TreasuryApplyRate { .. }
+            | HelperCall::VoteOpenSeats { .. } => json!({}),
         }
     }
 
@@ -290,6 +397,19 @@ impl HelperCall {
                 vester: target,
                 grant: grant_of(args)?,
             },
+            "vote.openSeats" => HelperCall::VoteOpenSeats { vote: target },
+            "vote.finish" => HelperCall::VoteFinish {
+                vote: target,
+                ballot: ballot_of(args)?,
+            },
+            "vote.carryOut" => HelperCall::VoteCarryOut {
+                vote: target,
+                ballot: ballot_of(args)?,
+            },
+            "vote.lapse" => HelperCall::VoteLapse {
+                vote: target,
+                ballot: ballot_of(args)?,
+            },
             other => bail!("unknown helper call {other:?}"),
         })
     }
@@ -313,6 +433,22 @@ impl HelperCall {
             // Someone else burned it first.
             HelperCall::VesterExecute { .. } => &["WrongState()"],
             HelperCall::VesterBurnAfterWindDown { .. } => &["WrongState()", "ProtectedGrant()"],
+            // Someone else opened the election, finished or moved on: a ballot
+            // is live, one is already open, the Council is no longer the
+            // runner, or an earlier `finish`/`carryOut` counted. (A call that
+            // is merely early is retried, never dropped: the clock may move.)
+            HelperCall::VoteOpenSeats { .. } => &["BallotLive()", "BadKind()", "BadProject()"],
+            HelperCall::VoteFinish { .. } => &["AlreadyFinished()", "NoBallot()"],
+            HelperCall::VoteCarryOut { .. } => &[
+                "Settled()",
+                "TooLate(uint64)",
+                "NothingToDo()",
+                "WoundDown()",
+                "NoBallot()",
+            ],
+            HelperCall::VoteLapse { .. } => {
+                &["Settled()", "NothingToDo()", "NotLapsable()", "NoBallot()"]
+            }
         }
     }
 }

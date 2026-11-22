@@ -3824,6 +3824,9 @@ mod chain_held_migration_postgres_tests;
 #[path = "tests/chain_pause_migration_postgres_tests.rs"]
 mod chain_pause_migration_postgres_tests;
 
+#[path = "tests/chain_council_migration_postgres_tests.rs"]
+mod chain_council_migration_postgres_tests;
+
 /// `insert_event_with_serving_write_guard` indexes mentions in the event's own
 /// transaction, and an indexing failure stays best-effort: the savepoint rolls
 /// back only the mention rows, never the event.

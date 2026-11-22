@@ -40,6 +40,9 @@
 //! | `season-entry`, `season-leave`                    | the founder or a team member (see    |
 //! |                                                   | `season_rules`)                      |
 //! | `season-remove`                                   | an operator of the server only       |
+//! | `candidacy` (a candidate's short text, 5.4)       | anyone whose linked wallet is the    |
+//! |                                                   | `proposer`; never an agent; a few a  |
+//! |                                                   | day, and a few for one ballot        |
 //! | none of the above, body names on-chain work       | anyone, as before (no lookup)        |
 //! | none of the above (a plain update, anything else) | the founder or a team member         |
 //!
@@ -64,12 +67,33 @@
 //! ten results, plain numbers, short words) and are refused on any other step. Nothing about them says the numbers are
 //! true; readers show them as reported by the helper.
 //!
+//! # A candidate's short text (COUNCIL-PLAN.md section 5.4)
+//!
+//! A `candidacy` record is a new family of the same kind 47003: the text a candidate for a
+//! project's Council signs, whose id is what `HolderVote.stand`/`standList`/`openReplace`
+//! record on the chain. Its tags are exactly `["a", "37001:<founder>:<id>"]`,
+//! `["candidacy", "<ballot id>"]`, `["t", "vote:<chain key>:<ballot id>"]`, one
+//! `["proposer", "<address>"]`, one or five `["candidate", "<address>"]` (the list's seat
+//! order) and one `["expiration", "<unix seconds>"]` (at most 30 days out); its content is
+//! `{"v":1,"text":"<at most 280 characters>"}`, at most 1,024 bytes. **Anyone signed in may
+//! stand** (a stranger too), with one condition: the wallet it proposes must be one the
+//! signer has linked to their own account (the same live wallet-binding records the room's
+//! write rule uses). An agent account signs none (the same limit as goals and promises): the
+//! words are a person's. At most three a day for one account and ten for one ballot.
+//!
+//! **The relay does not read the chain at write**, as for tasks: the check that a text belongs to
+//! a real candidate happens when it is read (the app and the server show a text only when its
+//! record id equals the `recordHash` the chain stored at `Stood`, the signer's linked wallet
+//! equals the chain's proposer and the `candidate` tags equal the chain's members). The order is
+//! sign, then `stand(recordId)`; a text with no matching option is never shown.
+//!
 //! # Agent accounts
 //!
 //! An account the server has on record as an agent (someone runs it, and both
 //! keys signed to say so: see `agent_label`) has limited powers here, even when
 //! it is on the team or is the founder: it may not confirm a task's work, grant
-//! more time, or sign goals, promises and promise marks. Those need a person.
+//! more time, sign goals, promises and promise marks, or stand for a seat (a
+//! candidacy's text). Those need a person.
 //! Everything else it may do exactly as any other account in its place. An
 //! account with no such record is not affected.
 //!
@@ -119,7 +143,7 @@
 //!
 //! Records stored before this check existed are not looked at again.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 use buzz_core::kind::{KIND_LAUNCH_RECORD, KIND_LAUNCH_UPDATE};
@@ -140,7 +164,7 @@ pub(crate) const OWN_WORK: &str =
     "restricted: a task's work must be confirmed by someone other than its helper";
 /// Said when an agent account signs something that needs a person.
 pub(crate) const AGENT_LIMIT: &str =
-    "restricted: an agent account cannot check work, grant more time, or sign goals and promises; a person on the team must";
+    "restricted: an agent account cannot check work, grant more time, sign goals and promises, or stand for a seat; a person must";
 /// Said when the `a` tag names a project record the server does not hold.
 pub(crate) const NO_PROJECT: &str =
     "invalid: this record names a project that is not on this server";
@@ -172,6 +196,38 @@ pub(crate) const TAKEN: &str =
 /// Said when an account takes too many tasks in a day.
 pub(crate) const TAKING_TOO_MUCH: &str =
     "rate-limited: you can take a few tasks a day; try again tomorrow";
+/// Said when a candidacy's tags or content are not the one shape the plan gives.
+pub(crate) const BAD_CANDIDACY: &str =
+    "invalid: a candidacy names one ballot, one proposer wallet, one person or five, and an end within 30 days";
+/// Said when a candidacy's text is not `{"v":1,"text":"..."}` within its limits.
+pub(crate) const BAD_CANDIDACY_TEXT: &str =
+    "invalid: a candidacy's text is {\"v\":1,\"text\":\"...\"}, at most 280 characters and 1,024 bytes";
+/// Said when the wallet a candidacy proposes is not one its signer has linked.
+pub(crate) const CANDIDACY_WALLET: &str =
+    "restricted: a candidacy must be signed by an account that has linked the wallet it proposes";
+/// Said when a candidacy's `vote:` topic names another chain than the project's.
+pub(crate) const CANDIDACY_OTHER_CHAIN: &str =
+    "invalid: a candidacy's vote tag names another project's chain";
+/// Said when a candidacy's own end has passed or is more than 30 days out.
+pub(crate) const CANDIDACY_EXPIRATION: &str =
+    "invalid: a candidacy's expiration must be within the next 30 days";
+/// Said when one account has signed its third candidacy of the day.
+pub(crate) const CANDIDACY_ENOUGH: &str =
+    "rate-limited: one account can sign three candidacies a day; try again tomorrow";
+/// Said when one ballot already holds ten candidate texts.
+pub(crate) const CANDIDACY_BALLOT_FULL: &str =
+    "rate-limited: this ballot has the ten candidate texts it can hold";
+/// The most characters a candidacy's text holds (COUNCIL-PLAN.md section 5.4).
+pub(crate) const CANDIDACY_TEXT_MAX: usize = 280;
+/// The most bytes a candidacy record's content may hold.
+pub(crate) const CANDIDACY_CONTENT_MAX: usize = 1_024;
+/// The longest a candidacy may stand for, in seconds (30 days).
+pub(crate) const CANDIDACY_EXPIRATION_MAX_SECS: u64 = 30 * 86_400;
+/// How many candidacies one account may sign in a day.
+const CANDIDACIES_PER_DAY: i64 = 3;
+/// How many candidacy records one ballot may hold.
+const CANDIDACIES_PER_BALLOT: i64 = 10;
+
 /// Said when a manager agent signs a task step.
 pub(crate) const MANAGER_LIMIT: &str =
     "restricted: a manager agent drafts for the founder; it can't post, take, hand in or check tasks";
@@ -265,6 +321,24 @@ pub(crate) struct Requirement {
     pub(crate) room_mute: Option<RoomMute>,
     /// A season family record (`season-entry`, `season-leave`, `season-remove`).
     pub(crate) season: Option<super::season_rules::Step>,
+    /// A candidate's short text (`candidacy`, COUNCIL-PLAN.md section 5.4).
+    pub(crate) candidacy: Option<Candidacy>,
+}
+
+/// What a `candidacy` record names: the ballot it stands on, the chain key its topic names, the wallet that proposes,
+/// the one person or five in the list's seat order, and when the text stops being shown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Candidacy {
+    /// The ballot's number (its `candidacy` tag and the `vote:` topic's last part agree).
+    pub(crate) ballot: u32,
+    /// The project's chain key the `vote:` topic names (`0x` and 64 hex digits, lower case).
+    pub(crate) chain_key: String,
+    /// The wallet that proposes: the signer must have linked it to their own account.
+    pub(crate) proposer: super::wallet_binding::Wallet,
+    /// One person, or five in the list's seat order.
+    pub(crate) candidates: Vec<super::wallet_binding::Wallet>,
+    /// When the text stops being shown (at most 30 days out).
+    pub(crate) until: u64,
 }
 
 /// What a `room-mute` record names: the person it stops (hex pubkey) and when it ends (unix seconds).
@@ -296,7 +370,9 @@ impl Requirement {
     /// Whether the record is one an agent account never signs: a goal, a
     /// promise or a promise mark, a confirmation, or a grant of more time.
     pub(crate) fn needs_a_person(&self) -> bool {
-        self.founder || self.step.is_some_and(|(part, _)| part.needs_a_person())
+        self.founder
+            || self.candidacy.is_some()
+            || self.step.is_some_and(|(part, _)| part.needs_a_person())
     }
 }
 
@@ -366,6 +442,10 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
     let mut room_mutes: Vec<&str> = Vec::new();
     let mut mute_wallets: Vec<&str> = Vec::new();
     let mut expirations: Vec<&str> = Vec::new();
+    let mut candidacies: Vec<&str> = Vec::new();
+    let mut proposers: Vec<&str> = Vec::new();
+    let mut candidates: Vec<&str> = Vec::new();
+    let mut topics: Vec<&str> = Vec::new();
     for tag in event.tags.iter() {
         let fields = tag.as_slice();
         let Some(name) = fields.first().map(|s| s.as_str()) else {
@@ -389,6 +469,11 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
             "room-mute" => room_mutes.push(value),
             "room-mute-wallet" => mute_wallets.push(value),
             "expiration" => expirations.push(value),
+            // A candidate's short text (COUNCIL-PLAN.md section 5.4): its own family, told apart by these tags.
+            "candidacy" => candidacies.push(value),
+            "proposer" => proposers.push(value),
+            "candidate" => candidates.push(value),
+            "t" => topics.push(value),
             _ => {}
         }
     }
@@ -491,6 +576,7 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
             join: true,
             room_mute: None,
             season: None,
+            candidacy: None,
         }));
     }
 
@@ -534,6 +620,46 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
             join: false,
             room_mute,
             season,
+            candidacy: None,
+        }));
+    }
+
+    // A candidate's short text (COUNCIL-PLAN.md section 5.4): its own family of this kind, exclusive of every other.
+    let vote_topic = topics
+        .iter()
+        .find(|topic| topic.starts_with("vote:"))
+        .copied();
+    if !candidacies.is_empty()
+        || !proposers.is_empty()
+        || !candidates.is_empty()
+        || vote_topic.is_some()
+    {
+        if founder
+            || team
+            || known
+            || step.is_some()
+            || !declines.is_empty()
+            || season.is_some()
+            || room_mute.is_some()
+        {
+            return Err("a candidacy cannot also be anything else".into());
+        }
+        let candidacy = read_candidacy(
+            event,
+            &candidacies,
+            &proposers,
+            &candidates,
+            &topics,
+            &expirations,
+        )?;
+        return Ok(Some(Requirement {
+            founder: false,
+            team: false,
+            step: None,
+            join: false,
+            room_mute: None,
+            season: None,
+            candidacy: Some(candidacy),
         }));
     }
 
@@ -551,7 +677,177 @@ pub(crate) fn classify(event: &Event) -> Result<Option<Requirement>, String> {
         join: false,
         room_mute: None,
         season: None,
+        candidacy: None,
     }))
+}
+
+/// Read the tags of a `candidacy` record into what it names, refusing anything the plan's shape does not allow
+/// (COUNCIL-PLAN.md section 5.4): exactly one `candidacy` tag holding the ballot's number, one `t` tag
+/// `vote:<chain key>:<ballot id>` agreeing with it, one `proposer` wallet, one `candidate` wallet or five in seat order,
+/// one `expiration`, and content `{"v":1,"text":"..."}` within its limits. The clock and the signer's wallet bindings
+/// are checked when the record is written (they need the server's time and records).
+fn read_candidacy(
+    event: &Event,
+    candidacies: &[&str],
+    proposers: &[&str],
+    candidates: &[&str],
+    topics: &[&str],
+    expirations: &[&str],
+) -> Result<Candidacy, String> {
+    let bad = || BAD_CANDIDACY.to_owned();
+    let [ballot] = candidacies else {
+        return Err(bad());
+    };
+    let ballot: u32 = ballot.parse().map_err(|_| bad())?;
+    let [proposer] = proposers else {
+        return Err(bad());
+    };
+    let proposer = super::wallet_binding::parse_wallet(proposer).ok_or_else(bad)?;
+    let candidates: Vec<super::wallet_binding::Wallet> = candidates
+        .iter()
+        .map(|text| super::wallet_binding::parse_wallet(text).ok_or_else(bad))
+        .collect::<Result<_, _>>()?;
+    if !matches!(candidates.len(), 1 | 5) {
+        return Err(bad());
+    }
+    // The plan's list is five accounts in the list's seat order: five different ones, and no zero address.
+    let distinct: BTreeSet<[u8; 20]> = candidates.iter().copied().collect();
+    if distinct.len() != candidates.len() || candidates.iter().any(|who| *who == [0u8; 20]) {
+        return Err(bad());
+    }
+    // One topic, and it is the vote's own: `vote:<chain key>:<ballot id>`.
+    let [topic] = topics else {
+        return Err(bad());
+    };
+    let rest = topic.strip_prefix("vote:").ok_or_else(bad)?;
+    let (chain_key, topic_ballot) = rest.rsplit_once(':').ok_or_else(bad)?;
+    if chain_key != chain_key.to_ascii_lowercase()
+        || crate::chain_reader::word::parse_fixed::<32>(chain_key).is_none()
+        || topic_ballot.parse::<u32>().ok() != Some(ballot)
+    {
+        return Err(bad());
+    }
+    let [until] = expirations else {
+        return Err(bad());
+    };
+    let until: u64 = until.parse().map_err(|_| bad())?;
+    if until == 0 {
+        return Err(bad());
+    }
+    check_candidacy_text(event)?;
+    Ok(Candidacy {
+        ballot,
+        chain_key: chain_key.to_owned(),
+        proposer,
+        candidates,
+        until,
+    })
+}
+
+/// Whether a candidacy's `expiration` is still ahead and at most 30 days out. Pure (the caller passes the clock).
+pub(crate) fn candidacy_expiration_ok(until: u64, now: u64) -> bool {
+    until > now && until <= now.saturating_add(CANDIDACY_EXPIRATION_MAX_SECS)
+}
+
+/// Check a candidacy's content: `{"v":1,"text":"..."}`, the text at most 280 characters, the content at most 1,024
+/// bytes and nothing else in it (the plan's exact shape, COUNCIL-PLAN.md section 5.4).
+fn check_candidacy_text(event: &Event) -> Result<(), String> {
+    let bad = || BAD_CANDIDACY_TEXT.to_owned();
+    if event.content.len() > CANDIDACY_CONTENT_MAX {
+        return Err(bad());
+    }
+    let body: serde_json::Value = serde_json::from_str(&event.content).map_err(|_| bad())?;
+    let body = body.as_object().ok_or_else(bad)?;
+    if body.len() != 2 || !body.contains_key("v") || !body.contains_key("text") {
+        return Err(bad());
+    }
+    if body["v"].as_u64() != Some(1) {
+        return Err(bad());
+    }
+    let text = body["text"].as_str().ok_or_else(bad)?;
+    if text.chars().count() > CANDIDACY_TEXT_MAX {
+        return Err(bad());
+    }
+    Ok(())
+}
+
+/// Whether the wallet a candidacy proposes is one its signer has linked to their own account. Pure: [`enforce_candidacy`]
+/// reads the live bindings and this says the one thing they must contain (the room's write rule and this one read the
+/// same records).
+pub(crate) fn candidacy_wallet_linked(
+    linked: &[super::wallet_binding::Wallet],
+    proposer: &super::wallet_binding::Wallet,
+) -> bool {
+    linked.contains(proposer)
+}
+
+/// Hold a candidacy to what needs the clock and the server's records: its end is still ahead and within 30 days, its
+/// `vote:` topic names this project's own chain when the project record does, and the wallet it proposes is one its
+/// signer has linked to their own account (the live kind 37017 records, the same rule the room's write uses). Its rates
+/// are separate, in [`enforce_candidacy_caps`]. Who may sign it (anyone but an agent) was decided before.
+async fn enforce_candidacy(
+    state: &AppState,
+    community: buzz_core::tenant::CommunityId,
+    event: &Event,
+    candidacy: &Candidacy,
+    project_record: &Event,
+) -> Result<(), IngestError> {
+    let now = u64::try_from(chrono::Utc::now().timestamp()).unwrap_or(0);
+    if !candidacy_expiration_ok(candidacy.until, now) {
+        return Err(IngestError::Rejected(CANDIDACY_EXPIRATION.into()));
+    }
+    if let Some(key) = super::task_chain::chain_key_of(project_record) {
+        let ours = crate::chain_reader::word::hex0x(&key);
+        if candidacy.chain_key != ours {
+            return Err(IngestError::Rejected(CANDIDACY_OTHER_CHAIN.into()));
+        }
+    }
+    let linked = super::wallet_binding::linked_wallets(state, community, &event.pubkey.to_bytes())
+        .await
+        .map_err(|e| internal("reading the signer's linked wallets", e))?;
+    if !candidacy_wallet_linked(&linked, &candidacy.proposer) {
+        return Err(IngestError::AuthFailed(CANDIDACY_WALLET.into()));
+    }
+    Ok(())
+}
+
+/// Hold a candidacy to its rates: three a day for one account and ten for one ballot (COUNCIL-PLAN.md section 5.4).
+/// Counted by the server's receive time, as asks to join are, and a refused record is not stored, so it uses no room.
+async fn enforce_candidacy_caps(
+    state: &AppState,
+    community: buzz_core::tenant::CommunityId,
+    event: &Event,
+    candidacy: &Candidacy,
+) -> Result<(), IngestError> {
+    let kinds = [KIND_LAUNCH_UPDATE as i32];
+    let today = state
+        .db
+        .count_tag_named_events_received_since(
+            community,
+            &event.pubkey.to_bytes(),
+            &kinds,
+            "candidacy",
+            Some(chrono::Utc::now() - chrono::Duration::hours(24)),
+        )
+        .await
+        .map_err(|e| internal("counting candidacies today", e))?;
+    if today >= CANDIDACIES_PER_DAY {
+        return Err(IngestError::AuthFailed(CANDIDACY_ENOUGH.into()));
+    }
+    let for_ballot = state
+        .db
+        .count_events(&buzz_db::EventQuery {
+            kinds: Some(kinds.to_vec()),
+            tag_filters: vec![("candidacy".to_owned(), vec![candidacy.ballot.to_string()])],
+            global_only: true,
+            ..buzz_db::EventQuery::for_community(community)
+        })
+        .await
+        .map_err(|e| internal("counting a ballot's candidate texts", e))?;
+    if for_ballot >= CANDIDACIES_PER_BALLOT {
+        return Err(IngestError::AuthFailed(CANDIDACY_BALLOT_FULL.into()));
+    }
+    Ok(())
 }
 
 /// The most tags a `room-mute` or season record carries (its `a`, a topic, the family tag, up to 8 wallets, an end).
@@ -1163,6 +1459,10 @@ pub(crate) async fn enforce_launch_update_authority(
     }
     if let Some(mute) = &requirement.room_mute {
         enforce_room_mute(state, community, &team, mute, &signer).await?;
+    }
+    if let Some(candidacy) = &requirement.candidacy {
+        enforce_candidacy(state, community, event, candidacy, &record.event).await?;
+        enforce_candidacy_caps(state, community, event, candidacy).await?;
     }
     match requirement.season {
         Some(step) => {
@@ -2659,5 +2959,351 @@ mod tests {
             &[&["t", "season-1"], &["season-entry", "1"], &["goal", "g"]]
         ))
         .is_err());
+    }
+
+    // ── the candidate's short text (COUNCIL-PLAN.md section 5.4) ──
+
+    /// A `candidacy` record with the plan's tags: the ballot, the `vote:` topic, the proposer wallet, the candidates in
+    /// seat order and an end; `body` is the JSON content.
+    fn candidacy(
+        w: &World,
+        who: &Keys,
+        ballot: &str,
+        topic: &str,
+        proposer: &str,
+        candidates: &[&str],
+        until: &str,
+        body: &str,
+    ) -> Event {
+        let coordinate = w.coordinate();
+        let mut tags: Vec<Vec<String>> = vec![
+            vec!["a".into(), coordinate],
+            vec!["candidacy".into(), ballot.into()],
+            vec!["t".into(), topic.into()],
+            vec!["proposer".into(), proposer.into()],
+        ];
+        for candidate in candidates {
+            tags.push(vec!["candidate".into(), (*candidate).into()]);
+        }
+        tags.push(vec!["expiration".into(), until.into()]);
+        let tags: Vec<Tag> = tags
+            .into_iter()
+            .map(|fields| Tag::parse(fields).expect("tag"))
+            .collect();
+        EventBuilder::new(Kind::Custom(KIND_LAUNCH_UPDATE as u16), body)
+            .tags(tags)
+            .allow_self_tagging()
+            .sign_with_keys(who)
+            .expect("sign")
+    }
+
+    /// The three wallets in every test: the proposer, and one person of a seat.
+    fn wallets() -> (String, String) {
+        (
+            format!("0x{}", "22".repeat(20)),
+            format!("0x{}", "33".repeat(20)),
+        )
+    }
+
+    fn a_chain_key() -> String {
+        format!("0x{}", "11".repeat(32))
+    }
+
+    fn a_day() -> String {
+        (chrono::Utc::now().timestamp() + 86_400).to_string()
+    }
+
+    fn text_body(text: &str) -> String {
+        format!(r#"{{"v":1,"text":"{text}"}}"#)
+    }
+
+    /// A candidacy is the plan's exact shape: its own family, its ballot named twice and agreeing, one proposer, one
+    /// person or five in seat order, one end, and the text's own two keys. Anyone may sign it (a stranger too); a
+    /// record off that shape is refused rather than stored for no reader to show.
+    #[test]
+    fn a_candidacy_has_exactly_the_plans_shape() {
+        let w = World::new();
+        let (proposer, person) = wallets();
+        let topic = format!("vote:{}:7", a_chain_key());
+        let body = text_body("I will keep the door open.");
+        let one = candidacy(
+            &w,
+            &w.stranger,
+            "7",
+            &topic,
+            &proposer,
+            &[&person],
+            &a_day(),
+            &body,
+        );
+        let requirement = classify(&one)
+            .expect("a candidacy reads")
+            .expect("a family");
+        let read = requirement.candidacy.as_ref().expect("the family");
+        assert_eq!(read.ballot, 7);
+        assert_eq!(read.chain_key, a_chain_key());
+        assert_eq!(read.candidates.len(), 1);
+        // Anyone signed in may stand: a stranger as much as the founder (a team member too).
+        assert_eq!(w.verdict(&one, None), Ok(()), "a stranger may stand");
+        let by_founder = candidacy(
+            &w,
+            &w.founder,
+            "7",
+            &topic,
+            &proposer,
+            &[&person],
+            &a_day(),
+            &body,
+        );
+        assert_eq!(
+            w.verdict(&by_founder, None),
+            Ok(()),
+            "the founder may stand"
+        );
+        // An agent may not: standing is a person's word.
+        assert_eq!(w.verdict_agent(&one, None), Err(AGENT_LIMIT));
+        assert!(requirement.needs_a_person(), "an agent signs no candidacy");
+        // A list of five in seat order is one candidacy too.
+        let five: Vec<String> = (0..5)
+            .map(|i| format!("0x{}", format!("{:02x}", 0x40 + i).repeat(20)))
+            .collect();
+        let five_refs: Vec<&str> = five.iter().map(String::as_str).collect();
+        let list = candidacy(
+            &w,
+            &w.mate,
+            "7",
+            &topic,
+            &proposer,
+            &five_refs,
+            &a_day(),
+            &body,
+        );
+        assert_eq!(
+            classify(&list)
+                .expect("reads")
+                .expect("a family")
+                .candidacy
+                .expect("the family")
+                .candidates
+                .len(),
+            5
+        );
+
+        // Wrong shapes: no ballot, two ballots, a ballot that is not a number, two proposers, a proposer that is not
+        // an address, two or six candidates, the same person twice, a zero address, a topic that is not the vote's, a
+        // topic naming another ballot, the wrong chain key, no end or two, an end that is not a number.
+        let mut cases: Vec<Event> = Vec::new();
+        let mut without_ballot = one.clone();
+        without_ballot.tags = without_ballot
+            .tags
+            .iter()
+            .filter(|tag| tag.as_slice().first().map(String::as_str) != Some("candidacy"))
+            .cloned()
+            .collect();
+        cases.push(without_ballot);
+        cases.push(candidacy(
+            &w,
+            &w.mate,
+            "7",
+            &format!("vote:{}:8", a_chain_key()),
+            &proposer,
+            &[&person],
+            &a_day(),
+            &body,
+        ));
+        cases.push(candidacy(
+            &w,
+            &w.mate,
+            "seven",
+            &format!("vote:{}:seven", a_chain_key()),
+            &proposer,
+            &[&person],
+            &a_day(),
+            &body,
+        ));
+        cases.push(candidacy(
+            &w,
+            &w.mate,
+            "7",
+            &format!("vote:{}:7", a_chain_key()),
+            "0x12",
+            &[&person],
+            &a_day(),
+            &body,
+        ));
+        cases.push(candidacy(
+            &w,
+            &w.mate,
+            "7",
+            &format!("vote:{}:7", a_chain_key()),
+            &proposer,
+            &[&person, &person],
+            &a_day(),
+            &body,
+        ));
+        cases.push(candidacy(
+            &w,
+            &w.mate,
+            "7",
+            &format!("vote:{}:7", a_chain_key()),
+            &proposer,
+            &[&person, &person, &person, &person, &person, &person],
+            &a_day(),
+            &body,
+        ));
+        cases.push(candidacy(
+            &w,
+            &w.mate,
+            "7",
+            &format!("vote:{}:7", a_chain_key()),
+            &proposer,
+            &[&format!("0x{}", "00".repeat(20))],
+            &a_day(),
+            &body,
+        ));
+        cases.push(candidacy(
+            &w,
+            &w.mate,
+            "7",
+            "season-7",
+            &proposer,
+            &[&person],
+            &a_day(),
+            &body,
+        ));
+        cases.push(candidacy(
+            &w,
+            &w.mate,
+            "7",
+            &format!("vote:{}:7", "0x12"),
+            &proposer,
+            &[&person],
+            &a_day(),
+            &body,
+        ));
+        cases.push(candidacy(
+            &w,
+            &w.mate,
+            "7",
+            &format!("vote:{}:7", a_chain_key()),
+            &proposer,
+            &[&person],
+            "soon",
+            &body,
+        ));
+        for case in cases {
+            assert!(
+                classify(&case).is_err(),
+                "an off-shape candidacy must be refused"
+            );
+        }
+        // A candidacy cannot also be a goal, a task or a mute.
+        let with_goal: &[&[&str]] = &[
+            &["goal", "g1"],
+            &["candidacy", "7"],
+            &["t", &topic],
+            &["proposer", &proposer],
+            &["candidate", &person],
+            &["expiration", "1900000000"],
+        ];
+        assert!(classify(&w.record(&w.mate, with_goal)).is_err());
+    }
+
+    /// The text is `{"v":1,"text":"..."}`: exactly those two keys, at most 280 characters, at most 1,024 bytes, and
+    /// nothing else in it. Pure (the clock and the wallet are checked when the record is written).
+    #[test]
+    fn a_candidacy_text_is_at_most_280_characters_and_1024_bytes() {
+        let w = World::new();
+        let (proposer, person) = wallets();
+        let topic = format!("vote:{}:7", a_chain_key());
+        for money in [text_body("short"), text_body(&"a".repeat(280))] {
+            assert!(
+                classify(&candidacy(
+                    &w,
+                    &w.mate,
+                    "7",
+                    &topic,
+                    &proposer,
+                    &[&person],
+                    &a_day(),
+                    &money
+                ))
+                .is_ok(),
+                "{}",
+                money.len()
+            );
+        }
+        for bad in [
+            text_body(&"a".repeat(281)),
+            text_body(""),
+            // A third key is not the plan's two.
+            r#"{"v":1,"text":"a","x":1}"#.to_owned(),
+            "{\"v\":2,\"text\":\"a\"}".to_owned(),
+            "{\"v\":1}".to_owned(),
+            "not json".to_owned(),
+            String::new(),
+        ] {
+            assert!(
+                classify(&candidacy(
+                    &w,
+                    &w.mate,
+                    "7",
+                    &topic,
+                    &proposer,
+                    &[&person],
+                    &a_day(),
+                    &bad
+                ))
+                .is_err(),
+                "{bad}"
+            );
+        }
+        // The byte limit on its own: 280 characters of four bytes each is over 1,024 bytes.
+        let wide = text_body(&"\u{1D11E}".repeat(280));
+        assert!(wide.len() > 1_024, "{}", wide.len());
+        assert!(classify(&candidacy(
+            &w,
+            &w.mate,
+            "7",
+            &topic,
+            &proposer,
+            &[&person],
+            &a_day(),
+            &wide
+        ))
+        .is_err());
+        // The clock: an end in the past, or more than 30 days out, is not a candidacy's end.
+        let now = 1_800_000_000u64;
+        assert!(candidacy_expiration_ok(now + 1, now));
+        assert!(candidacy_expiration_ok(
+            now + CANDIDACY_EXPIRATION_MAX_SECS,
+            now
+        ));
+        assert!(!candidacy_expiration_ok(now, now));
+        assert!(!candidacy_expiration_ok(now - 1, now));
+        assert!(!candidacy_expiration_ok(
+            now + CANDIDACY_EXPIRATION_MAX_SECS + 1,
+            now
+        ));
+    }
+
+    /// The one wallet rule: the proposer must be a wallet the signer linked to their own account. Remove the rule
+    /// (`candidacy_wallet_linked` returning true) and this test fails.
+    #[test]
+    fn a_candidacy_wallet_must_be_one_the_signer_linked() {
+        let mine = [0x22u8; 20];
+        let theirs = [0x33u8; 20];
+        assert!(
+            candidacy_wallet_linked(&[mine], &mine),
+            "the signer's own wallet"
+        );
+        assert!(
+            !candidacy_wallet_linked(&[theirs], &mine),
+            "someone else's wallet is not the signer's"
+        );
+        assert!(
+            !candidacy_wallet_linked(&[], &mine),
+            "no linked wallet at all"
+        );
     }
 }

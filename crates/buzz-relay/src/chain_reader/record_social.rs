@@ -595,8 +595,14 @@ pub fn streaks_of(
     })
 }
 
-/// Whether the runner is a Pair with two different, non-zero signers.
+/// Whether the project is run by more than one account: a Pair with two different, non-zero signers, or a Council with
+/// at least three distinct non-zero live seats (COUNCIL-PLAN.md section 5.8). A project that grows from a Pair into a
+/// Council keeps the badge.
 fn two_signers(runner: &RunnerRec) -> bool {
+    if runner.kind.as_deref() == Some("council") {
+        return runner.seats.is_some_and(|seats| seats >= 3);
+    }
+    // A record signed before `runner.kind` existed has none: it reads as a Pair then, as the app does.
     let zero = format!("0x{}", "0".repeat(40));
     runner.is_pair
         && runner

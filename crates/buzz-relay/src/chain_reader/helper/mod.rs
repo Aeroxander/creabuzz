@@ -28,6 +28,17 @@
 //!   one project in 24 hours, and together at most
 //!   [`calls::OPTIONAL_SHARE_PERCENT`] of the daily gas and spend caps across
 //!   every project, so the settle and the fee always keep their room.
+//! - **The Council round's four vote calls** (`COUNCIL-PLAN.md` section 5.5):
+//!   the due seat election, a ballot's result, a won result's carry-out and a
+//!   won result's lapse. Each is a call anyone may make and none moves money;
+//!   the helper never opens a replace vote. They are bounded to
+//!   [`plan::VOTE_JOBS_PER_PASS`] looked at in one pass over all projects, one
+//!   per project per [`plan::vote_pace_secs`] or a quarter of the stand window
+//!   when that is smaller (read from the contract's `day()`), at most
+//!   [`plan::VOTE_PER_PROJECT_PER_DAY`] sent for one project in 24 hours, and
+//!   [`calls::MAX_VOTE_ATTEMPTS`] failed attempts: five failures in a row leave
+//!   that project alone for 24 hours and log it. Before a carry-out is sent,
+//!   the contract's own `canCarryOut` is read first.
 
 pub mod calls;
 pub mod plan;
@@ -110,6 +121,16 @@ enum Outcome {
     /// Go on with the next job.
     Next,
     /// Stop the pass (a transaction in flight, or a cap reached).
+    Stop,
+}
+
+/// What a vote job's own gates (places, day, failure cooldown, pace) say.
+enum Gate {
+    /// Check it at the head and send it.
+    Go,
+    /// Not now: put it off (already done) and go on with the next job.
+    Skip,
+    /// Stop the pass (the node did not answer).
     Stop,
 }
 
@@ -257,10 +278,24 @@ impl Helper {
         // Ordered in SQL (the settle before the fee).
         let due = store::due_jobs(pool, reader, JOBS_PER_PASS as i64).await?;
         let mut optional = 0;
+        let mut votes = 0;
         for job in due {
-            // The optional calls are looked at a few at a time; the rest wait
-            // for the next pass (they stay pending, nothing is counted).
-            if calls::is_optional(&job.call) {
+            if calls::is_vote(&job.call) {
+                // The vote calls get a few places of their own in a pass, over
+                // all projects: a stream of junk ballots cannot become a burst
+                // of transactions.
+                if votes >= plan::VOTE_JOBS_PER_PASS {
+                    continue;
+                }
+                match self.vote_gate(pool, reader, &job, &mut report).await? {
+                    Gate::Go => {}
+                    Gate::Skip => continue,
+                    Gate::Stop => break,
+                }
+                votes += 1;
+            } else if calls::is_optional(&job.call) {
+                // The optional calls are looked at a few at a time; the rest wait
+                // for the next pass (they stay pending, nothing is counted).
                 if optional >= calls::OPTIONAL_PER_PASS {
                     continue;
                 }
@@ -284,6 +319,114 @@ impl Helper {
             }
         }
         Ok(report)
+    }
+
+    /// The gates a vote job meets before it is checked at the head: the
+    /// project's failure cooldown, its day's six transactions, and the helper's
+    /// own pace (once per ten minutes, or a quarter of the stand window when
+    /// that is smaller). A job that must wait is put off without an attempt
+    /// (nothing of it went wrong); a node that does not answer stops the pass.
+    async fn vote_gate(
+        &self,
+        pool: &PgPool,
+        reader: &str,
+        job: &JobRow,
+        report: &mut HelperReport,
+    ) -> anyhow::Result<Gate> {
+        let Some(project) = &job.project_key else {
+            return Ok(Gate::Go);
+        };
+        // Five failures in a row leave the project's vote calls alone for a
+        // day: a project whose ballots cannot be read (a bound pause that is
+        // not a vote contract, a contract that always reverts) must not burn
+        // the helper's day.
+        if store::vote_failed_recently(pool, reader, project, calls::VOTE_PROJECT_COOLDOWN_SECS)
+            .await?
+        {
+            let reason =
+                "this project's vote calls failed five times in a row; left alone for 24 hours";
+            store::postpone(
+                pool,
+                job.id,
+                reason,
+                calls::VOTE_PROJECT_COOLDOWN_SECS as f64,
+            )
+            .await?;
+            report.postponed += 1;
+            tracing::error!(
+                project = %hex0x(project),
+                job = %job.key,
+                "chain helper: {reason}"
+            );
+            return Ok(Gate::Skip);
+        }
+        if store::vote_sends_last_day(pool, reader, project).await?
+            >= plan::VOTE_PER_PROJECT_PER_DAY
+        {
+            store::postpone(
+                pool,
+                job.id,
+                "this project has had its vote calls for the day",
+                CAP_PAUSE_SECS,
+            )
+            .await?;
+            report.postponed += 1;
+            return Ok(Gate::Skip);
+        }
+        match self.vote_pace_wait(pool, reader, project, job).await {
+            Ok(None) => Ok(Gate::Go),
+            Ok(Some(wait)) => {
+                store::postpone(
+                    pool,
+                    job.id,
+                    "the helper's pace between this project's vote calls has not passed",
+                    wait as f64,
+                )
+                .await?;
+                report.postponed += 1;
+                Ok(Gate::Skip)
+            }
+            Err(Failure::Job(e)) => {
+                self.retry(pool, job, &e, report).await?;
+                Ok(Gate::Skip)
+            }
+            Err(Failure::Node(e)) => match self
+                .node_failed(pool, job, "a view of the vote contract", e, report)
+                .await?
+            {
+                Outcome::Stop => Ok(Gate::Stop),
+                Outcome::Next => Ok(Gate::Skip),
+            },
+        }
+    }
+
+    /// How long the project's next vote call must wait for the helper's pace,
+    /// `None` when it may go now. The pace is a quarter of the contract's own
+    /// stand window (`HolderVote.day()`), never more than ten minutes; the
+    /// contract is asked only when a vote call was sent for the project before.
+    async fn vote_pace_wait(
+        &self,
+        pool: &PgPool,
+        reader: &str,
+        project: &Word,
+        job: &JobRow,
+    ) -> Result<Option<u64>, Failure> {
+        let Some(sent_secs_ago) = store::vote_sent_secs_ago(pool, reader, project)
+            .await
+            .map_err(|e| job_failure(anyhow!("reading the project's vote sends: {e:#}")))?
+        else {
+            return Ok(None);
+        };
+        let day = self.view_uint(&job.target, view("day()", &[]), 0).await?;
+        let day = u64::try_from(day)
+            .map_err(|_| job_failure(anyhow!("the vote contract's day() is too large")))?;
+        let pace = plan::vote_pace_secs_of_day(day) as f64;
+        let waited = sent_secs_ago.max(0.0);
+        if waited >= pace {
+            Ok(None)
+        } else {
+            Ok(Some((pace - waited).ceil() as u64))
+        }
     }
 
     /// Whether `calls::OPTIONAL_PER_PROJECT_PER_DAY` transactions of the
@@ -461,6 +604,96 @@ impl Helper {
                     Check::Nothing("no open task has run out ten minutes ago".into())
                 }
             }
+            // The seat election the Council says is due: the contract's own
+            // `canOpenSeats()` (no ballot live, the Council is the runner and
+            // says it is due) answers it in one view.
+            HelperCall::VoteOpenSeats { .. } => positive(
+                self.view_uint(&target, view("canOpenSeats()", &[]), 0)
+                    .await?,
+                "canOpenSeats",
+            ),
+            // A ballot whose vote has ended and whose result is not recorded.
+            // `ballot(id)` is one static struct: kind, outcome, finished,
+            // carried, lapsed, upA, upB, winner, winnerB, optionCount,
+            // openedAt, standEnd, voteEnd, effectiveAt, supply, floor, council.
+            HelperCall::VoteFinish { ballot, .. } => {
+                let answer = self
+                    .view_answer(
+                        &target,
+                        view("ballot(uint32)", &[id_word(u64::from(*ballot))]),
+                    )
+                    .await?;
+                let finished = uint(&answer, 2).map_err(job_failure)?;
+                let carried = uint(&answer, 3).map_err(job_failure)?;
+                let lapsed = uint(&answer, 4).map_err(job_failure)?;
+                let opened_at = uint(&answer, 10).map_err(job_failure)?;
+                let vote_end = uint(&answer, 12).map_err(job_failure)?;
+                if opened_at != 0
+                    && finished == 0
+                    && carried == 0
+                    && lapsed == 0
+                    && u128::from(head_time) >= vote_end
+                {
+                    Check::Due(call.clone())
+                } else {
+                    Check::Nothing(
+                        "the ballot's result is recorded, or its vote has not ended".into(),
+                    )
+                }
+            }
+            // A won result whose wait has run: the contract's own
+            // `canCarryOut(id)` is read first, as the plan says (it also says
+            // whether the ballot was won, the wait is over and it is not late).
+            HelperCall::VoteCarryOut { ballot, .. } => positive(
+                self.view_uint(
+                    &target,
+                    view("canCarryOut(uint32)", &[id_word(u64::from(*ballot))]),
+                    0,
+                )
+                .await?,
+                "canCarryOut",
+            ),
+            // A won result two time units past its effective time that nobody
+            // carried out. The contract lets it go then (or when the project is
+            // wound down, which the planner's own two-unit rule does not see;
+            // `lapse` then succeeds a little later).
+            HelperCall::VoteLapse { ballot, .. } => {
+                let answer = self
+                    .view_answer(
+                        &target,
+                        view("ballot(uint32)", &[id_word(u64::from(*ballot))]),
+                    )
+                    .await?;
+                let carried = uint(&answer, 3).map_err(job_failure)?;
+                let lapsed = uint(&answer, 4).map_err(job_failure)?;
+                let opened_at = uint(&answer, 10).map_err(job_failure)?;
+                let vote_end = uint(&answer, 12).map_err(job_failure)?;
+                let effective_at = uint(&answer, 13).map_err(job_failure)?;
+                if opened_at == 0 || carried != 0 || lapsed != 0 {
+                    Check::Nothing("the ballot is settled".into())
+                } else if u128::from(head_time) < vote_end {
+                    Check::Nothing("the ballot's vote has not ended".into())
+                } else {
+                    let result = self
+                        .view_answer(
+                            &target,
+                            view("resultOf(uint32)", &[id_word(u64::from(*ballot))]),
+                        )
+                        .await?;
+                    let outcome = uint(&result, 0).map_err(job_failure)?;
+                    let units = self
+                        .view_uint(&target, view("LAPSE_UNITS()", &[]), 0)
+                        .await?;
+                    let day = self.view_uint(&target, view("day()", &[]), 0).await?;
+                    let late =
+                        effective_at.saturating_add(units.saturating_mul(day).saturating_mul(7));
+                    if matches!(outcome, 3 | 4) && u128::from(head_time) > late {
+                        Check::Due(call.clone())
+                    } else {
+                        Check::Nothing("no won result is two time units past its time".into())
+                    }
+                }
+            }
         })
     }
 
@@ -483,7 +716,18 @@ impl Helper {
             report.failed += 1;
             metrics::counter!("buzz_chain_helper_failed_total", "call" => job.call.clone())
                 .increment(1);
-            tracing::error!(job = %job.key, attempts = job.attempts + 1, "chain helper: job failed for good: {error}");
+            if calls::is_vote(&job.call) {
+                // Five failures in a row: this project's vote calls are left
+                // alone for a day from here (see `vote_gate`), and it is said.
+                tracing::error!(
+                    job = %job.key,
+                    project = ?job.project_key.map(|k| hex0x(&k)),
+                    attempts = job.attempts + 1,
+                    "chain helper: a vote call failed five times in a row: this project is left alone for 24 hours: {error}"
+                );
+            } else {
+                tracing::error!(job = %job.key, attempts = job.attempts + 1, "chain helper: job failed for good: {error}");
+            }
         } else {
             report.retried += 1;
             tracing::warn!(job = %job.key, attempts = job.attempts + 1, "chain helper: attempt failed: {error}");

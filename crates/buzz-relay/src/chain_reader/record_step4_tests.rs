@@ -105,6 +105,9 @@ fn the_second_run_emits_every_switched_event_and_each_one_decodes() {
         seen.insert((role.as_str(), def.name));
     }
     for def in events::EVENTS {
+        if super::fixture::only_with_the_council_switch_on(def.role, def.name) {
+            continue;
+        }
         if super::fixture::only_with_the_switches_on(def.role, def.name) {
             assert!(
                 seen.contains(&(def.role.as_str(), def.name)),

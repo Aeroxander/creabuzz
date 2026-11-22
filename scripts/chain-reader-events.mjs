@@ -50,6 +50,11 @@ const CONTRACTS = [
   // backers' claim contract (its address comes from the Launcher's EarlierBound log).
   { contract: "HolderPause", roles: ["Pause"] },
   { contract: "EarlierGrants", roles: ["Earlier"] },
+  // The Council round: when the deployment's Council switch is on the project's pause is a `HolderVote` (a `HolderPause`
+  // that also holds the ballots), so one role has two event tables over the same address; and a project's Council, whose
+  // address comes from the Launcher's `CouncilMade` log.
+  { contract: "HolderVote", roles: ["Pause"] },
+  { contract: "Council", roles: ["Council"] },
 ];
 // Allowances are not read.
 const SKIPPED = new Set(["ShareToken.Approval", "PlayDollar.Approval"]);
@@ -165,6 +170,8 @@ function rustTy(input, structs) {
   if (t === "bool") return "Ty::Bool";
   if (t === "bytes32") return "Ty::Bytes32";
   if (t === "bytes") return "Ty::Bytes";
+  const array = /^(.*)\[(\d+)\]$/.exec(t);
+  if (array) return `Ty::Array(&${rustTy({ ...input, type: array[1] }, structs)}, ${array[2]})`;
   if (/^uint(8|16|24|32|64|128|160|256)$/.test(t)) return t === "uint256" ? "U256" : t === "uint64" ? "U64" : `Ty::Uint("${t}")`;
   if (/^int(8|16|24|32|64|128|256)$/.test(t)) return `Ty::Int("${t}")`;
   throw new Error(`the reader cannot decode a parameter of type ${t}`);
@@ -182,10 +189,16 @@ function rustParams(inputs, structs, indent) {
 function rust(list) {
   const structs = [];
   const events = [];
+  // One role can have two contracts: `HolderVote` is a `HolderPause`, so its ABI carries the pause's events too. The
+  // table is by (role, event) and the second copy is left out; the recorded file keeps each contract's own ABI.
+  const seen = new Set();
   for (const [contract, { roles, events: evs }] of Object.entries(list.contracts)) {
     for (const role of roles) {
+      const fresh = evs.filter((e) => !seen.has(`${role}.${e.name}`));
+      if (fresh.length === 0) continue;
       events.push(`    // ── ${role} (${contract})`);
-      for (const e of evs) {
+      for (const e of fresh) {
+        seen.add(`${role}.${e.name}`);
         events.push(
           `    EventDef {\n        role: Role::${role},\n        name: "${e.name}",\n        params: &[\n${rustParams(e.inputs, structs, "            ")}\n        ],\n    },`,
         );

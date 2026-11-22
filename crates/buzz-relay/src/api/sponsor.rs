@@ -674,6 +674,85 @@ mod tests {
         assert!(!classify(&twice, 31337, &allowed()).is_ok_and(|parsed| parsed.exit));
     }
 
+    /// The Council round's presses (`COUNCIL-PLAN.md` section 5.6): a project's Council (`role` `council`) and its vote
+    /// contract (the pause, `role` `pause`) are contracts the reader follows, so every press a passkey account makes on
+    /// them -- stand, stand a list, open a replace vote, cast a vote, and the Council's propose, agree and withdraw, and
+    /// the Launcher's makeCouncil -- is an ordinary sponsored operation: on the allow-list by address, counted against
+    /// the day like a Back. **None of them is an exit** (they move no money out), and the exit rule is unchanged with a
+    /// ballot live: `[unpark, leave]` is the one exit that begins with another call and `unpark` alone counts like any
+    /// other operation. Remove the address allow-list and every press here is refused.
+    #[test]
+    fn a_council_or_vote_press_is_an_ordinary_operation_and_the_exit_rule_is_unchanged() {
+        let treasury = address(1);
+        let vote = address(2);
+        let council = address(4);
+        let launcher = address(6);
+        let allowed = Allowed {
+            targets: HashSet::from([treasury, vote, council, launcher]),
+            treasuries: vec![treasury],
+            pauses: vec![vote],
+        };
+        let press = |to: [u8; 20], signature: &str| {
+            request(
+                METHOD,
+                json!([operation(&text(&address(9)), &[call(to, signature)])]),
+            )
+        };
+        let config = SponsorConfig::for_test("http://127.0.0.1:1/");
+        for (to, signature) in [
+            (vote, "stand(bytes32)"),
+            (vote, "standList(address[5],bytes32)"),
+            (vote, "openReplace(address[5],bytes32)"),
+            (vote, "castVote(uint8)"),
+            (council, "propose(address,bytes)"),
+            (council, "agree(bytes32)"),
+            (council, "withdraw(bytes32)"),
+            (launcher, "makeCouncil(bytes32)"),
+        ] {
+            let parsed = classify(&press(to, signature), 31337, &allowed)
+                .unwrap_or_else(|_| panic!("{signature} is a followed contract's press"));
+            assert!(!parsed.exit, "{signature} moves no money out");
+            assert!(
+                counters(&config, &parsed, "203.0.113.5", "reader")
+                    .iter()
+                    .any(|(key, _)| key.starts_with("acct:")),
+                "{signature} counts against the account's day"
+            );
+        }
+        // A contract the reader does not follow is still refused.
+        let elsewhere = address(7);
+        assert!(classify(&press(elsewhere, "castVote(uint8)"), 31337, &allowed).is_err());
+        // With a ballot live the exit rule is the same one: `[unpark, leave]` is an exit; `unpark` alone is not.
+        let unpark = |to: [u8; 20]| {
+            let mut data = calldata::selector(calldata::UNPARK_SIGNATURE).to_vec();
+            data.extend_from_slice(&[0u8; 32]);
+            calldata::Call {
+                to,
+                value: [0u8; 32],
+                data,
+            }
+        };
+        let batch = |calls: &[calldata::Call]| {
+            request(METHOD, json!([operation(&text(&address(9)), calls)]))
+        };
+        assert!(
+            classify(
+                &batch(&[unpark(vote), call(treasury, calldata::LEAVE_SIGNATURE)]),
+                31337,
+                &allowed
+            )
+            .expect("passes")
+            .exit,
+            "a take out of parked Shares stays an exit"
+        );
+        assert!(
+            !classify(&batch(&[unpark(vote)]), 31337, &allowed)
+                .expect("passes")
+                .exit,
+            "an unpark alone is an ordinary operation"
+        );
+    }
+
     /// K9 (the pins): a method other than the one, a batch array, a body over 32 KB, another chain, two operations, and
     /// call data that cannot be read are refused with "not allowed"; so is a target that is off the list.
     #[test]

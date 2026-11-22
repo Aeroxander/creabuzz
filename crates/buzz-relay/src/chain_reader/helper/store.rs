@@ -525,6 +525,82 @@ pub async fn optional_sends_last_day(
     .await?)
 }
 
+/// Transactions of the vote calls (`calls::VOTE_NAMES`) sent for one project in
+/// the last 24 hours, counted as [`optional_sends_last_day`] counts the
+/// optional ones (a replacement at the same nonce is the same transaction).
+pub async fn vote_sends_last_day(
+    pool: &PgPool,
+    reader: &str,
+    project_key: &Word,
+) -> anyhow::Result<i64> {
+    let names: Vec<String> = super::calls::VOTE_NAMES
+        .iter()
+        .map(|n| (*n).to_owned())
+        .collect();
+    Ok(sqlx::query_scalar(
+        "SELECT count(DISTINCT (s.job_id, s.nonce)) FROM chain_helper_sends s \
+         JOIN chain_helper_jobs j ON j.id = s.job_id \
+         WHERE s.reader = $1 AND j.reader = $1 AND j.project_key = $2 AND j.call = ANY($3) \
+           AND s.sent_at > now() - interval '24 hours'",
+    )
+    .bind(reader)
+    .bind(project_key.as_slice())
+    .bind(&names)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// Seconds since the newest transaction the helper sent for one project's vote
+/// calls, `None` when it has sent none. The pace between a project's vote calls
+/// is measured from it (a replacement at the same nonce is the same
+/// transaction).
+pub async fn vote_sent_secs_ago(
+    pool: &PgPool,
+    reader: &str,
+    project_key: &Word,
+) -> anyhow::Result<Option<f64>> {
+    let names: Vec<String> = super::calls::VOTE_NAMES
+        .iter()
+        .map(|n| (*n).to_owned())
+        .collect();
+    Ok(sqlx::query_scalar(
+        "SELECT extract(epoch FROM now() - max(s.sent_at))::float8 FROM chain_helper_sends s \
+         JOIN chain_helper_jobs j ON j.id = s.job_id \
+         WHERE s.reader = $1 AND j.reader = $1 AND j.project_key = $2 AND j.call = ANY($3)",
+    )
+    .bind(reader)
+    .bind(project_key.as_slice())
+    .bind(&names)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// Whether a vote job of one project ended `failed` within `secs` seconds (five
+/// failures in a row leave that project alone: `COUNCIL-PLAN.md` section 5.5).
+pub async fn vote_failed_recently(
+    pool: &PgPool,
+    reader: &str,
+    project_key: &Word,
+    secs: u64,
+) -> anyhow::Result<bool> {
+    let names: Vec<String> = super::calls::VOTE_NAMES
+        .iter()
+        .map(|n| (*n).to_owned())
+        .collect();
+    let secs = f64::from(u32::try_from(secs).unwrap_or(u32::MAX));
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM chain_helper_jobs j \
+         WHERE j.reader = $1 AND j.project_key = $2 AND j.call = ANY($3) AND j.state = 'failed' \
+           AND j.done_at > now() - make_interval(secs => $4))",
+    )
+    .bind(reader)
+    .bind(project_key.as_slice())
+    .bind(&names)
+    .bind(secs)
+    .fetch_one(pool)
+    .await?)
+}
+
 /// Forget ended repeating jobs older than five weeks (their period is long
 /// past, so the builder will not make their keys again).
 pub async fn prune(pool: &PgPool, reader: &str) -> anyhow::Result<u64> {

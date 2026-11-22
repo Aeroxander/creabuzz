@@ -4,16 +4,18 @@
 -- the role list; auction, holder and pool_manager are reserved). `team` is a
 -- project's Team Shares token (migration 0070); `tasks` is a project's task
 -- book, found from its Treasury's `TasksReady` log (migration 0071); `pause`
--- is a project's holder pause, found from its Treasury's `PauseReady` log, and
+-- is a project's holder pause, found from its Treasury's `PauseReady` log (and
+-- when the Council switch is on, the project's vote contract is that same pause);
 -- `earlier` the claim contract, found from the Launcher's `EarlierBound` log
--- (migration 0076).
+-- (migration 0076); `council` a project's Council, found from the Launcher's
+-- `CouncilMade` log (migration 0077).
 -- `from_block` is where it was found, so a rollback past it forgets it.
 CREATE TABLE chain_contracts (
     reader       TEXT NOT NULL,
     address      BYTEA NOT NULL CHECK (length(address) = 20),
     role         TEXT NOT NULL CHECK (role IN
                      ('launcher', 'shares', 'team', 'treasury', 'vester', 'tasks', 'finisher', 'rounds', 'pair',
-                      'earlier', 'auction', 'holder', 'pool_manager', 'pause')),
+                      'earlier', 'auction', 'holder', 'pool_manager', 'pause', 'council')),
     project_key  BYTEA CHECK (project_key IS NULL OR length(project_key) = 32),
     from_block   BIGINT NOT NULL CHECK (from_block >= 0),
     PRIMARY KEY (reader, address)

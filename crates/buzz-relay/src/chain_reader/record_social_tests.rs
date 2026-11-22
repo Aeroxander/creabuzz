@@ -440,6 +440,8 @@ fn h5_the_badge_rule_on_its_inputs() {
         address: who(0xaa),
         is_pair: true,
         signers: Some([a.to_owned(), b.to_owned()]),
+        kind: Some("pair".into()),
+        seats: None,
     };
     let held = |bps: u64, accounts: u64| record_social::HeldRec {
         windows: record_social::WindowsRec {
@@ -484,6 +486,8 @@ fn h5_the_badge_rule_on_its_inputs() {
         address: who(1),
         is_pair: false,
         signers: None,
+        kind: Some("single".into()),
+        seats: None,
     };
     assert_eq!(reached(6200, 12, &alone), Some(false), "not a Pair");
     // No badge window: no verdict, never "no".
@@ -495,6 +499,67 @@ fn h5_the_badge_rule_on_its_inputs() {
     let e = record_social::established_of(None, &two, UNIT);
     assert_eq!((e.held_bps, e.accounts, e.reached), (None, None, None));
     assert!(e.two_signers);
+}
+
+/// The Established rule counts a Council (COUNCIL-PLAN.md section 5.8): a project that grows from a Pair into a Council
+/// keeps the badge; a Council with two live seats does not have it; one with five does.
+#[test]
+fn the_established_badge_counts_a_council() {
+    let council = |seats: u64| record::RunnerRec {
+        address: who(0xaa),
+        is_pair: false,
+        signers: None,
+        kind: Some("council".into()),
+        seats: Some(seats),
+    };
+    let pair = record::RunnerRec {
+        address: who(0xbb),
+        is_pair: true,
+        signers: Some([who(1), who(2)]),
+        kind: Some("pair".into()),
+        seats: None,
+    };
+    let held = record_social::HeldRec {
+        windows: record_social::WindowsRec {
+            rank_secs: rank_secs(UNIT),
+            badge_secs: badge_secs(UNIT),
+        },
+        rank: None,
+        badge: Some(record_social::BadgeRec {
+            shares: "1".into(),
+            bps: 6_200,
+        }),
+        counted_accounts: 12,
+    };
+    let reached = |runner: &record::RunnerRec| {
+        record_social::established_of(Some(&held), runner, UNIT).reached
+    };
+    // The Pair had the badge; handing the seat to a Council of five keeps it (the guard: `two_signers` counts a Council).
+    assert_eq!(
+        reached(&pair),
+        Some(true),
+        "the Pair is more than one account"
+    );
+    assert_eq!(
+        reached(&council(5)),
+        Some(true),
+        "a Council of five keeps the badge"
+    );
+    assert_eq!(
+        reached(&council(3)),
+        Some(true),
+        "three live seats are enough"
+    );
+    assert_eq!(reached(&council(2)), Some(false), "two live seats are not");
+    assert_eq!(reached(&council(0)), Some(false), "an open Council is not");
+    // The key keeps its name; the meaning is "run by more than one account".
+    let e = record_social::established_of(Some(&held), &council(5), UNIT);
+    assert!(e.two_signers);
+    assert!(!record_social::established_of(Some(&held), &council(2), UNIT).two_signers);
+    // An older record without `runner.kind` reads as a Pair, exactly as before.
+    let mut old = pair.clone();
+    old.kind = None;
+    assert_eq!(reached(&old), Some(true));
 }
 
 /// H6 and H7: `rank.money` is what the Shares would get at the record's own per-Share figure, and an account

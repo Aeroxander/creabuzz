@@ -31,6 +31,7 @@ use anyhow::{anyhow, bail, Context};
 use serde_json::Value;
 
 use super::events::Role;
+use super::ledger_council::{CouncilSeen, VoteSeen};
 use super::ledger_tasks::TaskLedger;
 use super::word::hex0x;
 
@@ -181,6 +182,8 @@ pub struct Contracts {
     pub pause: Option<String>,
     /// The earlier backers' claim contract, once the Launcher's `EarlierBound` for this project has been read.
     pub earlier: Option<String>,
+    /// The project's Council, once the Launcher's `CouncilMade` for this project has been read.
+    pub council: Option<String>,
 }
 
 /// What the holder pause's events say: who parked how much, and when the line was last seen reached.
@@ -302,6 +305,10 @@ pub struct Ledger {
     pub earlier_claimed: (u32, u128),
     /// The holder pause's events.
     pub pause_seen: PauseSeen,
+    /// The project's Council and its pending proposals (`COUNCIL-PLAN.md` section 1.6).
+    pub council: CouncilSeen,
+    /// The project's vote contract's ballots: absolute tallies, never voters (`COUNCIL-PLAN.md` section 5.1).
+    pub vote: VoteSeen,
     /// The platform fee in ten-thousandths, as at birth.
     pub fee_bps: u32,
     /// The time unit in seconds, as at birth.
@@ -429,31 +436,31 @@ fn park_acts(rows: &[LogRow]) -> HashSet<(u64, u32)> {
     used
 }
 
-fn text<'a>(row: &'a LogRow, name: &str) -> anyhow::Result<&'a str> {
+pub(super) fn text<'a>(row: &'a LogRow, name: &str) -> anyhow::Result<&'a str> {
     row.fields
         .get(name)
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("{}.{name} is missing or not text", row.event))
 }
 
-fn num(row: &LogRow, name: &str) -> anyhow::Result<u128> {
+pub(super) fn num(row: &LogRow, name: &str) -> anyhow::Result<u128> {
     text(row, name)?
         .parse::<u128>()
         .with_context(|| format!("{}.{name} is not an amount", row.event))
 }
 
-fn small(row: &LogRow, name: &str) -> anyhow::Result<u64> {
+pub(super) fn small(row: &LogRow, name: &str) -> anyhow::Result<u64> {
     u64::try_from(num(row, name)?).with_context(|| format!("{}.{name} is too large", row.event))
 }
 
-fn flag(row: &LogRow, name: &str) -> anyhow::Result<bool> {
+pub(super) fn flag(row: &LogRow, name: &str) -> anyhow::Result<bool> {
     row.fields
         .get(name)
         .and_then(Value::as_bool)
         .ok_or_else(|| anyhow!("{}.{name} is missing or not true or false", row.event))
 }
 
-fn address(row: &LogRow, name: &str) -> anyhow::Result<String> {
+pub(super) fn address(row: &LogRow, name: &str) -> anyhow::Result<String> {
     Ok(text(row, name)?.to_owned())
 }
 
@@ -471,12 +478,12 @@ fn nested_num(row: &LogRow, outer: &str, name: &str) -> anyhow::Result<u128> {
         .with_context(|| format!("{}.{outer}.{name} is not an amount", row.event))
 }
 
-fn sub(a: u128, b: u128, what: &str) -> anyhow::Result<u128> {
+pub(super) fn sub(a: u128, b: u128, what: &str) -> anyhow::Result<u128> {
     a.checked_sub(b)
         .ok_or_else(|| anyhow!("{what} would go below zero ({a} less {b})"))
 }
 
-fn add(a: u128, b: u128, what: &str) -> anyhow::Result<u128> {
+pub(super) fn add(a: u128, b: u128, what: &str) -> anyhow::Result<u128> {
     a.checked_add(b)
         .ok_or_else(|| anyhow!("{what} is too large"))
 }
@@ -525,6 +532,7 @@ impl Ledger {
                 tasks: None,
                 pause: None,
                 earlier: None,
+                council: None,
             },
             pair: None,
             team_pool,
@@ -532,6 +540,8 @@ impl Ledger {
             earlier_bound: false,
             earlier_claimed: (0, 0),
             pause_seen: PauseSeen::default(),
+            council: CouncilSeen::default(),
+            vote: VoteSeen::default(),
             fee_bps: u32::try_from(nested_num(row, "platform", "feeBps")?).context("feeBps")?,
             unit: u64::try_from(nested_num(row, "platform", "unit")?).context("unit")?,
             pot: 0,
@@ -591,6 +601,11 @@ impl Ledger {
             },
             Role::Earlier => match &self.contracts.earlier {
                 Some(earlier) => earlier,
+                None => return false,
+            },
+            // The Council is named by the Launcher's own `CouncilMade`.
+            Role::Council => match &self.contracts.council {
+                Some(council) => council,
                 None => return false,
             },
             // The Launcher and a Pair are not named by the project's own
@@ -737,6 +752,13 @@ impl Ledger {
                     self.contracts.pause = Some(address(row, "gate")?);
                 }
             }
+            (Role::Launcher, "CouncilMade") => {
+                if self.contracts.council.is_none() {
+                    let council = address(row, "council")?;
+                    self.contracts.council = Some(council);
+                    self.council.contract = self.contracts.council.clone();
+                }
+            }
             (Role::Launcher, "EarlierBound") => {
                 if self.contracts.earlier.is_none() {
                     self.contracts.earlier = Some(address(row, "earlier")?);
@@ -777,6 +799,14 @@ impl Ledger {
                     );
                 }
                 self.pause_seen.armed_at = small(row, "armedAt")?;
+            }
+            (Role::Pause, event) => {
+                return super::ledger_council::apply_vote(row, &mut self.vote)
+                    .map_err(|e| e.context(format!("pause event {event}")));
+            }
+            (Role::Council, event) => {
+                return super::ledger_council::apply_council(row, &mut self.council)
+                    .map_err(|e| e.context(format!("council event {event}")));
             }
             (Role::Treasury, "TaskMoney") => {
                 // The three buckets after the move, as `TaskLedger._applyTaskMoney` keeps them.

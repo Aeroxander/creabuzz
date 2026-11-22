@@ -190,6 +190,18 @@ fn discovered(role: Role, key: Word, block: u64, event: &str, decoded: &Value) -
                 });
             }
         }
+        (Role::Launcher, "CouncilMade") => {
+            // A Council is made by the runner handing its seat over, or by a carried-out vote: either way it can have
+            // no log before this one.
+            if let Some(address) = addr(decoded.get("council")) {
+                out.push(Contract {
+                    address,
+                    role: Role::Council,
+                    project_key: Some(key),
+                    from_block: block,
+                });
+            }
+        }
         _ => {}
     }
     out
@@ -212,7 +224,9 @@ fn project_of(role: Role, contract_key: Option<Word>, event: &str, log: &RawLog)
         return contract_key;
     }
     match event {
-        "ProjectLaunched" | "PairMade" | "WoundDown" | "EarlierPoolFunded" => topic_key(log, 1),
+        "ProjectLaunched" | "PairMade" | "CouncilMade" | "WoundDown" | "EarlierPoolFunded" => {
+            topic_key(log, 1)
+        }
         "EarlierBound" => earlier_bound_key(log),
         _ => None,
     }

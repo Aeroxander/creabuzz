@@ -18,6 +18,7 @@
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 
+use super::record_council::{CouncilRec, VoteRec};
 use super::record_social::{EstablishedRec, FeedRec, HeldRec, StreaksRec};
 use super::record_step4::{EarlierGrantsRec, PauseRec};
 use super::record_tasks::{TaskStateRec, TasksRec};
@@ -427,6 +428,11 @@ pub struct RunnerRec {
     pub is_pair: bool,
     /// The Pair's two signers.
     pub signers: Option<[String; 2]>,
+    /// The kind of runner: `single`, `pair` or `council` (COUNCIL-PLAN.md section 5.2). Null in a record signed before
+    /// the key existed: the app then reads `isPair` as before.
+    pub kind: Option<String>,
+    /// For a Council, the number of distinct non-zero live seats (the Established rule's input).
+    pub seats: Option<u64>,
 }
 
 /// A grant's cliff.
@@ -688,6 +694,10 @@ pub struct Record {
     pub wind_down: Option<WindDownRec>,
     /// Who runs it.
     pub runner: RunnerRec,
+    /// The project's Council; null unless the runner is a Council (and when it could not be read).
+    pub council: Option<CouncilRec>,
+    /// The project's vote contract and its newest ballot; null when the project has no vote contract.
+    pub vote: Option<VoteRec>,
     /// Team Shares and grants.
     pub team: TeamRec,
     /// Helper accounts.
@@ -1107,6 +1117,8 @@ fn check(r: &Record, bad: &mut Vec<String>) -> anyhow::Result<()> {
     super::record_tasks_rules::check(r, bad)?;
     // The two step 4 keys and the team's two additive fields, on their own rules.
     super::record_step4::check(r, bad)?;
+    // The Council runner's two keys, on their own rules.
+    super::record_council::check(r, bad)?;
     // The social keys (step 3), on their own rules: each is present and sound, or `null`.
     super::record_social::check_record(r, bad);
     Ok(())

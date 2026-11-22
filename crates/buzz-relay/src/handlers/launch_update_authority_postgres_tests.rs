@@ -12,9 +12,12 @@ use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
 
 use super::board_moderation_postgres_tests::{accept, community, refuse};
 use super::launch_update_authority::{
-    ASKED_ENOUGH, ASKING_TOO_MUCH, NOT_FOUNDER, NOT_HELPER, NOT_TEAM, NO_PROJECT, NO_TASK, ON_TEAM,
-    OTHER_PROJECT, OWN_WORK,
+    ASKED_ENOUGH, ASKING_TOO_MUCH, BAD_CANDIDACY, BAD_CANDIDACY_TEXT, CANDIDACY_BALLOT_FULL,
+    CANDIDACY_ENOUGH, CANDIDACY_EXPIRATION, CANDIDACY_EXPIRATION_MAX_SECS, CANDIDACY_WALLET,
+    NOT_FOUNDER, NOT_HELPER, NOT_TEAM, NO_PROJECT, NO_TASK, ON_TEAM, OTHER_PROJECT, OWN_WORK,
 };
+use crate::chain_reader::fixture::Fixture;
+use crate::handlers::room_support::{anvil, binding};
 use crate::state::AppState;
 
 /// Signed `ahead` seconds from now: a project record replaces the one before
@@ -1247,4 +1250,251 @@ async fn only_the_founder_turns_an_ask_away() {
     )
     .await;
     assert!(stored(&state, &tenant, &ok).await);
+}
+
+// ── the candidate's short text (COUNCIL-PLAN.md section 5.4), through the real ingest seam ──
+
+/// Link `who`'s account to the run's account `n` (a kind 37017 record, signed by the wallet's own key as the app does).
+async fn link(state: &Arc<AppState>, tenant: &TenantContext, who: &Keys, n: usize) -> String {
+    let fx = Fixture::load();
+    let (key, address) = anvil(&fx, n);
+    let expires = Timestamp::now().as_secs() + 3_600;
+    accept(
+        state,
+        tenant,
+        binding(&fx, who, &key, &address, expires, false),
+        "the wallet link",
+    )
+    .await;
+    address
+}
+
+/// A candidacy with the plan's tags and content; `text` keeps two records apart.
+fn candidacy(
+    who: &Keys,
+    coordinate: &str,
+    ballot: u32,
+    proposer: &str,
+    candidates: &[&str],
+    until: u64,
+    text: &str,
+) -> Event {
+    let chain_key = format!("0x{}", "11".repeat(32));
+    let mut tags: Vec<Vec<String>> = vec![
+        vec!["a".into(), coordinate.into()],
+        vec!["candidacy".into(), ballot.to_string()],
+        vec!["t".into(), format!("vote:{chain_key}:{ballot}")],
+        vec!["proposer".into(), proposer.into()],
+    ];
+    for candidate in candidates {
+        tags.push(vec!["candidate".into(), (*candidate).into()]);
+    }
+    tags.push(vec!["expiration".into(), until.to_string()]);
+    let tags: Vec<Tag> = tags
+        .into_iter()
+        .map(|fields| Tag::parse(fields).expect("tag"))
+        .collect();
+    EventBuilder::new(Kind::Custom(KIND_LAUNCH_UPDATE as u16), text)
+        .tags(tags)
+        .allow_self_tagging()
+        .custom_created_at(Timestamp::from(Timestamp::now().as_secs()))
+        .sign_with_keys(who)
+        .expect("sign")
+}
+
+/// A stranger may stand: a candidacy is anyone's record when the wallet it proposes is one the signer linked to their
+/// own account, and it is stored. The same record with a wallet the signer never linked is refused: remove the wallet
+/// check and the second half of this test fails.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_candidacy_is_stored_only_from_an_account_that_linked_the_wallet_it_proposes() {
+    let (state, tenant, p, coord) = world().await;
+    let mine = link(&state, &tenant, &p.stranger, 0).await;
+    let theirs = link(&state, &tenant, &p.mate, 1).await;
+    let until = Timestamp::now().as_secs() + 86_400;
+    let body = |text: &str| format!(r#"{{"v":1,"text":"{text}"}}"#);
+    // The stranger's own wallet: stored.
+    let good = candidacy(
+        &p.stranger,
+        &coord,
+        7,
+        &mine,
+        &[&theirs],
+        until,
+        &body("I will keep the door open."),
+    );
+    accept(&state, &tenant, good.clone(), "a candidacy").await;
+    assert!(stored(&state, &tenant, &good).await, "it is stored");
+    // Someone else's linked wallet: refused, and nothing stored.
+    let forged = candidacy(
+        &p.stranger,
+        &coord,
+        7,
+        &theirs,
+        &[&mine],
+        until,
+        &body("A list I do not hold."),
+    );
+    refuse(
+        &state,
+        &tenant,
+        forged.clone(),
+        CANDIDACY_WALLET,
+        "a wallet the signer never linked",
+    )
+    .await;
+    assert!(!stored(&state, &tenant, &forged).await);
+    // An address nobody linked is refused the same way.
+    let unlinked = format!("0x{}", "44".repeat(20));
+    refuse(
+        &state,
+        &tenant,
+        candidacy(
+            &p.stranger,
+            &coord,
+            7,
+            &unlinked,
+            &[&mine],
+            until,
+            &body("Unlinked."),
+        ),
+        CANDIDACY_WALLET,
+        "an unlinked wallet",
+    )
+    .await;
+}
+
+/// A candidacy's end is still ahead and at most 30 days out: one in the past and one 31 days out are refused, one at
+/// the limit is stored.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_candidacy_ends_within_thirty_days() {
+    let (state, tenant, p, coord) = world().await;
+    let mine = link(&state, &tenant, &p.stranger, 0).await;
+    let person = link(&state, &tenant, &p.mate, 1).await;
+    let now = Timestamp::now().as_secs();
+    let text = r#"{"v":1,"text":"Within the month."}"#;
+    for (until, why) in [
+        (now - 60, "an end already past"),
+        (
+            now + CANDIDACY_EXPIRATION_MAX_SECS + 60,
+            "an end past 30 days",
+        ),
+    ] {
+        refuse(
+            &state,
+            &tenant,
+            candidacy(&p.stranger, &coord, 7, &mine, &[&person], until, text),
+            CANDIDACY_EXPIRATION,
+            why,
+        )
+        .await;
+    }
+    let good = candidacy(
+        &p.stranger,
+        &coord,
+        7,
+        &mine,
+        &[&person],
+        now + CANDIDACY_EXPIRATION_MAX_SECS - 60,
+        text,
+    );
+    accept(&state, &tenant, good, "an end inside the month").await;
+}
+
+/// Three candidacies a day for one account and ten for one ballot: a fourth by the same account is refused whatever
+/// ballot it stands on, and the eleventh on one ballot is refused too (COUNCIL-PLAN.md section 5.4). Remove either cap
+/// and the matching refusal disappears.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn three_candidacies_a_day_for_one_account_and_ten_for_one_ballot() {
+    let (state, tenant, p, coord) = world().await;
+    let founder = link(&state, &tenant, &p.founder, 0).await;
+    let mate = link(&state, &tenant, &p.mate, 1).await;
+    let stranger = link(&state, &tenant, &p.stranger, 2).await;
+    let helper = link(&state, &tenant, &p.helper, 3).await;
+    let until = Timestamp::now().as_secs() + 86_400;
+    let body = |n: u32| format!(r#"{{"v":1,"text":"Text {n}."}}"#);
+    let mut n = 0u32;
+    let mut one = |who: &Keys, wallet: &str, ballot: u32, other: &str| {
+        n += 1;
+        candidacy(who, &coord, ballot, wallet, &[other], until, &body(n))
+    };
+    // The first account signs three, then is held for the day -- even on another ballot.
+    for ballot in 1..=3 {
+        let event = one(&p.founder, &founder, ballot, &mate);
+        accept(&state, &tenant, event, "one of three").await;
+    }
+    refuse(
+        &state,
+        &tenant,
+        one(&p.founder, &founder, 9, &mate),
+        CANDIDACY_ENOUGH,
+        "a fourth candidacy in the day",
+    )
+    .await;
+    // Two more accounts sign three each (nine on the ballot in all), and one more reaches the ballot's ten.
+    for (who, wallet, other) in [
+        (&p.mate, &mate, &stranger),
+        (&p.stranger, &stranger, &helper),
+    ] {
+        for _ in 0..3 {
+            let event = one(who, wallet, 1, other);
+            accept(&state, &tenant, event, "a ballot's ninth").await;
+        }
+    }
+    let tenth = one(&p.helper, &helper, 1, &founder);
+    accept(&state, &tenant, tenth, "a ballot's tenth").await;
+    refuse(
+        &state,
+        &tenant,
+        one(&p.helper, &helper, 1, &founder),
+        CANDIDACY_BALLOT_FULL,
+        "an eleventh on one ballot",
+    )
+    .await;
+}
+
+/// The text's own limits hold at the seam too: 281 characters, a body that is not the plan's JSON, and an off-shape
+/// record are refused as a shape error.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_candidacy_text_and_tags_are_held_to_their_limits() {
+    let (state, tenant, p, coord) = world().await;
+    let mine = link(&state, &tenant, &p.stranger, 0).await;
+    let person = link(&state, &tenant, &p.mate, 1).await;
+    let until = Timestamp::now().as_secs() + 86_400;
+    let long = format!(r#"{{"v":1,"text":"{}"}}"#, "a".repeat(281));
+    refuse(
+        &state,
+        &tenant,
+        candidacy(&p.stranger, &coord, 7, &mine, &[&person], until, &long),
+        BAD_CANDIDACY_TEXT,
+        "a text over 280 characters",
+    )
+    .await;
+    refuse(
+        &state,
+        &tenant,
+        candidacy(&p.stranger, &coord, 7, &mine, &[&person], until, "{}"),
+        BAD_CANDIDACY_TEXT,
+        "a body that is not the plan's two keys",
+    )
+    .await;
+    refuse(
+        &state,
+        &tenant,
+        candidacy(
+            &p.stranger,
+            &coord,
+            7,
+            &mine,
+            &[&person, &person],
+            until,
+            r#"{"v":1,"text":"Two of one person."}"#,
+        ),
+        BAD_CANDIDACY,
+        "two candidates",
+    )
+    .await;
 }

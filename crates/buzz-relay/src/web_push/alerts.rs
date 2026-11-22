@@ -5,6 +5,14 @@
 //! makes none) from its own cursor, and makes at most one alert per `(reader, project, serial, kind)`: the same key the
 //! in-app alert has, so a person is not told twice in two voices.
 //!
+//! **The Council round's two kinds** (`COUNCIL-PLAN.md` section 5.6). A ballot that opens (either kind: a seat election
+//! changes who runs the project too) is a `vote` alert, made from its `BallotOpened` row through the same cursor, and at
+//! most one is made for a project within one time unit of the chain's clock, so a stream of junk ballots cannot become a
+//! stream of pushes. A result that **moves or seats** is a `moved` alert made **from the reader's own derived result**
+//! (the frozen tallies and the floor, section 2.6), not from `BallotFinished`: by the first pass after `voteEnd` that
+//! sees it, once per `(project, ballot, kind)`, whether or not anyone has pressed `finish`. Its own 24-hour life counts
+//! from `voteEnd`. A voter's address and amount are never in a row here, as nowhere else.
+//!
 //! **Where the cursor starts.** The first time push is on, the cursor is set to the reader's next block to read, in the
 //! statement that creates it. Nothing before that is ever alerted: a cursor at 0 would send the whole history of every task
 //! to every holder. A row older than the alert's own lifetime (24 hours of the chain's clock) when it is picked up is
@@ -31,6 +39,8 @@ use super::settings::{WebPushConfig, PROJECT_DAILY_CAP};
 use super::store::{self, Subscription};
 use super::Kind;
 use crate::chain_reader::ledger::Ledger;
+use crate::chain_reader::ledger_council::BallotSeen;
+use crate::chain_reader::record_council::derive_result;
 use crate::chain_reader::word::{hex0x, parse_fixed};
 use crate::handlers::room_write::ROOM_MIN_SHARES;
 use crate::handlers::wallet_binding::{accounts_of_wallets, WALLETS_ASKED_MAX};
@@ -51,6 +61,14 @@ pub const ALERT_LIFETIME_SECS: u64 = 24 * 3600;
 pub const UNLINKED_BATCH: i64 = 50;
 /// The `TaskResolved` state of a plan withdrawn before a take: it moved nothing, so it makes no alert.
 const STATE_WITHDRAWN: u64 = 6;
+/// The most projects one pass looks at for a `moved` alert.
+pub const MOVED_BATCH: i64 = 16;
+/// One whole Share in wei (`HolderVote.MIN_VOTE`), the smallest tally a person needs to take a seat (the same value
+/// `record_council` and the helper hold).
+const ONE_SHARE: u128 = 1_000_000_000_000_000_000;
+/// The time unit a project's `vote` push is paced by when its launch row is not stored yet (ten minutes): a ballot's
+/// opening is never worth more than one push, and a unit the reader cannot read must not stop the alert.
+const VOTE_UNIT_FALLBACK_SECS: u64 = 600;
 
 /// What one pass did.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -84,6 +102,8 @@ pub struct Candidate {
     pub kind: Kind,
     /// The block the row is in.
     pub block: u64,
+    /// The block's time (the chain's clock).
+    pub block_time: u64,
 }
 
 /// What a task row says, or why it makes no alert. Pure.
@@ -93,6 +113,8 @@ pub fn classify(event: &str, state: Option<u64>) -> Option<Kind> {
         "TaskTaken" => Some(Kind::Taken),
         "TaskResolved" if state == Some(STATE_WITHDRAWN) => None,
         "TaskResolved" => Some(Kind::Ended),
+        // Either kind of ballot: a seat election changes who runs the project too.
+        "BallotOpened" => Some(Kind::Vote),
         _ => None,
     }
 }
@@ -399,7 +421,8 @@ async fn withdrawn_before(
     .await
 }
 
-/// The task rows of this reader in the blocks `from` up to, not including, `to`, in order, at most `limit` of them.
+/// The alert rows of this reader in the blocks `from` up to, not including, `to`, in order, at most `limit` of them: the
+/// task book's three events, and a ballot's opening (whose number the `vote` alert carries as its serial).
 async fn read_task_rows(
     pool: &sqlx::PgPool,
     reader: &str,
@@ -408,11 +431,13 @@ async fn read_task_rows(
     limit: i64,
 ) -> anyhow::Result<Vec<sqlx::postgres::PgRow>> {
     sqlx::query(
-        "SELECT l.block_number, l.project_key, l.event, l.decoded->>'serial' AS serial, \
+        "SELECT l.block_number, l.project_key, l.event, \
+                coalesce(l.decoded->>'serial', l.decoded->>'id') AS serial, \
                 l.decoded->>'state' AS state, b.block_time \
          FROM chain_logs l JOIN chain_blocks b ON b.reader = l.reader AND b.number = l.block_number \
-         WHERE l.reader = $1 AND l.role = 'tasks' AND l.project_key IS NOT NULL \
-           AND l.event IN ('TaskAnnounced', 'TaskTaken', 'TaskResolved') \
+         WHERE l.reader = $1 AND l.project_key IS NOT NULL \
+           AND ((l.role = 'tasks' AND l.event IN ('TaskAnnounced', 'TaskTaken', 'TaskResolved')) \
+                OR (l.role = 'pause' AND l.event = 'BallotOpened')) \
            AND l.block_number >= $2 AND l.block_number < $3 \
          ORDER BY l.block_number, l.log_index LIMIT $4",
     )
@@ -477,6 +502,20 @@ pub async fn make_alerts(
             .await
             .context("read the cursor")?;
     let cursor = u64::try_from(cursor).unwrap_or(0);
+    // The `moved` alerts are not made from a row the cursor walks past: they are the reader's derived result of a ballot
+    // whose vote ended, so every pass looks at the ballots that ended and not yet told (once each, bounded).
+    report.made += make_moved_alerts(
+        state,
+        config,
+        community,
+        reader_config,
+        &reader,
+        reader_next,
+        as_of,
+        now,
+        &mut report.skipped,
+    )
+    .await?;
     if cursor >= reader_next {
         return Ok(report);
     }
@@ -542,8 +581,10 @@ pub async fn make_alerts(
             serial,
             kind,
             block: u64::try_from(row.try_get::<i64, _>("block_number")?).unwrap_or(0),
+            block_time,
         });
     }
+    let candidates = one_vote_per_unit(pool, &reader, candidates, &mut report).await?;
 
     // The audience and the link of each project are read once per pass.
     let mut ready = Vec::with_capacity(candidates.len());
@@ -568,27 +609,7 @@ pub async fn make_alerts(
     // stored with no link and no rows, and [`retry_unlinked`] looks again until it is a day old.
     let mut tx = pool.begin().await?;
     for item in &ready {
-        let c = &item.candidate;
-        let inserted: Option<i64> = sqlx::query_scalar(
-            "INSERT INTO web_push_alerts (reader, project_key, serial, kind, block_number, link_ref, audience, cut) \
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (reader, project_key, serial, kind) DO NOTHING \
-             RETURNING id",
-        )
-        .bind(&reader)
-        .bind(c.project_key.as_slice())
-        .bind(i64::try_from(c.serial).context("serial")?)
-        .bind(c.kind.as_str())
-        .bind(i64::try_from(c.block).context("block")?)
-        .bind(&item.link_ref)
-        .bind(i32::try_from(item.audience).unwrap_or(i32::MAX))
-        .bind(i32::try_from(item.cut).unwrap_or(i32::MAX))
-        .fetch_optional(&mut *tx)
-        .await?;
-        let Some(alert_id) = inserted else {
-            continue; // made before: a repeated pass or a restart
-        };
-        report.made += 1;
-        write_outbox(&mut tx, community, alert_id, item, config, now, &mut report).await?;
+        store_alert(&mut tx, community, &reader, item, config, now, &mut report).await?;
     }
     sqlx::query("UPDATE web_push_cursor SET next_block = $2, updated_at = now() WHERE reader = $1 AND next_block = $3")
         .bind(&reader)
@@ -600,6 +621,271 @@ pub async fn make_alerts(
         .await
         .context("commit the alerts and the cursor")?;
     Ok(report)
+}
+
+/// Whether a ballot's result changes who runs the project, from its own events: the recorded `BallotFinished` when
+/// there is one, else the frozen tallies and the floor, exactly the reader's derived result (`COUNCIL-PLAN.md` section
+/// 2.6). `None` before `voteEnd`, when there is no result yet. Pure.
+pub fn moved_outcome(ballot: &BallotSeen, as_of: u64) -> Option<bool> {
+    if as_of < ballot.vote_end {
+        return None;
+    }
+    let outcome = match ballot.finished {
+        Some(finished) => finished.outcome,
+        None => {
+            derive_result(
+                ballot.kind,
+                &ballot.tallies,
+                ballot.option_count(),
+                ballot.cast,
+                ballot.floor,
+                ONE_SHARE,
+            )
+            .0
+        }
+    };
+    Some(matches!(outcome, 3 | 4))
+}
+
+/// The alerts one pass keeps: at most one `vote` for a project within one time
+/// unit of the chain's clock (`COUNCIL-PLAN.md` section 5.6, so a stream of junk
+/// ballots cannot become a stream of pushes). A ballot covered by a `vote`
+/// alert already stored within the unit is dropped too. The rest keep their
+/// order. Pure apart from the one read per project of its unit.
+async fn one_vote_per_unit(
+    pool: &sqlx::PgPool,
+    reader: &str,
+    candidates: Vec<Candidate>,
+    report: &mut MakeReport,
+) -> anyhow::Result<Vec<Candidate>> {
+    let mut units: BTreeMap<[u8; 32], u64> = BTreeMap::new();
+    let mut last: BTreeMap<[u8; 32], u64> = BTreeMap::new();
+    let mut kept = Vec::with_capacity(candidates.len());
+    for candidate in candidates {
+        if candidate.kind == Kind::Vote {
+            let unit = match units.get(&candidate.project_key) {
+                Some(unit) => *unit,
+                None => {
+                    let unit = crate::handlers::room_write::launched_of(
+                        pool,
+                        reader,
+                        &candidate.project_key,
+                    )
+                    .await
+                    .context("read the project's time unit")?
+                    .map_or(VOTE_UNIT_FALLBACK_SECS, |launch| launch.unit);
+                    units.insert(candidate.project_key, unit);
+                    unit
+                }
+            };
+            if within_one_unit(
+                last.get(&candidate.project_key).copied(),
+                candidate.block_time,
+                unit,
+            ) {
+                report.skipped += 1;
+                continue;
+            }
+            if vote_alert_within(
+                pool,
+                reader,
+                &candidate.project_key,
+                candidate.block_time,
+                unit,
+            )
+            .await?
+            {
+                report.skipped += 1;
+                continue;
+            }
+            last.insert(candidate.project_key, candidate.block_time);
+        }
+        kept.push(candidate);
+    }
+    Ok(kept)
+}
+
+/// Whether a `vote` alert already made at `previous_block_time` (the chain's clock) is close enough to `at` that a
+/// second one must not be made: within the project's time unit (`COUNCIL-PLAN.md` section 5.6, "at most one `vote` push
+/// per project per time unit"). `None` is no alert yet, so nothing to keep. Pure.
+pub fn within_one_unit(previous_block_time: Option<u64>, at: u64, unit: u64) -> bool {
+    previous_block_time.is_some_and(|previous| at.saturating_sub(previous) < unit)
+}
+
+/// Whether a `vote` alert for the project was made within one time unit before `block_time` (the chain's clock).
+async fn vote_alert_within(
+    pool: &sqlx::PgPool,
+    reader: &str,
+    project_key: &[u8; 32],
+    block_time: u64,
+    unit: u64,
+) -> Result<bool, sqlx::Error> {
+    let from = i64::try_from(block_time.saturating_sub(unit)).unwrap_or(0);
+    sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM web_push_alerts a \
+           JOIN chain_blocks b ON b.reader = a.reader AND b.number = a.block_number \
+         WHERE a.reader = $1 AND a.project_key = $2 AND a.kind = 'vote' AND b.block_time > $3)",
+    )
+    .bind(reader)
+    .bind(project_key.as_slice())
+    .bind(from)
+    .fetch_one(pool)
+    .await
+}
+
+/// The `moved` alerts: the ballots whose vote ended, whose derived result moves or seats someone, and that nobody has
+/// told the holders about yet. Made by the first pass after `voteEnd` that sees them, whether or not anyone recorded the
+/// result (`BallotFinished` is not needed), once per `(project, ballot, kind)`, with the alert's own life counted from
+/// `voteEnd`. Returns how many alerts were made; a ballot of the batch that does not (yet) move or seat anyone is counted
+/// in `skipped`.
+#[allow(clippy::too_many_arguments)]
+async fn make_moved_alerts(
+    state: &Arc<AppState>,
+    config: &WebPushConfig,
+    community: CommunityId,
+    reader_config: &crate::chain_reader::ChainReaderConfig,
+    reader: &str,
+    reader_next: u64,
+    as_of: u64,
+    now: DateTime<Utc>,
+    skipped: &mut usize,
+) -> anyhow::Result<usize> {
+    let Some(final_block) = reader_next.checked_sub(1) else {
+        return Ok(0);
+    };
+    let pool = state.db.pool();
+    let oldest = i64::try_from(as_of.saturating_sub(ALERT_LIFETIME_SECS)).unwrap_or(0);
+    // The newest ballot of each project whose vote ended inside the alert's life and whose `moved` alert is not stored.
+    let rows = sqlx::query(
+        "SELECT DISTINCT ON (l.project_key) l.project_key, l.decoded->>'id' AS ballot \
+         FROM chain_logs l \
+         WHERE l.reader = $1 AND l.role = 'pause' AND l.event = 'BallotOpened' \
+           AND l.block_number < $2 \
+           AND CASE WHEN l.decoded->>'voteEnd' ~ '^[0-9]+$' THEN (l.decoded->>'voteEnd')::bigint END <= $3 \
+           AND CASE WHEN l.decoded->>'voteEnd' ~ '^[0-9]+$' THEN (l.decoded->>'voteEnd')::bigint END >= $4 \
+           AND NOT EXISTS (SELECT 1 FROM web_push_alerts a \
+                 WHERE a.reader = $1 AND a.project_key = l.project_key AND a.kind = 'moved' \
+                   AND a.serial = CASE WHEN l.decoded->>'id' ~ '^[0-9]+$' THEN (l.decoded->>'id')::bigint END) \
+         ORDER BY l.project_key, l.block_number DESC, l.log_index DESC LIMIT $5",
+    )
+    .bind(reader)
+    .bind(i64::try_from(reader_next).context("block")?)
+    .bind(i64::try_from(as_of).context("chain time")?)
+    .bind(oldest)
+    .bind(MOVED_BATCH)
+    .fetch_all(pool)
+    .await
+    .context("read the ballots whose vote ended")?;
+    if rows.is_empty() {
+        return Ok(0);
+    }
+    let mut candidates = Vec::new();
+    for row in rows {
+        let key: Vec<u8> = row.try_get("project_key")?;
+        let Ok(project_key) = <[u8; 32]>::try_from(key.as_slice()) else {
+            continue;
+        };
+        let Some(ballot_id) = row
+            .try_get::<Option<String>, _>("ballot")?
+            .and_then(|text| text.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let logs =
+            crate::chain_reader::store::project_logs(pool, reader, &project_key, final_block)
+                .await?;
+        let Some(ledger) = Ledger::from_logs(&logs)? else {
+            *skipped += 1;
+            continue;
+        };
+        let Some(ballot) = ledger.vote.newest_ballot() else {
+            *skipped += 1;
+            continue;
+        };
+        // A newer ballot opened since, or a result already let go: nothing to tell about this one.
+        if ballot.id != ballot_id || ballot.lapsed {
+            *skipped += 1;
+            continue;
+        }
+        match moved_outcome(ballot, as_of) {
+            Some(true) => {}
+            _ => {
+                *skipped += 1;
+                continue;
+            }
+        }
+        // The block is the newest final one: the alert was made by the pass after `voteEnd`, not by a row that opened the
+        // ballot days before it, so its own life and a rollback are right.
+        candidates.push(Candidate {
+            project_key,
+            serial: u64::from(ballot_id),
+            kind: Kind::Moved,
+            block: final_block,
+            block_time: as_of,
+        });
+    }
+    if candidates.is_empty() {
+        return Ok(0);
+    }
+    let mut ready = Vec::with_capacity(candidates.len());
+    let mut per_project: BTreeMap<[u8; 32], (Option<String>, Audience)> = BTreeMap::new();
+    for candidate in candidates {
+        ready.push(
+            prepare(
+                state,
+                community,
+                reader,
+                reader_config,
+                reader_next,
+                now,
+                candidate,
+                &mut per_project,
+            )
+            .await?,
+        );
+    }
+    let mut tx = pool.begin().await?;
+    let mut report = MakeReport::default();
+    for item in &ready {
+        store_alert(&mut tx, community, reader, item, config, now, &mut report).await?;
+    }
+    tx.commit().await.context("commit the moved alerts")?;
+    Ok(report.made)
+}
+
+/// One new alert and its outbox rows in `tx`; a repeated pass inserts nothing (the unique key absorbs it) and makes no
+/// rows. Returns whether the alert was new.
+async fn store_alert(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    community: CommunityId,
+    reader: &str,
+    item: &Ready,
+    config: &WebPushConfig,
+    now: DateTime<Utc>,
+    report: &mut MakeReport,
+) -> anyhow::Result<bool> {
+    let c = &item.candidate;
+    let inserted: Option<i64> = sqlx::query_scalar(
+        "INSERT INTO web_push_alerts (reader, project_key, serial, kind, block_number, link_ref, audience, cut) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (reader, project_key, serial, kind) DO NOTHING \
+         RETURNING id",
+    )
+    .bind(reader)
+    .bind(c.project_key.as_slice())
+    .bind(i64::try_from(c.serial).context("serial")?)
+    .bind(c.kind.as_str())
+    .bind(i64::try_from(c.block).context("block")?)
+    .bind(&item.link_ref)
+    .bind(i32::try_from(item.audience).unwrap_or(i32::MAX))
+    .bind(i32::try_from(item.cut).unwrap_or(i32::MAX))
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(alert_id) = inserted else {
+        return Ok(false); // made before: a repeated pass or a restart
+    };
+    report.made += 1;
+    write_outbox(tx, community, alert_id, item, config, now, report).await?;
+    Ok(true)
 }
 
 /// The link, the audience and the devices of one alert, with the per-project reads of `per_project` shared by the
@@ -759,7 +1045,7 @@ pub async fn retry_unlinked(
     };
     let oldest = i64::try_from(as_of.saturating_sub(ALERT_LIFETIME_SECS)).unwrap_or(0);
     let rows = sqlx::query(
-        "SELECT a.id, a.project_key, a.serial, a.kind, a.block_number \
+        "SELECT a.id, a.project_key, a.serial, a.kind, a.block_number, b.block_time \
          FROM web_push_alerts a JOIN chain_blocks b ON b.reader = a.reader AND b.number = a.block_number \
          WHERE a.reader = $1 AND a.link_ref IS NULL AND b.block_time >= $2 \
          ORDER BY a.block_number, a.id LIMIT $3",
@@ -784,6 +1070,7 @@ pub async fn retry_unlinked(
             serial: u64::try_from(row.try_get::<i64, _>("serial")?).unwrap_or(0),
             kind,
             block: u64::try_from(row.try_get::<i64, _>("block_number")?).unwrap_or(0),
+            block_time: u64::try_from(row.try_get::<i64, _>("block_time")?).unwrap_or(0),
         };
         let item = prepare(
             state,
@@ -823,6 +1110,114 @@ pub async fn retry_unlinked(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// One ballot as the tests need it: kind 1 (replace), the given tallies, floor and cast, nothing recorded.
+    fn ballot(kind: u8, cast: u128, floor: u128, keep: u128, list: u128) -> BallotSeen {
+        BallotSeen {
+            id: 3,
+            kind,
+            opened_at: 1_000,
+            stand_end: 1_100,
+            vote_end: 1_200,
+            effective_at: 1_300,
+            supply: 1_000 * ONE_SHARE,
+            floor,
+            up_a: 0,
+            up_b: 0,
+            options: std::collections::BTreeMap::new(),
+            tallies: std::collections::BTreeMap::from([(0, keep), (1, list)]),
+            cast,
+            finished: None,
+            carried_out_at: None,
+            carried_out_council: None,
+            lapsed: false,
+            lapsed_at: None,
+            opened_block_time: 1_000,
+        }
+    }
+
+    /// A ballot that opens is a `vote` alert (either kind of ballot: a seat election changes who runs the project too),
+    /// and the pause's own other events are not.
+    #[test]
+    fn a_ballot_that_opened_is_a_vote_alert_and_nothing_else_of_the_pause_is() {
+        assert_eq!(classify("BallotOpened", None), Some(Kind::Vote));
+        for other in [
+            "Stood",
+            "Voted",
+            "Fell",
+            "BallotFinished",
+            "BallotCarriedOut",
+            "BallotLapsed",
+            "Parked",
+            "Unparked",
+            "Observed",
+        ] {
+            assert_eq!(classify(other, None), None, "{other}");
+        }
+    }
+
+    /// The `moved` alert is the reader's own derived result, not `BallotFinished`: with no recorded result, a list with
+    /// more than half of the cast moves the runner; one that does not, or a ballot under its floor, does not. Before
+    /// `voteEnd` there is no result at all.
+    #[test]
+    fn a_ballot_that_moves_or_seats_is_the_readers_derived_result_without_a_finished_row() {
+        assert!(ONE_SHARE > 0);
+        // No BallotFinished row: the frozen tallies say moved.
+        let moved = ballot(
+            1,
+            500 * ONE_SHARE,
+            334 * ONE_SHARE,
+            200 * ONE_SHARE,
+            300 * ONE_SHARE,
+        );
+        assert!(moved.finished.is_none(), "nobody recorded the result");
+        assert_eq!(moved_outcome(&moved, moved.vote_end - 1), None);
+        assert_eq!(moved_outcome(&moved, moved.vote_end), Some(true));
+        // A list that keeps the runner: kept, not moved.
+        let kept = ballot(
+            1,
+            500 * ONE_SHARE,
+            334 * ONE_SHARE,
+            300 * ONE_SHARE,
+            200 * ONE_SHARE,
+        );
+        assert_eq!(moved_outcome(&kept, kept.vote_end), Some(false));
+        // Under the turnout floor: short, moves nobody.
+        let short = ballot(1, 100 * ONE_SHARE, 334 * ONE_SHARE, 0, 100 * ONE_SHARE);
+        assert_eq!(moved_outcome(&short, short.vote_end), Some(false));
+        // A seat election with a person over the whole Share and over "keep": seated.
+        let seated = ballot(
+            2,
+            500 * ONE_SHARE,
+            334 * ONE_SHARE,
+            100 * ONE_SHARE,
+            200 * ONE_SHARE,
+        );
+        assert_eq!(moved_outcome(&seated, seated.vote_end), Some(true));
+        // A recorded result is used word for word.
+        let mut recorded = kept.clone();
+        recorded.finished = Some(crate::chain_reader::ledger_council::Finished {
+            outcome: 3,
+            winner: 1,
+            winner_b: 0,
+            cast_total: kept.cast,
+        });
+        assert_eq!(moved_outcome(&recorded, recorded.vote_end), Some(true));
+    }
+
+    /// At most one `vote` push for a project in one time unit: a second ballot in the same unit is dropped, the first
+    /// after it is kept (COUNCIL-PLAN.md section 5.6).
+    #[test]
+    fn at_most_one_vote_push_is_kept_for_a_project_within_one_unit() {
+        assert!(!within_one_unit(None, 1_000, 240));
+        assert!(within_one_unit(Some(1_000), 1_239, 240));
+        assert!(within_one_unit(Some(1_000), 1_000, 240));
+        assert!(!within_one_unit(Some(1_000), 1_240, 240));
+        assert!(within_one_unit(Some(1_000), 1_239, 600));
+        assert!(!within_one_unit(Some(1_000), 1_240, 60));
+        // A clock behind the stored one is never "after the unit": it is kept, not dropped for good.
+        assert!(!within_one_unit(Some(1_000), 900, 240));
+    }
 
     #[test]
     fn a_task_row_makes_one_of_three_kinds_and_a_withdrawn_plan_makes_none() {

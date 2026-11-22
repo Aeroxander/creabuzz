@@ -58,6 +58,12 @@ money not yet paid to the project, less 5%.
 
 ## 3. One project's life
 
+**Superseded in part (22 November 2026).** This section describes the earlier stage model (Solo, Backed, Team, Council, Open,
+with an auction and a reserve sale). The new model is `docs/next-version/JOIN-LEAVE-DESIGN.md`, and its section 9 says what it
+replaced; the Council is now the **runner seat** on top of the holder pause (`docs/next-version/COUNCIL-PLAN.md`, and the
+milestone 9 row in section 9). Read the table below as the history of the earlier design, not as a description of today's
+contracts.
+
 All numbers (judgement) unless marked. The page shows only the current stage and the single next step.
 
 | | Solo | Backed | Team | Council | Open |
@@ -340,7 +346,7 @@ Sizes are (estimate) for one experienced builder; each runs on Sepolia.
 In parallel: 5 beside 4 once the events are agreed; 6 beside 5; 8 beside 7; the design options page any time. About
 five to six months in all (estimate).
 
-**Where each milestone stands (21 November 2026; replaces "All NOT STARTED").** Everything below runs on a local chain
+**Where each milestone stands (22 November 2026; replaces "All NOT STARTED").** Everything below runs on a local chain
 or a test network with play dollars; no person has tried the new app yet (each report says so), and nothing is on a real
 network. Not legal or tax advice. The new model is `docs/next-version/JOIN-LEAVE-DESIGN.md`; its section 9 says what it
 replaces here. Report names are in `docs/next-version/`.

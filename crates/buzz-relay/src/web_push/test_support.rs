@@ -390,6 +390,122 @@ pub(crate) async fn add_task_row(
     .expect("a task row");
 }
 
+/// The vote contract's address in the alert tests: project A's pause, once `PauseReady` has named it. Not one of the
+/// run's contracts, so nothing else in the seeded rows claims it.
+pub(crate) const VOTE_GATE: [u8; 20] = [0x77; 20];
+
+/// A row of the project's owner contract in `block`: `PauseReady` on the Treasury (naming `gate`) or, with `role` and
+/// `address`, any other role's row. The block must exist.
+pub(crate) async fn add_vote_row(
+    w: &RoomWorld,
+    block: u64,
+    log_index: i32,
+    role: &str,
+    address: [u8; 20],
+    event: &str,
+    decoded: serde_json::Value,
+) {
+    sqlx::query(
+        "INSERT INTO chain_logs (reader, block_number, log_index, block_hash, tx_hash, address, role, project_key, \
+         event, topics, data, decoded) VALUES ($1, $2, $3, $4, $4, $5, $6, $7, $8, $9, $10, $11) \
+         ON CONFLICT DO NOTHING",
+    )
+    .bind(&w.reader)
+    .bind(i64::try_from(block).expect("block"))
+    .bind(log_index)
+    .bind(vec![(block % 251) as u8; 32])
+    .bind(address.as_slice())
+    .bind(role)
+    .bind(w.key.as_slice())
+    .bind(event)
+    .bind(Vec::<Vec<u8>>::new())
+    .bind(Vec::<u8>::new())
+    .bind(&decoded)
+    .execute(w.state.db.pool())
+    .await
+    .expect("a vote row");
+}
+
+/// The Treasury's `PauseReady`, naming `VOTE_GATE`: the ledger then knows the project's pause (its vote contract).
+pub(crate) async fn add_pause_ready(w: &RoomWorld, block: u64) {
+    add_vote_row(
+        w,
+        block,
+        0,
+        "treasury",
+        w.fx.projects["A"].treasury,
+        "PauseReady",
+        serde_json::json!({ "gate": format!("0x{}", hex::encode(VOTE_GATE)) }),
+    )
+    .await;
+}
+
+/// One `BallotOpened` of project A's vote contract at `gate`, with the ballot's times and numbers (all strings, as the
+/// reader stores them).
+pub(crate) async fn ballot_opened(
+    w: &RoomWorld,
+    block: u64,
+    log_index: i32,
+    gate: [u8; 20],
+    id: u32,
+    kind: u8,
+    opened_at: u64,
+    vote_end: u64,
+    supply: u128,
+    floor: u128,
+) {
+    add_vote_row(
+        w,
+        block,
+        log_index,
+        "pause",
+        gate,
+        "BallotOpened",
+        serde_json::json!({
+            "id": id.to_string(),
+            "kind": kind.to_string(),
+            "openedAt": opened_at.to_string(),
+            "standEnd": (opened_at + 1).to_string(),
+            "voteEnd": vote_end.to_string(),
+            "effectiveAt": (vote_end + 1).to_string(),
+            "supply": supply.to_string(),
+            "floor": floor.to_string(),
+            "upA": "0",
+            "upB": "0",
+        }),
+    )
+    .await;
+}
+
+/// One `Voted` row: the absolute tally of `option` and the cast total after it (no voter is named anywhere).
+pub(crate) async fn voted(
+    w: &RoomWorld,
+    block: u64,
+    log_index: i32,
+    gate: [u8; 20],
+    id: u32,
+    option: u8,
+    option_tally: u128,
+    cast_total: u128,
+) {
+    add_vote_row(
+        w,
+        block,
+        log_index,
+        "pause",
+        gate,
+        "Voted",
+        serde_json::json!({
+            "id": id.to_string(),
+            "option": option.to_string(),
+            "fromOption": u8::MAX.to_string(),
+            "optionTally": option_tally.to_string(),
+            "castTotal": cast_total.to_string(),
+        }),
+    )
+    .await;
+}
+
 /// Add one block holding one task row and tell the reader it has read up to it. Returns the block.
 pub(crate) async fn task_event(
     w: &RoomWorld,

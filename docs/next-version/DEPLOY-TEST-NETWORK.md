@@ -57,7 +57,7 @@ forge script script/DeployPot.s.sol --rpc-url sepolia --broadcast --account <you
 - The block the Launcher was deployed at is the lowest `blockNumber` in the broadcast file (hex; `cast to-dec <it>`). You need it
   in step 4.
 
-### 2b. Step 4's two switches (both off by default)
+### 2b. Step 4 and the Council round's switches (all off by default)
 
 The same script has two switches added in step 4. **Leave both alone and nothing about a deployment changes**: no holder pause, no
 claim contract, every earlier test and screen exactly as before. A switch can be turned on only by the deployer, once, inside the first hour after the
@@ -67,14 +67,20 @@ in the deploy script's own run; after that hour it cannot be turned on for that 
 | Setting | Default | What it does |
 |---|---|---|
 | `HOLDER_PAUSE` | `0` (off) | `1` also deploys the holder pause and binds it to the Launcher, so every project launched from then on has it. Holders park Shares; when parked Shares reach a third of the Shares backers hold, the team's draws from the allowance box and new task plans pause from one warning day later, for as long as a third stays parked. It never pays anyone, never moves money, and never stops or slows Take out. The founder is told so on the launch sheet, and it cannot be turned off for a project. The script prints the pause code's hash: publish it with your terms. |
+| `COUNCIL` | `0` (off) | `1` turns the Council on for this deployment and **requires `HOLDER_PAUSE=1`** (`COUNCIL=1` with the pause off, or any value other than 0 or 1, stops the script before it sends anything). The script then deploys a `HolderVote` as the project's pause implementation — it *is* the pause, and it also counts votes — and a `Council` implementation, and binds both to the Launcher in the same broadcast, before any project can launch. Holders who parked backer Shares can elect the two Council seats that come up, and can open a replace vote with a list of five accounts; every result waits the Treasury's longest task notice and anyone can carry it out. Off by default and nothing shows on a project with no Council and no open vote; with it off a project sees no difference at all. It cannot be turned on after the first hour. The script prints the vote and Council code hashes: publish them with your terms. |
 | `EARLIER_ROOT`, `EARLIER_TEXT_HASH`, `EARLIER_TOTAL`, `EARLIER_ROWS`, `EARLIER_FOUNDER`, `EARLIER_PROJECT_ID` | none of the six set (nothing is claimable) | **All six or none** (one set without the rest stops the script). They deploy the earlier backers' claim contract and bind it to the Launcher before any project can be launched; the project named by `EARLIER_FOUNDER` and `EARLIER_PROJECT_ID` (project zero) is born with a reserve of Team Shares for the list. `EARLIER_ROOT` is the list's one fingerprint (a Merkle root over rows of account and amount: the rows are never written down by this repository or the server), `EARLIER_TEXT_HASH` the fingerprint of the text a claimant accepts in the same call, `EARLIER_TOTAL` the pool in Team Share wei (the sum of the rows), `EARLIER_ROWS` the number of rows. The text, the consent words, the list and the pool's size are counsel's and the owner's: none is decided here. |
 | `EARLIER_ALLOW_LARGE` | `0` | A pool above the founder's own Team pool limit (100,000,000 Shares) is refused unless this is `1`. The pool dilutes backers (and keeps diluting them after a wind-down: unclaimed rows never expire), so set it on purpose. |
 
-The server needs **no setting** for either: it finds the pause and the claim contract from the Launcher's own events and writes
-what it reads into the signed numbers (null where a project has neither). To check: `cast call <Launcher> "holderPauseImpl()(address)"`
-is not the zero address with the first switch on; `cast call <Launcher> "earlier()(address)"` is not the zero address with the second.
-`scripts/pot-full-loop.sh pot-pause.spec` and `scripts/pot-full-loop.sh pot-earlier.spec` run each on a local chain end to end, the
-second with an invented list made by `scripts/pot-earlier-list.mjs`.
+The server needs **no setting** for either: it finds the pause, the Council and the vote contract from the contracts' own events
+and writes what it reads into the signed numbers (null where a project has none). To check: `cast call <Launcher>
+"holderPauseImpl()(address)"` is not the zero address with the pause on; `cast call <Launcher> "councilImpl()(address)"` is not the
+zero address with the Council on; `cast call <Launcher> "earlier()(address)"` is not the zero address with the claim contract on.
+`scripts/pot-full-loop.sh pot-pause.spec`, `pot-council.spec` (when the Council worlds land in that script) and
+`pot-earlier.spec` run each on a local chain end to end, the last with an invented list made by `scripts/pot-earlier-list.mjs`.
+
+For a **short test network**, deploy with `UNIT=1680` (a four-minute day) so a vote's stand window is four minutes, its voting
+twelve, and its wait sixty-six minutes: a whole replace vote, wait and carry-out fits in about eighty-two minutes, and seat
+elections come up every twelve hours. A real network uses the default seven-day unit and the same code.
 
 ## 3. Make the server's secrets, once
 

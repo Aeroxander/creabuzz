@@ -7,7 +7,7 @@
 //! again at the head right before it is sent (`super::check`): this builder
 //! only says when to look.
 //!
-//! Six jobs exist, all calls anyone may make:
+//! Ten jobs exist, all calls anyone may make:
 //! - the platform's fee waiting in a Treasury (`feesOwed`), collected once a
 //!   week at most;
 //! - outside money that has all arrived but is still stored as arriving: a
@@ -22,14 +22,35 @@
 //! - after a wind-down and one more time unit, a grant that is still live and
 //!   not protected: `Vester.burnAfterWindDown(id)`, once per grant.
 //!
+//! And the Council round's four vote calls (`COUNCIL-PLAN.md` section 5.5),
+//! each anyone may make and none moving money: the seat election the Council
+//! says is due (`HolderVote.openSeats()`, when `nextElection` has passed, no
+//! ballot is live and the Council exists), the result of a ballot whose vote
+//! has ended (`finish(id)`), a won result whose wait has run (`carryOut(id)`),
+//! and a won result nobody carried out two time units after it was due
+//! (`lapse(id)`). **The helper never opens a replace vote**: that is a
+//! holder's press, and `openReplace` is not a call it can build. The planner
+//! reads the ballot's own result first (a recorded `BallotFinished`, else the
+//! frozen tallies) and makes at most the one vote job the ballot's state
+//! allows; the helper reads the contract's `canCarryOut` and `canOpenSeats`
+//! views at the head before anything is sent.
+//!
 //! The last three wait [`NOTICE_GRACE_SECS`] after their time (whoever is there
 //! has had that time to do it themselves), and a project gets at most
 //! [`MAX_GRANT_JOBS_PER_PROJECT`] jobs of each Vester kind in one build.
+//!
+//! The vote jobs are held to their own pace: once per project per
+//! [`VOTE_PACE_SECS`] or a quarter of the stand window when that is smaller
+//! ([`vote_pace_secs`]), at most [`VOTE_PER_PROJECT_PER_DAY`] a day for one
+//! project, and at most [`VOTE_JOBS_PER_PASS`] looked at in one pass over all
+//! projects.
 
 use anyhow::Context;
 
 use super::calls::{HelperCall, NOTICE_GRACE_SECS, TASK_SETTLE_DELAY_SECS};
 use crate::chain_reader::ledger::{GrantState, Ledger, LogRow};
+use crate::chain_reader::ledger_council::BallotSeen;
+use crate::chain_reader::record_council::derive_result;
 use crate::chain_reader::word::{parse_fixed, Word};
 
 /// One week, the period of the repeating jobs.
@@ -38,6 +59,85 @@ pub const WEEK: u64 = 7 * 86_400;
 /// The most jobs of each Vester kind (a grant's burn, a grant's burn after a
 /// wind-down) one project gets in one build, earliest first.
 pub const MAX_GRANT_JOBS_PER_PROJECT: usize = 16;
+
+/// The helper's own pace for one project's vote calls, in seconds (ten
+/// minutes); a quarter of the stand window when that is smaller
+/// ([`vote_pace_secs`]).
+pub const VOTE_PACE_SECS: u64 = 600;
+
+/// The most vote jobs one pass looks at, over all projects (`COUNCIL-PLAN.md`
+/// section 5.5).
+pub const VOTE_JOBS_PER_PASS: usize = 3;
+
+/// The most transactions of the vote calls the helper sends for one project in
+/// any 24 hours.
+pub const VOTE_PER_PROJECT_PER_DAY: i64 = 6;
+
+/// How many time units after a won result's effective time it may still be
+/// carried out, and when a won result nobody carried out lapses
+/// (`HolderVote.LAPSE_UNITS`).
+pub const LAPSE_UNITS: u64 = 2;
+
+/// One whole Share in wei (`HolderVote.MIN_VOTE`), the smallest tally a person
+/// needs to take a seat (the same value `record_council` holds).
+const ONE_SHARE: u128 = 1_000_000_000_000_000_000;
+
+/// The helper's pace for one project's vote calls, in seconds, from the
+/// project's day (`HolderVote.day()`, a seventh of the time unit): ten minutes,
+/// or a quarter of the stand window when that is smaller (`standSecs/4`,
+/// COUNCIL-PLAN.md section 5.5 and V27). A day of zero (not a vote contract)
+/// keeps the ten minutes.
+pub fn vote_pace_secs_of_day(day: u64) -> u64 {
+    if day == 0 {
+        return VOTE_PACE_SECS;
+    }
+    VOTE_PACE_SECS.min(day / 4)
+}
+
+/// The same from the project's time unit (the planner's own number: a day is
+/// a seventh of the unit).
+pub fn vote_pace_secs(unit: u64) -> u64 {
+    vote_pace_secs_of_day(unit / 7)
+}
+
+/// The result a ballot's events give from `voteEnd` on: the recorded
+/// `BallotFinished` when there is one, else the frozen tallies (the contract's
+/// own `_compute`, `derive_result`). `None` before `voteEnd`.
+fn ballot_outcome(ballot: &BallotSeen, now: u64) -> Option<u8> {
+    if let Some(finished) = ballot.finished {
+        return Some(finished.outcome);
+    }
+    if now < ballot.vote_end {
+        return None;
+    }
+    let (outcome, _) = derive_result(
+        ballot.kind,
+        &ballot.tallies,
+        ballot.option_count(),
+        ballot.cast,
+        ballot.floor,
+        ONE_SHARE,
+    );
+    Some(outcome)
+}
+
+/// Whether the ballot still blocks a new one (the contract's `_freeSettled`):
+/// before its vote ends, or a won result still inside its carry-out window.
+/// A landed, lapsed, or ended-without-effect ballot blocks nothing.
+fn ballot_blocks(ballot: &BallotSeen, now: u64, unit: u64) -> bool {
+    if ballot.carried_out_at.is_some() || ballot.lapsed {
+        return false;
+    }
+    if now < ballot.vote_end {
+        return true;
+    }
+    if !matches!(ballot_outcome(ballot, now), Some(3 | 4)) {
+        return false;
+    }
+    now <= ballot
+        .effective_at
+        .saturating_add(LAPSE_UNITS.saturating_mul(unit))
+}
 
 /// A call that is due, and why.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -241,6 +341,83 @@ fn plan_ledger(
                         due_block,
                         repeats: false,
                     });
+                }
+            }
+        }
+    }
+    // The Council round's vote calls (COUNCIL-PLAN.md section 5.5). Only a
+    // project whose pause is a vote contract has them: no pause row, no ballot
+    // and no Council means no vote job at all.
+    if let Some(pause) = &ledger.contracts.pause {
+        let vote =
+            parse_fixed::<20>(pause).context("the project's vote contract (its pause) address")?;
+        let newest = ledger.vote.newest_ballot();
+        // The seat election the Council says is due: no ballot may be live
+        // (the contract's own `canOpenSeats` is read again at the head).
+        if ledger.contracts.council.is_some()
+            && ledger.council.next_election != 0
+            && ctx.time >= ledger.council.next_election
+            && !newest.is_some_and(|b| ballot_blocks(b, ctx.time, ledger.unit))
+        {
+            let next = ledger.council.next_election;
+            if let Some(due_block) = last_block(logs, "SeatsSet") {
+                jobs.push(Job {
+                    key: format!("vote-open-seats:{}:{next}", pause),
+                    call: HelperCall::VoteOpenSeats { vote },
+                    project_key: *key,
+                    due_block,
+                    repeats: false,
+                });
+            }
+        }
+        if let Some(ballot) = newest.filter(|b| b.carried_out_at.is_none() && !b.lapsed) {
+            // The row that made the ballot: its opening.
+            let opened = row_block(logs, "BallotOpened", "id", u64::from(ballot.id));
+            if let Some(opened) = opened {
+                // The result of a ballot whose vote has ended, once.
+                if ballot.finished.is_none() && ctx.time >= ballot.vote_end {
+                    jobs.push(Job {
+                        key: format!("vote-finish:{}:{}", pause, ballot.id),
+                        call: HelperCall::VoteFinish {
+                            vote,
+                            ballot: ballot.id,
+                        },
+                        project_key: *key,
+                        due_block: opened,
+                        repeats: false,
+                    });
+                }
+                // A won result: carried out once its wait has run, or lapsed
+                // two time units later if nobody carried it out.
+                if let Some(outcome) = ballot_outcome(ballot, ctx.time) {
+                    if matches!(outcome, 3 | 4) && ctx.time >= ballot.effective_at {
+                        let lapse_at = ballot
+                            .effective_at
+                            .saturating_add(LAPSE_UNITS.saturating_mul(ledger.unit));
+                        if ctx.time > lapse_at {
+                            jobs.push(Job {
+                                key: format!("vote-lapse:{}:{}", pause, ballot.id),
+                                call: HelperCall::VoteLapse {
+                                    vote,
+                                    ballot: ballot.id,
+                                },
+                                project_key: *key,
+                                due_block: opened,
+                                repeats: false,
+                            });
+                        } else {
+                            jobs.push(Job {
+                                key: format!("vote-carry-out:{}:{}", pause, ballot.id),
+                                call: HelperCall::VoteCarryOut {
+                                    vote,
+                                    ballot: ballot.id,
+                                },
+                                project_key: *key,
+                                due_block: opened,
+                                repeats: false,
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -741,5 +918,353 @@ mod tests {
             })
             .collect();
         assert_eq!(first[..3], [1, 3, 5]);
+    }
+
+    // ── the Council round's four vote jobs (COUNCIL-PLAN.md section 5.5) ──
+
+    /// The project's vote contract (its pause) and its Council, as text.
+    const VOTE: &str = "0x00000000000000000000000000000000000000aa";
+    const COUNCIL: &str = "0x00000000000000000000000000000000000000bb";
+    /// The base run's unit is a week; a ballot's `voteEnd` and `effectiveAt`
+    /// are picked from it.
+    const UNIT: u64 = 7 * 86_400;
+
+    /// One ballot with everything the planner reads, the given fields left as
+    /// the call sets them (opened at 1_000, a day of standing, three of voting).
+    fn ballot(id: u32, kind: u8, opened_at: u64) -> BallotSeen {
+        let stand_end = opened_at + UNIT / 7;
+        BallotSeen {
+            id,
+            kind,
+            opened_at,
+            stand_end,
+            vote_end: stand_end + 3 * (UNIT / 7),
+            effective_at: stand_end + 3 * (UNIT / 7) + 5 * 86_400,
+            supply: 1_000 * ONE_SHARE,
+            floor: 334 * ONE_SHARE,
+            up_a: 0,
+            up_b: 1,
+            options: std::collections::BTreeMap::new(),
+            tallies: std::collections::BTreeMap::new(),
+            cast: 0,
+            finished: None,
+            carried_out_at: None,
+            carried_out_council: None,
+            lapsed: false,
+            lapsed_at: None,
+            opened_block_time: opened_at,
+        }
+    }
+
+    /// A row of `event` at `block` for `role`, so the planner can name the row
+    /// that made the job due (the ballot's opening, the Council's seats).
+    fn row(
+        block: u64,
+        log_index: u32,
+        role: crate::chain_reader::events::Role,
+        address: &str,
+        event: &str,
+        fields: serde_json::Value,
+    ) -> LogRow {
+        LogRow {
+            block,
+            log_index,
+            time: block,
+            tx: [0u8; 32],
+            role,
+            address: parse_fixed::<20>(address).expect("address"),
+            event: event.to_owned(),
+            fields,
+        }
+    }
+
+    /// Project A's ledger with a vote contract, its Council and one ballot.
+    fn vote_ledger(fx: &Fixture, block: u64, ballot: Option<BallotSeen>) -> (Ledger, Vec<LogRow>) {
+        let mut rows = fx.rows("A", block);
+        let mut ledger = Ledger::from_logs(&rows).expect("reads").expect("launched");
+        ledger.contracts.pause = Some(VOTE.to_owned());
+        if let Some(b) = &ballot {
+            ledger.vote.newest = Some(b.id);
+            ledger.vote.ballots.insert(b.id, b.clone());
+            rows.push(row(
+                10,
+                0,
+                crate::chain_reader::events::Role::Pause,
+                VOTE,
+                "BallotOpened",
+                serde_json::json!({ "id": b.id.to_string() }),
+            ));
+        }
+        (ledger, rows)
+    }
+
+    /// The jobs of the vote calls only.
+    fn vote_jobs(jobs: &[Job]) -> Vec<&Job> {
+        jobs.iter()
+            .filter(|j| super::super::calls::is_vote(j.call.name()))
+            .collect()
+    }
+
+    #[test]
+    fn a_due_seat_election_gets_one_open_seats_job_and_not_before_time() {
+        let fx = Fixture::load();
+        let key = fx.projects["A"].key;
+        let block = fx.head();
+        let (mut ledger, mut rows) = vote_ledger(&fx, block, None);
+        let seats_row = rows.len();
+        rows.push(row(
+            11,
+            0,
+            crate::chain_reader::events::Role::Council,
+            COUNCIL,
+            "SeatsSet",
+            serde_json::json!({}),
+        ));
+        ledger.contracts.council = Some(COUNCIL.to_owned());
+        ledger.council.next_election = 50_000;
+        ledger.council.seats[0].who = Some("0x00000000000000000000000000000000000000c1".into());
+        let at = |t: u64| {
+            plan_ledger(&key, &rows, &ledger, &ctx(block, t))
+                .expect("plans")
+                .into_iter()
+                .filter(|j| matches!(j.call, HelperCall::VoteOpenSeats { .. }))
+                .collect::<Vec<_>>()
+        };
+        // A second before: nothing, and no other vote job either.
+        assert!(at(49_999).is_empty());
+        // At the Council's own next election: one job, named by that second,
+        // built on the Council's seats row.
+        let jobs = at(50_000);
+        assert_eq!(jobs.len(), 1, "{jobs:?}");
+        assert_eq!(jobs[0].call, HelperCall::VoteOpenSeats { vote: [0xaa; 20] });
+        assert_eq!(jobs[0].key, format!("vote-open-seats:{VOTE}:50000"));
+        assert_eq!(jobs[0].due_block, rows[seats_row].block);
+        assert!(!jobs[0].repeats);
+        // A ballot is live: the election waits (the contract would say no).
+        let (mut ledger, rows) = vote_ledger(&fx, block, Some(ballot(1, 1, 40_000)));
+        ledger.contracts.council = Some(COUNCIL.to_owned());
+        ledger.council.next_election = 50_000;
+        assert!(plan_ledger(&key, &rows, &ledger, &ctx(block, 50_000))
+            .expect("plans")
+            .iter()
+            .all(|j| !matches!(j.call, HelperCall::VoteOpenSeats { .. })));
+        // No Council: no seat election at any time.
+        let (mut ledger, rows) = vote_ledger(&fx, block, None);
+        ledger.council.next_election = 50_000;
+        assert!(plan_ledger(&key, &rows, &ledger, &ctx(block, u64::MAX / 2))
+            .expect("plans")
+            .iter()
+            .all(|j| !matches!(j.call, HelperCall::VoteOpenSeats { .. })));
+    }
+
+    #[test]
+    fn a_ballot_whose_vote_ended_gets_one_finish_job() {
+        let fx = Fixture::load();
+        let key = fx.projects["A"].key;
+        let block = fx.head();
+        let b = ballot(7, 1, 1_000);
+        let (ledger, rows) = vote_ledger(&fx, block, Some(b.clone()));
+        let jobs = |t: u64| {
+            plan_ledger(&key, &rows, &ledger, &ctx(block, t))
+                .expect("plans")
+                .into_iter()
+                .filter(|j| matches!(j.call, HelperCall::VoteFinish { .. }))
+                .collect::<Vec<_>>()
+        };
+        // The vote is still running: nothing.
+        assert!(jobs(b.vote_end - 1).is_empty());
+        // The second it ends: one job, once, for that ballot.
+        let due = jobs(b.vote_end);
+        assert_eq!(due.len(), 1, "{due:?}");
+        assert_eq!(
+            due[0].call,
+            HelperCall::VoteFinish {
+                vote: [0xaa; 20],
+                ballot: 7
+            }
+        );
+        assert_eq!(due[0].key, format!("vote-finish:{VOTE}:7"));
+        assert_eq!(due[0].due_block, 10, "the ballot's own opening row");
+        assert!(!due[0].repeats);
+        // Days later, and after the recorded result: no second job.
+        assert_eq!(jobs(b.vote_end + 30 * 86_400).len(), 1);
+        let mut recorded = b.clone();
+        recorded.finished = Some(crate::chain_reader::ledger_council::Finished {
+            outcome: 2,
+            winner: 0,
+            winner_b: 0,
+            cast_total: b.floor,
+        });
+        let (ledger, rows) = vote_ledger(&fx, block, Some(recorded));
+        assert!(plan_ledger(&key, &rows, &ledger, &ctx(block, u64::MAX / 2))
+            .expect("plans")
+            .iter()
+            .all(|j| !matches!(j.call, HelperCall::VoteFinish { .. })));
+    }
+
+    #[test]
+    fn a_won_ballot_is_carried_out_after_its_wait_and_lapsed_two_units_later() {
+        let fx = Fixture::load();
+        let key = fx.projects["A"].key;
+        let block = fx.head();
+        let mut won = ballot(3, 1, 1_000);
+        won.finished = Some(crate::chain_reader::ledger_council::Finished {
+            outcome: 3,
+            winner: 1,
+            winner_b: 0,
+            cast_total: 500 * ONE_SHARE,
+        });
+        let (ledger, rows) = vote_ledger(&fx, block, Some(won.clone()));
+        let jobs = |t: u64| {
+            plan_ledger(&key, &rows, &ledger, &ctx(block, t))
+                .expect("plans")
+                .into_iter()
+                .filter(|j| {
+                    matches!(
+                        j.call,
+                        HelperCall::VoteCarryOut { .. } | HelperCall::VoteLapse { .. }
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        // Before the wait has run: the result waits, nothing to carry out.
+        assert!(jobs(won.effective_at - 1).is_empty());
+        // The second it may be carried out: one job, once.
+        let due = jobs(won.effective_at);
+        assert_eq!(due.len(), 1, "{due:?}");
+        assert_eq!(
+            due[0].call,
+            HelperCall::VoteCarryOut {
+                vote: [0xaa; 20],
+                ballot: 3
+            }
+        );
+        assert_eq!(due[0].key, format!("vote-carry-out:{VOTE}:3"));
+        assert!(!due[0].repeats);
+        // Two time units later nobody has: the helper lets it go.
+        let lapse_at = won.effective_at + LAPSE_UNITS * UNIT;
+        assert_eq!(jobs(lapse_at).len(), 1);
+        assert!(matches!(
+            jobs(lapse_at)[0].call,
+            HelperCall::VoteCarryOut { .. }
+        ));
+        let late = jobs(lapse_at + 1);
+        assert_eq!(late.len(), 1, "{late:?}");
+        assert_eq!(
+            late[0].call,
+            HelperCall::VoteLapse {
+                vote: [0xaa; 20],
+                ballot: 3
+            }
+        );
+        assert_eq!(late[0].key, format!("vote-lapse:{VOTE}:3"));
+        // A ballot that is already carried out, or lapsed, is terminal.
+        for closed in ["carried", "lapsed"] {
+            let mut b = won.clone();
+            if closed == "carried" {
+                b.carried_out_at = Some(won.effective_at);
+            } else {
+                b.lapsed = true;
+                b.lapsed_at = Some(won.effective_at);
+            }
+            let (ledger, rows) = vote_ledger(&fx, block, Some(b));
+            let jobs = plan_ledger(&key, &rows, &ledger, &ctx(block, u64::MAX / 2)).expect("plans");
+            assert!(
+                jobs.iter().all(|j| !matches!(
+                    j.call,
+                    HelperCall::VoteCarryOut { .. } | HelperCall::VoteLapse { .. }
+                )),
+                "{closed}: {jobs:?}"
+            );
+        }
+    }
+
+    /// The planner reads the frozen tallies when nobody recorded the result:
+    /// a list with more than half of the cast is `moved` at `voteEnd`, and the
+    /// carry-out job is made from that derived result, not from a record.
+    #[test]
+    fn the_planner_derives_the_ballots_result_when_nobody_recorded_it() {
+        let fx = Fixture::load();
+        let key = fx.projects["A"].key;
+        let block = fx.head();
+        let mut b = ballot(5, 1, 1_000);
+        b.cast = 500 * ONE_SHARE;
+        b.tallies.insert(0, 200 * ONE_SHARE);
+        b.tallies.insert(1, 300 * ONE_SHARE);
+        assert!(b.finished.is_none(), "no BallotFinished row exists");
+        let (ledger, rows) = vote_ledger(&fx, block, Some(b.clone()));
+        let jobs = plan_ledger(&key, &rows, &ledger, &ctx(block, b.effective_at))
+            .expect("plans")
+            .into_iter()
+            .filter(|j| matches!(j.call, HelperCall::VoteCarryOut { .. }))
+            .collect::<Vec<_>>();
+        assert_eq!(jobs.len(), 1, "a moved result is carried out");
+        assert_eq!(
+            jobs[0].call,
+            HelperCall::VoteCarryOut {
+                vote: [0xaa; 20],
+                ballot: 5
+            }
+        );
+        // A ballot under its floor, or one nobody beat "keep" on, changes
+        // nothing: no carry-out and no lapse job, at any time.
+        for (cast, keep, list) in [
+            (100 * ONE_SHARE, 0, 100 * ONE_SHARE),
+            (500 * ONE_SHARE, 400 * ONE_SHARE, 100 * ONE_SHARE),
+        ] {
+            let mut quiet = ballot(6, 1, 1_000);
+            quiet.cast = cast;
+            quiet.tallies.insert(0, keep);
+            quiet.tallies.insert(1, list);
+            let (ledger, rows) = vote_ledger(&fx, block, Some(quiet));
+            let jobs = plan_ledger(&key, &rows, &ledger, &ctx(block, u64::MAX / 2)).expect("plans");
+            assert!(
+                jobs.iter().all(|j| !matches!(
+                    j.call,
+                    HelperCall::VoteCarryOut { .. } | HelperCall::VoteLapse { .. }
+                )),
+                "{jobs:?}"
+            );
+        }
+    }
+
+    /// No vote contract, no vote job: a project whose pause row never came has
+    /// neither a ballot nor a seat election to act on.
+    #[test]
+    fn no_vote_job_without_a_vote_contract() {
+        let fx = Fixture::load();
+        let key = fx.projects["A"].key;
+        let block = fx.head();
+        let (mut ledger, rows) = vote_ledger(&fx, block, Some(ballot(1, 1, 1_000)));
+        ledger.contracts.council = Some(COUNCIL.to_owned());
+        ledger.council.next_election = 1;
+        ledger.contracts.pause = None;
+        let jobs = plan_ledger(&key, &rows, &ledger, &ctx(block, u64::MAX / 2)).expect("plans");
+        assert!(vote_jobs(&jobs).is_empty(), "{jobs:?}");
+    }
+
+    /// The bounds the helper holds the vote calls to, and its shorter pace on
+    /// a test network: a quarter of the stand window when that is under ten
+    /// minutes (COUNCIL-PLAN.md section 5.5 and V27).
+    #[test]
+    fn the_vote_calls_are_bounded_and_paced_by_the_stand_window() {
+        assert_eq!(VOTE_JOBS_PER_PASS, 3, "at most 3 a pass over all projects");
+        assert_eq!(VOTE_PER_PROJECT_PER_DAY, 6, "at most 6 a day per project");
+        assert_eq!(
+            LAPSE_UNITS, 2,
+            "a won result lapses two time units after it was due"
+        );
+        // A real network: a day of 86,400 s, a stand window of a day; a quarter
+        // of it is over ten minutes, so the pace is ten minutes.
+        assert_eq!(vote_pace_secs(UNIT), 600);
+        assert_eq!(vote_pace_secs_of_day(86_400), 600);
+        // A test network with a 1,680 s unit: a day of 240 s, so the pace is
+        // 60 s, a quarter of the stand window, not ten minutes.
+        assert_eq!(vote_pace_secs(1_680), 60);
+        assert_eq!(vote_pace_secs_of_day(240), 60);
+        // A whole day of a second: still a quarter of it, and a day of zero (no
+        // vote contract) keeps the ten minutes.
+        assert_eq!(vote_pace_secs_of_day(4), 1);
+        assert_eq!(vote_pace_secs_of_day(0), VOTE_PACE_SECS);
     }
 }

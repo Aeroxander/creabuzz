@@ -1517,6 +1517,536 @@
           ]
         }
       ]
+    },
+    "HolderVote": {
+      "roles": [
+        "Pause"
+      ],
+      "events": [
+        {
+          "name": "BallotCarriedOut",
+          "signature": "BallotCarriedOut(uint32,address)",
+          "topic": "0x067f5b9fbfa73f50df3e491b26058a3ee6e0d7c03f61cfeafdc6c0ba98dd8e0b",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint32",
+              "indexed": true
+            },
+            {
+              "name": "council",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "BallotFinished",
+          "signature": "BallotFinished(uint32,uint8,uint8,uint8,uint256)",
+          "topic": "0xfc20a6670f0f6acea05d7150262463a450e3075afbd0ced458348ee5f681cb3a",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint32",
+              "indexed": true
+            },
+            {
+              "name": "outcome",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "winner",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "winnerB",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "castTotal",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "BallotLapsed",
+          "signature": "BallotLapsed(uint32)",
+          "topic": "0xd1b6b0aad4a43d2bff325dcad1967bd1f63a8ab29e022b8d7240fa7d6040e11a",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint32",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "name": "BallotOpened",
+          "signature": "BallotOpened(uint32,uint8,uint64,uint64,uint64,uint64,uint256,uint256,uint8,uint8,address)",
+          "topic": "0x85d11e5e4293d3a7d1c0aed47ea915c9651baf66ac3b7cb72236ffbe1e8a53c2",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint32",
+              "indexed": true
+            },
+            {
+              "name": "kind",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "openedAt",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "standEnd",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "voteEnd",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "effectiveAt",
+              "type": "uint64",
+              "indexed": false
+            },
+            {
+              "name": "supply",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "floor",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "upA",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "upB",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Fell",
+          "signature": "Fell(uint32,address,uint8,uint256,uint256,uint256)",
+          "topic": "0x3ac61619c6a2502fd0f6ed19033a925c2ad91bd5d1e31677a29fe0de95edd423",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint32",
+              "indexed": true
+            },
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "option",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "weight",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "optionTally",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "castTotal",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Observed",
+          "signature": "Observed(uint256,uint256,uint64)",
+          "topic": "0x96c454b6092472ee526c8e3979d5d4b05e39019602845b2ba85e6ff88940096e",
+          "inputs": [
+            {
+              "name": "parkedTotal",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "backerShares",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "armedAt",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Parked",
+          "signature": "Parked(address,uint256,uint256,uint256,uint256,uint64)",
+          "topic": "0xe10e6864ea310fb3bde8bb04a147383a4c98d2ab6e5e6799bbb5cc09f39b0e49",
+          "inputs": [
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "parkedBy",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "parkedTotal",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "backerShares",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "armedAt",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "ProjectBound",
+          "signature": "ProjectBound(address,bytes32,address)",
+          "topic": "0x5593e57f2ff36db62c52a2a900a285312eaac2f56c70ab57e447e65c7eff9f68",
+          "inputs": [
+            {
+              "name": "treasury",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "key",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "launcher",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "name": "Stood",
+          "signature": "Stood(uint32,uint8,address,address[5],uint8,bytes32,address)",
+          "topic": "0xa73ad47fd50479a4299ee3c793b0d63f1b8db6d55f04a02af40933dfad3e734b",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint32",
+              "indexed": true
+            },
+            {
+              "name": "option",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "members",
+              "type": "address[5]",
+              "indexed": false
+            },
+            {
+              "name": "count",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "recordHash",
+              "type": "bytes32",
+              "indexed": false
+            },
+            {
+              "name": "displaced",
+              "type": "address",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Unparked",
+          "signature": "Unparked(address,uint256,uint256,uint256,uint256,uint64)",
+          "topic": "0xbb456a131232649a83ed6c75b123d8556c67e9c99f1ee3d7260b0eb3844edc69",
+          "inputs": [
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "parkedBy",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "parkedTotal",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "backerShares",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "armedAt",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Voted",
+          "signature": "Voted(uint32,address,uint8,uint256,uint256,uint256,uint8,uint256)",
+          "topic": "0x2c2557fa1af8a875ed583f3046a288ed997a5c7fd092cb871ffa0252b6dd6531",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "uint32",
+              "indexed": true
+            },
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "option",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "weight",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "optionTally",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "castTotal",
+              "type": "uint256",
+              "indexed": false
+            },
+            {
+              "name": "fromOption",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "fromTally",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        }
+      ]
+    },
+    "Council": {
+      "roles": [
+        "Council"
+      ],
+      "events": [
+        {
+          "name": "Agreed",
+          "signature": "Agreed(bytes32,address,uint8)",
+          "topic": "0x8076309805173c7975bdad02307186f8cb84c3a9448774021c09a4fe764e6dd6",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "count",
+              "type": "uint8",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Cancelled",
+          "signature": "Cancelled(bytes32)",
+          "topic": "0xbaa1eb22f2a492ba1a5fea61b8df4d27c6c8b5f3971e63bb58fa14ff72eedb70",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "name": "Executed",
+          "signature": "Executed(bytes32,address)",
+          "topic": "0x59c3746e635078efc737fb3f37dd8188203b8df10bbad35878a7d156f4f51c41",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "name": "Proposed",
+          "signature": "Proposed(bytes32,address,address,bytes,uint256)",
+          "topic": "0x5568b45f763e17d849e666220afd5ee274e77f848c0044257a0fba3d64397fef",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "target",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "data",
+              "type": "bytes",
+              "indexed": false
+            },
+            {
+              "name": "nonce",
+              "type": "uint256",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Resigned",
+          "signature": "Resigned(uint8,address)",
+          "topic": "0x1819402c0f058ab0b65495a058993d97d6b50570ec1b456d6948a364c3fefeb3",
+          "inputs": [
+            {
+              "name": "seat",
+              "type": "uint8",
+              "indexed": false
+            },
+            {
+              "name": "who",
+              "type": "address",
+              "indexed": true
+            }
+          ]
+        },
+        {
+          "name": "SeatsSet",
+          "signature": "SeatsSet(address[5],uint64[5],uint32,uint64)",
+          "topic": "0x1eb3363f6c63598d262bfd2c02e940fd4f9f52058a48bb82bc19e85a4bcd506f",
+          "inputs": [
+            {
+              "name": "seats",
+              "type": "address[5]",
+              "indexed": false
+            },
+            {
+              "name": "seatedAt",
+              "type": "uint64[5]",
+              "indexed": false
+            },
+            {
+              "name": "generation",
+              "type": "uint32",
+              "indexed": false
+            },
+            {
+              "name": "nextElection",
+              "type": "uint64",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "Withdrawn",
+          "signature": "Withdrawn(bytes32,address,uint8)",
+          "topic": "0x351631437878367ded150b13c2b72bbcd7d89bf98edae5b158e990f73610fdd0",
+          "inputs": [
+            {
+              "name": "id",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "by",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "count",
+              "type": "uint8",
+              "indexed": false
+            }
+          ]
+        }
+      ]
     }
   }
 }

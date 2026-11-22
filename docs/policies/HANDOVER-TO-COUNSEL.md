@@ -64,4 +64,22 @@ Added by this update, for counsel to confirm (not in the design's list): whether
 - The Uniswap licence point: matters only if a pool returns; appears moot for now, for counsel to confirm.
 - The earlier-backers team budget questions (valuing team payments in Shares, related-party payments, disclosure of the budget, an unused budget if the manager stops): appear moot, for counsel to confirm, because the team budget is gone from the design. The earlier backers' own terms stay live as question 10.
 - The automatic-decision question about a submission that lapses when nobody settles it, and the "no-burn rule" bracket for Shares paid for work: the old rules are gone, and the new automatic rules (the allowance, the notice, a task that lapses when not taken or accepted) raise the same question again, so the bracket stays in the terms in new words.
-- Questions that depend on holders' votes (a vote to freeze a reward, Council elections, a turnout floor): appear moot, for counsel to confirm, because nothing is voted on; see question 4.
+- Questions that depend on holders' votes: **no longer moot as of 22 November 2026.** The Council round adds a deploy switch (`COUNCIL`, off by default) under which holders vote to replace the runner and to elect two Council seats; with the switch off, nothing is voted on and the paragraph above still stands. **Question 4's premise therefore has two settings, and counsel is asked to answer it per setting** (see the section below).
+- The lines about "nothing is voted on" elsewhere in this page read as the switch-off case; the switch-on case is the section below.
+
+### The Council round's questions (22 November 2026), word for word from the plan
+
+The first answer on the design's question 12.4 ("here governance is the notice and the right to leave, with no vote") assumed no vote.
+With `COUNCIL=1` that premise is false; with it off it holds. **Counsel is asked for an answer per setting of the switch.** The legal
+line is not edited.
+
+- **C1.** With a real vote (replace the runner, elect seats), is "governance and exit" delivered in the stronger sense? Does that change the analysis of Shares themselves (voting rights as an indicium) or of the platform fee that buys a vote? Redo 12.4 for both settings of the switch.
+- **C2.** Do voters who control who runs a pot, or Council seat holders (five accounts that decide the spending of others' money), face partnership, unincorporated-association, fiduciary or money-handling exposure? Does an AI agent holding a seat (V16 does not bar it) change that?
+- **C3.** A candidate's text is a statement by someone seeking control of others' money, hosted in the platform's app. Is it a solicitation? What moderation, or "no promise of profit" rule, is required beyond the one plain line of V41, and should a text be removable after the fact?
+- **C4.** Takeover disclosure: a holder of a third can take control for about the platform fee, and holders who do not look can lose about 12 in 100 within 30 days of the seat. What must the page and the terms say about that? The plan says only "taking out stays open".
+- **C5.** Naming: "Council", "five accounts", "list". Is it misleading that five seats can be one person? Is showing the linked names of accounts that did not agree to be listed acceptable? Does the Council section's last line ("can do what a founder could do, with the same limits, and nothing more") read as reassurance?
+- **C6.** Votes are public on a public chain and linked to accounts. Is "Posts and votes are public." enough for privacy and erasure rules?
+- **C7.** The snapshot rule (only Shares parked before a vote opens count) means late joiners cannot take part. Is that fair, and does it need disclosure on the Back sheet (the plan shows the planned-change sentence there)?
+- **C8.** The platform's helper presses `finish` and `carryOut`. Does automating a governance outcome make the platform a participant?
+- **C9.** Play dollars on a test network: does a vote on play dollars avoid all of this, and what changes at the first real-money launch?
+- **C10.** Questions 12.1, 12.7, 12.10 and 12.11 are not changed by this plan. The words "You can take your money out any time." alone (in an alert or a push, without the second half) are consistent with the existing planned-task push; counsel may want the pair kept together outside the app.

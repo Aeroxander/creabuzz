@@ -205,6 +205,40 @@ fn the_example_obeys_every_rule_of_section_7_3() {
                                 | "task_ended"
                                 | "task_withdrawn"
                                 | "update"
+                                // The Council round (step 5): the runner's kind and, when a Council runs the project,
+                                // the seats' words and every word of a ballot (COUNCIL-PLAN.md section 5.2).
+                                | "single"
+                                | "pair"
+                                | "council"
+                                | "keep"
+                                | "list"
+                                | "person"
+                                | "seats"
+                                | "replace"
+                                | "standing"
+                                | "voting"
+                                | "counting"
+                                | "waiting"
+                                | "carried-out"
+                                | "ended"
+                                | "short"
+                                | "kept"
+                                | "moved"
+                                | "seated"
+                                | "unchanged"
+                                | "draw"
+                                | "checkIn"
+                                | "rate"
+                                | "door"
+                                | "plan"
+                                | "accept"
+                                | "reject"
+                                | "cancel"
+                                | "grant"
+                                | "helper"
+                                | "handOver"
+                                | "windDown"
+                                | "other"
                         ),
                     "{path}: {s:?} is neither an amount nor a word of the record"
                 );
@@ -1457,21 +1491,51 @@ fn the_server_accepts_the_example_and_refuses_it_with_a_row_one_unit_off() {
 async fn refresh_is_600_while_a_task_is_open_and_3600_after() {
     let cadence = Cadence::default();
     // The rule, by each condition alone.
-    assert_eq!(numbers::refresh_every(&cadence, false, false, false), 3_600);
-    assert_eq!(numbers::refresh_every(&cadence, true, false, false), 600);
-    assert_eq!(numbers::refresh_every(&cadence, false, true, false), 600);
     assert_eq!(
-        numbers::refresh_every(&cadence, false, false, true),
+        numbers::refresh_every(&cadence, false, false, false, false, None),
+        3_600
+    );
+    assert_eq!(
+        numbers::refresh_every(&cadence, true, false, false, false, None),
+        600
+    );
+    assert_eq!(
+        numbers::refresh_every(&cadence, false, true, false, false, None),
+        600
+    );
+    assert_eq!(
+        numbers::refresh_every(&cadence, false, false, true, false, None),
         600,
         "a task is open"
+    );
+    // A live ballot: the smaller of ten minutes and a quarter of the stand window.
+    assert_eq!(
+        numbers::refresh_every(&cadence, false, false, false, true, Some(86_400)),
+        600
+    );
+    assert_eq!(
+        numbers::refresh_every(&cadence, false, false, false, true, Some(240)),
+        60,
+        "a test network's four-minute stand window"
+    );
+    assert_eq!(
+        numbers::refresh_every(&cadence, false, false, false, false, Some(240)),
+        3_600,
+        "a stand window alone does not shorten the promise"
     );
     // A record never promises more than the settings allow (half a day), whatever the cadence says.
     let wide = Cadence {
         active_secs: 100_000,
         idle_secs: 200_000,
     };
-    assert_eq!(numbers::refresh_every(&wide, false, false, true), 43_200);
-    assert_eq!(numbers::refresh_every(&wide, false, false, false), 43_200);
+    assert_eq!(
+        numbers::refresh_every(&wide, false, false, true, false, None),
+        43_200
+    );
+    assert_eq!(
+        numbers::refresh_every(&wide, false, false, false, false, None),
+        43_200
+    );
     // The run: tasks open at the example block, none at the end of the run.
     let open = build_from("A_example").await.expect("builds");
     assert!(open.record.tasks.as_ref().expect("a book").open_count > 0);

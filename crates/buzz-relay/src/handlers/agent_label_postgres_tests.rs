@@ -698,3 +698,51 @@ async fn an_agent_account_may_ask_to_join_but_never_accepts_an_ask() {
     )
     .await;
 }
+
+/// An agent account signs no candidacy (COUNCIL-PLAN.md section 5.4): standing for a project's Council is a person's word
+/// about who should run it, as a goal or a promise is. Remove the limit from the authority's `needs_a_person` and this
+/// test fails: the record is refused for the agent limit, and refused before any wallet has to be linked.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn an_agent_account_signs_no_candidacy() {
+    let (state, tenant, p, coord) = world().await;
+    accept(
+        &state,
+        &tenant,
+        label(&p.helper, &p.operator, 1),
+        "the label",
+    )
+    .await;
+    let proposer = format!("0x{}", "22".repeat(20));
+    let person = format!("0x{}", "33".repeat(20));
+    let chain_key = format!("0x{}", "11".repeat(32));
+    let until = (Timestamp::now().as_secs() + 86_400).to_string();
+    let tags: Vec<Tag> = [
+        vec!["a".to_string(), coord.clone()],
+        vec!["candidacy".to_string(), "7".to_string()],
+        vec!["t".to_string(), format!("vote:{chain_key}:7")],
+        vec!["proposer".to_string(), proposer],
+        vec!["candidate".to_string(), person],
+        vec!["expiration".to_string(), until],
+    ]
+    .into_iter()
+    .map(|fields| Tag::parse(fields).expect("tag"))
+    .collect();
+    let candidacy = EventBuilder::new(
+        Kind::Custom(KIND_LAUNCH_UPDATE as u16),
+        r#"{"v":1,"text":"An agent's word."}"#,
+    )
+    .tags(tags)
+    .allow_self_tagging()
+    .custom_created_at(Timestamp::from(Timestamp::now().as_secs()))
+    .sign_with_keys(&p.helper)
+    .expect("sign");
+    refuse(
+        &state,
+        &tenant,
+        candidacy,
+        AGENT_LIMIT,
+        "an agent's candidacy",
+    )
+    .await;
+}

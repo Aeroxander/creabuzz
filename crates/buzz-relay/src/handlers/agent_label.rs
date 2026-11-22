@@ -28,8 +28,12 @@
 //!   refused.
 //!
 //! That record is what limits an agent's powers elsewhere (see
-//! `launch_update_authority`). A profile with neither tag is not looked at,
-//! unless its account is on record as a manager agent (below).
+//! `launch_update_authority`): an agent account may not check a task's work,
+//! grant more time, sign goals, promises and promise marks, **or sign a
+//! candidacy** — the short text a person signs to stand for a project's
+//! Council (`COUNCIL-PLAN.md` section 5.4). Standing is a person's word about
+//! who should run the project, as a goal is. A profile with neither tag is not
+//! looked at, unless its account is on record as a manager agent (below).
 //!
 //! # Manager agents
 //!

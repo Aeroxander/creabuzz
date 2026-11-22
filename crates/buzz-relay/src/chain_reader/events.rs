@@ -41,6 +41,10 @@ pub enum Role {
     /// found from the Launcher's `EarlierBound` log and tied to the one
     /// project that log names.
     Earlier,
+    /// A project's Council (five seats, three needed), found from the
+    /// Launcher's `CouncilMade` log. Only projects of a deployment whose Council
+    /// switch is on have one.
+    Council,
     /// The dollar token (the play dollar on a test network). It is in the
     /// table so its events decode, but the reader does not follow it: every
     /// transfer of the dollar on the chain would be read for nothing, and the
@@ -61,6 +65,7 @@ impl Role {
             Role::Tasks => "tasks",
             Role::Pause => "pause",
             Role::Earlier => "earlier",
+            Role::Council => "council",
             Role::Dollar => "dollar",
         }
     }
@@ -77,6 +82,7 @@ impl Role {
             "tasks" => Role::Tasks,
             "pause" => Role::Pause,
             "earlier" => Role::Earlier,
+            "council" => Role::Council,
             "dollar" => Role::Dollar,
             _ => return None,
         })
@@ -101,6 +107,8 @@ pub enum Ty {
     Bytes,
     /// A static struct: its fields in order.
     Tuple(&'static [Param]),
+    /// A fixed-length array of a static type: the element type and its length.
+    Array(&'static Ty, usize),
 }
 
 /// One event parameter.
@@ -164,6 +172,12 @@ fn type_name(ty: &Ty, out: &mut String) {
                 type_name(&field.ty, out);
             }
             out.push(')');
+        }
+        Ty::Array(inner, len) => {
+            type_name(inner, out);
+            out.push('[');
+            out.push_str(&len.to_string());
+            out.push(']');
         }
     }
 }
@@ -230,6 +244,7 @@ pub enum DecodeError {
 fn static_words(ty: &Ty) -> usize {
     match ty {
         Ty::Tuple(fields) => fields.iter().map(|f| static_words(&f.ty)).sum(),
+        Ty::Array(inner, len) => static_words(inner) * len,
         _ => 1,
     }
 }
@@ -250,7 +265,7 @@ fn scalar(ty: &Ty, w: &Word) -> Value {
         Ty::Bool => Value::Bool(w[31] != 0),
         Ty::Bytes32 => Value::String(hex0x(w)),
         // Indexed dynamic values are hashes; not used by these events.
-        Ty::Bytes | Ty::Tuple(_) => Value::String(hex0x(w)),
+        Ty::Bytes | Ty::Tuple(_) | Ty::Array(_, _) => Value::String(hex0x(w)),
     }
 }
 
@@ -265,6 +280,13 @@ fn decode_static(ty: &Ty, data: &[u8], cursor: &mut usize) -> Result<Value, Deco
                 );
             }
             Ok(Value::Object(obj))
+        }
+        Ty::Array(inner, len) => {
+            let mut items = Vec::with_capacity(*len);
+            for _ in 0..*len {
+                items.push(decode_static(inner, data, cursor)?);
+            }
+            Ok(Value::Array(items))
         }
         _ => {
             let w = word_at(data, *cursor)?;

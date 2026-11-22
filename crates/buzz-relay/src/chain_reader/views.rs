@@ -252,6 +252,72 @@ pub struct EarlierViews {
     pub claimed_total: u128,
 }
 
+/// What a project's Council says, read at the one block (`COUNCIL-PLAN.md` section 1.3).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CouncilViews {
+    /// The Council contract.
+    pub address: String,
+    /// `seatList()`: the five seats, in order; none for an open seat.
+    pub seats: [Option<String>; 5],
+    /// `seatList()`: when each seat was taken (zero for an open seat).
+    pub seated_at: [u64; 5],
+    /// `THRESHOLD()`: how many seats must agree.
+    pub needed: u8,
+    /// `generation()`: goes up whenever any seat changes.
+    pub generation: u32,
+    /// `nextElection()`: when two seats next come up.
+    pub next_election: u64,
+    /// `upNext()`: the two seats that would come up.
+    pub up_seats: [u8; 2],
+    /// `PROPOSAL_TTL()`: how long a proposal may be agreed to, in seconds.
+    pub proposal_ttl: u64,
+}
+
+/// What a project's vote contract (`HolderVote`) says, read at the one block: the rule's numbers, never a tally.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct VoteViews {
+    /// The vote contract (the project's pause).
+    pub address: String,
+    /// `day()`: the project's day in seconds.
+    pub day: u64,
+    /// `LINE_DIVISOR()`: the turnout floor is one this-many-th of the snapshot's Shares.
+    pub line_divisor: u128,
+    /// `STAND_DAYS()`.
+    pub stand_days: u128,
+    /// `VOTE_DAYS()`.
+    pub vote_days: u128,
+    /// `STAND_DIVISOR()`: to stand, an account needs this fraction of the snapshot's Shares.
+    pub stand_divisor: u128,
+    /// `OPEN_DIVISOR()`: to open a replace vote, the Shares parked in all must be this fraction.
+    pub open_divisor: u128,
+    /// `MIN_VOTE()`: the smallest weight that can be cast.
+    pub min_vote: u128,
+    /// `MAX_LISTS()`.
+    pub max_lists: u8,
+    /// `MAX_PEOPLE()`.
+    pub max_people: u8,
+    /// `COOLDOWN_UNITS()`.
+    pub cooldown_units: u128,
+    /// `LAPSE_UNITS()`.
+    pub lapse_units: u128,
+    /// `Treasury.noticeFor(500).noticeSecs`: the longest task notice, the wait.
+    pub wait_secs: u64,
+    /// `nextReplaceAt()`: when a replace vote may next open (0 when no cooldown runs).
+    pub next_replace_at: u64,
+    /// `state().parkedTotal`: the Shares parked at the block (the limit on the cast while the vote runs).
+    pub parked_total: u128,
+    /// `state().backerShares`: the backers' Shares as the pause read them.
+    pub backer_shares: u128,
+    /// `Council.SEATS()`: five.
+    pub council_seats: u8,
+    /// `Council.THRESHOLD()`: three.
+    pub council_needed: u8,
+    /// `Council.ELECTION_UNITS()`.
+    pub council_election_units: u64,
+    /// `Council.PROPOSAL_UNITS()`.
+    pub council_proposal_units: u64,
+}
+
 /// Everything read for one record, all at one block.
 #[derive(Clone, Debug)]
 pub struct Views {
@@ -282,6 +348,10 @@ pub struct Views {
     pub test_network: bool,
     /// `Launcher.isPair(runner)`.
     pub is_pair: bool,
+    /// `Launcher.runnerKindOf(runner)`: 0 a single account, 1 a Pair, 2 a Council.
+    pub runner_kind: u8,
+    /// `Launcher.councilBound()`: whether the deployment's Council switch is on.
+    pub council_bound: bool,
     /// `Pair.first()` and `Pair.second()` when the runner is a Pair.
     pub signers: Option<[String; 2]>,
     /// The unfinished grants, by id.
@@ -298,6 +368,11 @@ pub struct Views {
     pub pause: Option<Result<PauseViews, String>>,
     /// The earlier backers' claim contract, when this project is the one it names: as above.
     pub earlier: Option<Result<EarlierViews, String>>,
+    /// The project's Council, when the runner is one: what it said, or why it could not be read (the key is then
+    /// `null` in the record and the reason is logged; nothing else depends on it).
+    pub council: Option<Result<CouncilViews, String>>,
+    /// The project's vote contract, when the deployment's Council switch is on and its pause is one: as above.
+    pub vote: Option<Result<VoteViews, String>>,
 }
 
 impl Views {
@@ -595,6 +670,18 @@ pub async fn read(
         "isPair(address)",
         &[address_word(&runner)],
     );
+    let runner_kind = plan.add(
+        "Launcher.runnerKindOf(runner)".into(),
+        launcher,
+        "runnerKindOf(address)",
+        &[address_word(&runner)],
+    );
+    let council_bound = plan.add(
+        "Launcher.councilBound()".into(),
+        launcher,
+        "councilBound()",
+        &[],
+    );
 
     // The task book: asked of the Treasury (its own address of the book) and of
     // the book itself. A project with no `TasksReady` row has no book to ask.
@@ -726,6 +813,12 @@ pub async fn read(
     quoted.expect_words(4)?;
     let runner_view = single(runner_at)?.address(0)?;
     let is_pair_view = single(is_pair)?.flag(0)?;
+    let runner_kind_view =
+        u8::try_from(single(runner_kind)?.uint(0)?).context("the runner's kind is past 255")?;
+    if runner_kind_view > 2 {
+        bail!("the Launcher says the runner's kind is {runner_kind_view}, not 0, 1 or 2");
+    }
+    let council_bound_view = single(council_bound)?.flag(0)?;
 
     let mut grants = Vec::new();
     for (id, grant_of, vested_of, claimable) in &grants_at {
@@ -930,6 +1023,35 @@ pub async fn read(
         ),
         _ => None,
     };
+    // The Council and the vote contract are read apart too: each key is `null` when its read fails, and the rest of
+    // the record is signed (COUNCIL-PLAN.md section 5.2).
+    let council = match (runner_kind_view, ledger.contracts.council.as_deref()) {
+        (2, Some(contract)) => Some(
+            read_council(source, contract, block)
+                .await
+                .map_err(|e| format!("{e:#}")),
+        ),
+        (2, None) => Some(Err(
+            "the runner is a Council but no CouncilMade named it".into()
+        )),
+        _ => None,
+    };
+    let vote = if council_bound_view {
+        match ledger.contracts.pause.as_deref() {
+            Some(gate) => match read_is_vote(source, gate, block).await {
+                // A plain `HolderPause` does not answer `isVote()`: it has no vote.
+                Ok(true) => Some(
+                    read_vote(source, gate, launcher, treasury, block)
+                        .await
+                        .map_err(|e| format!("{e:#}")),
+                ),
+                _ => None,
+            },
+            None => None,
+        }
+    } else {
+        None
+    };
 
     Ok(Views {
         block,
@@ -946,6 +1068,8 @@ pub async fn read(
         dollar_held: single(held)?.uint(0)?,
         test_network: single(test_network)?.flag(0)?,
         is_pair: is_pair_view,
+        runner_kind: runner_kind_view,
+        council_bound: council_bound_view,
         signers,
         grants,
         agents,
@@ -953,6 +1077,8 @@ pub async fn read(
         earlier_reserve,
         pause,
         earlier,
+        council,
+        vote,
     })
 }
 
@@ -1065,6 +1191,269 @@ async fn read_earlier(
         rows: at(4)?.uint(0)?,
         claimed_rows: at(5)?.uint(0)?,
         claimed_total: at(6)?.uint(0)?,
+    })
+}
+
+/// Whether `gate` is a vote contract: `HolderVote.isVote()`. A plain `HolderPause` has no such view, so a call that
+/// does not answer it means "not a vote" (the project's pause is a plain one); a node that cannot answer at all leaves
+/// the vote key `null` for this build, never a wrong one.
+async fn read_is_vote(source: &dyn ChainSource, gate: &str, block: u64) -> anyhow::Result<bool> {
+    let to = address_of(gate, "the holder pause")?;
+    let call = call(to, "isVote()", &[]);
+    let answers = source
+        .eth_call_batch(std::slice::from_ref(&call), block)
+        .await
+        .with_context(|| format!("read the pause's isVote() at block {block}"))?;
+    let [bytes] = answers.as_slice() else {
+        bail!("the node answered {} of 1 calls", answers.len());
+    };
+    let answer = Answer {
+        label: "HolderVote.isVote()",
+        bytes,
+    };
+    answer.expect_words(1)?;
+    answer.flag(0)
+}
+
+/// A project's Council's views: `seatList()`, `THRESHOLD()`, `generation()`, `nextElection()`, `upNext()` and
+/// `PROPOSAL_TTL()`, in one batch at `block`.
+async fn read_council(
+    source: &dyn ChainSource,
+    contract: &str,
+    block: u64,
+) -> anyhow::Result<CouncilViews> {
+    let to = address_of(contract, "the Council")?;
+    let mut plan = Plan {
+        calls: Vec::new(),
+        labels: Vec::new(),
+    };
+    let seats = plan.add("Council.seatList()".into(), to, "seatList()", &[]);
+    let needed = plan.add("Council.THRESHOLD()".into(), to, "THRESHOLD()", &[]);
+    let generation = plan.add("Council.generation()".into(), to, "generation()", &[]);
+    let next_election = plan.add("Council.nextElection()".into(), to, "nextElection()", &[]);
+    let up = plan.add("Council.upNext()".into(), to, "upNext()", &[]);
+    let proposal_ttl = plan.add("Council.PROPOSAL_TTL()".into(), to, "PROPOSAL_TTL()", &[]);
+    let answers = source
+        .eth_call_batch(&plan.calls, block)
+        .await
+        .with_context(|| format!("read the Council at block {block}"))?;
+    if answers.len() != plan.calls.len() {
+        bail!(
+            "the node answered {} of {} calls",
+            answers.len(),
+            plan.calls.len()
+        );
+    }
+    let at = |i: usize| Answer {
+        label: &plan.labels[i],
+        bytes: &answers[i],
+    };
+    let s = at(seats);
+    s.expect_words(10)?;
+    let mut seat_list: [Option<String>; 5] = std::array::from_fn(|_| None);
+    let mut seated_at = [0u64; 5];
+    for (i, seat) in seat_list.iter_mut().enumerate() {
+        *seat = Some(s.address(i)?);
+        seated_at[i] = u64::try_from(s.uint(5 + i)?).context("a seat's time is too large")?;
+    }
+    let zero = "0x0000000000000000000000000000000000000000";
+    for seat in seat_list.iter_mut() {
+        if seat.as_deref() == Some(zero) {
+            *seat = None;
+        }
+    }
+    let one = |i: usize| -> anyhow::Result<Answer<'_>> {
+        let a = at(i);
+        a.expect_words(1)?;
+        Ok(a)
+    };
+    let needed = u8::try_from(one(needed)?.uint(0)?).context("Council.THRESHOLD is too large")?;
+    if !(1..=5).contains(&needed) {
+        bail!("the Council says {needed} seats must agree, not 1 to 5");
+    }
+    let generation = u32::try_from(one(generation)?.uint(0)?).context("generation is too large")?;
+    let next_election =
+        u64::try_from(one(next_election)?.uint(0)?).context("Council.nextElection is too large")?;
+    let up = at(up);
+    up.expect_words(2)?;
+    let mut up_seats = [0u8; 2];
+    for (i, seat) in up_seats.iter_mut().enumerate() {
+        *seat = u8::try_from(up.uint(i)?).context("an up seat is too large")?;
+        if *seat > 4 {
+            bail!("Council.upNext names seat {seat}");
+        }
+    }
+    Ok(CouncilViews {
+        address: contract.to_owned(),
+        seats: seat_list,
+        seated_at,
+        needed,
+        generation,
+        next_election,
+        up_seats,
+        proposal_ttl: u64::try_from(one(proposal_ttl)?.uint(0)?)
+            .context("Council.PROPOSAL_TTL is too large")?,
+    })
+}
+
+/// The vote contract's rule numbers: its constants, the Treasury's longest notice and the Council's own constants,
+/// read at `block` (the Council's from the implementation the Launcher names, so they can be read before a project
+/// has a Council of its own).
+async fn read_vote(
+    source: &dyn ChainSource,
+    gate: &str,
+    launcher: [u8; 20],
+    treasury: [u8; 20],
+    block: u64,
+) -> anyhow::Result<VoteViews> {
+    let to = address_of(gate, "the vote contract")?;
+    let mut plan = Plan {
+        calls: Vec::new(),
+        labels: Vec::new(),
+    };
+    let mut pause_at = Vec::new();
+    for name in [
+        "STAND_DAYS",
+        "VOTE_DAYS",
+        "STAND_DIVISOR",
+        "OPEN_DIVISOR",
+        "MIN_VOTE",
+        "MAX_LISTS",
+        "MAX_PEOPLE",
+        "COOLDOWN_UNITS",
+        "LAPSE_UNITS",
+        "day",
+        "LINE_DIVISOR",
+        "nextReplaceAt",
+    ] {
+        let at = plan.add(
+            format!("HolderVote.{name}()"),
+            to,
+            &format!("{name}()"),
+            &[],
+        );
+        pause_at.push((name, at));
+    }
+    let notice = plan.add(
+        "Treasury.noticeFor(500)".into(),
+        treasury,
+        "noticeFor(uint16)",
+        &[uint_word(500)],
+    );
+    let state = plan.add("HolderPause.state()".into(), to, "state()", &[]);
+    let impl_at = plan.add(
+        "Launcher.councilImpl()".into(),
+        launcher,
+        "councilImpl()",
+        &[],
+    );
+    let answers = source
+        .eth_call_batch(&plan.calls, block)
+        .await
+        .with_context(|| format!("read the vote contract at block {block}"))?;
+    if answers.len() != plan.calls.len() {
+        bail!(
+            "the node answered {} of {} calls",
+            answers.len(),
+            plan.calls.len()
+        );
+    }
+    let at = |i: usize| Answer {
+        label: &plan.labels[i],
+        bytes: &answers[i],
+    };
+    let mut pause = BTreeMap::new();
+    for (name, i) in &pause_at {
+        let a = at(*i);
+        a.expect_words(1)?;
+        pause.insert(*name, a.uint(0)?);
+    }
+    let one = |name: &str| -> anyhow::Result<u128> {
+        pause
+            .get(name)
+            .copied()
+            .ok_or_else(|| anyhow!("the vote contract's {name} was not read"))
+    };
+    let notice = at(notice);
+    notice.expect_words(3)?;
+    let wait_secs = u64::try_from(notice.uint(0)?).context("the Treasury's notice is too large")?;
+    let state = at(state);
+    state.expect_words(6)?;
+    let parked_total = state.uint(0)?;
+    let backer_shares = state.uint(1)?;
+    let impl_address = at(impl_at);
+    impl_address.expect_words(1)?;
+    let impl_address = impl_address.address(0)?;
+    let zero = "0x0000000000000000000000000000000000000000";
+    let council_to = if impl_address == zero {
+        bail!("the Launcher has no Council implementation");
+    } else {
+        address_of(&impl_address, "the Council implementation")?
+    };
+    let mut second = Plan {
+        calls: Vec::new(),
+        labels: Vec::new(),
+    };
+    let mut impl_at = Vec::new();
+    for name in ["SEATS", "THRESHOLD", "ELECTION_UNITS", "PROPOSAL_UNITS"] {
+        let at = second.add(
+            format!("Council.{name}()"),
+            council_to,
+            &format!("{name}()"),
+            &[],
+        );
+        impl_at.push((name, at));
+    }
+    let got = source
+        .eth_call_batch(&second.calls, block)
+        .await
+        .with_context(|| format!("read the Council's constants at block {block}"))?;
+    if got.len() != second.calls.len() {
+        bail!(
+            "the node answered {} of {} calls",
+            got.len(),
+            second.calls.len()
+        );
+    }
+    let mut council = BTreeMap::new();
+    for (name, i) in &impl_at {
+        let a = Answer {
+            label: &second.labels[*i],
+            bytes: &got[*i],
+        };
+        a.expect_words(1)?;
+        council.insert(*name, a.uint(0)?);
+    }
+    let c = |name: &str| -> anyhow::Result<u128> {
+        council
+            .get(name)
+            .copied()
+            .ok_or_else(|| anyhow!("the Council's {name} was not read"))
+    };
+    Ok(VoteViews {
+        address: gate.to_owned(),
+        day: u64::try_from(one("day")?).context("day is too large")?,
+        line_divisor: one("LINE_DIVISOR")?,
+        stand_days: one("STAND_DAYS")?,
+        vote_days: one("VOTE_DAYS")?,
+        stand_divisor: one("STAND_DIVISOR")?,
+        open_divisor: one("OPEN_DIVISOR")?,
+        min_vote: one("MIN_VOTE")?,
+        max_lists: u8::try_from(one("MAX_LISTS")?).context("MAX_LISTS is too large")?,
+        max_people: u8::try_from(one("MAX_PEOPLE")?).context("MAX_PEOPLE is too large")?,
+        cooldown_units: one("COOLDOWN_UNITS")?,
+        lapse_units: one("LAPSE_UNITS")?,
+        wait_secs,
+        next_replace_at: u64::try_from(one("nextReplaceAt")?)
+            .context("nextReplaceAt is too large")?,
+        parked_total,
+        backer_shares,
+        council_seats: u8::try_from(c("SEATS")?).context("Council.SEATS is too large")?,
+        council_needed: u8::try_from(c("THRESHOLD")?).context("Council.THRESHOLD is too large")?,
+        council_election_units: u64::try_from(c("ELECTION_UNITS")?)
+            .context("Council.ELECTION_UNITS is too large")?,
+        council_proposal_units: u64::try_from(c("PROPOSAL_UNITS")?)
+            .context("Council.PROPOSAL_UNITS is too large")?,
     })
 }
 

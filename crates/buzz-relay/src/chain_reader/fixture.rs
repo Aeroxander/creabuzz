@@ -20,6 +20,9 @@ const RUN: &str = include_str!("testdata/pot-run.json");
 /// The second run: a deployment with the holder pause and the earlier backers' claim contract on
 /// (`scripts/chain-reader-fixture.py --pause`).
 const RUN_PAUSE: &str = include_str!("testdata/pot-run-pause.json");
+/// The third run: a deployment with the holder pause and the Council on (`scripts/chain-reader-fixture.py --council`):
+/// a project whose replace vote is carried out (a Council runner) and whose seat election is open.
+const RUN_COUNCIL: &str = include_str!("testdata/pot-run-council.json");
 
 /// A project's contracts in the run.
 #[derive(Clone, Debug)]
@@ -42,6 +45,8 @@ pub struct FxProject {
     pub pause: Option<[u8; 20]>,
     /// The deployment's earlier backers' claim contract, when this is the project it names.
     pub earlier: Option<[u8; 20]>,
+    /// The project's Council, once one was made.
+    pub council: Option<[u8; 20]>,
 }
 
 /// The run.
@@ -77,6 +82,11 @@ impl Fixture {
     /// Load the second run (both step 4 switches on).
     pub fn load_pause() -> Self {
         Self::from_text(RUN_PAUSE)
+    }
+
+    /// Load the third run (the holder pause and the Council on).
+    pub fn load_council() -> Self {
+        Self::from_text(RUN_COUNCIL)
     }
 
     fn from_text(text: &str) -> Self {
@@ -129,6 +139,7 @@ impl Fixture {
                         pair: p.get("pair").map(addr),
                         pause: p.get("pause").map(addr),
                         earlier: p.get("earlier").map(addr),
+                        council: p.get("council").map(addr),
                     },
                 )
             })
@@ -205,6 +216,9 @@ impl Fixture {
             if p.earlier == Some(*address) {
                 return Some((Role::Earlier, Some(name)));
             }
+            if p.council == Some(*address) {
+                return Some((Role::Council, Some(name)));
+            }
         }
         None
     }
@@ -276,13 +290,35 @@ impl Fixture {
 
 /// The events a deployment with both step 4 switches off never emits (the first run is one; the second has them all).
 pub fn only_with_the_switches_on(role: Role, name: &str) -> bool {
-    matches!(role, Role::Pause | Role::Earlier)
+    matches!(role, Role::Earlier)
         || matches!(
             (role, name),
-            (
-                Role::Launcher,
-                "EarlierBound" | "EarlierPoolFunded" | "HolderPauseBound"
-            ) | (Role::Treasury, "PauseReady")
+            (Role::Pause, "Observed" | "Parked" | "Unparked")
+                | (
+                    Role::Launcher,
+                    "EarlierBound" | "EarlierPoolFunded" | "HolderPauseBound"
+                )
+                | (Role::Treasury, "PauseReady")
+        )
+}
+
+/// The events a deployment with the Council switch off never emits (the first two runs are; the third has them all).
+pub fn only_with_the_council_switch_on(role: Role, name: &str) -> bool {
+    matches!(role, Role::Council)
+        || matches!(
+            (role, name),
+            (Role::Launcher, "CouncilBound" | "CouncilMade")
+                | (
+                    Role::Pause,
+                    "ProjectBound"
+                        | "BallotOpened"
+                        | "Stood"
+                        | "Voted"
+                        | "Fell"
+                        | "BallotFinished"
+                        | "BallotCarriedOut"
+                        | "BallotLapsed"
+                )
         )
 }
 

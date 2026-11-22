@@ -500,4 +500,146 @@ pub static EVENTS: &[EventDef] = &[
             p("claimedTotal", U256),
         ],
     },
+    // ── Pause (HolderVote)
+    EventDef {
+        role: Role::Pause,
+        name: "BallotCarriedOut",
+        params: &[ix("id", Ty::Uint("uint32")), p("council", Ty::Address)],
+    },
+    EventDef {
+        role: Role::Pause,
+        name: "BallotFinished",
+        params: &[
+            ix("id", Ty::Uint("uint32")),
+            p("outcome", Ty::Uint("uint8")),
+            p("winner", Ty::Uint("uint8")),
+            p("winnerB", Ty::Uint("uint8")),
+            p("castTotal", U256),
+        ],
+    },
+    EventDef {
+        role: Role::Pause,
+        name: "BallotLapsed",
+        params: &[ix("id", Ty::Uint("uint32"))],
+    },
+    EventDef {
+        role: Role::Pause,
+        name: "BallotOpened",
+        params: &[
+            ix("id", Ty::Uint("uint32")),
+            p("kind", Ty::Uint("uint8")),
+            p("openedAt", U64),
+            p("standEnd", U64),
+            p("voteEnd", U64),
+            p("effectiveAt", U64),
+            p("supply", U256),
+            p("floor", U256),
+            p("upA", Ty::Uint("uint8")),
+            p("upB", Ty::Uint("uint8")),
+            p("by", Ty::Address),
+        ],
+    },
+    EventDef {
+        role: Role::Pause,
+        name: "Fell",
+        params: &[
+            ix("id", Ty::Uint("uint32")),
+            ix("who", Ty::Address),
+            p("option", Ty::Uint("uint8")),
+            p("weight", U256),
+            p("optionTally", U256),
+            p("castTotal", U256),
+        ],
+    },
+    EventDef {
+        role: Role::Pause,
+        name: "ProjectBound",
+        params: &[
+            ix("treasury", Ty::Address),
+            ix("key", Ty::Bytes32),
+            ix("launcher", Ty::Address),
+        ],
+    },
+    EventDef {
+        role: Role::Pause,
+        name: "Stood",
+        params: &[
+            ix("id", Ty::Uint("uint32")),
+            p("option", Ty::Uint("uint8")),
+            ix("by", Ty::Address),
+            p("members", Ty::Array(&Ty::Address, 5)),
+            p("count", Ty::Uint("uint8")),
+            p("recordHash", Ty::Bytes32),
+            p("displaced", Ty::Address),
+        ],
+    },
+    EventDef {
+        role: Role::Pause,
+        name: "Voted",
+        params: &[
+            ix("id", Ty::Uint("uint32")),
+            ix("who", Ty::Address),
+            p("option", Ty::Uint("uint8")),
+            p("weight", U256),
+            p("optionTally", U256),
+            p("castTotal", U256),
+            p("fromOption", Ty::Uint("uint8")),
+            p("fromTally", U256),
+        ],
+    },
+    // ── Council (Council)
+    EventDef {
+        role: Role::Council,
+        name: "Agreed",
+        params: &[
+            ix("id", Ty::Bytes32),
+            ix("by", Ty::Address),
+            p("count", Ty::Uint("uint8")),
+        ],
+    },
+    EventDef {
+        role: Role::Council,
+        name: "Cancelled",
+        params: &[ix("id", Ty::Bytes32)],
+    },
+    EventDef {
+        role: Role::Council,
+        name: "Executed",
+        params: &[ix("id", Ty::Bytes32), ix("by", Ty::Address)],
+    },
+    EventDef {
+        role: Role::Council,
+        name: "Proposed",
+        params: &[
+            ix("id", Ty::Bytes32),
+            ix("by", Ty::Address),
+            p("target", Ty::Address),
+            p("data", Ty::Bytes),
+            p("nonce", U256),
+        ],
+    },
+    EventDef {
+        role: Role::Council,
+        name: "Resigned",
+        params: &[p("seat", Ty::Uint("uint8")), ix("who", Ty::Address)],
+    },
+    EventDef {
+        role: Role::Council,
+        name: "SeatsSet",
+        params: &[
+            p("seats", Ty::Array(&Ty::Address, 5)),
+            p("seatedAt", Ty::Array(&U64, 5)),
+            p("generation", Ty::Uint("uint32")),
+            p("nextElection", U64),
+        ],
+    },
+    EventDef {
+        role: Role::Council,
+        name: "Withdrawn",
+        params: &[
+            ix("id", Ty::Bytes32),
+            ix("by", Ty::Address),
+            p("count", Ty::Uint("uint8")),
+        ],
+    },
 ];

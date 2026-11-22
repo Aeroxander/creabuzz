@@ -68,7 +68,9 @@ fn same_param(recorded: &serde_json::Value, ours: &Param) {
 #[test]
 fn the_table_is_the_forge_build() {
     let recorded: serde_json::Value = serde_json::from_str(RECORDED).expect("recorded events");
-    let mut count = 0;
+    // One role can have two contracts: `HolderVote` is a `HolderPause`, so its ABI carries the pause's events too. The
+    // table is by (role, event) and keeps one copy; the recorded file keeps each contract's own ABI.
+    let mut checked: std::collections::HashSet<(Role, String)> = std::collections::HashSet::new();
     for (contract, entry) in recorded["contracts"].as_object().expect("contracts") {
         for role_name in entry["roles"].as_array().expect("roles") {
             let role = role_of(role_name.as_str().expect("role"));
@@ -93,23 +95,28 @@ fn the_table_is_the_forge_build() {
                 for (input, ours) in inputs.iter().zip(found.params.iter()) {
                     same_param(input, ours);
                 }
-                count += 1;
-            }
-            let names: Vec<&str> = events
-                .iter()
-                .map(|e| e["name"].as_str().expect("name"))
-                .collect();
-            for ours in EVENTS.iter().filter(|e| e.role == role) {
-                assert!(
-                    names.contains(&ours.name),
-                    "{contract}.{} is in the table but not in the build",
-                    ours.name
-                );
+                checked.insert((role, name.to_owned()));
             }
         }
     }
-    assert_eq!(count, EVENTS.len(), "every table entry was checked once");
-    assert_eq!(count, 51, "the build names 51 (role, event) pairs");
+    for ours in EVENTS {
+        assert!(
+            checked.contains(&(ours.role, ours.name.to_owned())),
+            "{:?}.{} is in the table but not in the build",
+            ours.role,
+            ours.name
+        );
+    }
+    assert_eq!(
+        checked.len(),
+        EVENTS.len(),
+        "every (role, event) pair of the build is in the table, once"
+    );
+    assert_eq!(
+        checked.len(),
+        68,
+        "the build names 68 (role, event) pairs (53 before the Council round: 8 HolderVote and 7 Council)"
+    );
 }
 
 /// A few topics pinned from forge's own output (`forge inspect <contract>

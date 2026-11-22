@@ -26,6 +26,9 @@ export const CONTRACTS = [
   { name: "PlayDollar", constant: "PLAY_DOLLAR_ABI" },
   { name: "HolderPause", constant: "HOLDER_PAUSE_ABI" },
   { name: "EarlierGrants", constant: "EARLIER_GRANTS_ABI" },
+  // The Council round: the vote contract (the pause with ballots) and a project's Council.
+  { name: "HolderVote", constant: "HOLDER_VOTE_ABI" },
+  { name: "Council", constant: "COUNCIL_ABI" },
 ];
 
 export const GENERATED_FILE = resolve(

@@ -320,6 +320,47 @@ Team Shares). Open it on the phone with the wallet on account 3.
 is are a provisional neutral placeholder in `app/src/features/earlier-grant/earlier-grant-consent.ts`); any real list. **Walked at
 360 x 640** by the loop's journey (`scripts/pot-full-loop.sh pot-earlier.spec`).
 
+### 4.10 The Council, a seat election and a replace vote (a world made for it)
+
+**Off by default.** The Council shows on a project only when the deployment was made with `COUNCIL=1` (which also needs
+`HOLDER_PAUSE=1`) and the project's runner has handed its seat to a Council, or holders have voted one in. With it off, and on every
+project with no Council and no open vote, nothing new shows anywhere.
+
+1. **Start the world with the switch on and a short day.** In `scripts/` (or the loop's own command), run the local chain and the
+   server with `COUNCIL=1 HOLDER_PAUSE=1 UNIT=1680` as the deploy settings, then `HOLDER_PAUSE=1 COUNCIL=1` for the app's build as the
+   loop does. A day is four minutes, so a vote's names are open for four minutes, voting runs for twelve, and a won result waits
+   sixty-six: a whole vote fits in about eighty-two minutes. (A real network uses the seven-day unit; the same code, same words.)
+2. **Launch a project and park Shares.** As the founder, launch, then join from a second account and press **Park Shares** for part
+   of them. The pause card appears as in 4.8.
+3. **Hand the seat to a Council.** As the present runner open the seat section and choose **Hand over to a Council**; enter five
+   accounts ("Seat 1" to "Seat 5"; the runner may be one). **Working:** "Once they take the seat, any three of the five must agree to
+   what you could do alone. Your Team Shares are not changed. This takes two steps: you offer the seat, then anyone can make the
+   Council." Press **Offer the seat**, sign, then **Make the Council** (anyone may press it while the offer lives). The Team/Money
+   tab now shows **The Council**: five seats with names and short addresses, "3 of them must agree to every action", and when two
+   seats next come up.
+4. **A three-of-five action.** As one seat, press one of the existing presses (for this round only **Hand over the seat** is wired as a
+   proposal for a seat; the other runner presses are not): the card says it asks the other seats, "{k} of 3 have agreed", and the other
+   seats see **Agree**. Two agreements are not enough; the third runs it and says so. "Take back my agreement" works before that.
+5. **A seat election.** When two seats are due (twelve hours at the short unit), anyone may open the election (the server's helper
+   does). The card **Two seats on the Council are up** shows, with **Stand for a seat** for a parked holder, "Keep the two seats as
+   they are" as a row, and the count line. Vote, then wait the sixty-six minutes: "The vote ended. {account} and {account} take their
+   seats on {date}. You can take your money out before then." The seats change after the wait; nobody presses anything to put the
+   result in.
+6. **A replace vote.** With enough Shares parked (a twentieth of the backers' Shares) a parked holder sees one line in the pause card,
+   "Enough Shares are parked to ask holders who should run this project.", and **Ask holders**. Write the short text (280 characters;
+   "Do not promise anyone a profit or a return."), add five accounts, press **Open the vote**: it signs, then sends. The card **A vote on
+   who runs this project** shows, the alert arrives for holders, and after the four-minute name window and twelve minutes of voting the
+   card shows the planned change from the frozen tallies **the moment the vote ends**, whether or not anyone recorded it: "Holders
+   voted to change who runs this project. On {date and time} {five accounts} take over from {the founder}. You can take your money out
+   before then. Taking out stays open." Take out during the wait to see that it is never slowed. After the wait, the new Council is in
+   the Team/Money tab.
+7. **The switch off.** A world deployed without `COUNCIL=1` shows none of this on any project, including one whose numbers have the
+   milestone-9 keys absent: no card, no section, no sheet, no press, no alert.
+
+**Not tried by anyone:** the whole of this part on a real phone; the Council world in `scripts/pot-full-loop.sh` and the phone loop are
+**not built this round** (the plan's A1 lists them; they are open work), so the checks here are the app's own tests and the Playwright
+`pot-council.spec.ts` (7 tests at 390 x 840 and 360 x 640 with axe), plus the contracts' own suites.
+
 ## 5. What cannot be tried without an `https` address
 
 A passkey, alerts when the app is closed, and the Copy and Share presses need a real certificate (the address of a test deployment:

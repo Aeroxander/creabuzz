@@ -3,6 +3,7 @@
 
     python3 -I scripts/chain-reader-example-check.py [record.json]
     python3 -I scripts/chain-reader-example-check.py --pause [record.json]   # the second example (the holder pause and the earlier grants on)
+    python3 -I scripts/chain-reader-example-check.py --council [record.json] # the third example (the holder pause and the Council on)
 
 It plays the same run the chain reader's fixture is made from (scripts/chain-reader-fixture.py, on a fresh anvil: the chain's clock is
 fixed, so the same run gives the same blocks and addresses), keeps the chain, and then asks the contracts again, with `cast call --block`,
@@ -38,9 +39,14 @@ social = importlib.util.module_from_spec(_social_spec)
 _social_spec.loader.exec_module(social)
 
 PAUSE_RUN = "--pause" in sys.argv[1:]
-_args = [a for a in sys.argv[1:] if a != "--pause"]
+COUNCIL_RUN = "--council" in sys.argv[1:]
+_args = [a for a in sys.argv[1:] if a not in ("--pause", "--council")]
 EXAMPLE = _args[0] if _args else os.path.join(
-    fx.REPO, "docs", "next-version", "record-v2-example-pause.json" if PAUSE_RUN else "record-v2-example.json"
+    fx.REPO,
+    "docs",
+    "next-version",
+    "record-v2-example-council.json" if COUNCIL_RUN
+    else ("record-v2-example-pause.json" if PAUSE_RUN else "record-v2-example.json"),
 )
 STATES = {"announced": 1, "taken": 2, "paid": 3, "rejected": 4, "returned": 5, "cancelled": 6, "lapsed": 7}
 ZERO = "0x" + "00" * 20
@@ -95,7 +101,10 @@ def main():
             except Exception:
                 time.sleep(0.2)
         fx.rpc("anvil_setBlockTimestampInterval", 1)
-        if PAUSE_RUN:
+        if COUNCIL_RUN:
+            played = fx.play_council(tmp)
+            check_council(example, block, now, played)
+        elif PAUSE_RUN:
             played = fx.play_pause(tmp)
             check_pause(example, block, now, played)
         else:
@@ -300,6 +309,123 @@ def check_pause(r, block, now, played):
     same("the holdings add up to the supply less what was sent to the pause by a plain transfer",
          sum(int(h["shares"]) for h in r["holders"]), num(block, sh, "totalSupply()(uint256)") - donated)
     same("no list was cut", r["truncated"], False)
+
+
+def check_council(r, block, now, played):
+    """The third example against the contracts: the Council runner, every number of the vote rule, the open ballot's
+    fields and its derived result, and no voter row."""
+    c = played["projects"]["C"]
+    t, sh, tm, v, pause = c["treasury"], c["shares"], c["team"], c["vester"], c["pause"]
+    council = c["council"]
+    same("the example block", block, played["books"]["C_waiting"]["block"])
+    same("asOf.time", now, int(fx.rpc("eth_getBlockByNumber", hex(block), False)["timestamp"], 16))
+    same("project key", r["key"], c["key"])
+    for name in ("treasury", "shares", "team", "vester"):
+        same(f"contracts.{name}", r["contracts"][name], c[name])
+    same("contracts.pause is the Treasury's pauseGate()", r["contracts"]["pause"], pause)
+    # The runner.
+    same("runner.address is the Treasury's runner()", r["runner"]["address"], lower(cast(block, t, "runner()(address)")[0]))
+    same("runner.kind is council", r["runner"]["kind"], "council")
+    same("runner.isPair is false", r["runner"]["isPair"], False)
+    same("runner.signers is null", r["runner"]["signers"], None)
+    seats = [lower(cast(block, council, "seatOf(uint8)(address,uint64,uint64)", i)[0]) for i in range(5)]
+    same("council.contract is the Treasury's runner()", r["council"]["contract"], council)
+    same("runner.seats is the live seats", r["runner"]["seats"], sum(1 for a in seats if a != ZERO))
+    for i, seat in enumerate(r["council"]["seats"]):
+        same(f"council.seats[{i}].account", seat["account"], None if seats[i] == ZERO else seats[i])
+        same(f"council.seats[{i}].seatedAt", seat["seatedAt"],
+             None if seats[i] == ZERO else int(cast(block, council, "seatOf(uint8)(address,uint64,uint64)", i)[1]))
+    same("council.needed", r["council"]["needed"], num(block, council, "THRESHOLD()(uint8)"))
+    same("council.generation", r["council"]["generation"], num(block, council, "generation()(uint32)"))
+    same("council.nextElection", r["council"]["nextElection"], num(block, council, "nextElection()(uint64)"))
+    same("council.upSeats", r["council"]["upSeats"], [int(x) for x in cast(block, council, "upNext()(uint8,uint8)")])
+    same("council.waiting.count (no proposal was made)", r["council"]["waiting"]["count"], 0)
+    same("council.waiting.kinds", r["council"]["waiting"]["kinds"], [])
+    # The rule: every number from the contract's constants and views.
+    rule, vote = r["vote"]["rule"], r["vote"]
+    unit = r["unit"]
+    day = num(block, pause, "day()(uint32)")
+    same("vote.contract is the pause", vote["contract"], pause)
+    same("vote.rule.standSecs is STAND_DAYS days", rule["standSecs"], num(block, pause, "STAND_DAYS()(uint256)") * day)
+    same("vote.rule.voteSecs is VOTE_DAYS days", rule["voteSecs"], num(block, pause, "VOTE_DAYS()(uint256)") * day)
+    same("vote.rule.waitSecs is the Treasury's noticeFor(500)", rule["waitSecs"], num(block, t, "noticeFor(uint16)(uint256,uint256,uint256)", 500))
+    same("vote.rule.floorDivisor is LINE_DIVISOR", rule["floorDivisor"], num(block, pause, "LINE_DIVISOR()(uint256)"))
+    same("vote.rule.openDivisor is OPEN_DIVISOR", rule["openDivisor"], num(block, pause, "OPEN_DIVISOR()(uint256)"))
+    same("vote.rule.standDivisor is STAND_DIVISOR", rule["standDivisor"], num(block, pause, "STAND_DIVISOR()(uint256)"))
+    same("vote.rule.cooldownSecs is COOLDOWN_UNITS units", rule["cooldownSecs"], num(block, pause, "COOLDOWN_UNITS()(uint256)") * unit)
+    same("vote.rule.seatsEverySecs is ELECTION_UNITS units", rule["seatsEverySecs"], num(block, council, "ELECTION_UNITS()(uint256)") * unit)
+    same("vote.rule.proposalTtlSecs is PROPOSAL_UNITS units", rule["proposalTtlSecs"], num(block, council, "PROPOSAL_UNITS()(uint256)") * unit)
+    same("vote.rule.needed is the Council's THRESHOLD", rule["needed"], num(block, council, "THRESHOLD()(uint8)"))
+    same("vote.rule.seats is the Council's SEATS", rule["seats"], num(block, council, "SEATS()(uint8)"))
+    same("vote.rule.maxLists", rule["maxLists"], num(block, pause, "MAX_LISTS()(uint8)"))
+    same("vote.rule.maxPeople", rule["maxPeople"], num(block, pause, "MAX_PEOPLE()(uint8)"))
+    same("vote.rule.minVote", int(rule["minVote"]), num(block, pause, "MIN_VOTE()(uint256)"))
+    # The next ballots.
+    same("vote.next.replaceFrom", vote["next"]["replaceFrom"],
+         max(num(block, pause, "nextReplaceAt()(uint64)"), now))
+    same("vote.next.seatsAt is the Council's nextElection", vote["next"]["seatsAt"], num(block, council, "nextElection()(uint64)"))
+    supply_now = num(block, sh, "totalSupply()(uint256)")
+    same("vote.next.openFloor is a twentieth of the Shares, rounded up", int(vote["next"]["openFloor"]),
+         -(-supply_now // num(block, pause, "OPEN_DIVISOR()(uint256)")))
+    # The open ballot: fields from `ballot(id)`, tallies from `optionOf`, the result derived here.
+    o = vote["open"]
+    ballot_id = num(block, pause, "current()(uint32)")
+    same("vote.open.id is the current ballot", o["id"], ballot_id)
+    w = [int(x, 16) for x in fx.words(fx.eth_call(pause, "ballot(uint32)", ballot_id, block=str(block)))]
+    names = ["kind", "outcome", "finished", "carried", "lapsed", "upA", "upB", "winner", "winnerB", "optionCount",
+             "openedAt", "standEnd", "voteEnd", "effectiveAt", "supply", "floor", "council"]
+    b = dict(zip(names, w))
+    same("vote.open.kind", o["kind"], "seats" if b["kind"] == 2 else "replace")
+    for field in ("openedAt", "standEnd", "voteEnd", "effectiveAt"):
+        same(f"vote.open.{field}", o[field], b[field])
+    same("vote.open.supply", int(o["supply"]), b["supply"])
+    same("vote.open.floor", int(o["floor"]), b["floor"])
+    same("vote.open.cast", int(o["cast"]), num(block, pause, "castOf(uint32)(uint256)", ballot_id))
+    same("vote.open.carriedOutAt", o["carriedOutAt"], None)
+    tally = []
+    for i in range(b["optionCount"]):
+        option_words = fx.words(fx.eth_call(pause, "optionOf(uint32,uint8)", ballot_id, i, block=str(block)))
+        tally.append(int(option_words[8], 16))
+        same(f"option {i} tally", int(o["options"][i]["tally"]), tally[-1])
+    same("the tallies add up to the cast", sum(tally), int(o["cast"]))
+    # The result, derived exactly as section 2.6, independently of the server's code.
+    cast_total, floor, kind = int(o["cast"]), int(o["floor"]), b["kind"]
+    if cast_total < floor:
+        outcome, winners = "short", []
+    elif kind == 1:
+        win = [i for i in range(1, len(tally)) if tally[i] * 2 > cast_total]
+        outcome, winners = ("moved", [win[0]]) if win else ("kept", [])
+    else:
+        keep_tally = tally[0]
+        ranked = sorted(((tally[i], i) for i in range(1, len(tally))
+                         if tally[i] >= int(rule["minVote"]) and tally[i] > keep_tally), reverse=True)
+        if not ranked:
+            outcome, winners = "unchanged", []
+        elif len(ranked) > 1 and ranked[1][0] < ranked[0][0]:
+            outcome, winners = "seated", [ranked[0][1], ranked[1][1]]
+        else:
+            outcome, winners = "seated", [ranked[0][1]]
+    same("the example has a result to read", o["result"] is not None, True)
+    if o["result"] is not None:
+        same("vote.open.result.outcome is the frozen tallies' result", o["result"]["outcome"], outcome)
+        same("vote.open.result.winners is the frozen tallies' result", o["result"]["winners"], winners)
+        same("vote.open.result.recorded (nobody pressed finish on this ballot)", o["result"]["recorded"], False)
+    same("the example is after voteEnd, in phase waiting", o["phase"], "waiting")
+    # No voter row: no voter's address in the vote block, and no per-voter amount.
+    voters = [played["accounts"][f"account{i}"] for i in (0, 1, 2, 3, 5, 9)]
+    allowed = {pause, t} | set(seats)
+    for option in o["options"]:
+        allowed |= set(option["members"])
+        if option["proposer"]:
+            allowed.add(option["proposer"])
+    text = json.dumps(vote)
+    same("no voter address in the vote block", [a for a in voters if a in text and a not in allowed], [])
+    # The winner unparked after the vote ended: the tallies stayed above what is parked now, and the record still shows
+    # the planned change (COUNCIL-PLAN.md section 5.2).
+    same("the cast is more than what is parked now",
+         int(o["cast"]) > num(block, pause, "parkedTotal()(uint256)"), True)
+    # Established: a Council of five counts as more than one account.
+    same("established.twoSigners holds for a Council of five", r["established"]["twoSigners"], True)
 
 
 def check_social(r, block, now, played):

@@ -597,3 +597,91 @@ async fn the_allow_list_has_the_treasuries_and_the_pauses_of_the_reader_and_no_o
         &allowed.pauses
     ));
 }
+
+/// The Council round (COUNCIL-PLAN.md section 5.6): the Council the reader follows (`role` `council`, migration 0077) and
+/// the vote contract (the project's pause) are both on the allow-list, so a passkey account's presses on them are ordinary
+/// sponsored operations -- on the list by address, never exits -- and the exit rule is still `[unpark, leave]` with the
+/// vote contract standing in for the pause. Remove the role from the list (or the migration's role) and the Council's
+/// presses are refused here.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_allow_list_has_the_councils_and_the_vote_contract_of_the_reader() {
+    let state = crate::test_support::test_state().await;
+    let pool = state.db.pool();
+    let reader = format!("sponsor-council-{}", uuid::Uuid::new_v4().simple());
+    let treasury = [0x11u8; 20];
+    let vote = [0x22u8; 20];
+    let council = [0x55u8; 20];
+    for (address, role) in [
+        (treasury, "treasury"),
+        (vote, "pause"),
+        (council, "council"),
+    ] {
+        sqlx::query(
+            "INSERT INTO chain_contracts (reader, address, role, project_key, from_block) VALUES ($1, $2, $3, NULL, 0)",
+        )
+        .bind(&reader)
+        .bind(address.as_slice())
+        .bind(role)
+        .execute(pool)
+        .await
+        .expect("a contract row");
+    }
+    let allowed = super::read_allowed(pool, &reader, &[0x99u8; 20])
+        .await
+        .expect("the allow-list reads");
+    assert!(
+        allowed.targets.contains(&council),
+        "the Council is followed"
+    );
+    assert_eq!(allowed.pauses, vec![vote], "the vote contract is the pause");
+    // Every Council round press is an ordinary operation the sponsor lets through.
+    for (to, signature) in [
+        (vote, "stand(bytes32)"),
+        (vote, "standList(address[5],bytes32)"),
+        (vote, "openReplace(address[5],bytes32)"),
+        (vote, "castVote(uint8)"),
+        (council, "propose(address,bytes)"),
+        (council, "agree(bytes32)"),
+        (council, "withdraw(bytes32)"),
+    ] {
+        let parsed = super::classify(
+            &body(&new_sender(), &[call(to, signature)]),
+            31337,
+            &allowed,
+        )
+        .unwrap_or_else(|_| panic!("{signature} is a followed contract's press"));
+        assert!(!parsed.exit, "{signature} is not an exit");
+    }
+    // The exit rule is unchanged: `[unpark, leave]` is an exit against this vote contract and Treasury.
+    let unpark = Call {
+        to: vote,
+        value: [0u8; 32],
+        data: {
+            let mut data = calldata::selector(calldata::UNPARK_SIGNATURE).to_vec();
+            data.extend_from_slice(&[0u8; 32]);
+            data
+        },
+    };
+    let leave = Call {
+        to: treasury,
+        value: [0u8; 32],
+        data: calldata::selector(calldata::LEAVE_SIGNATURE).to_vec(),
+    };
+    assert!(
+        super::classify(
+            &body(&new_sender(), &[unpark.clone(), leave]),
+            31337,
+            &allowed
+        )
+        .expect("passes")
+        .exit,
+        "a take out of parked Shares stays an exit with a ballot live"
+    );
+    assert!(
+        !super::classify(&body(&new_sender(), &[unpark]), 31337, &allowed)
+            .expect("passes")
+            .exit,
+        "an unpark alone counts like any other operation"
+    );
+}

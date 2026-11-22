@@ -813,10 +813,12 @@ cut is stated by the `null`, never hidden, and what is lost is a ranking row or 
 | `rule.minAccounts` | 10 |
 | `heldBps` | `held.badge.bps`; `null` when `held.badge` is |
 | `accounts` | `held.countedAccounts`; `null` when `held` is |
-| `twoSigners` | the runner is a Pair with two different non-zero signers |
+| `twoSigners` | the project is run by more than one account: a Pair with two different non-zero signers, or a Council with at least three distinct non-zero live seats (`runner.kind == "council"` and `runner.seats >= 3`) |
 | `reached` | `heldBps >= rule.minHeldBps and accounts >= rule.minAccounts and twoSigners`; `null` when `heldBps` is |
 
 The thresholds are server constants (the contracts have no number for them) and ship in the record, so an app reads and does not copy them.
+`twoSigners` keeps its name and now means "run by more than one account": a project that hands its seat to a Council must not lose, or never reach,
+Established, so a Council of five with at least three live seats counts (`docs/next-version/COUNCIL-PLAN.md` section 5.8).
 
 The badge is the design's own rule and it can be made with money (design 2.6): the money check is over the badge window, the head count is of accounts
 that hold **now** the smallest Back. Nine accounts that backed yesterday with the smallest Back each, beside one old holder, make the head count; what
@@ -1081,3 +1083,88 @@ deployment with both switches on) at the block where the pause is on and one row
 (`record-v2-example.json`) is the deployment with both switches off and differs from the previous one only by the added keys, all
 `null`. Both are written by the Rust test `the_example_is_what_the_server_writes` and `the_second_example_is_what_the_server_writes`
 (`UPDATE_EXAMPLE=1`), and checked field by field against the contracts by `scripts/chain-reader-example-check.py`.
+
+## 14. Step 5 additions: the Council runner and the vote (`runner.kind`, `runner.seats`, `council`, `vote`)
+
+Step 5 (`docs/next-version/COUNCIL-PLAN.md`) adds a runner that is five seats with three needed (`Council`), and a holder vote that lives in
+the holder pause (`HolderVote is HolderPause`, the project's `pauseGate` when the deployment's Council switch is on). The record stays version 2
+(section 1: adding a field never changes the version). The keys below are **always present**, `null` when the project has none, and a key that
+could not be worked out (a view that failed, a number that disagreed with the events or with the rule's arithmetic) is signed `null` with one
+error line in the server's log naming the project and the key; the rest of the record is signed. Nothing below is per voter: there is **no
+address of a voter and no per-voter amount, ever**.
+
+### 14.1 `runner.kind` and `runner.seats`
+
+| Field | Type | Meaning | From | When absent the app shows |
+|---|---|---|---|---|
+| `runner.kind` | string `"single"`, `"pair"` or `"council"` | the kind of the runner | `Launcher.runnerKindOf(runner)` at `asOf.block` | reads `runner.isPair` as before (a record signed before this key) |
+| `runner.seats` | int or null | for a Council, the number of distinct non-zero live seats (the Established rule's input) | view `seatList()`, counted | no Council figure |
+
+`runner.isPair` and `runner.signers` are unchanged (true and set only for a Pair).
+
+### 14.2 `council` (null unless the runner is a Council)
+
+| Field | Type | Meaning | From | Bound | When absent the app shows |
+|---|---|---|---|---|---|
+| `council.contract` | address | the Council | `CouncilMade` | | no Council section |
+| `council.seats` | array of 5 of `{account: address or null, seatedAt: int or null}` | the five seats in order; null for an open seat | view `seatList()` | exactly 5 | "The Council could not be read right now" in the Team section, no press |
+| `council.needed` | int | how many seats must agree | view `THRESHOLD()` | 1 to 5 | |
+| `council.generation` | int | goes up when any seat changes | view `generation()` | | |
+| `council.nextElection` | int | when two seats next come up | view `nextElection()` | | the line about the next vote is left out |
+| `council.upSeats` | `[int, int]` | which two seats come up | view `upNext()` | each 0 to 4 | |
+| `council.waiting.count` | int | proposals still open (not run, not taken back to nothing, not expired, this generation) | events at `asOf.time` | at most 200; `truncated` true above | nothing about waiting actions |
+| `council.waiting.kinds` | array of `{kind: string, count: int}` | the same, by kind: `draw`, `checkIn`, `rate`, `door`, `plan`, `accept`, `reject`, `cancel`, `grant`, `helper`, `handOver`, `windDown`, `other` | the selector of each proposal's call | at most 13 | |
+| `council.waiting.truncated` | bool | true when more proposals wait than the cap counts | the cap | | |
+
+Accounts are shown as the network already shows them (an address, and the name the account has linked). **Never the waiting calls' bytes or
+amounts** (the app reads those from the Council's own `Proposed` logs for a seat holder, as it does for a Pair).
+
+### 14.3 `vote` (null when the project has no `HolderVote`; otherwise an object)
+
+| Field | Type | Meaning | From | Bound | When absent the app shows |
+|---|---|---|---|---|---|
+| `vote.contract` | address | the vote contract (the pause's address) | `PauseReady` | equals `contracts.pause` | |
+| `vote.rule` | object | **every number a sentence needs**: `standSecs`, `voteSecs`, `waitSecs`, `floorDivisor`, `openDivisor`, `standDivisor`, `cooldownSecs`, `seatsEverySecs`, `proposalTtlSecs`, `needed`, `seats`, `maxLists`, `maxPeople`, `minVote` | the contract's constants and views at `asOf.block` | `waitSecs` equals the Treasury's `noticeFor(500)` read at the same block; `standSecs` and `voteSecs` are the pause's day times 1 and 3 | no sentence that needs a number is shown |
+| `vote.open` | object or null | the newest ballot that is not yet carried out, lapsed or finished without effect more than 3 days ago | views at `asOf.block` | | nothing about a vote |
+| `vote.open.id` | int | | `BallotOpened` | | |
+| `vote.open.kind` | `"seats"` or `"replace"` | | event | | |
+| `vote.open.phase` | `"standing"`, `"voting"`, `"counting"`, `"waiting"`, `"carried-out"`, `"ended"`, `"lapsed"` | from the four times and the flags at `asOf.time`; `ended` = short, kept or unchanged; `waiting` starts at `voteEnd` whether or not anyone has recorded the result | arithmetic | `counting` is the wait's end reached with the result still due (it lapses two time units later) | |
+| `vote.open.openedAt`, `standEnd`, `voteEnd`, `effectiveAt` | int | the four times | event | `openedAt < standEnd < voteEnd < effectiveAt` (checked) | |
+| `vote.open.supply` | amount (18 dec) | the backers' Shares at the snapshot | event | | |
+| `vote.open.floor` | amount | the Shares that must be cast | event, checked against `supply / floorDivisor` rounded up | at most `supply` | |
+| `vote.open.cast` | amount | the Shares cast so far | event `Voted`/`Fell` | **while `asOf.time < voteEnd`: at most `pause.parkedTotal`; from `voteEnd` on: at most `supply` only** (the tallies freeze, and winners may take their Shares out at once) | |
+| `vote.open.options` | array | `{index: int, kind: "keep" or "list" or "person", members: [address] (up to 5), proposer: address or null, recordHash: bytes32 or null, tally: amount}` | `Stood`, `Voted`, `Fell` | at most 13; the tallies add up to `cast` (always, before and after `voteEnd`) | the card shows no rows |
+| `vote.open.result` | object or null | `{outcome: "short"\|"kept"\|"moved"\|"seated"\|"unchanged", winners: [int] (up to 2), recorded: bool}` **derived by the reader from the frozen tallies and the floor from `voteEnd` on** (2.6); `recorded` is true once `BallotFinished` is seen, and when it is seen it must equal the derived result (else `vote` is null and one error is logged) | tallies, floor | | |
+| `vote.open.carriedOutAt` | int or null | | `BallotCarriedOut` | | |
+| `vote.next.seatsAt` | int or null | when two seats may be opened | `Council.nextElection` | | |
+| `vote.next.replaceFrom` | int or null | when a replace vote may next open (the cooldown's end; the present time when there is none) | view `nextReplaceAt()` | | |
+| `vote.next.openFloor` | amount | the parked Shares needed to open a replace vote now (1 in 20 of the supply) | the Shares over the view's `OPEN_DIVISOR` | | the opener's line is not shown |
+
+A text of a candidate or a list (`recordHash`) is joined in the app from the signed records (COUNCIL-PLAN.md section 5.4); the record carries
+only the hash. **No address of a voter, no per-voter amount, never a row per voter.**
+
+### 14.4 What the server checks before it signs these keys
+
+- The tallies add up to `cast`.
+- The times are in order, and the windows are the rule's (`standEnd = openedAt + standSecs`, `voteEnd = standEnd + voteSecs`,
+  `effectiveAt = voteEnd + waitSecs`).
+- `cast <= pause.parkedTotal` **only while `asOf.time < voteEnd`**, and `cast <= supply` always.
+- `effectiveAt - voteEnd` equals the Treasury's longest notice read at the same block (`noticeFor(500)`).
+- `floor` equals `ceil(supply / floorDivisor)`.
+- The derived result equals a recorded `BallotFinished`; any failure signs `vote: null` and logs one line naming the project and the key.
+
+A vote therefore **stays in the record through the whole wait even if every winner has taken their Shares out** (a named test: the whale
+unparks the second after `voteEnd`, the record still shows the planned change, and switching the `cast <= parkedTotal` limit to always makes it
+fail). The same applies to `council` (its views, the events' generation and next election, the waiting cap).
+
+How fresh: `refreshEverySecs` drops to the smaller of 600 and a quarter of `standSecs` while a ballot is live or a result waits
+(COUNCIL-PLAN.md section 5.3), so a vote opening shows within ten minutes on a real network.
+
+### 14.5 The third example
+
+`docs/next-version/record-v2-example-council.json` is the server's own output for the third real run (`testdata/pot-run-council.json`: the
+deployment with the holder pause and the Council switch on, played by `scripts/chain-reader-fixture.py --council`) at the block where a seat
+election's result waits: a Council runner, a ballot open, one carried out (the replace vote that made the Council), one moved vote, one moved
+after a voter's move, one where the winner unparked after the end, and a result the reader derived with nobody pressing `finish`. It is written
+by the Rust test `the_third_example_is_what_the_server_writes` (`UPDATE_EXAMPLE=1`) and checked field by field against the contracts by
+`python3 -I scripts/chain-reader-example-check.py --council`.

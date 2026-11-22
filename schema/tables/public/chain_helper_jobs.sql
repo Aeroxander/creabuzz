@@ -1,8 +1,9 @@
 -- Calls the chain helper sends (migration 0066): built from final chain rows,
 -- each failure leaving a retry record, ending in a terminal state. Since
--- migrations 0070, 0075 and 0076 the calls it builds are 'treasury.collectFees',
+-- migrations 0070, 0075, 0076 and 0077 the calls it builds are 'treasury.collectFees',
 -- 'treasury.settle', 'treasury.applyRate', 'vester.execute',
--- 'vester.burnAfterWindDown' and 'pause.poke'; the other names are history of the old contracts' calls.
+-- 'vester.burnAfterWindDown', 'pause.poke', 'vote.openSeats', 'vote.finish',
+-- 'vote.carryOut' and 'vote.lapse'; the other names are history of the old contracts' calls.
 CREATE TABLE chain_helper_jobs (
     id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     reader        TEXT NOT NULL CHECK (octet_length(reader) BETWEEN 1 AND 128),
@@ -10,6 +11,7 @@ CREATE TABLE chain_helper_jobs (
     call          TEXT NOT NULL CHECK (call IN
                       ('treasury.collectFees', 'treasury.settle',
                        'treasury.applyRate', 'vester.execute', 'vester.burnAfterWindDown',
+                       'vote.openSeats', 'vote.finish', 'vote.carryOut', 'vote.lapse',
                        'rounds.close', 'rounds.settleMany', 'rounds.release', 'rounds.returnUnsold',
                        'rounds.sweepFees', 'treasury.sweepFees', 'treasury.release',
                        'finisher.openPool', 'finisher.settle', 'finisher.sweep', 'finisher.abandon',

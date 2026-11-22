@@ -148,7 +148,9 @@ fn every_event_decodes_from_the_real_run() {
     for def in EVENTS {
         // The switches (the holder pause, the earlier backers' claim) are off in this run, which is the deployment
         // the record's example is made from; the second run (`pot-run-pause.json`) emits these and has its own test.
-        if crate::chain_reader::fixture::only_with_the_switches_on(def.role, def.name) {
+        if crate::chain_reader::fixture::only_with_the_switches_on(def.role, def.name)
+            || crate::chain_reader::fixture::only_with_the_council_switch_on(def.role, def.name)
+        {
             continue;
         }
         assert!(

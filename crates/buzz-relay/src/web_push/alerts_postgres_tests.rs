@@ -11,7 +11,8 @@ use sqlx::Row;
 
 use super::alerts::{audience_of, make_alerts, ALERT_LIFETIME_SECS};
 use super::test_support::{
-    add_block, add_task_row, push_world, set_reader_next, subscribed, task_event, PushWorld,
+    add_block, add_pause_ready, add_task_row, ballot_opened, push_world, set_reader_next,
+    subscribed, task_event, voted, PushWorld, VOTE_GATE,
 };
 use crate::handlers::room_write::ROOM_MIN_SHARES;
 
@@ -774,4 +775,160 @@ async fn i2_a_crowd_of_records_naming_the_key_does_not_hide_the_projects_link() 
         )),
         "the real record is found among the decoys"
     );
+}
+
+/// A ballot that opened in a time unit: one `vote` alert, and a second ballot in the same unit makes none
+/// (`COUNCIL-PLAN.md` section 5.6: at most one `vote` push per project per time unit, so a stream of junk ballots cannot
+/// become a stream of pushes). Remove the pace and this test fails.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_second_ballot_in_the_same_time_unit_makes_no_second_vote_push() {
+    let pw = push_world().await;
+    let (head, t0) = head(&pw);
+    let (_holder, _device) = subscribed(&pw, HOLDER).await;
+    make(&pw).await.expect("starts the cursor");
+    let supply = 1_000_000_000_000_000_000_000u128;
+    // The vote contract, from the Treasury's own `PauseReady` (the ledger then reads its ballots).
+    add_block(&pw.w, head + 1, t0 + 2).await;
+    add_pause_ready(&pw.w, head + 1).await;
+    // The first ballot, and its opening makes one vote push.
+    add_block(&pw.w, head + 2, t0 + 3).await;
+    ballot_opened(
+        &pw.w,
+        head + 2,
+        0,
+        VOTE_GATE,
+        1,
+        1,
+        t0 + 3,
+        t0 + 100,
+        supply,
+        supply / 3 + 1,
+    )
+    .await;
+    set_reader_next(&pw.w, head + 3).await;
+    let first = make(&pw).await.expect("the first ballot");
+    assert_eq!(first.made, 1, "{first:?}");
+    assert_eq!(vote_alerts(&pw).await, 1);
+    // A second ballot seconds later (the unit is a week): no second push.
+    add_block(&pw.w, head + 3, t0 + 4).await;
+    ballot_opened(
+        &pw.w,
+        head + 3,
+        0,
+        VOTE_GATE,
+        2,
+        1,
+        t0 + 4,
+        t0 + 101,
+        supply,
+        supply / 3 + 1,
+    )
+    .await;
+    set_reader_next(&pw.w, head + 4).await;
+    let second = make(&pw).await.expect("the second ballot");
+    assert_eq!(second.made, 0, "one vote push a unit: {second:?}");
+    assert!(second.skipped >= 1, "{second:?}");
+    assert_eq!(vote_alerts(&pw).await, 1);
+}
+
+/// The `moved` alert is made from the reader's **derived result**, not from `BallotFinished`: by the first pass after
+/// `voteEnd` that sees it, whether or not anyone pressed `finish` (**there is no `BallotFinished` row at all here**), once
+/// per `(project, ballot, kind)`, and only to holders with a device. Remove the derived pass and this test fails.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn the_moved_alert_is_made_from_the_derived_result_with_no_ballot_finished_row() {
+    let pw = push_world().await;
+    let (head, t0) = head(&pw);
+    let (_holder, _device) = subscribed(&pw, HOLDER).await;
+    make(&pw).await.expect("starts the cursor");
+    let supply = 1_000_000_000_000_000_000_000u128;
+    let floor = supply / 3 + 1;
+    add_block(&pw.w, head + 1, t0 + 2).await;
+    add_pause_ready(&pw.w, head + 1).await;
+    add_block(&pw.w, head + 2, t0 + 3).await;
+    ballot_opened(
+        &pw.w,
+        head + 2,
+        0,
+        VOTE_GATE,
+        1,
+        1,
+        t0 + 3,
+        t0 + 10,
+        supply,
+        floor,
+    )
+    .await;
+    // A list with 600 of the 1,000 Shares cast: more than half, so the result moves the runner.
+    voted(
+        &pw.w,
+        head + 2,
+        1,
+        VOTE_GATE,
+        1,
+        1,
+        600_000_000_000_000_000_000,
+        1_000_000_000_000_000_000_000,
+    )
+    .await;
+    set_reader_next(&pw.w, head + 3).await;
+    let opening = make(&pw).await.expect("the ballot opened");
+    assert_eq!(vote_alerts(&pw).await, 1, "{opening:?}");
+    assert_eq!(
+        moved_alerts(&pw).await,
+        0,
+        "the vote has not ended: no result to tell"
+    );
+    // The vote ends: a block after `voteEnd`, which the reader has read. Nobody recorded a result.
+    add_block(&pw.w, head + 3, t0 + 11).await;
+    set_reader_next(&pw.w, head + 4).await;
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>(
+            "SELECT count(*) FROM chain_logs WHERE reader = $1 AND event = 'BallotFinished'",
+        )
+        .bind(&pw.w.reader)
+        .fetch_one(pw.w.state.db.pool())
+        .await
+        .expect("count"),
+        0,
+        "no BallotFinished row exists"
+    );
+    let after = make(&pw).await.expect("the first pass after voteEnd");
+    assert_eq!(moved_alerts(&pw).await, 1, "{after:?}");
+    assert_eq!(
+        vote_alerts(&pw).await,
+        1,
+        "the opening's push is not sent twice"
+    );
+    // It reached the holder's device.
+    let queued: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM web_push_outbox o JOIN web_push_alerts a ON a.id = o.alert_id \
+         WHERE a.reader = $1 AND a.kind = 'moved' AND a.serial = 1 AND o.state <> 'dropped'",
+    )
+    .bind(&pw.w.reader)
+    .fetch_one(pw.w.state.db.pool())
+    .await
+    .expect("count");
+    assert!(queued >= 1, "the holder's device is queued");
+    // Once per (project, ballot, kind): a second pass makes no second alert.
+    let again = make(&pw).await.expect("another pass");
+    assert_eq!(again.made, 0, "{again:?}");
+    assert_eq!(moved_alerts(&pw).await, 1);
+}
+
+async fn vote_alerts(pw: &PushWorld) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM web_push_alerts WHERE reader = $1 AND kind = 'vote'")
+        .bind(&pw.w.reader)
+        .fetch_one(pw.w.state.db.pool())
+        .await
+        .expect("count the vote alerts")
+}
+
+async fn moved_alerts(pw: &PushWorld) -> i64 {
+    sqlx::query_scalar("SELECT count(*) FROM web_push_alerts WHERE reader = $1 AND kind = 'moved'")
+        .bind(&pw.w.reader)
+        .fetch_one(pw.w.state.db.pool())
+        .await
+        .expect("count the moved alerts")
 }

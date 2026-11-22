@@ -31,6 +31,19 @@ pub(crate) fn every_call() -> Vec<HelperCall> {
             vester: T,
             grant: 7,
         },
+        HelperCall::VoteOpenSeats { vote: T },
+        HelperCall::VoteFinish {
+            vote: T,
+            ballot: 11,
+        },
+        HelperCall::VoteCarryOut {
+            vote: T,
+            ballot: 12,
+        },
+        HelperCall::VoteLapse {
+            vote: T,
+            ballot: 13,
+        },
     ]
 }
 
@@ -41,7 +54,11 @@ fn exhaustive(call: &HelperCall) {
         | HelperCall::TreasurySettleTasks { .. }
         | HelperCall::TreasuryApplyRate { .. }
         | HelperCall::VesterExecute { .. }
-        | HelperCall::VesterBurnAfterWindDown { .. } => {}
+        | HelperCall::VesterBurnAfterWindDown { .. }
+        | HelperCall::VoteOpenSeats { .. }
+        | HelperCall::VoteFinish { .. }
+        | HelperCall::VoteCarryOut { .. }
+        | HelperCall::VoteLapse { .. } => {}
     }
 }
 
@@ -74,6 +91,9 @@ pub(crate) const FORBIDDEN: &[&str] = &[
     "markWoundDown()",
     "addRevenue(uint256)",
     "makePair(bytes32,address)",
+    // The vote's one opening that is a holder's press, never the helper's: the
+    // helper opens a seat election that is due, never a replace vote.
+    "openReplace(address[5],bytes32)",
     "propose(address,bytes)",
     "confirm(address,bytes,uint256)",
     "cancel(bytes32)",
@@ -110,7 +130,7 @@ fn the_calls_produce_exactly_the_allowed_selectors() {
     let allowed: BTreeSet<[u8; 4]> = ALLOWED.iter().map(|s| selector(s)).collect();
     assert_eq!(produced, allowed);
     // Each call's selector is its own signature's; the Vester's two take one
-    // number (the grant), the other three none.
+    // number (the grant), the ballot calls one (the ballot's id), the rest none.
     for call in &calls {
         assert_eq!(
             selector_of(call),
@@ -118,10 +138,11 @@ fn the_calls_produce_exactly_the_allowed_selectors() {
             "{}",
             call.name()
         );
-        let takes_grant = call.signature().ends_with("(uint256)");
+        let takes_a_number =
+            call.signature().ends_with("(uint256)") || call.signature().ends_with("(uint32)");
         assert_eq!(
             call.calldata().len(),
-            if takes_grant { 36 } else { 4 },
+            if takes_a_number { 36 } else { 4 },
             "{}",
             call.name()
         );
@@ -143,7 +164,7 @@ fn no_call_moves_money_by_choice_checks_in_or_signs_for_a_runner() {
         );
         assert!(!ALLOWED.contains(signature), "{signature} is allowed");
     }
-    // These five are the only ones, and they are the ones nobody's money waits on.
+    // These nine are the only ones, and they are the ones nobody's money waits on.
     assert_eq!(
         ALLOWED,
         [
@@ -151,9 +172,16 @@ fn no_call_moves_money_by_choice_checks_in_or_signs_for_a_runner() {
             "settle()",
             "applyRate()",
             "execute(uint256)",
-            "burnAfterWindDown(uint256)"
+            "burnAfterWindDown(uint256)",
+            "openSeats()",
+            "finish(uint32)",
+            "carryOut(uint32)",
+            "lapse(uint32)"
         ]
     );
+    // Opening a replace vote puts a holder's list on the ballot: that press is
+    // theirs, and the helper must never be able to make it.
+    assert!(!ALLOWED.contains(&"openReplace(address[5],bytes32)"));
     // Ending a project is a person's press, also once the quiet time has passed.
     assert!(FORBIDDEN.contains(&"windDown()"));
     assert!(FORBIDDEN.contains(&"burnUngrantedAfterWindDown()"));
@@ -199,9 +227,16 @@ fn the_optional_calls_have_the_tighter_attempt_limit() {
                 | HelperCall::VesterBurnAfterWindDown { .. }
         );
         assert_eq!(is_optional(call.name()), optional, "{}", call.name());
+        let expected = if optional {
+            MAX_OPTIONAL_ATTEMPTS
+        } else if is_vote(call.name()) {
+            MAX_VOTE_ATTEMPTS
+        } else {
+            8
+        };
         assert_eq!(
             max_attempts_for(call.name(), 8),
-            if optional { MAX_OPTIONAL_ATTEMPTS } else { 8 },
+            expected,
             "{}",
             call.name()
         );
@@ -335,6 +370,64 @@ fn stored_calls_read_back_and_unknown_ones_are_refused() {
         ("raw", json!({"data": "0x12345678"})),
     ] {
         let err = HelperCall::parse(name, T, &args).expect_err("unknown call");
+        assert!(err.to_string().contains("unknown helper call"), "{err}");
+    }
+}
+
+/// The four vote calls: each one is a call anyone may make, none takes a value,
+/// and the ballot's id is one 32-byte word that reads back. A stored job whose
+/// ballot is not a `uint32` ends instead of sending something else, and the
+/// closed list of vote calls is exactly the four of the plan (`openReplace` is
+/// a holder's press and is refused as an unknown call).
+#[test]
+fn the_vote_calls_carry_the_ballot_and_never_open_a_replace_vote() {
+    let call = HelperCall::VoteCarryOut {
+        vote: T,
+        ballot: 0x0102,
+    };
+    let data = call.calldata();
+    assert_eq!(&data[..4], selector("carryOut(uint32)").as_slice());
+    assert_eq!(data[4..34], [0u8; 30]);
+    assert_eq!((data[34], data[35]), (0x01, 0x02));
+    assert_eq!(call.args(), json!({ "ballot": 258u32 }));
+    assert_eq!(call.target(), T);
+    assert!(call.nothing_to_do_errors().contains(&"Settled()"));
+    assert_eq!(
+        HelperCall::parse("vote.carryOut", T, &call.args()).expect("reads back"),
+        call
+    );
+    for name in ["vote.finish", "vote.carryOut", "vote.lapse"] {
+        for bad in [
+            json!({}),
+            json!({ "ballot": "3" }),
+            json!({ "ballot": -1 }),
+            json!({ "ballot": u64::from(u32::MAX) + 1 }),
+        ] {
+            let err = HelperCall::parse(name, T, &bad).expect_err("a ballot that is not one");
+            assert!(err.to_string().contains("ballot"), "{name} {bad}: {err}");
+        }
+    }
+    assert_eq!(
+        HelperCall::parse("vote.openSeats", T, &json!({})).expect("reads"),
+        HelperCall::VoteOpenSeats { vote: T }
+    );
+    // The closed list is exactly the four vote calls: a replace vote and any
+    // other HolderVote call are not stored names.
+    let vote_calls: BTreeSet<&str> = every_call()
+        .iter()
+        .filter(|c| is_vote(c.name()))
+        .map(HelperCall::name)
+        .collect();
+    assert_eq!(vote_calls, VOTE_NAMES.iter().copied().collect());
+    for name in [
+        "vote.openReplace",
+        "vote.stand",
+        "vote.standList",
+        "vote.castVote",
+        "vote.seat",
+    ] {
+        assert!(!NAMES.contains(&name), "{name} must never be a stored call");
+        let err = HelperCall::parse(name, T, &json!({})).expect_err("unknown call");
         assert!(err.to_string().contains("unknown helper call"), "{err}");
     }
 }

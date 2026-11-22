@@ -5,6 +5,9 @@
     python3 -I scripts/chain-reader-fixture.py --check    # play it again and fail if the file is not what it gives
     python3 -I scripts/chain-reader-fixture.py --pause    # the second, small run (the holder pause and the earlier grants on)
     python3 -I scripts/chain-reader-fixture.py --pause --check
+    python3 -I scripts/chain-reader-fixture.py --council  # the third, small run (the holder pause and the Council on: a replace
+                                                          # vote carried out, then a seat election open and waiting)
+    python3 -I scripts/chain-reader-fixture.py --council --check
 
 Needs `anvil`, `cast` and `forge` (FOUNDRY_BIN, a folder holding them, or PATH) and a contracts/pot build. It uses the public
 anvil development mnemonic only (the keys are derived at run time; none is written here), picks a free port, and stops anvil
@@ -58,6 +61,7 @@ REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 POT = os.path.join(REPO, "contracts", "pot")
 OUT = os.path.join(REPO, "crates", "buzz-relay", "src", "chain_reader", "testdata", "pot-run.json")
 OUT_PAUSE = os.path.join(REPO, "crates", "buzz-relay", "src", "chain_reader", "testdata", "pot-run-pause.json")
+OUT_COUNCIL = os.path.join(REPO, "crates", "buzz-relay", "src", "chain_reader", "testdata", "pot-run-council.json")
 
 if os.environ.get("FOUNDRY_BIN"):
     os.environ["PATH"] = os.environ["FOUNDRY_BIN"] + os.pathsep + os.environ["PATH"]
@@ -255,6 +259,13 @@ VESTER_UINTS = [
 
 PAUSE_VIEWS = ["state()", "day()", "LINE_DIVISOR()"]
 EARLIER_VIEWS = ["vester()", "root()", "textHash()", "total()", "rows()", "claimedRows()", "claimedTotal()"]
+# The Council round: the vote contract's rule numbers and a Council's own views (the server reads them at `asOf.block`).
+VOTE_VIEWS = [
+    "STAND_DAYS()", "VOTE_DAYS()", "STAND_DIVISOR()", "OPEN_DIVISOR()", "MIN_VOTE()", "MAX_LISTS()", "MAX_PEOPLE()",
+    "COOLDOWN_UNITS()", "LAPSE_UNITS()", "day()", "LINE_DIVISOR()", "nextReplaceAt()", "state()", "isVote()",
+]
+COUNCIL_IMPL_VIEWS = ["SEATS()", "THRESHOLD()", "ELECTION_UNITS()", "PROPOSAL_UNITS()"]
+COUNCIL_VIEWS = ["seatList()", "THRESHOLD()", "generation()", "nextElection()", "upNext()", "PROPOSAL_TTL()"]
 
 
 def record_book(p, launcher, dollar, block, logs):
@@ -284,6 +295,8 @@ def record_book(p, launcher, dollar, block, logs):
     get(t, "quoteBack(uint256)", 1_000_000)
     runner = addr_of(eth_call(t, "runner()", block=at_b))
     is_pair = uint(get(launcher, "isPair(address)", runner)) != 0
+    runner_kind = uint(get(launcher, "runnerKindOf(address)", runner))
+    council_bound = uint(get(launcher, "councilBound()")) != 0
     if is_pair:
         get(runner, "first()")
         get(runner, "second()")
@@ -301,6 +314,23 @@ def record_book(p, launcher, dollar, block, logs):
         for sig in EARLIER_VIEWS:
             get(p["earlier"], sig)
         get(v, "earlierReserve()")
+    # The Council round: the vote contract's numbers (when the deployment's Council switch is on and this project's pause
+    # is a HolderVote) and the Council's own views (when its runner is one).
+    if p.get("pause") and council_bound:
+        try:
+            is_vote = uint(eth_call(p["pause"], "isVote()", block=at_b)) != 0
+        except Exception:
+            is_vote = False
+        if is_vote:
+            for sig in VOTE_VIEWS:
+                get(p["pause"], sig)
+            get(t, "noticeFor(uint16)", 500)
+            impl = addr_of(get(launcher, "councilImpl()"))
+            for sig in COUNCIL_IMPL_VIEWS:
+                get(impl, sig)
+    if runner_kind == 2:
+        for sig in COUNCIL_VIEWS:
+            get(p["council"], sig)
     # step 2: the task book
     b = p["tasks"]
     block_time = int(rpc("eth_getBlockByNumber", at_b, False)["timestamp"], 16)
@@ -324,7 +354,10 @@ def record_book(p, launcher, dollar, block, logs):
 def main():
     check = "--check" in sys.argv
     pause_run = "--pause" in sys.argv
-    out_file = OUT_PAUSE if pause_run else OUT
+    council_run = "--council" in sys.argv
+    if pause_run and council_run:
+        sys.exit("chain-reader-fixture: give --pause or --council, not both")
+    out_file = OUT_COUNCIL if council_run else (OUT_PAUSE if pause_run else OUT)
     tmp = tempfile.mkdtemp(prefix="chain-reader-fixture-")
     anvil = subprocess.Popen(
         ["anvil", "--port", str(PORT), "--silent", "--timestamp", str(GENESIS)],
@@ -339,7 +372,7 @@ def main():
             except Exception:
                 time.sleep(0.2)
         rpc("anvil_setBlockTimestampInterval", 1)
-        result = play_pause(tmp) if pause_run else play(tmp)
+        result = play_pause(tmp) if pause_run else (play_council(tmp) if council_run else play(tmp))
     finally:
         anvil.terminate()
         anvil.wait()
@@ -349,7 +382,8 @@ def main():
         current = open(out_file).read() if os.path.exists(out_file) else ""
         name = os.path.basename(out_file)
         if current != text:
-            sys.exit(f"{name} is not what a fresh run gives: run python3 -I scripts/chain-reader-fixture.py{' --pause' if pause_run else ''}")
+            flag = " --council" if council_run else (" --pause" if pause_run else "")
+            sys.exit(f"{name} is not what a fresh run gives: run python3 -I scripts/chain-reader-fixture.py{flag}")
         print(f"{name} is what a fresh run gives")
         return
     with open(out_file, "w") as f:
@@ -905,6 +939,245 @@ def play_pause(tmp):
         "about": "A real run of contracts/pot on anvil with the holder pause and the earlier grants on, played by scripts/chain-reader-fixture.py --pause. Do not edit by hand.",
         "chainId": 31337, "unit": UNIT, "launcher": launcher, "dollar": dollar, "earlierGrants": claims,
         "textHash": text_hash, "accounts": {f"account{i}": a for i, a in enumerate(ADDR)}, "projects": proj, "blocks": blocks,
+        "logs": logs, "snapshots": snapshots, "books": books, "final": final,
+    }
+
+
+
+# ---- the third run: the holder pause and the Council on
+
+def play_council(tmp):
+    """One project on a deployment with the holder pause and the Council on: a replace vote carried out (a Council runner,
+    with a moved vote and a move after another voter's move, and a Fell), then a seat election opened, voted and left for
+    the reader to derive, with a winner unparked the day after its vote ended."""
+    pid = run(["cast", "format-bytes32-string", "gamma"])
+    env = dict(os.environ, UNIT=str(UNIT), HOLDER_PAUSE="1", COUNCIL="1")
+    subprocess.run(
+        ["forge", "script", "script/DeployPot.s.sol", "--rpc-url", RPC, "--broadcast", "--slow", "--private-key",
+         KEYS[DEPLOYER]],
+        cwd=POT, env=env, check=True, capture_output=True,
+    )
+    with open(os.path.join(POT, "deployments", "pot-31337.json")) as f:
+        dep = json.load(f)
+    launcher, dollar = dep["launcher"].lower(), dep["quote"].lower()
+    vote_impl = dep["holderVote"].lower()
+    council_impl = dep["council"].lower()
+    assert int(dep["unit"]) == UNIT and int(vote_impl, 16) != 0 and int(council_impl, 16) != 0
+
+    h = run(["cast", "call", "--rpc-url", RPC, launcher, "settingsHash()(bytes32)"])
+    tx(FOUNDER_A, launcher, "launch(bytes32,string,string,(uint32,uint256),bytes32)", pid, "Council Project", "COUN",
+       f"(1000,{10_000_000 * 10**18})", h, at=day(0))
+    out = run(["cast", "call", "--rpc-url", RPC, launcher, "project(address,bytes32)((address,address,address,address,address,uint64))",
+               ADDR[FOUNDER_A], pid])
+    f, shares, team, treasury, vester, _ = [x.split()[0].lower() for x in out.strip("()").split(",")]
+    key = run(["cast", "call", "--rpc-url", RPC, launcher, "keyOf(address,bytes32)(bytes32)", ADDR[FOUNDER_A], pid]).lower()
+    pause = addr_of(eth_call(treasury, "pauseGate()"))
+    assert uint(eth_call(pause, "isVote()")) == 1, "with COUNCIL=1 the project's pause is the vote contract"
+    proj["C"] = dict(
+        founder=f, shares=shares, team=team, treasury=treasury, vester=vester, key=key, projectId=pid.lower(),
+        launchBlock=int(rpc("eth_blockNumber"), 16), tasks=addr_of(eth_call(treasury, "tasks()")), pause=pause,
+        council=None,
+    )
+    snapshots.pop("A", None), snapshots.pop("B", None), snapshots.pop("Z", None)
+    snapshots["C"] = []
+    snap_all(proj["C"]["launchBlock"])
+    T, SH, V, P = treasury, shares, vester, pause
+    marks = {}
+
+    def join(who, dollars, when):
+        raw = dollars * 10**6
+        tx(DEPLOYER, dollar, "mint(address,uint256)", ADDR[who], raw, at=when)
+        tx(who, dollar, "approve(address,uint256)", T, raw, after=60)
+        tx(who, T, "join(uint256,uint256,address)", raw, 0, ADDR[who], after=60)
+
+    def park(who, n, when):
+        tx(who, SH, "approve(address,uint256)", P, n, at=when)
+        tx(who, P, "park(uint256)", n, after=60)
+
+    def supply():
+        return uint(eth_call(SH, "totalSupply()"))
+
+    def parked():
+        return uint(eth_call(P, "parkedTotal()"))
+
+    def park_all(who, when):
+        n = uint(eth_call(SH, "balanceOf(address)", ADDR[who]))
+        if n:
+            park(who, n, when)
+
+    def ballot_field(ballot_id, name, block="latest"):
+        # The struct's words, named (the order of HolderVote.Ballot: see contracts/pot/src/HolderVote.sol).
+        order = ["kind", "outcome", "finished", "carried", "lapsed", "upA", "upB", "winner", "winnerB",
+                 "optionCount", "openedAt", "standEnd", "voteEnd", "effectiveAt", "supply", "floor", "council"]
+        w = words(eth_call(P, "ballot(uint32)", ballot_id, block=block))
+        return int(w[order.index(name)], 16)
+
+    def current():
+        return uint(eth_call(P, "current()"))
+
+    def vote(who, option, when):
+        tx(who, P, "castVote(uint8)", option, at=when)
+
+    me = lambda n: ADDR[n]
+    list1 = [me(FOUNDER_A), me(BACKER1), me(BACKER2), me(MEMBER1), me(MEMBER2)]
+    list2 = [me(MEMBER1), me(MEMBER2), me(PAYER), me(AGENT), me(FOUNDER_B)]
+    list3 = [me(FOUNDER_A), me(SECOND_B), me(DEPLOYER), me(AGENT), me(MEMBER2)]
+    list4 = [me(BACKER1), me(BACKER2), me(PAYER), me(AGENT), me(SECOND_B)]
+
+    def arm(members):
+        return "[" + ",".join(members) + "]"
+
+    # ---- backers, and enough parked for a replace vote (a twentieth of the Shares in all, a thousandth by the opener)
+    join(BACKER1, 5000, day(0.1))
+    join(BACKER2, 2000, day(0.2))
+    join(PAYER, 1000, day(0.3))
+    join(MEMBER1, 1000, day(0.4))
+    supply0 = supply()
+    park(BACKER1, supply0 * 4 // 10, day(0.6))
+    park(BACKER2, supply0 * 2 // 10, day(0.7))
+    park(PAYER, supply0 * 1 // 10, day(0.8))
+    park(MEMBER1, supply0 * 1 // 10, day(0.9))
+    assert parked() * 20 >= supply()
+
+    # ---- ballot 1: a replace vote, opened with the opener's own list, three more lists stood
+    tx(BACKER1, P, "openReplace(address[5],bytes32)", arm(list1), keccak("list one text"), at=day(1))
+    b1 = current()
+    stand_end1 = ballot_field(b1, "standEnd")
+    vote_end1 = ballot_field(b1, "voteEnd")
+    effective1 = ballot_field(b1, "effectiveAt")
+    tx(BACKER2, P, "standList(address[5],bytes32)", arm(list2), keccak("list two text"), at=day(1) + 300)
+    tx(PAYER, P, "standList(address[5],bytes32)", arm(list3), keccak("list three text"), at=day(1) + 400)
+    tx(MEMBER1, P, "standList(address[5],bytes32)", arm(list4), keccak("list four text"), at=day(1) + 500)
+    marks["C_replace_open"] = int(rpc("eth_blockNumber"), 16)
+
+    # ---- ballot 1's vote: a new vote, a move from an empty option, a move after another voter's move, and a Fell
+    vote(BACKER1, 1, stand_end1 + 60)
+    vote(BACKER2, 2, stand_end1 + 120)
+    vote(BACKER1, 2, stand_end1 + 180)
+    vote(PAYER, 1, stand_end1 + 240)
+    vote(BACKER2, 1, stand_end1 + 300)
+    vote(MEMBER1, 3, stand_end1 + 360)
+    # a voter takes Shares back while the vote runs: their weight falls and the tally with it (a `Fell`)
+    tx(MEMBER1, P, "unpark(uint256)", uint(eth_call(P, "parkedOf(address)", ADDR[MEMBER1])), at=stand_end1 + 420)
+    marks["C_replace_vote"] = int(rpc("eth_blockNumber"), 16)
+    tx(PAYER, P, "finish(uint32)", b1, at=vote_end1 + 60)
+    # the check-in window (two time units) is shorter than the wait: keep the door open for the seat election's new
+    # holders, who join after the result is carried out
+    tx(FOUNDER_A, T, "checkIn(bytes32)", keccak("record c2"), at=day(13))
+    tx(PAYER, P, "carryOut(uint32)", b1, at=effective1 + 60)
+    council = addr_of(eth_call(T, "runner()"))
+    assert uint(eth_call(launcher, "runnerKindOf(address)", council)) == 2
+    proj["C"]["council"] = council
+    marks["C_replace_carried"] = int(rpc("eth_blockNumber"), 16)
+
+    # ---- three accounts that can stand for a seat (none holds a seat that is not up), joined and parked
+    later = effective1 + 3_600
+    join(FOUNDER_A, 1000, later)
+    join(SECOND_B, 500, later + 3_000)
+    join(DEPLOYER, 500, later + 6_000)
+    park_all(FOUNDER_A, later + 9_000)
+    park_all(SECOND_B, later + 12_000)
+    park_all(DEPLOYER, later + 15_000)
+
+    # ---- ballot 2: the seat election that comes due, opened by anyone
+    next_election = uint(eth_call(council, "nextElection()"))
+    tx(PAYER, P, "openSeats()", at=next_election + 60)
+    b2 = current()
+    assert b2 != b1
+    stand_end2 = ballot_field(b2, "standEnd")
+    vote_end2 = ballot_field(b2, "voteEnd")
+    effective2 = ballot_field(b2, "effectiveAt")
+    tx(FOUNDER_A, P, "stand(bytes32)", keccak("person one text"), at=next_election + 600)
+    tx(SECOND_B, P, "stand(bytes32)", keccak("person two text"), at=next_election + 900)
+    tx(DEPLOYER, P, "stand(bytes32)", keccak("person three text"), at=next_election + 1_200)
+    marks["C_seat_open"] = int(rpc("eth_blockNumber"), 16)
+
+    # ---- ballot 2's vote; nobody finishes it: the reader derives the result from the frozen tallies
+    vote(BACKER1, 1, stand_end2 + 60)
+    vote(BACKER2, 2, stand_end2 + 120)
+    vote(PAYER, 1, stand_end2 + 180)
+    vote(FOUNDER_A, 1, stand_end2 + 240)
+    vote(MEMBER1, 0, stand_end2 + 300) if uint(eth_call(P, "parkedOf(address)", ADDR[MEMBER1])) else None
+    vote(SECOND_B, 2, stand_end2 + 360)
+    vote(DEPLOYER, 3, stand_end2 + 420)
+    marks["C_seat_vote"] = int(rpc("eth_blockNumber"), 16)
+    # the winner (option 1) takes its Shares out the day after the vote ends: the tallies are frozen and stay above
+    # what is parked now, and the record still shows the planned change (COUNCIL-PLAN.md section 5.2)
+    n = uint(eth_call(P, "parkedOf(address)", ADDR[FOUNDER_A]))
+    tx(FOUNDER_A, P, "unpark(uint256)", n, at=vote_end2 + 86_400)
+    marks["C_waiting"] = int(rpc("eth_blockNumber"), 16)
+    tx(PAYER, dollar, "approve(address,uint256)", T, 7, at=vote_end2 + 86_400 + 60)
+    marks["C_end"] = int(rpc("eth_blockNumber"), 16)
+
+    head = int(rpc("eth_blockNumber"), 16)
+    blocks = []
+    for k in range(head + 1):
+        b = rpc("eth_getBlockByNumber", hex(k), False)
+        blocks.append({"number": k, "hash": b["hash"], "parent": b["parentHash"], "time": int(b["timestamp"], 16)})
+    raw = rpc("eth_getLogs", {"fromBlock": "0x0", "toBlock": hex(head)})
+    logs = [
+        {
+            "block": int(l["blockNumber"], 16), "index": int(l["logIndex"], 16), "blockHash": l["blockHash"],
+            "txHash": l["transactionHash"], "address": l["address"].lower(), "topics": l["topics"], "data": l["data"],
+        }
+        for l in raw
+    ]
+    logs.sort(key=lambda l: (l["block"], l["index"]))
+    p = proj["C"]
+    at_b = hex(head)
+    final = {"block": head, "time": blocks[-1]["time"]}
+    balances = {"shares": {}, "team": {}}
+    for hld in list(ADDR) + [T, V, P, council]:
+        for tok, k2 in ((SH, "shares"), (team, "team")):
+            b = uint(eth_call(tok, "balanceOf(address)", hld, block=at_b))
+            if b:
+                balances[k2][hld] = str(b)
+    ballot_ids = [b1, b2]
+    final["C"] = {
+        "views": snapshot("C", head), "balances": balances,
+        "pause": {
+            "state": [str(uint(eth_call(P, "state()", block=at_b), i)) for i in range(6)],
+            "parkedOf": {a: str(uint(eth_call(P, "parkedOf(address)", a, block=at_b))) for a in ADDR},
+        },
+        "council": {
+            "address": council,
+            "seatList": [addr_of(eth_call(council, "seatList()", block=at_b), i) for i in range(5)],
+            "seatedAt": [str(uint(eth_call(council, "seatList()", block=at_b), 5 + i)) for i in range(5)],
+            "generation": str(uint(eth_call(council, "generation()", block=at_b))),
+            "nextElection": str(uint(eth_call(council, "nextElection()", block=at_b))),
+            "upNext": [str(uint(eth_call(council, "upNext()", block=at_b), i)) for i in range(2)],
+            "THRESHOLD": str(uint(eth_call(council, "THRESHOLD()", block=at_b))),
+        },
+        "vote": {
+            "current": str(current()),
+            "ballots": {
+                str(i): [str(int(w, 16)) for w in words(eth_call(P, "ballot(uint32)", i, block=at_b))]
+                for i in ballot_ids
+            },
+            "tally": {
+                str(i): {
+                    str(o): str(uint(eth_call(P, "optionOf(uint32,uint8)", i, o, block=at_b), 1))
+                    for o in range(13)
+                }
+                for i in ballot_ids
+            },
+            "cast": {str(i): str(uint(eth_call(P, "castOf(uint32)", i, block=at_b))) for i in ballot_ids},
+            "resultOf": {
+                str(i): [str(uint(eth_call(P, "resultOf(uint32)", i, block=at_b), k)) for k in range(3)]
+                for i in ballot_ids
+            },
+        },
+        "dollarHeld": str(uint(eth_call(dollar, "balanceOf(address)", T, block=at_b))),
+    }
+    books = {}
+    for name in ("C_replace_open", "C_replace_vote", "C_replace_carried", "C_seat_open", "C_seat_vote",
+                 "C_waiting", "C_end"):
+        books[name] = {"project": "C", "block": marks[name], "calls": record_book(p, launcher, dollar, marks[name], logs)}
+    return {
+        "about": "A real run of contracts/pot on anvil with the holder pause and the Council on, played by "
+                 "scripts/chain-reader-fixture.py --council. Do not edit by hand.",
+        "chainId": 31337, "unit": UNIT, "launcher": launcher, "dollar": dollar, "councilImpl": council_impl,
+        "accounts": {f"account{i}": a for i, a in enumerate(ADDR)}, "projects": proj, "blocks": blocks,
         "logs": logs, "snapshots": snapshots, "books": books, "final": final,
     }
 

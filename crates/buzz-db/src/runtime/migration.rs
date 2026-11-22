@@ -1883,6 +1883,28 @@ mod postgres_tests {
         assert!(!migration.contains("attach_community_write_fence"));
     }
 
+    /// Migration 0077 gives a project's Council its role, the helper its four vote calls and the alert maker its two
+    /// vote kinds. The desired-state schema must say the same, and the migration must stay clear of community scoping
+    /// (operator-global chain facts).
+    #[test]
+    fn chain_council_role_migration_matches_the_desired_schema() {
+        let mut migrations: Vec<_> = MIGRATOR.iter().collect();
+        migrations.sort_by_key(|migration| migration.version);
+        assert_eq!(migrations[76].version, 77);
+        let migration = migrations[76].sql.as_str();
+        let desired_schema = crate::test_support::desired_state_schema_sql();
+        for text in [
+            "'pause', 'council'",
+            "'vote.openSeats', 'vote.finish', 'vote.carryOut', 'vote.lapse'",
+            "'planned', 'taken', 'ended', 'vote', 'moved'",
+        ] {
+            assert!(desired_schema.contains(text), "schema.sql must say {text}");
+            assert!(migration.contains(text), "migration 0077 must say {text}");
+        }
+        assert!(!migration.to_ascii_lowercase().contains("community_id"));
+        assert!(!migration.contains("attach_community_write_fence"));
+    }
+
     /// Migration 0074 adds the web push tables and the sponsor counts. Three are operator-global (registered in every
     /// schema source, never fenced); the device rows and the outbox carry `community_id` and are fenced. The desired-state
     /// schema must say the same.
