@@ -410,8 +410,19 @@ separate, required step):
   text, and the server's sentence gained "or stand for a seat" for candidacies (web's matcher and its test updated); and knip
   reported eight app exports that nothing outside their module uses (now internal, so `web/`'s check passes).
 
-**Still not run:** the two brain items the plan lists as built-but-never-independently-checked (the reader's unpack bound and
-the recorded-run skill), and the independent verification pass itself, which is not mine to make.
+**The two brain items the plan lists as built-but-never-independently-checked were checked:**
+
+- *The reader's unpack bound.* Its own tests (in the app's suite, which passes) are the plan's cases: a download that states a
+  small size and holds 256 MiB is stopped while it inflates, an object that states a size over the limit is refused before any of
+  it is inflated, a pack of honest objects whose sizes add past the total is stopped, and a delta that states a target over the
+  limit is refused before building it; the limits are off unless a caller sets them, and they come off again when a download ends
+  (even when it fails).
+- *The recorded-run skill.* Its 15 unit tests pass (`cargo test -p buzz-cli --lib -- launchpad_brain`), and three checks were run
+  by hand on the built command: a recording holding a 64-digit key is refused with "nothing was written"; a clean recording with
+  the plan's headings is saved word for word as exactly one file **inside the brain** (`<checkout>/playbooks/<job>.md`) and nothing
+  outside it changed; and a second save of the same job is refused as a conflict, "nothing is ever overwritten".
+
+**Still not run:** the independent verification pass itself, which is not mine to make, and the `v6` fast-forward that waits on it.
 
 ## 3. Choices, deviations and findings
 
