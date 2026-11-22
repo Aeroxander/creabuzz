@@ -7,6 +7,7 @@ import {PlayDollar} from "../src/PlayDollar.sol";
 import {Parts} from "../src/Parts.sol";
 import {Launcher} from "../src/Launcher.sol";
 import {HolderPause} from "../src/HolderPause.sol";
+import {Council} from "../src/Council.sol";
 import {EarlierGrants} from "../src/EarlierGrants.sol";
 
 /// @notice Deploys the money contracts of one network: the dollar (PlayDollar on a test network, or an existing token whose
@@ -27,6 +28,11 @@ import {EarlierGrants} from "../src/EarlierGrants.sol";
 ///              Launcher in the same broadcast, before any project can be launched: every project launched from then on is born
 ///              with a pause that holders can use (docs/next-version/STEP4-PLAN.md). It is a switch of the deployment: it cannot
 ///              be changed later, and a project is born with the pause or without it for good. Off by default.
+///   COUNCIL    0 (the default) or 1. With 1 (and HOLDER_PAUSE=1, which it needs: a Council reads its project's pause as its vote
+///              contract) the script also deploys the `Council` implementation and binds it to the Launcher in the same broadcast,
+///              before any project can be launched: a project's runner can then hand the seat to a Council of five accounts, three of
+///              which must agree to every action (docs/next-version/COUNCIL-PLAN.md). It is a switch of the deployment: it cannot
+///              be changed later. Off by default; with it off nothing about a project or the Launcher's behaviour differs.
 ///
 ///   EARLIER_*  the earlier backers' claim (docs/next-version/STEP4-PLAN.md, section 3). All six or none; none is the default and
 ///              then nothing is claimable. Set together they deploy `EarlierGrants` and bind it to the Launcher in the same
@@ -57,6 +63,7 @@ contract DeployPot is Script {
         address launcher;
         address holderPause;
         address earlier;
+        address council;
         address admin;
         address platform;
         uint256 unit;
@@ -70,7 +77,10 @@ contract DeployPot is Script {
         address quoteIn = vm.envOr("QUOTE", address(0));
         uint256 holderPauseOn = vm.envOr("HOLDER_PAUSE", uint256(0));
         // every setting is checked before the broadcast starts, so a bad one sends nothing
+        uint256 councilOn = vm.envOr("COUNCIL", uint256(0));
         require(holderPauseOn <= 1, "HOLDER_PAUSE must be 0 or 1");
+        require(councilOn <= 1, "COUNCIL must be 0 or 1");
+        require(councilOn == 0 || holderPauseOn == 1, "COUNCIL=1 needs HOLDER_PAUSE=1");
         (
             bool earlierOn,
             bytes32 earlierKey,
@@ -112,6 +122,11 @@ contract DeployPot is Script {
             pauseImpl = new HolderPause();
             launcher.bindPause(address(pauseImpl));
         }
+        Council councilImpl;
+        if (councilOn == 1) {
+            councilImpl = new Council();
+            launcher.bindCouncil(address(councilImpl));
+        }
         EarlierGrants claims;
         if (earlierOn) {
             claims = new EarlierGrants(
@@ -127,6 +142,7 @@ contract DeployPot is Script {
             launcher: address(launcher),
             holderPause: address(pauseImpl),
             earlier: address(claims),
+            council: address(councilImpl),
             admin: admin,
             platform: platform,
             unit: unit,
@@ -140,6 +156,8 @@ contract DeployPot is Script {
         console2.log("holder pause    ", address(pauseImpl));
         if (address(pauseImpl) != address(0)) console2.logBytes32(address(pauseImpl).codehash);
         console2.log("earlier grants  ", address(claims));
+        console2.log("council         ", address(councilImpl));
+        if (address(councilImpl) != address(0)) console2.logBytes32(address(councilImpl).codehash);
 
         string memory key = "deployed";
         vm.serializeUint(key, "chainId", block.chainid);
@@ -151,6 +169,8 @@ contract DeployPot is Script {
         vm.serializeUint(key, "feeBps", feeBps);
         vm.serializeAddress(key, "holderPause", address(pauseImpl));
         vm.serializeBytes32(key, "holderPauseCodehash", address(pauseImpl).codehash);
+        vm.serializeAddress(key, "council", address(councilImpl));
+        vm.serializeBytes32(key, "councilCodehash", address(councilImpl).codehash);
         vm.serializeAddress(key, "earlierGrants", address(claims));
         vm.serializeBytes32(key, "earlierKey", earlierOn ? earlierKey : bytes32(0));
         string memory out = vm.serializeAddress(key, "launcher", address(launcher));

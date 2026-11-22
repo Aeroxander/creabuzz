@@ -859,11 +859,27 @@ contract Treasury {
     function takeSeat() external {
         if (msg.sender != pendingRunner || msg.sender == address(0)) revert NotAllowed();
         if (block.timestamp > uint256(pendingSeatAt) + SEAT_OFFER_MULT * unit) revert OfferExpired();
-        bool trim = pendingTrim;
+        _seat(msg.sender, pendingTrim);
+    }
+
+    /// @notice The project's holders have voted to move the runner seat to `council`, a Council the Launcher made: only the
+    /// project's vote contract (`pauseGate`) may say so. The seat moves whoever holds it now, and nothing the old runner left
+    /// behind can reach the new one: an offer it made, its helpers and a rate it proposed are all cleared. No Team grant is
+    /// touched (the founder is never trimmed by a vote).
+    function seatByVote(address council) external {
+        address g = pauseGate;
+        if (g == address(0) || msg.sender != g || _kind(council) != 2) revert NotAllowed();
+        (pendingRatePpm, pendingAt) = (0, 0);
+        _seat(council, false);
+    }
+
+    /// @dev Put `to` in the runner seat: clear the pending offer, switch every helper of the earlier runner off, say so, and
+    /// with `trim` also trim the founder's grants as an own exit.
+    function _seat(address to, bool trim) private {
         address from = runner;
-        (runner, pendingRunner, pendingTrim, pendingSeatAt) = (msg.sender, address(0), false, 0);
+        (runner, pendingRunner, pendingTrim, pendingSeatAt) = (to, address(0), false, 0);
         ++agentEpoch;
-        emit RunnerChanged(from, msg.sender);
+        emit RunnerChanged(from, to);
         if (trim) IVester(vester).exitAll(founder);
     }
 
@@ -974,13 +990,18 @@ contract Treasury {
         }
     }
 
-    /// @dev True when the caller is the runner and, if the runner is a Pair the Launcher made, that Pair is executing a
-    /// proposal both signers agreed to.
+    /// @dev True when the caller is the runner and, if the runner is a Pair or a Council the Launcher made, that contract is
+    /// executing a proposal its seats agreed to.
     function _isRunnerBothSigned() private view returns (bool) {
         address r = runner;
         if (msg.sender != r) return false;
-        if (!ILauncherPairs(salePath).isPair(r)) return true;
+        if (_kind(r) == 0) return true;
         return IPair(r).bothSigned();
+    }
+
+    /// @dev What kind of runner contract `a` is (0 none, 1 a Pair, 2 a Council), asked of the Launcher.
+    function _kind(address a) private view returns (uint8) {
+        return ILauncherPairs(salePath).runnerKindOf(a);
     }
 
     /// @dev New tasks need an open check-in window and a project that is not wound down.
@@ -989,12 +1010,12 @@ contract Treasury {
         if (block.timestamp >= activeEnd()) revert ProjectQuiet();
     }
 
-    /// @dev The runner or, when the runner is a Pair the Launcher made, one of its two signers.
+    /// @dev The runner or, when the runner is a Pair or a Council the Launcher made, one of its seats.
     function _isTeamSeat(address a) private view returns (bool) {
         address r = runner;
         if (a == r) return true;
-        if (!ILauncherPairs(salePath).isPair(r)) return false;
-        return IPairSigners(r).first() == a || IPairSigners(r).second() == a;
+        if (_kind(r) == 0) return false;
+        return IPairSigners(r).isSeat(a);
     }
 
     /// @dev Book the end of a task: its stayers' claim leaves `locked`, its notes' face leaves `notesOwed` and what is still

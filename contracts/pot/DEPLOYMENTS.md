@@ -10,7 +10,7 @@ git-ignored.
 `script/DeployPot.s.sol` deploys, in this order: the dollar (PlayDollar on a test network, or an existing 6-decimal token
 you name), `Parts` (the five implementations the Launcher clones: Treasury, Vester, Pair, the share token and the TaskBook), and the
 `Launcher` with the platform settings (the dollar, who receives the platform fee, the fee, the time unit, the default daily
-dollar limit of an agent), and, only when `HOLDER_PAUSE=1`, the holders' pause implementation bound to the Launcher, and, only when the six `EARLIER_*` settings are all given, the earlier backers' claim contract bound to the Launcher. It writes `deployments/pot-<chainid>.json` with the addresses. Projects are then launched by
+dollar limit of an agent), and, only when `HOLDER_PAUSE=1`, the holders' pause implementation bound to the Launcher, and, only when `COUNCIL=1`, the `Council` implementation bound to the Launcher, and, only when the six `EARLIER_*` settings are all given, the earlier backers' claim contract bound to the Launcher. It writes `deployments/pot-<chainid>.json` with the addresses. Projects are then launched by
 founders through `Launcher.launch`; each gets its own Treasury, Vester, TaskBook (the task queue; its address is `Treasury.tasks()`) and two tokens.
 
 ## Settings (environment variables, all optional)
@@ -24,6 +24,7 @@ founders through `Launcher.launch`; each gets its own Treasury, Vester, TaskBook
 | `FEE_BPS` | `200` (2%) | The platform fee on a join. The contract ceiling is 500 (5%). |
 | `AGENT_USD` | `25000000` (25 dollars) | An agent's default daily dollar limit. |
 | `HOLDER_PAUSE` | `0` (off) | `1` turns on the holders' pause (step 4, `docs/next-version/STEP4-PLAN.md`): the script also deploys `HolderPause` and binds it to the Launcher (`bindPause`) **in the same broadcast as the Launcher's own deployment, before any project can be launched**. Every project launched from then on is born with its own pause (a clone), and keeps it. Anything other than 0 or 1 makes the script stop before it sends anything. |
+| `COUNCIL` | `0` (off) | `1` turns on the Council (`docs/next-version/COUNCIL-PLAN.md`): the script also deploys the `Council` implementation and binds it to the Launcher (`bindCouncil`) in the same broadcast, before any project can be launched. **It needs `HOLDER_PAUSE=1`** (a Council reads its project's pause as its vote contract); `COUNCIL=1` with the pause off, or any value other than 0 or 1, makes the script stop before it sends anything. A runner (a founder alone, or a Pair) can then hand the seat to a Council of five accounts. The round's second part (the holders' vote) is not part of this setting yet. |
 
 | `EARLIER_ROOT`, `EARLIER_TEXT_HASH`, `EARLIER_TOTAL`, `EARLIER_ROWS`, `EARLIER_FOUNDER`, `EARLIER_PROJECT_ID` | none of them set (nothing is claimable) | The earlier backers' claim (step 4, `STEP4-PLAN.md` section 3): **all six or none**. Together they make the script deploy `EarlierGrants` and bind it to the Launcher (`bindEarlier`) in the same broadcast as the Launcher's own deployment, before any project can be launched. The first two are fingerprints (bytes32): the list's Merkle root and the text a claimant accepts; the list and the text themselves are never in this repository. `EARLIER_TOTAL` is the pool in Team Share wei (the sum of the rows) and `EARLIER_ROWS` the number of rows. `EARLIER_FOUNDER` and `EARLIER_PROJECT_ID` (bytes32) name the one project, by who launches it and under which id, that is born with the pool. Any of them set without the others makes the script stop before it sends anything. |
 | `EARLIER_ALLOW_LARGE` | `0` | `1` allows `EARLIER_TOTAL` above 100,000,000 Shares (the founder's own Team pool limit); the claim contract itself caps it at 1,000,000,000. A pool that large is a stated choice. Anything other than 0 or 1 stops the script. |
@@ -46,6 +47,33 @@ old and the new build and compares the digest). It is a switch of the **deployme
   (solc 0.8.37, optimizer 200 runs, `via_ir`, `evm_version = cancun`, `bytecode_hash = none`): `0x968400a44b9da42191d6e20ab5f47532e161ee3255d508c807d49f82f0a3ccdf`.
 - The pause holds no dollar and has no owner. Its one effect is that `draw` and `announceTask` of that project's Treasury refuse
   while a third of the backers' Shares are parked and have been for a day; take-outs are never touched.
+
+### The Council switch
+
+Off by default, and with it off nothing about a deployment or a project differs from before: `Launcher.councilImpl()` is zero,
+`makeCouncil` reverts, no address is ever registered as a Council, and `settingsHash()` is each of its three old formulas (the
+tests of `LauncherCouncil.t.sol` check each). `OffIsOff.t.sol`'s golden journey still gives the digest it gave at 4c36f73d6, and
+`OffIsOffCouncil.t.sol` runs the same 120-step differential on a stack with the pause and the Council bound where nobody makes a
+Council. It is a switch of the **deployment**:
+
+- `bindCouncil(impl)` works for the deployer only, once, inside the first hour, for an address with code, and only after the
+  pause is bound; the Launcher publishes `CouncilBound(impl, codehash)`. The script binds it in the same broadcast as the
+  Launcher's own deployment.
+- Once bound, `settingsHash()` has a **fourth form** that the Council test decides first: `keccak256(abi.encode(platform, pause, claims,
+  council))`, with a zero where the claim contract is off. A founder who read the hash before the switch is refused at launch and
+  reads it again.
+- A Council is a clone of `impl`: five seats, three of five needed for every action. It has no power a runner does not have;
+  every limit of the Treasury binds it. `Launcher.makeCouncil(key, members, salt)` makes the one the runner offered the seat to
+  (`Treasury.handOver(Launcher.councilAddress(key, members, salt), false)` first); the Launcher registers it as runner kind 2
+  (`runnerKindOf`), and publishes `CouncilMade(key, council, false)` (the five accounts are in the Council's own `SeatsSet`, emitted in the same transaction).
+- The expected code hash of the `Council` implementation, from the build at this commit (solc 0.8.37, optimizer 200 runs,
+  `via_ir`, `evm_version = cancun`, `bytecode_hash = none`; `forge inspect Council deployedBytecode | cast keccak`):
+  `0x4acf0462b41421ef2ed413fbe8e824a30036bb60cc53441785698ca0bcb5a849`. `HolderPause` is unchanged by this round
+  (`0x968400a4...ccdf`, above).
+- Events to check after a deployment with it on: `CouncilBound` on the Launcher (one), and on a made Council `SeatsSet` (the five
+  seats), the Treasury's `RunnerChanged` and the Launcher's `CouncilMade`. A project launched before the switch has no Council
+  and cannot get one unless its runner hands the seat to a Council: that works on any project of a deployment that has the switch
+  on, whenever it was launched.
 
 ### The earlier backers' claim
 

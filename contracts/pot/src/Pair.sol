@@ -80,6 +80,11 @@ contract Pair {
         return _executing;
     }
 
+    /// @notice True for the two signers. The Treasury asks it to bar both from taking a task or being paid for one.
+    function isSeat(address a) external view returns (bool) {
+        return a == first || a == second;
+    }
+
     /// @notice Check in for the project. Either signer, alone: the one thing a single signer may do.
     function checkIn(bytes32 recordHash) external onlySigner {
         treasury.checkIn(recordHash);

@@ -10,6 +10,7 @@ import {Pair} from "./Pair.sol";
 import {TaskBook} from "./TaskBook.sol";
 import {Parts} from "./Parts.sol";
 import {HolderPause} from "./HolderPause.sol";
+import {Council} from "./Council.sol";
 import {IShares, ITreasuryClock, ITreasuryRunner, IPair, ITaskBook, IEarlierGrants} from "./Interfaces.sol";
 
 /// @notice What the Launcher reads of the dollar token: the number of decimals (every amount in the Treasury is in raw
@@ -27,8 +28,9 @@ interface IDecimals {
 ///  - the platform settings new projects are born with (the dollar, who gets the fee, the fee, the time unit, the agents'
 ///    default dollar limit). A founder commits to the exact set they saw by passing its hash to `launch`; nothing in a
 ///    launched project follows a later change;
-///  - the registry of Pairs it made (the Treasury asks `isPair`), and `makePair`, which the second signer calls to accept
-///    the seat the founder offered;
+///  - the registry of runner contracts it made (the Treasury asks `runnerKindOf`: 1 a Pair, 2 a Council), `makePair`, which
+///    the second signer calls to accept the seat the founder offered, and (when the deployment turned the Council on)
+///    `makeCouncil`, which anyone calls to make the Council of five accounts the runner offered the seat to;
 ///  - `windDown(key)`, the app's and a Pair's wind-down target: it checks the caller is the runner and forwards to the
 ///    Treasury.
 /// The founder picks two numbers: the allowance rate and the size of the Team pool (`Terms`). The time unit N is a platform
@@ -96,6 +98,13 @@ contract Launcher {
     /// @notice The holder pause every project launched from now on is born with (the code its clones copy); zero while the
     /// deployment's switch is off, which is the default. Set once, by the deployer, in the first hour; never changed.
     address public holderPauseImpl;
+    /// @notice True once the deployment's Council switch is on. Kept in the same storage slot as `holderPauseImpl`, so a launch
+    /// with the switch off reads nothing more than it did before the Council existed (`settingsHash` and `launch` already read
+    /// that slot).
+    bool public councilBound;
+    /// @notice The Council every Council of a project is a clone of; zero while the deployment's Council switch is off, which
+    /// is the default. Set once, by the deployer, in the first hour, and only after the holder pause is bound; never changed.
+    address public councilImpl;
     /// @notice The earlier backers' claim contract; zero while the deployment has none, which is the default. Set once, by the
     /// deployer, in the first hour, and only before project `earlierKey` has launched; never changed.
     address public earlier;
@@ -103,8 +112,9 @@ contract Launcher {
     /// while nothing is bound.
     bytes32 public earlierKey;
 
-    /// @notice True for a Pair this Launcher made. The Treasury asks it.
-    mapping(address => bool) public isPair;
+    /// @notice What kind of runner contract an address is: 0 none the Launcher made, 1 a Pair, 2 a Council. The Treasury asks it
+    /// for both of its runner-seat checks, as one storage read.
+    mapping(address => uint8) public runnerKindOf;
     mapping(bytes32 => Project) private _projects;
 
     /// @notice One event with everything a server needs to index a project.
@@ -118,6 +128,13 @@ contract Launcher {
     );
     /// @notice The Pair of (`first`, `second`) took the runner seat of project `key`.
     event PairMade(bytes32 indexed key, address indexed pair, address first, address second);
+    /// @notice The deployment's Council switch was turned on: projects can now hand their seat to a Council, a clone of `impl`.
+    /// `codehash` is the code hash of `impl`, to compare with the build.
+    event CouncilBound(address impl, bytes32 codehash);
+    /// @notice A Council took the runner seat of project `key` (`byVote` false: the runner handed the seat over). Its five
+    /// accounts are in the Council's own `SeatsSet`, emitted in the same transaction, so a reader that finds the Council here
+    /// reads its seats there.
+    event CouncilMade(bytes32 indexed key, address indexed council, bool byVote);
     /// @notice The runner wound project `key` down.
     event WoundDown(bytes32 indexed key, address indexed runner);
     /// @notice The platform settings for new projects changed.
@@ -148,6 +165,10 @@ contract Launcher {
     error NotDeployer();
     /// @notice The one-time, first-hour binding is closed (done already, or the hour is over).
     error BindClosed();
+    /// @notice The deployment's Council switch is off.
+    error NoCouncil();
+    /// @notice A seat was named that is one of the project's own contracts, or another runner contract: it could never act.
+    error BadSeatHolder(address who);
 
     /// @param admin_ Who may change the settings for new projects.
     /// @param initial The first platform settings.
@@ -186,7 +207,8 @@ contract Launcher {
         bytes32 expectedSettingsHash
     ) external returns (address shares, address team, address treasury, address vester) {
         bytes32 key = keyOf(msg.sender, projectId);
-        if (settingsHash() != expectedSettingsHash) revert SettingsMoved();
+        address pauseImpl = holderPauseImpl;
+        if (_settingsHash(pauseImpl) != expectedSettingsHash) revert SettingsMoved();
         if (_projects[key].treasury != address(0)) revert ProjectExists();
         if (
             bytes(name).length == 0 || bytes(name).length > 64 || bytes(symbol).length == 0 || bytes(symbol).length > 64
@@ -238,8 +260,8 @@ contract Launcher {
                     tasks: ITaskBook(tasks)
                 })
             );
-        if (holderPauseImpl != address(0)) {
-            address gate = holderPauseImpl.clone();
+        if (pauseImpl != address(0)) {
+            address gate = pauseImpl.clone();
             HolderPause(gate).initialize(IShares(shares), s.unit);
             Treasury(treasury).bindPause(gate);
         }
@@ -268,7 +290,7 @@ contract Launcher {
     function makePair(bytes32 key, address first) external returns (address pair) {
         Project memory p = _project(key);
         pair = pairImpl.cloneDeterministic(_pairSalt(key, first, msg.sender));
-        isPair[pair] = true;
+        runnerKindOf[pair] = 1;
         Pair(pair).initialize(ITreasuryRunner(p.treasury), address(this), first, msg.sender);
         emit PairMade(key, pair, first, msg.sender);
     }
@@ -276,6 +298,41 @@ contract Launcher {
     /// @notice The address the Pair of (`first`, `second`) for project `key` will have.
     function pairAddress(bytes32 key, address first, address second) external view returns (address) {
         return pairImpl.predictDeterministicAddress(_pairSalt(key, first, second));
+    }
+
+    // ================================================ the Council ====================================================
+
+    /// @notice Make the Council of `members` for project `key`. The runner must have offered the seat to
+    /// `councilAddress(key, members, salt)` first (`Treasury.handOver`); the Council takes it in this call, as a Pair does, so
+    /// anyone can make it and nobody can change who the five accounts are (the address commits to them). No wait, no vote.
+    /// Only while the deployment's Council switch is on.
+    /// @param key The project.
+    /// @param members Five distinct accounts, none of them one of the project's own contracts.
+    /// @param salt Anything; lets the same five accounts have more than one Council.
+    /// @return council The new Council, now the project's runner.
+    function makeCouncil(bytes32 key, address[5] calldata members, bytes32 salt) external returns (address council) {
+        if (!councilBound) revert NoCouncil();
+        address impl = councilImpl;
+        Project memory p = _project(key);
+        for (uint256 i; i < 5; ++i) {
+            if (_isProjectAccount(p, members[i])) revert BadSeatHolder(members[i]);
+        }
+        council = impl.cloneDeterministic(_councilSalt(key, members, salt));
+        runnerKindOf[council] = 2;
+        Council(council).initialize(ITreasuryRunner(p.treasury), address(this), members, true);
+        emit CouncilMade(key, council, false);
+    }
+
+    /// @notice The address the Council of `members` with `salt` for project `key` will have.
+    function councilAddress(bytes32 key, address[5] calldata members, bytes32 salt) external view returns (address) {
+        return councilImpl.predictDeterministicAddress(_councilSalt(key, members, salt));
+    }
+
+    /// @notice True when `who` is one of project `key`'s own contracts (its Treasury, Vester, task queue, both Share tokens, its
+    /// pause), the Launcher, the Council implementation, or any runner contract this Launcher made: an account that can never
+    /// act, so it can never hold a Council seat. A smart account stays allowed.
+    function isProjectAccount(bytes32 key, address who) external view returns (bool) {
+        return _isProjectAccount(_project(key), who);
     }
 
     // ================================================ wind-down ======================================================
@@ -288,12 +345,22 @@ contract Launcher {
         address runner = Treasury(p.treasury).runner();
         // a Pair runner must be in the middle of executing a proposal both signers agreed to (defence in depth: the Pair
         // has no other way here)
-        if (msg.sender != runner || (isPair[runner] && !IPair(runner).bothSigned())) revert NotRunner();
+        if (msg.sender != runner || (runnerKindOf[runner] != 0 && !IPair(runner).bothSigned())) revert NotRunner();
         Treasury(p.treasury).markWoundDown();
         emit WoundDown(key, runner);
     }
 
     // ================================================ views ==========================================================
+
+    /// @notice True for a Pair this Launcher made.
+    function isPair(address who) external view returns (bool) {
+        return runnerKindOf[who] == 1;
+    }
+
+    /// @notice True for a Council this Launcher made.
+    function isCouncil(address who) external view returns (bool) {
+        return runnerKindOf[who] == 2;
+    }
 
     /// @notice The project a founder made under `projectId`.
     function project(address founder, bytes32 projectId) external view returns (Project memory) {
@@ -309,10 +376,18 @@ contract Launcher {
     /// passes it to `launch`.
     /// @dev With nothing bound the hash is `keccak256(abi.encode(platform))`, as before; a bound holder pause is added to it,
     /// and a bound claim contract after that, so a founder's launch is refused if either switch was turned on after they read
-    /// it. (With only the pause bound it is `keccak256(abi.encode(platform, pause))`, as it was before the claim contract.)
+    /// it. (With only the pause bound it is `keccak256(abi.encode(platform, pause))`, as it was before the claim contract.) A
+    /// bound Council comes first and gives a fourth form, `keccak256(abi.encode(platform, pause, claims, council))` (a zero
+    /// where the claim contract is off), so a founder who read the hash before the Council was turned on reads it again.
     function settingsHash() public view returns (bytes32) {
-        address pause = holderPauseImpl;
+        return _settingsHash(holderPauseImpl);
+    }
+
+    function _settingsHash(address pause) private view returns (bytes32) {
         address claims = earlier;
+        // a Council can only be bound beside a bound pause, so with no pause nothing more is read (a launch on a deployment
+        // with the switches off costs what it cost before the Council existed)
+        if (pause != address(0) && councilBound) return keccak256(abi.encode(platform, pause, claims, councilImpl));
         if (claims != address(0)) return keccak256(abi.encode(platform, pause, claims));
         if (pause == address(0)) return keccak256(abi.encode(platform));
         return keccak256(abi.encode(platform, pause));
@@ -336,6 +411,19 @@ contract Launcher {
         if (impl.code.length == 0) revert BadStack();
         holderPauseImpl = impl;
         emit HolderPauseBound(impl, impl.codehash);
+    }
+
+    /// @notice Turn the Council on for every project: a runner may hand its seat to a Council of five accounts (`makeCouncil`).
+    /// Only the deployer, once, inside the first hour (the deploy script does it in the same broadcast, before any launch), and
+    /// only after the holder pause is bound (a Council is born reading its project's pause as its vote contract). `impl` must
+    /// have code. The event carries the code hash, to compare with the build.
+    /// @param impl The deployed `Council` implementation.
+    function bindCouncil(address impl) external {
+        if (msg.sender != deployer) revert NotDeployer();
+        if (councilBound || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();
+        if (impl.code.length == 0 || holderPauseImpl == address(0)) revert BadStack();
+        (councilBound, councilImpl) = (true, impl);
+        emit CouncilBound(impl, impl.codehash);
     }
 
     /// @notice Bind the earlier backers' claim contract: the project it names (`EarlierGrants.key`) is born with a reserve of
@@ -387,6 +475,16 @@ contract Launcher {
 
     function _pairSalt(bytes32 key, address first, address second) private pure returns (bytes32) {
         return keccak256(abi.encode(key, "pair", first, second));
+    }
+
+    function _councilSalt(bytes32 key, address[5] calldata members, bytes32 salt) private pure returns (bytes32) {
+        return keccak256(abi.encode(key, "council", members, salt));
+    }
+
+    function _isProjectAccount(Project memory p, address who) private view returns (bool) {
+        return who == p.treasury || who == p.vester || who == p.shares || who == p.team || who == address(this)
+            || who == councilImpl || who == Treasury(p.treasury).pauseGate()
+            || who == address(Treasury(p.treasury).tasks()) || runnerKindOf[who] != 0;
     }
 
     function _set(Platform memory s) private {

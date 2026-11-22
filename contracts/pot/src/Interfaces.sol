@@ -71,18 +71,24 @@ interface ITreasuryClock {
     function burnAfterWindDown(uint256 amount) external;
 }
 
-/// @notice What the Treasury asks of the Launcher: which addresses are Pairs it made.
+/// @notice What the Treasury asks of the Launcher: which addresses are runner contracts it made.
 interface ILauncherPairs {
     /// @notice True for a Pair the Launcher made.
     function isPair(address who) external view returns (bool);
+    /// @notice What kind of runner contract `who` is: 0 not one the Launcher made, 1 a Pair, 2 a Council. The Treasury asks it
+    /// for both runner-seat checks, so a Council is read the same way a Pair is.
+    function runnerKindOf(address who) external view returns (uint8);
 }
 
-/// @notice The two signers of a Pair.
+/// @notice The seats of a runner contract that is run by more than one account (a Pair or a Council).
 interface IPairSigners {
-    /// @notice The first signer (the founder who offered the seat).
+    /// @notice The first signer (the founder who offered the seat). A Pair only.
     function first() external view returns (address);
-    /// @notice The second signer (who accepted).
+    /// @notice The second signer (who accepted). A Pair only.
     function second() external view returns (address);
+    /// @notice True when `who` holds a seat of this runner (both signers of a Pair, any of the five seats of a Council). Never
+    /// true for the zero address.
+    function isSeat(address who) external view returns (bool);
 }
 
 /// @notice What the Treasury reads of a Pair that is the runner.
@@ -91,7 +97,7 @@ interface IPair {
     function bothSigned() external view returns (bool);
 }
 
-/// @notice What a Pair asks of the project's Treasury: take the seat, and check in.
+/// @notice What a Pair or a Council asks of the project's Treasury: take the seat, check in, and read the gate.
 interface ITreasuryRunner {
     /// @notice The time unit N in seconds (a Pair's proposals live two units).
     function unit() external view returns (uint32);
@@ -99,6 +105,20 @@ interface ITreasuryRunner {
     function takeSeat() external;
     /// @notice The weekly check-in with the hash of the signed record.
     function checkIn(bytes32 recordHash) external;
+    /// @notice The project's holder pause (the vote contract when the deployment has one); zero when there is none.
+    function pauseGate() external view returns (address);
+}
+
+/// @notice What the project's vote contract asks of a Council: which two seats come up and who takes them. Only the vote
+/// contract the Council was born with may call either.
+interface ICouncilVote {
+    /// @notice Open the election that is due: say which two seats come up and move the next date on. Returns the two seat
+    /// numbers.
+    function openElection() external returns (uint8 upA, uint8 upB);
+    /// @notice Put the winners of the ballot for the two seats `upA` and `upB` in place (a zero winner leaves its seat as it was).
+    function seat(uint8 upA, uint8 upB, address winnerA, address winnerB) external;
+    /// @notice True when `who` holds a seat.
+    function isSeat(address who) external view returns (bool);
 }
 
 /// @notice What the Treasury asks of the project's TaskBook (the task queue). Every call that changes the book comes from the

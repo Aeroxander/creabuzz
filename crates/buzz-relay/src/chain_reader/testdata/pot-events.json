@@ -31,6 +31,45 @@
           ]
         },
         {
+          "name": "CouncilBound",
+          "signature": "CouncilBound(address,bytes32)",
+          "topic": "0xfa5a51a33eaf4e2a55336cc5f56b6cde2a59bc15a5cf117d7149f3f585e7e03a",
+          "inputs": [
+            {
+              "name": "impl",
+              "type": "address",
+              "indexed": false
+            },
+            {
+              "name": "codehash",
+              "type": "bytes32",
+              "indexed": false
+            }
+          ]
+        },
+        {
+          "name": "CouncilMade",
+          "signature": "CouncilMade(bytes32,address,bool)",
+          "topic": "0x2cb34335260ce285d9aa26351ef7b841ce6aa2299ed2ef6b252295f16cc19287",
+          "inputs": [
+            {
+              "name": "key",
+              "type": "bytes32",
+              "indexed": true
+            },
+            {
+              "name": "council",
+              "type": "address",
+              "indexed": true
+            },
+            {
+              "name": "byVote",
+              "type": "bool",
+              "indexed": false
+            }
+          ]
+        },
+        {
           "name": "EarlierBound",
           "signature": "EarlierBound(address,bytes32)",
           "topic": "0x00eef9560cbe734465b2903143862cf263a44a1b9e373e4c192be74ae3f3f855",

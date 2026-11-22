@@ -4,12 +4,21 @@ pragma solidity ^0.8.30;
 import {ILauncherPairs, IPair, IPairSigners} from "../../src/Interfaces.sol";
 import {Treasury} from "../../src/Treasury.sol";
 
-/// @notice Stands in for the Launcher: a registry of Pairs and the wind-down forwarder.
+/// @notice Stands in for the Launcher: a registry of runner contracts and the wind-down forwarder.
 contract MockSalePath is ILauncherPairs {
-    mapping(address => bool) public isPair;
+    mapping(address => uint8) public runnerKindOf;
+
+    function isPair(address who) external view returns (bool) {
+        return runnerKindOf[who] == 1;
+    }
 
     function setPair(address who, bool on) external {
-        isPair[who] = on;
+        runnerKindOf[who] = on ? 1 : 0;
+    }
+
+    /// @dev Register `who` as a runner contract of kind 2 (a Council), without a real Council behind it.
+    function setCouncilLike(address who, bool on) external {
+        runnerKindOf[who] = on ? 2 : 0;
     }
 
     function wind(address treasury) external {
@@ -25,6 +34,10 @@ contract MockPair is IPair, IPairSigners {
 
     constructor(address first_, address second_) {
         (first, second) = (first_, second_);
+    }
+
+    function isSeat(address a) external view returns (bool) {
+        return a == first || a == second;
     }
 
     function exec(address target, bytes calldata data, bool signed) external returns (bool ok, bytes memory ret) {

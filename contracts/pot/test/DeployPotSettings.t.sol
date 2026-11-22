@@ -131,6 +131,58 @@ contract DeployPotSettingsTest is Test {
         vm.expectRevert(bytes("HOLDER_PAUSE must be 0 or 1"));
         bad.run();
 
+        // ---- the Council switch (the Council round, K1): off by default, needs the pause, bound in the same broadcast. These
+        // cases are in this one function, not in a file of their own, because the script reads process environment variables
+        // and test contracts run in parallel: a second file setting HOLDER_PAUSE would race this one.
+        vm.setEnv("HOLDER_PAUSE", "0");
+        d = _run(); // COUNCIL is not set
+        assertEq(Launcher(d.launcher).councilImpl(), address(0), "default: no Council switch");
+        assertFalse(Launcher(d.launcher).councilBound());
+        assertEq(d.council, address(0));
+        json = vm.readFile("deployments/pot-11155111.json");
+        assertEq(vm.parseJsonAddress(json, ".council"), address(0));
+        vm.setEnv("COUNCIL", "2");
+        bad = new DeployPot();
+        vm.expectRevert(bytes("COUNCIL must be 0 or 1"));
+        bad.run();
+        vm.setEnv("COUNCIL", "1"); // the pause is still off
+        bad = new DeployPot();
+        vm.expectRevert(bytes("COUNCIL=1 needs HOLDER_PAUSE=1"));
+        bad.run();
+        vm.setEnv("HOLDER_PAUSE", "1");
+        vm.recordLogs();
+        d = _run();
+        l = Launcher(d.launcher);
+        assertTrue(d.council != address(0));
+        assertEq(l.councilImpl(), d.council, "the Council implementation is bound");
+        assertTrue(l.councilBound());
+        assertEq(l.holderPauseImpl(), d.holderPause, "and so is the pause");
+        assertLe(block.timestamp, uint256(l.deployedAt()) + 1 hours, "the binding landed inside the first hour");
+        logs = vm.getRecordedLogs();
+        bound = 0;
+        for (uint256 i; i < logs.length; ++i) {
+            if (logs[i].emitter == d.launcher && logs[i].topics[0] == Launcher.CouncilBound.selector) {
+                ++bound;
+                (address impl, bytes32 h) = abi.decode(logs[i].data, (address, bytes32));
+                assertEq(impl, d.council);
+                assertEq(h, d.council.codehash, "the published hash is the bound code's");
+            }
+        }
+        assertEq(bound, 1, "one CouncilBound");
+        json = vm.readFile("deployments/pot-11155111.json");
+        assertEq(vm.parseJsonAddress(json, ".council"), d.council);
+        assertEq(vm.parseJsonBytes32(json, ".councilCodehash"), d.council.codehash);
+        assertEq(
+            l.settingsHash(),
+            keccak256(abi.encode(_platformOf(l), d.holderPause, address(0), d.council)),
+            "the founder's hash covers the Council switch"
+        );
+        vm.prank(founder);
+        (,, address trC,) =
+            l.launch("p2", "Project", "PRJ", Launcher.Terms({ratePpm: 1000, teamPool: 1_000_000e18}), l.settingsHash());
+        assertTrue(Treasury(trC).pauseGate() != address(0));
+        vm.setEnv("COUNCIL", "0");
+
         // ---- the earlier grants: nothing set, nothing claimable (the default, checked on the file and on the Launcher)
         vm.setEnv("HOLDER_PAUSE", "0");
         _earlierSettings(0, 0, 0, 0, address(0), 0, 0);
@@ -209,7 +261,9 @@ contract DeployPotSettingsTest is Test {
         _expectEarlierRefusal2(1_000_000_000e18 + 1, 1, "EARLIER_TOTAL is over the ceiling");
         _expectEarlierRefusal2(1000e18, 2, "EARLIER_ALLOW_LARGE must be 0 or 1");
         // more rows than a uint32 holds is refused, not cut down to the low bits
-        _expectEarlierRefusal(ROOT, TXT, 5000e18, uint256(type(uint32).max) + 6, zeroFounder, ZID, "EARLIER_ROWS too big");
+        _expectEarlierRefusal(
+            ROOT, TXT, 5000e18, uint256(type(uint32).max) + 6, zeroFounder, ZID, "EARLIER_ROWS too big"
+        );
         _earlierSettings(ROOT, TXT, 5000e18, type(uint32).max, zeroFounder, ZID, 0);
         d = _run(); // exactly the largest count is allowed
         assertEq(uint256(EarlierGrants(d.earlier).rows()), uint256(type(uint32).max));

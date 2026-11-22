@@ -9,7 +9,10 @@
               moves the unit tests, the cycled must-bind run or the ledger of events;
   pause       a changed rule or removed guard of the holder pause (step 4, K1) makes the unit, attack or launcher tests fail;
   earlier     the same for the earlier backers' grants (step 4, K2): the claim contract, the Vester's reserve and counters, and the
-              Launcher's binding.
+              Launcher's binding;
+  council     the same for the Council runner and the Treasury's and Launcher's recognition of it (the Council round, K1): the
+              three-of-five rule, the list of calls, the fence, the seats and elections, `seatByVote`, the Launcher's binding, the
+              settings hash's fourth form and the Pair's `isSeat`.
 
 A mutation with a seventh entry (a sentence) is an EQUIVALENT mutant: the change cannot alter what the contract does, the
 sentence says why, and the script requires that it survive (a mutant that was killed would mean the proof is wrong).
@@ -61,6 +64,12 @@ EG = "test/EarlierGrants.t.sol"
 EV = "test/EarlierVester.t.sol"
 EL = "test/EarlierLauncher.t.sol"
 EM = "test/EarlierMoney.t.sol"
+CO = "test/Council.t.sol"
+CA = "test/CouncilAccess.t.sol"
+CS = "test/CouncilSeats.t.sol"
+LC = "test/LauncherCouncil.t.sol"
+SV = "test/SeatByVote.t.sol"
+CE = "test/CouncilEventsRebuild.t.sol"
 MUTATIONS = [
     # ---- formulas: the vectors must notice
     ("offset-dollar", "src/PotMath.sol", "OFFSET_USD = 1;", "OFFSET_USD = 1e6;", QO, "the virtual money in the quote grows to a dollar"),
@@ -256,6 +265,80 @@ MUTATIONS = [
     ("launch-pool-unfunded", "src/Launcher.sol", "                vester,\n                terms.teamPool + earlierPool\n", "                vester,\n                terms.teamPool\n", EL, "the reserve is not minted with the Team pool"),
     ("no-earlier-funded-event", "src/Launcher.sol", "            emit EarlierPoolFunded(key, vester, earlierPool);\n", "", EL, "the launch does not announce the reserve"),
     ("settings-hash-no-earlier", "src/Launcher.sol", "if (claims != address(0)) return keccak256(abi.encode(platform, pause, claims));", "", EL, "the founder's settings hash does not cover the claim contract"),
+    # ---- the Council round (docs/next-version/COUNCIL-PLAN.md, K1): the Council, Pair, Treasury, Launcher and settings-hash tests must notice
+    ("council-threshold-two", "src/Council.sol", "uint8 public constant THRESHOLD = 3;", "uint8 public constant THRESHOLD = 2;", CO, "two seats are enough to run a call"),
+    ("council-seats-six", "src/Council.sol", "uint8 public constant SEATS = 5;", "uint8 public constant SEATS = 4;", CO, "a Council has four seats"),
+    ("council-no-generation", "src/Council.sol", "        if (p.generation != generation) revert SeatsChanged();\n        if (block.timestamp > uint256(p.at) + PROPOSAL_TTL) revert Expired();", "        if (block.timestamp > uint256(p.at) + PROPOSAL_TTL) revert Expired();", CO, "an agreement given before a seat changed hands still counts"),
+    ("council-withdraw-no-generation", "src/Council.sol", "        if (p.generation != generation) revert SeatsChanged();\n        uint8 bit = uint8(1 << i);\n        if (p.mask & bit == 0) revert NotAllowed();", "        uint8 bit = uint8(1 << i);\n        if (p.mask & bit == 0) revert NotAllowed();", CO, "a proposal of an older generation can be taken back"),
+    ("council-no-expiry", "src/Council.sol", "        if (block.timestamp > uint256(p.at) + PROPOSAL_TTL) revert Expired();", "", CO, "a proposal never runs out"),
+    ("council-expiry-inclusive", "src/Council.sol", "if (block.timestamp > uint256(p.at) + PROPOSAL_TTL) revert Expired();", "if (block.timestamp >= uint256(p.at) + PROPOSAL_TTL) revert Expired();", CO, "a proposal runs out one second early"),
+    ("council-ttl-wrong", "src/Council.sol", "PROPOSAL_TTL = PROPOSAL_UNITS * uint256(u);", "PROPOSAL_TTL = PROPOSAL_UNITS * uint256(u) + 1 days;", CO, "a proposal lives longer than two time units"),
+    ("council-withdraw-ignored", "src/Council.sol", "        p.mask &= ~bit;\n", "", CO, "taking an agreement back leaves it counted"),
+    ("council-withdraw-nonagreed", "src/Council.sol", "        if (p.mask & bit == 0) revert NotAllowed();", "", CO, "a seat that did not agree can take another's agreement back"),
+    ("council-withdraw-no-cancel", "src/Council.sol", "        if (p.mask == 0) {\n            delete proposals[id];\n            emit Cancelled(id);\n        } else {\n            proposals[id] = p;\n        }", "        proposals[id] = p;", CO, "a proposal with no agreement left stays and says nothing"),
+    ("council-any-selector", "src/Council.sol", "        if (target == address(treasury)) {\n            if (sel == Treasury.handOver.selector)", "        if (target == address(treasury)) {\n            if (sel != bytes4(0)) return true;\n            if (sel == Treasury.handOver.selector)", CO, "every call to the Treasury is on the list"),
+    ("council-list-launcher-any", "src/Council.sol", "return target == launcher && sel == ILauncherWindDown.windDown.selector;", "return target == launcher;", CO, "every Launcher call is on the list"),
+    ("council-handover-trim-allowed", "src/Council.sol", "return data.length == 68 && uint256(bytes32(data[36:68])) == 0;", "return data.length == 68;", CO, "a hand-over that trims the founder is on the list (killed at propose)"),
+    ("council-forfeit-allowed", "src/Council.sol", "|| sel == Treasury.revokeAgent.selector || sel == Treasury.windDown.selector;", "|| sel == Treasury.revokeAgent.selector || sel == Treasury.windDown.selector\n                || sel == Treasury.announceForfeit.selector;", CO, "a forfeit without the member's say is on the list (killed at propose)"),
+    ("council-propose-list-missing", "src/Council.sol", "        if (!listed(target, data)) revert BadCall();\n", "", CO, "propose accepts any call"),
+    ("council-propose-target-missing", "src/Council.sol", "        if (target != address(treasury) && target != launcher) revert BadTarget();\n", "", CO, "propose accepts any target (killed by the list too: the table covers it)"),
+    ("council-propose-seat-only", "src/Council.sol", "        uint8 i = _indexOf(msg.sender);\n        if (i == NONE) revert NotAllowed();\n        if (target != address(treasury)", "        uint8 i = _indexOf(msg.sender);\n        if (target != address(treasury)", CO, "anyone proposes"),
+    ("council-agree-seat-only", "src/Council.sol", "        uint8 i = _indexOf(msg.sender);\n        if (i == NONE) revert NotAllowed();\n        bytes32 id = callId(target, data, n);", "        uint8 i = _indexOf(msg.sender);\n        bytes32 id = callId(target, data, n);", CO, "anyone agrees"),
+    ("council-agree-twice", "src/Council.sol", "        if (p.mask & bit != 0) revert AlreadyAgreed();", "", CO, "a seat's agreement counts again and again"),
+    ("council-no-delete-on-run", "src/Council.sol", "        delete proposals[id];\n        _executing = true;", "        _executing = true;", CO, "the record is kept after the third agreement: seats four and five run the call again"),
+    ("council-no-reentry-guard", "src/Council.sol", "        if (_executing) revert Reentrancy();\n", "", CO, "a seat that is paid by a call can agree to another inside it"),
+    ("council-failed-call-swallowed", "src/Council.sol", "        if (!ok) {\n            assembly (\"memory-safe\") {\n                revert(add(result, 0x20), mload(result))\n            }\n        }\n        emit Executed(id, msg.sender);", "        emit Executed(id, msg.sender);", CO, "a call that failed is called run and its record is gone"),
+    ("council-bothsigned-always", "src/Council.sol", "        return _executing;", "        return true;", CO, "the Council always looks as if its seats agreed"),
+    ("council-init-sender", "src/Council.sol", "if (launcher != address(0) || msg.sender != launcher_) revert BadSetup();", "if (launcher != address(0)) revert BadSetup();", CO, "anyone can set a clone up"),
+    ("council-init-vote-missing", "src/Council.sol", "        vote = treasury_.pauseGate();\n", "", CO, "a Council does not know its vote contract"),
+    ("council-double-seat", "src/Council.sol", "                if (members[i] == members[j]) revert BadSetup();", "", CO, "one account holds two seats of a new Council"),
+    ("council-zero-seat", "src/Council.sol", "            if (members[i] == address(0)) revert BadSetup();", "", CO, "the zero address is a seat of a new Council"),
+    ("council-seat-anyone", "src/Council.sol", "        if (msg.sender != vote || msg.sender == address(0)) revert NotAllowed();", "", CS, "anyone opens an election or puts winners in seats"),
+    ("council-vote-zero", "src/Council.sol", "        if (msg.sender != vote || msg.sender == address(0)) revert NotAllowed();", "        if (msg.sender != vote) revert NotAllowed();", CS, "with no vote contract, the zero address is the vote"),
+    ("council-isseat-zero", "src/Council.sol", "        if (a == address(0)) return NONE;\n", "", CO, "the zero address, which an open seat is stored as, is a seat"),
+    ("council-election-not-due", "src/Council.sol", "        if (block.timestamp < nextElection) revert NotDue(nextElection);", "", CS, "an election can be opened at any time"),
+    ("council-election-from-schedule", "src/Council.sol", "        nextElection = uint64(block.timestamp + ELECTION_UNITS * uint256(unit));\n        _emitSeats();\n    }", "        nextElection = uint64(uint256(nextElection) + ELECTION_UNITS * uint256(unit));\n        _emitSeats();\n    }", CS, "a late election makes the next one early"),
+    ("council-election-units", "src/Council.sol", "uint256 public constant ELECTION_UNITS = 26;", "uint256 public constant ELECTION_UNITS = 25;", CO, "two seats come up every 25 time units"),
+    ("council-up-open-not-first", "src/Council.sol", "uint48 l = _seats[i].who == address(0) ? 0 : _seats[i].lastUp;", "uint48 l = _seats[i].lastUp;", CS, "an open seat that came up and was not filled is not first again"),
+    ("council-up-tie-higher", "src/Council.sol", "            if (l < la) {", "            if (l <= la) {", CS, "a tie goes to the higher seat number"),
+    ("council-up-lastup-not-set", "src/Council.sol", "        _seats[upA].lastUp = nowAt;\n        _seats[upB].lastUp = nowAt;\n", "", CS, "the two seats' time is not moved on at opening, so the same two come up again"),
+    ("council-seat-wrong-seat", "src/Council.sol", "                (s, loTaken) = (lo, true);", "                (s, loTaken) = (hi, true);", CS, "a new winner takes the higher seat first"),
+    ("council-seat-incumbent-moved", "src/Council.sol", "            if (at == lo) {\n                (loTaken, placed[k]) = (true, true);", "            if (false) {\n                (loTaken, placed[k]) = (true, true);", CS, "a winner who holds one of the two seats is treated as new"),
+    ("council-seat-already-seated", "src/Council.sol", "            } else if (at != NONE) {\n                revert AlreadySeated(w[k]);\n            }", "            }", CS, "a winner who holds a seat that is not up gets a second seat"),
+    ("council-seat-same-winner", "src/Council.sol", "        if (winnerA != address(0) && winnerA == winnerB) revert BadSeat();\n", "", CS, "the same winner named twice takes both seats"),
+    ("council-seat-up-equal", "src/Council.sol", "if (upA >= SEATS || upB >= SEATS || upA == upB) revert BadSeat();", "if (upA >= SEATS || upB >= SEATS) revert BadSeat();", CS, "the same seat named as both seats that are up"),
+    ("council-seat-generation-missing", "src/Council.sol", "        if (changed) {\n            ++generation;", "        if (changed) {", CS, "a seat changes hands and older proposals live on"),
+    ("council-resign-no-generation", "src/Council.sol", "        ++generation;\n        emit Resigned(i, msg.sender);", "        emit Resigned(i, msg.sender);", CO, "a resigned seat's agreements live on"),
+    ("council-withdrawn-count-missing", "src/Council.sol", "emit Withdrawn(id, msg.sender, _count(p.mask));", "emit Withdrawn(id, msg.sender, 0);", CE, "the event of a taken-back agreement does not carry the count after it (a ledger of events cannot rebuild it)"),
+    ("pair-isseat-second-missing", "src/Pair.sol", "        return a == first || a == second;", "        return a == first;", CS, "a Pair's second signer is not a seat, so may take the tasks the Treasury bars"),
+    ("treasury-teamseat-pair-only", "src/Treasury.sol", "        if (_kind(r) == 0) return false;\n        return IPairSigners(r).isSeat(a);", "        if (!ILauncherPairs(salePath).isPair(r)) return false;\n        return IPairSigners(r).first() == a || IPairSigners(r).second() == a;", CS, "the five seats of a Council may take the tasks the Treasury bars (only a Pair's two signers are barred)"),
+    ("treasury-runnerkind-true", "src/Treasury.sol", "        if (_kind(r) == 0) return true;\n        return IPair(r).bothSigned();", "        if (_kind(r) != 1) return true;\n        return IPair(r).bothSigned();", CA, "a Council as the runner needs no agreement of its seats at the Treasury"),
+    ("treasury-forfeit-accepts-council", "src/Treasury.sol", "if (!_isRunnerBothSigned() || !ILauncherPairs(salePath).isPair(msg.sender)) revert NotAllowed();", "if (!_isRunnerBothSigned() || _kind(msg.sender) == 0) revert NotAllowed();", CA, "a Council can announce a forfeit (killed at the Treasury by a Council-like runner)"),
+    ("treasury-founderagrees-accepts-council", "src/Treasury.sol", "        if (!ILauncherPairs(salePath).isPair(msg.sender)) return false;\n        return IPairSigners(msg.sender).first() == founder", "        if (_kind(msg.sender) == 0) return false;\n        return IPairSigners(msg.sender).first() == founder", CA, "a Council can mark \"founder leaves\" and trim the founder's grants (killed at the Treasury)"),
+    ("treasury-seatbyvote-anyone", "src/Treasury.sol", "if (g == address(0) || msg.sender != g || _kind(council) != 2) revert NotAllowed();", "if (g == address(0) || _kind(council) != 2) revert NotAllowed();", SV, "anyone moves the runner seat to a Council"),
+    ("treasury-seatbyvote-zero-gate", "src/Treasury.sol", "if (g == address(0) || msg.sender != g || _kind(council) != 2) revert NotAllowed();", "if (msg.sender != g || _kind(council) != 2) revert NotAllowed();", SV, "a project with no gate can be moved by the zero address"),
+    ("treasury-seatbyvote-any-address", "src/Treasury.sol", "if (g == address(0) || msg.sender != g || _kind(council) != 2) revert NotAllowed();", "if (g == address(0) || msg.sender != g) revert NotAllowed();", SV, "the vote seats any address, not only a Council the Launcher made"),
+    ("treasury-seatbyvote-keeps-agents", "src/Treasury.sol", "        ++agentEpoch;\n        emit RunnerChanged(from, to);", "        emit RunnerChanged(from, to);", SV, "the old runner's helpers work under the new runner"),
+    ("treasury-seatbyvote-keeps-offer", "src/Treasury.sol", "(runner, pendingRunner, pendingTrim, pendingSeatAt) = (to, address(0), false, 0);", "(runner, pendingTrim, pendingSeatAt) = (to, false, 0);", SV, "an offer the old runner made to a puppet survives the vote"),
+    ("treasury-seatbyvote-keeps-rate", "src/Treasury.sol", "        (pendingRatePpm, pendingAt) = (0, 0);\n        _seat(council, false);", "        _seat(council, false);", SV, "a rate the old runner proposed reaches the new Council"),
+    ("treasury-takeseat-clears-rate", "src/Treasury.sol", "        _seat(msg.sender, pendingTrim);", "        (pendingRatePpm, pendingAt) = (0, 0);\n        _seat(msg.sender, pendingTrim);", SV, "a plain hand-over clears a pending rate (a money rule that changed)"),
+    ("launcher-bindcouncil-anyone", "src/Launcher.sol", "function bindCouncil(address impl) external {\n        if (msg.sender != deployer) revert NotDeployer();", "function bindCouncil(address impl) external {", LC, "anyone can turn the Council on"),
+    ("launcher-bindcouncil-twice", "src/Launcher.sol", "if (councilBound || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", "if (block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", LC, "the Council can be bound again"),
+    ("launcher-bindcouncil-after-hour", "src/Launcher.sol", "if (councilBound || block.timestamp > uint256(deployedAt) + 1 hours) revert BindClosed();", "if (councilBound) revert BindClosed();", LC, "a stolen key can turn the Council on at any time"),
+    ("launcher-bindcouncil-no-pause", "src/Launcher.sol", "if (impl.code.length == 0 || holderPauseImpl == address(0)) revert BadStack();", "if (impl.code.length == 0) revert BadStack();", LC, "a Council can be bound with no pause beside it"),
+    ("launcher-bindcouncil-needs-code", "src/Launcher.sol", "if (impl.code.length == 0 || holderPauseImpl == address(0)) revert BadStack();", "if (holderPauseImpl == address(0)) revert BadStack();", LC, "an address with no code can be bound"),
+    ("launcher-makecouncil-no-switch", "src/Launcher.sol", "        if (!councilBound) revert NoCouncil();\n", "", LC, "a Council can be made with the switch off"),
+    ("launcher-makecouncil-kind", "src/Launcher.sol", "        runnerKindOf[council] = 2;", "        runnerKindOf[council] = 1;", LC, "a Council is registered as a Pair"),
+    ("launcher-council-salt-members", "src/Launcher.sol", "return keccak256(abi.encode(key, \"council\", members, salt));", "return keccak256(abi.encode(key, \"council\", salt));", LC, "the Council's address does not commit to its five accounts"),
+    ("launcher-council-member-project-account", "src/Launcher.sol", "            if (_isProjectAccount(p, members[i])) revert BadSeatHolder(members[i]);\n", "", LC, "a project account is accepted as a seat"),
+    ("launcher-isprojectaccount-runner", "src/Launcher.sol", " || runnerKindOf[who] != 0;", ";", LC, "a runner contract can be a seat"),
+    ("launcher-isprojectaccount-tasks", "src/Launcher.sol", " || who == address(Treasury(p.treasury).tasks())", "", LC, "the project's task queue can be a seat"),
+    ("launcher-isprojectaccount-gate", "src/Launcher.sol", " || who == Treasury(p.treasury).pauseGate()", "", LC, "the project's pause can be a seat"),
+    ("launcher-isprojectaccount-impl", "src/Launcher.sol", "\n            || who == councilImpl", "", LC, "the Council implementation can be a seat"),
+    ("launcher-windDown-council-bypass", "src/Launcher.sol", "(runnerKindOf[runner] != 0 && !IPair(runner).bothSigned())", "(runnerKindOf[runner] == 1 && !IPair(runner).bothSigned())", LC, "a Council-kind runner winds a project down without its seats' agreement"),
+    ("settingshash-council-missing", "src/Launcher.sol", "        if (pause != address(0) && councilBound) return keccak256(abi.encode(platform, pause, claims, councilImpl));\n", "", LC, "the founder's settings hash does not cover the Council switch"),
+    ("settingshash-council-after-claims", "src/Launcher.sol", "        if (pause != address(0) && councilBound) return keccak256(abi.encode(platform, pause, claims, councilImpl));\n        if (claims != address(0)) return keccak256(abi.encode(platform, pause, claims));", "        if (claims != address(0)) return keccak256(abi.encode(platform, pause, claims));\n        if (pause != address(0) && councilBound) return keccak256(abi.encode(platform, pause, claims, councilImpl));", LC, "with claims and a Council bound the hash has no Council in it (the Council test is after the claims branch)"),
+    ("settingshash-council-no-claims", "src/Launcher.sol", "keccak256(abi.encode(platform, pause, claims, councilImpl))", "keccak256(abi.encode(platform, pause, councilImpl))", LC, "the fourth form leaves the claim contract out"),
 ]
 
 

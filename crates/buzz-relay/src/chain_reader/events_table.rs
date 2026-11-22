@@ -37,6 +37,20 @@ pub static EVENTS: &[EventDef] = &[
     },
     EventDef {
         role: Role::Launcher,
+        name: "CouncilBound",
+        params: &[p("impl", Ty::Address), p("codehash", Ty::Bytes32)],
+    },
+    EventDef {
+        role: Role::Launcher,
+        name: "CouncilMade",
+        params: &[
+            ix("key", Ty::Bytes32),
+            ix("council", Ty::Address),
+            p("byVote", Ty::Bool),
+        ],
+    },
+    EventDef {
+        role: Role::Launcher,
         name: "EarlierBound",
         params: &[p("earlier", Ty::Address), p("key", Ty::Bytes32)],
     },
