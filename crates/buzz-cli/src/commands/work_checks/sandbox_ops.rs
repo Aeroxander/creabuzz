@@ -431,7 +431,8 @@ fn ensure_private_root(root: &Path, what: &str) -> Result<PathBuf, String> {
             if mode != ROOT_MODE {
                 return Err(format!(
                     "refusing {what} root: {root:?} carries mode {mode:o}, not the \
-                     required private 0700"
+                     required private 0700 — if it is left over from an earlier run, \
+                     remove it and run again (it is never adopted silently)"
                 ));
             }
             // Owner proof: write our probe file in it and require the dir's
@@ -513,13 +514,29 @@ pub(crate) fn record_owned_in(
     name: &str,
     image_id: &str,
 ) -> Result<(), String> {
+    record_entry_in(root, owner, name, image_id, std::process::id(), now_secs())
+}
+
+/// The same write with the entry's own pid and time. The tests plant the
+/// entries of other runs and of finished containers through this one writer
+/// (never by hand: a hand-made entry creates the private root at the wrong
+/// mode and every later write is refused), and production passes the current
+/// pid and time through `record_owned_in`.
+pub(crate) fn record_entry_in(
+    root: &Path,
+    owner: &str,
+    name: &str,
+    image_id: &str,
+    pid: u32,
+    created_at: u64,
+) -> Result<(), String> {
     let root = ensure_private_root(root, "journal")?;
     let body = json!({
         "name": name,
         "owner": owner,
         "imageId": image_id,
-        "pid": std::process::id(),
-        "createdAt": now_secs(),
+        "pid": pid,
+        "createdAt": created_at,
     });
     persist_entry_atomic(&root, &entry_path_in(&root, owner, name), &body.to_string()).map_err(
         |e| {

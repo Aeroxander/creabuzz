@@ -578,16 +578,10 @@ fn write_journal_entry(owner: &str, name: &str, pid: u32) {
 }
 
 fn write_journal_entry_with_image(owner: &str, name: &str, pid: u32, image_id: &str) {
-    let entry = serde_json::json!({
-        "name": name,
-        "owner": owner,
-        "imageId": image_id,
-        "pid": pid,
-        "createdAt": 0,
-    });
-    std::fs::create_dir_all(ops::journal_root()).unwrap();
-    let path = ops::journal_root().join(format!("{owner}__{name}.json"));
-    std::fs::write(path, entry.to_string()).unwrap();
+    // Through the journal's own writer, which creates the private root and the entry the way
+    // production does. A hand-made entry here once created the root at the wrong mode, and every
+    // later write in the lane was refused (and every later run, until the root was removed).
+    ops::record_entry_in(&ops::journal_root(), owner, name, image_id, pid, 0).unwrap();
 }
 
 /// The immutable fixture image pointer, read from the daemon (the journal's
