@@ -10,8 +10,12 @@ import { TeamPauseLine } from "../pause/TeamPauseLine";
 import { useTeamPause } from "../pause/use-team-pause";
 import { Button } from "../../ui/button";
 import { Card } from "../../ui/card";
+import { useToast } from "../../ui/toast";
 import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
-import { runnerRole } from "../money/runner";
+import { potProblem } from "../money/pot-copy";
+import { checkInFor, mayCheckIn, runnerRole } from "../money/runner";
+import { useMoneySend } from "../money/use-money";
+import { checkInAction } from "../week/use-week";
 import { AllowanceSheets, useAllowanceState } from "./AllowanceSheets";
 import { boxNow, rateWords, smallDollarsText, whenWords } from "./pot-words";
 import { type Ready, WalletGate } from "./use-pot";
@@ -43,6 +47,91 @@ function lapseWords(lapseAt: number | null, now: number): string {
   return lapseAt > now
     ? `If the team does not check in again by ${timeText(lapseAt)}, the box stops filling, new backing stops and Team Shares stop unlocking until it does.`
     : `The check-in is overdue (it was due ${timeText(lapseAt)}): the box has stopped filling, new backing is stopped and Team Shares have stopped unlocking until the team checks in.`;
+}
+
+/** What a check-in carries when there is no weekly update to point at: 32 zero bytes. */
+const NO_RECORD = `0x${"0".repeat(64)}`;
+
+/**
+ * The weekly check-in's block: when the last one was, what a lapse does, and the press that keeps the project running.
+ * The press lives beside the runner's other presses on purpose: after a hand-over the new runner did not start the
+ * project, so the This-week page lists nothing for them and this is the only way back. Either signer of a Pair may check
+ * in alone, so the press is the same for every account that runs the money.
+ */
+function CheckInBlock({
+  a,
+  lapseAt,
+  numbers,
+  now,
+  ready,
+  wound,
+}: {
+  a: { lastCheckIn: number };
+  lapseAt: number | null;
+  numbers: ProjectNumbers;
+  now: number;
+  ready: Ready;
+  wound: boolean;
+}) {
+  const send = useMoneySend(
+    checkInAction(numbers.chainId, numbers.contracts.treasury),
+  );
+  const toast = useToast();
+  const [problem, setProblem] = useState<string | null>(null);
+  return (
+    <div data-testid="allowance-checkin">
+      <h3 className="text-sm font-semibold">The weekly check-in</h3>
+      <p className="mt-1 text-sm text-muted">
+        {wound
+          ? "This project has wound down, so there is nothing to check in."
+          : `The last check-in was on ${a.lastCheckIn > 0 ? dayText(a.lastCheckIn) : "no day yet"}. ${lapseWords(lapseAt, now)} Backers can always take their money out.`}
+      </p>
+      {wound ? null : (
+        <>
+          <Link
+            className="link mt-1 inline-flex min-h-11 items-center font-semibold"
+            to="/week"
+          >
+            Go to this week
+          </Link>
+          {mayCheckIn(numbers, ready.address) ? (
+            <div className="mt-1 flex flex-col items-start gap-1.5">
+              <Button
+                data-testid="allowance-check-in"
+                disabled={send.isPending}
+                onClick={() => {
+                  setProblem(null);
+                  const call = checkInFor(numbers, ready.address, NO_RECORD);
+                  if (!call) return;
+                  send.send(
+                    { chainId: numbers.chainId, build: () => [call] },
+                    {
+                      onSuccess: () =>
+                        toast(
+                          "Checked in. The allowance keeps running.",
+                          "done",
+                        ),
+                      onError: (error) =>
+                        setProblem(potProblem(error, "check-in")),
+                    },
+                  );
+                }}
+                size="sm"
+                variant="secondary"
+              >
+                {send.waiting ? "Look for your check-in" : "Check in only"}
+              </Button>
+            </div>
+          ) : null}
+          {problem ? (
+            <p className="text-danger text-sm" role="alert">
+              {problem}
+            </p>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
 }
 
 function Inner({
@@ -117,22 +206,14 @@ function Inner({
             : `You can apply it from ${whenWords(a.pending.applicableAt)}.`}
         </p>
       ) : null}
-      <div data-testid="allowance-checkin">
-        <h3 className="text-sm font-semibold">The weekly check-in</h3>
-        <p className="mt-1 text-sm text-muted">
-          {wound
-            ? "This project has wound down, so there is nothing to check in."
-            : `The last check-in was on ${a.lastCheckIn > 0 ? dayText(a.lastCheckIn) : "no day yet"}. ${lapseWords(lapseAt, now)} Backers can always take their money out.`}
-        </p>
-        {wound ? null : (
-          <Link
-            className="link mt-1 inline-flex min-h-11 items-center font-semibold"
-            to="/week"
-          >
-            Go to this week
-          </Link>
-        )}
-      </div>
+      <CheckInBlock
+        a={a}
+        lapseAt={lapseAt}
+        numbers={numbers}
+        now={now}
+        ready={ready}
+        wound={wound}
+      />
       {wound ? (
         <p className="text-sm text-muted">
           The allowance is closed: the box went back to the project's money.

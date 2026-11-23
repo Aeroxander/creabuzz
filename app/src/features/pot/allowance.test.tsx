@@ -166,6 +166,45 @@ describe("who sees the allowance screen", () => {
   });
 });
 
+const CHECK_IN_NO_RECORD = `0x${"0".repeat(64)}`;
+
+describe("the check-in press on the money tab", () => {
+  // The press lives beside the runner's other presses because after a hand-over the new runner did not start the
+  // project and the This-week page lists nothing for them: this is the only way back for them.
+  it("the runner presses and the call goes to the Treasury at once, carrying no week's words", async () => {
+    setup(FOUNDER_EVM);
+    show();
+    fireEvent.click(await screen.findByTestId("allowance-check-in"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    expect(chain.sent[0]?.to).toBe(numbers.contracts.treasury);
+    expect(decodeCall(TREASURY_ABI, chain.sent[0]?.data ?? "")).toMatchObject({
+      name: "checkIn",
+      args: [CHECK_IN_NO_RECORD],
+    });
+    expect((await screen.findByTestId("toast")).textContent).toContain(
+      "Checked in. The allowance keeps running.",
+    );
+  });
+
+  it("a Pair signer presses and it checks in at once through the Pair: a Pair lets either signer check in alone", async () => {
+    setup(BACKER_EVM);
+    show(pairRun, BACKER_EVM);
+    const block = await screen.findByTestId("allowance-checkin");
+    // No line about asking the other signer: a check-in needs one signer only.
+    expect(block.textContent).not.toContain("asks the other signer");
+    fireEvent.click(screen.getByTestId("allowance-check-in"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    expect(chain.sent[0]?.to).toBe(PAIR);
+    expect(decodeCall(PAIR_ABI, chain.sent[0]?.data ?? "")).toMatchObject({
+      name: "checkIn",
+      args: [CHECK_IN_NO_RECORD],
+    });
+    expect((await screen.findByTestId("toast")).textContent).toContain(
+      "Checked in. The allowance keeps running.",
+    );
+  });
+});
+
 describe("draw to an address", () => {
   async function open() {
     setup(FOUNDER_EVM);
