@@ -89,14 +89,25 @@ now fixed in `v7`:
 | `cc80ee66f` | The council round's own "to continue" line is closed and said so in its state note. |
 | `3050370f3` | The phone-360 first screen keeps its Back press (the top's sections sit 8px apart once the money lines said their units) and the new check-in press is a 44px target; the mock journeys' assertions follow the copy fixes. |
 | `46217d8fd` | The work-checks journal entries go through the journal's own writer (a hand-made entry poisoned the shared root at the wrong mode for every later run); the root refusal says what to do. |
+| `f2c252c1d` | One failing test no longer turns into 55: the config tests' env guard runs into a poisoned mutex like its neighbour does. |
+
+**`just test`'s integration part cannot start on this machine, for a reason outside the code.** Its migration step
+(`buzz-admin migrate` against the local dev database) fails: the database's migration ledger stops at version 64 while
+`chain_reader_cursor` already exists — the database was migrated before this migration was numbered 65 (the fork
+renumbers migrations at merge time, as `AGENTS.md` says to expect). Fresh databases migrate cleanly — every world run in
+this report migrated a scratch database from nothing — so the launch path is unaffected; this machine's dev database
+needs a recreate or a reconciliation before the integration lane runs here. The upgrade story in the deploy guide now
+names the hazard (an upgrade whose migrations were renumbered fails on a previously-migrated database; restore the
+pre-upgrade backup and reconcile before starting).
 
 **`buzz-cli`'s `work_checks` lane (the docker sandbox tests) flake under a loaded machine and pass alone.** The
 failing subset changes every run (3, 10, then 4 of its 53) and every named failure is green when run on its own: the
 tests have hard docker deadlines that lose to other work on the machine. One deterministic failure class was found
 underneath that and fixed at its cause (`46217d8fd`): the tests planted journal entries by hand, creating the shared
 journal root at 0755 where the journal requires 0700, and the guard correctly refused it in every later write of every
-later run until the root was removed by hand. The entries now go through the journal's own writer. Nothing in `v7`
-touches Rust otherwise.
+later run until the root was removed by hand. The entries now go through the journal's own writer. A second multiplier
+is fixed too (`f2c252c1d`): the config tests' env guard unwrapped a poisoned mutex, so one failure behind it became 55.
+Neither fix changes what production does.
 
 ## 4. What a person on a real phone has not done, and what else is open
 

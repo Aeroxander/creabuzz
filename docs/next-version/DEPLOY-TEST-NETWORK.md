@@ -281,7 +281,8 @@ backup key (step 9) and the first backup (step 10).
 | Anything built into the page (`VITE_CREATON_*`, the network) | `./run.sh build`, then `./run.sh restart`. `restart` alone keeps serving the old page. |
 | Anything the server reads (`BUZZ_CHAIN_*`, `BUZZ_INVESTING`, the helper, the sponsor, push, the policies) | `./run.sh restart`. No rebuild. |
 | A new deploy of the contracts | A new Launcher means a new network for the app: step 8 again (a new build), step 4 for the server, and the old projects stay on the old Launcher. |
-| The code | `./run.sh upgrade` (it backs up first, then builds and restarts). |
+| The code | `./run.sh upgrade` (it backs up first, then builds and restarts). Read the row below first if the code carries new migrations. |
+| New migrations in the code | They apply themselves when the server starts. One case stops it: this repository renumbers its migrations from time to time (when upstream is merged in), and a database migrated before a renumbering fails on the moved file ("relation ... already exists"). If the server stops that way after an upgrade, restore the pre-upgrade backup (below), ask whoever built the image which migrations moved, and let them reconcile the database before starting again. A fresh database never hits this. |
 
 **Going back after a bad change.** `./run.sh upgrade` and `./run.sh backup` leave you a backup to go back to; a bad upgrade is
 undone by restoring it: `AGE_IDENTITY_FILE=<the key file> ./run.sh restore backups/<the newest>.tar.age --yes` stops the server,
