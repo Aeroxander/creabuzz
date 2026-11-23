@@ -74,15 +74,21 @@ now fixed in `v7`:
 | `05016de73` | The copy pass (14 findings, independently reviewed): every bare money figure says "dollars"; accounts are counted as accounts, never people; one thing keeps one name (the give-up line says "built up", the claim line says "unlocked", and they are two different lines in `Vester`); the vote's count line says how a choice wins in full; the fee is named (Creaton, from the brand constant); a candidate's words say "looking" / "could not be read" / "No text" only when the read is done; a waiting call the app cannot describe offers no agree press and says who to ask (a seat that already agreed can always take its agreement back — the one press that is never hidden); the stand sheet says why its press is greyed out; the Take out sheet says how long outside money keeps arriving (from the record's own clock); "What you put in", not "paid in"; the Council-unreadable line says what to do next. |
 | `6d8829ed6` | One name for an account wherever it is named (Back sheet and vote card shared `namedAccount`; `pot/member-names.ts` holds the lookup). **A seat holder can give up their seat** (the contract's `resign`, from the seat's own account), with what it does said first: the seat comes up at the next vote, every waiting call stops and must be proposed again, nothing else changes. |
 | `ac38226a0` | The launch-docs pass: the unaudited line on every money sheet (one sheet, one place, so no flow is left without it); the code hashes are a step (check each against the build, publish with the terms, a mismatch is a stopped launch); the helper's balance and failure counter are watched; a runbook per leaked key; the rollback story; a watching-the-server step; every setting the guide names is in `.env.creaton.example` with its default; `BUZZ_INVESTING`'s example line is `true`. |
-| the next commit | The unit lane's two pre-existing failures, fixed at their cause (the docker stand-in and the path comparison). |
+| `461a7a65f` | The unit lane's two pre-existing failures, fixed at their cause (the docker stand-in and the path comparison). |
+| `7a162fd41` | The weekly check-in press reaches whoever runs the money (finding 4): on the Money tab beside the runner's other presses, for the runner, a Pair's signer (who checks in alone) and a Council seat (a proposal), with the check-in's own words in one place. |
+| `77614af82` | "The platform's settings" is "Creaton's settings" (one product name, the launchpad's rule R4's sibling); the council journey sizes its Draw from the signed box; `pot-full-loop.sh` picks the council and replace worlds from the journey's name. |
 
 ## 4. What a person on a real phone has not done, and what else is open
 
 - **No person has used the app on a phone.** Every report says this and it stays true. The testnet trial is where that
   changes; `docs/next-version/TRY-IT.md` is the guide.
-- **The seat presses' end-to-end run.** The Council world in `scripts/pot-full-loop.sh` now presses "Check in only"
-  and "Draw from the box" from a seat through the app and runs each to `Executed` (`pot-council.spec.ts`); the run of
-  that world on `v7` is the last proof and is recorded here when it lands.
+- **The seat presses' end-to-end run landed green**: `scripts/pot-full-loop.sh pot-council.spec` (the Council world,
+  real server, real chain, the app's own build in a browser) passed **27 checks**: a seat pressed "Check in only" and
+  "Draw from the box" on the Money tab, each went out as a proposal the record counted and the seat's waiting list
+  showed ("Check in for the project", "Draw 0.16 dollars from the allowance to …"), two more seats agreed to each on
+  the chain and each ran (`Executed` on the chain, the waiting count back to zero). The journey's Draw sizes its
+  amount from the box the server signed, so the app's typed figure and the seats' agreement are always the same
+  number. Run it again with `scripts/pot-full-loop.sh pot-council.spec` (the world is picked from the name).
 - **The independent verifier's full pass over the council round** (`COUNCIL-WIP-NOTES.md`'s last row) is still the
   step that promotes the round to `v6`; this readiness check ran the check set but it is the same agent's run, not an
   independent one.
