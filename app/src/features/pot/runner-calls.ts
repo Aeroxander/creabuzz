@@ -25,6 +25,16 @@ export function runnerSend(
 export const PAIR_WORDS =
   "This project is run by two. Pressing asks the other signer: nothing happens until they confirm the same step.";
 
+/**
+ * The note when a check-in landed. Either signer of a Pair may check in alone, so only a Council's seat was asking
+ * first (`checkInRoute`, `money/runner.ts`).
+ */
+export function checkInDoneWords(through: "now" | "ask"): string {
+  return through === "ask"
+    ? doneWords("council", "")
+    : "Checked in. The allowance keeps running.";
+}
+
 /** The note shown when it landed: who has to say yes next. */
 export function doneWords(
   through: RunnerSend["through"],

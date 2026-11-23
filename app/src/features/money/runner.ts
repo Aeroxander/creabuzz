@@ -73,6 +73,25 @@ export function mayCheckIn(
 }
 
 /**
+ * What a check-in carries when there is no week's words to point at: 32 zero bytes. The chain takes any hash and this
+ * one says plainly that nothing was said; a press that has a weekly update points at its id instead.
+ */
+export const CHECK_IN_NO_RECORD = `0x${"0".repeat(64)}`;
+
+/**
+ * How this account's check-in goes out. A check-in is not like the other runner presses: either signer of a Pair may
+ * check in alone, so only a Council's seat asks the other seats first. Null when the account does not run the project.
+ */
+export function checkInRoute(
+  numbers: ProjectNumbers,
+  me: string | null,
+): "now" | "ask" | null {
+  const role = runnerRole(numbers, me);
+  if (role.kind === "none") return null;
+  return role.kind === "seat" ? "ask" : "now";
+}
+
+/**
  * A runner-only call (draw, set the rate, the door, grant Team Shares, ...) as this account must send it: straight to the
  * Treasury when it is the runner (`through: "alone"`), as a proposal through the Pair when it is one of the two
  * signers (`through: "pair"`: the other signer confirms the same call), as a proposal through the Council when it holds

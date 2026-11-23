@@ -12,7 +12,13 @@ import { EmptyState } from "../../ui/empty-state";
 import { useToast } from "../../ui/toast";
 import { dayText, type ProjectNumbers, quietStateAt } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
-import { checkInFor, mayCheckIn } from "../money/runner";
+import {
+  CHECK_IN_NO_RECORD,
+  checkInFor,
+  checkInRoute,
+  mayCheckIn,
+} from "../money/runner";
+import { checkInDoneWords } from "../pot/runner-calls";
 import {
   useMoneySend,
   useProjectNumbers,
@@ -184,7 +190,7 @@ function CheckInAgain({
   const toast = useToast();
   const [problem, setProblem] = useState<string | null>(null);
   // With no weekly update to point at, the check-in carries no record: 32 zero bytes, said plainly as such.
-  const hash = lastRecordId ?? NO_RECORD;
+  const hash = lastRecordId ?? CHECK_IN_NO_RECORD;
   return (
     <>
       {problem ? (
@@ -203,7 +209,10 @@ function CheckInAgain({
             { chainId: numbers.chainId, build: () => [call] },
             {
               onSuccess: () =>
-                toast("Checked in. The allowance keeps running.", "done"),
+                toast(
+                  checkInDoneWords(checkInRoute(numbers, address) ?? "now"),
+                  "done",
+                ),
               onError: (error) => setProblem(potProblem(error, "check-in")),
             },
           );
@@ -216,6 +225,3 @@ function CheckInAgain({
     </>
   );
 }
-
-/** What a check-in carries when there is no weekly update to point at: 32 zero bytes. */
-const NO_RECORD = `0x${"0".repeat(64)}`;

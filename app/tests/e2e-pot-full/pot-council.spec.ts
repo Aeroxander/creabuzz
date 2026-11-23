@@ -7,7 +7,8 @@ import { encodeCall } from "../../../packages/creaton-core/src/pot/abi-codec.ts"
 import * as pot from "../../../packages/creaton-core/src/pot/pot-calls.ts";
 import { councilSeats } from "../../../packages/creaton-core/src/pot/pot-reads.ts";
 import { walletOf } from "../anvil/pot-chain";
-import { call, rpc, word } from "../anvil/rpc";
+import { call, passTime, rpc, word } from "../anvil/rpc";
+import { CHECK_IN_NO_RECORD } from "../../src/features/money/runner";
 import { topicOf } from "../../../packages/creaton-core/src/launchpad/work.ts";
 import { backFor, giveDollars } from "../e2e/helpers/live-chain";
 import { installAnvilWallet } from "../e2e/helpers/live-wallet";
@@ -16,6 +17,7 @@ import {
   atNarrowPhone,
   backInApp,
   check,
+  dollarsAsPageSays,
   NOT_RUNNABLE,
   ok,
   same,
@@ -38,9 +40,10 @@ test.skip(
  *   a founder starts a project and launches it; two backers back it; the runner offers the seat to a Council of five
  *   accounts and anyone makes the Council; the Treasury's runner and the Launcher's kind say it; the record says the runner is
  *   a Council of five with three needed, and the app's Money tab shows the Council section with its five seats, "3 of them must
- *   agree", the next election and the plan's last line; one seat proposes a check-in and the seat holder's page shows the
- *   waiting action with "Posts and votes are public."; two more seats agree on the chain, the call runs, the record's waiting
- *   count goes back to zero and the project's check-in time moves on; the section fits a 360 x 640 screen.
+ *   agree", the next election and the plan's last line; **the seat presses the app's own runner presses** — "Check in only"
+ *   and, once the box has filled, "Draw from the box" — each going out as a proposal the record counts and the seat holder's
+ *   page lists ("Posts and votes are public."); two more seats agree to each on the chain, the call runs and the record's
+ *   waiting count returns to zero; the section fits a 360 x 640 screen.
  *
  * The chain moves by seconds in this world, not days, so the page's own clock is left alone and no record reads as old. A
  * replace vote end to end is the ballot world that follows.
@@ -52,6 +55,7 @@ const addressWord = (value: bigint) =>
 
 interface Numbers {
   runner: { kind?: string; address: string; isPair: boolean };
+  allowance: { box: string };
   council: {
     contract: string;
     seats: { account: string | null; seatedAt: number | null }[];
@@ -188,8 +192,10 @@ test("a founder hands the seat to a Council, the app shows it, a seat proposes, 
       "the Money tab shows the Council section: five seats, three of them must agree, the next election and the plan's last line",
     );
 
-    // ── one seat proposes a check-in; the holder's page shows the waiting action and the public line ─────────────────
-    const checkIn = pot.checkInCall(project.treasury, `0x${"5c".repeat(32)}`);
+    // ── one seat presses "Check in only" on the Money tab: the press goes out as a proposal to the other seats ──────
+    // The weekly check-in press lives on the Money tab too, on purpose: after a hand-over the runner did not start the
+    // project, so the This-week page lists nothing for them and this is the only way back. A seat's press asks the other
+    // seats, and both the line under it and the note after say so.
     const nonce = await word(council, encodeCall(COUNCIL_ABI, "nonce", []));
     const seatA = await phone(browser);
     pages.push(seatA);
@@ -203,10 +209,13 @@ test("a founder hands the seat to a Council, the app shows it, a seat proposes, 
     await expect(seatA.getByTestId("council-section")).toBeVisible({
       timeout: 60_000,
     });
-
-    await walletOf(members[0] as string).sendCalls(
-      [pot.councilProposeCall(council, checkIn.to, checkIn.data)],
-      31337,
+    await expect(seatA.getByTestId("allowance-check-in")).toBeVisible({
+      timeout: 60_000,
+    });
+    await seatA.getByTestId("allowance-check-in").click();
+    await expect(seatA.getByTestId("toast")).toContainText(
+      "Asked. It runs when enough seats agree.",
+      { timeout: 60_000 },
     );
     const waiting = await waitForRecord(
       project.key,
@@ -223,14 +232,19 @@ test("a founder hands the seat to a Council, the app shows it, a seat proposes, 
     await expect(seatA.getByTestId("council-waiting-row")).toHaveCount(1, {
       timeout: 120_000,
     });
+    await expect(
+      seatA.getByTestId("council-waiting-row").first(),
+    ).toContainText("Check in for the project");
     await expect(seatA.getByTestId("council-waiting-public")).toContainText(
       "Posts and votes are public.",
     );
     ok(
-      "a seat proposed a check-in, the record counts it, and the seat holder's page lists it with the public line",
+      "a seat pressed Check in only on the Money tab: the press went out as a proposal the other seats must agree to, the record counts it, and the seat's page lists it",
     );
 
-    // ── two more seats agree: the call runs, and the record's waiting count goes back to zero ────────────────────────
+    // ── two more seats agree: the call runs, and the record's waiting count goes back to zero ──────────────────────
+    // The app pressed check-in carrying no week's words (32 zero bytes): the seats agree to that exact call.
+    const checkIn = pot.checkInCall(project.treasury, CHECK_IN_NO_RECORD);
     for (const seat of [members[1], members[2]] as string[]) {
       await walletOf(seat).sendCalls(
         [pot.councilAgreeCall(council, checkIn.to, checkIn.data, nonce)],
@@ -260,6 +274,70 @@ test("a founder hands the seat to a Council, the app shows it, a seat proposes, 
     ok(
       "two more seats agreed, the action ran, and the record's waiting count returned to zero",
     );
+
+    // ── the box fills, and the seat presses Draw from the box: the runner's presses are the seat's too ──────────────
+    await passTime(2 * 86_400);
+    const boxFilled = await waitForRecord(
+      project.key,
+      "the allowance box holds money",
+      (n) => BigInt(n.allowance.box) > 250_000n,
+      180,
+    );
+    ok(
+      `two days later the allowance box holds ${dollarsAsPageSays(BigInt(boxFilled.content.allowance.box))} play dollars`,
+    );
+    const drawNonce = await word(council, encodeCall(COUNCIL_ABI, "nonce", []));
+    await seatA.goto(`${link}?tab=money`);
+    await expect(seatA.getByTestId("allowance-draw")).toBeEnabled({
+      timeout: 60_000,
+    });
+    await seatA.getByTestId("allowance-draw").click();
+    await expect(seatA.getByTestId("draw-sheet")).toBeVisible();
+    await seatA.getByTestId("draw-to").fill(members[3] as string);
+    await seatA.getByTestId("draw-amount").fill("0.25");
+    await expect(seatA.getByTestId("runner-ask")).toContainText(
+      "This asks the other seats to agree",
+    );
+    await seatA.getByTestId("sheet-confirm").click();
+    await expect(seatA.getByTestId("toast")).toContainText(
+      "Asked. It runs when enough seats agree.",
+      { timeout: 60_000 },
+    );
+    const drew = await waitForRecord(
+      project.key,
+      "the record counts the draw proposal",
+      (n) => (numbersOf(n).council?.waiting.count ?? 0) >= 1,
+      180,
+    );
+    same(numbersOf(drew.content).council?.waiting.count, 1, "the draw waits");
+    await seatA.reload();
+    await expect(
+      seatA.getByTestId("council-waiting-row").first(),
+    ).toContainText("Draw 0.25 dollars from the allowance", {
+      timeout: 120_000,
+    });
+    ok(
+      "a seat pressed Draw from the box in the app: it went out as a proposal, and its row says what it draws",
+    );
+    // The proposal is byte-for-byte the call the seats agree to: the app and the chain never disagree about a step.
+    const draw = pot.drawCall({
+      treasury: project.treasury,
+      to: (members[3] as string).toLowerCase(),
+      amount: 250_000n,
+    });
+    for (const seat of [members[1], members[2]] as string[]) {
+      await walletOf(seat).sendCalls(
+        [pot.councilAgreeCall(council, draw.to, draw.data, drawNonce)],
+        31337,
+      );
+    }
+    await waitForRecord(
+      project.key,
+      "the draw ran",
+      (n) => (numbersOf(n).council?.waiting.count ?? 0) === 0,
+      180,
+    );
+    ok("two more seats agreed and the draw ran");
 
     // ── 360 x 640: the section does not scroll sideways ──────────────────────────────────────────────────────────────
     await atNarrowPhone(founder, "the Council section", ["council-section"]);

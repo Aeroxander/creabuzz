@@ -3,7 +3,11 @@
 // Each sheet's numbers are the numbers in the call it sends, and with a Pair each step is a proposal for the other signer.
 import { applyServerSettings } from "@creaton/core/client/server-settings.ts";
 import { decodeCall } from "@creaton/core/pot/abi-codec.ts";
-import { PAIR_ABI, TREASURY_ABI } from "@creaton/core/pot/abis.generated.ts";
+import {
+  COUNCIL_ABI,
+  PAIR_ABI,
+  TREASURY_ABI,
+} from "@creaton/core/pot/abis.generated.ts";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +23,11 @@ import {
   nameTheNetwork,
   numbersFor,
 } from "../../../tests/helpers/pot-harness";
+import { councilRecord } from "../../../tests/helpers/council-v2-parse";
+import { checkInCall } from "@creaton/core/pot/pot-calls.ts";
 import { dollarsText, type ProjectNumbers } from "../money/numbers";
+import { CHECK_IN_NO_RECORD } from "../money/runner";
+import { proposeAskLine } from "../council/council-words";
 import { AllowanceSection } from "./AllowanceSection";
 
 vi.mock(
@@ -163,6 +171,70 @@ describe("who sees the allowance screen", () => {
     expect(
       (await screen.findByTestId("allowance-read-failed")).textContent,
     ).toMatch(/Nothing changed/);
+  });
+});
+
+describe("the check-in press on the money tab", () => {
+  // The press lives beside the runner's other presses because after a hand-over the new runner did not start the
+  // project and the This-week page lists nothing for them: this is the only way back for them.
+  it("the runner presses and the call goes to the Treasury at once, carrying no week's words", async () => {
+    setup(FOUNDER_EVM);
+    show();
+    fireEvent.click(await screen.findByTestId("allowance-check-in"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    expect(chain.sent[0]?.to).toBe(numbers.contracts.treasury);
+    expect(decodeCall(TREASURY_ABI, chain.sent[0]?.data ?? "")).toMatchObject({
+      name: "checkIn",
+      args: [CHECK_IN_NO_RECORD],
+    });
+    expect((await screen.findByTestId("toast")).textContent).toContain(
+      "Checked in. The allowance keeps running.",
+    );
+  });
+
+  it("a Pair signer presses and it checks in at once through the Pair: a Pair lets either signer check in alone", async () => {
+    setup(BACKER_EVM);
+    show(pairRun, BACKER_EVM);
+    const block = await screen.findByTestId("allowance-checkin");
+    // No line about asking the other signer: a check-in needs one signer only.
+    expect(block.textContent).not.toContain("asks the other signer");
+    fireEvent.click(screen.getByTestId("allowance-check-in"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    expect(chain.sent[0]?.to).toBe(PAIR);
+    expect(decodeCall(PAIR_ABI, chain.sent[0]?.data ?? "")).toMatchObject({
+      name: "checkIn",
+      args: [CHECK_IN_NO_RECORD],
+    });
+    expect((await screen.findByTestId("toast")).textContent).toContain(
+      "Checked in. The allowance keeps running.",
+    );
+  });
+
+  it("a Council seat's press is a proposal to the Council, with the seats' threshold in its own numbers", async () => {
+    const run = councilRecord("voting");
+    const council = run.council;
+    if (!council) throw new Error("the record has no Council");
+    const seat = council.seats[1]?.account;
+    if (!seat) throw new Error("the second seat is open");
+    setup(seat);
+    show(run, seat);
+    const block = await screen.findByTestId("allowance-checkin");
+    expect(block.textContent).toContain(
+      proposeAskLine(council.needed, council.seats.length),
+    );
+    fireEvent.click(screen.getByTestId("allowance-check-in"));
+    await waitFor(() => expect(chain.sent.length).toBe(1));
+    expect(chain.sent[0]?.to).toBe(council.contract);
+    expect(decodeCall(COUNCIL_ABI, chain.sent[0]?.data ?? "")).toMatchObject({
+      name: "propose",
+      args: [
+        run.contracts.treasury,
+        checkInCall(run.contracts.treasury, CHECK_IN_NO_RECORD).data,
+      ],
+    });
+    expect((await screen.findByTestId("toast")).textContent).toContain(
+      "Asked. It runs when enough seats agree.",
+    );
   });
 });
 
