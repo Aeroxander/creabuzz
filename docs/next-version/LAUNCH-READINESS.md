@@ -48,9 +48,18 @@ The full check set at the base (`c6ac44811`) and again after the changes:
 | App: `pnpm check` (biome, tsc, copy, px-text, file-sizes) | exits 0 |
 | App: `pnpm test` (vitest) | 243 files, 2,257 passed at base → 2,261 after the changes |
 | App: `pnpm build` | passes; entry chunk 393 KiB against the 450,000-byte budget |
+| App: the mock Playwright smoke against a chain build (every journey, axe included) | **161 passed, 0 failed** |
+| `scripts/pot-full-loop.sh pot-council.spec` (the Council world: real server, real chain, the app in a browser) | **27 checks** — a seat presses Check in and Draw in the app; each runs when three seats agree |
+| `scripts/pot-full-loop.sh pot-replace.spec` (the replace-vote world) | **19 checks** — a replace vote end to end: the result derived from frozen tallies and carried out into a new Council |
 | `web/` + `packages/creaton-core` | `pnpm check` exits 0; 3,502 + 1,292 tests passed |
 | Rust: `cargo fmt --all -- --check`, `cargo clippy -p buzz-relay --all-targets -- -D warnings` | both clean |
 | `just test-unit` (every infra-free lane) | green after `v7`'s test fix (below) |
+
+The mock smoke was also the first run of the pot journeys against a chain build, and it caught two real regressions of
+the copy work (fixed in `3050370f3`): the money lines' new units pushed the Back press 7px under the tab bar at 360 by
+640 — the phone-360 contract is that Back is in the first screen, so the top's sections now sit 8px apart — and the new
+"Check in only" press was a 40px button where every press is a 44px target. Its journeys also caught the two
+assertions that still expected the old words.
 
 **The unit lane had two pre-existing failures at the base**, both in `scripts/test-compose-backup-encryption.sh`, both
 now fixed in `v7`:
@@ -77,6 +86,17 @@ now fixed in `v7`:
 | `461a7a65f` | The unit lane's two pre-existing failures, fixed at their cause (the docker stand-in and the path comparison). |
 | `7a162fd41` | The weekly check-in press reaches whoever runs the money (finding 4): on the Money tab beside the runner's other presses, for the runner, a Pair's signer (who checks in alone) and a Council seat (a proposal), with the check-in's own words in one place. |
 | `77614af82` | "The platform's settings" is "Creaton's settings" (one product name, the launchpad's rule R4's sibling); the council journey sizes its Draw from the signed box; `pot-full-loop.sh` picks the council and replace worlds from the journey's name. |
+| `cc80ee66f` | The council round's own "to continue" line is closed and said so in its state note. |
+| `3050370f3` | The phone-360 first screen keeps its Back press (the top's sections sit 8px apart once the money lines said their units) and the new check-in press is a 44px target; the mock journeys' assertions follow the copy fixes. |
+| `46217d8fd` | The work-checks journal entries go through the journal's own writer (a hand-made entry poisoned the shared root at the wrong mode for every later run); the root refusal says what to do. |
+
+**`buzz-cli`'s `work_checks` lane (the docker sandbox tests) flake under a loaded machine and pass alone.** The
+failing subset changes every run (3, 10, then 4 of its 53) and every named failure is green when run on its own: the
+tests have hard docker deadlines that lose to other work on the machine. One deterministic failure class was found
+underneath that and fixed at its cause (`46217d8fd`): the tests planted journal entries by hand, creating the shared
+journal root at 0755 where the journal requires 0700, and the guard correctly refused it in every later write of every
+later run until the root was removed by hand. The entries now go through the journal's own writer. Nothing in `v7`
+touches Rust otherwise.
 
 ## 4. What a person on a real phone has not done, and what else is open
 
