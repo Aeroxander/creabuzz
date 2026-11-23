@@ -7,8 +7,8 @@ money is involved anywhere in this document.
 
 ## 1. The verdict
 
-**Ready for a testnet trial with invited testers, from `v7` — not from `v6`/`council-wip` as they stood.** Three things
-said "no" before this round and all three are now closed or named:
+**Ready for a testnet trial with invited testers, from `v7` — not from `v6`/`council-wip` as they stood.** Four things
+said "no" before this round and all four are now closed or named:
 
 1. **The Council round left the seat-holder runner presses open.** A Council that won its seat could only hand the seat
    over: Draw, the rate, the door, check-in, Grant Team Shares, planning/accepting/cancelling a task, the helpers,
@@ -26,6 +26,11 @@ said "no" before this round and all three are now closed or named:
    watch on the helper's gas, no key-compromise runbook, no rollback story, settings the guide tells you to fill in
    missing from the template, no monitoring step, and a stale "zero hash" claim. All twelve findings (eight gaps, four
    nits) are closed in `v7` (`ac38226a0`).
+4. **The weekly check-in — the press that keeps a project alive — was unreachable for whoever did not start it.** It
+   lived only on This week, which lists only a person's own projects: after a hand-over (the seat features' whole
+   point) the new runner, a Pair's second signer, and every Council seat had no check-in press anywhere in the app,
+   and the Money tab sent them to a page with nothing on it. The press now sits beside the runner's other presses on
+   the Money tab for whoever runs the money (`7a162fd41`), asking the Council's other seats when a seat presses it.
 
 What is **still not ready for a public launch**, and was not in scope to fix here: the legal questions (the counsel
 question lists in `PLAN-V2.md` section 10 and `COUNCIL-REPORT.md` section 5), an outside audit of the contracts, and a
@@ -75,10 +80,9 @@ now fixed in `v7`:
 
 - **No person has used the app on a phone.** Every report says this and it stays true. The testnet trial is where that
   changes; `docs/next-version/TRY-IT.md` is the guide.
-- **The new seat presses have vitest and fixture coverage but no end-to-end loop run yet.** The Council worlds in
-  `scripts/pot-full-loop.sh` (`pot-council.spec`, `pot-replace.spec`) pass at the base and exercise hand-over and the
-  vote; extending one world to press Draw and check-in from a seat is the remaining proof for
-  `5b5fad4c0`.
+- **The seat presses' end-to-end run.** The Council world in `scripts/pot-full-loop.sh` now presses "Check in only"
+  and "Draw from the box" from a seat through the app and runs each to `Executed` (`pot-council.spec.ts`); the run of
+  that world on `v7` is the last proof and is recorded here when it lands.
 - **The independent verifier's full pass over the council round** (`COUNCIL-WIP-NOTES.md`'s last row) is still the
   step that promotes the round to `v6`; this readiness check ran the check set but it is the same agent's run, not an
   independent one.
