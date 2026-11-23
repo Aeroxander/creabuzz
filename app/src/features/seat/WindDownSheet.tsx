@@ -11,7 +11,8 @@ import {
 import { readSeatState } from "@creaton/core/pot/pot-state.ts";
 import type { ProjectNumbers } from "../money/numbers";
 import { PotSheet } from "../pot/PotSheet";
-import { PAIR_WORDS, doneWords, runnerSend } from "../pot/runner-calls";
+import { RunnerAskNote } from "../pot/RunnerAskNote";
+import { doneWords, runnerSend } from "../pot/runner-calls";
 import type { Ready } from "../pot/use-pot";
 import { quietWindDownWhy, windDownWords } from "./seat-words";
 
@@ -88,9 +89,7 @@ export function WindDownSheet({
           <li key={line}>{line}</li>
         ))}
       </ul>
-      {send?.through === "pair" ? (
-        <p className="text-sm text-muted">{PAIR_WORDS}</p>
-      ) : null}
+      <RunnerAskNote numbers={numbers} through={send?.through} />
     </PotSheet>
   );
 }

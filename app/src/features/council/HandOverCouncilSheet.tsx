@@ -24,7 +24,8 @@ import type { ProjectNumbers } from "../money/numbers";
 import { addressFromWord } from "../money/wallet";
 import type { GrantMember } from "../pot/GrantSheet";
 import { PotSheet } from "../pot/PotSheet";
-import { doneWords, PAIR_WORDS, runnerSend } from "../pot/runner-calls";
+import { RunnerAskNote } from "../pot/RunnerAskNote";
+import { doneWords, runnerSend } from "../pot/runner-calls";
 import type { Ready } from "../pot/use-pot";
 import {
   HAND_OVER_COUNCIL,
@@ -331,8 +332,8 @@ export function HandOverCouncilSheet({
           project.
         </p>
       ) : null}
-      {through === "pair" && !offeredNow ? (
-        <p className="text-sm text-muted">{PAIR_WORDS}</p>
+      {!offeredNow ? (
+        <RunnerAskNote numbers={numbers} through={through} />
       ) : null}
       {councilAddress && five ? (
         <p className="text-xs text-muted" data-testid="council-offer-address">

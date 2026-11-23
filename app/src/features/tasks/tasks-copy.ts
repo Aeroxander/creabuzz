@@ -2,6 +2,7 @@
  * The words of the Tasks tab: what each state says, and every problem a task step can meet as a sentence that says
  * what happened and what to do next. Money problems come from `moneyProblem`; this adds the steps that are records.
  */
+import { countWord } from "../council/vote-words";
 import { dollarsText } from "../money/numbers";
 import { potProblem } from "../money/pot-copy";
 import type { TaskState } from "./task-record";
@@ -74,6 +75,59 @@ export const TASK_PROBLEM = {
   agentLimits:
     "The limits were not set. Only the account that runs this project can set them.",
 } as const;
+
+/** Who must say yes to a runner's press before it happens: a Pair's other signer, or a Council's other seats. */
+export type AgreedBy = "pair" | "council";
+
+/**
+ * The three sentences of the pay-from-the-box press after it asks the runner's others first. The Pair's words are
+ * `TASK_PROBLEM`'s `asked`, `alreadyAsked` and `askedUnknown`; a Council's name the record's own threshold, never a
+ * typed number. Same sentences, same order, whatever kind of runner asked.
+ */
+export function payAskedWords(
+  by: AgreedBy,
+  needed: number,
+  seats: number,
+): string {
+  return by === "pair"
+    ? TASK_PROBLEM.asked
+    : `Asked. The pay goes out when ${needed} of the ${countWord(seats)} seats agree to it on the Money tab. Then come back here and save that it was paid.`;
+}
+
+/** The same pay is already waiting out there: a second ask would pay it twice. */
+export function payAlreadyAskedWords(
+  by: AgreedBy,
+  needed: number,
+  seats: number,
+): string {
+  return by === "pair"
+    ? TASK_PROBLEM.alreadyAsked
+    : `This same pay is already waiting for ${needed} of the ${countWord(seats)} seats to agree to it, so nothing new was asked. They agree on the Money tab; then come back here and save that it was paid.`;
+}
+
+/** What is waiting could not be read: nothing is asked on a guess. */
+export function payAskedUnknownWords(by: AgreedBy): string {
+  return by === "pair"
+    ? TASK_PROBLEM.askedUnknown
+    : "What is already waiting for the seats could not be read just now, so nothing was asked. Press again in a moment.";
+}
+
+/**
+ * Why "accept and pay" cannot pay here when a Council runs the project: enough seats must agree to the draw, which is
+ * not one press, so the work is accepted first and the pay is asked for after (the Pair's words are
+ * `TASK_PROBLEM.pairNeedsBoth`). The numbers are the record's own.
+ */
+export function councilNeedsAgreementWords(
+  needed: number,
+  seats: number,
+): string {
+  return `This project is run by ${countWord(seats)} accounts, and a payment from the allowance needs ${needed} of them to agree. Ask for the payment with "Draw from the box" on the Money tab: the seats agree to it there.`;
+}
+
+/** The accept-now words for the same case (the Pair's are `TASK_PROBLEM.pairSure`). */
+export function councilSureWords(needed: number, seats: number): string {
+  return `Press again to accept it now. It will show as accepted, pay owed. Then press "Ask for the pay from the box" on the task: when ${needed} of the ${countWord(seats)} seats agree, the payment goes out and is linked to this task.`;
+}
 
 /**
  * What the server says when a step on a task that has a plan on the network is refused, in the words a person reads. The server's

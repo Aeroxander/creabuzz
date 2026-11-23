@@ -68,7 +68,7 @@ function Inner({
   numbers: ProjectNumbers;
   ready: Ready;
   members: GrantMember[];
-  role: "alone" | "signer" | "none";
+  role: "alone" | "signer" | "seat" | "none";
 }) {
   const [granting, setGranting] = useState(false);
   return (

@@ -8,7 +8,8 @@ import { useState } from "react";
 import { Field } from "../../ui/field";
 import { dayText, type ProjectNumbers } from "../money/numbers";
 import { PotSheet } from "./PotSheet";
-import { PAIR_WORDS, doneWords, runnerSend } from "./runner-calls";
+import { RunnerAskNote } from "./RunnerAskNote";
+import { doneWords, runnerSend } from "./runner-calls";
 import { sharesWords } from "./pot-words";
 import type { Ready } from "./use-pot";
 
@@ -165,9 +166,7 @@ export function GrantSheet({
           {member.address}), starting {dayText(Math.floor(Date.now() / 1000))}.
         </p>
       ) : null}
-      {send?.through === "pair" ? (
-        <p className="text-sm text-muted">{PAIR_WORDS}</p>
-      ) : null}
+      <RunnerAskNote numbers={numbers} through={send?.through} />
     </PotSheet>
   );
 }

@@ -1,7 +1,7 @@
 /**
  * A runner-only call (draw, rate, door, grant) as this account sends it, with the words for who has to say yes: straight
- * to the Treasury for the runner, a proposal through the Pair for one of its two signers (the other signs next), or
- * nothing for anyone else.
+ * to the Treasury for the runner, a proposal through the Pair for one of its two signers (the other signs next), a
+ * proposal through the Council for one of its seats (the needed seats agree, then it runs), or nothing for anyone else.
  */
 import type { PotCall } from "@creaton/core/pot/pot-calls.ts";
 import type { ProjectNumbers } from "../money/numbers";

@@ -9,6 +9,7 @@ import {
   isRunner,
   type ProjectNumbers,
 } from "../money/numbers";
+import { runnerRole } from "../money/runner";
 import { useMoneySend, useWallet } from "../money/use-money";
 import { PLAY_MONEY_WORDS, boxNow } from "../pot/pot-words";
 import { planOfRecord } from "./chain/team/plan-read";
@@ -19,6 +20,8 @@ import { drawForTaskCall, rawDollars } from "./task-calls";
 import { acceptRecord, type ProjectTask } from "./task-record";
 import {
   boxShortWords,
+  councilNeedsAgreementWords,
+  councilSureWords,
   dollarsWords,
   payProblem,
   recordProblem,
@@ -36,7 +39,8 @@ export type PayRoute =
  * Who pays and how: the runner's own wallet draws the pay from the allowance box (`Treasury.draw`), and only while the
  * box holds enough. `box` is the most the record and the chain's own reading say it holds (a draw by someone else lowers
  * it, so it is never taken from the record alone, and the chain has the last word when the draw is sent). A project run by
- * two people needs both to sign a draw, which is not one press: it is not offered here. Never the server, never an agent.
+ * two people, or by a Council of seats, needs enough of them to agree to a draw, which is not one press: it is not offered
+ * here. Never the server, never an agent.
  */
 function payRoute(
   numbers: ProjectNumbers | null,
@@ -45,6 +49,16 @@ function payRoute(
   box: bigint,
 ): PayRoute {
   if (!numbers) return { kind: "none", why: TASK_PROBLEM.notRunner };
+  const council = numbers.council;
+  if (
+    numbers.runner.kind === "council" &&
+    council &&
+    runnerRole(numbers, address).kind === "seat"
+  )
+    return {
+      kind: "none",
+      why: councilNeedsAgreementWords(council.needed, council.seats.length),
+    };
   if (numbers.runner.isPair)
     return { kind: "none", why: TASK_PROBLEM.pairNeedsBoth };
   if (!isRunner(numbers, address))
@@ -247,7 +261,12 @@ export function AcceptAndPay({
         <p className="text-sm text-muted" data-testid="task-pay-later">
           {numbers?.runner.isPair
             ? TASK_PROBLEM.pairSure
-            : TASK_PROBLEM.boxShortSure}
+            : numbers?.runner.kind === "council" && numbers.council
+              ? councilSureWords(
+                  numbers.council.needed,
+                  numbers.council.seats.length,
+                )
+              : TASK_PROBLEM.boxShortSure}
         </p>
       ) : null}
       {problem || blocked ? (

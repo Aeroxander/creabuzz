@@ -7,7 +7,8 @@ import { useToast } from "../../ui/toast";
 import { allowancePerDay, type ProjectNumbers } from "../money/numbers";
 import { asRunner, runnerRole } from "../money/runner";
 import { useMoneySend, useWallet } from "../money/use-money";
-import { PAIR_WORDS } from "../pot/runner-calls";
+import { RunnerAskNote } from "../pot/RunnerAskNote";
+import { readCouncilWaiting } from "../council/waiting-read";
 import { planOfRecord } from "./chain/team/plan-read";
 import { readPairWaiting } from "../pot/use-pair-waiting";
 import { boxNow, PLAY_MONEY_WORDS } from "../pot/pot-words";
@@ -23,9 +24,13 @@ import { findPayment, PaymentSearchShort } from "./pay-lookup";
 import { drawForTaskCall, rawDollars } from "./task-calls";
 import { type ProjectTask, payRecord } from "./task-record";
 import {
+  type AgreedBy,
   boxShortWords,
   dollarsWords,
   foundWords,
+  payAlreadyAskedWords,
+  payAskedUnknownWords,
+  payAskedWords,
   payProblem,
   payTermsWords,
   recordProblem,
@@ -81,7 +86,7 @@ export function PayFromBox({
   const wallet = useWallet();
   const [problem, setProblem] = useState<string | null>(null);
   const [looking, setLooking] = useState(false);
-  const [asked, setAsked] = useState(false);
+  const [asked, setAsked] = useState<AgreedBy | null>(null);
   const [elsewhere, setElsewhere] = useState(false);
   // A person's word that no payment was ever sent, for a task accepted further back than the search reaches.
   const [nonePaid, setNonePaid] = useState(false);
@@ -206,35 +211,46 @@ export function PayFromBox({
       drawForTaskCall(treasury, payee, usd),
     );
     if (!sent) return;
-    if (sent.through === "pair") {
-      // The same pay already asked of the other signer (a reload lost this page's memory of it, or they asked from their own
-      // page) is never asked twice: confirming both would pay it twice.
-      let waiting: Awaited<ReturnType<typeof readPairWaiting>>;
+    if (sent.through === "pair" || sent.through === "council") {
+      // The same pay already asked of the other signer or the other seats (a reload lost this page's memory of it, or
+      // they asked from their own page) is never asked twice: agreeing to both would pay it twice.
+      let waiting: readonly { target: string; data: string }[];
       setLooking(true);
       try {
-        waiting = await readPairWaiting(
-          {
-            address: address ?? "",
-            wallet,
-            read: (to, data) => wallet.readCall(to, data),
-          },
-          sent.call.to,
-        );
+        waiting = (
+          sent.through === "pair"
+            ? await readPairWaiting(
+                {
+                  address: address ?? "",
+                  wallet,
+                  read: (to, data) => wallet.readCall(to, data),
+                },
+                sent.call.to,
+              )
+            : await readCouncilWaiting(
+                {
+                  address: address ?? "",
+                  wallet,
+                  read: (to, data) => wallet.readCall(to, data),
+                },
+                sent.call.to,
+              )
+        ).waiting;
       } catch {
         setLooking(false);
-        return setProblem(TASK_PROBLEM.askedUnknown);
+        return setProblem(payAskedUnknownWords(sent.through));
       }
       setLooking(false);
       const inner = drawForTaskCall(treasury, payee, usd);
       if (
-        waiting.waiting.some(
+        waiting.some(
           (w) =>
             w.target === inner.to.toLowerCase() &&
             w.data === inner.data.toLowerCase(),
         )
       ) {
-        setAsked(true);
-        return setProblem(TASK_PROBLEM.alreadyAsked);
+        setAsked(sent.through);
+        return setProblem(payAlreadyAskedWords(sent.through, needed, seats));
       }
     }
     send.send(
@@ -245,9 +261,10 @@ export function PayFromBox({
       },
       {
         onSuccess: (result) => {
-          if (sent.through === "pair") {
-            setAsked(true);
-            toast(TASK_PROBLEM.asked, "done");
+          if (sent.through !== "alone") {
+            // What the wallet sent was the ask, not the pay: the pay goes out when the others agree to it.
+            setAsked(sent.through);
+            toast(payAskedWords(sent.through, needed, seats), "done");
             return;
           }
           save(result.txHash, piece);
@@ -258,7 +275,11 @@ export function PayFromBox({
   };
 
   const busy = send.isPending || write.isPending || looking;
-  const pairRuns = role.kind === "signer";
+  // With a Pair or a Council as runner this press asks first, and the pay goes out when they agree.
+  const askKind: AgreedBy | null =
+    role.kind === "signer" ? "pair" : role.kind === "seat" ? "council" : null;
+  const needed = numbers.council?.needed ?? 0;
+  const seats = numbers.council?.seats.length ?? 0;
   let body: ReactNode;
   if (!payee) {
     body = (
@@ -368,7 +389,7 @@ export function PayFromBox({
   } else if (asked) {
     body = (
       <p className="text-sm" data-testid="task-pay-asked">
-        {TASK_PROBLEM.asked}
+        {payAskedWords(asked, needed, seats)}
       </p>
     );
   } else {
@@ -377,7 +398,7 @@ export function PayFromBox({
         <p className="text-sm" data-testid="task-pay-terms">
           {payTermsWords(usd, payee)}
         </p>
-        {pairRuns ? <p className="text-sm text-muted">{PAIR_WORDS}</p> : null}
+        <RunnerAskNote numbers={numbers} through={askKind ?? undefined} />
         <Button
           block
           data-testid="task-pay"
@@ -386,7 +407,7 @@ export function PayFromBox({
         >
           {busy
             ? "Waiting…"
-            : pairRuns
+            : askKind
               ? "Ask for the pay from the box"
               : "Pay from the box"}
         </Button>

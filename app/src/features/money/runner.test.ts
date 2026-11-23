@@ -4,7 +4,7 @@ import {
   PAIR_ABI,
   TREASURY_ABI,
 } from "@creaton/core/pot/abis.generated.ts";
-import { drawCall } from "@creaton/core/pot/pot-calls.ts";
+import { checkInCall, drawCall } from "@creaton/core/pot/pot-calls.ts";
 import { describe, expect, it } from "vitest";
 import {
   BACKER_EVM,
@@ -126,9 +126,36 @@ describe("a Council seat's runner-only call", () => {
     ).toBeNull();
     expect(asSeat(numbers, council.contract, inner)).toBeNull();
     expect(asSeat(numbers, null, inner)).toBeNull();
-    // A Council seat is not the runner: it never signs alone.
-    expect(runnerRole(numbers, seat)).toEqual({ kind: "none" });
-    expect(asRunner(numbers, seat, inner)).toBeNull();
+    // A Council seat is not the runner (it never signs alone): its role is a seat, and every runner call goes through
+    // the Council as a proposal, whichever door the caller used.
+    expect(runnerRole(numbers, seat)).toEqual({
+      kind: "seat",
+      council: council.contract,
+    });
+    const routed = asRunner(numbers, seat, inner);
+    expect(routed).toEqual(sent);
+    // An account that holds no seat still gets nothing.
+    const outsider = "0x000000000000000000000000000000000000dead";
+    expect(runnerRole(numbers, outsider)).toEqual({ kind: "none" });
+    expect(asRunner(numbers, outsider, inner)).toBeNull();
+  });
+
+  it("checks in through the Council like any other runner call", () => {
+    const numbers = councilRun();
+    const council = numbers.council;
+    if (!council) throw new Error("no Council");
+    const seat = council.seats[0]?.account;
+    if (!seat) throw new Error("the first seat is open");
+    expect(mayCheckIn(numbers, seat)).toBe(true);
+    const sent = checkInFor(numbers, seat, HASH);
+    expect(sent?.to).toBe(council.contract);
+    expect(decodeCall(COUNCIL_ABI, sent?.data ?? "")).toMatchObject({
+      name: "propose",
+      args: [
+        numbers.contracts.treasury,
+        checkInCall(numbers.contracts.treasury, HASH).data,
+      ],
+    });
   });
 
   it("nothing is proposed on a project that has wound down", () => {

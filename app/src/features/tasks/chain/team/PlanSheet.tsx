@@ -20,7 +20,8 @@ import type { ProjectNumbers } from "../../../money/numbers";
 import { pendingSend, sendKey } from "../../../money/pending-sends";
 import { PotSheet } from "../../../pot/PotSheet";
 import { readPairWaiting } from "../../../pot/use-pair-waiting";
-import { PAIR_WORDS, runnerSend } from "../../../pot/runner-calls";
+import { RunnerAskNote } from "../../../pot/RunnerAskNote";
+import { runnerSend } from "../../../pot/runner-calls";
 import type { Ready } from "../../../pot/use-pot";
 import { paidNotRecorded } from "../../paid-journal";
 import type { ProjectTask } from "../../task-record";
@@ -249,9 +250,7 @@ export function PlanSheet({
             {block.sentence}
           </p>
         ) : null}
-        {send?.through === "pair" ? (
-          <p className="text-sm text-muted">{PAIR_WORDS}</p>
-        ) : null}
+        <RunnerAskNote numbers={numbers} through={send?.through} />
       </>
     );
   else body = null;

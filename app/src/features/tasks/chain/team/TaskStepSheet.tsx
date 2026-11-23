@@ -15,7 +15,8 @@ import type { ProjectNumbers } from "../../../money/numbers";
 import { pendingSend, sendKey } from "../../../money/pending-sends";
 import type { PotAction } from "../../../money/pot-copy";
 import { PotSheet } from "../../../pot/PotSheet";
-import { PAIR_WORDS, runnerSend } from "../../../pot/runner-calls";
+import { RunnerAskNote } from "../../../pot/RunnerAskNote";
+import { runnerSend } from "../../../pot/runner-calls";
 import type { Ready } from "../../../pot/use-pot";
 import { nowOf } from "../state";
 import type { ChainTask } from "../types";
@@ -110,9 +111,7 @@ export function TaskStepSheet({
             {stopped}
           </p>
         ) : null}
-        {send?.through === "pair" ? (
-          <p className="text-sm text-muted">{PAIR_WORDS}</p>
-        ) : null}
+        <RunnerAskNote numbers={numbers} through={send?.through} />
       </>
     );
   else body = null;

@@ -12,7 +12,8 @@ import {
 import { readSeatState } from "@creaton/core/pot/pot-state.ts";
 import type { ProjectNumbers } from "../money/numbers";
 import { PotSheet } from "../pot/PotSheet";
-import { PAIR_WORDS, doneWords, runnerSend } from "../pot/runner-calls";
+import { RunnerAskNote } from "../pot/RunnerAskNote";
+import { doneWords, runnerSend } from "../pot/runner-calls";
 import type { Ready } from "../pot/use-pot";
 import type { SeatView } from "./use-seat";
 import {
@@ -168,9 +169,7 @@ export function WithdrawSheet({
         {toName} can no longer take the seat. Nothing else changes: you keep
         running the project's money.
       </p>
-      {send?.through === "pair" ? (
-        <p className="text-sm text-muted">{PAIR_WORDS}</p>
-      ) : null}
+      <RunnerAskNote numbers={numbers} through={send?.through} />
     </PotSheet>
   );
 }

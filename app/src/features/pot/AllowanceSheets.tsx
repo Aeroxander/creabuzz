@@ -26,7 +26,8 @@ import { dayText, type ProjectNumbers, timeText } from "../money/numbers";
 import { TeamPauseLine } from "../pause/TeamPauseLine";
 import { useTeamPause } from "../pause/use-team-pause";
 import { PotSheet } from "./PotSheet";
-import { PAIR_WORDS, doneWords, runnerSend } from "./runner-calls";
+import { RunnerAskNote } from "./RunnerAskNote";
+import { doneWords, runnerSend } from "./runner-calls";
 import { boxNow, rateWords, smallDollarsText } from "./pot-words";
 import type { Ready } from "./use-pot";
 
@@ -186,9 +187,7 @@ function DrawSheet({ numbers, ready, sheet, onClose }: Props) {
               box to {target}.
             </p>
           ) : null}
-          {send?.through === "pair" ? (
-            <p className="text-sm text-muted">{PAIR_WORDS}</p>
-          ) : null}
+          <RunnerAskNote numbers={numbers} through={send?.through} />
         </>
       )}
     </PotSheet>
@@ -289,9 +288,7 @@ function RateSheet({ numbers, ready, sheet, onClose }: Props) {
                 : "A lower rate takes effect at once."}
             </p>
           ) : null}
-          {send?.through === "pair" ? (
-            <p className="text-sm text-muted">{PAIR_WORDS}</p>
-          ) : null}
+          <RunnerAskNote numbers={numbers} through={send?.through} />
         </>
       )}
     </PotSheet>
@@ -403,9 +400,7 @@ function DoorSheet({ numbers, ready, sheet, onClose }: Props) {
           ? "While the door is closed nobody can back this project. People who hold Shares can still take their money out."
           : `Opening it lets anyone back this project again, as long as the team keeps checking in${numbers.clock.activeUntil ? ` (the next check-in is due by ${dayText(numbers.clock.activeUntil)})` : ""}.`}
       </p>
-      {send?.through === "pair" ? (
-        <p className="text-sm text-muted">{PAIR_WORDS}</p>
-      ) : null}
+      <RunnerAskNote numbers={numbers} through={send?.through} />
     </PotSheet>
   );
 }

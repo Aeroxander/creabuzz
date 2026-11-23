@@ -18,7 +18,8 @@ import { Field } from "../../../../ui/field";
 import type { ProjectNumbers } from "../../../money/numbers";
 import { pendingSend, sendKey } from "../../../money/pending-sends";
 import { PotSheet } from "../../../pot/PotSheet";
-import { PAIR_WORDS, runnerSend } from "../../../pot/runner-calls";
+import { RunnerAskNote } from "../../../pot/RunnerAskNote";
+import { runnerSend } from "../../../pot/runner-calls";
 import type { Ready } from "../../../pot/use-pot";
 import type { Project } from "../../../project/project-record";
 import type { ProjectTask, WorkerLinks } from "../../task-record";
@@ -254,9 +255,7 @@ export function AcceptSheet({
               </summary>
               <p className="mt-1 text-muted">{PAY_DETAILS}</p>
             </details>
-            {send?.through === "pair" ? (
-              <p className="text-sm text-muted">{PAIR_WORDS}</p>
-            ) : null}
+            <RunnerAskNote numbers={numbers} through={send?.through} />
           </>
         )}
       </>
